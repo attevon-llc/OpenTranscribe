@@ -443,11 +443,25 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     # table rather than on a column, because the whole revision is one CREATE TABLE.
     has_file_facts = "file_facts" in tables
 
+    # v390: recorded_date + its provenance on media_file. Probed on the CHECK rather than
+    # on the column deliberately — the constraint is the half of the revision that carries
+    # the design (a date with no source is unrepresentable), and keying on it means a
+    # database left with the columns but not the CHECKs by a partial run falls through to
+    # v389 and re-runs v390, which the idempotent DDL handles. Keying on the column would
+    # stamp that database as done and leave the rule unenforced.
+    has_recorded_date_provenance = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_media_file_recorded_date_provenance')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the ingest-artifacts sidecar. Cumulative, so a database that
     # somehow has file_facts but lost user_group.organization_id falls through to an
     # earlier arm and re-runs both — which is safe, both revisions being idempotent.
-    if (
+    #
+    # Bound to a name rather than inlined twice: v390 is v389's fingerprint plus one probe,
+    # and a copy-pasted 30-term conjunction is a place for the two to drift apart silently.
+    matches_v389 = (
         has_cloud_seams
         and not has_legacy_varchar_uuid
         and has_media_file_quarantine
@@ -480,7 +494,11 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and not has_legacy_role_check
         and has_user_group_org
         and has_file_facts
-    ):
+    )
+    # v390: same as v389 plus the recorded-date provenance rule.
+    if matches_v389 and has_recorded_date_provenance:
+        return "v390_add_recorded_date_provenance"
+    if matches_v389:
         return "v389_add_file_facts"
     # v388: same as v387 plus the group tenancy stamp.
     if (

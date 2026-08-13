@@ -173,12 +173,45 @@ class MediaFile(Base):
     audio_bit_depth: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Audio bit depth
 
     # Creation information
+    #
+    # ⚠️ ``creation_date`` is the CONTAINER's claim and nothing else. It used to be
+    # the end of a silent fallback chain (container metadata → filesystem mtime →
+    # ``upload_time``) that recorded no provenance, so a value copied from
+    # ``upload_time`` was indistinguishable from one read out of the file. That chain
+    # is gone: the fallbacks are now explicit ``recorded_date_source`` values below.
+    # Rows written before v390 may still hold a laundered value, which is exactly why
+    # v390 does not backfill ``recorded_date`` from this column.
     creation_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
-    )  # Original creation date
+    )  # Original creation date, as the container states it (NULL = the container did not)
     last_modified_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )  # Last modified date
+
+    # --- When the recording actually happened, and how we know (v390, #403 R7) ---
+    #
+    # Distinct from ``upload_time`` (when the bytes arrived) and from ``creation_date``
+    # (what the container claims). This is the resolved answer to "when did this
+    # meeting happen", and it never travels without its source — see
+    # ``app.core.enums.RecordedDateSource``.
+    # No ``index=True``: that would declare a FULL index under the same name the
+    # migration gives a PARTIAL one, which is precisely the ORM/DDL disagreement
+    # ``test_orm_ddl_divergence`` exists to catch. The partial index is declared in
+    # ``__table_args__`` instead, with its predicate.
+    recorded_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    recorded_date_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    recorded_date_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: Every source's observation, winner and losers alike, so a disagreement is
+    #: inspectable instead of buried in whichever branch of the resolver ran first.
+    recorded_date_candidates: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    #: The user set the date by hand. No re-derivation may overwrite a locked row —
+    #: this is what makes "you can correct it" permanent rather than true until the
+    #: next reindex.
+    recorded_date_locked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
 
     # Device information
     device_make: Mapped[str | None] = mapped_column(String, nullable=True)  # Device manufacturer
@@ -285,6 +318,42 @@ class MediaFile(Base):
     # evidence can't be destroyed while a dispute/notice is open.
     legal_hold: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    # Declared here, not only in v390, because a constraint the database enforces and
+    # Python never states is invisible until it fires at runtime — see
+    # ``tests/unit/test_orm_ddl_divergence.py``, whose allowlist is empty by
+    # measurement. The two that carry design rather than hygiene:
+    #
+    #   * ``ck_media_file_recorded_date_provenance`` makes a date with no recorded
+    #     origin a state the database will not hold. The rule is not "remember to set
+    #     the source" — it is that forgetting is rejected.
+    #   * ``ck_media_file_recorded_date_locked_is_manual`` stops a re-derivation from
+    #     relabelling a hand-entered date as machine-derived while leaving it locked.
+    __table_args__ = (
+        CheckConstraint(
+            "recorded_date_source IS NULL OR recorded_date_source IN "
+            "('container', 'filename', 'transcript', 'llm', 'manual', 'none')",
+            name="ck_media_file_recorded_date_source",
+        ),
+        CheckConstraint(
+            "recorded_date IS NULL OR recorded_date_source IS NOT NULL",
+            name="ck_media_file_recorded_date_provenance",
+        ),
+        CheckConstraint(
+            "recorded_date_confidence IS NULL OR "
+            "(recorded_date_confidence >= 0 AND recorded_date_confidence <= 1)",
+            name="ck_media_file_recorded_date_confidence",
+        ),
+        CheckConstraint(
+            "NOT recorded_date_locked OR recorded_date_source = 'manual'",
+            name="ck_media_file_recorded_date_locked_is_manual",
+        ),
+        Index(
+            "ix_media_file_recorded_date",
+            "recorded_date",
+            postgresql_where=text("recorded_date IS NOT NULL"),
+        ),
     )
 
     # Relationships

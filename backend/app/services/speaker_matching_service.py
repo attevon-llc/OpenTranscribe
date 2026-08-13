@@ -18,6 +18,7 @@ from app.models.media import SpeakerProfile
 from app.services.opensearch_service import add_speaker_embedding
 from app.services.opensearch_service import find_matching_speaker
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
+from app.services.speaker_rename_tracker import SpeakerRenameTracker
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,11 @@ class SpeakerMatchingService:
     def __init__(self, db: Session, embedding_service: SpeakerEmbeddingService | None):
         self.db = db
         self.embedding_service = embedding_service
+        # Auto-accepted matches rename speakers whose chunks may already be
+        # indexed — the cloud-ASR path extracts embeddings on the GPU worker in
+        # parallel with chunk indexing, and rediarize re-matches a long-completed
+        # file. Recorded here, dispatched after the commit (issue #432).
+        self._rename_tracker = SpeakerRenameTracker()
 
     def _media_file_org_id(self, media_file_id: int | None) -> int | None:
         """Resolve the tenant scope of a per-file speaker operation.
@@ -558,6 +564,7 @@ class SpeakerMatchingService:
                 results.append(result)
 
         self.db.commit()
+        self._rename_tracker.flush(self.db)
         return results
 
     def process_speaker_embeddings_native(
@@ -598,6 +605,7 @@ class SpeakerMatchingService:
                 results.append(result)
 
         self.db.commit()
+        self._rename_tracker.flush(self.db)
         return results
 
     def _process_single_speaker(
@@ -714,6 +722,13 @@ class SpeakerMatchingService:
         if match["auto_accept"]:
             logger.info(
                 f"Auto-accepting match for speaker {int(speaker.id)} -> {match['suggested_name']}"
+            )
+            # The string the chunk plane holds, captured while it still exists
+            # (issue #432) — after the commit Postgres only knows the new name.
+            self._rename_tracker.record(
+                int(speaker.media_file_id),
+                str(speaker.display_name or speaker.name or ""),
+                match["suggested_name"],
             )
             speaker.display_name = match["suggested_name"]
             speaker.verified = True  # type: ignore[assignment]

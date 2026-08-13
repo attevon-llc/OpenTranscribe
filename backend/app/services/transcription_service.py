@@ -215,6 +215,15 @@ class TranscriptionService:
         """
         Update speaker display name.
 
+        No chunk-plane propagation here, deliberately (issue #432): nothing calls
+        this method — the rename users actually reach is
+        ``PUT /api/speakers/{uuid}``, which captures the pre-write name and
+        dispatches ``propagate_speaker_rename`` itself (issue #405). Wiring a
+        dispatch into an unreachable path would be untestable dead code. **If you
+        ever route a caller here, add the dispatch too**, or the renamed
+        speaker's chunks keep the old name and chat's speaker scope silently
+        returns nothing for them.
+
         Args:
             speaker_id: Speaker ID
             display_name: New display name

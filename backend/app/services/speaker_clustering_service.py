@@ -26,6 +26,7 @@ from app.models.media import SpeakerCluster
 from app.models.media import SpeakerClusterMember
 from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
+from app.services.speaker_rename_tracker import SpeakerRenameTracker
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,11 @@ class SpeakerClusteringService:
 
     def __init__(self, db: Session):
         self.db = db
+        # A clustering pass relabels many speakers across many files at once, and
+        # every one of those files was indexed long ago. Renames are recorded as
+        # they happen and dispatched once per commit — never per row, which would
+        # queue one update_by_query per speaker per file (issue #432).
+        self._rename_tracker = SpeakerRenameTracker()
 
     def _media_file_org_id(self, media_file_id: int | None) -> int | None:
         """Resolve the tenant scope of a speaker via its media file's org."""
@@ -184,6 +190,11 @@ class SpeakerClusteringService:
                             .first()
                         )
                         if profile:
+                            self._rename_tracker.record(
+                                int(speaker.media_file_id),
+                                str(speaker.display_name or speaker.name or ""),
+                                str(profile.name),
+                            )
                             speaker.display_name = profile.name
                             speaker.verified = True
                     self._update_cluster_centroid(cluster, user_id)
@@ -198,6 +209,7 @@ class SpeakerClusteringService:
         except Exception as e:
             logger.error("Error in find_or_create_cluster for speaker %s: %s", speaker_id, e)
             self.db.rollback()
+            self._rename_tracker.discard()
             return None
 
     def cluster_speakers_for_file(
@@ -237,6 +249,9 @@ class SpeakerClusteringService:
                 clusters.append(cluster)
 
         self.db.commit()
+        # Any speaker that joined a promoted cluster was relabelled above; the
+        # chunk plane still carries the diarizer label it was indexed with.
+        self._rename_tracker.flush(self.db)
         return clusters
 
     # ------------------------------------------------------------------
@@ -1359,6 +1374,13 @@ class SpeakerClusteringService:
                 speaker = speakers_by_id.get(int(member.speaker_id))
                 if speaker:
                     speaker.profile_id = profile.id  # type: ignore[assignment]
+                    # Members span every file the cluster reaches into, each with
+                    # its own indexed label — record before the overwrite (#432).
+                    self._rename_tracker.record(
+                        int(speaker.media_file_id),
+                        str(speaker.display_name or speaker.name or ""),
+                        name,
+                    )
                     speaker.display_name = name  # type: ignore[assignment]
                     speaker.verified = True  # type: ignore[assignment]
 
@@ -1366,6 +1388,7 @@ class SpeakerClusteringService:
             from app.services.profile_embedding_service import ProfileEmbeddingService
 
             self.db.commit()
+            self._rename_tracker.flush(self.db)
             ProfileEmbeddingService.update_profile_embedding(self.db, int(profile.id))
 
             logger.info(
@@ -1379,6 +1402,7 @@ class SpeakerClusteringService:
         except Exception as e:
             logger.error("Error promoting cluster to profile: %s", e)
             self.db.rollback()
+            self._rename_tracker.discard()
             return None
 
     # ------------------------------------------------------------------
@@ -1765,8 +1789,17 @@ class SpeakerClusteringService:
                     failed += 1
                     continue
 
+                # Every branch below overwrites the name the chunk plane was
+                # indexed with, so each records the old one first (issue #432).
+                # "accept" applies a DIFFERENT name per speaker, which is why the
+                # tracker groups by new name rather than assuming one per batch.
+                indexed_as = str(speaker.display_name or speaker.name or "")
+
                 if action == "accept":
                     if speaker.suggested_name:
+                        self._rename_tracker.record(
+                            int(speaker.media_file_id), indexed_as, str(speaker.suggested_name)
+                        )
                         speaker.display_name = speaker.suggested_name  # type: ignore[assignment]
                         speaker.verified = True  # type: ignore[assignment]
                         updated += 1
@@ -1776,11 +1809,17 @@ class SpeakerClusteringService:
 
                 elif action == "assign" and profile:
                     speaker.profile_id = profile.id  # type: ignore[assignment]
+                    self._rename_tracker.record(
+                        int(speaker.media_file_id), indexed_as, str(profile.name)
+                    )
                     speaker.display_name = profile.name  # type: ignore[assignment]
                     speaker.verified = True  # type: ignore[assignment]
                     updated += 1
 
                 elif action == "name" and display_name:
+                    self._rename_tracker.record(
+                        int(speaker.media_file_id), indexed_as, display_name
+                    )
                     speaker.display_name = display_name  # type: ignore[assignment]
                     speaker.verified = True  # type: ignore[assignment]
                     updated += 1
@@ -1803,8 +1842,12 @@ class SpeakerClusteringService:
             self.db.commit()
         except Exception as e:
             self.db.rollback()
+            # The renames never landed — dropping them keeps a later flush on the
+            # same service instance from propagating a rolled-back name.
+            self._rename_tracker.discard()
             return {"updated_count": 0, "failed_count": len(speaker_uuids), "errors": [str(e)]}
 
+        self._rename_tracker.flush(self.db)
         return {"updated_count": updated, "failed_count": failed, "errors": errors}
 
     # ------------------------------------------------------------------

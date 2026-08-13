@@ -194,12 +194,25 @@ function createChatStore() {
         // Folded into msg_metadata rather than kept as separate stream state, so
         // ChatMessage has ONE render path: the same flag arrives on the
         // persisted message when the thread is reloaded.
-        if (event.code === 'context_dropped') {
+        if (event.code === 'context_dropped' || event.code === 'no_context') {
+          // `retrieved` is folded in too: on `no_context` it is what separates
+          // an empty search from masking having dropped everything, and the
+          // count is not otherwise on screen until the thread is reloaded.
           update((s) => ({
             ...s,
             messages: s.messages.map((m) =>
               m.uuid === s.streamingMessageId
-                ? { ...m, msg_metadata: { ...(m.msg_metadata ?? {}), context_dropped: true } }
+                ? {
+                    ...m,
+                    msg_metadata: {
+                      ...(m.msg_metadata ?? {}),
+                      [event.code]: true,
+                      ...(event.retrieved === undefined ? {} : { retrieved: event.retrieved }),
+                      ...(event.files_searched === undefined
+                        ? {}
+                        : { files_searched: event.files_searched }),
+                    },
+                  }
                 : m
             ),
           }));

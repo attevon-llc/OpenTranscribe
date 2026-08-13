@@ -75,6 +75,14 @@ interface ChatMessageMetadata {
    * survives a reload rather than existing only for the streaming session.
    */
   context_dropped?: boolean;
+  /**
+   * NOTHING reached the prompt: retrieval matched nothing, the search backend
+   * was unavailable and degraded to a context-free answer, or masking failed
+   * closed on every chunk (issue #438). Distinct from `context_dropped`, where
+   * excerpts existed and the budget rejected them — read `retrieved` beside
+   * this to tell an empty search (`0`) from fail-closed masking (non-zero).
+   */
+  no_context?: boolean;
 }
 
 export interface ChatMessage {
@@ -218,8 +226,13 @@ type StreamStage = 'rewriting' | 'retrieving' | 'reranking' | 'generating';
  * for none of them, so the answer is ungrounded. Reported rather than absorbed —
  * an answer that reads as sourced when it is not is the failure this exists to
  * prevent.
+ *
+ * `no_context`: nothing reached the prompt at all (issue #438). Retrieval
+ * degrades to an empty result on any failure, so this covers "nothing matched",
+ * "the search backend was down", and "masking dropped every chunk" alike — the
+ * `retrieved` count separates them. The two codes are mutually exclusive.
  */
-export type ChatWarningCode = 'context_dropped';
+export type ChatWarningCode = 'context_dropped' | 'no_context';
 
 export type ChatErrorCode =
   | 'llm_unconfigured'
@@ -238,7 +251,13 @@ export type ChatStreamEvent =
     }
   | { type: 'status'; stage: StreamStage }
   | { type: 'sources'; citations: ChatSource[] }
-  | { type: 'warning'; code: ChatWarningCode; retrieved?: number }
+  | {
+      type: 'warning';
+      code: ChatWarningCode;
+      retrieved?: number;
+      /** Present on `no_context`: `'all'` for an unscoped turn, else a count. */
+      files_searched?: number | 'all';
+    }
   | { type: 'delta'; text: string }
   /**
    * A chunk of the model's separately-streamed reasoning/"thinking" text.

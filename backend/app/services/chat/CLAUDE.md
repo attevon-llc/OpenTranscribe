@@ -157,6 +157,30 @@ Three rules that only hold together (issues #384, #386, #387):
    normal-looking reply is the failure this exists to prevent. Adding a frame
    means adding it to `chatStream.ts`'s `known` list too, or the client drops it
    as an unknown future event.
+4. **When NOTHING reached the prompt**, the turn sets `msg_metadata.no_context`
+   and emits `{"code": "no_context", "retrieved": N, "files_searched": F}`
+   (issue #438). The two codes are mutually exclusive branches of one `if`:
+   `context_dropped` means excerpts existed and the budget rejected them,
+   `no_context` means none survived to be budgeted.
+
+   It exists because **`retrieve_chunks` degrades to `[]` on ANY failure** — the
+   run that opened #438 was an OpenSearch `503 search_phase_execution_exception`
+   raised while the v6 reindex was rebuilding `transcript_chunks`, swallowed by
+   that fail-soft handler. The model then answered "I do not have enough
+   information in the provided excerpts" over a 432-file corpus full of matching
+   material, and nothing distinguished that from a grounded negative. `retrieved`
+   separates the two remaining causes: `0` is an empty (or failed) search,
+   non-zero is masking failing closed on every chunk.
+
+   ⚠️ It cannot yet say *which*: the exception is caught inside
+   `services/search/chunk_retrieval.retrieve_chunks`, which returns `[]` with no
+   signal. Threading a `retrieval_failed` flag out of there would let the frame
+   distinguish "your library has nothing about this" from "search was down" —
+   worth doing, and it is a one-line change in a module this package does not own.
+
+   A warning **code** is as much a contract as a frame name: it needs a
+   `ChatWarningCode` entry in `frontend/src/lib/types/chat.ts`, a branch in the
+   store's fold, and a rendering, or the server reports a problem nobody sees.
 
 `history_max_turns` counts **turn pairs** on both sides — `_history_for_prompt`
 fetches `max_turns * 2` rows and `build_messages` slices

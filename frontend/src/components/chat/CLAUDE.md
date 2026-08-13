@@ -45,12 +45,26 @@ list.** That forward-compatibility rule silently drops anything unrecognised, so
 a backend-only change ships a frame nobody ever sees. Frames today: `start`,
 `status`, `sources`, `warning`, `delta`, `usage`, `done`, `error`.
 
-`warning` (`{code, retrieved}`, issue #384) reports that retrieval found excerpts
-but none fit the model's context window — the answer is NOT grounded in the
-user's recordings. The store folds it into `msg_metadata.context_dropped` rather
-than holding separate stream state, so `ChatMessage` has **one** render path and
-the notice survives a reload; the server persists the same flag on the message
-row. `sources` now carries only the excerpts that actually reached the prompt.
+`warning` (`{code, retrieved}`) reports that the answer is NOT grounded in the
+user's recordings, and carries one of **two** codes:
+
+- `context_dropped` (#384) — retrieval found excerpts and none fit the model's
+  context window.
+- `no_context` (#438) — nothing reached the prompt at all. Retrieval degrades to
+  an empty result on any failure, so this covers "nothing matched", "search was
+  unavailable" and "masking dropped every chunk"; the `retrieved` count (also
+  folded in) is what separates them.
+
+The store folds both into `msg_metadata` (`context_dropped` / `no_context`)
+rather than holding separate stream state, so `ChatMessage` has **one** render
+path and the notice survives a reload; the server persists the same flags on the
+message row. The two notices are an `{#if}`/`{:else if}`, never stacked — they
+name different defects and only one can be true. `sources` carries only the
+excerpts that actually reached the prompt.
+
+**A new warning `code` is as invisible as a new frame** if the client does not
+know it: the store's fold checks the code explicitly, so an unhandled one is
+parsed, ignored, and never rendered.
 
 Raw fetch bypasses the axios interceptors, so CSRF (`getCsrfToken()`) and the
 one-shot 401 refresh are handled explicitly in that module.

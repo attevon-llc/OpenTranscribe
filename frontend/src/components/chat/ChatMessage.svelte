@@ -82,6 +82,10 @@
   // not grounded in the user's recordings (issue #384). Shown above the sources
   // block because it changes how the answer should be read.
   $: contextDropped = Boolean(message.msg_metadata?.context_dropped);
+  // Nothing reached the model at all — retrieval matched nothing, or failed and
+  // degraded to a context-free answer (issue #438). Without this the model's
+  // "I don't have enough information" reads as a grounded negative.
+  $: noContext = Boolean(message.msg_metadata?.no_context);
   $: timestamp = formatTimestamp(message.created_at);
   $: canEdit = isUser && !message.pending;
 </script>
@@ -146,6 +150,10 @@
       {#if contextDropped}
         <p class="context-warning" data-testid="chat-context-dropped">
           {$t('chat.message.contextDropped')}
+        </p>
+      {:else if noContext}
+        <p class="context-warning" data-testid="chat-no-context">
+          {$t('chat.message.noContext')}
         </p>
       {/if}
 

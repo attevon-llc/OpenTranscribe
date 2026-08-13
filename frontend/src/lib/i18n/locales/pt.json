@@ -4779,6 +4779,7 @@
   "chat.jumpToLatest": "Ir para a mais recente",
   "chat.message.aborted": "Interrompida — esta resposta está incompleta.",
   "chat.message.contextDropped": "Esta resposta não se baseou nas suas gravações: foram encontrados excertos, mas nenhum coube na janela de contexto do modelo. Experimente uma conversa mais curta, menos excertos por resposta ou um modelo com uma janela de contexto maior.",
+  "chat.message.noContext": "Nada foi pesquisado para esta resposta: nenhum excerto das suas gravações chegou ao modelo, por isso a resposta não se baseia nelas. Verifique se as gravações que esperava estão transcritas e indexadas e se a pesquisa está disponível.",
   "chat.message.copied": "Copiado",
   "chat.message.copy": "Copiar",
   "chat.message.edit": "Editar",

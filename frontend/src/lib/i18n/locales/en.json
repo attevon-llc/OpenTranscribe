@@ -4779,6 +4779,7 @@
   "chat.jumpToLatest": "Jump to latest",
   "chat.message.aborted": "Stopped — this answer is incomplete.",
   "chat.message.contextDropped": "This answer was not grounded in your recordings: excerpts were found, but none fit the model's context window. Try a shorter conversation, fewer excerpts per answer, or a model with a larger context window.",
+  "chat.message.noContext": "Nothing was searched for this answer: no excerpts from your recordings reached the model, so the reply is not grounded in them. Check that the recordings you expected are transcribed and indexed, and that search is available.",
   "chat.message.copied": "Copied",
   "chat.message.copy": "Copy",
   "chat.message.edit": "Edit",

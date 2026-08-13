@@ -10,6 +10,13 @@ in its own collapsed-by-default block rather than mixed into the answer.
 ``sources`` is emitted only once the excerpt budget is known, and lists only the
 excerpts that actually reached the prompt — see the comment at its yield site.
 
+``warning`` carries a ``code`` naming exactly one way the answer ended up
+ungrounded: ``context_dropped`` (excerpts were retrieved and the budget fit none
+of them) or ``no_context`` (nothing reached masking at all — retrieval matched
+nothing, every chunk failed closed under masking, or the search backend was
+unavailable and degraded to a context-free answer). Adding a code means teaching
+``frontend/src/lib/types/chat.ts``'s ``ChatWarningCode`` about it too.
+
 Threading model: everything except the SSE plumbing is synchronous (OpenSearch,
 SQLAlchemy, ``requests``), so the blocking stages run via Starlette's threadpool
 and the provider's token stream is bridged with ``iterate_in_threadpool``.
@@ -270,7 +277,11 @@ async def _finalize_turn(
     if turn.prompt_tokens is None and turn.completion_tokens is None:
         try:
             turn.prompt_tokens = llm.estimate_tokens("".join(m["content"] for m in messages))
-            turn.completion_tokens = llm.estimate_tokens(turn.answer)
+            # Reasoning counts, even though it is not the answer (issue #439). The
+            # model generated and was billed for those tokens; separating them out
+            # of `answer` so they stop rendering must not also delete them from the
+            # meter. Providers that report usage already include them.
+            turn.completion_tokens = llm.estimate_tokens(turn.answer + turn.reasoning)
             turn.tokens_estimated = True
         except Exception:  # noqa: BLE001
             logger.exception("Token estimation failed")
@@ -474,7 +485,34 @@ class ChatService:
                 turn.offered_citations = citations_mod.build_offered_citations(masked, excerpt_ids)
                 yield sse("sources", {"citations": turn.offered_citations})
 
-                if masked and not excerpt_ids:
+                if not masked:
+                    # Nothing reached the prompt at all. The model will answer "I
+                    # don't have enough information", which is indistinguishable
+                    # from a grounded negative — and, worse, from a working search
+                    # that simply found nothing. Retrieval degrades to an empty
+                    # list on ANY failure (issue #438: an OpenSearch 503 during a
+                    # reindex produced a confident "I don't know" over a corpus
+                    # full of matching material), so the counters are the only
+                    # evidence the user can be shown. `retrieved` separates the
+                    # two remaining cases: 0 means the search returned nothing,
+                    # non-zero means masking failed closed on every chunk.
+                    turn.metadata["no_context"] = True
+                    logger.warning(
+                        "Chat turn %s answered with NO excerpts: retrieved=%s, "
+                        "files_searched=%s — the reply is ungrounded",
+                        assistant_message_uuid,
+                        turn.metadata.get("retrieved", 0),
+                        turn.metadata.get("files_searched", 0),
+                    )
+                    yield sse(
+                        "warning",
+                        {
+                            "code": "no_context",
+                            "retrieved": turn.metadata.get("retrieved", 0),
+                            "files_searched": turn.metadata.get("files_searched", 0),
+                        },
+                    )
+                elif not excerpt_ids:
                     # Retrieval found material and the budget left no room for any
                     # of it. Say so rather than answering ungrounded behind a
                     # normal-looking reply.

@@ -145,6 +145,22 @@ describe('createSseParser', () => {
     expect(events[0]).toEqual({ type: 'warning', code: 'context_dropped', retrieved: 4 });
   });
 
+  it('passes a no_context warning through with its counts (#438)', () => {
+    const events: ChatStreamEvent[] = [];
+    const parser = createSseParser((event) => events.push(event));
+
+    parser.push(
+      'event: warning\ndata: {"code":"no_context","retrieved":0,"files_searched":"all"}\n\n'
+    );
+
+    expect(events[0]).toEqual({
+      type: 'warning',
+      code: 'no_context',
+      retrieved: 0,
+      files_searched: 'all',
+    });
+  });
+
   it('parses reasoning frames, distinct from delta', () => {
     const { events, onEvent } = collect();
     const parser = createSseParser(onEvent);

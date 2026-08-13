@@ -353,6 +353,12 @@ services:
     # transcription tasks cannot head-of-line-block postprocess.
     command: celery -A app.core.celery worker --loglevel=info -Q cpu,utility,cpu-transcribe --concurrency=${CPU_WORKER_CONCURRENCY:-8} --max-tasks-per-child=20 --hostname cpu-processor@%h -E
     volumes:
+      # Sentence tokenizer corpora. THIS WORKER CHUNKS TRANSCRIPTS (issue #436) —
+      # without the mount, punkt is absent and every chunk it writes is cut by the
+      # regex fallback, which splits on abbreviations punkt keeps intact. The two
+      # splitters disagree, so a missing mount here silently produces different
+      # boundaries from any worker that has it.
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       # Shared scratch — writes the preprocessed WAV for GPU/embedding workers
       - pipeline_scratch:/scratch/opentranscribe
       - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
@@ -554,6 +560,12 @@ services:
     command: celery -A app.core.celery worker --loglevel=info -Q embedding --concurrency=1 --max-tasks-per-child=500 --hostname search-indexer@%h -E
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      # Sentence tokenizer corpora. THIS WORKER CHUNKS TRANSCRIPTS (issue #436) —
+      # without the mount, punkt is absent and every chunk it writes is cut by the
+      # regex fallback, which splits on abbreviations punkt keeps intact. The two
+      # splitters disagree, so a missing mount here silently produces different
+      # boundaries from any worker that has it.
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       # Shared scratch — so embedding worker can use the temp WAV if needed
       - pipeline_scratch:/scratch/opentranscribe
     environment:

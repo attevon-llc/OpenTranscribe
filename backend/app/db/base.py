@@ -9,6 +9,30 @@ connect_args: dict = {}
 if settings.POSTGRES_SSLMODE and settings.POSTGRES_SSLMODE != "disable":
     connect_args["sslmode"] = settings.POSTGRES_SSLMODE
 
+
+def build_libpq_options(idle_in_transaction_timeout_ms: int) -> str | None:
+    """Build the libpq ``options`` string for a connection, or None if empty.
+
+    Factored out so the value is testable without opening a connection, and so
+    a second server-side GUC can be added here rather than by string-appending
+    at the call site.
+
+    Args:
+        idle_in_transaction_timeout_ms: Milliseconds; 0 or less disables.
+
+    Returns:
+        A libpq ``options`` string, or None when nothing needs setting.
+    """
+    gucs: list[str] = []
+    if idle_in_transaction_timeout_ms > 0:
+        gucs.append(f"-c idle_in_transaction_session_timeout={idle_in_transaction_timeout_ms}")
+    return " ".join(gucs) if gucs else None
+
+
+_libpq_options = build_libpq_options(settings.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS)
+if _libpq_options is not None:
+    connect_args["options"] = _libpq_options
+
 # Create SQLAlchemy engine with connection pool settings
 # Backend (FastAPI) handles concurrent API requests — needs larger pool.
 # Celery workers each fork their own process with a separate engine, so

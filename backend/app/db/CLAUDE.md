@@ -12,8 +12,9 @@ pending. `alembic upgrade head` by hand is **production-only**.
 
 - `migrations.py` — the runner plus `_detect_schema_version()`, a ~400-line ladder of
   `information_schema` probes that maps a schema fingerprint to a revision to stamp.
-- `base.py` — `engine`, `SessionLocal`, `Base`, `get_db()`. `session_utils.py` —
-  `session_scope()` (the contextmanager tasks use), `get_refreshed_object`.
+- `base.py` — `engine`, `SessionLocal`, `Base`, `get_db()`, `build_libpq_options()`.
+  `session_utils.py` — `session_scope()` (the contextmanager tasks use),
+  `get_refreshed_object`.
 - `README.md` — longer prose on the layering.
 
 ## Adding a schema change
@@ -61,6 +62,32 @@ v377-v383 (after the chat chain) rather than renumbering chat's, since the chat 
 had already reached production. Nothing about any revision's DDL changed — only the
 seven files' names and their `revision`/`down_revision` strings, and everything that
 referenced them (detection arms, consistency tests, this file).
+
+## Never hold a transaction across slow work (issue #440)
+
+Open the session, do the database work, close it — then do the HTTP call / model inference /
+file I/O. A session left open while the process does something else holds `ACCESS SHARE` on
+every table it touched (which queues any `ALTER TABLE` behind it, including a migration) and
+pins the VACUUM horizon for the whole cluster. 35 leaks of this shape were found and fixed;
+one had a `celery-cpu-worker` connection `idle in transaction` for **48+ minutes**.
+
+Two things keep it from coming back, and neither replaces the other:
+
+- **`scripts/audit-session-lifetime.py`** — 9 AST detectors, wired into `.pre-commit-config.yaml`
+  (self-test first) and its own phase in `run-integration-tests.sh`. Allowlist entries need a
+  written reason and a **stale entry fails the run**, so an exemption cannot outlive its subject.
+- **`DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`** (default 5 min, 0 disables) — the server-side backstop.
+  `base.py:build_libpq_options` puts `idle_in_transaction_session_timeout` in the shared engine's
+  `connect_args`, so Postgres terminates a backend holding an open transaction and running no
+  query. It **cannot interrupt a slow query, only an idle one**, which is exactly why it is safe
+  to ship on: legitimate long statements are untouched. The migration engines in `migrations.py`
+  are built separately and are outside it by construction, so a long `ALTER TABLE` and the
+  advisory-lock holder are never at risk.
+
+`tests/unit/test_idle_in_transaction_backstop.py` proves the GUC really terminates an idle
+transaction **against a live server, with its own control** (same idle duration, no GUC → the
+connection survives) plus a second control that a `pg_sleep` inside a statement is *not* killed.
+Configuration-only assertions would have passed against a backstop that did nothing.
 
 ## Gotchas
 

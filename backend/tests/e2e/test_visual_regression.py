@@ -45,6 +45,10 @@ from PIL import Image
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
+from tests.e2e._visual_diff import CHANNEL_NOISE_THRESHOLD  # noqa: F401
+from tests.e2e._visual_diff import DIFF_TOLERANCE
+from tests.e2e._visual_diff import diff_fraction as _diff_fraction
+
 pytestmark = pytest.mark.visual  # run-e2e.sh runs visual tests serially (quiet stack)
 
 # This module used to define its own ``FRONTEND_URL``/``BACKEND_URL`` constants here.
@@ -58,14 +62,6 @@ TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: 
 # Fixed viewport so baselines are deterministic across machines.
 VIEWPORT = {"width": 1280, "height": 800}
 
-# Allowed fraction of differing pixels before a comparison is treated as a real
-# visual change (covers sub-pixel anti-aliasing / font-hinting jitter).
-DIFF_TOLERANCE = 0.005  # 0.5%
-
-# Per-channel intensity delta below which a pixel is considered "same" (ignores
-# imperceptible 1-2/255 rendering noise).
-CHANNEL_NOISE_THRESHOLD = 12
-
 SCREENSHOT_DIR = Path(__file__).parent / "__screenshots__"
 
 # Set to "1" to (re)write baselines instead of comparing.
@@ -78,22 +74,6 @@ def _png_to_array(data: bytes) -> np.ndarray:
         return np.asarray(img.convert("RGB"), dtype=np.uint8)
 
 
-def _diff_fraction(a: np.ndarray, b: np.ndarray) -> float:
-    """Return the fraction of pixels that differ beyond the noise threshold.
-
-    Args:
-        a: First image as an RGB uint8 array.
-        b: Second image as an RGB uint8 array (must match ``a``'s shape).
-
-    Returns:
-        Differing-pixel count divided by total pixel count, in [0, 1].
-    """
-    delta = np.abs(a.astype(np.int16) - b.astype(np.int16))
-    # A pixel differs if ANY channel exceeds the per-channel noise threshold.
-    differing = np.any(delta > CHANNEL_NOISE_THRESHOLD, axis=-1)
-    return float(differing.sum()) / float(differing.size)
-
-
 def _compare_or_write(name: str, png_bytes: bytes) -> None:
     """Compare a screenshot against its baseline, or write it in update mode.
 
@@ -104,26 +84,30 @@ def _compare_or_write(name: str, png_bytes: bytes) -> None:
     SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
     baseline_path = SCREENSHOT_DIR / f"{name}.png"
 
-    if UPDATE_SCREENSHOTS or not baseline_path.exists():
+    if UPDATE_SCREENSHOTS:
         baseline_path.write_bytes(png_bytes)
-        if not UPDATE_SCREENSHOTS:
-            pytest.skip(
-                f"Wrote missing baseline {baseline_path.name}; re-run to compare "
-                f"(or use UPDATE_SCREENSHOTS=1 to refresh deliberately)."
-            )
         return
+
+    if not baseline_path.exists():
+        # A missing baseline is a FAILURE, never an auto-write.
+        #
+        # This used to write the file and `pytest.skip`, which made the suite
+        # self-approving in two runs with no human ever looking at the image:
+        # run once to write, run again to "pass" against what the possibly
+        # broken build just produced. `scripts/e2e/run-e2e.sh` treats skips as
+        # success, so the first run was green too.
+        pytest.fail(
+            f"No baseline for '{name}' at {baseline_path}. A screenshot is only "
+            f"a baseline once a human has looked at it. Generate it deliberately "
+            f"with UPDATE_SCREENSHOTS=1 and review the image in the diff before "
+            f"committing it."
+        )
 
     current = _png_to_array(png_bytes)
     baseline = _png_to_array(baseline_path.read_bytes())
 
-    if current.shape != baseline.shape:
-        # Full-page height can drift with content; crop both to the shared box so
-        # a comparison is still meaningful rather than auto-failing on shape.
-        h = min(current.shape[0], baseline.shape[0])
-        w = min(current.shape[1], baseline.shape[1])
-        current = current[:h, :w]
-        baseline = baseline[:h, :w]
-
+    # Shapes may differ; _diff_fraction charges the non-overlapping area as
+    # differing rather than cropping it away unseen.
     fraction = _diff_fraction(current, baseline)
     if fraction > DIFF_TOLERANCE:
         # Persist the failing capture next to the baseline for inspection.

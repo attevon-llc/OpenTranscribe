@@ -153,7 +153,18 @@ while [[ $# -gt 0 ]]; do
         --results) MODE=results ;;
         --clean)   MODE=clean ;;
         --show)    MODE=show; SHOW_ID="${2:-}"; shift ;;
-        --module)  MODE=run; MODULE="${2:-}"; shift ;;
+        # Refuse a second --module rather than silently keeping the last one. Passing
+        # `--module lockout --module session` looked like it ran both and ran only session,
+        # so the missing module read as "no findings there" — the same silently-dropped-work
+        # shape this script's own MODULE_TESTS bug had. One module at a time is deliberate
+        # (see the header); make the misuse loud instead of plausible.
+        --module)
+            if [[ -n "$MODULE" ]]; then
+                echo -e "${RED}--module given twice ('$MODULE' then '${2:-}').${NC}" >&2
+                echo -e "${RED}Run one module at a time, or use --all.${NC}" >&2
+                exit 2
+            fi
+            MODE=run; MODULE="${2:-}"; shift ;;
         --dry-run) DRY_RUN=true ;;
         -h|--help) sed -n '2,50p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *) echo -e "${RED}Unknown option: $1${NC}" >&2; exit 2 ;;

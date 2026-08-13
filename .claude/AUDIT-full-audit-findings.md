@@ -270,6 +270,42 @@ Full store-coverage and password-path tables are in task #5/#13/#14 descriptions
 
 ---
 
+## 5b. Production defects found, all via test work rather than by reading
+
+None of these were on the handoff's list. Each surfaced because a test was made honest, or
+because a suite failure was chased to its cause instead of retried.
+
+| Defect | How it surfaced |
+|---|---|
+| `POST /admin/users/{uuid}/mfa/reset` **500s for every account that has MFA** (`totp_secret = None` against a `v200` NOT NULL) | Hidden *by* the audit defect: the audit call and the `200` both sat outside `if mfa_settings:`, so the no-op path answered success |
+| `DELETE /admin/users/{uuid}/sessions` wrote **no revocation epoch** — force-logout left a compromised account authenticated for the access-token lifetime | Found while adding the missing audit record |
+| **SSRF bypass needing no DNS control**: `allow_redirects` unset, so a public URL answering `302 → 169.254.169.254` reaches AWS IMDS | Control run for the pinning fix; the log shows a live connection attempt |
+| **RFC 6598 (100.64.0.0/10) passed in BOTH modes** — it is neither `is_private` nor `is_global`, and the comment claiming otherwise was false | Verifying a secondary inference that turned out to be wrong in the safer direction |
+| Two DB session leaks wedging the database on **two different workers** | DDL tests began failing with `LockNotAvailable`; the suite went 138.9 s → 224.8 s |
+| `scripts/benchmark-diarization.py` — `os.environ` with no `import os`; **unrunnable** for as long as the line existed | Linting `scripts/` for the first time |
+| `scripts/benchmark_engine_compare.py` — swapped `write_csv` arguments; **crashed at its final step every run** | Same |
+
+## 5c. Three of my own conclusions were wrong
+
+Recorded because the handoff asked for the record to be honest, and because each was
+corrected by measurement rather than argument.
+
+- **"The `SKIP_S3` default asymmetry is a live bug."** It is dead code — `conftest` uses
+  `setdefault` after a TCP probe, so those per-file fallbacks never fire.
+- **"The standalone E2E nondeterminism is login rate-limiting."** Disproven: four
+  back-to-back runs made ~44 token calls in ~3 minutes against a 120/min limit, all green,
+  and `pytest-playwright`'s `context` is function-scoped so a session cannot leak between
+  tests. The real cause was a **flapping backend** behind a 60 s axios timeout — and the
+  reloads were caused by **my own `pre-commit` runs** stashing the tree while E2E ran.
+- **"`-m gallery` exits 0."** It exits 5; `run-e2e.sh` `exec`s pytest directly, bypassing
+  the exit-5 forgiveness. The defect was real, my described signature was not.
+
+Agents also corrected me twice on substance: wiring the documented HS512 into access tokens
+would have **401'd every authenticated request** (the HTTP verifiers accept HS256 only, with
+no dual-accept), and the prescribed E2E fixture restructure would have had `test_logout_*`
+blacklist a shared token for every later test — manufacturing the exact cross-file coupling
+it was meant to remove.
+
 ## 6. Fixed during this audit
 
 **Mutation ratchet no longer passes vacuously** — control-verified both directions.

@@ -30,9 +30,9 @@
 # test strength. That happened to `lockout` and produced 41 false findings in `dependencies`.
 #
 # module<TAB>max_survivors<TAB>min_coverage_pct<TAB>measured_on<TAB>note
-spans	10	100	2026-08-12	95.1% kill rate; the 10 remaining are log/error strings
-lockout	149	80	2026-08-12	200 -> 171 -> 149 across three test batches; 77 of the 149 are log strings, 12 log-branch
-security	133	77	2026-08-12	verify_token's exp/essential gap closed; not yet re-measured after that batch
-session	77	76	2026-08-12	re-probe policy closed; OIDCStateStore mutants now killed by the #33 tests
-dependencies	470	93	2026-08-12	measured BEFORE the 118 new tests landed — first re-measure will lower this a lot
-password_policy	90	0	2026-08-12	coverage not yet measured by the pre-flight; the known real finding is closed
+spans	10	0	2026-08-12	hermetic tests, so the pre-flight cannot measure coverage; 95.1% kill rate. The 10 are log/error strings.
+lockout	149	80	2026-08-12	200 -> 171 -> 149 across three test batches. 77 of the 149 are log strings, 12 log-branch.
+security	133	77	2026-08-12	verify_token's exp/essential gap closed AFTER this run; expect a lower number next measure.
+session	73	76	2026-08-12	77 -> 73 after the Redis re-probe tests. OIDCStateStore mutants now killed by the #33 tests.
+dependencies	180	93	2026-08-12	470 -> 180 after the 118 new tests and the MODULE_TESTS fix (coverage 68.4% -> 93%).
+password_policy	91	93	2026-08-12	FIRST clean measurement. The 90 quoted earlier was never a measured run — recorded as 91, not as a regression.

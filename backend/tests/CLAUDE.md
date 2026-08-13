@@ -208,7 +208,42 @@ is hours and is not the point.
 ./scripts/run-mutation-tests.sh --module spans --dry-run
 ./scripts/run-mutation-tests.sh --results          # re-report, no re-run
 ./scripts/run-mutation-tests.sh --show <id>        # the diff for one survivor
+./scripts/run-mutation-tests.sh --verify <id>      # does that survivor really survive?
+./scripts/run-mutation-tests.sh --check-baseline   # the RATCHET (also gate phase 7)
+python3 scripts/triage-mutants.py <log> <module>   # observable vs unobservable
 ```
+
+**"Kill every mutant" is not the goal, and treating it as one is why this stalled for a day.**
+A clean run of `lockout` reports 149 survivors of which **77 edit a log message and 12 flip a
+condition guarding only a log call** — unobservable by the repo's own rule, and asserting on log
+text produces tests that break on every reword. So the gate is a **ratchet**:
+`scripts/mutation-baselines.tsv` records each module's measured count and
+`--check-baseline` fails when one RISES. Down is progress; up means a predicate lost its test.
+Lower the baseline when you add tests; **never raise it to make a run pass**.
+
+`triage-mutants.py` splits survivors into `noise-string`, `noise-log-branch` and `logic` so the
+count you act on is the last one. Its rules were wrong three times, twice by over-reporting and
+once — the dangerous direction — by under-reporting: a string inside a **predicate**
+(`hashed_password.startswith("$pbkdf2-sha256$")`) *is* the logic, and calling it a log edit hid
+a FIPS-rehash finding. Every rule now has a must-fire and a must-stay-clean case in
+`--selftest`.
+
+**A survivor is a claim, not a fact — `--verify` makes it prove itself.** It applies the
+mutation to the real source, runs the module's tests, restores, and reports
+CONFIRMED-SURVIVED / KILLED / UNVERIFIABLE. Needed because the harness produced wrong numbers
+four different ways: an incomplete `MODULE_TESTS` list (41 false survivors in `dependencies`,
+which I reported as a proxy header-spoofing vulnerability before checking), a second `--module`
+silently replacing the first, cached verdicts from an older test list presented as current, and
+a survivor list read from a **stale log** that never ran that module. Each now has a guard —
+respectively a coverage pre-flight, an error, a test-list fingerprint, and a
+`--- mutating <path> ---` check.
+
+⚠️ **`--verify` transiently edits live source.** It holds a per-module `flock` (two concurrent
+verifies each restore from their own backup, so one reinstates the other's mutation — observed)
+and restores on INT/TERM/ERR/EXIT, but nothing survives a SIGKILL of the process group: a
+stopped batch left `now <` mutated to `now <=` in `app/auth/lockout.py`. **Do not commit while
+one runs** (pre-commit stashes the whole tree, issue #434), and check
+`git diff backend/app/` after any interrupted run.
 
 **Runtime** (per module, serial): `spans` ~1-3 min · `password_policy` ~5-15 min · `security`
 ~10-30 min (each mutant pays a bcrypt round) · `dependencies` ~20-60 min (each mutant boots the

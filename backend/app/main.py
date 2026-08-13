@@ -325,11 +325,25 @@ def _clear_stale_task_state():
     # Clear stale task locks and coordination state.
     # Every Redis-based lock used by any task must be listed here
     # so that a restart never gets blocked by an orphaned lock.
+    #
+    # ⚠️ NOT the reindex coordination keys — `reindex_lock:*`, `reindex_state:*`
+    # and `reindex_uuids:*` were in this list and had to come out. This runs in
+    # the **API** process, which restarts on its own (deploy, crash, `--reload`
+    # in dev) while the Celery workers that own those keys keep running. Wiping
+    # them mid-reindex is not a no-op: the next `search_index_maintenance` sees
+    # no lock, dispatches a second coordinator, that coordinator recreates the
+    # shared state with its own tiny `worker_count`, the in-flight batch workers
+    # increment into it, completion fires early with an almost-empty
+    # "files I indexed" set — and the post-reindex orphan sweep deletes
+    # everything not in it. Measured on an isolated stack: 432 files / 208k
+    # chunks reduced to 252 files / 111k chunks by one backend reload during a
+    # reindex. `reindex_lock` carries `ex=3600` and the state keys carry a TTL,
+    # so a genuinely dead coordinator unblocks itself; a live one no longer gets
+    # its coordination state deleted out from under it.
+    # `reindex_cancel:*` stays — it is a user request, meaningless after a
+    # restart, and clearing it can only cause a reindex to run, never to delete.
     stale_patterns = [
         # Reindex coordination
-        "reindex_lock:*",
-        "reindex_state:*",
-        "reindex_uuids:*",
         "reindex_cancel:*",
         # Auto-labeling
         "auto_label_lock:*",

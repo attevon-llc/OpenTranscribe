@@ -10,6 +10,7 @@ from app.core.constants import NOTIFICATION_TYPE_REINDEX_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_PROGRESS
 from app.core.constants import CPUPriority
 from app.core.redis import get_redis
+from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
@@ -401,6 +402,18 @@ def _clear_cancellation_flag(user_id: int) -> None:
 _REINDEX_STATE_KEY = "reindex_state:{user_id}"
 _REINDEX_UUIDS_KEY = "reindex_uuids:{user_id}"
 
+#: Post-reindex orphan sweep guard. A sweep that would remove more than this
+#: fraction of the indexed files is refused: the input set comes from Redis
+#: coordination state, and an incomplete set is indistinguishable from a corpus
+#: that really is orphaned. Mirrors `opensearch_integrity_task`, deliberately —
+#: two sweeps of the same shape should refuse on the same rule.
+_ORPHAN_RATIO_LIMIT = 0.10
+
+#: Files below which the ratio guard does not apply: in a three-file index one
+#: genuine orphan is 33%, and a guard that blocks routine cleanup forever gets
+#: turned off.
+_ORPHAN_FLOOR_FILES = 5
+
 
 def _clear_stale_progress(user_id: int) -> None:
     """Clear stale reindex progress and coordination state from Redis.
@@ -583,6 +596,9 @@ def reindex_transcripts_task(
             },
         )
         redis.expire(state_key, 86400)  # 24h TTL
+        # The uuid set needs the same TTL. It is the input to the orphan sweep,
+        # and a set that outlives its run is a set that describes a different one.
+        redis.expire(uuids_key, 86400)
 
         # Partition file IDs into worker_count groups
         partitions: list[list[int]] = [[] for _ in range(worker_count)]
@@ -749,21 +765,50 @@ def _handle_reindex_completion(
     _refresh_index_and_clear_cache()
     _force_merge_after_reindex()
 
-    # Orphan cleanup — only safe for FULL reindex (all files).
-    # For partial reindex (specific file_uuids), the indexed set is incomplete
-    # and orphan detection would incorrectly delete existing chunks.
+    # Orphan cleanup — only safe for a FULL reindex that actually COMPLETED.
+    #
+    # It deletes every file in the index that is not in "the set of files this
+    # run indexed", so a set that is merely *incomplete* reads as a corpus that
+    # is mostly orphaned. Two ways that happens, both observed: a partial
+    # reindex (specific file_uuids), and a run whose coordination state was
+    # reset underneath it — the API process used to clear `reindex_state:*` on
+    # every restart, which orphan-swept a 432-file corpus down to 252.
+    #
+    # Fail closed, the same way `opensearch_integrity_task._cleanup_index_by_field`
+    # refuses an empty "valid" set: an incomplete tally cannot be distinguished
+    # from a corpus that really is orphaned, so the sweep declines and says so.
+    # Skipping it leaves stale documents, which the next full reindex removes.
+    # Getting it wrong deletes the index, which nothing recovers.
     state = redis_client.hgetall(state_key)
-    is_partial = state.get(b"partial", state.get("partial", b"0")) in (b"1", "1")
 
-    if not is_partial:
-        indexed_uuids = redis_client.smembers(uuids_key)
-        if indexed_uuids:
-            uuid_set = {u.decode() if isinstance(u, bytes) else u for u in indexed_uuids}
-            orphan_cleaned = _cleanup_orphaned_chunks(user_id, uuid_set)
+    def _field(key: str, default: str = "") -> str:
+        value = state.get(key.encode(), state.get(key, default))
+        return value.decode() if isinstance(value, bytes) else str(value)
+
+    if _field("partial", "0") == "1":
+        logger.info(f"Skipping orphan cleanup for partial reindex (user {user_id})")
+    else:
+        indexed_uuids = {
+            u.decode() if isinstance(u, bytes) else u for u in redis_client.smembers(uuids_key)
+        }
+        expected = int(_field("total", "0") or 0)
+        accounted = len(indexed_uuids) + int(_field("failed", "0") or 0)
+        if not indexed_uuids:
+            logger.warning(
+                f"Skipping orphan cleanup for user {user_id}: this run recorded NO indexed "
+                f"files, so every document in the index would look orphaned."
+            )
+        elif expected and accounted < expected:
+            logger.warning(
+                f"Skipping orphan cleanup for user {user_id}: only {len(indexed_uuids)} of "
+                f"{expected} files are accounted for. The coordination state was reset or "
+                f"a second reindex overlapped this one — sweeping now would delete the "
+                f"{expected - accounted} files this run never got to."
+            )
+        else:
+            orphan_cleaned = _cleanup_orphaned_chunks(user_id, indexed_uuids)
             if orphan_cleaned > 0:
                 logger.info(f"Cleaned {orphan_cleaned} orphaned chunks for user {user_id}")
-    else:
-        logger.info(f"Skipping orphan cleanup for partial reindex (user {user_id})")
 
     # Read final stats
     state = redis_client.hgetall(state_key)
@@ -845,7 +890,17 @@ def _cleanup_orphaned_chunks(user_id: int, indexed_file_uuids: set[str]) -> int:
             index=index_name,
             body={
                 "size": 0,
-                "query": {"term": {"user_id": user_id}},
+                # G4 on the detection side: a file is "present in the index" when
+                # it has chunks. The DELETE below stays plane-agnostic on purpose —
+                # once a file is judged orphaned, its digests must go with it.
+                "query": {
+                    "bool": {
+                        "filter": [
+                            {"term": {"user_id": user_id}},
+                            chunk_plane_clause(),
+                        ]
+                    }
+                },
                 "aggs": {
                     "file_uuids": {
                         "terms": {"field": "file_uuid", "size": 50000},
@@ -858,6 +913,25 @@ def _cleanup_orphaned_chunks(user_id: int, indexed_file_uuids: set[str]) -> int:
 
         orphan_uuids = indexed_in_os - indexed_file_uuids
         if not orphan_uuids:
+            return 0
+
+        # Ratio guard — the backstop, and it is what the tally check in
+        # `_handle_reindex_completion` cannot cover. That check compares the
+        # accumulated uuid set against the coordinator's own `total`, so when a
+        # SECOND coordinator resets the shared state mid-run, the truncated
+        # tally and the truncated total agree with each other and it passes.
+        # This one compares against the INDEX, which no reset can rewrite: a
+        # "cleanup" removing most of the corpus is a coordination failure, not a
+        # corpus that is mostly orphaned. Same constants and the same small-index
+        # floor as `opensearch_integrity_task`, whose sweep has the same shape.
+        if len(orphan_uuids) > _ORPHAN_FLOOR_FILES and (
+            len(orphan_uuids) / max(len(indexed_in_os), 1) > _ORPHAN_RATIO_LIMIT
+        ):
+            logger.error(
+                f"REFUSING post-reindex orphan cleanup for user {user_id}: it would delete "
+                f"{len(orphan_uuids)} of {len(indexed_in_os)} indexed files. A reindex that "
+                f"orphaned most of the corpus did not finish — run a full reindex instead."
+            )
             return 0
 
         # Delete orphaned chunks

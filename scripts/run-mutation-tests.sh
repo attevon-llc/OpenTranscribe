@@ -317,11 +317,37 @@ fi
 $DRY_RUN || check_preconditions || exit 1
 echo
 
+# Warn when a target's cached mutmut verdicts were produced by a DIFFERENT test list.
+#
+# mutmut keeps results in backend/mutants/ and reuses them across runs, so the report can
+# mix records from a previous run with this one. That matters the moment MODULE_TESTS
+# changes: after widening lockout's list from 56% to 80% coverage, the report still listed
+# survivors recorded under the old list -- including one ("a locked account reports NOT
+# locked") that the widened suite demonstrably kills. A cached survivor from a weaker test
+# set reads exactly like a real finding: the same trap as an incomplete list, one level up.
+#
+# A function rather than inline code so it is testable without a 30-90 minute run.
+# Args: $1 = module key, $2 = the test list, $3 = cache dir, $4 = mutants dir.
+# Echoes "stale" when the results must not be trusted, "" otherwise. Always rewrites the
+# fingerprint, so the warning fires once per change and not forever after.
+warn_if_test_list_changed() {
+    local key=$1 tests=$2 out_dir=$3 mutants_dir=$4
+    local tests_hash prev_hash hash_file
+    tests_hash=$(printf '%s' "$tests" | sha256sum | cut -c1-16)
+    hash_file="$out_dir/$key.testhash"
+    prev_hash=$(cat "$hash_file" 2>/dev/null || true)
+    printf '%s' "$tests_hash" > "$hash_file"
+    if [[ -n "$prev_hash" && "$prev_hash" != "$tests_hash" && -d "$mutants_dir" ]]; then
+        echo stale
+    fi
+}
+
 FAILED=()
 #: Percent of the target module the SELECTED tests must execute before survivors mean
 #: anything. Not a coverage target for the codebase — a sanity check on MODULE_TESTS.
 MIN_TARGET_COVERAGE=${MIN_TARGET_COVERAGE:-60}
 LOW_COVERAGE=()
+STALE_CACHE=()
 for key in "${MODULES[@]}"; do
     path="${MODULE_PATH[$key]}"
     tests="${MODULE_TESTS[$key]}"
@@ -347,6 +373,15 @@ for key in "${MODULES[@]}"; do
     # glob over the mutant ids: app/services/redaction/spans.py -> app.services.redaction.spans*
     mutant_glob="${path%.py}"
     mutant_glob="${mutant_glob//\//.}*"
+
+    if ! $DRY_RUN && [[ -n $(warn_if_test_list_changed "$key" "$tests" "$OUT_DIR" "$BACKEND/mutants") ]]; then
+        echo -e "${RED}    ⚠ MODULE_TESTS[$key] changed since the cached results were written.${NC}" >&2
+        echo -e "${RED}      backend/mutants/ still holds verdicts from the OLD list, and the${NC}" >&2
+        echo -e "${RED}      report cannot tell them apart from this run's. Re-run as:${NC}" >&2
+        echo -e "${RED}        ./scripts/run-mutation-tests.sh --clean${NC}" >&2
+        echo -e "${RED}        ./scripts/run-mutation-tests.sh --module $key${NC}" >&2
+        STALE_CACHE+=("$key")
+    fi
 
     # PRE-FLIGHT: do the selected tests actually EXECUTE this module?
     #
@@ -421,6 +456,11 @@ echo -e "            real infinite loop the tests were papering over"
 echo -e "  ${YELLOW}suspicious${NC} much slower than baseline — usually a mutated retry/sleep bound"
 echo
 echo -e "Logs: $OUT_DIR/"
+if [[ ${#STALE_CACHE[@]} -gt 0 ]]; then
+    echo -e "${RED}⚠ RESULTS FOR THESE TARGETS MIX TWO TEST SETS: ${STALE_CACHE[*]}${NC}"
+    echo -e "${RED}  Their MODULE_TESTS changed since the cache was written. Run --clean, then${NC}"
+    echo -e "${RED}  re-run the module, before triaging a single survivor.${NC}"
+fi
 if [[ ${#LOW_COVERAGE[@]} -gt 0 ]]; then
     # Printed AFTER the survivor list on purpose: it is the caveat that decides how to read
     # everything above it. Without it, a reader takes a survivor count at face value.

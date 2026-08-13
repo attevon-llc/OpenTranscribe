@@ -985,14 +985,19 @@ CHAT_MAX_SCOPE_FILES = 500
 #   tika  — the legacy OLE2/RTF tier, on its own, for exercising that path.
 DOCUMENT_PARSER_BACKEND = _os.environ.get("DOCUMENT_PARSER_BACKEND", "auto").lower()
 
-# Base URL of the docling-serve sidecar. Empty disables the tier entirely, which is what
-# `--no-documents` and a lean deployment want. NOT published on the host: the sidecar
-# converts arbitrary user bytes and belongs on the app network only.
+# Base URL of the docling-serve sidecar. Empty (the default) disables the tier entirely,
+# which is what a lean deployment wants; `./opentr.sh start dev --with-documents` sets it to
+# http://docling-serve:5001. The sidecar converts arbitrary user bytes with no
+# authentication, so docker-compose.documents.yml publishes it on **127.0.0.1 only**
+# (DOCLING_SERVE_PORT, default 5197) — never on 0.0.0.0. It is published at all for one
+# reason: host-side pytest has to drive the OCR path against a real sidecar, because a mock
+# would only prove the mock.
 DOCUMENT_PARSER_URL = _os.environ.get("DOCUMENT_PARSER_URL", "").strip()
 
 # Base URL of the optional Apache Tika container. Empty (the default) means legacy OLE2
 # and RTF uploads are refused with "convert to .docx or .pdf first" — a better answer
-# than a worse parse.
+# than a worse parse. Same loopback-only publication as the sidecar above (TIKA_PORT,
+# default 5198), for the same reason.
 DOCUMENT_TIKA_URL = _os.environ.get("DOCUMENT_TIKA_URL", "").strip()
 
 # --- DB-backed defaults (SystemSettings keys in the comments) ----------------

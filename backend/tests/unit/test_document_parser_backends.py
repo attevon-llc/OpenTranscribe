@@ -318,9 +318,21 @@ class TestRobustnessAgainstUncuratedInput:
 
 
 def _sidecar_url() -> str | None:
+    """The reachable docling-serve, or ``None``.
+
+    Auto-enables by TCP probe, the way the root conftest auto-enables the MinIO- and
+    OpenSearch-backed suites. An explicit ``DOCUMENT_PARSER_URL`` wins; otherwise the
+    loopback port ``docker-compose.documents.yml`` publishes is probed, so
+    ``./opentr.sh start dev --with-documents`` is enough to make the OCR tests below run.
+
+    Requiring the env var was a silent-skip trap: the overlay sets ``DOCUMENT_PARSER_URL``
+    inside the *containers*, and host-side pytest never sees it — so the two tests that
+    prove OCR works skipped on exactly the setup that was meant to run them, and a green
+    local run proved less than it looked.
+    """
     url = os.environ.get("DOCUMENT_PARSER_URL", "").strip()
     if not url:
-        return None
+        url = f"http://localhost:{os.environ.get('DOCLING_SERVE_PORT', '5197')}"
     host = url.split("//", 1)[-1].split("/", 1)[0]
     hostname, _, port = host.partition(":")
     try:
@@ -333,9 +345,10 @@ def _sidecar_url() -> str | None:
 @pytest.mark.skipif(
     _sidecar_url() is None,
     reason=(
-        "No reachable docling-serve at $DOCUMENT_PARSER_URL. The OCR path cannot be "
-        "proven without one — a mocked sidecar would only prove the mock. Start one with "
-        "the docling-sidecar service, or point DOCUMENT_PARSER_URL at it."
+        "No reachable docling-serve. The OCR path cannot be proven without one — a mocked "
+        "sidecar would only prove the mock. Start one with "
+        "`./opentr.sh start dev --with-documents` (publishes 127.0.0.1:5197), or point "
+        "DOCUMENT_PARSER_URL at an existing sidecar."
     ),
 )
 class TestTheSidecarOcrPath:

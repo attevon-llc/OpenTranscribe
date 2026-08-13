@@ -120,6 +120,11 @@ show_help() {
   echo "                         testing against actual model output, not canned tokens."
   echo "                         Default model: Gemma 4 E4B (AWQ), GPU 2. See"
   echo "                         docker-compose.llm-test.yml for the Ollama alternative."
+  echo "  --with-documents     - Start the document parsing sidecars: docling-serve (OCR +"
+  echo "                         layout, CPU-only, localhost:5197) and Apache Tika (legacy"
+  echo "                         OLE2 .doc/.ppt/.xls + RTF, localhost:5198). Without this"
+  echo "                         flag the in-worker 'slim' tier still parses PDF/OOXML/text;"
+  echo "                         scans and legacy Office get a typed 'not available' error."
   echo "  --with-keycloak-test - Start Keycloak test container (dev or prod; localhost:8180)"
   echo "  --with-authentik-test - Start Authentik test container (dev or prod; localhost:9022)"
   echo "  --with-watch         - Mount the host watch folder (WATCH_HOST_PATH, default ./watch) for auto-import"
@@ -193,6 +198,7 @@ show_help() {
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
   echo "  ./opentr.sh start dev --with-mock-llm        # Dev with a fake LLM for chat/AI testing"
   echo "  ./opentr.sh start dev --with-llm-test        # Dev with a real GPU-backed LLM (vLLM) for chat testing"
+  echo "  ./opentr.sh start dev --with-documents       # Dev with the OCR + legacy-Office parser sidecars"
   echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
   echo "  ./opentr.sh start dev --with-authentik-test  # Dev with Authentik test container"
   echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
@@ -503,6 +509,10 @@ FRESH_LDAP_SERVICES=(lldap)
 # Mock LLM provider (--with-mock-llm). Isolated like every other aux overlay so
 # a fresh stack cannot collide with the main one on port 5199.
 FRESH_MOCK_LLM_SERVICES=(mock-llm)
+# Document parsing sidecars (--with-documents). Both hard-code a container_name and
+# publish a loopback port, so both need the #347 isolation treatment or a fresh stack
+# collides with the main one on 5197/5198.
+FRESH_DOCUMENTS_SERVICES=(docling-serve tika)
 FRESH_SMB_SERVICES=(smb-test)
 FRESH_MONITORING_SERVICES=(prometheus grafana)
 
@@ -587,6 +597,10 @@ FRESH_LDAP_PORT_VARS=(
 )
 FRESH_MOCK_LLM_PORT_VARS=(
   "MOCK_LLM_PORT=5199"          # mock LLM provider → :5199
+)
+FRESH_DOCUMENTS_PORT_VARS=(
+  "DOCLING_SERVE_PORT=5197"     # docling-serve sidecar → :5001
+  "TIKA_PORT=5198"              # apache/tika           → :9998
 )
 FRESH_SMB_PORT_VARS=(
   "SMB_TEST_PORT=4450"          # samba → :445
@@ -915,6 +929,7 @@ start_app() {
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
   WITH_MOCK_LLM_FLAG=""
+  WITH_DOCUMENTS_FLAG=""
   WITH_LLM_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
   WITH_AUTHENTIK_TEST_FLAG=""
@@ -1014,6 +1029,10 @@ start_app() {
         WITH_MOCK_LLM_FLAG="--with-mock-llm"
         shift
         ;;
+      --with-documents)
+        WITH_DOCUMENTS_FLAG="--with-documents"
+        shift
+        ;;
       --with-llm-test)
         WITH_LLM_TEST_FLAG="--with-llm-test"
         shift
@@ -1105,6 +1124,11 @@ start_app() {
       _port_vars+=("${FRESH_MOCK_LLM_PORT_VARS[@]}")
       _aux_services+=("${FRESH_MOCK_LLM_SERVICES[@]}")
       _aux_files+=("docker-compose.mock-llm.yml")
+    fi
+    if [ -n "$WITH_DOCUMENTS_FLAG" ]; then
+      _port_vars+=("${FRESH_DOCUMENTS_PORT_VARS[@]}")
+      _aux_services+=("${FRESH_DOCUMENTS_SERVICES[@]}")
+      _aux_files+=("docker-compose.documents.yml")
     fi
     if [ -n "$WITH_SMB_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_SMB_PORT_VARS[@]}")
@@ -1439,6 +1463,19 @@ start_app() {
       echo "   Models: mock-gpt (normal) mock-echo mock-empty mock-error mock-slow"
     else
       echo "⚠️  --with-mock-llm specified but docker-compose.mock-llm.yml not found"
+    fi
+  fi
+
+  # Add the document parsing sidecars if requested
+  if [ -n "$WITH_DOCUMENTS_FLAG" ]; then
+    if [ -f "docker-compose.documents.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.documents.yml"
+      echo "📄 Adding document parsing sidecars (docker-compose.documents.yml)"
+      echo "   docling-serve (OCR + layout, CPU only) — from containers: http://docling-serve:5001   from host: http://localhost:${DOCLING_SERVE_PORT:-5197}"
+      echo "   Apache Tika (legacy OLE2 .doc/.ppt/.xls + RTF)  — from containers: http://tika:9998   from host: http://localhost:${TIKA_PORT:-5198}"
+      echo "   Sets DOCUMENT_PARSER_URL + DOCUMENT_TIKA_URL on backend and the CPU workers."
+    else
+      echo "⚠️  --with-documents specified but docker-compose.documents.yml not found"
     fi
   fi
 
@@ -2009,6 +2046,19 @@ reset_and_init() {
       echo "   Models: mock-gpt (normal) mock-echo mock-empty mock-error mock-slow"
     else
       echo "⚠️  --with-mock-llm specified but docker-compose.mock-llm.yml not found"
+    fi
+  fi
+
+  # Add the document parsing sidecars if requested
+  if [ -n "$WITH_DOCUMENTS_FLAG" ]; then
+    if [ -f "docker-compose.documents.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.documents.yml"
+      echo "📄 Adding document parsing sidecars (docker-compose.documents.yml)"
+      echo "   docling-serve (OCR + layout, CPU only) — from containers: http://docling-serve:5001   from host: http://localhost:${DOCLING_SERVE_PORT:-5197}"
+      echo "   Apache Tika (legacy OLE2 .doc/.ppt/.xls + RTF)  — from containers: http://tika:9998   from host: http://localhost:${TIKA_PORT:-5198}"
+      echo "   Sets DOCUMENT_PARSER_URL + DOCUMENT_TIKA_URL on backend and the CPU workers."
+    else
+      echo "⚠️  --with-documents specified but docker-compose.documents.yml not found"
     fi
   fi
 

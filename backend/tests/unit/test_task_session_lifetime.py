@@ -554,6 +554,7 @@ class _FakeRedis:
     def __init__(self):
         self.hashes: dict[tuple[str, str], int] = {}
         self.sets: dict[str, set] = {}
+        self.expiries: dict[str, int] = {}
 
     def hget(self, key, field):
         return self.hashes.get((key, field))
@@ -568,6 +569,10 @@ class _FakeRedis:
 
     def sadd(self, key, *values):
         self.sets.setdefault(key, set()).update(values)
+
+    def expire(self, key, seconds):
+        self.expiries[key] = seconds
+        return key in self.sets or any(k == key for k, _ in self.hashes)
 
 
 @pytest.fixture

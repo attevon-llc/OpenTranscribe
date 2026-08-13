@@ -3,6 +3,7 @@
 import contextlib
 import logging
 from typing import Any
+from uuid import uuid4
 
 from app.core.celery import celery_app
 from app.core.config import settings
@@ -402,6 +403,83 @@ def _clear_cancellation_flag(user_id: int) -> None:
 
 _REINDEX_STATE_KEY = "reindex_state:{user_id}"
 _REINDEX_UUIDS_KEY = "reindex_uuids:{user_id}"
+_REINDEX_LOCK_KEY = "reindex_lock:{user_id}"
+
+#: TTL on a run's coordination keys. A crashed coordinator or a batch worker that
+#: never reaches completion leaves them behind; run-scoping means each such run
+#: leaks its OWN pair rather than overwriting one shared pair, so the expiry is
+#: what bounds the leak.
+_REINDEX_STATE_TTL_SECONDS = 86400
+
+
+def _reindex_keys(user_id: int, run_id: str | None) -> tuple[str, str]:
+    """Return the ``(state_key, uuids_key)`` pair belonging to ONE reindex run.
+
+    The coordination state used to be keyed on ``user_id`` alone, so two
+    overlapping coordinators for the same user addressed the same hash and the
+    same uuid set. That is reachable whenever a run outlives
+    ``reindex_lock:{user_id}``'s one-hour expiry: the lock lapses, the next
+    ``search_index_maintenance`` tick sees no lock and dispatches a second
+    coordinator, and that coordinator resets ``worker_count`` under the first
+    run's still-running batch workers. Completion then fires early holding a
+    fraction of the uuids the first run had indexed — and the orphan sweep reads
+    that fraction as "everything else is orphaned".
+
+    Appending the coordinator's task id makes the two runs address disjoint keys,
+    so a late coordinator cannot write into an earlier run's state at all.
+
+    Args:
+        user_id: Owner of the reindex.
+        run_id: The coordinator's task id. ``None``/empty selects the **legacy**
+            user-only key shape, which exists for one reason: batch messages
+            queued by a pre-upgrade coordinator arrive with no run id, and the
+            state they must coordinate against is the user-only pair that
+            coordinator wrote.
+
+    Returns:
+        ``(state_key, uuids_key)``.
+    """
+    state_key = _REINDEX_STATE_KEY.format(user_id=user_id)
+    uuids_key = _REINDEX_UUIDS_KEY.format(user_id=user_id)
+    if not run_id:
+        return state_key, uuids_key
+    return f"{state_key}:{run_id}", f"{uuids_key}:{run_id}"
+
+
+def _release_reindex_lock(redis_client: Any, user_id: int, run_id: str | None) -> bool:
+    """Release ``reindex_lock:{user_id}``, but only if ``run_id`` still holds it.
+
+    The lock stays **user-scoped** on purpose — it is what makes runs mutually
+    exclusive per user, and run-scoping it would permit the concurrency instead
+    of preventing it. The consequence is that a run which outlived its own lock
+    must not delete the lock a *later* run now owns; doing so releases that run
+    early and lets a third coordinator in, which is the same failure one step
+    further along.
+
+    Args:
+        redis_client: Redis client.
+        user_id: Owner of the reindex.
+        run_id: Coordinator task id to check ownership against. ``None`` (a
+            legacy batch message) deletes unconditionally, as before.
+
+    Returns:
+        True if the lock was released or was already gone.
+    """
+    lock_key = _REINDEX_LOCK_KEY.format(user_id=user_id)
+    if run_id:
+        holder = redis_client.get(lock_key)
+        if isinstance(holder, bytes):
+            holder = holder.decode()
+        if holder is not None and holder != run_id:
+            logger.warning(
+                f"Reindex run {run_id} (user {user_id}) finished but the lock is now held "
+                f"by run {holder}; leaving it alone. Deleting it would release a reindex "
+                f"that is still running."
+            )
+            return False
+    redis_client.delete(lock_key)
+    return True
+
 
 #: Post-reindex orphan sweep guard. A sweep that would remove more than this
 #: fraction of the indexed files is refused: the input set comes from Redis
@@ -417,28 +495,41 @@ _ORPHAN_FLOOR_FILES = 5
 
 
 def _clear_stale_progress(user_id: int) -> None:
-    """Clear stale reindex progress and coordination state from Redis.
+    """Clear the stale reindex **progress tracker** key from Redis.
 
-    Called at the start of a new reindex to ensure no leftover state from
-    a previous run (whether it completed, failed, or was interrupted)
-    contaminates the new run's progress tracking.
+    Called at the start of a new reindex so a previous run's ETA/percentage does
+    not contaminate this one. ``task_progress:reindex:{user_id}`` is still keyed
+    on the user alone — the SPA reads it by user — so it is still the one key
+    here that can be stale.
+
+    It deliberately no longer touches ``reindex_state``/``reindex_uuids``. Those
+    are now run-scoped (see :func:`_reindex_keys`), so a fresh run's pair cannot
+    pre-exist and there is nothing stale to clear — while deleting the
+    *user-scoped* pair is exactly the thing that wiped a live run's coordination
+    state out from under it. A run's own pair is deleted by its completion
+    handler, and the TTL bounds the crash case.
     """
     try:
-        redis = get_redis()
-        state_key = _REINDEX_STATE_KEY.format(user_id=user_id)
-        uuids_key = _REINDEX_UUIDS_KEY.format(user_id=user_id)
-        progress_key = f"task_progress:reindex:{user_id}"
-        redis.delete(state_key, uuids_key, progress_key)
+        get_redis().delete(f"task_progress:reindex:{user_id}")
     except Exception as e:
-        logger.warning(f"Could not clear stale reindex state: {e}")
+        logger.warning(f"Could not clear stale reindex progress: {e}")
 
 
-def _send_reindex_progress(redis_client: Any, user_id: int, tracker: Any | None = None) -> None:
-    """Read global progress from Redis and send a WebSocket notification.
+def _send_reindex_progress(
+    redis_client: Any, user_id: int, state_key: str, tracker: Any | None = None
+) -> None:
+    """Read this run's progress from Redis and send a WebSocket notification.
 
     Uses ProgressTracker for EWMA-smoothed ETA when available.
+
+    Args:
+        redis_client: Redis client.
+        user_id: Owner of the reindex, used for the websocket route.
+        state_key: This run's state hash. Passed in rather than derived from
+            ``user_id`` so a batch worker reports its OWN run's counters.
+        tracker: Optional progress tracker for EWMA ETA.
     """
-    state = redis_client.hgetall(_REINDEX_STATE_KEY.format(user_id=user_id))
+    state = redis_client.hgetall(state_key)
     if not state:
         return
     indexed = int(state.get(b"indexed", state.get("indexed", 0)))
@@ -507,20 +598,28 @@ def reindex_transcripts_task(
     from app.models.media import FileStatus
     from app.models.media import MediaFile
 
-    task_id = self.request.id
+    # The run id. `self.request.id` is absent when the task is invoked outside a
+    # Celery request (eager mode, a direct call), and a `None` run id silently
+    # selects the legacy shared key shape this whole mechanism exists to avoid —
+    # so synthesise one rather than aliasing onto another run.
+    task_id = self.request.id or f"local-{uuid4()}"
     logger.info(f"Re-index coordinator {task_id} started for user {user_id}")
 
-    # Prevent concurrent reindex runs for the same user
+    # Prevent concurrent reindex runs for the same user. Kept USER-scoped: this
+    # is the mutual exclusion, and run-scoping it would grant the concurrency.
     redis_lock = get_redis()
-    lock_key = f"reindex_lock:{user_id}"
+    lock_key = _REINDEX_LOCK_KEY.format(user_id=user_id)
     if not redis_lock.set(lock_key, task_id, nx=True, ex=3600):
         logger.warning(f"Reindex already running for user {user_id}, skipping")
         return {"status": "skipped", "message": "Reindex already in progress"}
 
     _clear_cancellation_flag(user_id)
 
-    # Clear stale progress state from any previous run (failed or completed)
+    # Clear the stale progress tracker from any previous run (failed or completed).
+    # This no longer touches the coordination state: see `_clear_stale_progress`.
     _clear_stale_progress(user_id)
+
+    state_key, uuids_key = _reindex_keys(user_id, task_id)
 
     if model_id:
         error = _handle_model_switch(model_id)
@@ -578,8 +677,6 @@ def reindex_transcripts_task(
         # Set up Redis state for worker coordination
         redis = get_redis()
         worker_count = settings.REINDEX_PARALLEL_WORKERS
-        state_key = _REINDEX_STATE_KEY.format(user_id=user_id)
-        uuids_key = _REINDEX_UUIDS_KEY.format(user_id=user_id)
 
         redis.delete(state_key, uuids_key)
         redis.hset(
@@ -596,10 +693,12 @@ def reindex_transcripts_task(
                 "partial": "1" if file_uuids else "0",
             },
         )
-        redis.expire(state_key, 86400)  # 24h TTL
-        # The uuid set needs the same TTL. It is the input to the orphan sweep,
+        redis.expire(state_key, _REINDEX_STATE_TTL_SECONDS)
+        # The uuid set needs the same TTL — it is the input to the orphan sweep,
         # and a set that outlives its run is a set that describes a different one.
-        redis.expire(uuids_key, 86400)
+        # It CANNOT be set here: the set does not exist yet (Redis `EXPIRE` on a
+        # missing key is a no-op that returns 0), so this call has never done
+        # anything. The batch worker sets it on first `sadd` instead.
 
         # Partition file IDs into worker_count groups
         partitions: list[list[int]] = [[] for _ in range(worker_count)]
@@ -610,7 +709,7 @@ def reindex_transcripts_task(
         for partition in partitions:
             if partition:
                 reindex_batch_task.apply_async(
-                    args=[partition, user_id],
+                    args=[partition, user_id, task_id],
                     priority=CPUPriority.MAINTENANCE,
                 )
                 dispatched += 1
@@ -637,7 +736,11 @@ def reindex_transcripts_task(
         with contextlib.suppress(Exception):
             _clear_stale_progress(user_id)
         with contextlib.suppress(Exception):
-            get_redis().delete(f"reindex_lock:{user_id}")
+            # This run's OWN keys only — never the user-scoped pair, which may
+            # belong to a run that is still working.
+            get_redis().delete(state_key, uuids_key)
+        with contextlib.suppress(Exception):
+            _release_reindex_lock(get_redis(), user_id, task_id)
         return {"error": str(e)}
 
 
@@ -675,19 +778,32 @@ def _load_reindex_page(file_ids: list[int]) -> list[tuple[str, dict[str, Any] | 
 def reindex_batch_task(
     file_ids: list[int],
     user_id: int,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Process a partition of files for re-indexing.
 
-    Each worker indexes its assigned files and updates Redis state
-    atomically. The last worker to finish handles cleanup.
+    Each worker indexes its assigned files and updates its own run's Redis state
+    atomically. The last worker of that run to finish handles cleanup.
+
+    Args:
+        file_ids: The partition of media file ids this worker owns.
+        user_id: Owner of the reindex.
+        run_id: The dispatching coordinator's task id, which scopes the
+            coordination keys to one run. **Defaults to None deliberately**: a
+            Celery signature is a wire contract, and batch messages already on
+            the queue when the workers are upgraded arrive with the old
+            two-argument form. A required third parameter fails those at
+            dispatch and abandons their files. ``None`` selects the legacy
+            user-only keys — which is not merely tolerated but correct, because
+            the pre-upgrade coordinator that queued the message wrote exactly
+            that pair.
     """
     from app.services.progress_tracker import ProgressTracker
     from app.services.search.indexing_service import TranscriptIndexingService
 
     indexing_service = TranscriptIndexingService()
     redis = get_redis()
-    state_key = _REINDEX_STATE_KEY.format(user_id=user_id)
-    uuids_key = _REINDEX_UUIDS_KEY.format(user_id=user_id)
+    state_key, uuids_key = _reindex_keys(user_id, run_id)
 
     # Resume ProgressTracker from coordinator state for EWMA ETA
     total = int(redis.hget(state_key, "total") or len(file_ids))
@@ -701,6 +817,7 @@ def reindex_batch_task(
     local_stats = {"indexed": 0, "failed": 0, "skipped": 0, "chunks": 0}
     cancelled = False
     page_size = 50
+    uuids_ttl_set = False
 
     for batch_start in range(0, len(file_ids), page_size):
         if cancelled:
@@ -733,7 +850,7 @@ def reindex_batch_task(
                 local_stats["skipped"] += 1
                 redis.hincrby(state_key, "indexed", 1)
                 redis.hincrby(state_key, "skipped", 1)
-                _send_reindex_progress(redis, user_id, tracker)
+                _send_reindex_progress(redis, user_id, state_key, tracker)
                 continue
 
             try:
@@ -760,13 +877,18 @@ def reindex_batch_task(
 
                 # Track indexed UUID for orphan cleanup
                 redis.sadd(uuids_key, file_uuid)
+                if not uuids_ttl_set:
+                    # The set only exists once something has been added to it,
+                    # so this is the earliest point the TTL can actually attach.
+                    redis.expire(uuids_key, _REINDEX_STATE_TTL_SECONDS)
+                    uuids_ttl_set = True
 
-                # Update global progress atomically
+                # Update this run's progress atomically
                 redis.hincrby(state_key, "indexed", 1)
                 redis.hincrby(state_key, "chunks", chunk_count)
 
                 # Send progress notification with EWMA ETA
-                _send_reindex_progress(redis, user_id, tracker)
+                _send_reindex_progress(redis, user_id, state_key, tracker)
 
             except Exception as e:
                 logger.error(f"Error re-indexing file {file_uuid}: {e}")
@@ -777,17 +899,30 @@ def reindex_batch_task(
     workers_done = redis.hincrby(state_key, "workers_done", 1)
     worker_count = int(redis.hget(state_key, "worker_count") or 1)
 
-    # Last worker handles cleanup
+    # Last worker OF THIS RUN handles cleanup
     if workers_done >= worker_count:
-        _handle_reindex_completion(redis, user_id, state_key, uuids_key)
+        _handle_reindex_completion(redis, user_id, state_key, uuids_key, run_id)
 
     return local_stats
 
 
 def _handle_reindex_completion(
-    redis_client: Any, user_id: int, state_key: str, uuids_key: str
+    redis_client: Any,
+    user_id: int,
+    state_key: str,
+    uuids_key: str,
+    run_id: str | None = None,
 ) -> None:
-    """Final cleanup after all reindex workers complete."""
+    """Final cleanup after all of one run's reindex workers complete.
+
+    Args:
+        redis_client: Redis client.
+        user_id: Owner of the reindex.
+        state_key: This run's state hash.
+        uuids_key: This run's indexed-uuid set.
+        run_id: This run's coordinator task id, used to check the per-user lock
+            is still ours before releasing it. ``None`` is the legacy path.
+    """
     _restore_normal_mode()
     _refresh_index_and_clear_cache()
     _force_merge_after_reindex()
@@ -825,7 +960,19 @@ def _handle_reindex_completion(
                 f"Skipping orphan cleanup for user {user_id}: this run recorded NO indexed "
                 f"files, so every document in the index would look orphaned."
             )
-        elif expected and accounted < expected:
+        elif not expected:
+            # `total` is written once, by the coordinator, before any batch is
+            # dispatched, and the coordinator returns early rather than
+            # dispatching a run of zero files — so a completion that cannot read
+            # it is reading a hash that expired or was reset, not a finished run.
+            # Without this the tally check below is skipped (`expected` is 0) and
+            # a truncated uuid set sweeps everything else away.
+            logger.warning(
+                f"Skipping orphan cleanup for user {user_id}: the coordination state carries "
+                f"no file total, so the {len(indexed_uuids)} uuids recorded cannot be shown "
+                f"to be the whole run."
+            )
+        elif accounted < expected:
             logger.warning(
                 f"Skipping orphan cleanup for user {user_id}: only {len(indexed_uuids)} of "
                 f"{expected} files are accounted for. The coordination state was reset or "
@@ -883,8 +1030,10 @@ def _handle_reindex_completion(
     }
     send_ws_event(user_id, NOTIFICATION_TYPE_REINDEX_COMPLETE, {"stats": stats})
 
-    # Cleanup Redis keys (including reindex lock)
-    redis_client.delete(state_key, uuids_key, f"reindex_lock:{user_id}")
+    # Cleanup Redis keys. The state/uuid pair belongs to this run, so it goes
+    # unconditionally; the lock is user-scoped and only goes if we still hold it.
+    redis_client.delete(state_key, uuids_key)
+    _release_reindex_lock(redis_client, user_id, run_id)
     _clear_cancellation_flag(user_id)
 
     logger.info(

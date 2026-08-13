@@ -38,7 +38,8 @@ Rules:
 7. Be concise and specific. Prefer concrete details, timestamps and quotes over generalities.
 8. An excerpt whose tag carries truncated="true" was cut short to fit the context window. Do not treat its last sentence as the end of what was said, and say so if the user's question depends on the missing part.
 9. When the excerpts point somewhere obviously worth following up — an unresolved decision, a named person who was not asked about, a promised action with no outcome — end with a single short "Next:" line proposing that question. Skip it when the answer is complete.
-10. A <counted> block holds numbers computed by querying the whole library, not by reading the excerpts. Report those numbers exactly as given. Never recount them from the excerpts, never estimate, and never contradict them — the excerpts are a handful of examples, not the full set, so counting them yourself will be wrong. If a <counted> block reports a limitation, say so in your answer."""  # noqa: E501
+10. A <counted> block holds numbers computed by querying the whole library, not by reading the excerpts. Report those numbers exactly as given. Never recount them from the excerpts, never estimate, and never contradict them — the excerpts are a handful of examples, not the full set, so counting them yourself will be wrong. If a <counted> block reports a limitation, say so in your answer.
+11. An <overview> block summarises EVERY recording in scope, while the excerpts below it cover only a few of them. When the question is about a collection rather than a moment, answer from the overview and cover every recording it lists — do not narrow the answer to whichever recordings happen to have excerpts. Use the excerpts for specific quotes and timestamps."""  # noqa: E501
 
 NO_CONTEXT_SYSTEM_RULES = """You are OpenTranscribe's assistant, currently in direct chat mode with no transcript context attached.
 
@@ -339,6 +340,7 @@ def build_messages(
     max_history_turns: int = 10,
     diagnostics: dict[str, int] | None = None,
     counted_block: str = "",
+    overview_block: str = "",
 ) -> tuple[list[dict[str, str]], list[int]]:
     """Assemble the full message list for the provider.
 
@@ -381,19 +383,25 @@ def build_messages(
     # are the examples beside it. Dropping it to fit one more speaker turn would
     # leave the model to count the examples, which is the failure the counted
     # tier exists to remove.
+    # Both structured blocks come off the TOP of the budget, in a fixed order:
+    # counted first (it is the answer to an aggregation), then the overview (it
+    # is the shape of the collection), then the excerpts (they are the evidence).
     counted = counted_block or ""
-    budget_chars = max(0, budget_chars - len(counted))
+    overview = overview_block or ""
+    budget_chars = max(0, budget_chars - len(counted) - len(overview))
 
     excerpt_ids: list[int] = []
     if chunks and budget_chars > 0:
         excerpt_block, excerpt_ids = format_excerpts(chunks, budget_chars=budget_chars)
         if excerpt_block:
             # Concatenation only — question and excerpts are both untrusted text.
-            messages.append({"role": "user", "content": counted + excerpt_block + "\n" + question})
+            messages.append(
+                {"role": "user", "content": counted + overview + excerpt_block + "\n" + question}
+            )
             _record(diagnostics, budget_chars, len(chunks) - len(excerpt_ids))
             return messages, excerpt_ids
 
-    messages.append({"role": "user", "content": counted + question})
+    messages.append({"role": "user", "content": counted + overview + question})
     _record(diagnostics, budget_chars, len(chunks) - len(excerpt_ids))
     return messages, excerpt_ids
 

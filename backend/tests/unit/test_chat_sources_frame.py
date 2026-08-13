@@ -90,9 +90,10 @@ async def _collect(
     monkeypatch.setattr(
         chat_service,
         "_prepare_context",
-        # Three values since #403 Stage 4: the third is the counted-aggregation
-        # result, None for every turn the router did not send to that tier.
-        lambda *_args, **_kwargs: (list(chunks), dict(diagnostics), None),
+        # Four values since #403 Stage 4: the counted-aggregation result and the
+        # map-reduce overview, both None for a turn the router left on the chunk
+        # plane — which is every turn these tests drive.
+        lambda *_args, **_kwargs: (list(chunks), dict(diagnostics), None, None),
     )
     monkeypatch.setattr(chat_service.limits, "is_cancelled", lambda _uuid: False)
 

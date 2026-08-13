@@ -177,7 +177,7 @@ def _prepare_context(
     search_mode: str,
     llm,
     rewrite_enabled: bool,
-) -> tuple[list[MaskedChunk], dict[str, Any], Any]:
+) -> tuple[list[MaskedChunk], dict[str, Any], Any, Any]:
     """Run the blocking RAG stages: rewrite → route → count → retrieve → mask.
 
     Executed in a worker thread. Returns the masked chunks, diagnostics for the
@@ -218,6 +218,7 @@ def _prepare_context(
     # and the excerpts that follow are examples beside that number, never the
     # thing it was derived from. ROUTE, DON'T FUSE — two queries, combined here.
     counted = None
+    overview = None
     if decision.wants_aggregate:
         from app.services.chat.aggregation_service import answer_aggregation
         from app.services.opensearch_service import get_opensearch_client
@@ -273,6 +274,33 @@ def _prepare_context(
         from app.services.chat.redactor import mask_digests
 
         digest_masked = mask_digests(db, result.digests, user_id)
+        # The MAP output, read not computed: level 1 ran at ingest, so a summary
+        # over a large scope costs no map-time work (#403 Phase 4).
+        from app.services.chat.mapreduce import build_file_summaries
+        from app.services.chat.mapreduce import build_overview
+        from app.services.chat.mapreduce import scope_digest_hits
+
+        # A BOUNDED scope is mapped over in full; the ranked leg is only a
+        # fallback for "all accessible", where mapping over everything is not
+        # possible. Ranking picks the best passages, mapping covers every
+        # document — using the ranked leg as the map produced a block headed
+        # "recordings: 8" over a 25-file scope, and an answer that said so.
+        map_hits = scope_digest_hits(db, file_uuids or []) if file_uuids else []
+        if map_hits:
+            map_masked = mask_digests(db, map_hits, user_id)
+            summaries = build_file_summaries(
+                db, map_hits, masked_text={id(m.source): m.content for m in map_masked}
+            )
+        else:
+            summaries = build_file_summaries(
+                db,
+                result.digests,
+                masked_text={id(m.source): m.content for m in digest_masked},
+            )
+        overview = build_overview(
+            question, summaries, files_in_scope=len(file_uuids) if file_uuids else 0
+        )
+        meta["overview"] = overview.as_metadata()
         # Digests lead: they are the recording-level answer a summarize turn
         # asked for, and the chunk excerpts under them are the evidence.
         masked = digest_masked + masked
@@ -293,7 +321,7 @@ def _prepare_context(
         meta["speakers_filtered"] = list(speakers)
     timings = meta.setdefault("timings_ms", {})
     timings.update(result.timings_ms)
-    return masked, meta, counted
+    return masked, meta, counted, overview
 
 
 # SSE comment lines are ignored by every client but keep the connection warm.
@@ -492,6 +520,7 @@ class ChatService:
         # A counted answer is not "context" in the excerpt sense: it survives an
         # empty retrieval, so it is initialised here and not inside the branch.
         counted_block = ""
+        overview_block = ""
         reached_end = False
         try:
             if use_context:
@@ -520,11 +549,14 @@ class ChatService:
                             rewrite_enabled=settings.query_rewrite_enabled,
                         )
 
-                masked, meta, counted = await _with_keepalive(run_in_threadpool(_prep), keepalive_q)
+                masked, meta, counted, overview = await _with_keepalive(
+                    run_in_threadpool(_prep), keepalive_q
+                )
                 async for frame in _drain(keepalive_q):
                     yield frame
                 turn.metadata.update(meta)
                 counted_block = format_counted_block(counted)
+                overview_block = overview.block if overview is not None else ""
 
             # Resolve the answer budget BEFORE building the prompt: build_messages
             # reserves context for the reply, so raising max_tokens after the fact
@@ -552,6 +584,7 @@ class ChatService:
                 max_history_turns=settings.history_max_turns,
                 diagnostics=prompt_diagnostics,
                 counted_block=counted_block,
+                overview_block=overview_block,
             )
             chunks_used = len(excerpt_ids)
             turn.metadata["chunks_used"] = chunks_used

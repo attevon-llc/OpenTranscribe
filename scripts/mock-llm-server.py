@@ -270,7 +270,12 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=5199)
-    parser.add_argument('--host', default='0.0.0.0')  # noqa: S104 - dev-only tool
+    # Loopback by DEFAULT: this server answers every prompt with no
+    # authentication, so a bare `python scripts/mock-llm-server.py` on a
+    # developer's workstation must not expose it to the LAN. The container
+    # opts into 0.0.0.0 explicitly in docker-compose.mock-llm.yml, where the
+    # container boundary plus a 127.0.0.1-only published port are the isolation.
+    parser.add_argument('--host', default='127.0.0.1')
     args = parser.parse_args()
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)

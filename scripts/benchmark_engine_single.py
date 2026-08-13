@@ -20,6 +20,7 @@ import logging
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from datetime import UTC, datetime
@@ -255,7 +256,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         '--output',
-        default=f'/tmp/engine_single_{ts}.csv',  # noqa: S108
+        default=str(Path(tempfile.gettempdir()) / f'engine_single_{ts}.csv'),
         metavar='CSV',
         help='Output CSV path.',
     )

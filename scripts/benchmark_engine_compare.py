@@ -19,6 +19,7 @@ import csv
 import json
 import logging
 import sys
+import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -299,7 +300,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         '--output',
-        default='/tmp/engine_compare.csv',  # noqa: S108
+        default=str(Path(tempfile.gettempdir()) / 'engine_compare.csv'),
         help='Path to write the CSV results.',
     )
     parser.add_argument(

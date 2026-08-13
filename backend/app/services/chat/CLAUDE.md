@@ -52,9 +52,15 @@ on top of it. Four independent stages, none of which is a setting:
 | Reranking | `CHAT_RERANKER_MODEL = cross-encoder/ms-marco-MiniLM-L-6-v2`, an English MS MARCO model |
 | Prompting | `BASE_SYSTEM_RULES` and the query-rewriter prompt are written in English |
 
-Chunking is the exception — `chunking_service._PUNKT_LANG_MAP` covers 18 languages
-and `indexing_service` already passes the file's language through. So chunk
-*boundaries* are fine; everything that ranks or reads them is not.
+Chunking used to be listed here as "the exception — chunk boundaries are fine."
+**That was wrong, and only true for Latin and Cyrillic scripts.**
+`_PUNKT_LANG_MAP` covers 18 European languages, and everything else was handed to
+the ENGLISH punkt model, which returned a whole Chinese transcript as one
+sentence — while `str.split()` reported it as one *word*, so no size check fired
+either. A 10,500-character Chinese recording became **one chunk**. Fixed in issue
+#448; `tests/unit/test_chunking_scripts.py` covers zh/ja/ko/ar/hi/th with Latin
+controls. Chunk boundaries are now correct for every script; what remains
+English-only is everything that RANKS or READS them.
 
 The failure this produced was **silent**: a non-English recording is not retrieved
 for an English question, so the model answered confidently from whatever English

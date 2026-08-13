@@ -24,6 +24,7 @@ from unittest.mock import patch
 import pytest
 from starlette.requests import Request
 
+from app.auth import lockout as lockout_module
 from app.auth import rate_limit as rate_limit_module
 from app.auth import session as session_module
 
@@ -60,6 +61,12 @@ class _RecordingRedis:
         return None
 
     def set(self, *_a, **_k):
+        return True
+
+    def ping(self):
+        # `lockout._get_redis_client` PINGs before returning the client, so a stand-in
+        # without this is reported as an unreachable Redis and the test silently exercises
+        # the fallback instead of the path it names.
         return True
 
 
@@ -361,3 +368,146 @@ def test_degradation_counter_exists_with_bounded_labels():
     from app.core import metrics
 
     assert sorted(metrics.security_state_degraded_total._labelnames) == ["control", "fallback"]
+
+
+@pytest.mark.unit
+class TestLockoutStoreDegradation:
+    """``lockout._get_store`` — the same shape as ``session._get_store``, same stakes.
+
+    Lockout state is what stops password guessing, so when Redis goes down the fallback and
+    its recovery are a security control, not a convenience. Mutation testing left the whole
+    re-probe policy unasserted here even though the session equivalent is now covered: the
+    interval could be made always-true (a fresh client plus a PING per login attempt, on an
+    unauthenticated path), the boundary could slip by one interval, ``recovered is not None``
+    could invert (so a recovered Redis is discarded and the process stays per-replica
+    forever), and the fallback store could be left as ``None``.
+
+    Per-replica lockout counting is the consequence that matters: N replicas means N times
+    the configured threshold before anyone is locked out.
+    """
+
+    def _reset(self):
+        lockout_module._redis_client = None
+        lockout_module._in_memory_store = None
+        lockout_module._store_initialized = False
+        lockout_module._last_redis_probe = 0.0
+
+    def teardown_method(self):
+        self._reset()
+
+    def test_the_client_decodes_responses(self):
+        """``decode_responses=True`` is not cosmetic.
+
+        Without it redis-py returns bytes, so ``key.startswith(LOCKOUT_PREFIX)`` in the
+        cleanup sweep compares str to bytes and every key looks foreign — the sweep silently
+        stops sweeping. Asserted on the kwargs actually passed, because nothing else observes
+        it until that sweep quietly does nothing.
+        """
+        captured: dict[str, object] = {}
+
+        class _FromUrlSpy:
+            @staticmethod
+            def from_url(url, **kwargs):
+                captured.update(kwargs)
+                captured["url"] = url
+                return _RecordingRedis([])
+
+        with patch.dict("sys.modules", {"redis": type("_M", (), {"Redis": _FromUrlSpy})}):
+            client = lockout_module._get_redis_client()
+
+        assert client is not None
+        assert captured["decode_responses"] is True
+        assert captured["socket_connect_timeout"] == 5
+        assert captured["socket_timeout"] == 5
+
+    def test_a_missing_redis_package_falls_back_rather_than_raising(self):
+        """`ImportError` must degrade, not 500 the login route."""
+        self._reset()
+        with patch.dict("sys.modules", {"redis": None}):
+            assert lockout_module._get_redis_client() is None
+
+    def test_the_fallback_store_is_a_real_store(self):
+        self._reset()
+        with patch.object(lockout_module, "_get_redis_client", return_value=None):
+            store = lockout_module._get_store()
+
+        assert store is not None
+        assert isinstance(store, lockout_module.InMemoryLockoutStore)
+
+    def test_every_fallback_caller_shares_one_store(self):
+        """One store per process, or two login attempts do not see each other's count.
+
+        A fresh store per call degrades lockout from "counted per replica" to "not counted at
+        all" — the threshold is never reached and the control is off.
+        """
+        self._reset()
+        with patch.object(lockout_module, "_get_redis_client", return_value=None):
+            stores = [lockout_module._get_store() for _ in range(4)]
+
+        assert all(s is stores[0] for s in stores)
+
+    def test_redis_is_probed_once_while_it_is_healthy(self):
+        self._reset()
+        healthy = _RecordingRedis([])
+        probe = _CountingProbe(result=healthy)
+        with patch.object(lockout_module, "_get_redis_client", probe):
+            for _ in range(5):
+                assert lockout_module._get_store() is healthy
+
+        assert probe.calls == 1
+
+    def test_the_fallback_does_not_re_probe_within_the_interval(self):
+        """The always-true interval mutation restores a PING per unauthenticated attempt."""
+        self._reset()
+        probe = _CountingProbe(result=None)
+        with patch.object(lockout_module, "_get_redis_client", probe):
+            first = lockout_module._get_store()
+            rest = [lockout_module._get_store() for _ in range(5)]
+
+        assert probe.calls == 1, (
+            f"Redis probed {probe.calls}x across 6 calls — every failed login would pay a "
+            "connection setup and a PING"
+        )
+        assert isinstance(first, lockout_module.InMemoryLockoutStore)
+        assert all(store is first for store in rest)
+
+    def test_it_re_probes_exactly_at_the_interval_boundary(self):
+        """``>=``, not ``>``. Needs a PATCHED clock: rewinding lands past the boundary."""
+        self._reset()
+        recovered = _RecordingRedis([])
+        with patch.object(lockout_module, "_get_redis_client", return_value=None):
+            assert isinstance(lockout_module._get_store(), lockout_module.InMemoryLockoutStore)
+
+        frozen = lockout_module._last_redis_probe + lockout_module.REDIS_REPROBE_SECONDS
+        with (
+            patch.object(lockout_module.time, "monotonic", return_value=frozen),
+            patch.object(lockout_module, "_get_redis_client", return_value=recovered),
+        ):
+            assert lockout_module._get_store() is recovered
+
+    def test_a_recovered_redis_is_adopted_and_the_fallback_dropped(self):
+        """``if recovered is not None`` must not invert.
+
+        Inverted, a recovered Redis is thrown away and the replica counts lockouts in its own
+        memory forever — the outage becomes permanent without another restart.
+        """
+        self._reset()
+        recovered = _RecordingRedis([])
+        with patch.object(lockout_module, "_get_redis_client", return_value=None):
+            assert isinstance(lockout_module._get_store(), lockout_module.InMemoryLockoutStore)
+
+        lockout_module._last_redis_probe -= 10_000
+        with patch.object(lockout_module, "_get_redis_client", return_value=recovered):
+            assert lockout_module._get_store() is recovered
+        # ...and it stays adopted without re-probing.
+        assert lockout_module._redis_client is recovered
+
+    def test_a_probe_that_still_fails_keeps_the_same_fallback_store(self):
+        """The negative of adoption: a failed re-probe must not discard accumulated counts."""
+        self._reset()
+        with patch.object(lockout_module, "_get_redis_client", return_value=None):
+            first = lockout_module._get_store()
+            lockout_module._last_redis_probe -= 10_000
+            second = lockout_module._get_store()
+
+        assert second is first

@@ -50,8 +50,25 @@ MODEL_ID = "mock-gpt"
 #   mock-reasoning  streams a reasoning phase (delta.reasoning_content, the vLLM
 #                   dialect this app's OpenAI-compatible parser reads) before the
 #                   same [1]/[2] answer as mock-gpt — exercises the collapsible
-#                   reasoning display end to end with no GPU or real model
+#                   reasoning display end to end with no GPU or real model.
+#                   Reasoning only SEPARATES when the request asked for thinking;
+#                   see THINKING_END_TOKEN below for why that condition is real
 SCENARIOS = ("mock-gpt", "mock-echo", "mock-empty", "mock-error", "mock-slow", "mock-reasoning")
+
+# The boundary token a Gemma-4-class model emits between its chain-of-thought and
+# its answer. Reproduced verbatim (issue #439) because canning the *fixed* shape
+# only would have made the regression untestable.
+#
+# Measured against vLLM 0.19 serving Gemma 4 E4B with `--reasoning-parser gemma4`:
+# the template only emits the matching `<|channel>` OPENER when the request asks
+# for thinking (`chat_template_kwargs={"enable_thinking": true}`). Unasked, the
+# model reasons anyway and emits this closer alone — and vLLM's *streaming*
+# parser, which enters reasoning mode on the opener, never fires. The whole
+# chain-of-thought then arrives on `delta.content` with this control token
+# embedded in it. Its non-streaming parser recovers from a lone closer, so only
+# the streaming shape below is conditional; that asymmetry is the real server's,
+# not an invention of this mock.
+THINKING_END_TOKEN = "<channel|>"
 
 # Long enough to trip DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S without hanging a suite.
 SLOW_FIRST_TOKEN_DELAY_S = 45
@@ -87,6 +104,18 @@ REPLY_TEMPLATE = (
     "print('hello from the mock LLM')\n"
     "```\n"
 )
+
+
+def _thinking_requested(body: dict) -> bool:
+    """Did the caller activate the chat template's thinking mode?
+
+    ``chat_template_kwargs={"enable_thinking": true}`` is how a client asks vLLM
+    for a well-delimited thought block. Whether it was sent is the difference
+    between reasoning arriving on its own wire field and reasoning arriving as
+    the answer (issue #439), so the mock branches on exactly that.
+    """
+    kwargs = body.get("chat_template_kwargs")
+    return bool(isinstance(kwargs, dict) and kwargs.get("enable_thinking"))
 
 
 def _topic_from(messages: list[dict]) -> str:
@@ -194,6 +223,15 @@ class Handler(BaseHTTPRequestHandler):
                 }
             )
             return
+
+        if reasoning and not _thinking_requested(body):
+            # The unasked-for streaming shape, reproduced from a real vLLM +
+            # Gemma 4 run (issue #439): no separate wire field at all, the
+            # chain-of-thought inlined ahead of the answer and the boundary token
+            # left in the content as literal text. An app that does not activate
+            # thinking renders all of this as the answer.
+            text = f"{reasoning}{THINKING_END_TOKEN}{text}"
+            reasoning = None
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")

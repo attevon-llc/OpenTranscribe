@@ -308,6 +308,30 @@ class LLMService:
                     "presence_penalty": kwargs.get("presence_penalty", 0.0),
                 }
             )
+            # Reasoning must be ACTIVATED, or vLLM streams it as the answer (issue #439).
+            #
+            # A reasoning-capable chat template only emits its "start of thought"
+            # token when asked (gemma4 and qwen3 both spell that ask
+            # `enable_thinking`). Unasked, gemma4's template instead appends an
+            # already-closed empty thought channel to the prompt — the model reasons
+            # regardless, so its *generated* text carries no opener, only a bare
+            # closer. vLLM's streaming reasoning parser enters reasoning mode on the
+            # opener alone, so it never fires and the whole chain-of-thought is
+            # streamed on `delta.content`; worse, the gemma4 parser disables
+            # special-token stripping to protect its boundary tokens, so the bare
+            # closer reaches the answer as a literal control token.
+            #
+            # Asking for thinking is therefore the fix, and it is the server's own
+            # mechanism: the parser then splits the block itself and reasoning
+            # arrives on `delta.reasoning` / `delta.reasoning_content`, both of which
+            # `llm_stream.parse_openai_sse` already routes to the collapsible display.
+            # A template with no such flag simply ignores an unused kwarg.
+            #
+            # vLLM only: `chat_template_kwargs` is its extension, and "custom"
+            # OpenAI-clones 400 on unknown payload keys — the same reason they are
+            # excluded from `llm_stream.USAGE_OPTION_PROVIDERS`.
+            if kwargs.get("enable_thinking", True):
+                payload["chat_template_kwargs"] = {"enable_thinking": True}
 
         return payload
 
@@ -390,7 +414,11 @@ class LLMService:
             raise Exception("No choices in LLM response")
 
         choice = data["choices"][0]
-        content = choice.get("message", {}).get("content", "")
+        # `or ""`, not a default: a reasoning model that spends its whole token
+        # budget inside the thought channel returns `"content": null` with
+        # `finish_reason: "length"` — the key is present, so `.get(k, "")` yields
+        # None and every caller that concatenates or strips this blows up.
+        content = choice.get("message", {}).get("content") or ""
         finish_reason = choice.get("finish_reason")
 
         usage_tokens = None

@@ -138,6 +138,12 @@ show_help() {
   echo "  bench engine                             - Run engine split-stage benchmarks (Phase 2 gate)"
   echo "  bench status                             - Show bench containers, GPU state, volumes"
   echo "  bench compare <master.csv> <branch.csv>  - Print side-by-side speedup table"
+  # `bench all|phase|collate` existed for a while without appearing here, so the only way to
+  # find them was to read the case block (issue #399). `bench help` already listed them,
+  # which is exactly how a top-level help goes stale unnoticed.
+  echo "  bench all [--smoke|--quick|--full]       - Full end-to-end run (stands up otbench, all phases)"
+  echo "  bench phase <name> [--smoke|--quick]     - Run a single phase end-to-end"
+  echo "  bench collate                            - Aggregate per-level metrics into the master tables"
   echo ""
   echo "HTTPS/SSL Setup (for microphone recording from other devices):"
   echo "  1. Generate certificates: ./scripts/generate-ssl-cert.sh opentranscribe.local --auto-ip"
@@ -2642,7 +2648,7 @@ case "$1" in
         echo ""
         echo "⏳ Waiting for bench backend to become healthy..."
         wait_for_bench_backend_health
-        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep opentranscribe
+        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep otbench
         echo ""
         echo "✅ Bench stack ready on $TARGET_BRANCH."
         if [[ "$TARGET_BRANCH" == "master" ]]; then
@@ -2711,7 +2717,7 @@ case "$1" in
 
       status)
         echo "=== Bench Containers ==="
-        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep opentranscribe || echo "(none running)"
+        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep otbench || echo "(none running)"
         echo ""
         echo "=== GPU State ==="
         nvidia-smi --query-gpu=index,name,memory.used,utilization.gpu --format=csv,noheader
@@ -2750,7 +2756,12 @@ case "$1" in
         SINGLE_CSV="engine_single_${TIMESTAMP}.csv"
         QUEUE_CSV="engine_queue_${TIMESTAMP}.csv"
         RESULTS_DIR="docs/engine-benchmark-results"
-        WORKER="opentranscribe-celery-worker"
+        # otbench-*, not opentranscribe-*: docker-compose.bench.yml renames every
+        # service so a bench stack can coexist with dev. Checking the dev name inverted
+        # this gate — with only the bench stack up it aborted, and with the dev stack up
+        # it PASSED, green-lighting a benchmark whose bench worker may not exist. It
+        # validated the one stack the benchmark must never touch (issue #399).
+        WORKER="otbench-celery-worker"
 
         echo "🔬 Engine benchmark — branch: $(git branch --show-current)"
         echo "   Using bench stack (fresh volumes, never touches NAS/prod data)"
@@ -2797,7 +2808,7 @@ case "$1" in
         echo ""
         echo "⏳ Waiting for bench stack to be ready (DB migrations, model pre-load)..."
         wait_for_bench_backend_health 240
-        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep opentranscribe
+        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep otbench
 
         # Verify the worker is up
         if ! docker ps --format '{{.Names}}' | grep -q "^${WORKER}$"; then

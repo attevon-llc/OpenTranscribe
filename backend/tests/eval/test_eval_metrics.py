@@ -57,8 +57,19 @@ def _tied_pool(id_for) -> list[RunDoc]:
 
 
 def _scheme_production(kind: str, index: int) -> str:
-    """The ids this app actually uses: `{uuid}_{chunk_index}` / `{uuid}_digest`."""
-    return f"{FILE}_digest" if kind == "digest" else f"{FILE}_{index}"
+    """The ids this app actually uses, imported rather than restated.
+
+    Stage 3 shipped `{uuid}_digest_{n}` — sectioned, so the section number is part
+    of the id. Spelling it by hand here once meant the invariance test guarded a
+    convention the app had stopped using; reading it from the module that mints
+    the ids is what keeps this honest as the scheme evolves.
+    """
+    from app.services.ingest_artifacts.index_mapping import digest_document_id
+
+    if kind == "digest":
+        # index is the negative chunk_index sentinel; section 0 is -1.
+        return digest_document_id(FILE, -1 - index)
+    return f"{FILE}_{index}"
 
 
 def _scheme_swapped(kind: str, index: int) -> str:
@@ -117,7 +128,7 @@ def test_normalise_run_emits_strictly_decreasing_scores():
     assert len(set(values)) == len(values), "ties survived normalisation"
     # doc_type ascending puts 'chunk' before 'digest', so chunk 0 leads.
     assert ordered[0][0] == f"{FILE}_0"
-    assert ordered[-1][0] == f"{FILE}_digest"
+    assert ordered[-1][0] == _scheme_production("digest", -1)
 
 
 def test_unanswered_query_scores_zero_and_stays_in_the_denominator():

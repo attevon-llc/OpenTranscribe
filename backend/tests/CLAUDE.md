@@ -306,7 +306,7 @@ corpus with ground truth known by construction; `harness/` measures.
 | `harness/metrics.py` | `trec_eval` via `pytrec_eval_terrier`. Tie normalisation, `-c` semantics, linear gain — all three are NOT the library default |
 | `harness/qrels.py` | gold turn ranges -> chunk-level graded judgements. **One adapter for QMSum and the synthetic tier** — they share the inclusive turn-range convention deliberately |
 | `harness/corpora.py` | queries + gold, remapped onto the uuids the app indexed, with the licence tier attached |
-| `harness/index_reader.py` | refresh -> force-merge -> refresh, then read chunks back |
+| `harness/index_reader.py` | **settle** (complete + stable + nothing predating the run) -> refresh -> force-merge -> refresh, then read chunks back |
 | `harness/runner.py` | drives `retrieve_chunks` (the chat path), never `/api/search` |
 | `harness/report.py` | the deterministic results document and metric table |
 
@@ -323,10 +323,20 @@ Three things to know before touching it:
   purposes" header and we publish images. Never move it into `requirements.txt`. Every module that
   imports it does so lazily and every test `importorskip`s it with that reason.
 - **`normalise_run` is load-bearing, not tidiness.** trec_eval breaks ties by docid *descending*,
-  our ids are `{uuid}_{chunk_index}` and Stage 3's digests will be `{uuid}_digest`, and RRF
-  produces ties structurally — so an untied-broken run lets Stage 3 pass its own gate on document
-  naming. `test_eval_metrics.py` swaps the id convention and asserts the metric is unchanged, with
-  a guard test proving the hazard is real.
+  our ids are `{uuid}_{chunk_index}` and `{uuid}_digest_{n}`, and RRF produces ties structurally —
+  so an untied-broken run lets a stage pass its own gate on document naming. `test_eval_metrics.py`
+  swaps the id convention and asserts the metric is unchanged, with a guard test proving the
+  hazard is real; it reads the digest id from `index_mapping.digest_document_id` rather than
+  spelling it, because it was already guarding a scheme the app had moved past once.
+- **A measurement is refused unless the corpus has settled.** `await_settled` requires every
+  expected file to carry chunks, the (files, chunks) pair to repeat across two polls, **and** —
+  when a dispatch timestamp is passed — nothing in the corpus to predate the run. The first two
+  alone are satisfied by a reindex that has been dispatched and has not started, which certifies
+  the old index as the new one. Polling the chunk total alone produced phantom deltas of
+  223 / 357 / 591 chunks over an unchanged corpus.
+- **`scripts/reindex_eval_corpus.py`** dispatches the real `reindex_transcripts` task and waits
+  for the settle. Two consecutive runs must report the same chunk count; that equality is the
+  precondition for any phase-over-phase delta, and it is measured, not assumed.
 - **Baselines under `tests/eval/baselines/` are committed controls.** `metrics.json` and
   `metrics.md` are byte-identical across runs by construction; anything non-deterministic
   (elapsed time, target) lives in `runinfo.json`, outside the claim. Regenerate one only when the

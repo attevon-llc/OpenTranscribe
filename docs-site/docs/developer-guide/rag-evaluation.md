@@ -467,6 +467,73 @@ The general rule: **a control with an unmeasured reproducibility band is not a c
 the band before trusting any delta against it.
 :::
 
+## Three ways this harness measured the wrong index
+
+The reproducibility section above fixed the *chunking*. Establishing the pre-v6 control then
+found three more ways a number can be recorded against an index that is not what it looks like.
+All three are now closed in code, and each one is worth knowing about because none of them
+produces an error — they produce a plausible number.
+
+### 1. The workers that index had no punkt (issue #436)
+
+`chunk_transcript_by_speaker_turns` splits sentences with NLTK punkt when a punkt model is
+resolvable and with a regex otherwise, and the two cut in different places — **49 files / 226
+chunks apart** over this corpus. The `nltk_data` mount existed on `backend`, `celery-worker` and
+the GPU workers, and on **neither of the two workers that actually index**:
+`index_transcript_search` runs on the `embedding` queue and `reindex_transcripts` on `cpu`.
+
+So every chunk in the index was cut by the regex fallback while every test process and the host
+venv resolved punkt, and `--dispatch eager` (host) built a different index from `--dispatch celery`
+(worker) *from the same corpus*. The mount is now on both workers, with a test that derives
+"which queues chunk" from the call graph and "which service serves that queue" from the compose
+file, so a task moved to another queue keeps the assertion honest.
+
+Because it changes chunk boundaries for every subsequently indexed file, it deliberately shipped
+inside the single index-v6 reindex rather than on its own.
+
+### 2. Settling was inferred from a plateau
+
+The harness recorded whatever the index held when it was asked. Polling the total chunk count
+alone reported phantom deltas of **223 / 357 / 591 chunks** between runs over a corpus nobody had
+changed: the count was read while a reindex was still walking the file list, and a plateau in a
+rising count is indistinguishable from the end of one.
+
+`bench rag` now refuses to measure until three conditions hold together
+(`tests/eval/harness/index_reader.await_settled`):
+
+1. **every expected file carries chunks** — a reindex deletes a file's documents before writing
+   the new ones, so a mid-run poll sees a corpus that is merely *smaller*;
+2. **(files, chunks) is identical on two consecutive polls**;
+3. **nothing predates the run**, when a dispatch timestamp is supplied. Conditions 1 and 2 are
+   both satisfied by a reindex that has been *dispatched and has not started* — Celery queue
+   latency easily outlasts two poll intervals — and the check would then certify the old index as
+   the new one, producing an "after" measurement byte-identical to the "before" for the best
+   possible reason.
+
+`--expect-files N` overrides the manifests' own count; `--expect-files -1` skips the check.
+
+### 3. A reindex could delete most of the index
+
+Establishing the control, a full reindex reduced the corpus from **432 files / 208,333 chunks** to
+**252 files / 111,097 chunks**. Not a measurement artefact — a real, pre-existing product bug:
+
+`app/main.py`'s startup sweep cleared `reindex_lock:*` / `reindex_state:*` / `reindex_uuids:*`,
+from the **API** process, which restarts independently of the Celery workers that own those keys.
+With the lock gone mid-reindex, `search_index_maintenance` dispatched a second coordinator; that
+coordinator rewrote the shared state with its own `worker_count`; the in-flight batch workers
+incremented into it; completion fired holding 22 of 432 uuids; and the post-reindex orphan sweep —
+which deletes every file *not* in that set — targeted 195,930 documents.
+
+The API no longer clears those keys (they carry TTLs, so a genuinely dead coordinator still
+unblocks itself), and the sweep now fails closed: it declines unless indexed + failed accounts for
+every file the coordinator snapshotted. Skipping the sweep leaves stale documents the next full
+reindex removes; running it on an incomplete tally deletes an index nothing recovers.
+
+:::tip Measuring on a stack with Celery Beat running
+Even with the destructive path closed, a maintenance-dispatched partial reindex overlapping a
+measurement changes what is being measured. Stop `celery-beat` for the duration of a control run.
+:::
+
 ## The Stage 1 baseline — the named control
 
 Committed at `backend/tests/eval/baselines/`. Every later stage reports its delta against these,
@@ -520,6 +587,67 @@ so that no timing-derived metric can be computed from them. **Measured on the re
 misses are meetings whose QMSum text diverges enough that fewer than 80% of turns align; provenance
 is per file and all-or-nothing, because a file that is 60% measured and 40% invented is neither.
 :::
+
+## Stage 3 — index v6, measured against a control taken on the same day
+
+`stage1-baseline` is not the control for this. It was measured before three determinism
+fixes and on a 232-file corpus that is now 432, so a delta against it would be mostly
+composition and chunking. `stage3-control-pre-v6` replaces it: same code, same corpus, same
+day, measured after the corpus was proven stable.
+
+**Determinism, measured not assumed.** Two consecutive full re-indexes of the unchanged
+corpus (`scripts/reindex_eval_corpus.py`, which drives the real `reindex_transcripts` task
+and waits for the settle) produced **432 files / 208,332 chunks both times**, and the
+control measurement was byte-identical across two runs. After the v6 reindex the chunk plane
+is *still* exactly 208,332 documents, with 2,576 digest documents beside it — so the digest
+tier is purely additive and the two tables below differ only by what Stage 3 changed.
+
+| | pre-v6 control | index v6 |
+|---|---|---|
+| files | 432 | 432 |
+| chunk documents | 208,332 | 208,332 |
+| digest documents | — | 2,576 (~6.0 sections/file) |
+| embedded field | `content` | `embedding_text` (title + date + roster + body) |
+
+### Per class, corpus-wide scope (what chat actually does)
+
+| corpus | class | n | nDCG@10 pre-v6 | nDCG@10 v6 | Δ | Δ nDCG@5 | Δ MRR | Δ R@10 |
+|---|---|---|---|---|---|---|---|---|
+| qmsum | lookup | 1172 | 0.0885 | **0.1038** | +0.0153 | +0.0154 | +0.0326 | +0.0130 |
+| qmsum | summarize | 404 | 0.0561 | **0.0821** | +0.0259 | +0.0279 | +0.0572 | +0.0095 |
+| qmsum | all | 1576 | 0.0802 | **0.0983** | +0.0181 | +0.0186 | +0.0389 | +0.0121 |
+| synthetic | lookup | 50 | 0.3134 | **0.3363** | +0.0228 | +0.0342 | +0.0370 | +0.0100 |
+| synthetic | multi_file | 25 | 0.1957 | **0.2132** | +0.0175 | +0.0466 | +0.0860 | −0.0280 |
+| synthetic | all | 75 | 0.2742 | **0.2952** | +0.0210 | +0.0383 | +0.0533 | −0.0027 |
+
+**The gate is met**: nDCG@10 is up on the multi-file class, and the lookup class did not
+regress — it rose in both corpora, which is more than the gate asked for.
+
+### Where the gain comes from, and what it costs
+
+Digest documents are **not retrieved** in Stage 3 — `_build_filters` carries the chunk-plane
+clause, so neither search nor chat can return one. The movement is entirely the
+`embedding_text` repoint: every chunk is now embedded as
+`"{title} | {date} | participants: {roster}\n\n{chunk text}"` instead of the bare chunk. The
+synthetic queries ask things like *"Across the sprint retrospective sessions for the
+logistics team…"*, where the discriminating words live in the **title** and in nothing
+anybody said; BM25 already scored `title`, the vector leg did not.
+
+The cost is visible and expected. The measured embedding window is **128 wordpieces**, so a
+~30-piece header displaces roughly the last 20 words of a 200-word chunk from that chunk's
+own vector — which is why the top-heavy measures (nDCG@5, MRR) gain most while
+`multi_file` R@10 slips 0.028 and R@20 slips 0.021: the right files are pulled up, and a
+little of the tail is pushed out. On this corpus that trade is clearly positive; it is also
+the first knob Stage 5's bake-off should sweep (header on chunks vs digests only).
+
+### G9 — BM25 IDF cross-talk between doc types
+
+Digest documents carry a `content` field, so they contribute to the document frequencies
+that score chunk queries. Measured: **2,576 digests against 208,332 chunks, 1.2% of the
+index**. The addendum's guard for this is "lookup must stay within noise"; lookup *rose* in
+both corpora, so if the effect is present it is smaller than the `embedding_text` gain. The
+mechanism is named here so a future regression is not mysterious, but nothing in this
+measurement attributes anything to it.
 
 ## What we cannot currently claim
 

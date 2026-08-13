@@ -1,0 +1,697 @@
+{
+  "answers": {
+    "answerer": {
+      "acl_filter": "accessible_user_ids (the production ACL field)",
+      "answerer": "reference",
+      "hybrid_aggs": "never — OpenSearch 3.4 crashes on aggs over a hybrid body",
+      "intents": [
+        "count_events",
+        "count_files",
+        "list_files",
+        "speaker_top",
+        "temporal_count"
+      ],
+      "is_production_path": false,
+      "llm_required": false,
+      "mechanism": {
+        "count_events": "postgres: regexp_count over transcript_segment.text",
+        "count_files": "opensearch: match_phrase(content.exact) + terms(file_uuid) agg",
+        "list_files": "opensearch: match_phrase(content.exact) + terms(file_uuid) agg",
+        "speaker_top": "opensearch: title phrase filter + terms(speakers) x terms(file_uuid)",
+        "temporal_count": "opensearch phrase agg INTERSECT postgres meeting-date filter"
+      },
+      "postgres_available": true,
+      "summary": "harness-side rules router + OpenSearch terms aggregations + Postgres. The instrument's control, NOT the product's chat path (which has no aggregation route until Stage 4)."
+    },
+    "details": [
+      {
+        "gold": 12,
+        "kind": "integer",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00000",
+        "rule": "R3-agg-count-files",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": 12
+      },
+      {
+        "gold": [
+          "337e99c2-53ff-5d8c-8da5-57f447a107b2",
+          "f0dc3d38-a221-56bd-b397-cd10eb963fb8"
+        ],
+        "kind": "file_set",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00001",
+        "rule": "R4-agg-list-files",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": [
+          "337e99c2-53ff-5d8c-8da5-57f447a107b2",
+          "f0dc3d38-a221-56bd-b397-cd10eb963fb8"
+        ]
+      },
+      {
+        "gold": 7,
+        "kind": "integer",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00002",
+        "rule": "R5-agg-count-events",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": 7
+      },
+      {
+        "gold": {
+          "sessions": 8,
+          "speaker": "Alina Prentiss"
+        },
+        "kind": "speaker_count",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00003",
+        "rule": "R6-agg-speaker-top",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": {
+          "sessions": 8,
+          "speaker": "Alina Prentiss"
+        }
+      },
+      {
+        "gold": 2,
+        "kind": "integer",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00004",
+        "rule": "R7-agg-temporal-count",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": 2
+      },
+      {
+        "gold": 4,
+        "kind": "integer",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00005",
+        "rule": "R3-agg-count-files",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": 4
+      },
+      {
+        "gold": [
+          "16aa9a80-eb2a-50af-9acb-6720170794d4",
+          "46f5b81b-139d-5d01-97ca-b18abe68bfbd",
+          "824f656d-2525-5b45-9d32-18897b969fb5",
+          "986b835d-41e2-5b8f-bafd-839135588cc0",
+          "de3b4dc3-17ee-5c7e-84ab-8b0d25891107",
+          "e6cc03da-aa7d-5e0f-b713-1946cc96db61",
+          "ffbd1553-0918-513d-ae69-c5c4f315250b"
+        ],
+        "kind": "file_set",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00006",
+        "rule": "R4-agg-list-files",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": [
+          "16aa9a80-eb2a-50af-9acb-6720170794d4",
+          "46f5b81b-139d-5d01-97ca-b18abe68bfbd",
+          "824f656d-2525-5b45-9d32-18897b969fb5",
+          "986b835d-41e2-5b8f-bafd-839135588cc0",
+          "de3b4dc3-17ee-5c7e-84ab-8b0d25891107",
+          "e6cc03da-aa7d-5e0f-b713-1946cc96db61",
+          "ffbd1553-0918-513d-ae69-c5c4f315250b"
+        ]
+      },
+      {
+        "gold": 6,
+        "kind": "integer",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00007",
+        "rule": "R5-agg-count-events",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": 6
+      },
+      {
+        "gold": {
+          "sessions": 20,
+          "speaker": "Rania Ingersoll"
+        },
+        "kind": "speaker_count",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00008",
+        "rule": "R6-agg-speaker-top",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": {
+          "sessions": 20,
+          "speaker": "Rania Ingersoll"
+        }
+      },
+      {
+        "gold": 4,
+        "kind": "integer",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00009",
+        "rule": "R7-agg-temporal-count",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": 4
+      },
+      {
+        "gold": 10,
+        "kind": "integer",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00010",
+        "rule": "R3-agg-count-files",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": 10
+      },
+      {
+        "gold": [
+          "275c0690-7f94-5083-9ae2-215c20d91f9e",
+          "5ec3f410-5cfc-55c7-b87a-66c544ff3a70",
+          "72e4080d-f1df-5fb5-99fc-062d3a658148",
+          "80a08be3-f807-5a25-b016-60a3498958eb",
+          "80e9dded-ba2c-50b2-94c5-92c549b3103a",
+          "999074a8-05a7-5d7d-905d-bc49aa8f7a62",
+          "a8633847-fec8-514e-8397-1ef15bea8c88",
+          "ae7cbebb-1f89-50f1-88ce-a635982b5e66"
+        ],
+        "kind": "file_set",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00011",
+        "rule": "R4-agg-list-files",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": [
+          "275c0690-7f94-5083-9ae2-215c20d91f9e",
+          "5ec3f410-5cfc-55c7-b87a-66c544ff3a70",
+          "72e4080d-f1df-5fb5-99fc-062d3a658148",
+          "80a08be3-f807-5a25-b016-60a3498958eb",
+          "80e9dded-ba2c-50b2-94c5-92c549b3103a",
+          "999074a8-05a7-5d7d-905d-bc49aa8f7a62",
+          "a8633847-fec8-514e-8397-1ef15bea8c88",
+          "ae7cbebb-1f89-50f1-88ce-a635982b5e66"
+        ]
+      },
+      {
+        "gold": 10,
+        "kind": "integer",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00012",
+        "rule": "R5-agg-count-events",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": 10
+      },
+      {
+        "gold": {
+          "sessions": 8,
+          "speaker": "Adaeze Thorne"
+        },
+        "kind": "speaker_count",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00013",
+        "rule": "R6-agg-speaker-top",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": {
+          "sessions": 8,
+          "speaker": "Adaeze Thorne"
+        }
+      },
+      {
+        "gold": 2,
+        "kind": "integer",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00014",
+        "rule": "R7-agg-temporal-count",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": 2
+      },
+      {
+        "gold": 9,
+        "kind": "integer",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00015",
+        "rule": "R3-agg-count-files",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": 9
+      },
+      {
+        "gold": [
+          "184da08e-72f7-5d61-95c8-0bf7578d222b",
+          "36391ca6-16cf-5486-85fa-0065a02c9893",
+          "47a68071-50a8-5052-be8a-d4fc9d7f6fa1",
+          "cdfd827f-4dee-554e-be86-c873a13555ae",
+          "dd956097-0a7d-553b-bdf5-4324e6ee4b20",
+          "e4a4d626-db25-5c06-88d2-bab282e804d2",
+          "f7748120-fa3c-5074-9126-c3c94751c00e"
+        ],
+        "kind": "file_set",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00016",
+        "rule": "R4-agg-list-files",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": [
+          "184da08e-72f7-5d61-95c8-0bf7578d222b",
+          "36391ca6-16cf-5486-85fa-0065a02c9893",
+          "47a68071-50a8-5052-be8a-d4fc9d7f6fa1",
+          "cdfd827f-4dee-554e-be86-c873a13555ae",
+          "dd956097-0a7d-553b-bdf5-4324e6ee4b20",
+          "e4a4d626-db25-5c06-88d2-bab282e804d2",
+          "f7748120-fa3c-5074-9126-c3c94751c00e"
+        ]
+      },
+      {
+        "gold": 4,
+        "kind": "integer",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00017",
+        "rule": "R5-agg-count-events",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": 4
+      },
+      {
+        "gold": {
+          "sessions": 8,
+          "speaker": "Alina Prentiss"
+        },
+        "kind": "speaker_count",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00018",
+        "rule": "R6-agg-speaker-top",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": {
+          "sessions": 8,
+          "speaker": "Alina Prentiss"
+        }
+      },
+      {
+        "gold": 3,
+        "kind": "integer",
+        "license_tier": "A",
+        "query_id": "synthetic:ag-00019",
+        "rule": "R7-agg-temporal-count",
+        "scores": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "submitted": 3
+      }
+    ],
+    "rows": [
+      {
+        "corpus": "synthetic",
+        "license_tier": "A",
+        "metrics": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "queries": 20,
+        "query_class": "aggregation",
+        "rule": "all",
+        "scored_on": [
+          "answer"
+        ],
+        "unanswered": 0
+      },
+      {
+        "corpus": "synthetic",
+        "license_tier": "A",
+        "metrics": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "queries": 4,
+        "query_class": "aggregation",
+        "rule": "R3-agg-count-files",
+        "scored_on": [
+          "answer"
+        ],
+        "unanswered": 0
+      },
+      {
+        "corpus": "synthetic",
+        "license_tier": "A",
+        "metrics": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "queries": 4,
+        "query_class": "aggregation",
+        "rule": "R4-agg-list-files",
+        "scored_on": [
+          "answer"
+        ],
+        "unanswered": 0
+      },
+      {
+        "corpus": "synthetic",
+        "license_tier": "A",
+        "metrics": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "queries": 4,
+        "query_class": "aggregation",
+        "rule": "R5-agg-count-events",
+        "scored_on": [
+          "answer"
+        ],
+        "unanswered": 0
+      },
+      {
+        "corpus": "synthetic",
+        "license_tier": "A",
+        "metrics": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "queries": 4,
+        "query_class": "aggregation",
+        "rule": "R6-agg-speaker-top",
+        "scored_on": [
+          "answer"
+        ],
+        "unanswered": 0
+      },
+      {
+        "corpus": "synthetic",
+        "license_tier": "A",
+        "metrics": {
+          "EM": 1.0,
+          "answered": 1.0,
+          "partial": 1.0
+        },
+        "queries": 4,
+        "query_class": "aggregation",
+        "rule": "R7-agg-temporal-count",
+        "scored_on": [
+          "answer"
+        ],
+        "unanswered": 0
+      }
+    ],
+    "scored": 20,
+    "scoring": {
+      "engine": "tests.eval.harness.answers",
+      "llm_required": false,
+      "measure_semantics": {
+        "EM": "exact match under the policy below — the Stage 4 gate",
+        "answered": "share of the gold query set the answerer attempted",
+        "partial": "diagnostic partial credit; NEVER a substitute for EM"
+      },
+      "measures": [
+        "EM",
+        "partial",
+        "answered"
+      ],
+      "policy": {
+        "count_rule": "|submitted - gold| <= 0; no interpolated partial credit",
+        "count_tolerance": 0,
+        "gate": "EM (exact match) — the Stage 4 gate. 'partial' is diagnostic only.",
+        "kind_mismatch_policy": "scored 0; counts as answered, not as unanswered",
+        "name_normalisation": "casefold + whitespace collapse",
+        "set_credit": "f1",
+        "set_rule": "EM = set equality (a subset is WRONG); partial = F1 over the file sets",
+        "speaker_credit": "fields",
+        "speaker_rule": "EM = name AND sessions; partial = fraction of the two fields correct",
+        "unanswered_policy": "scored 0 on every measure and counted (trec_eval -c semantics)"
+      },
+      "set_ordering": "every set is emitted sorted (PYTHONHASHSEED is unpinned here)"
+    },
+    "unanswered": 0
+  },
+  "control_name": "stage3-control-pre-v6",
+  "corpora": [
+    {
+      "answer_queries_scored": 0,
+      "chunks_indexed": 121119,
+      "files_in_manifest": 232,
+      "files_indexed": 232,
+      "key": "qmsum",
+      "license_tier": "A",
+      "name": "QMSum (Yale-LILY)",
+      "queries_dropped_unjudgeable": 0,
+      "queries_scored": 1576,
+      "version": "83d7768c1f2b4dfeb091385d3dc7e239b8e5bb7e"
+    },
+    {
+      "answer_queries_scored": 20,
+      "chunks_indexed": 87213,
+      "files_in_manifest": 200,
+      "files_indexed": 200,
+      "key": "synthetic",
+      "license_tier": "A",
+      "name": "OpenTranscribe synthetic tier (otsynth-core-v1)",
+      "queries_dropped_unjudgeable": 0,
+      "queries_scored": 75,
+      "version": "otsynth-core-v1@1.0.0/seed=20260812/select=gold-closure[multi_file+aggregation]/meetings=200of2000"
+    }
+  ],
+  "index": {
+    "corpus_chunks": 208332,
+    "corpus_files": 432,
+    "docs_count": 208332,
+    "docs_deleted": 0,
+    "expected_files": 432
+  },
+  "metric_engine": {
+    "canonical_names": {
+      "MRR": "RR",
+      "R@10": "R@10",
+      "R@20": "R@20",
+      "R@5": "R@5",
+      "nDCG@10": "nDCG@10",
+      "nDCG@20": "nDCG@20",
+      "nDCG@5": "nDCG@5"
+    },
+    "engine": "pytrec_eval_terrier",
+    "engine_version": "0.5.10",
+    "gain": "linear (gain = rel)",
+    "measure_strings": {
+      "MRR": "recip_rank",
+      "R@10": "recall.10",
+      "R@20": "recall.20",
+      "R@5": "recall.5",
+      "nDCG@10": "ndcg_cut.10",
+      "nDCG@20": "ndcg_cut.20",
+      "nDCG@5": "ndcg_cut.5"
+    },
+    "ndcg_variant": "ndcg_cut (ideal DCG truncated at k)",
+    "tie_break": "harness re-sort by (-score, doc_type, file_uuid, chunk_index)",
+    "unanswered_query_policy": "scored 0 and included in the mean (trec_eval -c)"
+  },
+  "qrels": {
+    "answer_scored_queries_in_their_own_table": 20,
+    "judged_documents": 78694,
+    "mean_judged_per_query": 47.6644,
+    "queries": 1651,
+    "queries_dropped_unjudgeable": 0,
+    "unanswered_queries": 0
+  },
+  "relevance_policy": {
+    "binary": false,
+    "high_threshold": 0.5,
+    "low_threshold": 0.0,
+    "rule": "graded by gold word-share of the chunk"
+  },
+  "retrieval": {
+    "candidate_pool": 48,
+    "llm_required": false,
+    "path": "chat retrieval (app.services.search.chunk_retrieval.retrieve_chunks)",
+    "scope": "corpus",
+    "scope_note": "corpus-wide, file_uuids=None",
+    "search_mode": "hybrid",
+    "stage": "retrieve",
+    "workers": 4
+  },
+  "rows": [
+    {
+      "corpus": "qmsum",
+      "license_tier": "A",
+      "metrics": {
+        "MRR": 0.198965,
+        "R@10": 0.066408,
+        "R@20": 0.08188,
+        "R@5": 0.050201,
+        "nDCG@10": 0.088496,
+        "nDCG@20": 0.087081,
+        "nDCG@5": 0.095652
+      },
+      "queries": 1172,
+      "query_class": "lookup",
+      "scored_on": [
+        "retrieval"
+      ],
+      "unanswered": 0
+    },
+    {
+      "corpus": "qmsum",
+      "license_tier": "A",
+      "metrics": {
+        "MRR": 0.133993,
+        "R@10": 0.020483,
+        "R@20": 0.028858,
+        "R@5": 0.01462,
+        "nDCG@10": 0.05615,
+        "nDCG@20": 0.04789,
+        "nDCG@5": 0.06542
+      },
+      "queries": 404,
+      "query_class": "summarize",
+      "scored_on": [
+        "retrieval"
+      ],
+      "unanswered": 0
+    },
+    {
+      "corpus": "qmsum",
+      "license_tier": "A",
+      "metrics": {
+        "MRR": 0.18231,
+        "R@10": 0.054635,
+        "R@20": 0.068288,
+        "R@5": 0.04108,
+        "nDCG@10": 0.080204,
+        "nDCG@20": 0.077034,
+        "nDCG@5": 0.087902
+      },
+      "queries": 1576,
+      "query_class": "all",
+      "scored_on": [
+        "retrieval"
+      ],
+      "unanswered": 0
+    },
+    {
+      "corpus": "synthetic",
+      "license_tier": "A",
+      "metrics": {
+        "MRR": 0.327781,
+        "R@10": 0.46,
+        "R@20": 0.56,
+        "R@5": 0.34,
+        "nDCG@10": 0.313437,
+        "nDCG@20": 0.341978,
+        "nDCG@5": 0.265845
+      },
+      "queries": 50,
+      "query_class": "lookup",
+      "scored_on": [
+        "retrieval"
+      ],
+      "unanswered": 0
+    },
+    {
+      "corpus": "synthetic",
+      "license_tier": "A",
+      "metrics": {
+        "MRR": 0.319055,
+        "R@10": 0.231333,
+        "R@20": 0.264667,
+        "R@5": 0.133,
+        "nDCG@10": 0.195743,
+        "nDCG@20": 0.210368,
+        "nDCG@5": 0.156836
+      },
+      "queries": 25,
+      "query_class": "multi_file",
+      "scored_on": [
+        "retrieval"
+      ],
+      "unanswered": 0
+    },
+    {
+      "corpus": "synthetic",
+      "license_tier": "A",
+      "metrics": {
+        "MRR": 0.324872,
+        "R@10": 0.383778,
+        "R@20": 0.461556,
+        "R@5": 0.271,
+        "nDCG@10": 0.274206,
+        "nDCG@20": 0.298108,
+        "nDCG@5": 0.229509
+      },
+      "queries": 75,
+      "query_class": "all",
+      "scored_on": [
+        "retrieval"
+      ],
+      "unanswered": 0
+    }
+  ],
+  "schema_version": 2
+}

@@ -110,6 +110,15 @@ def build_parser() -> argparse.ArgumentParser:
         "container-network name in .env.",
     )
     parser.add_argument("--allow-live-stack", action="store_true")
+    parser.add_argument(
+        "--expect-files",
+        type=int,
+        default=0,
+        help="Refuse to measure until this many corpus files carry chunks AND the "
+        "count is stable across two polls. 0 = the manifests' own file count. "
+        "Pass -1 to skip the settle check entirely (measuring whatever is there).",
+    )
+    parser.add_argument("--settle-timeout", type=float, default=1800.0)
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
 
@@ -271,7 +280,37 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
     client = get_opensearch_client()
     if client is None:
         raise SystemExit("No OpenSearch client — is the stack up and are the ports exported?")
+
+    # Load every corpus BEFORE touching the index: the settle check needs the
+    # complete expected file set, and measuring a corpus that is still being
+    # indexed is the failure this whole preamble exists to prevent.
+    loaded = [(key, *_load_corpus(key, manifest_root, data_dir)) for key in keys]
+    settled: dict[str, Any] | None = None
+    if args.expect_files >= 0:
+        corpus_uuids = sorted({uuid for _, corpus, _, _ in loaded for uuid in corpus.file_uuids})
+        expected = args.expect_files or len(corpus_uuids)
+        try:
+            settled = index_reader.await_settled(
+                client,
+                settings.OPENSEARCH_CHUNKS_INDEX,
+                corpus_uuids,
+                expected_files=expected,
+                timeout_s=args.settle_timeout,
+            )
+        except index_reader.IndexNotSettledError as exc:
+            logger.error("%s", exc)
+            return 3
     index_state = index_reader.prepare_index(client, settings.OPENSEARCH_CHUNKS_INDEX)
+    if settled is not None:
+        # Only the settled counters go in the committed document. How many polls
+        # it took is a property of when the run started, not of the corpus, and
+        # metrics.json is byte-identical across runs by construction.
+        index_state = {
+            **index_state,
+            "corpus_files": settled["files"],
+            "corpus_chunks": settled["chunks"],
+            "expected_files": settled["expected_files"],
+        }
 
     all_queries = []
     answer_queries = []
@@ -279,8 +318,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
     qrels: dict[str, dict[str, int]] = {}
     unjudged: list[str] = []
 
-    for key in keys:
-        corpus, turns, queries = _load_corpus(key, manifest_root, data_dir)
+    for _key, corpus, turns, queries in loaded:
         queries.sort(key=lambda query: query.query_id)
         if args.limit_queries:
             queries = queries[: args.limit_queries]
@@ -372,7 +410,15 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
         (out_dir / "answers.md").write_text(answer_table, encoding="utf-8")
     elapsed = time.monotonic() - started
     (out_dir / "runinfo.json").write_text(
-        json.dumps({"elapsed_seconds": round(elapsed, 1), "target": target}, indent=2) + "\n",
+        json.dumps(
+            {
+                "elapsed_seconds": round(elapsed, 1),
+                "target": target,
+                "settle": settled,
+            },
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
 

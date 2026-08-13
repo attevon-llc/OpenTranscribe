@@ -93,16 +93,40 @@ class RetrievalConfig:
 
 
 def _to_run_docs(hits) -> list[RunDoc]:
-    return [
-        RunDoc(
-            doc_id=f"{hit.file_uuid}_{hit.chunk_index}",
-            score=float(hit.score),
-            doc_type="chunk",
-            file_uuid=hit.file_uuid,
-            chunk_index=int(hit.chunk_index),
+    """Retrieved hits as run documents, labelled by the plane they came from.
+
+    A negative ``chunk_index`` is the digest sentinel (index v6), so it is also
+    the only signal available here that a *digest* reached the chat path — the
+    hit dataclass carries no ``doc_type``. Labelling it honestly matters twice
+    over: the id must be the one the index actually holds
+    (``{uuid}_digest_{n}``, not ``{uuid}_-1``), and the tie-break sorts on
+    ``doc_type``, which is what stops a digest winning a tie on its NAME. As of
+    Stage 3 the chat filter excludes digests, so this branch should not fire;
+    it exists because it will in Stage 4, and because a mislabelled document is
+    worse than an excluded one.
+    """
+    from app.services.ingest_artifacts.index_mapping import DOC_TYPE_CHUNK
+    from app.services.ingest_artifacts.index_mapping import DOC_TYPE_DIGEST
+    from app.services.ingest_artifacts.index_mapping import digest_document_id
+
+    docs: list[RunDoc] = []
+    for hit in hits:
+        chunk_index = int(hit.chunk_index)
+        is_digest = chunk_index < 0
+        docs.append(
+            RunDoc(
+                doc_id=(
+                    digest_document_id(hit.file_uuid, -1 - chunk_index)
+                    if is_digest
+                    else f"{hit.file_uuid}_{chunk_index}"
+                ),
+                score=float(hit.score),
+                doc_type=DOC_TYPE_DIGEST if is_digest else DOC_TYPE_CHUNK,
+                file_uuid=hit.file_uuid,
+                chunk_index=chunk_index,
+            )
         )
-        for hit in hits
-    ]
+    return docs
 
 
 def execute(

@@ -185,16 +185,33 @@ def _prepare_context(
     meta: dict[str, Any] = {}
 
     effective_query = question
+    llm_intent: str | None = None
     if rewrite_enabled and history:
         from app.services.chat.query_rewriter import rewrite_query
 
         rewrite_started = time.monotonic()
-        effective_query = rewrite_query(llm, history, question)
+        rewrite = rewrite_query(llm, history, question)
+        effective_query = rewrite.query
+        llm_intent = rewrite.intent
         if effective_query != question:
             meta["rewritten_query"] = effective_query
         meta.setdefault("timings_ms", {})["rewrite"] = int(
             (time.monotonic() - rewrite_started) * 1000
         )
+
+    # Recorded, not yet acted on (#403 Stage 4 unit 1). The router is the last
+    # missing piece of the Phase-0 instrumentation set, and landing the metadata
+    # before the behaviour means the intent distribution over real traffic is
+    # measurable BEFORE any tier change is judged against it.
+    from app.services.chat.router import route
+
+    decision = route(
+        question,
+        rewritten=effective_query if effective_query != question else None,
+        llm_intent=llm_intent,
+        speakers=speakers,
+    )
+    meta["route"] = decision.as_metadata()
 
     result = retrieve_context(
         query=effective_query,

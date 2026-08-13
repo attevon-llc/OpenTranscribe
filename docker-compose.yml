@@ -616,7 +616,15 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c 'import os,time; exit(0 if os.path.exists(\"/app/celerybeat-schedule\") and time.time()-os.path.getmtime(\"/app/celerybeat-schedule\")<300 else 1)'"]
+      # Newest of celerybeat-schedule*, NOT the base file alone. The shelve/SQLite
+      # store runs in WAL mode, so a live beat writes celerybeat-schedule-wal every
+      # tick while the base file's mtime only moves on checkpoint. Watching the base
+      # file reported UNHEALTHY on a scheduler that was demonstrably dispatching —
+      # observed at a failing streak of 41 with the base file 5.4 hours stale and the
+      # WAL current. An alarm that cannot go green trains everyone to ignore it, so a
+      # real beat failure would have been invisible; beat drives backup.check_schedule,
+      # watch_source.scan_all, directory.sync_check_schedule and search_index_maintenance.
+      test: ["CMD-SHELL", "python3 -c 'import glob,os,time; p=glob.glob(\"/app/celerybeat-schedule*\"); exit(0 if p and time.time()-max(os.path.getmtime(f) for f in p)<300 else 1)'"]
       interval: 30s
       timeout: 10s
       retries: 3

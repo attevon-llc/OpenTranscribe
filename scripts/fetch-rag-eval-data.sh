@@ -586,7 +586,7 @@ RB_DATASETS=(locov1 longembed)
 # only, and --accept-noncommercial is required to fetch it at all.
 DOC_DATASETS=(qasper contractnli cuad multidoc2dial docling-fixtures
               olmocr-bench bnl-newspapers doclaynet pmc-oa govdocs1
-              omnidocbench ucsf-idl)
+              omnidocbench ucsf-idl ami-documents)
 
 MLMETA+=(
     # -- Tier A, gold evidence spans: the only things an nDCG@10 claim can rest on
@@ -735,6 +735,27 @@ MLMETA+=(
               should have produced from the PDF (sections, tables, captions, refs).
               ⚠ NCBI is deleting the legacy FTP layout in August 2026; the S3 keys
               pinned in the manifest are the new per-PMCID layout and still resolve."
+
+    [ami-documents.TIER]="A"
+    [ami-documents.NAME]="AMI shared-doc — the documents produced in and for 67 AMI meetings"
+    [ami-documents.LICENSE]="Creative Commons Attribution 4.0 International (CC BY 4.0)"
+    [ami-documents.LICENSE_URL]="https://groups.inf.ed.ac.uk/ami/corpus/license.shtml"
+    [ami-documents.HOMEPAGE]="https://groups.inf.ed.ac.uk/ami/corpus/"
+    [ami-documents.SOURCE]="pinned:https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/"
+    [ami-documents.SUBDIR]="documents/ami-documents"
+    [ami-documents.NOTE]="The ONLY corpus found that pairs recordings with the documents the same
+              participants actually produced — 987 .ppt, 842 .doc, 524 .txt, 87 .xls,
+              28 .eml, plus slidesBackUp JPGs, across 67 meetings that ALSO have
+              transcripts and audio in the ami/ arm. That is what makes #362's
+              mixed-corpus gate a found scenario rather than an authored one: a
+              question answerable from both a recording and a document, with a
+              time-anchored media citation and a page-anchored document citation.
+              Same CC BY 4.0 as the AMI signals, so Tier A throughout.
+              It deliberately keeps the .ini/.lnk/INFO2 junk a real shared folder
+              carries — parser robustness is part of what this exercises.
+              Manifest pinning was validated against the mirror's own directory
+              listings for all 67 meetings (71 listings, 0 mismatches) rather than
+              pinned from whatever landed on disk — see negative result #7."
 
     [govdocs1.TIER]="A"
     [govdocs1.NAME]="GovDocs1 / Digital Corpora — 991 real-world .gov files, thread0"
@@ -921,7 +942,18 @@ fi
 
 selected() { [[ -z "$ONLY" || "$ONLY" == "$1" ]]; }
 field() { echo "${META[$1.$2]}"; }
-mlfield() { echo "${MLMETA[$1.$2]}"; }
+# A missing metadata field used to abort under `set -u` with only
+# "MLMETA[$1.$2]: unbound variable" — no key, no field name, printed mid-run from
+# whichever of the four manifest writers touched it. Name the gap instead: the
+# writers legitimately probe optional fields, so an absent one is empty, not fatal.
+mlfield() {
+    if [[ -v "MLMETA[$1.$2]" ]]; then
+        echo "${MLMETA[$1.$2]}"
+    else
+        [[ -n "${RAG_EVAL_DEBUG_META:-}" ]] && echo "meta: $1 has no $2" >&2
+        echo ""
+    fi
+}
 
 # True when --only names a multilingual key. Used to leave the shared top-level
 # MANIFEST.tsv alone when this run only touched multilingual/ — that file is

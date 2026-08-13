@@ -1,0 +1,3 @@
+ce495b73ba31bb5203a8f1f3b086a5f0e6421de05d921b6c0727368fa128b02b	qmsum/corpus.jsonl	https://huggingface.co/datasets/dwzhu/LongEmbed/resolve/10039a580487dacecf79db69166e17ace3ede392/qmsum/corpus.jsonl
+65a2dc5c1db95d7a0a7c0e49eb10f62d9ffd4e885c9fac84c300f00a954f22a3	qmsum/qrels.jsonl	https://huggingface.co/datasets/dwzhu/LongEmbed/resolve/10039a580487dacecf79db69166e17ace3ede392/qmsum/qrels.jsonl
+8bc4637293908df8e3f4d9de936f93b84245db1bdf1be9e7605f24f9aa262129	qmsum/queries.jsonl	https://huggingface.co/datasets/dwzhu/LongEmbed/resolve/10039a580487dacecf79db69166e17ace3ede392/qmsum/queries.jsonl

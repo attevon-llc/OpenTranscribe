@@ -253,11 +253,13 @@ def digest_plane_query(
 def file_plane_query(file_uuid: str) -> dict[str, Any]:
     """**Every** document of one file, whatever plane it belongs to.
 
-    Deliberately has no ``doc_type`` predicate, and the two callers both need
-    that: deleting a media file must leave nothing behind, and a full rebuild
-    wants a clean slate before it regenerates both planes. Using
-    :func:`chunk_plane_query` for either would strand the digests — readable,
-    with whatever ACL they were last stamped with.
+    Deliberately has no ``doc_type`` predicate, and all three callers need that:
+    deleting a media file must leave nothing behind, a full rebuild wants a clean
+    slate before it regenerates both planes, and
+    :meth:`TranscriptIndexingService.count_file_documents` verifies the delete
+    against the same predicate the delete used. Using :func:`chunk_plane_query`
+    for any of them would strand the digests — readable, with whatever ACL they
+    were last stamped with.
 
     Args:
         file_uuid: UUID of the media file.
@@ -1004,6 +1006,62 @@ class TranscriptIndexingService:
             return deleted
         except Exception as e:
             logger.error(f"Error deleting chunks for file {file_uuid}: {e}")
+            return 0
+
+    def count_file_documents(self, file_uuid: str) -> int:
+        """Count this file's still-indexed documents — **every plane**.
+
+        The verification half of :meth:`delete_transcript_chunks`, and it lives
+        here rather than at the caller so the two share one predicate: a survivor
+        count built from a *different* predicate than the delete it checks is not
+        a check. ``delete_transcript_chunks`` returns 0 for "no chunks", "index
+        absent" and "the delete failed" alike, so this count — never that return
+        value — is what proves an erasure complete.
+
+        **Both planes, deliberately** (index v6, #403 Stage 3). A
+        :func:`chunk_plane_query` count would report a clean sweep while the
+        file's ``doc_type: digest`` sections were still indexed, and those
+        sections are verbatim transcript text: the erasure would audit as
+        complete with the recording's own words still searchable and still
+        retrievable by chat. That is the failure the unqualified delete exists to
+        prevent, arriving one step later through its verifier.
+
+        Unlike everything else in this class it **raises** rather than returning
+        0 when it cannot ask. Its caller is a GDPR Art. 17 erasure that records
+        "could not verify" as a residual, and a 0 meaning "the cluster was
+        unreachable" is precisely the wrong answer there. An **absent index** is
+        still 0 — that is the cluster answering.
+
+        The explicit refresh is the #435 lesson applied to the delete path: a
+        ``count`` is a search and sees only what the last refresh made visible,
+        so without it a delete that raised part-way could leave documents that
+        the count cannot see and reports as gone. One refresh per erased file is
+        not on any hot path.
+
+        Args:
+            file_uuid: UUID of the media file.
+
+        Returns:
+            Number of documents of any plane still matching the file.
+
+        Raises:
+            Exception: The cluster could not be reached or could not answer.
+        """
+        from opensearchpy.exceptions import NotFoundError
+
+        if not opensearch_client:
+            raise RuntimeError("OpenSearch client unavailable")
+
+        index_name = settings.OPENSEARCH_CHUNKS_INDEX
+        try:
+            if not opensearch_client.indices.exists(index=index_name):
+                return 0
+            opensearch_client.indices.refresh(index=index_name)
+            response = opensearch_client.count(
+                index=index_name, body={"query": file_plane_query(file_uuid)}
+            )
+            return int(response["count"])
+        except NotFoundError:
             return 0
 
     def _orphaned_document_ids(

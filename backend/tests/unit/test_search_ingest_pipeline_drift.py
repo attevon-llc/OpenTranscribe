@@ -49,11 +49,22 @@ class _FakeClient:
         self.ingest = _FakeIngest(live)
 
 
+#: What the pipeline must embed **today** — index v6 repointed it from ``content``
+#: (#403 Stage 3), which is the drift case below. Spelled out rather than read back
+#: from ``_build_neural_ingest_pipeline``: deriving the expectation from the code
+#: under test would make every assertion here true by construction, and this file
+#: exists because a field_map change reaching only fresh installs is invisible.
+CURRENT_FIELD_MAP = {"embedding_text": "embedding"}
+
+#: The pre-v6 field map, i.e. what an upgraded deployment's live pipeline still has.
+PRE_V6_FIELD_MAP = {"content": "embedding"}
+
+
 def _live_pipeline(**overrides: Any) -> dict[str, Any]:
     """A pipeline body as OpenSearch would return it, with fields overridden."""
     processor: dict[str, Any] = {
         "model_id": MODEL_ID,
-        "field_map": {"content": "embedding"},
+        "field_map": dict(CURRENT_FIELD_MAP),
         "batch_size": settings.SEARCH_NEURAL_BATCH_SIZE,
         "ignore_failure": False,
     }
@@ -63,7 +74,7 @@ def _live_pipeline(**overrides: Any) -> dict[str, Any]:
         else:
             processor[key] = value
     return {
-        "description": "Neural embedding pipeline for transcript search",
+        "description": f"Neural embedding pipeline for transcript search (model: {MODEL_ID})",
         "processors": [{"text_embedding": processor}],
     }
 
@@ -97,12 +108,18 @@ def _written_processor(fake: _FakeClient) -> dict[str, Any]:
 
 
 def test_field_map_change_recreates_the_pipeline(client):
-    """The #383 Phase 3 case: same model, different source field."""
-    fake = client(_live_pipeline(field_map={"legacy_text": "embedding"}))
+    """The #383 Phase 3 case, now the real one: same model, different source field.
+
+    An upgraded deployment's live pipeline still embeds ``content``; index v6
+    embeds ``embedding_text``. Without recreation that deployment keeps embedding
+    the chunk body and never sees the contextualization header, silently — the
+    version is identical, only retrieval quality differs.
+    """
+    fake = client(_live_pipeline(field_map=dict(PRE_V6_FIELD_MAP)))
 
     assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
 
-    assert _written_processor(fake)["field_map"] == {"content": "embedding"}
+    assert _written_processor(fake)["field_map"] == CURRENT_FIELD_MAP
 
 
 def test_batch_size_change_recreates_the_pipeline(client):

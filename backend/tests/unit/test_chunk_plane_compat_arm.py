@@ -71,7 +71,12 @@ _ALLOWED: dict[str, str] = {
         "Reports index SIZE for the admin panel. Every document counts, including "
         "digests; filtering would under-report what the cluster is holding."
     ),
-    "api/endpoints/search.py::repair_indices": ("Names indices, does not filter documents."),
+    "api/endpoints/search.py::_probe_index_health": (
+        "A liveness probe — match_all/size 0 against each of eight indices, asking "
+        "whether the index answers at all. It selects no documents to act on, and "
+        "seven of the eight have no planes. Extracted from repair_indices, which "
+        "held this same exemption before the session-lifetime split."
+    ),
     "services/search/hybrid_search_service.py::count_matches": (
         "Takes its filter list as a parameter from _build_filters, which carries "
         "the arm. Building a second one here is what G3 warns against."

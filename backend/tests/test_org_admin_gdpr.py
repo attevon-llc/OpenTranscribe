@@ -120,6 +120,16 @@ class _FakeIndices:
         self._cluster.maybe_fail("indices.exists")
         return False
 
+    def refresh(self, index: str) -> None:
+        """A ``count`` is a search and sees only what the last refresh made visible.
+
+        The chunks-index survivor count forces one first (#435), so unrefreshed
+        survivors of a delete that failed part-way cannot read as gone. Recorded
+        rather than ignored so a test can assert it happened.
+        """
+        self._cluster.maybe_fail("indices.refresh")
+        self._cluster.refreshed.append(index)
+
 
 class _FakeOpenSearch:
     """A stand-in cluster whose answer to each API call the test chooses.
@@ -134,7 +144,8 @@ class _FakeOpenSearch:
         failures: ``failures`` list each ``delete_by_query`` reports — the way
             OpenSearch reports a *partial* sweep, in the body, without raising.
         fail: API names (``delete``, ``delete_by_query``, ``count``,
-            ``indices.exists``) that raise "cluster unreachable" instead.
+            ``indices.exists``, ``indices.refresh``) that raise "cluster
+            unreachable" instead.
         absent_indices: Index names ``indices.exists`` answers False for.
     """
 
@@ -147,6 +158,7 @@ class _FakeOpenSearch:
         self.indices = _FakeIndices(self)
         self.deleted_docs: list[tuple[str, str]] = []
         self.delete_by_query_calls: list[tuple[str, dict]] = []
+        self.refreshed: list[str] = []
 
     def maybe_fail(self, api: str) -> None:
         if api in self.fail:
@@ -959,8 +971,14 @@ class TestPartialErasureIsReportedAsPartial:
     ):
         """``delete_transcript_chunks`` returns 0 for "no chunks" AND for "the
         delete failed", so its return value cannot tell them apart. The count of
-        chunks still matching the file is what proves the RAG index is clean —
-        and this is the exact scenario the erasure used to call a success."""
+        documents still matching the file is what proves the RAG index is clean —
+        and this is the exact scenario the erasure used to call a success.
+
+        "document", not "chunk": since index v6 the count spans **both** planes,
+        so a surviving digest section — verbatim transcript text — is reported
+        here too. Which plane the count means is pinned behaviourally in
+        ``unit/test_file_erasure_plane_verification.py``.
+        """
         from app.core.config import settings
         from app.services.gdpr_erasure_service import erase_user
 
@@ -972,14 +990,18 @@ class TestPartialErasureIsReportedAsPartial:
                 "app.services.file_cleanup_service.delete_file_storage_artifacts",
                 return_value=True,
             ),
-            fake_opensearch(counts={settings.OPENSEARCH_CHUNKS_INDEX: 4}),
+            fake_opensearch(counts={settings.OPENSEARCH_CHUNKS_INDEX: 4}) as cluster,
             captured_audit() as fake_audit,
         ):
             summary = erase_user(db_session, user.id)
 
         assert _stages(summary) == ["transcript_chunks"]
-        assert "4 chunk(s) survive" in summary["errors"][0]["error"]
+        assert "4 document(s) survive" in summary["errors"][0]["error"]
         assert summary["complete"] is False
+        assert settings.OPENSEARCH_CHUNKS_INDEX in cluster.refreshed, (
+            "the survivor count is a search — without a refresh first it can read "
+            "documents a half-failed delete left behind as already gone (#435)"
+        )
         assert _outcome(fake_audit) is AuditOutcome.PARTIAL
 
     def test_an_unverifiable_index_is_not_treated_as_an_empty_one(

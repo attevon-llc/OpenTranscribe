@@ -372,6 +372,13 @@ def _count_surviving(index: str, query: dict[str, Any]) -> int:
     because "I could not ask" is not "nothing is there"; the caller records that
     as a residual error rather than silently treating it as a clean sweep.
 
+    Its one caller is the speaker/voiceprint sweep, which addresses documents by
+    id across three indices that have no planes. **Do not route a
+    ``transcript_chunks`` count through it**: since index v6 that index holds two
+    kinds of document, so every read of it has to say which it means, and a
+    helper that takes a caller-supplied predicate can only launder that decision
+    (:meth:`TranscriptIndexingService.count_file_documents` is where it is made).
+
     Args:
         index: Index to count in.
         query: OpenSearch query body's ``query`` clause.
@@ -500,11 +507,25 @@ def _erase_transcript_doc(file_uuid: str, fail: Callable[[str, object], None]) -
 
 
 def _erase_transcript_chunks(file_uuid: str, fail: Callable[[str, object], None]) -> None:
-    """Delete the file's chunks from the RAG index, and verify none survive.
+    """Delete the file's documents from the RAG index, and verify none survive.
 
     ``delete_transcript_chunks`` returns 0 for "no chunks", "index absent" AND
     "the delete failed", so only the count is evidence. This index stores
     transcript text UNREDACTED, so a survivor here is the raw content.
+
+    **Both of the index's planes are meant here, not the chunk plane** (index v6,
+    #403 Stage 3). ``transcript_chunks`` also holds per-file ``doc_type: digest``
+    documents whose sentences are verbatim transcript text, and
+    ``delete_transcript_chunks`` removes both by design. A chunk-plane survivor
+    count would therefore report a clean sweep while the digest of an erased
+    recording stayed indexed — the erasure reporting success while transcript
+    text survives, which is the exact shape this function's error reporting was
+    written for.
+
+    Neither the delete nor the count builds its predicate here: both are
+    ``file_plane_query``, in ``search/indexing_service``, which owns the plane
+    vocabulary. Building a second predicate at this call site is what would let
+    the check and the thing it checks drift apart.
     """
     try:
         from app.services.search.indexing_service import TranscriptIndexingService
@@ -514,13 +535,11 @@ def _erase_transcript_chunks(file_uuid: str, fail: Callable[[str, object], None]
         fail("transcript_chunks", e)
 
     try:
-        from app.core.config import settings as app_settings
+        from app.services.search.indexing_service import TranscriptIndexingService
 
-        left = _count_surviving(
-            app_settings.OPENSEARCH_CHUNKS_INDEX, {"term": {"file_uuid": file_uuid}}
-        )
+        left = TranscriptIndexingService().count_file_documents(file_uuid)
         if left:
-            fail("transcript_chunks", f"{left} chunk(s) survive")
+            fail("transcript_chunks", f"{left} document(s) survive")
     except Exception as e:  # noqa: BLE001 — unverifiable == not proven gone
         fail("transcript_chunks", f"could not verify: {e}")
 

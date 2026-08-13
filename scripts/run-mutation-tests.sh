@@ -95,18 +95,25 @@ declare -A MODULE_TESTS=(
     # tests/api/test_proxy_auth_endpoint.py had covered both the untrusted-peer and
     # identity-mismatch cases all along, and simply was not selected. Same failure
     # mode as the RUN_* gate trap in backend/tests/CLAUDE.md.
-    # test_mutation_target_tests_are_complete.py derives this list and fails if a test
-    # file referencing the module is missing from it.
+    # A static reference-based guard for this list was tried and REJECTED: the two files
+    # it needed to find (test_proxy_auth_endpoint.py, test_cloud_seams.py) name neither
+    # the module nor its helpers -- they drive it over HTTP and through the provider
+    # registry -- so nothing static could derive them. The coverage pre-flight below
+    # measures the property directly instead.
     [dependencies]="tests/unit/test_route_privilege_tiers.py tests/unit/test_account_lifecycle.py tests/unit/test_account_approval.py tests/unit/test_mfa_enforcement.py tests/unit/test_flower_access.py tests/unit/test_banner_acknowledgment.py tests/unit/test_token_type_binding.py tests/unit/test_access_token_revocation_epoch.py tests/unit/test_credential_gate_fail_closed.py tests/api/test_proxy_auth_endpoint.py tests/test_cloud_seams.py tests/unit/test_proxy_identity_consistency.py tests/unit/test_lifecycle_denial_audit_records.py tests/unit/test_optional_current_user.py tests/unit/test_external_token_auth.py"
-    [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py"
-    # ⚠️ EXPECT ~EVERY OIDCStateStore MUTANT TO SURVIVE, and do not read that as a
-    # harness fault. app/auth/session.py's session-timeout code moved to
-    # token_service.py, so test_session_lifetime.py (which imports token_service)
-    # exercises almost none of this module. `store_state` appears in the whole test
-    # tree exactly once -- as a STRING in test_handler_blocking_io.py's offload
-    # assertion -- and `get_state`/`delete_state` appear nowhere, so the single-use
-    # state deletion that prevents OIDC state/PKCE replay has no test at all.
-    # Tracked as #33; until it is written, this target measures absence, not weakness.
+    # Coverage pre-flight caught this list at 56% of the module on its first real run:
+    # it omitted test_lockout_atomicity.py (named for the module it tests) and
+    # test_auth_config_behaviour.py, both of which import app.auth.lockout directly, plus
+    # the login path that drives it end to end. Now 80.4%.
+    [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py"
+    # HISTORY, kept because the reasoning still applies to the next target like it:
+    # this entry used to warn that ~every OIDCStateStore mutant would survive, because
+    # `store_state`/`get_state`/`delete_state` had no test at all and the target
+    # therefore measured ABSENCE, not weakness. #33 landed those tests and the
+    # 2026-08-12 run kills the store_state mutants, so the warning is retired. The
+    # distinction it drew -- a target can report survivors because nothing tests the
+    # code, not because the tests are weak -- is now checked mechanically by the
+    # coverage pre-flight rather than remembered in a comment.
     [session]="tests/unit/test_session_lifetime.py tests/unit/test_auth_state_degradation.py tests/unit/test_oidc_state_single_use.py"
 )
 

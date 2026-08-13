@@ -31,17 +31,29 @@ _PUNKT_LANG_MAP: dict[str, str] = {
     "tr": "turkish",
 }
 
-# Cache of loaded NLTK tokenizers keyed by language name
+# Resolved tokenizers, and the languages already proven unresolvable. BOTH are
+# permanent for the life of the process, and that is the point: punkt and the
+# regex fallback below cut sentences in different places, so which one answers
+# has to be a property of the process, never of when a document happened to be
+# chunked. This used to be a 5-minute wall-clock cooldown after a failed load,
+# which made `chunk_transcript_by_speaker_turns` a function of `time.time()`:
+# one transient failure while the nltk_data mount came up (the model cache is
+# chowned during stack startup) switched the splitter to regex, and 300 seconds
+# later it switched back, mid-reindex. The same corpus then indexed to different
+# chunk text depending on where in the run each file happened to land.
 _nltk_tokenizers: dict[str, Any] = {}
-_nltk_unavailable_until: float = 0.0  # time.time() value; NLTK retried after this
+_nltk_unavailable: set[str] = set()
 
 
 def _get_nltk_tokenizer(language: str = "english"):
     """Load the NLTK punkt sentence tokenizer for the given language.
 
-    Tokenizers are cached after first load. Falls back to English if the
-    requested language model is not available, then to None if NLTK itself
-    is unavailable. Retries after a 5-minute cooldown.
+    Resolved **once per process**, positively or negatively. Falls back to
+    English if the requested language model is not available, then to None if
+    NLTK itself is unavailable -- and a None result is remembered, so a later
+    call cannot silently start splitting sentences differently. Picking up a
+    punkt model installed after the process started requires a restart; that is
+    the deliberate trade for reproducible chunk boundaries.
 
     Args:
         language: NLTK punkt language name (e.g. "english", "german").
@@ -49,15 +61,10 @@ def _get_nltk_tokenizer(language: str = "english"):
     Returns:
         The tokenizer on success, or None if NLTK/punkt is unavailable.
     """
-    import time
-
-    global _nltk_unavailable_until
-
-    if time.time() < _nltk_unavailable_until:
-        return None
-
     if language in _nltk_tokenizers:
         return _nltk_tokenizers[language]
+    if language in _nltk_unavailable:
+        return None
 
     try:
         import nltk.data
@@ -69,10 +76,22 @@ def _get_nltk_tokenizer(language: str = "english"):
             _nltk_tokenizers[language] = tokenizer
             logger.debug(f"Loaded NLTK punkt tokenizer for '{language}'")
             return tokenizer
+        reason = "no punkt/punkt_tab model on any nltk.data.path"
     except Exception as e:
-        logger.debug(f"NLTK punkt tokenizer not available, using regex fallback: {e}")
+        reason = f"{type(e).__name__}: {e}"
 
-    _nltk_unavailable_until = time.time() + 300  # 5-minute cooldown
+    _nltk_unavailable.add(language)
+    # WARNING, not DEBUG: this was invisible for long enough that nobody noticed
+    # the workers that actually do the indexing (celery-embedding-worker for
+    # `index_transcript_search`, celery-cpu-worker for `reindex_transcripts`)
+    # carry no nltk_data mount at all, so every chunk in the live index was cut
+    # by the regex fallback while every test process cut them with punkt.
+    logger.warning(
+        f"NLTK punkt unavailable for '{language}' ({reason}); using the regex "
+        f"sentence splitter for the life of this process. Chunk boundaries will "
+        f"NOT match a process that has punkt -- do not compare an index built "
+        f"here against one built elsewhere."
+    )
     return None
 
 
@@ -92,8 +111,12 @@ def _load_punkt_model(nltk_data_module: Any, language: str) -> Any:
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?。！？।])\s+")
 
 
-def _split_into_sentences(text: str, language: str = "en") -> list[str]:
+def split_into_sentences(text: str, language: str = "en") -> list[str]:
     """Split text into sentences using NLTK punkt with regex fallback.
+
+    Public: ``services/ingest_artifacts/digest.py`` splits the same transcript text the
+    same way, so the digest's sentence boundaries and the index's chunk boundaries stay
+    the same boundaries. A second implementation would drift.
 
     Args:
         text: Input text to split.
@@ -389,7 +412,7 @@ def _split_long_turn(
     overlap_words = min(overlap_words, target_words - 1)
 
     # Split into sentences using language-aware tokenizer
-    sentences = _split_into_sentences(text, language)
+    sentences = split_into_sentences(text, language)
 
     if len(sentences) <= 1:
         # Single sentence or splitting failed -- fall back to word-count splitting

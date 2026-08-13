@@ -37,7 +37,8 @@ Rules:
 6. Some excerpts may contain masked spans such as [NAME] or [EMAIL] where sensitive content was removed. Treat those as genuinely unknown — never guess what was masked.
 7. Be concise and specific. Prefer concrete details, timestamps and quotes over generalities.
 8. An excerpt whose tag carries truncated="true" was cut short to fit the context window. Do not treat its last sentence as the end of what was said, and say so if the user's question depends on the missing part.
-9. When the excerpts point somewhere obviously worth following up — an unresolved decision, a named person who was not asked about, a promised action with no outcome — end with a single short "Next:" line proposing that question. Skip it when the answer is complete."""  # noqa: E501
+9. When the excerpts point somewhere obviously worth following up — an unresolved decision, a named person who was not asked about, a promised action with no outcome — end with a single short "Next:" line proposing that question. Skip it when the answer is complete.
+10. A <counted> block holds numbers computed by querying the whole library, not by reading the excerpts. Report those numbers exactly as given. Never recount them from the excerpts, never estimate, and never contradict them — the excerpts are a handful of examples, not the full set, so counting them yourself will be wrong. If a <counted> block reports a limitation, say so in your answer."""  # noqa: E501
 
 NO_CONTEXT_SYSTEM_RULES = """You are OpenTranscribe's assistant, currently in direct chat mode with no transcript context attached.
 
@@ -276,6 +277,57 @@ def _trim_to_budget(index: int, chunk: MaskedChunk, content: str, room: int) -> 
     return open_tag + _cut_at_boundary(content, content_room) + _TRUNCATION_MARK + _EXCERPT_CLOSE
 
 
+# A counted answer is small, exact, and IS the answer — so it is rendered before
+# the excerpts and its cost comes off the top of the budget. Rows are capped so a
+# 400-file result cannot crowd out every excerpt; the cap is stated in the block
+# rather than silently applied, because a truncated list read as complete is the
+# same silent-wrong-answer shape the whole tier exists to remove.
+_MAX_COUNTED_ROWS = 40
+_COUNTED_OPEN = "<counted>\n"
+_COUNTED_CLOSE = "</counted>\n\n"
+
+
+def format_counted_block(result) -> str:
+    """Render an :class:`~app.services.chat.aggregation.AggregationResult`.
+
+    Concatenation only, and every value is sanitized the same way an excerpt
+    attribute is — a recording title is arbitrary user text and reaches the
+    prompt here just as it does inside an ``<excerpt>`` tag.
+
+    Args:
+        result: The aggregation result, or ``None``.
+
+    Returns:
+        A delimited block, or ``""`` when there is nothing counted to report.
+    """
+    if result is None:
+        return ""
+    lines: list[str] = [f"question type: {_sanitize_attribute(result.shape)}"]
+    if result.subject:
+        lines.append(f"counted for: {_sanitize_attribute(result.subject)}")
+    if result.count is not None:
+        lines.append(f"total: {int(result.count)}")
+    if result.speaker:
+        lines.append(
+            f"top speaker: {_sanitize_attribute(result.speaker)} "
+            f"({int(result.speaker_sessions or 0)} recordings)"
+        )
+
+    titles = list(result.file_titles) or [""] * len(result.file_uuids)
+    if result.file_uuids:
+        lines.append("recordings:")
+        for title in titles[:_MAX_COUNTED_ROWS]:
+            shown = _sanitize_attribute(title) or "Untitled recording"
+            lines.append(f"  - {shown}")
+        hidden = len(result.file_uuids) - min(len(result.file_uuids), _MAX_COUNTED_ROWS)
+        if hidden > 0:
+            lines.append(f"  (+{hidden} more not listed here; the total above is complete)")
+    for name, value in sorted(result.coverage.items()):
+        if value is not None:
+            lines.append(f"note: {_sanitize_attribute(f'{name} = {value}')}")
+    return _COUNTED_OPEN + "\n".join(lines) + "\n" + _COUNTED_CLOSE
+
+
 def build_messages(
     *,
     system_prompt: str,
@@ -286,6 +338,7 @@ def build_messages(
     response_tokens: int,
     max_history_turns: int = 10,
     diagnostics: dict[str, int] | None = None,
+    counted_block: str = "",
 ) -> tuple[list[dict[str, str]], list[int]]:
     """Assemble the full message list for the provider.
 
@@ -323,17 +376,24 @@ def build_messages(
 
     overhead = len(system_prompt) + sum(len(m["content"]) for m in messages[1:]) + len(question)
     budget_chars = max(0, (context_window - response_tokens) * _CHARS_PER_TOKEN - overhead)
+    # The counted block comes off the TOP of the budget, not out of what is left
+    # after the excerpts. It is the answer to an aggregation question; excerpts
+    # are the examples beside it. Dropping it to fit one more speaker turn would
+    # leave the model to count the examples, which is the failure the counted
+    # tier exists to remove.
+    counted = counted_block or ""
+    budget_chars = max(0, budget_chars - len(counted))
 
     excerpt_ids: list[int] = []
     if chunks and budget_chars > 0:
         excerpt_block, excerpt_ids = format_excerpts(chunks, budget_chars=budget_chars)
         if excerpt_block:
             # Concatenation only — question and excerpts are both untrusted text.
-            messages.append({"role": "user", "content": excerpt_block + "\n" + question})
+            messages.append({"role": "user", "content": counted + excerpt_block + "\n" + question})
             _record(diagnostics, budget_chars, len(chunks) - len(excerpt_ids))
             return messages, excerpt_ids
 
-    messages.append({"role": "user", "content": question})
+    messages.append({"role": "user", "content": counted + question})
     _record(diagnostics, budget_chars, len(chunks) - len(excerpt_ids))
     return messages, excerpt_ids
 

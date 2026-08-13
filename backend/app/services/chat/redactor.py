@@ -189,3 +189,158 @@ def mask_chunks(db: Session, chunks: list[ChunkHit], user_id: int) -> list[Maske
             len(chunks),
         )
     return masked
+
+
+def _digest_sentences(db: Session, chunk: ChunkHit) -> list[dict] | None:
+    """The stored sentences of one digest section, with their provenance.
+
+    The INDEXED digest document carries only its rendered text — no segment ids
+    — so re-masking has to come back to ``file_facts`` for the provenance the
+    extractive builder recorded. ``None`` means the row or the section is not
+    resolvable, and the caller must then fail closed rather than fall back.
+    """
+    from app.models.file_facts import FileFacts
+
+    row = db.query(FileFacts.digest).filter(FileFacts.media_file_id == chunk.file_id).first()
+    if row is None or not row[0]:
+        return None
+    # `is None`, never `or`: section 0 is a real section and it is the FIRST one
+    # of every digest, so `chunk.digest_section or -1` matched nothing for it and
+    # sent every leading section down the inline-masking fallback. Found by the
+    # per-sentence test, not by reading.
+    wanted = -1 if chunk.digest_section is None else int(chunk.digest_section)
+    sections = (row[0] or {}).get("sections") or []
+    for section in sections:
+        if int(section.get("index", -1)) == wanted:
+            sentences = section.get("sentences") or []
+            return list(sentences) if sentences else None
+    return None
+
+
+def mask_digests(db: Session, digests: list[ChunkHit], user_id: int) -> list[MaskedChunk]:
+    """Re-mask digest sections **through their provenance**, failing closed per sentence.
+
+    ⚠️ **Never route a digest through :func:`mask_chunks`.** That path rebuilds a
+    chunk's text from every ``TranscriptSegment`` overlapping its time range,
+    which is correct for a chunk — a chunk *is* contiguous turns — and
+    catastrophically wrong for a digest, whose text is a handful of
+    non-contiguous *selected* sentences spanning the whole recording. The
+    rebuild would return the entire span verbatim in place of a short summary:
+    strictly **more** text than was asked for, emitted by a function whose name
+    asserts it was masked. No reviewer looks twice at a call to ``mask_*``.
+
+    So the unit of masking here is the **sentence**, addressed by the
+    ``segment_ids`` its provenance records (#403 D3). Fail-closed is per
+    sentence too: an unmaskable sentence contributes nothing and the rest of the
+    section still reaches the prompt, where a chunk fails closed whole. Those are
+    genuinely different contracts, which is the second reason this is not an
+    overload of ``mask_chunks``.
+
+    Args:
+        db: Database session.
+        digests: Digest hits from ``retrieve_digests``.
+        user_id: Subject of the effective redaction policy (the requester, as in
+            chat generally — not the file owner).
+
+    Returns:
+        Masked digests. A section whose provenance cannot be resolved comes back
+        with empty content and is dropped by the caller, never passed through raw.
+    """
+    if not digests:
+        return []
+    try:
+        from app.services.redaction.config import resolve_effective_config
+
+        cfg = resolve_effective_config(db, user_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not resolve redaction config; withholding all digest content")
+        return [MaskedChunk(source=d, content="", was_masked=True) for d in digests]
+
+    if not (cfg.enabled and cfg.redact_before_llm):
+        return [MaskedChunk(source=d, content=d.content) for d in digests]
+
+    from app.models.media import MediaFile
+    from app.services.redaction.service import RedactionService
+
+    masked: list[MaskedChunk] = []
+    unresolvable = 0
+    for digest in digests:
+        sentences = None
+        try:
+            status = (
+                db.query(MediaFile.redaction_status).filter(MediaFile.id == digest.file_id).scalar()
+            )
+            if status == C.REDACTION_STATUS_DONE:
+                sentences = _digest_sentences(db, digest)
+        except Exception:  # noqa: BLE001
+            logger.exception("Digest provenance lookup failed; withholding the section")
+            sentences = None
+
+        if sentences is None:
+            # No cached spans to apply. Masking the rendered section inline is
+            # the only remaining option that cannot over-disclose — and if even
+            # that fails, `_mask_inline` already returns "".
+            unresolvable += 1
+            masked.append(
+                MaskedChunk(
+                    source=digest, content=_mask_inline(digest.content, cfg), was_masked=True
+                )
+            )
+            continue
+
+        kept: list[str] = []
+        for sentence in sentences:
+            try:
+                text = _mask_sentence(db, sentence, cfg, RedactionService)
+            except Exception:  # noqa: BLE001
+                logger.exception("Digest sentence masking failed; dropping that sentence")
+                text = ""
+            if text:
+                kept.append(text)
+        masked.append(MaskedChunk(source=digest, content=" ".join(kept).strip(), was_masked=True))
+
+    if unresolvable:
+        logger.info(
+            "Digest masking fell back to inline detection for %d/%d sections "
+            "(no cached provenance — detection may still be running)",
+            unresolvable,
+            len(digests),
+        )
+    return masked
+
+
+def _mask_sentence(db: Session, sentence: dict, cfg, redaction_service) -> str:
+    """Mask one digest sentence from the cached spans of its own segments.
+
+    Returns ``""`` when the provenance is a kind this reader does not understand
+    — a ``char_range`` document sentence (#362) reaching a transcript masker is
+    a bug, and guessing at it would send unmasked text.
+    """
+    from app.models.media import TranscriptSegment
+    from app.services.ingest_artifacts.provenance import KIND_SEGMENT_IDS
+
+    provenance = sentence.get("provenance") or {}
+    if provenance.get("kind") != KIND_SEGMENT_IDS:
+        return ""
+    segment_ids = [int(i) for i in provenance.get("segment_ids") or []]
+    if not segment_ids:
+        return ""
+
+    rows = (
+        db.query(TranscriptSegment)
+        .filter(TranscriptSegment.id.in_(segment_ids))
+        .order_by(TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id)
+        .all()
+    )
+    if not rows:
+        return ""
+    parts = []
+    for row in rows:
+        text = str(row.text or "")
+        if not text:
+            continue
+        piece, _applied = redaction_service.mask_segment(
+            text, row.redactions or [], row.words, cfg, set()
+        )
+        parts.append(piece)
+    return " ".join(parts).strip()

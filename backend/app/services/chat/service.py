@@ -51,6 +51,7 @@ from app.services.chat import limits
 from app.services.chat.hooks import ChatCompletionContext
 from app.services.chat.hooks import fire_message_complete
 from app.services.chat.prompting import build_messages
+from app.services.chat.prompting import format_counted_block
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.redactor import mask_chunks
 from app.services.chat.retrieval import retrieve_context
@@ -176,12 +177,15 @@ def _prepare_context(
     search_mode: str,
     llm,
     rewrite_enabled: bool,
-) -> tuple[list[MaskedChunk], dict[str, Any]]:
-    """Run the blocking RAG stages: rewrite → retrieve → mask.
+) -> tuple[list[MaskedChunk], dict[str, Any], Any]:
+    """Run the blocking RAG stages: rewrite → route → count → retrieve → mask.
 
-    Executed in a worker thread; returns the masked chunks plus diagnostics for
-    the message metadata (ids/counts/timings only, never text).
+    Executed in a worker thread. Returns the masked chunks, diagnostics for the
+    message metadata (ids/counts/timings only, never text), and the counted
+    result when the router sent the turn to the aggregation tier.
     """
+    from app.core.config import settings as settings_config
+
     meta: dict[str, Any] = {}
 
     effective_query = question
@@ -199,10 +203,6 @@ def _prepare_context(
             (time.monotonic() - rewrite_started) * 1000
         )
 
-    # Recorded, not yet acted on (#403 Stage 4 unit 1). The router is the last
-    # missing piece of the Phase-0 instrumentation set, and landing the metadata
-    # before the behaviour means the intent distribution over real traffic is
-    # measurable BEFORE any tier change is judged against it.
     from app.services.chat.router import route
 
     decision = route(
@@ -213,17 +213,71 @@ def _prepare_context(
     )
     meta["route"] = decision.as_metadata()
 
+    # The counted tier runs BEFORE retrieval and is independent of it: "how many
+    # meetings mention X" is answered by an aggregation over the whole library,
+    # and the excerpts that follow are examples beside that number, never the
+    # thing it was derived from. ROUTE, DON'T FUSE — two queries, combined here.
+    counted = None
+    if decision.wants_aggregate:
+        from app.services.chat.aggregation_service import answer_aggregation
+        from app.services.opensearch_service import get_opensearch_client
+
+        counted_started = time.monotonic()
+        counted = answer_aggregation(
+            question,
+            decision,
+            db=db,
+            client=get_opensearch_client(),
+            index=settings_config.OPENSEARCH_CHUNKS_INDEX,
+            user_id=user_id,
+            organization_id=organization_id,
+            file_uuids=file_uuids,
+        )
+        meta.setdefault("timings_ms", {})["aggregate"] = int(
+            (time.monotonic() - counted_started) * 1000
+        )
+        # Recorded either way. "The router said aggregate and the mechanism
+        # declined" is a different fact from "it was never an aggregation", and
+        # only the metadata can tell them apart after the fact.
+        meta["aggregation"] = counted.as_metadata() if counted is not None else {"declined": True}
+
+    # A counted turn still retrieves — a reduced leg, so a misroute always has
+    # evidence and every `[n]` marker still resolves to a clickable timestamp.
+    # The plan's ratio: a third of the usual excerpts, because the number above
+    # them is the answer and the excerpts are illustration.
+    retrieval_settings = settings
+    if counted is not None:
+        from dataclasses import replace as _replace
+
+        retrieval_settings = _replace(settings, final_chunks=max(1, settings.final_chunks // 3))
+        meta["chunk_leg_reduced_to"] = retrieval_settings.final_chunks
+
     result = retrieve_context(
         query=effective_query,
         user_id=user_id,
         organization_id=organization_id,
         file_uuids=file_uuids,
         speakers=speakers,
-        settings=settings,
+        settings=retrieval_settings,
         search_mode=search_mode,
+        wants_digest=decision.wants_digest,
     )
 
     masked = mask_chunks(db, result.chunks, user_id)
+    if result.digests:
+        # A SEPARATE masking call, not an overload. A digest is non-contiguous
+        # selected sentences; `mask_chunks` would rebuild it from every segment
+        # overlapping its time range and hand back the whole span verbatim —
+        # more text than the digest holds, from a function whose name says it
+        # masked it. `mask_digests` goes through the per-sentence provenance.
+        from app.services.chat.redactor import mask_digests
+
+        digest_masked = mask_digests(db, result.digests, user_id)
+        # Digests lead: they are the recording-level answer a summarize turn
+        # asked for, and the chunk excerpts under them are the evidence.
+        masked = digest_masked + masked
+        meta["digests_retrieved"] = len(result.digests)
+
     kept = [chunk for chunk in masked if chunk.content.strip()]
     # Masking fails CLOSED: an unmaskable chunk becomes "" and contributes
     # nothing. Without this counter that is indistinguishable from retrieval
@@ -239,7 +293,7 @@ def _prepare_context(
         meta["speakers_filtered"] = list(speakers)
     timings = meta.setdefault("timings_ms", {})
     timings.update(result.timings_ms)
-    return masked, meta
+    return masked, meta, counted
 
 
 # SSE comment lines are ignored by every client but keep the connection warm.
@@ -435,6 +489,9 @@ class ChatService:
 
         masked: list[MaskedChunk] = []
         messages: list[dict[str, str]] = []
+        # A counted answer is not "context" in the excerpt sense: it survives an
+        # empty retrieval, so it is initialised here and not inside the branch.
+        counted_block = ""
         reached_end = False
         try:
             if use_context:
@@ -463,10 +520,11 @@ class ChatService:
                             rewrite_enabled=settings.query_rewrite_enabled,
                         )
 
-                masked, meta = await _with_keepalive(run_in_threadpool(_prep), keepalive_q)
+                masked, meta, counted = await _with_keepalive(run_in_threadpool(_prep), keepalive_q)
                 async for frame in _drain(keepalive_q):
                     yield frame
                 turn.metadata.update(meta)
+                counted_block = format_counted_block(counted)
 
             # Resolve the answer budget BEFORE building the prompt: build_messages
             # reserves context for the reply, so raising max_tokens after the fact
@@ -493,6 +551,7 @@ class ChatService:
                 response_tokens=answer_tokens,
                 max_history_turns=settings.history_max_turns,
                 diagnostics=prompt_diagnostics,
+                counted_block=counted_block,
             )
             chunks_used = len(excerpt_ids)
             turn.metadata["chunks_used"] = chunks_used

@@ -33,6 +33,10 @@ class RetrievalResult:
     """Chunks for the prompt, plus diagnostics surfaced in message metadata."""
 
     chunks: list[ChunkHit] = field(default_factory=list)
+    #: Digest-plane hits, kept in their OWN list. Route, don't fuse: they are a
+    #: separate query whose results the prompt layer interleaves, never a second
+    #: population merged into one ranking.
+    digests: list[ChunkHit] = field(default_factory=list)
     retrieved: int = 0
     reranked: int = 0
     cache_hit: bool = False
@@ -48,6 +52,8 @@ def retrieve_context(
     speakers: list[str] | None = None,
     settings: ChatSettings,
     search_mode: str = "hybrid",
+    wants_digest: bool = False,
+    digest_size: int = 6,
 ) -> RetrievalResult:
     """Run the retrieval pipeline for one question.
 
@@ -59,6 +65,8 @@ def retrieve_context(
         speakers: Restrict to these speakers' turns (None/empty = anyone).
         settings: Admin-tuned RAG knobs.
         search_mode: ``hybrid`` | ``semantic`` | ``keyword``.
+        wants_digest: Run the digest leg as well (the router's summarize tier).
+        digest_size: How many digest sections to fetch.
 
     Returns:
         A :class:`RetrievalResult`; empty chunks when nothing matched or
@@ -78,6 +86,26 @@ def retrieve_context(
         settings_rev=settings.revision,
         search_mode=search_mode,
     )
+
+    # The digest leg is deliberately OUTSIDE the chunk cache. The cache key is
+    # built for the chunk plane, and widening it would invalidate every cached
+    # entry in every deployment on upgrade for the sake of one extra query on
+    # summarize turns only. Running it unconditionally also means a cache HIT on
+    # the chunk leg still produces digests, rather than a summarize answer that
+    # silently loses its summary tier for the cache TTL.
+    if wants_digest:
+        from app.services.search.chunk_retrieval import retrieve_digests
+
+        digest_started = time.monotonic()
+        result.digests = retrieve_digests(
+            query,
+            user_id=user_id,
+            organization_id=organization_id,
+            file_uuids=file_uuids,
+            size=digest_size,
+            search_mode=search_mode,
+        )
+        result.timings_ms["digest"] = int((time.monotonic() - digest_started) * 1000)
 
     cached = retrieval_cache.get_cached(key)
     if cached is not None:

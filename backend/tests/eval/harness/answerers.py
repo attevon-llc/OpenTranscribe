@@ -5,7 +5,7 @@ aggregations or Postgres**, never by an LLM counting, and **D6 makes the no-LLM
 deployment first-class**. An answer-scoring path that needed a model would
 contradict the property it exists to measure, so nothing here imports one.
 
-Two answerers ship:
+Three answerers ship — a floor, a ceiling, and the thing being measured:
 
 ``NullAnswerer``
     Declines every query. This is the honest floor: as of Stage 1 the product has
@@ -19,21 +19,31 @@ Two answerers ship:
     that it establishes what this corpus's aggregation questions are worth when
     answered by a mechanism that is exact by construction: Stage 4's router has a
     number to beat and a per-rule breakdown of where the difficulty is.
+``ProductAnswerer``
+    **The product's own path** (#403 Stage 4) — ``services/chat/router.route``
+    then ``services/chat/aggregation_service.answer_aggregation``, the same two
+    calls a chat turn makes. It is the thing being measured, and it shares no
+    intent parsing with the reference, which is the only reason comparing the two
+    says anything at all.
 
-Both are deterministic. Aggregations order by ``_key`` and refuse a truncated
-bucket list rather than reporting a count that silently dropped a shard's tail;
-every set is returned sorted.
+All three are deterministic. Aggregations order by ``_key`` and refuse a
+truncated bucket list rather than reporting a count that silently dropped a
+shard's tail; every set is returned sorted.
 
-**The intent parser is matched to the generator's question frames** and says so.
-That is a stated limit, not a hidden one: it recovers the *subject phrase* from a
-natural-language question, and the phrase is never the answer — the answer is a
-count or a file set that only the index or the database can produce.
+**The reference's intent parser is matched to the generator's question frames**
+and says so. That is a stated limit, not a hidden one: it recovers the *subject
+phrase* from a natural-language question, and the phrase is never the answer —
+the answer is a count or a file set that only the index or the database can
+produce. The product recovers its subject by stripping a **generic**
+interrogative frame instead, so it is expected to score below the reference; the
+gap between them is a finding about the product, not noise in the instrument.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
@@ -372,10 +382,120 @@ class ReferenceAnswerer:
         return None if top is None else Answer.speaker_count(top[0], top[1])
 
 
+class ProductAnswerer:
+    """**The product's own aggregation path**, driven end to end (#403 Stage 4).
+
+    ``NullAnswerer`` is the floor and ``ReferenceAnswerer`` is the ceiling; this
+    is the thing being measured. It calls ``services/chat/router.route`` and then
+    ``services/chat/aggregation_service.answer_aggregation`` — the same two
+    functions a chat turn calls — and maps whatever comes back onto the gold
+    answer shape.
+
+    **It shares no code with `ReferenceAnswerer`, deliberately.** The reference's
+    intent regexes are matched to the eval generator's exact question frames; the
+    product recovers its subject by stripping a generic interrogative frame. If
+    the product imported those regexes it would be scored against itself and the
+    number would mean nothing. Expect it to score *below* the reference — the gap
+    is the measurement.
+
+    Args:
+        client: OpenSearch client.
+        index: Chunk index name.
+        user_id: Owner of the corpus.
+        engine: SQLAlchemy engine. ``None`` makes the Postgres-answered shapes
+            decline rather than answer from a weaker source.
+    """
+
+    name = "product"
+
+    def __init__(self, client: Any, index: str, user_id: int, engine: Any | None = None) -> None:
+        self.client = client
+        self.index = index
+        self.user_id = int(user_id)
+        self.engine = engine
+        self.shapes: Counter = Counter()
+
+    def describe(self) -> dict[str, Any]:
+        from app.services.chat.aggregation import SHAPES
+
+        return {
+            "answerer": self.name,
+            "summary": (
+                "the PRODUCT's chat aggregation path: services/chat/router.route -> "
+                "services/chat/aggregation_service.answer_aggregation. Shares no intent "
+                "parsing with the reference answerer, which is what makes the comparison "
+                "meaningful rather than circular."
+            ),
+            "is_production_path": True,
+            "llm_required": False,
+            "acl_filter": "accessible_user_ids + the Postgres accessible-files subquery",
+            "shapes": list(SHAPES),
+            "shapes_used": dict(sorted(self.shapes.items())),
+            "hybrid_aggs": "never — OpenSearch 3.4 crashes on aggs over a hybrid body",
+            "known_limitation": (
+                "the temporal filter is a range on upload_time, the only date this "
+                "application records. Injected corpus files carry their meeting date in "
+                "metadata_important, which no product code reads, so date-filtered "
+                "questions are expected to score 0 here until a recorded-date column exists."
+            ),
+        }
+
+    def answer(self, query) -> Answer | None:
+        """Route, aggregate, and map onto the gold shape — or decline."""
+        from app.services.chat.aggregation import SHAPE_COUNT_EVENTS
+        from app.services.chat.aggregation import SHAPE_COUNT_FILES
+        from app.services.chat.aggregation import SHAPE_LIST_FILES
+        from app.services.chat.aggregation import SHAPE_SPEAKER_FACET
+        from app.services.chat.aggregation_service import answer_aggregation
+        from app.services.chat.router import route
+
+        decision = route(query.text)
+        if not decision.wants_aggregate:
+            self.shapes["not-routed-to-aggregate"] += 1
+            return None
+
+        session = None
+        try:
+            if self.engine is not None:
+                from sqlalchemy.orm import Session
+
+                session = Session(self.engine)
+            result = answer_aggregation(
+                query.text,
+                decision,
+                db=session,
+                client=self.client,
+                index=self.index,
+                user_id=self.user_id,
+            )
+        finally:
+            if session is not None:
+                session.close()
+
+        if result is None:
+            self.shapes["declined"] += 1
+            return None
+        self.shapes[result.shape] += 1
+
+        if result.shape == SHAPE_LIST_FILES:
+            return Answer.file_set(result.file_uuids)
+        if result.shape == SHAPE_SPEAKER_FACET:
+            if result.speaker is None:
+                # A tie at the top means there is no "the most". Declining is the
+                # honest outcome; naming one is a coin flip presented as a fact.
+                return None
+            return Answer.speaker_count(result.speaker, int(result.speaker_sessions or 0))
+        if result.shape in (SHAPE_COUNT_FILES, SHAPE_COUNT_EVENTS):
+            return None if result.count is None else Answer.integer(result.count)
+        return None
+
+
 def build_answerer(name: str, **kwargs: Any):
     """Answerer by name. Unknown names raise rather than defaulting to silence."""
     if name == "none":
         return NullAnswerer()
     if name == "reference":
         return ReferenceAnswerer(**kwargs)
-    raise ValueError(f"Unknown answerer {name!r}; expected 'none' or 'reference'")
+    if name == "product":
+        return ProductAnswerer(**kwargs)
+    raise ValueError(f"Unknown answerer {name!r}; expected 'none', 'reference' or 'product'")

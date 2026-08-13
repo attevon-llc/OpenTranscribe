@@ -30,7 +30,12 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
 - `detection_config_for_all()` deliberately ignores user/admin config (threshold `0.0`, all PII
   entities) so toggling a category later applies instantly.
 - Overlapping spans merge; higher priority wins (`pii > toxicity > profanity > custom`).
-- Detectors degrade to "no spans" on missing deps/failure — they never block the pipeline.
+- **A detector reports THREE outcomes, not two** (`detectors/DetectorUnavailableError`):
+  found nothing (`[]`), ran and raised (a plain exception), could not run at all (that
+  exception). The third used to be the first — `pii_presidio._get_analyzer` caught an absent
+  Presidio, returned `None`, and `detect_pii` returned `[]`, which is a clean segment. See the
+  gotcha below; degrading to "no spans" is still what the *pipeline* does, but that is now a
+  decision made where the policy lives.
 - NO `.env` vars for behavior; coded `DEFAULT_REDACTION_*` in `core/constants.py`.
   `REDACTION_DEVICE` / `REDACTION_MIN_FREE_VRAM_GB` / `REDACTION_PII_USE_GLINER` are ops knobs.
 
@@ -50,12 +55,36 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
 - Settings `api/endpoints/redaction_settings.py` (`/user-settings/redaction`,
   `/admin/redaction-policy`); UI `ContentRedactionSettings.svelte` / `RedactionPolicySettings.svelte`.
   Migration `v364_add_content_redaction`; `redaction_{start,end}_ms` on `FilePipelineTiming`.
-- Tests: `tests/redaction/` (GPU-free), `tests/integration/test_redaction_pipeline.py`,
+- Tests: `tests/redaction/` (GPU-free; `test_detector_unavailability.py` pins the three detector
+  outcomes and both `detect_and_store` dispositions), `tests/integration/test_redaction_pipeline.py`,
   `tests/e2e/test_redaction_e2e.py`, fixtures `tests/fixtures/redaction/`. ML detector tests are
   `@pytest.mark.models`. Docs: `docs-site/docs/features/content-redaction.md`.
 
 ## Gotchas
 
+- **⚠️ "Unavailable" and "failed" are one sink and two dispositions — do not collapse them.**
+  `detect_segment_spans` takes `failures` (issue #324) and `unavailable`, a strict SUBSET of it.
+  **Every masker reads only `failures`**, so a dead detector and a broken one both withhold text
+  — correct, because both mean "could not look" and the next step is a provider. Only
+  `detect_and_store` reads `unavailable`, and it **subtracts it before deciding FAILED**.
+  That subtraction is load-bearing: `redaction_status = failed` is not an inert label, because
+  `llm_guard.resolve_llm_masking` turns it into a **non-retryable** `RedactionNotReadyError`
+  that `defer_for_redaction` re-raises at once. Marking every file FAILED on a deployment that
+  simply has no Presidio would permanently break summarization, speaker-ID **and** topic
+  extraction for every user with `redact_before_llm` on. Unavailable detectors go into
+  `skipped_detectors` instead — which the frontend already toasts
+  (`fileDetail/notificationHandler.ts`), so the operator sees it with no UI change. Re-running
+  a scan does not install a dependency, so FAILED ("re-run me") is also just the wrong word.
+- **⚠️ RESIDUAL, KNOWN, PINNED (task #78): the CACHED path still trusts a scan that never ran
+  PII.** The fix above closes `_mask_inline` — the *fallback*. `chat/redactor._mask_from_segments`
+  is the path most requests take, and it trusts cached spans on `redaction_status == done`;
+  since unavailability is a skip, a no-Presidio scan still reaches `done`. A `pii`-enabled user
+  therefore still gets raw text with `was_masked=True` through the primary path. The masker
+  **cannot probe for itself** — the API process and `celery-redaction` preload different models,
+  so "can I load Presidio here" answers a different question from "did the detector that produced
+  these spans have it". Closing it needs durable per-file **detector coverage** (a schema change).
+  `tests/unit/test_chat_redactor.py::test_the_cached_path_still_trusts_a_scan_that_never_ran_pii`
+  is a **must-fire** guard: it asserts the hazard, and goes RED when #78 lands.
 - **⚠️ `mask_segment` with no cached spans masks NOTHING and returns the text unchanged.** This is
   the trap behind redact-before-LLM: `_dispatch_redaction` queues detection from the *same*
   post-processing step that queues summarization / speaker-ID / topic-extraction, onto a

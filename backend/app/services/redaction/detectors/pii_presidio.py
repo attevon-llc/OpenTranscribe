@@ -1,9 +1,15 @@
 """PII detector — Microsoft Presidio (regex recognizers) + optional GLiNER (names).
 
 Heavy: imports presidio/spaCy/gliner lazily and builds a process-wide singleton
-``AnalyzerEngine``. Loaded only by the celery-redaction worker. If a dependency is
-missing the detector degrades gracefully (returns no spans) so the rest of the
-pipeline is unaffected.
+``AnalyzerEngine``. Loaded only by the celery-redaction worker.
+
+**A missing dependency raises :class:`DetectorUnavailableError`; it does NOT
+degrade to "no spans".** "Presidio is not installed" and "this segment is clean"
+are the same return value otherwise, and the caller that has to tell them apart
+is the one about to post the text to an LLM provider. Degrading quietly is still
+the *disposition* the pipeline chooses — ``detect_and_store`` records the
+detector as skipped and completes — but that is now a decision made where the
+policy lives, not a fact hidden where the model loads.
 """
 
 from __future__ import annotations
@@ -11,6 +17,7 @@ from __future__ import annotations
 import logging
 
 from app.core import constants as C  # noqa: N812
+from app.services.redaction.detectors import DetectorUnavailableError
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import build_word_offsets
 from app.services.redaction.spans import map_char_span_to_words
@@ -137,13 +144,32 @@ def preload() -> bool:
 
 
 def detect_pii(text: str, words: list[dict] | None, cfg: dict) -> list[RedactionSpan]:
-    """Return PII spans (category='pii') for one segment's text."""
+    """Return PII spans (category='pii') for one segment's text.
+
+    Args:
+        text: The segment text to examine.
+        words: Word timings, used to map char spans back to word indices.
+        cfg: Detection config (``pii_entities``, ``pii_confidence``, ``pii_use_gliner``).
+
+    Returns:
+        The PII spans found. An empty list means the analyzer ran and found
+        nothing — never that it could not run.
+
+    Raises:
+        DetectorUnavailableError: The analyzer could not be built, so nothing was
+            examined.
+        Exception: Whatever ``analyzer.analyze`` raises. A chunk that raised is a
+            chunk nobody looked at, and the segment's result is therefore partial.
+    """
     if not text or not text.strip():
         return []
     use_gliner = bool(cfg.get("pii_use_gliner", C.REDACTION_PII_USE_GLINER))
     analyzer = _get_analyzer(use_gliner)
     if analyzer is None:
-        return []
+        raise DetectorUnavailableError(
+            "Presidio analyzer could not be built (missing dependency, spaCy model "
+            "or weights); this text was never examined for PII"
+        )
 
     keep_entities = set(cfg.get("pii_entities", C.REDACTION_PII_ENTITIES))
     min_score = float(cfg.get("pii_confidence", C.DEFAULT_REDACTION_PII_CONFIDENCE))
@@ -153,11 +179,14 @@ def detect_pii(text: str, words: list[dict] | None, cfg: dict) -> list[Redaction
     # Chunk long text; offset results back to absolute positions.
     for base in range(0, len(text), _MAX_CHARS):
         chunk = text[base : base + _MAX_CHARS]
-        try:
-            results = analyzer.analyze(text=chunk, language="en")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Presidio analyze failed on a chunk: %s", exc)
-            continue
+        # No `except: continue` here. Skipping a chunk that raised left the rest
+        # of the segment's PII unfound and returned the result as though it were
+        # complete — the same "could not look reads as clean" shape as an absent
+        # analyzer, one frame lower. Propagating instead lets
+        # ``detect_segment_spans`` record it in ``failures``, which is what every
+        # fail-closed masker reads. Unlike an unbuildable analyzer this IS worth
+        # re-running, so it stays an ordinary exception.
+        results = analyzer.analyze(text=chunk, language="en")
         for r in results:
             entity_type = _ENTITY_MAP.get(r.entity_type)
             if entity_type is None or entity_type not in keep_entities:

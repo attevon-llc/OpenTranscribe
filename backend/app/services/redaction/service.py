@@ -18,6 +18,7 @@ from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.config import detection_config_for_all
 from app.services.redaction.config import detector_language_support
 from app.services.redaction.config import normalize_language
+from app.services.redaction.detectors import DetectorUnavailableError
 from app.services.redaction.detectors import wordlist
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import apply_redactions
@@ -39,6 +40,7 @@ class RedactionService:
         run_pii: bool = True,
         run_toxicity: bool = True,
         failures: list[str] | None = None,
+        unavailable: list[str] | None = None,
     ) -> tuple[list[dict], dict | None]:
         """Run cached detectors for one segment. Returns (span_dicts, toxicity_scores).
 
@@ -48,11 +50,17 @@ class RedactionService:
         ``run_*`` flags are gated by per-language detector support.
 
         Args:
-            failures: Optional sink. A detector that raises appends its name here so
-                the caller can tell "found nothing" apart from "could not look".
-                Detection is cached once and never re-run, so a swallowed failure
-                would otherwise be indistinguishable from a clean result forever
-                (issue #324).
+            failures: Optional sink. A detector that could not produce a trustworthy
+                result appends its name here so the caller can tell "found nothing"
+                apart from "could not look". Detection is cached once and never
+                re-run, so a swallowed failure would otherwise be indistinguishable
+                from a clean result forever (issue #324). **Every masker reads this
+                one** — an unavailable detector is as unsafe as a broken one when
+                the next step is posting the text to a provider.
+            unavailable: Optional second sink, a SUBSET of ``failures``: detectors
+                that could not run at all (dependency/model absent). Only
+                ``detect_and_store`` cares, because re-running will not install a
+                dependency — see :class:`DetectorUnavailableError`.
         """
         spans: list[RedactionSpan] = []
         # Profanity (curated, user-independent → safe to cache).
@@ -64,6 +72,12 @@ class RedactionService:
                 from app.services.redaction.detectors import pii_presidio
 
                 spans.extend(pii_presidio.detect_pii(text, words, det_cfg))
+            except DetectorUnavailableError as exc:
+                logger.warning("PII detector unavailable for a segment: %s", exc)
+                if failures is not None:
+                    failures.append("pii")
+                if unavailable is not None:
+                    unavailable.append("pii")
             except Exception as exc:  # noqa: BLE001
                 logger.warning("PII detection skipped for a segment: %s", exc)
                 if failures is not None:
@@ -133,6 +147,11 @@ class RedactionService:
         # transcript full of PII would look clean forever (issue #324). Anything
         # in here means the cached result is not trustworthy.
         detector_failures: list[str] = []
+        # The subset of the above that could not run AT ALL. Subtracted before the
+        # FAILED decision below: FAILED means "re-run me", and re-running does not
+        # install a missing dependency. See DetectorUnavailableError for why that
+        # distinction is load-bearing rather than cosmetic.
+        detector_unavailable: list[str] = []
 
         llm_spans_by_idx: dict[int, list] = {}
         if run_llm:
@@ -178,13 +197,31 @@ class RedactionService:
                         run_pii=run_pii,
                         run_toxicity=False,
                         failures=detector_failures,
+                        unavailable=detector_unavailable,
                     )
                     if idx in llm_spans_by_idx:
                         span_dicts = span_dicts + llm_spans_by_idx[idx]
                     pii_count += sum(1 for s in span_dicts if s.get("category") == "pii")
                     seg.redactions = span_dicts or None  # type: ignore[assignment]
                     seg.toxicity = tox_scores[idx]  # type: ignore[assignment]
-            if detector_failures:
+            # An UNAVAILABLE detector is reported as skipped, not failed — FAILED is
+            # not an inert label, and llm_guard turns it into a permanent refusal
+            # (see DetectorUnavailableError). The maskers are unaffected either way:
+            # they read `failures`, which records unavailability too.
+            unavailable = sorted(set(detector_unavailable))
+            if unavailable:
+                for name in unavailable:
+                    skipped[name] = "unavailable"
+                logger.warning(
+                    "Redaction detection for file %s ran without detectors %s "
+                    "(unavailable on this deployment); their categories were NOT "
+                    "examined and the cached spans do not cover them.",
+                    file_id,
+                    unavailable,
+                )
+
+            hard_failures = sorted(set(detector_failures) - set(unavailable))
+            if hard_failures:
                 # Do NOT cache a degraded pass as DONE. Detection runs once and is
                 # never re-run, so marking this complete would permanently record
                 # "no PII found" for a transcript nobody actually finished scanning
@@ -193,7 +230,7 @@ class RedactionService:
                 # The spans that DID succeed are committed — they are real findings
                 # and dropping them would be strictly worse — but the status makes
                 # clear the result is partial.
-                failed = sorted(set(detector_failures))
+                failed = hard_failures
                 media.redaction_status = C.REDACTION_STATUS_FAILED  # type: ignore[assignment]
                 db.commit()
                 logger.error(
@@ -215,7 +252,7 @@ class RedactionService:
             logger.error("Redaction detection failed for file %s: %s", file_id, exc)
             return {"status": "failed", "error": str(exc)}
 
-        ran = [d for d in ("profanity", "pii", "toxicity") if d in supported]
+        ran = [d for d in ("profanity", "pii", "toxicity") if d in supported and d not in skipped]
         if run_llm:
             ran.append("llm")
         return {

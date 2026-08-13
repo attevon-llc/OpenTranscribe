@@ -367,78 +367,157 @@ def test_a_profanity_failure_withholds_when_custom_words_are_masked():
     assert masked[0].content == ""
 
 
-def test_an_absent_presidio_never_reaches_the_failures_sink():
-    """MUST-FIRE. The residual hole one layer BELOW the fix above (measured).
+def _real_cfg(categories, entities=None):
+    """The REAL ``EffectiveRedactionConfig``, not the SimpleNamespace stand-in.
 
-    ``_mask_inline`` can only fail closed on what ``detect_segment_spans``
-    records, and that function only records a detector that raises *out of*
-    ``detect_pii``. ``pii_presidio`` swallows its own failures one level lower:
-    ``_get_analyzer`` catches an absent or unbuildable Presidio, logs "PII
-    detection disabled", latches ``_load_failed`` and returns ``None``, and
-    ``detect_pii`` then returns ``[]`` — indistinguishable from a clean segment.
-
-    Measured, running the REAL detector layer and the REAL masker with only the
-    analyzer taken away (which IS the deployment being modelled):
-
-        analyzer is None      -> spans=[] failures=[]      blocking={} -> PASSES THROUGH
-        analyzer.analyze()    -> spans=[] failures=[]      blocking={} -> PASSES THROUGH
-          raises
-        detect_pii() raises   -> spans=[] failures=['pii'] blocking={'pii'} -> withheld
-
-    So a user who HAS enabled ``pii`` on a deployment with no Presidio still gets
-    the chunk sent unmasked while ``mask_chunks`` labels it masked. That is the
-    same swallowed-failure shape this module just closed, and the sink is the
-    only thing that could separate the two — it just is not fed here.
-
-    **This test asserts the hazard, not the desired behaviour.** When the lower
-    layer learns to report unavailability, this goes RED: delete it and assert
-    the chunk is withheld instead. Do not "fix" it by relaxing the assertion.
+    The tests below run the real detector layer and the real masker, so the
+    config has to carry every field both of them read.
     """
     from app.core import constants as C  # noqa: N812
     from app.services.redaction.config import EffectiveRedactionConfig
 
-    real_cfg = EffectiveRedactionConfig(
+    return EffectiveRedactionConfig(
         enabled=True,
         redact_before_llm=True,
-        enabled_categories={"pii"},
-        pii_entities=set(C.REDACTION_PII_ENTITIES),
+        enabled_categories=set(categories),
+        pii_entities=set(C.REDACTION_PII_ENTITIES if entities is None else entities),
     )
+
+
+def _mask_chunks_with_analyzer(analyzer, cfg):
+    """Drive ``mask_chunks`` down the inline path with a given Presidio analyzer.
+
+    Only ``_get_analyzer`` is stubbed. ``detect_segment_spans``, ``detect_pii``,
+    the wordlist detector and ``mask_segment`` are all the real thing, because the
+    defect being guarded lives *between* those layers: a stub of any one of them
+    would model the code we wish existed.
+    """
     db = _db_with("done", [])  # no segments → the inline fallback
-
-    sink: list[str] = []
-    real_detect = __import__(
-        "app.services.redaction.service", fromlist=["RedactionService"]
-    ).RedactionService.detect_segment_spans
-
-    def _spy(text, words, det_cfg, **kwargs):
-        # Hand the REAL function our own sink so the test can read what it
-        # recorded, then report it onward exactly as it was given.
-        kwargs["failures"] = sink
-        return real_detect(text, words, det_cfg, **kwargs)
-
     with (
         patch(
             "app.services.redaction.config.resolve_effective_config",
-            return_value=real_cfg,
+            return_value=cfg,
         ),
-        # Presidio absent / analyzer unbuildable — nothing else is stubbed.
         patch(
             "app.services.redaction.detectors.pii_presidio._get_analyzer",
-            return_value=None,
+            return_value=analyzer,
         ),
-        patch(
-            "app.services.redaction.service.RedactionService.detect_segment_spans",
-            side_effect=_spy,
-        ),
+    ):
+        return mask_chunks(db, [_chunk()], user_id=1)
+
+
+class _AnalyzerThatThrows:
+    """Presidio built fine, then threw — the second row of the measured table."""
+
+    def analyze(self, text, language):  # noqa: ARG002
+        raise RuntimeError("nlp engine exploded")
+
+
+def test_an_absent_presidio_withholds_the_chunk_when_pii_is_enabled():
+    """MEASURED FAIL-OPEN, one layer below the sink (issue #403 task #77).
+
+    ``_mask_inline`` can only fail closed on what ``detect_segment_spans``
+    records, and that function only recorded a detector that raised *out of*
+    ``detect_pii``. ``pii_presidio`` swallowed its own failure one level lower:
+    ``_get_analyzer`` caught an absent or unbuildable Presidio, logged "PII
+    detection disabled" and returned ``None``, and ``detect_pii`` then returned
+    ``[]`` — indistinguishable from a clean segment.
+
+    Measured on HEAD before the fix, real detector layer, only the analyzer
+    removed (which IS the deployment being modelled — a box with no working
+    Presidio, the common CPU-only case):
+
+        analyzer is None          -> spans=[] failures=[]      blocking={}      PASSES THROUGH
+        analyzer.analyze() raises -> spans=[] failures=[]      blocking={}      PASSES THROUGH
+        detect_pii() raises       -> spans=[] failures=['pii'] blocking={'pii'} withheld
+
+    Only the third reached the sink and it is the least likely of the three, so a
+    user who had explicitly ENABLED ``pii`` still got the chunk sent unmasked
+    while ``mask_chunks`` reported ``was_masked=True``.
+    """
+    masked = _mask_chunks_with_analyzer(None, _real_cfg({"pii"}))
+
+    assert masked[0].content == ""
+    assert "555-1234" not in masked[0].content
+
+
+def test_a_presidio_that_throws_withholds_the_chunk_when_pii_is_enabled():
+    """Row 2. A built analyzer that raises used to be skipped chunk-by-chunk.
+
+    Twin of the test above and not a duplicate of it: the two faults were swallowed
+    in different places (``_get_analyzer`` returning ``None`` vs an ``except:
+    continue`` inside the chunk loop) and are given different dispositions by
+    ``detect_and_store``. Both must withhold here.
+    """
+    masked = _mask_chunks_with_analyzer(_AnalyzerThatThrows(), _real_cfg({"pii"}))
+
+    assert masked[0].content == ""
+
+
+def test_an_absent_presidio_still_answers_when_pii_was_never_enabled():
+    """THE regression that would hurt most users — the CPU-only default deployment.
+
+    ``pii`` is deliberately NOT in ``DEFAULT_REDACTION_CATEGORIES``, so a box with
+    no working Presidio and a user who never asked for PII masking must lose
+    nothing: blanket fail-closed would empty every excerpt over a category nobody
+    enabled. That narrowness is what makes the gate above safe, and it is the
+    property most likely to be broken by "just fail closed on any failure".
+
+    Runs the real wordlist detector and the real masker over profanity-free text,
+    so the assertion is that the content SURVIVES, not merely that it is non-empty.
+    """
+    masked = _mask_chunks_with_analyzer(None, _real_cfg({"profanity", "toxicity", "custom"}))
+
+    assert masked[0].content == "my number is 555-1234"
+    assert masked[0].was_masked is True
+
+
+def test_the_cached_path_still_trusts_a_scan_that_never_ran_pii():
+    """MUST-FIRE. The residual hole the fix above does NOT close (task #78).
+
+    ``_mask_inline`` is the FALLBACK. The path most requests take is
+    ``_mask_from_segments``, which trusts cached spans whenever
+    ``redaction_status == done`` — and an unavailable detector is recorded as a
+    *skip*, so a scan that never ran Presidio still reaches ``done``. The segments
+    then say "no PII spans", the masker masks nothing, and a ``pii``-enabled user
+    gets the raw text with ``was_masked=True``. Same leak as the one just closed,
+    through the primary path instead of the fallback.
+
+    Marking those scans FAILED instead is not the fix: ``llm_guard`` turns FAILED
+    into a non-retryable refusal, which would permanently break summarization,
+    speaker-ID and topic extraction on any deployment with no Presidio. And the
+    masker cannot probe for itself — the API process and the ``celery-redaction``
+    worker load different models, so "can I load Presidio here" answers a
+    different question from "did the detector that produced these spans have it".
+    Closing it needs durable per-file **detector coverage**, which is a schema
+    change.
+
+    **This test asserts the hazard, not the desired behaviour**, exactly like the
+    guard it replaces. This fixture is a DONE file with no recorded PII coverage,
+    so any fail-closed implementation of #78 must withhold it — when that lands,
+    this goes RED. Delete it then and assert the chunk is withheld. Do not "fix"
+    it by relaxing the assertion.
+    """
+    segment = SimpleNamespace(
+        text="my number is 555-1234",
+        redactions=None,  # the scan cached nothing for PII because it never looked
+        words=None,
+    )
+    db = _db_with("done", [segment])
+
+    with patch(
+        "app.services.redaction.config.resolve_effective_config",
+        return_value=_real_cfg({"pii"}),
     ):
         masked = mask_chunks(db, [_chunk()], user_id=1)
 
-    assert sink == [], (
-        "the sink now sees an absent PII detector — the lower layer was fixed, "
-        "so delete this guard and assert the chunk is WITHHELD instead"
-    )
     assert masked[0].content == "my number is 555-1234", (
-        "an absent Presidio no longer passes the chunk through; re-derive this guard"
+        "the cached path now discriminates on detector coverage — #78 landed, so "
+        "delete this guard and assert the chunk is WITHHELD instead"
+    )
+    assert masked[0].was_masked is True, (
+        "and it still claims to have masked it, which is what makes this a leak "
+        "rather than a visible failure"
     )
 
 

@@ -247,14 +247,27 @@ OLLAMA_MODEL=llama3.2:latest
 
 ## No LLM Mode
 
-OpenTranscribe works without LLM configuration:
-- Transcription: ✅ Full functionality
-- Speaker Diarization: ✅ Full functionality
-- AI Summarization: No (Requires LLM)
-- Speaker Identification Suggestions: No (Requires LLM)
-- Auto-Label: No (Requires LLM)
+OpenTranscribe works without any LLM configuration. Leave `LLM_PROVIDER` empty (and configure no
+provider in **Settings → AI**) and these still work in full:
 
-Leave `LLM_PROVIDER` empty to disable AI features.
+- **Transcription** and **speaker diarization**
+- **Cross-recording speaker matching** (voiceprints are local models, not an LLM)
+- **Search — keyword *and* semantic.** The embedding model runs inside your OpenSearch container;
+  an embedding model is not a language model
+- **Content redaction** (the optional LLM detector is off by default)
+- Tags, collections, sharing, exports, subtitles, watch sources, analytics
+
+These need a provider:
+
+- AI summarization
+- Topic / tag / collection suggestions
+- Speaker identification suggestions from conversational content
+- **AI Chat** — the chat page shows a setup prompt instead of a composer
+
+Adding a provider later is retroactive: existing recordings become summarizable and chattable
+immediately, with no re-processing.
+
+Full breakdown: [Working Without an AI Model](../user-guide/without-an-ai-model.md).
 
 ## Next Steps
 

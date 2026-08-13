@@ -63,7 +63,7 @@ The tier travels with the data all the way into the results files, so publishabl
 tables are separated mechanically rather than by memory at writing time.
 
 :::warning Platform metadata is not a licence
-Repository and dataset-hub metadata has misrepresented the real terms **three times** in this
+Repository and dataset-hub metadata has misrepresented the real terms **four times** in this
 project:
 
 - OpenSLR's AMI mirror serves an older release under **CC BY-NC-SA**, while the Edinburgh original
@@ -72,6 +72,9 @@ project:
   archive — and the authors' own site — say **CC BY-NC-ND 4.0**.
 - Every `BeIR/*` dataset repo is tagged `cc-by-sa-4.0`, including `BeIR/msmarco`, whose underlying
   MS MARCO terms are **non-commercial research only**.
+- OmniDocBench's dataset-hub `license` field is **empty** — so no automated check flags anything —
+  while its prose "Copyright Statement" says **research purposes only, not for commercial use**.
+  An absent metadata field is not evidence of a permissive licence.
 
 Always trace the licence to the original corpus's own terms. Each of these would have put an
 unpublishable number in a paper.
@@ -297,6 +300,52 @@ Reproduction requires four things to be pinned, and all four are recorded with e
    and word counts, and whether its timings are real or synthetic.
 3. **Seeds** — synthetic corpora regenerate byte-identically from their recorded seed.
 4. **Metric implementation and version** — per the divergence above.
+
+## Reproducibility: the index has to be stable, not just the measurement
+
+A benchmark can be deterministic in the wrong place. This one was, and the gap took a stack rebuild
+to expose.
+
+**The measurement is deterministic.** Two consecutive runs against an unchanged index produce
+byte-identical `metrics.json` and `metrics.md`. That was verified and is still true.
+
+**The index was not.** Re-indexing one *unchanged* corpus three times produced three different
+chunk counts and three different scores:
+
+| run | chunks | nDCG@10 (all) |
+|---|---|---|
+| initial | 119,950 | 0.1052 |
+| after a stack rebuild | 119,949 | 0.1023 |
+| after a forced re-index | 120,540 | 0.1029 |
+
+Identical inputs each time — 232 files, 129,062 segments, 2,145 speakers — and the index was
+internally coherent on every run (no orphans, no stale tails, `doc_count == max(chunk_index)+1` for
+all 232 files). The chunking genuinely differed.
+
+**Cause: `ORDER BY start_time` is not a total order.** Overlapping speech and interpolated
+backchannels routinely share an onset — **3,072 tie groups covering 6,152 segments** in this corpus.
+Postgres returns tied rows in physical storage order, which a delete-then-bulk-insert reshuffles.
+Tied segments swap, speaker-turn grouping changes, chunk boundaries move:
+
+```
+471.983  471.993  "Uh - huh ."
+471.983  473.233  "I mean , if you did it at th..."
+```
+
+Whether that 10 ms backchannel sorts before or after the 1.25 s utterance it overlaps decides
+whether the turn is split. Every chronological segment read now orders by
+`(start_time, end_time, id)`, with an AST test failing any that does not end in the primary key.
+
+:::danger Why this was worth chasing before building on the control
+Every stage reports its delta against the previous stage as control, and the index-v6 stage
+**mandates a full reindex** — so its control and treatment necessarily sit on different indexes.
+Its gate is "nDCG@10 up on the multi-file class", and the drift from reshuffling (~2.8%) is the same
+size as a plausible real improvement. An unstable index would have let that stage pass its own gate
+on document reordering alone, and the result would have looked exactly like a win.
+
+The general rule: **a control with an unmeasured reproducibility band is not a control.** Establish
+the band before trusting any delta against it.
+:::
 
 ## The Stage 1 baseline — the named control
 

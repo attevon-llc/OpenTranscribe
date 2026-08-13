@@ -100,6 +100,72 @@ at meaning and weak at rare literal strings.
 assistant was given. Thin or off-target cards mean the search missed, not that
 the model was lazy — re-scope or rephrase.
 
+## Reading the sources panel
+
+Under every grounded answer is a **"N sources"** toggle. It is collapsed by
+default under long answers and expanded while the answer is still streaming.
+Open it and each source is one card:
+
+| On the card | What it tells you |
+|---|---|
+| `[1]` | The number the answer cites. Claim `[1]` was supported by *this* passage |
+| Recording title | Which file it came from |
+| Speaker | Who said it — the excerpt is one person's turn, not a mixed passage |
+| Timestamp | Where in the recording |
+| Two lines of the passage | The actual words the assistant was shown |
+
+Clicking a card opens that recording **at that second**.
+
+Two properties are worth knowing, because they are what make the panel worth
+trusting:
+
+- **The links are built from the search results, not from the model's text.**
+  The assistant writes `[1]`; it never writes the URL. A citation therefore
+  cannot point somewhere the retrieval did not actually return.
+- **The panel lists what actually reached the model**, not everything retrieved.
+  If a passage was found but did not fit the context window it is not listed, so
+  the card count is a true account of what the answer could have been based on.
+
+The panel is the fastest way to diagnose a disappointing answer. Read the cards
+first: if they are off-topic, the search missed and you should re-scope or
+re-word. If they are on-topic and the answer still isn't, that is the model, and
+regenerating or switching model is the thing to try.
+
+## When it says it doesn't know
+
+The assistant is instructed to say plainly when the retrieved passages do not
+contain the answer, and to suggest what to search or select instead, rather than
+producing something plausible. **That is the system working**, and it is worth
+reading as information: it usually means the passages it was given genuinely did
+not cover the question.
+
+What to do, roughly in order of how often it helps:
+
+1. **Widen or change the scope.** The most common cause is that the right
+   recording was not in scope at all. Check the context bar.
+2. **Use the words that were spoken.** Retrieval matches your phrasing against
+   the transcript's.
+3. **Try *Exact words* retrieval mode** if you know a distinctive phrase.
+4. **Split the question.** Three questions at once retrieve a blend that answers
+   none of them.
+5. **Check the recording finished transcribing.** Only completed transcripts are
+   searchable.
+
+Two related messages mean something more specific:
+
+- **"This answer was not grounded in your recordings"** — passages *were* found,
+  but none fit the model's context window. Shorten the conversation, lower
+  *Excerpts per answer*, or use a model with a larger window. Do not read that
+  answer as sourced.
+- **A *Context off* chip** in the context bar means you turned transcripts off
+  for this conversation. The model is answering from general knowledge with no
+  access to your recordings at all.
+
+If an answer ends with a short **"Next:"** line, that is the assistant proposing
+the follow-up it thinks the passages point at — an unresolved decision, a
+promised action with no outcome. Ignore it freely; it is a suggestion, not part
+of the answer.
+
 :::tip "Summarise this recording" is the wrong question for chat
 Chat retrieves a handful of relevant passages; it does not read the whole
 recording. For a whole-transcript summary, use the **summary** feature on the
@@ -173,6 +239,11 @@ OpenRouter, Amazon Bedrock, or a self-hosted vLLM/Ollama endpoint). Until one is
 set, the chat page shows a setup prompt.
 
 Recordings must have finished transcribing to be searchable.
+
+Chat is the **only** feature that stops without a provider. Search — including
+semantic search — transcription, diarization and everything else run on local
+models and need nothing configured. See
+[Working Without an AI Model](./without-an-ai-model.md).
 
 ## Privacy
 

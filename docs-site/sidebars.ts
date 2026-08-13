@@ -47,7 +47,9 @@ const sidebars: SidebarsConfig = {
         'user-guide/ai-summarization',
         'user-guide/search-and-filters',
         'user-guide/chatting-with-transcripts',
+        'user-guide/without-an-ai-model',
         'user-guide/collections',
+        'user-guide/tags',
         'user-guide/admin-panel',
       ],
     },
@@ -62,6 +64,14 @@ const sidebars: SidebarsConfig = {
         'features/watch-sources',
         'features/llm-integration',
         'features/rag-chat',
+        {
+          type: 'doc',
+          id: 'features/documents',
+          // Labelled in the sidebar itself: the page describes a design, not a
+          // shipped feature, and a reader scanning "Features" must see that
+          // before they click.
+          label: 'Documents (planned)',
+        },
         'features/usage-tracking',
         'features/authentication',
         'features/pipeline-optimization',
@@ -118,6 +128,7 @@ const sidebars: SidebarsConfig = {
         'developer-guide/watch-sources',
         'developer-guide/rag-chat',
         'developer-guide/rag-evaluation',
+        'developer-guide/rag-design-and-validation',
         'developer-guide/contributing',
         'developer-guide/testing',
         'developer-guide/releasing',

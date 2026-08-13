@@ -167,3 +167,66 @@ def test_the_predicate_itself_is_right(rendered, is_total):
     keys = [k.strip() for k in rendered.split(",") if k.strip()]
     total = keys[-1] == f"{_MODEL}.{_TIEBREAKER}"
     assert total is is_total
+
+
+# ---------------------------------------------------------------------------
+# alembic's autogenerate must actually see the models (issue #431 / #403 handoff).
+#
+# `alembic/env.py` set `target_metadata = Base.metadata` and never imported `app.models`.
+# `Base.metadata` is populated as a SIDE EFFECT of importing the model modules, so it was
+# empty: measured, 0 tables from `app.db.base` alone versus 54 after the import. Autogenerate
+# therefore compared the live database against nothing and reported no model-side differences
+# whatever — which is how 24 database constraints came to exist with no ORM declaration while
+# a tool whose entire purpose is detecting that stayed silent.
+#
+# Same class as every other finding on this branch: a check that runs, produces output, and
+# cannot fail. The one-line import is the fix; this is the test that keeps it.
+# ---------------------------------------------------------------------------
+
+
+def test_alembic_env_imports_the_models():
+    """The import is a side effect, so an "unused import" cleanup silently breaks the tool.
+
+    Asserted on the source text rather than by running alembic: the failure mode is the import
+    being *removed*, and a linter or a well-meaning tidy-up is the likely cause. `# noqa` on
+    the line is not enough on its own — nothing else states why it must stay.
+    """
+    env_source = (Path(__file__).resolve().parents[2] / "alembic" / "env.py").read_text()
+    assert "import app.models" in env_source, (
+        "alembic/env.py must import app.models — Base.metadata is populated by importing the "
+        "model modules, and without it target_metadata is EMPTY and --autogenerate reports no "
+        "model differences at all (it saw 0 tables instead of 54)"
+    )
+
+
+def test_base_metadata_is_empty_without_the_model_import():
+    """The premise, proven rather than asserted in prose.
+
+    If importing `app.db.base` ever registered the tables by itself, the test above would be
+    guarding nothing — and this test is what would say so.
+    """
+    import subprocess
+    import sys
+
+    backend = Path(__file__).resolve().parents[2]
+    probe = (
+        f"import sys; sys.path.insert(0, {str(backend)!r});"
+        "from app.db.base import Base;"
+        "print(len(Base.metadata.tables));"
+        "import app.models;"
+        "print(len(Base.metadata.tables))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        cwd=str(backend),
+        timeout=180,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    before, after = (int(x) for x in result.stdout.split())
+    assert before == 0, (
+        f"app.db.base now registers {before} tables by itself — the env.py import is no longer "
+        "load-bearing and test_alembic_env_imports_the_models is guarding nothing"
+    )
+    assert after > 40, f"importing app.models registered only {after} tables"

@@ -93,13 +93,38 @@ def test_the_worker_presence_gate_names_a_bench_container():
     Asserted positively as well as negatively: a gate deleted outright would satisfy the
     "no dev names" test above while removing the safety check entirely.
     """
-    block = _bench_block(_opentr_source())
+    source = _opentr_source()
+    block = _bench_block(source)
     assignments = re.findall(r'WORKER="([^"]+)"', block)
     assert assignments, "the bench block no longer sets WORKER — the presence gate is gone"
+
+    # Resolve `${BENCH_CONTAINER_PREFIX}` from its own assignment in the script,
+    # the way audit-route-coverage.py resolves module-level constants. #399 fixed
+    # this gate by replacing the literal "otbench" with the variable — which is
+    # the better code and which a literal startswith() would reject. Resolving
+    # keeps the check exactly as strong: a WORKER naming the DEV container still
+    # fails, and an unresolvable prefix fails loudly rather than passing.
+    prefix_match = re.search(r'^BENCH_CONTAINER_PREFIX="([^"]+)"', source, re.MULTILINE)
+    assert prefix_match, "BENCH_CONTAINER_PREFIX is no longer assigned a literal in opentr.sh"
+    shell_prefix = prefix_match.group(1)
+    # `_BENCH_PREFIX` carries the separator ("otbench-"); the shell variable does not
+    # ("otbench"), because the separator lives in the assignment that uses it. So the
+    # test's expectation must START WITH the shell value, not equal it — and a rename
+    # of the bench stack still fails here rather than silently passing.
+    assert _BENCH_PREFIX.startswith(shell_prefix), (
+        f"BENCH_CONTAINER_PREFIX is {shell_prefix!r}, which does not match this test's "
+        f"expected {_BENCH_PREFIX!r} — the bench stack was renamed and this is stale"
+    )
+
     for worker in assignments:
-        assert worker.startswith(_BENCH_PREFIX), (
-            f'WORKER="{worker}" must name a bench container; gating on the dev worker passes '
-            "whenever the dev stack happens to be up"
+        resolved = worker.replace("${BENCH_CONTAINER_PREFIX}", shell_prefix)
+        assert "${" not in resolved, (
+            f'WORKER="{worker}" expands a variable this test cannot resolve, so it cannot '
+            "prove the gate names a bench container. Resolve it here or inline the prefix."
+        )
+        assert resolved.startswith(_BENCH_PREFIX), (
+            f'WORKER="{worker}" resolves to {resolved!r} and must name a bench container; '
+            "gating on the dev worker passes whenever the dev stack happens to be up"
         )
 
 

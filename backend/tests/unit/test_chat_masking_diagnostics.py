@@ -37,7 +37,11 @@ def _prepare(monkeypatch, *, masked: list[MaskedChunk], retrieved: int) -> dict:
         lambda **_: RetrievalResult(chunks=[chunk.source for chunk in masked], retrieved=retrieved),
     )
     monkeypatch.setattr(chat_service, "mask_chunks", lambda *_args, **_kwargs: masked)
-    _, meta = chat_service._prepare_context(
+    # `_prepare_context` returns (masked_chunks, meta, counted, overview) since
+    # Stage 4 added the counted and overview tiers. Only `meta` is under test
+    # here, so the rest are discarded by name rather than by arity — a bare
+    # `_, meta = ...` broke silently when the tuple grew from two to four.
+    _, meta, _counted, _overview = chat_service._prepare_context(
         None,
         user_id=1,
         organization_id=None,

@@ -49,6 +49,11 @@ GPU_DEVICE_ID_FROM_ENV="${GPU_DEVICE_ID}"
 # through start/reset first aborted before it could print anything. `dev` matches the
 # default those functions use, so defaulting here cannot change a real invocation.
 : "${ENVIRONMENT:=dev}"
+# Same reason as GPU_DEVICE_ID above: it is read to warn that clustering cannot be
+# moved off its pinned device, and that warning path runs on checkouts whose .env
+# never set it. Line 406 guards its own read with `:-`; line 409 does not, and a
+# static guard cannot know the `-n` test above it already proved it non-empty.
+: "${GPU_CLUSTERING_DEVICE:=}"
 
 # Export APP_VERSION so docker compose can pass it through to containers
 # (used instead of ./VERSION file bind-mount to avoid OCI stub creation in dev mode)

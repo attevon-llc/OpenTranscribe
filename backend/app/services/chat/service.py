@@ -50,6 +50,7 @@ from app.services.chat import citations as citations_mod
 from app.services.chat import limits
 from app.services.chat.hooks import ChatCompletionContext
 from app.services.chat.hooks import fire_message_complete
+from app.services.chat.output_redactor import OutputRedactor
 from app.services.chat.prompting import build_messages
 from app.services.chat.prompting import format_counted_block
 from app.services.chat.redactor import MaskedChunk
@@ -348,6 +349,85 @@ async def _drain(queue: asyncio.Queue):
         yield queue.get_nowait()
 
 
+def _resolve_output_policy(user_id: int):
+    """The requesting user's effective redaction config, or None if unresolvable.
+
+    Its own short-lived session: this runs on every turn including
+    ``use_context=False`` ones, which never open the retrieval session at all.
+    ``None`` is not "no redaction" — ``OutputRedactor`` reads it as "mask
+    everything", because being unable to resolve the policy must not mean
+    sending generated text out unexamined.
+    """
+    from app.db.session_utils import session_scope
+    from app.services.redaction.config import resolve_effective_config
+
+    try:
+        with session_scope() as db:
+            return resolve_effective_config(db, user_id)
+    except Exception:  # noqa: BLE001 — the redactor fails closed on None
+        logger.exception("Could not resolve the output redaction policy for user %s", user_id)
+        return None
+
+
+async def _redact_delta(redactor: OutputRedactor, text: str) -> str:
+    """Buffer one generated delta; return what is safe to put on the wire now.
+
+    Returns ``""`` while a sentence is still arriving. Detection is CPU-bound
+    (Presidio), so it goes to a thread — buffering itself is string work and
+    stays on the loop.
+    """
+    if not redactor.active:
+        return text
+    span = redactor.buffer(text)
+    if not span:
+        return ""
+    # Annotated: run_in_threadpool is typed as returning Any, and returning it
+    # straight out of a str-declared function trips no-any-return.
+    # OutputRedactor.mask genuinely returns str.
+    masked: str = await run_in_threadpool(redactor.mask, span)
+    return masked
+
+
+def _record_output_redaction(
+    turn: ChatTurn, answer: OutputRedactor | None, reasoning: OutputRedactor | None
+) -> None:
+    """Stamp what output redaction did on the turn's metadata.
+
+    Only when it was active, so a deployment with redaction off carries no new
+    key. ``withheld_spans`` is the one that matters: a sentence replaced by the
+    failsafe placeholder is otherwise indistinguishable from a short answer.
+    """
+    if answer is None or not answer.active:
+        return
+    withheld = answer.withheld_spans + (reasoning.withheld_spans if reasoning else 0)
+    turn.metadata["output_redaction"] = {
+        "masked_spans": answer.masked_spans + (reasoning.masked_spans if reasoning else 0),
+        "withheld_spans": withheld,
+    }
+    turn.metadata.setdefault("timings_ms", {})["output_redaction"] = answer.mask_ms + (
+        reasoning.mask_ms if reasoning else 0
+    )
+    if withheld:
+        logger.warning(
+            "Chat output redaction withheld %d generated span(s): detectors were "
+            "unavailable for an enabled category, so the text was replaced rather than sent",
+            withheld,
+        )
+
+
+async def _flush_redactor(redactor: OutputRedactor | None) -> str:
+    """Mask and return the unemitted tail. Idempotent — later calls return ``""``."""
+    if redactor is None:
+        return ""
+    tail = redactor.drain()
+    if not tail:
+        return ""
+    if not redactor.active:
+        return tail
+    masked_tail: str = await run_in_threadpool(redactor.mask, tail)
+    return masked_tail
+
+
 async def _finalize_turn(
     *,
     turn: ChatTurn,
@@ -522,6 +602,10 @@ class ChatService:
         counted_block = ""
         overview_block = ""
         reached_end = False
+        # Declared out here because the shielded `finally` flushes them: a turn
+        # torn down mid-sentence still has to persist the buffered tail.
+        answer_redactor: OutputRedactor | None = None
+        reasoning_redactor: OutputRedactor | None = None
         try:
             if use_context:
                 # Query rewriting is a separate LLM round trip, so it is worth
@@ -639,6 +723,15 @@ class ChatService:
                         {"code": "context_dropped", "retrieved": len(masked)},
                     )
 
+            # Redaction of the model's OWN words. Offset masking covers the text
+            # we gave it; nothing covered the text it writes about that material
+            # until this. Resolved here rather than inside `_prepare_context`
+            # because a `use_context=False` turn never runs that stage and its
+            # answer is just as visible.
+            output_policy = await run_in_threadpool(_resolve_output_policy, user_id)
+            answer_redactor = OutputRedactor(output_policy)
+            reasoning_redactor = OutputRedactor(output_policy)
+
             yield sse("status", {"stage": "generating"})
 
             kwargs: dict[str, Any] = {"max_tokens": answer_tokens}
@@ -665,13 +758,19 @@ class ChatService:
                     cancel_event.set()
 
                 if event.type == "delta":
+                    # The watchdog below measures the PROVIDER's first token, so
+                    # it is satisfied here — before the redactor may hold this
+                    # delta back. Keying it off emission instead would read a
+                    # buffered first sentence as a stalled model and kill it.
                     if not got_first_token:
                         got_first_token = True
                         turn.metadata.setdefault("timings_ms", {})["first_token"] = int(
                             (time.monotonic() - started) * 1000
                         )
-                    turn.answer_parts.append(event.text)
-                    yield sse("delta", {"text": event.text})
+                    safe = await _redact_delta(answer_redactor, event.text)
+                    if safe:
+                        turn.answer_parts.append(safe)
+                        yield sse("delta", {"text": safe})
                 elif event.type == "reasoning":
                     # The model IS actively responding once reasoning starts, so this
                     # satisfies the first-token watchdog exactly like an answer delta —
@@ -682,8 +781,12 @@ class ChatService:
                         turn.metadata.setdefault("timings_ms", {})["first_token"] = int(
                             (time.monotonic() - started) * 1000
                         )
-                    turn.reasoning_parts.append(event.text)
-                    yield sse("reasoning", {"text": event.text})
+                    # Reasoning is rendered too (a collapsed block, not a hidden
+                    # one), so it is a display surface and gets its own buffer.
+                    safe = await _redact_delta(reasoning_redactor, event.text)
+                    if safe:
+                        turn.reasoning_parts.append(safe)
+                        yield sse("reasoning", {"text": safe})
                 elif event.type == "usage":
                     turn.prompt_tokens = event.prompt_tokens
                     turn.completion_tokens = event.completion_tokens
@@ -702,6 +805,19 @@ class ChatService:
                     turn.error_code = "timeout"
                     yield sse("error", {"code": "timeout", "message": turn.error})
                     break
+
+            # The last sentence usually has no trailing whitespace to prove it
+            # ended, so it is still in the buffer. Flushing here (rather than
+            # only in the shielded teardown) is what puts it on the wire; the
+            # teardown flush is idempotent and only covers a torn-down turn.
+            tail = await _flush_redactor(answer_redactor)
+            if tail:
+                turn.answer_parts.append(tail)
+                yield sse("delta", {"text": tail})
+            reasoning_tail = await _flush_redactor(reasoning_redactor)
+            if reasoning_tail:
+                turn.reasoning_parts.append(reasoning_tail)
+                yield sse("reasoning", {"text": reasoning_tail})
 
         except Exception as exc:  # noqa: BLE001 — surface as a frame, never a 500
             logger.exception("Chat stream failed for conversation %s", conversation_uuid)
@@ -732,6 +848,22 @@ class ChatService:
                 turn.finish_reason = "cancelled"
 
             with anyio.CancelScope(shield=True):
+                # A turn torn down mid-sentence still holds a buffered tail. It
+                # cannot be yielded (there is no client left, and this scope
+                # contains no `yield` by design) but it IS part of the answer,
+                # so it is masked and persisted — the user sees it on reload.
+                # `drain()` is idempotent, so a normal exit does not duplicate it.
+                try:
+                    tail = await _flush_redactor(answer_redactor)
+                    if tail:
+                        turn.answer_parts.append(tail)
+                    reasoning_tail = await _flush_redactor(reasoning_redactor)
+                    if reasoning_tail:
+                        turn.reasoning_parts.append(reasoning_tail)
+                except Exception:  # noqa: BLE001 — never mask the real outcome
+                    logger.exception("Chat output redaction teardown flush failed")
+                _record_output_redaction(turn, answer_redactor, reasoning_redactor)
+
                 try:
                     await _finalize_turn(
                         turn=turn,

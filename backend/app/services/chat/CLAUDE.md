@@ -30,7 +30,8 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | `reranker.py` | Lazy CPU cross-encoder singleton; `None` when the model cache is absent |
 | `query_rewriter.py` | Follow-up → standalone query; every failure returns the original |
 | `retrieval_cache.py` | Redis exact-query cache, keyed by user+org+query+scope+settings-rev |
-| `redactor.py` | **Re-masks retrieved chunks before the LLM** |
+| `redactor.py` | **Re-masks retrieved chunks before the LLM** (the *egress* control) |
+| `output_redactor.py` | **Re-masks what the MODEL WRITES, sentence by sentence** (the *display* control) |
 | `prompting.py` | Layered system prompt + delimited excerpts, concatenation only |
 | `citations.py` | Structured citations; `[n]` markers only SELECT, never construct |
 | `service.py` | SSE orchestration, persistence, audit, hooks |
@@ -46,26 +47,6 @@ first.** The gate *condition* is identical to summarization's
 (`tasks/summarization.py`): apply when `cfg.enabled and cfg.redact_before_llm`,
 with the admin force floor already folded in by `resolve_effective_config`.
 
-### ⚠️ Masking is conditional on WHERE the model runs (owner decision, 2026-08-13)
-
-This section used to read as absolute. It is not. A **local** model — vLLM on our own GPU —
-receives excerpt text unmasked: the text never leaves the machine, so masking costs recall and
-buys nothing. A **remote or cloud provider** still receives masked text, because sending
-unredacted PII to a third party is a data-egress event in a way a local inference call is not.
-
-Key that decision off the **provider**, never off a global setting.
-
-The consequence for this package: the masking path is now *the egress path*, so a defect in it is
-a disclosure rather than a policy inconsistency. That is the reason the two-masker distinction
-below is filed as a hazard and not as tidiness.
-
-**And the policy opens a hole it does not itself close.** Offset-based redaction masks known spans
-in *stored* text. It cannot catch a model that reads "John Smith, SSN 123-45-6789" — correctly
-unmasked on a local deployment — and writes *"Smith's social ends in 6789"* in its own words:
-there is no span to mask, at offsets that exist in no stored record. **Redaction of model-generated
-OUTPUT is not implemented.** Until it is, a local-model deployment is *less* protected than before
-the policy change, which is a deliberate documented trade and must not become an undocumented one.
-
 The **subject** is not. Summarization resolves the *file owner's* config
 (`redaction/llm_guard.py` reads `media_file.user_id`); chat resolves the
 *requesting user's*, because one turn retrieves across a library of shared
@@ -78,12 +59,88 @@ masked, the chunk's content becomes `""` and contributes nothing — never the r
 text. Tests in `tests/unit/test_chat_redactor.py` pin this; do not "fix" them by
 falling back to the original content.
 
-### ⚠️ There are TWO maskers and they are not interchangeable
+### ⚠️ Masking is to be conditional on WHERE the model runs — DECIDED, NOT YET BUILT
+
+Owner decision, 2026-08-13. A **local** model — vLLM on our own GPU — is to receive excerpt text
+unmasked: the text never leaves the machine, so masking costs recall and buys nothing. A **remote
+or cloud provider** still receives masked text, because sending unredacted PII to a third party is
+a data-egress event in a way a local inference call is not. Key that decision off the
+**provider**, never off a global setting.
+
+⚠️ **None of that is in the code yet.** `mask_chunks` / `mask_digests` still gate on
+`cfg.enabled and cfg.redact_before_llm` with no provider check anywhere, so **input masking
+applies to every provider today** and a local deployment is *not* currently less protected than
+before the decision. Say so accurately: this was mis-stated once already.
+
+**Order of operations is a safety constraint, not a preference.** Output redaction (below) had to
+land *first*, and it has. Land the provider keying the other way round and the gap is real,
+between two commits, on a deployment that believes it is protected.
+
+When the keying does land, tighten the admin string with it. The floor
+(`redaction.force_redact_before_llm`) already describes itself as **external**-only in all three
+places a human reads it — the audit description ("Mandate masked text to external LLM providers")
+and both i18n strings — so exempting a local model is the control finally matching its label, not
+an override of it. But an admin on a local-only deployment may have set it believing it covered
+their own vLLM, so the label should say that outright.
+
+### Output redaction: masking what the model WRITES (`output_redactor.py`)
+
+Offset-based redaction masks known spans in *stored* text. It cannot catch a model that reads
+"John Smith, SSN 123-45-6789" and writes *"the number he gave was 123-45-6789"* in its own words:
+there is no span to mask, at offsets that exist in no stored record, so **every cached-span masker
+in this codebase renders it clean**. Measured on HEAD before the fix, through the real
+`stream_reply`: the client received `'The number he gave was 123-45-6789. That is all.'`
+
+**`redactor.py` is the egress control; `output_redactor.py` is the display control.** They are not
+alternatives and neither substitutes for the other.
+
+- **Sentence-buffered.** Deltas accumulate; only text up to the last completed sentence boundary is
+  emitted, and the detector runs over that span first. The alternatives were rejected: masking at
+  persist-and-reload is cheapest and wrong (the user already read it), and refusing to stream is
+  honest and a large UX regression. A newline counts as a boundary (markdown lists carry no
+  periods), honorifics and initials do not (splitting `Mr. Smith` hands the detector `Smith`
+  alone), and an over-long boundary-free buffer force-flushes while holding a tail so an entity
+  straddling the cut is not halved.
+- **The gate is `cfg.enabled and cfg.enabled_categories` — NOT `redact_before_llm`.** Same
+  `resolve_effective_config` call, same subject, same admin floor; a different field, deliberately.
+  `redact_before_llm` is an *egress* control. A user with redaction on and `redact_before_llm` off
+  has a masked transcript view and would still get an unmasked SSN rendered into the chat answer —
+  precisely the hole this closes. The narrower gate is the plausible-looking wrong choice and has
+  been proposed once already.
+- **Fail closed, per sentence.** `detect_segment_spans` *swallows* a PII-detector failure and
+  returns the spans it did get, so "found nothing" and "could not look" are the same value — the
+  `failures` sink (issue #324) is the only thing that separates them. A failure of a detector
+  feeding an **enabled category** replaces the sentence with `REDACTION_LLM_FAILSAFE_TEXT`; a
+  failure outside the user's categories does not, or every CPU-only deployment without Presidio
+  would lose its answers to a category it never asked for. An unresolvable *policy* activates
+  masking with every category on, rather than passing text through.
+- **The persisted answer is the masked one.** Storing the raw generation would create an unmasked
+  PII store in `chat_message.content` that no read path masks, and reload would then show more than
+  the stream did.
+- **Reasoning gets its own buffer.** The thinking block is collapsed, not hidden — it is a display
+  surface.
+- **The watchdog measures the PROVIDER's first token, not the first emission.** Keying it off
+  emission would read a buffered first sentence as a stalled model and kill it as a timeout.
+- **Redaction off is a pure pass-through** — no buffering, no detector, byte-identical stream.
+
+Measured cost (gemma-4-e4b on the local vLLM, 400 deltas / 1,677 chars / 23.9 tok/s, real
+Presidio): **+549 ms to first visible token**, 12.7 ms of detector time per sentence, +318 ms
+over the whole 16.7 s answer. The one-off cost that actually hurts is the **~10 s Presidio cold
+load** on the first masked answer in a fresh API process — worth preloading, and not yet done.
+
+Pinned by `tests/unit/test_chat_output_redaction.py`, whose `models`-marked test is the only one
+that proves the *detector* — not the plumbing — catches a paraphrase.
+
+### ⚠️ There are TWO maskers on the INPUT side and they are not interchangeable
+
+(Three in the package overall — `OutputRedactor` above is the third, and it addresses text that
+has no stored form at all. These two are the ones that can be confused for each other.)
 
 | Function | For | Addresses text by | Fails closed |
 |---|---|---|---|
 | `mask_chunks()` | transcript chunks | **time range** — every segment overlapping the hit | per chunk, whole |
 | `mask_digests()` | `doc_type: digest` documents | **provenance** — each sentence's own `segment_ids` | per **sentence** |
+| `OutputRedactor` | model-generated text | **detection at emit time** — no stored spans exist | per **sentence** |
 
 A digest sent through `mask_chunks()` **over-discloses**. A chunk *is* contiguous turns, so
 rebuilding it from its time range reproduces it. A digest is a handful of non-contiguous *selected*

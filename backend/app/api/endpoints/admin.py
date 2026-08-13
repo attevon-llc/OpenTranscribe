@@ -88,9 +88,11 @@ from app.schemas.user import AdminPasswordResetRequest
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
 from app.services import system_settings_service
+from app.services.account_security_service import DeletedUser
 from app.services.account_security_service import assert_password_auth_possible
 from app.services.account_security_service import audit_password_change
 from app.services.account_security_service import audit_role_change
+from app.services.account_security_service import audit_user_deleted
 from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import revoke_all_sessions
 
@@ -814,6 +816,7 @@ def create_admin_user(
 @router.delete("/users/{user_uuid}", response_model=dict[str, str])
 def delete_admin_user(
     user_uuid: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
@@ -852,6 +855,11 @@ def delete_admin_user(
 
         _assert_not_last_super_admin(db, user, ROLE_USER)
 
+        # Capture what the audit record needs before the row is gone: after the commit
+        # the ORM object is expired, so reading user.email would re-query a deleted row.
+        deleted_snapshot = DeletedUser.of(user)
+        client_ip, user_agent = _get_client_info(request)
+
         # Delete all user data atomically using a savepoint
         savepoint = db.begin_nested()
         try:
@@ -865,6 +873,13 @@ def delete_admin_user(
             savepoint.rollback()
             raise
         db.commit()
+
+        # This endpoint destroys a user, their files and their transcripts irreversibly
+        # and recorded NOTHING — while its twin, DELETE /api/users/{uuid}, performs the
+        # identical deletion through these same three helpers and does audit it. Emitted
+        # after the commit, matching that twin, so a failed delete leaves no record of a
+        # deletion that did not happen. FedRAMP AU-2/AU-12, GDPR Art. 30(2)(d).
+        audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent)
 
         logger.info(f"User deletion completed successfully: {user_id}")
         return {"message": "User deleted successfully"}

@@ -229,9 +229,25 @@ def test_bench_status_and_start_list_bench_containers():
     assert patterns, "no `docker ps | grep` found in the bench case block"
     # The single-container gate has its own test; these are the listings.
     listings = {_expand(p, scope=block).strip("\"'") for p in patterns if "WORKER" not in p}
-    assert listings == {_bench_container_prefix()}, (
-        f"bench `docker ps` listings grep for {sorted(listings)}; they must match "
-        f"{_bench_container_prefix()!r} so they show the bench stack"
+    bench_prefix = _bench_container_prefix()
+
+    # `bench rag` (#403 Stage 1) is a peer arm that measures retrieval over a
+    # corpus injected into an ISOLATED --fresh deployment, so it legitimately
+    # addresses `otfresh-<name>-*` rather than `otbench-*`. The rule #399 encodes
+    # is not "always otbench" — it is "address the deployment you are measuring,
+    # never the dev stack", so both prefixes pass and `opentranscribe-` does not.
+    for pattern in sorted(listings):
+        assert "opentranscribe" not in pattern, (
+            f"bench `docker ps` listing greps for {pattern!r} — that is the DEV "
+            "stack's container prefix, which is exactly issue #399"
+        )
+        assert bench_prefix in pattern or "otfresh-" in pattern, (
+            f"bench `docker ps` listing greps for {pattern!r}; it must address "
+            f"either the bench stack ({bench_prefix!r}) or an isolated "
+            "`otfresh-<name>` deployment"
+        )
+    assert any(bench_prefix in pattern for pattern in listings), (
+        f"no bench listing addresses {bench_prefix!r} any more"
     )
 
 
@@ -281,4 +297,35 @@ def test_the_arm_list_is_derived_and_non_trivial():
     assert len(arms - NON_DOCUMENTED_ARMS) >= 8, (
         f"only parsed {sorted(arms)} out of the bench case block — the pattern "
         "regex has drifted from the source and the help tests are now vacuous"
+    )
+
+
+def test_bench_rag_is_a_peer_arm_that_targets_an_isolated_deployment():
+    """#403 Stage 1: retrieval quality, measured like every other bench arm.
+
+    The RAG bench is a *peer* of the GPU arms, not a mode of them — it needs no
+    GPU, no ASR and no LLM. What it does share is the #399 lesson: it must
+    address the deployment it is measuring by that deployment's own container
+    names, and it must refuse the shared dev stack.
+    """
+    block = _bench_case_block()
+    assert "rag" in _bench_arms(), "`bench rag` is no longer a dispatched arm"
+
+    rag = block[block.index("      rag)") :]
+    rag = rag[: rag.index("\n      help|*)")]
+
+    assert "otfresh-${RAG_FRESH_NAME}-opensearch" in rag, (
+        "the rag arm no longer verifies the fresh deployment's OWN OpenSearch "
+        "container before measuring it"
+    )
+    assert "scripts/benchmark_rag.py" in rag, "the rag arm no longer runs the harness"
+    assert "exit $?" in rag, (
+        "the rag arm must propagate the harness's exit status — opentr.sh ends "
+        "in `exit 0`, so without this it reports success however it failed"
+    )
+    # The harness runs on the host against published ports; .env's hosts are
+    # docker-network names and do not resolve there.
+    assert re.search(r'export POSTGRES_HOST="\$RAG_HOST"', rag), (
+        "the rag arm must ASSIGN the host, not default it — opentr.sh has "
+        "already loaded .env, whose POSTGRES_HOST is `postgres`"
     )

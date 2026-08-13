@@ -455,6 +455,15 @@ subsystem, and put new subsystem detail **there**, not in this file.
   destroys the work for real. Wait for the restore, verify the file actually contains your
   change, and only then copy. This was caught once by diffing the backup against the live file
   instead of trusting the copy.
+  ☠️ **The worst variant is a GREEN run: a test suite can pass having tested the OLD code.**
+  Observed — a suite reported `13 passed` while the tree was stashed, having imported the
+  committed versions of both the source and the test file. A minute later the same command
+  reported `2 failed, 11 passed`, because that run caught the app file restored and the test
+  file not. **Neither number meant anything**, and the only tell was that the *test names* in
+  the output did not match the names just written. A red run makes you look; a green one gets
+  recorded as evidence and you move on. So: **when a run is your evidence, check it ran YOUR
+  code** — new test names present, a marker string in the output, or a deliberate failure you
+  expect to see. A pass you cannot attribute is not a measurement.
 - **`audit-tests` is a WHOLE-TREE gate, so an unfinished test file blocks everyone.** One
   in-progress test anywhere under `backend/tests` with an open finding refuses **every** commit
   in the worktree, including commits that do not touch it — twice in one day a lane's own

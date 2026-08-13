@@ -34,7 +34,6 @@ services/
 ├── file_service.py                    # File management operations
 ├── file_cleanup_service.py            # File recovery and cleanup operations
 ├── file_retention_service.py          # Admin-configurable auto-deletion policies
-├── transcription_service.py           # Transcription workflow management
 ├── llm_service.py                     # Multi-provider LLM (vLLM, OpenAI, Ollama, Claude, OpenRouter)
 ├── opensearch_service.py              # Full-text + neural search, ML Commons, alias-based speaker indices
 ├── hybrid_search_service.py           # Hybrid BM25+vector search (OS 3.4 crash fix applied)
@@ -154,57 +153,6 @@ async def upload_file(
 - **Storage Integration**: MinIO operations with error handling
 - **Tag Management**: File tagging operations
 - **Statistics**: User file statistics and analytics
-
-## 🎙️ Transcription Service (`transcription_service.py`)
-
-### Purpose
-Orchestrates transcription workflows, manages AI processing tasks, and handles speaker management.
-
-### Key Operations
-```python
-class TranscriptionService:
-    def start_transcription(self, file_id: int, user: User) -> Dict[str, Any]:
-        """Initiate transcription process."""
-        # Validation, task creation, Celery dispatch
-
-    def get_transcription_status(self, file_id: int, user: User) -> Dict[str, Any]:
-        """Get detailed transcription progress."""
-        # Task status, progress tracking, error reporting
-
-    def update_transcript_segments(self, file_id: int, updates: List[TranscriptSegmentUpdate], user: User) -> List[TranscriptSegment]:
-        """Bulk update transcript segments."""
-        # Authorization, validation, batch updates
-
-    def merge_speakers(self, primary_id: int, secondary_id: int, user: User) -> Speaker:
-        """Merge two speakers across all segments."""
-        # Complex database operations, referential integrity
-```
-
-### Workflow Management
-```python
-# Transcription Pipeline
-def start_transcription(self, file_id: int, user: User):
-    # 1. Validate file exists and is processable
-    file_obj = self._validate_file_for_transcription(file_id, user)
-
-    # 2. Check current status
-    if file_obj.status not in [FileStatus.PENDING, FileStatus.ERROR]:
-        raise ValidationError("File cannot be transcribed in current state")
-
-    # 3. Dispatch background task
-    task = transcribe_audio_task.delay(file_id)
-
-    # 4. Return task information
-    return {"task_id": task.id, "status": "started"}
-```
-
-### Features
-- **Task Orchestration**: Celery task management and monitoring
-- **Progress Tracking**: Real-time transcription progress
-- **Speaker Management**: AI-generated speaker identification and merging
-- **Segment Editing**: Transcript text and timing modifications
-- **Cross-file Analytics**: Speaker consistency across multiple files
-- **Error Recovery**: Robust error handling and retry mechanisms
 
 ## 🤖 LLM Service (`llm_service.py`)
 

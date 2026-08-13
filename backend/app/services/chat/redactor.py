@@ -30,7 +30,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MaskedChunk:
-    """A chunk whose text is safe to place in a prompt."""
+    """A chunk whose text is safe to place in a prompt.
+
+    ``was_masked`` records that the redaction policy **applied** to this chunk,
+    not that anything was found in it — a chunk that failed closed carries
+    ``content == ""`` and ``was_masked=True``, because the policy is precisely
+    what emptied it. The safety signal is ``content``; nothing may infer
+    "this text is masked" from the flag alone.
+    """
 
     source: ChunkHit
     content: str
@@ -125,14 +132,33 @@ def _mask_inline(text: str, cfg) -> str:
     Toxicity classification is skipped: it is the expensive detector and loading
     it on an interactive request would blow the latency budget. PII/profanity
     still run, which is what ``redact_before_llm`` primarily protects.
+
+    **The ``failures`` sink is what makes the fail-closed promise true.**
+    ``detect_segment_spans`` *swallows* a PII-detector exception and returns
+    whatever spans it managed to collect, so "found nothing" and "could not look"
+    are the same return value (issue #324). Without the sink this function
+    returned the chunk **verbatim** whenever Presidio was broken or absent, and
+    ``mask_chunks`` then labelled it masked and sent it — on the path that
+    egresses to a third-party provider. A `try`/`except` around a call that never
+    raises is not a fail-closed control; the docstring said it was.
+
+    Narrow on purpose (see ``blocking_detector_failures``): only a failure of a
+    detector feeding a category this user actually masks withholds the chunk. A
+    CPU-only deployment with no Presidio that never enabled ``pii`` must keep
+    answering rather than lose every excerpt to a category it never asked for.
     """
     try:
+        from app.services.redaction.config import blocking_detector_failures
         from app.services.redaction.config import detection_config_for_all
         from app.services.redaction.service import RedactionService
 
+        failures: list[str] = []
         spans, _toxicity = RedactionService.detect_segment_spans(
-            text, None, detection_config_for_all(), run_toxicity=False
+            text, None, detection_config_for_all(), run_toxicity=False, failures=failures
         )
+        blocking = blocking_detector_failures(failures, cfg.enabled_categories)
+        if blocking:
+            raise RuntimeError(f"detectors unavailable for enabled categories: {sorted(blocking)}")
         masked, _applied = RedactionService.mask_segment(text, spans, None, cfg, set())
         return masked
     except Exception:  # noqa: BLE001

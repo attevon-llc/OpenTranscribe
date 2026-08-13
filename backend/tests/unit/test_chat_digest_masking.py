@@ -60,8 +60,19 @@ def _digest_hit(content: str = DIGEST_TEXT) -> ChunkHit:
     )
 
 
-def _cfg(*, enabled: bool = True, redact_before_llm: bool = True):
-    return SimpleNamespace(enabled=enabled, redact_before_llm=redact_before_llm)
+def _cfg(
+    *,
+    enabled: bool = True,
+    redact_before_llm: bool = True,
+    categories=("pii", "profanity", "custom"),
+):
+    """Stand-in for ``EffectiveRedactionConfig``; ``enabled_categories`` is read
+    by the inline fallback and so must be present here too."""
+    return SimpleNamespace(
+        enabled=enabled,
+        redact_before_llm=redact_before_llm,
+        enabled_categories=set(categories),
+    )
 
 
 def _segment(seg_id: int, text: str):
@@ -235,6 +246,82 @@ def test_detection_not_finished_falls_back_to_inline_and_never_to_raw():
 
     assert inline.called
     assert masked[0].content == "[MASKED]"
+
+
+def test_the_inline_fallback_withholds_a_section_on_a_swallowed_detector_failure():
+    """The digest path reaches the SAME inline masker, so it had the same hole.
+
+    A section whose provenance is unresolvable is masked inline, and
+    ``detect_segment_spans`` swallowing a PII-detector error there returned the
+    rendered section verbatim while ``mask_digests`` marked it masked. Nothing
+    here is patched at ``_mask_inline`` — patching it would prove only that the
+    fallback is called, not that it is safe.
+    """
+
+    def _detect(_text, _words, _det_cfg, *, failures=None, **_kwargs):
+        if failures is not None:
+            failures.append("pii")
+        return [], None
+
+    db = _facts_db([_sentence("x", [1])], status="processing")
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(categories=("pii",)),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            side_effect=_detect,
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            side_effect=lambda text, *_a, **_k: (text, []),
+        ),
+    ):
+        masked = mask_digests(db, [_digest_hit()], user_id=1)
+
+    assert masked[0].content == ""
+    assert "We agreed the budget" not in masked[0].content
+
+
+def test_the_per_sentence_path_needs_no_detector_at_all():
+    """Provenance masking reads CACHED spans, so it has no sink to forget.
+
+    Stated as a test because "does `mask_digests` have the same hole?" is
+    answerable two ways: the inline fallback did (above), the per-sentence path
+    never could — it runs no detector. A detector call appearing here later would
+    be a new egress surface and this goes red.
+    """
+    detect_calls: list[str] = []
+
+    db = _facts_db(
+        [_sentence("We agreed the budget.", [1])],
+        segment_batches=[[_segment(1, "We agreed the budget.")]],
+    )
+
+    def _record_detect_call(text, *_a, **_k):
+        # A named function rather than `detect_calls.append(text) or (...)`:
+        # append returns None, so the `or` idiom works but reads as though the
+        # append produced a value, and mypy rejects it as func-returns-value.
+        detect_calls.append(text)
+        return ([], None)
+
+    with (
+        patch("app.services.redaction.config.resolve_effective_config", return_value=_cfg()),
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            side_effect=_record_detect_call,
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            side_effect=lambda text, *_a, **_k: (text, []),
+        ),
+    ):
+        masked = mask_digests(db, [_digest_hit()], user_id=1)
+
+    assert masked[0].content == "We agreed the budget."
+    assert detect_calls == []
 
 
 def test_policy_off_passes_the_digest_through_untouched():

@@ -46,6 +46,7 @@ import time
 
 from app.core import constants as C  # noqa: N812
 from app.services.redaction.config import EffectiveRedactionConfig
+from app.services.redaction.config import blocking_detector_failures
 
 logger = logging.getLogger(__name__)
 
@@ -73,15 +74,6 @@ _MAX_BUFFER_CHARS = 1200
 _HOLD_TAIL_CHARS = 96
 
 _TRAILING_WORD_RE = re.compile(r"([A-Za-z][A-Za-z.]*)$")
-
-# Detector → the categories it produces, mirroring ``redaction/config.py``. Used
-# to decide whether a detector failure is one this user's policy cares about.
-_DETECTOR_CATEGORIES: dict[str, set[str]] = {
-    "profanity": {"profanity", "custom"},
-    "pii": {"pii"},
-    "toxicity": {"toxicity"},
-    "llm": {"pii", "toxicity", "profanity", "custom"},
-}
 
 
 def _is_abbreviation(text_before: str) -> bool:
@@ -230,15 +222,10 @@ class OutputRedactor:
     def _blocking_failures(self, failures: list[str]) -> set[str]:
         """Which detector failures actually matter for this user's categories.
 
-        A PII detector that could not load is irrelevant to a user who does not
-        have ``pii`` enabled — and PII is *not* in the default categories, so
-        treating every failure as blocking would withhold answers wholesale on
-        deployments that never asked for PII masking in the first place.
-
-        ``failures`` names DETECTORS and ``enabled_categories`` names
-        CATEGORIES; they coincide for ``pii`` and diverge for ``profanity``
-        (which also produces ``custom``), so the mapping is written out rather
-        than assumed.
+        Shared with the input-side masker (``redactor._mask_inline``): both have
+        to draw the same line between "a detector this policy relies on could not
+        run" and "a detector for a category this policy ignores could not run",
+        and two copies of that judgement drift. See
+        ``redaction.config.blocking_detector_failures`` for why it is narrow.
         """
-        enabled = self._cfg.enabled_categories
-        return {name for name in failures if _DETECTOR_CATEGORIES.get(name, {name}) & enabled}
+        return blocking_detector_failures(failures, self._cfg.enabled_categories)

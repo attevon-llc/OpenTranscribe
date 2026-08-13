@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Collection
+from collections.abc import Iterable
 from dataclasses import dataclass
 from dataclasses import field
 
@@ -19,8 +21,11 @@ from app.core import constants as C  # noqa: N812
 
 logger = logging.getLogger(__name__)
 
-# Detector → categories it produces (used to gate detection + masking by detector toggle).
-_DETECTOR_CATEGORIES = {
+# Detector → categories it produces. The ONE copy of this mapping: every
+# fail-closed masker needs it to decide whether a detector failure is one the
+# user's policy cares about, and a second copy drifts silently
+# (``blocking_detector_failures`` below is the shared reader).
+_DETECTOR_CATEGORIES: dict[str, set[str]] = {
     "profanity": {"profanity", "custom"},
     "pii": {"pii"},
     "toxicity": {"toxicity"},
@@ -212,6 +217,38 @@ def resolve_effective_config(db: Session, user_id: int) -> EffectiveRedactionCon
         or admin["force_export_redacted"],
         export_locked=admin["force_export_redacted"],
     )
+
+
+def blocking_detector_failures(
+    failures: Iterable[str], enabled_categories: Collection[str]
+) -> set[str]:
+    """Which detector failures actually matter for a policy masking ``enabled_categories``.
+
+    ``detect_segment_spans`` **swallows** a detector exception and returns the
+    spans it did collect, so "found nothing" and "could not look" are the same
+    return value; its ``failures`` sink (issue #324) is the only thing that tells
+    them apart. Any masker that must fail closed asks this function whether a
+    recorded failure is one this user's policy cares about.
+
+    The narrowness is the point. ``pii`` is **not** in the default categories, so
+    treating every failure as blocking would withhold content wholesale on every
+    CPU-only deployment that has no Presidio and never asked for PII masking.
+    Only a failure of a detector feeding an *enabled* category may withhold.
+
+    ``failures`` names DETECTORS while ``enabled_categories`` names CATEGORIES;
+    they coincide for ``pii`` and diverge for ``profanity`` (which also produces
+    ``custom``), so the mapping is written out rather than assumed.
+
+    Args:
+        failures: Detector names recorded by ``detect_segment_spans``.
+        enabled_categories: The categories this policy masks.
+
+    Returns:
+        The subset of ``failures`` that feeds an enabled category. Empty means
+        nothing the caller masks was left unchecked.
+    """
+    enabled = set(enabled_categories)
+    return {name for name in failures if _DETECTOR_CATEGORIES.get(name, {name}) & enabled}
 
 
 def normalize_language(language: str | None) -> str:

@@ -231,20 +231,3 @@ unit/test_multipart_upload.py::test_multipart_round_trip_against_real_storage::e
 fixtures/mock_llm.py::mock_llm_url::readiness-probe-target  # BACKLOG(#431): `_reachable("127.0.0.1", CONTAINER_PORT)` with CONTAINER_PORT hardcoded to 5199. Under `--fresh --port-offset N --with-mock-llm` the container is on 5199+N, so this probe misses it and silently falls back to a host subprocess — degraded but not wrong. Fix: read MOCK_LLM_PORT from the environment. UNTRIAGED.
 fixtures/mock_llm.py::mock_llm_base_url_for_backend::readiness-probe-target  # BACKLOG(#431): same hardcoded 5199. Worse than its sibling: this one SKIPS when the probe fails, so every test needing the backend to reach the mock silently disappears against an offset stack. Fix: read MOCK_LLM_PORT from the environment. UNTRIAGED.
 test_selective_reprocess.py::auth_token::readiness-probe-target  # BACKLOG(#431): `BASE_URL = "http://localhost:5174/api"` hardcodes the dev stack's published backend port, and the ConnectionError handler turns "wrong stack" into a skip. Against `--fresh --port-offset N` the whole module skips, or — worse — passes against the DEV stack while claiming to test the isolated one. Fix: derive BASE_URL from BACKEND_PORT. UNTRIAGED.
-
-# --- external-service-mock false positives: the fixture patches the index NAME, not the client ---
-# `chunk_index` creates a THROWAWAY index on the real OpenSearch cluster with the real mapping
-# (`speaker` as keyword with eager global ordinals — the exact field the #405 bug turns on), then
-# monkeypatches `settings.OPENSEARCH_CHUNKS_INDEX` so the code under test writes there instead of
-# the live index. The client is never mocked; every assertion below is executed by OpenSearch 3.4.
-# Redirecting a real client at a scratch index is the CORRECT shape for this test, so these are
-# detector false positives, not deferred work. The detector should distinguish "monkeypatch a
-# settings value" from "patch the service" — reported upstream to the test-suite work.
-integration/test_rename_propagation_chunks.py::test_speaker_rename_rewrites_chunk_speaker_and_speakers_array::external-service-mock  # real cluster; fixture patches the index name only
-integration/test_rename_propagation_chunks.py::test_rename_leaves_other_files_and_other_speakers_alone::external-service-mock  # real cluster; fixture patches the index name only
-integration/test_rename_propagation_chunks.py::test_chat_speaker_scope_finds_pre_rename_content_under_the_new_name::external-service-mock  # real cluster; fixture patches the index name only
-integration/test_rename_propagation_chunks.py::test_batch_accept_collapses_several_speakers_in_one_pass::external-service-mock  # real cluster; fixture patches the index name only
-integration/test_rename_propagation_chunks.py::test_rename_is_a_noop_when_no_chunk_carries_the_old_name::external-service-mock  # real cluster; fixture patches the index name only
-integration/test_rename_propagation_chunks.py::test_title_rename_rewrites_every_chunk_of_the_file::external-service-mock  # real cluster; fixture patches the index name only
-integration/test_rename_propagation_chunks.py::test_propagation_bumps_the_chat_corpus_version::external-service-mock  # real cluster; fixture patches the index name only
-integration/test_rename_propagation_chunks.py::test_rename_query_is_built_through_chunk_plane_query::external-service-mock  # real cluster; fixture patches the index name only

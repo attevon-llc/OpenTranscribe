@@ -1,6 +1,20 @@
 # Mutation-testing baselines — a RATCHET, not a to-do list, and NOT a claim that the
 # remaining survivors are harmless.
 #
+# SPANS IS AT ITS FLOOR — 10, and all ten are EQUIVALENT MUTANTS (measured 2026-08-13).
+#
+# Do not spend another pass on `spans`. Tests were written for all ten, the file was
+# registered in MODULE_TESTS[spans], coverage reached 98%, and the count did not move —
+# because none of the ten can change observable behaviour:
+#   * a corrupted `style` default or fallback is normalised back, and `_placeholder`
+#     falls through to the label form for ANY unrecognised value (incl. None);
+#   * `not text or not spans` -> `and` reaches the same answer via `if not applied`;
+#   * `char_start > cursor` -> `>=` and `cursor < n` -> `<=` append the empty string;
+#   * both `build_word_offsets` mutants sit on the FIRST `idx < 0` guard, where the
+#     fallback `text.find(token)` re-finds the same index.
+# Full reasoning: backend/tests/redaction/test_apply_redactions_mutants.py.
+# Lowering this baseline requires changing spans.py, not adding tests.
+#
 # WHY THIS FILE EXISTS
 #
 # "Kill every surviving mutant" is not a finishable goal on this codebase: an AST census of
@@ -49,7 +63,7 @@
 # test strength. That happened to `lockout` and produced 41 false findings in `dependencies`.
 #
 # module<TAB>max_survivors<TAB>min_coverage_pct<TAB>measured_on<TAB>note
-spans	10	95	2026-08-12	10 survivors of 206. Census: 5 are operator flips in live predicates (`not text or not spans`->and, `char_start > cursor`->>=, `cursor < n`-><=, `idx < 0`->{<=0,<1}) and 5 rewrite the literal "label" — the fallback mask style, where every non-special value behaves identically, so those 5 are equivalent mutants. spans.py has no logger at all; the previous note ("the 10 are log/error strings") described a different file.
+spans	10	95	2026-08-12	10 survivors of 206, and ALL TEN ARE EQUIVALENT (verified 2026-08-13 by writing tests for every one: registered in MODULE_TESTS, coverage 97%->98%, count unmoved). Corrects the previous note, which called 5 of them 'operator flips in live predicates' — those 5 are equivalent too: `or`->`and` reaches the same answer via `if not applied`; `char_start > cursor`->`>=` and `cursor < n`->`<=` append the empty string; and BOTH `idx < 0` mutants sit on the FIRST guard, where the fallback `text.find(token)` re-finds the same index. This is a FLOOR: lowering it needs a change to spans.py, not more tests. Reasoning: tests/redaction/test_apply_redactions_mutants.py.
 lockout	149	80	2026-08-12	200 -> 171 -> 149 across three test batches. Census of the 149: 58 log strings + 8 log-only branches = 66; the remaining 83 are predicates and assignments (`record.last_failed_attempt = ...`, `now < locked_until_dt`) — real gaps. The previous note ("77 log strings, 12 log-branch" = 89) was never measured.
 security	95	77	2026-08-13	133 -> 95 after verify_token's exp/essential test AND adding tests/unit/test_verify_token_claims.py to MODULE_TESTS[security] — it was written FROM these survivors and was never in the selected set, so the mutants it kills came back every run. Coverage 77 -> 79%.
 session	73	76	2026-08-12	77 -> 73 after the Redis re-probe tests. OIDCStateStore mutants now killed by the #33 tests. Census: 31 log strings + 2 log-only branches; 40 other.

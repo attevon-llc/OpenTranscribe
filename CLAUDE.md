@@ -479,6 +479,20 @@ subsystem, and put new subsystem detail **there**, not in this file.
   recorded as evidence and you move on. So: **when a run is your evidence, check it ran YOUR
   code** — new test names present, a marker string in the output, or a deliberate failure you
   expect to see. A pass you cannot attribute is not a measurement.
+- **To watch a test fail against the OLD code, use a `git archive HEAD` tree — never swap files
+  in the shared checkout.** The repo's standard is that a test you have not seen red is not
+  evidence, so this is done often. Reverting a file in place and putting it back costs two
+  backend hot-reloads (each dispatching `search_index_maintenance`), leaves the fix off disk in
+  a window where a stash can capture the reverted state, and races every other writer:
+
+  ```bash
+  git archive HEAD | (mkdir -p /tmp/redcheck && tar -x -C /tmp/redcheck)
+  cp backend/tests/.../test_the_new_one.py /tmp/redcheck/backend/tests/.../   # new tests, old source
+  cd /tmp/redcheck/backend && <run them; expect red>
+  ```
+
+  Immune to stash windows, costs no reloads, disturbs nobody, and the tree you are testing is
+  provably HEAD rather than "what I think I reverted".
 - **`audit-tests` is a WHOLE-TREE gate, so an unfinished test file blocks everyone.** One
   in-progress test anywhere under `backend/tests` with an open finding refuses **every** commit
   in the worktree, including commits that do not touch it — twice in one day a lane's own

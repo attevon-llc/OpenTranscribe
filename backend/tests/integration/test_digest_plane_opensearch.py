@@ -25,6 +25,7 @@ Point it at an isolated stack, never the shared dev one::
 
 from __future__ import annotations
 
+import math
 import os
 import uuid as uuid_pkg
 from typing import Any
@@ -36,6 +37,7 @@ from app.models.media import Speaker
 from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.services.ingest_artifacts import index_mapping as digest_mapping
+from app.services.ingest_artifacts import sizing
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
@@ -51,8 +53,9 @@ pytestmark = [
     ),
 ]
 
-# Long enough that the digest builder's MIN_SENTENCE_WORDS keeps them, varied enough
-# that TextRank has something to rank, and enough of them to produce >1 section.
+# Long enough that the digest builder's MIN_SENTENCE_WORDS keeps them and varied enough
+# that TextRank has something to rank. The section COUNT is a function of total source
+# words, not of this list — see `_SCRIPT_REPEATS` below.
 _SCRIPT = [
     ("SPEAKER_00", "Let us start with the quarterly budget review for the new product line."),
     (
@@ -73,10 +76,35 @@ _SCRIPT = [
     ),
 ]
 
+#: Source words in one pass of ``_SCRIPT`` — every line is one sentence and every line
+#: clears ``MIN_SENTENCE_WORDS``, so this is exactly what the digest builder will count.
+_SCRIPT_WORDS = sum(len(text.split()) for _, text in _SCRIPT)
+
+#: How many times ``_SCRIPT`` is repeated to build the fixture transcript. **Derived, not
+#: chosen.** ``sizing.section_count_for`` is ``ceil(source_words / SOURCE_WORDS_PER_SECTION)``,
+#: so a transcript under 1,500 words gets exactly ONE section — which is a correct digest and
+#: a useless fixture: ``test_a_shorter_resection_leaves_no_orphan_digest`` needs a
+#: multi-section digest before a shrink means anything. The original six repetitions came to
+#: 576 words and produced one section, so that test could never reach its own subject.
+#: 1.5 × the constant lands in the MIDDLE of the two-section band, so neither an edit to
+#: ``_SCRIPT`` nor a modest change to ``SOURCE_WORDS_PER_SECTION`` silently drops it back to
+#: one — and the ``sections >= 2`` assertion is what fails, loudly, if it ever does.
+_SCRIPT_REPEATS = math.ceil(1.5 * sizing.SOURCE_WORDS_PER_SECTION / _SCRIPT_WORDS)
+
 
 @pytest.fixture
 def transcribed_file(db_session):
-    """A real ``media_file`` with real segments — the digest is built from these."""
+    """A real ``media_file`` with real segments — the digest is built from these.
+
+    Ends by **checking its own precondition**: the transcript must be long enough for the
+    real sizing rule to give it more than one section. The fixture shipped 576 words long,
+    which ``sizing.section_count_for`` correctly reduces to a single section — so
+    ``test_a_shorter_resection_leaves_no_orphan_digest`` could never reach the assertion it
+    was written for. Deriving ``_SCRIPT_REPEATS`` from the constant is not enough on its
+    own: a future change to ``SOURCE_WORDS_PER_SECTION``, to ``MIN_SENTENCE_WORDS``, or to
+    ``_SCRIPT`` could put it back under the line, and this must fail in the fixture, by
+    name, rather than turn a test back into one that cannot fail.
+    """
     user = User(
         email=f"digest_{uuid_pkg.uuid4().hex[:10]}@example.com",
         hashed_password="x",
@@ -112,7 +140,7 @@ def transcribed_file(db_session):
     db_session.flush()
 
     clock = 0.0
-    for _ in range(6):
+    for _ in range(_SCRIPT_REPEATS):
         for label, text in _SCRIPT:
             db_session.add(
                 TranscriptSegment(
@@ -126,6 +154,18 @@ def transcribed_file(db_session):
             )
             clock += 8.0
     db_session.flush()
+
+    from app.services.ingest_artifacts.digest import candidate_sentences
+    from app.services.ingest_artifacts.service import load_ordered_segments
+
+    rankable = candidate_sentences(load_ordered_segments(db_session, media_file.id))
+    source_words = sum(sentence.word_count for sentence in rankable)
+    assert sizing.section_count_for(source_words) >= 2, (
+        f"the fixture transcript is {source_words} source words, which the real sizing "
+        f"rule ({sizing.SOURCE_WORDS_PER_SECTION} words per section) turns into a "
+        f"single-section digest — every multi-section assertion below would be unreachable"
+    )
+
     return media_file, user
 
 

@@ -19,6 +19,25 @@ What is proven here and nowhere else:
 * the refresh-window race the fix's author documented is **reachable** — see
   ``test_reindex_inside_the_refresh_window_leaves_the_tail_behind``.
 
+Two things this module got wrong on its first execution, both worth keeping in front of
+whoever edits it next:
+
+* **It reasons about the chunk plane, and it must own every input that decides what is in
+  the index.** It shipped with a positive ``FILE_ID`` literal, which since index v6 is fed
+  to a digest generator that resolves it against Postgres — and on the Stage-3 stack that
+  id was a real recording, so a stranger's five-section digest landed in this module's
+  index and broke six of its assertions. The sharper half of the finding is the other
+  direction: **on a machine without that row the whole suite would have passed while
+  proving less.** A suite whose outcome depends on database content it does not own is not
+  a gate, and it fails *green* for everyone else. Hence the negative id at :data:`FILE_ID`;
+  do not "simplify" it back to a positive one.
+* **Anything that reads back what a bulk load just wrote must refresh first.** The bulk
+  load uses ``refresh=False`` and this module's own
+  ``test_reindex_inside_the_refresh_window_leaves_the_tail_behind`` is *about* that — yet
+  ``_strip_doc_type_from_chunks`` selected through an unrefreshed searcher, so the "pre-v6
+  corpus" it claims to construct sometimes never existed. Measured: 1 failure in 8 runs
+  without the refresh, 13 of 13 clean with it.
+
 Point the suite at an isolated stack, never the shared dev one::
 
     OPENSEARCH_PORT=5280 MINIO_PORT=5278 \\
@@ -47,7 +66,27 @@ pytestmark = [
 ]
 
 USER_ID = 4001
-FILE_ID = 400
+
+#: **Negative on purpose, and it is a correctness property of this module.**
+#:
+#: ``index_transcript_chunks`` also writes the digest plane, and ``_index_digest_plane``
+#: resolves this id against Postgres in its own session. A positive literal is a bet that
+#: no ``media_file`` has that id — and the bet was lost: this suite shipped with
+#: ``FILE_ID = 400``, and on the Stage-3 stack row 400 is a real 690-segment recording, so
+#: every ``_index()`` here read a stranger's transcript, built its five-section digest and
+#: wrote it into this module's throwaway index. ``_docs`` filters on ``file_uuid`` alone, so
+#: the chunk-index assertions saw ``[-5, -4, -3, -2, -1, 0, 1, …]`` and the count-gate test
+#: saw a second search (the digest plane's own prune gate). Six of this module's tests
+#: failed for that reason and none of them for the reason they were written to check —
+#: and on any stack without that row they would all have passed while proving less.
+#:
+#: ``media_file.id`` is a positive serial, so a negative id CANNOT resolve:
+#: ``generate_file_artifacts`` returns ``None``, the digest plane is empty by construction
+#: rather than by luck, and this module's outcome no longer depends on what happens to be
+#: in the database. Nothing is mocked to achieve it. ``_index`` asserts the emptiness so the
+#: precondition is checked rather than assumed, and the digest plane's own behaviour is
+#: covered by ``test_digest_plane_opensearch.py``, which owns a real file.
+FILE_ID = -400
 
 
 @pytest.fixture
@@ -112,6 +151,11 @@ def _index(segments: list[dict[str, Any]], *, file_uuid: str) -> dict[str, Any]:
         tags=[],
     )
     assert isinstance(result, dict), f"indexing returned a failure sentinel: {result!r}"
+    assert result["digest_sections"] == 0, (
+        "a digest was generated for FILE_ID — this module reasons about the chunk plane "
+        "only, and its chunk_index and search-counter assertions are wrong if the digest "
+        "plane is also being written. See the FILE_ID comment."
+    )
     return result
 
 
@@ -221,7 +265,11 @@ def test_first_index_issues_the_count_gate_and_no_delete_by_query(chunk_index):
     after = _index_counters_delta(chunk_index, before)
 
     assert first["stale_removed"] == 0
-    assert after["searches"] == 1, "the count gate, and nothing after it"
+    assert after["searches"] == 1, (
+        "the chunk plane's count gate, and nothing after it. One, not two: the digest "
+        "plane has a count gate of its own, and it is silent here only because FILE_ID "
+        "resolves to no media file — see the FILE_ID comment"
+    )
     assert after["deleted"] == 0
 
     # The gate's own predicate, evaluated by the real searcher: genuinely empty.
@@ -291,9 +339,23 @@ def _patch_chunk_plane_query(monkeypatch, base, svc, clause: dict[str, Any]) -> 
 
 
 def _strip_doc_type_from_chunks(client, file_uuid: str) -> None:
-    """Make this file's chunk documents look the way a pre-v6 index holds them."""
+    """Make this file's chunk documents look the way a pre-v6 index holds them.
+
+    The refresh is load-bearing, not defensive. ``update_by_query`` selects through a
+    **search**, and the bulk load that wrote these chunks used ``refresh=False`` — so
+    without it this helper matches zero documents, strips nothing, and silently leaves a
+    fully v6 corpus behind. That is exactly how it shipped, and it made
+    ``test_a_bare_doc_type_term_silently_stops_pruning_the_existing_corpus`` *intermittent*
+    rather than simply broken — measured at 1 failure in 8 runs. When it fires, the bare
+    term is being measured against documents that all still carry ``doc_type: chunk``: the
+    term matches them, four chunks are pruned, and the hazard the test exists to
+    characterise was never constructed at all. The same searcher-visibility mechanic this
+    module characterises in
+    ``test_reindex_inside_the_refresh_window_leaves_the_tail_behind``.
+    """
     from app.core.config import settings
 
+    client.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
     client.update_by_query(
         index=settings.OPENSEARCH_CHUNKS_INDEX,
         body={
@@ -426,12 +488,17 @@ def test_reindex_inside_the_refresh_window_leaves_the_tail_behind(chunk_index):
     later re-examines them, and a subsequent refresh does not trigger a prune.
 
     The service's docstring calls this out and judges it unreachable ("which no pipeline
-    path does"). Measured on OpenSearch 3.4 at the production default
-    ``refresh_interval`` of 1 s, two back-to-back ``index_transcript_chunks`` calls take
-    ~150 ms and the leak reproduced in 5 of 6 attempts. This test pins
-    ``refresh_interval`` open instead of racing a 1 s clock, so it states the mechanism
-    rather than the timing — and the control below proves the mechanism *is* visibility,
-    not the predicate.
+    path does"). Re-measured 2026-08-13 against this stack's OpenSearch at the production
+    default ``refresh_interval`` (the index sets none, so the 1 s cluster default applies):
+    a back-to-back pair of ``index_transcript_chunks`` calls completes in 125–224 ms and
+    **the stale tail survived 11 of 12 pairs**. So the conditional is doing all the work —
+    the window is not narrow, and anything that does re-index one file twice in a second
+    leaks almost every time. That is issue #435, and the number above is the one to quote
+    in it.
+
+    This test pins ``refresh_interval`` open instead of racing a 1 s clock, so it states
+    the mechanism rather than the timing — and the control below proves the mechanism *is*
+    visibility, not the predicate.
 
     If a future change closes the race (refreshing before the gate, or dropping the gate),
     this test fails. That is the intended signal: update it, and delete the caveat in

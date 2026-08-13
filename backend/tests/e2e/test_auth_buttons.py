@@ -584,11 +584,17 @@ class TestPostLoginGallery:
         _login_local(page, ADMIN_EMAIL, ADMIN_PASSWORD)
         _wait_for_gallery(page)
 
-        # Check if there are any file cards to click
-        file_cards = page.locator(".file-card, .gallery-item, a[href*='/files/']")
-        if file_cards.count() > 0:
-            file_cards.first.click()
-            # Deterministic settle rather than a guessed duration (issue #431).
-            page.wait_for_load_state("networkidle")
-            # Should navigate to a file detail page
-            assert "/files/" in page.url, f"Expected /files/ in URL, got {page.url}"
+        # The gallery grid is VIRTUALISED, so it renders after `networkidle`. `.count()` is
+        # a snapshot that does not wait: taken here it returned 0 on some runs — silently
+        # passing this test via an `if` with no `else` — and on others returned a partially
+        # rendered set whose first element was not the link. Wait for a card to exist, then
+        # assert unconditionally.
+        page.wait_for_selector(".file-card", state="visible", timeout=30000)
+        cards = page.locator(".file-card")
+        assert cards.count() > 0, "the dev stack must have at least one file to navigate to"
+
+        # Click the anchor, not its wrapper: `.file-card` is a DIV containing the
+        # `/files/{uuid}` link, and the old union selector could resolve to the wrapper.
+        cards.first.locator("a[href*='/files/']").first.click()
+        page.wait_for_url(lambda url: "/files/" in url, timeout=15000)
+        assert "/files/" in page.url, f"Expected /files/ in URL, got {page.url}"

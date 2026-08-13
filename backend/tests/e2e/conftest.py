@@ -112,9 +112,20 @@ def backend_url(request: pytest.FixtureRequest) -> str:
 
 @pytest.fixture
 def login_page(page: Page, base_url: str):
-    """Navigate to login page and return page object."""
-    page.goto(base_url)
-    # Wait for login form to be ready
+    """Navigate to the login page and wait until it is ACTUALLY ready.
+
+    Waiting for ``#email`` alone is not enough. Half of what the login page renders —
+    the registration link, the SSO/PKI buttons, the "or continue with" divider — is
+    gated on ``authMethods``, which arrives from an async ``GET /api/auth/methods``.
+    Asserting on any of it before that response lands is a race that only shows up
+    under parallel load: ``test_registration_link_exists`` failed in a 3-worker run
+    while passing every time the same page was driven by hand.
+
+    Waiting for the response itself is the deterministic signal. The ``expect_response``
+    context is entered BEFORE ``goto`` so the response cannot be missed.
+    """
+    with page.expect_response(lambda r: "/api/auth/methods" in r.url, timeout=20000):
+        page.goto(base_url)
     page.wait_for_selector("#email", timeout=10000)
     return page
 

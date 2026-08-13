@@ -411,9 +411,15 @@ subsystem, and put new subsystem detail **there**, not in this file.
 > an LLM sees it depends on **where the model runs**: a **local** model receives it unmasked (the
 > text never leaves the machine, so masking costs recall and buys nothing), a **remote provider**
 > still gets masked text (sending unredacted PII to a third party is a data-egress event). Key that
-> off the **provider**, never a global setting. ⚠️ Redaction of model-generated **output** is not
-> implemented, so a local-model deployment is currently *less* protected than before the policy
-> change — a deliberate, documented trade.
+> off the **provider**, never a global setting.
+>
+> ⚠️ **The provider keying is DECIDED, NOT BUILT.** No code branches on the provider — only the
+> CLAUDE.md files were amended — so **input masking applies to every provider today** and a local
+> deployment is *not* currently less protected than before the decision. **Output redaction landed
+> first, deliberately**: `services/chat/output_redactor.py` masks what the model *writes*,
+> sentence-buffered, gated on `cfg.enabled and cfg.enabled_categories` (the **display** policy, not
+> the `redact_before_llm` **egress** policy). Land the provider keying before it and the gap is
+> real, between two commits, on a deployment that believes it is protected.
 >
 > ⚠️ **Two maskers, not interchangeable.** `redactor.mask_chunks()` addresses text by **time
 > range**; `redactor.mask_digests()` by **provenance** (`segment_ids`). A digest through the chunk

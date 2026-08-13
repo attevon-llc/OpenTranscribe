@@ -23,6 +23,13 @@ indexing → WebSocket notification.
   alive; must stay in `celery_app`'s `include=` list.
 - `recovery.py` / `recovery_tasks.py` — `system.startup_recovery` and the periodic
   `cleanup.health_check` reclaim files stuck in PROCESSING with no live Celery task.
+- `erasure_reconciliation.py` — `gdpr.erasure_reconcile`, **utility** queue, daily 04:40.
+  Finishes GDPR Art. 17 erasures that a legal hold deferred, and re-erases subjects a
+  backup restore brought back. `takedown_service.release_file` calls its
+  `notify_hold_released` for latency; **the schedule is the guarantee** — a hold can also
+  be cleared by a DB edit or a restore, and a hook alone has a silent failure mode.
+  Design rationale (what the ledger must never store, and why `org_member` entries are
+  never auto-re-erased) lives in `app/services/CLAUDE.md`.
 - `directory_sync_task.py` — LDAP reconciliation/deprovisioning, **cpu** queue.
   `directory.sync_check_schedule` runs from beat every 15 min, reads the DB-stored cron
   (`directory_sync.schedule`), and dispatches `directory.sync_run` when due — so changing the

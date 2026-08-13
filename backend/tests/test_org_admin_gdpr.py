@@ -36,6 +36,7 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import require_org_admin
 from app.auth.audit import AuditOutcome
 from app.models.media import Collection
+from app.models.media import Comment
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerProfile
@@ -207,12 +208,25 @@ def captured_audit():
 
 
 def _speaker_indices() -> set[str]:
-    """The speaker indices the voiceprint sweep visits (v3 + v4 + alias)."""
+    """The speaker indices the voiceprint sweep visits (v3 + v4 + alias + v3 backup).
+
+    ``speakers_v3_backup`` joined the set in issue #442 and is not housekeeping:
+    ``opensearch_service/indices._restore_v3_from_backup`` reindexes it into
+    ``speakers_v3`` whenever v3 is found empty, so a small deployment erasing its last
+    subject had their biometric embeddings put back by the next
+    ``ensure_indices_exist()``.
+    """
     from app.core.constants import get_speaker_index
     from app.core.constants import get_speaker_index_v3
+    from app.core.constants import get_speaker_index_v3_backup
     from app.core.constants import get_speaker_index_v4
 
-    return {get_speaker_index(), get_speaker_index_v3(), get_speaker_index_v4()}
+    return {
+        get_speaker_index(),
+        get_speaker_index_v3(),
+        get_speaker_index_v4(),
+        get_speaker_index_v3_backup(),
+    }
 
 
 @pytest.fixture()
@@ -749,6 +763,112 @@ class TestOrgScopedErasure:
         assert db.query(Collection).filter(Collection.id == w.coll_a.id).first() is None
         assert db.query(User).filter(User.id == w.member_a.id).first() is not None
 
+    def test_erase_org_member_data_removes_the_members_org_stamped_side_tables(self, two_orgs):
+        """The four row types the org-scoped path missed until issue #442.
+
+        ``SummaryPrompt``, ``UserSetting``, ``CustomVocabulary`` and ``WatchSource`` all
+        carry an ``organization_id``, and the account-wide path reached them only through
+        the ``user`` row's FK CASCADE — which this path never triggers, by design. So an
+        org admin's "erase this member's data" left all four behind, and **WatchSource
+        stores SMB/S3 credentials**: the tenant kept the erased member's encrypted
+        secrets and a live import path using them.
+
+        The other-org twins are the control. They must survive, or the fix would have
+        replaced a leak with a cross-tenant deletion.
+        """
+        w = two_orgs
+        db = w.db
+        from app.models.custom_vocabulary import CustomVocabulary
+        from app.models.prompt import SummaryPrompt
+        from app.models.prompt import UserSetting
+        from app.models.watch_source import WatchSource
+
+        def _rows(org_id: int, suffix: str):
+            prompt = SummaryPrompt(
+                user_id=w.member_a.id,
+                organization_id=org_id,
+                name=f"p_{suffix}",
+                prompt_text="summarise",
+            )
+            setting = UserSetting(
+                user_id=w.member_a.id,
+                organization_id=org_id,
+                setting_key=f"k_{suffix}",
+                setting_value="v",
+            )
+            vocab = CustomVocabulary(
+                user_id=w.member_a.id, organization_id=org_id, term=f"term_{suffix}"
+            )
+            # An SMB source, because the encrypted credential columns are the reason
+            # this row type mattered: leaving it behind leaves the tenant holding the
+            # erased member's share password and a live import path using it.
+            source = WatchSource(
+                user_id=w.member_a.id,
+                organization_id=org_id,
+                name=f"ws_{suffix}",
+                source_type="smb",
+                smb_server="files.example.com",
+                smb_share="recordings",
+                smb_username=f"user_{suffix}",
+                encrypted_smb_password="ciphertext",
+            )
+            db.add_all([prompt, setting, vocab, source])
+            db.commit()
+            return prompt, setting, vocab, source
+
+        target = _rows(int(w.org_a.id), "a")
+        survivor = _rows(int(w.org_b.id), "b")
+        target_ids = [(type(r), r.id) for r in target]
+        survivor_ids = [(type(r), r.id) for r in survivor]
+
+        from app.services.gdpr_erasure_service import erase_org_member_data
+
+        summary = erase_org_member_data(db, int(w.member_a.id), int(w.org_a.id))
+
+        assert summary["prompts_deleted"] == 1
+        assert summary["user_settings_deleted"] == 1
+        assert summary["custom_vocabularies_deleted"] == 1
+        assert summary["watch_sources_deleted"] == 1
+        # Asserted row by row as well as by counter: a counter can be incremented by
+        # code that deletes nothing.
+        assert len(target_ids) == 4, "the fixture built fewer rows than it claims"
+        for model, row_id in target_ids:
+            assert db.query(model).filter(model.id == row_id).first() is None, (
+                f"{model.__name__} survived the org-scoped erasure"
+            )
+        for model, row_id in survivor_ids:
+            assert db.query(model).filter(model.id == row_id).first() is not None, (
+                f"{model.__name__} belonging to the OTHER org was destroyed"
+            )
+
+    def test_erase_org_member_data_removes_comments_on_other_members_org_files(self, two_orgs):
+        """Comments/tasks the member wrote on the TENANT's other files.
+
+        Neither table has an ``organization_id``, so the tenant boundary is the file's.
+        A comment on the member's own org file is already gone with that file; this is
+        the one no per-file pass can see. The member's comment on a PERSONAL file of
+        their own is the control — an org admin has no authority over that.
+        """
+        w = two_orgs
+        db = w.db
+        colleague_file = _mk_file(db, user=w.admin_a, org_id=int(w.org_a.id))
+        personal_file = _mk_file(db, user=w.member_a, org_id=None)
+        in_tenant = Comment(
+            media_file_id=colleague_file.id, user_id=w.member_a.id, text="in tenant"
+        )
+        personal = Comment(media_file_id=personal_file.id, user_id=w.member_a.id, text="personal")
+        db.add_all([in_tenant, personal])
+        db.commit()
+        in_tenant_id, personal_id = in_tenant.id, personal.id
+
+        from app.services.gdpr_erasure_service import erase_org_member_data
+
+        summary = erase_org_member_data(db, int(w.member_a.id), int(w.org_a.id))
+
+        assert summary["comments_deleted"] == 1
+        assert db.query(Comment).filter(Comment.id == in_tenant_id).first() is None
+        assert db.query(Comment).filter(Comment.id == personal_id).first() is not None
+
     def test_erase_org_member_data_records_voiceprint_failure(self, two_orgs, fake_opensearch):
         """The org-scoped erasure reports a failed biometric sweep too — the
         (user, org) voiceprint docs are the only copy no relational CASCADE
@@ -883,6 +1003,46 @@ class TestPartialErasureIsReportedAsPartial:
         # ...and the erasure still ran to completion rather than aborting.
         assert summary["users_deleted"] == 1
         assert db_session.query(User).filter(User.id == user.id).first() is None
+
+    def test_a_failed_profile_embedding_removal_blocks_a_success_audit(
+        self, db_session, fake_opensearch, captured_audit
+    ):
+        """The last ``contextlib.suppress`` on this path, removed in issue #442.
+
+        ``remove_profile_embedding`` was wrapped in ``suppress(Exception)`` at all three
+        call sites — the same shape already fixed for the transcript document. A
+        biometric profile embedding that could not be deleted made the erasure report
+        SUCCESS, and the ``speaker_profile`` row naming which document to retry was
+        destroyed in the same pass.
+
+        The profile row must still be deleted: best-effort is right, silent is not.
+        """
+        from app.models.media import SpeakerProfile
+        from app.services.gdpr_erasure_service import erase_user
+
+        user = _mk_user(db_session, "profile_fail")
+        profile = SpeakerProfile(uuid=uuid_pkg.uuid4(), user_id=user.id, name="Alice")
+        db_session.add(profile)
+        db_session.commit()
+        profile_id, user_id = profile.id, user.id
+
+        with (
+            fake_opensearch(),
+            patch(
+                "app.services.opensearch_service.remove_profile_embedding",
+                side_effect=RuntimeError("index unavailable"),
+            ),
+            captured_audit() as fake_audit,
+        ):
+            summary = erase_user(db_session, user_id)
+
+        assert _stages(summary) == ["profile_embedding"]
+        assert summary["complete"] is False
+        assert _outcome(fake_audit) is AuditOutcome.PARTIAL
+        assert summary["speaker_profiles_deleted"] == 1
+        assert (
+            db_session.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first() is None
+        )
 
     def test_unavailable_opensearch_client_is_not_a_silent_success(
         self, db_session, captured_audit

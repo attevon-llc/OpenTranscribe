@@ -34,6 +34,17 @@ def _of_type(events: list[dict], event_type: AuditEventType) -> list[dict]:
     return [e for e in events if e["event_type"] is event_type]
 
 
+def _of_action(events: list[dict], event_type: AuditEventType, action: str) -> list[dict]:
+    """Select by event type AND ``details.action``.
+
+    One erasure now emits THREE ``ADMIN_USER_DELETE`` records — the ledger's
+    ``gdpr_erasure_requested`` and ``gdpr_erasure_recorded`` bracketing the service's
+    own ``gdpr_erasure`` (issue #442). Selecting on the event type alone would either
+    fail on the count or, worse, assert against whichever record happened to be first.
+    """
+    return [e for e in _of_type(events, event_type) if e.get("details", {}).get("action") == action]
+
+
 # ---------------------------------------------------------------------------
 # POST /admin/gdpr/erase-user/{uuid} — the actor
 # ---------------------------------------------------------------------------
@@ -66,11 +77,10 @@ def test_gdpr_erasure_names_the_acting_super_admin(
     )
     assert response.status_code == status.HTTP_200_OK, response.text
 
-    erasures = _of_type(events, AuditEventType.ADMIN_USER_DELETE)
+    erasures = _of_action(events, AuditEventType.ADMIN_USER_DELETE, "gdpr_erasure")
     assert len(erasures) == 1, f"expected exactly one erasure record, got {events}"
 
     details = erasures[0]["details"]
-    assert details["action"] == "gdpr_erasure"
     # Who did it.
     assert details["actor_user_id"] == actor_id
     assert details["actor_email"] == actor_email
@@ -79,6 +89,26 @@ def test_gdpr_erasure_names_the_acting_super_admin(
     assert details["target_user_id"] == target_id
     assert details["target_email"] == target_email
     assert erasures[0]["user_id"] == target_id
+
+    # The ledger's own two records bracket this one and share its event type, so
+    # `user_id` must mean the same thing in all three or the audit stream cannot be
+    # queried by subject at all (issue #443). A first version of the ledger put the
+    # ACTOR there, giving one event type two opposite conventions in one sequence.
+    ledger = [
+        e
+        for e in _of_type(events, AuditEventType.ADMIN_USER_DELETE)
+        if e["details"]["action"] in {"gdpr_erasure_requested", "gdpr_erasure_recorded"}
+    ]
+    assert len(ledger) == 2, f"expected the ledger to bracket the erasure, got {events}"
+    for record in ledger:
+        assert record["user_id"] == target_id, (
+            "A ledger record attributes `user_id` to someone other than the data "
+            "subject, while the erasure record beside it uses the subject."
+        )
+        assert record["details"]["actor_user_id"] == actor_id, (
+            "The ledger record does not name the acting super admin, so moving the "
+            "subject into `user_id` lost the actor entirely."
+        )
 
 
 def test_gdpr_erasure_still_reports_the_webhook_when_there_is_no_actor(db_session, normal_user):
@@ -98,7 +128,7 @@ def test_gdpr_erasure_still_reports_the_webhook_when_there_is_no_actor(db_sessio
     with patch.object(gdpr_erasure_service.audit_logger, "log", lambda **kw: events.append(kw)):
         gdpr_erasure_service.erase_user(db_session, int(normal_user.id))
 
-    erasures = _of_type(events, AuditEventType.ADMIN_USER_DELETE)
+    erasures = _of_action(events, AuditEventType.ADMIN_USER_DELETE, "gdpr_erasure")
     assert len(erasures) == 1
     assert erasures[0]["details"]["actor_email"] == "data-subject-webhook"
     assert erasures[0]["details"]["actor_user_id"] is None

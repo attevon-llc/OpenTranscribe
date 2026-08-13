@@ -49,10 +49,14 @@ helpers read the column fail-safe and it is the constraint that keeps that sound
 `v382_scim_tokens` (`scim_token` table + `group_mapping`'s `source`/membership CHECKs
 widened for `proxy`/`scim`), `v383_saml_auth_type` (`auth_type` CHECK
 widened for `'saml'` + `user.saml_subject`, mirroring `v380`'s identity-column shape
-for a fourth provider), head currently `v384_add_chat_reasoning_content` (nullable
+for a fourth provider), `v384_add_chat_reasoning_content` (nullable
 `chat_message.reasoning_content` — persists a provider's separately-streamed
 reasoning/"thinking" text for the collapsible reasoning display; single-marker
-revision, no CHECK involved).
+revision, no CHECK involved), head currently `v389_add_erasure_ledger`
+(the GDPR Art. 17 ledger — note its detection arm keys on
+`ck_erasure_ledger_counters_numeric` rather than on the table, because a table
+without that CHECK can store the personal data the ledger exists not to retain and
+therefore *should* re-run the revision).
 
 **Renumbering note (2026-08).** This auth-identity chain originally used v375-v381,
 branched off `v374_add_tag_user_id` independently of the RAG-chat chain

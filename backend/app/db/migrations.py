@@ -439,7 +439,55 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'user_group' AND column_name = 'organization_id')"
     )
 
+    # v389: the GDPR Art. 17 erasure ledger. Probed on the CHECK rather than on the
+    # table, because the constraint is the part that carries the guarantee — a hand-made
+    # `erasure_ledger` without `ck_erasure_ledger_counters_numeric` is a table that can
+    # store the personal data the ledger exists not to retain, and re-running the
+    # revision is exactly the right repair for it.
+    has_erasure_ledger = "erasure_ledger" in tables and _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_erasure_ledger_counters_numeric')"
+    )
+
     # Return the highest version stamp that matches (newest first)
+    # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
+    # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
+    # strictly more specific and the ladder returns the FIRST match.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_chat_tables
+        and has_chat_projects
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+        and has_oidc_subject
+        and has_oidc_user_refresh_token
+        and has_session_id_token
+        and has_user_approval_status
+        and has_approval_status_check
+        and has_scim_token
+        and has_proxy_group_source
+        and has_saml_subject
+        and has_saml_auth_type_check
+        and has_chat_reasoning_content
+        and not has_orphan_tables
+        and has_tag_share
+        and has_actor_fk_set_null
+        and has_tag_share_type_check
+        and not has_legacy_role_check
+        and has_user_group_org
+        and has_erasure_ledger
+    ):
+        return "v389_add_erasure_ledger"
     # v388: same as v387 plus the group tenancy stamp.
     if (
         has_cloud_seams

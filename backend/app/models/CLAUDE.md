@@ -47,6 +47,15 @@ authority. See `backend/app/db/CLAUDE.md`.
   behind. The relationship therefore uses `passive_deletes=True` and deliberately NOT
   `delete-orphan`. `ChatProject.default_scope` / `has_scope` mirror `ChatConversation.scope` so
   the resolver reads either shape without a second code path.
+- `erasure.py` — `ErasureLedgerEntry` (`v389`, issue #442): one row per GDPR Art. 17
+  erasure request. **Its schema is a security control, not a convenience.** It has no
+  free-text column at all (every textual column is a short CHECK-constrained enum) and
+  `counters` is JSONB behind `ck_erasure_ledger_counters_numeric`, which rejects any
+  value that is not a JSON number — because a ledger holding the personal data it
+  records the destruction of is not erasure. `subject_user_id` /
+  `subject_organization_id` are **deliberately not foreign keys**: they name the rows
+  being destroyed, and a `SET NULL` would erase the only key the reconciliation sweep
+  has. Full rationale in `app/services/CLAUDE.md`.
 - `__init__.py` — the canonical import surface. A new model must be added here.
 
 ## Conventions / patterns

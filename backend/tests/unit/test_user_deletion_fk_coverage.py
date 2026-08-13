@@ -280,6 +280,18 @@ _ACTOR: dict[str, Disposition] = {
         "v387. prompts.share_prompt accepts owner OR admin, so this points at a row "
         "the owner-scoped sweep never matches.",
     ),
+    "erasure_ledger.actor_user_id": Disposition(
+        SET_NULL,
+        "ErasureLedgerEntry",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v389 (#442). The compliance record of an Art. 17 erasure must outlive the "
+        "admin who performed it — and erasing THAT admin must not be blocked by, or "
+        "destroy, evidence about a different data subject. actor_kind survives the "
+        "NULL, so the entry still says whether it was staff or the subject themselves. "
+        "Note the SUBJECT columns are deliberately not FKs at all: they name the rows "
+        "the ledger records the destruction of.",
+    ),
 }
 
 #: Already ``SET NULL`` before this suite existed, for the same "the artifact outlives

@@ -221,6 +221,19 @@ def release_file(
     )
     logger.info(f"File {file.id} ({file.uuid}) released from quarantine by admin {admin.id}")
     _notify_owner_release(file)
+
+    # Lifting a hold can UNBLOCK a GDPR erasure (issue #442). An Art. 17 request that
+    # hit this file was deferred, not abandoned — ``_purge_files`` skipped it under
+    # Art. 17(3)(e) and, because ``media_file.user_id`` is a NO ACTION FK, the whole
+    # account survived with it. Until this call existed, releasing the hold ended the
+    # only justification for that retention and nothing noticed: the deferral became
+    # permanent non-compliance. Dispatch only — the sweep decides which entries are now
+    # finishable, and it runs on a schedule regardless, so a failed dispatch delays the
+    # completion rather than losing it.
+    if clear_legal_hold:
+        from app.tasks.erasure_reconciliation import notify_hold_released
+
+        notify_hold_released(file)
     return file
 
 

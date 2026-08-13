@@ -649,6 +649,154 @@ both corpora, so if the effect is present it is smaller than the `embedding_text
 mechanism is named here so a future regression is not mysterious, but nothing in this
 measurement attributes anything to it.
 
+## Stage 4 — the router, the counted tier and the digest leg
+
+Three baselines, taken in a single measurement window against index v6, all committed under
+`backend/tests/eval/baselines/`. Each is a control **for** something specific, and reading one for
+a question it does not answer is the failure this section exists to prevent.
+
+| Baseline | Command | It is a control for |
+|---|---|---|
+| `stage4-control` | `--corpus qmsum --corpus synthetic` | **D5**: that Stage 4 did not regress the chunk plane |
+| `stage4-routed` | `--stage route` (adds `digest_leg`) | what the **digest tier** contributes, as file selection |
+| `stage4-aggregation` | `--answerer product` | what the **product's** aggregation path scores |
+| `stage4-router` | `scripts/benchmark_router.py` | the router as a **classifier**, no stack required |
+
+### The control: zero, to four decimal places
+
+Against `stage3-index-v6`, every class and every measure:
+
+| corpus | class | Δ nDCG@10 | Δ R@10 | Δ MRR |
+|---|---|---|---|---|
+| qmsum | lookup | +0.0000 | +0.0000 | +0.0000 |
+| qmsum | summarize | +0.0000 | +0.0000 | +0.0000 |
+| synthetic | lookup | +0.0000 | +0.0000 | +0.0000 |
+| synthetic | multi_file | +0.0000 | +0.0000 | +0.0000 |
+
+D5's "lookup must never regress" is satisfied **by identity, not by a margin**: the router, the
+counted tier, the digest plane and `mask_digests` are all live, and the chunk plane is byte-for-byte
+what it was. G9's predicted BM25 IDF cross-talk did not materialise.
+
+### Why the routed run's ranked list is identical, on purpose
+
+`--stage route` puts the production router in the loop, and its metric table is **the same table**.
+That is the design, and it is test-asserted.
+
+Digest hits are recorded *beside* the ranked list, never merged into it. The qrels judge **chunks** —
+they map gold turn spans onto whatever chunks the indexer produced — so a digest document is
+unjudged: it would score 0 and push relevant chunks down. A merged run would therefore score *worse*
+than the control **by construction**, and every reading of that number would be wrong — it would look
+like the digest tier hurt retrieval when it was an artefact of the judgement space. Judging digests
+instead would mean inventing a second relevance rule mid-epic, which is how a qrels file stops
+meaning anything.
+
+So the digest tier is measured for what it is actually claimed to do. Stage 1 established the shape
+of the problem: corpus-wide nDCG@10 **0.1052** against **0.3296** with an oracle gold-file scope —
+**roughly two thirds of the loss is picking the wrong recording.**
+
+### The digest leg, measured as file selection
+
+```
+queries scored                                     1651
+routed to the digest tier                           401   (of a 404-query summarize class)
+...and the tier returned something                  401   (100%)
+digest leg found a gold file                         93
+chunk leg found a gold file in its top 10 files     193
+RESCUED (digest found it, chunk top-10 did NOT)      16   = 3.99% of routed
+```
+
+**Read 3.99% as the modest result it is.** Of the 93 gold files the digest leg found, **77 were
+files the chunk leg already had** — re-finding those is worth nothing and is excluded by the strict
+definition. Across all 1,651 scored queries the rescue rate is **0.97%**. It is a real effect on the
+~4% of summarize-class queries where the digest tier is the only reason the right recording is
+reachable at all; it is **not** the answer to file selection, and it recovers only a small corner of
+the 0.1052 → 0.3296 gap.
+
+Routing on live traffic reproduced the offline confusion matrix without adjustment: 404/404
+summarize, 1220/1222 lookup, 25/25 `multi_file` → lookup, and the same two borderline QMSum leaks
+behind the committed **0.104%** leakage figure.
+
+The arithmetic between 404 classified `summarize` and 401 that reached the digest tier is worth
+following, because neither number is the other's superset:
+
+```
+404 summarize-class queries
+ −5  carry a QUOTED PHRASE, which removes the digest tier
+ ───
+399
+ +2  lookup-class queries that leaked to summarize (the 0.104%) and got the tier
+ ───
+401  routed to the digest tier
+```
+
+Both adjustments are the design working rather than failing. A **quoted phrase removes the digest
+tier** because a digest is *selected* sentences: a literal phrase can be absent from the digest and
+present in the transcript, and answering "not mentioned" from a digest is the silent-wrong-answer
+shape this epic keeps hitting. And the two leaked lookups keep their chunk tier throughout, so they
+cost a reduced excerpt budget and nothing else.
+
+`tiers` on the record is what distinguishes "the tier was not asked for" from "the tier was asked
+and returned nothing" — without it, `routed_to_digest_tier` would be unreadable.
+
+### The product's aggregation path: 0.800 against an exact ceiling
+
+| answerer | EM | R3 count | R4 list | R5 events | R6 speaker | R7 temporal |
+|---|---|---|---|---|---|---|
+| `none` (pre-Stage-4 floor) | 0.000 | 0/4 | 0/4 | 0/4 | 0/4 | 0/4 |
+| **`product`** | **0.800** | 4/4 | 4/4 | 4/4 | 4/4 | 0/4 |
+| `reference` (harness ceiling) | 1.000 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 |
+
+The comparison means something only because the two share **no intent parsing**: the reference's
+regexes are matched to the generator's exact question frames, while the product strips a *generic*
+interrogative frame. Four of five rules reach the ceiling.
+
+R7 fails for a reason that is a **product gap, not a harness artefact**: `media_file` records
+`upload_time` and nothing else, so "meetings in March 2025" filters on the date a file was
+*ingested*. All 432 corpus files share one upload date and the meeting dates live in metadata no
+product code reads. Every user with a back-catalogue has this problem; it is filed, and the answer
+states the limitation rather than hiding it.
+
+### ⚠️ A metric we replaced, and why — do not quietly drop metrics
+
+The #383 plan specified, for map-reduce: *"on the summarize class with N files in scope, distinct
+`file_uuid`s represented in the answer goes from ~N/4 (today's `max_chunks_per_file` ceiling) to
+N."*
+
+**Measured, over a 25-recording scope against a real model, it went 1/25 → 0/25.** It did not move,
+and the honest reading is that **the metric measured the wrong thing**. Operationalised as
+"recordings the answer names", it rewards enumeration — but a model asked to *"summarise what these
+sessions covered across all of them"* answers thematically, and that is the better answer, not a
+worse one. The metric would have scored a good summary zero and a list of twenty-five titles full
+marks.
+
+What actually improved is checkable, and was checked against Postgres rather than read approvingly:
+
+| | control (chunk leg only) | with the overview block |
+|---|---|---|
+| evidence covers | 12 of 25 files | **25 of 25** |
+| recordings claimed | — | **25** ✓ (truth: 25) |
+| total duration claimed | — | **44h 30m** ✓ (truth: 160,250 s) |
+| distinct speakers claimed | — | **102** ✓ (truth: 102) |
+| what it said | *"the only excerpt that details substantive topics is [12]… specify which recording you would like me to search"* | a corpus-level summary across all 25 |
+
+**The replacement metric: corpus-level claims in the answer are verifiable against the full scope.**
+The control could make none of them — it had a quarter of the collection and asked the user to pick
+a recording.
+
+Recorded at this length because a metric that is silently swapped is how a baseline stops meaning
+anything. The old one is written down, the measurement that retired it is written down, and the
+replacement says what it measures.
+
+:::warning The first run of that measurement produced a confidently wrong answer
+Before the fix, the overview was composed from the *ranked* digest leg. Asked for 50 sections over
+a 25-file scope it returned 50 sections drawn from **8 files**, the block was headed
+`recordings: 8`, and the model faithfully reported *"8 vendor review board sessions"* over a scope
+of twenty-five. **Ranking picks the best passages; mapping covers every document** — see
+[the prior-art page](rag-prior-art-and-packages.md#ranking-picks-the-best-passages-mapping-covers-every-document).
+No unit test would have caught it: every unit test hands the composer the summaries it was supposed
+to have.
+:::
+
 ## What we cannot currently claim
 
 Stated plainly, because a benchmark's limits are part of its result:
@@ -662,10 +810,10 @@ Stated plainly, because a benchmark's limits are part of its result:
   dropped. At the default budget (200 meetings, ~1.1× QMSum) that closes 25 `multi_file` and 21
   `aggregation` queries; a first-N-by-key subset would have closed 4.
 - **`aggregation` is now scored on its answer** (exact match, see [Scoring an answer, not a
-  rank](#scoring-an-answer-not-a-rank)), but by the harness's own aggs+SQL reference answerer —
-  **the product has no aggregation route until Stage 4**, and measured through the `none` answerer
-  it scores 0.000. The published 1.000 characterises the corpus and the mechanism, not the shipped
-  system.
+  rank](#scoring-an-answer-not-a-rank)). The reference answerer's 1.000 characterises the corpus and
+  the mechanism, not the shipped system; **the shipped system scores 0.800** through
+  `--answerer product` (see [Stage 4](#the-products-aggregation-path-0800-against-an-exact-ceiling)),
+  and the gap is one rule with a named structural cause.
 - **Injecting synthetic data moves the QMSum numbers.** Retrieval runs corpus-wide, so the
   candidate pool roughly doubles and document frequencies shift. Run the QMSum-only control before
   and after and record the delta; **never compare a measurement taken across the injection.**
@@ -674,7 +822,10 @@ Stated plainly, because a benchmark's limits are part of its result:
   against this one.
 - **No *generation* quality number exists.** Aggregation exactness is scored; faithfulness,
   citation correctness and answer prose are not, and the synthetic tier is explicitly not a source
-  of generation ground truth. Nothing in this harness evaluates what a model wrote.
+  of generation ground truth. Nothing in this harness evaluates what a model wrote. The Stage 4
+  coverage check (25 recordings / 44h 30m / 102 speakers, each verified against Postgres) is a
+  **single hand-run measurement over one scope**, not a harness stage — it is evidence that the
+  overview block works, not a number that can be regressed against.
 - **Scale is split**: the largest real corpus (MeetingBank, 31.7 M words) is internal-only.
 - **Multilingual coverage is 20 languages scored, not 100.** The unscored remainder is enumerated
   with a specific reason each — no public benchmark with relevance judgements, transcripts but no

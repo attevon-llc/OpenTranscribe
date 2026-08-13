@@ -3,8 +3,17 @@
 The pipeline for one chat turn:
 
 ```
-scope → retrieve → rerank → diversity-sample → mask → prompt → stream → persist
+scope → rewrite → ROUTE ─┬─ aggregate ──▶ <counted> block
+                         ├─ digest map ──▶ <overview> block
+                         └─ chunk plane ─▶ excerpts
+                              → rerank → diversity-sample → mask → prompt → stream → persist
 ```
+
+**ROUTE, DON'T FUSE.** The tiers are separate queries whose results the prompt layer places in a
+fixed order; they are never merged into one RRF ranking. Fusing documents of very different length
+— a 55-word digest section against a 200-word speaker turn — ranks by an artefact of that
+difference rather than by relevance. Every route keeps the chunk tier, so a misroute costs a
+reduced excerpt budget and never an unanswerable turn.
 
 Each stage is its own module so the two security-critical ones (`redactor.py`,
 `prompting.py`) can be read and tested without wading through streaming plumbing.
@@ -14,6 +23,10 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | `settings.py` | Admin knobs resolved in ONE `get_settings_map()` call; `.revision` digest keys the retrieval cache so a retune invalidates it |
 | `context_resolver.py` | Scope (files/collections/tags) → file uuids, **in Postgres** |
 | `retrieval.py` | Cache → retrieve → rerank → diversity sample; returns `RetrievalResult` with diagnostics |
+| `router.py` | Rules-only intent + tiers (#403 Stage 4). Loads nothing, calls nothing |
+| `aggregation.py` | Counted answers, pure half: shapes, subject extraction, filters |
+| `aggregation_service.py` | Counted answers, I/O half: OpenSearch aggs + Postgres |
+| `mapreduce.py` | `tree_summarize` over the digest plane; two reducers, one no-LLM |
 | `reranker.py` | Lazy CPU cross-encoder singleton; `None` when the model cache is absent |
 | `query_rewriter.py` | Follow-up → standalone query; every failure returns the original |
 | `retrieval_cache.py` | Redis exact-query cache, keyed by user+org+query+scope+settings-rev |
@@ -33,6 +46,26 @@ first.** The gate *condition* is identical to summarization's
 (`tasks/summarization.py`): apply when `cfg.enabled and cfg.redact_before_llm`,
 with the admin force floor already folded in by `resolve_effective_config`.
 
+### ⚠️ Masking is conditional on WHERE the model runs (owner decision, 2026-08-13)
+
+This section used to read as absolute. It is not. A **local** model — vLLM on our own GPU —
+receives excerpt text unmasked: the text never leaves the machine, so masking costs recall and
+buys nothing. A **remote or cloud provider** still receives masked text, because sending
+unredacted PII to a third party is a data-egress event in a way a local inference call is not.
+
+Key that decision off the **provider**, never off a global setting.
+
+The consequence for this package: the masking path is now *the egress path*, so a defect in it is
+a disclosure rather than a policy inconsistency. That is the reason the two-masker distinction
+below is filed as a hazard and not as tidiness.
+
+**And the policy opens a hole it does not itself close.** Offset-based redaction masks known spans
+in *stored* text. It cannot catch a model that reads "John Smith, SSN 123-45-6789" — correctly
+unmasked on a local deployment — and writes *"Smith's social ends in 6789"* in its own words:
+there is no span to mask, at offsets that exist in no stored record. **Redaction of model-generated
+OUTPUT is not implemented.** Until it is, a local-model deployment is *less* protected than before
+the policy change, which is a deliberate documented trade and must not become an undocumented one.
+
 The **subject** is not. Summarization resolves the *file owner's* config
 (`redaction/llm_guard.py` reads `media_file.user_id`); chat resolves the
 *requesting user's*, because one turn retrieves across a library of shared
@@ -44,6 +77,87 @@ Masking **fails closed**. If the policy cannot be resolved, or a chunk cannot be
 masked, the chunk's content becomes `""` and contributes nothing — never the raw
 text. Tests in `tests/unit/test_chat_redactor.py` pin this; do not "fix" them by
 falling back to the original content.
+
+### ⚠️ There are TWO maskers and they are not interchangeable
+
+| Function | For | Addresses text by | Fails closed |
+|---|---|---|---|
+| `mask_chunks()` | transcript chunks | **time range** — every segment overlapping the hit | per chunk, whole |
+| `mask_digests()` | `doc_type: digest` documents | **provenance** — each sentence's own `segment_ids` | per **sentence** |
+
+A digest sent through `mask_chunks()` **over-discloses**. A chunk *is* contiguous turns, so
+rebuilding it from its time range reproduces it. A digest is a handful of non-contiguous *selected*
+sentences spanning an entire recording, so the same rebuild returns the **whole recording
+verbatim** — strictly more text than the digest held, from a function whose name asserts it masked
+it. Nothing about a call to `mask_*` invites a second look in review, and under the current
+redaction policy this is the path that egresses to a third-party provider.
+
+`tests/unit/test_chat_digest_masking.py::test_the_chunk_path_over_discloses_a_digest` is a
+**must-fire** guard: it asserts the wrong path still produces *more* text than the digest. If
+someone folds `mask_digests` into `mask_chunks`, that test goes red while its twin goes green.
+
+## The router, and the two structured blocks it can add (#403 Stage 4)
+
+`router.py` classifies a turn into `lookup` / `summarize` / `aggregate` / `temporal` from a
+lexicon plus structural signals. It loads no model and makes no call; the only LLM signal is an
+optional `INTENT:` line on a rewrite that was **already being paid for**, so turn 1 still makes
+zero calls before retrieval. Two invariants bound the cost of a misroute:
+
+1. **The chunk tier is never removed** — a misrouted query retrieves the same evidence it would
+   have, and `[n]` markers still resolve.
+2. **Structure only ever REMOVES a non-chunk tier; it never changes the label.** A signal that
+   could *promote* would let corpus size alone reroute an ordinary lookup, which is the one
+   regression D5 forbids. Measured lookup leakage: **0.104%** (2 of 1,923 labelled queries).
+
+Two blocks can precede the excerpts, in this fixed order, and **both come off the top of the
+excerpt budget** rather than out of what is left after it:
+
+| Block | Built by | Why it outranks excerpts |
+|---|---|---|
+| `<counted>` | `aggregation_service.answer_aggregation` | It *is* the answer to "how many"; excerpts are examples beside it |
+| `<overview>` | `mapreduce.build_overview` | It covers every recording in scope; excerpts cover a handful |
+
+Base rules **10** and **11** exist because rule 3 ("answer from the excerpts") fights both of them:
+rule 10 says report a `<counted>` number exactly and never recount from the excerpts; rule 11 says
+cover every recording an `<overview>` lists rather than narrowing to whichever have excerpts.
+
+### The counted tier never lets a model count
+
+"How many meetings discussed X" is not a retrieval question. Ranking twelve chunks and asking a
+model to count them yields a confident number that is wrong whenever the answer exceeds the
+excerpt budget — on a corpus, usually. So the tier counts with OpenSearch aggregations and
+Postgres and hands over a table. Three constraints are not negotiable:
+
+- **No `search_pipeline` and no `hybrid` clause on an aggregation body.** OpenSearch 3.4 throws
+  `ArrayIndexOutOfBoundsException` inside `score-ranker-processor` when an aggregation meets
+  hybrid + collapse + RRF. This is a crash, not a style rule.
+- **A truncated bucket list is refused, never reported.** An aggregation that dropped a shard's
+  tail is a wrong answer that looks like a right one.
+- **Occurrences are counted over segments, not chunks.** Chunking overlaps a long turn's tail into
+  the next chunk, so counting occurrences over chunk documents double-counts every overlap. File
+  *coverage* is fine over chunks — a file is counted once either way.
+
+Every shape **declines** rather than guessing: a number from the wrong mechanism is
+indistinguishable from a number from the right one, so falling back to ranked excerpts is strictly
+better than a confident wrong count.
+
+### The overview: ranking is not mapping
+
+`mapreduce.py` is `tree_summarize` over the digest plane. Level 1 of the map already ran at
+ingest — the extractive digest **is** the per-file map output — so a summary over 1,000 recordings
+costs zero map-time work.
+
+⚠️ **For a bounded scope the map reads `file_facts` for every file in it (`scope_digest_hits`) and
+ignores relevance.** It does *not* use the ranked digest leg, and that will look like a redundant
+second path until you know why: asked for 50 sections over a 25-file scope, `retrieve_digests`
+returned 50 sections drawn from **8 files**, because sections cluster by relevance — that is what a
+ranker is for. The composed block was headed `recordings: 8` and the model answered *"8 vendor
+review board sessions"* over a scope of 25. **Ranking picks the best passages; mapping covers every
+document.** Raising `size` does not fix it: ranking gives no coverage guarantee at any K.
+
+The ranked leg survives only for the unbounded "all accessible" scope, where mapping over
+everything is impossible — and there the header reports what it covered (`8 of 25 in scope`)
+rather than presenting the covered count as the total.
 
 ## Scope resolves in Postgres, never OpenSearch
 

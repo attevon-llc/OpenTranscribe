@@ -121,7 +121,7 @@ These are recorded so they can be **overruled with evidence** rather than re-arg
 
 | Package | Rejected because |
 |---|---|
-| **LangChain** summarization chains | Brings a framework to obtain a control-flow pattern (test 1). Concretely, our own `llm_service._summarize_section` shows the hazard the chains share: it runs `str.format` over transcript text, which `services/chat/prompting.py` forbids outright — a transcript containing `{evil}` raises or interpolates. We reuse the *shape* (bounded thread pool, pre-filled error slots, index-keyed results) and not the code. |
+| **LangChain** summarization chains | Three reasons, in increasing order of how much they cost us. (a) It brings a framework to obtain a control-flow pattern — fan out N calls, combine the results — which is test 1. (b) The classic chains (`load_summarize_chain` with `stuff` / `map_reduce` / `refine`) are **deprecated in favour of LangGraph**, so adopting them means adopting a migration we did not need. (c) The decisive one: **every chain assumes the map step is an LLM call.** Ours is not — the per-file map output is the extractive digest, computed deterministically at ingest, which is exactly what makes a summary over 1,000 recordings cost zero map-time work. A chain cannot express "the map already happened", so adopting one would have meant paying for the thing the design exists to avoid. We reuse the *shape* (bounded thread pool, pre-filled error slots, index-keyed results) and none of the code. |
 | **LlamaIndex** response synthesizers | Duplicates a layer we already run (test 2): its value is ingestion, vector stores, and retrievers, and ours live in OpenSearch. We adopt its **vocabulary** — `tree_summarize`, `DocumentSummaryIndex` — and name our components accordingly. |
 | **`semantic-router`** | Routes by embedding similarity, i.e. a client-side encoder call per turn **on the critical path**; and its base dependencies pull `litellm` + `openai` + `aiohttp` + `tiktoken`. Our routing requirement is explicitly rules-first with zero LLM calls before retrieval on turn 1. |
 | **RAPTOR** (for now) | Genuinely additive and not rejected on principle — see below. Deferred until it can be measured against a Stage 4 baseline that does not yet exist. |
@@ -157,12 +157,59 @@ So that the mapping is unambiguous:
 | Hybrid chunk retrieval | BM25 + dense kNN fused by **Reciprocal Rank Fusion** |
 | The digest plane (Stage 3) | **DocumentSummaryIndex** / parent-document (small-to-big) retrieval |
 | The query router (Stage 4) | **Query routing** — "route, don't fuse" |
-| Two-level summarization (Stage 4) | **Map-reduce** = **`tree_summarize`** |
+| Two-level summarization (Stage 4) | **Map-reduce** = **`tree_summarize`** — see [the map step is a read](#the-map-step-is-a-read-not-a-call) |
 | Rerank stage (Stage 5) | **Two-stage retrieve-then-rerank** |
 
 **We built the standard patterns. For a while we simply were not calling them by their names** —
 the digest plane was `DocumentSummaryIndex` before anyone wrote that down. Naming them is not
 cosmetic: it is how a reader knows which known failure modes apply.
+
+### The map step is a read, not a call
+
+Our `tree_summarize` differs from every published implementation in one respect, and it is the
+respect that makes corpus scale tractable:
+
+```
+transcript chunks ──(TextRank, at ingest, NO LLM)──▶ file digest      ← the MAP
+file digests      ──(code, or N small bounded calls)─▶ collection view ← the REDUCE
+```
+
+Level 1 already ran when the file was ingested. A summary over 1,000 recordings therefore costs
+**zero** map-time work — the map is a database read. That is the whole reason the digest is
+deterministic and extractive rather than LLM-written: a map step that needed a model would leave
+the corpus-scale case exactly as impossible as it was before.
+
+Two levels only, deliberately. Not recursive — see RAPTOR below.
+
+### Ranking picks the best passages; mapping covers every document
+
+**This distinction is load-bearing, it is not obvious, and it was learned by shipping the wrong
+one.** Anyone reading `mapreduce.scope_digest_hits` will notice that a ranked digest retrieval
+already exists (`retrieve_digests`) and wonder why the map does not simply use it. It did, once.
+
+Asked for 50 digest sections over a **25-file** scope, the ranked leg returned 50 sections drawn
+from **8 files** — sections cluster by relevance, which is precisely what a ranker is for. The
+composed overview was therefore headed `recordings: 8`, and the model faithfully answered *"The
+recordings cover 8 vendor review board sessions"* over a scope of twenty-five. Nothing looked
+broken. The number was simply wrong, and confidently so.
+
+The two operations are not interchangeable:
+
+| | question it answers | correct behaviour |
+|---|---|---|
+| **Ranking** (`retrieve_digests`) | "which passages best match this query?" | return the top K by relevance, wherever they cluster |
+| **Mapping** (`scope_digest_hits`) | "what is in each document?" | return one summary **per document**, ignoring relevance entirely |
+
+So for a **bounded** scope the map reads `file_facts` for every file in it and ignores ranking. The
+ranked leg survives only for the unbounded "all accessible" case, where mapping over everything is
+not possible — and there the header says how much it covered rather than reporting the covered
+count as the total.
+
+:::danger Do not "simplify" the map back to the ranked leg
+It will look like a redundant second retrieval path and it is not. Increasing `size` does not fix
+it: ranking gives you no coverage guarantee at **any** K. `tests/unit/test_chat_mapreduce.py::test_the_scope_map_covers_every_file_not_the_best_ranked_ones`
+fails if the map is replaced by a ranked retrieval.
+:::
 
 ### RAPTOR — the one open idea worth measuring
 

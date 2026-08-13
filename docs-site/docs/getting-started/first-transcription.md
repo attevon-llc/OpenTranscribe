@@ -116,7 +116,7 @@ flowchart LR
 - **Upload Manager** (bottom-right floating panel)
 - **Notifications Panel** (bell icon in navbar)
 - **File Library** (processing badge on file cards)
-- **Flower Dashboard** (http://localhost:5555/flower)
+- **Flower Dashboard** (http://localhost:5175/flower)
 
 ![Notifications panel showing transcription progress](/img/screenshots/workflow/notifications-multiple.png)
 
@@ -299,7 +299,7 @@ Group related files:
 ### Processing Stuck
 
 - **Check logs**: `./opentranscribe.sh logs celery-worker`
-- **Check Flower**: http://localhost:5555/flower
+- **Check Flower**: http://localhost:5175/flower
 - **Restart workers**: `./opentranscribe.sh restart`
 - **Check GPU memory**: `nvidia-smi`
 

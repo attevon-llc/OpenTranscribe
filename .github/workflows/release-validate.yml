@@ -33,6 +33,22 @@ on:
       - 'scripts/release/**'
       - 'scripts/validate-deployments.sh'
       - '.github/workflows/release-validate.yml'
+      # validate-deployments.sh does not re-declare the overlay chain — it resolves every
+      # permutation by calling `./opentr.sh <args> --dry-run` and parsing what it prints. It
+      # is LITERALLY a test of opentr.sh and the common.sh it sources, and neither was in
+      # this filter, so a PR changing overlay assembly ran the deployment matrix zero times.
+      - 'opentr.sh'
+      - 'scripts/common.sh'
+      # scripts/release.sh is the orchestrator FILE; 'scripts/release/**' above only covers
+      # the stage DIRECTORY. Same for the rehearsal harness the release stages invoke.
+      - 'scripts/release.sh'
+      - 'scripts/release-tests/**'
+      # The docs job below runs `npm ci && npm run build`, and it was unreachable from a PR:
+      # docs-site/** was not listed here, and deploy-docs.yml only fires on push to master.
+      # So a duplicate blog slug or an undefined author merged green and broke master on
+      # deploy. deployment-configuration.md is included because validate-deployments.sh
+      # parses it as its anti-staleness source.
+      - 'docs-site/**'
   workflow_dispatch:
     inputs:
       tag:

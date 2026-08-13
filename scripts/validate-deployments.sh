@@ -177,7 +177,17 @@ resolve_chain() {
 # does not — so an undocumented-but-validated flag is fine, while a
 # documented-but-unvalidated flag is exactly the gap worth failing on.
 check_documented_coverage() {
-    [[ -f "$DOC_TABLE" ]] || { as_record PASS "doc table absent — coverage check skipped"; return; }
+    # A MISSING INPUT IS NOT A PASS. This recorded PASS with the reason "coverage check
+    # skipped", so deleting, moving or renaming the doc table silently disabled the only
+    # check that catches a documented deployment flag nobody validates — and the run stayed
+    # green. That is the same shape as the mutation ratchet exiting 0 with no logs, and as
+    # 30-verify.sh degrading to `warn` when a gitignored node_modules was absent. The file is
+    # tracked in git, so its absence is a repo defect, not an environment quirk: fail.
+    [[ -f "$DOC_TABLE" ]] || {
+        as_record FAIL "doc table missing at $DOC_TABLE" \
+            "coverage cannot be checked; restore the file or update DOC_TABLE"
+        return
+    }
 
     local matrix_args=""
     for entry in "${DEPLOYMENTS[@]}"; do

@@ -1,30 +1,68 @@
-# Release criteria — the single definition of "is this releasable?"
+# Release criteria — the severity of every gate that is READ FROM THIS FILE.
 #
-# WHY A FILE INSTEAD OF SHELL
+# WHAT READS IT
 #
-# The same question gets asked in three places: locally by `./scripts/release.sh`,
-# in CI by release-validate.yml, and (later) by an AWS promotion job. If each
-# encodes its own idea of "meets the criteria", they will disagree, and the
-# disagreement will surface as a release that passed locally and broke in the next
-# environment. One file, read by all of them, makes "meets the criteria" mean one
-# thing — and makes changing it a reviewable diff rather than an edit in three
-# scripts.
+#   scripts/release/10-preflight.sh   stage: preflight
+#   scripts/release/30-verify.sh      stage: verify
 #
-# It also makes the gates legible to an agent: `release.sh <stage> --json` reports
-# per-criterion results keyed by the ids below.
+# That list is exhaustive, and it is enforced from both directions. Each of those
+# scripts loads its own stage from here and then:
+#
+#   * refuses (exit 2) to record a criterion id that this file does not define;
+#   * refuses (exit 2) to finish with a criterion defined here that it never
+#     checked;
+#   * takes `severity` from HERE and the pass/fail outcome from ITSELF.
+#
+# The last point is the whole design. A check knows whether it passed; it does
+# not get to decide whether its failure stops a release. Splitting those two
+# decisions is what makes this file load-bearing rather than decorative.
+#
+# HISTORY — why the shape changed
+#
+# This file used to describe all twelve stages and claimed in its own header
+# that the local orchestrator and CI both read it. Nothing read it: the only
+# reference outside the docs was a COMMENT in scripts/release.sh, and every
+# stage script hand-coded its ids into a printf. Predictably it drifted, and the
+# drift was invisible:
+#
+#   * `remote-builder` was `blocking` here and recorded `warn` by preflight, so
+#     a missing ARM64 builder — checked early precisely so it is not discovered
+#     after the amd64 build — did not stop anything.
+#   * `docs-build` was `blocking` here, listed under `preflight` (which never
+#     checked it), and implemented in `verify`, which recorded `warn`.
+#   * `schema-drift` was `warn`, justified by "4 known pre-existing offenders
+#     (3 orphan tables + tag.created_at)". v385 dropped those tables and the
+#     check became a hard phase of run-integration-tests.sh — so the entry
+#     described a policy that no longer existed, for a check this pipeline no
+#     longer invokes directly.
+#   * `e2e-suite` claimed the FULL Playwright suite was a blocking release gate.
+#     The `test` stage runs `run-integration-tests.sh --coverage --e2e-smoke`;
+#     the full suite has never been part of it.
+#
+# So the stages that define their gates in their own scripts are deliberately
+# NOT listed here any more. `40-build.sh` checks that the images build and that
+# the version is baked in; `80-publish.sh` checks both architectures;
+# `90-promote.sh` compares digests; `95-finish.sh` checks CI and the manifest.
+# Re-adding them here as prose would recreate exactly the failure this file just
+# had, and the one root CLAUDE.md warns about: `expected-schemas.tsv` died of
+# being a hand-maintained table that nothing read.
+#
+# If a second consumer ever appears (a CI job, an AWS promotion job), add its
+# stage here and wire it the same way — bidirectionally, or not at all.
 #
 # SEVERITY
-#   blocking  — a failure stops the stage (overridable only with --force-<stage>,
-#               which records the operator and reason in the ledger)
-#   warn      — reported, never stops anything
+#   blocking  — a failure stops the stage. Overridable only with
+#               --force-<stage> "<reason>", which records the operator and the
+#               reason in the ledger as `overridden`, never as a pass.
+#   warn      — reported, never stops anything.
 #
-# ENVIRONMENTS
-# `enforced_in` lists where a criterion is blocking. `local` is this workstation;
-# `ci` is release-validate.yml. `test` / `prod` are placeholders for the AWS
-# promotion work and are deliberately unused today — they exist so adding an
-# environment is a data change, not a redesign.
+# Outcomes a script may record: `pass`, `fail`, `not-measured`. `not-measured`
+# is neither: it means the check did not run, so it proves nothing, and against
+# a `blocking` criterion it stops the stage exactly as a failure does. (Same
+# convention as scripts/run-mutation-tests.sh's exit 4 and run-integration-
+# tests.sh's "⊘ NOT MEASURED — proves nothing, not counted as a pass".)
 
-version: 1
+version: 2
 
 stages:
   # ─── Static checks. No Docker, seconds. ─────────────────────────────────
@@ -33,138 +71,78 @@ stages:
     criteria:
       - id: version-consistency
         description: VERSION, pyproject, package.json, package-lock (both fields), Alembic single head
-        command: python3 scripts/release/check-version-consistency.py --mode ci --json
         severity: blocking
-        enforced_in: [local, ci]
-
-      - id: deployment-matrix
-        description: Every documented deployment permutation produces a valid compose config
-        command: ./scripts/validate-deployments.sh --json
-        severity: blocking
-        enforced_in: [local, ci]
-        expected_duration_s: 20
 
       - id: clean-worktree
         description: No uncommitted changes — a release must be reproducible from the tag
         severity: blocking
-        enforced_in: [local]
 
       - id: remote-builder
         description: The ARM64 remote builder answers (checked BEFORE the 13.8 GB build starts)
+        # blocking, and it must stay blocking: 80-publish.sh cannot publish a
+        # multi-arch manifest without it and hard-exits, and `both-arches` is
+        # what the promote stage compares digests for. A `warn` here just moves
+        # the same failure to hour three.
         severity: blocking
-        enforced_in: [local]
+
+      - id: security-tooling
+        description: trivy / grype / syft are installed (the scan stage skips whatever is missing)
+        severity: warn
+
+      - id: release-test-secrets
+        description: HUGGINGFACE_TOKEN present, or both rehearsal scenarios die at their first transcription
+        severity: warn
+
+      - id: release-test-media
+        description: Rehearsal media fixtures exist and are small enough to transcribe quickly
+        severity: warn
+
+      - id: disk-space
+        description: Enough free space on the docker root for the images
+        severity: warn
+
+      - id: deployment-matrix
+        description: Every documented deployment permutation produces a valid compose config
+        severity: blocking
+
+      - id: live-stack
+        description: Informational — the rehearse stage requires the live stack STOPPED
+        severity: warn
+
+      - id: changelog-section
+        description: CHANGELOG.md has a section for this version
+        # warn HERE on purpose: preflight runs before `bump`, and bump is what
+        # promotes [Unreleased] into [X.Y.Z]. 70-tag.sh refuses without it, so
+        # this is an early notice, not the gate.
+        severity: warn
+
+  # ─── The fast gate. Safe with the live stack up, well under a minute. ───
+  verify:
+    description: Everything checkable without building an image
+    criteria:
+      - id: version-consistency
+        description: The six version sources agree and Alembic has a single head (pre-tag mode)
+        severity: blocking
+
+      - id: deployment-matrix
+        description: Every documented deployment permutation produces a valid compose config
+        severity: blocking
+
+      - id: release-manifest
+        description: Every release-manifest.txt path exists, or a pinned install 404s for every user
+        severity: blocking
+
+      - id: structural-tests
+        description: Alembic chain, model registration, manifest, install/upgrade scripts, .env coverage
+        severity: blocking
 
       - id: docs-build
         description: docs-site builds — catches duplicate blog slugs and undefined authors/tags
-        command: npm --prefix docs-site ci && npm --prefix docs-site run build
+        # blocking, including when it cannot be measured. deploy-docs.yml does
+        # not fire on tag pushes, so a locally-skipped docs build means the slug
+        # collision is found by release-validate.yml's `docs` job at tag time —
+        # after the tag exists. `SKIP_DOCS_BUILD=true` is the recorded opt-out.
         severity: blocking
-        enforced_in: [ci]
-        expected_duration_s: 120
-
-      - id: changelog-section
-        description: CHANGELOG.md has a dated section for this version
-        severity: warn        # blocking at the `tag` stage, not before
-        enforced_in: [local, ci]
-
-  # ─── Test gates. Need the dev stack up. ─────────────────────────────────
-  test:
-    description: The existing pre-merge gates, run against the release candidate
-    criteria:
-      - id: integration-suite
-        description: The canonical pre-merge gate
-        command: ./scripts/run-integration-tests.sh --coverage --e2e-smoke
-        severity: blocking
-        enforced_in: [local]
-        expected_duration_s: 2400
-
-      - id: e2e-suite
-        description: Playwright, full suite
-        command: ./scripts/e2e/run-e2e.sh
-        severity: blocking
-        enforced_in: [local]
-        expected_duration_s: 1800
-
-      - id: schema-drift
-        description: No table- or column-level drift between models and schema
-        command: RUN_SCHEMA_DRIFT_TESTS=true backend/venv/bin/pytest backend/tests/unit/test_schema_drift.py
-        # warn, not blocking: 4 known pre-existing offenders (3 orphan tables +
-        # tag.created_at) each need a migration, not a code change. Flip to
-        # blocking once those land.
-        severity: warn
-        enforced_in: [local]
-
-  # ─── Build and scan. Produces the candidate; publishes nothing. ─────────
-  build:
-    description: Local build of the release candidate
-    criteria:
-      - id: images-build
-        description: backend, frontend and docs build with the version build-args
-        severity: blocking
-        enforced_in: [local]
-        expected_duration_s: 2700
-
-      - id: version-baked
-        description: The built backend reports the version under test, not "unknown"
-        severity: blocking
-        enforced_in: [local]
-
-  scan:
-    description: Vulnerability scan of the LOCALLY BUILT images
-    criteria:
-      - id: no-critical-cves
-        description: Trivy/Grype find no CRITICAL vulnerabilities
-        command: SCAN_SOURCE=local FAIL_ON_CRITICAL=true ./scripts/security-scan.sh all
-        severity: blocking
-        enforced_in: [local]
-        expected_duration_s: 600
-
-  # ─── Rehearsal. Requires the live stack STOPPED. ────────────────────────
-  rehearse:
-    description: Fresh-install and upgrade scenarios against the local candidate
-    criteria:
-      - id: fresh-install
-        description: The documented one-liner produces a working stack
-        command: ./scripts/release-tests/test-fresh-install.sh --yes
-        severity: blocking
-        enforced_in: [local]
-        expected_duration_s: 4500
-
-      - id: upgrade-from-previous
-        description: Data survives, migrations apply, the NEW version is running
-        command: REQUIRE_PREVIOUS=1 ./scripts/release-tests/test-upgrade.sh --yes
-        severity: blocking
-        enforced_in: [local]
-        expected_duration_s: 7200
-
-  # ─── Publish. Everything past here touches the outside world. ───────────
-  publish:
-    description: Multi-arch build and push of :vX.Y.Z (never :latest)
-    criteria:
-      - id: both-arches-published
-        description: The published manifest lists linux/amd64 AND linux/arm64
-        severity: blocking
-        enforced_in: [local]
-
-  promote:
-    description: Move :latest to the validated digest
-    criteria:
-      - id: digest-identical
-        description: :latest and :vX.Y.Z resolve to the same digest (copy, never rebuild)
-        severity: blocking
-        enforced_in: [local]
-
-  finish:
-    description: Publish the GitHub release — the switch the installer reads
-    criteria:
-      - id: ci-green
-        description: release-validate.yml passed for this tag's SHA
-        severity: blocking
-        enforced_in: [local]
-
-      - id: manifest-reachable
-        description: Every release-manifest.txt path is fetchable at the tag
-        severity: blocking
-        enforced_in: [local, ci]
 
 # Ordering. The reasoning that must not be lost:
 #
@@ -179,6 +157,9 @@ stages:
 #     The GitHub release is what the installer resolves for "latest". There must
 #     never be a window where releases/latest names a version whose images do not
 #     exist yet.
+#
+# This list is DOCUMENTATION. `STAGES` in scripts/release.sh is what runs, and
+# says so at its definition — the one honest label this file already had.
 order:
   - preflight
   - bump

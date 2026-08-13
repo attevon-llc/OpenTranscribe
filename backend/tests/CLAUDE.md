@@ -159,6 +159,27 @@ an_already_shared_tag` passed throughout, because a broken store produces absenc
 
 ## Gotchas
 
+- **Subdirectory-conftest fixtures vanish from a mixed file selection (issue #454, pytest 9.1).**
+  `pytest tests/unit/a.py tests/b.py tests/unit/c.py` used to give
+  `fixture 'run_in_clean_process' not found` — **3 setup ERRORS, not failures**, so the
+  fail-closed-environment and Celery-reliability guards silently stopped running. Mechanism:
+  pytest ≥ 9.1 matches a conftest's fixtures to tests by **collector-node object identity**
+  (`FixtureManager._matchfactories`) and registers each conftest exactly once (`pop` from
+  `_pending_conftests`), while `Session.collect` **rebuilds a directory's children** whenever an
+  argument ends at a file inside it (`handle_dupes=False`). Leaving a subdirectory and returning
+  therefore hangs the later file off a second, unregistered collector.
+  **The `__init__.py` asymmetry is NOT the cause** — a minimal repro errors identically with
+  both, neither, or either present, and `tests/api/` (no `__init__.py`) breaks the same way.
+  Bisected: 8.4.2 and 9.0.3 clean, 9.1.0/9.1.1 broken, 9.1.1 is newest. Worked around by
+  `fixtures/dir_collector_memo.py` (memoises directory collectors; registered from the root
+  conftest's `pytest_plugins`) and pinned by `unit/test_conftest_fixture_visibility.py`, whose
+  must-fire control **skips with removal instructions** once upstream fixes it. Confirmed
+  victims were `run_in_clean_process` + `revisions_at_or_after` (`unit/conftest.py`) and
+  `org_context` + `organizations_capability_on` (`api/conftest.py`).
+- **`tests/` must never gain an `__init__.py`.** Prepend import mode would then root
+  `tests/conftest.py` at `backend/`, `backend/tests` would never reach `sys.path`, and
+  `pytest_plugins = ["fixtures.mock_llm", ...]` dies with `No module named 'fixtures'` — the
+  same reason `--import-mode=importlib` is unusable here.
 - **`tests/integration/` is a directory name, not a marker.** Its contents split three ways:
   `integration`-marked (need the live stack), `gpu`-marked (boundary/diarization regression,
   lifecycle, perf gates), and three deliberately service-free tests in

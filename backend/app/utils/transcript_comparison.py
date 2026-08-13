@@ -34,7 +34,11 @@ def export_baseline(db, file_id: int, output_path: str) -> dict:
     segments = (
         db.query(TranscriptSegment)
         .filter(TranscriptSegment.media_file_id == file_id)
-        .order_by(TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id)
+        .order_by(
+            TranscriptSegment.start_time,
+            TranscriptSegment.end_time,
+            TranscriptSegment.id,
+        )
         .all()
     )
     speakers = (
@@ -112,7 +116,11 @@ def export_word_reference(
     segments = (
         db.query(TranscriptSegment)
         .filter(TranscriptSegment.media_file_id == file_id)
-        .order_by(TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id)
+        .order_by(
+            TranscriptSegment.start_time,
+            TranscriptSegment.end_time,
+            TranscriptSegment.id,
+        )
         .all()
     )
     speakers = (

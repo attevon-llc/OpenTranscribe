@@ -2,14 +2,13 @@
 
 **The OpenSearch chunk index stores transcript text UNREDACTED.** That is correct
 for search (the user searching their own transcripts should find their own words),
-but it means retrieval hands back raw text — including anything the redaction
-policy says must never leave the deployment.
+but it means retrieval hands back raw text — including anything the owner's
+redaction policy says must never leave the deployment.
 
 So chat re-masks every retrieved chunk whenever ``enabled && redact_before_llm``
-applies — the same gate condition summarization uses (``tasks/summarization.py``),
-with the admin force floor folded in by ``resolve_effective_config``, but resolved
-for the **requesting user** rather than the file owner (see ``mask_chunks``).
-Masking is read-time only; stored transcripts are never modified.
+applies, using exactly the gate summarization uses (``tasks/summarization.py``),
+with the admin force floor folded in by ``resolve_effective_config``. Masking is
+read-time only; stored transcripts are never modified.
 
 Primary path: rebuild the chunk from its ``TranscriptSegment`` rows, whose
 detection spans are cached in JSONB — sub-millisecond, no detector runs. Fallback
@@ -97,7 +96,11 @@ def _mask_from_segments(db: Session, chunk: ChunkHit, cfg) -> str | None:
             TranscriptSegment.end_time >= chunk.start_time,
             TranscriptSegment.start_time <= end_time,
         )
-        .order_by(TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id)
+        .order_by(
+            TranscriptSegment.start_time,
+            TranscriptSegment.end_time,
+            TranscriptSegment.id,
+        )
         .all()
     )
     if not segments:
@@ -139,26 +142,12 @@ def _mask_inline(text: str, cfg) -> str:
 
 
 def mask_chunks(db: Session, chunks: list[ChunkHit], user_id: int) -> list[MaskedChunk]:
-    """Apply the REQUESTING user's redact-before-LLM policy to retrieved chunks.
-
-    **This is deliberately asymmetric with summarization, and the asymmetry matters.**
-    Summarization resolves the *file owner's* config (``redaction/llm_guard.py``'s
-    ``resolve_llm_masking`` reads ``media_file.user_id``), because it processes one
-    file on that owner's behalf. Chat retrieves across a whole library of shared
-    recordings in a single turn — there is no single owner to resolve — so the policy
-    applied is the asker's, with the admin force floor folded in by
-    ``resolve_effective_config``. A sharee with a laxer personal policy therefore sees
-    chunks masked to *their* policy, not the owner's.
-
-    Anything building a summary tier on top of chat retrieval (#383) has to pick one of
-    these two subjects explicitly; inheriting whichever the surrounding code happened to
-    use is how the two paths would silently diverge.
+    """Apply the owner's redact-before-LLM policy to retrieved chunks.
 
     Args:
         db: Database session.
         chunks: Chunks straight out of retrieval (unredacted index content).
-        user_id: The requesting user, whose effective policy governs (admin force
-            floor included) — NOT the owner of the files the chunks came from.
+        user_id: Owner whose effective policy governs (admin force floor included).
 
     Returns:
         Chunks with prompt-safe text. When the policy does not apply, content is

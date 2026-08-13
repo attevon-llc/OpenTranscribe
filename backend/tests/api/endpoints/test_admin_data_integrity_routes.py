@@ -6,11 +6,12 @@ coverage** — the only mention of the path anywhere in ``tests/`` was
 a request. It is the operator's only view of whether an OpenSearch orphan sweep is
 under way, and the panel enables or disables its Start button off that one flag.
 
-The destructive sibling ``POST /admin/data-integrity`` is deliberately **not**
-exercised here: it dispatches a sweep that deletes OpenSearch documents across the
-whole deployment. Its guard (``already_running`` → no dispatch) is the interesting
-part and is reachable through this status read, which is what the sweep itself
-consults.
+The destructive sibling ``POST /admin/data-integrity`` is not exercised **here** — it
+dispatches a sweep that deletes OpenSearch documents across the whole deployment. It is
+covered in ``test_misc_uncovered_routes.py`` with the task and the Redis lock replaced by
+stand-ins, so the authz tiers and the ``already_running`` guard (asserted to dispatch
+nothing) are checked without a real sweep. Do not "complete" the coverage here by calling
+it for real.
 
 **Redis is faked; nothing else is.** These handlers read a lock key, and priming
 the real Redis with ``data_integrity_running`` would make the live admin panel

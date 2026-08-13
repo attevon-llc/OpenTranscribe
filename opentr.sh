@@ -151,6 +151,12 @@ show_help() {
   echo "  bench rag --fresh <name> [args]          - Retrieval quality (nDCG/recall/MRR) over an injected eval corpus"
   echo "  bench status                             - Show bench containers, GPU state, volumes"
   echo "  bench compare <master.csv> <branch.csv>  - Print side-by-side speedup table"
+  # `bench all|phase|collate` existed for a while without appearing here, so the only way to
+  # find them was to read the case block (issue #399). `bench help` already listed them,
+  # which is exactly how a top-level help goes stale unnoticed.
+  echo "  bench all [--smoke|--quick|--full]       - Full end-to-end run (stands up otbench, all phases)"
+  echo "  bench phase <name> [--smoke|--quick]     - Run a single phase end-to-end"
+  echo "  bench collate                            - Aggregate per-level metrics into the master tables"
   echo ""
   echo "HTTPS/SSL Setup (for microphone recording from other devices):"
   echo "  1. Generate certificates: ./scripts/generate-ssl-cert.sh opentranscribe.local --auto-ip"

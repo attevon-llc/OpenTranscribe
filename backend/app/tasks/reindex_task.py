@@ -84,7 +84,11 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
     segments = (
         db.query(TranscriptSegment)
         .filter(TranscriptSegment.media_file_id == file_id)
-        .order_by(TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id)
+        .order_by(
+            TranscriptSegment.start_time,
+            TranscriptSegment.end_time,
+            TranscriptSegment.id,
+        )
         .all()
     )
 

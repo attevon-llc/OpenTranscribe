@@ -29,6 +29,7 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -233,6 +234,156 @@ class TestTheSweepRespectsItsPreconditions:
         monkeypatch.setattr(lockout_module, "_get_store", lambda: redis_like)
 
         assert cleanup_expired_lockouts() == 0
+
+
+class TestTheSweepsBoundariesAndItsWholeLoop:
+    """The cases the suite above could not reach, all from surviving mutants (#431).
+
+    Those tests establish the RULE (dead records go, live ones stay) with records sitting
+    comfortably on one side of each threshold. What survived is everything about *where* the
+    thresholds are and whether the loop finishes: the 24-hour window could become 25, the
+    idle comparison could flip to ``<=``, the expiry comparison to ``>``, ``continue`` could
+    become ``break``, and ``cleaned += 1`` could become ``cleaned = 1``.
+    """
+
+    def test_the_idle_window_is_twenty_four_hours(self, store):
+        """A record idle for 24.5 h is swept — so the window cannot quietly become 25 h.
+
+        Paired with the next test, this pins the constant from both sides. A window that
+        drifts longer is a slow memory leak in the in-memory store; shorter, and the sweep
+        starts deleting records whose attacker is still active.
+        """
+        _write(
+            store,
+            _record(
+                "idle-24h5@example.com",
+                locked_until=datetime.now(UTC) - timedelta(hours=1),
+                last_attempt_hours_ago=24.5,
+            ),
+        )
+
+        assert cleanup_expired_lockouts() == 1
+        assert not _exists(store, "idle-24h5@example.com")
+
+    def test_a_record_idle_for_just_under_the_window_survives(self, store):
+        _write(
+            store,
+            _record(
+                "idle-23h5@example.com",
+                locked_until=datetime.now(UTC) - timedelta(hours=1),
+                last_attempt_hours_ago=23.5,
+            ),
+        )
+
+        assert cleanup_expired_lockouts() == 0
+        assert _exists(store, "idle-23h5@example.com")
+
+    def test_activity_exactly_on_the_threshold_is_not_swept(self, store):
+        """``last_activity < cleanup_threshold``, not ``<=``.
+
+        Exactly-24-hours-ago is the last moment of the retention window, so the record must
+        stay. One microsecond of slack in the wrong direction is the difference between a
+        sweep that respects its own window and one that is always a hair early.
+        """
+        # The CLOCK MUST BE FROZEN. The sweep reads `datetime.now(UTC)` itself, microseconds
+        # after this test computes its own, so a record placed "exactly" 24 h before the
+        # test's `now` is already a hair OUTSIDE the sweep's window and gets deleted for the
+        # wrong reason. The first version of this test failed for precisely that, which is
+        # the same trap that let the `>=`-vs-`>` mutant survive a boundary test elsewhere on
+        # this branch: an exact boundary is unreachable without controlling the clock.
+        frozen = datetime.now(UTC)
+
+        class _FrozenDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):  # noqa: ARG003 - signature must match
+                return frozen
+
+        record = _record(
+            "on-threshold@example.com",
+            locked_until=frozen - timedelta(hours=1),
+            last_attempt_hours_ago=0,
+        )
+        exactly = frozen - timedelta(hours=24)
+        record.last_failed_attempt = exactly.isoformat()
+        record.first_failed_attempt = exactly.isoformat()
+        _write(store, record)
+
+        with patch.object(lockout_module, "datetime", _FrozenDatetime):
+            assert cleanup_expired_lockouts() == 0
+        assert _exists(store, "on-threshold@example.com")
+
+    def test_the_loop_visits_every_key_after_skipping_a_foreign_one(self, store):
+        """``continue`` must not be ``break``.
+
+        A foreign key is written FIRST, so a ``break`` in the skip branch abandons the sweep
+        before it reaches either eligible record. With ``continue`` both go. Insertion order
+        is load-bearing here and that is the point: the existing mixed-store test passes
+        under ``break`` whenever its foreign key happens to sort last.
+        """
+        store._data["not-a-lockout-key"] = "{}"
+        _write(store, _expired_and_idle("sweep-a@example.com"))
+        _write(store, _expired_and_idle("sweep-b@example.com"))
+
+        assert cleanup_expired_lockouts() == 2
+        assert not _exists(store, "sweep-a@example.com")
+        assert not _exists(store, "sweep-b@example.com")
+        assert store._data["not-a-lockout-key"] == "{}"
+
+    def test_an_empty_value_is_skipped_without_abandoning_the_sweep(self, store):
+        """The loop has TWO `continue`s, and only one of them was reachable by a test.
+
+        The first skips a non-lockout key; the second skips a lockout key whose value is
+        empty. Turning THAT one into `break` still passed everything, including the
+        foreign-key test — so an empty value (a half-written record, or a store someone
+        cleared by hand) would silently end the sweep and leave every later record forever.
+        """
+        store._data[lockout_module._lockout_key("blank@example.com")] = ""
+        _write(store, _expired_and_idle("after-blank-a@example.com"))
+        _write(store, _expired_and_idle("after-blank-b@example.com"))
+
+        assert cleanup_expired_lockouts() == 2
+        assert not _exists(store, "after-blank-a@example.com")
+        assert not _exists(store, "after-blank-b@example.com")
+
+    def test_a_lockout_expiring_exactly_now_counts_as_expired(self, store):
+        """`now >= locked_until_dt`, not `>`.
+
+        On the tick the lockout ends, the account is unlocked — so the record is eligible for
+        the sweep. Under `>` it stays "locked" for one more tick, which is harmless in
+        isolation but is the same off-by-one that, elsewhere in this module, decides whether
+        a locked-out user can log in at the moment their lockout expires. Pinned here because
+        this is the one place a frozen clock makes it cheap to assert.
+        """
+        frozen = datetime.now(UTC)
+
+        class _FrozenDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):  # noqa: ARG003 - signature must match
+                return frozen
+
+        record = _record(
+            "expiring-now@example.com",
+            locked_until=frozen,  # exactly the boundary
+            last_attempt_hours_ago=48,  # idle, so only the expiry test decides
+        )
+        _write(store, record)
+
+        with patch.object(lockout_module, "datetime", _FrozenDatetime):
+            assert cleanup_expired_lockouts() == 1
+        assert not _exists(store, "expiring-now@example.com")
+
+    def test_the_returned_count_is_the_number_swept_not_a_flag(self, store):
+        """``cleaned += 1`` must not be ``cleaned = 1``.
+
+        The count is what the Celery beat task logs, so a hardcoded 1 makes a sweep of 400
+        records and a sweep of one indistinguishable — and the number is the only signal
+        anyone has that the store is growing.
+        """
+        for i in range(3):
+            _write(store, _expired_and_idle(f"count-{i}@example.com"))
+
+        assert cleanup_expired_lockouts() == 3
+        assert store._data == {}
 
 
 class _RedisLikeStore:

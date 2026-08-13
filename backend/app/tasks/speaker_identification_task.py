@@ -326,7 +326,9 @@ def identify_speakers_llm_task(self, file_uuid: str):
                 db.query(TranscriptSegment)
                 .filter(TranscriptSegment.media_file_id == file_id)
                 .order_by(
-                    TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id
+                    TranscriptSegment.start_time,
+                    TranscriptSegment.end_time,
+                    TranscriptSegment.id,
                 )
                 .all()
             )

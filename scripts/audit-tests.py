@@ -746,12 +746,40 @@ def _params(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
     return [a.arg for a in [*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs]]
 
 
+def _is_configuration_patch(target: str) -> bool:
+    """Is this patch redirecting CONFIGURATION rather than substituting a service?
+
+    ``monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", scratch)`` changes which index
+    the code under test writes to. The client is untouched: every assertion still executes on
+    the real engine. Pointing a real client at a throwaway index is the *correct* shape for an
+    integration test — it is how you get real engine semantics without touching the live index.
+
+    This exists because the detector fired on all 8 tests in
+    ``tests/integration/test_rename_propagation_chunks.py``, which do exactly that against a
+    real OpenSearch 3.4. Reported by the #403 work, and their framing is the reason it was
+    worth fixing rather than allowlisting: **a detector that fires on correct code teaches
+    people to allowlist, and an allowlist habit is how the 41-finding backlog formed.**
+
+    The discrimination is a service patch replaces the client or something that returns one
+    (``get_opensearch_client``, ``OpenSearch``, ``.search``, ``.index``), whereas a
+    configuration patch sets a scalar on a settings object.
+    """
+    first = target.split(',')[0].strip()
+    # `settings` / `Settings` / `app.core.config.settings` as the patch target object.
+    if re.search(r'(^|\.)settings$', first, re.IGNORECASE):
+        return True
+    # The dotted string form: patch("app.core.config.settings.OPENSEARCH_CHUNKS_INDEX").
+    return bool(re.search(r'config\.settings\.[A-Z_]+', first))
+
+
 def _direct_patch_services(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
     """Services substituted by ``patch``/``monkeypatch`` calls written INSIDE this function."""
     services: set[str] = set()
     for node in ast.walk(fn):
         if isinstance(node, ast.Call) and (_is_patch_call(node) or _is_monkeypatch_call(node)):
             target = ', '.join(ast.unparse(a) for a in node.args[:2])
+            if _is_configuration_patch(target):
+                continue
             service = _service_of(target, use_name_tokens=False)
             if service is not None:
                 services.add(service)
@@ -1597,6 +1625,21 @@ SELFTEST_CASES: tuple[tuple[str, str], ...] = (
 
 #: Sources that must produce NO finding — the false-positive half of the calibration.
 SELFTEST_CLEAN: tuple[str, ...] = (
+    # Redirecting a REAL client at a throwaway index is the correct shape for an
+    # integration test: `settings.OPENSEARCH_CHUNKS_INDEX` is the index NAME, not the
+    # client, and every assertion still executes on the real engine. The detector fired on
+    # all 8 tests in tests/integration/test_rename_propagation_chunks.py for this
+    # (reported by #403). A detector that fires on correct code teaches people to
+    # allowlist, and an allowlist habit is how the 41-finding backlog formed.
+    '@pytest.mark.integration\n'
+    'def test_rename_propagates_to_chunks(chunk_index, monkeypatch):\n'
+    '    monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", chunk_index)\n'
+    '    assert propagate(1) == 3\n',
+    # The dotted-string form of the same thing.
+    '@pytest.mark.integration\n'
+    'def test_reindex_uses_the_scratch_index():\n'
+    '    with patch("app.core.config.settings.OPENSEARCH_CHUNKS_INDEX", "scratch"):\n'
+    '        assert reindex(1) == 3\n',
     # An exact status assertion with the real check unguarded: the shape the fixes produce.
     'def test_a(client):\n'
     '    r = client.get("/x")\n'

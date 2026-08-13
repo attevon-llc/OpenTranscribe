@@ -204,7 +204,12 @@ def get_speaker_media_preview(
     best_seg = (
         db.query(TranscriptSegment)
         .filter(TranscriptSegment.speaker_id == speaker.id)
-        .order_by((TranscriptSegment.end_time - TranscriptSegment.start_time).desc())
+        .order_by(
+            (TranscriptSegment.end_time - TranscriptSegment.start_time).desc(),
+            # Equal-duration segments would otherwise rank in physical storage order,
+            # which a delete-then-bulk-insert reshuffles (issue #433).
+            TranscriptSegment.id,
+        )
         .first()
     )
     seg_start = float(best_seg.start_time) if best_seg else 0.0

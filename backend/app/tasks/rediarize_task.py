@@ -72,7 +72,9 @@ def _load_segments_as_transcript(file_id: int) -> dict:
             db.query(TranscriptSegment)
             .filter(TranscriptSegment.media_file_id == file_id)
             .order_by(
-                TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id
+                TranscriptSegment.start_time,
+                TranscriptSegment.end_time,
+                TranscriptSegment.id,
             )
             .all()
         )

@@ -40,6 +40,25 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
+#
+# `import app.models` is LOAD-BEARING, not tidiness. `Base.metadata` is populated as a side
+# effect of importing the model modules, and importing `app.db.base` alone registers NOTHING:
+# measured, 0 tables before this import and 54 after. So `target_metadata = Base.metadata`
+# compared the database against an EMPTY metadata, and `--autogenerate` has never worked as a
+# drift check in this repo — it saw every table as absent from the models and therefore
+# reported no model-side differences at all. That is why 24 database constraints could exist
+# with no ORM declaration and nothing complained (issue #431, reported by the #403 work).
+#
+# Two things to know before relying on it now that it works:
+#   * The baseline is NOT empty — roughly 800 operations of `ix_`/`idx_` naming drift, since
+#     `Base` deliberately has no `naming_convention` (adding one would rename every existing
+#     constraint, i.e. a schema change). So "empty autogenerate diff" is not a usable
+#     acceptance criterion; "adds zero NEW operations versus the baseline" is.
+#   * Model-vs-schema drift is gated by `scripts/check-schema-drift.py` (see
+#     `tests/unit/test_schema_drift.py`), not by autogenerate. This import makes autogenerate
+#     usable for authoring a revision; it does not replace that gate.
+import app.models  # noqa: E402,F401  (side-effect import: registers every table on Base)
+
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

@@ -336,6 +336,61 @@ pass without the feature working?" rather than by a test failing.
   result** when documents ship: no public dataset provides ground truth for it. The defensible
   framing is per-type quality on public benchmarks plus a constructed, fully-specified gate.
 
+## The stack: standard patterns, named — and what we wrote ourselves
+
+Nothing here is an invention where an established pattern exists. This table is the map, so that
+nobody re-implements a solved problem and everyone can tell which parts are deliberately ours.
+
+### Retrieval and search
+
+| What it does | Industry name | What actually runs it |
+|---|---|---|
+| keyword scoring | **BM25** | OpenSearch, native |
+| semantic scoring | **dense / kNN vector retrieval** | `all-MiniLM-L6-v2` (384-dim) running **inside OpenSearch** via ML Commons — not a Python embedding call |
+| combining the two | **hybrid search + Reciprocal Rank Fusion** | OpenSearch `score-ranker-processor`, `rank_constant` 30 |
+| retrieve a small unit, answer from a bigger one | **parent-document / small-to-big retrieval** | the Stage 2 digest tier — a per-file extractive summary indexed alongside chunks |
+| summarise more documents than fit in a context | **map-reduce summarization** | Stage 4, two levels over digests |
+| send different question types down different paths | **query routing** | Stage 4 rules router |
+| rescore the top-k with a stronger model | **two-stage retrieve-then-rerank** | Stage 5, cross-encoder, licence-checked |
+| resolve "what about him?" against history | **conversational query rewriting** | shipped |
+| exact counts and lists | **aggregation, not generation** | OpenSearch aggregations / Postgres — never an LLM counting |
+
+### Evaluation
+
+| What it does | Industry name | What actually runs it |
+|---|---|---|
+| ranking metrics | **nDCG@k, recall@k, MRR** | `pytrec_eval_terrier` — the NIST `trec_eval` C implementation, isolated in `requirements-eval.txt` for a licence reason |
+| significance | paired tests, bootstrap | `scipy.stats` |
+| ground truth | **qrels** | QMSum's human judgements; synthetic gold known by construction |
+
+### Serving
+
+| What it does | What runs it |
+|---|---|
+| local LLM serving | **vLLM**, OpenAI-compatible (Gemma 4 E4B AWQ 4-bit in testing) |
+| LLM-free testing | `scripts/mock-llm-server.py` — real OpenAI-compatible server, canned tokens only |
+| document parsing *(Stage 6)* | **Docling** (MIT) + **RapidOCR**, optional **Apache Tika** for the OLE2/RTF tail |
+
+### What we wrote ourselves, and why
+
+Three things have no off-the-shelf equivalent that respects **speaker boundaries**, which is the
+whole point of transcript RAG:
+
+- **Speaker-turn chunking.** Every generic chunker splits on characters, tokens or sentences. A
+  fixed window over a conversation straddles speakers, and the moment it does, speaker attribution
+  in an answer becomes a guess and the Speakers filter stops being exact.
+- **Rename propagation into the index.** Chunks snapshot the speaker's display name at index time.
+  Renaming a speaker in Postgres has to reach every chunk, or a speaker-scoped question silently
+  returns nothing (this was a real bug — [#405](https://github.com/attevon-llc/OpenTranscribe/issues/405)).
+- **Timestamp-anchored citations.** A citation carries `start_time`/`end_time` so it deep-links to
+  the moment, not just the file.
+
+Two more are ours **provisionally**, not on principle — the extractive digest (TextRank over a
+TF-IDF sentence graph) and keyphrase extraction (RAKE-shaped), both written on `numpy` + `nltk`
+because those are already hard dependencies. `sumy`, `pytextrank`, `yake` and `keybert` all exist,
+and swapping to one is a live question weighed against adding dependency surface — tracked, not
+assumed settled.
+
 ## Related
 
 - [RAG Evaluation Methodology](./rag-evaluation.md) — corpora, metric definitions, and how to

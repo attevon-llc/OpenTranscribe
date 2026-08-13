@@ -12,6 +12,7 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | File | Responsibility |
 |---|---|
 | `settings.py` | Admin knobs resolved in ONE `get_settings_map()` call; `.revision` digest keys the retrieval cache so a retune invalidates it |
+| `language.py` | **The English-only scope of RAG**, and the warning that makes it visible |
 | `context_resolver.py` | Scope (files/collections/tags) → file uuids, **in Postgres** |
 | `retrieval.py` | Cache → retrieve → rerank → diversity sample; returns `RetrievalResult` with diagnostics |
 | `reranker.py` | Lazy CPU cross-encoder singleton; `None` when the model cache is absent |
@@ -37,6 +38,89 @@ Masking **fails closed**. If the policy cannot be resolved, or a chunk cannot be
 masked, the chunk's content becomes `""` and contributes nothing — never the raw
 text. Tests in `tests/unit/test_chat_redactor.py` pin this; do not "fix" them by
 falling back to the original content.
+
+## ⚠️ RAG and chat are ENGLISH-ONLY. Transcription is not.
+
+**Do not "fix" this by widening a constant.** WhisperX transcribes 100+ languages
+and that must keep working; what is English-only is the *question-answering* path
+on top of it. Four independent stages, none of which is a setting:
+
+| Stage | Why it is English |
+|---|---|
+| BM25 | the `transcript_chunks` analyzer is `english_stop` + `english_snowball` (`services/search/indexing_service.py:55-70`) — a Spanish query stems as if it were English |
+| Embeddings | default `all-MiniLM-L6-v2`, declared `"languages": ["en"]` in `core/constants.py:OPENSEARCH_EMBEDDING_MODELS` |
+| Reranking | `CHAT_RERANKER_MODEL = cross-encoder/ms-marco-MiniLM-L-6-v2`, an English MS MARCO model |
+| Prompting | `BASE_SYSTEM_RULES` and the query-rewriter prompt are written in English |
+
+Chunking is the exception — `chunking_service._PUNKT_LANG_MAP` covers 18 languages
+and `indexing_service` already passes the file's language through. So chunk
+*boundaries* are fine; everything that ranks or reads them is not.
+
+The failure this produced was **silent**: a non-English recording is not retrieved
+for an English question, so the model answered confidently from whatever English
+material remained and nothing said a recording had been effectively invisible.
+
+**It warns, it does not refuse — deliberately.** A transcript library is normally
+mixed, so refusing every question because one recording is Spanish would be worse
+than useless. The turn answers from what it can and emits a `warning` frame
+`{"code": "unsupported_language", "languages": [...], "files": N, "unknown_files": N,
+"supported": ["en"]}` plus `msg_metadata.unsupported_language` — **the exact
+mechanism `context_dropped` already uses**, so there is one render path and the
+notice survives a reload. Do not invent a second one.
+
+**Three buckets, because unknown is its own answer.** `MediaFile.language` is
+nullable. An undetected language is *not* counted as English (that would hide a
+real Spanish recording) and *not* as non-English (that would fire on every library
+recorded before language detection existed). It is reported as
+`context_languages.unknown_files` on every turn and warns on nothing by itself.
+
+**What is judged, and what deliberately is not.** Languages come from the union of
+the *resolved scope* and the files the retrieved excerpts came from. The scope half
+is the important one: a scoped Spanish file that retrieval never surfaces would
+otherwise never warn, because failing to retrieve it is the whole defect. But
+`file_uuids is None` ("all accessible") is **never enumerated** — one foreign
+recording anywhere in a library would put the warning on nearly every turn, and a
+warning that is always on is one nobody reads.
+
+Language is read from **Postgres, not the chunk document** — the index carries a
+`language` keyword field, but for the same reason scope resolution avoids it (see
+below). The read reapplies no permission filter because both inputs are already
+authorized (`context_resolver` for the scope, `accessible_user_ids` for the hits).
+The lookup fails **open**: a diagnostic must never break a chat turn, and a warning
+invented from a failed read would be worse than none.
+
+**Not admin-tunable, on purpose.** An operator can select a multilingual embedding
+model, but that repairs one of the four stages; a `SystemSettings` row letting them
+declare "Spanish is supported" would be dishonest about the other three.
+`SUPPORTED_RAG_LANGUAGES` widens in code, alongside the pipeline that earns it.
+
+Known gap: the *question's* language is not detected — asking in Spanish about an
+English transcript is not flagged. That needs a language detector and is part of
+the multilingual-RAG backlog, not this notice.
+
+`tests/test_chat_language_scope.py` pins all of it, and every "it fires" test is
+paired with an all-English **control** asserting silence.
+
+**The client renders it** (`ChatMessage.svelte`, testid `chat-unsupported-language`),
+via `stores/chat.ts` folding the frame into `msg_metadata` exactly as
+`context_dropped` does. Three things had to move together and a fourth is a trap:
+
+- `ChatWarningCode` in `lib/types/chat.ts` — a code missing from that union is
+  **silently discarded**, so the server can emit a warning nobody ever sees.
+- `stores/chat.ts`'s `warning` case, now a code→patch map rather than an
+  `if` chain, so an unhandled code cannot fall through to nothing.
+- `chatStream.ts`'s `known` list keys on the **event name** (`warning`), not the
+  code, so it needed no change — but a genuinely new frame type would.
+- The notice **names the languages** through `formatLanguageNames`
+  (`Intl.DisplayNames`, reader's locale, raw code as fallback). A language
+  silently dropped there would understate the warning — the user would be told
+  fewer of their recordings were unsupported than actually were.
+
+`chat.message.unsupportedLanguage` exists in all 8 locales (`npm run check:i18n`
+enforces exact parity). Guards: `ChatMessage.unsupportedLanguage.test.ts`,
+`chat.reducer.test.ts`, and `formatting.test.ts` — the naming assertion lives in
+the last of those because vitest loads no locale bundle, so `$t` returns the raw
+key and any assertion on the rendered sentence in a component test is vacuous.
 
 ## Scope resolves in Postgres, never OpenSearch
 

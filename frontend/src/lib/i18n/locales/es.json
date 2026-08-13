@@ -4779,6 +4779,7 @@
   "chat.jumpToLatest": "Ir a lo más reciente",
   "chat.message.aborted": "Detenida: esta respuesta está incompleta.",
   "chat.message.contextDropped": "Esta respuesta no se basó en tus grabaciones: se encontraron extractos, pero ninguno cabía en la ventana de contexto del modelo. Prueba con una conversación más corta, menos extractos por respuesta o un modelo con una ventana de contexto mayor.",
+  "chat.message.unsupportedLanguage": "Algunas grabaciones en el alcance de esta conversación están en {{languages}}. El chat y la búsqueda están ajustados solo para inglés por ahora, por lo que esas grabaciones fueron en gran medida invisibles para esta pregunta y la respuesta puede estar incompleta. La transcripción en sí admite todos los idiomas del modelo.",
   "chat.message.copied": "Copiado",
   "chat.message.copy": "Copiar",
   "chat.message.edit": "Editar",

@@ -60,7 +60,7 @@ export interface ChatSource {
 }
 
 /** Diagnostics attached to an assistant message (ids/counts only). */
-interface ChatMessageMetadata {
+export interface ChatMessageMetadata {
   rewritten_query?: string;
   retrieved?: number;
   reranked?: number;
@@ -75,6 +75,21 @@ interface ChatMessageMetadata {
    * survives a reload rather than existing only for the streaming session.
    */
   context_dropped?: boolean;
+  /**
+   * The turn's context included recordings in a language RAG is not tuned for.
+   * Transcription is multilingual; retrieval, reranking and prompting are
+   * English-only, so a non-English recording is effectively invisible to the
+   * question and the model answers from whatever English material remains.
+   * Set live from the `warning` frame and persisted, like `context_dropped`.
+   */
+  unsupported_language?: boolean;
+  /** Per-turn language diagnostics backing {@link unsupported_language}. */
+  context_languages?: {
+    languages?: string[];
+    files?: number;
+    unknown_files?: number;
+    supported?: string[];
+  };
 }
 
 export interface ChatMessage {
@@ -218,8 +233,15 @@ type StreamStage = 'rewriting' | 'retrieving' | 'reranking' | 'generating';
  * for none of them, so the answer is ungrounded. Reported rather than absorbed —
  * an answer that reads as sourced when it is not is the failure this exists to
  * prevent.
+ *
+ * `unsupported_language`: the context included recordings in a language the
+ * English-only RAG stack cannot rank or read. Same principle: the answer looks
+ * complete while a recording was invisible to it.
+ *
+ * ⚠️ A code missing from this union is silently discarded by `stores/chat.ts`,
+ * so the server can emit a warning nobody ever sees. Widen both together.
  */
-export type ChatWarningCode = 'context_dropped';
+export type ChatWarningCode = 'context_dropped' | 'unsupported_language';
 
 export type ChatErrorCode =
   | 'llm_unconfigured'
@@ -238,7 +260,14 @@ export type ChatStreamEvent =
     }
   | { type: 'status'; stage: StreamStage }
   | { type: 'sources'; citations: ChatSource[] }
-  | { type: 'warning'; code: ChatWarningCode; retrieved?: number }
+  | {
+      type: 'warning';
+      code: ChatWarningCode;
+      /** `context_dropped` only: how many excerpts were retrieved but dropped. */
+      retrieved?: number;
+      /** `unsupported_language` only: the languages seen and how many files. */
+      context_languages?: ChatMessageMetadata['context_languages'];
+    }
   | { type: 'delta'; text: string }
   /**
    * A chunk of the model's separately-streamed reasoning/"thinking" text.

@@ -4779,6 +4779,7 @@
   "chat.jumpToLatest": "Jump to latest",
   "chat.message.aborted": "Stopped — this answer is incomplete.",
   "chat.message.contextDropped": "This answer was not grounded in your recordings: excerpts were found, but none fit the model's context window. Try a shorter conversation, fewer excerpts per answer, or a model with a larger context window.",
+  "chat.message.unsupportedLanguage": "Some recordings in this conversation's scope are in {{languages}}. Chat and search are currently tuned for English only, so those recordings were largely invisible to this question and the answer may be incomplete. Transcription itself supports every language the model does.",
   "chat.message.copied": "Copied",
   "chat.message.copy": "Copy",
   "chat.message.edit": "Edit",

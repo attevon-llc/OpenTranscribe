@@ -4779,6 +4779,7 @@
   "chat.jumpToLatest": "跳到最新",
   "chat.message.aborted": "已停止 — 这条回答不完整。",
   "chat.message.contextDropped": "此回答并未基于您的录音：虽然找到了摘录，但没有一条能放入模型的上下文窗口。请尝试缩短对话、减少每次回答的摘录数量，或改用上下文窗口更大的模型。",
+  "chat.message.unsupportedLanguage": "此对话范围内的部分录音使用的是{{languages}}。聊天和搜索目前仅针对英语进行了优化，因此这些录音对本次提问基本不可见，答案可能不完整。转录功能本身支持模型所支持的所有语言。",
   "chat.message.copied": "已复制",
   "chat.message.copy": "复制",
   "chat.message.edit": "编辑",

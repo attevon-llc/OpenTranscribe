@@ -14,6 +14,7 @@
   import ChatMessageMeta from './ChatMessageMeta.svelte';
   import ChatReasoning from './ChatReasoning.svelte';
   import ChatSources from './ChatSources.svelte';
+  import { formatLanguageNames } from '$lib/utils/formatting';
   import type { ChatMessage } from '$lib/types/chat';
 
   export let message: ChatMessage;
@@ -82,6 +83,16 @@
   // not grounded in the user's recordings (issue #384). Shown above the sources
   // block because it changes how the answer should be read.
   $: contextDropped = Boolean(message.msg_metadata?.context_dropped);
+  // The context included recordings in a language RAG cannot rank or read, so
+  // they were effectively invisible to the question (task #37). Transcription is
+  // multilingual; retrieval, reranking and prompting are not.
+  $: unsupportedLanguage = Boolean(message.msg_metadata?.unsupported_language);
+  // Display-only join of an already-downloaded list. Intl.DisplayNames turns the
+  // ISO codes the backend sends ("es") into the reader's own language ("Spanish"),
+  // falling back to the raw code for anything it does not know.
+  $: unsupportedLanguageList = formatLanguageNames(
+    message.msg_metadata?.context_languages?.languages ?? []
+  );
   $: timestamp = formatTimestamp(message.created_at);
   $: canEdit = isUser && !message.pending;
 </script>
@@ -146,6 +157,12 @@
       {#if contextDropped}
         <p class="context-warning" data-testid="chat-context-dropped">
           {$t('chat.message.contextDropped')}
+        </p>
+      {/if}
+
+      {#if unsupportedLanguage}
+        <p class="context-warning" data-testid="chat-unsupported-language">
+          {$t('chat.message.unsupportedLanguage', { languages: unsupportedLanguageList })}
         </p>
       {/if}
 

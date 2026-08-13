@@ -122,8 +122,11 @@ is canned — retrieval, redaction masking, citations, SSE and usage recording a
 take their real paths. Scenario models drive the app's real error handling:
 `mock-gpt` (normal), `mock-echo` (returns the prompt it was given — assert what the
 app actually *sent*), `mock-empty`, `mock-error`, `mock-slow`, `mock-reasoning`
-(streams a `delta.reasoning_content` "thinking" phase before the answer — exercises
-the collapsible reasoning display). Never start it as a
+(streams a "thinking" phase before the answer — exercises the collapsible reasoning display.
+⚠️ It separates reasoning **only when the request activated thinking** via
+`chat_template_kwargs={"enable_thinking": true}`; unasked, it reproduces the real server's
+#439 behaviour and leaks the thoughts into the answer, so the app's handling of that is
+testable). Never start it as a
 bare host process: it binds 5199 and then blocks the container. Fixtures and the
 full table: `backend/tests/CLAUDE.md`.
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.

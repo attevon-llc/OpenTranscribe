@@ -352,7 +352,9 @@ class SubtitleService:
         segments = (
             db.query(TranscriptSegment)
             .filter(TranscriptSegment.media_file_id == media_file_id)
-            .order_by(TranscriptSegment.start_time)
+            .order_by(
+                TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id
+            )
             .all()
         )
 
@@ -430,7 +432,9 @@ class SubtitleService:
         segments = (
             db.query(TranscriptSegment)
             .filter(TranscriptSegment.media_file_id == media_file_id)
-            .order_by(TranscriptSegment.start_time)
+            .order_by(
+                TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id
+            )
             .all()
         )
 
@@ -534,7 +538,9 @@ class SubtitleService:
         segments = (
             db.query(TranscriptSegment)
             .filter(TranscriptSegment.media_file_id == media_file_id)
-            .order_by(TranscriptSegment.start_time)
+            .order_by(
+                TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id
+            )
             .all()
         )
 
@@ -702,7 +708,9 @@ class SubtitleService:
         segments = (
             db.query(TranscriptSegment)
             .filter(TranscriptSegment.media_file_id == media_file_id)
-            .order_by(TranscriptSegment.start_time)
+            .order_by(
+                TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id
+            )
             .all()
         )
 

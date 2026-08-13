@@ -220,7 +220,9 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int):
             segments = (
                 db.query(TranscriptSegment)
                 .filter(TranscriptSegment.media_file_id == file_id)
-                .order_by(TranscriptSegment.start_time)
+                .order_by(
+                    TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id
+                )
                 .all()
             )
 

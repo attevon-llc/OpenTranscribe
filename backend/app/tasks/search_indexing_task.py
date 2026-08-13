@@ -127,11 +127,23 @@ def index_transcript_search_task(  # noqa: C901
             if not media_file:
                 raise ValueError(f"Media file {file_id} not found")
 
+            # start_time alone is NOT a total order: overlapping speech and
+            # interpolated backchannels routinely share an onset (measured on the
+            # eval corpus: 3,072 tie groups covering 6,152 segments). Postgres then
+            # returns tied rows in physical order, which a delete-then-bulk-insert
+            # reshuffles — so the same transcript re-indexed produced a DIFFERENT
+            # speaker-turn grouping, a different chunk count, and a different
+            # nDCG@10. Ordering by (start_time, end_time, id) makes the sequence a
+            # function of the data alone, so re-indexing is reproducible.
             segments = (
                 db.query(TranscriptSegment)
                 .options(joinedload(TranscriptSegment.speaker))
                 .filter(TranscriptSegment.media_file_id == file_id)
-                .order_by(TranscriptSegment.start_time)
+                .order_by(
+                    TranscriptSegment.start_time,
+                    TranscriptSegment.end_time,
+                    TranscriptSegment.id,
+                )
                 .all()
             )
 

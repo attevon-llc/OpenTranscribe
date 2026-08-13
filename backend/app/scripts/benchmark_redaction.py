@@ -67,7 +67,9 @@ def _db_segments() -> tuple[list[dict], float]:
         rows = (
             db.query(TranscriptSegment)
             .filter(TranscriptSegment.media_file_id == mf.id)
-            .order_by(TranscriptSegment.start_time)
+            .order_by(
+                TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id
+            )
             .all()
         )
         segs = [{"text": r.text, "words": r.words} for r in rows]

@@ -97,7 +97,7 @@ def _mask_from_segments(db: Session, chunk: ChunkHit, cfg) -> str | None:
             TranscriptSegment.end_time >= chunk.start_time,
             TranscriptSegment.start_time <= end_time,
         )
-        .order_by(TranscriptSegment.start_time)
+        .order_by(TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id)
         .all()
     )
     if not segments:

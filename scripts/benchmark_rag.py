@@ -322,6 +322,28 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
             logger.error('%s', exc)
             return 3
     index_state = index_reader.prepare_index(client, settings.OPENSEARCH_CHUNKS_INDEX)
+
+    # The embedding model belongs in the CLAIM, not in runinfo.json (#437). A
+    # retrieval number is a statement about a corpus AND the model that vectorised
+    # it — swap the model and the same code over the same corpus produces a
+    # different number, so a baseline that does not name it cannot be compared to
+    # anything. Every baseline before this one was measured on
+    # all-MiniLM-L6-v2/384d, verifiable from the cluster but nowhere in the files.
+    try:
+        from app.services.search.settings_service import get_search_embedding_settings
+
+        embedding_model, embedding_dimension = get_search_embedding_settings()
+        index_state = {
+            **index_state,
+            'embedding_model': embedding_model,
+            'embedding_dimension': embedding_dimension,
+        }
+    except Exception as exc:  # noqa: BLE001 - recorded, never fatal to a measurement
+        # Recorded rather than swallowed: "we could not read the model" and "the
+        # model is X" must not look the same in a committed baseline.
+        logger.warning('Could not resolve the embedding model: %s', exc)
+        index_state = {**index_state, 'embedding_model': 'UNRESOLVED', 'embedding_dimension': 0}
+
     if settled is not None:
         # Only the settled counters go in the committed document. How many polls
         # it took is a property of when the run started, not of the corpus, and

@@ -45,10 +45,41 @@ RUN_LOG="$OUT_DIR/run-$$.log"
 RUN_XML="$OUT_DIR/run-$$.xml"
 mkdir -p "$OUT_DIR"
 
+# A git worktree cannot use $REPO_ROOT/backend/venv: docker-compose.override.yml
+# declares an anonymous volume at /app/venv and /app binds ./backend, so Docker
+# CREATES backend/venv on the host — empty and root-owned — in order to mount over
+# it. Building a real venv there needs sudo to clear the stub and then duplicates a
+# multi-gigabyte install for every worktree. OT_TEST_PYTHON lets a worktree borrow
+# the main checkout's interpreter instead, which is the same environment CI and the
+# gate use:
+#
+#   OT_TEST_PYTHON=/path/to/main/backend/venv/bin/python ./scripts/run-backend-tests.sh
+#
+# It must be a PYTHON, not a pytest: `python -m pytest` picks up the interpreter's
+# own site-packages, whereas a pytest shim from another tree resolves its imports
+# against wherever it was installed.
+if [[ -n "${OT_TEST_PYTHON:-}" ]]; then
+    if [[ ! -x "$OT_TEST_PYTHON" ]]; then
+        echo -e "${RED}OT_TEST_PYTHON is set but not executable: $OT_TEST_PYTHON${NC}" >&2
+        exit 2
+    fi
+    if ! "$OT_TEST_PYTHON" -c 'import pytest' 2>/dev/null; then
+        echo -e "${RED}OT_TEST_PYTHON has no pytest: $OT_TEST_PYTHON${NC}" >&2
+        echo -e "  Point it at a venv python that has the backend requirements installed." >&2
+        exit 2
+    fi
+    PY_CMD=("$OT_TEST_PYTHON" -m pytest)
+    echo -e "${BLUE}Using OT_TEST_PYTHON: $OT_TEST_PYTHON${NC}" >&2
+else
+    PY_CMD=("$REPO_ROOT/backend/venv/bin/pytest")
+fi
+
 PY="$REPO_ROOT/backend/venv/bin/pytest"
-if [[ ! -x "$PY" ]]; then
+if [[ -z "${OT_TEST_PYTHON:-}" && ! -x "$PY" ]]; then
     VENV_DIR="$REPO_ROOT/backend/venv"
     echo -e "${RED}missing $PY${NC}" >&2
+    echo -e "  Or borrow another checkout's interpreter without building one here:" >&2
+    echo -e "    ${GREEN}OT_TEST_PYTHON=/path/to/backend/venv/bin/python $0${NC}" >&2
     # `bare mountpoint` is by far the most common cause in a worktree and the least
     # guessable: docker-compose.override.yml masks the host venv with an anonymous volume
     # at /app/venv, and because /app is a bind of ./backend, Docker has to CREATE
@@ -158,7 +189,7 @@ if $GATED; then
     echo -e "${BLUE}  (RUN_*-gated security suites enabled)${NC}" >&2
 fi
 
-"${env_prefix[@]}" "$PY" "${ARGS[@]}" \
+"${env_prefix[@]}" "${PY_CMD[@]}" "${ARGS[@]}" \
     -p no:warnings \
     --junitxml="$RUN_XML" \
     2>&1 | tee "$RUN_LOG"

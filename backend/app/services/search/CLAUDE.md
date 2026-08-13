@@ -94,12 +94,39 @@ custom only, label style).
   `chunk_plane_query`** (issues #400, #405).
   Re-indexing overwrites `{file_uuid}_{chunk_index}` in place, so a shorter re-chunk used to
   orphan the tail — stale text, stale speakers, stale timestamps, still returned by search and
-  by RAG chat. `index_transcript_chunks` now prunes `chunk_index >= len(chunks)` after the bulk
-  load, gated by a `count` so the first index after transcription pays no `delete_by_query`.
+  by RAG chat. `index_transcript_chunks` prunes `chunk_index >= len(chunks)` after the bulk
+  load, so the first index after transcription still pays no `delete_by_query`.
   Since v6 the index also holds digest documents, so the predicate is one of **three** —
   see "Index v6" below; picking the wrong one either strands a digest or destroys it.
   `extra_filters=` lets a caller narrow *within* the chunk plane without forking the
   predicate — `tasks/rename_propagation_task.py` uses it.
+- **The prune's gate is an `mget`, and it must never go back to being a `count`** (issue
+  #435). A `count` is a **search**, and a search sees only what the last refresh made
+  visible; the bulk load above uses `refresh=False`. So a second index of one file inside
+  the refresh window used to find an empty tail, skip the delete, and orphan the chunks
+  **permanently** — nothing later re-examined them. Measured before the fix: a back-to-back
+  pair of `index_transcript_chunks` calls completes in 125–224 ms and **the tail survived 11
+  of 12 pairs**, and *nothing serialises the callers* — five dispatch sites reach the
+  single-file task, including `api/endpoints/files/reprocess.py` (user-triggered, no
+  in-flight check) and the recovery sweep, which branches on the index record being
+  **missing** rather than on the original task having stopped. `mget` addresses documents by
+  id, reads the translog and is realtime, so it sees the tail the instant it is written; it
+  also works on a pre-v6 corpus by construction. Both `_prune_stale_chunks` and
+  `_prune_stale_digests` use it.
+  - The probe is a **window** of `_ORPHAN_PROBE_WINDOW` (64) ids, not one id: a partially
+    failed bulk load can leave a hole, and `test_a_shorter_resection_leaves_no_orphan_digest`
+    plants its orphan at `sections + 3`.
+  - **A `_seq_no`/`_version` predicate cannot replace it.** `delete_by_query` runs as a
+    scroll **search**, so it has the same visibility dependency — measured, a
+    `delete_by_query` over 4 unrefreshed documents deletes **0**. That is also why the prune
+    `indices.refresh()` *after* the gate fires and before the delete.
+  - **Refreshing before the gate instead would cost 23–44% of every full reindex**: measured
+    at ~95 ms median per file (near-flat in index size — it is dominated by building the HNSW
+    graph for the vectors just written), i.e. +41–79 s on a 432-file run that takes 182 s.
+    The `mget` costs 4.0–4.8 ms against the 3.7–4.1 ms count it replaced.
+  - Still **not** guaranteed: two genuinely overlapping index calls for one file are not
+    serialised by anything. A probe cannot find a tail a concurrent writer has not written
+    yet. That is a coordination problem, not a visibility one.
 - **Chunk docs snapshot `speaker` / `speakers` / `title`; renames must be propagated**
   (issue #405). Chat's speaker axis resolves the display name from **Postgres** and filters the
   index with an exact `terms` match on `speaker` (`hybrid_search_service:1107`), so an

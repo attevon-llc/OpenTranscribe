@@ -64,6 +64,33 @@ def _get_indexed_uuids() -> set[str] | None:
         return None
 
 
+def _report_embedding_provenance(stats: dict[str, int | bool | str]) -> None:
+    """Log when the index holds vectors from more than one embedding model (#437).
+
+    This is the only **automatic** detector of a mixed vector space, and it is
+    here because this task is the only thing that periodically asks whether the
+    index is what it should be. It cannot be the ordinary write path:
+    ``ensure_chunks_index_exists`` runs on every single indexing call.
+
+    It deliberately does not act. Reindexing is the cure, but the cure is a full
+    re-embed of every user's corpus, and dispatching that from a beat tick on the
+    strength of one aggregation is how a health check becomes an outage. The
+    remedy is ``PUT /search/models/neural/active`` or ``POST /search/models``,
+    which an operator chooses to run.
+
+    Args:
+        stats: The maintenance stats dict, annotated in place.
+    """
+    from app.services.search.embedding_provenance import survey_embedding_models
+
+    survey = survey_embedding_models()
+    stats["embedding_provenance"] = survey.verdict
+    if survey.mixed:
+        logger.error(survey.describe())
+    elif survey.verdict == "partially_unattributed":
+        logger.info(survey.describe())
+
+
 def _find_unindexed_by_user(
     completed_files: list[Any], indexed_uuids: set[str]
 ) -> dict[int, list[str]]:
@@ -191,6 +218,7 @@ def _run_search_maintenance() -> dict[str, Any]:
                 stats["error"] = "opensearch_query_failed"
                 return stats
             stats["indexed_files"] = len(indexed_uuids)
+            _report_embedding_provenance(stats)
 
             unindexed_by_user = _find_unindexed_by_user(completed_files, indexed_uuids)
             total_unindexed = sum(len(uuids) for uuids in unindexed_by_user.values())

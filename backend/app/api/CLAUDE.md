@@ -160,8 +160,17 @@ Shaped for a script or agent rather than a screen.
 
 OpenSearch neural-search lifecycle, admin-gated and idempotent (`already_registered` /
 `already_deployed`): `POST /search/models/neural/{model}/{register,deploy,undeploy}`.
-Read state via `GET /search/models/neural/status` or `GET /search/models/neural`.
+Read state via `GET /search/models/neural/status` (which also carries the `embedding_provenance`
+survey — the one query answering whether the index is a single comparable vector space) or
+`GET /search/models/neural`.
 **`/search/models/neural/active` is `PUT`-only and triggers a full reindex** — there is no GET.
+It and `POST /search/models` are now **the same implementation**
+(`services/search/model_switch.py`): they were two halves of one job, neither of which switched
+anything (#437). "Full reindex" means **one coordinator per owner of a COMPLETED file** — a
+per-caller dispatch left every other user's chunks in the previous model's vector space. Both
+answer **409** for a model that is not registered *and* deployed, because recording a selection
+whose pipeline cannot emit the new dimension makes the coordinator delete the chunks index and
+then fail every write. Detail: `backend/app/services/search/CLAUDE.md`.
 User administration: `GET /users` and `DELETE /admin/users/{uuid}` (creation is
 `POST /admin/users`; role/lock/reset live on their own sub-paths).
 

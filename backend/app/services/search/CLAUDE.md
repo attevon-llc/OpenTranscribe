@@ -43,6 +43,9 @@ separate and lives in the `../opensearch_service/` package (alias `speakers` →
 - `hybrid_search_service.py` — `HybridSearchService.search`, the only query path.
 - `ml_model_service.py` — ML Commons register/deploy. `model_downloader.py`,
   `settings_service.py` (DB-backed model + dimension), `tenant_scope.py`.
+- `embedding_provenance.py` — which model produced the vectors, and the one-query
+  mixed-index survey. `model_switch.py` — the whole model switch, shared by both
+  endpoints. See "Switching the embedding model" below.
 
 ## Conventions / patterns
 
@@ -77,7 +80,9 @@ custom only, label style).
   `_generate_synthetic_snippet`. Don't "simplify" those away.
 - Relevance sorts can't mix `_score` with other sort criteria under the pipeline; non-relevance
   sorts therefore take the `_search_with_two_phase` path (hybrid aggs → BM25 collapse per page).
-- `recreate_index_for_dimension` **deletes the index**. Switching embedding model = full reindex.
+- `recreate_index_for_dimension` **deletes the index**. Switching embedding model = full reindex —
+  and "full" means *every user's* transcripts; see the section below for why that is not what it
+  used to mean.
 - Availability, index, and pipeline checks are cached in module globals behind `_state_lock`.
   After recreating an index call `reset_infrastructure_state()` / `reset_neural_search_state()`,
   or the worker keeps trusting stale state (neural-failure TTL is only 30 s, success 120 s).
@@ -137,6 +142,96 @@ custom only, label style).
   Both bump the chat corpus version, or chat keeps serving the pre-rename retrieval for the
   cache TTL. Once #383's digest tier lands, rename joins the digest-regeneration triggers
   (addendum G1) — the seam is that module's `_finish`.
+
+## Switching the embedding model (#437) — one implementation, and it fans out
+
+**Clearing a cache re-embeds nothing.** Two vectors from two different models occupy the same
+kNN space and `cosinesimil` returns a number for them, so hybrid search ranks the two
+populations against each other and nothing looks wrong. There is no error, no log and no metric
+in the ordinary run — which is why the provenance below exists.
+
+- **`model_switch.apply_embedding_model_switch` is the ONE switch.** `POST
+  /search/models` (the settings UI) and `PUT /search/models/neural/active` (ops-only) both call
+  it. They used to be two halves of the job and neither half was a switch: `POST` wrote the
+  `search.embedding_model` / `search.embedding_dimension` settings and reindexed but never
+  touched the ML active model or the ingest pipeline, so **no vector changed and the setting
+  lied**; `PUT` repointed the pipeline and recreated the index but never wrote the settings, so
+  the reindex coordinator then read the OLD dimension and recreated the index a **second** time
+  at the wrong size — a dimension-changing switch was broken outright.
+- **There are two SystemSettings keys and nothing reconciled them.**
+  `search.embedding_model` is the HuggingFace name and drives the index's `knn_vector`
+  dimension; `search.opensearch_model_id` is the ML Commons id and drives the pipeline. Never
+  read the first as "what embedded this document" — it is demonstrably able to disagree.
+- **Order is load-bearing.** Settings → pipeline → caches → index → reindex. Every coordinator
+  reconciles the index against `get_search_embedding_dimension()`, and
+  `recreate_index_for_dimension` *deletes the index* when it disagrees, so writing the setting
+  first is what makes the fan-out safe: each coordinator sees a match and no-ops.
+- **The reindex covers every owner, not the caller.** `reindex_transcripts_task` filters
+  `MediaFile.user_id == user_id`, so the "full reindex" the endpoints advertised covered only
+  the admin who pressed the button — on a multi-user deployment that left every other user's
+  chunks in the previous model's vector space, permanently, via the documented happy path.
+  `dispatch_reindex_for_every_owner` dispatches one coordinator per owner of a COMPLETED file.
+  N concurrent coordinators is not a new shape: `tasks/search_maintenance_task._dispatch_reindex_tasks`
+  already loops one per user.
+- **An undeployed model is refused (409), not recorded.** Saving a selection for a model that
+  cannot embed anything is what made the legacy path *destructive*: the coordinator honours the
+  new dimension, deletes the whole chunks index, and then fails every write because the
+  untouched pipeline still emits the old width. ⚠️ The settings UI has **no** register/deploy
+  control, so a non-default model currently has to be registered and deployed by API first.
+
+### `embedding_model` is the model, and `"neural"` means UNKNOWN
+
+The chunk mapping has always declared `embedding_model` as a `keyword` and the write site
+always filled it with the string `"neural"` — the embedding *mode*. Measured before the fix:
+**210,908 documents, cardinality 1**.
+
+- `active_embedding_model()` returns what `ensure_neural_ingest_pipeline` resolved **from the
+  pipeline it wrote**, cached beside `_neural_pipeline_available` and cleared by
+  `reset_neural_pipeline_state`. A stale label is worse than none — it is a specific claim that
+  gets believed.
+- The label is the model **name**, not the ML id: re-registering one model yields two ids and
+  identical vectors, so an id-keyed label would report a mix where there is none.
+- **`"neural"` is kept as the unknown bucket.** Not replaced with a new sentinel (that splits
+  the unattributed population in two) and never backfilled with the current model (that asserts
+  something about 210,908 documents nobody can know). Unresolvable new writes land there too.
+- **No mapping change, so no `_INDEX_VERSION` bump.** The index `_meta` deliberately does *not*
+  record the model either: that is a second copy of a fact that can drift from the documents,
+  and the `terms` agg reads the documents themselves. Derive, don't record.
+
+### Detecting a mixed index
+
+`survey_embedding_models()` — one bounded `terms` agg (`size: 50`, `missing` bucket for
+documents with no field at all), **2.5–6.7 ms** measured against the 210,908-document index.
+
+| verdict | meaning |
+|---|---|
+| `empty` / `unavailable` | no documents / could not ask — `unavailable` never reads as agreement |
+| `unattributed` | only `"neural"`. Every deployment's state before its first post-fix index |
+| `uniform` | exactly one named model, no unknowns. The only `comparable` verdict besides `empty` |
+| `partially_unattributed` | one named model **beside** the unknown bucket |
+| `mixed` | **two or more NAMED models.** Proven, not suspected |
+
+**`partially_unattributed` is deliberately not `mixed`.** Those unknown documents might be from
+the same model, and it is the state every existing deployment enters the moment it indexes
+anything after this lands — an alarm that fires wrongly for the universal case is one people
+learn to ignore in the dangerous one.
+
+Read at `GET /search/models/neural/status` (the endpoint an operator consults before deciding
+to reindex), in both switch responses, and once per `search_index_maintenance` tick — the only
+**automatic** detector, because `_get_indexed_uuids` only finds files with *no* chunks, so a
+file holding old-model chunks looks indexed forever. It logs and does **not** act: dispatching
+a full re-embed of every corpus from a beat tick on one aggregation is how a health check
+becomes an outage. It is deliberately **not** in `POST /search/repair-indices`, whose machinery
+is close/reopen/force-merge and cannot repair a vector space — reporting it there would imply
+the repair had addressed it.
+
+`ml_model_service.get_active_model_id()` **refuses to guess.** It used to return
+`list_models(deployed_only=True)[0]` — the first hit of an unsorted `match_all` — whenever the
+stored model was not deployed, and `ensure_neural_ingest_pipeline` writes whatever it is handed
+straight into the pipeline. That silently repointed embedding **with no user action**. Exactly
+one deployed model is not a choice and is adopted with a warning (the recovery the fallback
+exists for); more than one returns `None` and leaves search on BM25 — loud, obvious and
+reversible, where a wrong guess is silent and costs a full re-embed.
 
 ## Index v6: two planes in one index (#403 Stage 3)
 

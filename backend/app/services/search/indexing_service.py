@@ -14,6 +14,10 @@ from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import opensearch_client
 
 from .chunking_service import chunk_transcript_by_speaker_turns
+from .embedding_provenance import active_embedding_model
+from .embedding_provenance import reset_active_embedding_model
+from .embedding_provenance import resolve_model_label
+from .embedding_provenance import set_active_embedding_model
 
 logger = logging.getLogger(__name__)
 
@@ -565,6 +569,19 @@ def _check_existing_pipeline_config(pipeline_id: str, expected: dict[str, Any]) 
             drift.append(f"batch_size: {live['batch_size']!r} != {expected.get('batch_size')!r}")
 
         if drift:
+            # A ``model_id`` drift is categorically worse than the other two and is
+            # logged as such (issue #437): recreating the pipeline makes every FUTURE
+            # document use the new model while every existing document keeps vectors
+            # from the old one, and cosine between the two populations is meaningless.
+            # The other drifts change what is embedded, not what embeds it.
+            if live.get("model_id") != expected.get("model_id"):
+                logger.warning(
+                    f"Neural ingest pipeline {pipeline_id} is pointed at a DIFFERENT "
+                    f"embedding model ({live.get('model_id')!r} -> "
+                    f"{expected.get('model_id')!r}). Documents already indexed keep "
+                    f"their old vectors; a FULL reindex is required before the index "
+                    f"is a single comparable vector space again."
+                )
             logger.info(
                 f"Neural ingest pipeline {pipeline_id} has drifted, recreating ({'; '.join(drift)})"
             )
@@ -617,6 +634,7 @@ def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
         if pipeline_check is True:
             _neural_pipeline_verified = True
             _neural_pipeline_available = True
+            set_active_embedding_model(resolve_model_label(model_id))
             return True
 
         # Create or update pipeline (try with batch_size first, fall back without)
@@ -641,12 +659,20 @@ def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
 
         _neural_pipeline_verified = True
         _neural_pipeline_available = True
+        # Provenance is resolved HERE, from the model id we just wrote into the
+        # pipeline, and nowhere else (#437). Reading it from
+        # ``get_search_embedding_settings()`` instead would attach a label that is
+        # demonstrably able to name a model that never touched the vector: the two
+        # SystemSettings keys behind that function are written by different
+        # endpoints and nothing reconciles them.
+        set_active_embedding_model(resolve_model_label(model_id))
         return True
 
     except Exception as e:
         logger.error(f"Error creating neural ingest pipeline: {e}")
         _neural_pipeline_verified = False
         _neural_pipeline_available = False
+        reset_active_embedding_model()
         return False
 
 
@@ -676,6 +702,10 @@ def reset_neural_pipeline_state() -> None:
     global _neural_pipeline_verified, _neural_pipeline_available
     _neural_pipeline_verified = False
     _neural_pipeline_available = False
+    # The provenance label describes the pipeline, so it expires with it. Leaving
+    # the previous model's name behind would stamp it on documents the NEXT model
+    # embeds — a wrong label is worse than no label, because it is believed.
+    reset_active_embedding_model()
 
 
 def _get_index_body_with_dimension(dimension: int) -> dict[str, Any]:
@@ -890,10 +920,16 @@ class TranscriptIndexingService:
         t_index_start = time.time()
         try:
             use_neural = is_neural_pipeline_available()
+            # The model that will actually produce these vectors, not the mode
+            # they were produced in (#437). ``is_neural_pipeline_available`` is
+            # what verifies the pipeline, so the label is resolved by the time we
+            # read it; when it could not be named this is the same ``"neural"``
+            # every pre-#437 document carries, so unknown stays one bucket.
+            provenance = active_embedding_model()
             if use_neural:
                 for chunk in chunks:
-                    chunk["embedding_model"] = "neural"
-                logger.debug(f"Using neural ingest pipeline for file {file_uuid}")
+                    chunk["embedding_model"] = provenance
+                logger.debug(f"Using neural ingest pipeline for file {file_uuid} ({provenance})")
             else:
                 for chunk in chunks:
                     chunk["embedding_model"] = None
@@ -939,7 +975,7 @@ class TranscriptIndexingService:
                     "collection_ids": collection_ids or [],
                     "accessible_user_ids": effective_user_ids,
                     "indexed_at": now,
-                    "embedding_model": "neural" if use_neural else None,
+                    "embedding_model": provenance if use_neural else None,
                     **({} if organization_id is None else {"organization_id": organization_id}),
                 },
                 use_neural=use_neural,

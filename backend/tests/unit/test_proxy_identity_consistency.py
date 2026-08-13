@@ -112,10 +112,34 @@ def proxy_enabled() -> None:
 
 @pytest.fixture
 def audited(monkeypatch) -> list[dict]:
-    """Capture what the gate hands to the audit logger."""
+    """Capture what the gate hands to the audit logger.
+
+    NOTE this patches ``log`` on the audit_logger INSTANCE, which is a shared singleton —
+    so it captures EVERY emitter reached during the call, not only this module's.
+    """
     events: list[dict] = []
     monkeypatch.setattr(deps_module.audit_logger, "log", lambda **kw: events.append(kw))
     return events
+
+
+def _record(audited: list[dict], event_type: AuditEventType) -> dict:
+    """The one record of *event_type*, selected by TYPE rather than by position.
+
+    These assertions used to index ``audited[0]``. That broke the moment
+    ``revoke_all_user_tokens_in_transaction`` gained its own ``AUTH_TOKEN_REVOKE`` record —
+    which is a fix, not a regression: a mass revocation that emitted nothing was itself a
+    finding. But it fires FIRST, so every ``audited[0]`` silently retargeted onto it and
+    the suite failed with ``KeyError: 'source_ip'``.
+
+    Positional indexing into an emitted-event list has the same defect as a positional
+    ``.nth()`` DOM selector: it silently means something different as soon as anything is
+    inserted above it. Assert on identity instead.
+    """
+    matches = [e for e in audited if e["event_type"] is event_type]
+    assert len(matches) == 1, (
+        f"expected exactly one {event_type} record, got {[e['event_type'] for e in audited]}"
+    )
+    return matches[0]
 
 
 def _request(
@@ -472,12 +496,18 @@ class TestAMismatchRevokesAndReports:
     ):
         self._mismatch(db_session, proxy_user)
 
-        assert [e["event_type"] for e in audited] == [AuditEventType.AUTH_SESSION_TERMINATED]
-        assert audited[0]["error_code"] == "PROXY_IDENTITY_MISMATCH"
+        # The mismatch record must be present. The list is NOT pinned to exactly one
+        # entry: revoking the sessions legitimately emits its own AUTH_TOKEN_REVOKE, and
+        # a mass revocation that recorded nothing was itself an audit finding. Requiring
+        # a single record would mean this test fails whenever the revocation plane gets
+        # MORE observable, which is backwards.
+        assert AuditEventType.AUTH_SESSION_TERMINATED in [e["event_type"] for e in audited]
+        terminated = _record(audited, AuditEventType.AUTH_SESSION_TERMINATED)
+        assert terminated["error_code"] == "PROXY_IDENTITY_MISMATCH"
         # Recorded as a FAILURE, which is what makes it findable: an operator
         # reviewing the audit index filters on the outcome, and a denial logged
         # without one is a denial nobody sees.
-        assert audited[0]["outcome"] is AuditOutcome.FAILURE
+        assert terminated["outcome"] is AuditOutcome.FAILURE
 
     def test_the_audit_record_names_the_account_it_terminated(
         self, db_session, proxy_enabled, audited, proxy_user
@@ -489,22 +519,24 @@ class TestAMismatchRevokesAndReports:
         """
         self._mismatch(db_session, proxy_user)
 
-        assert audited[0]["user_id"] == proxy_user.id
-        assert audited[0]["username"] == str(proxy_user.email)
+        assert _record(audited, AuditEventType.AUTH_SESSION_TERMINATED)["user_id"] == proxy_user.id
+        assert _record(audited, AuditEventType.AUTH_SESSION_TERMINATED)["username"] == str(
+            proxy_user.email
+        )
 
     def test_the_audit_record_attributes_the_request(
         self, db_session, proxy_enabled, audited, proxy_user
     ):
         self._mismatch(db_session, proxy_user)
 
-        assert audited[0]["source_ip"] == TRUSTED_PEER
-        assert audited[0]["user_agent"] == "pytest"
+        assert _record(audited, AuditEventType.AUTH_SESSION_TERMINATED)["source_ip"] == TRUSTED_PEER
+        assert _record(audited, AuditEventType.AUTH_SESSION_TERMINATED)["user_agent"] == "pytest"
 
     def test_the_audit_record_says_what_was_asserted_and_how_much_was_revoked(
         self, db_session, proxy_enabled, audited, proxy_user
     ):
         self._mismatch(db_session, proxy_user)
-        details = audited[0]["details"]
+        details = _record(audited, AuditEventType.AUTH_SESSION_TERMINATED)["details"]
 
         assert details["asserted_identity"] == OTHER_IDENTITY
         assert details["sessions_revoked"] == 2
@@ -517,7 +549,10 @@ class TestAMismatchRevokesAndReports:
         with pytest.raises(HTTPException):
             _enforce(proxy_user, _request(asserted=f"  {OTHER_IDENTITY.upper()}  "), db_session)
 
-        assert audited[0]["details"]["asserted_identity"] == OTHER_IDENTITY
+        assert (
+            _record(audited, AuditEventType.AUTH_SESSION_TERMINATED)["details"]["asserted_identity"]
+            == OTHER_IDENTITY
+        )
 
     def test_an_unmatched_route_still_produces_a_record(
         self, db_session, proxy_enabled, audited, proxy_user
@@ -530,7 +565,10 @@ class TestAMismatchRevokesAndReports:
                 db_session,
             )
 
-        assert audited[0]["details"]["path"] == ORDINARY_PATH
+        assert (
+            _record(audited, AuditEventType.AUTH_SESSION_TERMINATED)["details"]["path"]
+            == ORDINARY_PATH
+        )
 
 
 # ── the gate reaches it, and reaches it first ───────────────────────────────────

@@ -91,7 +91,10 @@ def _stub_transport(status_code: int = 200, payload=None, text: str = ""):
         async def __aexit__(self, *_exc):
             return False
 
-        def get(self, url, headers=None):
+        def get(self, url, headers=None, **_kwargs):
+            # `**_kwargs` absorbs `allow_redirects=False`, which the handlers pass because
+            # an SSRF pin only covers one hop. Asserting on it belongs in
+            # tests/unit/test_ssrf_connection_pinning.py, not here.
             requests.append((url, dict(headers or {})))
             return _Response()
 

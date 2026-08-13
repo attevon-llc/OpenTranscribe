@@ -1,7 +1,12 @@
 """The password-policy controls nothing was exercising (FedRAMP IA-5).
 
-Four separate controls in ``app/auth/password_policy.py`` could be deleted with the
-whole suite still green. Each test below names the consequence it prevents.
+Seven separate controls in ``app/auth/password_policy.py`` (and its
+``password_history.py`` service wrapper) could be deleted with the whole suite still
+green. Each test below names the consequence it prevents.
+
+The *wiring* — that the endpoints actually consult any of this — is a different
+question, and it lives in ``test_password_control_wiring.py``. A policy enforced
+perfectly and consulted nowhere is not a control.
 
 * **Password reuse** (``check_password_history``). ``rg check_password_history
   backend/tests`` returned ZERO hits before this file: the FedRAMP IA-5 reuse control
@@ -24,6 +29,16 @@ whole suite still green. Each test below names the consequence it prevents.
   expires". Narrowing the guard to ``< 0`` makes the cutoff ``now``, so **every**
   password reads as expired and every account in the deployment is force-reset on next
   login. Only the *setting's* acceptance of 0 was tested, never the behaviour.
+* **The minimum password age** (``min_age_remaining``). There was no minimum age
+  anywhere in ``backend/``, which made the bounded history self-defeating: nothing
+  rate-limits a password change, so any user could run ``password_history_count``
+  throwaway changes back to back, prune the row holding their original out of the
+  retained window, and set the original again (FedRAMP IA-5(1)(e)).
+* **The current-password floor** (``password_history.check_password_against_history``).
+  ``check_password_history`` fails **open** on an entry it cannot verify, so a history
+  of unreadable rows turned the reuse control entirely off while returning success.
+  Reading the live ``user.hashed_password`` refuses at least the password the caller
+  already has, and is also what covers an account whose history was never seeded.
 
 Everything here runs against the real policy object with its settings published through
 the process-level auth cache — no database, no HTTP client. One test drives the real
@@ -325,14 +340,29 @@ class _HistoryQuery:
     def all(self) -> list[Any]:
         return self._rows
 
+    def first(self) -> Any:
+        return self._rows[0] if self._rows else None
+
 
 class _HistoryDB:
-    """Minimal ``Session`` stand-in returning canned ``PasswordHistory`` rows."""
+    """Minimal ``Session`` stand-in returning canned ``PasswordHistory`` rows.
 
-    def __init__(self, hashes: list[str]):
+    Keyed by model, unlike the other fakes in this suite, because
+    ``check_password_against_history`` reads **two** tables: the history rows and
+    the account's live ``user.hashed_password``. A model-blind fake would hand the
+    current-password lookup a ``PasswordHistory`` row and the distinction under
+    test would disappear.
+    """
+
+    def __init__(self, hashes: list[str], current_hash: str | None = None):
         self._rows: list[Any] = [SimpleNamespace(password_hash=h) for h in hashes]
+        self._user = SimpleNamespace(id=1, hashed_password=current_hash)
 
-    def query(self, *_a: Any, **_k: Any) -> _HistoryQuery:
+    def query(self, model: Any = None, *_a: Any, **_k: Any) -> _HistoryQuery:
+        from app.models.user import User
+
+        if model is User:
+            return _HistoryQuery([self._user])
         return _HistoryQuery(self._rows)
 
 
@@ -525,3 +555,185 @@ class TestMaxAgeZeroNeverExpires:
         fresh = datetime.now(UTC) - timedelta(days=1)
 
         assert policy_module.is_password_expired(fresh) is False
+
+
+# ── CONTROL 6: a minimum password age, so the bounded history cannot be flushed ──
+
+
+class TestMinimumPasswordAge:
+    """Consequence prevented: the bounded history defeating itself.
+
+    ``_cleanup_old_history`` is a pure keep-newest-N prune and ``PUT /api/users/me``
+    carries no rate limit, so with no minimum age an ordinary user could issue
+    ``password_history_count`` sequential changes with throwaway passwords — the last
+    of which prunes the row holding their original — and then set the original again.
+    FedRAMP IA-5(1)(e) defeated with no privilege at all, in one uninterrupted minute.
+
+    ``None`` means "permitted now" throughout, deliberately: the zero case is falsy
+    while the last second of the window is a truthy ``timedelta``, so a caller testing
+    truthiness rather than ``is not None`` would be right by accident and wrong at the
+    boundary.
+    """
+
+    def test_a_change_inside_the_window_is_refused(self):
+        _publish(password_policy_enabled=True, password_min_age_hours=24)
+        just_now = datetime.now(UTC) - timedelta(hours=1)
+
+        remaining = policy_module.password_min_age_remaining(just_now)
+
+        assert remaining is not None
+        assert timedelta(hours=22) < remaining <= timedelta(hours=23)
+
+    def test_a_change_after_the_window_is_permitted(self):
+        _publish(password_policy_enabled=True, password_min_age_hours=24)
+        yesterday = datetime.now(UTC) - timedelta(hours=25)
+
+        assert policy_module.password_min_age_remaining(yesterday) is None
+
+    def test_the_boundary_itself_is_permitted(self):
+        """Exactly ``min_age_hours`` old is old enough — ``>`` not ``>=``.
+
+        Pins the comparison that decides whether the advertised "24 hours" actually
+        means 24 or silently means 25.
+        """
+        _publish(password_policy_enabled=True, password_min_age_hours=24)
+        now = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+
+        assert (
+            policy_module.password_min_age_remaining(now - timedelta(hours=24), current_time=now)
+            is None
+        )
+        assert (
+            policy_module.password_min_age_remaining(
+                now - timedelta(hours=24) + timedelta(seconds=1), current_time=now
+            )
+            is not None
+        )
+
+    def test_zero_disables_the_control(self):
+        """The documented off switch, matching ``max_age_days`` == 0."""
+        _publish(password_policy_enabled=True, password_min_age_hours=0)
+
+        assert policy_module.password_min_age_remaining(datetime.now(UTC)) is None
+
+    def test_a_disabled_policy_disables_the_control(self):
+        _publish(password_policy_enabled=False, password_min_age_hours=24)
+
+        assert policy_module.password_min_age_remaining(datetime.now(UTC)) is None
+
+    def test_an_unknown_change_date_is_permitted_not_refused(self):
+        """NULL is "no recorded change", and it is the ONLY state that can populate it.
+
+        Reading absent data as a fresh password would refuse the change forever on
+        every row seeded before the column was maintained.
+        """
+        _publish(password_policy_enabled=True, password_min_age_hours=24)
+
+        assert policy_module.password_min_age_remaining(None) is None
+
+    def test_a_naive_timestamp_is_treated_as_utc(self):
+        """The column is tz-aware, but a naive value must not crash the compare."""
+        _publish(password_policy_enabled=True, password_min_age_hours=24)
+        naive = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1)
+
+        remaining = policy_module.password_min_age_remaining(naive)
+
+        # The value, not just "not None": a naive value silently read as a
+        # different offset would still be truthy but off by hours.
+        assert remaining is not None
+        assert timedelta(hours=22) < remaining <= timedelta(hours=23)
+
+    def test_the_configured_value_is_what_is_enforced(self):
+        """Not a hardcoded 24: raising the setting must raise the floor."""
+        _publish(password_policy_enabled=True, password_min_age_hours=72)
+        now = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+
+        # 48 h old against a 72 h floor leaves exactly 24 h — a hardcoded 24 would
+        # report None here, and any other multiplier would report a different span.
+        assert policy_module.password_min_age_remaining(
+            now - timedelta(hours=48), current_time=now
+        ) == timedelta(hours=24)
+
+    def test_the_coded_default_is_nonzero(self):
+        """A control whose default is "off" would leave the defect unfixed everywhere.
+
+        The layered accessor resolves DB > .env > this default, and there is no
+        ``PASSWORD_MIN_AGE_HOURS`` in ``Settings``, so the coded default is what an
+        unconfigured deployment enforces.
+        """
+        _publish(password_policy_enabled=True)
+
+        assert policy_module.password_policy.min_age_hours == (
+            policy_module.DEFAULT_PASSWORD_MIN_AGE_HOURS
+        )
+        assert policy_module.DEFAULT_PASSWORD_MIN_AGE_HOURS > 0
+
+
+# ── CONTROL 7: the current password is refused even when history says nothing ────
+
+
+class TestTheCurrentPasswordIsRefusedFromTheLiveColumn:
+    """The floor under ``check_password_history``'s deliberate fail-open.
+
+    Two states leave the history rows silent: an account whose history was never
+    seeded (the bootstrap super_admin was exactly this), and a history whose entries
+    this build cannot verify — which the policy layer treats as fail-OPEN and merely
+    logs. In both, re-setting the password you are already using was accepted and
+    audited as a successful change.
+
+    Reading ``user.hashed_password`` closes that without stranding anyone: the only
+    password it refuses is the one the caller already has.
+    """
+
+    def test_the_current_password_is_refused_with_an_empty_history(self, reuse_enforced):
+        from app.core.security import get_password_hash
+
+        password = "Correct-Horse-Battery-9"
+        db = _HistoryDB([], current_hash=get_password_hash(password))
+
+        assert history_service.check_password_against_history(cast(Any, db), 1, password) is False
+
+    def test_a_different_password_is_still_allowed_with_an_empty_history(self, reuse_enforced):
+        """The control: the floor refuses one password, not every password."""
+        from app.core.security import get_password_hash
+
+        db = _HistoryDB([], current_hash=get_password_hash("Correct-Horse-Battery-9"))
+
+        assert (
+            history_service.check_password_against_history(cast(Any, db), 1, "Totally-Other-1")
+            is True
+        )
+
+    def test_the_current_password_is_refused_when_every_history_row_is_unreadable(
+        self, reuse_enforced
+    ):
+        """The fail-open case, which is the whole reason this floor exists."""
+        from app.core.security import get_password_hash
+
+        password = "Correct-Horse-Battery-9"
+        db = _HistoryDB(["not-a-passlib-hash"], current_hash=get_password_hash(password))
+
+        assert history_service.check_password_against_history(cast(Any, db), 1, password) is False
+
+    def test_an_external_identity_placeholder_does_not_raise(self, reuse_enforced):
+        """``EXTERNAL_AUTH_NO_PASSWORD`` is not a hash; comparing must not 500."""
+        from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
+
+        db = _HistoryDB([], current_hash=EXTERNAL_AUTH_NO_PASSWORD)
+
+        assert (
+            history_service.check_password_against_history(cast(Any, db), 1, "Totally-Other-1")
+            is True
+        )
+
+    def test_a_disabled_policy_still_disables_the_floor(
+        self,
+    ):
+        """An operator who turned reuse prevention off has it off, floor included."""
+        from app.core.security import get_password_hash
+
+        _publish(password_policy_enabled=False, password_history_count=5)
+        password = "Correct-Horse-Battery-9"
+        db = _HistoryDB([], current_hash=get_password_hash(password))
+
+        assert history_service.check_password_against_history(cast(Any, db), 1, password) is True

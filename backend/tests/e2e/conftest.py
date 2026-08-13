@@ -26,13 +26,18 @@ Run with specific base URL:
 """
 
 import os
+import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import cast
 
 import pytest
 from playwright.sync_api import Page
+
+#: Repo root, derived from this file: backend/tests/e2e/conftest.py
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -108,6 +113,164 @@ def backend_url(request: pytest.FixtureRequest) -> str:
     if from_flag:
         return str(from_flag)
     return BACKEND_URL
+
+
+# ---------------------------------------------------------------------------
+# Stack preflight
+#
+# ``scripts/e2e/run-e2e.sh`` checks only that ports 5173/5174 are OPEN. A
+# published container port stays open while the process behind it is restarting,
+# so that check cannot tell a healthy stack from a broken one — and every failure
+# below was first seen as a pile of unrelated per-test timeouts rather than as
+# "the stack is not ready".
+# ---------------------------------------------------------------------------
+
+#: Vite's dev server appends an HMR cache-buster (``?t=<ms>``) to every module URL
+#: it rewrites. Captures ``(store_name, stamp)``.
+_STORE_IMPORT_RE = re.compile(r"/src/stores/([A-Za-z0-9_.-]+?)\.ts\?t=(\d+)")
+
+
+def split_store_modules(sources: dict[str, str]) -> dict[str, dict[str, list[str]]]:
+    """Find shared stores the dev server is serving under MORE THAN ONE URL.
+
+    ES modules are keyed by URL, so two importers that resolve ``$stores/auth`` to
+    two different ``?t=`` stamps each get their own copy of the module — and
+    therefore their own copy of every store it creates. The layout writes the
+    signed-in user into one instance; a component holding the other sees ``$user``
+    as ``null`` forever.
+
+    This is not hypothetical. ``TagManagerModal.svelte`` sat on a 28-hour-old stamp
+    while ``+layout``/``Navbar`` carried the current one, so its
+    ``$: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin'`` was
+    permanently false and the tag manager's "Share with everyone" button never
+    rendered. That surfaced as ONE mystifying E2E failure
+    (``test_promote_publishes_to_the_shared_vocabulary``) against correct app code
+    and a correct test; the sibling test asserting the button is ABSENT passed
+    throughout, because absence is what a broken store also produces.
+
+    Pure by design: the fetching lives in :func:`_fetch_store_importers`, so the
+    detector can be exercised on synthetic text (``test_preflight_guard.py``). A
+    scanner that silently matches nothing is indistinguishable from a clean stack.
+
+    Args:
+        sources: Compiled module text, keyed by the source path it was fetched from.
+
+    Returns:
+        ``{store: {stamp: [importer, ...]}}`` for every store seen under two or more
+        stamps; empty when the module graph is consistent.
+    """
+    seen: dict[str, dict[str, list[str]]] = {}
+    for path, text in sources.items():
+        for store, stamp in _STORE_IMPORT_RE.findall(text):
+            seen.setdefault(store, {}).setdefault(stamp, []).append(path)
+    return {store: by_stamp for store, by_stamp in seen.items() if len(by_stamp) > 1}
+
+
+def _fetch_store_importers(base_url: str) -> dict[str, str]:
+    """Fetch the compiled text of every source module that imports a ``$stores/`` module.
+
+    Returns an empty mapping when the frontend is not a Vite dev server (the prod /
+    nginx overlays serve a bundle, where this whole failure mode cannot occur), so
+    the caller's check degrades to a no-op rather than a false alarm.
+    """
+    import requests
+
+    frontend = _REPO_ROOT / "frontend"
+    if not frontend.is_dir():
+        return {}
+
+    candidates = [
+        path
+        for pattern in ("src/**/*.svelte", "src/**/*.ts")
+        for path in frontend.glob(pattern)
+        if not path.name.endswith((".test.ts", ".spec.ts"))
+        and "$stores/" in path.read_text(encoding="utf-8", errors="ignore")
+    ]
+
+    sources: dict[str, str] = {}
+    with requests.Session() as session:
+        for path in candidates:
+            rel = path.relative_to(frontend).as_posix()
+            try:
+                response = session.get(f"{base_url}/{rel}", timeout=10)
+            except requests.RequestException:
+                continue
+            # nginx answers the SPA fallback (index.html) for these paths; only a
+            # Vite dev server returns transformed JS carrying ?t= stamps.
+            if response.status_code == 200:
+                sources[rel] = response.text
+    return sources
+
+
+def _await_stable_backend(backend_url: str, *, required: int = 3, budget: float = 120.0) -> str:
+    """Wait for ``/health`` to answer 200 ``required`` times in a row.
+
+    Consecutive successes, not one — a backend cycling through uvicorn reloads
+    answers intermittently, and a single lucky probe reports it as ready. Observed
+    at 9 healthy samples out of 40 while another process rewrote ``backend/app``;
+    in that state ``initAuth``'s ``/auth/session`` call stalls, and because
+    ``+layout.svelte`` renders the app behind ``{#if $authReady}``, ``#email``
+    never appears and EVERY login-page fixture times out at once.
+
+    Returns:
+        An empty string when the backend is stable, else a description of the failure.
+    """
+    import requests
+
+    deadline = time.monotonic() + budget
+    streak = 0
+    last = "no probe completed"
+    while time.monotonic() < deadline:
+        try:
+            status = requests.get(f"{backend_url}/health", timeout=5).status_code
+            if status == 200:
+                streak += 1
+                if streak >= required:
+                    return ""
+                time.sleep(1.0)
+                continue
+            last = f"/health returned {status}"
+        except requests.RequestException as exc:
+            last = f"/health unreachable ({type(exc).__name__})"
+        streak = 0
+        time.sleep(2.0)
+    return last
+
+
+@pytest.fixture(scope="session", autouse=True)
+def e2e_stack_preflight(base_url: str, backend_url: str) -> None:
+    """Refuse to run the suite against a stack that cannot support it.
+
+    Both checks exist because their absence has already cost debugging time on
+    failures that looked like test defects and were not. Failing here — once, with
+    the remedy — beats letting the condition surface as a different arbitrary
+    subset of timeouts on every run.
+    """
+    problem = _await_stable_backend(backend_url)
+    if problem:
+        pytest.exit(
+            f"E2E preflight: backend at {backend_url} is not serving steadily ({problem}).\n"
+            "Ports being open is not enough — a restarting container keeps its port open.\n"
+            "Start or settle the stack first:  ./opentr.sh start dev",
+            returncode=3,
+        )
+
+    splits = split_store_modules(_fetch_store_importers(base_url))
+    if splits:
+        detail = "\n".join(
+            f"  ${{stores/{store}}} served under {len(by_stamp)} URLs; e.g. "
+            + " | ".join(
+                f"?t={stamp} <- {sorted(importers)[0]}" for stamp, importers in by_stamp.items()
+            )
+            for store, by_stamp in sorted(splits.items())
+        )
+        pytest.exit(
+            "E2E preflight: the Vite dev server is serving DUPLICATE store modules, so "
+            "components hold different copies of the same Svelte store and props derived "
+            f"from it (roles, session) are silently wrong:\n{detail}\n"
+            "Remedy:  ./opentr.sh restart-frontend",
+            returncode=3,
+        )
 
 
 @pytest.fixture

@@ -36,7 +36,9 @@
 #   do not start one while a transcription benchmark is running.
 # - It writes only to backend/mutants/ (mutmut's working copy, gitignored) and to
 #   $OT_MUTATION_OUT_DIR (default .mutation/ in the repo, gitignored — NOT /tmp, which is
-#   cleared on reboot and silently disarmed the ratchet).
+#   cleared on reboot and silently disarmed the ratchet). Each module leaves two files there:
+#   <key>.log (the run) and <key>.meta (what the run was measured against). See "EVIDENCE"
+#   below — the .meta is not a convenience, it is what makes the .log admissible.
 # - backend/mutants/ is left in place on purpose: --results and --show read it, and
 #   mutmut reuses it as a cache across runs. It is ~330k lines of DELIBERATELY
 #   CORRUPTED source, so nothing may scan it. bandit is the one that bit us — it walks
@@ -53,6 +55,17 @@
 #   ./scripts/run-mutation-tests.sh --all                # every configured module (hours)
 #   ./scripts/run-mutation-tests.sh --results            # re-report the last run, no re-run
 #   ./scripts/run-mutation-tests.sh --show <mutant-id>   # the diff for one surviving mutant
+#   ./scripts/run-mutation-tests.sh --check-baseline [m] # the RATCHET, mutates nothing
+#
+# Exit codes (stable — --check-baseline is meant to be read by a gate):
+#   0  pass
+#   1  a REGRESSION: survivors rose above the baseline, or coverage fell below its floor
+#   2  misuse (unknown flag/module, --module twice)
+#   3  misconfigured: no run log at all, or a module with no baseline row
+#   4  NOT MEASURED — the check could not be performed. An unfinished run, a log that does not
+#      match the current source or tests, an unmeasurable coverage pre-flight, a cache mixing
+#      two test lists, or zero modules checked. NEVER render 4 as a pass; it is the state this
+#      script has been wrong about more often than any other.
 
 set -uo pipefail
 
@@ -113,7 +126,13 @@ declare -A MODULE_PATH=(
 declare -A MODULE_TESTS=(
     [spans]="tests/redaction/test_apply_redactions.py tests/redaction/test_span_merge_boundaries.py tests/redaction/test_word_offset_alignment.py tests/redaction/test_non_ascii_masking.py"
     [password_policy]="tests/unit/test_auth_config_behaviour.py tests/test_fedramp_compliance.py tests/unit/test_account_lifecycle.py tests/unit/test_auth_policy_source_of_truth.py tests/unit/test_password_policy_controls.py"
-    [security]="tests/api/endpoints/test_auth_comprehensive.py tests/unit/test_token_type_binding.py tests/test_fips_140_3.py tests/unit/test_bcrypt_test_rounds.py tests/unit/test_local_auth_policy.py tests/unit/test_jwt_algorithm_downgrade.py"
+    # tests/unit/test_verify_token_claims.py is here because it was WRITTEN from this module's
+    # survivors ("Written from surviving mutants (issue #431)") and then never added to the
+    # selection — so the very mutants it kills would have come back as survivors on the next
+    # run, which is failure mode 1 (a test that is not selected kills nothing) applied to the
+    # fix for failure mode 1. Adding a test file here can only lower a count; leaving one out
+    # manufactures findings.
+    [security]="tests/api/endpoints/test_auth_comprehensive.py tests/unit/test_token_type_binding.py tests/test_fips_140_3.py tests/unit/test_bcrypt_test_rounds.py tests/unit/test_local_auth_policy.py tests/unit/test_jwt_algorithm_downgrade.py tests/unit/test_verify_token_claims.py"
     # ⚠️ THIS LIST IS THE MEASUREMENT. An omitted file is not a smaller run — it is a
     # batch of FALSE survivors that look exactly like real findings. The first run of
     # this target reported 41 survivors in `_enforce_proxy_identity_consistency` and
@@ -167,6 +186,160 @@ warn_if_test_list_changed() {
     if [[ -n "$prev_hash" && "$prev_hash" != "$tests_hash" && -d "$mutants_dir" ]]; then
         echo stale
     fi
+}
+
+
+# ---------------------------------------------------------------------------
+# EVIDENCE — what makes a log a MEASUREMENT rather than a file
+#
+# A log does not validate itself, and every guard below is a way that mattered.
+#
+# 1. A TRUNCATED LOG READ AS AN IMPROVEMENT. The survivor count was a `grep -c` over the
+#    whole log. A run killed at 40% has already printed "--- mutating <path> ---", so the
+#    wrong-module guard passed, and the partial list yielded a LOWER count — only a count
+#    ABOVE the baseline ever failed. The tool printed "✓ improved (149 -> 40) — lower the
+#    baseline in scripts/mutation-baselines.tsv", i.e. it instructed the operator to ratchet
+#    DOWN to a number produced by a crash. An incomplete run must be NOT MEASURED, never an
+#    improvement.
+# 2. NOTHING BOUND A LOG TO THE SOURCE IT MEASURED. No commit, no hash, no mtime. A log from
+#    an arbitrarily old tree passed indefinitely. Live example, found by this change:
+#    app/core/security.py and tests/test_fips_140_3.py (in MODULE_TESTS[security]) both
+#    changed in c0c462aa, hours after security.log was written — and --check-baseline still
+#    reported "✓ holding at 133". Regenerating mutmut's mutants from today's source confirms
+#    the drift independently: the log names 10 mutants the current file cannot produce.
+# 3. THE COUNT WAS PARSED FROM OUTPUT THE RUN DOES NOT WRITE. `mutmut run`'s tee'd output ends
+#    with an EMOJI list; the "<mutant>: survived" lines the old grep looked for come from
+#    `mutmut results`, which the script prints AFTER the tee. The six logs in .mutation/ only
+#    contain them because that session captured the whole script's stdout. A log produced by
+#    the run path as written would have matched zero lines and scored a perfect 0.
+#
+# So a run now writes, at the END and only on completion:
+#
+#   * a delimited SUMMARY BLOCK appended to the log — one line per mutant of that module,
+#     verdicts included, with the counts repeated on the END marker. No END marker means the
+#     run did not finish. A recount that disagrees with the marker means the log was truncated
+#     or edited after the fact. A mutant still marked "not checked" means mutmut itself stopped
+#     early, which is the exact shape of failure (1).
+#   * a <key>.meta sidecar recording the sha256 of the module source and of every file in
+#     MODULE_TESTS, plus the coverage and cache-staleness verdicts of that run.
+#
+# The meta is DELETED when a run starts and written only when it finishes, so its mere
+# existence is completion evidence, independent of the log.
+# ---------------------------------------------------------------------------
+SUMMARY_BEGIN="=== OT-MUTATION-SUMMARY BEGIN"
+SUMMARY_END="=== OT-MUTATION-SUMMARY END"
+
+sha_of_file() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
+
+module_source_sha() { sha_of_file "$BACKEND/${MODULE_PATH[$1]}"; }
+
+# One hash over the CONTENT of every selected test file. It has to be content and not the
+# file LIST: the case that was live here is a test file that gained a test after the run
+# (d8df6b6c added the verify_token exp/essential test that security's own baseline note says
+# closed a gap), which leaves the list identical and the measurement obsolete.
+module_tests_sha() {
+    local key=$1 f h acc=""
+    for f in ${MODULE_TESTS[$key]}; do
+        h=$(sha_of_file "$BACKEND/$f")
+        [[ -n "$h" ]] || { printf 'MISSING:%s' "$f"; return 1; }
+        acc+="$f $h"$'\n'
+    done
+    printf '%s' "$acc" | sha256sum | cut -d' ' -f1
+}
+
+# Read one key out of a .meta. Deliberately NOT `source`: a meta is generated data, and
+# sourcing generated data executes it.
+meta_value() { sed -n "s/^$2=//p" "$1" 2>/dev/null | tail -1; }
+
+# mutmut's own status vocabulary (mutmut/__main__.py: emoji_by_status). Read from the log
+# rather than from `mutmut results`, and that is not interchangeable: `mutmut results` prints
+# only the mutants it has something to complain about — for spans it listed the 10 survivors
+# and NONE of the 196 killed — so a "total" taken from it is really "survivors + unchecked" and
+# would move with the finding it is supposed to bound.
+declare -A STATUS_BY_EMOJI=(
+    ["🎉"]=killed      ["🙁"]=survived   ["🫥"]="no tests"  ["⏰"]=timeout
+    ["🤔"]=suspicious  ["🔇"]=skipped    ["🧙"]="caught by type check"
+    ["💥"]=segfault    ["🛑"]=interrupted ["?"]="not checked"
+)
+
+# Append the summary block to $log and write $key.meta.
+#
+# The body is `mutmut run`'s own end-of-run list, which is inside the tee and carries EVERY
+# mutant of the module. The last progress line carries mutmut's independent tally of the same
+# run; both go into the marker so the checker can compare them. This function only records —
+# every judgement is check_baseline's, so there is one place to read for what makes a run
+# admissible.
+#
+# Deliberately callable without a 30-90 minute run: point it at a recorded log and it produces
+# the same artifacts, which is how the guards downstream are tested at all.
+finalize_run_evidence() {
+    local key=$1 log=$2 coverage=$3 stale=$4 lowcov=$5
+    local dotted esc plain body total survived notchecked tsha prog run_total run_surv
+    dotted="${MODULE_PATH[$key]%.py}"; dotted="${dotted//\//.}"
+    esc="${dotted//./[.]}"
+
+    plain=$(tr '\r' '\n' < "$log" | sed $'s/\033\\[[0-9;]*m//g')
+    body=$(printf '%s\n' "$plain" \
+        | awk '/^Mutant results$/ {f = 1} f' \
+        | grep -E "^[^[:space:]]+[[:space:]]+${esc}[.][^[:space:]]+[[:space:]]*$" \
+        | while read -r emoji name _; do
+              [[ -n "${STATUS_BY_EMOJI[$emoji]:-}" ]] || continue
+              printf '%s: %s\n' "$name" "${STATUS_BY_EMOJI[$emoji]}"
+          done | sort -u)
+    total=$(printf '%s' "$body" | grep -c . || true)
+    survived=$(printf '%s' "$body" | grep -c ': survived$' || true)
+    notchecked=$(printf '%s' "$body" | grep -c ': not checked$' || true)
+
+    # mutmut's own counter: "<processed>/<all mutants>  🎉 k 🫥 n  ⏰ t  🤔 s  🙁 v  🔇 sk  🧙 c"
+    prog=$(printf '%s\n' "$plain" | grep -oE '[0-9]+/[0-9]+ +🎉 [0-9]+.*🙁 [0-9]+' | tail -1)
+    run_total=$(sed -n 's|^\([0-9]*\)/.*|\1|p' <<<"$prog")
+    run_surv=$(sed -n 's/.*🙁 \([0-9]*\).*/\1/p' <<<"$prog")
+
+    {
+        echo "$SUMMARY_BEGIN key=$key path=${MODULE_PATH[$key]} ==="
+        [[ -n "$body" ]] && printf '%s\n' "$body"
+        echo "$SUMMARY_END key=$key mutants=$total survived=$survived not_checked=$notchecked" \
+             "run_mutants=${run_total:-?} run_survived=${run_surv:-?} ==="
+    } >> "$log"
+
+    tsha=$(module_tests_sha "$key" || true)
+    {
+        echo "schema=1"
+        echo "module=$key"
+        echo "path=${MODULE_PATH[$key]}"
+        echo "run_at=$(date -Is)"
+        echo "git_commit=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+        echo "source_sha=$(module_source_sha "$key")"
+        echo "tests_sha=$tsha"
+        echo "tests_list_sha=$(printf '%s' "${MODULE_TESTS[$key]}" | sha256sum | cut -c1-16)"
+        for f in ${MODULE_TESTS[$key]}; do
+            echo "test_file=$f $(sha_of_file "$BACKEND/$f")"
+        done
+        echo "coverage=$coverage"
+        echo "stale_cache=$stale"
+        echo "low_coverage=$lowcov"
+        echo "mutants=$total"
+        echo "survived=$survived"
+        echo "not_checked=$notchecked"
+        echo "run_mutants=${run_total:-}"
+        echo "run_survived=${run_surv:-}"
+        # LAST, always: a reader that finds this line knows every line above it was written.
+        echo "completed=1"
+    } > "$OUT_DIR/$key.meta"
+}
+
+# Exit status for a RUN (not for --check-baseline).
+#
+# A red banner that does not change the exit code is a banner no caller can see: `--all` printed
+# "⚠ SURVIVORS FROM THESE TARGETS ARE NOT TRUSTWORTHY" and exited 0, so a run with a stale cache
+# and 20% target coverage was indistinguishable to a script from a clean one. 4 outranks 1 on
+# purpose — when coverage is below the floor or the cache mixes two test lists, the survivor
+# count is not a smaller finding, it is not a finding at all.
+mutation_run_exit_code() {
+    local failed=$1 lowcov=$2 stale=$3 nocov=$4
+    if (( lowcov > 0 || stale > 0 || nocov > 0 )); then echo 4; return; fi
+    if (( failed > 0 )); then echo 1; return; fi
+    echo 0
 }
 
 
@@ -362,15 +535,21 @@ print("APPLIED")
 
 # Compare a module's survivor count against its committed baseline — the RATCHET.
 #
-# "Kill every mutant" is not finishable here: lockout's 149 survivors include 77 log-string
-# edits and 12 conditions guarding only a log call, none observable by any caller. Without a
-# bounded definition of done, every pass closes a few real gaps and leaves a large residue,
-# which reads as no progress. So the rule is: the count may go DOWN, never UP.
+# "Kill every mutant" is not finishable here: an AST census of lockout's 149 survivors puts 66
+# of them (58 log strings + 8 conditions guarding only a log call) beyond any caller's
+# observation. Without a bounded definition of done, every pass closes a few real gaps and
+# leaves a large residue, which reads as no progress. So the rule is: the count may go DOWN,
+# never UP. It is a ratchet, NOT a claim that the remaining survivors are harmless — the same
+# census says 83 of lockout's are ordinary predicates and assignments.
 #
 # Reads scripts/mutation-baselines.tsv. That file is READ here, deliberately — a checked-in
 # table nothing reads goes stale, which is how expected-schemas.tsv died.
+#
+# Returns 0 pass · 1 REGRESSION · 3 misconfigured (no log, no baseline row) · 4 NOT MEASURED.
+# 4 is never summable into a pass: it means the check could not be performed at all.
 check_baseline() {
-    local key=$1 log="$OUT_DIR/$1.log" baselines="$REPO_ROOT/scripts/mutation-baselines.tsv"
+    local key=$1 log="$OUT_DIR/$1.log" meta="$OUT_DIR/$1.meta"
+    local baselines="$REPO_ROOT/scripts/mutation-baselines.tsv"
     local dotted survivors max_survivors coverage min_coverage line
 
     if [[ ! -f "$log" ]]; then
@@ -402,12 +581,119 @@ check_baseline() {
         # here made a stale log indistinguishable from a clean ratchet.
         return 4
     fi
-    survivors=$(tr '\r' '\n' < "$log" | grep -c "^ *${dotted}\..*: survived" || true)
-    coverage=$(tr '\r' '\n' < "$log" \
-        | grep -oE 'coverage of target by selected tests: .*[0-9]+%' \
-        | grep -oE '[0-9]+' | tail -1)
+    # --- Did the run FINISH? (hole 1: a truncated log used to read as an improvement) ------
+    local esc blk end_line rec_total rec_surv rec_nc run_total run_surv
+    local cnt_total cnt_surv cnt_nc
+    esc="${dotted//./[.]}"
+    blk=$(tr '\r' '\n' < "$log" | sed $'s/\033\\[[0-9;]*m//g' \
+          | sed -n "/^$SUMMARY_BEGIN key=$key /,/^$SUMMARY_END key=$key /p")
+    end_line=$(printf '%s\n' "$blk" | grep -m1 -F "$SUMMARY_END key=$key " || true)
+    if [[ -z "$end_line" ]]; then
+        echo -e "${YELLOW}$key: $log has no completed-run marker — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  The summary block is written only when the run finishes, so an${NC}" >&2
+        echo -e "${YELLOW}  interrupted, truncated or pre-#37 log lands here. It is NOT a score of${NC}" >&2
+        echo -e "${YELLOW}  0 and must never be ratcheted to. Re-run: --clean then --module $key.${NC}" >&2
+        return 4
+    fi
+    rec_total=$(sed -n 's/.* mutants=\([0-9]*\) .*/\1/p' <<<"$end_line")
+    rec_surv=$(sed -n 's/.* survived=\([0-9]*\) .*/\1/p' <<<"$end_line")
+    rec_nc=$(sed -n 's/.* not_checked=\([0-9]*\) .*/\1/p' <<<"$end_line")
+    run_total=$(sed -n 's/.* run_mutants=\([0-9?]*\) .*/\1/p' <<<"$end_line")
+    run_surv=$(sed -n 's/.* run_survived=\([0-9?]*\) .*/\1/p' <<<"$end_line")
+    cnt_total=$(printf '%s\n' "$blk" | grep -cE "^${esc}[.][^[:space:]]+: " || true)
+    cnt_surv=$(printf '%s\n' "$blk" | grep -cE "^${esc}[.][^[:space:]]+: survived$" || true)
+    cnt_nc=$(printf '%s\n' "$blk" | grep -cE "^${esc}[.][^[:space:]]+: not checked$" || true)
 
-    echo -e "${BLUE}$key: $survivors survivor(s) vs baseline $max_survivors; coverage ${coverage:-?}% vs floor ${min_coverage}%${NC}"
+    if [[ -z "$rec_total" ]] || (( rec_total == 0 )); then
+        echo -e "${YELLOW}$key: the run recorded $rec_total mutants — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  Zero mutants is an empty backend/mutants/ or a glob that matched${NC}" >&2
+        echo -e "${YELLOW}  nothing, not a module with no findings.${NC}" >&2
+        return 4
+    fi
+    # The recount is what catches a log truncated (or edited) AFTER the marker was written.
+    if (( cnt_total != rec_total || cnt_surv != rec_surv )); then
+        echo -e "${YELLOW}$key: summary block disagrees with its own marker — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  marker says mutants=$rec_total survived=$rec_surv; the block holds${NC}" >&2
+        echo -e "${YELLOW}  $cnt_total / $cnt_surv. The log was truncated or edited after the run.${NC}" >&2
+        return 4
+    fi
+    # mutmut leaves everything it never reached as "not checked". A run that mutmut aborted
+    # part-way still reaches the summary, and its remaining mutants say so — this is the arm
+    # that catches a partial run which DID write a marker.
+    if (( cnt_nc > 0 || rec_nc > 0 )); then
+        echo -e "${YELLOW}$key: $cnt_nc of $cnt_total mutants were never checked — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  mutmut stopped before finishing the module. The survivors it did${NC}" >&2
+        echo -e "${YELLOW}  record are a PREFIX of the run, not a lower count — this is the shape${NC}" >&2
+        echo -e "${YELLOW}  that used to print '✓ improved' and ask for the baseline to be lowered.${NC}" >&2
+        return 4
+    fi
+    # mutmut's own tally of the same run, taken from its progress counter rather than from its
+    # results list. Two numbers derived independently must agree; if they do not, the log was
+    # assembled from more than one run and neither count means anything.
+    if [[ "$run_total" != "$rec_total" || "$run_surv" != "$rec_surv" ]]; then
+        echo -e "${YELLOW}$key: mutmut's own tally disagrees with the summary — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  progress counter: ${run_total:-?} mutants / ${run_surv:-?} survived;${NC}" >&2
+        echo -e "${YELLOW}  summary block: $rec_total / $rec_surv. This log is not one run.${NC}" >&2
+        return 4
+    fi
+    survivors=$cnt_surv
+
+    # --- Was it measured against THIS source? (hole 2) -------------------------------------
+    if [[ ! -f "$meta" ]] || [[ "$(meta_value "$meta" completed)" != "1" ]]; then
+        echo -e "${YELLOW}$key: no completed $meta — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  The sidecar records what the run measured (source + test hashes).${NC}" >&2
+        echo -e "${YELLOW}  Without it nothing binds this log to a tree, so it cannot expire.${NC}" >&2
+        return 4
+    fi
+    local now_src now_tests rec_src rec_tests
+    now_src=$(module_source_sha "$key"); rec_src=$(meta_value "$meta" source_sha)
+    if [[ -z "$now_src" || "$now_src" != "$rec_src" ]]; then
+        echo -e "${YELLOW}$key: ${MODULE_PATH[$key]} has changed since the run — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  measured ${rec_src:0:12}… , current ${now_src:0:12}… (run at${NC}" >&2
+        echo -e "${YELLOW}  $(meta_value "$meta" run_at), commit $(meta_value "$meta" git_commit)).${NC}" >&2
+        return 4
+    fi
+    now_tests=$(module_tests_sha "$key" || true); rec_tests=$(meta_value "$meta" tests_sha)
+    if [[ -z "$now_tests" || "$now_tests" != "$rec_tests" ]]; then
+        echo -e "${YELLOW}$key: MODULE_TESTS content has changed since the run — NOT MEASURED.${NC}" >&2
+        # Name the files, because "a test changed" is the interesting half: a test ADDED after
+        # the run is precisely what makes a survivor count too high rather than too low.
+        local rec_line f h
+        while read -r rec_line; do
+            [[ -n "$rec_line" ]] || continue
+            f=${rec_line%% *}; h=${rec_line##* }
+            if [[ ! -f "$BACKEND/$f" ]]; then
+                echo -e "${YELLOW}    gone:    $f${NC}" >&2
+            elif [[ "$(sha_of_file "$BACKEND/$f")" != "$h" ]]; then
+                echo -e "${YELLOW}    changed: $f${NC}" >&2
+            fi
+        done < <(sed -n 's/^test_file=//p' "$meta")
+        for f in ${MODULE_TESTS[$key]}; do
+            grep -qF "test_file=$f " "$meta" || echo -e "${YELLOW}    added:   $f${NC}" >&2
+        done
+        return 4
+    fi
+
+    # --- Was the run itself trustworthy? (hole 3) ------------------------------------------
+    if [[ "$(meta_value "$meta" stale_cache)" == "1" ]]; then
+        echo -e "${YELLOW}$key: the run mixed cached verdicts from two test lists — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  Re-run: --clean then --module $key.${NC}" >&2
+        return 4
+    fi
+
+    coverage=$(meta_value "$meta" coverage)
+    # hole 3/4: this used to warn and fall through, and only when min_coverage > 0 — so for
+    # `spans`, the one module whose coverage could not be measured and whose floor is
+    # therefore 0, the guard was inert in both directions and the count was accepted with no
+    # evidence the selected tests execute the module at all.
+    if [[ -z "$coverage" ]]; then
+        echo -e "${YELLOW}$key: the run recorded no target coverage — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  Without it the survivor count may be measuring test SELECTION.${NC}" >&2
+        echo -e "${YELLOW}  Re-run --module $key and fix the pre-flight if it still can't measure.${NC}" >&2
+        return 4
+    fi
+
+    echo -e "${BLUE}$key: $survivors survivor(s) of $cnt_total vs baseline $max_survivors; coverage ${coverage}% vs floor ${min_coverage}%${NC}"
 
     local failed=0
     if (( survivors > max_survivors )); then
@@ -421,11 +707,9 @@ check_baseline() {
         echo -e "${GREEN}✓ holding at $survivors${NC}"
     fi
     # Coverage guards the count's MEANING: below the floor, survivors measure test selection.
-    if [[ -z "${coverage:-}" ]] && (( min_coverage > 0 )); then
-        echo -e "${YELLOW}  ⚠ this run recorded no target coverage, so the count above cannot be${NC}" >&2
-        echo -e "${YELLOW}    checked against the ${min_coverage}% floor. Re-run to get one.${NC}" >&2
-    fi
-    if [[ -n "${coverage:-}" ]] && (( coverage < min_coverage )); then
+    # (The "no coverage recorded" case is handled above, as NOT MEASURED — it used to warn
+    # here and fall through to a pass.)
+    if (( coverage < min_coverage )); then
         echo -e "${RED}✗ coverage fell (${min_coverage}% -> ${coverage}%): the survivor count above${NC}" >&2
         echo -e "${RED}  measures test SELECTION, not test strength. Fix MODULE_TESTS first.${NC}" >&2
         failed=1
@@ -713,10 +997,17 @@ FAILED=()
 MIN_TARGET_COVERAGE=${MIN_TARGET_COVERAGE:-60}
 LOW_COVERAGE=()
 STALE_CACHE=()
+NO_COVERAGE=()
 for key in "${MODULES[@]}"; do
     path="${MODULE_PATH[$key]}"
     tests="${MODULE_TESTS[$key]}"
     log="$OUT_DIR/$key.log"
+    stale_flag=0
+    lowcov_flag=0
+
+    # The sidecar is this run's completion certificate, so the OLD one goes first. Leaving it
+    # in place would let a run that dies half way be checked against the previous run's hashes.
+    $DRY_RUN || rm -f "$OUT_DIR/$key.meta"
 
     echo -e "${BLUE}--- mutating $path ---${NC}"
     echo -e "    tests: $tests"
@@ -746,6 +1037,7 @@ for key in "${MODULES[@]}"; do
         echo -e "${RED}        ./scripts/run-mutation-tests.sh --clean${NC}" >&2
         echo -e "${RED}        ./scripts/run-mutation-tests.sh --module $key${NC}" >&2
         STALE_CACHE+=("$key")
+        stale_flag=1
     fi
 
     # PRE-FLIGHT: do the selected tests actually EXECUTE this module?
@@ -762,26 +1054,51 @@ for key in "${MODULES[@]}"; do
     # survivors measure test SELECTION, not test strength, and the report says so instead
     # of leaving the reader to infer it.
     if ! $DRY_RUN; then
-        # Dotted form, because --cov takes an importable name; and --cov-report=term is
-        # required -- an empty --cov-report prints no total to parse, which silently made
-        # this check a no-op the first time it was written.
-        cov_mod="${path%.py}"
-        cov_mod="${cov_mod//\//.}"
+        # --cov takes the module's DIRECTORY, not its dotted name, and the row for the file is
+        # read rather than TOTAL. That is not a style choice — the dotted form CANNOT measure
+        # `spans`:
+        #
+        #   coverage resolves each dotted `source` entry by importing it inside
+        #   `sys_modules_saved()` (coverage/inorout.py), a context manager that DELETES every
+        #   module the import pulled in. Importing app.services.redaction.spans runs the
+        #   package __init__, which reaches numpy and torch. numpy's C extension is
+        #   single-phase-init and cannot be initialised twice in one process, so when conftest
+        #   later imported it for real, collection died with
+        #   `ImportError: cannot load module more than once per process`, pytest never ran, and
+        #   the pre-flight reported "could not measure target coverage" — for a full year of
+        #   this file's life, on the one module whose floor was therefore recorded as 0.
+        #   spans.py itself is pure; it is the PACKAGE that is heavy, and only the dotted form
+        #   imports it. A directory `source` is never imported, so no module is unloaded.
+        #
+        # --cov-report=term is required: an empty --cov-report prints no table to parse, which
+        # silently made this check a no-op the first time it was written. The Cover column is
+        # found by scanning the row from the right for a field ending in `%`, because
+        # [tool.coverage.report] show_missing puts the line list in the LAST column.
         cov_pct=$(cd "$BACKEND" && env "${GATES[@]}" "$VENV_BIN/python" -m pytest $tests \
             -o addopts= -p no:cacheprovider -q --no-header \
-            --cov="$cov_mod" --cov-report=term 2>/dev/null \
-            | awk '/^TOTAL/ {gsub(/%/, "", $NF); print $NF}' | tail -1 | cut -d. -f1)
+            --cov="$(dirname "$path")" --cov-report=term 2>/dev/null \
+            | awk -v f="$path" '$1 == f {
+                   for (i = NF; i > 0; i--) if ($i ~ /%$/) { gsub(/%/, "", $i); print $i; break }
+               }' | tail -1 | cut -d. -f1)
         if [[ -n "${cov_pct:-}" ]]; then
             if (( cov_pct < MIN_TARGET_COVERAGE )); then
                 echo -e "${RED}    ⚠ selected tests cover only ${cov_pct}% of $path${NC}"
                 echo -e "${RED}      Survivors below ${MIN_TARGET_COVERAGE}% measure SELECTION, not weakness —${NC}"
                 echo -e "${RED}      add the missing test files to MODULE_TESTS[$key] before believing them.${NC}"
                 LOW_COVERAGE+=("$key:${cov_pct}%")
+                lowcov_flag=1
             else
                 echo -e "    coverage of target by selected tests: ${GREEN}${cov_pct}%${NC}"
             fi
         else
-            echo -e "${YELLOW}    could not measure target coverage — treat survivors with suspicion${NC}"
+            # Not a shrug any more. An unmeasurable pre-flight means nothing establishes that
+            # the selected tests execute the module at all, so the survivor count that follows
+            # is unreadable — and `--check-baseline` refuses a run whose meta records no
+            # coverage rather than accepting the count.
+            echo -e "${RED}    ⚠ could not measure coverage of $path — the run is NOT a measurement.${NC}"
+            echo -e "${RED}      Fix the pre-flight before triaging survivors; --check-baseline will${NC}"
+            echo -e "${RED}      report this module NOT MEASURED.${NC}"
+            NO_COVERAGE+=("$key")
         fi
     fi
 
@@ -803,6 +1120,12 @@ for key in "${MODULES[@]}"; do
         echo -e "${YELLOW}! $key: mutmut exited non-zero (survivors, or a run error)${NC}"
         FAILED+=("$key")
     fi
+
+    # THE COMPLETION RECORD. Reached only if the run above returned, which is what makes its
+    # absence meaningful.
+    finalize_run_evidence "$key" "$log" "${cov_pct:-}" "$stale_flag" "$lowcov_flag"
+    echo -e "    evidence: $OUT_DIR/$key.meta ($(meta_value "$OUT_DIR/$key.meta" mutants) mutants,"\
+            "$(meta_value "$OUT_DIR/$key.meta" survived) survived)"
     echo
 done
 
@@ -833,8 +1156,12 @@ if [[ ${#LOW_COVERAGE[@]} -gt 0 ]]; then
     echo -e "${RED}  The selected tests barely execute the module, so a survivor mostly means${NC}"
     echo -e "${RED}  'no selected test runs this line' — fix MODULE_TESTS before triaging.${NC}"
 fi
+if [[ ${#NO_COVERAGE[@]} -gt 0 ]]; then
+    echo -e "${RED}⚠ TARGET COVERAGE COULD NOT BE MEASURED: ${NO_COVERAGE[*]}${NC}"
+    echo -e "${RED}  Nothing establishes that the selected tests execute these modules, so${NC}"
+    echo -e "${RED}  their counts are not measurements. --check-baseline will refuse them.${NC}"
+fi
 if [[ ${#FAILED[@]} -gt 0 ]]; then
     echo -e "${YELLOW}Modules with survivors or errors: ${FAILED[*]}${NC}"
-    exit 1
 fi
-exit 0
+exit "$(mutation_run_exit_code "${#FAILED[@]}" "${#LOW_COVERAGE[@]}" "${#STALE_CACHE[@]}" "${#NO_COVERAGE[@]}")"

@@ -19,9 +19,13 @@ otherwise-working deployment, and no exception from here can escape into the log
 path.
 
 SSRF: the discovery URL is admin-supplied, so it goes through
-:func:`app.utils.url_validation.assert_safe_outbound_url` — but with
-``allow_private=True``, because an IdP on the LAN or on the compose network
-(``http://idp:8080``) is the normal case for this deployment, not an attack.
+:func:`app.utils.url_validation.resolve_pinned_target` — but with ``allow_private=True``,
+because an IdP on the LAN or on the compose network (``http://idp:8080``) is the normal
+case for this deployment, not an attack. It used to call ``assert_safe_outbound_url``,
+which validates and then discards the resolved addresses, so httpx re-resolved the
+hostname at connect time and the check covered a different answer than the connection
+used. That is reachable at **login time for every user**, and the result is TTL-cached,
+so it is worth the extra step even though the URL is super_admin-configured.
 """
 
 from __future__ import annotations
@@ -35,7 +39,7 @@ from urllib.parse import urlunparse
 import httpx
 from cachetools import TTLCache
 
-from app.utils.url_validation import assert_safe_outbound_url
+from app.utils.url_validation import resolve_pinned_target
 
 logger = logging.getLogger(__name__)
 
@@ -71,18 +75,33 @@ def clear_discovery_caches() -> None:
 
 
 async def _fetch_json(url: str, timeout: float, purpose: str) -> dict[str, Any] | None:
-    """GET *url* and return its JSON object, or None on any failure."""
-    try:
-        assert_safe_outbound_url(url, purpose=purpose, allow_private=True)
-    except Exception as exc:
-        # assert_safe_outbound_url raises HTTPException; a 400 must not surface from
-        # inside a login redirect, so it is logged and treated as "unavailable".
-        logger.warning("Refused %s fetch of %r: %s", purpose, url, exc)
+    """GET *url* and return its JSON object, or None on any failure.
+
+    The request is **pinned** to the address the SSRF guard validated. Validating the
+    hostname and then handing that hostname to httpx lets it resolve a second time, so a
+    hostname whose DNS alternates public/``127.0.0.1`` passes the check and is connected
+    somewhere else — and this runs at login time for every user, then caches the answer.
+    ``resolve_pinned_target`` resolves once and returns the IP to dial plus the hostname to
+    verify TLS against; see its module docstring for why that does not weaken TLS.
+    """
+    target, reason = resolve_pinned_target(url, allow_private=True)
+    if target is None:
+        # A refusal must not surface as a 400 from inside a login redirect, so it is
+        # logged and treated as "unavailable".
+        logger.warning("Refused %s fetch of %r: %s", purpose, url, reason)
         return None
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.get(url)
+            response = await client.get(
+                target.url,
+                headers=target.headers,
+                extensions=target.httpx_extensions,
+                # A pin covers one hop. httpx does not follow redirects by default; this
+                # says so out loud, because turning it on would hand the next hop's
+                # hostname straight to the resolver with no check at all.
+                follow_redirects=False,
+            )
             response.raise_for_status()
             data = response.json()
     except httpx.HTTPError as exc:

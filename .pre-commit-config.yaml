@@ -25,14 +25,28 @@ repos:
       - id: check-shebang-scripts-are-executable
 
   # Python formatting and linting with Ruff (replaces Black, isort, flake8)
+  #
+  # `scripts/` was UNLINTED until this change: 40 Python files, including every piece of
+  # gate tooling the suite's honesty rests on (audit-tests.py, audit-route-coverage.py,
+  # triage-mutants.py, check-schema-drift.py, analyze-test-timing.py). The tools that guard
+  # the tests were the least-guarded code in the repo, and it showed — enabling ruff turned
+  # up 109 findings, among them `benchmark-diarization.py` reading `os.environ` with no
+  # `import os` at module scope, i.e. a script that has raised NameError on import for as
+  # long as that line has existed and that nobody could have run since.
+  #
+  # Two configs are in play and that is deliberate, not an oversight: `backend/` resolves
+  # `backend/pyproject.toml` (double quotes, force-single-line isort) and `scripts/` resolves
+  # the root `pyproject.toml` (single quotes). Ruff picks the nearest config per file, so one
+  # `files:` pattern gets both. Do NOT "unify" them by deleting a config — that reformats a
+  # thousand files to settle a question nobody asked.
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.0
     hooks:
       - id: ruff
         args: [--fix, --show-fixes]
-        files: ^backend/
+        files: ^(backend|scripts)/
       - id: ruff-format
-        files: ^backend/
+        files: ^(backend|scripts)/
 
   # Python type checking
   - repo: https://github.com/pre-commit/mirrors-mypy

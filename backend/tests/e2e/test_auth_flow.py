@@ -98,19 +98,21 @@ class TestLoginFlow:
         login_page.fill("#password", "wrongpassword")
         login_page.click("button[type=submit]")
 
-        # Should show error message
-        # Deterministic settle rather than a guessed duration (issue #431).
-        login_page.wait_for_load_state("networkidle")
-        # Check for error indication (could be alert, toast, or inline error)
-        error_visible = (
-            login_page.locator("[role=alert]").is_visible()
-            or login_page.locator(".error").is_visible()
-            or login_page.locator("text=Invalid").is_visible()
-            or login_page.locator("text=incorrect").is_visible()
+        # `[role=alert]` is the app's error surface (one node, "Incorrect username
+        # or password"), and `expect` AUTO-WAITS for it.
+        #
+        # The previous chain of synchronous `.is_visible()` calls was a SNAPSHOT
+        # taken the instant `networkidle` settled. When the alert had not painted
+        # yet the chain fell through to `text=Invalid` / `text=incorrect` — bare
+        # text selectors that can match several nodes, and a multi-match locator
+        # makes Playwright's strict mode RAISE rather than return False. So the
+        # test ERRORED under parallel load instead of failing, non-deterministically.
+        # Its final `or login_page.url.endswith("/login")` could not fail either:
+        # a rejected login stays on /login by definition.
+        expect(login_page.get_by_role("alert")).to_contain_text(
+            "Incorrect username or password", timeout=15000
         )
-        assert error_visible or login_page.url.endswith("/login"), (
-            "Should show error or stay on login page"
-        )
+        assert login_page.url.endswith("/login"), "a rejected login must not navigate away"
 
     def test_login_failure_nonexistent_user(self, login_page: Page):
         """Test login fails for non-existent user."""
@@ -283,18 +285,16 @@ class TestRegistrationFlow:
         page.fill("#confirmPassword", "ValidPassword123!")
 
         page.click("button:has-text('Create Account')")
-        # A rejection is the ABSENCE of a redirect, which no locator can auto-wait for:
-        # settle deterministically instead of guessing 2 s (issue #431).
-        page.wait_for_load_state("networkidle")
 
-        # Should show error about existing user
-        error_shown = (
-            page.locator("[role=alert]").is_visible()
-            or page.locator("text=exists").is_visible()
-            or page.locator("text=already").is_visible()
-            or "register" in page.url  # Still on register page
-        )
-        assert error_shown, "Should show error for duplicate email"
+        # Same fix as test_login_failure_invalid_password, and this one was the
+        # observed offender: `text=already` matches TWO nodes on this page — the
+        # alert ("Email already registered") AND the "Already have an account?
+        # Login" link — so every time the alert had not rendered by the time the
+        # snapshot chain reached that term, strict mode raised and the test ERRORED.
+        # That is the entirety of its parallel-load flakiness; standalone it always
+        # short-circuited on `[role=alert]` first and looked stable.
+        expect(page.get_by_role("alert")).to_contain_text("already registered", timeout=15000)
+        assert "register" in page.url, "a duplicate email must not create an account"
 
     # NOTE: there is deliberately no "duplicate username" test — the register
     # form's "username" maps to User.full_name, which is NOT unique (only

@@ -149,14 +149,61 @@ def test_allowlist_reasons_are_present_and_categorised() -> None:
     """Every allowlist entry needs three key segments and a non-empty reason.
 
     The category being part of the key is what stops one exemption covering every detector;
-    an entry that lost it would silently widen to all sixteen.
+    an entry that lost it would silently widen to all twenty-one.
     """
     root = Path(__file__).resolve().parents[1]
     allowed = auditor.load_allowlist(root)
     assert allowed, "the allowlist should not be empty — did the path move?"
     bad_keys = sorted(k for k in allowed if len(k.split("::")) != 3)
     unknown = sorted(k for k in allowed if k.split("::")[-1] not in auditor.CATEGORIES)
-    missing_reason = sorted(k for k, r in allowed.items() if r == "no reason given")
+    missing_reason = sorted(
+        k for k, reasons in allowed.items() if any(r == "no reason given" for r in reasons)
+    )
     assert not bad_keys, f"keys must be <file>::<test>::<category>: {bad_keys}"
     assert not unknown, f"keys naming a detector that does not exist: {unknown}"
     assert not missing_reason, f"entries with no written reason: {missing_reason}"
+
+
+def _finding(key: str, line: int) -> object:
+    """A Finding with the given allowlist key."""
+    path, test, category = key.split("::")
+    return auditor.Finding(category, path, line, test, "detail")
+
+
+@pytest.mark.unit
+def test_allowlist_covers_one_finding_per_line() -> None:
+    """Three findings under one key need three lines, not one.
+
+    The rail this replaces was a SET difference, so it could not distinguish a key producing
+    three findings from a key producing one. ``test_personal_file_read_surfaces_unaffected``
+    has three ``!=`` status assertions and three allowlist lines; under set semantics, fixing
+    two of them left the run green with the third still exempt — an exemption outliving most
+    of its subject, which is precisely what the "this file can only shrink" guarantee claims
+    cannot happen.
+    """
+    key = "t.py::test_a::negated-status"
+    three = [_finding(key, n) for n in (1, 2, 3)]
+
+    covered = auditor.apply_allowlist(three, {key: ["BACKLOG one", "BACKLOG two", "BACKLOG three"]})
+    assert covered[0] == [], "three lines must cover three findings"
+    assert len(covered[1]) == 3, "all three carry a BACKLOG reason"
+    assert covered[3] == [], "nothing stale while every line has a finding"
+
+    under = auditor.apply_allowlist(three, {key: ["BACKLOG one"]})
+    assert len(under[0]) == 2, "one line must NOT cover three findings"
+
+    # The partial fix: two assertions repaired, three lines left behind.
+    over = auditor.apply_allowlist(
+        [_finding(key, 1)], {key: ["BACKLOG one", "BACKLOG two", "BACKLOG three"]}
+    )
+    assert over[0] == [], "the one surviving finding is still covered"
+    assert len(over[3]) == 1 and "delete 2" in over[3][0], (
+        f"a partial fix must report the surplus lines, got {over[3]}"
+    )
+
+
+@pytest.mark.unit
+def test_allowlist_reports_an_entry_whose_finding_is_gone() -> None:
+    """The original rail, kept: an exemption cannot outlive its subject entirely."""
+    stale = auditor.apply_allowlist([], {"t.py::test_a::negated-status": ["BACKLOG gone"]})[3]
+    assert len(stale) == 1 and "0 findings" in stale[0], stale

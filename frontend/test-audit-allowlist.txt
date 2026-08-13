@@ -14,6 +14,21 @@
 # A REASON IS REQUIRED. Adding an entry is a deliberate, reviewable act; widening an
 # assertion to restore green is not. "flaky" and "TODO" are not reasons.
 #
+# THIS FILE CAN ONLY SHRINK. An entry with no finding left to cover FAILS the run — fix a
+# test, delete its line. Until the stale rail was ported from the Python side this file had no
+# such check at all, so an exemption could outlive its subject indefinitely AND pre-exempt any
+# future test that reused the name (a `describe > it` title is a string anyone can retype).
+#
+# ONE LINE BUYS ONE FINDING. Duplicate keys are a COUNT, not a mistake: three lines mean three
+# known findings under that key. Fix one and the surplus line is reported as stale, which is
+# the partial fix a set difference cannot see.
+#
+# TWO KINDS OF ENTRY:
+#   ACCEPTED — the pattern is correct here, and the reason says why. No prefix.
+#   BACKLOG  — the finding is real and DEFERRED. The reason starts with `BACKLOG`, and the
+#              auditor counts and prints these separately on every run, so a green gate is
+#              never mistaken for a clean tree.
+#
 # Nothing should ever be allowlisted for `only-leak`. A committed `.only` silently disables
 # every other test in the file; there is no version of that which is intentional in a
 # committed test. Delete the `.only` instead.

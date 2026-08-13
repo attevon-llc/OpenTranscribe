@@ -4,20 +4,23 @@ Complete Screenshot Organization Script - All 104 Screenshots
 Processes all OpenTranscribe screenshots with comprehensive mapping
 """
 
-import os
 import json
+import os
 from pathlib import Path
+
 from PIL import Image
 
 # Configuration
-SOURCE_DIR = "OpenTranscribe-Screenshots"
-TARGET_DIR = "docs-site/static/img/screenshots"
+SOURCE_DIR = 'OpenTranscribe-Screenshots'
+TARGET_DIR = 'docs-site/static/img/screenshots'
 MAX_WIDTH = 1920
 QUALITY = 85
+
 
 def get_file_size_kb(file_path):
     """Get file size in kilobytes."""
     return os.path.getsize(file_path) / 1024
+
 
 def optimize_image(input_path, output_path, max_width=MAX_WIDTH, quality=QUALITY):
     """Optimize image by resizing and compressing."""
@@ -51,9 +54,10 @@ def optimize_image(input_path, output_path, max_width=MAX_WIDTH, quality=QUALITY
     except Exception as e:
         return False, str(e)
 
+
 def main():
     # Load the remaining screenshots mapping
-    with open('scripts/remaining-screenshots-map.json', 'r') as f:
+    with open('scripts/remaining-screenshots-map.json') as f:
         screenshot_map = json.load(f)
 
     source_path = Path(SOURCE_DIR)
@@ -68,16 +72,12 @@ def main():
         (target_path / category).mkdir(parents=True, exist_ok=True)
 
     # Process screenshots
-    metadata = {
-        "total_processed": 0,
-        "total_skipped": 0,
-        "screenshots": []
-    }
+    metadata = {'total_processed': 0, 'total_skipped': 0, 'screenshots': []}
 
     processed_count = 0
     skipped_count = 0
 
-    for screenshot_file in sorted(source_path.glob("Screenshot*.png")):
+    for screenshot_file in sorted(source_path.glob('Screenshot*.png')):
         found = False
 
         # Find matching entry in screenshot_map
@@ -88,53 +88,56 @@ def main():
                 description = data['description']
 
                 # Create sequential numbering
-                existing_files = list((target_path / category).glob("*.png"))
+                existing_files = list((target_path / category).glob('*.png'))
                 file_number = len(existing_files) + 1
-                output_filename = f"{file_number:02d}-{name}.png"
+                output_filename = f'{file_number:02d}-{name}.png'
                 output_file = target_path / category / output_filename
 
-                print(f"Processing: {screenshot_file.name}")
-                print(f"  -> {category}/{output_filename}")
+                print(f'Processing: {screenshot_file.name}')
+                print(f'  -> {category}/{output_filename}')
 
                 success, result = optimize_image(str(screenshot_file), str(output_file))
 
                 if success:
                     file_size_kb = result
-                    print(f"  ✓ Optimized: {file_size_kb:.1f} KB")
+                    print(f'  ✓ Optimized: {file_size_kb:.1f} KB')
 
-                    metadata["screenshots"].append({
-                        "original_name": screenshot_file.name,
-                        "category": category,
-                        "filename": output_filename,
-                        "path": f"/img/screenshots/{category}/{output_filename}",
-                        "description": description,
-                        "size_kb": round(file_size_kb, 1)
-                    })
+                    metadata['screenshots'].append(
+                        {
+                            'original_name': screenshot_file.name,
+                            'category': category,
+                            'filename': output_filename,
+                            'path': f'/img/screenshots/{category}/{output_filename}',
+                            'description': description,
+                            'size_kb': round(file_size_kb, 1),
+                        }
+                    )
 
                     processed_count += 1
                 else:
-                    print(f"  ✗ Failed: {result}")
+                    print(f'  ✗ Failed: {result}')
                     skipped_count += 1
 
                 found = True
                 break
 
         if not found:
-            print(f"Skipping: {screenshot_file.name} (not in mapping)")
+            print(f'Skipping: {screenshot_file.name} (not in mapping)')
             skipped_count += 1
 
-    metadata["total_processed"] = processed_count
-    metadata["total_skipped"] = skipped_count
+    metadata['total_processed'] = processed_count
+    metadata['total_skipped'] = skipped_count
 
     # Save metadata
-    metadata_file = target_path / "screenshots-metadata-complete.json"
+    metadata_file = target_path / 'screenshots-metadata-complete.json'
     with open(metadata_file, 'w') as f:
         json.dump(metadata, f, indent=2)
 
-    print(f"\n✅ Processing complete!")
-    print(f"   Processed: {processed_count} screenshots")
-    print(f"   Skipped: {skipped_count} screenshots")
-    print(f"   Metadata: {metadata_file}")
+    print('\n✅ Processing complete!')
+    print(f'   Processed: {processed_count} screenshots')
+    print(f'   Skipped: {skipped_count} screenshots')
+    print(f'   Metadata: {metadata_file}')
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     main()

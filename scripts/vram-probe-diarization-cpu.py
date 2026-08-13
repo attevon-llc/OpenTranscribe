@@ -20,7 +20,6 @@ Phase CPU feasibility study. See
 from __future__ import annotations
 
 import argparse
-import ctypes
 import gc
 import json
 import logging
@@ -38,12 +37,12 @@ import numpy as np
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
 )
-log = logging.getLogger("cpu_probe")
+log = logging.getLogger('cpu_probe')
 
 SAMPLE_INTERVAL_S = 0.1
-PYANNOTE_MODEL = "pyannote/speaker-diarization-community-1"
+PYANNOTE_MODEL = 'pyannote/speaker-diarization-community-1'
 
 
 # --------------------------------------------------------------------------
@@ -77,9 +76,9 @@ class CPURunResult:
 def _rss_mb() -> float:
     """Process RSS in MB, from /proc/self/status:VmRSS."""
     try:
-        with open("/proc/self/status") as f:
+        with open('/proc/self/status') as f:
             for line in f:
-                if line.startswith("VmRSS:"):
+                if line.startswith('VmRSS:'):
                     # "VmRSS:  123456 kB"
                     return int(line.split()[1]) / 1024.0
     except Exception:
@@ -96,7 +95,7 @@ class RSSSampler:
 
     def start(self) -> None:
         self._t0 = time.perf_counter()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="rss-sampler")
+        self._thread = threading.Thread(target=self._run, daemon=True, name='rss-sampler')
         self._thread.start()
 
     def _run(self) -> None:
@@ -120,32 +119,31 @@ def load_audio(wav_path: Path, max_seconds: float | None = None) -> tuple[dict, 
     """
     import torch
 
-    with wave.open(str(wav_path), "rb") as wf:
+    with wave.open(str(wav_path), 'rb') as wf:
         sr = wf.getframerate()
         n_frames = wf.getnframes()
         raw = wf.readframes(n_frames)
     if sr != 16000:
-        raise ValueError(f"expected 16 kHz, got {sr}")
+        raise ValueError(f'expected 16 kHz, got {sr}')
     data = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
     if max_seconds is not None:
         limit = int(max_seconds * sr)
         data = data[:limit]
     duration = len(data) / sr
     wav = torch.from_numpy(np.ascontiguousarray(data)).unsqueeze(0)
-    return {"waveform": wav, "sample_rate": sr, "uri": wav_path.stem}, duration
+    return {'waveform': wav, 'sample_rate': sr, 'uri': wav_path.stem}, duration
 
 
 def make_stage_timer() -> tuple[Any, dict[str, float]]:
     """Pipeline hook that records the wall time each stage enters."""
-    stage_enter_t: dict[str, float] = {}
     stage_durations: dict[str, float] = {}
     tracked = [
-        "segmentation",
-        "speaker_counting",
-        "binarization",
-        "embedding_inference_start",
-        "embeddings",
-        "clustering_start",
+        'segmentation',
+        'speaker_counting',
+        'binarization',
+        'embedding_inference_start',
+        'embeddings',
+        'clustering_start',
     ]
     t_first: dict[str, float] = {}
 
@@ -169,38 +167,36 @@ def run_one(args: argparse.Namespace) -> CPURunResult:
     # so MKL + OpenMP pick it up.
     torch.set_num_threads(args.num_threads)
     torch.set_num_interop_threads(max(1, args.num_threads // 2))
-    os.environ["OMP_NUM_THREADS"] = str(args.num_threads)
-    os.environ["MKL_NUM_THREADS"] = str(args.num_threads)
-    os.environ["ONNX_NUM_THREADS"] = str(args.num_threads)
+    os.environ['OMP_NUM_THREADS'] = str(args.num_threads)
+    os.environ['MKL_NUM_THREADS'] = str(args.num_threads)
+    os.environ['ONNX_NUM_THREADS'] = str(args.num_threads)
 
     # Force the fork budget helper to return bs=1 on CPU (already the
     # default, but set explicitly so the trace is unambiguous).
-    os.environ["PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE"] = "1"
+    os.environ['PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE'] = '1'
 
     gc.collect()
     baseline_mb = _rss_mb()
     log.info(
-        f"Run: file={args.audio_file} config={args.config} threads={args.num_threads} "
-        f"max_seconds={args.max_seconds} baseline_rss={baseline_mb:.1f}MB"
+        f'Run: file={args.audio_file} config={args.config} threads={args.num_threads} '
+        f'max_seconds={args.max_seconds} baseline_rss={baseline_mb:.1f}MB'
     )
 
     t_load0 = time.perf_counter()
 
     from pyannote.audio import Pipeline
 
-    pipeline = Pipeline.from_pretrained(
-        PYANNOTE_MODEL, token=os.environ.get("HUGGINGFACE_TOKEN")
-    )
+    pipeline = Pipeline.from_pretrained(PYANNOTE_MODEL, token=os.environ.get('HUGGINGFACE_TOKEN'))
     if pipeline is None:
-        raise RuntimeError(f"{PYANNOTE_MODEL} returned None")
+        raise RuntimeError(f'{PYANNOTE_MODEL} returned None')
 
     # Explicitly move to CPU (overrides any env HF_AUTO device)
-    pipeline.to(torch.device("cpu"))
+    pipeline.to(torch.device('cpu'))
 
     # Optional ONNX segmentation offload. Triggers the fork's
     # _setup_onnx_cpu path which loads pre-converted ONNX models.
-    if args.config in ("onnx-seg-fp32", "onnx-seg-int8"):
-        quantize = args.config == "onnx-seg-int8"
+    if args.config in ('onnx-seg-fp32', 'onnx-seg-int8'):
+        quantize = args.config == 'onnx-seg-int8'
         # Call the private method directly; public constructor kwarg
         # couldn't be retro-applied to an already-loaded pipeline.
         pipeline._setup_onnx_cpu(quantize=quantize, num_threads=args.num_threads)
@@ -220,13 +216,13 @@ def run_one(args: argparse.Namespace) -> CPURunResult:
     t_diar0 = time.perf_counter()
     try:
         output = pipeline(audio, hook=hook)
-        annotation = getattr(output, "speaker_diarization", output)
+        annotation = getattr(output, 'speaker_diarization', output)
         if annotation is not None:
             num_speakers = len(set(annotation.labels()))
             num_segments = sum(1 for _ in annotation.itertracks())
     except Exception as e:
-        err = f"{type(e).__name__}: {e}"
-        log.exception("CPU probe run failed")
+        err = f'{type(e).__name__}: {e}'
+        log.exception('CPU probe run failed')
 
     t_diar = time.perf_counter() - t_diar0
     samples = sampler.stop()
@@ -263,12 +259,12 @@ def write_result(result: CPURunResult, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     dur = int(result.audio_duration_s)
     name = (
-        f"{Path(result.audio_file).stem}__dur-{dur}s__{result.config}__"
-        f"threads-{result.num_threads}.json"
+        f'{Path(result.audio_file).stem}__dur-{dur}s__{result.config}__'
+        f'threads-{result.num_threads}.json'
     )
     path = out_dir / name
     path.write_text(json.dumps(asdict(result), indent=2))
-    log.info(f"Wrote {path}  RTF={result.realtime_factor}  spk={result.num_speakers_detected}")
+    log.info(f'Wrote {path}  RTF={result.realtime_factor}  spk={result.num_speakers_detected}')
     return path
 
 
@@ -277,29 +273,29 @@ def parse_args() -> argparse.Namespace:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     p.add_argument(
-        "--audio-file",
-        default="/app/benchmark/test_audio/0.5h_1899s.wav",
-        help="Path to 16 kHz WAV file.",
+        '--audio-file',
+        default='/app/benchmark/test_audio/0.5h_1899s.wav',
+        help='Path to 16 kHz WAV file.',
     )
     p.add_argument(
-        "--max-seconds",
+        '--max-seconds',
         type=float,
         default=None,
-        help="Slice the input to the first N seconds (for short-duration tests).",
+        help='Slice the input to the first N seconds (for short-duration tests).',
     )
     p.add_argument(
-        "--config",
-        choices=["torch-only", "onnx-seg-fp32", "onnx-seg-int8"],
-        default="torch-only",
+        '--config',
+        choices=['torch-only', 'onnx-seg-fp32', 'onnx-seg-int8'],
+        default='torch-only',
     )
-    p.add_argument("--num-threads", type=int, default=8)
-    p.add_argument("--out", default="/app/docs/diarization-vram-profile/raw/cpu/")
-    p.add_argument("--smoke", action="store_true", help="30-second smoke test.")
+    p.add_argument('--num-threads', type=int, default=8)
+    p.add_argument('--out', default='/app/docs/diarization-vram-profile/raw/cpu/')
+    p.add_argument('--smoke', action='store_true', help='30-second smoke test.')
     p.add_argument(
-        "--hard-timeout-min",
+        '--hard-timeout-min',
         type=float,
         default=15.0,
-        help="Hard wall-time kill switch (SIGALRM). Guards against runaway loops.",
+        help='Hard wall-time kill switch (SIGALRM). Guards against runaway loops.',
     )
     return p.parse_args()
 
@@ -308,7 +304,7 @@ def _install_timeout(minutes: float) -> None:
     import signal
 
     def _alarm(_sig: int, _frm: Any) -> None:
-        log.error(f"hard timeout after {minutes} min -- aborting run")
+        log.error(f'hard timeout after {minutes} min -- aborting run')
         os._exit(124)
 
     signal.signal(signal.SIGALRM, _alarm)
@@ -322,7 +318,7 @@ def main() -> int:
     if args.smoke:
         # Minimal smoke: 30 s of audio, onnx-int8, 8 threads.
         args.max_seconds = 30.0
-        args.config = "onnx-seg-int8"
+        args.config = 'onnx-seg-int8'
         args.num_threads = 8
 
     result = run_one(args)
@@ -330,5 +326,5 @@ def main() -> int:
     return 0 if result.error is None else 2
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

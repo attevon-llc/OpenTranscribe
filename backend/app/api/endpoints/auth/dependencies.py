@@ -464,15 +464,21 @@ def _enforce_banner_acknowledgment(user: User, request: Request | None, db: Sess
     )
 
 
-def _get_client_info(request: Request) -> tuple[str, str]:
+def _get_client_info(request: Request | None) -> tuple[str, str]:
     """Extract client IP and user agent from request.
 
     Args:
-        request: FastAPI request object
+        request: FastAPI request object, or ``None`` where none is in scope.
 
     Returns:
-        Tuple of (client_ip, user_agent)
+        Tuple of (client_ip, user_agent); ``("unknown", "unknown")`` when *request* is
+        ``None``. Callers audit from service-layer and background paths that genuinely
+        have no request, and an audit record that cannot resolve an address must never
+        turn the operation it is recording into a 500.
     """
+    if request is None:
+        return "unknown", "unknown"
+
     # Resolve through the trusted-proxy chain, not the raw peer: behind a reverse proxy
     # request.client.host is the PROXY, so every audited login recorded the proxy's
     # address instead of the user's (issue #284 A0.5).

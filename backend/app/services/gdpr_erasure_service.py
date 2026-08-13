@@ -391,6 +391,15 @@ def erase_user(
         username=email,
         details={
             "action": "gdpr_erasure",
+            # Both sides named explicitly. The top-level ``user_id``/``username``
+            # are the TARGET here (this record survives the account, so it has to
+            # carry who was erased) while the org-scoped twin below keys them on
+            # the ACTOR — so a reader cannot infer either side from position
+            # alone. ``actor_email`` falls back to "data-subject-webhook" ONLY for
+            # the genuine self-service path; a caller that omits it for a
+            # staff-initiated erasure misattributes the act to the data subject.
+            "target_user_id": user_id,
+            "target_email": email,
             "actor_user_id": actor_user_id,
             "actor_email": actor_email or "data-subject-webhook",
             **{

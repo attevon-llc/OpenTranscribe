@@ -334,6 +334,77 @@ print("APPLIED")
     return 0
 }
 
+# Compare a module's survivor count against its committed baseline — the RATCHET.
+#
+# "Kill every mutant" is not finishable here: lockout's 149 survivors include 77 log-string
+# edits and 12 conditions guarding only a log call, none observable by any caller. Without a
+# bounded definition of done, every pass closes a few real gaps and leaves a large residue,
+# which reads as no progress. So the rule is: the count may go DOWN, never UP.
+#
+# Reads scripts/mutation-baselines.tsv. That file is READ here, deliberately — a checked-in
+# table nothing reads goes stale, which is how expected-schemas.tsv died.
+check_baseline() {
+    local key=$1 log="$OUT_DIR/$1.log" baselines="$REPO_ROOT/scripts/mutation-baselines.tsv"
+    local dotted survivors max_survivors coverage min_coverage line
+
+    if [[ ! -f "$log" ]]; then
+        echo -e "${RED}no run log at $log — run --module $key first${NC}" >&2
+        return 3
+    fi
+    line=$(grep -P "^${key}\t" "$baselines" 2>/dev/null || true)
+    if [[ -z "$line" ]]; then
+        echo -e "${RED}$key has no baseline in scripts/mutation-baselines.tsv.${NC}" >&2
+        echo -e "${RED}  Add one from a clean run rather than skipping it: a module with no${NC}" >&2
+        echo -e "${RED}  baseline is a module nothing is ratcheting.${NC}" >&2
+        return 3
+    fi
+    max_survivors=$(printf '%s' "$line" | cut -f2)
+    min_coverage=$(printf '%s' "$line" | cut -f3)
+
+    dotted="${MODULE_PATH[$key]%.py}"; dotted="${dotted//\//.}"
+
+    # The log must be evidence that THIS module was actually mutated. A stale or truncated log
+    # yields zero matching survivor lines, which the comparison below would read as a perfect
+    # score and invite lowering the baseline to 0 — after which nothing is ratcheting anything.
+    # Observed: `--check-baseline` reported "improved (77 -> 0)" for session and "(10 -> 0)" for
+    # spans from logs left behind by earlier runs.
+    if ! grep -q -- "--- mutating ${MODULE_PATH[$key]} ---" "$log"; then
+        echo -e "${YELLOW}$key: $log is not a run of ${MODULE_PATH[$key]} — skipping.${NC}" >&2
+        echo -e "${YELLOW}  Re-run: --clean then --module $key. A count of 0 from the wrong log${NC}" >&2
+        echo -e "${YELLOW}  looks like a perfect score.${NC}" >&2
+        return 0
+    fi
+    survivors=$(tr '\r' '\n' < "$log" | grep -c "^ *${dotted}\..*: survived" || true)
+    coverage=$(tr '\r' '\n' < "$log" \
+        | grep -oE 'coverage of target by selected tests: .*[0-9]+%' \
+        | grep -oE '[0-9]+' | tail -1)
+
+    echo -e "${BLUE}$key: $survivors survivor(s) vs baseline $max_survivors; coverage ${coverage:-?}% vs floor ${min_coverage}%${NC}"
+
+    local failed=0
+    if (( survivors > max_survivors )); then
+        echo -e "${RED}✗ survivors ROSE ($max_survivors -> $survivors). A predicate lost its test,${NC}" >&2
+        echo -e "${RED}  or new untested code landed. Do NOT raise the baseline to make this pass.${NC}" >&2
+        failed=1
+    elif (( survivors < max_survivors )); then
+        echo -e "${GREEN}✓ improved ($max_survivors -> $survivors) — lower the baseline in${NC}"
+        echo -e "${GREEN}  scripts/mutation-baselines.tsv so the ratchet holds the new level.${NC}"
+    else
+        echo -e "${GREEN}✓ holding at $survivors${NC}"
+    fi
+    # Coverage guards the count's MEANING: below the floor, survivors measure test selection.
+    if [[ -z "${coverage:-}" ]] && (( min_coverage > 0 )); then
+        echo -e "${YELLOW}  ⚠ this run recorded no target coverage, so the count above cannot be${NC}" >&2
+        echo -e "${YELLOW}    checked against the ${min_coverage}% floor. Re-run to get one.${NC}" >&2
+    fi
+    if [[ -n "${coverage:-}" ]] && (( coverage < min_coverage )); then
+        echo -e "${RED}✗ coverage fell (${min_coverage}% -> ${coverage}%): the survivor count above${NC}" >&2
+        echo -e "${RED}  measures test SELECTION, not test strength. Fix MODULE_TESTS first.${NC}" >&2
+        failed=1
+    fi
+    return $failed
+}
+
 # Same set scripts/run-backend-tests.sh --gated enables. Mandatory here: three of the
 # test files above are behind a module-level skipif, and a skipped test cannot kill a
 # mutant — an ungated run would report their mutants as survivors.
@@ -383,6 +454,7 @@ while [[ $# -gt 0 ]]; do
         # so the missing module read as "no findings there" — the same silently-dropped-work
         # shape this script's own MODULE_TESTS bug had. One module at a time is deliberate
         # (see the header); make the misuse loud instead of plausible.
+        --check-baseline) MODE=baseline; MODULE="${2:-}"; shift ;;
         --module)
             if [[ -n "$MODULE" ]]; then
                 echo -e "${RED}--module given twice ('$MODULE' then '${2:-}').${NC}" >&2
@@ -499,6 +571,18 @@ if [[ "$MODE" == show ]]; then
     exec "$VENV_BIN/mutmut" show "$SHOW_ID"
 fi
 
+if [[ "$MODE" == baseline ]]; then
+    if [[ -n "$MODULE" && "$MODULE" != ALL ]]; then
+        check_baseline "$MODULE"; exit $?
+    fi
+    rc=0
+    for key in "${!MODULE_PATH[@]}"; do
+        [[ -f "$OUT_DIR/$key.log" ]] || continue
+        check_baseline "$key" || rc=1
+    done
+    exit $rc
+fi
+
 if [[ "$MODE" == verify ]]; then
     # Turn a claimed survivor into a CHECKED claim. See verify_survivor's comment for the
     # mutant whose verdict was wrong and prompted this.
@@ -561,6 +645,7 @@ fi
 
 $DRY_RUN || check_preconditions || exit 1
 echo
+
 
 FAILED=()
 #: Percent of the target module the SELECTED tests must execute before survivors mean

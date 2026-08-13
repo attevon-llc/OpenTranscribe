@@ -186,20 +186,33 @@ run_phase "Collection determinism (two processes, same test ids)" \
         echo "$(wc -l < "$a") test ids, identical across both collections"
     '
 
-# 7. Optional: corpus-dependent search relevance harness
+# 7. Mutation ratchet — cheap, and it reads results the operator already produced.
+#
+# Does NOT run mutmut (that is 30-90 minutes per module and stays opt-in). It compares the
+# LAST run's survivor count for each module against scripts/mutation-baselines.tsv and fails
+# if a count rose or a module's test-selection coverage fell. Modules with no prior run are
+# skipped, so this never blocks a gate on a benchmark nobody asked for.
+#
+# The ratchet exists because "kill every mutant" is not finishable: lockout's 149 survivors
+# include 77 log-string edits no caller can observe. Down is progress, up is a regression, and
+# that is a gate you can actually pass.
+run_phase "Mutation ratchet (last run vs baselines)" \
+    "$SCRIPT_DIR/run-mutation-tests.sh" --check-baseline
+
+# 8. Optional: corpus-dependent search relevance harness
 if $SEARCH_QUALITY; then
     run_phase "Search quality harness (corpus-dependent)" \
         env RUN_SEARCH_QUALITY_TESTS=true "$VENV_PY" -m pytest tests/test_search_quality.py -o addopts="" -q --tb=short
 fi
 
-# 8. Optional: browser smoke tests against the live stack
+# 9. Optional: browser smoke tests against the live stack
 if $E2E_SMOKE; then
     run_phase "E2E smoke (browser)" \
         "$VENV_PY" -m pytest tests/e2e/test_settings_modal.py tests/e2e/test_a11y.py \
             tests/e2e/test_file_detail_transcript.py tests/e2e/test_media_download.py -q --tb=short
 fi
 
-# 9. Optional: orphaned test-user report (dry run — pass --execute manually to apply)
+# 10. Optional: orphaned test-user report (dry run — pass --execute manually to apply)
 if $CLEANUP; then
     echo -e "${BLUE}--- Orphaned test users (dry run) ---${NC}"
     "$VENV_PY" "$PROJECT_ROOT/scripts/cleanup-test-users.py" || true

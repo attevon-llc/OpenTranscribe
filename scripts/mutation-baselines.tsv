@@ -1,0 +1,38 @@
+# Mutation-testing baselines — a RATCHET, not a to-do list.
+#
+# WHY THIS FILE EXISTS
+#
+# "Kill every surviving mutant" is not a finishable goal on this codebase: a clean run of
+# app/auth/lockout.py reports 149 survivors, of which 77 edit a log message and 12 flip a
+# condition guarding only a log call. No caller can observe those, and asserting on log text
+# creates tests that break on every reword. Without a bounded definition of done, each pass
+# closes a few real gaps and leaves a large residue — which reads as no progress.
+#
+# So the gate is: the survivor count for a module may go DOWN, never UP. A new untested
+# predicate raises it and fails `--check-baseline`. That is the same shape as the coverage
+# `fail_under` ratchet in backend/pyproject.toml, and for the same reason.
+#
+# This file is READ by `./scripts/run-mutation-tests.sh --check-baseline`. It is not
+# documentation: a checked-in table nothing reads goes stale, which is exactly how
+# `expected-schemas.tsv` died.
+#
+# HOW TO UPDATE
+#
+#   ./scripts/run-mutation-tests.sh --clean            # stale cached verdicts are the #1 trap
+#   ./scripts/run-mutation-tests.sh --module <name>
+#   ./scripts/run-mutation-tests.sh --check-baseline <name>
+#
+# Lower the number when you have added tests. NEVER raise it to make a run pass — that is the
+# one move this file exists to prevent. Raising it needs a reason in the commit message.
+#
+# COVERAGE is recorded alongside because a survivor count is meaningless without it: a module
+# whose selected tests execute 56% of it reports survivors that measure test SELECTION, not
+# test strength. That happened to `lockout` and produced 41 false findings in `dependencies`.
+#
+# module<TAB>max_survivors<TAB>min_coverage_pct<TAB>measured_on<TAB>note
+spans	10	100	2026-08-12	95.1% kill rate; the 10 remaining are log/error strings
+lockout	149	80	2026-08-12	200 -> 171 -> 149 across three test batches; 77 of the 149 are log strings, 12 log-branch
+security	133	77	2026-08-12	verify_token's exp/essential gap closed; not yet re-measured after that batch
+session	77	76	2026-08-12	re-probe policy closed; OIDCStateStore mutants now killed by the #33 tests
+dependencies	470	93	2026-08-12	measured BEFORE the 118 new tests landed — first re-measure will lower this a lot
+password_policy	90	0	2026-08-12	coverage not yet measured by the pre-flight; the known real finding is closed

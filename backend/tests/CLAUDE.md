@@ -10,10 +10,35 @@ CI**), `SKIP_S3`/`SKIP_OPENSEARCH` forced `True`. E2E is local-only: `./scripts/
 (3 xdist workers `--dist loadfile`, then `-m visual` serially) and `run-e2e-smoke.sh`.
 Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
 
+## ⚠️ A branch that adds a migration must be tested against a stack that has APPLIED it
+
+`conftest` defaults `POSTGRES_PORT` to **5176 — the dev stack**, which runs whatever is checked
+out in the *main* repo. A worktree on a feature branch that adds a migration is therefore, by
+default, **testing the branch's code against master's schema**.
+
+That is not hypothetical. It produced **13 failures** that read as real breakage and were
+reported as pre-existing: 10 in `test_v389_migration_consistency`, 2 ORM-cascade, 1 DDL
+divergence — every one of them `relation "file_facts" does not exist`, because the dev stack sat
+at `v388` while the branch added `v389`. Re-run against a stack holding the migration and all 13
+pass:
+
+```bash
+POSTGRES_PORT=5276 OPENSEARCH_PORT=5280 pytest tests/...     # an isolated --fresh stack
+```
+
+Check before believing a schema failure:
+```bash
+docker exec <pg-container> psql -U postgres -d opentranscribe -tAc "SELECT version_num FROM alembic_version;"
+```
+
+Same family as everything else in this file: a red number that describes something other than
+what it appears to. A green one from the wrong schema is worse.
+
 ## Key files
 
 - `conftest.py` — sets env **before** `app.*` imports (DB/MinIO creds via `dotenv_values(.env)`,
-  `POSTGRES_HOST=localhost:5176`). `db_session` = savepoint isolation surviving `commit()`;
+  `POSTGRES_HOST=localhost:5176` — see the migration warning above). `db_session` = savepoint
+  isolation surviving `commit()`;
   `client` overrides `get_db`; an autouse session fixture patches `Task.apply_async` so
   `.delay()` never reaches a real broker.
 - `e2e/conftest.py` (`login_page`, `authenticated_page`, `auth_helper`, `api_helper`,

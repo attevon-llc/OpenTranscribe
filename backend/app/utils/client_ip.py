@@ -68,15 +68,24 @@ def is_trusted_proxy(ip: str) -> bool:
     return any(parsed in network for network in _TRUSTED_NETWORKS)
 
 
-def resolve_client_ip(request: Request) -> str:
+def resolve_client_ip(request: Request | None) -> str:
     """Return the most trustworthy client address for *request*.
 
     Args:
-        request: The incoming request.
+        request: The incoming request, or ``None`` where no request is in scope.
 
     Returns:
         The client IP, or ``"unknown"`` when it cannot be determined.
     """
+    # ``None`` is a real case, not a test artifact: several service-layer and background
+    # call sites audit an action with no request in scope, and callers reach this through
+    # helpers that pass whatever they were given. It already answered UNKNOWN for a
+    # request whose transport exposes no peer; a wholly absent request is the same
+    # question and must not be an AttributeError — an audit record failing to resolve an
+    # IP must never turn a successful config write into a 500.
+    if request is None:
+        return UNKNOWN
+
     direct_ip = str(request.client.host) if request.client else UNKNOWN
 
     # Without a trusted-proxy allowlist, forwarding headers are attacker-controlled.

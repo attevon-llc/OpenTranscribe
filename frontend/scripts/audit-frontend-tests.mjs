@@ -54,6 +54,20 @@
  * allowlist lives at `frontend/test-audit-allowlist.txt`: one
  * `<file>::<full test name>::<category>  # reason` per line.
  *
+ * THE ALLOWLIST CAN ONLY SHRINK, AND ONE LINE BUYS ONE FINDING. Both rails are ported from
+ * the Python side, and this file had NEITHER — `rg stale` in here returned nothing — while
+ * the allowlist presented itself as the counterpart of a file whose central guarantee is that
+ * an exemption cannot outlive its subject. Without them an entry survived its finding
+ * indefinitely, and a `<file>::<test>::<category>` key silently pre-exempted any FUTURE test
+ * that happened to reuse the name — a describe/it title is a string anyone can retype.
+ *
+ *   - An entry with no finding left to cover FAILS the run. Delete the line.
+ *   - Duplicate keys are a COUNT, not a mistake: three lines mean three known findings. Fix
+ *     one and the surplus line is reported, which is the partial fix a set difference cannot
+ *     see (a key producing three findings and one producing one are the same key to a set).
+ *   - A reason starting `BACKLOG` marks deferred work and is counted and printed separately,
+ *     so a green gate is never read as a clean tree.
+ *
  * TWO TRAPS, both learned from calibrating the Python auditor — do not "simplify" them away:
  *
  *   1. The assertion vocabulary is bigger than `expect()`. Testing Library's `getByRole` /
@@ -631,21 +645,73 @@ function scanFile(path, root) {
 
 // ------------------------------------------------------------------------------ allowlist
 
-function loadAllowlist() {
-  if (!existsSync(ALLOWLIST_PATH)) return new Map();
+/** Reason prefix marking an entry as DEFERRED WORK rather than an accepted pattern. */
+const BACKLOG_PREFIX = 'BACKLOG';
+
+/**
+ * `key -> [reason, ...]`, one entry per LINE. An array, not a string: one line buys one
+ * finding, so duplicate keys encode a count rather than being an error to reject.
+ */
+export function loadAllowlist(text) {
   const entries = new Map();
-  for (const raw of readFileSync(ALLOWLIST_PATH, 'utf8').split('\n')) {
+  for (const raw of text.split('\n')) {
     const line = raw.trim();
     if (!line || line.startsWith('#')) continue;
     const hash = line.indexOf('#');
     const key = (hash === -1 ? line : line.slice(0, hash)).trim();
     const reason = hash === -1 ? '' : line.slice(hash + 1).trim();
-    if (key) entries.set(key, reason || 'no reason given');
+    if (!key) continue;
+    if (!entries.has(key)) entries.set(key, []);
+    entries.get(key).push(reason || 'no reason given');
   }
   return entries;
 }
 
 const keyOf = (f) => `${f.path}::${f.test}::${f.category}`;
+
+/**
+ * Split findings by allowlist coverage, pairing one line to one finding.
+ *
+ * Returns `{ open, backlog, accepted, stale }`. `stale` names every key holding more lines
+ * than the tree still produces — the key vanished entirely, or it was PARTIALLY fixed. The
+ * second case is the one a set difference is blind to, and it is the common one: a test with
+ * three offending assertions gets three lines, and repairing two of them must not leave the
+ * third quietly exempt.
+ */
+export function applyAllowlist(findings, allowed) {
+  const byKey = new Map();
+  for (const f of findings) {
+    const key = keyOf(f);
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(f);
+  }
+
+  const open = [];
+  const backlog = [];
+  let accepted = 0;
+  for (const [key, group] of byKey) {
+    const reasons = allowed.get(key) ?? [];
+    group.slice(0, reasons.length).forEach((f, i) => {
+      if (reasons[i].startsWith(BACKLOG_PREFIX)) backlog.push(f);
+      else accepted += 1;
+    });
+    open.push(...group.slice(reasons.length));
+  }
+
+  const stale = [];
+  for (const [key, reasons] of [...allowed].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    const live = byKey.get(key)?.length ?? 0;
+    if (live >= reasons.length) continue;
+    stale.push(
+      live === 0
+        ? `${key}  (${reasons.length} entr${reasons.length === 1 ? 'y' : 'ies'}, 0 findings)`
+        : `${key}  (${reasons.length} entries, ${live} finding(s) — delete ${
+            reasons.length - live
+          })`
+    );
+  }
+  return { open, backlog, accepted, stale };
+}
 
 function collectTestFiles(dir) {
   if (!statSync(dir).isDirectory()) return [dir];
@@ -730,9 +796,76 @@ const SELFTEST_CLEAN = [
   "describe('d', () => { it('a', () => { expect(() => f()).toThrow('boom'); }); });",
 ];
 
+/**
+ * The allowlist rails, self-tested for the same reason the detectors are: a stale check that
+ * stops noticing reports nothing, which reads exactly like a clean allowlist. Each case names
+ * what must happen and what must NOT.
+ */
+const ALLOWLIST_CASES = [
+  [
+    'one line covers one finding',
+    () => {
+      const f = { path: 'a.test.ts', test: 'x', category: 'weak-only', line: 1, detail: '' };
+      const r = applyAllowlist([f], loadAllowlist('a.test.ts::x::weak-only  # reason'));
+      return r.open.length === 0 && r.accepted === 1 && r.stale.length === 0;
+    },
+  ],
+  [
+    'one line does NOT cover three findings',
+    () => {
+      const f = (line) => ({
+        path: 'a.test.ts',
+        test: 'x',
+        category: 'weak-only',
+        line,
+        detail: '',
+      });
+      const r = applyAllowlist([f(1), f(2), f(3)], loadAllowlist('a.test.ts::x::weak-only  # r'));
+      return r.open.length === 2;
+    },
+  ],
+  [
+    'an entry whose finding is gone is STALE',
+    () => applyAllowlist([], loadAllowlist('a.test.ts::x::weak-only  # r')).stale.length === 1,
+  ],
+  [
+    'a PARTIAL fix leaves surplus lines, and they are STALE',
+    () => {
+      const f = { path: 'a.test.ts', test: 'x', category: 'weak-only', line: 1, detail: '' };
+      const list = loadAllowlist(
+        'a.test.ts::x::weak-only  # r\na.test.ts::x::weak-only  # r\na.test.ts::x::weak-only  # r'
+      );
+      const r = applyAllowlist([f], list);
+      return r.open.length === 0 && r.stale.length === 1 && r.stale[0].includes('delete 2');
+    },
+  ],
+  [
+    'a BACKLOG reason is counted as deferred work, not accepted',
+    () => {
+      const f = { path: 'a.test.ts', test: 'x', category: 'weak-only', line: 1, detail: '' };
+      const r = applyAllowlist([f], loadAllowlist('a.test.ts::x::weak-only  # BACKLOG(#431): tbd'));
+      return r.backlog.length === 1 && r.accepted === 0 && r.open.length === 0;
+    },
+  ],
+  [
+    'a comment line is not an entry',
+    () => loadAllowlist('# a.test.ts::x::weak-only  # r\n\n').size === 0,
+  ],
+];
+
 function runSelfTest() {
   let failures = 0;
   console.log('\n\x1b[1maudit-frontend-tests self-test\x1b[0m\n');
+  for (const [label, check] of ALLOWLIST_CASES) {
+    let ok = false;
+    try {
+      ok = check() === true;
+    } catch (err) {
+      console.log(`      threw: ${err.message}`);
+    }
+    console.log(`  ${ok ? '\x1b[32m✓' : '\x1b[31m✗'}\x1b[0m allowlist: ${label}`);
+    if (!ok) failures += 1;
+  }
   for (const [category, source] of SELFTEST_CASES) {
     const { findings } = scanSource(source, 'fixture.test.ts');
     const hit = findings.some((f) => f.category === category);
@@ -759,9 +892,8 @@ function runSelfTest() {
     console.log(`\n\x1b[31m${failures} self-test failure(s) — a detector is broken\x1b[0m\n`);
     return 1;
   }
-  console.log(
-    `\n\x1b[32mall ${SELFTEST_CASES.length + SELFTEST_CLEAN.length} self-test cases pass\x1b[0m\n`
-  );
+  const total = SELFTEST_CASES.length + SELFTEST_CLEAN.length + ALLOWLIST_CASES.length;
+  console.log(`\n\x1b[32mall ${total} self-test cases pass\x1b[0m\n`);
   return 0;
 }
 
@@ -792,8 +924,15 @@ function main(argv) {
   let findings = scans.flatMap((s) => s.findings);
   if (category) findings = findings.filter((f) => f.category === category);
 
-  const allowed = loadAllowlist();
-  const open = findings.filter((f) => !allowed.has(keyOf(f)));
+  const allowed = existsSync(ALLOWLIST_PATH)
+    ? loadAllowlist(readFileSync(ALLOWLIST_PATH, 'utf8'))
+    : new Map();
+  const { open, backlog, accepted, stale: allStale } = applyAllowlist(findings, allowed);
+
+  // Staleness is only meaningful on a FULL scan: a `--category` run or a subdirectory has not
+  // looked at the findings the other entries cover, and would report every one of them.
+  const fullScan = !category && target === scanRoot;
+  const stale = fullScan ? allStale : [];
   const all = CATEGORIES;
 
   if (flags.has('--json')) {
@@ -803,9 +942,15 @@ function main(argv) {
           files: paths.length,
           tests_seen: testsSeen,
           total: findings.length,
-          allowlisted: findings.length - open.length,
+          accepted,
+          backlog: backlog.length,
           unallowlisted: open.length,
+          stale_allowlist_entries: stale,
           by_category: open.reduce(
+            (acc, f) => ({ ...acc, [f.category]: (acc[f.category] ?? 0) + 1 }),
+            {}
+          ),
+          backlog_by_category: backlog.reduce(
             (acc, f) => ({ ...acc, [f.category]: (acc[f.category] ?? 0) + 1 }),
             {}
           ),
@@ -815,21 +960,23 @@ function main(argv) {
         2
       )
     );
-    return open.length ? 1 : 0;
+    return open.length || stale.length ? 1 : 0;
   }
 
   console.log(
     `\n\x1b[1m${relative(frontendRoot, target) || '.'}\x1b[0m — ${paths.length} test file(s), ` +
-      `${testsSeen} tests, ${findings.length} findings, ${open.length} not allowlisted\n`
+      `${testsSeen} tests, ${findings.length} findings: ${open.length} open, ` +
+      `${backlog.length} backlog, ${accepted} accepted\n`
   );
   for (const cat of all) {
     const hits = open.filter((f) => f.category === cat);
     const total = findings.filter((f) => f.category === cat).length;
+    const deferred = backlog.filter((f) => f.category === cat).length;
     const colour = hits.length ? '\x1b[31m' : '\x1b[32m';
     console.log(
       `  ${colour}${cat.padEnd(26)}\x1b[0m ${String(hits.length).padStart(
         4
-      )} open  (${total} total)`
+      )} open  (${total} total${deferred ? `, ${deferred} backlog` : ''})`
     );
     const show = flags.has('--list') ? hits : hits.slice(0, 5);
     for (const f of show) console.log(`      ${f.path}:${f.line} ${f.test} — ${f.detail}`);
@@ -837,14 +984,35 @@ function main(argv) {
       console.log(`      … ${hits.length - 5} more (--list)`);
   }
 
+  if (stale.length) {
+    console.log(
+      `\n\x1b[31m${stale.length} allowlist key(s) hold more entries than findings:\x1b[0m`
+    );
+    for (const key of stale.slice(0, 20)) console.log(`  ${key}`);
+    if (stale.length > 20) console.log(`  … ${stale.length - 20} more`);
+    console.log(`  Delete the surplus lines from ${relative(frontendRoot, ALLOWLIST_PATH)}. One`);
+    console.log('  line buys one finding: an exemption must never outlive its subject, and a');
+    console.log(
+      '  key with no finding left silently pre-exempts the next test to reuse the name.\n'
+    );
+  }
+  if (backlog.length) {
+    console.log(
+      `\x1b[1;33m${backlog.length} finding(s) are DEFERRED WORK, not accepted patterns.\x1b[0m`
+    );
+    console.log(
+      `  They carry a \`${BACKLOG_PREFIX}\` reason in ${relative(frontendRoot, ALLOWLIST_PATH)}.` +
+        ' This gate is green\n  because nothing NEW landed — not because the tree is clean.'
+    );
+  }
   if (open.length) {
     console.log(`\n\x1b[31m${open.length} findings need a fix or an allowlist entry\x1b[0m`);
     console.log(
       `  allowlist: ${relative(frontendRoot, ALLOWLIST_PATH)}` +
         '  (one "<file>::<full test name>::<category>  # reason" per line)\n'
     );
-    return 1;
   }
+  if (open.length || stale.length) return 1;
   console.log('\n\x1b[32mno un-allowlisted findings\x1b[0m\n');
   return 0;
 }

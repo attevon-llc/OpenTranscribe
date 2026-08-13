@@ -33,6 +33,14 @@ from conftest import TEST_ADMIN_PASSWORD
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
+# The `gallery` marker is REGISTERED in e2e/pytest.ini and root CLAUDE.md documents
+# `./scripts/e2e/run-e2e.sh -m gallery` as a supported selector — but nothing in the tree
+# carried the marker, so the documented command deselected all 333 tests and pytest exited 5
+# ("no tests ran") while this file's 52 tests sat here unselected. Module scope, so the whole
+# file moves with the selector. test_pytest_config_consistency.py now fails if a registered
+# marker selects nothing, so this cannot silently regress.
+pytestmark = pytest.mark.gallery
+
 # Test data
 TEST_FILE_TITLE = "PyTorch at Tesla"
 
@@ -333,14 +341,18 @@ class TestSelectionModeButtons:
         assert title is not None and len(title) > 10
 
     def test_organize_dropdown_opens(self) -> None:
-        """Clicking Organize should open dropdown with items."""
+        """Clicking Organize should open a dropdown offering each organize action."""
         self.page.click(".organize-btn")
         # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         menu = self.page.locator(".dropdown-menu")
         expect(menu).to_be_visible(timeout=3000)
 
-        items = menu.locator(".dropdown-item")
-        assert items.count() == 4, f"Expected 4 organize items, got {items.count()}"
+        # Assert WHICH actions are offered, not how many. A bare count == 4 failed the
+        # moment Tags was added to this menu, and a count cannot distinguish "the export
+        # actions are present" from "there are four of something". Naming them makes the
+        # failure message say what is actually missing.
+        for label in ("Collection", "Tags", "SRT", "WebVTT", "Text"):
+            expect(menu.locator(".dropdown-item", has_text=label)).to_have_count(1, timeout=3000)
 
     def test_organize_dropdown_items_have_tooltips(self) -> None:
         """Each Organize dropdown item should have a tooltip."""
@@ -548,9 +560,11 @@ class TestBulkActions:
         self.page.click(".organize-btn")
 
         # expect() below already polls, so a fixed wait here is pure waste (issue #431).
+        # Selected by TEXT, not .nth(): positional selectors silently retarget when a menu
+        # item is inserted above them, which is exactly how this test came to click Tags.
         menu = self.page.locator(".dropdown-menu")
-        srt_btn = menu.locator(".dropdown-item").nth(1)
-        expect(srt_btn).to_contain_text("SRT")
+        srt_btn = menu.locator(".dropdown-item", has_text="SRT")
+        expect(srt_btn).to_have_count(1)
 
         with self.page.expect_download(timeout=30000) as download_info:
             srt_btn.click()
@@ -565,9 +579,10 @@ class TestBulkActions:
         self.page.click(".organize-btn")
 
         # expect() below already polls, so a fixed wait here is pure waste (issue #431).
+        # Selected by TEXT, not .nth() — see test_export_srt_via_ui.
         menu = self.page.locator(".dropdown-menu")
-        webvtt_btn = menu.locator(".dropdown-item").nth(2)
-        expect(webvtt_btn).to_contain_text("WebVTT")
+        webvtt_btn = menu.locator(".dropdown-item", has_text="WebVTT")
+        expect(webvtt_btn).to_have_count(1)
 
         with self.page.expect_download(timeout=30000) as download_info:
             webvtt_btn.click()
@@ -581,9 +596,10 @@ class TestBulkActions:
         self.page.click(".organize-btn")
 
         # expect() below already polls, so a fixed wait here is pure waste (issue #431).
+        # Selected by TEXT, not .nth() — see test_export_srt_via_ui.
         menu = self.page.locator(".dropdown-menu")
-        txt_btn = menu.locator(".dropdown-item").nth(3)
-        expect(txt_btn).to_contain_text("Text")
+        txt_btn = menu.locator(".dropdown-item", has_text="Text")
+        expect(txt_btn).to_have_count(1)
 
         with self.page.expect_download(timeout=30000) as download_info:
             txt_btn.click()

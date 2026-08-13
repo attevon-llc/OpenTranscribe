@@ -80,6 +80,39 @@ Detectors
         benchmark against a stack that may not exist. Fires only when EVERY argument of the
         probe call is fixed at parse time; one derived argument means the target follows the
         stack under test.
+    broad-raises
+        ``pytest.raises(Exception)`` / ``(BaseException)``. The block asserts only that
+        *something* went wrong, and **the setup inside the block counts**: a renamed keyword
+        argument, a missing fixture attribute or a DB error all read as the refusal the test
+        claims to prove. ruff's B017 says the same thing, and one of these carries a bare
+        a bare ruff ``B017`` suppression with no reason, which is how the shape survived.
+        ``match=`` clears it: pinning the message is a real constraint on *which* failure.
+    bare-return
+        A bare ``return`` in a test body reached before the test has asserted or skipped
+        anything. ``conditional-skip`` only sees ``pytest.skip``, so this is the silent twin:
+        the test exits green having proved nothing and reporting nothing. A ``return`` that
+        follows an assertion (the second half of the test is conditional) or a ``pytest.skip``
+        (``return  # unreachable, satisfies mypy``) is NOT this — both were checked against the
+        real tree, and firing on them would have made the detector useless.
+    self-comparison
+        The test's SOLE assertion compares an expression to a syntactically identical one:
+        ``assert _key_with_corpus("7") == _key_with_corpus("7")`` in a test named
+        "cache key is stable within one corpus version" stays green if the key ignores the
+        corpus version entirely. Only when it is the only assertion — the same comparison
+        beside two real ones is a deliberate determinism check, not a vacuous test.
+    sleep-sync
+        ``time.sleep``/``asyncio.sleep`` used as **synchronisation** rather than as a poll
+        interval. A bare sleep before an assertion bounds *correctness*: if the thing is not
+        ready in 0.5 s the assertion runs anyway and the test fails (or, worse, passes for the
+        wrong reason on a fast machine). A sleep inside a bounded poll loop that re-checks and
+        exits early bounds only *latency*, so it is exempt — as is the whole Playwright
+        ``wait_for_timeout`` idiom, which precedes auto-retrying ``expect()`` assertions.
+    skipped-test
+        An unconditional ``@pytest.mark.skip``, or an ``@pytest.mark.xfail`` without
+        ``strict=True``. Both report a colour that is not "failed" forever. A non-strict xfail
+        is the subtler one: it also passes when the test starts PASSING, so the day the bug is
+        fixed nothing tells you the marker can go. The frontend auditor has had this detector
+        since #431 and the backend did not — an asymmetry, not a decision.
 
 Usage::
 
@@ -99,6 +132,15 @@ per line. The category is REQUIRED — an entry keyed only by test would exempt 
 every detector at once, which is how a `failure-masking` exemption silently granted a
 `no-assertion` one too. Adding an entry is a deliberate, reviewable act; widening an
 assertion to restore green is not.
+
+**The allowlist is COUNT-AWARE: one line buys one finding.** A key is not a blanket. The set
+difference this used to do could not see a PARTIAL fix — a key producing three findings and a
+key producing one were the same key — so fixing two of
+``test_personal_file_read_surfaces_unaffected``'s three ``!=`` assertions left the run green
+with the exemption still covering the third. Duplicate keys are therefore MEANINGFUL, not an
+error: three identical lines mean "three known findings here". Fix one and the surplus line is
+reported as stale, exactly like an entry whose finding vanished entirely. That is what makes
+"this file can only shrink" true per-finding rather than per-test-name.
 
 **Run ``--selftest`` after touching any detector.** Its frontend sibling's self-test caught
 two detectors matching *nothing*, which reports 0 findings and is indistinguishable from a
@@ -147,6 +189,11 @@ CATEGORIES = (
     'fixture-named-test',
     'external-service-mock',
     'readiness-probe-target',
+    'broad-raises',
+    'bare-return',
+    'self-comparison',
+    'sleep-sync',
+    'skipped-test',
 )
 
 
@@ -1199,6 +1246,312 @@ def _readiness_probe_targets(
     return out
 
 
+# ----------------------------------------------------------- over-broad exception assertions
+
+#: Exception types that assert "something went wrong" and nothing more.
+_BROAD_EXCEPTIONS = frozenset({'Exception', 'BaseException'})
+
+
+def _broad_raises(fn: ast.AST) -> list[tuple[int, str]]:
+    """``(lineno, caught)`` for each ``pytest.raises(Exception)`` with no ``match=``.
+
+    The block is not a claim about the code under test — it is a claim that the block raised.
+    Everything inside it counts, so a renamed keyword argument, a fixture that stopped
+    supplying an attribute, or a DB error at ``commit()`` all satisfy the assertion and read
+    as the refusal the test says it proves.
+
+    ``match=`` is the escape hatch and it is a real one: pinning the message narrows the
+    assertion to a specific failure. A trailing ``as exc`` is NOT, even when an assertion on
+    ``exc.value`` follows — ``assert getattr(exc.value, "status_code", None) == 403`` is
+    satisfied by any exception carrying that attribute, including one raised while building
+    the call's arguments.
+    """
+    out: list[tuple[int, str]] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        name = (
+            node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, 'id', '')
+        )
+        if name != 'raises' or not node.args:
+            continue
+        first = node.args[0]
+        caught = first.elts if isinstance(first, ast.Tuple) else [first]
+        if not all(isinstance(c, ast.Name) and c.id in _BROAD_EXCEPTIONS for c in caught):
+            continue
+        if any(k.arg == 'match' for k in node.keywords):
+            continue
+        out.append((node.lineno, ast.unparse(first)))
+    return out
+
+
+# ------------------------------------------------------------------------ bare early return
+
+#: Calls that REPORT a bail-out. A ``return`` after one of these is bookkeeping (usually
+#: ``return  # unreachable, satisfies mypy``), not a silent green.
+_REPORTING_CALLS = _ASSERTING_CALLS | frozenset({'skip', 'xfail', 'exit'})
+
+
+def _inner_function_node_ids(scope: ast.AST) -> set[int]:
+    """Ids of every node that lives inside a function defined within ``scope``.
+
+    The generalisation of :func:`_nested_call_ids`. A ``return`` inside a helper closure
+    defined in a test is that helper's control flow, not the test bailing out.
+    """
+    out: set[int] = set()
+    for node in ast.walk(scope):
+        if node is scope or not isinstance(
+            node, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda
+        ):
+            continue
+        for inner in ast.walk(node):
+            out.add(id(inner))
+    return out
+
+
+def _expression_evidence(node: ast.AST) -> bool:
+    """True when an EXPRESSION contains an assertion or a reported bail-out.
+
+    Expression-level only: ``ast.walk`` over a statement would descend into nested ``if`` and
+    ``for`` bodies, and evidence inside a branch that may not run is not evidence.
+    """
+    for inner in ast.walk(node):
+        if isinstance(inner, ast.Assert):
+            return True
+        if isinstance(inner, ast.Call):
+            name = (
+                inner.func.attr
+                if isinstance(inner.func, ast.Attribute)
+                else getattr(inner.func, 'id', '')
+            )
+            if name.startswith('assert') or name in _REPORTING_CALLS:
+                return True
+    return False
+
+
+def _unconditional_evidence(statement: ast.stmt) -> bool:
+    """True when running ``statement`` necessarily asserts or reports something.
+
+    A branching statement is worth nothing here even if it contains an assertion: that is the
+    whole point of ``conditional-only``. The distinction is what makes this detector see the
+    live instance — ``test_throughput_benchmark`` opens with ``if not completed_files:
+    pytest.skip(...)``, so a "was anything reported earlier in the function?" reading excused
+    the *unrelated* bare return 60 lines later and the detector found nothing at all.
+    """
+    if isinstance(statement, ast.Assert):
+        return True
+    if isinstance(
+        statement,
+        ast.If
+        | ast.For
+        | ast.AsyncFor
+        | ast.While
+        | ast.FunctionDef
+        | ast.AsyncFunctionDef
+        | ast.ClassDef
+        | ast.Match,
+    ):
+        return False
+    if isinstance(statement, ast.With | ast.AsyncWith):
+        if any(_expression_evidence(item.context_expr) for item in statement.items):
+            return True
+        return any(_unconditional_evidence(s) for s in statement.body)
+    if isinstance(statement, ast.Try):
+        return any(_unconditional_evidence(s) for s in statement.body)
+    return _expression_evidence(statement)
+
+
+def _bare_returns(fn: ast.AST) -> list[int]:
+    """Linenos of ``return`` statements reached before the test asserted or reported anything.
+
+    Evidence counts when it is on the return's OWN path: an unconditional statement earlier in
+    the return's block, or earlier in any block enclosing it. Evidence in a sibling branch does
+    not count, and neither does an assertion after the return — a test that exits early having
+    proved nothing is green whatever the rest of the body does.
+
+    Calibrated against every bare return in this tree. Four of the five are legitimate and
+    firing on them would have made the detector noise:
+
+    * ``e2e/test_chat.py`` and ``unit/test_auth_config_has_readers.py`` assert in the same
+      branch, then return — the rest of the test is genuinely conditional;
+    * ``e2e/test_mfa.py`` asserts twice inside the ``except`` handler it returns from;
+    * ``e2e/test_gallery_actions.py`` calls ``pytest.skip`` and then returns for mypy's benefit.
+
+    The fifth — ``test_embedding_migration_integration.py`` — prints "No files were prepared
+    successfully." and returns, with nothing asserted and nothing reported. A run where the
+    setup produced nothing is then indistinguishable from a run that passed.
+    """
+    out: list[int] = []
+
+    def walk_block(statements: list[ast.stmt], seen: bool) -> None:
+        for statement in statements:
+            if isinstance(statement, ast.Return) and statement.value is None and not seen:
+                out.append(statement.lineno)
+            if not isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
+                for block in _statement_lists(statement):
+                    walk_block(block, seen)
+            if _unconditional_evidence(statement):
+                seen = True
+
+    walk_block(list(getattr(fn, 'body', [])), False)
+    return sorted(set(out))
+
+
+# ------------------------------------------------------------------------- self-comparison
+
+
+def _self_comparison(fn: ast.AST) -> tuple[int, str] | None:
+    """``(lineno, expression)`` when the test's SOLE assertion compares something to itself.
+
+    ``assert _key_with_corpus("7") == _key_with_corpus("7")`` is green whether or not the key
+    depends on the corpus version at all, which is the one thing the test is named for.
+
+    "Sole" is load-bearing. The same file's ``test_scope_hash_is_order_independent`` asserts
+    ``scope_hash(None) == scope_hash(None)`` beside ``scope_hash(["b","a"]) ==
+    scope_hash(["a","b"])`` and ``scope_hash(None) != scope_hash(["a"])`` — there it pins
+    determinism of a value the other two assertions have already constrained, and firing on it
+    would teach people to allowlist.
+    """
+    asserts = _asserts(fn)
+    if len(asserts) != 1 or _asserting_calls(fn):
+        return None
+    test = asserts[0].test
+    if not isinstance(test, ast.Compare) or len(test.comparators) != 1:
+        return None
+    if not isinstance(test.ops[0], ast.Eq | ast.Is):
+        return None
+    left = ast.unparse(test.left)
+    if left != ast.unparse(test.comparators[0]):
+        return None
+    return asserts[0].lineno, left
+
+
+# --------------------------------------------------------------- sleep as synchronisation
+
+
+def _is_sleep_call(node: ast.Call) -> bool:
+    """``time.sleep(...)`` / ``asyncio.sleep(...)`` / a bare imported ``sleep(...)``.
+
+    Playwright's ``page.wait_for_timeout`` is deliberately NOT here. It is the e2e suite's
+    whole waiting idiom (~70 sites), it precedes ``expect()`` assertions that auto-retry, and
+    reporting it would produce a 70-entry allowlist nobody reads — the "a detector that fires
+    on correct code teaches people to allowlist" failure this file already learned once.
+    """
+    parts = _dotted(node.func)
+    if not parts or parts[-1] != 'sleep':
+        return False
+    return len(parts) == 1 or parts[0] in ('time', 'asyncio')
+
+
+def _statement_lists(node: ast.AST) -> list[list[ast.stmt]]:
+    """Every statement list under ``node``, innermost blocks included."""
+    out: list[list[ast.stmt]] = []
+    for field in ('body', 'orelse', 'finalbody'):
+        block = getattr(node, field, None)
+        if not isinstance(block, list) or not all(isinstance(s, ast.stmt) for s in block):
+            continue
+        out.append(block)
+        for statement in block:
+            out.extend(_statement_lists(statement))
+    for handler in getattr(node, 'handlers', []) or []:
+        out.extend(_statement_lists(handler))
+    return out
+
+
+def _direct_sleep_calls(statements: list[ast.stmt]) -> list[ast.Call]:
+    """Sleep calls written as a statement DIRECTLY in this block (not in a nested one)."""
+    out: list[ast.Call] = []
+    for statement in statements:
+        if not isinstance(statement, ast.Expr):
+            continue
+        value = statement.value
+        if isinstance(value, ast.Await):
+            value = value.value
+        if isinstance(value, ast.Call) and _is_sleep_call(value):
+            out.append(value)
+    return out
+
+
+def _poll_interval_sleeps(fn: ast.AST) -> set[int]:
+    """Ids of sleeps that are a poll INTERVAL in a bounded loop, so not a synchronisation bet.
+
+    A loop that re-checks a condition and can exit early already asserts readiness; the sleep
+    only decides how often it asks, so a wrong duration costs time and never correctness. That
+    is eleven of the sixteen blocking sleeps in this tree — auth retry/backoff, status polling,
+    ``_wait_for(predicate)`` helpers.
+
+    The exception, and the reason this looks at the sleep's OWN block rather than "is it
+    somewhere in a loop": ``if _is_port_open(...): time.sleep(5); break``. That sleep is inside
+    the loop but on the branch that *leaves* it — the poll already succeeded, and the 5 s is a
+    bare bet that Keycloak finishes booting. A direct ``break``/``return`` in the sleep's own
+    block therefore disqualifies it.
+    """
+    out: set[int] = set()
+    nested = _inner_function_node_ids(fn)
+    for loop in ast.walk(fn):
+        if not isinstance(loop, ast.For | ast.AsyncFor | ast.While) or id(loop) in nested:
+            continue
+        has_exit = any(
+            isinstance(inner, ast.Break | ast.Return)
+            for statement in loop.body
+            for inner in ast.walk(statement)
+        )
+        if not has_exit:
+            continue
+        for block in _statement_lists(loop):
+            if any(isinstance(s, ast.Break | ast.Return) for s in block):
+                continue
+            for call in _direct_sleep_calls(block):
+                out.add(id(call))
+    return out
+
+
+def _sleep_syncs(fn: ast.AST) -> list[tuple[int, str]]:
+    """``(lineno, source)`` for each blocking sleep that is not a poll interval."""
+    exempt = _poll_interval_sleeps(fn)
+    nested = _inner_function_node_ids(fn)
+    return [
+        (node.lineno, ast.unparse(node))
+        for node in ast.walk(fn)
+        if isinstance(node, ast.Call)
+        and _is_sleep_call(node)
+        and id(node) not in exempt
+        and id(node) not in nested
+    ]
+
+
+# ------------------------------------------------------------------------- disabled tests
+
+
+def _skip_markers(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> list[tuple[int, str]]:
+    """``(lineno, marker)`` for decorators that permanently disable the test.
+
+    ``skipif`` is deliberately absent: a conditional gate is how this repo selects the
+    ``RUN_*`` suites, and it is visible in the run. ``xfail(strict=True)`` is absent for the
+    opposite reason — it FAILS when the test starts passing, so it cannot outlive its subject.
+    A non-strict ``xfail`` can, and silently.
+    """
+    out: list[tuple[int, str]] = []
+    for dec in fn.decorator_list:
+        target = dec.func if isinstance(dec, ast.Call) else dec
+        parts = _dotted(target)
+        if 'mark' not in parts:
+            continue
+        marker = parts[-1]
+        if marker == 'skip':
+            out.append((dec.lineno, 'pytest.mark.skip — never runs, never reports'))
+        elif marker == 'xfail':
+            strict = isinstance(dec, ast.Call) and any(
+                k.arg == 'strict' and isinstance(k.value, ast.Constant) and k.value.value is True
+                for k in dec.keywords
+            )
+            if not strict:
+                out.append(
+                    (dec.lineno, 'pytest.mark.xfail without strict=True — also passes once fixed')
+                )
+    return out
+
+
 def scan_source(source: str, rel: str) -> list[Finding]:
     """Scan test source text. Helper functions are scanned for failure-masking too.
 
@@ -1268,8 +1621,59 @@ def scan_source(source: str, rel: str) -> list[Finding]:
                     f'{target} — hardcoded endpoint, not the stack under test',
                 )
             )
+
+        # A sleep in a `_wait_for(predicate)` helper or a session fixture is the same bet as
+        # one in a test body, so this is not gated on `is_test` either.
+        for lineno, call in _sleep_syncs(node):
+            found.append(
+                Finding(
+                    'sleep-sync',
+                    rel,
+                    lineno,
+                    node.name,
+                    f'{call} — a fixed wait, not a poll loop; nothing re-checks readiness',
+                )
+            )
         if not is_test:
             continue
+
+        for lineno, marker in _skip_markers(node):
+            found.append(Finding('skipped-test', rel, lineno, node.name, marker))
+
+        for lineno, caught in _broad_raises(node):
+            found.append(
+                Finding(
+                    'broad-raises',
+                    rel,
+                    lineno,
+                    node.name,
+                    f'pytest.raises({caught}) — the setup inside the block satisfies it too',
+                )
+            )
+
+        for lineno in _bare_returns(node):
+            found.append(
+                Finding(
+                    'bare-return',
+                    rel,
+                    lineno,
+                    node.name,
+                    'bare `return` before any assert or skip — exits green having proved nothing',
+                )
+            )
+
+        identical = _self_comparison(node)
+        if identical is not None:
+            lineno, expression = identical
+            found.append(
+                Finding(
+                    'self-comparison',
+                    rel,
+                    lineno,
+                    node.name,
+                    f'sole assertion is `{expression} == {expression}` — true by construction',
+                )
+            )
 
         for lineno, count in _status_alternatives(node):
             if count > _MAX_STATUS_ALTERNATIVES:
@@ -1433,19 +1837,72 @@ def scan_file(path: Path, root: Path) -> list[Finding]:
 _BACKLOG_PREFIX = 'BACKLOG'
 
 
-def load_allowlist(root: Path) -> dict[str, str]:
-    """Map ``<file>::<test>::<category>`` to its stated reason."""
+def load_allowlist(root: Path) -> dict[str, list[str]]:
+    """Map ``<file>::<test>::<category>`` to the reason of EACH line carrying that key.
+
+    A list, not a string, because **one line buys one finding**. Set membership could not see a
+    partial fix: ``test_personal_file_read_surfaces_unaffected`` produces three
+    ``negated-status`` findings and ``test_community_router_reachable`` produces two, and under
+    a set the whole test was exempt as soon as one line existed — fix two of the three
+    assertions and the run stayed green with the third still covered. Duplicate keys are
+    therefore the encoding of a count, not a mistake to reject; the file already contained
+    exactly as many lines as findings for both of those tests.
+    """
     path = root / _ALLOWLIST_NAME
     if not path.exists():
         return {}
-    allowed: dict[str, str] = {}
+    allowed: dict[str, list[str]] = {}
     for raw in path.read_text().splitlines():
         line = raw.strip()
         if not line or line.startswith('#'):
             continue
         key, _, reason = line.partition('#')
-        allowed[key.strip()] = reason.strip() or 'no reason given'
+        allowed.setdefault(key.strip(), []).append(reason.strip() or 'no reason given')
     return allowed
+
+
+def apply_allowlist(
+    findings: list[Finding], allowed: dict[str, list[str]]
+) -> tuple[list[Finding], list[Finding], int, list[str]]:
+    """Split findings by allowlist coverage, one line per finding.
+
+    Returns ``(unallowlisted, backlog, accepted, stale)``. ``stale`` describes entries with no
+    finding left to cover — either the key vanished entirely or the file holds MORE lines than
+    the key now produces, which is the partial-fix signal the set-based version could not give.
+    """
+    by_key: dict[str, list[Finding]] = {}
+    for finding in findings:
+        by_key.setdefault(finding.key, []).append(finding)
+
+    unallowlisted: list[Finding] = []
+    backlog: list[Finding] = []
+    accepted = 0
+    for key, group in by_key.items():
+        reasons = allowed.get(key, [])
+        # Pairing is positional and the scan order is deterministic, so which line covers
+        # which occurrence is stable across runs. It does not matter WHICH: the reasons for a
+        # repeated key describe the same defect, and the count is the thing being enforced.
+        for finding, reason in zip(group, reasons, strict=False):
+            if reason.startswith(_BACKLOG_PREFIX):
+                backlog.append(finding)
+            else:
+                accepted += 1
+        unallowlisted.extend(group[len(reasons) :])
+
+    stale: list[str] = []
+    for key, reasons in sorted(allowed.items()):
+        live = len(by_key.get(key, []))
+        if live >= len(reasons):
+            continue
+        if live == 0:
+            stale.append(
+                f'{key}  ({len(reasons)} entr{"y" if len(reasons) == 1 else "ies"}, 0 findings)'
+            )
+        else:
+            stale.append(
+                f'{key}  ({len(reasons)} entries, {live} finding(s) — delete {len(reasons) - live})'
+            )
+    return unallowlisted, backlog, accepted, stale
 
 
 # ------------------------------------------------------------------------------- self-test
@@ -1621,6 +2078,66 @@ SELFTEST_CASES: tuple[tuple[str, str], ...] = (
         '        pytest.skip("stack not running")\n'
         '    assert r.status_code == 200\n',
     ),
+    (
+        # The live shape, ruff-suppression and all: the DB error the commit is supposed to
+        # raise is indistinguishable from one raised by the two `add()` calls above it.
+        'broad-raises',
+        'def test_a(db_session):\n'
+        '    db_session.add(link)\n'
+        '    with pytest.raises(Exception):  # B017 suppressed in the real file\n'
+        '        db_session.commit()\n',
+    ),
+    (
+        # `as exc` plus an assertion on `exc.value` does NOT narrow it: any exception
+        # carrying `status_code == 403` satisfies both, including one from argument setup.
+        'broad-raises',
+        'def test_a(world):\n'
+        '    with pytest.raises(Exception) as exc:\n'
+        '        get_file_by_uuid_with_permission(world.db, "u", 1, organization_id=2)\n'
+        '    assert getattr(exc.value, "status_code", None) == 403\n',
+    ),
+    (
+        # The live instance: nothing was prepared, so nothing is asserted and nothing is
+        # reported. `conditional-skip` cannot see this — there is no `pytest.skip`.
+        'bare-return',
+        'def test_a(files):\n'
+        '    prepared = [f for f in files if prepare(f)]\n'
+        '    if not prepared:\n'
+        '        print("No files were prepared successfully.")\n'
+        '        return\n'
+        '    assert process(prepared) == len(prepared)\n',
+    ),
+    (
+        'self-comparison',
+        'def test_cache_key_is_stable_within_one_corpus_version():\n'
+        '    assert _key_with_corpus("7") == _key_with_corpus("7")\n',
+    ),
+    (
+        # `time.sleep(0.5)  # let NVML settle` then measure. If the driver has not settled
+        # the assertion runs anyway, and on a fast machine it passes for the wrong reason.
+        'sleep-sync',
+        'def test_a():\n'
+        '    torch.cuda.empty_cache()\n'
+        '    time.sleep(0.5)\n'
+        '    assert _nvml_used_mb() - baseline <= RESIDUE_GATE_MB\n',
+    ),
+    (
+        # Inside a poll loop, but on the branch that LEAVES it: the poll already succeeded
+        # and the 5 s is a bare bet on start-up. A whole-loop exemption would clear this.
+        'sleep-sync',
+        'def test_a():\n'
+        '    for _ in range(60):\n'
+        '        if _is_port_open("localhost", 8180):\n'
+        '            time.sleep(5)\n'
+        '            break\n'
+        '        time.sleep(2)\n'
+        '    assert _is_port_open("localhost", 8180)\n',
+    ),
+    ('skipped-test', '@pytest.mark.skip(reason="flaky")\ndef test_a():\n    assert run() == 1\n'),
+    (
+        'skipped-test',
+        '@pytest.mark.xfail(reason="not implemented")\ndef test_a():\n    assert run() == 1\n',
+    ),
 )
 
 #: Sources that must produce NO finding — the false-positive half of the calibration.
@@ -1724,6 +2241,66 @@ SELFTEST_CLEAN: tuple[str, ...] = (
     'def test_readiness_endpoint_reports_degraded(client):\n'
     '    r = client.get("/api/readiness")\n'
     '    assert r.json()["status"] == "degraded"\n',
+    # A named exception is the whole point of pytest.raises — broad-raises must not fire.
+    'def test_a():\n    with pytest.raises(ValueError):\n        parse("nope")\n',
+    # `match=` pins WHICH failure, which is the narrowing the broad form lacks.
+    'def test_a():\n'
+    '    with pytest.raises(Exception, match="quarantined"):\n'
+    '        read(file_id=1)\n',
+    # A return AFTER an assertion: the rest of the test is genuinely conditional. Four of the
+    # five bare returns in this tree are this shape (e2e/test_chat.py, e2e/test_mfa.py,
+    # unit/test_auth_config_has_readers.py) and firing on them makes the detector noise.
+    'def test_a(client):\n'
+    '    assert client.get("/x").status_code == 200\n'
+    '    if not llm_configured():\n'
+    '        return\n'
+    '    assert client.get("/y").json()["suggestions"]\n',
+    # `pytest.skip(...)` then `return  # unreachable, satisfies mypy` — the skip IS the report,
+    # and the return is bookkeeping (e2e/test_gallery_actions.py::test_retry_failed_api).
+    'def test_a(client):\n'
+    '    error_file = _get_error_file(client)\n'
+    '    if error_file is None:\n'
+    '        pytest.skip("No error files to test retry")\n'
+    '        return\n'
+    '    assert retry(error_file).status_code == 200\n',
+    # A `return` inside a helper CLOSURE is that helper's control flow, not the test bailing.
+    'def test_a(monkeypatch):\n'
+    '    def fake_fetch(url):\n'
+    '        return\n'
+    '    monkeypatch.setattr(svc, "fetch", fake_fetch)\n'
+    '    assert svc.run() == 1\n',
+    # A self-comparison BESIDE real assertions pins determinism of a value the others already
+    # constrain. unit/test_chat_retrieval.py::test_scope_hash_is_order_independent, verbatim.
+    'def test_scope_hash_is_order_independent():\n'
+    '    assert scope_hash(["b", "a"]) == scope_hash(["a", "b"])\n'
+    '    assert scope_hash(None) == scope_hash(None)\n'
+    '    assert scope_hash(None) != scope_hash(["a"])\n',
+    # A poll loop re-checks and exits early, so the sleep bounds LATENCY, not correctness.
+    # Eleven of this tree's sixteen blocking sleeps are this shape.
+    'def _wait_for(predicate, timeout=10.0, interval=0.05):\n'
+    '    deadline = time.monotonic() + timeout\n'
+    '    while time.monotonic() < deadline:\n'
+    '        if predicate():\n'
+    '            return True\n'
+    '        time.sleep(interval)\n'
+    '    return False\n',
+    # Retry-with-backoff: the same shape written as a `for` with a `break` nested in an `if`.
+    'def test_a():\n'
+    '    for attempt in range(4):\n'
+    '        resp = requests.post(URL, timeout=10)\n'
+    '        if resp.status_code == 200:\n'
+    '            break\n'
+    '        time.sleep(5 * (attempt + 1))\n'
+    '    assert resp.status_code == 200\n',
+    # `skipif` is how this repo gates the RUN_* suites and is visible in the run.
+    '@pytest.mark.skipif(not RUN_PKI_TESTS, reason="RUN_PKI_TESTS unset")\n'
+    'def test_a():\n'
+    '    assert pki_login() == 200\n',
+    # `xfail(strict=True)` FAILS when the test starts passing, so it cannot outlive its
+    # subject. api/endpoints/test_comments.py carries two of these.
+    '@pytest.mark.xfail(strict=True, reason="update_comment takes no Request")\n'
+    'def test_a():\n'
+    '    assert update_comment(1) == 403\n',
 )
 
 #: The #400 suite's ACTUAL fixture, reduced. It is the regression guard for the defect that
@@ -1911,14 +2488,12 @@ def main() -> int:
         findings = [f for f in findings if f.category == args.category]
 
     allowed = load_allowlist(args.root)
-    unallowed = [f for f in findings if f.key not in allowed]
-    backlog = [f for f in findings if allowed.get(f.key, '').startswith(_BACKLOG_PREFIX)]
-    accepted = len(findings) - len(unallowed) - len(backlog)
+    unallowed, backlog, accepted, all_stale = apply_allowlist(findings, allowed)
 
-    # An allowlist entry whose finding is gone is an entry nobody will ever delete. Only
-    # meaningful on a FULL scan — a filtered one has not looked at the other categories.
+    # An allowlist entry with no finding left to cover is an entry nobody will ever delete.
+    # Only meaningful on a FULL scan — a filtered one has not looked at the other categories.
     full_scan = not args.category and not args.no_e2e
-    stale = sorted(set(allowed) - {f.key for f in findings}) if full_scan else []
+    stale = all_stale if full_scan else []
 
     if args.json:
         print(
@@ -1964,13 +2539,14 @@ def main() -> int:
             print(f'  {line}')
         print('  The counts above are not trustworthy. Run --selftest.\n')
     if stale:
-        print(f'\n\033[31m{len(stale)} allowlist entry(ies) no longer match any finding:\033[0m')
+        print(f'\n\033[31m{len(stale)} allowlist key(s) hold more entries than findings:\033[0m')
         for key in stale[:20]:
             print(f'  {key}')
         if len(stale) > 20:
             print(f'  … {len(stale) - 20} more')
-        print(f'  Delete them from {args.root / _ALLOWLIST_NAME} — a stale exemption is a')
-        print('  blanket nobody reviews, and it hides the next real finding in that test.\n')
+        print(f'  Delete the surplus lines from {args.root / _ALLOWLIST_NAME}. One line buys')
+        print('  one finding: a stale exemption is a blanket nobody reviews, and a surplus one')
+        print('  keeps covering the assertions you did NOT fix.\n')
     if backlog:
         print(
             f'\033[1;33m{len(backlog)} finding(s) are DEFERRED WORK, not accepted patterns.\033[0m'

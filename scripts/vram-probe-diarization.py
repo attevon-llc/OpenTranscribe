@@ -153,7 +153,7 @@ def parse_args() -> argparse.Namespace:
         '--small-batch-sweep',
         action='store_true',
         help='Sweep small embedding batch sizes (1,4,8,16,32) across 2 files × 3 caps × 2 precisions. '
-             'Uses PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE to bypass the fork auto-scaler.',
+        'Uses PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE to bypass the fork auto-scaler.',
     )
     p.add_argument(
         '--der-sweep',
@@ -664,14 +664,16 @@ def run_small_batch_sweep(args: argparse.Namespace) -> int:
                 for mp in precisions:
                     run_idx += 1
                     logger.info(f'=== Small-batch sweep {run_idx}/{total} ===')
-                    sub = argparse.Namespace(**{
-                        **vars(args),
-                        'file': file,
-                        'cap_gb': cap,
-                        'embedding_batch_size': bs,
-                        'mixed_precision': mp,
-                        'repeat_index': 0,
-                    })
+                    sub = argparse.Namespace(
+                        **{
+                            **vars(args),
+                            'file': file,
+                            'cap_gb': cap,
+                            'embedding_batch_size': bs,
+                            'mixed_precision': mp,
+                            'repeat_index': 0,
+                        }
+                    )
                     result = run_one(sub)
                     write_result(result, out_dir)
                     if result.error:
@@ -704,14 +706,16 @@ def run_der_sweep(args: argparse.Namespace) -> int:
             for mp in precisions:
                 run_idx += 1
                 logger.info(f'=== DER sweep {run_idx}/{total} ===')
-                sub = argparse.Namespace(**{
-                    **vars(args),
-                    'file': file,
-                    'cap_gb': 'unlimited',
-                    'embedding_batch_size': bs,
-                    'mixed_precision': mp,
-                    'repeat_index': 0,
-                })
+                sub = argparse.Namespace(
+                    **{
+                        **vars(args),
+                        'file': file,
+                        'cap_gb': 'unlimited',
+                        'embedding_batch_size': bs,
+                        'mixed_precision': mp,
+                        'repeat_index': 0,
+                    }
+                )
                 result = run_one(sub)
                 write_result(result, out_dir)
                 if result.error:

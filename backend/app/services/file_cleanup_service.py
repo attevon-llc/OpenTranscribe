@@ -4,6 +4,7 @@ File cleanup service for recovering stuck files and maintaining system health.
 
 import contextlib
 import logging
+from collections.abc import Callable
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -356,58 +357,192 @@ class FileCleanupService:
 cleanup_service = FileCleanupService()
 
 
-def _cleanup_opensearch_for_file(file: "MediaFile", file_uuid: str) -> None:
+def _opensearch_client():
+    """Return the OpenSearch client, or ``None`` when it is disabled/unbuilt."""
+    from app.services.opensearch_service import opensearch_client
+
+    return opensearch_client
+
+
+def _count_surviving(index: str, query: dict[str, Any]) -> int:
+    """Count documents still matching ``query`` in ``index`` after a delete.
+
+    An **absent index answers 0** — the cluster confirmed the documents are
+    gone. Anything else (no client, connection refused, auth failure) **raises**,
+    because "I could not ask" is not "nothing is there"; the caller records that
+    as a residual error rather than silently treating it as a clean sweep.
+
+    Args:
+        index: Index to count in.
+        query: OpenSearch query body's ``query`` clause.
+
+    Returns:
+        The number of documents that survived the deletion attempt.
+
+    Raises:
+        Exception: The cluster could not be reached or could not answer.
+    """
+    from opensearchpy.exceptions import NotFoundError
+
+    client = _opensearch_client()
+    if client is None:
+        raise RuntimeError("OpenSearch client unavailable")
+    try:
+        if not client.indices.exists(index=index):
+            return 0
+        return int(client.count(index=index, body={"query": query})["count"])
+    except NotFoundError:
+        return 0
+
+
+def _cleanup_opensearch_for_file(file: "MediaFile", file_uuid: str) -> list[dict[str, Any]]:
     """Remove all OpenSearch documents associated with a media file.
 
-    Covers: speakers (v3), speakers_v4, transcripts, transcript_chunks,
-    transcript_summaries. Each step is non-fatal.
+    Covers: speaker embeddings (v3 + v4 + alias), the transcript document, the
+    ``transcript_chunks`` RAG index, and transcript summaries.
+
+    Best-effort means **one failing store never stops the others** — it does NOT
+    mean failures are invisible. Every step that could not prove its documents
+    are gone is returned to the caller. This used to wrap each step in
+    ``contextlib.suppress(Exception)``, so an OpenSearch outage during a GDPR
+    Art. 17 erasure destroyed the DB rows (and the account) while leaving the
+    verbatim transcript and its RAG chunks indexed and searchable — reported to
+    the caller, the API and the audit log as a completed erasure, with the row
+    that would identify what to re-delete already gone.
+
+    Two of the steps go through helpers that swallow their own errors and return
+    a value that cannot distinguish "absent" from "failed"
+    (``remove_speaker_embedding`` returns ``False`` for both;
+    ``delete_transcript_chunks`` returns ``0`` for both). For those, the
+    surviving-document count — not the helper's return value — is the evidence.
+
+    Args:
+        file: The media file whose documents are being removed. Must still be
+            attached (``file.speakers`` and ``file.id`` are read here).
+        file_uuid: The file's UUID, used as the transcript/chunk document key.
+
+    Returns:
+        One ``{"stage", "file_uuid", "error"}`` dict per store whose documents
+        may have survived. Empty means every store confirmed them gone.
     """
-    # Speaker embeddings (v3)
-    with contextlib.suppress(Exception):
-        from app.services.opensearch_service import remove_speaker_embedding
+    residual: list[dict[str, Any]] = []
 
-        for speaker in list(file.speakers):
-            remove_speaker_embedding(str(speaker.uuid))
+    def _fail(stage: str, err: object) -> None:
+        logger.warning(f"OpenSearch erasure incomplete for file {file_uuid} at '{stage}': {err}")
+        residual.append({"stage": stage, "file_uuid": file_uuid, "error": str(err)})
 
-    # Speaker embeddings (v4)
-    with contextlib.suppress(Exception):
-        from app.core.constants import get_speaker_index_v4
-        from app.services.opensearch_service import opensearch_client
+    speaker_uuids: list[str] = []
+    try:
+        speaker_uuids = [str(speaker.uuid) for speaker in list(file.speakers)]
+    except Exception as e:  # noqa: BLE001 — a detached/failed load is itself a miss
+        _fail("speakers", f"could not enumerate the file's speakers: {e}")
 
-        if opensearch_client:
-            v4_index = get_speaker_index_v4()
-            if opensearch_client.indices.exists(index=v4_index):
-                for speaker in list(file.speakers):
-                    with contextlib.suppress(Exception):
-                        opensearch_client.delete(index=v4_index, id=str(speaker.uuid))
+    _erase_speaker_docs(speaker_uuids, _fail)
+    _erase_transcript_doc(file_uuid, _fail)
+    _erase_transcript_chunks(file_uuid, _fail)
+    _erase_summary_docs(int(file.id), _fail)
+    return residual
 
-    # Transcript document
-    with contextlib.suppress(Exception):
-        from app.services.opensearch_service import opensearch_client
+
+def _erase_speaker_docs(speaker_uuids: list[str], fail: Callable[[str, object], None]) -> None:
+    """Delete the file's speaker embeddings (biometric data) and verify.
+
+    ``remove_speaker_embedding`` already sweeps v3 + v4 + the alias, so there is
+    exactly one deletion path — but it swallows its own errors and returns
+    ``False`` for "absent" and "failed" alike, so the surviving-document count is
+    what actually proves the embeddings are gone.
+    """
+    if not speaker_uuids:
+        return
+
+    for speaker_uuid in speaker_uuids:
+        try:
+            from app.services.opensearch_service import remove_speaker_embedding
+
+            remove_speaker_embedding(speaker_uuid)
+        except Exception as e:  # noqa: BLE001 — it swallows its own; this is belt-and-braces
+            fail("speakers", e)
+
+    from app.core.constants import get_speaker_index
+    from app.core.constants import get_speaker_index_v3
+    from app.core.constants import get_speaker_index_v4
+
+    for idx in {get_speaker_index(), get_speaker_index_v3(), get_speaker_index_v4()}:
+        try:
+            left = _count_surviving(idx, {"ids": {"values": speaker_uuids}})
+            if left:
+                fail("speakers", f"{left} voiceprint doc(s) survive in {idx}")
+        except Exception as e:  # noqa: BLE001 — unverifiable == not proven gone
+            fail("speakers", f"could not verify {idx}: {e}")
+
+
+def _erase_transcript_doc(file_uuid: str, fail: Callable[[str, object], None]) -> None:
+    """Delete the transcript document — the verbatim text of the recording."""
+    try:
+        from opensearchpy.exceptions import NotFoundError
+
         from app.services.opensearch_service import settings as os_settings
 
-        if opensearch_client:
-            opensearch_client.delete(index=os_settings.OPENSEARCH_TRANSCRIPT_INDEX, id=file_uuid)
+        client = _opensearch_client()
+        if client is None:
+            raise RuntimeError("OpenSearch client unavailable")
+        # NotFoundError is the cluster ANSWERING that the document is not there,
+        # which is the desired end state — not a failure to remove it.
+        with contextlib.suppress(NotFoundError):
+            client.delete(index=os_settings.OPENSEARCH_TRANSCRIPT_INDEX, id=file_uuid)
+    except Exception as e:  # noqa: BLE001
+        fail("transcript", e)
 
-    # Transcript chunks
-    with contextlib.suppress(Exception):
+
+def _erase_transcript_chunks(file_uuid: str, fail: Callable[[str, object], None]) -> None:
+    """Delete the file's chunks from the RAG index, and verify none survive.
+
+    ``delete_transcript_chunks`` returns 0 for "no chunks", "index absent" AND
+    "the delete failed", so only the count is evidence. This index stores
+    transcript text UNREDACTED, so a survivor here is the raw content.
+    """
+    try:
         from app.services.search.indexing_service import TranscriptIndexingService
 
         TranscriptIndexingService().delete_transcript_chunks(file_uuid)
+    except Exception as e:  # noqa: BLE001 — it swallows its own; this is belt-and-braces
+        fail("transcript_chunks", e)
 
-    # Transcript summaries
-    with contextlib.suppress(Exception):
-        from app.services.opensearch_service import opensearch_client
+    try:
+        from app.core.config import settings as app_settings
+
+        left = _count_surviving(
+            app_settings.OPENSEARCH_CHUNKS_INDEX, {"term": {"file_uuid": file_uuid}}
+        )
+        if left:
+            fail("transcript_chunks", f"{left} chunk(s) survive")
+    except Exception as e:  # noqa: BLE001 — unverifiable == not proven gone
+        fail("transcript_chunks", f"could not verify: {e}")
+
+
+def _erase_summary_docs(file_id: int, fail: Callable[[str, object], None]) -> None:
+    """Delete the file's LLM-written summaries — prose about the recording."""
+    try:
         from app.services.opensearch_service import settings as os_settings
 
-        if opensearch_client:
-            summary_index = os_settings.OPENSEARCH_SUMMARY_INDEX
-            if opensearch_client.indices.exists(index=summary_index):
-                opensearch_client.delete_by_query(
-                    index=summary_index,
-                    body={"query": {"term": {"file_id": int(file.id)}}},
-                    refresh=True,
-                )
+        client = _opensearch_client()
+        if client is None:
+            raise RuntimeError("OpenSearch client unavailable")
+        summary_index = os_settings.OPENSEARCH_SUMMARY_INDEX
+        if not client.indices.exists(index=summary_index):
+            return
+        resp = client.delete_by_query(
+            index=summary_index,
+            body={"query": {"term": {"file_id": file_id}}},
+            refresh=True,
+        )
+        # delete_by_query reports per-document failures in the BODY rather than
+        # raising, so a partial sweep looks like a success without this.
+        failures = (resp or {}).get("failures") or []
+        if failures:
+            fail("transcript_summaries", f"delete_by_query reported {len(failures)} failure(s)")
+    except Exception as e:  # noqa: BLE001
+        fail("transcript_summaries", e)
 
 
 def delete_file_storage_artifacts(db: Session, file: MediaFile) -> bool:
@@ -417,36 +552,50 @@ def delete_file_storage_artifacts(db: Session, file: MediaFile) -> bool:
     (subtitle-embedded videos + extracted audio under ``processed-videos/derived/``).
     Single source of truth shared by the interactive delete endpoint and the
     retention/auto-delete path so neither can orphan storage. Best-effort per
-    artifact — a missing object never blocks the rest.
+    artifact — a failure on one never blocks the rest.
+
+    A missing object is NOT a failure: S3/MinIO deletes are idempotent and do
+    not raise for an absent key, so anything that does raise is a real one.
+
+    Args:
+        db: Database session (used for the derived-cache lookup).
+        file: The media file whose artifacts are being deleted.
 
     Returns:
-        True if the original (``storage_path``) object was deleted.
+        True when every artifact this file has was deleted or was already
+        absent; False when at least one may still be in object storage.
+        ``purge_media_file`` turns a False into a residual error so a GDPR
+        erasure that left the media itself behind cannot audit as complete —
+        which is why this reports "all clear" rather than the narrower "the
+        original was deleted" it used to. The per-artifact detail is logged.
     """
     from app.services.minio_service import delete_file
 
-    original_deleted = False
+    all_deleted = True
     for path_attr in ("storage_path", "thumbnail_path"):
         path = getattr(file, path_attr, None)
         if not path:
             continue
         try:
             delete_file(str(path))
-            if path_attr == "storage_path":
-                original_deleted = True
             logger.info(f"Deleted MinIO object {path}")
-        except Exception as minio_err:
-            logger.warning(f"Could not delete MinIO object {path} (non-fatal): {minio_err}")
+        except Exception as minio_err:  # noqa: BLE001 — one artifact never blocks the rest
+            all_deleted = False
+            logger.warning(f"Could not delete MinIO object {path}: {minio_err}")
 
     # Regenerable derived cache — duplicates that must not outlive the original.
+    # "Regenerable" describes how they were made, not what they hold: these are
+    # subtitle-burned video and extracted audio, i.e. the media itself.
     try:
         from app.services.minio_service import MinIOService
         from app.services.video_processing_service import VideoProcessingService
 
         VideoProcessingService(MinIOService()).clear_cache_for_media_file(db, int(file.id))
-    except Exception as cache_err:
-        logger.debug(f"Derived-cache cleanup failed (non-fatal): {cache_err}")
+    except Exception as cache_err:  # noqa: BLE001
+        all_deleted = False
+        logger.warning(f"Derived-cache cleanup failed for file {file.uuid}: {cache_err}")
 
-    return original_deleted
+    return all_deleted
 
 
 def _cleanup_empty_clusters(db: Session, owner_id: int) -> None:
@@ -506,14 +655,31 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
 
     SpeakerProfile records and their profile embeddings are intentionally preserved.
 
-    Returns ``{"deleted": bool, "file_uuid": str, "error": str | None}``. Never raises.
+    Returns ``{"deleted": bool, "file_uuid": str, "error": str | None,
+    "residual_errors": list[dict]}``. Never raises.
+
+    ``deleted`` reports the **database row** only. ``residual_errors`` is
+    non-empty when a copy of the file's data may still exist in object storage
+    or OpenSearch, and steps 1 and 2 are best-effort in the sense that one
+    failing store does not stop the others — NOT in the sense that their
+    failures are invisible. A caller that treats ``deleted: True`` as "every
+    copy is gone" is wrong: the GDPR erasure path must surface
+    ``residual_errors`` so an incomplete erasure audits as PARTIAL.
     """
     file_uuid = str(file.uuid)
+    residual: list[dict[str, Any]] = []
     try:
         owner_id = int(file.user_id)
 
-        delete_file_storage_artifacts(db, file)
-        _cleanup_opensearch_for_file(file, file_uuid)
+        if not delete_file_storage_artifacts(db, file):
+            residual.append(
+                {
+                    "stage": "storage",
+                    "file_uuid": file_uuid,
+                    "error": "one or more object-storage artifacts could not be deleted",
+                }
+            )
+        residual.extend(_cleanup_opensearch_for_file(file, file_uuid) or [])
 
         db.delete(file)
         db.commit()
@@ -528,12 +694,22 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
 
         _cleanup_empty_clusters(db, owner_id)
 
-        return {"deleted": True, "file_uuid": file_uuid, "error": None}
+        return {
+            "deleted": True,
+            "file_uuid": file_uuid,
+            "error": None,
+            "residual_errors": residual,
+        }
 
     except Exception as e:
         db.rollback()
         logger.error(f"purge_media_file: failed to delete file {file_uuid}: {e}")
-        return {"deleted": False, "file_uuid": file_uuid, "error": str(e)}
+        return {
+            "deleted": False,
+            "file_uuid": file_uuid,
+            "error": str(e),
+            "residual_errors": residual,
+        }
 
 
 def auto_delete_media_file(db: Session, file: MediaFile) -> dict:

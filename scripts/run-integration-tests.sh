@@ -94,11 +94,22 @@ GATED_FILES=(tests/test_pki_auth.py tests/test_mfa_security.py
              tests/test_admin_endpoints.py)
 
 FAILED_PHASES=()
+SKIPPED_PHASES=()   # phases that exited 4 = NOT MEASURED (verified nothing, but did not fail)
 run_phase() {
     local title=$1; shift
+    local rc=0
     echo -e "${BLUE}--- $title ---${NC}"
-    if "$@"; then
+    "$@" || rc=$?
+    # Exit 4 is "NOT MEASURED", distinct from both pass and fail. Only the mutation ratchet
+    # emits it today: it skips modules with no run log on purpose (a measurement is 30-90
+    # minutes and stays opt-in), but with no logs at all it was exiting 0 and this function
+    # printed "passed" for a check that examined nothing. A phase that verified nothing must
+    # not read as a phase that verified everything.
+    if (( rc == 0 )); then
         echo -e "${GREEN}✓ $title passed${NC}\n"
+    elif (( rc == 4 )); then
+        echo -e "${YELLOW}⊘ $title NOT MEASURED — proves nothing, not counted as a pass${NC}\n"
+        SKIPPED_PHASES+=("$title")
     else
         echo -e "${RED}✗ $title FAILED${NC}\n"
         FAILED_PHASES+=("$title")
@@ -191,7 +202,10 @@ run_phase "Collection determinism (two processes, same test ids)" \
 # Does NOT run mutmut (that is 30-90 minutes per module and stays opt-in). It compares the
 # LAST run's survivor count for each module against scripts/mutation-baselines.tsv and fails
 # if a count rose or a module's test-selection coverage fell. Modules with no prior run are
-# skipped, so this never blocks a gate on a benchmark nobody asked for.
+# skipped, so this never blocks a gate on a benchmark nobody asked for — but they are now
+# NAMED, and a run that measured nothing exits 4 and reports "NOT MEASURED" instead of
+# "passed". It previously exited 0 in silence, so a gate with no evidence at all was
+# indistinguishable in the output from a clean six-module ratchet.
 #
 # The ratchet exists because "kill every mutant" is not finishable: lockout's 149 survivors
 # include 77 log-string edits no caller can observe. Down is progress, up is a regression, and
@@ -222,10 +236,22 @@ fi
 # --- Summary -----------------------------------------------------------------
 echo -e "${BLUE}========================================${NC}"
 if [ ${#FAILED_PHASES[@]} -eq 0 ]; then
-    echo -e "${GREEN}All selected phases passed.${NC}"
+    # "All selected phases passed" must not absorb a phase that verified nothing. Naming the
+    # NOT MEASURED phases here is the difference between a gate and a green light.
+    if (( ${#SKIPPED_PHASES[@]} > 0 )); then
+        echo -e "${YELLOW}Phases that PASSED NOTHING (not measured — no evidence available):${NC}"
+        for phase in "${SKIPPED_PHASES[@]}"; do echo -e "  ${YELLOW}⊘ $phase${NC}"; done
+        echo -e "${GREEN}All other selected phases passed.${NC}"
+    else
+        echo -e "${GREEN}All selected phases passed.${NC}"
+    fi
     exit 0
 else
     echo -e "${RED}Failed phases:${NC}"
     for phase in "${FAILED_PHASES[@]}"; do echo -e "  ${RED}✗ $phase${NC}"; done
+    if (( ${#SKIPPED_PHASES[@]} > 0 )); then
+        echo -e "${YELLOW}Not measured:${NC}"
+        for phase in "${SKIPPED_PHASES[@]}"; do echo -e "  ${YELLOW}⊘ $phase${NC}"; done
+    fi
     exit 1
 fi

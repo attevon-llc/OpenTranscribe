@@ -19,6 +19,7 @@ tests/unit/test_db_metrics.py drives coroutines with ``asyncio.run``).
 """
 
 import asyncio
+from urllib.parse import urlparse
 
 import pytest
 
@@ -30,6 +31,7 @@ from app.auth.oidc import validate_token
 from app.auth.oidc.claims import _claim_by_path
 from app.auth.oidc.claims import _normalize_roles
 from app.auth.oidc.endpoints import _get_realm_urls
+from app.utils.url_validation import PinnedTarget
 
 AUTHENTIK_DISCOVERY = (
     "https://auth.example.com/application/o/opentranscribe/.well-known/openid-configuration"
@@ -98,8 +100,26 @@ def fake_http(monkeypatch):
     FakeAsyncClient.calls = []
     oidc_discovery.clear_discovery_caches()
     monkeypatch.setattr(oidc_discovery.httpx, "AsyncClient", FakeAsyncClient)
-    # assert_safe_outbound_url resolves DNS; example.com hosts must not be looked up.
-    monkeypatch.setattr(oidc_discovery, "assert_safe_outbound_url", lambda *a, **k: None)
+
+    # resolve_pinned_target resolves DNS; example.com hosts must not be looked up. The stub
+    # returns an UNPINNED target (url unchanged), which is what a literal-address input
+    # yields, so these tests keep asserting on the original URL.
+    def _no_dns(url, **_kwargs):
+        parsed = urlparse(url)
+        return (
+            PinnedTarget(
+                original_url=url,
+                url=url,
+                address=parsed.hostname or "",
+                hostname=parsed.hostname or "",
+                host_header=parsed.netloc,
+                scheme=parsed.scheme,
+                pinned=False,
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(oidc_discovery, "resolve_pinned_target", _no_dns)
     yield FakeAsyncClient
     oidc_discovery.clear_discovery_caches()
 
@@ -141,12 +161,10 @@ class TestFetchDiscoveryDocument:
         assert asyncio.run(oidc_discovery.fetch_discovery_document(AUTHENTIK_DISCOVERY)) is None
 
     def test_ssrf_rejection_returns_none(self, fake_http, monkeypatch):
-        from fastapi import HTTPException
-
         def _refuse(*args, **kwargs):
-            raise HTTPException(status_code=400, detail="nope")
+            return None, "Cloud metadata endpoint blocked"
 
-        monkeypatch.setattr(oidc_discovery, "assert_safe_outbound_url", _refuse)
+        monkeypatch.setattr(oidc_discovery, "resolve_pinned_target", _refuse)
         fake_http.routes[AUTHENTIK_DISCOVERY] = AUTHENTIK_DOCUMENT
         assert asyncio.run(oidc_discovery.fetch_discovery_document(AUTHENTIK_DISCOVERY)) is None
         assert fake_http.calls == []

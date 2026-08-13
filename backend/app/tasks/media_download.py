@@ -44,25 +44,51 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
     """
     file_uuid = ""
     try:
-        # session_scope auto-commits/rolls-back/closes. This task only reads the
-        # MediaFile row (the heavy ffmpeg/MinIO work writes its own cache rows via
-        # the service), so there are no mid-task commits to preserve.
+        # Phase 1 — read (short, DB only). Plain scalars, no ORM instance
+        # escapes: the scope closes before any MinIO/ffmpeg work starts.
         with session_scope() as db:
-            db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-            if not db_file:
-                return {"status": "error", "message": "File not found"}
-
-            file_uuid = str(db_file.uuid)
-            filename = str(db_file.filename)
-            base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
-            storage_path = str(db_file.storage_path)
-
-            publish_download_event(
-                file_uuid, status="processing", mode=mode, message="Preparing your download…"
+            row = (
+                db.query(MediaFile.uuid, MediaFile.filename, MediaFile.storage_path)
+                .filter(MediaFile.id == file_id)
+                .first()
             )
+            if not row:
+                return {"status": "error", "message": "File not found"}
+            file_uuid = str(row[0])
+            filename = str(row[1])
+            storage_path = str(row[2])
 
-            service = VideoProcessingService(MinIOService())
+        base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
 
+        publish_download_event(
+            file_uuid, status="processing", mode=mode, message="Preparing your download…"
+        )
+
+        service = VideoProcessingService(MinIOService())
+
+        if mode not in ("video_subtitles",) and not mode.startswith("audio_"):
+            publish_download_event(
+                file_uuid, status="error", mode=mode, message=f"Unsupported mode: {mode}"
+            )
+            return {"status": "error", "message": f"Unsupported mode {mode}"}
+
+        # ⚠️ PARTIAL: the transaction below still spans the ffmpeg run.
+        #
+        # ``VideoProcessingService`` takes a ``Session`` and uses it in two
+        # places — a ``media_file.filename`` lookup, and (subtitle mode) the
+        # ``transcript_segment`` SELECT inside ``SubtitleService`` — and then
+        # runs the MinIO download and the full ffmpeg transcode with that same
+        # session still open. Scoping the session to the service call (rather
+        # than to the whole task, as before) is as far as this can be fixed from
+        # the task side: it removes the task's own read from the window, but the
+        # transcode remains inside it.
+        #
+        # The complete fix belongs in ``VideoProcessingService``: have
+        # ``process_video_with_subtitles`` / ``extract_audio`` / ``_generate_
+        # subtitle_file`` take the filename + pre-rendered subtitle content as
+        # plain arguments (or open their own short session for each read)
+        # instead of borrowing the caller's for the whole run.
+        with session_scope() as db:
             if mode == "video_subtitles":
                 cache_key = service.process_video_with_subtitles(
                     db=db,
@@ -74,7 +100,7 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
                 )
                 content_type = "video/mp4"
                 download_filename = f"{base_name}_with_subtitles.mp4"
-            elif mode.startswith("audio_"):
+            else:
                 audio_format = mode.split("_", 1)[1]  # mp3 | wav | original
                 cache_key, ext, content_type = service.extract_audio(
                     db=db,
@@ -83,11 +109,6 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
                     audio_format=audio_format,
                 )
                 download_filename = f"{base_name}.{ext}"
-            else:
-                publish_download_event(
-                    file_uuid, status="error", mode=mode, message=f"Unsupported mode: {mode}"
-                )
-                return {"status": "error", "message": f"Unsupported mode {mode}"}
 
         url = service.presigned_download_url(cache_key, download_filename, content_type)
 

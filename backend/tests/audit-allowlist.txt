@@ -15,7 +15,11 @@
 #   BACKLOG  — the finding is real and is DEFERRED WORK. The reason starts with `BACKLOG`,
 #              and the auditor counts and prints these separately on every single run:
 #
-#                  166 finding(s) are DEFERRED WORK, not accepted patterns.
+#                  N finding(s) are DEFERRED WORK, not accepted patterns.
+#
+#              (N is whatever the run reports — it was written here as a literal "166",
+#              which was already 164 by the time anyone re-ran it. A count copied into a
+#              comment is a measurement that rots; read it off the auditor.)
 #
 #              so a green gate can never be mistaken for a clean tree. This is what let the
 #              gate be installed (pre-commit + CI) in the same change that added seven new
@@ -32,6 +36,7 @@ integration/test_diarization_perf_gates.py::test_coexistence_under_simulated_cap
 unit/test_auth_policy_source_of_truth.py::test_policy_runs_even_when_the_env_flag_is_false::mock-heavy  # six patch.object calls are the collaborators of confirm_password_reset (settings flag, validator, audit logger, history check, history writer, token revoker); the test exists to prove the DB-resolved policy is consulted even with PASSWORD_POLICY_ENABLED=False, and each collaborator would otherwise hit the DB or the audit sink. Not reducible without turning it into an integration test of five other subsystems.
 unit/test_handler_and_ws_hardening.py::test_hardened_refuses_wildcard_cors_with_credentials::mock-heavy  # seven monkeypatch.setattr calls CONSTRUCT the production configuration under test — _validate_production_secrets refuses to boot on any one of JWT_SECRET_KEY/ENCRYPTION_KEY/REDIS_PASSWORD/DEBUG/TESTING being unset, so all of them must be valid for the assertion to be about CORS specifically. The assertion itself is a real pytest.raises(ValueError, match='CORS').
 unit/test_watch_fs_event_supervisor.py::test_load_plans_records_an_error_for_an_unresolvable_path::mock-heavy  # the watch settings are DB-backed SystemSettings read through five separate accessors, so five monkeypatches ARE the configuration; the remaining two replace session_scope and WATCH_FOLDER_PATH. The assertions are on the returned plans/gate and the published status, not on any mock.
+unit/test_watch_fs_event_watchdog.py::test_filtered_events_never_reach_the_dispatcher::sleep-sync  # this asserts a NEGATIVE — that a `.part` file and a `.txt` file never reach the dispatcher — and there is no event to poll for, so a bounded wait is the only shape available. The duration is derived from the thing under test (POLL_INTERVAL * 6 against a polling observer constructed with POLL_INTERVAL), not guessed, and the failure direction is safe: too short reports a false pass only if the observer is slower than six of its own poll cycles. The other four sleep-sync findings are timing bets before a positive assertion; this one is not.
 
 # ------------------------------------------------------------------- DEFERRED WORK
 # Real findings in files this change did not own. Each is COUNTED AND PRINTED as
@@ -55,8 +60,11 @@ test_tenant_isolation.py::test_personal_file_read_surfaces_unaffected::negated-s
 # --- status-guarded-assert (1)
 e2e/test_media_download.py::test_stream_url_is_presigned_and_supports_range::status-guarded-assert  # BACKLOG(#431): the real assertion only runs `if status == N`, so a wrong status skips it. Needs an unconditional exact-status assert first. UNTRIAGED.
 
-# --- conditional-only (5)
-e2e/test_auth_buttons.py::test_navigation_works_after_login::conditional-only  # BACKLOG(#431): every assertion sits in an `if` with no `else`, so the test passes whenever the condition is false. Needs the condition asserted or a deterministic setup. UNTRIAGED.
+# --- conditional-only (3)
+# test_navigation_works_after_login was here. Fixed, not exempted: the gallery grid is
+# VIRTUALISED, so `.count()` snapshotted 0 before render and every assertion sat in an
+# `if` that was simply false — the test passed by doing nothing. It now waits for a card,
+# asserts unconditionally, and clicks the anchor rather than its wrapper.
 e2e/test_gallery_actions.py::test_toolbar_does_not_overflow_header::conditional-only  # BACKLOG(#431): every assertion sits in an `if` with no `else`, so the test passes whenever the condition is false. Needs the condition asserted or a deterministic setup. UNTRIAGED.
 e2e/test_speaker_gender_clusters.py::test_gender_chips_render_on_clusters::conditional-only  # BACKLOG(#431): every assertion sits in an `if` with no `else`, so the test passes whenever the condition is false. Needs the condition asserted or a deterministic setup. UNTRIAGED.
 e2e/test_speaker_gender_clusters.py::test_expand_cluster_shows_gender_icons::conditional-only  # BACKLOG(#431): every assertion sits in an `if` with no `else`, so the test passes whenever the condition is false. Needs the condition asserted or a deterministic setup. UNTRIAGED.
@@ -107,7 +115,6 @@ e2e/test_auth_buttons.py::test_local_login_shows_gallery::weak-only  # BACKLOG(#
 e2e/test_auth_buttons.py::test_ldap_login_shows_gallery::weak-only  # BACKLOG(#431): the test's only assertion is bare-truthy or `is not None`, which nearly any value satisfies. Needs an assertion that names the expected value. UNTRIAGED.
 e2e/test_auth_flow.py::test_registration_password_mismatch::weak-only  # BACKLOG(#431): the test's only assertion is bare-truthy or `is not None`, which nearly any value satisfies. Needs an assertion that names the expected value. UNTRIAGED.
 e2e/test_auth_flow.py::test_registration_weak_password::weak-only  # BACKLOG(#431): the test's only assertion is bare-truthy or `is not None`, which nearly any value satisfies. Needs an assertion that names the expected value. UNTRIAGED.
-e2e/test_auth_flow.py::test_registration_duplicate_email_fails::weak-only  # BACKLOG(#431): the test's only assertion is bare-truthy or `is not None`, which nearly any value satisfies. Needs an assertion that names the expected value. UNTRIAGED.
 e2e/test_ldap_oidc.py::test_ldap_wrong_password_rejected::weak-only  # BACKLOG(#431): the test's only assertion is bare-truthy or `is not None`, which nearly any value satisfies. Needs an assertion that names the expected value. UNTRIAGED.
 e2e/test_login.py::test_wrong_password::weak-only  # BACKLOG(#431): the test's only assertion is bare-truthy or `is not None`, which nearly any value satisfies. Needs an assertion that names the expected value. UNTRIAGED.
 e2e/test_login.py::test_nonexistent_user::weak-only  # BACKLOG(#431): the test's only assertion is bare-truthy or `is not None`, which nearly any value satisfies. Needs an assertion that names the expected value. UNTRIAGED.
@@ -231,3 +238,40 @@ unit/test_multipart_upload.py::test_multipart_round_trip_against_real_storage::e
 fixtures/mock_llm.py::mock_llm_url::readiness-probe-target  # BACKLOG(#431): `_reachable("127.0.0.1", CONTAINER_PORT)` with CONTAINER_PORT hardcoded to 5199. Under `--fresh --port-offset N --with-mock-llm` the container is on 5199+N, so this probe misses it and silently falls back to a host subprocess — degraded but not wrong. Fix: read MOCK_LLM_PORT from the environment. UNTRIAGED.
 fixtures/mock_llm.py::mock_llm_base_url_for_backend::readiness-probe-target  # BACKLOG(#431): same hardcoded 5199. Worse than its sibling: this one SKIPS when the probe fails, so every test needing the backend to reach the mock silently disappears against an offset stack. Fix: read MOCK_LLM_PORT from the environment. UNTRIAGED.
 test_selective_reprocess.py::auth_token::readiness-probe-target  # BACKLOG(#431): `BASE_URL = "http://localhost:5174/api"` hardcodes the dev stack's published backend port, and the ConnectionError handler turns "wrong stack" into a skip. Against `--fresh --port-offset N` the whole module skips, or — worse — passes against the DEV stack while claiming to test the isolated one. Fix: derive BASE_URL from BACKEND_PORT. UNTRIAGED.
+
+# --- broad-raises (5)
+# `pytest.raises(Exception)` asserts that the block raised, not that the code refused. The
+# block contains the CALL SETUP too, so a renamed keyword argument, a fixture that stopped
+# supplying an attribute, or an unrelated DB error all satisfy it and read as the refusal the
+# test is named for. Four of these follow up with `assert getattr(exc.value, "status_code",
+# None) == 403`, which narrows but does not fix it: an exception raised while BUILDING the
+# arguments passes both lines if it happens to carry that attribute, and none of them proves
+# the exception was an HTTPException at all. The fix in every case is to name the type
+# (`pytest.raises(HTTPException)`) and assert `exc.value.status_code` directly, which also
+# deletes the `# noqa: B017`. Deferred: all six live in files outside the change that added
+# the detector.
+test_speaker_constraints.py::test_cannot_link_unique_constraint::broad-raises  # BACKLOG(#431): the only site carrying a bare `# noqa: B017` — a suppression with no reason, which is how the shape survived a linter that already flags it. `db_session.commit()` is expected to raise IntegrityError for the duplicate SpeakerCannotLink; any other DB error (a stale session, a failed earlier flush) passes identically. Fix: `pytest.raises(IntegrityError)` and drop the noqa. UNTRIAGED.
+test_takedown_quarantine.py::test_quarantine_hides_file_from_owner::broad-raises  # BACKLOG(#431): expects a 404 from get_file_by_uuid_with_permission for a quarantined file; the follow-up `getattr(exc.value, "status_code", None) == 404` passes for any exception with that attribute, including one raised assembling the call. Fix: `pytest.raises(HTTPException)` + `exc.value.status_code == 404`. UNTRIAGED.
+test_tenant_isolation.py::test_org_a_cannot_reach_org_b_file_by_uuid::broad-raises  # BACKLOG(#431): the comment already says `# HTTPException 403` — name it in the call. As written a TypeError from the four-argument signature reads as cross-org denial, which is the exact isolation claim this suite exists to make. UNTRIAGED.
+test_tenant_isolation.py::test_personal_scope_excludes_org_file::broad-raises  # BACKLOG(#431): same shape, organization_id=None path. Fix: `pytest.raises(HTTPException)` + assert on `exc.value.status_code`. UNTRIAGED.
+test_tenant_isolation.py::test_cross_org_shared_file_denied_under_org_scope::broad-raises  # BACKLOG(#431): same shape; the preceding `perm is None` assertion is real, so only the raises half is weak. Fix: `pytest.raises(HTTPException)`. UNTRIAGED.
+
+# --- bare-return (1)
+# The untested twin of `conditional-skip`: the test exits green having asserted nothing AND
+# reported nothing. `conditional-skip` only recognises `pytest.skip`, so this shape was
+# invisible to every detector in the file.
+test_embedding_migration_integration.py::test_throughput_benchmark::bare-return  # BACKLOG(#431): `if not prepared_files: print("No files were prepared successfully."); return` — every file in the sample failing to prepare produces a PASS with a message on stdout that pytest hides by default. The test opens with a real `pytest.skip("No completed files in database")` guard, so the honest fix is the same call here: skip (or fail) rather than return. UNTRIAGED.
+
+# --- self-comparison (1)
+unit/test_chat_retrieval.py::test_cache_key_is_stable_within_one_corpus_version::self-comparison  # BACKLOG(#431): the test's sole assertion is `_key_with_corpus("7") == _key_with_corpus("7")`, which is true whether or not the key incorporates the corpus version at all — i.e. it is green in exactly the state its sibling `test_cache_key_changes_when_corpus_changes` exists to forbid. The fix is to assert the key is stable across two independently-built inputs that differ only in something irrelevant (a re-ordered scope, a fresh ChatSettings with the same revision), not against a literal re-invocation. UNTRIAGED.
+
+# --- sleep-sync (4)
+# A blocking sleep that is not a poll interval bounds CORRECTNESS, not latency: if the thing
+# is not ready when the timer expires the assertion runs anyway. Each of these is a bet on a
+# duration; each fails differently on a loaded machine than on an idle one. The fifth
+# sleep-sync finding (unit/test_watch_fs_event_watchdog.py) is ACCEPTED above — it asserts a
+# negative, where a bounded wait is the only shape available.
+e2e/test_gallery_actions.py::test_reprocess_api_changes_status::sleep-sync  # BACKLOG(#431): `time.sleep(2)` after a reprocess request, then asserts the status is in (pending, processing, queued). Two seconds is both too long (a fast worker can already be back to `completed`, failing) and too short (a busy queue may not have transitioned yet, also failing). The file already has `_wait_for_status`, a real poll loop — use it, with the target set to any of the three. UNTRIAGED.
+e2e/test_ldap_oidc.py::ensure_keycloak_running::sleep-sync  # BACKLOG(#431): `if _is_port_open(...): time.sleep(5); break` — the poll SUCCEEDED and then bets five seconds on Keycloak finishing its boot. Keycloak 25+ serves `/health/ready` on management port 9000 (see scripts/CLAUDE.md), which is the condition this sleep is standing in for. Fix: poll that endpoint instead of sleeping past the port opening. UNTRIAGED.
+integration/test_diarizer_lifecycle.py::test_handoff_residue_within_gate::sleep-sync  # BACKLOG(#431): `time.sleep(0.5)  # let NVML settle` between `torch.cuda.synchronize()` and the NVML residue reading that the gate asserts on. If the driver has not settled the measurement is taken anyway and the test reports a VRAM regression that is really a timing artefact — and on an idle GPU it passes for the wrong reason. Fix: poll `_nvml_used_mb()` until two consecutive readings agree, or until it drops below the gate. UNTRIAGED.
+unit/test_settings_cache.py::test_ttl_expiry::sleep-sync  # BACKLOG(#431): `time.sleep(0.3)` to outlive the cache TTL, in the FAST unit suite. It couples a unit test to the wall clock (300 ms of the suite's budget, and a stalled worker changes the result), and it silently stops testing anything the day the TTL is raised above 0.3 s. Fix: monkeypatch the cache's clock, which is what the surrounding tests in the file already inject via `_SessionSpy`. UNTRIAGED.

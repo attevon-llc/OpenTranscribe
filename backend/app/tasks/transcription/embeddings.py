@@ -45,6 +45,27 @@ def _process_speaker_embeddings(
         f"mode: {embedding_service.mode} ({embedding_service.model_name})"
     )
 
+    # Audio slicing + model inference, deliberately OUTSIDE any session. When
+    # this ran inside ``session_scope`` the whole extraction (up to 5 ffmpeg
+    # slices per speaker plus inference on each) sat inside one Postgres
+    # transaction, holding ACCESS SHARE and pinning the vacuum horizon for its
+    # entire duration.
+    extract_start = time.perf_counter()
+    raw_embeddings = embedding_service.extract_embeddings_for_segments(
+        audio_file_path, processed_segments, speaker_mapping
+    )
+    # ``aggregate_embeddings`` mean-pools + L2-normalizes, exactly what
+    # ``process_speaker_segments`` did internally before matching.
+    aggregated_embeddings = {
+        speaker_id: embedding_service.aggregate_embeddings(embeddings)
+        for speaker_id, embeddings in raw_embeddings.items()
+        if embeddings
+    }
+    logger.info(
+        f"TIMING: extract_embeddings_for_segments completed in "
+        f"{time.perf_counter() - extract_start:.3f}s (no DB session held)"
+    )
+
     matching_start = time.perf_counter()
     with session_scope() as db:
         # Compute accessible profiles for cross-user matching via shared collections
@@ -52,19 +73,20 @@ def _process_speaker_embeddings(
 
         accessible_ids = PermissionService.get_accessible_profile_ids(db, ctx.user_id)
 
-        matching_service = SpeakerMatchingService(db, embedding_service)
+        # ``embedding_service=None``: the embeddings arrive already aggregated
+        # and normalized, which is the only thing the matching service used it
+        # for on this path.
+        matching_service = SpeakerMatchingService(db, embedding_service=None)
         logger.info(f"Starting speaker matching for {len(speaker_mapping)} speakers")
-        speaker_results = matching_service.process_speaker_segments(
-            audio_file_path,
-            ctx.file_id,
-            ctx.user_id,
-            processed_segments,
-            speaker_mapping,
+        speaker_results = matching_service.process_speaker_embeddings_native(
+            media_file_id=ctx.file_id,
+            user_id=ctx.user_id,
+            native_embeddings=aggregated_embeddings,
             accessible_profile_ids=accessible_ids,
         )
         matching_elapsed = time.perf_counter() - matching_start
         logger.info(
-            f"TIMING: process_speaker_segments completed in {matching_elapsed:.3f}s - "
+            f"TIMING: speaker profile matching completed in {matching_elapsed:.3f}s - "
             f"got {len(speaker_results) if speaker_results else 0} results"
         )
         update_task_status(db, ctx.task_id, "in_progress", progress=0.82)

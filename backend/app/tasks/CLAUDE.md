@@ -58,6 +58,49 @@ indexing → WebSocket notification.
 - Workers run `--pool=threads`, so `worker_process_init` does not fire — logging is wired via
   `setup_logging`. `request_id` is stamped on task headers at publish and cleared in
   `task_postrun`; never assume a ContextVar survives into the next task.
+- **NEVER hold a DB session across slow non-DB work.** Three phases, always: a short read
+  session returning **plain data**, the slow work with **no session open**, then a short
+  write session. This is the single most repeated defect in this package — see below.
+
+## The session-lifetime rule (read before writing any task)
+
+A task that wraps its whole body in one `with session_scope() as db:` and then does MinIO,
+ffmpeg, a model load, an LLM call, SMTP or OpenSearch **inside** it holds an open transaction
+for the duration. `session_scope` is not at fault; it simply never gets to exit.
+
+**This has wedged the live database twice, on two different workers, in one day.** The CPU
+worker sat `idle in transaction` for 48 minutes (a 3-hour task, killed by the hard time
+limit); the NLP worker for 1h26m. Both on a full-entity `transcript_segment` SELECT.
+
+Why it matters beyond the hang — a plain SELECT takes `ACCESS SHARE` for the life of the
+transaction, so:
+
+1. **It queues `ALTER TABLE`.** That is an Alembic upgrade hanging mid-release, and dev runs
+   migrations automatically on backend startup. It is how the bug was found: DDL migration
+   tests started failing with `psycopg2.errors.LockNotAvailable`.
+2. **It pins the VACUUM horizon** on `transcript_segment`, the largest table in the product.
+3. **It consumes a pool connection permanently.**
+
+**The fix pattern** (`speaker_attribute_task.py` is the worked example — read it):
+
+- Read phase returns **plain data, never ORM instances**. An instance escaping the session can
+  lazy-load later and silently reopen a transaction, reintroducing the bug invisibly.
+- Narrow the query to the columns you use, and `outerjoin` rather than letting `seg.speaker`
+  lazy-load per row.
+- Where a callee takes `db` and does the slow work itself, change it to take the data — or to
+  open its own short session. Passing `db` down is how the idiom spreads.
+- Watch for objects that **hold** an ORM row (`LocalWatchClient` did) and for ORM attribute
+  reads after scope exit. `db.expunge()` turns a silent lazy load into a loud
+  `DetachedInstanceError`.
+
+**`ThreadPoolExecutor` does not bound anything.** `__exit__` calls `shutdown(wait=True)` with
+no timeout, so a per-future `result(timeout=30)` is decorative — one wedged child holds the
+block, and the transaction, indefinitely.
+
+**Testing it**: `tests/unit/test_task_session_lifetime.py` swaps the module's `session_scope`
+for a depth-tracking stand-in and has each slow-call stub report the open-scope depth at the
+moment it runs. Assert `>= 2` scopes opened, so a task that never touches the DB cannot pass.
+A structural "does it call session_scope" test is not enough.
 
 ## How it connects
 

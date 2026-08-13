@@ -149,11 +149,17 @@ def _login_browser(page: Page, base_url: str, email: str, password: str):
 
 
 def _wait_for_gallery(page: Page, timeout: int = 15000):
-    """Wait for navigation past the login page."""
-    page.wait_for_function(
-        "() => !document.querySelector('#email') || document.querySelector('#email').offsetParent === null",
-        timeout=timeout,
-    )
+    """Wait for the app to be READY after login, not merely past the login form.
+
+    The previous check — "#email is absent or not visible" — becomes true the instant the
+    login form unmounts, which is well before the SPA has finished its post-login
+    initialisation. Navigating into Settings inside that window mounts the panel and then
+    tears it back down, so `_open_security_settings` saw `.security-settings` appear, its
+    spinner wait passed *because the whole panel had gone* (`querySelector` returns null
+    either way), and the caller's `text_content` then timed out against a stable, correct
+    app. Waiting for real gallery chrome closes the window.
+    """
+    page.wait_for_selector(".gallery-action-buttons", state="visible", timeout=timeout * 2)
 
 
 def _open_security_settings(page: Page):
@@ -175,9 +181,14 @@ def _open_security_settings(page: Page):
     profile_nav.click()
     page.wait_for_selector(".security-settings", state="visible", timeout=10000)
 
-    # Wait for async MFA status to finish loading (spinner disappears)
+    # Wait for async MFA status to finish loading (spinner disappears).
+    #
+    # The panel must still be PRESENT: `!document.querySelector('.security-settings
+    # .spinner')` alone is also true when the whole panel has unmounted, so it reported
+    # "loaded" for a panel that had vanished and pushed the failure into the caller.
     page.wait_for_function(
-        "() => !document.querySelector('.security-settings .spinner')",
+        "() => { const p = document.querySelector('.security-settings');"
+        "        return !!p && !p.querySelector('.spinner'); }",
         timeout=10000,
     )
 

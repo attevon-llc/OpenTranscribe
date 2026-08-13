@@ -27,19 +27,16 @@ import statistics
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Reuse helpers from benchmark_e2e so we stay in lockstep with its upload path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from benchmark_e2e import (  # noqa: E402
     DEFAULT_BACKEND_URL,
     DEFAULT_REDIS_URL,
-    POLL_INTERVAL,
     POLL_TIMEOUT,
     _fmt_duration,
     get_auth_token,
-    get_file_metadata,
     poll_task_completion,
     upload_file_via_api,
 )
@@ -55,9 +52,25 @@ DB_NAME = 'opentranscribe'
 def _db_query(sql: str) -> list[list[str]]:
     try:
         result = subprocess.run(
-            ['docker', 'exec', DB_CONTAINER, 'psql', '-U', DB_USER, '-d', DB_NAME,
-             '-t', '-A', '-F', '\t', '-c', sql],
-            capture_output=True, text=True, timeout=30,
+            [
+                'docker',
+                'exec',
+                DB_CONTAINER,
+                'psql',
+                '-U',
+                DB_USER,
+                '-d',
+                DB_NAME,
+                '-t',
+                '-A',
+                '-F',
+                '\t',
+                '-c',
+                sql,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if result.returncode != 0:
             return []
@@ -72,7 +85,7 @@ def fetch_timing_rows(task_ids: list[str]) -> list[dict]:
         return []
     # Quote each task_id safely for inlining into the SQL (they're UUIDs, so
     # the risk surface is minimal, but we belt-and-suspenders anyway).
-    safe = ",".join(f"'{t.replace(chr(39), chr(39) * 2)}'" for t in task_ids)
+    safe = ','.join(f"'{t.replace(chr(39), chr(39) * 2)}'" for t in task_ids)
     columns = [
         'task_id',
         'http_request_received_ms',
@@ -100,15 +113,12 @@ def fetch_timing_rows(task_ids: list[str]) -> list[dict]:
         'cpu_worker_cold',
         'gpu_worker_cold',
     ]
-    sql = (
-        f"SELECT {','.join(columns)} "
-        f"FROM file_pipeline_timing WHERE task_id IN ({safe})"
-    )
+    sql = f'SELECT {",".join(columns)} FROM file_pipeline_timing WHERE task_id IN ({safe})'
     rows: list[dict] = []
     for row in _db_query(sql):
         if len(row) < len(columns):
             continue
-        entry = dict(zip(columns, row))
+        entry = dict(zip(columns, row, strict=False))
         rows.append(entry)
     return rows
 
@@ -141,9 +151,7 @@ def _one_upload(
     """Upload, wait for completion, return summary including file_uuid."""
     started = time.time()
     try:
-        _, upload_resp, _ = upload_file_via_api(
-            backend_url, token, fixture_path, verify=verify
-        )
+        _, upload_resp, _ = upload_file_via_api(backend_url, token, fixture_path, verify=verify)
     except Exception as e:
         return {
             'status': 'upload_failed',
@@ -155,7 +163,11 @@ def _one_upload(
         return {'status': 'no_uuid', 'started': started}
 
     ok = poll_task_completion(
-        backend_url, file_uuid, token, timeout=poll_timeout, verify=verify,
+        backend_url,
+        file_uuid,
+        token,
+        timeout=poll_timeout,
+        verify=verify,
     )
     elapsed = time.time() - started
     return {
@@ -170,14 +182,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description='Concurrent-upload contention benchmark',
     )
-    parser.add_argument('--fixture-file', required=True,
-                        help='Path to the media fixture to upload')
-    parser.add_argument('--n', type=int, default=8,
-                        help='Number of concurrent uploads (default 8)')
+    parser.add_argument('--fixture-file', required=True, help='Path to the media fixture to upload')
+    parser.add_argument('--n', type=int, default=8, help='Number of concurrent uploads (default 8)')
     parser.add_argument('--backend-url', default=DEFAULT_BACKEND_URL)
     parser.add_argument('--redis-url', default=DEFAULT_REDIS_URL)
-    parser.add_argument('--timeout', type=int, default=POLL_TIMEOUT,
-                        help='Max seconds to wait per upload (default 3600)')
+    parser.add_argument(
+        '--timeout',
+        type=int,
+        default=POLL_TIMEOUT,
+        help='Max seconds to wait per upload (default 3600)',
+    )
     parser.add_argument('--output', default='benchmark_concurrent_uploads.csv')
     parser.add_argument('--no-verify', action='store_true')
     args = parser.parse_args()
@@ -213,8 +227,7 @@ def main() -> None:
     batch_elapsed = time.time() - batch_start
 
     successes = [s for s in summaries if s.get('status') == 'ok']
-    print(f'\nBatch complete: {len(successes)}/{args.n} ok in '
-          f'{_fmt_duration(batch_elapsed)}')
+    print(f'\nBatch complete: {len(successes)}/{args.n} ok in {_fmt_duration(batch_elapsed)}')
 
     # Give the postprocess flush a beat to write the DB rows
     time.sleep(5)
@@ -225,9 +238,7 @@ def main() -> None:
     # Use DB shortcut: task_id == active_task_id on the media_file row.
     task_map: dict[str, str] = {}
     for uuid in uuids:
-        rows = _db_query(
-            f"SELECT active_task_id FROM media_file WHERE uuid = '{uuid}'"
-        )
+        rows = _db_query(f"SELECT active_task_id FROM media_file WHERE uuid = '{uuid}'")
         if rows and rows[0][0].strip():
             task_map[uuid] = rows[0][0].strip()
 
@@ -256,9 +267,7 @@ def main() -> None:
         ('queue_gpu_to_post', 'gpu_end_ms', 'postprocess_received_ms'),
         ('postprocess', 'postprocess_received_ms', 'postprocess_end_ms'),
         ('user_perceived', 'http_request_received_ms', 'completion_notified_ms'),
-        ('search_index_tail',
-         'completion_notified_ms',
-         'search_index_end_ms'),
+        ('search_index_tail', 'completion_notified_ms', 'search_index_end_ms'),
     ]
 
     def _extract(row: dict, start_key: str, end_key: str) -> float | None:
@@ -274,10 +283,7 @@ def main() -> None:
     print(f'{"stage":<20} {"p50":>9} {"p95":>9} {"min":>9} {"max":>9} {"mean":>9}')
     print('-' * 72)
     for name, s_key, e_key in stage_defs:
-        values = [
-            v for v in (_extract(row, s_key, e_key) for row in timing_rows)
-            if v is not None
-        ]
+        values = [v for v in (_extract(row, s_key, e_key) for row in timing_rows) if v is not None]
         if not values:
             print(f'{name:<20} {"n/a":>9} {"n/a":>9} {"n/a":>9} {"n/a":>9} {"n/a":>9}')
             continue
@@ -294,8 +300,10 @@ def main() -> None:
 
     cold_count = sum(1 for row in timing_rows if row.get('gpu_worker_cold') == 'true')
     if cold_count:
-        print(f'\nNote: {cold_count} of {len(timing_rows)} tasks were the first on '
-              f'their worker process (cold start).')
+        print(
+            f'\nNote: {cold_count} of {len(timing_rows)} tasks were the first on '
+            f'their worker process (cold start).'
+        )
 
 
 if __name__ == '__main__':

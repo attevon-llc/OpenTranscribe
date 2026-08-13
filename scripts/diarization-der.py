@@ -5,6 +5,7 @@ In-container: same rule as vram-probe-diarization.py (fails outside Docker).
 Reads RTTMs from docs/diarization-vram-profile/raw/rttm/ and emits
 docs/diarization-vram-profile/accuracy.md with per-config DER + tier.
 """
+
 from __future__ import annotations
 
 import json
@@ -97,18 +98,20 @@ def main() -> int:
             hyp_spk = len(hyp.labels())
             spk_match = hyp_spk == ref_spk
             tier = classify(der, spk_match)
-            results.append({
-                'file': file,
-                'cap': key[0],
-                'bs': key[1],
-                'mp': key[2],
-                'r': key[3],
-                'ref_spk': ref_spk,
-                'hyp_spk': hyp_spk,
-                'der': round(der, 4),
-                'tier': tier,
-                'is_reference': key == ref_key,
-            })
+            results.append(
+                {
+                    'file': file,
+                    'cap': key[0],
+                    'bs': key[1],
+                    'mp': key[2],
+                    'r': key[3],
+                    'ref_spk': ref_spk,
+                    'hyp_spk': hyp_spk,
+                    'der': round(der, 4),
+                    'tier': tier,
+                    'is_reference': key == ref_key,
+                }
+            )
 
     # Write markdown
     lines = [
@@ -123,8 +126,8 @@ def main() -> int:
     for r in results:
         marker = ' *(reference)*' if r['is_reference'] else ''
         lines.append(
-            f"| {r['file']} | {r['cap']} | {r['bs']} | {r['mp']} | {r['ref_spk']} | "
-            f"{r['hyp_spk']} | {r['der']:.4f} | **{r['tier']}**{marker} |"
+            f'| {r["file"]} | {r["cap"]} | {r["bs"]} | {r["mp"]} | {r["ref_spk"]} | '
+            f'{r["hyp_spk"]} | {r["der"]:.4f} | **{r["tier"]}**{marker} |'
         )
     out_md.parent.mkdir(parents=True, exist_ok=True)
     out_md.write_text('\n'.join(lines) + '\n')

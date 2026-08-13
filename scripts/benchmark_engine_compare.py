@@ -389,7 +389,7 @@ def main() -> int:
     print_table(rows)
     print()
 
-    write_csv(Path(args.output), rows)
+    write_csv(rows, Path(args.output))
 
     pass_count = sum(1 for r in rows if r['result'] == 'PASS')
     skip_count = sum(1 for r in rows if r['result'] == 'SKIP')

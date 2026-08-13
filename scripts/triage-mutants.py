@@ -28,7 +28,7 @@ Three categories:
 
 Usage::
 
-    python3 scripts/triage-mutants.py /tmp/ot-mutation/lockout.log app.auth.lockout
+    python3 scripts/triage-mutants.py .mutation/lockout.log app.auth.lockout
     python3 scripts/triage-mutants.py <log> <dotted-module> --list logic
     python3 scripts/triage-mutants.py --selftest
 """
@@ -50,8 +50,18 @@ _CONDITION = re.compile(r'^\s*(if|elif|while)\b')
 _COMPARISON = re.compile(r'(==|!=|\bin\b|\bis\b|startswith|endswith|<|>)')
 
 
+#: Placeholder a string literal collapses to. It must contain NO character `_COMPARISON`
+#: matches. It used to be ``<S>`` — which contains ``<`` and ``>`` — so every stripped line
+#: matched the comparison regex, ``predicate_string`` was True whenever ``strings_only`` was
+#: True, and the ``return 'noise-string'`` below became UNREACHABLE. Measured over the six
+#: target modules: 546 of 547 mutable lines were strings_only, and rule 1 fired 0 times.
+#: The 10-case self-test passed throughout, because its string case is classified by the
+#: _LOG_CALL rule further down rather than by this one.
+_PLACEHOLDER = '__STR__'
+
+
 def _strip_strings(line: str) -> str:
-    return _STRING.sub('<S>', line)
+    return _STRING.sub(_PLACEHOLDER, line)
 
 
 def _is_string_fragment(line: str) -> bool:
@@ -64,9 +74,9 @@ def _is_string_fragment(line: str) -> bool:
     triage report every multi-line log message as an actionable finding.
     """
     remainder = _strip_strings(line)
-    for token in ('<S>', 'f', ',', '(', ')', '+', '%'):
+    for token in (_PLACEHOLDER, 'f', ',', '(', ')', '+', '%'):
         remainder = remainder.replace(token, '')
-    return remainder.strip() == '' and '<S>' in _strip_strings(line)
+    return remainder.strip() == '' and _PLACEHOLDER in _strip_strings(line)
 
 
 def classify(minus: list[str], plus: list[str], body_after: list[str]) -> str:
@@ -161,6 +171,30 @@ _SELFTEST: list[tuple[str, list[str], list[str], list[str], str]] = [
         ['    logger.info(None)'],
         [],
         'noise-string',
+    ),
+    (
+        # MUST-FIRE case for the strings-only rule specifically. The case above does NOT
+        # exercise it — it is a log call, so it is classified by the _LOG_CALL rule and
+        # passes even when the strings-only rule is dead code. That is exactly how the
+        # placeholder collision (`<S>` matching the `<|>` comparison regex) survived: the
+        # rule matched nothing across 547 real lines while the self-test stayed green.
+        # This case has NO log call and NO comparison, so only the strings-only rule can
+        # classify it.
+        'a bare string assignment with no comparison is noise-string',
+        ['    self.label = "processing"'],
+        ['    self.label = "XXprocessingXX"'],
+        [],
+        'noise-string',
+    ),
+    (
+        # MUST-STAY-CLEAN twin: the same shape, but the string sits in a PREDICATE, so it
+        # is the logic. This is the FIPS-rehash shape the classifier once misfiled as a log
+        # edit — the under-reporting direction, which hides findings.
+        'a string inside a predicate is logic, not noise',
+        ['    if hashed_password.startswith("$pbkdf2-sha256$"):'],
+        ['    if hashed_password.startswith("XX$pbkdf2-sha256$XX"):'],
+        ['        return True'],
+        'logic',
     ),
     (
         'a condition guarding only a log call',

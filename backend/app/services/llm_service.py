@@ -1261,26 +1261,38 @@ class LLMService:
                 "Add one in Settings before testing the connection."
             )
 
-        if self.config.base_url:
-            from app.core.config import settings as _settings
-            from app.utils.url_validation import is_safe_url
-
-            safe, reason = is_safe_url(
-                self.config.base_url, allow_private=_settings.LLM_ALLOW_PRIVATE_ENDPOINTS
-            )
-            if not safe:
-                logger.warning("Connection test blocked for %s: %s", self.config.base_url, reason)
-                return False, (
-                    "Connection failed: the endpoint must be a publicly reachable "
-                    "http(s) address. Set LLM_ALLOW_PRIVATE_ENDPOINTS=true to allow a "
-                    "self-hosted endpoint on a private network."
-                )
-
         try:
             headers = self._get_headers()
 
             # Claude/Anthropic providers don't have a models endpoint, test with a simple request
             if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
+                # This branch reaches the network through `chat_completion`, which builds
+                # its own request from `base_url` — so the guard is scoped HERE rather than
+                # covering the whole method. The other branch validates and PINS the exact
+                # URL it fetches (below); leaving this check in front of both made it
+                # resolve `base_url` and then resolve `models_url` again, two independent
+                # answers for one operation.
+                #
+                # This is validate-only: it cannot pin, because the connection is made
+                # several frames away inside `chat_completion`.
+                if self.config.base_url:
+                    from app.core.config import settings as _settings
+                    from app.utils.url_validation import is_safe_url
+
+                    safe, reason = is_safe_url(
+                        self.config.base_url,
+                        allow_private=_settings.LLM_ALLOW_PRIVATE_ENDPOINTS,
+                    )
+                    if not safe:
+                        logger.warning(
+                            "Connection test blocked for %s: %s", self.config.base_url, reason
+                        )
+                        return False, (
+                            "Connection failed: the endpoint must be a publicly reachable "
+                            "http(s) address. Set LLM_ALLOW_PRIVATE_ENDPOINTS=true to allow a "
+                            "self-hosted endpoint on a private network."
+                        )
+
                 # Test with a simple message
                 test_messages = [{"role": "user", "content": "Hi"}]
                 response = self.chat_completion(test_messages, max_tokens=5)
@@ -1313,7 +1325,38 @@ class LLMService:
                 logger.debug(
                     f"Testing connection to {self.config.provider}: {models_url} (derived from {chat_endpoint})"
                 )
-                http_response = self.session.get(models_url, headers=headers, timeout=10)
+
+                # `models_url` is DERIVED from base_url, so the guard above validated a
+                # different string than the one fetched. Validate and PIN the actual target:
+                # `is_safe_url` resolves, judges, and discards, leaving requests to resolve
+                # again at connect time — a rebinding window. `resolve_pinned_target` returns
+                # the checked IP to dial plus the hostname to verify TLS against.
+                from app.core.config import settings as _settings
+                from app.utils.url_validation import pinned_requests_session
+                from app.utils.url_validation import resolve_pinned_target
+
+                target, reason = resolve_pinned_target(
+                    models_url, allow_private=_settings.LLM_ALLOW_PRIVATE_ENDPOINTS
+                )
+                if target is None:
+                    logger.warning("Connection test blocked for %s: %s", models_url, reason)
+                    return False, (
+                        "Connection failed: the endpoint must be a publicly reachable "
+                        "http(s) address. Set LLM_ALLOW_PRIVATE_ENDPOINTS=true to allow a "
+                        "self-hosted endpoint on a private network."
+                    )
+
+                # A pinned session replaces `self.session` for this one request: its SNI
+                # hostname is bound to this target, so it must not be reused or redirected.
+                # Losing the retry adapter is correct here — a connection *test* that
+                # silently retries a 500 three times is reporting the wrong thing anyway.
+                with pinned_requests_session(target) as pinned:
+                    http_response = pinned.get(
+                        target.url,
+                        headers={**headers, **target.headers},
+                        timeout=10,
+                        allow_redirects=False,
+                    )
 
                 if http_response.status_code == 200:
                     return True, f"Connection successful (tested {models_url})"
@@ -1665,23 +1708,31 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             logger.info(f"Health check using models endpoint: {models_url}")
 
             # The base URL is user-supplied config; refuse internal targets before
-            # fetching (issue #284 A0.1).
+            # fetching (issue #284 A0.1) and PIN the checked address, so the request goes
+            # to the address that was judged rather than to whatever the resolver answers
+            # a second time (DNS rebinding).
             from app.core.config import settings as _settings
-            from app.utils.url_validation import is_safe_url
+            from app.utils.url_validation import pinned_requests_session
+            from app.utils.url_validation import resolve_pinned_target
 
-            safe, reason = is_safe_url(
+            target, reason = resolve_pinned_target(
                 models_url, allow_private=_settings.LLM_ALLOW_PRIVATE_ENDPOINTS
             )
-            if not safe:
+            if target is None:
                 logger.warning("Health check blocked for %s: %s", models_url, reason)
                 return False
 
             # Use a short timeout with no retries for health checks — this must
             # not block a sync thread for 30+ seconds if the LLM server is down.
-            # Create a one-off session without the retry adapter.
-            import requests as _requests
-
-            response = _requests.get(models_url, headers=headers, timeout=3)
+            # `allow_redirects=False`: the pin covers one hop, and a 302 to an internal
+            # address would otherwise be followed with no check at all.
+            with pinned_requests_session(target) as _session:
+                response = _session.get(
+                    target.url,
+                    headers={**headers, **target.headers},
+                    timeout=3,
+                    allow_redirects=False,
+                )
             logger.info(f"Health check response status: {response.status_code}")
 
             if response.status_code == 200:

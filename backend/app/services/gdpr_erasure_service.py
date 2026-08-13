@@ -35,6 +35,17 @@ window. The operation is **idempotent** (re-running on an already-erased subject
 is a no-op that returns zeroed counters) and writes an ``admin.user.delete``
 audit event on completion so the erasure itself is on the compliance trail.
 
+Partial erasure
+---------------
+An erasure that could not destroy every copy is reported as one. One failing
+store never aborts the others — the relational and storage deletions are the
+legally-binding ones and must proceed — but every failure lands in
+``summary["errors"]``, ``summary["complete"]`` goes False, and the audit event
+is ``PARTIAL`` instead of ``SUCCESS``. This covers the object store, the
+transcript document, the ``transcript_chunks`` RAG index, summaries, and the
+voiceprint indices alike. Reporting a partial erasure as complete is worse than
+a loud failure: the DB rows that identify *what* to re-delete are already gone.
+
 Community-edition invariance
 ----------------------------
 ``erase_organization`` is only reachable with orgs present; in the
@@ -143,6 +154,12 @@ def _erase_speaker_voiceprints(
                     conflicts="proceed",
                 )
                 deleted += int(resp.get("deleted", 0))
+                # delete_by_query reports per-document failures in the BODY
+                # rather than raising, so a partial sweep of biometric docs
+                # would otherwise look identical to a complete one.
+                failures = (resp or {}).get("failures") or []
+                if failures:
+                    _record(f"index {idx}: {len(failures)} document(s) failed to delete")
             except Exception as idx_err:  # noqa: BLE001 — best-effort per index
                 logger.warning(f"Voiceprint erasure failed on index {idx}: {idx_err}")
                 _record(f"index {idx}: {idx_err}")
@@ -167,6 +184,11 @@ def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -
     object-lock is best-effort only). Skips are reported in the summary so
     the erasure is auditable as partial, and a later hold release re-runs the
     idempotent erasure to finish the job.
+
+    ``purge_media_file``'s ``residual_errors`` are surfaced for the same reason:
+    a deleted DB row with the transcript, its RAG chunks or the media object
+    still in place is a partial erasure, and reading ``deleted: True`` alone
+    reported it as a complete one.
     """
     for media_file in files:
         if bool(media_file.legal_hold):
@@ -179,6 +201,7 @@ def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -
             )
             continue
         result = purge_media_file(db, media_file)
+        summary["errors"].extend(result.get("residual_errors") or [])
         if result.get("deleted"):
             summary["media_files_deleted"] += 1
         else:
@@ -273,9 +296,33 @@ def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
         "users_deleted": 0,
         "legal_holds_skipped": 0,
         "errors": [],
+        "complete": True,
         "sla_days": ERASURE_SLA_DAYS,
         "already_erased": False,
     }
+
+
+def _resolve_outcome(summary: dict[str, Any]) -> AuditOutcome:
+    """Set ``summary["complete"]`` and pick the audit outcome from the errors.
+
+    The single place that decides whether an Art. 17 erasure completed. An
+    erasure that could not destroy every copy of the subject's data — a legal
+    hold, an unreachable object store, an OpenSearch outage that left the
+    transcript or its RAG chunks indexed — is PARTIAL, never SUCCESS. The
+    endpoints return this summary verbatim, so ``complete`` is also the
+    machine-readable answer for a caller scripting against the API (which gets
+    HTTP 200 either way).
+
+    Args:
+        summary: The erasure summary, whose ``errors`` list has been fully
+            populated by this point.
+
+    Returns:
+        ``AuditOutcome.SUCCESS`` when nothing survived, ``PARTIAL`` otherwise.
+    """
+    complete = not summary["errors"]
+    summary["complete"] = complete
+    return AuditOutcome.SUCCESS if complete else AuditOutcome.PARTIAL
 
 
 def erase_user(
@@ -299,8 +346,9 @@ def erase_user(
     ``actor_*`` identifies WHO invoked the erasure for the audit trail
     (``None`` = the data subject via the deletion webhook). Idempotent: a
     missing user returns ``already_erased=True`` with zeroed counters. Never
-    raises — errors are collected in ``summary["errors"]``. Files under an
-    active legal hold are skipped (Art. 17(3)(e)) and reported. SLA: data
+    raises — errors are collected in ``summary["errors"]``, and anything left in
+    that list makes ``summary["complete"]`` False and audits PARTIAL. Files under
+    an active legal hold are skipped (Art. 17(3)(e)) and reported. SLA: data
     erased within :data:`ERASURE_SLA_DAYS` days of the request.
     """
     summary = _new_summary("user", user_id)
@@ -338,11 +386,20 @@ def erase_user(
 
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
-        outcome=AuditOutcome.SUCCESS if not summary["errors"] else AuditOutcome.PARTIAL,
+        outcome=_resolve_outcome(summary),
         user_id=user_id,
         username=email,
         details={
             "action": "gdpr_erasure",
+            # Both sides named explicitly. The top-level ``user_id``/``username``
+            # are the TARGET here (this record survives the account, so it has to
+            # carry who was erased) while the org-scoped twin below keys them on
+            # the ACTOR — so a reader cannot infer either side from position
+            # alone. ``actor_email`` falls back to "data-subject-webhook" ONLY for
+            # the genuine self-service path; a caller that omits it for a
+            # staff-initiated erasure misattributes the act to the data subject.
+            "target_user_id": user_id,
+            "target_email": email,
             "actor_user_id": actor_user_id,
             "actor_email": actor_email or "data-subject-webhook",
             **{
@@ -433,7 +490,7 @@ def erase_org_member_data(
         user_id=actor_user_id,
         username=actor_email,
         organization_id=org_id,
-        outcome=AuditOutcome.SUCCESS if not summary["errors"] else AuditOutcome.PARTIAL,
+        outcome=_resolve_outcome(summary),
         details={
             "action": "gdpr_erasure_org_member",
             "organization_id": org_id,
@@ -540,7 +597,7 @@ def erase_organization(
         user_id=actor_user_id,
         username=actor_email,
         organization_id=org_id,
-        outcome=AuditOutcome.SUCCESS if not summary["errors"] else AuditOutcome.PARTIAL,
+        outcome=_resolve_outcome(summary),
         details={
             "action": "gdpr_erasure_organization",
             "organization_id": org_id,

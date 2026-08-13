@@ -230,3 +230,141 @@ def test_a_category_with_no_connection_test_is_a_400(client, super_admin_token_h
     assert response.json()["detail"] == (
         "Connection test not supported for category: password_policy"
     )
+
+
+# ---------------------------------------------------------------------------
+# PUT /{category} — the CENTRAL audit log, not just the auth_config_audit table
+# ---------------------------------------------------------------------------
+#
+# The tests above prove the ``auth_config_audit`` TABLE is written and readable.
+# That table is reachable only through ``GET /audit/{category}`` — one category at
+# a time, no time range, no export — so it is invisible to
+# ``GET /admin/audit-logs``, the export endpoint, the CEF/SIEM stream and the
+# org-admin view. Switching the identity provider, rotating the OIDC client
+# secret, disabling MFA enforcement, lowering the lockout threshold or re-enabling
+# local login therefore never reached the compliance record at all
+# (FedRAMP AU-2/AU-3/AU-12, GDPR Art. 30).
+#
+# These are ENDPOINT-level tests on purpose. ``unit/test_audit_event_emitters.py``
+# asserts each ``AuditEventType`` member is emitted *somewhere*, which is per
+# MEMBER, not per ENDPOINT: ``ADMIN_SETTINGS_CHANGE`` already had emitters in the
+# SCIM-token, group-mapping, chat and mail-delivery routes, so it would have
+# reported this whole surface as covered.
+
+
+def _collect_audit(monkeypatch) -> list[dict]:
+    """Collect the central audit records this module's endpoints emit."""
+    from app.api.endpoints import auth_config as auth_config_module
+
+    events: list[dict] = []
+    monkeypatch.setattr(auth_config_module.audit_logger, "log", lambda **kw: events.append(kw))
+    return events
+
+
+def _settings_changes(events: list[dict], action: str) -> list[dict]:
+    from app.auth.audit import AuditEventType
+
+    return [
+        e
+        for e in events
+        if e["event_type"] is AuditEventType.ADMIN_SETTINGS_CHANGE
+        and e["details"].get("action") == action
+    ]
+
+
+def test_a_category_update_reaches_the_central_audit_log(
+    client, super_admin_token_headers, super_admin_user, monkeypatch
+):
+    """Changing auth configuration is attributable in the log everything else reads.
+
+    Asserting only that "an event fired" would still pass with the actor and the
+    changed key swapped or absent, so this pins the ACTOR (who), the CATEGORY and
+    KEY (what), and the new VALUE.
+    """
+    from app.auth.audit import AuditOutcome
+
+    events = _collect_audit(monkeypatch)
+
+    _change_a_setting(client, super_admin_token_headers, "OT-Central-Audit")
+
+    changes = _settings_changes(events, "auth_config_update")
+    assert len(changes) == 1, f"expected exactly one auth_config_update record, got {events}"
+
+    record = changes[0]
+    assert record["outcome"] is AuditOutcome.SUCCESS
+    # Who.
+    assert record["user_id"] == super_admin_user.id
+    assert record["username"] == str(super_admin_user.email)
+    # What.
+    assert record["details"]["category"] == CATEGORY
+    assert record["details"]["changed_keys"] == [CHANGED_KEY]
+    assert record["details"]["changes"] == {CHANGED_KEY: "OT-Central-Audit"}
+    assert record["details"]["sensitive_keys_changed"] == []
+
+
+def test_a_secret_rotation_is_audited_by_key_name_and_never_by_value(
+    client, super_admin_token_headers, monkeypatch
+):
+    """Rotating a secret is a FACT worth auditing; the secret is not.
+
+    ``config_value`` is ``None`` for a sensitive key on every read surface of this
+    API and ``is_set`` carries the signal — so the audit log must not become the
+    one place the value appears. The rotation itself still has to be visible, or an
+    operator cannot tell a credential change from a quiet one.
+    """
+    secret = "OT-Bind-Secret-Should-Never-Be-Logged"
+    events = _collect_audit(monkeypatch)
+
+    response = client.put(
+        f"{BASE}/ldap", headers=super_admin_token_headers, json={"ldap_bind_password": secret}
+    )
+    assert response.status_code == status.HTTP_200_OK, response.text
+
+    changes = _settings_changes(events, "auth_config_update")
+    assert len(changes) == 1, f"expected exactly one auth_config_update record, got {events}"
+
+    details = changes[0]["details"]
+    assert details["sensitive_keys_changed"] == ["ldap_bind_password"]
+    assert details["changed_keys"] == ["ldap_bind_password"]
+    # The fact is recorded and the value is not — including anywhere else in the
+    # record (a ciphertext-carrying "changes" entry would also fail this).
+    assert secret not in repr(changes[0])
+    assert "ldap_bind_password" not in details["changes"]
+
+
+def test_a_refused_change_is_audited_as_a_failure(
+    client, super_admin_token_headers, super_admin_user, monkeypatch
+):
+    """A rejected attempt to change auth config is itself the interesting event.
+
+    Repeated attempts to open up authentication are the pattern a reviewer looks
+    for, and a log recording only successes cannot show them. ``allow_registration``
+    while ``local_enabled`` is false is the one cross-field rule the schema
+    rejects, so this drives the real 400 path rather than a synthetic one.
+    """
+    from app.auth.audit import AuditOutcome
+
+    events = _collect_audit(monkeypatch)
+    # Read the fixture's identity BEFORE the request: the refusal path calls
+    # db.rollback(), which under the savepoint harness discards the fixture rows
+    # themselves. (The endpoint snapshots its actor for the same reason — without
+    # that it raised ObjectDeletedError from inside the 400 handler.)
+    actor_id, actor_email = super_admin_user.id, str(super_admin_user.email)
+
+    response = client.put(
+        f"{BASE}/local",
+        headers=super_admin_token_headers,
+        json={"allow_registration": True, "local_enabled": False},
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST, response.text
+
+    changes = _settings_changes(events, "auth_config_update")
+    assert len(changes) == 1, f"expected exactly one auth_config_update record, got {events}"
+
+    record = changes[0]
+    assert record["outcome"] is AuditOutcome.FAILURE
+    assert record["error_code"] == "INVALID_AUTH_CONFIG"
+    assert record["user_id"] == actor_id
+    assert record["username"] == actor_email
+    assert record["details"]["category"] == "local"
+    assert record["details"]["requested_keys"] == ["allow_registration", "local_enabled"]

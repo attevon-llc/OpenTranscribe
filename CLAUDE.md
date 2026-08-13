@@ -300,8 +300,22 @@ python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
   measurement cycles on the Redis-retry bug; `python -m cProfile -o out.prof -m pytest <test>`
   found it in one.
 
-Current: backend **5,329 passed / 62 skipped / 113 s** (from 4,752 / 458 / 511 s), zero barrier
-clusters; frontend **481 passed / ~11 s**; e2e 341 collected. Regenerate the timing baseline with
+Current (measured 2026-08-13, load average ~10 on 48 cores — quote the command, not the
+number, if you are unsure): backend **6,623 passed / 62 real skips / 104 s** (from
+4,752 / 458 / 511 s); frontend **669 passed / 76 files / 21.6 s**; e2e **341 collected,
+271 passed / 1 failed** (`test_promote_publishes_to_the_shared_vocabulary`), plus 8
+visual-regression baselines currently failing. The junit XML reports 146 skipped because
+it counts the 84 xfails; 62 is the real skip count.
+
+**These numbers rot — re-derive rather than trust them.** The previous values above were
+wrong by 1,294 backend tests and 188 frontend tests when checked. `./scripts/run-backend-tests.sh
+--summary` and `cd frontend && npm run test` answer in seconds.
+
+Barrier clusters: none remain at sub-second scale, but a residual ~9 s DDL cluster does —
+21 of the 35 tests over 5 s are `v3xx_migration_consistency` tests from 8 different modules
+all landing near 9 s, which is the `ddl_exclusive` advisory-lock queue. DDL modules are
+~418 s of the ~1,197 s summed CPU. Far better than the 414-of-511 s it started from, but
+"zero barrier clusters" overstates it. Regenerate the timing baseline with
 `./scripts/run-backend-tests.sh && cp /tmp/ot-backend-tests/last.xml baseline.xml` — it is
 gitignored, because a committed measurement rots.
 

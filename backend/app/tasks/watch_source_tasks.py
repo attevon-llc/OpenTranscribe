@@ -304,7 +304,14 @@ def _handle_group(db, source: WatchSource, group, max_imports: int) -> bool:
 def stitch_and_import(
     self, source_id: int, base_name: str, extension: str, parts: list[dict]
 ) -> dict:
-    """Download the parts, ffmpeg-concat them, and import the single result."""
+    """Download the parts, ffmpeg-concat them, and import the single result.
+
+    Phased so that **no DB session is open during the part downloads or the
+    ffmpeg concat**. Previously one ``session_scope`` wrapped the whole body:
+    a multi-part SMB/S3 group is gigabytes of transfer plus a full ffmpeg
+    concat, and Postgres spent all of it "idle in transaction" — blocking
+    ``ALTER TABLE`` and pinning the cluster-wide vacuum horizon.
+    """
     from app.services.watch_sources import multipart
 
     temp_dir = settings.watch_temp_dir
@@ -313,34 +320,53 @@ def stitch_and_import(
     stitched_path: str | None = None
 
     try:
+        # Phase 1 — read (short). Snapshot plain scalars and build the client.
         with session_scope() as db:
             source = db.query(WatchSource).filter(WatchSource.id == source_id).first()
             if not source:
                 return {"skipped": True, "reason": "source missing"}
+            source_type = str(source.source_type)
+            upload_stitched = bool(source.upload_stitched_to_source)
+            # Local parts are read in place and are never written back, so the
+            # local client is not needed here — and it is the one client that
+            # keeps a reference to the WatchSource ORM row, which must not
+            # outlive this session. The S3/SMB clients capture decrypted
+            # credentials as plain values.
+            client = create_client(source) if source_type != "local" else None
 
-            file_infos = [_file_from_dict(d) for d in parts]
-            stitched_name = multipart.generate_stitched_filename(base_name, extension)
+        file_infos = [_file_from_dict(d) for d in parts]
+        stitched_name = multipart.generate_stitched_filename(base_name, extension)
+        first_dir = os.path.dirname(file_infos[0].path)
+        stitched_remote = (first_dir + "/" if first_dir else "") + stitched_name
 
-            with create_client(source) as client:
-                # Download every part into temp (ordered).
-                for fi in file_infos:
-                    dest = str(temp_dir / f"part_{source_id}_{uuid_pkg.uuid4().hex}{extension}")
-                    if source.source_type == "local":
-                        # Local parts are read in place.
-                        local_parts.append(fi.path)
-                    else:
-                        client.download_file(fi.path, dest)
-                        local_parts.append(dest)
+        with contextlib.ExitStack() as stack:
+            if client is not None:
+                stack.enter_context(client)
 
-                stitched_path = str(
-                    temp_dir / f"stitched_{source_id}_{uuid_pkg.uuid4().hex}{extension}"
-                )
-                if not multipart.stitch_files(local_parts, stitched_path):
-                    raise RuntimeError("ffmpeg stitch failed")
+            # Phase 2 — part downloads + ffmpeg concat. NO DB session held.
+            for fi in file_infos:
+                dest = str(temp_dir / f"part_{source_id}_{uuid_pkg.uuid4().hex}{extension}")
+                if client is None:
+                    # Local parts are read in place.
+                    local_parts.append(fi.path)
+                else:
+                    client.download_file(fi.path, dest)
+                    local_parts.append(dest)
+
+            stitched_path = str(
+                temp_dir / f"stitched_{source_id}_{uuid_pkg.uuid4().hex}{extension}"
+            )
+            if not multipart.stitch_files(local_parts, stitched_path):
+                raise RuntimeError("ffmpeg stitch failed")
+
+            # Phase 3 — write (short): tracking rows + ingest of the one
+            # stitched artifact.
+            with session_scope() as db:
+                source = db.query(WatchSource).filter(WatchSource.id == source_id).first()
+                if not source:
+                    return {"skipped": True, "reason": "source missing"}
 
                 # Tracking row for the stitched output (unique synthetic path).
-                first_dir = os.path.dirname(file_infos[0].path)
-                stitched_remote = (first_dir + "/" if first_dir else "") + stitched_name
                 row = WatchSourceFile(
                     uuid=uuid_pkg.uuid4(),
                     watch_source_id=source.id,
@@ -358,6 +384,7 @@ def stitch_and_import(
                 )
 
                 stitched_media_id = result.media_file_id
+                result_status = str(result.status)
 
                 # Mark each part as a consumed stitched_part linked to the result.
                 for fi in file_infos:
@@ -384,14 +411,14 @@ def stitch_and_import(
                     part_row.processed_at = datetime.now(UTC)
                 db.commit()
 
-                # Optionally write the stitched file back to the source.
-                if source.upload_stitched_to_source and source.source_type != "local":
-                    try:
-                        client.upload_file(stitched_path, stitched_remote)
-                    except Exception as e:  # noqa: BLE001
-                        logger.warning("upload_stitched_to_source failed: %s", e)
+            # Phase 4 — optional write-back to the source. NO DB session held.
+            if upload_stitched and client is not None:
+                try:
+                    client.upload_file(stitched_path, stitched_remote)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("upload_stitched_to_source failed: %s", e)
 
-            return {"status": result.status, "stitched": stitched_name}
+        return {"status": result_status, "stitched": stitched_name}
     except Exception as e:  # noqa: BLE001
         logger.error("stitch_and_import failed for source %s group %s: %s", source_id, base_name, e)
         return {"status": "error", "error": str(e)}
@@ -411,16 +438,27 @@ def stitch_and_import(
 # --------------------------------------------------------------------------- #
 @celery_app.task(name="watch_source.send_notification", bind=True, priority=CPUPriority.MAINTENANCE)
 def send_notification(self, source_id: int, summary: dict) -> dict:
-    """Send a scan-summary email via each linked, enabled email config."""
+    """Send a scan-summary email via each linked, enabled email config.
+
+    The session is closed before any mail is sent: ``send_email`` is an SMTP or
+    Microsoft-Graph round trip with a 30 s timeout *per config*, and holding the
+    task's transaction across it pinned the cluster-wide vacuum horizon for the
+    duration with nothing to show for it.
+    """
+    from app.models.email_notification_config import EmailNotificationConfig
     from app.services.watch_email_service import build_scan_summary_html
     from app.services.watch_email_service import send_email
 
-    sent = 0
+    had_error = summary.get("errors", 0) > 0
+
+    # Phase 1 — read (short).
     with session_scope() as db:
         source = db.query(WatchSource).filter(WatchSource.id == source_id).first()
         if not source:
             return {"skipped": True}
-        had_error = summary.get("errors", 0) > 0
+        source_name = str(source.name)
+
+        deliveries: list[tuple[EmailNotificationConfig, list[str]]] = []
         for link in source.email_links:
             cfg = link.email_config
             if not cfg or not cfg.is_enabled:
@@ -432,11 +470,24 @@ def send_notification(self, source_id: int, summary: dict) -> dict:
             recipients = _merge_recipients(cfg.default_recipients, link.additional_recipients)
             if not recipients:
                 continue
-            subject = f"OpenTranscribe — watch source '{source.name}' scan complete"
-            html = build_scan_summary_html(source.name, summary)
-            ok, _msg = send_email(cfg, recipients, subject, html)
-            if ok:
-                sent += 1
+            # ``send_email`` needs the config OBJECT (it reads ~10 columns and
+            # decrypts a stored secret). Expunge detaches it with its column
+            # values already loaded, so it outlives the session; and because it
+            # is detached rather than merely closed-over, an accidental lazy
+            # load raises DetachedInstanceError loudly instead of silently
+            # opening a second transaction mid-send.
+            db.expunge(cfg)
+            deliveries.append((cfg, recipients))
+
+    # Phase 2 — send. NO DB session held.
+    subject = f"OpenTranscribe — watch source '{source_name}' scan complete"
+    html = build_scan_summary_html(source_name, summary)
+
+    sent = 0
+    for cfg, recipients in deliveries:
+        ok, _msg = send_email(cfg, recipients, subject, html)
+        if ok:
+            sent += 1
     return {"sent": sent}
 
 

@@ -414,7 +414,14 @@ class TestTagManagerTools:
     def test_search_clears_back_to_the_full_list(self, tags_page: Page, tag_api):
         tag_api.post("/api/tags", {"name": _unique_tag_name()})
         _reload_tags(tags_page)
-        before = _tag_rows(tags_page).count()
+        # `.count()` is a SNAPSHOT — it does not wait. Taken straight after the reload it
+        # returned 0 before the list had rendered, so `before` was 0, the final assertion
+        # became "expect 0 rows" and the test failed against a correctly-populated list.
+        # Wait for a non-empty list first; we just created a tag, so 0 is never valid here.
+        rows = _tag_rows(tags_page)
+        expect(rows.first).to_be_visible(timeout=10000)
+        before = rows.count()
+        assert before > 0, "the tag we just created must be listed before searching"
 
         tags_page.get_by_label("Search tags").fill("zzz-matches-nothing")
         tags_page.wait_for_timeout(400)

@@ -125,7 +125,19 @@ this file is for.
     segment by segment — a substring regex scored `/api/tasks/{task_id}` as covered by a test
     naming `/api/tasks/system/fix-file/x`. Both regressions are `--selftest` cases (9 total).
     It measures REFERENCE, not execution, and says so in every run: an upper bound on
-    "untested". Currently **0**.
+    "untested". Currently **51 of 490**, plus 1 WebSocket route (`/api/ws`) that is reported
+    separately and is also unreferenced.
+
+    ⚠️ **It reported `0` for months, and that was wrong in three ways at once** — every one of
+    them scoring an untested route as covered. The HTTP method was not part of the match key
+    (a POST test "covered" a DELETE route: `test_scim.py` has no `client.put` at all, so the
+    RFC 7644 *replace* verb had zero tests and passed); an unresolved f-string wildcard could
+    stand in for a **literal** path segment (`/api/files/<wild>/<wild>` matched every 4-segment
+    route under `/api/files/`, including from a test asserting those routes are *gone*); and
+    any string constant counted as evidence, **including the xfail route-inventory tables** —
+    so adding a route to `test_route_has_a_caller.py` marked it covered forever. Evidence must
+    now be the URL argument of a real HTTP client call. `--fail-on-uncovered` makes it gate;
+    the default stays exit 0 so existing callers are unbroken.
   - `run-mutation-tests.sh` — see the mutation section in `backend/tests/CLAUDE.md`. Opt-in,
     never in the gate or CI. **`--clean` when you are done**: it leaves ~330k lines of
     deliberately corrupted source in `backend/mutants/`, which is gitignored but which
@@ -219,10 +231,10 @@ this file is for.
   `: "${VAR:=}"` to the `opentr.sh` prologue block; the prologue runs at top level before any
   function, which is why it also covers references inside `common.sh`. Exemptions are a
   `_ALLOWLIST` dict keyed `<script>::<VAR>` with a mandatory reason, and a **stale entry fails**.
-  Three live offenders are allowlisted as `BACKLOG` right now, all in `common.sh`:
-  `GPU_DEVICE_ID` (:231-232), `ENVIRONMENT` (:283 — set only inside `opentr.sh` *functions*, so
-  any path reaching the helper another way aborts), and `USER` (:24 — not bash-maintained, so the
-  error path that *explains* a docker-permission problem is itself what crashes).
+  The `_ALLOWLIST` is currently **empty** — the three `BACKLOG` offenders this file used to
+  list (`GPU_DEVICE_ID`, `ENVIRONMENT`, `USER`, all in `common.sh`) were fixed, and the entries
+  went with them. Read `_ALLOWLIST` in `test_shell_expansion_guards.py` rather than this
+  paragraph: a count transcribed into prose is a measurement that rots, and this one had.
   **An assignment inside a function of the other file does not count as a guard** — that is
   precisely how `ENVIRONMENT` slipped past a first draft that pooled assignments across both
   files. `${#VAR}` and `${VAR%…}` are **not** guards (both still abort); escaped `\$VAR` in help

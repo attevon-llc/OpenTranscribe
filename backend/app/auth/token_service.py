@@ -627,7 +627,7 @@ class TokenService:
         return issued_at < epoch
 
     def revoke_all_user_tokens_in_transaction(
-        self, db: Session, user_id: int, user_uuid: str | None = None
+        self, db: Session, user_id: int, user_uuid: str | None = None, reason: str | None = None
     ) -> int:
         """
         Revoke all refresh tokens for a user **without** committing.
@@ -643,6 +643,14 @@ class TokenService:
         Args:
             db: Database session (transaction owned by the caller)
             user_id: User ID whose tokens should be revoked
+            user_uuid: The user's UUID, resolved from *user_id* when omitted. It
+                is what the revocation epoch is keyed on.
+            reason: Free-text cause, carried into the audit record. The callers
+                that have one (``account_security_service.revoke_all_sessions``
+                and everything above it — admin password reset, role change,
+                lock, MFA reset, SCIM deactivation, directory sync) already
+                phrase it for their log line; passing it here is what turns
+                "sessions were revoked" into "sessions were revoked *because*".
 
         Returns:
             Number of tokens revoked
@@ -673,8 +681,35 @@ class TokenService:
             count += 1
 
         # Access tokens have no rows to revoke — kill them by epoch instead.
-        self.stamp_user_revocation_epoch(
-            user_uuid or self._user_uuid_for(db, user_id),
+        resolved_uuid = user_uuid or self._user_uuid_for(db, user_id)
+        self.stamp_user_revocation_epoch(resolved_uuid)
+
+        # MASS revocation is audited here, not left to the callers.
+        #
+        # :meth:`revoke_token` calls itself "the single choke point for every
+        # revocation path" and audits accordingly — but it is the SINGLE-token
+        # path, and this method is not routed through it. So the bulk path, which
+        # is the one admin password reset, role change, lock, MFA reset, SCIM
+        # deactivation and directory sync all use, produced no audit record at
+        # all (FedRAMP AU-2/AU-12).
+        #
+        # ``user_id``/``username`` name the TARGET, matching :meth:`revoke_token`
+        # above (which stamps the token owner) — this layer has no request and
+        # therefore no actor. Callers that DO know the actor emit their own
+        # actor-keyed record alongside; the two are correlated by ``request_id``.
+        # It fires even when ``count`` is 0: the epoch stamp above still happened
+        # and still invalidated every outstanding access token, so "0 sessions"
+        # is a real revocation, not a no-op.
+        audit_logger.log(
+            event_type=AuditEventType.AUTH_TOKEN_REVOKE,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=user_id,
+            details={
+                "scope": "all_user_tokens",
+                "sessions_revoked": count,
+                "reason": reason,
+                "user_uuid": resolved_uuid,
+            },
         )
 
         return count

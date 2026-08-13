@@ -1,20 +1,39 @@
-# Mutation-testing baselines — a RATCHET, not a to-do list.
+# Mutation-testing baselines — a RATCHET, not a to-do list, and NOT a claim that the
+# remaining survivors are harmless.
 #
 # WHY THIS FILE EXISTS
 #
-# "Kill every surviving mutant" is not a finishable goal on this codebase: a clean run of
-# app/auth/lockout.py reports 149 survivors, of which 77 edit a log message and 12 flip a
-# condition guarding only a log call. No caller can observe those, and asserting on log text
-# creates tests that break on every reword. Without a bounded definition of done, each pass
-# closes a few real gaps and leaves a large residue — which reads as no progress.
+# "Kill every surviving mutant" is not a finishable goal on this codebase: an AST census of
+# lockout's 149 survivors (regenerate mutmut's mutants from the source, map each survivor back
+# to the line it edits, ask whether that line is inside a logging call) finds 58 that edit a log
+# string and 8 that flip a condition guarding only a log call. No caller can observe those, and
+# asserting on log text creates tests that break on every reword. Without a bounded definition
+# of done, each pass closes a few real gaps and leaves a large residue — which reads as no
+# progress.
 #
 # So the gate is: the survivor count for a module may go DOWN, never UP. A new untested
 # predicate raises it and fails `--check-baseline`. That is the same shape as the coverage
 # `fail_under` ratchet in backend/pyproject.toml, and for the same reason.
 #
+# READ THE NUMBERS AS A CEILING, NOT AS AN ALL-CLEAR. The same census over all six modules puts
+# 167 of the 636 survivors (26%) in the log-string / log-branch bucket. The other 461 are
+# ordinary predicates, comparisons, assignments and default arguments — code a caller CAN
+# observe, and each one is a line the suite executes without checking. The counts below bound
+# the residue; they do not excuse it.
+#
 # This file is READ by `./scripts/run-mutation-tests.sh --check-baseline`. It is not
 # documentation: a checked-in table nothing reads goes stale, which is exactly how
-# `expected-schemas.tsv` died.
+# `expected-schemas.tsv` died. It went stale here anyway — two of the notes below described
+# measurements nobody had made (see spans and lockout) — so every note now states what was
+# measured and how.
+#
+# ⚠️ ALL SIX ROWS CURRENTLY AWAIT RE-MEASUREMENT. `--check-baseline` reports them NOT MEASURED
+# (exit 4), because a run log is only admissible with the completion + source-binding evidence
+# a run now writes beside it (<key>.meta), and the 2026-08-12 logs predate that. The numbers
+# below are the last recorded LEVEL, not a verified state. Two of them are independently known
+# to be stale: regenerating mutants from today's source produces 10 mutants security.log names
+# but the current app/core/security.py cannot make (c0c462aa changed it), and security's own
+# note already said its verify_token gap closed after the run.
 #
 # HOW TO UPDATE
 #
@@ -30,9 +49,9 @@
 # test strength. That happened to `lockout` and produced 41 false findings in `dependencies`.
 #
 # module<TAB>max_survivors<TAB>min_coverage_pct<TAB>measured_on<TAB>note
-spans	10	0	2026-08-12	hermetic tests, so the pre-flight cannot measure coverage; 95.1% kill rate. The 10 are log/error strings.
-lockout	149	80	2026-08-12	200 -> 171 -> 149 across three test batches. 77 of the 149 are log strings, 12 log-branch.
-security	133	77	2026-08-12	verify_token's exp/essential gap closed AFTER this run; expect a lower number next measure.
-session	73	76	2026-08-12	77 -> 73 after the Redis re-probe tests. OIDCStateStore mutants now killed by the #33 tests.
-dependencies	180	93	2026-08-12	470 -> 180 after the 118 new tests and the MODULE_TESTS fix (coverage 68.4% -> 93%).
-password_policy	91	93	2026-08-12	FIRST clean measurement. The 90 quoted earlier was never a measured run — recorded as 91, not as a regression.
+spans	10	95	2026-08-12	10 survivors of 206. Census: 5 are operator flips in live predicates (`not text or not spans`->and, `char_start > cursor`->>=, `cursor < n`-><=, `idx < 0`->{<=0,<1}) and 5 rewrite the literal "label" — the fallback mask style, where every non-special value behaves identically, so those 5 are equivalent mutants. spans.py has no logger at all; the previous note ("the 10 are log/error strings") described a different file.
+lockout	149	80	2026-08-12	200 -> 171 -> 149 across three test batches. Census of the 149: 58 log strings + 8 log-only branches = 66; the remaining 83 are predicates and assignments (`record.last_failed_attempt = ...`, `now < locked_until_dt`) — real gaps. The previous note ("77 log strings, 12 log-branch" = 89) was never measured.
+security	133	77	2026-08-12	STALE, independently: the log names 10 mutants today's source cannot generate (c0c462aa). Census of the 133: 10 log strings, 115 other, 8 unmappable to current source. verify_token's exp/essential gap closed after this run, and its test (tests/unit/test_verify_token_claims.py) was not in MODULE_TESTS until now — expect a materially lower number next measure.
+session	73	76	2026-08-12	77 -> 73 after the Redis re-probe tests. OIDCStateStore mutants now killed by the #33 tests. Census: 31 log strings + 2 log-only branches; 40 other.
+dependencies	180	93	2026-08-12	470 -> 180 after the 118 new tests and the MODULE_TESTS fix (coverage 68.4% -> 93%). Census: 48 log strings + 2 log-only branches; 130 other.
+password_policy	91	93	2026-08-12	FIRST clean measurement. The 90 quoted earlier was never a measured run — recorded as 91, not as a regression. Census: 8 log strings; 83 other.

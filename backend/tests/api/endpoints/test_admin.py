@@ -5,6 +5,8 @@ from unittest.mock import patch
 
 from fastapi import status
 
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
 from app.core.version import APP_VERSION
 from tests.user_owned_rows import seed_owned_rows
 
@@ -142,6 +144,45 @@ def test_admin_users_delete(client, admin_token_headers, normal_user, db_session
     db_session.expire_all()
     assert db_session.query(User).filter(User.id == owned.user_id).first() is None
     assert owned.remaining(db_session) == {}
+
+
+def test_admin_users_delete_writes_an_audit_record(
+    client, admin_token_headers, admin_user, normal_user, db_session, monkeypatch
+):
+    """Deleting a user through the ADMIN route must be attributable.
+
+    This endpoint destroys a user, their files and their transcripts irreversibly and
+    recorded nothing at all, while its twin ``DELETE /api/users/{uuid}`` — the same
+    deletion, through the same three helpers — did audit it. So the destructive path was
+    the unattributable one (FedRAMP AU-2/AU-12, GDPR Art. 30(2)(d)).
+
+    ``test_audit_event_emitters.py`` could not catch this: it asserts that each
+    ``AuditEventType`` member is emitted *somewhere*, and ``ADMIN_USER_DELETE`` already
+    had its emitter in ``users.py``. The gap was per-endpoint, not per-member.
+    """
+    from app.api.endpoints import admin as admin_module
+
+    events: list[dict] = []
+    monkeypatch.setattr(admin_module.audit_logger, "log", lambda **kw: events.append(kw))
+
+    target_uuid = str(normal_user.uuid)
+    target_email = str(normal_user.email)
+
+    response = client.delete(f"/api/admin/users/{target_uuid}", headers=admin_token_headers)
+    assert response.status_code == status.HTTP_200_OK, response.text
+
+    deletions = [e for e in events if e["event_type"] is AuditEventType.ADMIN_USER_DELETE]
+    assert len(deletions) == 1, f"expected exactly one ADMIN_USER_DELETE, got {events}"
+
+    record = deletions[0]
+    assert record["outcome"] is AuditOutcome.SUCCESS
+    # The record must name BOTH sides: who did it and who was destroyed. Asserting only
+    # that "an event fired" would still pass if the actor and target were swapped, which
+    # is a live defect elsewhere in this surface (erase_user records the wrong actor).
+    assert record["details"]["target_user"] == target_uuid
+    assert record["details"]["target_email"] == target_email
+    assert record["username"] == str(admin_user.email)
+    assert record["user_id"] == admin_user.id
 
 
 def test_admin_users_delete_leaves_the_bystanders_data_alone(

@@ -45,13 +45,11 @@ from typing import Any
 
 import numpy as np
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
-log = logging.getLogger("mps_probe")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+log = logging.getLogger('mps_probe')
 
 MPS_SAMPLE_INTERVAL_S = 0.1
-PYANNOTE_MODEL = "pyannote/speaker-diarization-community-1"
+PYANNOTE_MODEL = 'pyannote/speaker-diarization-community-1'
 
 
 @dataclass
@@ -91,7 +89,7 @@ class MPSSampler:
 
     def start(self) -> None:
         self._t0 = time.perf_counter()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="mps-sampler")
+        self._thread = threading.Thread(target=self._run, daemon=True, name='mps-sampler')
         self._thread.start()
 
     def _run(self) -> None:
@@ -113,17 +111,17 @@ class MPSSampler:
 def load_audio(wav_path: Path) -> dict[str, Any]:
     import torch
 
-    with wave.open(str(wav_path), "rb") as wf:
+    with wave.open(str(wav_path), 'rb') as wf:
         sr = wf.getframerate()
         n = wf.getnframes()
         raw = wf.readframes(n)
     if sr != 16000:
-        raise ValueError(f"expected 16kHz, got {sr}")
+        raise ValueError(f'expected 16kHz, got {sr}')
     data = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
     return {
-        "waveform": torch.from_numpy(np.ascontiguousarray(data)).unsqueeze(0),
-        "sample_rate": sr,
-        "uri": wav_path.stem,
+        'waveform': torch.from_numpy(np.ascontiguousarray(data)).unsqueeze(0),
+        'sample_rate': sr,
+        'uri': wav_path.stem,
     }
 
 
@@ -132,34 +130,34 @@ def run_one(args: argparse.Namespace) -> MPSRunResult:
     from pyannote.audio import Pipeline
 
     if not torch.backends.mps.is_available():
-        raise RuntimeError("MPS not available")
+        raise RuntimeError('MPS not available')
 
     # Force the fork's auto-scaler to honor our batch choice.
     if args.embedding_batch_size and args.embedding_batch_size > 0:
-        os.environ["PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE"] = str(args.embedding_batch_size)
+        os.environ['PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE'] = str(args.embedding_batch_size)
     else:
-        os.environ.pop("PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE", None)
+        os.environ.pop('PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE', None)
 
     gc.collect()
     torch.mps.empty_cache()
     baseline_mb = torch.mps.driver_allocated_memory() / (1024**2)
     recommended_max = (
         torch.mps.recommended_max_memory() / (1024**2)
-        if hasattr(torch.mps, "recommended_max_memory")
+        if hasattr(torch.mps, 'recommended_max_memory')
         else 0.0
     )
     log.info(
-        f"Run: file={args.audio_file} bs={args.embedding_batch_size} "
-        f"mp={args.mixed_precision} baseline={baseline_mb:.1f}MB"
+        f'Run: file={args.audio_file} bs={args.embedding_batch_size} '
+        f'mp={args.mixed_precision} baseline={baseline_mb:.1f}MB'
     )
 
     t_load0 = time.perf_counter()
-    pipeline = Pipeline.from_pretrained(PYANNOTE_MODEL, token=os.environ.get("HUGGINGFACE_TOKEN"))
+    pipeline = Pipeline.from_pretrained(PYANNOTE_MODEL, token=os.environ.get('HUGGINGFACE_TOKEN'))
     if pipeline is None:
-        raise RuntimeError(f"{PYANNOTE_MODEL} load returned None")
-    pipeline.to(torch.device("mps"))
-    if hasattr(pipeline, "embedding_mixed_precision"):
-        pipeline.embedding_mixed_precision = args.mixed_precision == "on"
+        raise RuntimeError(f'{PYANNOTE_MODEL} load returned None')
+    pipeline.to(torch.device('mps'))
+    if hasattr(pipeline, 'embedding_mixed_precision'):
+        pipeline.embedding_mixed_precision = args.mixed_precision == 'on'
     t_load = time.perf_counter() - t_load0
 
     sampler = MPSSampler()
@@ -172,14 +170,14 @@ def run_one(args: argparse.Namespace) -> MPSRunResult:
     try:
         audio = load_audio(Path(args.audio_file))
         output = pipeline(audio)
-        annotation = getattr(output, "speaker_diarization", output)
+        annotation = getattr(output, 'speaker_diarization', output)
         if annotation is not None:
             num_speakers = len(set(annotation.labels()))
             num_segments = sum(1 for _ in annotation.itertracks())
         torch.mps.synchronize()
     except Exception as e:
-        err = f"{type(e).__name__}: {e}"
-        log.exception("mps probe failed")
+        err = f'{type(e).__name__}: {e}'
+        log.exception('mps probe failed')
 
     samples = sampler.stop()
     t_diar = time.perf_counter() - t_diar0
@@ -194,10 +192,8 @@ def run_one(args: argparse.Namespace) -> MPSRunResult:
     return MPSRunResult(
         timestamp=datetime.now(UTC).isoformat(),
         audio_file=Path(args.audio_file).name,
-        audio_duration_s=round(
-            wave.open(args.audio_file, "rb").getnframes() / 16000, 2
-        ),
-        device="mps",
+        audio_duration_s=round(wave.open(args.audio_file, 'rb').getnframes() / 16000, 2),
+        device='mps',
         embedding_batch_size_setting=args.embedding_batch_size,
         mixed_precision=args.mixed_precision,
         repeat_index=args.repeat_index,
@@ -220,19 +216,19 @@ def write_result(result: MPSRunResult, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     bs = result.embedding_batch_size_setting
     fname = (
-        f"{Path(result.audio_file).stem}__mps__bs-{bs}__mp-{result.mixed_precision}"
-        f"__r{result.repeat_index}.json"
+        f'{Path(result.audio_file).stem}__mps__bs-{bs}__mp-{result.mixed_precision}'
+        f'__r{result.repeat_index}.json'
     )
     path = out_dir / fname
     path.write_text(json.dumps(asdict(result), indent=2))
-    log.info(f"Wrote {path}")
+    log.info(f'Wrote {path}')
     return path
 
 
 def run_small_batch_sweep(args: argparse.Namespace) -> int:
     out_dir = Path(args.out)
     batches = [1, 4, 8, 16, 32, 64]
-    precisions = ["off"]
+    precisions = ['off']
     total = len(batches) * len(precisions)
     idx = 0
     fails = 0
@@ -240,34 +236,40 @@ def run_small_batch_sweep(args: argparse.Namespace) -> int:
     for bs in batches:
         for mp in precisions:
             idx += 1
-            log.info(f"=== MPS sweep {idx}/{total} ===")
-            sub = argparse.Namespace(**{
-                **vars(args),
-                "embedding_batch_size": bs,
-                "mixed_precision": mp,
-                "repeat_index": 0,
-            })
+            log.info(f'=== MPS sweep {idx}/{total} ===')
+            sub = argparse.Namespace(
+                **{
+                    **vars(args),
+                    'embedding_batch_size': bs,
+                    'mixed_precision': mp,
+                    'repeat_index': 0,
+                }
+            )
             try:
                 result = run_one(sub)
                 write_result(result, out_dir)
                 if result.error:
                     fails += 1
             except Exception as e:
-                log.error(f"Sweep run {idx} failed: {e}")
+                log.error(f'Sweep run {idx} failed: {e}')
                 fails += 1
-            log.info(f"Sweep {idx}/{total} fails={fails} elapsed={(time.perf_counter()-t0)/60:.1f}min")
-    log.info(f"MPS sweep complete: {idx} runs, {fails} failures")
+            log.info(
+                f'Sweep {idx}/{total} fails={fails} elapsed={(time.perf_counter() - t0) / 60:.1f}min'
+            )
+    log.info(f'MPS sweep complete: {idx} runs, {fails} failures')
     return 0 if fails == 0 else 2
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--audio-file", default="/tmp/test_0.5h.wav")
-    p.add_argument("--embedding-batch-size", type=int, default=16)
-    p.add_argument("--mixed-precision", choices=["off", "on"], default="off")
-    p.add_argument("--repeat-index", type=int, default=0)
-    p.add_argument("--out", default="/tmp/mps-probe-out")
-    p.add_argument("--small-batch-sweep", action="store_true")
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument('--audio-file', default='/tmp/test_0.5h.wav')
+    p.add_argument('--embedding-batch-size', type=int, default=16)
+    p.add_argument('--mixed-precision', choices=['off', 'on'], default='off')
+    p.add_argument('--repeat-index', type=int, default=0)
+    p.add_argument('--out', default='/tmp/mps-probe-out')
+    p.add_argument('--small-batch-sweep', action='store_true')
     return p.parse_args()
 
 
@@ -280,5 +282,5 @@ def main() -> int:
     return 0 if result.error is None else 2
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

@@ -88,9 +88,11 @@ from app.schemas.user import AdminPasswordResetRequest
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
 from app.services import system_settings_service
+from app.services.account_security_service import DeletedUser
 from app.services.account_security_service import assert_password_auth_possible
 from app.services.account_security_service import audit_password_change
 from app.services.account_security_service import audit_role_change
+from app.services.account_security_service import audit_user_deleted
 from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import revoke_all_sessions
 
@@ -814,6 +816,7 @@ def create_admin_user(
 @router.delete("/users/{user_uuid}", response_model=dict[str, str])
 def delete_admin_user(
     user_uuid: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
@@ -852,6 +855,11 @@ def delete_admin_user(
 
         _assert_not_last_super_admin(db, user, ROLE_USER)
 
+        # Capture what the audit record needs before the row is gone: after the commit
+        # the ORM object is expired, so reading user.email would re-query a deleted row.
+        deleted_snapshot = DeletedUser.of(user)
+        client_ip, user_agent = _get_client_info(request)
+
         # Delete all user data atomically using a savepoint
         savepoint = db.begin_nested()
         try:
@@ -865,6 +873,13 @@ def delete_admin_user(
             savepoint.rollback()
             raise
         db.commit()
+
+        # This endpoint destroys a user, their files and their transcripts irreversibly
+        # and recorded NOTHING — while its twin, DELETE /api/users/{uuid}, performs the
+        # identical deletion through these same three helpers and does audit it. Emitted
+        # after the commit, matching that twin, so a failed delete leaves no record of a
+        # deletion that did not happen. FedRAMP AU-2/AU-12, GDPR Art. 30(2)(d).
+        audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent)
 
         logger.info(f"User deletion completed successfully: {user_id}")
         return {"message": "User deleted successfully"}
@@ -1408,6 +1423,7 @@ def admin_reset_user_password(
 
 @router.post("/users/{user_uuid}/unlock")
 def admin_unlock_account(
+    request: Request,
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -1425,6 +1441,8 @@ def admin_unlock_account(
     ``PUT /users/{uuid}`` with ``is_active``. Two endpoints named lock/unlock
     that are not inverses is a trap, not an API.
     """
+    client_ip, user_agent = _get_client_info(request)
+
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -1441,6 +1459,8 @@ def admin_unlock_account(
         event_type=AuditEventType.AUTH_ACCOUNT_UNLOCK,
         user_id=current_user.id,
         username=str(current_user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
         outcome=AuditOutcome.SUCCESS,
         details={
             "target_user": user_uuid,
@@ -1455,12 +1475,15 @@ def admin_unlock_account(
 
 @router.post("/users/{user_uuid}/lock")
 def admin_lock_account(
+    request: Request,
     user_uuid: str,
     reason: str = Query("Admin action", description="Reason for locking the account"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
     """Admin lock of user account."""
+    client_ip, user_agent = _get_client_info(request)
+
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -1475,6 +1498,8 @@ def admin_lock_account(
         event_type=AuditEventType.AUTH_ACCOUNT_DISABLED,
         user_id=current_user.id,
         username=str(current_user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
         outcome=AuditOutcome.SUCCESS,
         details={
             "target_user": user_uuid,
@@ -1488,37 +1513,37 @@ def admin_lock_account(
 
 @router.delete("/users/{user_uuid}/sessions")
 def admin_terminate_user_sessions(
+    request: Request,
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """Force logout user by terminating all sessions."""
+    """Force logout user by terminating all sessions.
+
+    Goes through ``revoke_all_sessions`` — i.e. ``token_service`` — like every
+    other revocation path. It used to set ``RefreshToken.revoked_at`` inline,
+    which made it the one termination that wrote **no Redis blacklist entry and
+    no per-user revocation epoch**. That is a correctness bug before it is an
+    audit one: the epoch is the only thing that reaches already-issued *access*
+    tokens (they are stateless, so there is no row to revoke), so an admin force-
+    logging-out a compromised account left it authenticated for the remaining
+    access-token lifetime.
+    """
+    client_ip, user_agent = _get_client_info(request)
+
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Revoke all refresh tokens
-    now = datetime.now(UTC)
-    tokens = (
-        db.query(RefreshToken)
-        .filter(
-            RefreshToken.user_id == user.id,
-            RefreshToken.revoked_at.is_(None),
-        )
-        .all()
-    )
-
-    count = 0
-    for token in tokens:
-        token.revoked_at = now  # type: ignore[assignment]
-        count += 1
-
+    count = revoke_all_sessions(db, user, reason="admin session termination")
     db.commit()
 
     audit_logger.log(
         event_type=AuditEventType.AUTH_LOGOUT_ALL,
         user_id=current_user.id,
         username=str(current_user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
         outcome=AuditOutcome.SUCCESS,
         details={
             "target_user": user_uuid,
@@ -1697,20 +1722,41 @@ def admin_link_external_identity(
 
 @router.post("/users/{user_uuid}/mfa/reset")
 def admin_reset_user_mfa(
+    request: Request,
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
 ):
-    """Admin reset of user MFA (if user loses device). Requires super_admin role."""
+    """Admin reset of user MFA (if user loses device). Requires super_admin role.
+
+    The audit record reports what actually happened. It used to sit OUTSIDE the
+    ``if mfa_settings:`` block and always log ``MFA_DISABLE`` / ``SUCCESS``, so a
+    reset against an account with no second factor enrolled recorded a disable
+    that did nothing — an event a reviewer would read as "this account's MFA was
+    removed on this date". The attempt is still recorded either way (a run of
+    resets against accounts that have no MFA is itself worth seeing); only the
+    outcome changes.
+    """
+    client_ip, user_agent = _get_client_info(request)
+
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     mfa_settings = db.query(UserMFA).filter(UserMFA.user_id == user.id).first()
+    # A row that exists with `totp_enabled` already false is the same non-event as
+    # no row at all: nothing was in force, so nothing was disabled.
+    was_enabled = bool(mfa_settings and mfa_settings.totp_enabled)
+
     if mfa_settings:
-        mfa_settings.totp_enabled = False  # type: ignore[assignment]
-        mfa_settings.totp_secret = None  # type: ignore[assignment]
-        mfa_settings.backup_codes = []  # type: ignore[assignment]
+        # DELETE the row, like the user-facing `POST /auth/mfa/disable` does.
+        # This branch used to null `totp_secret`, which `v200` made NOT NULL — so
+        # the reset raised an IntegrityError (a 500) for every account that
+        # actually had a second factor, i.e. the only case the endpoint exists
+        # for. Nothing caught it because the audit call, and the `{"success":
+        # true}` response, both sat outside this block: an account with no MFA
+        # took the no-op path and answered 200.
+        db.delete(mfa_settings)
         # Dropping the second factor must not leave sessions that were minted
         # while it was still in force.
         revoke_all_sessions(db, user, reason="admin MFA reset")
@@ -1720,10 +1766,14 @@ def admin_reset_user_mfa(
         event_type=AuditEventType.AUTH_MFA_DISABLE,
         user_id=current_user.id,
         username=str(current_user.email),
-        outcome=AuditOutcome.SUCCESS,
+        source_ip=client_ip,
+        user_agent=user_agent,
+        outcome=AuditOutcome.SUCCESS if was_enabled else AuditOutcome.FAILURE,
+        error_code=None if was_enabled else "MFA_NOT_ENROLLED",
         details={
             "target_user": user_uuid,
             "reset_by": "admin",
+            "mfa_was_enabled": was_enabled,
         },
     )
 
@@ -1997,7 +2047,17 @@ def admin_erase_user(
 
     from app.services.gdpr_erasure_service import erase_user
 
-    return erase_user(db, int(target.id))
+    # Name the ACTING super_admin. Without these, every platform erasure recorded
+    # actor_email "data-subject-webhook" — the service's default, meaning "the user
+    # deleted their own IdP account" — so a staff-initiated erasure was attributed
+    # to a self-service deletion that never happened, 100% of the time. The
+    # org-admin twin (erase_org_member_data) has always passed them.
+    return erase_user(
+        db,
+        int(target.id),
+        actor_user_id=int(current_user.id),
+        actor_email=str(current_user.email),
+    )
 
 
 # ---------------------------------------------------------------------------

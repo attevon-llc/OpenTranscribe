@@ -129,6 +129,34 @@ was finding nothing at all.
   write a test that only passes under the relaxed values. `shared_auth_state`/`gallery_page`
   exist to log in **once per session** for the same reason.
 
+## Before you debug a "flaky" E2E test, rule out the STACK (issue #431)
+
+Three separate mystifying per-test failures all turned out to be the environment, not the
+tests. `scripts/e2e/run-e2e.sh` only checked that **ports 5173/5174 were open** — and a
+restarting container keeps its published port open, so that check passed throughout. A
+session-scoped autouse preflight in `e2e/conftest.py` now catches both causes in ~3.4 s:
+
+- **A flapping backend.** `+layout.svelte` renders the ENTIRE app behind `{#if $authReady}`,
+  and `authReady` is set only after `initAuth()`'s `GET /auth/session` resolves — behind a
+  **60 s** axios timeout. So any backend stall makes `#email` absent for up to a minute and
+  *every* login-page fixture times out at once, with a different subset landing in each stall
+  window. That reads exactly like order-dependent flakiness and is not. Observed: uvicorn
+  reloading **19× in 5 minutes** (`/health` up on 9 of 40 samples) while a `pre-commit` run
+  stashed and restored the tree — **so running `pre-commit` while E2E runs manufactures E2E
+  failures.** The preflight requires **3 consecutive** `/health` 200s; one lucky probe cannot
+  clear a flapping backend.
+- **A split Vite module graph.** ES modules are keyed by URL, so a store served under two
+  `?t=` stamps becomes **two independent store instances** — one written by the layout, one
+  subscribed by a component that then sees `null` forever. This made a promote button's
+  `canPromote` false with correct code, correct data and a correctly-authenticated session;
+  a content-free `touch` fixed it. `split_store_modules` detects it; it degrades to a no-op
+  on the prod/nginx overlays.
+
+Both have must-fire and must-stay-clean cases in `e2e/test_preflight_guard.py`.
+
+⚠️ **An absence-asserting sibling cannot catch this class.** `test_promote_control_absent_for_
+an_already_shared_tag` passed throughout, because a broken store produces absence too.
+
 ## Gotchas
 
 - **`tests/integration/` is a directory name, not a marker.** Its contents split three ways:

@@ -287,7 +287,7 @@ For AI summarization and speaker identification features:
 Default ports (configurable in `.env`):
 - Frontend: `80`
 - Backend API: `8080`
-- Flower (task monitor): `5555`
+- Flower (task monitor): `5175`
 - Database: `5432`
 - Redis: `6379`
 - MinIO: `9000`
@@ -360,7 +360,7 @@ sudo ./opentr.sh status
 ```
 
 **Task Monitoring:**
-Access Flower dashboard at: http://localhost:5555/flower
+Access Flower dashboard at: http://localhost:5175/flower
 
 **Logs:**
 ```bash
@@ -438,7 +438,7 @@ sudo ./opentr.sh logs celery-worker
 ```
 
 **Check Flower dashboard:**
-http://localhost:5555/flower
+http://localhost:5175/flower
 
 ### Out of Memory
 

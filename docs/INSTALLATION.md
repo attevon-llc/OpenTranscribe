@@ -124,7 +124,7 @@ cd opentranscribe
 **Access the application:**
 - Web Interface: http://localhost:5173
 - API Documentation: http://localhost:8080/docs
-- Task Monitor: http://localhost:5555/flower
+- Task Monitor: http://localhost:5175/flower
 
 ## 🔐 Authentication Configuration
 

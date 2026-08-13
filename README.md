@@ -1052,7 +1052,7 @@ behind stale environment variables, and an endpoint returning a hardcoded value 
 test referenced.
 
 ```bash
-python3 scripts/audit-tests.py backend/tests   # 14 AST detectors, exits 1 on new offenders
+python3 scripts/audit-tests.py backend/tests   # 16 AST detectors, exits 1 on new offenders
 cd frontend && npm run test:audit              # the vitest sibling, 10 detectors
 npm run test:audit:selftest                    #   ...and ITS self-test — not optional
 python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
@@ -1074,8 +1074,12 @@ python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
   <test>` settled in one pass what two plausible hypotheses had cost two full measurement
   cycles.
 
-Current: backend **5,329 passed / 62 skipped / 113 s** (from 4,752 / 458 / 511 s), zero
-barrier clusters; frontend **481 passed / ~11 s**; e2e 341 collected.
+Current (measured 2026-08-13): backend **6,623 passed / 62 real skips / 104 s** (from
+4,752 / 458 / 511 s); frontend **669 passed / 76 files / 21.6 s**; e2e **341 collected**.
+A residual ~9 s DDL cluster remains (the `ddl_exclusive` advisory-lock queue); the
+sub-second barriers are gone. **Re-derive rather than trust these** — the values printed
+here previously were wrong by 1,294 backend and 188 frontend tests;
+`./scripts/run-backend-tests.sh --summary` answers in seconds.
 
 ### **Contributing**
 We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.

@@ -132,25 +132,6 @@ def _create_password_context() -> CryptContext:
 pwd_context = _create_password_context()
 
 
-def _get_jwt_algorithm() -> str:
-    """
-    Get the appropriate JWT algorithm based on FIPS version.
-
-    FIPS 140-3 prefers HS512 for stronger HMAC signatures.
-    FIPS 140-2 and non-FIPS mode use HS256.
-
-    Returns:
-        JWT algorithm string (HS256 or HS512)
-    """
-    if (
-        settings.FIPS_MODE
-        and hasattr(settings, "FIPS_VERSION")
-        and settings.FIPS_VERSION == "140-3"
-    ):
-        return settings.JWT_ALGORITHM_V3
-    return settings.JWT_ALGORITHM
-
-
 def create_access_token(
     subject: str | Any,
     expires_delta: timedelta | None = None,
@@ -159,8 +140,24 @@ def create_access_token(
     """
     Create a JWT access token with optional additional claims.
 
-    For FIPS 140-3 compliance, uses HS512 algorithm for stronger HMAC signatures.
-    For FIPS 140-2 and non-FIPS mode, uses HS256.
+    **The algorithm is ``settings.JWT_ALGORITHM`` — never FIPS-branched.** There used
+    to be a ``_get_jwt_algorithm()`` here that returned ``JWT_ALGORITHM_V3`` (HS512)
+    under ``FIPS_MODE`` + ``FIPS_VERSION="140-3"``. It was deleted rather than wired
+    into the real login path, because the access-token *verifiers* on the request path
+    (``api/endpoints/auth/dependencies.py`` — ``get_current_user`` and
+    ``get_optional_current_user``) decode with ``algorithms=[settings.JWT_ALGORITHM]``
+    and nothing else. An issuer that FIPS-branched while those did not would mint
+    tokens no authenticated request could verify.
+
+    **HS256 is FIPS-approved.** HMAC-SHA-256 is an approved algorithm under FIPS 198-1
+    with SHS (FIPS 180-4); NIST SP 800-57 Pt.1 R5 puts it at 128 bits of security, above
+    the 112-bit floor SP 800-131A Rev.2 requires. Running HS256 is therefore a
+    compliant configuration, not a violation — the defect this replaced was a false
+    documentation claim and a dead branch, not weak crypto.
+
+    To actually run HS512, set ``JWT_ALGORITHM=HS512`` (and a ``JWT_SECRET_KEY`` of at
+    least 64 bytes — ``config.py`` warns otherwise). That single knob moves issuance
+    **and** verification together, because both read the same setting.
 
     Args:
         subject: The subject (usually user UUID) to encode in the token
@@ -176,14 +173,17 @@ def create_access_token(
     else:
         expire = now + timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
 
-    algorithm = _get_jwt_algorithm()
+    algorithm = settings.JWT_ALGORITHM
 
     to_encode = {
         "exp": expire,
         "sub": str(subject),
         "iat": now,
         "jti": str(uuid.uuid4()),  # JWT ID for token revocation support
-        "alg_version": "v3" if algorithm == "HS512" else "v2",  # Track algorithm version
+        # Track algorithm version. Derived from the algorithm actually used, so it
+        # stays correct when an operator sets JWT_ALGORITHM=HS512; it is "v2" on a
+        # default deployment because HS256 is the default.
+        "alg_version": "v3" if algorithm == "HS512" else "v2",
         # Purpose binding — see auth.constants.TOKEN_TYPE_ACCESS.
         "type": TOKEN_TYPE_ACCESS,
     }

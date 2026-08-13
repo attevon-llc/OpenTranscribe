@@ -20,22 +20,24 @@ Usage (from repo root, inside backend venv):
 from __future__ import annotations
 
 import argparse
+import os  # noqa: E402
 import sys
 from pathlib import Path
 
-import os  # noqa: E402
-
 from dotenv import dotenv_values  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
-from sqlalchemy import text  # noqa: E402
+from sqlalchemy import (
+    create_engine,  # noqa: E402
+    text,  # noqa: E402
+)
 
 # Build the DB URL from .env + dev-stack defaults directly — importing
 # app.core.config has filesystem side effects (creates data dirs).
-_env = dotenv_values(Path(__file__).resolve().parent.parent / ".env")
+_env = dotenv_values(Path(__file__).resolve().parent.parent / '.env')
 
 
 def _setting(name: str, default: str) -> str:
     return os.environ.get(name) or _env.get(name) or default
+
 
 # Fixture email patterns from backend/tests/conftest.py and the e2e suite.
 # SQL LIKE patterns — '%' wildcard, '_' escaped where it's literal.
@@ -47,43 +49,41 @@ def _setting(name: str, default: str) -> str:
 # `tests/unit/test_e2e_data_hygiene.py` is the gate that stops a NEW unswept prefix
 # appearing; this list is the backstop for runs that died mid-flight.
 ORPHAN_PATTERNS = [
-    r"testuser\_%@example.com",
-    r"testadmin\_%@example.com",
-    r"testsuperadmin\_%@example.com",
-    r"otheruser\_%@example.com",
-    r"unique\_%@example.com",
-    r"newuser\_%@example.com",
-    "test-%@example.com",  # test-<uuid>@example.com
-    "reg-e2e-%@example.com",  # e2e registration attempts (test_registration, test_auth_flow)
-    "shortname-%@example.com",  # e2e display-name registration test
-    "mfa-e2e-%@example.com",  # e2e MFA enrolment user (test_mfa.py session fixture)
+    r'testuser\_%@example.com',
+    r'testadmin\_%@example.com',
+    r'testsuperadmin\_%@example.com',
+    r'otheruser\_%@example.com',
+    r'unique\_%@example.com',
+    r'newuser\_%@example.com',
+    'test-%@example.com',  # test-<uuid>@example.com
+    'reg-e2e-%@example.com',  # e2e registration attempts (test_registration, test_auth_flow)
+    'shortname-%@example.com',  # e2e display-name registration test
+    'mfa-e2e-%@example.com',  # e2e MFA enrolment user (test_mfa.py session fixture)
 ]
 
 # Real dev-stack accounts that must never be touched, even if a pattern drifts.
 KEEP_EMAILS = {
-    "admin@example.com",
-    "test@example.com",
-    "testuser@example.com",  # legacy manual account — keep unless asked
-    "sharetest@example.com",
+    'admin@example.com',
+    'test@example.com',
+    'testuser@example.com',  # legacy manual account — keep unless asked
+    'sharetest@example.com',
 }
-KEEP_PREFIXES = ("ldap-", "kc-", "superdave")
+KEEP_PREFIXES = ('ldap-', 'kc-', 'superdave')
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--execute", action="store_true", help="Actually delete (default: dry run)"
-    )
+    parser.add_argument('--execute', action='store_true', help='Actually delete (default: dry run)')
     args = parser.parse_args()
 
     url = (
-        f"postgresql://{_setting('POSTGRES_USER', 'postgres')}:"
-        f"{_setting('POSTGRES_PASSWORD', 'postgres')}@"
-        f"localhost:{_setting('POSTGRES_TEST_PORT', '5176')}/"
-        f"{_setting('POSTGRES_DB', 'opentranscribe')}"
+        f'postgresql://{_setting("POSTGRES_USER", "postgres")}:'
+        f'{_setting("POSTGRES_PASSWORD", "postgres")}@'
+        f'localhost:{_setting("POSTGRES_TEST_PORT", "5176")}/'
+        f'{_setting("POSTGRES_DB", "opentranscribe")}'
     )
     engine = create_engine(url)
-    where = " OR ".join(rf"email LIKE '{p}' ESCAPE '\'" for p in ORPHAN_PATTERNS)
+    where = ' OR '.join(rf"email LIKE '{p}' ESCAPE '\'" for p in ORPHAN_PATTERNS)
 
     with engine.connect() as conn:
         rows = conn.execute(
@@ -107,30 +107,32 @@ def main() -> int:
             else:
                 candidates.append((row.id, row.email))
 
-        print(f"Matched {len(rows)} users:")
+        print(f'Matched {len(rows)} users:')
         for email in kept:
-            print(f"  KEEP    {email} (keep-list)")
+            print(f'  KEEP    {email} (keep-list)')
         for email, files in owners:
-            print(f"  SKIP    {email} (owns {files} media files — review manually)")
+            print(f'  SKIP    {email} (owns {files} media files — review manually)')
         for _id, email in candidates:
-            print(f"  {'DELETE' if args.execute else 'WOULD DELETE'}  {email}")
+            print(f'  {"DELETE" if args.execute else "WOULD DELETE"}  {email}')
 
         if not candidates:
-            print("Nothing to delete.")
+            print('Nothing to delete.')
             return 0
 
         if args.execute:
             ids = [c[0] for c in candidates]
             # The SELECT above already auto-began a transaction on this
             # connection — reuse it and commit, rather than calling begin().
-            result = conn.execute(text('DELETE FROM "user" WHERE id = ANY(:ids)'), {"ids": ids})
+            result = conn.execute(text('DELETE FROM "user" WHERE id = ANY(:ids)'), {'ids': ids})
             conn.commit()
-            print(f"Deleted {result.rowcount} orphaned test users.")
+            print(f'Deleted {result.rowcount} orphaned test users.')
         else:
-            print(f"\nDry run — {len(candidates)} users would be deleted. "
-                  "Re-run with --execute to apply.")
+            print(
+                f'\nDry run — {len(candidates)} users would be deleted. '
+                'Re-run with --execute to apply.'
+            )
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

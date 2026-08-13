@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.approval import APPROVAL_APPROVED
+from app.auth.password_history import add_password_to_history
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import role_implies_superuser
 from app.core.security import get_password_hash
@@ -73,6 +74,10 @@ def _ensure_admin_user(db: Session) -> None:
     super-admin credential. A hardened deployment instead gets ``INITIAL_ADMIN_EMAIL``
     with ``INITIAL_ADMIN_PASSWORD``, or a generated password logged once at startup.
 
+    The seeded password goes into ``password_history`` like every other
+    account-creation path's does, and a *generated* one additionally sets
+    ``must_change_password`` — see the comments at the write below.
+
     Repairing an existing account whose derived mirror drifted is
     :func:`_heal_superuser_mirror`'s job, not this function's.
     """
@@ -87,10 +92,11 @@ def _ensure_admin_user(db: Session) -> None:
         return
 
     if not user:
+        password_hash = get_password_hash(password)
         user = User(
             email=email,
             full_name="Admin User",
-            hashed_password=get_password_hash(password),
+            hashed_password=password_hash,
             role=ROLE_SUPER_ADMIN,
             is_superuser=role_implies_superuser(ROLE_SUPER_ADMIN),
             # System-created: there is no inbox to prove control of, and an
@@ -109,15 +115,39 @@ def _ensure_admin_user(db: Session) -> None:
             # than left to the column default so the guarantee is visible here.
             approval_status=APPROVAL_APPROVED,
             approved_at=datetime.now(UTC),
+            # A GENERATED password is a temporary authenticator: nobody chose it and
+            # it is written to the container log at CRITICAL below, so it must not
+            # stay this account's password (FedRAMP IA-5(1), "change default/temporary
+            # authenticators immediately"). PUT /api/users/me is exempt from the
+            # forced-change gate, so the hold has an exit.
+            #
+            # NOT applied to the other two cases, and the distinction is the point:
+            # INITIAL_ADMIN_PASSWORD was chosen by the operator, so it is not a
+            # temporary authenticator and holding them would break scripted hardened
+            # provisioning that signs in with the credential it just configured. The
+            # relaxed-environment dev credential must stay a plain login or every e2e
+            # run and every local session starts behind a forced-change screen.
+            must_change_password=generated,
         )
         db.add(user)
+        # flush() to get the id: the history row needs it, and without one the
+        # bootstrap super_admin — the highest-privilege account in the deployment —
+        # was the ONE account whose seeded password was invisible to the reuse check.
+        # "Rotating" it to the very same value returned zero history rows, was
+        # accepted, and was audited as a successful password change, while the
+        # credential in the logs stayed live. Every other creation path
+        # (registration.py, users.create_user, invitations.py) already did this.
+        db.flush()
+        add_password_to_history(db, int(user.id), password_hash)
         db.commit()
         if generated:
             # The only time this password is ever visible. Logged at CRITICAL so it
             # survives a production log level and the operator cannot miss it.
             logger.critical(
                 "Created bootstrap admin %s with a GENERATED password: %s\n"
-                "Store it now and change it after first login — it is not recoverable. "
+                "Store it now — it is not recoverable. This account is flagged for a "
+                "forced password change at first sign-in, and this value is recorded in "
+                "its password history, so it cannot be re-set as the new password. "
                 "Set INITIAL_ADMIN_PASSWORD to choose your own instead.",
                 email,
                 password,

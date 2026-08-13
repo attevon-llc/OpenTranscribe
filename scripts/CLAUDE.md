@@ -117,11 +117,49 @@ this file is for.
     unrelated tests from ≥3 files inside a sub-second band are a released lock queue, not a
     coincidence. Cluster chaining must cap total band width — chaining on gap alone runs away
     into a single false 13 s "cluster" that is really just dense work.
+  - `audit-route-coverage.py [--list|--json|--prefix P|--selftest]` — API routes with no test
+    referencing them. **Not a grep, and the reason matters**: the literal-path version reported
+    141 uncovered routes when the answer was 28, because the suites build URLs from a base
+    constant (`_BASE = "/api/user-settings"` + `f"{_BASE}/download"`), so the full path appears
+    nowhere. It resolves module-level string constants per file and matches **structurally**,
+    segment by segment — a substring regex scored `/api/tasks/{task_id}` as covered by a test
+    naming `/api/tasks/system/fix-file/x`. Both regressions are `--selftest` cases (9 total).
+    It measures REFERENCE, not execution, and says so in every run: an upper bound on
+    "untested". Currently **0**.
   - `run-mutation-tests.sh` — see the mutation section in `backend/tests/CLAUDE.md`. Opt-in,
     never in the gate or CI. **`--clean` when you are done**: it leaves ~330k lines of
     deliberately corrupted source in `backend/mutants/`, which is gitignored but which
     filesystem-walking tools still see (bandit failed a commit on a finding inside a mutant, and
     needs the `*/mutants/*` exclusion because the hook runs `bandit -r backend/` from the root).
+
+    **This script produced four wrong measurements before it produced a right one, and each
+    guard below exists because of one.** Read them before trusting a survivor count:
+    1. `MODULE_TESTS` omitted a test file → 41 false survivors in `dependencies`, reported as a
+       proxy header-spoofing vulnerability. A test that is never selected kills no mutant, so an
+       incomplete list does not shrink the run, it manufactures findings. **Guard:** a coverage
+       pre-flight prints how much of the target the selected tests execute, and says in red that
+       survivors below 60% measure SELECTION, not weakness. It caught `lockout` at 56% on its
+       first real use (missing `test_lockout_atomicity.py`, a file named for the module).
+    2. A second `--module` silently replaced the first, so `--module a --module b` ran only `b`
+       and `a` read as "no findings". **Guard:** it is an error.
+    3. mutmut caches verdicts in `backend/mutants/` and reuses them, so a report can mix results
+       from an older `MODULE_TESTS`. **Guard:** the test list is fingerprinted beside the cache;
+       a change demands `--clean` before the numbers mean anything.
+    4. A survivor is a *claim*, and mutmut's own verdict can be wrong. **`--verify <mutant-id>`**
+       applies the mutation to the real source and runs the module's tests, reporting
+       CONFIRMED-SURVIVED / KILLED / UNVERIFIABLE. It applies the hunk via the diff's **context
+       lines** scoped to the mutated function, because mutmut's `@@` offsets are
+       function-relative and the Redis and in-memory lockout paths are near-duplicates — a bare
+       search-and-replace picks the wrong one, which is exactly how a survivor got misreported
+       as already-tested.
+
+    `--verify` transiently edits the live source file. It holds a per-module `flock` (two
+    concurrent verifies each restore from their own backup, so one reinstates the other's
+    mutation — observed), restores on INT/TERM/ERR/EXIT, and warns when the target is already
+    dirty. **Do not commit while a verify runs**: pre-commit stashes the whole tree and will
+    capture the mutation. Nothing survives a SIGKILL of the process group — a stopped batch left
+    `now <` mutated to `now <=` in `app/auth/lockout.py`, so check `git diff backend/app/auth/`
+    after any interrupted run.
   - `frontend/scripts/audit-frontend-tests.mjs` (`npm run test:audit`) — the vitest sibling,
     10 detectors, TypeScript compiler API. Run `test:audit:selftest` after ANY detector change:
     its 21 cases caught two detectors matching **nothing**, which reports 0 findings and reads

@@ -295,9 +295,30 @@ print("APPLIED")
             echo "UNVERIFIABLE  $mutant (context block matched ${out#AMBIGUOUS } times)"; return 2 ;;
     esac
 
-    ( cd "$BACKEND" && env "${GATES[@]}" "$VENV_BIN/python" -m pytest $tests \
-        -o addopts= -p no:cacheprovider -q --no-header >/dev/null 2>&1 )
-    rc=$?
+    # STAGED, and this is a correctness-preserving optimisation rather than a shortcut: a
+    # mutant is KILLED iff ANY selected test fails, so the fast files run first with `-x`
+    # and a failure short-circuits the rest. Only a SURVIVED verdict has to pay for the
+    # whole list.
+    #
+    # It matters because `--verify` re-runs the module's ENTIRE list, while mutmut itself
+    # runs only the tests covering each mutant. That asymmetry made verification 28-48 s per
+    # mutant (lockout's list includes tests/api/test_auth_endpoints.py, a DB + HTTP suite),
+    # i.e. hours for one module -- so the tool that exists to make survivors trustworthy was
+    # too slow to use on them. KILLED is the common case once tests exist, and it is now the
+    # cheap one.
+    local fast="" slow=""
+    for f in $tests; do
+        case "$f" in tests/unit/*) fast="$fast $f" ;; *) slow="$slow $f" ;; esac
+    done
+
+    rc=0
+    for stage in "$fast" "$slow"; do
+        [[ -n "${stage// /}" ]] || continue
+        ( cd "$BACKEND" && env "${GATES[@]}" "$VENV_BIN/python" -m pytest $stage \
+            -o addopts= -p no:cacheprovider -q --no-header -x >/dev/null 2>&1 )
+        rc=$?
+        [[ $rc -ne 0 ]] && break
+    done
     trap - INT TERM ERR EXIT
     cp "$backup" "$BACKEND/$path"
     rm -f "$backup"

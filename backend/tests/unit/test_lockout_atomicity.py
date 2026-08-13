@@ -532,3 +532,134 @@ def test_memory_expired_lockout_resets_attempts_but_keeps_the_lockout_count(monk
     assert is_locked is False, "an expired lockout must not still report locked"
     assert record["failed_attempts"] == 1, "the counter restarts at this attempt"
     assert record["lockout_count"] == 1, "progressive escalation state must survive expiry"
+
+
+# ---------------------------------------------------------------------------
+# `unlock_account` — the admin remedy, which had NO test of any kind.
+#
+# Mutation testing found 17 survivors in it, including `return False` → `return True`
+# (an unlock that did nothing reporting success) and dropping the
+# `identifier = _normalize_identifier(identifier)` call. That second one is the sharp
+# case: without normalisation the unlock targets a DIFFERENT key from the one the failed
+# logins wrote, so the account stays locked while the admin is told it worked — and the
+# operator's only escape hatch from a lockout silently stops working.
+# ---------------------------------------------------------------------------
+
+
+def _lock_out(identifier: str) -> None:
+    """Drive a real lockout through the public API, rather than hand-writing a record."""
+    for _ in range(3):
+        lockout.check_and_record_attempt(identifier, success=False)
+    assert lockout.get_lockout_info(identifier)["is_locked"] is True
+
+
+def test_unlock_clears_the_lockout_and_reports_true(monkeypatch):
+    fake = _FakeRedis()
+    _use(monkeypatch, fake)
+    identifier = "unlock-me@example.com"
+    _lock_out(identifier)
+
+    assert lockout.unlock_account(identifier) is True
+
+    record = _record(fake, identifier)
+    assert record["locked_until"] is None
+    assert record["failed_attempts"] == 0
+    assert record["admin_unlocked_at"] is not None
+    assert lockout.get_lockout_info(identifier)["is_locked"] is False
+
+
+def test_unlock_preserves_the_lockout_count_for_the_audit_trail(monkeypatch):
+    """`lockout_count` drives progressive duration, so clearing it rewards a repeat attacker.
+
+    An admin unlock is a remedy for the USER, not an amnesty for the pattern: the next
+    lockout must still escalate.
+    """
+    fake = _FakeRedis()
+    _use(monkeypatch, fake)
+    identifier = "unlock-audit@example.com"
+    _lock_out(identifier)
+    count_before = _record(fake, identifier)["lockout_count"]
+    assert count_before == 1
+
+    lockout.unlock_account(identifier)
+
+    assert _record(fake, identifier)["lockout_count"] == count_before
+
+
+def test_unlocking_a_non_locked_account_reports_false_and_writes_nothing(monkeypatch):
+    """`return False` → `return True` survived: nothing asserted the negative outcome.
+
+    Writing anything here would also stamp `admin_unlocked_at` on an account that was never
+    locked, which corrupts the audit trail the previous test protects.
+    """
+    fake = _FakeRedis()
+    _use(monkeypatch, fake)
+    identifier = "never-locked@example.com"
+    lockout.check_and_record_attempt(identifier, success=False)
+    writes_before = len(fake.writes)
+
+    assert lockout.unlock_account(identifier) is False
+    assert len(fake.writes) == writes_before
+
+
+def test_unlocking_an_unknown_account_reports_false(monkeypatch):
+    fake = _FakeRedis()
+    _use(monkeypatch, fake)
+
+    assert lockout.unlock_account("no-such-account@example.com") is False
+    assert fake.data == {}
+
+
+def test_unlocking_an_already_expired_lockout_reports_false(monkeypatch):
+    """The `now >= locked_until_dt` arm — an expired lockout needs no unlocking.
+
+    Reported as False so an operator is not told they fixed something that had already
+    resolved itself, and so `admin_unlocked_at` is not stamped for an action that did nothing.
+    """
+    fake = _FakeRedis()
+    _use(monkeypatch, fake)
+    identifier = "expired-lock@example.com"
+    _lock_out(identifier)
+
+    expired = lockout.LockoutRecord.from_dict(_record(fake, identifier))
+    expired.set_locked_until(datetime.now(UTC) - timedelta(minutes=1))
+    fake.data[lockout._lockout_key(identifier)] = json.dumps(expired.to_dict())
+
+    assert lockout.unlock_account(identifier) is False
+
+
+def test_unlock_uses_the_canonical_identifier(monkeypatch):
+    """Dropping `_normalize_identifier` survived, and it is the worst of the 17.
+
+    Failed logins write under the canonical key. If the unlock does not normalise, it reads
+    and clears a DIFFERENT key: the admin gets `True` (or `False`) from an unrelated bucket
+    while the real lockout stands. The account stays locked and the only remedy appears to
+    have run.
+    """
+    fake = _FakeRedis()
+    _use(monkeypatch, fake)
+    _lock_out("Canonical-Case@Example.com")
+
+    # Same account, as an operator would plausibly type it into the admin panel.
+    assert lockout.unlock_account("  canonical-case@example.com  ") is True
+    assert lockout.get_lockout_info("Canonical-Case@Example.com")["is_locked"] is False
+
+
+def test_after_an_unlock_the_counter_restarts_but_escalation_continues(monkeypatch):
+    """The two halves together, which no single-value assertion can express.
+
+    `failed_attempts` restarts at 1 (the user is not one attempt from re-lockout), while the
+    NEXT lockout is longer than the first because `lockout_count` survived.
+    """
+    fake = _FakeRedis()
+    _use(monkeypatch, fake)
+    identifier = "unlock-then-fail@example.com"
+    _lock_out(identifier)
+    first_duration = lockout._get_lockout_duration_minutes(0)
+
+    lockout.unlock_account(identifier)
+    lockout.check_and_record_attempt(identifier, success=False)
+
+    assert _record(fake, identifier)["failed_attempts"] == 1
+    # lockout_count is 1, so the next lockout uses the second step of the schedule.
+    assert lockout._get_lockout_duration_minutes(1) >= first_duration

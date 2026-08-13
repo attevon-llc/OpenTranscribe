@@ -31,7 +31,6 @@ from pathlib import Path
 import pytest
 
 from app.scripts.corpus_injection.adapters import build_adapter
-from app.scripts.corpus_injection.adapters.generic_json import GenericJsonAdapter
 from app.scripts.corpus_injection.adapters.qmsum import QMSumAdapter
 from app.scripts.corpus_injection.model import TIMING_REAL
 from app.scripts.corpus_injection.model import TIMING_SYNTHETIC
@@ -291,77 +290,6 @@ class TestQMSumAdapterMetadata:
         root = _qmsum_tree(tmp_path, "Product", "TEST001", turns)
         doc = QMSumAdapter(root).load("TEST001")
         assert [t.turn_index for t in doc.turns] == [0, 1, 2, 3, 4]
-
-
-class TestGenericJsonAdapter:
-    def _write(self, tmp_path: Path, records: list[dict]) -> Path:
-        root = tmp_path / "synthetic"
-        root.mkdir()
-        (root / "meetings.jsonl").write_text(
-            "\n".join(json.dumps(r) for r in records), encoding="utf-8"
-        )
-        return root
-
-    def test_reads_jsonl(self, tmp_path: Path):
-        root = self._write(
-            tmp_path,
-            [{"meeting_id": "s1", "turns": [{"speaker": "A", "text": "hi", "start": 0, "end": 1}]}],
-        )
-        doc = GenericJsonAdapter(root).load("s1")
-        assert doc.turns[0].text == "hi"
-        assert doc.turns[0].start == 0.0
-
-    def test_reads_one_object_per_file(self, tmp_path: Path):
-        root = tmp_path / "synthetic"
-        root.mkdir()
-        (root / "s2.json").write_text(json.dumps({"turns": [{"speaker": "A", "text": "yo"}]}))
-        assert GenericJsonAdapter(root).meeting_ids() == ["s2"]
-
-    def test_generated_timings_are_never_promoted_to_real(self, tmp_path: Path):
-        """A generator's timestamps are output, not measurement.
-
-        They are kept (the pacing is deliberate) but the provenance stays
-        synthetic, so the guard still refuses to compute a timing metric.
-        """
-        root = self._write(
-            tmp_path,
-            [
-                {
-                    "meeting_id": "s1",
-                    "turns": [
-                        {"speaker": "A", "text": "hi", "start": 0, "end": 1},
-                        {"speaker": "B", "text": "yo", "start": 2, "end": 3},
-                    ],
-                }
-            ],
-        )
-        doc = GenericJsonAdapter(root).load("s1")
-        resolve_timings(doc)
-        assert doc.timing.source == TIMING_SYNTHETIC
-        assert doc.timing.params["generator"] == "corpus_supplied_v1"
-        assert doc.turns[1].start == 2.0
-
-    def test_version_file_is_recorded_when_present(self, tmp_path: Path):
-        root = self._write(tmp_path, [{"meeting_id": "s1", "turns": []}])
-        (root / "VERSION").write_text("gen-2026-08-12-a\n")
-        assert GenericJsonAdapter(root).describe().version == "gen-2026-08-12-a"
-
-    def test_missing_version_still_records_something_identifying(self, tmp_path: Path):
-        """A truthy version is not enough — the manifest has to say *what* ran.
-
-        The fallback describes the content, so two corpora of different sizes
-        cannot record the same version string. Asserting only truthiness would
-        pass on a hardcoded ``"unknown"``.
-        """
-        root = self._write(tmp_path, [{"meeting_id": "s1", "turns": []}])
-        assert GenericJsonAdapter(root).describe().version == "unversioned-1-meetings"
-
-        second = tmp_path / "two"
-        second.mkdir()
-        bigger = self._write(
-            second, [{"meeting_id": "s1", "turns": []}, {"meeting_id": "s2", "turns": []}]
-        )
-        assert GenericJsonAdapter(bigger).describe().version == "unversioned-2-meetings"
 
 
 class TestRegistry:

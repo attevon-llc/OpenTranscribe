@@ -122,7 +122,17 @@ def _load_corpus(key: str, manifest_root: Path, data_dir: Path):
     if key == "qmsum":
         queries = corpora_mod.load_qmsum_queries(corpus)
     elif key == "synthetic":
-        queries = corpora_mod.load_synthetic_queries(corpus, data_dir / "synthetic")
+        # The manifest records the exact directory that was injected, which is a
+        # *rung* under $RAG_EVAL_DATA_DIR/synthetic (otsynth-core-v1/, ...), not
+        # that directory itself. Prefer it, and fall back to the data dir only so
+        # a manifest written on another machine still resolves.
+        source = corpus.root if (corpus.root / "queries.jsonl").is_file() else data_dir / "synthetic"
+        if not (source / "queries.jsonl").is_file():
+            raise SystemExit(
+                f"No queries.jsonl under {corpus.root} or {data_dir / 'synthetic'}. "
+                f"The synthetic corpus must be readable to resolve its gold sets."
+            )
+        queries = corpora_mod.load_synthetic_queries(corpus, source)
     else:
         raise SystemExit(f"No query loader for corpus {key!r} (it ships no relevance judgements).")
     return corpus, turns, queries

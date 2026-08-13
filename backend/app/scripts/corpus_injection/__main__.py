@@ -56,6 +56,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fraction of turns that must align to a timed reference before a meeting's "
         "timings count as real; below it the whole meeting goes synthetic [0.8]",
     )
+    parser.add_argument(
+        "--synthetic-meetings",
+        type=int,
+        default=None,
+        help="Synthetic tier only: meeting budget. The full rung is 2,000 meetings / "
+        "22.4M words (10.6x QMSum) and would dominate the index rather than add to it. "
+        "0 injects every meeting. [200]",
+    )
+    parser.add_argument(
+        "--synthetic-select-for",
+        default=None,
+        help="Synthetic tier only: comma-separated query classes the meeting budget is "
+        "spent closing gold sets for [multi_file,aggregation]",
+    )
     parser.add_argument("--force", action="store_true", help="Rewrite rows even if unchanged")
     parser.add_argument("--dry-run", action="store_true", help="Parse and report, write nothing")
     parser.add_argument(
@@ -105,8 +119,18 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
     logger.info("Target: postgres=%s opensearch=%s", target["postgres"], target["opensearch"])
 
     data_dir = Path(args.data_dir or DEFAULT_DATA_DIR)
+    options: dict[str, object] = {}
+    if args.synthetic_meetings is not None:
+        options["meetings"] = args.synthetic_meetings
+    if args.synthetic_select_for:
+        options["select_for"] = tuple(
+            part.strip() for part in args.synthetic_select_for.split(",") if part.strip()
+        )
     adapter = build_adapter(
-        args.corpus, data_dir, Path(args.corpus_root) if args.corpus_root else None
+        args.corpus,
+        data_dir,
+        Path(args.corpus_root) if args.corpus_root else None,
+        options=options,
     )
     info = adapter.describe()
     logger.info(
@@ -123,10 +147,22 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
         )
 
     meeting_ids = adapter.meeting_ids()
+    selected = len(meeting_ids)
     if args.only:
         meeting_ids = [m for m in meeting_ids if m in set(args.only)]
     if args.limit:
         meeting_ids = meeting_ids[: args.limit]
+    if len(meeting_ids) < selected and adapter.subset_breaks_gold_closure:
+        # Not cosmetic: the harness drops any query whose gold set is only
+        # partly injected, so an arbitrary subset of THIS corpus reports fewer
+        # queries rather than an error, and reads as a completed run.
+        logger.warning(
+            "--limit/--only cut %d of %d meetings from a corpus whose gold sets span files. "
+            "Queries left with a partial gold set will be DROPPED by the harness, not scored. "
+            "Use the corpus's own budget flag (e.g. --synthetic-meetings N) instead.",
+            selected - len(meeting_ids),
+            selected,
+        )
     logger.info("Injecting %d meeting(s)", len(meeting_ids))
 
     records = []

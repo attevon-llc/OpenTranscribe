@@ -4879,6 +4879,7 @@
   "chat.sources.count_one": "{{count}} Quelle",
   "chat.sources.count_other": "{{count}} Quellen",
   "chat.sources.openAt": "Aufnahme bei {{time}} öffnen",
+  "chat.sources.summaryBadge": "Zusammenfassung",
   "chat.sources.title": "Quellen",
   "chat.sources.untitled": "Unbenannte Aufnahme",
   "chat.status.complete": "Antwort fertig",

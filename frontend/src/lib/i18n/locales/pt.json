@@ -4879,6 +4879,7 @@
   "chat.sources.count_one": "{{count}} fonte",
   "chat.sources.count_other": "{{count}} fontes",
   "chat.sources.openAt": "Abrir a gravação em {{time}}",
+  "chat.sources.summaryBadge": "Resumo",
   "chat.sources.title": "Fontes",
   "chat.sources.untitled": "Gravação sem título",
   "chat.status.complete": "Resposta concluída",

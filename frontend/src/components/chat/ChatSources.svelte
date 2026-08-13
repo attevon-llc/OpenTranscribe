@@ -17,6 +17,14 @@
 
   $: count = sources.length;
 
+  /**
+   * A citation with no `kind` predates #403 Stage 4 and is a transcript chunk.
+   * Defaulting the OTHER way would render every historic citation as a summary.
+   */
+  function isDigest(source: ChatSource): boolean {
+    return source.kind === 'digest';
+  }
+
   function toggle(): void {
     expanded = !expanded;
   }
@@ -61,7 +69,13 @@
               <span class="source-body">
                 <span class="source-title">{source.title || $t('chat.sources.untitled')}</span>
                 <span class="source-meta">
-                  {#if source.speaker}<span class="source-speaker">{source.speaker}</span>{/if}
+                  {#if isDigest(source)}
+                    <span class="source-kind" data-testid="chat-source-digest">
+                      {$t('chat.sources.summaryBadge')}
+                    </span>
+                  {:else if source.speaker}
+                    <span class="source-speaker">{source.speaker}</span>
+                  {/if}
                   <span class="source-time">{formatClock(source.start_time)}</span>
                 </span>
                 {#if source.snippet}
@@ -169,6 +183,21 @@
 
   .source-speaker {
     font-weight: 500;
+  }
+
+  /* A digest is derived text, not a quote. The badge is what stops a summary
+     from reading as something a participant said — light/dark parity via the
+     shared tokens, never a hardcoded colour. */
+  .source-kind {
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 0.68rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: 0.25rem;
+    background: var(--surface-alt, var(--background-secondary));
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
   }
 
   .source-time {

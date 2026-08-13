@@ -47,14 +47,30 @@ export function isScopeUnfiltered(scope: ChatScope | null | undefined): boolean 
   return isScopeEmpty(scope) && !(scope?.speakers?.length ?? 0);
 }
 
-/** One transcript excerpt an answer may reference as `[n]`. */
+/**
+ * What a citation points at (#403 Stage 4).
+ *
+ * `chunk` is somebody's words at a timestamp. `digest` is DERIVED text — an
+ * extractive summary of a span of the same recording — and must never be
+ * rendered as a quote: presenting it as speech attributes to a person words
+ * nobody actually said. Older messages predate the field and carry nothing,
+ * which is why every read treats an absent value as `chunk`.
+ */
+export type ChatSourceKind = 'chunk' | 'digest';
+
+/** One retrieved excerpt an answer may reference as `[n]`. */
 export interface ChatSource {
   id: number;
+  /** Absent on messages persisted before Stage 4; treat as `chunk`. */
+  kind?: ChatSourceKind;
   file_uuid: string;
   title: string;
   chunk_index: number;
+  /** Section number when `kind === 'digest'`, else null. */
+  digest_section?: number | null;
   start_time: number;
   end_time: number | null;
+  /** Always null for a digest: a section spans several speakers. */
   speaker: string | null;
   snippet: string;
 }

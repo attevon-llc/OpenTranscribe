@@ -4879,6 +4879,7 @@
   "chat.sources.count_one": "{{count}} источник",
   "chat.sources.count_other": "{{count}} источников",
   "chat.sources.openAt": "Открыть запись на {{time}}",
+  "chat.sources.summaryBadge": "Сводка",
   "chat.sources.title": "Источники",
   "chat.sources.untitled": "Запись без названия",
   "chat.status.complete": "Ответ готов",

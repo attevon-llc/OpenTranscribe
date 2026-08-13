@@ -4879,6 +4879,7 @@
   "chat.sources.count_one": "{{count}} 件の出典",
   "chat.sources.count_other": "{{count}} 件の出典",
   "chat.sources.openAt": "{{time}} から録音を開く",
+  "chat.sources.summaryBadge": "要約",
   "chat.sources.title": "出典",
   "chat.sources.untitled": "無題の録音",
   "chat.status.complete": "回答が完了しました",

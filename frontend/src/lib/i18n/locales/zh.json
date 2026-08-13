@@ -4879,6 +4879,7 @@
   "chat.sources.count_one": "{{count}} 条来源",
   "chat.sources.count_other": "{{count}} 条来源",
   "chat.sources.openAt": "在 {{time}} 打开录音",
+  "chat.sources.summaryBadge": "摘要",
   "chat.sources.title": "来源",
   "chat.sources.untitled": "未命名录音",
   "chat.status.complete": "回答已完成",

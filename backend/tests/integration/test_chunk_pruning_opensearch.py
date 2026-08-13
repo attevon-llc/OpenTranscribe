@@ -10,14 +10,18 @@ that gap: same service, same query builder, a real engine underneath.
 What is proven here and nowhere else:
 
 * a shrinking re-chunk really does leave no ``{file_uuid}_{n}`` tail behind;
-* the count-gate really returns 0 on a first index, so the hot path issues **no**
-  ``delete_by_query`` — asserted from the engine's own index stats, not from a spy;
+* the gate really finds nothing on a first index, so the hot path issues **no**
+  ``delete_by_query`` and **no search at all** — asserted from the engine's own index
+  stats, not from a spy;
 * the prune's ``term`` on ``file_uuid`` really is scoped to one file;
 * the index-v6 plane split behaves on OpenSearch exactly as it does against the stand-in —
   the chunk-plane prune spares a digest, the per-file delete takes it, and a bare
   ``doc_type`` term (the mistake) stops pruning a pre-v6 corpus entirely;
-* the refresh-window race the fix's author documented is **reachable** — see
-  ``test_reindex_inside_the_refresh_window_leaves_the_tail_behind``.
+* the #435 refresh-window race is **closed**, and closed by the mechanism claimed rather
+  than by timing — see ``test_reindex_inside_the_refresh_window_still_prunes_the_tail``,
+  which freezes the searcher outright and asserts that the searcher is blind to the tail
+  while an id lookup is not. That test used to assert the opposite (the leak), and the
+  11-of-12 measurement that justified changing it is quoted in its docstring.
 
 Two things this module got wrong on its first execution, both worth keeping in front of
 whoever edits it next:
@@ -178,10 +182,17 @@ def _chunk_indexes(client, file_uuid: str) -> list[int]:
 def _counters(client) -> dict[str, int]:
     """Engine-side counters that reveal what the service actually issued.
 
-    ``search.query_total`` distinguishes "the count gate ran and stopped" (one search)
-    from "a ``delete_by_query`` was issued as well" (the gate plus the delete's own
-    searches) without patching anything on the client. ``indexing.delete_total`` is the
-    number of documents actually removed.
+    The three are chosen so the gate's *mechanism* is observable, not just its
+    outcome, and without patching anything on the client:
+
+    * ``search.query_total`` — searcher-dependent work. The prune gate used to be a
+      ``count``, which is a search, and a search sees only what the last refresh
+      made visible. That is issue #435. After the fix the hot path must issue
+      **none**.
+    * ``get.total`` — realtime, translog-reading work, one per id in an ``mget``
+      probe. This is what "the gate still ran" looks like, so "no search" cannot be
+      confused with "no gate".
+    * ``indexing.delete_total`` — documents actually removed.
     """
     from app.core.config import settings
 
@@ -190,6 +201,7 @@ def _counters(client) -> dict[str, int]:
     ]["primaries"]
     return {
         "searches": int(primaries["search"]["query_total"]),
+        "gets": int(primaries["get"]["total"]),
         "deleted": int(primaries["indexing"]["delete_total"]),
     }
 
@@ -248,14 +260,22 @@ def test_prune_touches_only_the_file_being_reindexed(chunk_index):
 # ---------------------------------------------------------------------------
 
 
-def test_first_index_issues_the_count_gate_and_no_delete_by_query(chunk_index):
-    """Nothing indexed yet, and nothing indexed above the new count: one search, no delete.
+def test_first_index_probes_by_id_and_issues_no_search_and_no_delete(chunk_index):
+    """Nothing to prune: exactly one realtime id probe, no search at all, no delete.
 
     Read from the engine's own counters rather than a spy on the client, because the
-    claim under test is about what OpenSearch was asked to do. ``delete_by_query`` forces
-    a whole-index refresh, which is the cost the count gate exists to avoid on the path
-    every completed transcription takes.
+    claim under test is about what OpenSearch was asked to do — and since #435 the
+    *kind* of request is the point, not only the count of them. The gate used to be a
+    ``count``; a count is a search, and a search sees only what the last refresh made
+    visible, which is the whole bug. It is now an ``mget``, which reads the translog.
+    The counters tell those two apart: ``get.total`` rises by exactly one probe
+    window, ``search.query_total`` does not move.
+
+    ``delete_by_query`` remains the expensive thing the gate exists to avoid on the
+    path every completed transcription takes — it forces a whole-index refresh, and a
+    refresh on this mapping was measured at ~95 ms median per file.
     """
+    from app.services.search.indexing_service import _ORPHAN_PROBE_WINDOW
     from app.services.search.indexing_service import chunk_plane_query
 
     file_uuid = str(uuid.uuid4())
@@ -265,14 +285,20 @@ def test_first_index_issues_the_count_gate_and_no_delete_by_query(chunk_index):
     after = _index_counters_delta(chunk_index, before)
 
     assert first["stale_removed"] == 0
-    assert after["searches"] == 1, (
-        "the chunk plane's count gate, and nothing after it. One, not two: the digest "
-        "plane has a count gate of its own, and it is silent here only because FILE_ID "
-        "resolves to no media file — see the FILE_ID comment"
+    assert after["searches"] == 0, (
+        "the hot path must issue NO searcher-dependent request. The chunk plane's gate "
+        "is an id probe now, and the digest plane's gate is silent here only because "
+        "FILE_ID resolves to no media file — see the FILE_ID comment"
+    )
+    assert after["gets"] == _ORPHAN_PROBE_WINDOW, (
+        "...and the gate DID run: one probe window of realtime id lookups. Without "
+        "this, 'no search' would also be satisfied by a gate that was deleted"
     )
     assert after["deleted"] == 0
 
-    # The gate's own predicate, evaluated by the real searcher: genuinely empty.
+    # There is genuinely no tail — asserted through the searcher, which agrees with
+    # the probe here because a refresh has landed. The two disagreeing is #435, and
+    # the test below is where that is pinned.
     from app.core.config import settings
 
     chunk_index.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
@@ -288,7 +314,8 @@ def test_first_index_issues_the_count_gate_and_no_delete_by_query(chunk_index):
     delta = _index_counters_delta(chunk_index, before)
 
     assert grown["stale_removed"] == 0
-    assert delta["searches"] == 1
+    assert delta["searches"] == 0
+    assert delta["gets"] == _ORPHAN_PROBE_WINDOW
     assert delta["deleted"] == 0
     assert _chunk_indexes(chunk_index, file_uuid) == list(range(9))
 
@@ -474,62 +501,87 @@ def test_a_bare_doc_type_term_silently_stops_pruning_the_existing_corpus(chunk_i
 
 
 # ---------------------------------------------------------------------------
-# The documented race — reachable, and it does not heal
+# The race that used to be here — closed, and pinned closed
 # ---------------------------------------------------------------------------
 
 
-def test_reindex_inside_the_refresh_window_leaves_the_tail_behind(chunk_index):
-    """CHARACTERISATION: the count gate reads the searcher, so it can miss the tail.
+def test_reindex_inside_the_refresh_window_still_prunes_the_tail(chunk_index):
+    """The #435 fix: the gate is realtime, so a frozen searcher does not hide the tail.
 
-    ``_prune_stale_chunks`` gates the delete on a ``count``, and a count is a search
-    against the last refreshed segment. The bulk load before it uses ``refresh=False``.
-    So when the same file is indexed twice before a refresh lands, the second index sees
-    an empty tail, skips the delete, and the orphans stay — **permanently**: nothing
-    later re-examines them, and a subsequent refresh does not trigger a prune.
+    **What this test used to assert, and why it changed.** ``_prune_stale_chunks``
+    gated its delete on a ``count``. A count is a search against the last refreshed
+    segment, and the bulk load before it uses ``refresh=False`` — so when the same
+    file was indexed twice before a refresh landed, the second index saw an empty
+    tail, skipped the delete, and the orphans stayed **permanently**: nothing later
+    re-examined them, and a subsequent refresh triggered no prune. This module
+    characterised that as a passing test, and the service's docstring called it
+    unreachable ("which no pipeline path does").
 
-    The service's docstring calls this out and judges it unreachable ("which no pipeline
-    path does"). Re-measured 2026-08-13 against this stack's OpenSearch at the production
-    default ``refresh_interval`` (the index sets none, so the 1 s cluster default applies):
-    a back-to-back pair of ``index_transcript_chunks`` calls completes in 125–224 ms and
-    **the stale tail survived 11 of 12 pairs**. So the conditional is doing all the work —
-    the window is not narrow, and anything that does re-index one file twice in a second
-    leaks almost every time. That is issue #435, and the number above is the one to quote
-    in it.
+    Both parts of that were wrong, and measured rather than argued. At this stack's
+    production ``refresh_interval`` a back-to-back pair of ``index_transcript_chunks``
+    calls completes in 125–224 ms and **the stale tail survived 11 of 12 pairs** —
+    the window is not narrow. And nothing serialises the callers: five dispatch sites
+    reach the single-file indexing task, including a user-triggered reprocess with no
+    in-flight check and a recovery sweep that branches on the index record being
+    *missing* rather than on the original task having stopped. Issue #435.
 
-    This test pins ``refresh_interval`` open instead of racing a 1 s clock, so it states
-    the mechanism rather than the timing — and the control below proves the mechanism *is*
-    visibility, not the predicate.
+    **What closed it.** The gate is now an ``mget`` over the ids at or above
+    ``keep_count``. Id lookups are realtime — they read the translog — so the probe
+    sees the tail the instant the bulk load returns, refresh or no refresh. The
+    ``delete_by_query`` that follows still needs a searcher, so the prune refreshes
+    first; that refresh sits behind the gate and a full reindex therefore pays none
+    of it (measured: ~95 ms median per file if it were unconditional, +41 s on a
+    432-file run).
 
-    If a future change closes the race (refreshing before the gate, or dropping the gate),
-    this test fails. That is the intended signal: update it, and delete the caveat in
-    ``_prune_stale_chunks``'s docstring.
+    This test pins ``refresh_interval`` open rather than racing a 1 s clock, which
+    makes it a **harsher** condition than production, not a weaker one: the searcher
+    is frozen for the whole test instead of for a few hundred milliseconds.
     """
     from app.core.config import settings
+    from app.services.search.indexing_service import chunk_plane_query
 
     index_name = settings.OPENSEARCH_CHUNKS_INDEX
     chunk_index.indices.put_settings(index=index_name, body={"index": {"refresh_interval": "-1"}})
 
-    leaked_uuid = str(uuid.uuid4())
-    first = _index(_segments(8, marker="ORIGINAL"), file_uuid=leaked_uuid)
-    second = _index(_segments(3, marker="EDITED"), file_uuid=leaked_uuid)
-
+    file_uuid = str(uuid.uuid4())
+    first = _index(_segments(8, marker="ORIGINAL"), file_uuid=file_uuid)
     assert first["chunk_count"] == 8
+
+    # THE CONTROL, and the reason this test can still fail. The searcher must be
+    # genuinely blind right here, or everything below passes for the wrong reason.
+    # This is the old gate's own predicate, evaluated by the real searcher, at the
+    # exact moment the old gate would have evaluated it: it finds nothing, which is
+    # why it skipped the delete and leaked. The id plane disagrees, and that
+    # disagreement is the entire fix.
+    blind = chunk_index.count(
+        index=index_name,
+        body={"query": chunk_plane_query(file_uuid, from_chunk_index=3)},
+    )
+    assert blind["count"] == 0, (
+        "the searcher must be blind to the tail here, or the refresh window is not "
+        "being held open and this test is not exercising #435 at all"
+    )
+    assert chunk_index.exists(index=index_name, id=f"{file_uuid}_7"), (
+        "...while the same documents ARE addressable by id. Realtime vs searcher is "
+        "the whole mechanism; if this ever fails, mget is not realtime and the fix "
+        "rests on nothing"
+    )
+
+    second = _index(_segments(3, marker="EDITED"), file_uuid=file_uuid)
+
     assert second["chunk_count"] == 3
-    assert second["stale_removed"] == 0, "the gate saw an unrefreshed, empty tail"
+    assert second["stale_removed"] == 5, (
+        "the realtime probe saw the tail the searcher could not, and the prune ran"
+    )
 
-    surviving = _docs(chunk_index, leaked_uuid)  # _docs refreshes before reading
-    assert [int(doc["chunk_index"]) for doc in surviving] == list(range(8))
-    assert any("ORIGINAL" in doc["content"] for doc in surviving), "stale text is searchable"
+    surviving = _docs(chunk_index, file_uuid)  # _docs refreshes before reading
+    assert [int(doc["chunk_index"]) for doc in surviving] == [0, 1, 2]
+    assert all("ORIGINAL" not in doc["content"] for doc in surviving), (
+        "no stale text survives — there is nothing left to heal later"
+    )
 
-    # It does not heal: the refresh above made the tail visible, but nothing prunes it
-    # until the file is indexed again.
-    assert _chunk_indexes(chunk_index, leaked_uuid) == list(range(8))
-    healed = _index(_segments(3, marker="EDITED"), file_uuid=leaked_uuid)
-    assert healed["stale_removed"] == 5
-    assert _chunk_indexes(chunk_index, leaked_uuid) == [0, 1, 2]
-
-    # Control: identical calls with a refresh in between prune correctly, so the cause
-    # is searcher visibility and nothing else about the second index.
+    # Control: the path that already worked before #435 — a refresh in between —
+    # still prunes exactly the same way, so the fix did not trade one case for another.
     clean_uuid = str(uuid.uuid4())
     _index(_segments(8, marker="ORIGINAL"), file_uuid=clean_uuid)
     chunk_index.indices.refresh(index=index_name)

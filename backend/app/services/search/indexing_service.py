@@ -4,6 +4,7 @@ import contextlib
 import datetime
 import logging
 import time
+from collections.abc import Callable
 from collections.abc import Iterator
 from typing import Any
 
@@ -37,6 +38,17 @@ _RETRYABLE_ERROR_TYPES = frozenset(
         "cluster_block_exception",
     }
 )
+
+#: How many consecutive document ids one realtime orphan probe covers (#435).
+#:
+#: A bulk load writes ``0..n-1``, so the tail a shorter re-chunk orphans is normally
+#: contiguous and a single id would answer the question. The probe is a *window*
+#: because that assumption is not guaranteed and is already violated on purpose in
+#: the suite: ``_extract_failed_docs`` drops documents whose bulk error is permanent,
+#: leaving a hole, and ``test_a_shorter_resection_leaves_no_orphan_digest`` plants its
+#: orphan at ``sections + 3``. The walk stops at the first window in which nothing is
+#: found, so a document set that ends terminates it. 64 ids cost one round trip.
+_ORPHAN_PROBE_WINDOW = 64
 
 # Permanent error types that should NOT be retried
 _PERMANENT_ERROR_TYPES = frozenset(
@@ -994,6 +1006,42 @@ class TranscriptIndexingService:
             logger.error(f"Error deleting chunks for file {file_uuid}: {e}")
             return 0
 
+    def _orphaned_document_ids(
+        self, *, index_name: str, document_id: Callable[[int], str], first_orphan: int
+    ) -> list[str]:
+        """Ids of this file's documents from ``first_orphan`` upward, read REALTIME.
+
+        ``mget`` addresses documents **by id**, and an id lookup reads the translog:
+        it sees a document the instant the bulk load returns, with no refresh. A
+        ``count``/``search`` sees only what the last refresh made visible. That
+        difference is the whole of the #435 fix — see :meth:`_prune_stale_chunks`.
+
+        Measured on this stack: 5 documents bulk-loaded with ``refresh=False`` were
+        all returned by ``mget`` while a ``count`` over the same predicate returned 0.
+
+        Args:
+            index_name: Index to probe.
+            document_id: Builds the document id for an index — ``{uuid}_{n}`` for a
+                chunk, ``{uuid}_digest_{n}`` for a digest section.
+            first_orphan: First index that the new generation did not write.
+
+        Returns:
+            The ids that exist, in probe order. Empty means nothing to prune.
+        """
+        if not opensearch_client:
+            return []
+
+        found: list[str] = []
+        start = first_orphan
+        while True:
+            probe = [document_id(n) for n in range(start, start + _ORPHAN_PROBE_WINDOW)]
+            response = opensearch_client.mget(index=index_name, body={"ids": probe}, _source=False)
+            window = [doc["_id"] for doc in response.get("docs", []) if doc.get("found")]
+            if not window:
+                return found
+            found.extend(window)
+            start += _ORPHAN_PROBE_WINDOW
+
     def _prune_stale_chunks(self, file_uuid: str, *, keep_count: int) -> int:
         """Delete chunks left behind by a longer previous chunking of this file.
 
@@ -1001,15 +1049,57 @@ class TranscriptIndexingService:
         overwritten in place (the doc id is derived from ``chunk_index``); anything
         at or above ``keep_count`` belongs to a chunking that no longer exists.
 
-        **The count runs first so the first index after transcription pays nothing.**
-        A ``count`` is a cheap search against the existing searcher; the
-        ``delete_by_query`` it guards forces a whole-index ``refresh``, which is the
-        part worth avoiding on the hot path where there is provably nothing to delete.
+        **The gate is an id probe, not a count, and that is issue #435.** A ``count``
+        is a search, and a search sees only what the last ``refresh`` made visible,
+        while the bulk load above uses ``refresh=False``. So a second index of the
+        same file inside the refresh window used to find an empty tail, skip the
+        delete, and leave the orphans **permanently** — nothing later re-examined
+        them and a subsequent refresh triggered no prune.
 
-        The count reads the searcher, so it can miss documents written within the
-        index's ``refresh_interval`` (1 s). That only matters if the same file were
-        re-indexed twice inside one second, which no pipeline path does — a re-index
-        follows a transcript edit, a reprocess, or a recovery sweep.
+        The previous version of this docstring called that unreachable ("no pipeline
+        path re-indexes the same file twice inside one second"). Both halves of that
+        were false, and both were measured rather than argued:
+
+        * **Reachable, and not narrowly.** A back-to-back pair of
+          ``index_transcript_chunks`` calls completes in 125–224 ms at this cluster's
+          production ``refresh_interval``, and the stale tail survived **11 of 12
+          pairs**.
+        * **Nothing serialises the callers.** Five dispatch sites reach the
+          single-file indexing task — ``tasks/transcription/postprocess.py``,
+          ``tasks/transcription/background.py``, ``services/task_recovery_service.py``,
+          ``api/endpoints/files/reprocess.py`` (user-triggered, at any moment, with no
+          in-flight or lock check) and ``scripts/corpus_injection/injector.py`` — plus
+          the batch loop in ``tasks/reindex_task.py``. The recovery sweep is the
+          sharpest: it branches on the index record being *missing*, not on the
+          original task having *stopped*, so a file whose indexing is in flight gets a
+          second dispatch by design.
+
+        **What the mechanism now guarantees**, and only this: any orphan that exists
+        when :meth:`_orphaned_document_ids` runs is found, whether or not a refresh
+        has made it searchable. The probe is realtime; the ``refresh`` below is then
+        required because ``delete_by_query`` executes as a **scroll search** and
+        therefore cannot see what the probe just found — measured directly, a
+        ``delete_by_query`` over 4 unrefreshed documents deletes 0. That is also why
+        a ``_seq_no`` or ``_version`` predicate cannot replace the gate: a predicate
+        changes which *visible* documents match, it cannot make invisible ones
+        visible.
+
+        **What it does NOT guarantee.** Two genuinely overlapping
+        ``index_transcript_chunks`` calls for one file are still not serialised by
+        anything. If a second call's probe runs before a first call's bulk load
+        returns, the tail it has not written yet cannot be found — by any mechanism
+        short of a lock. Interleaved writers on one file remain a coordination
+        problem, not a visibility one.
+
+        **Cost, measured rather than assumed** (real mapping, 384-d HNSW, 50
+        chunks/file, 25 samples, at 5k/15k/30k documents): the probe is
+        **4.0–4.8 ms** against the **3.7–4.1 ms** count it replaces. The alternative
+        — refreshing unconditionally before the gate — is **95 ms median /
+        116–184 ms mean per file**, near-flat in index size because it is dominated
+        by building the HNSW graph for the vectors just written, which is **+41 s to
+        +79 s on a 432-file reindex that takes 182 s**. Hence the refresh sits behind
+        the gate, on the path where a re-chunk actually shrank, and a full reindex
+        pays none of it.
 
         A failure here is logged, not raised: the new chunks are already indexed and
         correct, and the caller must not report a successful index as a failure.
@@ -1025,15 +1115,21 @@ class TranscriptIndexingService:
             return 0
 
         index_name = settings.OPENSEARCH_CHUNKS_INDEX
-        query = chunk_plane_query(file_uuid, from_chunk_index=keep_count)
         try:
-            count_response = opensearch_client.count(index=index_name, body={"query": query})
-            if not count_response.get("count", 0):
+            stale_ids = self._orphaned_document_ids(
+                index_name=index_name,
+                document_id=lambda n: f"{file_uuid}_{n}",
+                first_orphan=keep_count,
+            )
+            if not stale_ids:
                 return 0
 
+            # The probe read the translog; delete_by_query reads a searcher. Without
+            # this the delete matches nothing it was just told about.
+            opensearch_client.indices.refresh(index=index_name)
             response = opensearch_client.delete_by_query(
                 index=index_name,
-                body={"query": query},
+                body={"query": chunk_plane_query(file_uuid, from_chunk_index=keep_count)},
                 refresh=True,
                 conflicts="proceed",
             )
@@ -1042,6 +1138,15 @@ class TranscriptIndexingService:
                 f"Pruned {deleted} stale chunk(s) for file {file_uuid} "
                 f"(re-chunk shrank to {keep_count} chunks)"
             )
+            if deleted != len(stale_ids):
+                # The predicate declined documents the id probe found. The known
+                # cause is the pre-v6 compat arm: chunks written before index v6
+                # carry no `doc_type`, so a predicate that lost the arm matches
+                # none of them while their ids exist.
+                logger.warning(
+                    f"Stale-chunk prune for file {file_uuid} found {len(stale_ids)} "
+                    f"orphan id(s) but the chunk-plane predicate deleted {deleted}"
+                )
             return deleted
         except Exception as e:
             logger.error(
@@ -1121,20 +1226,42 @@ class TranscriptIndexingService:
             return 0
 
     def _prune_stale_digests(self, file_uuid: str, *, keep_count: int) -> int:
-        """Delete digest sections left behind by a longer previous sectioning."""
+        """Delete digest sections left behind by a longer previous sectioning.
+
+        The same realtime gate as :meth:`_prune_stale_chunks`, for the same reason
+        (#435) and with the same guarantee: this plane is written by the same
+        unrefreshed bulk load, from the same five unserialised dispatch paths, so a
+        count gate here misses an orphan section exactly as often. Fixing one plane
+        and describing the race as closed would be a docstring asserting a guarantee
+        the code does not provide — which is the defect #435 is about.
+        """
         if not opensearch_client:
             return 0
 
         index_name = settings.OPENSEARCH_CHUNKS_INDEX
-        query = digest_plane_query(file_uuid, from_section=keep_count)
         try:
-            if not opensearch_client.count(index=index_name, body={"query": query}).get("count", 0):
+            stale_ids = self._orphaned_document_ids(
+                index_name=index_name,
+                document_id=lambda n: digest_mapping.digest_document_id(file_uuid, n),
+                first_orphan=keep_count,
+            )
+            if not stale_ids:
                 return 0
+
+            opensearch_client.indices.refresh(index=index_name)
             response = opensearch_client.delete_by_query(
-                index=index_name, body={"query": query}, refresh=True, conflicts="proceed"
+                index=index_name,
+                body={"query": digest_plane_query(file_uuid, from_section=keep_count)},
+                refresh=True,
+                conflicts="proceed",
             )
             deleted = int(response.get("deleted", 0))
             logger.info(f"Pruned {deleted} stale digest section(s) for file {file_uuid}")
+            if deleted != len(stale_ids):
+                logger.warning(
+                    f"Stale-digest prune for file {file_uuid} found {len(stale_ids)} "
+                    f"orphan id(s) but the digest-plane predicate deleted {deleted}"
+                )
             return deleted
         except Exception as e:  # noqa: BLE001
             logger.error(f"Could not prune stale digest sections for file {file_uuid}: {e}")

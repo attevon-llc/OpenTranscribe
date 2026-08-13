@@ -212,6 +212,32 @@ repos:
         pass_filenames: false
         files: ^(backend/tests/.*\.py|backend/tests/audit-allowlist\.txt|scripts/audit-tests\.py)$
 
+  # DB session-lifetime gate (issue #440) — a session held across slow non-DB work keeps a
+  # transaction open, and a plain SELECT holds ACCESS SHARE for its life. That QUEUES
+  # `ALTER TABLE`, i.e. it hangs an Alembic upgrade mid-release (and dev migrates on backend
+  # startup), pins the VACUUM horizon on the largest table, and burns a pool connection.
+  # Measured live twice in one day on two different workers: 48 min and 1h26m
+  # idle-in-transaction, found only because DDL tests started failing with LockNotAvailable.
+  #
+  # Wired here on purpose. This audit's very first finding was that `audit-route-coverage.py`
+  # could never fail AND nothing invoked it — a gate nothing runs is documentation. Adding a
+  # detector without wiring it would have repeated that on the same day it was diagnosed.
+  #
+  # SELF-TEST FIRST, same rule as audit-tests above: a detector that silently stops matching
+  # reports zero findings, which is indistinguishable from a clean codebase.
+      - id: audit-session-lifetime-selftest
+        name: session-lifetime self-test (every detector must still fire)
+        entry: python3 scripts/audit-session-lifetime.py --selftest
+        language: system
+        pass_filenames: false
+        files: ^scripts/audit-session-lifetime\.py$
+      - id: audit-session-lifetime
+        name: audit DB session lifetime (no transaction held across slow work)
+        entry: python3 scripts/audit-session-lifetime.py backend/app
+        language: system
+        pass_filenames: false
+        files: ^(backend/app/.*\.py|scripts/session-lifetime-allowlist\.txt|scripts/audit-session-lifetime\.py)$
+
   # Shell script linting
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.9.0.6

@@ -35,7 +35,7 @@ from tests.eval.harness.metrics import RunDoc
 
 logger = logging.getLogger(__name__)
 
-STAGES = ("retrieve", "rerank")
+STAGES = ("retrieve", "rerank", "route")
 
 #: ``corpus``      retrieve across every accessible file — what chat actually does,
 #:                 and the number every later stage has to move.
@@ -59,6 +59,9 @@ class RetrievalConfig:
 
     stage: str = "retrieve"
     size: int = DEFAULT_SIZE
+    #: Digest sections the ``route`` stage fetches when the router asks for the
+    #: digest tier. Matches ``service.py``'s production default.
+    digest_size: int = 6
     search_mode: str = "hybrid"
     scope: str = "corpus"
     workers: int = 4
@@ -81,6 +84,16 @@ class RetrievalConfig:
             ),
             "llm_required": False,
         }
+        if self.stage == "route":
+            base.update(
+                {
+                    "digest_size": self.digest_size,
+                    "ranked_plane": (
+                        "chunk only — digest hits are measured as FILE SELECTION, not "
+                        "mixed into the ranking (see RouteRecord)"
+                    ),
+                }
+            )
         if self.stage == "rerank":
             base.update(
                 {
@@ -90,6 +103,50 @@ class RetrievalConfig:
                 }
             )
         return base
+
+
+@dataclass(frozen=True)
+class RouteRecord:
+    """What the router did for one query, and what each tier actually returned.
+
+    The digest leg is recorded **beside** the ranked list rather than merged into
+    it, and that is the central measurement decision of this stage.
+
+    Mixing digest documents into the ranking would look like the obvious thing to
+    do and would be wrong twice over. The qrels judge *chunks* — they are built
+    by mapping gold turn spans onto whatever chunks the indexer produced — so a
+    digest document is unjudged, scores 0, and pushes real relevant chunks down
+    the list. The routed run would then score WORSE than the control by
+    construction, and the number would be an artefact of the judgement space
+    rather than a fact about retrieval. Fixing that by judging digests too would
+    mean inventing a second relevance rule mid-epic, which is how a qrels file
+    stops meaning anything.
+
+    So the ranked list stays chunk-only and comparable to the control, and the
+    digest leg is measured for the thing it is actually claimed to do. Stage 1
+    established that with an oracle gold-file scope nDCG@10 goes 0.1052 ->
+    0.3296 — **roughly two thirds of the loss is file selection**, which is the
+    entire argument for a digest tier. So the question this record answers is
+    "did the digest leg surface a gold FILE the chunk leg missed", not "where did
+    a digest rank".
+    """
+
+    intent: str
+    tiers: tuple[str, ...]
+    #: Files the digest leg surfaced, best first. Empty when the router did not
+    #: ask for the digest tier — which is not the same as the tier returning
+    #: nothing, and ``tiers`` is what distinguishes them.
+    digest_files: tuple[str, ...] = ()
+    #: Files the chunk leg surfaced, best first, deduplicated.
+    chunk_files: tuple[str, ...] = ()
+
+
+def _ordered_files(hits) -> tuple[str, ...]:
+    """File uuids in rank order, first occurrence wins, no duplicates."""
+    seen: dict[str, None] = {}
+    for hit in hits:
+        seen.setdefault(str(hit.file_uuid), None)
+    return tuple(seen)
 
 
 def _to_run_docs(hits) -> list[RunDoc]:
@@ -136,6 +193,7 @@ def execute(
     config: RetrievalConfig,
     organization_id: int | None = None,
     progress_every: int = 200,
+    records: dict[str, RouteRecord] | None = None,
 ) -> dict[str, list[RunDoc]]:
     """Run every query through the production retriever.
 
@@ -145,6 +203,10 @@ def execute(
         config: Retrieval knobs, pinned by the harness.
         organization_id: Tenant, or None for personal scope.
         progress_every: Log cadence; does not affect results.
+        records: Optional out-parameter, filled by ``stage='route'`` with one
+            :class:`RouteRecord` per query. Follows the same shape as
+            ``prompting.build_messages(diagnostics=...)`` rather than changing
+            the return type, so every existing caller is unaffected.
 
     Returns:
         ``query_id -> [RunDoc]`` in provider-ranked order. A query that retrieved
@@ -154,15 +216,34 @@ def execute(
     Raises:
         RuntimeError: If ``stage='rerank'`` and the cross-encoder is unavailable.
             Silently skipping the rerank would report a rerank number that never
-            reranked anything.
+            reranked anything. Also if ``stage='route'`` is asked for without a
+            ``records`` dict: the routed run's whole reason to exist is the
+            digest-leg evidence, and a caller that drops it would get numbers
+            byte-identical to the control under a different name — the exact
+            "control wearing a new name" failure this stage was added to avoid.
     """
     if config.stage not in STAGES:
         raise ValueError(f"Unknown stage {config.stage!r}; expected one of {STAGES}")
     if config.scope not in SCOPES:
         raise ValueError(f"Unknown scope {config.scope!r}; expected one of {SCOPES}")
 
+    if config.stage == "route" and records is None:
+        raise RuntimeError(
+            "stage='route' needs a records dict to write the digest-leg evidence into; "
+            "without it the run is byte-identical to stage='retrieve' under another name."
+        )
+
     from app.services.search.chunk_retrieval import diversity_sample
     from app.services.search.chunk_retrieval import retrieve_chunks
+
+    router = None
+    retrieve_digests_fn = None
+    if config.stage == "route":
+        from app.services.chat.router import route as route_fn
+        from app.services.search.chunk_retrieval import retrieve_digests
+
+        router = route_fn
+        retrieve_digests_fn = retrieve_digests
 
     reranker = None
     if config.stage == "rerank":
@@ -190,6 +271,28 @@ def execute(
             size=config.size,
             search_mode=config.search_mode,
         )
+        if router is not None:
+            # The production router, on the production question text. No
+            # harness-side classifier: a second copy would drift, and then the
+            # measurement would be of the copy.
+            decision = router(query.text)
+            digests = []
+            if decision.wants_digest and retrieve_digests_fn is not None:
+                digests = retrieve_digests_fn(
+                    query.text,
+                    user_id=user_id,
+                    organization_id=organization_id,
+                    file_uuids=scope,
+                    size=config.digest_size,
+                    search_mode=config.search_mode,
+                )
+            assert records is not None  # guaranteed by the guard above
+            records[query.query_id] = RouteRecord(
+                intent=decision.intent,
+                tiers=tuple(decision.tiers),
+                digest_files=_ordered_files(digests),
+                chunk_files=_ordered_files(hits),
+            )
         if reranker is not None:
             hits = reranker(query.text, hits, max_pairs=config.rerank_max_pairs)
             hits = diversity_sample(hits, max_per_file=config.max_per_file, cap=config.final_chunks)

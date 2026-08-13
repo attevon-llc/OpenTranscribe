@@ -218,3 +218,93 @@ def render_routing_table(result: RoutingResult) -> str:
             f"| {expected} | {total} | {correct} | {correct / total:.4f} | {wrong or '—'} |"
         )
     return header + "\n".join(lines) + "\n"
+
+
+def build_digest_leg_report(
+    queries: list,
+    records: dict,
+    *,
+    chunk_files_at: int = 10,
+) -> dict[str, Any]:
+    """What the digest tier bought, measured as **file selection**.
+
+    Stage 1 established the shape of the problem: corpus-wide nDCG@10 was 0.1052
+    while an oracle gold-file scope scored 0.3296, so roughly **two thirds of the
+    loss is picking the wrong recording**, not ranking badly inside the right
+    one. The digest tier exists to close that gap, so the honest question is not
+    "where did a digest rank" but "did the digest leg surface a gold FILE the
+    chunk leg missed".
+
+    ``rescued`` is the headline and it is deliberately strict: a gold file counts
+    only if the digest leg found it **and** the chunk leg's top ``chunk_files_at``
+    distinct files did not. A digest leg that merely re-finds what the chunk leg
+    already had is worth nothing, and an aggregate recall number would hide that.
+
+    Args:
+        queries: The scored :class:`~tests.eval.harness.corpora.EvalQuery` set.
+        records: ``query_id -> RouteRecord`` from ``runner.execute``.
+        chunk_files_at: How deep into the chunk leg's file order counts as
+            "the chunk leg already had it".
+
+    Returns:
+        A self-describing block for the results document.
+    """
+    routed = 0
+    with_digests = 0
+    digest_hit = 0
+    chunk_hit = 0
+    rescued_queries = 0
+    rescued_files = 0
+    by_class: dict[str, Counter] = {}
+
+    scored = [q for q in queries if q.query_id in records]
+    for query in scored:
+        record = records[query.query_id]
+        gold = {span.file_uuid for span in query.spans}
+        counts = by_class.setdefault(query.query_class, Counter())
+        counts["n"] += 1
+        counts[record.intent] += 1
+        if "digest" not in record.tiers:
+            continue
+        routed += 1
+        if record.digest_files:
+            with_digests += 1
+        chunk_top = set(record.chunk_files[:chunk_files_at])
+        digest_found = gold & set(record.digest_files)
+        if digest_found:
+            digest_hit += 1
+        if gold & chunk_top:
+            chunk_hit += 1
+        missed_by_chunks = digest_found - chunk_top
+        if missed_by_chunks:
+            rescued_queries += 1
+            rescued_files += len(missed_by_chunks)
+
+    return {
+        "measures": "file selection, NOT rank — see RouteRecord for why",
+        "queries_scored": len(scored),
+        "routed_to_digest_tier": routed,
+        "routed_and_the_tier_returned_something": with_digests,
+        "digest_leg_found_a_gold_file": digest_hit,
+        f"chunk_leg_found_a_gold_file_in_top_{chunk_files_at}_files": chunk_hit,
+        "rescued": {
+            "queries": rescued_queries,
+            "files": rescued_files,
+            "rate": round(rescued_queries / routed, 4) if routed else 0.0,
+            "definition": (
+                f"a gold file the digest leg surfaced that the chunk leg's top "
+                f"{chunk_files_at} distinct files did not. Re-finding what the chunk "
+                "leg already had counts for nothing."
+            ),
+        },
+        "intent_by_query_class": {
+            name: dict(sorted(counts.items())) for name, counts in sorted(by_class.items())
+        },
+        "caveat": (
+            "Queries the router sends to the chunk plane are byte-identical to the "
+            "control by design — the routed run is only expected to differ where the "
+            "router asked for the digest tier. `routed_to_digest_tier` is the "
+            "denominator that makes that visible; a zero there means the run measured "
+            "nothing new."
+        ),
+    }

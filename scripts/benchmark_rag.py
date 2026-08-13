@@ -56,7 +56,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--data-dir', default=str(DEFAULT_DATA_DIR))
     parser.add_argument('--control-name', default='stage1-baseline')
     parser.add_argument('--out', default=None, help='Output dir [tests/eval/baselines/<name>]')
-    parser.add_argument('--stage', default='retrieve', choices=('retrieve', 'rerank'))
+    parser.add_argument(
+        '--stage',
+        default='retrieve',
+        choices=('retrieve', 'rerank', 'route'),
+        help='retrieve = the candidate pool, the committed control. rerank = what reaches '
+        'the prompt. route = the production router in the loop, which adds the digest leg on '
+        'summarize-routed queries; its ranked list stays chunk-only so nDCG remains '
+        'comparable to the control, and the digest tier is reported separately as file '
+        'selection.',
+    )
     parser.add_argument(
         '--scope',
         default='corpus',
@@ -386,10 +395,28 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
 
     rows: list[dict] = []
     result = None
+    route_records: dict[str, runner_mod.RouteRecord] = {}
+    digest_leg = None
     if all_queries:
-        run = runner_mod.execute(all_queries, user_id=user_id, config=config)
+        run = runner_mod.execute(
+            all_queries,
+            user_id=user_id,
+            config=config,
+            records=route_records if config.stage == 'route' else None,
+        )
         result = metrics_mod.evaluate(qrels, run)
         rows = report_mod.build_rows(all_queries, result)
+        if config.stage == 'route':
+            from tests.eval.harness.routing import build_digest_leg_report
+
+            digest_leg = build_digest_leg_report(all_queries, route_records)
+            logger.info(
+                'Digest leg: %d/%d queries routed to it, %d rescued a gold file '
+                'the chunk leg missed',
+                digest_leg['routed_to_digest_tier'],
+                digest_leg['queries_scored'],
+                digest_leg['rescued']['queries'],
+            )
 
     answers_block, answer_rows = _score_answers(args, answer_queries, user_id, client, settings)
 
@@ -411,6 +438,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
         rows=rows,
         answers=answers_block,
     )
+    if digest_leg is not None:
+        results['digest_leg'] = digest_leg
 
     out_dir = Path(args.out) if args.out else DEFAULT_BASELINE_ROOT / args.control_name
     out_dir.mkdir(parents=True, exist_ok=True)

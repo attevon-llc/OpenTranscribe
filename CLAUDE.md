@@ -313,6 +313,8 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Services overview, LLM features, yt-dlp ingestion | `backend/app/services/CLAUDE.md` |
 | Deterministic ingest artifacts (facts / extractive digest / keyphrases, no LLM) | `backend/app/services/ingest_artifacts/CLAUDE.md` |
 | RAG chat pipeline (retrieval, masking, prompting) | `backend/app/services/chat/CLAUDE.md` |
+| **RAG design: the standard patterns and what runs them** | `docs-site/docs/developer-guide/rag-design-and-validation.md` |
+| **RAG evaluation: how quality is measured, and the traps** | `docs-site/docs/developer-guide/rag-evaluation.md` |
 | Pluggable ASR providers | `backend/app/services/asr/CLAUDE.md` |
 | Pluggable diarization providers | `backend/app/services/diarization/CLAUDE.md` |
 | OpenSearch indexing + neural/hybrid search | `backend/app/services/search/CLAUDE.md` |

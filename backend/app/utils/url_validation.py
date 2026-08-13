@@ -18,6 +18,13 @@ Two layers are offered:
 Self-hosted Ollama/vLLM on a private LAN is a legitimate configuration, so callers may
 pass ``allow_private=True`` — wired to ``LLM_ALLOW_PRIVATE_ENDPOINTS``, which must stay
 off on any multi-tenant deployment.
+
+``allow_private=True`` loosens the **address range**, never the metadata carve-out:
+cloud instance metadata is not a private service anyone deploys, and the OIDC
+discovery/test-connection paths that pass the flag document blocking it as the whole
+point of calling this module. It used to skip ``_reject_reason`` wholesale, so every
+``allow_private=True`` caller would happily fetch ``169.254.169.254`` — see
+``tests/api/endpoints/test_admin_auth_config_audit_routes.py``.
 """
 
 from __future__ import annotations
@@ -29,14 +36,20 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-# Private/reserved hostnames that should be blocked
-BLOCKED_HOSTNAMES = {
-    "localhost",
-    "localhost.localdomain",
+#: Hostnames that name an instance-metadata service. Refused even under
+#: ``allow_private=True`` — unlike ``localhost``, no deployment runs its IdP or its LLM
+#: behind one of these names.
+METADATA_HOSTNAMES = {
     "metadata.google.internal",  # GCP metadata
     "metadata.goog",
     "instance-data",  # AWS/OpenStack metadata alias
 }
+
+# Private/reserved hostnames that should be blocked
+BLOCKED_HOSTNAMES = {
+    "localhost",
+    "localhost.localdomain",
+} | METADATA_HOSTNAMES
 
 #: Cloud instance-metadata addresses. IPv4 link-local and IPv6 ULA already cover these,
 #: but they are listed explicitly so the intent survives a refactor of the range checks.
@@ -47,14 +60,30 @@ METADATA_ADDRESSES = {
 }
 
 
+def _metadata_reject_reason(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str | None:
+    """Return a reason when *ip* is an instance-metadata address, else None.
+
+    Applied unconditionally, including under ``allow_private=True``: the flag exists
+    for a LAN IdP or a self-hosted model server, and neither of those is IMDS.
+    """
+    # IPv6-mapped IPv4 (e.g. ::ffff:169.254.169.254) must be judged as its IPv4 form.
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    if str(ip) in METADATA_ADDRESSES:
+        return "Cloud metadata endpoint blocked"
+    return None
+
+
 def _reject_reason(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str | None:
     """Return why *ip* is not a safe outbound target, or None if it is fine."""
+    metadata_reason = _metadata_reject_reason(ip)
+    if metadata_reason:
+        return metadata_reason
+
     # IPv6-mapped IPv4 (e.g. ::ffff:169.254.169.254) must be judged as its IPv4 form.
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
 
-    if str(ip) in METADATA_ADDRESSES:
-        return "Cloud metadata endpoint blocked"
     if ip.is_unspecified:
         # 0.0.0.0 / :: — routes to "this host" on most stacks and passed every
         # is_private/is_loopback/is_reserved check before this was added.
@@ -101,7 +130,8 @@ def resolve_public_addresses(url: str, *, allow_private: bool = False) -> tuple[
     if not hostname:
         return [], "No hostname in URL"
 
-    if not allow_private and hostname.lower() in BLOCKED_HOSTNAMES:
+    lowered = hostname.lower()
+    if lowered in METADATA_HOSTNAMES or (not allow_private and lowered in BLOCKED_HOSTNAMES):
         return [], f"Blocked hostname: {hostname}"
 
     try:
@@ -125,10 +155,9 @@ def resolve_public_addresses(url: str, *, allow_private: bool = False) -> tuple[
         except ValueError:
             return [], f"Unparseable address for {hostname}"
 
-        if not allow_private:
-            reason = _reject_reason(ip)
-            if reason:
-                return [], reason
+        reason = _reject_reason(ip) if not allow_private else _metadata_reject_reason(ip)
+        if reason:
+            return [], reason
         addresses.append(ip_str)
 
     if not addresses:

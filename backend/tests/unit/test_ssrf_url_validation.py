@@ -79,6 +79,50 @@ def test_allow_private_still_rejects_non_http_schemes():
     assert safe is False
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://169.254.169.254/latest/meta-data/",  # AWS/Azure IMDS
+        "http://[fd00:ec2::254]/latest/meta-data/",  # AWS IPv6 IMDS
+        "http://[::ffff:169.254.169.254]/latest/meta-data/",  # IPv6-mapped IPv4
+        "http://metadata.google.internal/computeMetadata/v1/",
+        "http://instance-data/latest/meta-data/",
+    ],
+)
+def test_allow_private_never_reaches_instance_metadata(url):
+    """The absence of THIS test is why the bypass shipped.
+
+    ``allow_private=True`` used to skip the rejection check wholesale, and the
+    cloud-metadata carve-out lived inside it — so every caller passing the flag would
+    happily resolve and dial ``169.254.169.254``. That includes
+    ``auth/oidc/discovery.py``, which fetches discovery/JWKS at **login time**, so the
+    reachable surface was not limited to an admin action.
+
+    The suite had `test_allow_private_permits_lan_targets` (the loosening) and
+    `test_allow_private_still_rejects_non_http_schemes` (one thing it must not loosen),
+    but nothing pinning the metadata carve-out under the flag — the exact gap between
+    "the flag works" and "the flag does not disable everything else".
+
+    The IPv6-mapped form is included because a mapped address is a *different* Python
+    object than its IPv4 form, so a check written only against `METADATA_ADDRESSES`
+    strings misses it unless it unmaps first.
+    """
+    safe, reason = is_safe_url(url, allow_private=True)
+    assert safe is False, f"{url} must be refused even with allow_private=True"
+    assert reason, "a refusal must state a reason for the audit record"
+
+
+def test_allow_private_is_not_a_no_op_for_the_same_range():
+    """Control for the test above: link-local that is NOT metadata still gets through.
+
+    Without this, blanket-refusing everything in 169.254.0.0/16 would satisfy the metadata
+    test while quietly breaking a legitimate link-local LAN target — a fix that passes by
+    being too strict is still a regression.
+    """
+    safe, reason = is_safe_url("http://169.254.10.20:11434/v1", allow_private=True)
+    assert safe is True, f"non-metadata link-local should be allowed: {reason}"
+
+
 def test_assert_raises_generic_error_without_leaking_the_reason():
     """SSRF here is semi-blind — the reason must not turn the endpoint into a scanner."""
     from fastapi import HTTPException

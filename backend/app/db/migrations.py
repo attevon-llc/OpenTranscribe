@@ -431,7 +431,50 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check')"
     )
 
+    # v388: user_group carries the organization_id stamp, so the group plane finally has
+    # a column a tenant filter can read. A single-marker revision (it only adds a column),
+    # so the arm is v387's fingerprint plus this one probe.
+    has_user_group_org = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'user_group' AND column_name = 'organization_id')"
+    )
+
     # Return the highest version stamp that matches (newest first)
+    # v388: same as v387 plus the group tenancy stamp.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_chat_tables
+        and has_chat_projects
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+        and has_oidc_subject
+        and has_oidc_user_refresh_token
+        and has_session_id_token
+        and has_user_approval_status
+        and has_approval_status_check
+        and has_scim_token
+        and has_proxy_group_source
+        and has_saml_subject
+        and has_saml_auth_type_check
+        and has_chat_reasoning_content
+        and not has_orphan_tables
+        and has_tag_share
+        and has_actor_fk_set_null
+        and has_tag_share_type_check
+        and not has_legacy_role_check
+        and has_user_group_org
+    ):
+        return "v388_add_user_group_organization_id"
     # v387: the actor FKs are SET NULL and tag_share.target_type is constrained.
     # Everything v386 requires must also hold — this revision only alters existing
     # objects, so it is v386's fingerprint plus the two new rules.

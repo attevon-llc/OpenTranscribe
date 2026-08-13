@@ -30,6 +30,11 @@ check_docker() {
     echo ""
     echo "❌ Error: Permission denied accessing Docker."
     echo ""
+    # `${USER:-$(id -un)}`: USER is not maintained by bash, so it is unset under `env -i`,
+    # in a bare container and in some cron/systemd units — and this is the message whose
+    # whole job is to EXPLAIN a permission failure, so under `set -u` the explanation was
+    # itself the crash. `id -un` can fail too (a container with no passwd entry for the
+    # uid), so it falls back again rather than substituting an empty parenthetical.
     echo "Your user (${USER:-$(id -un 2>/dev/null || echo "unknown")}) is not in the 'docker' group."
     echo "Run the following commands, then log out and back in:"
     echo ""

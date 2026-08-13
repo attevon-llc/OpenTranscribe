@@ -46,7 +46,40 @@ RUN_XML="$OUT_DIR/run-$$.xml"
 mkdir -p "$OUT_DIR"
 
 PY="$REPO_ROOT/backend/venv/bin/pytest"
-[[ -x "$PY" ]] || { echo -e "${RED}missing $PY${NC}" >&2; exit 2; }
+if [[ ! -x "$PY" ]]; then
+    VENV_DIR="$REPO_ROOT/backend/venv"
+    echo -e "${RED}missing $PY${NC}" >&2
+    # `bare mountpoint` is by far the most common cause in a worktree and the least
+    # guessable: docker-compose.override.yml masks the host venv with an anonymous volume
+    # at /app/venv, and because /app is a bind of ./backend, Docker has to CREATE
+    # backend/venv on the host to mount over it. In a checkout that has no venv yet that
+    # directory arrives empty and owned by root, so the failure looks like a corrupted
+    # venv rather than one that was never created — and `python -m venv` into it fails
+    # with a permission error that names neither Docker nor the override file.
+    if [[ -d "$VENV_DIR" && ! -e "$VENV_DIR/bin/python" ]]; then
+        owner=$(stat -c '%U' "$VENV_DIR" 2>/dev/null || echo "?")
+        echo >&2
+        echo -e "${YELLOW}$VENV_DIR exists but is empty (owner: $owner).${NC}" >&2
+        echo -e "${YELLOW}The dev stack created it as a bare mount point, not a venv:${NC}" >&2
+        echo -e "${YELLOW}  docker-compose.override.yml has an anonymous volume at /app/venv,${NC}" >&2
+        echo -e "${YELLOW}  and /app is a bind of ./backend, so Docker creates ./backend/venv${NC}" >&2
+        echo -e "${YELLOW}  on the host if it is absent. Nothing is installed in it.${NC}" >&2
+        echo >&2
+        if [[ "$owner" != "$(id -un)" ]]; then
+            echo -e "  It is owned by ${RED}$owner${NC}, so removing it needs elevation:" >&2
+            echo -e "    ${GREEN}sudo rmdir '$VENV_DIR'${NC}" >&2
+        else
+            echo -e "    ${GREEN}rmdir '$VENV_DIR'${NC}" >&2
+        fi
+        echo -e "  then create the real venv (the two-step install is mandatory —" >&2
+        echo -e "  see backend/requirements-nodeps.txt for why):" >&2
+        echo -e "    ${GREEN}cd '$REPO_ROOT/backend' && python3.11 -m venv venv${NC}" >&2
+        echo -e "    ${GREEN}venv/bin/pip install -r requirements.txt${NC}" >&2
+        echo -e "    ${GREEN}venv/bin/pip install --no-deps -r requirements-nodeps.txt${NC}" >&2
+        echo -e "    ${GREEN}venv/bin/pip install pre-commit mypy ruff bandit${NC}" >&2
+    fi
+    exit 2
+fi
 
 # ── Reporting from the saved artifacts (no pytest) ─────────────────────────
 

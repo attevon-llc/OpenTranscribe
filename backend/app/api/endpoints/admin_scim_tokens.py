@@ -14,6 +14,7 @@ recovery path.
 from __future__ import annotations
 
 import logging
+import uuid as uuid_pkg
 from datetime import datetime
 
 from fastapi import APIRouter
@@ -119,8 +120,25 @@ def revoke_scim_token(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_active_superuser),
 ):
-    """Revoke a token. Idempotent, and never reversible."""
-    row = scim_token_service.revoke_token(db, token_uuid)
+    """Revoke a token. Idempotent, and never reversible.
+
+    Raises:
+        HTTPException: 400 when *token_uuid* is not a UUID, 404 when it names no
+            token. The malformed case used to reach a Postgres UUID comparison and
+            die as an unhandled ``DataError`` — a 500 whose aborted transaction also
+            poisoned the rest of the request's session. The message matches
+            ``utils/uuid_helpers.get_by_uuid`` so every admin UUID path answers the
+            same way.
+    """
+    try:
+        parsed_uuid = uuid_pkg.UUID(token_uuid)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid UUID format: {token_uuid}",
+        ) from None
+
+    row = scim_token_service.revoke_token(db, str(parsed_uuid))
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="SCIM token not found")
     client_ip, user_agent = _get_client_info(request)

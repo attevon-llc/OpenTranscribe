@@ -61,6 +61,25 @@ Detectors
     fixture-named-test
         A ``@pytest.fixture`` named ``test_*``. It never runs as a test but reads as one,
         and it corrupts any count of tests-without-assertions.
+    external-service-mock
+        A test whose **id claims integration with an external service while that service is
+        substituted**. The convention (issue #431, decided from the #403 RAG work): "ran
+        against the real engine" and "ran against a stand-in" must be **different test ids** —
+        a stand-in is never quietly substituted under the same id. Twelve tests for an
+        OpenSearch ``delete_by_query`` body once ran entirely against an in-memory stand-in
+        under ids that read as real-engine coverage; the suite was green on an assumption about
+        the engine, and neither JUnit history nor the timing analyser could see it. A claim is
+        only counted where the test DECLARES one — a marker/env gate, a realness word in the
+        test's own name, or the module path. The service's own name is deliberately NOT a
+        claim: it names the subject, not the engine.
+    readiness-probe-target
+        A health/readiness probe whose **target is hardcoded instead of derived from the stack
+        under test**. ``wait_for_bench_backend_health`` polled ``opentranscribe-backend`` — the
+        DEV stack — so the bench stack's readiness wait returned "healthy" whenever dev was up,
+        regardless of whether the stack under test had started at all. That green-lights a
+        benchmark against a stack that may not exist. Fires only when EVERY argument of the
+        probe call is fixed at parse time; one derived argument means the target follows the
+        stack under test.
 
 Usage::
 
@@ -94,6 +113,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -125,6 +145,8 @@ CATEGORIES = (
     'error-swallowed',
     'mock-heavy',
     'fixture-named-test',
+    'external-service-mock',
+    'readiness-probe-target',
 )
 
 
@@ -635,6 +657,520 @@ def _patch_refs(fn: ast.AST) -> int:
     return count
 
 
+# -------------------------------------------------------------- external-service substitution
+
+#: External services whose behaviour a test can only really prove against the running thing.
+#: ``patch`` = substrings that identify the service in a patch/monkeypatch target;
+#: ``name`` = words that identify it in an identifier (test name, fixture name, filename).
+#: The two differ on purpose: ``boto3`` names S3 in a patch target and never in a test id,
+#: while ``http`` names a transport in a fixture name (``fake_http``) and matches far too much
+#: as a patch substring.
+_EXTERNAL_SERVICES: dict[str, tuple[frozenset[str], frozenset[str]]] = {
+    'opensearch': (
+        frozenset({'opensearch', 'elasticsearch'}),
+        frozenset({'opensearch', 'elasticsearch'}),
+    ),
+    's3': (frozenset({'minio', 'boto3', 'botocore', 's3'}), frozenset({'minio', 's3'})),
+    'redis': (frozenset({'redis'}), frozenset({'redis'})),
+    'llm': (
+        frozenset({'llm', 'openai', 'anthropic', 'ollama', 'bedrock'}),
+        frozenset({'llm', 'openai', 'anthropic', 'ollama', 'bedrock'}),
+    ),
+    'smtp': (frozenset({'smtp', 'smtplib'}), frozenset({'smtp'})),
+    'http': (
+        frozenset({'requests', 'httpx', 'aiohttp', 'urllib', 'urlopen'}),
+        frozenset({'http', 'httpx', 'requests'}),
+    ),
+}
+
+#: Words that mark an identifier as naming a *substitute*. A fixture called ``fake_opensearch``
+#: says what it is; the failure mode is a fixture like that wired into a test id that says the
+#: opposite.
+_DOUBLE_WORDS = frozenset(
+    {
+        'mock',
+        'mocks',
+        'mocked',
+        'fake',
+        'fakes',
+        'faked',
+        'stub',
+        'stubs',
+        'stubbed',
+        'dummy',
+        'patched',
+        'inmemory',
+        'standin',
+        'spy',
+    }
+)
+
+#: Words in a test id that claim the REAL service was exercised.
+_REAL_CLAIM_WORDS = frozenset({'integration', 'integrations', 'real', 'live', 'e2e', 'actual'})
+
+#: Multi-word claims that survive word-splitting badly (``end_to_end`` -> end, to, end).
+_REAL_CLAIM_PHRASES = ('end_to_end', 'endtoend', 'against_real', 'realworld')
+
+#: Words that make an id honest about running against a substitute. ``unit`` counts: a test
+#: under ``tests/unit/`` has already declared what it is, and its id says so.
+_HONEST_WORDS = _DOUBLE_WORDS | frozenset({'unit', 'offline', 'simulated', 'contract'})
+
+#: Honest phrases, same reason as ``_REAL_CLAIM_PHRASES``.
+_HONEST_PHRASES = ('in_memory', 'stand_in', 'no_stack', 'without_', 'no_service')
+
+
+#: Word splitter that also breaks camelCase, so ``LLMService`` -> ``llm``, ``service``.
+#: Matching service tokens as SUBSTRINGS instead cost a false positive immediately:
+#: ``llm`` lives inside ``mfa_enro-llm-ent_module``, which made an MFA test read as a
+#: mislabelled LLM integration test.
+_WORD_RE = re.compile(r'[A-Z]+(?![a-z])|[A-Z][a-z0-9]*|[a-z0-9]+')
+
+
+def _words(text: str) -> set[str]:
+    """Lowercase word set of an identifier or path (``api/test_s3_live.py`` -> api, test, …)."""
+    return {m.group(0).lower() for m in _WORD_RE.finditer(text)}
+
+
+def _service_of(text: str, *, use_name_tokens: bool) -> str | None:
+    """The external service an identifier or patch target names, if any."""
+    text_words = _words(text)
+    for service, (patch_tokens, name_tokens) in _EXTERNAL_SERVICES.items():
+        tokens = name_tokens if use_name_tokens else patch_tokens
+        if tokens & text_words:
+            return service
+    return None
+
+
+def _params(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    """Every parameter name — for a test or fixture, the fixtures it requests."""
+    return [a.arg for a in [*fn.args.posonlyargs, *fn.args.args, *fn.args.kwonlyargs]]
+
+
+def _direct_patch_services(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    """Services substituted by ``patch``/``monkeypatch`` calls written INSIDE this function."""
+    services: set[str] = set()
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Call) and (_is_patch_call(node) or _is_monkeypatch_call(node)):
+            target = ', '.join(ast.unparse(a) for a in node.args[:2])
+            service = _service_of(target, use_name_tokens=False)
+            if service is not None:
+                services.add(service)
+    return services
+
+
+def _fixture_services(tree: ast.Module) -> dict[str, set[str]]:
+    """``fixture name -> services it substitutes``, resolved transitively within the module.
+
+    **This is the part that makes the detector see the real defect.** The #400 suite installs
+    its in-memory OpenSearch through a fixture called ``fake_index``::
+
+        @pytest.fixture
+        def fake_index(monkeypatch):
+            client = _FakeIndex()
+            monkeypatch.setattr(svc, 'opensearch_client', client)
+
+    Every test then takes ``fake_index`` and contains no ``patch`` call at all. Reading only
+    the test body sees nothing, and reading only the *parameter name* sees nothing either —
+    ``fake_index`` says "fake" but never says which service, and naming the service in the
+    fixture is a convention no test can be relied on to follow. Resolving the fixture's own
+    body is what turns "a name that looks harmless" into "monkeypatches OpenSearch".
+
+    Verified against the real file: before this, the genuine #400 suite stayed clean even when
+    deliberately mislabelled into ``tests/integration/`` — the detector fired on its synthetic
+    fixture and on nothing else, which is the failure mode this auditor exists to catch.
+    """
+    functions = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)]
+    services = {fn.name: _direct_patch_services(fn) for fn in functions}
+    requests_of = {fn.name: _params(fn) for fn in functions}
+
+    # A fixture that requests another fixture inherits its substitutions. Iterate to a
+    # fixpoint rather than recursing: fixture graphs in conftest-heavy trees contain cycles
+    # through overridden names, and a recursive walk would not terminate.
+    for _ in range(len(functions) + 1):
+        changed = False
+        for name, requested in requests_of.items():
+            inherited = {s for r in requested for s in services.get(r, ())}
+            if inherited - services[name]:
+                services[name] |= inherited
+                changed = True
+        if not changed:
+            break
+    return {name: found for name, found in services.items() if found}
+
+
+def _substitution_targets(
+    fn: ast.FunctionDef | ast.AsyncFunctionDef, fixture_services: dict[str, set[str]]
+) -> list[tuple[str, str]]:
+    """``(service, evidence)`` for every external-service client this test substitutes.
+
+    Three shapes, in descending order of how visible they are in the test itself:
+
+    * a ``patch``/``monkeypatch`` call in the test body;
+    * a requested **fixture** that patches the service — resolved through
+      :func:`_fixture_services`, and the shape that hid the #400 near-miss entirely;
+    * a parameter whose name says "double" *and* names the service
+      (``fake_opensearch``, ``mock_redis_unavailable``). Kept as the fallback for fixtures
+      defined in a ``conftest.py`` this scan cannot see.
+    """
+    out: list[tuple[str, str]] = []
+    for service in sorted(_direct_patch_services(fn)):
+        out.append((service, f'patches {service}'))
+
+    for param in _params(fn):
+        resolved = fixture_services.get(param)
+        if resolved:
+            for service in sorted(resolved):
+                out.append((service, f'fixture {param} patches {service}'))
+            continue
+        if _words(param) & _DOUBLE_WORDS:
+            service = _service_of(param, use_name_tokens=True)
+            if service is not None:
+                out.append((service, f'fixture {param}'))
+    return out
+
+
+#: Markers that DECLARE a test needs the real thing. A marker is part of test selection, so
+#: `-m integration` picking up a fully mocked test is the mislabel in its purest form.
+_REAL_CLAIM_MARKERS = frozenset({'integration', 'e2e'})
+
+#: Env gates that declare the same thing. ``skipif(SKIP_OPENSEARCH, …)`` means "this test only
+#: runs when the real OpenSearch is reachable" — the conftest sets it by TCP probe.
+_SERVICE_SKIP_GATES = {
+    'skip_opensearch': 'opensearch',
+    'skip_s3': 's3',
+    'skip_minio': 's3',
+    'skip_redis': 'redis',
+}
+
+
+def _marker_claims(decorators: list[ast.expr]) -> set[str]:
+    """Service names (or ``*`` for any) claimed by a decorator set.
+
+    Recognises ``@pytest.mark.integration``, ``@pytest.mark.needs_opensearch``,
+    ``@pytest.mark.<service>``, and ``@pytest.mark.skipif(SKIP_S3, …)``.
+    """
+    claims: set[str] = set()
+    for dec in decorators:
+        target = dec.func if isinstance(dec, ast.Call) else dec
+        parts = _dotted(target)
+        if 'mark' not in parts:
+            continue
+        marker = parts[-1]
+        marker_words = _words(marker)
+        if marker in _REAL_CLAIM_MARKERS:
+            claims.add('*')
+        if marker in ('skipif', 'skipIf') and isinstance(dec, ast.Call):
+            gate_text = ' '.join(ast.unparse(a) for a in dec.args).lower()
+            for gate, service in _SERVICE_SKIP_GATES.items():
+                if gate in gate_text:
+                    claims.add(service)
+        for service, (_, name_tokens) in _EXTERNAL_SERVICES.items():
+            needs = marker.startswith(('needs_', 'requires_'))
+            if (name_tokens & marker_words) and (needs or marker in name_tokens):
+                claims.add(service)
+    return claims
+
+
+def _pytestmark_values(scope: ast.Module | ast.ClassDef) -> list[ast.expr]:
+    """The marker expressions of a ``pytestmark = …`` assignment, module- or class-level."""
+    out: list[ast.expr] = []
+    for statement in scope.body:
+        if not isinstance(statement, ast.Assign):
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == 'pytestmark' for t in statement.targets):
+            continue
+        value = statement.value
+        out.extend(value.elts if isinstance(value, ast.List | ast.Tuple) else [value])
+    return out
+
+
+def _external_service_mock(
+    fn: ast.FunctionDef | ast.AsyncFunctionDef,
+    rel: str,
+    module_claims: set[str],
+    fixture_services: dict[str, set[str]],
+) -> tuple[str, str] | None:
+    """Return ``(services, evidence)`` when a test id claims the real service but mocks it.
+
+    The decided convention (issue #431, from the #403 RAG work): **"ran against the real
+    engine" and "ran against a stand-in" must be different test ids.** A suite of twelve tests
+    for a ``delete_by_query`` body once ran entirely against an in-memory OpenSearch stand-in
+    while carrying ids that read as real-engine coverage — a green suite resting on an
+    assumption about the engine, invisible to JUnit history and to the timing analyser.
+
+    A claim of realness is only counted where the test *declares* one, in descending order of
+    how hard it is to argue with:
+
+    * a **marker or env gate** — ``@pytest.mark.integration``, ``@pytest.mark.needs_redis``,
+      ``skipif(SKIP_OPENSEARCH, …)``, or a module-level ``pytestmark``. These drive selection,
+      so this is the strongest form and no naming excuses it;
+    * a **realness word in the test's own name** (``test_real_delete_by_query``,
+      ``…_against_live_opensearch``). No directory makes that id honest;
+    * a **realness word in the module path** (``tests/integration/``, ``tests/e2e/``) — a
+      weaker, positional claim, excused when the location or the name declares the substitute.
+
+    The service's own name in the test id is deliberately NOT a claim. It names the *subject*,
+    not the engine: on this tree that tier fired on 20 honestly-named unit tests
+    (``test_blacklist_token_redis_unavailable_fail_secure``, whose fixture is literally called
+    ``mock_redis_unavailable``), which is exactly the false-positive class that makes a gate
+    get ignored.
+    """
+    substitutions = _substitution_targets(fn, fixture_services)
+    if not substitutions:
+        return None
+    substituted = {service for service, _ in substitutions}
+
+    name = fn.name.lower()
+    path = rel.lower()
+    name_words = _words(name)
+    path_words = _words(path)
+
+    claims = module_claims | _marker_claims(fn.decorator_list)
+    declared = substituted if '*' in claims else substituted & claims
+
+    honest_name = bool(name_words & _HONEST_WORDS) or any(p in name for p in _HONEST_PHRASES)
+    honest_path = bool(path_words & _HONEST_WORDS) or any(p in path for p in _HONEST_PHRASES)
+    named = bool(name_words & _REAL_CLAIM_WORDS) or any(p in name for p in _REAL_CLAIM_PHRASES)
+    positional = bool(path_words & _REAL_CLAIM_WORDS) or any(p in path for p in _REAL_CLAIM_PHRASES)
+
+    # A realness word in a test name claims the real SERVICE only when the name says which
+    # service. `test_a_real_session_still_authorizes_enrollment` uses "real" to qualify the
+    # session object, not Redis, and was this detector's first false positive.
+    named_services = {s for s in substituted if _EXTERNAL_SERVICES[s][1] & name_words}
+
+    if declared:
+        claimed, why = declared, 'marker/env gate'
+    elif named and named_services and not honest_name:
+        claimed, why = named_services, 'test name'
+    elif positional and not (honest_name or honest_path):
+        claimed, why = substituted, 'module path'
+    else:
+        return None
+
+    evidence = '; '.join(sorted({e for _, e in substitutions}))[:100]
+    return f'{", ".join(sorted(claimed))} ({why})', evidence
+
+
+# ------------------------------------------------------------------- readiness probe targets
+
+#: Words that make a function, or a called helper, a readiness/health probe. Matched as WORDS,
+#: not substrings: ``ready`` inside ``already`` would otherwise make every
+#: ``test_already_*`` test a probe, and there are a dozen of those in this tree.
+_PROBE_WORDS = frozenset(
+    {
+        'ready',
+        'readiness',
+        'reachable',
+        'health',
+        'healthy',
+        'wait',
+        'poll',
+        'polling',
+        'probe',
+    }
+)
+
+#: Calls that actually reach out to an endpoint.
+_PROBE_CALLS = frozenset(
+    {
+        'create_connection',
+        'connect',
+        'connect_ex',
+        'get',
+        'head',
+        'post',
+        'request',
+        'urlopen',
+        'run',
+        'check_output',
+        'check_call',
+        'ping',
+        'inspect',
+    }
+)
+
+#: Substrings that make a string literal a concrete endpoint rather than a relative path.
+#: The container-name prefixes are here because that is the shape the real bug took:
+#: ``wait_for_bench_backend_health`` polled ``opentranscribe-backend`` — the DEV stack — so
+#: the bench stack's readiness wait returned "healthy" whenever dev was up, regardless of
+#: whether the stack under test had started at all.
+_ENDPOINT_SUBSTRINGS = (
+    'localhost',
+    '127.0.0.1',
+    '0.0.0.0',
+    '[::1]',
+    'opentranscribe-',
+    'otbench-',
+    'otfresh-',
+)
+
+_HOST_PORT_RE = re.compile(r'[a-z0-9][a-z0-9.\-]*:\d{2,5}(?!\d)')
+
+
+def _fully_literal(
+    node: ast.AST, consts: dict[str, ast.expr], _seen: frozenset[str] = frozenset()
+) -> bool:
+    """True when the expression's value is fixed at parse time, resolving single assignments.
+
+    ``BASE_URL = "http://localhost:5174/api"`` then ``f"{BASE_URL}/auth/login"`` is as
+    hardcoded as the literal; ``os.environ.get("MINIO_PORT", "5178")`` is not.
+    """
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.Name):
+        if node.id in _seen or node.id not in consts:
+            return False
+        return _fully_literal(consts[node.id], consts, _seen | {node.id})
+    if isinstance(node, ast.Tuple | ast.List | ast.Set):
+        return all(_fully_literal(e, consts, _seen) for e in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(
+            k is not None and _fully_literal(k, consts, _seen) and _fully_literal(v, consts, _seen)
+            for k, v in zip(node.keys, node.values, strict=True)
+        )
+    if isinstance(node, ast.JoinedStr):
+        return all(
+            _fully_literal(v.value if isinstance(v, ast.FormattedValue) else v, consts, _seen)
+            for v in node.values
+        )
+    if isinstance(node, ast.BinOp):
+        return _fully_literal(node.left, consts, _seen) and _fully_literal(
+            node.right, consts, _seen
+        )
+    return False
+
+
+def _literal_strings(node: ast.AST, consts: dict[str, ast.expr]) -> list[str]:
+    """Every string constant reachable from the expression, resolving single assignments."""
+    out: list[str] = []
+    stack: list[tuple[ast.AST, frozenset[str]]] = [(node, frozenset())]
+    while stack:
+        current, seen = stack.pop()
+        if isinstance(current, ast.Constant):
+            if isinstance(current.value, str):
+                out.append(current.value)
+            continue
+        if isinstance(current, ast.Name):
+            if current.id not in seen and current.id in consts:
+                stack.append((consts[current.id], seen | {current.id}))
+            continue
+        for child in ast.iter_child_nodes(current):
+            stack.append((child, seen))
+    return out
+
+
+def _is_endpoint_literal(text: str) -> bool:
+    lowered = text.lower()
+    if any(sub in lowered for sub in _ENDPOINT_SUBSTRINGS):
+        return True
+    return bool(_HOST_PORT_RE.search(lowered))
+
+
+def _is_probe_name(name: str) -> bool:
+    return bool(_words(name) & _PROBE_WORDS) or 'is_up' in name.lower()
+
+
+def _skip_gated_calls(body: list[ast.stmt]) -> set[int]:
+    """Ids of calls inside a reachability gate — ``try/except -> skip`` or ``if …: skip``.
+
+    A gate that decides "the stack is not there, skip" IS a readiness probe, whatever it is
+    called. ``test_selective_reprocess.py``'s ``auth_token`` is the shape: a POST wrapped in
+    ``except requests.ConnectionError: pytest.skip("Dev environment not running")``.
+    """
+    gated: set[int] = set()
+    for statement in body:
+        for node in ast.walk(statement):
+            skips: list[ast.AST] = []
+            probed: list[ast.AST] = []
+            if isinstance(node, ast.Try):
+                skips = list(node.handlers)
+                probed = list(node.body)
+            elif isinstance(node, ast.If):
+                skips = [*node.body, *node.orelse]
+                probed = [node.test]
+            if not skips or not probed:
+                continue
+            calls_skip = any(
+                isinstance(inner, ast.Call)
+                and isinstance(inner.func, ast.Attribute)
+                and inner.func.attr == 'skip'
+                for stmt in skips
+                for inner in ast.walk(stmt)
+            )
+            if not calls_skip:
+                continue
+            for stmt in probed:
+                for inner in ast.walk(stmt):
+                    if isinstance(inner, ast.Call):
+                        gated.add(id(inner))
+    return gated
+
+
+def _nested_call_ids(scope: ast.AST) -> set[int]:
+    """Ids of every call that lives inside a function defined within ``scope``.
+
+    Without this the same probe is reported twice. ``scan_source`` scans each function via
+    ``ast.walk(tree)`` — which yields methods and nested functions too — and then scans module
+    scope separately; a probe inside a test **method** was therefore reported once under the
+    method's name and again under ``<module>``, needing two allowlist entries for one defect.
+    """
+    out: set[int] = set()
+    for node in ast.walk(scope):
+        if node is scope or not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Call):
+                out.add(id(inner))
+    return out
+
+
+def _readiness_probe_targets(
+    fn: ast.FunctionDef | ast.AsyncFunctionDef | ast.Module,
+    name: str,
+    module_consts: dict[str, ast.expr],
+) -> list[tuple[int, str]]:
+    """``(lineno, target)`` for each probe whose endpoint is hardcoded, not derived.
+
+    Fires only when EVERY argument of the probe call is fixed at parse time. One derived
+    argument means the target follows the stack under test: ``_reachable("127.0.0.1", port)``
+    against a subprocess on an allocated port is correct and must stay clean, while
+    ``_reachable("127.0.0.1", 5199)`` asks about whichever stack happens to own the dev
+    stack's published port.
+    """
+    body = list(getattr(fn, 'body', []))
+    consts = dict(module_consts)
+    consts.update(_single_assignments(body))
+    whole_fn_is_probe = _is_probe_name(name)
+    gated = _skip_gated_calls(body)
+    # Calls belonging to an inner function are that function's findings, not this scope's.
+    nested = _nested_call_ids(fn)
+
+    out: list[tuple[int, str]] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call) or id(node) in nested:
+            continue
+        callee = (
+            node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, 'id', '')
+        )
+        # A call to a probe HELPER (`_service_reachable(...)`) is a probe wherever it appears.
+        # A bare `.get(...)` only becomes one inside a probe function or a reachability gate.
+        named_probe = _is_probe_name(callee)
+        contextual_probe = callee in _PROBE_CALLS and (whole_fn_is_probe or id(node) in gated)
+        if not (named_probe or contextual_probe):
+            continue
+        arguments = [*node.args, *[k.value for k in node.keywords]]
+        if not arguments or any(isinstance(a, ast.Starred) for a in arguments):
+            continue
+        if not all(_fully_literal(a, consts) for a in arguments):
+            continue
+        endpoints = [
+            s for a in arguments for s in _literal_strings(a, consts) if _is_endpoint_literal(s)
+        ]
+        if endpoints:
+            out.append((node.lineno, f'{callee}(…{endpoints[0]}…)'))
+    return out
+
+
 def scan_source(source: str, rel: str) -> list[Finding]:
     """Scan test source text. Helper functions are scanned for failure-masking too.
 
@@ -650,6 +1186,19 @@ def scan_source(source: str, rel: str) -> list[Finding]:
     module_consts = _single_assignments(
         [s for s in tree.body if isinstance(s, ast.Assign | ast.AnnAssign)]
     )
+    # `pytest.mark.integration` on the module or the class reaches every test inside it, so a
+    # decorator-only read of the claim would miss whole suites.
+    module_claims = _marker_claims(_pytestmark_values(tree))
+    # Which fixture in this module substitutes which service — see `_fixture_services`.
+    fixture_services = _fixture_services(tree)
+    class_claims: dict[int, set[str]] = {}
+    for cls in [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]:
+        claims = _marker_claims([*cls.decorator_list, *_pytestmark_values(cls)])
+        if not claims:
+            continue
+        for inner in ast.walk(cls):
+            if isinstance(inner, ast.FunctionDef | ast.AsyncFunctionDef):
+                class_claims.setdefault(id(inner), set()).update(claims)
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
@@ -676,6 +1225,19 @@ def scan_source(source: str, rel: str) -> list[Finding]:
                     node.lineno,
                     node.name,
                     f'except {caught} -> pytest.skip',
+                )
+            )
+
+        # Probes live in helpers and fixtures more often than in tests, so this one is not
+        # gated on `is_test`.
+        for lineno, target in _readiness_probe_targets(node, node.name, module_consts):
+            found.append(
+                Finding(
+                    'readiness-probe-target',
+                    rel,
+                    lineno,
+                    node.name,
+                    f'{target} — hardcoded endpoint, not the stack under test',
                 )
             )
         if not is_test:
@@ -793,6 +1355,36 @@ def scan_source(source: str, rel: str) -> list[Finding]:
         refs = _patch_refs(node)
         if refs >= _MAX_PATCH_REFS:
             found.append(Finding('mock-heavy', rel, node.lineno, node.name, f'{refs} patch calls'))
+
+        mislabelled = _external_service_mock(
+            node, rel, module_claims | class_claims.get(id(node), set()), fixture_services
+        )
+        if mislabelled is not None:
+            services, evidence = mislabelled
+            found.append(
+                Finding(
+                    'external-service-mock',
+                    rel,
+                    node.lineno,
+                    node.name,
+                    f'id claims real {services}, but {evidence}',
+                )
+            )
+
+    # A conftest's service detection runs at import time, outside any function — and that is
+    # where the probe that decides which stack the whole suite talks to actually lives. The
+    # whole tree is passed: `_readiness_probe_targets` drops calls owned by an inner function,
+    # which is what keeps a probe inside a test METHOD from being reported here as well.
+    for lineno, target in _readiness_probe_targets(tree, '<module>', module_consts):
+        found.append(
+            Finding(
+                'readiness-probe-target',
+                rel,
+                lineno,
+                '<module>',
+                f'{target} — hardcoded endpoint, not the stack under test',
+            )
+        )
 
     return found
 
@@ -948,6 +1540,59 @@ SELFTEST_CASES: tuple[tuple[str, str], ...] = (
         '        assert run() == 3\n',
     ),
     ('fixture-named-test', '@pytest.fixture\ndef test_thing():\n    return 1\n'),
+    (
+        # The #400 near-miss, relabelled the way the convention forbids: an in-memory
+        # stand-in wearing an id that claims the engine.
+        'external-service-mock',
+        'def test_delete_by_query_against_real_opensearch(fake_opensearch):\n'
+        '    index_chunks(file_id=1, chunks=[])\n'
+        '    assert fake_opensearch.deleted == [{"range": {"chunk_index": {"gte": 3}}}]\n',
+    ),
+    (
+        # A marker is the strongest claim there is: `-m integration` SELECTS this test.
+        'external-service-mock',
+        '@pytest.mark.integration\n'
+        'def test_stale_tail_is_pruned(monkeypatch):\n'
+        '    monkeypatch.setattr("app.services.search.opensearch_client", _Fake())\n'
+        '    assert prune(1) == 3\n',
+    ),
+    (
+        # ...and it reaches every test in the module through `pytestmark`.
+        'external-service-mock',
+        'pytestmark = pytest.mark.integration\n'
+        'def test_upload_writes_the_object():\n'
+        '    with patch("boto3.client") as client:\n'
+        '        store("k", b"v")\n'
+        '    assert client.called\n',
+    ),
+    (
+        # `skipif(SKIP_OPENSEARCH, ...)` declares "only runs against the real engine".
+        'external-service-mock',
+        '@pytest.mark.skipif(SKIP_OPENSEARCH, reason="needs the engine")\n'
+        'def test_hybrid_search_ranks_by_rrf(monkeypatch):\n'
+        '    monkeypatch.setattr("app.services.search.opensearch_service.client", _Fake())\n'
+        '    assert rank(["a"]) == ["a"]\n',
+    ),
+    (
+        # The bench bug: a readiness wait pinned to the DEV stack's container name, so it
+        # reported healthy whenever dev was up and the stack under test never mattered.
+        'readiness-probe-target',
+        'def wait_for_bench_backend_health(timeout=180):\n'
+        '    out = subprocess.check_output(["docker", "inspect", "opentranscribe-backend"])\n'
+        '    return b"healthy" in out\n',
+    ),
+    (
+        # Same defect through a module constant: resolving single assignments is what makes
+        # `f"{BASE_URL}/health"` as hardcoded as the literal it came from.
+        'readiness-probe-target',
+        'BASE_URL = "http://localhost:5174/api"\n'
+        'def test_stack_is_up():\n'
+        '    try:\n'
+        '        r = requests.get(f"{BASE_URL}/health", timeout=5)\n'
+        '    except requests.ConnectionError:\n'
+        '        pytest.skip("stack not running")\n'
+        '    assert r.status_code == 200\n',
+    ),
 )
 
 #: Sources that must produce NO finding — the false-positive half of the calibration.
@@ -1011,27 +1656,157 @@ SELFTEST_CLEAN: tuple[str, ...] = (
     '    if r.status_code != 200:\n'
     '        pytest.fail(r.text)\n'
     '    assert r.json()["ok"] == 1\n',
+    # A stand-in under an id that claims nothing is the CORRECT half of the convention —
+    # this is the #400 suite as actually written, and it must stay clean.
+    'def test_stale_tail_is_dropped(fake_opensearch):\n'
+    '    index_chunks(1, [])\n'
+    '    assert fake_opensearch.deleted == ["chunk_index >= 3"]\n',
+    # "real" qualifying something that is not the service. The first false positive this
+    # detector produced: "a real session", with Redis faked, and Redis nowhere in the name.
+    'def test_a_real_session_still_authorizes_enrollment(fake_redis):\n'
+    '    assert authorize(session="s1") == "ok"\n',
+    # The service NAMING itself is not a claim — it names the subject. Twenty tests of this
+    # exact shape fired before that tier was removed.
+    'def test_blacklist_token_redis_unavailable_fails_secure(mock_redis_unavailable):\n'
+    '    assert blacklist("t") is False\n',
+    # One derived argument means the probe follows the stack under test: a subprocess on an
+    # allocated port is legitimately on 127.0.0.1.
+    'def _wait_until_serving(port):\n    return _reachable("127.0.0.1", port)\n',
+    # The conftest shape after 7c989d51: probe the endpoint the suite will actually use.
+    'PORT = int(os.environ.get("MINIO_PORT", "5178"))\n'
+    'def _service_reachable():\n'
+    '    return socket.create_connection(("localhost", PORT), timeout=1)\n',
+    # A relative path against a fixture-provided client carries no endpoint at all, so a
+    # readiness TEST is not a readiness probe with a hardcoded target.
+    'def test_readiness_endpoint_reports_degraded(client):\n'
+    '    r = client.get("/api/readiness")\n'
+    '    assert r.json()["status"] == "degraded"\n',
+)
+
+#: The #400 suite's ACTUAL fixture, reduced. It is the regression guard for the defect that
+#: made ``external-service-mock`` useless in practice: the stand-in is installed by a fixture
+#: called ``fake_index``, which never names OpenSearch, so neither a patch-only scan of the
+#: test body nor a look at the parameter name saw anything. Only resolving the fixture's own
+#: body does. Before `_fixture_services` existed, the real file stayed clean even when
+#: deliberately mislabelled — the detector fired on its own synthetic fixture and nothing else.
+_FIXTURE_RESOLUTION_SOURCE = (
+    '@pytest.fixture\n'
+    'def fake_index(monkeypatch):\n'
+    '    client = _FakeIndex()\n'
+    "    monkeypatch.setattr(svc, 'opensearch_client', client)\n"
+    '    return client\n'
+    '\n'
+    'def test_shrinking_rechunk_leaves_no_stale_tail(fake_index):\n'
+    '    assert index_chunks(1, []) == 3\n'
+)
+
+#: Must-fire cases whose verdict depends on the MODULE PATH, which the fixtures above cannot
+#: express (they are all scanned as ``fixture.py``). ``(category, path, source)``.
+SELFTEST_PATH_CASES: tuple[tuple[str, str, str], ...] = (
+    (
+        # `tests/integration/` is a positional claim: the directory says real stack.
+        'external-service-mock',
+        'integration/test_chunk_reindex.py',
+        'def test_stale_tail_is_pruned(fake_opensearch):\n'
+        '    index_chunks(1, [])\n'
+        '    assert fake_opensearch.deleted == ["chunk_index >= 3"]\n',
+    ),
+    (
+        # The real shape, mislabelled by LOCATION. Verified against the actual #400 file.
+        'external-service-mock',
+        'integration/test_search_chunk_pruning.py',
+        _FIXTURE_RESOLUTION_SOURCE,
+    ),
+    (
+        # ...and the same body mislabelled by MARKER, which is the stronger claim: a
+        # `-m integration` run selects it as real-engine coverage.
+        'external-service-mock',
+        'unit/test_search_chunk_pruning.py',
+        'pytestmark = pytest.mark.integration\n' + _FIXTURE_RESOLUTION_SOURCE,
+    ),
+)
+
+#: ``(path, source)`` pairs that must stay clean. The first is the second half of the
+#: convention made executable: the SAME test body, moved to a directory that declares what it
+#: is, is correctly labelled — which is the whole point of "different ids".
+SELFTEST_PATH_CLEAN: tuple[tuple[str, str], ...] = (
+    (
+        'unit/test_chunk_reindex.py',
+        'def test_stale_tail_is_pruned(fake_opensearch):\n'
+        '    index_chunks(1, [])\n'
+        '    assert fake_opensearch.deleted == ["chunk_index >= 3"]\n',
+    ),
+    # The #400 suite exactly as it really ships: a stand-in, honestly located, claiming
+    # nothing. Fixture resolution must not turn "uses a fake" into a finding on its own —
+    # 388 tests in this tree substitute a service and 264 of them are only visible through
+    # this resolution, so a claim-side slip would report all of them.
+    ('unit/test_search_chunk_pruning.py', _FIXTURE_RESOLUTION_SOURCE),
+)
+
+#: ``(category, path, source)`` where the category must fire **exactly once**.
+#:
+#: The fires/clean pair cannot express "reported twice". One defect reported under two names
+#: costs two allowlist entries and reads as two problems, and `readiness-probe-target` did
+#: exactly that: `scan_source` scans every function reached by ``ast.walk`` — methods and
+#: nested functions included — and then scans module scope separately, so a probe inside a test
+#: METHOD was reported once as the method and again as ``<module>``. Both a must-fire and a
+#: must-stay-clean case pass happily while that is broken.
+SELFTEST_ONCE: tuple[tuple[str, str, str], ...] = (
+    (
+        'readiness-probe-target',
+        'test_stack.py',
+        'class TestStack:\n'
+        '    def test_the_api_is_up(self):\n'
+        '        try:\n'
+        '            r = requests.get("http://localhost:5174/api/health", timeout=1)\n'
+        '        except requests.ConnectionError:\n'
+        '            pytest.skip("dev stack not running")\n'
+        '        assert r.json()["status"] == "ok"\n',
+    ),
 )
 
 
 def run_selftest(verbose: bool = True) -> list[str]:
     """Return a list of failure descriptions — empty means every detector is alive."""
     failures: list[str] = []
-    for category, source in SELFTEST_CASES:
-        got = {f.category for f in scan_source(source, 'fixture.py')}
+
+    def check_fires(category: str, source: str, rel: str, label: str) -> None:
+        got = {f.category for f in scan_source(source, rel)}
         if category not in got:
-            failures.append(f'{category} did not fire (got {sorted(got) or "nothing"})')
+            failures.append(f'{label} did not fire (got {sorted(got) or "nothing"})')
         if verbose:
             mark = '\033[31m✗' if category not in got else '\033[32m✓'
-            print(f'  {mark}\033[0m fires {category}')
-    for i, source in enumerate(SELFTEST_CLEAN, start=1):
-        found = scan_source(source, 'fixture.py')
+            print(f'  {mark}\033[0m fires {label}')
+
+    def check_clean(source: str, rel: str, label: str) -> None:
+        found = scan_source(source, rel)
         if found:
             detail = ', '.join(f'{f.category}: {f.detail}' for f in found)
-            failures.append(f'clean case {i} produced {detail}')
+            failures.append(f'{label} produced {detail}')
         if verbose:
             mark = '\033[31m✗' if found else '\033[32m✓'
-            print(f'  {mark}\033[0m clean case {i} produces no finding')
+            print(f'  {mark}\033[0m {label} produces no finding')
+
+    for category, source in SELFTEST_CASES:
+        check_fires(category, source, 'fixture.py', category)
+    # Path-dependent cases: `external-service-mock`'s weakest claim tier is POSITIONAL
+    # (`tests/integration/`, `tests/e2e/`), which a fixture scanned as `fixture.py` cannot
+    # express. Without these the tier is unreachable from the self-test and could rot silently.
+    for category, rel, source in SELFTEST_PATH_CASES:
+        check_fires(category, source, rel, f'{category} @ {rel}')
+    for category, rel, source in SELFTEST_ONCE:
+        hits = [f for f in scan_source(source, rel) if f.category == category]
+        label = f'{category} @ {rel} fires exactly once'
+        if len(hits) != 1:
+            where = ', '.join(f'{f.test}:{f.line}' for f in hits) or 'nothing'
+            failures.append(f'{label}: got {len(hits)} ({where})')
+        if verbose:
+            mark = '\033[31m✗' if len(hits) != 1 else '\033[32m✓'
+            print(f'  {mark}\033[0m {label}')
+    for i, source in enumerate(SELFTEST_CLEAN, start=1):
+        check_clean(source, 'fixture.py', f'clean case {i}')
+    for rel, source in SELFTEST_PATH_CLEAN:
+        check_clean(source, rel, f'clean case @ {rel}')
     return failures
 
 
@@ -1044,7 +1819,13 @@ def _selftest_main() -> int:
             print(f'  {line}')
         print()
         return 1
-    total = len(SELFTEST_CASES) + len(SELFTEST_CLEAN)
+    total = (
+        len(SELFTEST_CASES)
+        + len(SELFTEST_PATH_CASES)
+        + len(SELFTEST_ONCE)
+        + len(SELFTEST_CLEAN)
+        + len(SELFTEST_PATH_CLEAN)
+    )
     print(f'\n\033[32mall {total} self-test cases pass\033[0m\n')
     return 0
 

@@ -152,20 +152,54 @@ run_phase "Model-vs-schema drift" \
     env RUN_SCHEMA_DRIFT_TESTS=true "$VENV_PY" -m pytest tests/unit/test_schema_drift.py \
     -o addopts="" -q --tb=short
 
-# 6. Optional: corpus-dependent search relevance harness
+# 6. Collection determinism. Two independent processes must collect the SAME test ids.
+#
+# This exists because a single parametrize argument built from `uuid4()` at import time made
+# the ENTIRE suite fail collection: xdist runs one import per worker, each got a different
+# id, and xdist aborted with "Different tests were collected between gw1 and gw0" — every
+# worker, zero tests run. It passed when its own file was run alone, which is exactly how it
+# reached the shared suite.
+#
+# Tests the property directly rather than blocklisting the causes, so it also catches
+# collection that varies with time, locale, filesystem order or a stray environment read.
+# Lives here rather than in the fast suite: two full collections cost ~30 s, and this branch
+# spent a lot of effort getting that suite down to ~2 min.
+run_phase "Collection determinism (two processes, same test ids)" \
+    bash -c '
+        set -uo pipefail
+        a=$(mktemp) && b=$(mktemp)
+        trap "rm -f $a $b" EXIT
+        "'"$VENV_PY"'" -m pytest --collect-only -q -o addopts= -p no:cacheprovider \
+            2>/dev/null | grep "::" | sort > "$a"
+        "'"$VENV_PY"'" -m pytest --collect-only -q -o addopts= -p no:cacheprovider \
+            2>/dev/null | grep "::" | sort > "$b"
+        if [[ ! -s $a ]]; then
+            echo "collected nothing — the probe did not run" >&2
+            exit 1
+        fi
+        if ! diff -u "$a" "$b" > /tmp/ot-collection-diff.txt; then
+            echo "Test ids differ between two collections of the SAME tree." >&2
+            echo "Under -n auto this makes xdist abort the whole run. First 20 lines:" >&2
+            head -20 /tmp/ot-collection-diff.txt >&2
+            exit 1
+        fi
+        echo "$(wc -l < "$a") test ids, identical across both collections"
+    '
+
+# 7. Optional: corpus-dependent search relevance harness
 if $SEARCH_QUALITY; then
     run_phase "Search quality harness (corpus-dependent)" \
         env RUN_SEARCH_QUALITY_TESTS=true "$VENV_PY" -m pytest tests/test_search_quality.py -o addopts="" -q --tb=short
 fi
 
-# 7. Optional: browser smoke tests against the live stack
+# 8. Optional: browser smoke tests against the live stack
 if $E2E_SMOKE; then
     run_phase "E2E smoke (browser)" \
         "$VENV_PY" -m pytest tests/e2e/test_settings_modal.py tests/e2e/test_a11y.py \
             tests/e2e/test_file_detail_transcript.py tests/e2e/test_media_download.py -q --tb=short
 fi
 
-# 8. Optional: orphaned test-user report (dry run — pass --execute manually to apply)
+# 9. Optional: orphaned test-user report (dry run — pass --execute manually to apply)
 if $CLEANUP; then
     echo -e "${BLUE}--- Orphaned test users (dry run) ---${NC}"
     "$VENV_PY" "$PROJECT_ROOT/scripts/cleanup-test-users.py" || true

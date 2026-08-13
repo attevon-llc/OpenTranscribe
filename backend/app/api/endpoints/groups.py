@@ -12,7 +12,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
-from app.api.endpoints.auth import get_current_active_user
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.core.constants import NOTIFICATION_TYPE_GROUP_MEMBER_ADDED
 from app.core.constants import NOTIFICATION_TYPE_GROUP_MEMBER_REMOVED
 from app.db.base import get_db
@@ -50,6 +51,54 @@ router = APIRouter()
 #: precisely because it is obviously not a real value: "now" would silently claim the row
 #: was just created and would sort a timestamp-less group to the top of every list.
 UNKNOWN_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def _group_in_scope(group: UserGroup, ctx: RequestContext) -> bool:
+    """Is this group in the caller's ACTIVE tenant scope? (v388)
+
+    Mirrors ``deps_context.scope_to_context``: in org context only that org's groups, in
+    personal scope only unstamped ones. Expressed as a predicate rather than a query filter
+    because six of the eight routes resolve the group by UUID first.
+    """
+    if ctx.is_org_context:
+        return group.organization_id == ctx.org_id
+    return group.organization_id is None
+
+
+def _get_group_in_scope(db: Session, group_uuid: str, ctx: RequestContext) -> UserGroup:
+    """Resolve a group by UUID and enforce the tenant boundary.
+
+    **404, not 403, when out of tenant** — deliberately the same status and message as a
+    UUID that does not exist, so probing cannot distinguish "another tenant has this group"
+    from "no such group" and enumerate the other tenant's groups. Same reasoning as
+    ``require_capability``'s 404 and the tag plane's 404-on-non-writable.
+    """
+    group = get_by_uuid(db, UserGroup, group_uuid, "Group not found")
+    if not _group_in_scope(group, ctx):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    return group
+
+
+def _same_tenant(db: Session, user_id: int, ctx: RequestContext) -> bool:
+    """Is ``user_id`` in the caller's active tenant? (v388)
+
+    The check ``add_member`` never had. Membership is read from
+    ``organization_membership`` rather than from any token claim — the repo's rule that
+    authorization reads the table, never the claim alone.
+    """
+    from app.models.organization import OrganizationMembership
+
+    memberships = {
+        row[0]
+        for row in db.query(OrganizationMembership.organization_id)
+        .filter(OrganizationMembership.user_id == user_id)
+        .all()
+    }
+    if ctx.is_org_context:
+        return ctx.org_id in memberships
+    # Personal scope: only accounts with no org membership at all, mirroring
+    # `scope_to_context`'s personal branch and `GET /users/search`'s gate.
+    return not memberships
 
 
 def _get_membership(db: Session, group_id: int, user_id: int) -> UserGroupMember | None:
@@ -129,14 +178,23 @@ def _build_group_response(db: Session, group: UserGroup, current_user_id: int) -
 @router.get("", response_model=list[GroupSchema])
 def list_groups(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """List groups the current user belongs to (owned + member)."""
+    current_user = ctx.user
+    # Membership already limits this to the caller's own groups; the tenant term (v388)
+    # additionally keeps an org-context session from listing personal-scope groups and
+    # vice versa, so switching scope switches which groups exist.
+    tenant_term = (
+        UserGroup.organization_id == ctx.org_id
+        if ctx.is_org_context
+        else UserGroup.organization_id.is_(None)
+    )
     groups = (
         db.query(UserGroup)
         .join(UserGroupMember, UserGroupMember.group_id == UserGroup.id)
         .options(joinedload(UserGroup.owner))
-        .filter(UserGroupMember.user_id == current_user.id)
+        .filter(UserGroupMember.user_id == current_user.id, tenant_term)
         .all()
     )
 
@@ -191,10 +249,16 @@ def list_groups(
 def create_group(
     group_in: GroupCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Create a new group. Creator is automatically added as owner."""
-    # Check for duplicate name for this user
+    current_user = ctx.user
+    # Duplicate check stays scoped to (owner, name) and deliberately NOT to the tenant,
+    # because that is exactly what the DB constraint `_user_group_owner_name_uc` enforces.
+    # Narrowing this to the active org while leaving the constraint owner-wide would let a
+    # create pass this check and then die on an IntegrityError — a 500 in place of the 400.
+    # So a group name is unique per owner across all of their tenants; widening that is a
+    # separate schema decision, not something to imply here.
     existing = (
         db.query(UserGroup)
         .filter(
@@ -213,6 +277,10 @@ def create_group(
         name=group_in.name,
         description=group_in.description,
         owner_id=current_user.id,
+        # Stamp the ACTIVE scope (v388): a group created while working in an org belongs to
+        # that org, not to the creator's personal space — the same rule as every other
+        # org-stamped table.
+        organization_id=ctx.org_id,
     )
     db.add(group)
     db.flush()
@@ -237,10 +305,11 @@ def create_group(
 def get_group(
     group_uuid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Get group detail with member list. Must be a member."""
-    group = get_by_uuid(db, UserGroup, group_uuid, "Group not found")
+    current_user = ctx.user
+    group = _get_group_in_scope(db, group_uuid, ctx)
 
     # Verify user is a member
     my_membership = _get_membership(db, group.id, current_user.id)
@@ -296,10 +365,11 @@ def update_group(
     group_uuid: str,
     group_update: GroupUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Update group name/description. Requires owner or admin role."""
-    group = get_by_uuid(db, UserGroup, group_uuid, "Group not found")
+    current_user = ctx.user
+    group = _get_group_in_scope(db, group_uuid, ctx)
     _require_group_admin(db, group, current_user.id)
 
     update_data = group_update.model_dump(exclude_unset=True)
@@ -334,10 +404,11 @@ def update_group(
 def delete_group(
     group_uuid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Delete a group. Only the group owner can delete it."""
-    group = get_by_uuid(db, UserGroup, group_uuid, "Group not found")
+    current_user = ctx.user
+    group = _get_group_in_scope(db, group_uuid, ctx)
 
     require_resource_owner(
         group,
@@ -364,14 +435,23 @@ def add_member(
     group_uuid: str,
     member_add: GroupMemberAdd,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Add a member to a group. Requires owner or admin role."""
-    group = get_by_uuid(db, UserGroup, group_uuid, "Group not found")
+    current_user = ctx.user
+    group = _get_group_in_scope(db, group_uuid, ctx)
     _require_group_admin(db, group, current_user.id)
 
     # Resolve target user
     target_user = get_by_uuid(db, User, str(member_add.user_uuid), "User not found")
+
+    # The tenant boundary this route never had (v388). Without it a group admin in tenant A
+    # could add a member of tenant B by UUID, and because collections are shared with
+    # *groups*, that handed the outsider a sharing surface reaching across the boundary.
+    # 404 with the SAME "User not found" detail as an unknown UUID, so this cannot be used
+    # to confirm that an account exists in another tenant.
+    if not _same_tenant(db, target_user.id, ctx):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     # Check not already a member
     existing = _get_membership(db, group.id, target_user.id)
@@ -421,10 +501,11 @@ def update_member_role(
     user_uuid: str,
     member_update: GroupMemberUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Update a member's role. Requires owner or admin role."""
-    group = get_by_uuid(db, UserGroup, group_uuid, "Group not found")
+    current_user = ctx.user
+    group = _get_group_in_scope(db, group_uuid, ctx)
     caller_membership = _require_group_admin(db, group, current_user.id)
 
     target_user = get_by_uuid(db, User, user_uuid, "User not found")
@@ -477,14 +558,15 @@ def remove_member(
     group_uuid: str,
     user_uuid: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Remove a member from a group.
 
     Owner/admin can remove others. Any member can remove themselves (leave).
     The group owner cannot leave -- they must delete the group instead.
     """
-    group = get_by_uuid(db, UserGroup, group_uuid, "Group not found")
+    current_user = ctx.user
+    group = _get_group_in_scope(db, group_uuid, ctx)
     target_user = get_by_uuid(db, User, user_uuid, "User not found")
 
     target_membership = _get_membership(db, group.id, target_user.id)

@@ -53,7 +53,7 @@ Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
 
 **Runs on every commit** (`.pre-commit-config.yaml`: `audit-tests-selftest` then `audit-tests`)
 and in the `backend-tests` CI job. Before this it was in neither — `rg audit-tests` found only
-prose. 14 AST detectors; full inventory and the calibration traps live in `scripts/CLAUDE.md`.
+prose. 16 AST detectors; full inventory and the calibration traps live in `scripts/CLAUDE.md`.
 What matters when you are writing a test here:
 
 - **`tests/e2e` is scanned too.** It used to be excluded, which hid 21 findings in the only
@@ -87,7 +87,7 @@ What matters when you are writing a test here:
   clear a finding.
 - **Run `python3 scripts/audit-tests.py --selftest` after touching a detector**, and give any
   new one a must-fire *and* a must-stay-clean fixture. `unit/test_audit_tests_selftest.py` runs
-  all 36 cases under pytest for the same reason: a detector that matches nothing reports zero
+  all 54 cases under pytest for the same reason: a detector that matches nothing reports zero
   findings, which is indistinguishable from a clean suite.
 
 ## Safety rules (non-negotiable) — enforced by `unit/test_e2e_data_hygiene.py`

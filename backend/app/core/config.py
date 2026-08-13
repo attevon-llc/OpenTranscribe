@@ -1109,7 +1109,19 @@ class Settings(BaseSettings):
         self.TEMP_DIR.mkdir(exist_ok=True, parents=True)
 
     class Config:
-        env_file = ".env"
+        # `env_file` is resolved against the WORKING DIRECTORY, which made the whole test
+        # suite CWD-sensitive: `pytest` from `backend/` found no env file and used the
+        # values conftest exports, while the same command from the repo root loaded the
+        # operator's real `.env` into a unit-test run. That is not a cosmetic difference —
+        # it produced two false failures, one of them a security test that stopped
+        # exercising the SSRF guard and started asserting that nothing happened to be
+        # listening on a local port, i.e. a control that passed for the wrong reason.
+        #
+        # Under `TESTING` no env file is loaded at all, so both invocations see exactly the
+        # environment the fixtures set. This is also already the de-facto contract: the
+        # supported `backend/`-relative run never found a file here, which is why conftest
+        # carries its own defaults for the DB connection.
+        env_file = None if os.getenv("TESTING", "").lower() in ("1", "true") else ".env"
         case_sensitive = True
         extra = "ignore"  # Ignore env vars not defined in Settings (e.g., from docker-compose)
 

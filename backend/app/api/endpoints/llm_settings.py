@@ -769,7 +769,11 @@ def test_active_configuration(
         base_url=str(user_config.base_url) if user_config.base_url else None,
     )
 
-    result = test_llm_connection(test_request=test_request, current_user=current_user)
+    # `db=db` is not optional: `test_llm_connection` declares `db: Session = Depends(get_db)`,
+    # so calling it in-process without it binds `db` to the `fastapi.params.Depends` OBJECT.
+    # Harmless only while these two callers never set `config_id` on the request they build —
+    # the first one that does gets an AttributeError on a Depends instance.
+    result = test_llm_connection(test_request=test_request, current_user=current_user, db=db)
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
@@ -816,7 +820,11 @@ def test_specific_configuration(
         base_url=str(user_config.base_url) if user_config.base_url else None,
     )
 
-    result = test_llm_connection(test_request=test_request, current_user=current_user)
+    # `db=db` is not optional: `test_llm_connection` declares `db: Session = Depends(get_db)`,
+    # so calling it in-process without it binds `db` to the `fastapi.params.Depends` OBJECT.
+    # Harmless only while these two callers never set `config_id` on the request they build —
+    # the first one that does gets an AttributeError on a Depends instance.
+    result = test_llm_connection(test_request=test_request, current_user=current_user, db=db)
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:

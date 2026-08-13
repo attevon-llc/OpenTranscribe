@@ -89,7 +89,11 @@ def main() -> int:  # noqa: C901
             segs = (
                 db.query(TranscriptSegment)
                 .filter(TranscriptSegment.media_file_id == file_id)
-                .order_by(TranscriptSegment.start_time)
+                .order_by(
+                    TranscriptSegment.start_time,
+                    TranscriptSegment.end_time,
+                    TranscriptSegment.id,
+                )
                 .all()
             )
             print("Masked output (read-time):")

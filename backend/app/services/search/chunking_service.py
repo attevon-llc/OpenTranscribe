@@ -284,7 +284,18 @@ def _group_segments_into_speaker_turns(
     turns = []
 
     def _collect_words(seg: dict[str, Any]) -> list[dict[str, Any]]:
-        return seg.get("words") or []
+        # COPY. `seg.get("words")` returns the CALLER's list, and the turn it seeds is
+        # later `.extend()`ed — so without the copy this grows the caller's own segment
+        # dicts, and chunking the same list twice gives different results. Measured before
+        # the fix: segments[0]["words"] went 1 -> 2 -> 3 across successive calls, and 330 of
+        # 648 swept target/overlap/segment configurations produced first != second.
+        #
+        # That is issue #433's shape ("re-indexing one unchanged corpus produced three
+        # different chunk counts") reappearing one layer down: the accumulated list flips
+        # _compute_chunk_timestamp's `len(word_ts) >= words_before + chunk_word_count`
+        # guard, so a chunk that interpolated its timestamp on the first pass reads real
+        # word timings on the second.
+        return list(seg.get("words") or [])
 
     current_turn = {
         "speaker": segments[0].get("speaker", "Unknown"),

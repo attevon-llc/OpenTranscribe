@@ -19,6 +19,30 @@ from app.services.llm_stream import parse_ollama_ndjson
 from app.services.llm_stream import parse_openai_sse
 
 
+def _transport(service):
+    """Inject the outbound transport at the seam that now OWNS it.
+
+    ``chat_completion_stream`` no longer posts through a bare ``service.session``:
+    ``_endpoint_session`` validates and PINS the endpoint first (issue #444), so a mock
+    hung on ``service.session`` is never reached and ``llm.test`` is refused as
+    unresolvable — the test would then pass or fail for a reason unrelated to streaming.
+    """
+    from app.utils.url_validation import PinnedTarget
+
+    session = MagicMock()
+    target = PinnedTarget(
+        original_url="http://llm.test/v1/chat/completions",
+        url="http://203.0.113.9/v1/chat/completions",
+        address="203.0.113.9",
+        hostname="llm.test",
+        host_header="llm.test",
+        scheme="http",
+        pinned=True,
+    )
+    service._endpoint_session = lambda url: (session, target)
+    return session
+
+
 def _texts(events: list[LLMStreamEvent]) -> str:
     return "".join(e.text for e in events if e.type == "delta")
 
@@ -262,24 +286,24 @@ def _mock_response(lines: list[str], status: int = 200) -> MagicMock:
 
 def test_chat_completion_stream_relays_parsed_events():
     service = _service()
-    service.session = MagicMock()
-    service.session.post.return_value = _mock_response(OPENAI_STREAM)
+    session = _transport(service)
+    session.post.return_value = _mock_response(OPENAI_STREAM)
 
     events = list(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
 
     assert _texts(events) == "Hello, world"
     assert events[-1].type == "done"
     # Streaming must be requested on the wire, not just assumed.
-    payload = service.session.post.call_args.kwargs["json"]
+    payload = session.post.call_args.kwargs["json"]
     assert payload["stream"] is True
-    assert service.session.post.call_args.kwargs["stream"] is True
+    assert session.post.call_args.kwargs["stream"] is True
 
 
 def test_chat_completion_stream_reports_http_error_in_band():
     """A non-200 must arrive as an error EVENT — the SSE status line is already sent."""
     service = _service()
-    service.session = MagicMock()
-    service.session.post.return_value = _mock_response([], status=429)
+    session = _transport(service)
+    session.post.return_value = _mock_response([], status=429)
 
     events = list(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
 
@@ -292,8 +316,8 @@ def test_chat_completion_stream_reports_connection_error_in_band():
     import requests
 
     service = _service()
-    service.session = MagicMock()
-    service.session.post.side_effect = requests.exceptions.ConnectionError("refused")
+    session = _transport(service)
+    session.post.side_effect = requests.exceptions.ConnectionError("refused")
 
     events = list(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
 
@@ -305,7 +329,7 @@ def test_chat_completion_stream_honors_cancel_event():
     """Stop-generation truncates output and reports finish_reason='cancelled'."""
     cancel = threading.Event()
     service = _service()
-    service.session = MagicMock()
+    session = _transport(service)
 
     def lines():
         yield 'data: {"choices":[{"delta":{"content":"before"}}]}'
@@ -315,7 +339,7 @@ def test_chat_completion_stream_honors_cancel_event():
     response = MagicMock()
     response.status_code = 200
     response.iter_lines.return_value = lines()
-    service.session.post.return_value = response
+    session.post.return_value = response
 
     events = list(
         service.chat_completion_stream([{"role": "user", "content": "hi"}], cancel_event=cancel)
@@ -329,8 +353,8 @@ def test_chat_completion_stream_honors_cancel_event():
 def test_chat_completion_stream_estimates_tokens_when_provider_omits_usage():
     """Providers without usage reporting still let the caller bill/display something."""
     service = _service("custom")
-    service.session = MagicMock()
-    service.session.post.return_value = _mock_response(
+    session = _transport(service)
+    session.post.return_value = _mock_response(
         ['data: {"choices":[{"delta":{"content":"some answer text"}}]}', "data: [DONE]"]
     )
 

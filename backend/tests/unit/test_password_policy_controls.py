@@ -616,6 +616,40 @@ class TestMinimumPasswordAge:
 
         assert policy_module.password_min_age_remaining(datetime.now(UTC)) is None
 
+    def test_zero_short_circuits_rather_than_falling_through_to_the_arithmetic(self):
+        """``<= 0`` is the guard, not ``< 0`` — and the difference is observable.
+
+        Narrowed to ``< 0``, a zero-hour floor stops short-circuiting and starts
+        answering from ``(changed_at + 0h) - now`` instead. That agrees for every
+        past timestamp, which is why the case above cannot see it, and disagrees
+        the moment ``password_changed_at`` is in the future — ordinary clock skew
+        between an app node and the database that stamps the column. A control the
+        operator switched off would then report a wait.
+        """
+        _publish(password_policy_enabled=True, password_min_age_hours=0)
+        now = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+
+        assert (
+            policy_module.password_min_age_remaining(now + timedelta(minutes=5), current_time=now)
+            is None
+        )
+
+    def test_the_smallest_nonzero_floor_still_bites(self):
+        """Only ``0`` disables; ``1`` is a one-hour floor, not a second off switch.
+
+        Every other case here configures 24 or 72 hours, and all of them survive a
+        guard widened to ``min_age_hours <= 1``. The smallest configurable nonzero
+        value is the only one that separates "0 disables" from "anything under two
+        hours disables" — the shape an operator setting a deliberately short floor
+        would hit.
+        """
+        _publish(password_policy_enabled=True, password_min_age_hours=1)
+        now = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
+
+        assert policy_module.password_min_age_remaining(
+            now - timedelta(minutes=30), current_time=now
+        ) == timedelta(minutes=30)
+
     def test_a_disabled_policy_disables_the_control(self):
         _publish(password_policy_enabled=False, password_min_age_hours=24)
 
@@ -642,6 +676,24 @@ class TestMinimumPasswordAge:
         # different offset would still be truthy but off by hours.
         assert remaining is not None
         assert timedelta(hours=22) < remaining <= timedelta(hours=23)
+
+    def test_a_naive_current_time_is_treated_as_utc(self):
+        """The OTHER side of the subtraction, and it has its own normalisation.
+
+        The case above passes a naive ``password_changed_at``; ``current_time``
+        reaches a separate branch that nothing exercised. Callers pass one in from
+        a frozen clock or a caller-supplied "as of" time, and a naive value that is
+        not normalised does not answer wrongly — it raises ``TypeError`` from
+        subtracting an aware datetime from a naive one, turning a policy question
+        into a 500 on the password-change path.
+        """
+        _publish(password_policy_enabled=True, password_min_age_hours=24)
+        naive_now = datetime(2026, 8, 13, 12, 0)  # deliberately no tzinfo
+        changed_at = datetime(2026, 8, 13, 11, 0, tzinfo=UTC)
+
+        assert policy_module.password_min_age_remaining(
+            changed_at, current_time=naive_now
+        ) == timedelta(hours=23)
 
     def test_the_configured_value_is_what_is_enforced(self):
         """Not a hardcoded 24: raising the setting must raise the floor."""

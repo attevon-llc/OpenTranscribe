@@ -342,6 +342,56 @@ def _opens_session(item: ast.withitem) -> bool:
     return _last_name(ctx) in _SESSION_OPENERS
 
 
+#: Session methods that put the caller back INTO a transaction after a close.
+_REARMS_TRANSACTION = frozenset(
+    {'query', 'execute', 'add', 'delete', 'merge', 'refresh', 'flush', 'scalar', 'get'}
+)
+
+
+def _release_line(fn: ast.FunctionDef | ast.AsyncFunctionDef, param: str) -> int | None:
+    """Line after which *param*'s transaction is released, or None if it never is.
+
+    Walks the function's TOP-LEVEL statements in order with one bit of state. A
+    ``<param>.close()`` releases; any later ``<param>.<db-method>()`` re-arms, because a
+    handler that closes and then queries again is holding a transaction across whatever
+    follows — the read → close → slow → REOPEN → write shape is correct, and the reopened
+    part must still be checked.
+
+    Deliberately top-level only. A close inside an ``if`` or a loop is conditional, and
+    treating a conditional release as a release would let the real defect through on the
+    branch that skips it — the direction this must not be wrong in.
+    """
+    released: int | None = None
+    for stmt in fn.body:
+        # Skip COMPOUND statements entirely, but walk EXPRESSIONS inside a simple one.
+        #
+        # Both halves are load-bearing. Not descending into `if`/`for`/`while`/`try`/`with`
+        # is what keeps a CONDITIONAL `db.close()` from reading as an unconditional release
+        # — on the branch that skips it the transaction is still held, which is the real
+        # defect, and that is the direction this must not be wrong in.
+        #
+        # But within a simple statement the chain must be walked, because the session call
+        # is rarely the outermost one: in `again = db.query(M).first()` the outer call is
+        # `.first()`, whose base is `db.query(M)` rather than the name `db` — so a check
+        # that only inspects the outermost call never sees the re-arm.
+        if isinstance(stmt, ast.If | ast.For | ast.While | ast.Try | ast.With):
+            continue
+        if isinstance(stmt, ast.AsyncFor | ast.AsyncWith):
+            continue
+
+        for call in (n for n in ast.walk(stmt) if isinstance(n, ast.Call)):
+            if not isinstance(call.func, ast.Attribute):
+                continue
+            value = call.func.value
+            if not isinstance(value, ast.Name) or value.id != param:
+                continue
+            if call.func.attr == 'close':
+                released = call.lineno
+            elif released is not None and call.func.attr in _REARMS_TRANSACTION:
+                released = None
+    return released
+
+
 def _takes_session(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
     """The name of a parameter that is somebody else's ``Session``, or None.
 
@@ -451,11 +501,23 @@ def scan_source(source: str, rel: str) -> list[Finding]:
         if param is None:
             continue
         scope = owner.get(node, node.name)
+        # A released session is not a held one. THE CURE FOR AN ENDPOINT IS `db.close()`:
+        # its session comes from `Depends(get_db)` and lives for the request, so it cannot
+        # be restructured into a `with` block — the fix is read → close → slow work.
+        # Without this, the rule flags a CORRECTLY FIXED endpoint, and the only way past it
+        # is to rename the helper so its dotted path stops matching. That happened: a fix
+        # was renamed `_live_snapshot_status` purely to dodge a path substring, while two
+        # structurally identical fixes went clean because their names differed. A gate that
+        # punishes the cure gets switched off, which is the failure this whole file exists
+        # to prevent.
+        released_after = _release_line(node, param)
         for inner in ast.walk(node):
             if not isinstance(inner, ast.Call):
                 continue
             rule = _classify(inner)
             if rule is None:
+                continue
+            if released_after is not None and inner.lineno > released_after:
                 continue
             key = ('session-param-slow-work', inner.lineno, scope)
             if key in seen:
@@ -651,11 +713,43 @@ SELFTEST_CASES: tuple[tuple[str, str], ...] = (
         '            except OSError:\n'
         '                pass\n',
     ),
+    (
+        # A CONDITIONAL close is not a release. On the branch that skips it the handler
+        # holds the request transaction across the round trip, which is the actual defect
+        # — so top-level-only detection is deliberate, not a simplification.
+        'session-param-slow-work',
+        'def handler(db, uuid):\n'
+        '    row = db.query(M).first()\n'
+        '    if row.needs_close:\n'
+        '        db.close()\n'
+        '    opensearch_client.search(index="i", body={})\n',
+    ),
+    (
+        # Closed, then RE-ARMED by a later query. Everything after the re-arm is held
+        # again, so the read -> close -> slow -> reopen -> write shape must still be
+        # checked past the reopen.
+        'session-param-slow-work',
+        'def handler(db, uuid):\n'
+        '    row = db.query(M).first()\n'
+        '    db.close()\n'
+        '    again = db.query(M).first()\n'
+        '    opensearch_client.search(index="i", body={})\n',
+    ),
 )
 
 #: Sources that MUST stay silent. These are the real three-phase fix shapes — if the
 #: detector flags them, the gate punishes the correct code and will be turned off.
 SELFTEST_CLEAN: tuple[str, ...] = (
+    # THE ENDPOINT CURE. A `Depends(get_db)` session lives for the request and cannot be
+    # wrapped in a `with`, so the fix is read -> close -> slow work. Flagging this makes the
+    # gate punish the cure; a real fix was renamed purely to dodge a path substring before
+    # the release rule existed.
+    'def handler(db, uuid):\n'
+    '    row = db.query(M).filter(M.uuid == uuid).first()\n'
+    '    name = str(row.filename)\n'
+    '    db.close()\n'
+    '    opensearch_client.search(index="i", body={"q": name})\n'
+    '    minio_service.download_file(object_name=name, file_path="/tmp/a")\n',
     # The canonical fix: read -> slow work with no session -> write.
     'def task(uuid):\n'
     '    with session_scope() as db:\n'

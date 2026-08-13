@@ -19,50 +19,9 @@
 # backend/app/tasks/CLAUDE.md; backend/app/tasks/speaker_attribute_task.py is the example.
 
 # --------------------------------------------------------------------------------------
-# Celery tasks — same defect class as the six that were fixed, not yet reached.
-# --------------------------------------------------------------------------------------
-tasks/topic_extraction.py::extract_topics_task::session-llm  # BACKLOG the 7th LLM-in-transaction instance, and the same shape as ai.generate_summary. It cannot be split from app/tasks alone: TopicExtractionService is constructed with db= and both reads the transcript and writes the TopicSuggestion row through it, so the fix belongs in services/topic_extraction_service.py.
-tasks/imohash_recompute.py::recompute_all::session-object-storage  # BACKLOG one-shot backfill task: compute_from_minio() streams each object's fingerprint sample inside the batch session. Bounded by the batch size, and the task is gated off once imohash_package_recompute_complete is set, so it is not a live risk — but it is the same shape.
-tasks/speaker_merge_task.py::process_speaker_merge_background::session-search-engine  # BACKLOG OpenSearch merge sync inside the write session. Individually a single round trip; needs the read/act/write split to be safe under a slow cluster.
-tasks/speaker_update_task.py::process_speaker_update_background::session-search-engine  # BACKLOG OpenSearch speaker-name sync inside the write session (1 of 3 calls).
-tasks/speaker_update_task.py::process_speaker_update_background::session-search-engine  # BACKLOG OpenSearch profile-info sync inside the same session (2 of 3).
-tasks/speaker_update_task.py::process_speaker_update_background::session-search-engine  # BACKLOG OpenSearch profile-rename sync inside the same session (3 of 3). Three round trips in one transaction is the reindex_batch shape at smaller N.
-tasks/thumbnail_migration.py::_migrate_single_thumbnail::session-param-slow-work  # BACKLOG one-shot migration helper takes the caller's session and uploads each regenerated thumbnail through it.
-
-# --------------------------------------------------------------------------------------
 # Services — the callee half of the interprocedural rule.
 # --------------------------------------------------------------------------------------
 services/watch_sources/processing.py::ingest_prepared_file::session-param-slow-work  # BACKLOG KNOWN RESIDUAL, documented in the function's docstring: the MinIO object key is derived from the MediaFile primary key, so the upload cannot happen before the row exists. watch_source.scan_single now keeps this window to ONE file instead of a whole scan. Closing it means giving this function the phased plain-data signature, which changes its public contract and its test.
-services/file_cleanup_service.py::delete_file_storage_artifacts::session-param-slow-work  # BACKLOG storage deletes for one file run on the caller's session.
-services/file_cleanup_service.py::purge_media_file::session-param-slow-work  # BACKLOG the canonical destroy: object-storage artifacts deleted through the caller's session before the row delete commits (1 of 2).
-services/file_cleanup_service.py::purge_media_file::session-param-slow-work  # BACKLOG same function, the OpenSearch cleanup half (2 of 2). cleanup_expired_files now gives it one SHORT session per file rather than one across the whole retention pass.
-services/video_processing_service.py::VideoProcessingService.clear_cache_for_media_file::session-param-slow-work  # BACKLOG five MinIO deletes on the caller's session. Unlike its siblings this one is still called from API request handlers and a test that this change does not own, so the signature cannot move yet.
-services/media_download_service.py::MediaDownloadService.process_media_url_sync::session-param-slow-work  # BACKLOG yt-dlp ingest uploads the downloaded media through the caller's session.
-services/cache_management_service.py::apply_retention::session-param-slow-work  # BACKLOG constructs a MinIOService and applies a lifecycle rule on the caller's session.
-services/cache_management_service.py::set_retention_days::session-param-slow-work  # BACKLOG same, on the settings-write path.
-services/profile_embedding_service.py::ProfileEmbeddingService.calculate_profile_similarity::session-param-slow-work  # BACKLOG OpenSearch prerequisite probe on the caller's session (1 of 2).
-services/profile_embedding_service.py::ProfileEmbeddingService.calculate_profile_similarity::session-param-slow-work  # BACKLOG OpenSearch profile-existence probe on the caller's session (2 of 2).
-services/smart_speaker_suggestion_service.py::SmartSpeakerSuggestionService._get_profile_suggestions_optimized::session-param-slow-work  # BACKLOG OpenSearch profile-existence probe on the caller's session.
-services/smart_speaker_suggestion_service.py::SmartSpeakerSuggestionService.consolidate_suggestions_batch::session-param-slow-work  # BACKLOG same probe on the batch path.
-
-# --------------------------------------------------------------------------------------
-# API endpoints — a request-scoped `db: Session = Depends(get_db)` held across a network
-# call. Shorter-lived than a Celery task, but it is the same lock on the same tables, and
-# a slow OpenSearch/MinIO hop under concurrency is how a pool gets exhausted.
-# --------------------------------------------------------------------------------------
-api/endpoints/summarization.py::get_file_summary::session-param-slow-work  # BACKLOG reads the summary doc from OpenSearch on the request session.
-api/endpoints/summarization.py::delete_summary::session-param-slow-work  # BACKLOG constructs OpenSearchSummaryService on the request session (1 of 2).
-api/endpoints/summarization.py::delete_summary::session-param-slow-work  # BACKLOG deletes the summary doc on the request session (2 of 2).
-api/endpoints/search.py::repair_indices::session-param-slow-work  # BACKLOG admin index repair: index existence probe on the request session (1 of 2).
-api/endpoints/search.py::repair_indices::session-param-slow-work  # BACKLOG admin index repair: search on the request session (2 of 2).
-api/endpoints/speakers.py::debug_cross_media_data::session-param-slow-work  # BACKLOG debug endpoint, two OpenSearch searches on the request session (1 of 2).
-api/endpoints/speakers.py::debug_cross_media_data::session-param-slow-work  # BACKLOG debug endpoint, second OpenSearch search (2 of 2).
-api/endpoints/speakers.py::_sync_profile_rename_to_opensearch::session-param-slow-work  # BACKLOG profile rename synced to OpenSearch on the request session.
-api/endpoints/speakers.py::_clear_video_cache_for_speaker::session-param-slow-work  # BACKLOG derived-cache purge on the request session.
-api/endpoints/speakers.py::_clear_speaker_video_cache::session-param-slow-work  # BACKLOG derived-cache purge on the request session (second call site).
-api/endpoints/speaker_update.py::_apply_high_confidence_match::session-param-slow-work  # BACKLOG speaker doc synced to OpenSearch on the request session.
-api/endpoints/speaker_update.py::_sync_suggestion_speakers_to_opensearch::session-param-slow-work  # BACKLOG per-suggestion OpenSearch sync on the request session.
-api/endpoints/speaker_update.py::trigger_retroactive_matching::session-param-slow-work  # BACKLOG retroactive pass calls the sync above with the request session.
-api/endpoints/files/__init__.py::clear_video_cache::session-param-slow-work  # BACKLOG derived-cache purge on the request session.
-api/endpoints/files/complete_upload.py::complete_upload::session-param-slow-work  # BACKLOG imohash fingerprint streamed from MinIO on the request session.
-api/endpoints/backup_settings.py::get_backup_status::session-param-slow-work  # BACKLOG OpenSearch snapshot status read on the request session.
+services/video_processing_service.py::VideoProcessingService.clear_cache_for_media_file::session-param-slow-work  # BACKLOG five MinIO deletes on the caller's session. Unlike its siblings this one is still called from API request handlers and a test that this change does not own, so the signature cannot move yet. Its delete loop is deliberately NOT delegated to the session-free clear_derived_cache(): the interprocedural rule does not recurse, so delegating would clear this finding while the leak stayed. Fix = signature to (self, file_id), callers in api/endpoints/speakers.py + tests/test_cache_management.py.
+services/profile_embedding_service.py::ProfileEmbeddingService.calculate_profile_similarity::session-param-slow-work  # BACKLOG OpenSearch prerequisite probe on the caller's session (1 of 2). The `db` parameter is DEAD — nothing in the body reads it — so the fix is to delete it, not to re-phase anything. Blocked only by call sites this change does not own: services/speaker_matching_service.py (~L190, drop `self.db,`), api/endpoints/speaker_profiles.py (~L395, drop `db,`) and the fake in tests/test_speaker_tenant_gating.py (~L188, drop `db` from its signature). Until then both callers hold a transaction across the kNN.
+services/profile_embedding_service.py::ProfileEmbeddingService.calculate_profile_similarity::session-param-slow-work  # BACKLOG OpenSearch profile-existence probe on the caller's session (2 of 2). Same three-line fix as above; deliberately NOT hidden by delegating the body to a session-free helper, which would clear both findings while the callers' transactions stayed open exactly as they are.

@@ -1485,8 +1485,109 @@ class MediaDownloadService:
         if not self.is_valid_media_url(url):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid media URL")
 
-        # Resolve user_id from the User object
+        # Phase 1 — read the two identifiers the download phase needs, then END
+        # the caller's transaction. A yt-dlp download plus a multi-gigabyte MinIO
+        # upload used to run with it open, holding ACCESS SHARE on media_file for
+        # the whole ingest (``app/tasks/CLAUDE.md``). Committing here is safe:
+        # this method already commits below, so no caller relies on it leaving
+        # work pending.
         resolve_user_id = int(user.id) if user else None
+        file_id = int(media_file.id)
+        db.commit()
+
+        # Phase 2 — download + upload. NO transaction is held.
+        staged = self._download_and_stage_media(
+            url=url,
+            user_id=resolve_user_id,
+            file_id=file_id,
+            progress_callback=progress_callback,
+            media_username=media_username,
+            media_password=media_password,
+            video_quality=video_quality,
+            audio_only=audio_only,
+            audio_quality=audio_quality,
+            benchmark_task_id=benchmark_task_id,
+        )
+
+        if progress_callback:
+            progress_callback(95, "Finalizing and updating database...")
+
+        # Phase 3 — write (DB only).
+        _update_media_file_with_download_data(
+            media_file=media_file,
+            media_info=staged["media_info"],
+            media_metadata=staged["media_metadata"],
+            technical_metadata=staged["technical_metadata"],
+            storage_path=staged["storage_path"],
+            file_size=staged["file_size"],
+            thumbnail_path=staged["thumbnail_path"],
+            original_filename=staged["original_filename"],
+            source_url=url,
+            imohash_value=staged["imohash_value"],
+        )
+        with benchmark_timing.stage(benchmark_task_id, "db_commit"):
+            db.commit()
+            db.refresh(media_file)
+
+        # Surface per-file context (size + MIME) so the analysis layer can
+        # slice timing by file characteristics later.
+        benchmark_timing.set_context(
+            benchmark_task_id,
+            {
+                "file_size_bytes": int(staged["file_size"]) if staged["file_size"] else 0,
+                "content_type": staged["technical_metadata"].get("content_type") or "",
+            },
+        )
+
+        logger.info(f"Updated MediaFile record {media_file.id} for media video")
+
+        return media_file
+
+    def _download_and_stage_media(
+        self,
+        *,
+        url: str,
+        user_id: int | None,
+        file_id: int,
+        progress_callback: Callable[[int, str], None] | None = None,
+        media_username: str | None = None,
+        media_password: str | None = None,
+        video_quality: str = "best",
+        audio_only: bool = False,
+        audio_quality: str = "best",
+        benchmark_task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Download a media URL and stage it in object storage.
+
+        **Takes no DB session and opens none.** This is the slow half of
+        :meth:`process_media_url_sync` — yt-dlp extraction, the download itself,
+        ffprobe metadata, the imohash sample, the MinIO upload and the thumbnail
+        — and it must run with the caller's transaction closed.
+
+        Args:
+            url: Media URL to download.
+            user_id: Owner id; the storage key is namespaced by it.
+            file_id: Internal media file id, used for thumbnail naming.
+            progress_callback: Optional ``(percent, message)`` callback.
+            media_username: Optional site credential.
+            media_password: Optional site credential.
+            video_quality: yt-dlp video quality selector.
+            audio_only: Download audio only.
+            audio_quality: yt-dlp audio quality selector.
+            benchmark_task_id: Optional task id for per-stage timing markers.
+
+        Returns:
+            Plain data for the caller's write phase: ``media_info``,
+            ``media_metadata``, ``technical_metadata``, ``storage_path``,
+            ``file_size``, ``thumbnail_path``, ``original_filename`` and
+            ``imohash_value``.
+
+        Raises:
+            HTTPException: If the video id cannot be extracted.
+        """
+        from app.utils import benchmark_timing
+
+        resolve_user_id = user_id
 
         # Extract video info first to get video ID
         logger.debug(f"Extracting video information for URL: {url}")
@@ -1547,7 +1648,7 @@ class MediaDownloadService:
             # Generate unique storage path
             file_uuid = str(uuid.uuid4())
             file_extension = Path(downloaded_file).suffix
-            storage_path = f"media/{user.id}/{file_uuid}{file_extension}"
+            storage_path = f"media/{resolve_user_id}/{file_uuid}{file_extension}"
 
             # Compute imohash against the local downloaded file BEFORE the
             # upload clears it from disk. imohash samples three small byte
@@ -1596,49 +1697,26 @@ class MediaDownloadService:
                 thumbnail_path = _get_thumbnail_with_fallback(
                     self,
                     media_info,
-                    int(user.id),
-                    int(media_file.id),
+                    int(resolve_user_id) if resolve_user_id is not None else 0,
+                    file_id,
                     downloaded_file,
                     defer_fallback_generation=True,
                     storage_path=storage_path,
                 )
 
-            if progress_callback:
-                progress_callback(95, "Finalizing and updating database...")
-
-            # Prepare media metadata and update the MediaFile record
+            # Prepare media metadata for the caller's write phase.
             media_metadata = self._prepare_media_metadata(url, media_info)
-            _update_media_file_with_download_data(
-                media_file=media_file,
-                media_info=media_info,
-                media_metadata=media_metadata,
-                technical_metadata=technical_metadata,
-                storage_path=storage_path,
-                file_size=file_size,
-                thumbnail_path=thumbnail_path,
-                original_filename=original_filename,
-                source_url=url,
-                imohash_value=imohash_value,
-            )
 
-            # Save updated record to database
-            with benchmark_timing.stage(benchmark_task_id, "db_commit"):
-                db.commit()
-                db.refresh(media_file)
-
-            # Surface per-file context (size + MIME) so the analysis layer can
-            # slice timing by file characteristics later.
-            benchmark_timing.set_context(
-                benchmark_task_id,
-                {
-                    "file_size_bytes": int(file_size) if file_size else 0,
-                    "content_type": technical_metadata.get("content_type") or "",
-                },
-            )
-
-            logger.info(f"Updated MediaFile record {media_file.id} for media video")
-
-            return media_file
+            return {
+                "media_info": media_info,
+                "media_metadata": media_metadata,
+                "technical_metadata": technical_metadata,
+                "storage_path": storage_path,
+                "file_size": file_size,
+                "thumbnail_path": thumbnail_path,
+                "original_filename": original_filename,
+                "imohash_value": imohash_value,
+            }
 
         finally:
             # Clean up temporary files

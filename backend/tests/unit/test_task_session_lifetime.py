@@ -49,10 +49,12 @@ two scopes were opened, so a task that never touches the DB cannot pass.
 
 import contextlib
 import uuid as uuid_mod
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
 import pytest
+from celery.exceptions import Retry
 
 from app.models.email_notification_config import EmailNotificationConfig
 from app.models.email_notification_config import WatchSourceEmail
@@ -60,6 +62,7 @@ from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import Task as TaskModel
 from app.models.media import TranscriptSegment
+from app.models.topic import TopicSuggestion
 from app.models.watch_source import WatchSource
 from app.tasks import media_download as mdl
 from app.tasks import reindex_task as rix
@@ -1567,3 +1570,184 @@ def test_scan_single_records_a_client_failure_as_a_scan_error(
     status, message = recorded_calls[0]
     assert status == "error"
     assert "could not be used" in message
+
+
+# --------------------------------------------------------------------------- #
+# 13. ai.extract_topics — the SEVENTH LLM-in-transaction instance
+#
+#     Same shape as ai.generate_summary, and it could not be fixed from
+#     app/tasks alone: ``TopicExtractionService`` was constructed with ``db=``
+#     and both READ the transcript and WROTE the ``TopicSuggestion`` row through
+#     it, so one ``session_scope`` in the task spanned the whole provider round
+#     trip. The split therefore lives in the SERVICE, and this fixture patches
+#     ``session_scope`` in BOTH modules so a scope opened at either end is seen.
+# --------------------------------------------------------------------------- #
+_TOPIC_LLM_JSON = """<thinking>ok</thinking>
+<answer>
+{"suggested_collections": [{"name": "Team Standups", "confidence": 0.9, "rationale": "r"}],
+ "suggested_tags": [{"name": "budget", "confidence": 0.9, "rationale": "r"},
+                    {"name": "hiring", "confidence": 0.8, "rationale": "r"}]}
+</answer>"""
+
+
+class _FakeTopicLLMService:
+    """Stands in for the provider client. Records the prompt it was actually SENT."""
+
+    user_context_window = 32768
+    config = _FakeLLMConfig()
+
+    def __init__(self, tracker, recorded, *, boom: bool = False):
+        self._tracker = tracker
+        self._recorded = recorded
+        self._boom = boom
+
+    def chat_completion(self, messages, **kwargs):
+        # A multi-minute HTTP round trip against an external provider.
+        self._tracker.observe("llm_chat_completion")
+        self._recorded["messages"] = messages
+        if self._boom:
+            raise RuntimeError("provider returned 502")
+        return SimpleNamespace(content=_TOPIC_LLM_JSON)
+
+
+@pytest.fixture
+def topic_extraction_env(db_session, monkeypatch):
+    """Patch topic extraction's LLM/notification seams; keep the DB real."""
+    from app.services import topic_extraction_service as tes
+    from app.tasks import topic_extraction as tex
+
+    tracker = _ScopeTracker(db_session)
+    recorded: dict = {}
+
+    # BOTH ends: the task's identity/masking reads and the service's read+write
+    # phases. Patching only the task would let a service-side scope go unseen.
+    monkeypatch.setattr(tex, "session_scope", tracker.scope)
+    monkeypatch.setattr(tes, "session_scope", tracker.scope)
+    monkeypatch.setattr(tex, "resolve_llm_masking", lambda db, media_file: None)
+    monkeypatch.setattr(
+        tex,
+        "send_topic_extraction_notification",
+        lambda **kw: recorded.setdefault("notifications", []).append(kw),
+    )
+
+    service = _FakeTopicLLMService(tracker, recorded)
+
+    class _Factory:
+        @staticmethod
+        def create_from_settings(user_id=None):
+            recorded["llm_user_id"] = user_id
+            return service
+
+    monkeypatch.setattr(tes, "LLMService", _Factory)
+
+    tracker.recorded = recorded
+    tracker.llm_service = service  # type: ignore[attr-defined]
+    return tracker
+
+
+def test_topic_extraction_calls_the_llm_outside_the_session(
+    db_session, normal_user, topic_extraction_env
+):
+    """The regression: the provider round trip must run with zero scopes open."""
+    from app.tasks import topic_extraction as tex
+
+    tracker = topic_extraction_env
+    media_file, _ = _make_transcribed_file(db_session, normal_user)
+
+    result = tex.extract_topics_task.apply(args=[str(media_file.uuid)]).get()
+
+    assert result["status"] == "completed", result
+    assert result["tag_count"] == 2
+    assert result["collection_count"] == 1
+
+    assert tracker.seen["llm_chat_completion"] == 0, _leak(tracker, "llm_chat_completion")
+    assert tracker.opened >= 2, f"expected a read scope and a write scope, got {tracker.opened}"
+    assert tracker.max_depth == 1, "session scopes must not nest"
+    assert tracker.depth == 0
+
+    # The read phase really did produce the transcript the provider was sent, so
+    # "zero scopes open" cannot be satisfied by sending nothing.
+    prompt = tracker.recorded["messages"][-1]["content"]
+    assert "hello" in prompt
+    assert tracker.recorded["llm_user_id"] == normal_user.id
+
+    # ...and the suggestion landed in Postgres.
+    db_session.expire_all()
+    stored = (
+        db_session.query(TopicSuggestion)
+        .filter(TopicSuggestion.media_file_id == media_file.id)
+        .first()
+    )
+    assert stored is not None
+    assert str(stored.uuid) == result["suggestion_id"]
+    assert {t["name"] for t in stored.suggested_tags} == {"budget", "hiring"}
+
+
+def test_topic_extraction_read_phase_returns_plain_data(
+    db_session, normal_user, topic_extraction_env
+):
+    """``_load_extraction_inputs`` must not hand back live ORM instances."""
+    from app.services.topic_extraction_service import TopicExtractionService
+
+    tracker = topic_extraction_env
+    media_file, _ = _make_transcribed_file(db_session, normal_user, speakers=1)
+
+    inputs = TopicExtractionService()._load_extraction_inputs(
+        int(media_file.id), force_regenerate=False, redaction_cfg=None
+    )
+
+    assert tracker.depth == 0, "the read scope was still open on return"
+    assert tracker.opened == 1
+    assert inputs is not None
+    assert inputs["user_id"] == normal_user.id
+    assert isinstance(inputs["transcript"], str) and "hello there" in inputs["transcript"]
+    for value in inputs.values():
+        assert not isinstance(value, (MediaFile, Speaker, TranscriptSegment, TopicSuggestion))
+
+
+def test_topic_extraction_releases_the_scope_when_the_provider_fails(
+    db_session, normal_user, topic_extraction_env
+):
+    """A provider failure must not leave a scope open — and must report failure."""
+    from app.tasks import topic_extraction as tex
+
+    tracker = topic_extraction_env
+    media_file, _ = _make_transcribed_file(db_session, normal_user, speakers=1)
+    tracker.llm_service._boom = True  # type: ignore[attr-defined]
+
+    result = tex.extract_topics_task.apply(args=[str(media_file.uuid)]).get()
+
+    assert result["status"] == "failed", result
+    assert tracker.seen["llm_chat_completion"] == 0, _leak(tracker, "llm_chat_completion")
+    assert tracker.depth == 0, "a session scope survived the failure"
+    assert tracker.opened >= 1
+
+
+def test_topic_extraction_defers_for_redaction_with_no_session_open(
+    db_session, normal_user, topic_extraction_env, monkeypatch
+):
+    """``defer_for_redaction`` dispatches a Celery task — never inside a transaction."""
+    from app.services.redaction.llm_guard import RedactionNotReadyError
+    from app.tasks import topic_extraction as tex
+
+    tracker = topic_extraction_env
+    media_file, _ = _make_transcribed_file(db_session, normal_user, speakers=1)
+
+    def _not_ready(db, mf):
+        raise RedactionNotReadyError("spans pending", retryable=True, file_id=int(mf.id))
+
+    monkeypatch.setattr(tex, "resolve_llm_masking", _not_ready)
+
+    deferred: list[int] = []
+
+    def _defer(task, exc, **kw):
+        deferred.append(tracker.depth)
+        raise Retry()
+
+    monkeypatch.setattr(tex, "defer_for_redaction", _defer)
+
+    with pytest.raises(Retry):
+        tex.extract_topics_task.apply(args=[str(media_file.uuid)], throw=True).get()
+
+    assert deferred == [0], f"deferral ran with {deferred} scope(s) open"
+    assert tracker.depth == 0

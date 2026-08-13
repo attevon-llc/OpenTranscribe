@@ -685,6 +685,30 @@ def get_index_health(
     return health
 
 
+def _probe_index_health(indices: list[str]) -> dict[str, str]:
+    """Classify each index as ``healthy`` / ``missing`` / ``unhealthy``.
+
+    Two OpenSearch round trips **per index**, so it runs with **no DB session
+    held** — hence a plain list in, a plain dict out, and no ``db`` parameter.
+    An exception from either probe means "unhealthy": that is the repair trigger,
+    and an ``exists`` call that raises is exactly as broken as a failing search.
+    """
+    from app.services.opensearch_service import opensearch_client
+
+    health: dict[str, str] = {}
+    for idx in indices:
+        try:
+            if not opensearch_client.indices.exists(index=idx):
+                health[idx] = "missing"
+                continue
+            # Test if index is healthy
+            opensearch_client.search(index=idx, body={"query": {"match_all": {}}, "size": 0})
+            health[idx] = "healthy"
+        except Exception:
+            health[idx] = "unhealthy"
+    return health
+
+
 @router.post("/repair-indices")
 def repair_indices(
     db: Session = Depends(get_db),
@@ -694,6 +718,14 @@ def repair_indices(
 
     For the speakers index (kNN), rebuilds from PostgreSQL data.
     For other indices, attempts close/reopen and force merge strategies.
+
+    **Ordered so the request transaction is released across the OpenSearch work.**
+    ``db`` comes from ``Depends(get_db)`` and lives for the whole request, so the
+    eight probe round trips below used to run with a Postgres transaction open
+    (opened by the admin-auth dependency) — ACCESS SHARE held for the length of a
+    possibly-unreachable cluster's timeouts. The probes and the non-speaker
+    repairs now run with nothing held; only ``rebuild_speaker_index`` needs
+    Postgres, and it is left until last so it opens a fresh transaction of its own.
 
     Returns:
         Dict with per-index repair results.
@@ -705,40 +737,41 @@ def repair_indices(
     if not opensearch_client:
         raise HTTPException(status_code=503, detail="OpenSearch client not available")
 
+    speaker_index = get_speaker_index()
     indices = [
-        get_speaker_index(),
+        speaker_index,
         settings.OPENSEARCH_TRANSCRIPT_INDEX,
         get_speaker_index_v4(),
         settings.OPENSEARCH_CHUNKS_INDEX,
     ]
 
-    results: dict[str, str] = {}
+    # Release the request transaction before the OpenSearch phase below.
+    db.close()
+
+    # Phase 1 — probe every index, with no Postgres transaction held.
+    health = _probe_index_health(indices)
+    results: dict[str, str] = {idx: state for idx, state in health.items() if state != "unhealthy"}
     speakers_indexed = 0
 
+    # Phase 2 — repair the non-speaker indices. Still OpenSearch-only.
     for idx in indices:
+        if health[idx] != "unhealthy" or idx == speaker_index:
+            continue
+        repaired = _repair_index(idx)
+        results[idx] = "repaired" if repaired else "failed"
+
+    # Phase 3 — the one repair that reads Postgres, in a transaction of its own.
+    if health.get(speaker_index) == "unhealthy":
         try:
-            if not opensearch_client.indices.exists(index=idx):
-                results[idx] = "missing"
-                continue
-            # Test if index is healthy
-            opensearch_client.search(index=idx, body={"query": {"match_all": {}}, "size": 0})
-            results[idx] = "healthy"
-        except Exception:
-            # Index is unhealthy, attempt repair
-            if idx == get_speaker_index():
-                try:
-                    rebuild_result = rebuild_speaker_index(db)
-                    if rebuild_result.get("status") == "rebuilt":
-                        results[idx] = "rebuilt"
-                        speakers_indexed = rebuild_result.get("speakers_indexed", 0)
-                    else:
-                        results[idx] = "failed"
-                except Exception as e:
-                    logger.exception(f"Failed to rebuild speakers index: {e}")
-                    results[idx] = "failed"
+            rebuild_result = rebuild_speaker_index(db)
+            if rebuild_result.get("status") == "rebuilt":
+                results[speaker_index] = "rebuilt"
+                speakers_indexed = rebuild_result.get("speakers_indexed", 0)
             else:
-                repaired = _repair_index(idx)
-                results[idx] = "repaired" if repaired else "failed"
+                results[speaker_index] = "failed"
+        except Exception as e:
+            logger.exception(f"Failed to rebuild speakers index: {e}")
+            results[speaker_index] = "failed"
 
     any_failed = any(v == "failed" for v in results.values())
 

@@ -95,11 +95,23 @@ class TestPasswordPolicy:
         from app.auth.password_policy import get_policy_requirements
 
         requirements = get_policy_requirements()
-        assert "min_length" in requirements
-        assert "require_uppercase" in requirements
-        assert "require_lowercase" in requirements
-        assert "require_digit" in requirements
-        assert "require_special" in requirements
+        # The EXACT key set, not five spot checks. This dict is returned verbatim
+        # as the body of GET /api/auth/password-policy, so every key is a wire
+        # contract the registration and change-password forms read. A per-key
+        # `in` check cannot see a key that was renamed, dropped, or never added:
+        # `min_age_hours` shipped without one and nothing failed.
+        assert set(requirements) == {
+            "enabled",
+            "min_length",
+            "require_uppercase",
+            "require_lowercase",
+            "require_digit",
+            "require_special",
+            "special_characters",
+            "history_count",
+            "max_age_days",
+            "min_age_hours",
+        }
         assert requirements["min_length"] >= 12  # FedRAMP minimum
 
 

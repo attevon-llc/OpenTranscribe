@@ -5,14 +5,17 @@ Provides unified interface for multiple LLM providers using synchronous HTTP req
 Designed specifically for Celery tasks - no asyncio conflicts.
 """
 
+import contextlib
 import json
 import logging
 import re
 import threading
 import time
 from collections.abc import Iterator
+from contextlib import ExitStack
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import TYPE_CHECKING
 from typing import Any
 from typing import Optional
 
@@ -25,6 +28,9 @@ from app.core.constants import LLM_OUTPUT_LANGUAGES
 from app.services.llm_stream import LLMStreamEvent
 from app.services.llm_stream import apply_stream_payload
 from app.services.llm_stream import get_stream_parser
+
+if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
+    from app.utils.url_validation import PinnedTarget
 
 logger = logging.getLogger(__name__)
 
@@ -94,10 +100,28 @@ class LLMConfig:
     response_tokens: int = 4000  # Max tokens for response
 
 
+class LLMEndpointBlockedError(Exception):
+    """The configured LLM endpoint is not a permitted outbound target.
+
+    Raised *before* any connection is attempted, by the SSRF guard on the shared
+    request path. Distinct from a network error so callers can tell "we refused to
+    dial this" from "we dialled it and it failed".
+    """
+
+
 class LLMService:
     """
     Synchronous LLM service for Celery tasks - no asyncio conflicts
     """
+
+    #: Returned to the operator when the endpoint is refused. Deliberately does NOT say
+    #: *why* — the reason distinguishes "private address" from "cannot resolve", which
+    #: turns an operator-visible error into a network scanner. The reason is logged.
+    BLOCKED_ENDPOINT_MESSAGE = (
+        "The configured LLM endpoint is not a permitted outbound target. It must be a "
+        "publicly reachable http(s) address. Set LLM_ALLOW_PRIVATE_ENDPOINTS=true to "
+        "allow a self-hosted endpoint on a private network."
+    )
 
     def __init__(self, config: LLMConfig):
         self.config = config
@@ -113,17 +137,18 @@ class LLMService:
         # tokens for an answer that was hard-capped at 4000. The two must agree.
         self.config.response_tokens = self.response_tokens
 
-        # Create session with retry strategy for reliability
-        self.session = requests.Session()
-        retry_strategy = Retry(
+        # Retry policy for the outbound session. The session itself is built lazily by
+        # `_endpoint_session`, because it cannot exist until the endpoint has been
+        # validated and pinned — see that method.
+        self._retry_strategy = Retry(
             total=3,
             backoff_factor=1,
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=["HEAD", "GET", "POST"],
         )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
-        self.session.mount("http://", adapter)
-        self.session.mount("https://", adapter)
+        self._session_lock = threading.Lock()
+        self._pinned_stack: ExitStack | None = None
+        self._pinned: tuple[str, requests.Session, PinnedTarget] | None = None
 
         # Provider-specific endpoint mappings
         def build_endpoint(base_url: str) -> str:
@@ -408,12 +433,101 @@ class LLMService:
         else:
             return self._extract_openai_response(data)
 
+    def _endpoint_session(self, url: str) -> tuple[requests.Session, "PinnedTarget"]:
+        """Validate *url*, pin it, and return the session to send it with.
+
+        **This is the single construction point for every outbound LLM request.**
+        ``chat_completion`` (via :meth:`_send_llm_request`) and
+        ``chat_completion_stream`` both go through it, so the guard cannot be true of
+        one and false of the other — which is exactly the defect it closes (issue #444).
+        ``validate_connection``/``health_check`` were guarded; ``chat_completion``, the
+        path that runs on **every real request**, was not, so an operator-configured
+        ``base_url`` was checked when someone pressed "Test connection" and unchecked
+        forever after.
+
+        The endpoint is operator-supplied configuration, so:
+
+        * the address is **pinned** — ``resolve_pinned_target`` resolves once and returns
+          the IP to dial plus the hostname to verify TLS against. Validate-then-let-the-
+          client-re-resolve loses to a hostname that alternates between a public address
+          and ``127.0.0.1``; there is exactly one resolution here and the address that
+          was judged is the address that is dialled.
+        * ``LLM_ALLOW_PRIVATE_ENDPOINTS`` is honoured exactly as on the other call sites —
+          a self-hosted Ollama/vLLM on the LAN is a legitimate configuration. The flag
+          loosens the address range only; instance metadata stays refused.
+
+        The session is built **once per service instance** and reused. That keeps the
+        connection pooling and retry policy this service has always had — the LLM
+        redaction detector issues one ``chat_completion`` per transcript segment on a
+        single instance, so a per-request session would mean a TLS handshake per segment
+        — and it means one DNS resolution per instance rather than one per call.
+
+        Args:
+            url: The endpoint about to be POSTed to (``self.endpoints[provider]``).
+
+        Returns:
+            ``(session, target)``. Send ``target.url`` with ``target.headers`` merged
+            into your own, and ``allow_redirects=False``.
+
+        Raises:
+            LLMEndpointBlockedError: The endpoint must not be fetched.
+        """
+        with self._session_lock:
+            cached = self._pinned
+            if cached is not None and cached[0] == url:
+                return cached[1], cached[2]
+
+            from app.core.config import settings as _settings
+            from app.utils.url_validation import pinned_requests_session
+            from app.utils.url_validation import resolve_pinned_target
+
+            target, reason = resolve_pinned_target(
+                url, allow_private=_settings.LLM_ALLOW_PRIVATE_ENDPOINTS
+            )
+            if target is None:
+                logger.warning("Blocked LLM request to %r: %s", url, reason)
+                raise LLMEndpointBlockedError(self.BLOCKED_ENDPOINT_MESSAGE)
+
+            self._discard_pinned_session()
+            stack = ExitStack()
+            session = stack.enter_context(pinned_requests_session(target))
+            # `pinned_requests_session` yields a bare Session. Restore the retry policy
+            # in place: mounting a fresh HTTPAdapter would REPLACE the pinned adapter and
+            # silently undo the SNI binding, leaving TLS verified against the IP.
+            # `max_retries` is on HTTPAdapter, not the abstract BaseAdapter `adapters`
+            # is typed with; every adapter mounted here is an HTTPAdapter.
+            for adapter in session.adapters.values():
+                if isinstance(adapter, HTTPAdapter):
+                    adapter.max_retries = self._retry_strategy
+            self._pinned_stack = stack
+            self._pinned = (url, session, target)
+            return session, target
+
+    def _discard_pinned_session(self) -> None:
+        """Close and forget the pinned session, if one was built."""
+        stack, self._pinned_stack = self._pinned_stack, None
+        self._pinned = None
+        if stack is not None:
+            with contextlib.suppress(Exception):
+                stack.close()
+
     def _send_llm_request(
         self, url: str, payload: dict, headers: dict, timeout: int
     ) -> dict[str, Any]:
         """Send HTTP request to LLM provider and return parsed JSON response."""
+        session, target = self._endpoint_session(url)
         start_time = time.time()
-        response = self.session.post(url, json=payload, headers=headers, timeout=timeout)
+        # `allow_redirects=False`: the pin covers ONE hop. A public endpoint that passes
+        # validation and answers `302 Location: http://169.254.169.254/` reaches cloud
+        # instance metadata with no DNS control at all, and would additionally reuse this
+        # session's SNI binding for a different host.
+        response = session.post(
+            target.url,
+            json=payload,
+            headers={**headers, **target.headers},
+            timeout=timeout,
+            allow_redirects=False,
+        )
         request_time = time.time() - start_time
 
         logger.info(
@@ -560,10 +674,29 @@ class LLMService:
             f"{sum(len(m.get('content', '')) for m in messages)} chars"
         )
 
+        # Same guard, same construction point as the non-streaming path — see
+        # `_endpoint_session`. Pinning is transparent to streaming: it changes which
+        # address the socket is opened to and which name TLS is verified against, and
+        # nothing about the response body, so chunked transfer and `iter_lines` are
+        # untouched. The only added latency is one DNS resolution on the FIRST call per
+        # service instance, which the caller's first-token watchdog does not notice.
+        try:
+            session, target = self._endpoint_session(url)
+        except LLMEndpointBlockedError as e:
+            # In-band, like every other failure here: the SSE status line is already sent.
+            yield LLMStreamEvent(type="error", message=str(e))
+            return
+
         try:
             # (connect, read) — a 120s idle gap means the provider stopped producing.
-            response = self.session.post(
-                url, json=payload, headers=headers, timeout=(10, 120), stream=True
+            # `allow_redirects=False` for the reason given in `_send_llm_request`.
+            response = session.post(
+                target.url,
+                json=payload,
+                headers={**headers, **target.headers},
+                timeout=(10, 120),
+                stream=True,
+                allow_redirects=False,
             )
         except requests.exceptions.RequestException as e:
             logger.error(f"LLM stream connection failed for {provider}: {type(e).__name__}")
@@ -1215,10 +1348,6 @@ class LLMService:
         Returns:
             Tuple of (success, message)
         """
-        # Refuse internal targets before any request (issue #284 A0.1). This is a SECOND
-        # outbound path for a user-supplied base_url — separate from the health check
-        # below, which uses a one-off requests.get while this uses self.session with a
-        # retry adapter. Guarding only one of them left the other reachable.
         # Reject a missing credential locally, before any outbound request. Nothing validated
         # the API key here, so a blank one produced `Authorization: Bearer ` and the provider
         # answered 401 — which meant the admin "test connection" button reported a generic
@@ -1238,33 +1367,15 @@ class LLMService:
 
             # Claude/Anthropic providers don't have a models endpoint, test with a simple request
             if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
-                # This branch reaches the network through `chat_completion`, which builds
-                # its own request from `base_url` — so the guard is scoped HERE rather than
-                # covering the whole method. The other branch validates and PINS the exact
-                # URL it fetches (below); leaving this check in front of both made it
-                # resolve `base_url` and then resolve `models_url` again, two independent
-                # answers for one operation.
+                # No local guard here: this branch reaches the network through
+                # `chat_completion`, which now validates and PINS the URL it actually
+                # POSTs to (`_endpoint_session`). The `is_safe_url(base_url)` check that
+                # used to sit here was validate-only — it judged a *different* string
+                # from the one fetched, resolved it a second time, and for these two
+                # providers judged a `base_url` that is never used at all (their
+                # endpoints are fixed). The refusal still surfaces here, as the
+                # `LLMEndpointBlockedError` message caught below.
                 #
-                # This is validate-only: it cannot pin, because the connection is made
-                # several frames away inside `chat_completion`.
-                if self.config.base_url:
-                    from app.core.config import settings as _settings
-                    from app.utils.url_validation import is_safe_url
-
-                    safe, reason = is_safe_url(
-                        self.config.base_url,
-                        allow_private=_settings.LLM_ALLOW_PRIVATE_ENDPOINTS,
-                    )
-                    if not safe:
-                        logger.warning(
-                            "Connection test blocked for %s: %s", self.config.base_url, reason
-                        )
-                        return False, (
-                            "Connection failed: the endpoint must be a publicly reachable "
-                            "http(s) address. Set LLM_ALLOW_PRIVATE_ENDPOINTS=true to allow a "
-                            "self-hosted endpoint on a private network."
-                        )
-
                 # Test with a simple message
                 test_messages = [{"role": "user", "content": "Hi"}]
                 response = self.chat_completion(test_messages, max_tokens=5)
@@ -1318,8 +1429,10 @@ class LLMService:
                         "self-hosted endpoint on a private network."
                     )
 
-                # A pinned session replaces `self.session` for this one request: its SNI
-                # hostname is bound to this target, so it must not be reused or redirected.
+                # A one-off pinned session for this request: its SNI hostname is bound to
+                # this target, so it must not be reused or redirected. It is deliberately
+                # not the instance session `_endpoint_session` builds — that one is pinned
+                # to the *chat* endpoint, and this is the derived models URL.
                 # Losing the retry adapter is correct here — a connection *test* that
                 # silently retries a 500 three times is reporting the wrong thing anyway.
                 with pinned_requests_session(target) as pinned:
@@ -1348,12 +1461,9 @@ class LLMService:
         Properly closes the HTTP session and releases any held connections.
         Should be called when the LLMService instance is no longer needed.
         """
-        if hasattr(self, "session"):
-            try:
-                self.session.close()
-                logger.debug(f"Closed session for {self.config.provider}")
-            except Exception as e:
-                logger.warning(f"Error closing session: {e}")
+        with self._session_lock:
+            self._discard_pinned_session()
+        logger.debug(f"Closed session for {self.config.provider}")
 
     def _build_known_speakers_context(self, known_speakers: list) -> str:
         """Build context string from known speaker profiles."""

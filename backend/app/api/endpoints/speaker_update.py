@@ -13,6 +13,7 @@ patterns and automatically groups speakers across multiple videos.
 
 import logging
 import uuid
+from typing import Any
 
 import numpy as np
 from sqlalchemy.orm import Session
@@ -172,30 +173,53 @@ def _get_profile_uuid(db: Session, profile_id: int | None) -> str | None:
     return str(profile.uuid) if profile else None
 
 
-def _sync_speaker_to_opensearch(speaker: Speaker, db: Session) -> None:
-    """Sync a speaker's display name, profile, and verification status to OpenSearch."""
-    try:
-        from app.services.opensearch_service import update_speaker_display_name
-        from app.services.opensearch_service import update_speaker_profile
+def _speaker_sync_document(db: Session, speaker: Speaker) -> dict[str, Any]:
+    """Snapshot the fields a speaker's search document carries, as **plain data**.
 
-        update_speaker_display_name(
-            str(speaker.uuid), str(speaker.display_name) if speaker.display_name else None
-        )
-        profile_uuid = _get_profile_uuid(
-            db, int(speaker.profile_id) if speaker.profile_id else None
-        )
-        update_speaker_profile(
-            speaker_uuid=str(speaker.uuid),
-            profile_id=int(speaker.profile_id) if speaker.profile_id else None,
-            profile_uuid=profile_uuid,
-            verified=bool(speaker.verified),
-        )
-        logger.info(
-            f"Synced speaker {speaker.id} to OpenSearch: "
-            f"display_name='{speaker.display_name}', profile_id={speaker.profile_id}, verified={speaker.verified}"
-        )
-    except Exception as e:
-        logger.exception(f"Failed to sync speaker {speaker.id} to OpenSearch: {e}")
+    Reading the profile UUID may cost a second SELECT, so it is resolved here, while
+    a session is legitimately open, rather than during the push. Nothing in the
+    returned dict is an ORM instance, so the caller can close its transaction before
+    any of it reaches the network.
+    """
+    profile_id = int(speaker.profile_id) if speaker.profile_id else None
+    return {
+        "speaker_id": int(speaker.id),
+        "speaker_uuid": str(speaker.uuid),
+        "display_name": str(speaker.display_name) if speaker.display_name else None,
+        "profile_id": profile_id,
+        "profile_uuid": _get_profile_uuid(db, profile_id),
+        "verified": bool(speaker.verified),
+    }
+
+
+def _push_speaker_documents(documents: list[dict[str, Any]]) -> None:
+    """Write speaker documents to the search index.
+
+    **Takes no ``Session``.** Two OpenSearch round trips per document, and
+    retroactive matching produces one document per matched speaker across the whole
+    library — the exact per-item loop that used to run inside a single transaction.
+    Each document is pushed independently so one index failure cannot drop the rest,
+    matching the previous per-speaker try/except.
+    """
+    from app.services.opensearch_service import update_speaker_display_name
+    from app.services.opensearch_service import update_speaker_profile
+
+    for document in documents:
+        try:
+            update_speaker_display_name(document["speaker_uuid"], document["display_name"])
+            update_speaker_profile(
+                speaker_uuid=document["speaker_uuid"],
+                profile_id=document["profile_id"],
+                profile_uuid=document["profile_uuid"],
+                verified=document["verified"],
+            )
+            logger.info(
+                f"Synced speaker {document['speaker_id']} to OpenSearch: "
+                f"display_name='{document['display_name']}', "
+                f"profile_id={document['profile_id']}, verified={document['verified']}"
+            )
+        except Exception as e:
+            logger.exception(f"Failed to sync speaker {document['speaker_id']} to OpenSearch: {e}")
 
 
 def _update_profile_embedding(db: Session, speaker_id: int, profile_id: int) -> None:
@@ -208,104 +232,163 @@ def _update_profile_embedding(db: Session, speaker_id: int, profile_id: int) -> 
         logger.warning(f"Failed to update profile embedding for speaker {speaker_id}: {e}")
 
 
-def _apply_high_confidence_match(speaker: Speaker, updated_speaker: Speaker, db: Session) -> None:
-    """Apply automatic labeling for high confidence matches (75%+)."""
-    speaker.display_name = updated_speaker.display_name  # type: ignore[assignment]
+def _apply_high_confidence_match(
+    db: Session, speaker: Speaker, trigger: dict[str, Any]
+) -> dict[str, Any]:
+    """Apply automatic labeling for high confidence matches (75%+).
+
+    **Postgres only.** The OpenSearch write this used to do inline is now returned
+    as a plain document and pushed by ``_push_speaker_documents`` after the
+    transaction commits — one index round trip per auto-applied speaker was
+    happening inside the matching transaction, once per match, for the whole library.
+    """
+    speaker.display_name = trigger["display_name"]  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
 
-    if updated_speaker.profile_id:
-        speaker.profile_id = updated_speaker.profile_id  # type: ignore[assignment]
-        _update_profile_embedding(db, speaker.id, int(updated_speaker.profile_id))
+    if trigger["profile_id"]:
+        speaker.profile_id = trigger["profile_id"]  # type: ignore[assignment]
+        _update_profile_embedding(db, speaker.id, int(trigger["profile_id"]))
 
-    _sync_speaker_to_opensearch(speaker, db)
     logger.info(
-        f"Auto-applied {updated_speaker.display_name} to {speaker.name} ({speaker.confidence:.1%} confidence)"
+        f"Auto-applied {trigger['display_name']} to {speaker.name} "
+        f"({speaker.confidence:.1%} confidence)"
     )
+    return _speaker_sync_document(db, speaker)
 
 
-def _process_speaker_match(
-    speaker: Speaker,
-    updated_speaker: Speaker,
+def _score_candidates(
     embedding_array: np.ndarray,
-    db: Session,
-) -> tuple[int, int]:
-    """
-    Process a single speaker for potential matching.
+    candidates: list[dict[str, Any]],
+    trigger_display_name: str | None,
+) -> list[dict[str, Any]]:
+    """Fetch each candidate's voiceprint and score it against the labeled speaker.
 
-    Returns:
-        Tuple of (auto_applied_increment, suggested_increment)
+    **Takes no ``Session``.** This is one OpenSearch read per candidate — every
+    speaker the user owns — and it used to run inside the caller's transaction, with
+    the write for each match interleaved. Reads and writes are now separated so the
+    N round trips happen with nothing held.
+
+    Returns the candidates at or above the 0.5 suggestion floor, each with its
+    ``similarity``; ordering follows the input.
     """
-    # Skip already verified speakers with different names
-    if (
-        speaker.verified
-        and speaker.display_name
-        and speaker.display_name != updated_speaker.display_name
-    ):
+    scored: list[dict[str, Any]] = []
+
+    for candidate in candidates:
+        # Skip already verified speakers with different names
+        if (
+            candidate["verified"]
+            and candidate["display_name"]
+            and candidate["display_name"] != trigger_display_name
+        ):
+            logger.info(
+                f"Skipping speaker {candidate['id']} ({candidate['name']}): "
+                f"already verified as '{candidate['display_name']}'"
+            )
+            continue
+
+        other_embedding = get_speaker_embedding(candidate["uuid"])
+        if not other_embedding:
+            logger.warning(
+                f"No embedding found for speaker {candidate['uuid']} ({candidate['name']})"
+            )
+            continue
+
+        similarity = calculate_cosine_similarity(embedding_array, np.array(other_embedding))
         logger.info(
-            f"Skipping speaker {speaker.id} ({speaker.name}): already verified as '{speaker.display_name}'"
+            f"Similarity between {trigger_display_name} and {candidate['name']}: {similarity:.3f}"
         )
-        return (0, 0)
 
-    # Get embedding for this speaker
-    other_embedding = get_speaker_embedding(str(speaker.uuid))
-    if not other_embedding:
-        logger.warning(f"No embedding found for speaker {speaker.uuid} ({speaker.name})")
-        return (0, 0)
+        if similarity < 0.5:
+            continue
 
-    # Calculate similarity
-    similarity = calculate_cosine_similarity(embedding_array, np.array(other_embedding))
-    logger.info(
-        f"Similarity between {updated_speaker.display_name} and {speaker.name}: {similarity:.3f}"
-    )
+        scored.append({**candidate, "similarity": similarity})
 
-    if similarity < 0.5:
-        return (0, 0)
-
-    # Update confidence and suggestion in PostgreSQL
-    speaker.confidence = similarity  # type: ignore[assignment]
-    speaker.suggested_name = updated_speaker.display_name  # type: ignore[assignment]
-    speaker.suggestion_source = "voice_match"  # type: ignore[assignment]
-    store_speaker_match(updated_speaker.id, speaker.id, similarity, db)
-
-    if similarity >= 0.75:
-        _apply_high_confidence_match(speaker, updated_speaker, db)
-        return (1, 0)
-
-    # Medium confidence (50-75%): just suggest
-    logger.info(
-        f"Suggested {updated_speaker.display_name} for {speaker.name} ({similarity:.1%} confidence)"
-    )
-    return (0, 1)
+    return scored
 
 
-def _sync_suggestion_speakers_to_opensearch(updated_speaker: Speaker, db: Session) -> None:
-    """Batch sync all suggestion updates to OpenSearch."""
+def _persist_match_results(
+    db: Session, trigger: dict[str, Any], scored: list[dict[str, Any]]
+) -> tuple[int, int, list[dict[str, Any]]]:
+    """Write every scored match to Postgres.
+
+    Returns ``(auto_applied_count, suggested_count, documents)`` where ``documents``
+    are the search documents for the auto-applied speakers, to be pushed once the
+    transaction has committed.
+    """
+    documents: list[dict[str, Any]] = []
+    auto_applied_count = 0
+    suggested_count = 0
+
+    if not scored:
+        return auto_applied_count, suggested_count, documents
+
+    rows = {
+        int(row.id): row
+        for row in db.query(Speaker).filter(Speaker.id.in_([m["id"] for m in scored])).all()
+    }
+
+    for match in scored:
+        speaker = rows.get(match["id"])
+        if speaker is None:
+            continue
+
+        similarity = match["similarity"]
+        speaker.confidence = similarity  # type: ignore[assignment]
+        speaker.suggested_name = trigger["display_name"]  # type: ignore[assignment]
+        speaker.suggestion_source = "voice_match"  # type: ignore[assignment]
+        store_speaker_match(trigger["id"], speaker.id, similarity, db)
+
+        if similarity >= 0.75:
+            documents.append(_apply_high_confidence_match(db, speaker, trigger))
+            auto_applied_count += 1
+            continue
+
+        # Medium confidence (50-75%): just suggest
+        logger.info(
+            f"Suggested {trigger['display_name']} for {speaker.name} ({similarity:.1%} confidence)"
+        )
+        suggested_count += 1
+
+    return auto_applied_count, suggested_count, documents
+
+
+def _load_suggestion_speaker_documents(
+    db: Session, trigger: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Snapshot every medium-confidence suggestion this label produced.
+
+    Postgres only — the documents it returns are pushed later, with no session
+    open. The caller must have committed first: ``autoflush`` is off on this
+    project's sessionmaker, so pending confidences would otherwise be invisible to
+    the filter below.
+    """
     try:
         suggestion_speakers = (
             db.query(Speaker)
             .filter(
-                Speaker.user_id == updated_speaker.user_id,
-                Speaker.suggested_name == updated_speaker.display_name,
+                Speaker.user_id == trigger["user_id"],
+                Speaker.suggested_name == trigger["display_name"],
                 Speaker.confidence >= 0.5,
                 Speaker.confidence < 0.75,
                 Speaker.verified == False,  # noqa: E712 - SQLAlchemy requires == for SQL generation
             )
             .all()
         )
-
-        for speaker in suggestion_speakers:
-            _sync_speaker_to_opensearch(speaker, db)
-
-        if suggestion_speakers:
-            logger.info(f"Synced {len(suggestion_speakers)} speaker suggestions to OpenSearch")
+        return [_speaker_sync_document(db, speaker) for speaker in suggestion_speakers]
     except Exception as e:
-        logger.exception(f"Error during batch OpenSearch sync for suggestions: {e}")
+        logger.exception(f"Error collecting suggestion speakers for OpenSearch sync: {e}")
+        return []
 
 
 def _send_bulk_update_notification(
-    updated_speaker: Speaker, auto_applied_count: int, suggested_count: int
+    trigger: dict[str, Any], auto_applied_count: int, suggested_count: int
 ) -> None:
-    """Send WebSocket notification about bulk speaker updates."""
+    """Send WebSocket notification about bulk speaker updates.
+
+    Takes the labeled speaker as plain data: the caller has committed by this point,
+    and reading an attribute off an expired ORM instance would open a fresh
+    transaction just to render a notification.
+    """
     if auto_applied_count == 0:
         return
 
@@ -315,14 +398,14 @@ def _send_bulk_update_notification(
         from app.api.websockets import publish_notification
 
         coro = publish_notification(
-            user_id=int(updated_speaker.user_id),
+            user_id=trigger["user_id"],
             notification_type="speakers_bulk_updated",
             data={
-                "trigger_speaker_id": updated_speaker.id,
-                "display_name": str(updated_speaker.display_name),
+                "trigger_speaker_id": trigger["id"],
+                "display_name": str(trigger["display_name"]),
                 "auto_applied_count": auto_applied_count,
                 "suggested_count": suggested_count,
-                "message": f"Auto-applied '{updated_speaker.display_name}' to {auto_applied_count} additional speakers",
+                "message": f"Auto-applied '{trigger['display_name']}' to {auto_applied_count} additional speakers",
             },
         )
 
@@ -366,50 +449,88 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
         - Only processes unverified speakers or those with matching names
         - Updates profile embeddings for all automatically assigned speakers
         - Logs detailed information about matching decisions for debugging
+
+    Session lifetime:
+        This runs in ``process_speaker_update_background`` and used to hold the
+        caller's transaction across *every* phase — one OpenSearch voiceprint read
+        per speaker the user owns, plus two index writes per match. A plain SELECT
+        holds ACCESS SHARE for the life of its transaction, so that queued every
+        ``ALTER TABLE`` (an Alembic upgrade) and pinned the vacuum horizon for as
+        long as the whole pass took. It is now read → commit → score (no
+        transaction) → write → commit → push (no transaction). The ``db.commit()``
+        calls are deliberate: they are what actually releases the locks, and this
+        function has always owned the transaction boundary here (the pre-split code
+        committed mid-body too).
     """
     try:
+        # Phase 0 — snapshot the labeled speaker as plain data, then release the
+        # transaction the caller handed us. Nothing below touches the instance.
+        trigger: dict[str, Any] = {
+            "id": int(updated_speaker.id),
+            "uuid": str(updated_speaker.uuid),
+            "user_id": int(updated_speaker.user_id),
+            "display_name": str(updated_speaker.display_name)
+            if updated_speaker.display_name
+            else None,
+            "profile_id": int(updated_speaker.profile_id) if updated_speaker.profile_id else None,
+        }
         logger.info(
-            f"Starting retroactive matching for speaker {updated_speaker.id} labeled as '{updated_speaker.display_name}'"
+            f"Starting retroactive matching for speaker {trigger['id']} "
+            f"labeled as '{trigger['display_name']}'"
         )
+        db.commit()
 
-        embedding = get_speaker_embedding(str(updated_speaker.uuid))
+        # Phase 1 — voiceprints and similarity. NO transaction is open here.
+        embedding = get_speaker_embedding(trigger["uuid"])
         if not embedding:
-            logger.warning(f"No embedding found for speaker {updated_speaker.uuid}")
+            logger.warning(f"No embedding found for speaker {trigger['uuid']}")
             return {"auto_applied_count": 0, "suggested_count": 0}
 
         embedding_array = np.array(embedding)
 
-        all_speakers = (
-            db.query(Speaker)
+        candidates = [
+            {
+                "id": int(row.id),
+                "uuid": str(row.uuid),
+                "name": str(row.name),
+                "display_name": row.display_name,
+                "verified": bool(row.verified),
+            }
+            for row in db.query(
+                Speaker.id,
+                Speaker.uuid,
+                Speaker.name,
+                Speaker.display_name,
+                Speaker.verified,
+            )
             .filter(
-                Speaker.user_id == updated_speaker.user_id,
-                Speaker.id != updated_speaker.id,
+                Speaker.user_id == trigger["user_id"],
+                Speaker.id != trigger["id"],
             )
             .all()
-        )
+        ]
+        db.commit()
 
         logger.info(
-            f"Checking {len(all_speakers)} speakers for matches with {updated_speaker.display_name}"
+            f"Checking {len(candidates)} speakers for matches with {trigger['display_name']}"
         )
+        scored = _score_candidates(embedding_array, candidates, trigger["display_name"])
 
-        auto_applied_count = 0
-        suggested_count = 0
-
-        for speaker in all_speakers:
-            auto_inc, sugg_inc = _process_speaker_match(
-                speaker, updated_speaker, embedding_array, db
-            )
-            auto_applied_count += auto_inc
-            suggested_count += sugg_inc
-
+        # Phase 2 — the writes, then commit so the suggestion snapshot below sees
+        # them (autoflush is off) and the locks are released before the push.
+        auto_applied_count, suggested_count, documents = _persist_match_results(db, trigger, scored)
         db.commit()
-        _sync_suggestion_speakers_to_opensearch(updated_speaker, db)
+        documents.extend(_load_suggestion_speaker_documents(db, trigger))
+        db.commit()
+
+        # Phase 3 — index writes. NO transaction is open here.
+        _push_speaker_documents(documents)
 
         logger.info(
             f"Retroactive matching complete: {auto_applied_count} auto-applied, {suggested_count} suggested"
         )
 
-        _send_bulk_update_notification(updated_speaker, auto_applied_count, suggested_count)
+        _send_bulk_update_notification(trigger, auto_applied_count, suggested_count)
 
         return {"auto_applied_count": auto_applied_count, "suggested_count": suggested_count}
 

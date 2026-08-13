@@ -199,6 +199,26 @@ class TestEveryLifecycleDenialIdentifiesTheAccountAndTheClient:
         assert audited[0]["source_ip"] == "unknown"
         assert audited[0]["user_agent"] == "unknown"
 
+    def test_no_request_at_all_records_the_documented_placeholder(self, audited):
+        """``request=None`` is a supported input, and the placeholder is a contract.
+
+        Service-layer and background callers audit with no request in scope — that
+        is why ``_get_client_info`` takes ``Request | None`` at all — and the two
+        fields it fills are what the audit index groups by. They therefore have to
+        stay non-empty strings *spelled the same way* as the degraded-request case
+        above: a ``None``, an empty string, or a differently-cased placeholder
+        splits every "attempts by source" bucket in two, for exactly the events
+        that arrived without a request.
+        """
+        assert deps_module._get_client_info(None) == ("unknown", "unknown")
+
+        with pytest.raises(HTTPException) as exc:
+            get_current_active_user(request=None, current_user=_user(must_change_password=True))
+
+        assert exc.value.status_code == 403
+        assert audited[0]["source_ip"] == "unknown"
+        assert audited[0]["user_agent"] == "unknown"
+
 
 # ── per-gate: the event type, the error code, the details ────────────────────────
 

@@ -1009,6 +1009,25 @@ def reprocess_media_file(
     )
 
 
+def _clear_derived_cache(file_id: int, filename: str) -> None:
+    """Drop a file's regenerable derived cache. **Touches no database session.**
+
+    Deliberately module-level rather than inline in the handler below: five
+    MinIO deletes plus the bucket check in ``VideoProcessingService.__init__``
+    are network round trips, and running them from inside the request handler
+    kept the request transaction — and ``ACCESS SHARE`` on ``media_file`` —
+    open for their whole duration (``app/tasks/CLAUDE.md``).
+
+    Args:
+        file_id: Internal media file id.
+        filename: The file's original filename; the cache keys derive from it.
+    """
+    from app.services.minio_service import MinIOService
+    from app.services.video_processing_service import VideoProcessingService
+
+    VideoProcessingService(MinIOService()).clear_derived_cache(file_id, filename)
+
+
 @router.delete("/{file_uuid}/cache", status_code=204)
 def clear_video_cache(
     file_uuid: str,
@@ -1025,17 +1044,16 @@ def clear_video_cache(
     db_file = get_media_file_by_uuid(
         db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
     )
-    file_id = db_file.id  # Internal ID for cache operations
+    file_id = int(db_file.id)  # Internal ID for cache operations
+    filename = str(db_file.filename)  # Plain data: the cache keys derive from it
+
+    # End the authorization read's transaction before the object-storage work
+    # below, which touches no database.
+    db.commit()
 
     try:
-        from app.services.minio_service import MinIOService
-        from app.services.video_processing_service import VideoProcessingService
-
-        minio_service = MinIOService()
-        video_service = VideoProcessingService(minio_service)
-
         # Clear cached videos for this file
-        video_service.clear_cache_for_media_file(db, file_id)
+        _clear_derived_cache(file_id, filename)
 
         logger.info(f"Cleared video cache for file {file_id} after speaker updates")
 

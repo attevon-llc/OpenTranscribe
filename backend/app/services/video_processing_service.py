@@ -873,8 +873,68 @@ class VideoProcessingService:
             self._upload_to_cache(output_path, cache_key, ext, content_type=content_type)
             return cache_key, ext, content_type
 
+    def derived_cache_keys(self, file_id: int, filename: str) -> list[str]:
+        """Every derived-cache key a media file can own. Pure — no I/O, no DB.
+
+        Both subtitle-embedded video variants and all three audio-extract
+        variants. Shared by the delete paths so the list cannot drift between
+        them.
+
+        Args:
+            file_id: Internal media file id.
+            filename: The file's ORIGINAL filename, which the keys derive from.
+
+        Returns:
+            Cache keys under ``DERIVED_CACHE_PREFIX``.
+        """
+        return [
+            self.generate_cache_key(file_id, filename, include_speakers=True),
+            self.generate_cache_key(file_id, filename, include_speakers=False),
+            self.audio_cache_key(filename, "mp3"),
+            self.audio_cache_key(filename, "wav"),
+            self.audio_cache_key(filename, "original"),
+        ]
+
+    def clear_derived_cache(self, file_id: int, filename: str) -> None:
+        """Delete a file's derived-cache objects. **Takes no DB session.**
+
+        Five MinIO round trips, so callers must not be holding a transaction:
+        take the filename in the read phase and call this afterwards. Absent
+        objects are not an error — these deletes are idempotent.
+
+        Args:
+            file_id: Internal media file id.
+            filename: The file's original filename.
+        """
+        for cache_key in self.derived_cache_keys(file_id, filename):
+            try:
+                self.minio_service.delete_object(self.cache_bucket, cache_key)
+                logger.info(f"Cleared cache for {cache_key}")
+            except Exception as cache_error:
+                # Cache file might not exist, which is fine, but we should log for debugging
+                logger.debug(
+                    f"Cache file {cache_key} not found or could not be deleted: {cache_error}"
+                )
+
     def clear_cache_for_media_file(self, db: Session, file_id: int):
-        """Clear cached processed videos for a media file."""
+        """Clear cached processed videos for a media file, resolving the name via ``db``.
+
+        ⚠️ **Known session-lifetime leak — do not call this from new code.** The
+        filename is looked up on the CALLER's session, so a caller that is
+        mid-transaction holds it across the five MinIO deletes below. Its
+        remaining callers are the two request handlers in
+        ``api/endpoints/speakers.py``, whose signature this change does not own;
+        it is catalogued in ``scripts/session-lifetime-allowlist.txt`` under its
+        own key until they move. Every other path resolves the filename in its
+        own short read phase and calls :meth:`clear_derived_cache` afterwards.
+
+        The delete loop is **deliberately inline rather than delegated** to
+        :meth:`clear_derived_cache`: delegating would hide the still-open leak
+        from ``scripts/audit-session-lifetime.py``, whose interprocedural rule
+        does not recurse. A gate that reports zero on a live defect is worse
+        than the six duplicated lines. Delete this method — not the duplication —
+        once ``speakers.py`` stops passing a session.
+        """
         try:
             # Get the MediaFile to access original filename
             from app.models.media import MediaFile
@@ -884,16 +944,7 @@ class VideoProcessingService:
                 logger.warning(f"Media file {file_id} not found for cache clearing")
                 return
 
-            filename = str(db_file.filename)
-            # Clear both subtitle-embedded video variants and all audio extract variants.
-            cache_keys = [
-                self.generate_cache_key(file_id, filename, include_speakers=True),
-                self.generate_cache_key(file_id, filename, include_speakers=False),
-                self.audio_cache_key(filename, "mp3"),
-                self.audio_cache_key(filename, "wav"),
-                self.audio_cache_key(filename, "original"),
-            ]
-            for cache_key in cache_keys:
+            for cache_key in self.derived_cache_keys(file_id, str(db_file.filename)):
                 try:
                     self.minio_service.delete_object(self.cache_bucket, cache_key)
                     logger.info(f"Cleared cache for {cache_key}")

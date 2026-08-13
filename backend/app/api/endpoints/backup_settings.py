@@ -197,6 +197,19 @@ def _s3_status(cfg: dict, db: Session) -> S3Status | None:
     )
 
 
+def _live_snapshot_status() -> OpenSearchSnapshotStatus:
+    """Live OpenSearch snapshot probe. **No DB session is held.**
+
+    Up to three round trips against a cluster that may be unreachable, so it takes
+    no ``db`` and the caller closes the request transaction before calling it: this
+    used to run on the request session, holding ACCESS SHARE for the length of the
+    cluster's timeouts (see ``backend/app/tasks/CLAUDE.md``).
+    """
+    from app.services import opensearch_snapshot
+
+    return OpenSearchSnapshotStatus(**opensearch_snapshot.snapshot_status())
+
+
 def _settings_response(cfg: dict, db: Session) -> BackupSettings:
     return BackupSettings(
         **{k: v for k, v in cfg.items() if k != "last_result"},
@@ -242,7 +255,14 @@ def get_backup_status(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_superuser),
 ) -> BackupStatus:
-    """Return last run / result and whether the schedule is currently due."""
+    """Return last run / result and whether the schedule is currently due.
+
+    Ordered so the OpenSearch snapshot probe runs with **no Postgres transaction
+    open**: every DB-backed value is read first, the request session is released,
+    and only then does the cluster get contacted.
+    """
+    # Phase 1 — everything that needs Postgres (settings + the S3 reachability
+    # probe, which decrypts the stored secret through this session).
     cfg = backup_service.get_settings(db)
     next_due = False
     if cfg["enabled"]:
@@ -250,11 +270,15 @@ def get_backup_status(
             next_due = backup_service.is_due(cfg["schedule"], cfg["last_run_at"], datetime.now(UTC))
         except ValueError:
             next_due = False
-    os_snapshot_status = None
-    if cfg["include_opensearch"]:
-        from app.services import opensearch_snapshot
+    s3_status = _s3_status(cfg, db)
+    destination_status = DestinationStatus(**backup_service.destination_status(cfg["destination"]))
 
-        os_snapshot_status = OpenSearchSnapshotStatus(**opensearch_snapshot.snapshot_status())
+    # Release the request transaction before the cluster probe below.
+    db.close()
+
+    # Phase 2 — OpenSearch, with no Postgres transaction held.
+    os_snapshot_status = _live_snapshot_status() if cfg["include_opensearch"] else None
+
     return BackupStatus(
         enabled=cfg["enabled"],
         schedule=cfg["schedule"],
@@ -262,10 +286,8 @@ def get_backup_status(
         last_run_at=cfg["last_run_at"],
         last_result=cfg.get("last_result"),
         next_due=next_due,
-        destination_status=DestinationStatus(
-            **backup_service.destination_status(cfg["destination"])
-        ),
-        s3_status=_s3_status(cfg, db),
+        destination_status=destination_status,
+        s3_status=s3_status,
         pg_dump_available=backup_service.pg_dump_available(),
         include_opensearch=cfg["include_opensearch"],
         opensearch_snapshot_status=os_snapshot_status,

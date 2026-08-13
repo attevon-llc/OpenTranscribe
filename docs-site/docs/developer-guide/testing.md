@@ -6,6 +6,35 @@ sidebar_position: 3
 
 OpenTranscribe has comprehensive testing at multiple levels: unit tests, integration tests, and end-to-end browser tests.
 
+## The bar, and where it does not apply
+
+**Production code ships with tests that would actually fail if the code were wrong.** Not tests
+that execute the code — tests that *notice*. The difference is the subject of
+[Test quality](#test-quality-a-test-that-cannot-fail-is-worse-than-no-test) below, and it is not
+theoretical here: this repo has shipped an assertion that passed against an empty index, a marker
+that selected nothing, 240 security tests gated off behind stale environment variables, and a
+parser reporting `14/14 ok` while extracting two characters per document.
+
+Three rules follow from that:
+
+1. **Watch the test fail before the fix.** A test you have never seen red is not evidence that it
+   is checking anything. When a fix is already in place, break it deliberately, confirm the test
+   goes red, and restore.
+2. **Assert the outcome, not the absence of an exception.** `n/N succeeded` is not a measurement
+   if a success can be empty. Assert *characters extracted*, *rows written*, *the exact status
+   code* — something a broken implementation could not produce.
+3. **Never loosen a test to make it pass, and never allowlist a finding you could fix.** If the
+   test is wrong, fix it for the stated reason. If the product is wrong, fix the product. See
+   [Fix the finding, never silence it](https://github.com/attevon-llc/OpenTranscribe/blob/master/CLAUDE.md)
+   in the repository guide.
+
+:::tip Quick prototypes and spikes are explicitly exempt
+Throwaway code exploring whether an approach works does **not** need a test harness, and imposing
+one is a good way to make exploration expensive. The bar scales with the project: a spike answers
+a question and is deleted or rewritten; production code is depended upon. If it is genuinely
+ambiguous which mode a change is in, ask — do not guess in either direction.
+:::
+
 ## Test Structure
 
 ```

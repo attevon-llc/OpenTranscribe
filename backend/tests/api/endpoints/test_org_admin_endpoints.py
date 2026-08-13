@@ -267,6 +267,33 @@ class TestEraseOrganizationConfirmGate:
         db_session.expire_all()
         assert db_session.query(Organization).filter(Organization.id == org.id).first() is None
 
+    def test_a_partial_erasure_is_visible_in_the_200_body(
+        self, client, org, org_admin_request, monkeypatch
+    ):
+        """An erasure that could not destroy every copy still answers **200**.
+
+        That is the current contract, and it is deliberately pinned here rather
+        than left implicit: the only way a caller scripting against this route
+        can tell a complete erasure from a partial one is the body. So the body
+        must say so — ``complete: false`` plus a populated ``errors`` list — and
+        a future move to 207/`Multi-Status` has to come through this test rather
+        than silently changing what an integrator sees.
+
+        The failure injected is an unreachable OpenSearch during the biometric
+        sweep, which is exactly the outage that used to answer ``errors: []``.
+        """
+        monkeypatch.setattr("app.services.opensearch_service.opensearch_client", None)
+        monkeypatch.setattr("app.services.opensearch_service.client.opensearch_client", None)
+        monkeypatch.setattr("app.services.search.indexing_service.opensearch_client", None)
+
+        response = client.post(f"{ERASE_ORG_PATH}?confirm=true", headers=org_admin_request)
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["complete"] is False
+        assert body["errors"], "a partial erasure must name what survived"
+        assert any(e.get("stage") == "voiceprints" for e in body["errors"])
+
 
 # --------------------------------------------------------------------------- #
 # Org-member erasure: the target must be a member of THIS org                  #

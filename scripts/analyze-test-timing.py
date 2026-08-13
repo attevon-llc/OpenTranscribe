@@ -109,7 +109,11 @@ class Report:
         if not self.cases:
             return {}
         ds = sorted(c.duration for c in self.cases)
-        pick = lambda p: ds[min(int(len(ds) * p), len(ds) - 1)]  # noqa: E731
+
+        def pick(p: float) -> float:
+            """Nearest-rank percentile, clamped so p=1.0 cannot index past the end."""
+            return ds[min(int(len(ds) * p), len(ds) - 1)]
+
         return {
             'p50': pick(0.50),
             'p90': pick(0.90),

@@ -50,6 +50,7 @@ Exit codes: 0 clean (for the selected categories), 1 drift found, 2 misuse,
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import sys
@@ -100,11 +101,28 @@ def _bootstrap_env() -> None:
             os.environ.setdefault(key, value or '')
 
 
+def _include_object(_obj, name, _type, _reflected, _compare_to) -> bool:
+    """Alembic's include_object hook: skip alembic's own bookkeeping table.
+
+    Alembic dictates this five-argument signature, so four parameters are unused. They are
+    underscore-prefixed to say that deliberately rather than silenced with a blanket
+    `noqa: ARG005` — a named function also gives the rule somewhere to grow if more tables
+    need excluding, which a lambda inside a dict literal does not.
+    """
+    return name != 'alembic_version'
+
+
 def collect_diffs() -> list:
     from alembic.autogenerate import compare_metadata
     from alembic.migration import MigrationContext
 
-    import app.models  # noqa: F401  registers every model on Base.metadata
+    # Imported for its SIDE EFFECT: importing the package registers every model on
+    # Base.metadata, and without it the comparison below runs against an EMPTY metadata
+    # and reports "no drift" for a schema it never looked at. Done via import_module
+    # rather than a bare `import app.models` so the intent is explicit and there is no
+    # unused-import finding to suppress — alembic/env.py omitting exactly this import is
+    # why --autogenerate compared 0 tables against 54 and had never worked as a drift check.
+    importlib.import_module('app.models')
     from app.db.base import Base, engine
 
     with engine.connect() as conn:
@@ -116,10 +134,7 @@ def collect_diffs() -> list:
                 # (now() vs CURRENT_TIMESTAMP, '{}'::jsonb vs '{}'). Off until the
                 # signal categories are clean.
                 'compare_server_default': False,
-                # ARG005: the caller dictates this callback signature.
-                'include_object': lambda obj, name, type_, reflected, compare_to: (  # noqa: ARG005
-                    name != 'alembic_version'
-                ),
+                'include_object': _include_object,
             },
         )
         return compare_metadata(context, Base.metadata)

@@ -993,23 +993,17 @@ def update_single_transcript_segment(
         setattr(segment, field, value)
 
     # If the text changed, re-run redaction detection for THIS segment only so the
-    # edited text never bypasses masking (cheap inline detectors; ML best-effort).
+    # edited text never bypasses masking. The API process preloads no ML detectors,
+    # so this is also where a detector is most likely to be unavailable — and this
+    # path WRITES, so a swallowed failure would be cached as "clean" forever rather
+    # than costing one request. `redetect_edited_segment` owns that decision: it
+    # marks the file stale and queues a worker re-scan instead of persisting a
+    # result nobody could examine. It never raises for a detector fault, so a
+    # broken detector cannot turn a transcript edit into a 500.
     if text_changed:
-        try:
-            from app.services.redaction.config import detection_config_for_all
-            from app.services.redaction.service import RedactionService
+        from app.services.redaction.service import RedactionService
 
-            det_cfg = detection_config_for_all()
-            det_cfg["language"] = db_file.language
-            span_dicts, toxicity = RedactionService.detect_segment_spans(
-                str(segment.text),
-                segment.words,  # type: ignore[arg-type]
-                det_cfg,
-            )
-            segment.redactions = span_dicts or None  # type: ignore[assignment]
-            segment.toxicity = toxicity  # type: ignore[assignment]
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"Re-detection after segment edit failed: {e}")
+        RedactionService.redetect_edited_segment(db, db_file, segment)
 
     db.commit()
     db.refresh(segment)

@@ -114,8 +114,31 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   so `toxicity.score_texts` must NOT re-acquire it (`score_text` does — single-segment path only).
 - **"CPU service" is a misnomer**: `REDACTION_DEVICE=auto` puts models on GPU whenever free VRAM
   ≥ `REDACTION_MIN_FREE_VRAM_GB` (1.5), re-probed per scan, moving them back under pressure.
-- **Segment-edit re-detection runs inline in the API process** (`crud.py`, `text_changed` branch),
-  which never preloads Presidio/toxicity — ML detectors are best-effort there.
+- **⚠️ Segment-edit re-detection is the one fail-closed path that WRITES** — and the API process
+  it runs in never preloads Presidio/toxicity, so it is also where a detector is most likely to
+  be unavailable. `crud.py`'s `text_changed` branch used to persist whatever
+  `detect_segment_spans` returned; since that call swallows a detector exception, an outage was
+  cached as `redactions = NULL` under `redaction_status = done`, and **every later read then
+  took the cached-span path and found nothing to mask**. Unlike the request-scoped fixes in
+  `chat/redactor.py`, the leak outlived its cause — the detector never had to fail again.
+  `RedactionService.redetect_edited_segment` now owns the decision: it keeps the spans the
+  detectors that DID run found (real findings, and detected against the NEW text so their
+  offsets address the text they are stored beside — the previous spans are simply dropped,
+  because nothing can realign them to edited text), and on a **blocking** failure sets the file
+  to `pending` + queues `redaction_detect_task`.
+  `pending`, not a new sentinel: every status-aware reader already honours it (`_redaction_pending`
+  withholds, `chat/_mask_from_segments` refuses non-`done` and falls through to inline
+  fail-closed masking, `llm_guard` defers **retryably**). Not `failed` — that is non-retryable in
+  `llm_guard`. Not a 4xx — a detector outage must not block a user fixing a typo.
+  **The queue drains in one hop**: `detect_and_store` writes `processing` then `done` or
+  `failed` and never `pending`, so only an edit can set it and there is no cycle; a second edit
+  while a scan is pending rides the first one's dispatch. Blocking is `blocking_detector_failures`
+  against the **file owner's** policy (the subject `llm_guard` uses — the editor may be an admin
+  whose own redaction is off), so a CPU-only deployment that never enabled `pii` is untouched.
+  Pinned by `tests/redaction/test_segment_edit_redetection.py`.
+  Note toxicity failures never reach the `failures` sink at all (`detect_segment_spans` logs them
+  at debug), so a toxicity-only fault does not mark a file stale — consistent with every other
+  masker, which reads the same sink.
 - PII is detected and cached but **not** in `DEFAULT_REDACTION_CATEGORIES` (too aggressive on
   conversation); `ORGANIZATION` is excluded from default entities (spaCy over-tags acronyms).
 - Profanity and PII are **English-only** (`REDACTION_*_LANGUAGES`); unsupported languages come

@@ -265,6 +265,152 @@ class RedactionService:
         }
 
     @staticmethod
+    def redetect_edited_segment(
+        db: Session, media_file: MediaFile, segment: TranscriptSegment
+    ) -> str:
+        """Re-detect ONE edited segment, or record that it could not be examined.
+
+        A segment edit invalidates that segment's cached spans — they address
+        offsets in text that no longer exists — so the API process re-runs
+        detection inline. It has no Presidio or toxicity weights loaded
+        (``celery-redaction`` is the only process that preloads them), so this is
+        also the path most likely to meet a detector that cannot run.
+
+        **The failure mode this exists to prevent is a WRITE.**
+        ``detect_segment_spans`` swallows a detector exception and returns the
+        spans it did collect, so "found nothing" and "could not look" are the
+        same value (issue #324). Persisting that value cached the outage: every
+        later read took the cached-span path, found nothing to mask, and sent the
+        segment on. Unlike the request-scoped fixes in ``chat/redactor.py`` and
+        the detector layer, the leak then outlived its cause — the detector never
+        had to fail again.
+
+        So on a **blocking** failure the file is marked ``pending`` and a full
+        re-scan is queued instead. ``pending`` is not a new concept: it is the
+        state ``_lazy_dispatch_redaction`` already uses, and every status-aware
+        reader honours it (the transcript read withholds, chat's cached path
+        refuses and falls back to inline fail-closed masking, ``llm_guard``
+        defers). ``failed`` would be wrong — ``llm_guard`` turns it into a
+        NON-retryable refusal, permanently breaking summarization for the file —
+        and refusing the edit outright would be worse still: a user fixing a
+        typo should not be blocked by a detector outage.
+
+        What *is* persisted is the spans the detectors that DID run found. They
+        are real findings and they were detected against the NEW text, so their
+        offsets address the text they are stored beside; the previous spans are
+        simply gone, because there is no meaningful way to realign them. Same
+        disposition ``detect_and_store`` takes on a partial pass: keep the
+        findings, let the status say the result is incomplete.
+
+        Blocking is decided against the **file owner's** effective policy — the
+        subject ``llm_guard.resolve_llm_masking`` uses, because the content is
+        theirs. Resolving the *editor's* config would let an admin whose own
+        redaction is off cache an unexamined segment as clean in someone else's
+        transcript. And it is narrow on purpose
+        (:func:`~app.services.redaction.config.blocking_detector_failures`): only
+        a detector feeding a category that policy actually masks may withhold, so
+        a CPU-only deployment with no Presidio that never enabled ``pii`` is
+        untouched.
+
+        Args:
+            db: Database session. Committed only when the file is marked stale.
+            media_file: The edited segment's file (the policy subject).
+            segment: The segment whose ``text`` just changed. Its ``redactions``
+                and ``toxicity`` are updated in place.
+
+        Returns:
+            ``"done"`` when the cached spans can be trusted, ``"stale"`` when the
+            file was marked for re-detection instead.
+        """
+        from app.services.redaction.config import blocking_detector_failures
+        from app.services.redaction.config import resolve_effective_config
+
+        failures: list[str] = []
+        try:
+            det_cfg = detection_config_for_all()
+            det_cfg["language"] = media_file.language
+            span_dicts, toxicity = RedactionService.detect_segment_spans(
+                str(segment.text),
+                segment.words,  # type: ignore[arg-type]
+                det_cfg,
+                failures=failures,
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Not just one detector — the whole re-detection. Nothing was
+            # examined, and the segment's cached spans still describe the text it
+            # had before the edit.
+            logger.warning("Re-detection after a segment edit raised: %s", exc)
+            return RedactionService._mark_redaction_stale(db, media_file, ["*"])
+
+        blocking: list[str] = []
+        if failures:
+            try:
+                cfg = resolve_effective_config(db, int(media_file.user_id))
+                blocking = sorted(blocking_detector_failures(failures, cfg.enabled_categories))
+            except Exception:  # noqa: BLE001
+                # Fail CLOSED: an unresolvable policy is not an absent policy. If
+                # we cannot tell whether the owner masks these categories, we
+                # cannot tell that caching this result is safe.
+                logger.exception(
+                    "Could not resolve the owner's redaction policy after a segment edit; "
+                    "treating every failed detector as blocking"
+                )
+                blocking = sorted(set(failures))
+
+        segment.redactions = span_dicts or None  # type: ignore[assignment]
+        segment.toxicity = toxicity  # type: ignore[assignment]
+        if blocking:
+            return RedactionService._mark_redaction_stale(db, media_file, blocking)
+        return "done"
+
+    @staticmethod
+    def _mark_redaction_stale(db: Session, media_file: MediaFile, detectors: list[str]) -> str:
+        """Record that a file's cached spans no longer cover its text, and re-scan it.
+
+        Args:
+            db: Database session (committed here so the queued task cannot read
+                the pre-edit rows).
+            media_file: File whose cached spans are no longer trustworthy.
+            detectors: What could not be trusted, for the operator-facing log.
+
+        Returns:
+            Always ``"stale"``. Never raises: a detector outage must not turn a
+            transcript edit into a 500.
+        """
+        status = getattr(media_file, "redaction_status", None)
+        already_queued = status in (C.REDACTION_STATUS_PENDING, C.REDACTION_STATUS_PROCESSING)
+        media_file.redaction_status = C.REDACTION_STATUS_PENDING  # type: ignore[assignment]
+        try:
+            db.commit()
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            logger.exception(
+                "Could not mark file %s stale after an unexaminable segment edit", media_file.id
+            )
+            return "stale"
+
+        logger.warning(
+            "A segment edit on file %s could not be examined by detectors %s. The file's "
+            "cached spans are marked stale (pending) and a full re-detection was queued, "
+            "rather than caching an unexamined segment as clean.",
+            media_file.id,
+            detectors,
+        )
+        if already_queued:
+            # A scan is already coming; a second one would just duplicate the CPU
+            # work for someone editing several segments in a row.
+            return "stale"
+        try:
+            from app.tasks.redaction_task import redaction_detect_task
+
+            redaction_detect_task.delay(file_id=int(media_file.id), user_id=int(media_file.user_id))
+        except Exception:  # noqa: BLE001
+            # The status stands either way — the file stays withheld rather than
+            # silently reverting to "scanned and clean".
+            logger.exception("Could not queue re-detection for file %s", media_file.id)
+        return "stale"
+
+    @staticmethod
     def _owner_wants_llm(db: Session, user_id: int) -> bool:
         try:
             from app.services.redaction.config import resolve_effective_config

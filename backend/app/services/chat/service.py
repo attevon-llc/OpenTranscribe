@@ -200,7 +200,12 @@ def _prepare_context(
     )
 
     masked = mask_chunks(db, result.chunks, user_id)
-    masked = [chunk for chunk in masked if chunk.content.strip()]
+    kept = [chunk for chunk in masked if chunk.content.strip()]
+    # Masking fails CLOSED: an unmaskable chunk becomes "" and contributes
+    # nothing. Without this counter that is indistinguishable from retrieval
+    # returning less, which is a different defect with a different fix.
+    meta["chunks_dropped_empty_after_masking"] = len(masked) - len(kept)
+    masked = kept
 
     meta["retrieved"] = result.retrieved
     meta["reranked"] = result.reranked
@@ -450,6 +455,7 @@ class ChatService:
             # it earlier meant the UI could render clickable citations for
             # excerpts the model was never given — an answer that looks sourced
             # but is not grounded in the cited material (issue #384).
+            prompt_diagnostics: dict[str, int] = {}
             messages, excerpt_ids = build_messages(
                 system_prompt=system_prompt,
                 chunks=masked,
@@ -458,9 +464,11 @@ class ChatService:
                 context_window=llm.user_context_window,
                 response_tokens=answer_tokens,
                 max_history_turns=settings.history_max_turns,
+                diagnostics=prompt_diagnostics,
             )
             chunks_used = len(excerpt_ids)
             turn.metadata["chunks_used"] = chunks_used
+            turn.metadata.update(prompt_diagnostics)
 
             if use_context:
                 turn.offered_citations = citations_mod.build_offered_citations(masked, excerpt_ids)

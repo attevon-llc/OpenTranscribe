@@ -140,6 +140,7 @@ show_help() {
   echo "  bench clean                              - Stop bench stack and wipe all bench volumes"
   echo "  bench run [output.csv] [fixtures_dir]    - Run upload-speed benchmark on current branch"
   echo "  bench engine                             - Run engine split-stage benchmarks (Phase 2 gate)"
+  echo "  bench rag --fresh <name> [args]          - Retrieval quality (nDCG/recall/MRR) over an injected eval corpus"
   echo "  bench status                             - Show bench containers, GPU state, volumes"
   echo "  bench compare <master.csv> <branch.csv>  - Print side-by-side speedup table"
   echo ""
@@ -2886,6 +2887,97 @@ case "$1" in
         backend/venv/bin/python scripts/collate_benchmark.py "${@:3}"
         ;;
 
+      rag)
+        # Retrieval-quality benchmark (#403 Stage 1) — a PEER of the GPU arms
+        # above, not a mode of them. It measures nDCG/recall/MRR over an
+        # already-injected eval corpus and needs no GPU, no ASR and no LLM.
+        #
+        # It runs against a --fresh deployment rather than the otbench stack,
+        # because the corpus is injected there by scripts/inject-eval-corpus.sh
+        # and the measurement must be reproducible against a NAMED, isolated
+        # dataset. Same lesson as #399: address the target deployment's own
+        # container names and published ports, never the dev stack's — a bench
+        # arm that validates the wrong stack reports the wrong number.
+        RAG_FRESH_NAME=""
+        RAG_PORT_OFFSET=""
+        RAG_ARGS=()
+        shift 2  # drop "bench rag"
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            --fresh)       RAG_FRESH_NAME="$2"; shift 2 ;;
+            --port-offset) RAG_PORT_OFFSET="$2"; shift 2 ;;
+            *)             RAG_ARGS+=("$1"); shift ;;
+          esac
+        done
+
+        if [[ -n "$RAG_FRESH_NAME" && -z "$RAG_PORT_OFFSET" ]]; then
+          RAG_OFFSET_FILE=".fresh/${RAG_FRESH_NAME}.offset"
+          if [[ -f "$RAG_OFFSET_FILE" ]]; then
+            RAG_PORT_OFFSET="$(tr -d '[:space:]' < "$RAG_OFFSET_FILE")"
+          else
+            echo "❌ No offset recorded for fresh deployment '${RAG_FRESH_NAME}' (${RAG_OFFSET_FILE})."
+            echo "   Pass --port-offset N, or check './opentr.sh fresh-list'."
+            exit 1
+          fi
+        fi
+        RAG_PORT_OFFSET="${RAG_PORT_OFFSET:-0}"
+        if ! [[ "$RAG_PORT_OFFSET" =~ ^[0-9]+$ ]]; then
+          echo "❌ --port-offset must be a non-negative integer, got '${RAG_PORT_OFFSET}'."
+          exit 1
+        fi
+
+        # Verify the deployment we are about to measure is actually up, by ITS
+        # container names (otfresh-<name>-*), before exporting anything.
+        if [[ -n "$RAG_FRESH_NAME" ]]; then
+          RAG_OS_CONTAINER="otfresh-${RAG_FRESH_NAME}-opensearch"
+          if ! docker ps --format '{{.Names}}' | grep -q "^${RAG_OS_CONTAINER}$"; then
+            echo "❌ '${RAG_OS_CONTAINER}' is not running — the corpus is indexed there."
+            echo "   Start it:  ./opentr.sh start dev --fresh ${RAG_FRESH_NAME} --port-offset ${RAG_PORT_OFFSET}"
+            exit 1
+          fi
+        fi
+
+        # OT_EVAL_PYTHON exists because a git worktree does not carry the venv:
+        # it lives in the main checkout, and the harness runs on the host.
+        RAG_PYTHON="${OT_EVAL_PYTHON:-backend/venv/bin/python}"
+        if [[ ! -x "$RAG_PYTHON" ]]; then
+          echo "❌ No usable interpreter at '${RAG_PYTHON}'."
+          echo "   Create backend/venv (see 'Backend / venv' in CLAUDE.md), or set"
+          echo "   OT_EVAL_PYTHON=/path/to/venv/bin/python (needed in a worktree)."
+          exit 1
+        fi
+        if ! "$RAG_PYTHON" -c "import pytrec_eval" 2>/dev/null; then
+          echo "❌ The metric engine is missing. It is an EVAL-ONLY dependency, kept out of"
+          echo "   requirements.txt and the published images for licence reasons:"
+          echo "   ${RAG_PYTHON} -m pip install -r backend/requirements-eval.txt"
+          exit 1
+        fi
+
+        # Assigned, not defaulted: opentr.sh has already loaded .env, whose hosts
+        # are docker-network names (`postgres`, `opensearch`). The harness runs on
+        # the HOST, against published ports, so those names do not resolve.
+        RAG_HOST="${OT_EVAL_HOST:-localhost}"
+        export POSTGRES_HOST="$RAG_HOST"
+        export OPENSEARCH_HOST="$RAG_HOST"
+        export MINIO_HOST="$RAG_HOST"
+        export REDIS_HOST="$RAG_HOST"
+        export POSTGRES_PORT=$((5176 + RAG_PORT_OFFSET))
+        export REDIS_PORT=$((5177 + RAG_PORT_OFFSET))
+        export MINIO_PORT=$((5178 + RAG_PORT_OFFSET))
+        export OPENSEARCH_PORT=$((5180 + RAG_PORT_OFFSET))
+
+        echo "🔎 RAG retrieval benchmark (#403 Stage 1)"
+        [[ -n "$RAG_FRESH_NAME" ]] && echo "   Deployment: otfresh-${RAG_FRESH_NAME} (offset +${RAG_PORT_OFFSET})"
+        echo "   OpenSearch: ${OPENSEARCH_HOST}:${OPENSEARCH_PORT}   Postgres: ${POSTGRES_HOST}:${POSTGRES_PORT}"
+        echo "   No GPU, no ASR, no LLM — retrieval only (D6)."
+        echo ""
+        # Exit with the harness's own status. opentr.sh ends in `exit 0`, so a
+        # bench arm that just runs a command reports success however it failed —
+        # and this one is meant to be usable as a gate.
+        "$RAG_PYTHON" scripts/benchmark_rag.py "${RAG_ARGS[@]}"
+        exit $?
+        ;;
+
       help|*)
         echo "🧪 Benchmark subcommands (isolated from NAS data):"
         echo "  bench all [--smoke|--quick|--full] [--phases a,b]  - Full end-to-end run (all phases, all metrics)"
@@ -2896,6 +2988,7 @@ case "$1" in
         echo "  bench clean                              - Stop bench stack and wipe all bench volumes"
         echo "  bench run [output.csv] [fixtures_dir]    - Run upload-speed benchmark on current branch"
         echo "  bench engine                             - Run engine split-stage benchmarks (Phase 2 gate)"
+        echo "  bench rag --fresh <name> [args]          - Retrieval quality (nDCG/recall/MRR) over an injected eval corpus"
         echo "  bench status                             - Show bench containers, GPU state, volumes"
         echo "  bench compare <master.csv> <branch.csv>  - Print side-by-side speedup table"
         echo ""

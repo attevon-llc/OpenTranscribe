@@ -1,0 +1,41 @@
+# Retrieval-evaluation dependencies — TEST/EVAL ENVIRONMENT ONLY.
+#
+# ⚠️ NEVER merge this file into requirements.txt, requirements-ci.txt or any
+# Dockerfile. This is a LICENCE boundary, not tidiness.
+#
+# `pytrec_eval_terrier` is MIT for the Python wrapper, but the wheel embeds the
+# NIST trec_eval C sources, several of which (trec_eval.c, m_ndcg.c,
+# m_ndcg_cut.c, m_recip_rank.c — read, verbatim) carry:
+#
+#     Copyright (c) 2008 - Chris Buckley.
+#     Permission is granted for use and modification of this file for
+#     research, non-commercial purposes.
+#
+# GitHub reports NOASSERTION for usnistgov/trec_eval for exactly this reason.
+# Computing measurements for research and for a paper is squarely inside that
+# grant. **Redistributing** it inside davidamacey/opentranscribe-* images, which
+# ship a product with a commercial edition, is not. So it lives here, installed
+# by the eval path only.
+#
+#   backend/venv/bin/pip install -r backend/requirements-eval.txt
+#
+# Cost, measured in a clean venv: a 1.1 MB compiled extension plus ~32 KB of
+# Python, declaring only numpy and scipy — both already installed (numpy pinned
+# in requirements.txt, scipy transitively via sentence-transformers).
+# Net new transitive dependencies: ZERO. Verified again on install here.
+#
+# Rationale and the measured 0.369 absolute nDCG@10 divergence between
+# implementations that made this a decision rather than a preference:
+# .rag-403/oss-leverage-survey.md §1 and
+# docs-site/docs/developer-guide/rag-evaluation.md.
+
+# NIST trec_eval, wrapped. The maintained fork (Glasgow / Terrier team) —
+# publishes wheels; the original cvangysel/pytrec-eval is sdist-only and last
+# released in 2020.
+pytrec_eval_terrier>=0.5.10
+
+# Canonical measure strings ("nDCG@10", "R@10") with explicit provider naming,
+# so a label in a table is checkably the measure trec_eval computed. Base
+# dependency: pytrec-eval-terrier only. Its optional providers (ranx, trectools,
+# cwl_eval) are extras and are deliberately not installed.
+ir_measures>=0.4.3

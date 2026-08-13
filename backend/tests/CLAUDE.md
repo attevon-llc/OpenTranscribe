@@ -260,6 +260,46 @@ Why each piece:
   *anything* answers. An unrelated service on that port produces `SignatureDoesNotMatch`
   failures that look like real bugs.
 
+## `tests/eval/` — the RAG evaluation harness (issue #403 Stage 1)
+
+Not a test suite that gates anything: it is the **instrument** every retrieval-affecting change
+reports against (D5), plus the tests that keep the instrument honest. `synthetic/` generates a
+corpus with ground truth known by construction; `harness/` measures.
+
+| Module | Owns |
+|---|---|
+| `harness/metrics.py` | `trec_eval` via `pytrec_eval_terrier`. Tie normalisation, `-c` semantics, linear gain — all three are NOT the library default |
+| `harness/qrels.py` | gold turn ranges -> chunk-level graded judgements. **One adapter for QMSum and the synthetic tier** — they share the inclusive turn-range convention deliberately |
+| `harness/corpora.py` | queries + gold, remapped onto the uuids the app indexed, with the licence tier attached |
+| `harness/index_reader.py` | refresh -> force-merge -> refresh, then read chunks back |
+| `harness/runner.py` | drives `retrieve_chunks` (the chat path), never `/api/search` |
+| `harness/report.py` | the deterministic results document and metric table |
+
+```bash
+./opentr.sh bench rag --fresh rag403              # the one command, <5 min
+pytest tests/eval -q                              # logic tests, nothing running
+OPENSEARCH_PORT=5280 pytest tests/integration/test_rag_eval_harness.py -m integration
+```
+
+Three things to know before touching it:
+
+- **The metric engine is an eval-only dependency** (`backend/requirements-eval.txt`) for a
+  **licence** reason, not a size one: trec_eval's C sources carry a "research, non-commercial
+  purposes" header and we publish images. Never move it into `requirements.txt`. Every module that
+  imports it does so lazily and every test `importorskip`s it with that reason.
+- **`normalise_run` is load-bearing, not tidiness.** trec_eval breaks ties by docid *descending*,
+  our ids are `{uuid}_{chunk_index}` and Stage 3's digests will be `{uuid}_digest`, and RRF
+  produces ties structurally — so an untied-broken run lets Stage 3 pass its own gate on document
+  naming. `test_eval_metrics.py` swaps the id convention and asserts the metric is unchanged, with
+  a guard test proving the hazard is real.
+- **Baselines under `tests/eval/baselines/` are committed controls.** `metrics.json` and
+  `metrics.md` are byte-identical across runs by construction; anything non-deterministic
+  (elapsed time, target) lives in `runinfo.json`, outside the claim. Regenerate one only when the
+  corpus composition genuinely changes, and say so in the PR.
+
+Methodology, the overlap->relevance rule, and the committed numbers:
+`docs-site/docs/developer-guide/rag-evaluation.md`.
+
 ## Chat suites (issue #52)
 
 | File | Needs |

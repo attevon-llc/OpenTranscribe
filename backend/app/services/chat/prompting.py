@@ -285,6 +285,7 @@ def build_messages(
     context_window: int,
     response_tokens: int,
     max_history_turns: int = 10,
+    diagnostics: dict[str, int] | None = None,
 ) -> tuple[list[dict[str, str]], list[int]]:
     """Assemble the full message list for the provider.
 
@@ -301,6 +302,11 @@ def build_messages(
             while the endpoint fetched ``max_turns * 2`` rows, so the setting
             delivered half the depth it advertised and the surplus rows were
             fetched only to be discarded (issue #386).
+        diagnostics: Optional out-parameter, filled with ``budget_chars`` and
+            ``chunks_dropped_for_budget``. The budget is computed here — from
+            the *trimmed* history, which is what actually consumes the window —
+            so recomputing it in the caller would be a second implementation of
+            the rule that decides how much room excerpts get.
 
     Returns:
         ``(messages, excerpt_ids)`` — the 1-based ids of the chunks that reached
@@ -324,7 +330,23 @@ def build_messages(
         if excerpt_block:
             # Concatenation only — question and excerpts are both untrusted text.
             messages.append({"role": "user", "content": excerpt_block + "\n" + question})
+            _record(diagnostics, budget_chars, len(chunks) - len(excerpt_ids))
             return messages, excerpt_ids
 
     messages.append({"role": "user", "content": question})
+    _record(diagnostics, budget_chars, len(chunks) - len(excerpt_ids))
     return messages, excerpt_ids
+
+
+def _record(diagnostics: dict[str, int] | None, budget_chars: int, dropped: int) -> None:
+    """Fill the out-parameter, if the caller asked for one.
+
+    ``budget_chars`` is what a long conversation actually leaves for excerpts:
+    ``resolve_answer_tokens`` caps the reply at half the window and the overhead
+    subtraction takes the rest, so a turn can retrieve well and still have room
+    for nothing. Without the number, that reads as a retrieval problem.
+    """
+    if diagnostics is None:
+        return
+    diagnostics["budget_chars"] = budget_chars
+    diagnostics["chunks_dropped_for_budget"] = max(0, dropped)

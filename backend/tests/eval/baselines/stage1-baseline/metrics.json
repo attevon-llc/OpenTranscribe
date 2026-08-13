@@ -1,0 +1,129 @@
+{
+  "control_name": "stage1-baseline",
+  "corpora": [
+    {
+      "chunks_indexed": 119950,
+      "files_in_manifest": 232,
+      "files_indexed": 232,
+      "key": "qmsum",
+      "license_tier": "A",
+      "name": "QMSum (Yale-LILY)",
+      "queries_dropped_unjudgeable": 0,
+      "queries_scored": 1576,
+      "version": "83d7768c1f2b4dfeb091385d3dc7e239b8e5bb7e"
+    }
+  ],
+  "index": {
+    "docs_count": 119950,
+    "docs_deleted": 0
+  },
+  "metric_engine": {
+    "canonical_names": {
+      "MRR": "RR",
+      "R@10": "R@10",
+      "R@20": "R@20",
+      "R@5": "R@5",
+      "nDCG@10": "nDCG@10",
+      "nDCG@20": "nDCG@20",
+      "nDCG@5": "nDCG@5"
+    },
+    "engine": "pytrec_eval_terrier",
+    "engine_version": "0.5.10",
+    "gain": "linear (gain = rel)",
+    "measure_strings": {
+      "MRR": "recip_rank",
+      "R@10": "recall.10",
+      "R@20": "recall.20",
+      "R@5": "recall.5",
+      "nDCG@10": "ndcg_cut.10",
+      "nDCG@20": "ndcg_cut.20",
+      "nDCG@5": "ndcg_cut.5"
+    },
+    "ndcg_variant": "ndcg_cut (ideal DCG truncated at k)",
+    "tie_break": "harness re-sort by (-score, doc_type, file_uuid, chunk_index)",
+    "unanswered_query_policy": "scored 0 and included in the mean (trec_eval -c)"
+  },
+  "qrels": {
+    "judged_documents": 77674,
+    "mean_judged_per_query": 49.2855,
+    "queries": 1576,
+    "queries_dropped_unjudgeable": 0,
+    "unanswered_queries": 0
+  },
+  "relevance_policy": {
+    "binary": false,
+    "high_threshold": 0.5,
+    "low_threshold": 0.0,
+    "rule": "graded by gold word-share of the chunk"
+  },
+  "retrieval": {
+    "candidate_pool": 48,
+    "llm_required": false,
+    "path": "chat retrieval (app.services.search.chunk_retrieval.retrieve_chunks)",
+    "scope": "corpus",
+    "scope_note": "corpus-wide, file_uuids=None",
+    "search_mode": "hybrid",
+    "stage": "retrieve",
+    "workers": 4
+  },
+  "rows": [
+    {
+      "corpus": "qmsum",
+      "license_tier": "A",
+      "metrics": {
+        "MRR": 0.249038,
+        "R@10": 0.082953,
+        "R@20": 0.101715,
+        "R@5": 0.064058,
+        "nDCG@10": 0.110746,
+        "nDCG@20": 0.10994,
+        "nDCG@5": 0.12008
+      },
+      "queries": 1172,
+      "query_class": "lookup",
+      "scored_on": [
+        "retrieval"
+      ],
+      "unanswered": 0
+    },
+    {
+      "corpus": "qmsum",
+      "license_tier": "A",
+      "metrics": {
+        "MRR": 0.209322,
+        "R@10": 0.030009,
+        "R@20": 0.04389,
+        "R@5": 0.018826,
+        "nDCG@10": 0.088946,
+        "nDCG@20": 0.076018,
+        "nDCG@5": 0.102012
+      },
+      "queries": 404,
+      "query_class": "summarize",
+      "scored_on": [
+        "retrieval"
+      ],
+      "unanswered": 0
+    },
+    {
+      "corpus": "qmsum",
+      "license_tier": "A",
+      "metrics": {
+        "MRR": 0.238857,
+        "R@10": 0.069381,
+        "R@20": 0.086892,
+        "R@5": 0.052463,
+        "nDCG@10": 0.105158,
+        "nDCG@20": 0.101244,
+        "nDCG@5": 0.115448
+      },
+      "queries": 1576,
+      "query_class": "all",
+      "scored_on": [
+        "retrieval"
+      ],
+      "unanswered": 0
+    }
+  ],
+  "schema_version": 1
+}

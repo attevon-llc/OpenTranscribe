@@ -1,0 +1,129 @@
+{
+  "control_name": "stage1-baseline-goldscope",
+  "corpora": [
+    {
+      "chunks_indexed": 119950,
+      "files_in_manifest": 232,
+      "files_indexed": 232,
+      "key": "qmsum",
+      "license_tier": "A",
+      "name": "QMSum (Yale-LILY)",
+      "queries_dropped_unjudgeable": 0,
+      "queries_scored": 1576,
+      "version": "83d7768c1f2b4dfeb091385d3dc7e239b8e5bb7e"
+    }
+  ],
+  "index": {
+    "docs_count": 119950,
+    "docs_deleted": 0
+  },
+  "metric_engine": {
+    "canonical_names": {
+      "MRR": "RR",
+      "R@10": "R@10",
+      "R@20": "R@20",
+      "R@5": "R@5",
+      "nDCG@10": "nDCG@10",
+      "nDCG@20": "nDCG@20",
+      "nDCG@5": "nDCG@5"
+    },
+    "engine": "pytrec_eval_terrier",
+    "engine_version": "0.5.10",
+    "gain": "linear (gain = rel)",
+    "measure_strings": {
+      "MRR": "recip_rank",
+      "R@10": "recall.10",
+      "R@20": "recall.20",
+      "R@5": "recall.5",
+      "nDCG@10": "ndcg_cut.10",
+      "nDCG@20": "ndcg_cut.20",
+      "nDCG@5": "ndcg_cut.5"
+    },
+    "ndcg_variant": "ndcg_cut (ideal DCG truncated at k)",
+    "tie_break": "harness re-sort by (-score, doc_type, file_uuid, chunk_index)",
+    "unanswered_query_policy": "scored 0 and included in the mean (trec_eval -c)"
+  },
+  "qrels": {
+    "judged_documents": 77674,
+    "mean_judged_per_query": 49.2855,
+    "queries": 1576,
+    "queries_dropped_unjudgeable": 0,
+    "unanswered_queries": 0
+  },
+  "relevance_policy": {
+    "binary": false,
+    "high_threshold": 0.5,
+    "low_threshold": 0.0,
+    "rule": "graded by gold word-share of the chunk"
+  },
+  "retrieval": {
+    "candidate_pool": 48,
+    "llm_required": false,
+    "path": "chat retrieval (app.services.search.chunk_retrieval.retrieve_chunks)",
+    "scope": "gold-files",
+    "scope_note": "ORACLE: file_uuids = the query's own gold files (upper bound)",
+    "search_mode": "hybrid",
+    "stage": "retrieve",
+    "workers": 4
+  },
+  "rows": [
+    {
+      "corpus": "qmsum",
+      "license_tier": "A",
+      "metrics": {
+        "MRR": 0.543013,
+        "R@10": 0.17607,
+        "R@20": 0.235748,
+        "R@5": 0.123832,
+        "nDCG@10": 0.300635,
+        "nDCG@20": 0.292839,
+        "nDCG@5": 0.318384
+      },
+      "queries": 1172,
+      "query_class": "lookup",
+      "scored_on": [
+        "retrieval"
+      ],
+      "unanswered": 0
+    },
+    {
+      "corpus": "qmsum",
+      "license_tier": "A",
+      "metrics": {
+        "MRR": 0.638451,
+        "R@10": 0.090741,
+        "R@20": 0.141166,
+        "R@5": 0.056081,
+        "nDCG@10": 0.413772,
+        "nDCG@20": 0.375268,
+        "nDCG@5": 0.445121
+      },
+      "queries": 404,
+      "query_class": "summarize",
+      "scored_on": [
+        "retrieval"
+      ],
+      "unanswered": 0
+    },
+    {
+      "corpus": "qmsum",
+      "license_tier": "A",
+      "metrics": {
+        "MRR": 0.567478,
+        "R@10": 0.154197,
+        "R@20": 0.211502,
+        "R@5": 0.106465,
+        "nDCG@10": 0.329637,
+        "nDCG@20": 0.313969,
+        "nDCG@5": 0.350872
+      },
+      "queries": 1576,
+      "query_class": "all",
+      "scored_on": [
+        "retrieval"
+      ],
+      "unanswered": 0
+    }
+  ],
+  "schema_version": 1
+}

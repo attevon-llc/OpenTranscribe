@@ -35,7 +35,8 @@
 # - It does NOT touch the GPU. It is CPU-only and will happily saturate every core, so
 #   do not start one while a transcription benchmark is running.
 # - It writes only to backend/mutants/ (mutmut's working copy, gitignored) and to
-#   $OT_MUTATION_OUT_DIR (default /tmp/ot-mutation).
+#   $OT_MUTATION_OUT_DIR (default .mutation/ in the repo, gitignored — NOT /tmp, which is
+#   cleared on reboot and silently disarmed the ratchet).
 # - backend/mutants/ is left in place on purpose: --results and --show read it, and
 #   mutmut reuses it as a cache across runs. It is ~330k lines of DELIBERATELY
 #   CORRUPTED source, so nothing may scan it. bandit is the one that bit us — it walks
@@ -62,8 +63,33 @@ VENV_BIN="$BACKEND/venv/bin"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 
-OUT_DIR="${OT_MUTATION_OUT_DIR:-/tmp/ot-mutation}"
+# Run artifacts live in the REPO, not /tmp, and the reason is the ratchet.
+#
+# `--check-baseline` compares the LAST run's log against scripts/mutation-baselines.tsv.
+# A measurement costs 30-90 minutes per module, so the log IS the evidence — and under the
+# old /tmp default the OS deleted that evidence on every reboot. The gate then found no logs,
+# checked nothing, and printed a pass (see the aggregate loop below, and the `unmeasured`
+# accounting that now makes that state visible). The baselines were always durable; the
+# evidence they are compared against was not.
+OUT_DIR="${OT_MUTATION_OUT_DIR:-$REPO_ROOT/.mutation}"
 mkdir -p "$OUT_DIR"
+
+# One-time adoption of logs written by the previous /tmp default, so upgrading does not
+# silently discard a measurement someone spent an hour producing.
+#
+# ONLY when OUT_DIR is the default. An explicit OT_MUTATION_OUT_DIR means "look here and
+# nowhere else" — usually to test the ratchet's own behaviour against a known-empty
+# directory. Adopting into it silently refilled that directory and made the empty-evidence
+# case unreachable, i.e. it broke the one experiment that proves this gate works.
+_LEGACY_OUT_DIR="/tmp/ot-mutation"
+if [[ -z "${OT_MUTATION_OUT_DIR:-}" && -d "$_LEGACY_OUT_DIR" && "$OUT_DIR" != "$_LEGACY_OUT_DIR" ]]; then
+    for _legacy in "$_LEGACY_OUT_DIR"/*.log "$_LEGACY_OUT_DIR"/*.testhash; do
+        [[ -e "$_legacy" ]] || continue
+        [[ -e "$OUT_DIR/$(basename "$_legacy")" ]] && continue
+        cp -p "$_legacy" "$OUT_DIR/" 2>/dev/null &&
+            echo -e "${YELLOW}adopted $(basename "$_legacy") from $_LEGACY_OUT_DIR${NC}" >&2
+    done
+fi
 
 # ---------------------------------------------------------------------------
 # Module -> the tests that actually exercise it.
@@ -369,10 +395,12 @@ check_baseline() {
     # Observed: `--check-baseline` reported "improved (77 -> 0)" for session and "(10 -> 0)" for
     # spans from logs left behind by earlier runs.
     if ! grep -q -- "--- mutating ${MODULE_PATH[$key]} ---" "$log"; then
-        echo -e "${YELLOW}$key: $log is not a run of ${MODULE_PATH[$key]} — skipping.${NC}" >&2
+        echo -e "${YELLOW}$key: $log is not a run of ${MODULE_PATH[$key]} — NOT MEASURED.${NC}" >&2
         echo -e "${YELLOW}  Re-run: --clean then --module $key. A count of 0 from the wrong log${NC}" >&2
         echo -e "${YELLOW}  looks like a perfect score.${NC}" >&2
-        return 0
+        # 4, not 0: "I could not check this" must never be summed into a pass. Returning 0
+        # here made a stale log indistinguishable from a clean ratchet.
+        return 4
     fi
     survivors=$(tr '\r' '\n' < "$log" | grep -c "^ *${dotted}\..*: survived" || true)
     coverage=$(tr '\r' '\n' < "$log" \
@@ -575,11 +603,43 @@ if [[ "$MODE" == baseline ]]; then
     if [[ -n "$MODULE" && "$MODULE" != ALL ]]; then
         check_baseline "$MODULE"; exit $?
     fi
+    # Skipping an unmeasured module is DELIBERATE — a measurement is 30-90 minutes and stays
+    # opt-in, so the gate must not block on a benchmark nobody asked for. What was wrong was
+    # doing it SILENTLY: with no logs the loop skipped all six, exited 0, and the gate printed
+    # "passed" for a check that examined nothing. Indistinguishable, in the output, from a
+    # genuine six-module pass. So the skip stays; the silence does not.
     rc=0
+    local_measured=0
+    unmeasured=()
     for key in "${!MODULE_PATH[@]}"; do
-        [[ -f "$OUT_DIR/$key.log" ]] || continue
-        check_baseline "$key" || rc=1
+        if [[ ! -f "$OUT_DIR/$key.log" ]]; then
+            unmeasured+=("$key")
+            continue
+        fi
+        check_baseline "$key"
+        case $? in
+            0) local_measured=$((local_measured + 1)) ;;
+            4) unmeasured+=("$key") ;;      # stale/wrong log — checked nothing
+            *) local_measured=$((local_measured + 1)); rc=1 ;;
+        esac
     done
+
+    total=${#MODULE_PATH[@]}
+    if (( ${#unmeasured[@]} > 0 )); then
+        IFS=' ' read -r -a _sorted <<< "$(printf '%s\n' "${unmeasured[@]}" | sort | tr '\n' ' ')"
+        echo -e "${YELLOW}⊘ NOT MEASURED (${#unmeasured[@]}/$total): ${_sorted[*]}${NC}" >&2
+        echo -e "${YELLOW}  These modules are ratcheting NOTHING in this run. Measure with:${NC}" >&2
+        echo -e "${YELLOW}    ./scripts/run-mutation-tests.sh --module <name>${NC}" >&2
+    fi
+
+    if (( local_measured == 0 )); then
+        echo -e "${RED}✗ the ratchet checked 0 of $total modules — this proves nothing.${NC}" >&2
+        echo -e "${RED}  Exiting 4 (NOT MEASURED) so no caller can render this as a pass.${NC}" >&2
+        # Not exit 1: nothing regressed. Not exit 0: nothing was verified either. A gate
+        # needs to be able to tell those two apart, and before this it could not.
+        exit 4
+    fi
+    echo -e "${BLUE}ratchet checked $local_measured/$total module(s)${NC}"
     exit $rc
 fi
 

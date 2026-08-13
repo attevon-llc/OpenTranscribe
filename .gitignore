@@ -325,3 +325,7 @@ test-results/
 backend/mutants/
 backend/.mutmut-cache
 .mutmut-cache
+# Run logs + test-list fingerprints. These are the EVIDENCE `--check-baseline` compares
+# against scripts/mutation-baselines.tsv (which IS committed). They live in the repo rather
+# than /tmp because /tmp is cleared on reboot, which silently disarmed the ratchet.
+.mutation/

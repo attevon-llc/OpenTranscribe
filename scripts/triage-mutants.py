@@ -45,6 +45,9 @@ from collections import Counter
 _STRING = re.compile(r"""('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")""")
 _LOG_CALL = re.compile(r'^\s*(logger|log)\s*\.\s*\w+\s*\(')
 _CONDITION = re.compile(r'^\s*(if|elif|while)\b')
+#: A comparison or membership test on the changed line means a mutated string is
+#: load-bearing rather than cosmetic (`== "x"`, `in (...)`, `.startswith(...)`).
+_COMPARISON = re.compile(r'(==|!=|\bin\b|\bis\b|startswith|endswith|<|>)')
 
 
 def _strip_strings(line: str) -> str:
@@ -78,7 +81,18 @@ def classify(minus: list[str], plus: list[str], body_after: list[str]) -> str:
     if not minus or not plus:
         return 'unclassified'
 
-    if [_strip_strings(x) for x in minus] == [_strip_strings(x) for x in plus]:
+    strings_only = [_strip_strings(x) for x in minus] == [_strip_strings(x) for x in plus]
+
+    # A string inside a PREDICATE is not noise — it IS the logic. `_get_pbkdf2_iterations`
+    # and `needs_rehash_for_fips_v3` turn on
+    # `hashed_password.startswith('$pbkdf2-sha256$')`; mutate that literal and the branch is
+    # never taken, so a hash that must be upgraded for FIPS 140-3 silently is not. The
+    # strings-equal rule would have filed that as a log-message edit, which is the dangerous
+    # direction for a classifier to be wrong in: it hides findings instead of adding work.
+    predicate_string = strings_only and (
+        _CONDITION.match(minus[0]) or _COMPARISON.search(_strip_strings(minus[0]))
+    )
+    if strings_only and not predicate_string:
         return 'noise-string'
 
     # Anything a LOG CALL consumes is unobservable: the argument never leaves the call.
@@ -197,6 +211,20 @@ _SELFTEST: list[tuple[str, list[str], list[str], list[str], str]] = [
             '            logger.warning("locking")',
             '            record.set_locked_until(unlock_time)',
         ],
+        'logic',
+    ),
+    (
+        'a string inside a PREDICATE is logic, not noise',
+        ['        if hashed_password.startswith("$pbkdf2-sha256$"):'],
+        ['        if hashed_password.startswith("XX$pbkdf2-sha256$XX"):'],
+        ['            rounds = int(parts[2])'],
+        'logic',
+    ),
+    (
+        'a string compared for equality is logic',
+        ['    if payload.get("type") == "access":'],
+        ['    if payload.get("type") == "XXaccessXX":'],
+        ['        return payload'],
         'logic',
     ),
     ('an empty diff is unclassified', [], [], [], 'unclassified'),

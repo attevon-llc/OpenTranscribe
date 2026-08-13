@@ -407,13 +407,18 @@ Stated plainly, because a benchmark's limits are part of its result:
 
 - **Publishable retrieval quality rests on QMSum.** The other Tier A corpora supply realism,
   multilingual coverage or long-context, not additional English meeting-retrieval judgements.
-- **Two of the four query classes are unmeasured as of Stage 1.** `multi_file` and `aggregation`
-  have no real-data ground truth anywhere, and the synthetic corpus that supplies them is generated
-  but **not yet injected**: its on-disk shape (`meetings/part-*.jsonl`, `turns[].content`,
-  `meeting_key`) does not match what the injector's generic JSON adapter reads
-  (`meetings.jsonl`, `turns[].text`, `meeting_id`), so a converter is still owed. The harness's
-  loader, gold-span handling and per-class reporting for those classes are implemented and unit
-  tested — what is missing is the data on the stack, not the code.
+- **`multi_file` and `aggregation` have no real-data ground truth anywhere**, so both rest entirely
+  on the synthetic tier. That tier is now injectable — a native adapter reads the generator's own
+  format and selects meetings by **gold closure**, because aggregation markers are planted across
+  the whole 2,000-meeting corpus and a query whose gold set is only partly present is correctly
+  dropped. At the default budget (200 meetings, ~1.1× QMSum) that closes 25 `multi_file` and 21
+  `aggregation` queries; a first-N-by-key subset would have closed 4.
+- **`aggregation` is resolvable but not yet *scored*.** Its queries carry `scored_on: "answer"` —
+  an integer, a file set, a speaker name — and the harness scores retrieval. Until an
+  answer-scoring path exists, that row reports coverage, not quality.
+- **Injecting synthetic data moves the QMSum numbers.** Retrieval runs corpus-wide, so the
+  candidate pool roughly doubles and document frequencies shift. Run the QMSum-only control before
+  and after and record the delta; **never compare a measurement taken across the injection.**
 - **Injecting the synthetic tier will move the QMSum numbers**, because both corpora share one
   index and its document frequencies. Any mixed-corpus baseline is a new control, not a comparison
   against this one.

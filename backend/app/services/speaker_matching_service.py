@@ -188,7 +188,6 @@ class SpeakerMatchingService:
 
             # Get profile matches using the ProfileEmbeddingService
             profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
-                self.db,
                 embedding.tolist(),
                 user_id,
                 threshold=ConfidenceLevel.LOW,

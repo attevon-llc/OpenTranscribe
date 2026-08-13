@@ -116,9 +116,7 @@ class TestCacheConfigEndpoints:
 class TestClearCacheOnDelete:
     """Deleting a file must clear its derived cache (no orphaned duplicates)."""
 
-    def test_clear_cache_for_media_file_targets_all_variants(
-        self, db_session, sample_user, monkeypatch
-    ):
+    def test_clear_derived_cache_targets_all_variants(self, db_session, sample_user, monkeypatch):
         file = MediaFile(
             uuid=str(uuid.uuid4()),
             filename="talk.mp4",
@@ -140,7 +138,10 @@ class TestClearCacheOnDelete:
             "delete_object",
             lambda bucket, key: deleted.append(key),
         )
-        svc.clear_cache_for_media_file(db_session, int(file.id))
+        # `clear_cache_for_media_file` took a caller-owned Session and issued its five
+        # MinIO deletes through it. It is gone; `clear_derived_cache` takes no session,
+        # so the caller resolves the filename in a short read that closes first.
+        svc.clear_derived_cache(int(file.id), str(file.filename))
 
         # Both video variants + all three audio variants, all under derived/.
         assert all(k.startswith("derived/") for k in deleted)

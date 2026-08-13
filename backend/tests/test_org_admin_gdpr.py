@@ -1051,8 +1051,7 @@ class TestPartialErasureIsReportedAsPartial:
         with (
             patch("app.services.minio_service.delete_file", _boom),
             patch(
-                "app.services.video_processing_service."
-                "VideoProcessingService.clear_cache_for_media_file",
+                "app.services.video_processing_service.VideoProcessingService.clear_derived_cache",
                 return_value=None,
             ),
             fake_opensearch(),
@@ -1079,8 +1078,7 @@ class TestPartialErasureIsReportedAsPartial:
         with (
             patch("app.services.minio_service.delete_file", lambda _object_name: None),
             patch(
-                "app.services.video_processing_service."
-                "VideoProcessingService.clear_cache_for_media_file",
+                "app.services.video_processing_service.VideoProcessingService.clear_derived_cache",
                 return_value=None,
             ),
             fake_opensearch(),

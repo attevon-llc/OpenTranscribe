@@ -86,11 +86,13 @@ from tests.unit.test_task_session_lifetime import _ScopeTracker
 
 _AUDITOR = Path(__file__).resolve().parents[3] / "scripts" / "audit-session-lifetime.py"
 
-#: The one speaker-plane scope still carrying a BACKLOG allowlist entry. Its ``db``
-#: parameter is dead (nothing in the body reads it), but removing it means editing
-#: two call sites and a test fake outside this change's ownership. Listed here so
-#: that closing it FAILS this test and forces the allowlist line to go with it.
-_KNOWN_RESIDUAL_SCOPES = {"ProfileEmbeddingService.calculate_profile_similarity"}
+#: EMPTY, and that is the point. This held
+#: ``ProfileEmbeddingService.calculate_profile_similarity``, whose ``db`` parameter was
+#: DEAD — nothing in the body read it — so the fix was to delete the parameter, not to
+#: restructure anything. Closing it made this test fail, which forced the allowlist line
+#: to be deleted in the same change. Exactly what the set is for: add a scope here only
+#: while it genuinely cannot be fixed, and let closing it break the test.
+_KNOWN_RESIDUAL_SCOPES: set[str] = set()
 
 _SPEAKER_PLANE_FILES = (
     "api/endpoints/speakers.py",
@@ -474,10 +476,11 @@ def test_merge_plan_returns_plain_data(db_session, normal_user, merge_task_env):
 def test_clear_video_cache_opens_its_own_short_session(db_session, normal_user, monkeypatch):
     """The purge no longer runs on the task's transaction.
 
-    A residual remains one frame down (``clear_cache_for_media_file`` still takes a
-    session and deletes through it, under its own allowlist key). What this pins is
-    that the window is now ONE call inside a scope this helper owns — and that the
-    storage client is constructed *before* that scope exists.
+    NO residual remains. The filename is resolved in a short scope this helper owns,
+    that scope CLOSES, and the deletes then go through ``clear_derived_cache``, which
+    takes no session at all — so this pins that the purge runs at depth 0, and that the
+    storage client is constructed before any scope exists. The session-taking
+    ``clear_cache_for_media_file`` it used to call has been deleted.
     """
     from app.services import minio_service as minio_mod
     from app.services import video_processing_service as vps
@@ -496,9 +499,10 @@ def test_clear_video_cache_opens_its_own_short_session(db_session, normal_user, 
         def __init__(self, minio_service):
             recorded["storage"] = minio_service
 
-        def clear_cache_for_media_file(self, db, file_id):
+        def clear_derived_cache(self, file_id, filename):
             tracker.observe("clear_cache")
             recorded["file_id"] = file_id
+            recorded["filename"] = filename
 
     monkeypatch.setattr(minio_mod, "MinIOService", _FakeMinIO)
     monkeypatch.setattr(vps, "VideoProcessingService", _FakeVideoService)
@@ -506,7 +510,7 @@ def test_clear_video_cache_opens_its_own_short_session(db_session, normal_user, 
     spk._clear_video_cache_for_speaker(media_file.id)
 
     assert tracker.seen["storage_client"] == 0, _leak(tracker, "storage_client")
-    assert tracker.seen["clear_cache"] == 1, tracker.observations
+    assert tracker.seen["clear_cache"] == 0, _leak(tracker, "clear_cache")
     assert tracker.opened == 1, f"expected exactly one short session, got {tracker.opened}"
     assert tracker.max_depth == 1
     assert tracker.depth == 0
@@ -530,7 +534,7 @@ def test_clear_speaker_video_cache_uses_one_session_per_file(db_session, normal_
         def __init__(self, minio_service):
             pass
 
-        def clear_cache_for_media_file(self, db, file_id):
+        def clear_derived_cache(self, file_id, filename):
             tracker.observe("clear_cache")
             purged.append(file_id)
 
@@ -540,9 +544,12 @@ def test_clear_speaker_video_cache_uses_one_session_per_file(db_session, normal_
     spk._clear_speaker_video_cache({first.id, second.id})
 
     assert sorted(purged) == sorted([first.id, second.id])
+    # Each purge runs at depth 0 — the per-file read scope closes before it. The scope
+    # COUNT still has to differ per file, or one transaction is spanning the whole merge.
+    assert tracker.seen["clear_cache"] == 0, _leak(tracker, "clear_cache")
     counts = tracker.opened_at("clear_cache")
     assert len(set(counts)) == len(counts), (
-        "both files were purged inside the SAME session — one transaction is "
+        "both files were purged after the SAME session — one read transaction is "
         f"spanning the whole merge: {tracker.timeline}"
     )
     assert tracker.opened == 2, f"expected one short session per file, got {tracker.opened}"

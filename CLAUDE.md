@@ -415,6 +415,18 @@ subsystem, and put new subsystem detail **there**, not in this file.
   hook itself reports no findings. Four agents in one checkout produced four destroyed work
   sets, ~25-minute commit blocks, and a patch file in `~/.cache/pre-commit/` every two minutes
   before this rule was adopted. Serialising cost nothing and every lane landed within the hour.
+- **Inside a stash window, your uncommitted work is simply GONE from disk — and the failure can
+  present as your own code having never been written.** Three symptoms of the same cause, all
+  observed here: the phantom `files were modified by this hook`; the E2E backend flapping; and
+  a module reverting to its last-committed version, so a test that passed sixty seconds ago
+  fails with `ImportError: cannot import name '<the thing you just wrote>'`. Someone nearly
+  spent an afternoon on a non-existent import cycle. **Before debugging a sudden impossible
+  failure, check whether another writer is running pre-commit.**
+  ⚠️ **And do NOT back up your files during that window — you will back up the stash.** Copying
+  to a safe directory mid-stash captures the *reverted* content, and "restoring" from it
+  destroys the work for real. Wait for the restore, verify the file actually contains your
+  change, and only then copy. This was caught once by diffing the backup against the live file
+  instead of trusting the copy.
 - **`audit-tests` is a WHOLE-TREE gate, so an unfinished test file blocks everyone.** One
   in-progress test anywhere under `backend/tests` with an open finding refuses **every** commit
   in the worktree, including commits that do not touch it — twice in one day a lane's own

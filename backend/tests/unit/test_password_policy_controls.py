@@ -259,6 +259,29 @@ class TestAnUnverifiableEntryDoesNotBlockTheChange:
         critical = [r for r in caplog.records if r.levelno == logging.CRITICAL]
         assert len(critical) == 1
 
+    def test_a_healthy_history_check_reports_nothing(self, reuse_enforced, caplog):
+        """The negative half, and the reason the alert is worth having.
+
+        Found as a surviving mutant: `unverifiable = 0` → `= 1` makes `if unverifiable:`
+        always true, so "the reuse control is NOT being enforced" is logged at ERROR or
+        CRITICAL on **every** password change. Nothing noticed, because the only assertions
+        on that log covered the case where it is supposed to fire.
+
+        An alert that fires on every success is worse than no alert: it trains whoever reads
+        it to ignore exactly the message that says a security control has stopped working.
+        So the silence is part of the contract, not an absence of behaviour.
+        """
+        verifier = _Verifier()
+        history = [_fake_hash("Older-1"), _fake_hash("Older-2")]
+
+        with caplog.at_level(logging.ERROR, logger="app.auth.password_policy"):
+            assert _check("Brand-New-Pass-9", history, verifier) is True
+
+        noisy = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert noisy == [], (
+            f"a fully verifiable history logged a degradation: {[r.getMessage() for r in noisy]}"
+        )
+
 
 class TestTheRealCallSiteConsultsTheRealVerifier:
     """Consequence prevented: the service wrapper the endpoints actually call drifting

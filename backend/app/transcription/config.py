@@ -70,9 +70,17 @@ class TranscriptionConfig:
     concurrent_requests: int = 1
 
     def config_hash(self) -> str:
-        """Hash of model-loading-relevant config for cache invalidation."""
+        """Hash of model-loading-relevant config for cache invalidation.
+
+        MD5 is a cache key, never a security control — which is exactly why
+        ``usedforsecurity=False`` is required and not merely tidy: without it this call
+        RAISES on a host whose OpenSSL enforces FIPS, and every transcription task
+        fails at model load. Declaring it to the runtime also satisfies the linters,
+        so the suppression comments this line used to carry are gone (matches
+        ``services/search/hybrid_search_service.py``).
+        """
         key = f"{self.model_name}:{self.compute_type}:{self.device}:{self.device_index}"
-        return hashlib.md5(key.encode()).hexdigest()[:12]  # noqa: S324  # nosec B324
+        return hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()[:12]
 
     @classmethod
     def from_environment(cls, **overrides) -> "TranscriptionConfig":

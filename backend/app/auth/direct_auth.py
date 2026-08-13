@@ -41,7 +41,26 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    """Create a JWT access token.
+    """Create a JWT access token. **This is the issuer every login path uses.**
+
+    Local, PKI, OIDC, SAML, proxy and MFA-enrolment logins all import this function
+    (``api/endpoints/auth/{login,pki,oidc,saml,proxy,sessions,mfa_enrollment}.py``),
+    as does ``services/account_security_service.py``. ``core.security.create_access_token``
+    is a second implementation that no production caller reaches.
+
+    **The signing algorithm is ``settings.JWT_ALGORITHM`` and is deliberately not
+    FIPS-branched.** The verifiers on the request path —
+    ``api/endpoints/auth/dependencies.py``'s ``get_current_user`` and
+    ``get_optional_current_user`` — decode with ``algorithms=[settings.JWT_ALGORITHM]``
+    and nothing else, so issuing under a different algorithm here would produce tokens
+    that authenticate no request. Issuer and verifier move together only via that one
+    setting; ``JWT_ALGORITHM_V3`` is read by ``core.security.verify_token``'s
+    dual-accept list, never by an access-token issuer.
+
+    HS256 is an approved FIPS algorithm (HMAC per FIPS 198-1 over SHA-256 per
+    FIPS 180-4, 128-bit security strength under SP 800-57 Pt.1 R5), so the default
+    configuration is FIPS-compliant. Operators wanting HS512 set ``JWT_ALGORITHM=HS512``
+    plus a 64-byte ``JWT_SECRET_KEY``.
 
     Args:
         data: Dictionary of claims to encode in the token

@@ -16,7 +16,11 @@ Security:
 - Backup codes are hashed with bcrypt (cost factor 12) or PBKDF2-SHA256 (600k iterations)
 
 FIPS 140-3 Compliance Notes:
-- Backup codes use PBKDF2-SHA256 with 600,000 iterations when FIPS_VERSION="140-3"
+- Backup codes use PBKDF2-SHA256 with 600,000 iterations when FIPS_MODE is on and
+  FIPS_VERSION="140-3". FIPS_MODE is the master switch: FIPS_VERSION defaults to
+  "140-3" on every deployment, so it enables nothing on its own.
+- bcrypt stays registered verify-only in the FIPS context so codes issued before
+  FIPS was enabled keep working instead of silently locking the user out
 - TOTP uses SHA-1 by default per RFC 6238 - this is FIPS allowed for HMAC
   (NIST SP 800-131A Rev. 2 allows SHA-1 for HMAC-based applications like TOTP)
 - SHA-256/SHA-512 TOTP available via TOTP_ALGORITHM setting for high-security
@@ -41,15 +45,44 @@ from app.utils.encryption import encrypt_api_key
 logger = logging.getLogger(__name__)
 
 
+#: bcrypt work factor for backup codes. Matches ``core.security.BCRYPT_DEFAULT_ROUNDS``.
+BACKUP_CODE_BCRYPT_ROUNDS = 12
+
+
 def _create_backup_code_context() -> CryptContext:
     """
     Create password context for backup codes with FIPS 140-3 compliance.
 
-    When FIPS_VERSION is "140-3", uses PBKDF2-SHA256 with 600k iterations
-    per NIST SP 800-132 (2024) recommendations for high-security environments.
+    When FIPS_MODE is on and FIPS_VERSION is "140-3", new codes are hashed with
+    PBKDF2-SHA256 at 600k iterations per NIST SP 800-132 (2024). For non-FIPS
+    environments, bcrypt with cost factor 12 provides good protection against
+    brute-force attacks on 8-character backup codes.
 
-    For non-FIPS environments, bcrypt with cost factor 12 provides good
-    protection against brute-force attacks on 8-character backup codes.
+    **bcrypt is listed in BOTH branches, verify-only in the FIPS one.** It used to
+    be absent from the FIPS branch, which meant turning FIPS on permanently
+    invalidated every backup code already in the database: ``verify()`` raised
+    ``UnknownHashError`` on a ``$2b$`` hash, :meth:`MFAService.verify_backup_code`
+    swallowed it at DEBUG, and the user was silently locked out of the one credential
+    that exists for when they have lost their phone. That is an availability failure
+    on a recovery path, with no trace above DEBUG.
+
+    Why verify-only bcrypt is the right answer under FIPS rather than a compliance
+    regression:
+
+    * ``core.security._create_password_context`` already makes exactly this choice for
+      user passwords — bcrypt listed and ``deprecated`` in the FIPS branch. Two
+      different answers to the same question in one codebase was the real defect.
+    * passlib's bcrypt backend is the ``bcrypt`` package's bundled implementation, not
+      OpenSSL, so verification does not attempt a primitive a FIPS-enforcing OpenSSL
+      would refuse.
+    * Backup codes are **single-use**: a verified code is consumed and deleted by the
+      caller, so the legacy-hash population strictly drains and no new bcrypt hash is
+      ever written while FIPS is on (``default`` is PBKDF2-SHA256).
+    * The alternative is not stronger crypto; it is a locked-out account.
+
+    Deployments that must not run bcrypt at all under FIPS should have users
+    regenerate their codes *before* enabling FIPS —
+    :func:`backup_codes_need_regeneration` is the detector for that.
 
     Returns:
         CryptContext: Configured password hashing context
@@ -59,9 +92,11 @@ def _create_backup_code_context() -> CryptContext:
         # FIPS_MODE is the master switch — FIPS_VERSION alone defaults to
         # "140-3" even on non-FIPS deployments (matches core/security.py).
         return CryptContext(
-            schemes=["pbkdf2_sha256"],
+            schemes=["pbkdf2_sha256", "bcrypt"],
             default="pbkdf2_sha256",
+            deprecated=["bcrypt"],
             pbkdf2_sha256__rounds=settings.PBKDF2_ITERATIONS_V3,
+            bcrypt__rounds=BACKUP_CODE_BCRYPT_ROUNDS,
         )
     else:
         # Non-FIPS: bcrypt by default (cost factor 12 balances security and
@@ -70,7 +105,7 @@ def _create_backup_code_context() -> CryptContext:
         return CryptContext(
             schemes=["bcrypt", "pbkdf2_sha256"],
             default="bcrypt",
-            bcrypt__rounds=12,
+            bcrypt__rounds=BACKUP_CODE_BCRYPT_ROUNDS,
             pbkdf2_sha256__rounds=settings.PBKDF2_ITERATIONS_V3,
         )
 
@@ -103,19 +138,29 @@ def get_totp_algorithm():
 
 def backup_codes_need_regeneration(hashed_codes: list[str]) -> bool:
     """
-    Check if backup codes need regeneration for FIPS 140-3 upgrade.
+    Check if backup codes should be regenerated for FIPS 140-3 hygiene.
 
     When migrating from non-FIPS to FIPS 140-3 mode, existing bcrypt-hashed
-    backup codes should be regenerated with PBKDF2-SHA256. This function
-    detects codes that need regeneration.
+    backup codes are still *verifiable* (bcrypt is a deprecated verify-only scheme
+    in the FIPS context — see :func:`_create_backup_code_context`), but they are not
+    hashed with an approved algorithm. A deployment whose authorising official
+    requires approved-algorithm storage end to end should have those users
+    regenerate. This is the detector for that; it is advisory, and no longer the
+    difference between "works" and "locked out".
+
+    Gated on ``FIPS_MODE`` as well as ``FIPS_VERSION``. It previously checked
+    ``FIPS_VERSION`` alone, and ``FIPS_VERSION`` defaults to ``"140-3"`` on **every**
+    deployment — so on an ordinary non-FIPS install this returned True for bcrypt
+    hashes that are the correct, current format. Surfacing that would have told every
+    non-FIPS user to regenerate codes that were perfectly fine.
 
     Args:
         hashed_codes: List of hashed backup codes from the database
 
     Returns:
-        bool: True if codes are hashed with bcrypt and we're in FIPS 140-3 mode
+        bool: True if codes are hashed with bcrypt while FIPS 140-3 mode is active
     """
-    if settings.FIPS_VERSION != "140-3":
+    if not (settings.FIPS_MODE and settings.FIPS_VERSION == "140-3"):
         return False
 
     if not hashed_codes:
@@ -430,8 +475,10 @@ class MFAService:
         Verify a backup code against a list of hashed codes.
 
         Uses constant-time comparison via passlib to prevent timing attacks.
-        Supports both PBKDF2-SHA256 (FIPS 140-3) and bcrypt hashes for
-        backwards compatibility during migration.
+        Both PBKDF2-SHA256 (FIPS 140-3) and bcrypt hashes verify in **either**
+        mode — bcrypt is registered verify-only in the FIPS context, which is what
+        stops enabling FIPS from silently invalidating every code already issued
+        (see :func:`_create_backup_code_context`).
 
         Args:
             code: Plaintext backup code from user
@@ -453,11 +500,28 @@ class MFAService:
             try:
                 if backup_code_context.verify(normalized, stored_hash):
                     logger.info("Backup code verification successful")
+                    if backup_codes_need_regeneration([stored_hash]):
+                        # Approved-algorithm hygiene, not a failure: the code just
+                        # verified and is about to be consumed. Surfaced at WARNING
+                        # because a FIPS deployment's operator needs to know legacy
+                        # hashes are still in play.
+                        logger.warning(
+                            "Backup code verified from a legacy bcrypt hash while FIPS "
+                            "140-3 mode is active; ask this user to regenerate their "
+                            "backup codes so all stored hashes use PBKDF2-SHA256."
+                        )
                     return True, stored_hash
             except Exception as e:
-                # Handle potential invalid hash format or algorithm mismatch
-                # This can occur during migration from bcrypt to PBKDF2-SHA256
-                logger.debug(f"Backup code hash verification error: {e}")
+                # An unparseable/unknown hash. Every scheme this app has ever written
+                # is registered in both context branches, so reaching here means a
+                # corrupt or foreign value — WARNING, not DEBUG: this used to be the
+                # silent half of the FIPS backup-code lockout.
+                logger.warning(
+                    "Backup code hash could not be verified (%s: %s); "
+                    "hash is corrupt or was written by an unregistered scheme",
+                    type(e).__name__,
+                    e,
+                )
                 continue
 
         logger.debug("Backup code verification failed - code not found")

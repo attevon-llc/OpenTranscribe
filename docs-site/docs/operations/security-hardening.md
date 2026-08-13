@@ -418,7 +418,7 @@ OpenTranscribe includes features that map to NIST 800-53 controls:
 | **IA-2** (Identification and Authentication) | Multi-factor authentication, PKI/CAC support |
 | **IA-5** (Authenticator Management) | Password complexity, history, expiration policies |
 | **SC-12** (Cryptographic Key Establishment) | PBKDF2 key derivation |
-| **SC-13** (Cryptographic Protection) | AES-256-GCM, HS512 JWT signing |
+| **SC-13** (Cryptographic Protection) | AES-256-GCM at rest, HMAC-SHA-256 (HS256) JWT signing -- both FIPS-approved; see [Algorithm Requirements](#algorithm-requirements) |
 | **SC-28** (Protection of Information at Rest) | Encrypted sensitive data fields |
 
 Classification banners are configurable in **Admin > Settings > System > Classification Banner**.
@@ -467,23 +467,59 @@ For government and high-security deployments, OpenTranscribe supports FIPS 140-3
 
 ```bash
 # .env configuration
+FIPS_MODE=true                      # THE master switch -- nothing below takes effect without it
 FIPS_VERSION=140-3
 PBKDF2_ITERATIONS_V3=600000        # NIST SP 800-132 2024 recommendation
-JWT_ALGORITHM_V3=HS512              # HMAC-SHA512 for JWT signing
 ENCRYPTION_ALGORITHM_V3=AES-256-GCM # Authenticated encryption
 FIPS_MIGRATION_MODE=compatible      # Accept both old and new formats during transition
 FIPS_VALIDATE_ENTROPY=true          # Validate entropy sources
 ```
 
+:::caution `FIPS_MODE` is the switch, not `FIPS_VERSION`
+`FIPS_VERSION` defaults to `140-3` on **every** deployment. Setting it alone changes
+nothing: password hashing and MFA backup-code hashing both gate on
+`FIPS_MODE and FIPS_VERSION == "140-3"`. Set `FIPS_MODE=true`.
+:::
+
 ### Algorithm Requirements
 
-| Component | FIPS 140-2 (Legacy) | FIPS 140-3 | Migration |
-|-----------|-------------------|------------|-----------|
-| Password Hashing | PBKDF2-SHA256 (210k iter) | PBKDF2-SHA256 (600k iter) | Auto-upgrade on login |
-| Symmetric Encryption | Fernet (AES-128-CBC) | AES-256-GCM | Auto-upgrade on access |
-| JWT Signing | HS256 | HS512 | Dual verification during transition |
-| Token Hashing | SHA-256 | SHA-512 | Auto-upgrade on issuance |
-| MFA Backup Codes | bcrypt | PBKDF2-SHA256 (600k iter) | Regeneration required |
+| Component | Non-FIPS default | FIPS 140-3 (`FIPS_MODE=true`) | Migration |
+|-----------|------------------|-------------------------------|-----------|
+| Password Hashing | bcrypt-SHA256 (cost 12) | PBKDF2-SHA256 (600k iter) | Auto-upgrade on login |
+| Symmetric Encryption | AES-256-GCM | AES-256-GCM | Auto-upgrade on access |
+| JWT Signing (access tokens) | HS256 | HS256 | None needed -- see below |
+| Token Hashing | SHA-512 | SHA-512 | n/a |
+| MFA Backup Codes | bcrypt (cost 12) | PBKDF2-SHA256 (600k iter) | Existing bcrypt codes keep working |
+
+#### JWT signing is HS256, and that is FIPS-approved
+
+Access tokens are signed with **HS256 (HMAC-SHA-256) in every mode, FIPS included.**
+This is a compliant configuration, not a gap:
+
+- HMAC is approved by **FIPS 198-1**, and SHA-256 by **FIPS 180-4**.
+- **NIST SP 800-57 Part 1 Rev. 5** rates HMAC-SHA-256 at 128 bits of security --
+  comfortably above the 112-bit minimum **SP 800-131A Rev. 2** requires through 2030 and
+  beyond.
+
+Earlier revisions of this page claimed FIPS 140-3 mode switched JWT signing to HS512. It
+never did. The FIPS-aware selector existed in `app/core/security.py` but sat on a function
+no login path called, while every real login minted HS256 through
+`app/auth/direct_auth.py`. The dead selector has been removed rather than wired up,
+because the verifiers on the request path (`get_current_user` /
+`get_optional_current_user` in `app/api/endpoints/auth/dependencies.py`) accept
+`settings.JWT_ALGORITHM` **and nothing else** -- a FIPS-branching issuer would have minted
+tokens that authenticate no request.
+
+If your authorising official requires HS512 specifically, set it explicitly:
+
+```bash
+JWT_ALGORITHM=HS512
+JWT_SECRET_KEY=<at least 64 bytes>   # HS512 needs a 512-bit key; startup warns if shorter
+```
+
+That one setting moves issuance and verification together. Note that changing it
+invalidates every access token already in flight, so users see one 401 and their client
+refreshes; plan it for a maintenance window rather than a rolling restart.
 
 ### Migration Process
 

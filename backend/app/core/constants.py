@@ -967,3 +967,71 @@ DEFAULT_CHAT_SEARCH_MODE = "hybrid"
 # Resolved-scope ceiling: a selection resolving to more files than this is
 # rejected (HTTP 400) rather than silently truncated.
 CHAT_MAX_SCOPE_FILES = 500
+
+
+# =============================================================================
+# Document ingestion (issue #362 / #403 Stage 6)
+# =============================================================================
+# Two env vars only, and both are *wiring* (where a container lives), not policy —
+# per the repo rule, everything a user or admin would tune is a DB-backed
+# `SystemSettings` row with a `DEFAULT_DOCUMENT_*` coded default below.
+
+# Which parsing tier to use: auto | slim | serve | tika.
+#   auto  — the sidecar when DOCUMENT_PARSER_URL health-checks, else the in-worker
+#           slim tier, else Tika. This is the single branch point
+#           (`services/documents/registry.get_parser_for`).
+#   slim  — in-worker only. No OCR, no layout model, no table structure.
+#   serve — sidecar only. Unreachable becomes a RETRYABLE failure, not a parse failure.
+#   tika  — the legacy OLE2/RTF tier, on its own, for exercising that path.
+DOCUMENT_PARSER_BACKEND = _os.environ.get("DOCUMENT_PARSER_BACKEND", "auto").lower()
+
+# Base URL of the docling-serve sidecar. Empty disables the tier entirely, which is what
+# `--no-documents` and a lean deployment want. NOT published on the host: the sidecar
+# converts arbitrary user bytes and belongs on the app network only.
+DOCUMENT_PARSER_URL = _os.environ.get("DOCUMENT_PARSER_URL", "").strip()
+
+# Base URL of the optional Apache Tika container. Empty (the default) means legacy OLE2
+# and RTF uploads are refused with "convert to .docx or .pdf first" — a better answer
+# than a worse parse.
+DOCUMENT_TIKA_URL = _os.environ.get("DOCUMENT_TIKA_URL", "").strip()
+
+# --- DB-backed defaults (SystemSettings keys in the comments) ----------------
+
+# `documents.ocr_enabled` — the global OCR switch. On by default: OCR is day-one scope,
+# and a scanned PDF that silently indexes as empty is the failure mode this exists to
+# avoid.
+DEFAULT_DOCUMENT_OCR_ENABLED = True
+
+# `documents.ocr_policy` — auto | force | never. `auto` OCRs only what has no usable
+# text layer.
+DEFAULT_DOCUMENT_OCR_POLICY = "auto"
+
+# `documents.ocr_text_threshold` — characters per page below which a PDF is treated as
+# having no usable text layer. Measured over the corpora: olmOCR-bench `old_scans` sits
+# at 0 chars/page across 60 PDFs, `tables` at ~2,300, so 100 separates them by an order
+# of magnitude at both ends.
+DEFAULT_DOCUMENT_OCR_TEXT_THRESHOLD = 100
+
+# `documents.ocr_shard_pages` — pages per OCR shard. The whole point of sharding is
+# fairness, not throughput: a 500-page scan becomes ~25 interleaved ~1-minute tasks
+# instead of one 25-minute queue-starver (worker_prefetch_multiplier=1 is global).
+DEFAULT_DOCUMENT_OCR_SHARD_PAGES = 20
+
+# `documents.ocr_batch_size` — pages per ONNX batch INSIDE one shard. Follows the
+# SEARCH_NEURAL_BATCH_SIZE precedent: batch by default, retry once unbatched on failure
+# so one malformed page cannot fail a whole shard. Bounded by GPU HOLD TIME, not just
+# VRAM — a bigger batch holds the admission lock longer, which is exactly the contention
+# transcription must not lose.
+DEFAULT_DOCUMENT_OCR_BATCH_SIZE = 4
+
+# `documents.max_pages` — hard page ceiling. A trip truncates WITH a warning rather than
+# failing: half of a 5,000-page document beats none of it, as long as it is said.
+DEFAULT_DOCUMENT_MAX_PAGES = 2000
+
+# `documents.max_upload_bytes` — separate from MAX_UPLOAD_BYTES (15 GB, sized for video).
+# A 15 GB "document" is an attack, not a use case.
+DEFAULT_DOCUMENT_MAX_UPLOAD_BYTES = 256 * 1024 * 1024
+
+# `documents.chunk_target_words` — deliberately reads the transcript chunker's target at
+# call time rather than declaring a second number: heterogeneous chunk lengths distort
+# RRF, and two settings that must agree are one that will not.

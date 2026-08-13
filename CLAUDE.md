@@ -406,13 +406,28 @@ subsystem, and put new subsystem detail **there**, not in this file.
 
 > **Cosine score conversion (repo-wide trap):** OpenSearch `cosinesimil` returns `(1 + cosine) / 2`, NOT raw cosine. Every kNN score read must do `raw_cosine = 2.0 * hit["_score"] - 1.0`. All 11 read sites live in the speaker/voiceprint plane under `backend/app/services/` (none in `api/`, and transcript search ranks by RRF, never raw cosine) — all 11 currently correct. Full table: `backend/app/services/search/CLAUDE.md`.
 
-> **Chat retrieval trap (issue #52):** the `transcript_chunks` OpenSearch index stores
-> transcript text **UNREDACTED** — correct for search over your own words, but it means
-> any path sending chunk content to an LLM must first call
-> `services/chat/redactor.mask_chunks()`. Masking fails CLOSED (an unmaskable chunk
-> contributes nothing rather than going out raw). Equally: in chat scope resolution
-> `file_uuids=None` means "all accessible" while `file_uuids=[]` means "match nothing" —
-> inverting those leaks the whole library. Details: `backend/app/services/chat/CLAUDE.md`.
+> **Chat retrieval trap (issue #52), as amended by the redaction policy of 2026-08-13:** the
+> `transcript_chunks` index stores transcript text **UNREDACTED**. Whether it must be masked before
+> an LLM sees it depends on **where the model runs**: a **local** model receives it unmasked (the
+> text never leaves the machine, so masking costs recall and buys nothing), a **remote provider**
+> still gets masked text (sending unredacted PII to a third party is a data-egress event). Key that
+> off the **provider**, never a global setting. ⚠️ Redaction of model-generated **output** is not
+> implemented, so a local-model deployment is currently *less* protected than before the policy
+> change — a deliberate, documented trade.
+>
+> ⚠️ **Two maskers, not interchangeable.** `redactor.mask_chunks()` addresses text by **time
+> range**; `redactor.mask_digests()` by **provenance** (`segment_ids`). A digest through the chunk
+> path is rebuilt from every segment in its span and comes back as the **whole recording
+> verbatim** — more text than the digest held, from a function whose name says it masked it. Both
+> fail closed, at different units: a chunk whole, a digest per sentence.
+>
+> ⚠️ **Ranking is not mapping.** `retrieve_digests` ranks; `mapreduce.scope_digest_hits` maps. Using
+> the ranked leg as the map step produced a summary headed "recordings: 8" over a 25-file scope.
+> Raising `size` does not fix it — ranking gives no coverage guarantee at any K.
+>
+> Equally: in chat scope resolution `file_uuids=None` means "all accessible" while `file_uuids=[]`
+> means "match nothing" — inverting those leaks the whole library. Details:
+> `backend/app/services/chat/CLAUDE.md`.
 
 ## Conventions
 

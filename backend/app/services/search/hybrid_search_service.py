@@ -21,6 +21,7 @@ from app.core.constants import SEARCH_CACHE_TTL_SECONDS
 from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_SNIPPETS_PER_FILE
+from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import opensearch_client
 from app.services.search.indexing_service import ensure_chunks_index_exists
@@ -919,6 +920,11 @@ class HybridSearchService:
         scope_filter = [
             {"terms": {"accessible_user_ids": [user_id]}},
             *org_filter_clauses(organization_id),
+            # Addendum G3: this reader builds its own filter list and so does not
+            # inherit `_build_filters`' chunk-plane gate. Without the clause a
+            # digest section pollutes title autocomplete and contributes a bogus
+            # speaker bucket — derived text offered as if somebody had said it.
+            chunk_plane_clause(),
         ]
 
         try:
@@ -1024,6 +1030,10 @@ class HybridSearchService:
                             "filter": [
                                 {"terms": {"accessible_user_ids": [user_id]}},
                                 *org_filter_clauses(organization_id),
+                                # Addendum G3: facet counts are per-document, so
+                                # digest sections would inflate every speaker and
+                                # tag bucket by a file-shaped amount.
+                                chunk_plane_clause(),
                             ]
                         }
                     },
@@ -1097,6 +1107,13 @@ class HybridSearchService:
 
         filters: list[dict[str, Any]] = [{"terms": {"accessible_user_ids": [user_id]}}]
         filters.extend(org_filter_clauses(organization_id))
+        # The chunk plane, compatibility-armed. Search results are somebody's own
+        # words; a digest is derived text and must not surface as if it were a
+        # quote (addendum G6 — it would also carry NEITHER of the two read-time
+        # masking treatments, since both are keyed to the shape they expect).
+        # Stage 4's router is what adds the digest leg, deliberately and
+        # separately, with its own citation shape.
+        filters.append(chunk_plane_clause())
 
         if file_uuid:
             filters.append({"term": {"file_uuid": file_uuid}})

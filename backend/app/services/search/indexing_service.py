@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from app.core.config import settings
+from app.services.ingest_artifacts import index_mapping as digest_mapping
 from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import opensearch_client
 
@@ -22,7 +23,11 @@ _neural_pipeline_available = False
 # Index version -- bump when mappings or analysis settings change.
 # Stored in index _meta so ensure_chunks_index_exists() can detect stale indices.
 # v5: added organization_id (tenant scope) for cloud-edition isolation.
-_INDEX_VERSION = 5
+# v6: doc_type discriminator + digest documents + embedding_text (#403 Stage 3).
+#     The mapping additions and the id/clause helpers live in
+#     services/ingest_artifacts/index_mapping.py, which Stage 2 pinned so this
+#     bump could carry all of them in ONE reindex.
+_INDEX_VERSION = digest_mapping.TARGET_INDEX_VERSION
 
 # Transient bulk error types that are safe to retry
 _RETRYABLE_ERROR_TYPES = frozenset(
@@ -130,6 +135,11 @@ TRANSCRIPT_CHUNKS_INDEX_BODY = {
             # Tracking
             "embedding_model": {"type": "keyword"},
             "indexed_at": {"type": "date"},
+            # v6 (#403 Stage 3): the doc_type discriminator, the field the neural
+            # ingest pipeline embeds, and the digest section number. Defined in
+            # services/ingest_artifacts/index_mapping.py so Stage 2 could pin the
+            # shape and Stage 3 could apply it unchanged.
+            **digest_mapping.TARGET_MAPPING_ADDITIONS,
         },
     },
 }
@@ -161,20 +171,23 @@ def chunk_plane_query(
     """Build the query that selects the CHUNK-plane documents of one file.
 
     **Every delete and every targeted rewrite against the chunks index is built
-    here, and nowhere else.**
-    #383 Phase 3 adds non-chunk documents (per-file digests, discriminated by a
-    ``doc_type`` field) to this same index. A delete that only matches on
-    ``file_uuid`` would take the digests with it. Keeping the predicate in one
-    function means that change is a single line added to ``filters`` below::
+    here, or in its two siblings below, and nowhere else.**
+    Since v6 the index also holds per-file **digest** documents
+    (``doc_type: digest``), so a predicate matching only on ``file_uuid`` takes
+    the digests with it — which is why the discriminator lives here rather than
+    at each call site.
 
-        filters.append({"term": {"doc_type": "chunk"}})
+    The clause is :func:`~app.services.ingest_artifacts.index_mapping.chunk_plane_clause`,
+    not a bare ``{"term": {"doc_type": "chunk"}}``, and the difference is the
+    whole point: **every chunk written before v6 carries no ``doc_type`` at
+    all**, so a bare term matches none of them and the #400 stale-tail prune
+    silently stops working for an entire installed corpus. An explicit mapping
+    does nothing for documents written before it existed.
 
-    Do not write a ``delete_by_query`` or an ``update_by_query`` against
-    ``OPENSEARCH_CHUNKS_INDEX`` anywhere else — a scattered copy is exactly what
-    this function prevents. ``extra_filters`` exists so a caller that needs to
-    narrow *within* the chunk plane (the rename propagation of issue #405 only
-    wants the docs still carrying the old speaker name) still inherits whatever
-    predicate this function grows.
+    ``extra_filters`` exists so a caller that needs to narrow *within* the chunk
+    plane (the rename propagation of issue #405 only wants the docs still
+    carrying the old speaker name) still inherits whatever predicate this
+    function grows.
 
     Args:
         file_uuid: UUID of the media file whose chunks are being selected.
@@ -186,12 +199,61 @@ def chunk_plane_query(
     Returns:
         An OpenSearch query body fragment (the value of ``"query"``).
     """
-    filters: list[dict[str, Any]] = [{"term": {"file_uuid": file_uuid}}]
+    filters: list[dict[str, Any]] = [
+        {"term": {"file_uuid": file_uuid}},
+        digest_mapping.chunk_plane_clause(),
+    ]
     if from_chunk_index is not None:
         filters.append({"range": {"chunk_index": {"gte": from_chunk_index}}})
     if extra_filters:
         filters.extend(extra_filters)
     return {"bool": {"filter": filters}}
+
+
+def digest_plane_query(
+    file_uuid: str,
+    *,
+    from_section: int | None = None,
+) -> dict[str, Any]:
+    """The digest-plane sibling of :func:`chunk_plane_query`.
+
+    No compatibility arm: digest documents are all new, so ``doc_type`` is
+    always present on them.
+
+    Args:
+        file_uuid: UUID of the media file whose digest sections are selected.
+        from_section: When set, restrict to sections at or above this index —
+            the orphans left behind when a digest re-sections to fewer parts,
+            exactly the way a shorter re-chunk orphans a chunk tail (#400).
+
+    Returns:
+        An OpenSearch query body fragment.
+    """
+    filters: list[dict[str, Any]] = [
+        {"term": {"file_uuid": file_uuid}},
+        digest_mapping.digest_plane_clause(),
+    ]
+    if from_section is not None:
+        filters.append({"range": {"digest_section": {"gte": from_section}}})
+    return {"bool": {"filter": filters}}
+
+
+def file_plane_query(file_uuid: str) -> dict[str, Any]:
+    """**Every** document of one file, whatever plane it belongs to.
+
+    Deliberately has no ``doc_type`` predicate, and the two callers both need
+    that: deleting a media file must leave nothing behind, and a full rebuild
+    wants a clean slate before it regenerates both planes. Using
+    :func:`chunk_plane_query` for either would strand the digests — readable,
+    with whatever ACL they were last stamped with.
+
+    Args:
+        file_uuid: UUID of the media file.
+
+    Returns:
+        An OpenSearch query body fragment.
+    """
+    return {"bool": {"filter": [{"term": {"file_uuid": file_uuid}}]}}
 
 
 def _build_hybrid_search_pipeline() -> dict[str, Any]:
@@ -417,7 +479,17 @@ def _build_neural_ingest_pipeline(model_id: str) -> dict[str, Any]:
             {
                 "text_embedding": {
                     "model_id": model_id,
-                    "field_map": {"content": "embedding"},
+                    # v6: embed `embedding_text`, not `content` (#403 Stage 3).
+                    # Every document carries it; for a chunk it is the file
+                    # header plus the chunk text, for a digest section the same
+                    # header plus the section. That header is the zero-LLM
+                    # contextualization — it is what makes "the logistics team's
+                    # retro" retrievable when the phrase is in the title and not
+                    # in anything anybody said. #401 is what makes this reach
+                    # upgraded deployments: the drift check compares field_map,
+                    # so an existing pipeline is recreated rather than silently
+                    # left embedding the old field.
+                    "field_map": {"embedding_text": "embedding"},
                     "batch_size": settings.SEARCH_NEURAL_BATCH_SIZE,
                     "ignore_failure": False,
                 }
@@ -783,12 +855,22 @@ class TranscriptIndexingService:
             logger.warning(f"No chunks generated for file {file_uuid}")
             return 0
 
-        # 2. Add indexed_at timestamp and accessible_user_ids
+        # 2. Add indexed_at timestamp, accessible_user_ids, and the v6 fields
         now = datetime.datetime.now(datetime.UTC).isoformat()
         effective_user_ids = accessible_user_ids if accessible_user_ids else [user_id]
+        header_roster = sorted(speakers or [])
         for chunk in chunks:
             chunk["indexed_at"] = now
             chunk["accessible_user_ids"] = effective_user_ids
+            chunk[digest_mapping.DOC_TYPE_FIELD] = digest_mapping.DOC_TYPE_CHUNK
+            # The pipeline embeds this field, not `content` — see
+            # `_build_neural_ingest_pipeline`. BM25 still scores `content`.
+            chunk["embedding_text"] = digest_mapping.build_embedding_text(
+                title=title,
+                recorded_at=upload_time,
+                roster=header_roster,
+                body=str(chunk.get("content") or ""),
+            )
 
         # 3. Choose embedding mode and index
         t_index_start = time.time()
@@ -822,6 +904,33 @@ class TranscriptIndexingService:
             # in search and in RAG chat retrieval (issue #400).
             stale_removed = self._prune_stale_chunks(file_uuid, keep_count=len(chunks))
 
+            # The digest plane (#403 Stage 3, addendum G1). It rides the chunk
+            # index rather than the coordinator because `delete_transcript_chunks`
+            # is an unqualified per-file delete: every rebuild trigger — version
+            # bump, model switch, maintenance repair, manual reindex — comes
+            # through here, and any one of them that regenerated chunks and not
+            # digests would destroy the digest tier permanently.
+            digest_count = self._index_digest_plane(
+                file_id=file_id,
+                file_uuid=file_uuid,
+                base_metadata={
+                    "user_id": user_id,
+                    "title": title,
+                    "tags": tags or [],
+                    "upload_time": upload_time,
+                    "language": language,
+                    "content_type": content_type,
+                    "duration": duration,
+                    "file_size": file_size,
+                    "collection_ids": collection_ids or [],
+                    "accessible_user_ids": effective_user_ids,
+                    "indexed_at": now,
+                    "embedding_model": "neural" if use_neural else None,
+                    **({} if organization_id is None else {"organization_id": organization_id}),
+                },
+                use_neural=use_neural,
+            )
+
             index_ms = round((time.time() - t_index_start) * 1000)
             total_ms = chunk_ms + index_ms
             mode_str = "neural" if use_neural else "text-only"
@@ -840,19 +949,28 @@ class TranscriptIndexingService:
                 "mode": mode_str,
                 "neural": use_neural,
                 "stale_removed": stale_removed,
+                "digest_sections": digest_count,
             }
         except Exception as e:
             logger.error(f"Bulk indexing failed for file {file_uuid}: {e}")
             return 0
 
     def delete_transcript_chunks(self, file_uuid: str) -> int:
-        """Delete all chunks for a file.
+        """Delete **every** indexed document for a file — both planes.
+
+        Its two callers are file deletion and the full rebuild in
+        :meth:`reindex_transcript`, and both mean "leave nothing behind":
+        a digest that outlives its file is a readable summary of a deleted
+        recording, and a digest that survives a rebuild whose transcript
+        re-sectioned to fewer parts is a stale orphan (#400's failure, one
+        plane over). Hence :func:`file_plane_query`, not
+        :func:`chunk_plane_query`.
 
         Args:
-            file_uuid: UUID of the file to delete chunks for.
+            file_uuid: UUID of the file to delete documents for.
 
         Returns:
-            Number of chunks deleted.
+            Number of documents deleted.
         """
         if not opensearch_client:
             return 0
@@ -864,7 +982,7 @@ class TranscriptIndexingService:
 
             response = opensearch_client.delete_by_query(
                 index=index_name,
-                body={"query": chunk_plane_query(file_uuid)},
+                body={"query": file_plane_query(file_uuid)},
                 refresh=True,
             )
             deleted: int = response.get("deleted", 0)
@@ -932,6 +1050,128 @@ class TranscriptIndexingService:
             )
             return 0
 
+    def _index_digest_plane(
+        self,
+        *,
+        file_id: int,
+        file_uuid: str,
+        base_metadata: dict[str, Any],
+        use_neural: bool,
+    ) -> int:
+        """Regenerate and index this file's digest documents.
+
+        Regeneration happens **here**, on the per-file index path, for the
+        reason addendum G1 gives: `delete_transcript_chunks` is unqualified and
+        every rebuild trigger routes through this method's caller, so anything
+        that is not regenerated here is destroyed. Stage 2's
+        ``source_fingerprint`` short-circuit is what makes that affordable — an
+        unchanged transcript costs a SHA-256, not a TextRank — and because the
+        fingerprint covers the *resolved* speaker display name, a rename
+        invalidates the row by itself and needs no separate trigger (#405).
+
+        Its own session: the callers are a Celery task that has one open over a
+        batch of files and an API path that has none, and borrowing the former's
+        would make a digest failure roll back a whole batch's progress.
+
+        An empty digest is a valid outcome (a ten-second clip has no sentence
+        long enough), and a failure here is logged rather than raised: the
+        chunks are already indexed and correct, and a caller must not report a
+        good index as a failure.
+
+        Args:
+            file_id: Media file integer id.
+            file_uuid: Media file UUID.
+            base_metadata: Per-file fields shared with chunk documents. The ACL
+                rewrite keys on ``file_id`` and the tenant backfill on
+                ``file_uuid`` (addendum G5), so :func:`build_digest_documents`
+                puts **both** on every digest — do not strip either.
+            use_neural: Whether to run the documents through the ingest pipeline.
+
+        Returns:
+            Number of digest sections indexed.
+        """
+        try:
+            from app.db.session_utils import session_scope
+            from app.services.ingest_artifacts import generate_file_artifacts
+
+            with session_scope() as db:
+                row = generate_file_artifacts(db, file_id)
+                if row is None:
+                    return 0
+                digest = dict(row.digest or {})
+                facts = dict(row.facts or {})
+
+            documents = digest_mapping.build_digest_documents(
+                file_uuid=file_uuid,
+                file_id=file_id,
+                digest=digest,
+                facts=facts,
+                base_metadata=base_metadata,
+            )
+            ids = digest_mapping.digest_document_ids(file_uuid, digest)
+            if documents:
+                self._bulk_index_documents(list(zip(ids, documents, strict=True)), use_neural)
+            # Same orphan hazard as #400's chunk tail: the ids embed the section
+            # number, so a digest that re-sections shorter leaves the extras
+            # behind, still matching every query the file matches.
+            self._prune_stale_digests(file_uuid, keep_count=len(documents))
+            return len(documents)
+        except Exception as exc:  # noqa: BLE001 — chunks are indexed; do not fail the caller
+            logger.error(f"Could not index digest plane for file {file_uuid}: {exc}")
+            return 0
+
+    def _prune_stale_digests(self, file_uuid: str, *, keep_count: int) -> int:
+        """Delete digest sections left behind by a longer previous sectioning."""
+        if not opensearch_client:
+            return 0
+
+        index_name = settings.OPENSEARCH_CHUNKS_INDEX
+        query = digest_plane_query(file_uuid, from_section=keep_count)
+        try:
+            if not opensearch_client.count(index=index_name, body={"query": query}).get("count", 0):
+                return 0
+            response = opensearch_client.delete_by_query(
+                index=index_name, body={"query": query}, refresh=True, conflicts="proceed"
+            )
+            deleted = int(response.get("deleted", 0))
+            logger.info(f"Pruned {deleted} stale digest section(s) for file {file_uuid}")
+            return deleted
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Could not prune stale digest sections for file {file_uuid}: {e}")
+            return 0
+
+    def _bulk_index_documents(
+        self, documents: list[tuple[str, dict[str, Any]]], use_neural_pipeline: bool
+    ) -> int:
+        """Bulk index ``(_id, document)`` pairs. Used by the digest plane.
+
+        Separate from :meth:`_bulk_index_chunks` because that one derives the id
+        from ``chunk_index``, and a digest's id is ``{uuid}_digest_{n}`` —
+        ``{uuid}_0`` is already chunk 0.
+        """
+        if not opensearch_client or not documents:
+            return 0
+
+        index_name = settings.OPENSEARCH_CHUNKS_INDEX
+        bulk_body: list[Any] = []
+        for doc_id, document in documents:
+            action: dict[str, Any] = {"index": {"_index": index_name, "_id": doc_id}}
+            if use_neural_pipeline:
+                action["index"]["pipeline"] = settings.OPENSEARCH_NEURAL_PIPELINE
+            bulk_body.append(action)
+            bulk_body.append(document)
+
+        response = opensearch_client.bulk(body=bulk_body, refresh=False)
+        if response.get("errors"):
+            failed = [
+                item["index"]
+                for item in response.get("items", [])
+                if item.get("index", {}).get("error")
+            ]
+            logger.error(f"Digest bulk index reported {len(failed)} failure(s): {failed[:3]}")
+            return len(documents) - len(failed)
+        return len(documents)
+
     def reindex_transcript(
         self,
         file_id: int,
@@ -958,11 +1198,12 @@ class TranscriptIndexingService:
         Returns:
             Number of chunks indexed.
         """
-        # Delete existing chunks first. Not redundant with the tail prune
+        # Delete every plane first. Not redundant with the tail prunes
         # ``index_transcript_chunks`` now does (issue #400): a full rebuild wants a
-        # clean slate, and this is the only path that also clears the chunks of a
+        # clean slate, and this is the only path that also clears the documents of a
         # transcript that now yields NO chunks at all — in which case
-        # ``index_transcript_chunks`` returns early without pruning.
+        # ``index_transcript_chunks`` returns early without pruning. The digest
+        # plane goes with them and is regenerated by the same call (addendum G1).
         self.delete_transcript_chunks(file_uuid)
 
         # Re-index

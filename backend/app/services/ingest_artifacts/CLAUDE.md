@@ -27,7 +27,9 @@ directory, you have misread the stage.
   talk time comes from `utils/transcript_builders.compute_speaker_stats`.
 - `provenance.py` — the D3 tagged union and its validator.
 - `sizing.py` — **the measured embedding window** and everything derived from it.
-- `index_mapping.py` — the target OpenSearch mapping for Stage 3. **Defined, not applied.**
+- `index_mapping.py` — the OpenSearch mapping, id scheme and document builder for the digest
+  plane. Defined here in Stage 2, **applied by Stage 3** (`_INDEX_VERSION = 6`); Stage 3
+  imports every name in it rather than restating any of them.
 
 Task: `app/tasks/ingest_artifacts_task.py` (`artifacts.generate_file_facts`, **nlp** queue),
 dispatched fire-and-forget from `transcription/postprocess.enrich_and_dispatch`.
@@ -74,11 +76,15 @@ against the live model, with a negative control that fails if the window ever gr
 
 - **Transcription** → `postprocess.enrich_and_dispatch` → `dispatch_file_facts`. Not gated on
   an LLM provider, unlike every other enrichment task on the nlp queue.
-- **Stage 3 (reindex)** must call `generate_file_artifacts` **inside** `reindex_transcript`
-  (addendum **G1**): `delete_transcript_chunks` is an unqualified delete and every rebuild
-  trigger would otherwise destroy digests permanently. The `source_fingerprint`
-  short-circuit is what makes calling it on every reindex cheap — an unchanged transcript
-  costs a SHA-256, not a TextRank.
+- **Indexing (index v6)** calls `generate_file_artifacts` from
+  `search/indexing_service._index_digest_plane`, which runs on the per-file index path —
+  i.e. inside `reindex_transcript` as addendum **G1** requires, and also on first ingest,
+  so a file is never chunked without its digest. `delete_transcript_chunks` is an
+  unqualified per-file delete and every rebuild trigger routes through it, so anything not
+  regenerated there is destroyed permanently. The `source_fingerprint` short-circuit is what
+  makes calling it on every reindex cheap — an unchanged transcript costs a SHA-256, not a
+  TextRank — and it opens its **own** session, because its callers are a Celery task holding
+  one over a batch of files and an API path holding none.
 - **Speaker rename (#405)** needs no separate trigger: the fingerprint covers the *resolved*
   display name, so a rename invalidates the row by itself.
 - **Redaction**: digest sentences are verbatim segment text with segment ids attached, so
@@ -106,6 +112,16 @@ against the live model, with a negative control that fails if the window ever gr
 - `generator_version` is `"{facts}.{digest}.{keyphrases}"` schema versions. Bump the relevant
   one when an algorithm changes and the next reindex regenerates; forget to, and a mixed-
   vintage corpus is being measured as if it were one thing.
-- `index_mapping.py` **applies nothing**. `tests/unit/test_digest_index_mapping.py` asserts
-  `_INDEX_VERSION` is still 5, so the mapping and the bump cannot drift apart before Stage 3
-  lands them together.
+- `index_mapping.py` still **writes nothing** — it builds dicts. Stage 3 applied it:
+  `_INDEX_VERSION` is assigned *from* `TARGET_INDEX_VERSION`, and
+  `tests/unit/test_digest_index_mapping.py` (retargeted, not deleted) asserts the live mapping
+  contains every pinned field. The invariant it guards was never "Stage 2 has not shipped" but
+  "the mapping and the version never disagree": a field without a bump reaches fresh installs
+  only, a bump without the field costs every deployment a reindex.
+- **A rename does not yet reach the INDEXED digest.** The fingerprint invalidates the
+  `file_facts` row, so the next reindex regenerates it — but `rename_propagation_task` rewrites
+  the chunk plane only, so until then a digest document's `speakers` array and its
+  `embedding_text` participant header still name the old speaker. Its `content` is unaffected
+  (digest sentences are verbatim transcript text, which does not contain the display name), it
+  carries no single-valued `speaker` field, and it is excluded from facets and from retrieval,
+  so nothing user-visible is wrong today. Stage 4 turns the digest leg on and must close this.

@@ -96,20 +96,10 @@ custom only, label style).
   orphan the tail — stale text, stale speakers, stale timestamps, still returned by search and
   by RAG chat. `index_transcript_chunks` now prunes `chunk_index >= len(chunks)` after the bulk
   load, gated by a `count` so the first index after transcription pays no `delete_by_query`.
-  When #383 Phase 3 adds digest documents to this index, the `doc_type` predicate goes in
-  `chunk_plane_query` and nowhere else. `extra_filters=` lets a caller narrow *within* the
-  chunk plane without forking the predicate — `tasks/rename_propagation_task.py` uses it.
-- **The v6 target mapping already exists, in `services/ingest_artifacts/index_mapping.py`**
-  (#403 Stage 2). It is *defined and applied nowhere*: `_INDEX_VERSION` is still 5, and
-  `tests/unit/test_digest_index_mapping.py` asserts that, so the mapping and the bump land
-  together in Stage 3. It owns `doc_type` (keyword, #403 **D1** — not `source_type`), the
-  compat-armed `chunk_plane_clause()` every reader must import, `embedding_text`, the
-  `{uuid}_digest_{n}` id scheme, the negative `chunk_index` sentinel, and a digest-document
-  builder carrying **both** `file_id` and `file_uuid`. The compat arm is mandatory for a
-  reason worth stating precisely: a bare `term` on `doc_type` is not broken by the dynamic
-  mapping (the four values are single lowercase tokens OpenSearch 3.4 matches fine) — it is
-  broken by **every document already indexed carrying no `doc_type` at all**, which makes the
-  #400 prune count return 0 for the whole installed corpus.
+  Since v6 the index also holds digest documents, so the predicate is one of **three** —
+  see "Index v6" below; picking the wrong one either strands a digest or destroys it.
+  `extra_filters=` lets a caller narrow *within* the chunk plane without forking the
+  predicate — `tasks/rename_propagation_task.py` uses it.
 - **Chunk docs snapshot `speaker` / `speakers` / `title`; renames must be propagated**
   (issue #405). Chat's speaker axis resolves the display name from **Postgres** and filters the
   index with an exact `terms` match on `speaker` (`hybrid_search_service:1107`), so an
@@ -120,3 +110,60 @@ custom only, label style).
   Both bump the chat corpus version, or chat keeps serving the pre-rename retrieval for the
   cache TTL. Once #383's digest tier lands, rename joins the digest-regeneration triggers
   (addendum G1) — the seam is that module's `_finish`.
+
+## Index v6: two planes in one index (#403 Stage 3)
+
+`_INDEX_VERSION` is **6**, and it is assigned *from*
+`services/ingest_artifacts/index_mapping.TARGET_INDEX_VERSION` so the number and the mapping
+cannot drift. `transcript_chunks` now holds two kinds of document:
+
+| plane | `doc_type` | `_id` | `chunk_index` |
+|---|---|---|---|
+| transcript chunk | `chunk` (absent on anything written before v6) | `{uuid}_{n}` | `n` |
+| digest section | `digest` | `{uuid}_digest_{n}` | `-1-n` (negative sentinel; `index.sort.field` includes `chunk_index`, and 0 is a real chunk) |
+
+Everything about the shape — the mapping additions, the id scheme, the sentinel, the
+`chunk_plane_clause()` / `digest_plane_clause()` helpers, `build_embedding_text` and
+`build_digest_documents` — lives in `services/ingest_artifacts/index_mapping.py` and is
+**imported, never restated**. It was pinned there a stage early precisely so Stage 3 got one
+bump and one reindex.
+
+- **Three predicate builders, and picking the wrong one is silent.** `chunk_plane_query`
+  (compat-armed chunk plane — the #400 tail prune, the #405 rename rewrite),
+  `digest_plane_query` (digest sections of one file — the digest-orphan prune), and
+  `file_plane_query` (**every** plane — file deletion and the full rebuild in
+  `reindex_transcript`). A rebuild that used the chunk-plane predicate would leave the
+  digests of a shorter re-sectioning behind; a delete that used it would leave a readable
+  summary of a deleted recording.
+- **The compat arm is mandatory, and for a precise reason.** A bare `term` on `doc_type` is
+  not broken by the dynamic mapping (the four values are single lowercase tokens OpenSearch
+  3.4 matches fine) — it is broken by **every document already indexed carrying no `doc_type`
+  at all**, which makes the #400 prune count return 0 for the whole installed corpus. An
+  explicit keyword mapping does nothing for documents written before it existed.
+  `tests/unit/test_chunk_plane_compat_arm.py` sweeps every function in `app/` that queries
+  this index and requires each one to have *decided*; the deliberate exceptions
+  (`update_file_access_index`, the tenant backfill, the whole-file orphan sweeps) are an
+  allowlist with written reasons, and a stale entry fails.
+- **The ACL and tenant rewrites must REACH digests** (addendum G5) — `update_file_access_index`
+  keys on `file_id`, the tenant backfill on `file_uuid`, and `build_digest_documents` puts
+  **both** on every digest. Excluding them there is a permission leak, not a relevance bug.
+- **The digest plane is written by `index_transcript_chunks`, not by the coordinator**
+  (addendum G1). `delete_transcript_chunks` is unqualified and every rebuild trigger routes
+  through it, so a rebuild that regenerated only chunks would destroy the digest tier
+  permanently. `_index_digest_plane` calls `ingest_artifacts.generate_file_artifacts` on its
+  **own** session; the `source_fingerprint` short-circuit makes an unchanged transcript cost a
+  SHA-256, and because the fingerprint covers the *resolved* speaker display name, a rename
+  invalidates the row by itself.
+- **The neural ingest pipeline embeds `embedding_text`, not `content`.** Every document
+  carries it: for a chunk it is `"{title} | {date} | participants: {roster}\n\n{chunk text}"`,
+  for a digest section the same header plus the section. That header is the zero-LLM
+  contextualization — it is what makes "the logistics team's retro" retrievable when the
+  phrase is in the title and in nothing anybody said. BM25 still scores `content`.
+  ⚠️ The measured embedding window is **128 wordpieces**, not the 256 the plan assumed
+  (`services/ingest_artifacts/sizing.py`), so the header is a real cost: it displaces roughly
+  the last 20 words of a 200-word chunk from that chunk's own vector.
+- **Search does not return digests; chat does not either, yet.** `_build_filters` carries
+  `chunk_plane_clause()`, so both the search UI and `retrieve_chunks` see the chunk plane
+  only. That is deliberate: a digest is derived text, it would render as if a speaker had said
+  it, and it would receive **neither** read-time masking treatment (addendum G6). The digest
+  leg, with its own citation shape, is Stage 4's.

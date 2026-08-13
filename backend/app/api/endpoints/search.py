@@ -25,6 +25,7 @@ from app.core.redis import get_redis
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.search import SetEmbeddingModelSchema
+from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 
 logger = logging.getLogger(__name__)
 
@@ -397,7 +398,18 @@ def trigger_reindex(
                         index=index_name,
                         body={
                             "size": 0,
-                            "query": {"term": {"user_id": current_user.id}},
+                            "query": {
+                                "bool": {
+                                    "filter": [
+                                        {"term": {"user_id": current_user.id}},
+                                        # G4: "which files still need indexing?".
+                                        # A file left with only a digest (a rebuild
+                                        # that failed part-way) would otherwise read
+                                        # as indexed and never be repaired.
+                                        chunk_plane_clause(),
+                                    ]
+                                }
+                            },
                             "aggs": {
                                 "indexed_files": {
                                     "terms": {
@@ -562,7 +574,16 @@ def reindex_status(
                 index=settings.OPENSEARCH_CHUNKS_INDEX,
                 body={
                     "size": 0,
-                    "query": {"term": {"user_id": current_user.id}},
+                    "query": {
+                        "bool": {
+                            "filter": [
+                                {"term": {"user_id": current_user.id}},
+                                # G4, again: the number the admin UI shows as
+                                # "indexed files" must count files with chunks.
+                                chunk_plane_clause(),
+                            ]
+                        }
+                    },
                     "aggs": {
                         "unique_files": {"cardinality": {"field": "file_uuid"}},
                         "last_indexed": {"max": {"field": "indexed_at"}},

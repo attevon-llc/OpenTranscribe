@@ -36,20 +36,47 @@ def _digest():
     return build_digest(segments)
 
 
-def test_stage_2_has_not_applied_the_bump():
-    """The scope line, executable. Stage 3 owns the reindex; Stage 2 must not trigger one.
+def test_the_fields_and_the_bump_landed_together():
+    """Stage 3 applied it, and applied ALL of it in ONE bump.
 
-    A bump here would make every deployment's next full reindex delete and recreate the
-    chunks index for a change nothing writes yet.
+    Until Stage 3 this test asserted the opposite — ``_INDEX_VERSION == 5`` and none of
+    the fields present — because a bump with nothing writing the fields would have made
+    every deployment's next full reindex delete and recreate the index for nothing. It
+    is retargeted rather than deleted: the invariant it protects is not "Stage 2 has not
+    shipped" but "the mapping and the version never disagree", and that is exactly as
+    load-bearing afterwards. A field added to the live mapping without a bump reaches
+    fresh installs only; a bump without the field costs every deployment a reindex.
+
+    ``_INDEX_VERSION`` is assigned *from* ``TARGET_INDEX_VERSION``, so the numeric half
+    cannot drift. The mapping half can, which is what the loop checks.
     """
-    assert _INDEX_VERSION == target.TARGET_INDEX_VERSION - 1
+    assert _INDEX_VERSION == target.TARGET_INDEX_VERSION
     mappings = cast(dict[str, Any], TRANSCRIPT_CHUNKS_INDEX_BODY["mappings"])
     properties = mappings["properties"]
-    for field in target.TARGET_MAPPING_ADDITIONS:
-        assert field not in properties, (
-            f"{field} is in the live mapping but _INDEX_VERSION is still {_INDEX_VERSION} — "
-            "the field and the bump must land together"
+    for field, definition in target.TARGET_MAPPING_ADDITIONS.items():
+        assert properties.get(field) == definition, (
+            f"{field} is missing from the live mapping (or differs from the pinned shape) "
+            f"while _INDEX_VERSION is {_INDEX_VERSION} — one reindex was supposed to carry "
+            f"all of it"
         )
+    assert mappings["_meta"]["version"] == target.TARGET_INDEX_VERSION
+
+
+def test_the_ingest_pipeline_embeds_the_contextualized_field():
+    """The other half of the v6 bump, and the reason it needs the reindex.
+
+    Repointing ``field_map`` changes what future documents embed; existing documents
+    keep vectors built from the old field until they are rebuilt. #401 is what makes the
+    repoint reach an upgraded deployment at all — the drift check compares ``field_map``,
+    so a live pipeline is recreated rather than left silently embedding ``content``.
+    """
+    from app.services.search.indexing_service import _build_neural_ingest_pipeline
+
+    processor = _build_neural_ingest_pipeline("model-1")["processors"][0]["text_embedding"]
+    assert processor["field_map"] == {"embedding_text": "embedding"}
+    assert "embedding_text" in target.TARGET_MAPPING_ADDITIONS, (
+        "the pipeline reads a field the mapping does not declare"
+    )
 
 
 def test_doc_type_is_mapped_explicitly_as_keyword():

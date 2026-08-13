@@ -12,6 +12,7 @@ from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import CPUPriority
 from app.core.redis import get_redis
+from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,11 @@ def _get_indexed_uuids() -> set[str] | None:
             index=index_name,
             body={
                 "size": 0,
+                # Addendum G4: "is this file indexed?" must mean "does it have
+                # CHUNKS?". Counting any document per file_uuid makes a
+                # digest-only file — what a partially failed rebuild leaves —
+                # look indexed, so auto-repair never fires for it.
+                "query": {"bool": {"filter": [chunk_plane_clause()]}},
                 "aggs": {
                     "file_uuids": {
                         "terms": {

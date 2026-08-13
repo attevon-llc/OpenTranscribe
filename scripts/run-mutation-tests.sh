@@ -117,6 +117,122 @@ declare -A MODULE_TESTS=(
     [session]="tests/unit/test_session_lifetime.py tests/unit/test_auth_state_degradation.py tests/unit/test_oidc_state_single_use.py"
 )
 
+
+# Warn when a target's cached mutmut verdicts were produced by a DIFFERENT test list.
+#
+# mutmut keeps results in backend/mutants/ and reuses them across runs, so the report can
+# mix records from a previous run with this one. That matters the moment MODULE_TESTS
+# changes: after widening lockout's list from 56% to 80% coverage, the report still listed
+# survivors recorded under the old list -- including one ("a locked account reports NOT
+# locked") that the widened suite demonstrably kills. A cached survivor from a weaker test
+# set reads exactly like a real finding: the same trap as an incomplete list, one level up.
+#
+# A function rather than inline code so it is testable without a 30-90 minute run.
+# Args: $1 = module key, $2 = the test list, $3 = cache dir, $4 = mutants dir.
+# Echoes "stale" when the results must not be trusted, "" otherwise. Always rewrites the
+# fingerprint, so the warning fires once per change and not forever after.
+warn_if_test_list_changed() {
+    local key=$1 tests=$2 out_dir=$3 mutants_dir=$4
+    local tests_hash prev_hash hash_file
+    tests_hash=$(printf '%s' "$tests" | sha256sum | cut -c1-16)
+    hash_file="$out_dir/$key.testhash"
+    prev_hash=$(cat "$hash_file" 2>/dev/null || true)
+    printf '%s' "$tests_hash" > "$hash_file"
+    if [[ -n "$prev_hash" && "$prev_hash" != "$tests_hash" && -d "$mutants_dir" ]]; then
+        echo stale
+    fi
+}
+
+
+# Verify ONE claimed survivor by applying its mutation to the real source and running the
+# module's tests. This exists because mutmut's own verdict has been wrong here.
+#
+# `app.auth.lockout.x__check_and_record_attempt_memory__mutmut_13` turns
+# `return True, locked_until_dt` into `return False, ...` -- a locked account reporting NOT
+# locked -- and mutmut recorded it as SURVIVED. Applied directly to app/auth/lockout.py it
+# fails `test_lockout_atomicity.py::test_locked_account_short_circuits_without_writing`
+# immediately. So the survivor list has false positives from a THIRD mechanism, after the
+# incomplete test list and the stale cache: mutmut's own per-mutant environment and test
+# selection. The coverage pre-flight cannot see this one, because it measures coverage
+# OUTSIDE mutmut.
+#
+# A survivor is a claim about the test suite. This turns it into a checked claim. Only
+# single-line mutations are handled, and a non-unique or multi-line diff is reported as
+# UNVERIFIABLE rather than guessed at.
+verify_survivor() {
+    local mutant=$1 module_key=$2
+    local path tests backup rc out
+    path="${MODULE_PATH[$module_key]:-}"
+    tests="${MODULE_TESTS[$module_key]:-}"
+    if [[ -z "$path" ]]; then
+        echo "UNVERIFIABLE  unknown module key '$module_key'"; return 2
+    fi
+
+    backup=$(mktemp)
+    cp "$BACKEND/$path" "$backup"
+
+    # The hunk is applied via its CONTEXT lines, not by line number: mutmut prints the
+    # diff relative to the mutated FUNCTION, so `@@ -24,7 +24,7 @@` is not a file offset.
+    # Context also disambiguates a changed line that occurs more than once -- e.g.
+    # `return True, locked_until_dt` appears twice in lockout.py, and a bare
+    # search-and-replace either picks the wrong one or gives up.
+    out=$("$VENV_BIN/mutmut" show "$mutant" 2>/dev/null | MUT_TARGET="$BACKEND/$path" \
+        "$VENV_BIN/python" -c '
+import os, pathlib, sys
+
+show = sys.stdin.read().splitlines()
+old, new = [], []
+for line in show:
+    if line.startswith(("---", "+++", "@@", "#")):
+        continue
+    if line.startswith("-"):
+        old.append(line[1:])
+    elif line.startswith("+"):
+        new.append(line[1:])
+    else:
+        old.append(line[1:] if line.startswith(" ") else line)
+        new.append(line[1:] if line.startswith(" ") else line)
+
+if not old or old == new:
+    print("NODIFF"); raise SystemExit(0)
+
+old_block, new_block = "\n".join(old), "\n".join(new)
+target = pathlib.Path(os.environ["MUT_TARGET"])
+source = target.read_text()
+count = source.count(old_block)
+if count != 1:
+    print(f"AMBIGUOUS {count}"); raise SystemExit(0)
+target.write_text(source.replace(old_block, new_block))
+print("APPLIED")
+')
+
+    case "$out" in
+        APPLIED) : ;;
+        NODIFF)
+            cp "$backup" "$BACKEND/$path"; rm -f "$backup"
+            echo "UNVERIFIABLE  $mutant (mutmut show produced no usable diff)"; return 2 ;;
+        *)
+            cp "$backup" "$BACKEND/$path"; rm -f "$backup"
+            echo "UNVERIFIABLE  $mutant (context block matched ${out#AMBIGUOUS } times)"; return 2 ;;
+    esac
+
+    ( cd "$BACKEND" && env "${GATES[@]}" "$VENV_BIN/python" -m pytest $tests \
+        -o addopts= -p no:cacheprovider -q --no-header >/dev/null 2>&1 )
+    rc=$?
+    cp "$backup" "$BACKEND/$path"
+    rm -f "$backup"
+
+    if [[ $rc -eq 0 ]]; then
+        echo "SURVIVED      $mutant  (confirmed: the suite does not notice)"
+        return 1
+    fi
+    # Two ways to get here, and the message must not pick one: mutmut's verdict can be
+    # wrong, or the suite can have gained a test since the run. --verify always uses the
+    # CURRENT suite, which is the question worth answering either way.
+    echo "KILLED        $mutant  (the CURRENT suite catches it -- the recorded survivor verdict is stale or wrong)"
+    return 0
+}
+
 # Same set scripts/run-backend-tests.sh --gated enables. Mandatory here: three of the
 # test files above are behind a module-level skipif, and a skipped test cannot kill a
 # mutant — an ungated run would report their mutants as survivors.
@@ -160,6 +276,7 @@ while [[ $# -gt 0 ]]; do
         --results) MODE=results ;;
         --clean)   MODE=clean ;;
         --show)    MODE=show; SHOW_ID="${2:-}"; shift ;;
+        --verify)  MODE=verify; SHOW_ID="${2:-}"; shift ;;
         # Refuse a second --module rather than silently keeping the last one. Passing
         # `--module lockout --module session` looked like it ran both and ran only session,
         # so the missing module read as "no findings there" — the same silently-dropped-work
@@ -281,6 +398,30 @@ if [[ "$MODE" == show ]]; then
     exec "$VENV_BIN/mutmut" show "$SHOW_ID"
 fi
 
+if [[ "$MODE" == verify ]]; then
+    # Turn a claimed survivor into a CHECKED claim. See verify_survivor's comment for the
+    # mutant whose verdict was wrong and prompted this.
+    [[ -n "$SHOW_ID" ]] || {
+        echo -e "${RED}--verify needs a mutant id, e.g.${NC}" >&2
+        echo -e "${RED}  --verify app.auth.lockout.x__check_and_record_attempt_memory__mutmut_13${NC}" >&2
+        exit 2
+    }
+    # Derive the module key from the mutant id so the caller cannot pair a mutant with the
+    # wrong module's test list — which would silently verify against the wrong suite.
+    verify_key=""
+    for k in "${!MODULE_PATH[@]}"; do
+        dotted="${MODULE_PATH[$k]%.py}"; dotted="${dotted//\//.}"
+        case "$SHOW_ID" in "$dotted".*) verify_key="$k" ;; esac
+    done
+    [[ -n "$verify_key" ]] || {
+        echo -e "${RED}Cannot tell which configured module '$SHOW_ID' belongs to.${NC}" >&2
+        exit 2
+    }
+    echo -e "${BLUE}Verifying against MODULE_TESTS[$verify_key]${NC}"
+    verify_survivor "$SHOW_ID" "$verify_key"
+    exit $?
+fi
+
 if [[ "$MODE" == clean ]]; then
     # Deletes ONLY backend/mutants/ and the mutmut cache, both generated and
     # gitignored. Deliberately not automatic after a run: --results and --show read
@@ -316,31 +457,6 @@ fi
 
 $DRY_RUN || check_preconditions || exit 1
 echo
-
-# Warn when a target's cached mutmut verdicts were produced by a DIFFERENT test list.
-#
-# mutmut keeps results in backend/mutants/ and reuses them across runs, so the report can
-# mix records from a previous run with this one. That matters the moment MODULE_TESTS
-# changes: after widening lockout's list from 56% to 80% coverage, the report still listed
-# survivors recorded under the old list -- including one ("a locked account reports NOT
-# locked") that the widened suite demonstrably kills. A cached survivor from a weaker test
-# set reads exactly like a real finding: the same trap as an incomplete list, one level up.
-#
-# A function rather than inline code so it is testable without a 30-90 minute run.
-# Args: $1 = module key, $2 = the test list, $3 = cache dir, $4 = mutants dir.
-# Echoes "stale" when the results must not be trusted, "" otherwise. Always rewrites the
-# fingerprint, so the warning fires once per change and not forever after.
-warn_if_test_list_changed() {
-    local key=$1 tests=$2 out_dir=$3 mutants_dir=$4
-    local tests_hash prev_hash hash_file
-    tests_hash=$(printf '%s' "$tests" | sha256sum | cut -c1-16)
-    hash_file="$out_dir/$key.testhash"
-    prev_hash=$(cat "$hash_file" 2>/dev/null || true)
-    printf '%s' "$tests_hash" > "$hash_file"
-    if [[ -n "$prev_hash" && "$prev_hash" != "$tests_hash" && -d "$mutants_dir" ]]; then
-        echo stale
-    fi
-}
 
 FAILED=()
 #: Percent of the target module the SELECTED tests must execute before survivors mean

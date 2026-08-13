@@ -23,6 +23,7 @@ Two regressions are pinned here:
 from __future__ import annotations
 
 import json
+import threading
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -381,3 +382,153 @@ def test_ttl_outlives_the_maximum_lockout(monkeypatch):
 
     ttl_seconds = int(fake.cas_calls[0]["ttl"])
     assert ttl_seconds > settings.ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES * 60
+
+
+# ---------------------------------------------------------------------------
+# The IN-MEMORY path — i.e. what lockout does while Redis is DOWN.
+#
+# Every test above drives `_check_and_record_attempt_redis`, because `_FakeRedis` has a
+# `pipeline` attribute and `check_and_record_attempt` dispatches on exactly that. So the
+# fallback branch that runs during a Redis outage had no test at all, and mutation testing
+# says so plainly: turning its locked-account short-circuit from
+# `return True, locked_until_dt` into `return False, ...` — a locked account reporting NOT
+# locked — survives the whole suite
+# (`app.auth.lockout.x__check_and_record_attempt_memory__mutmut_13`).
+#
+# That is the branch an attacker gets for free the moment Redis is unavailable, and it is
+# the branch this project's own degradation design says must keep working. `_FakeMemoryStore`
+# deliberately has NO `pipeline`, which is the whole mechanism for reaching it.
+# ---------------------------------------------------------------------------
+
+
+class _FakeMemoryStore:
+    """The in-memory store's contract as `_check_and_record_attempt_memory` uses it.
+
+    Reaches into `_lock` and `_data` directly, exactly as the production code does — so if
+    that coupling is ever cleaned up, these tests break loudly rather than silently
+    exercising nothing. No `pipeline` attribute: that absence is what routes
+    `check_and_record_attempt` down the memory branch.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._data: dict[str, str] = {}
+
+
+def _use_memory(monkeypatch) -> _FakeMemoryStore:
+    store = _FakeMemoryStore()
+    monkeypatch.setattr(lockout, "_redis_client", None)
+    monkeypatch.setattr(lockout, "_in_memory_store", store)
+    monkeypatch.setattr(lockout, "_store_initialized", True)
+    assert not hasattr(store, "pipeline"), "a `pipeline` attribute would divert to Redis"
+    return store
+
+
+def _memory_record(store: _FakeMemoryStore, identifier: str) -> dict:
+    return json.loads(store._data[lockout._lockout_key(identifier)])
+
+
+def test_memory_path_is_the_one_under_test(monkeypatch):
+    """Guard the guard: prove these tests reach the memory branch, not Redis.
+
+    Without this, a future change to the dispatch condition would silently send every test
+    below back through the Redis path — they would all still pass, and the fallback would be
+    untested again with nothing to say so.
+    """
+    store = _use_memory(monkeypatch)
+    called: list[str] = []
+    real = lockout._check_and_record_attempt_memory
+
+    def _spy(*args, **kwargs):
+        called.append("memory")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(lockout, "_check_and_record_attempt_memory", _spy)
+    lockout.check_and_record_attempt("dispatch@example.com", success=False)
+
+    assert called == ["memory"]
+    assert store._data, "the memory store was not written to"
+
+
+def test_memory_threshold_reached_locks_the_account(monkeypatch):
+    store = _use_memory(monkeypatch)
+
+    results = [
+        lockout.check_and_record_attempt("mem-threshold@example.com", success=False)
+        for _ in range(3)
+    ]
+
+    assert [locked for locked, _ in results] == [False, False, True]
+    assert results[-1][1] is not None
+    assert _memory_record(store, "mem-threshold@example.com")["failed_attempts"] == 3
+
+
+def test_memory_locked_account_stays_locked_and_is_not_bumped(monkeypatch):
+    """THE mutation finding: a locked account must still report locked with Redis down.
+
+    Also asserts the counter is not incremented, so a locked-out attacker cannot extend
+    their own lockout indefinitely — and, more importantly, so that the short-circuit is
+    proven to happen BEFORE the write rather than merely returning the right flag.
+    """
+    store = _use_memory(monkeypatch)
+    identifier = "mem-locked@example.com"
+
+    for _ in range(3):
+        lockout.check_and_record_attempt(identifier, success=False)
+    attempts_when_locked = _memory_record(store, identifier)["failed_attempts"]
+
+    is_locked, unlock_time = lockout.check_and_record_attempt(identifier, success=False)
+
+    assert is_locked is True
+    assert unlock_time is not None
+    assert _memory_record(store, identifier)["failed_attempts"] == attempts_when_locked
+
+
+def test_memory_successful_login_clears_the_counter(monkeypatch):
+    """`record.failed_attempts = 0` on success — not 1, and not left alone.
+
+    A mutation setting it to 1 means one failure is remembered across a successful login, so
+    the account locks a step early forever after. Nothing observed that on this path.
+    """
+    store = _use_memory(monkeypatch)
+    identifier = "mem-success@example.com"
+
+    lockout.check_and_record_attempt(identifier, success=False)
+    lockout.check_and_record_attempt(identifier, success=False)
+    assert _memory_record(store, identifier)["failed_attempts"] == 2
+
+    is_locked, unlock_time = lockout.check_and_record_attempt(identifier, success=True)
+
+    assert (is_locked, unlock_time) == (False, None)
+    record = _memory_record(store, identifier)
+    assert record["failed_attempts"] == 0
+    assert record["locked_until"] is None
+    assert record["first_failed_attempt"] is None
+    assert record["last_failed_attempt"] is None
+
+
+def test_memory_expired_lockout_resets_attempts_but_keeps_the_lockout_count(monkeypatch):
+    """Expiry must clear the counter and KEEP `lockout_count`.
+
+    `lockout_count` drives progressive duration, so losing it on expiry hands a repeat
+    attacker the shortest lockout every time — the escalation silently stops escalating.
+    """
+    store = _use_memory(monkeypatch)
+    identifier = "mem-expired@example.com"
+
+    for _ in range(3):
+        lockout.check_and_record_attempt(identifier, success=False)
+    locked_record = _memory_record(store, identifier)
+    assert locked_record["lockout_count"] == 1
+
+    # Rewind the stored unlock time so the lockout has expired.
+    expired = lockout.LockoutRecord.from_dict(locked_record)
+    expired.set_locked_until(datetime.now(UTC) - timedelta(minutes=1))
+    store._data[lockout._lockout_key(identifier)] = json.dumps(expired.to_dict())
+
+    is_locked, _ = lockout.check_and_record_attempt(identifier, success=False)
+
+    record = _memory_record(store, identifier)
+    assert is_locked is False, "an expired lockout must not still report locked"
+    assert record["failed_attempts"] == 1, "the counter restarts at this attempt"
+    assert record["lockout_count"] == 1, "progressive escalation state must survive expiry"

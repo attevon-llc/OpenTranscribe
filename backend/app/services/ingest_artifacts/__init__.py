@@ -17,6 +17,12 @@ from .keyphrases import extract_keyphrases
 from .provenance import char_range_provenance
 from .provenance import segment_provenance
 from .provenance import validate_provenance
+from .recorded_date import DateCandidate
+from .recorded_date import Resolution
+from .recorded_date import resolve as resolve_recorded_date
+from .recorded_date_service import apply_resolution
+from .recorded_date_service import resolve_for_file as resolve_recorded_date_for_file
+from .recorded_date_service import set_manual_date
 from .service import GENERATOR_VERSION
 from .service import build_artifacts
 from .service import generate_file_artifacts
@@ -28,6 +34,9 @@ __all__ = [
     "DOC_TYPE_FIELD",
     "GENERATOR_VERSION",
     "TARGET_INDEX_VERSION",
+    "DateCandidate",
+    "Resolution",
+    "apply_resolution",
     "build_artifacts",
     "build_digest",
     "build_digest_documents",
@@ -38,7 +47,10 @@ __all__ = [
     "extract_keyphrases",
     "generate_file_artifacts",
     "load_ordered_segments",
+    "resolve_recorded_date",
+    "resolve_recorded_date_for_file",
     "segment_provenance",
+    "set_manual_date",
     "source_fingerprint",
     "validate_provenance",
 ]

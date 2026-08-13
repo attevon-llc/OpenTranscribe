@@ -31,7 +31,7 @@ from app.services.chat.aggregation import buckets
 from app.services.chat.aggregation import choose_shape
 from app.services.chat.aggregation import extract_subject
 from app.services.chat.aggregation import subject_clause
-from app.services.chat.aggregation_service import _temporal_range
+from app.services.chat.aggregation_service import _temporal_bounds
 from app.services.chat.aggregation_service import answer_aggregation
 from app.services.chat.router import TemporalHint
 from app.services.chat.router import route
@@ -232,19 +232,27 @@ def test_the_bucket_ceiling_clears_the_scope_cap():
 @pytest.mark.parametrize(
     ("hint", "expected"),
     [
-        (TemporalHint(year=2025, month=3), {"gte": "2025-03-01", "lt": "2025-04-01"}),
-        (TemporalHint(year=2025, month=12), {"gte": "2025-12-01", "lt": "2026-01-01"}),
-        (TemporalHint(year=2025), {"gte": "2025-01-01", "lt": "2026-01-01"}),
+        (TemporalHint(year=2025, month=3), ("2025-03-01", "2025-04-01")),
+        (TemporalHint(year=2025, month=12), ("2025-12-01", "2026-01-01")),
+        (TemporalHint(year=2025), ("2025-01-01", "2026-01-01")),
     ],
 )
-def test_an_absolute_date_becomes_a_half_open_range(hint, expected):
-    assert _temporal_range(hint) == {"range": {"upload_time": expected}}
+def test_an_absolute_date_becomes_a_half_open_period(hint, expected):
+    """Bounds, no longer an OpenSearch ``range`` on ``upload_time``.
+
+    The filter moved to Postgres against ``media_file.recorded_date`` (#403 R7): the
+    index lags a user's correction by a reindex, and "when was this recorded" is not
+    "when was this uploaded" — on the eval corpus ``upload_time`` had ONE distinct
+    value across 432 files. ``_temporal_bounds`` is now the pure half and the query
+    lives in ``_files_in_period``.
+    """
+    assert _temporal_bounds(hint) == expected
 
 
 @pytest.mark.parametrize("hint", [None, TemporalHint(relative="most-recent")])
 def test_a_relative_hint_produces_no_filter(hint):
     """ "Recent" has no agreed definition; an invented one is invisible to the user."""
-    assert _temporal_range(hint) is None
+    assert _temporal_bounds(hint) is None
 
 
 # -------------------------------------------------------- the OpenSearch bodies
@@ -300,17 +308,40 @@ def test_the_list_shape_returns_the_file_uuids_sorted():
     assert result.file_uuids == ("a", "b", "c")
 
 
-def test_a_temporal_question_puts_the_date_in_the_filter():
+def test_a_temporal_question_declines_when_the_date_filter_cannot_be_resolved():
+    """No session means no ``recorded_date`` lookup, so the period cannot be applied.
+
+    Answering anyway would return the count for *every* month under a question that
+    named one — a number from the wrong mechanism, which base rule 10 then instructs
+    the model to report exactly. Declining drops the turn to ranked excerpts, which is
+    the standing rule for every shape in this module.
+
+    This asserted the opposite before #403 R7: it checked that an ``upload_time``
+    range reached the OpenSearch body. That filter was on the *upload* date, so on any
+    back-catalogue import it answered a different question than the one asked.
+    """
     question = "How many meetings in March 2025 discussed the Atlas migration?"
+    client = _RecordingClient(_file_agg("f1"))
+    assert (
+        answer_aggregation(question, route(question), db=None, client=client, index="i", user_id=7)
+        is None
+    )
+
+
+def test_a_question_with_no_period_still_answers_without_a_database():
+    """The control: the decline above must be caused by the PERIOD, not by ``db=None``.
+
+    Without this, deleting the date-filter branch entirely would leave the test above
+    green (a shape that always declines declines here too) and the suite would report a
+    working guard over removed code.
+    """
+    question = "How many meetings discussed the Atlas migration?"
     client = _RecordingClient(_file_agg("f1"))
     result = answer_aggregation(
         question, route(question), db=None, client=client, index="i", user_id=7
     )
     assert result is not None
-    assert {"range": {"upload_time": {"gte": "2025-03-01", "lt": "2025-04-01"}}} in (
-        client.bodies[0]["query"]["bool"]["filter"]
-    )
-    assert result.coverage["date_filter"] == "upload_time"
+    assert result.coverage["date_filter"] is None
 
 
 # ---------------------------------------------------------------- speaker facet

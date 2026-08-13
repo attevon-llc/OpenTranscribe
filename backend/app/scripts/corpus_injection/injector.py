@@ -54,12 +54,43 @@ from app.scripts.corpus_injection import rows as rowbuild
 from app.scripts.corpus_injection.model import InjectionRecord
 from app.scripts.corpus_injection.model import MeetingDoc
 from app.scripts.corpus_injection.timings import resolve_timings
+from app.services.ingest_artifacts.date_sources import from_filename
+from app.services.ingest_artifacts.recorded_date import resolve as resolve_recorded_date
+from app.services.ingest_artifacts.recorded_date_service import apply_resolution
 
 logger = logging.getLogger(__name__)
 
 RAG_EVAL_KEY = rowbuild.RAG_EVAL_KEY
 
 TurnRows = list[dict[str, object]]
+
+
+def _refresh_recorded_date(media_file: MediaFile, doc: MeetingDoc) -> None:
+    """Resolve this row's recording date through the SAME resolver a real upload uses.
+
+    The corpus record is this row's container — it has no media, so nothing else can play
+    that part — and the filename is consulted too. Both go through
+    ``services/ingest_artifacts.resolve``, so the injector picks no winner of its own and
+    the precedence rule stays in one place.
+
+    ⚠️ **This is the injector writing what ingest would write, not the product reading eval
+    metadata.** The date is also in ``metadata_important['rag_eval']``, and no product code
+    may read it there: a retrieval or aggregation path consulting that block would be
+    scoring the corpus against its own answer key, and the number would measure nothing.
+    The product only ever reads ``media_file.recorded_date``.
+
+    Without this, every injected meeting is dated to the injection run — ``upload_time``
+    had exactly ONE distinct value across all 432 files while the meetings span a year.
+    """
+    apply_resolution(
+        media_file,
+        resolve_recorded_date(
+            [
+                rowbuild.recorded_date_candidate(doc),
+                from_filename(media_file.filename),
+            ]
+        ),
+    )
 
 
 def _upsert_media_file(
@@ -83,6 +114,8 @@ def _upsert_media_file(
     media_file.summary_status = "not_configured"
     media_file.metadata_important = rowbuild.eval_metadata(doc, seed, tool_version, digest)
     media_file.storage_path = media_file.storage_path or "pending"
+
+    _refresh_recorded_date(media_file, doc)
 
     if existing is None:
         db.add(media_file)
@@ -159,6 +192,21 @@ def inject_meeting(
 
     existing = db.execute(select(MediaFile).where(MediaFile.uuid == file_uuid)).scalar_one_or_none()
     if existing is not None and not force and _is_unchanged(db, existing, digest):
+        # The skip path still refreshes the recorded date, and deliberately nothing else.
+        #
+        # "Unchanged" is a statement about the meeting's CONTENT — the segment hash. It is
+        # not a statement about the row's derived metadata, which can gain a field the row
+        # predates: `recorded_date` is exactly that, added in v390. Without this, a corpus
+        # injected before v390 could never acquire its dates except through `--force`,
+        # which deletes and reinserts every segment and therefore re-chunks and re-indexes
+        # the file. For an eval corpus that is the expensive answer AND the dangerous one:
+        # it moves segment ids and chunk boundaries, so every retrieval baseline measured
+        # against the previous injection stops being comparable.
+        #
+        # Writing it here touches no segment, dispatches no indexing, and leaves the
+        # OpenSearch index untouched — the date filter reads Postgres.
+        _refresh_recorded_date(existing, doc)
+        db.flush()
         _, turn_rows, nudged = rowbuild.build_segment_rows(doc, seed, media_file_id=existing.id)
         stored = int(
             db.scalar(

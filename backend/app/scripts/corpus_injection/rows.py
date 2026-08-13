@@ -14,10 +14,13 @@ Everything here is deterministic in ``(corpus, meeting_id, seed)``.
 
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
+from app.core.enums import RecordedDateSource
 from app.scripts.corpus_injection import ids
 from app.scripts.corpus_injection.model import MeetingDoc
+from app.services.ingest_artifacts.recorded_date import DateCandidate
 
 #: Step used to separate two segments that would otherwise be identical under
 #: ``uq_transcript_segment_content``. See :func:`separate_duplicate_spans`.
@@ -71,6 +74,43 @@ def eval_metadata(doc: MeetingDoc, seed: str, tool_version: str, digest: str) ->
             **doc.extra,
         }
     }
+
+
+def recorded_date_candidate(doc: MeetingDoc) -> DateCandidate | None:
+    """The meeting's own date, as a ``container`` observation — or ``None``.
+
+    **This is the injector doing what ingest does, not the product reading eval
+    metadata**, and the distinction is the whole reason this function is here rather
+    than in a service. A real upload's recording date comes out of the container
+    headers; a row with no media has no container, and the corpus record *is* the
+    artifact the date ships in. Writing it at injection time is the analogue of ffprobe
+    running at upload time.
+
+    ⚠️ **No product code may read ``metadata_important['rag_eval']['date']``.** That
+    block is the evaluation harness's gold source, and a retrieval or aggregation path
+    consulting it would be scoring the corpus against its own answer key — the number
+    would measure nothing. The date reaches the product the same way a real file's
+    does: through ``media_file.recorded_date``, stamped here, with its provenance.
+
+    Returns ``None`` for a corpus that carries no date, which is most of them —
+    QMSum's meetings are undated, and they must stay that way rather than acquiring an
+    invented one.
+    """
+    raw = str(doc.extra.get("date") or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.date.fromisoformat(raw)
+    except ValueError:
+        # A corpus whose date field is not an ISO date is a corpus we cannot date. Say
+        # nothing rather than guess a format — the same rule the filename source follows.
+        return None
+    return DateCandidate(
+        source=RecordedDateSource.CONTAINER,
+        date=datetime.datetime(parsed.year, parsed.month, parsed.day, tzinfo=datetime.UTC),
+        confidence=1.0,
+        evidence=f"{doc.corpus} corpus record: date={raw}",
+    )
 
 
 def separate_duplicate_spans(rows: list[dict[str, Any]]) -> int:

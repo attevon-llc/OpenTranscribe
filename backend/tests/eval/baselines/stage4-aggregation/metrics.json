@@ -5,7 +5,7 @@
       "answerer": "product",
       "hybrid_aggs": "never — OpenSearch 3.4 crashes on aggs over a hybrid body",
       "is_production_path": true,
-      "known_limitation": "the temporal filter is a range on upload_time, the only date this application records. Injected corpus files carry their meeting date in metadata_important, which no product code reads, so date-filtered questions are expected to score 0 here until a recorded-date column exists.",
+      "known_limitation": "the temporal filter resolves media_file.recorded_date in Postgres (v390), not upload_time, so date-scoped questions are answered on when the meeting happened. What this corpus does NOT measure: recorded_date is written here by the injector from the corpus record — the analogue of a container creation_time — because these meetings encode their date in neither their title, their filename, nor their dialogue. The filename and transcript extractors are therefore UNEXERCISED by this score and rest entirely on their unit tests. A file whose date no source knows is excluded from the filter and counted in coverage.undated_files_excluded, so a count here is a floor over any corpus that is not fully dated.",
       "llm_required": false,
       "shapes": [
         "count_files",
@@ -93,11 +93,11 @@
         "query_id": "synthetic:ag-00004",
         "rule": "R7-agg-temporal-count",
         "scores": {
-          "EM": 0.0,
+          "EM": 1.0,
           "answered": 1.0,
-          "partial": 0.0
+          "partial": 1.0
         },
-        "submitted": 0
+        "submitted": 2
       },
       {
         "gold": 4,
@@ -180,11 +180,11 @@
         "query_id": "synthetic:ag-00009",
         "rule": "R7-agg-temporal-count",
         "scores": {
-          "EM": 0.0,
+          "EM": 1.0,
           "answered": 1.0,
-          "partial": 0.0
+          "partial": 1.0
         },
-        "submitted": 0
+        "submitted": 4
       },
       {
         "gold": 10,
@@ -269,11 +269,11 @@
         "query_id": "synthetic:ag-00014",
         "rule": "R7-agg-temporal-count",
         "scores": {
-          "EM": 0.0,
+          "EM": 1.0,
           "answered": 1.0,
-          "partial": 0.0
+          "partial": 1.0
         },
-        "submitted": 0
+        "submitted": 2
       },
       {
         "gold": 9,
@@ -356,11 +356,11 @@
         "query_id": "synthetic:ag-00019",
         "rule": "R7-agg-temporal-count",
         "scores": {
-          "EM": 0.0,
+          "EM": 1.0,
           "answered": 1.0,
-          "partial": 0.0
+          "partial": 1.0
         },
-        "submitted": 0
+        "submitted": 3
       }
     ],
     "rows": [
@@ -368,9 +368,9 @@
         "corpus": "synthetic",
         "license_tier": "A",
         "metrics": {
-          "EM": 0.8,
+          "EM": 1.0,
           "answered": 1.0,
-          "partial": 0.8
+          "partial": 1.0
         },
         "queries": 20,
         "query_class": "aggregation",
@@ -448,9 +448,9 @@
         "corpus": "synthetic",
         "license_tier": "A",
         "metrics": {
-          "EM": 0.0,
+          "EM": 1.0,
           "answered": 1.0,
-          "partial": 0.0
+          "partial": 1.0
         },
         "queries": 4,
         "query_class": "aggregation",

@@ -4908,5 +4908,22 @@
   "chat.warnings.proceed": "Use it anyway",
   "chat.composer.charCount": "{{count}} / {{max}}",
   "chat.composer.tooLong": "Too long — keep it under {{max}} characters",
-  "gallery.bulk.chatTruncated": "Using the first {{used}} of {{total}} recordings — that is the maximum per chat."
+  "gallery.bulk.chatTruncated": "Using the first {{used}} of {{total}} recordings — that is the maximum per chat.",
+  "metadata.recordedDate": "Recorded",
+  "provenance.source.container": "from file metadata",
+  "provenance.source.filename": "from filename",
+  "provenance.source.transcript": "from the transcript",
+  "provenance.source.llm": "from AI extraction",
+  "provenance.source.manual": "set by you",
+  "provenance.source.none": "no source found",
+  "provenance.source.unresolved": "not yet determined",
+  "provenance.sourceTooltip": "This value was derived {{source}}. Click to see every source.",
+  "provenance.conflictNote": "Sources disagree about this value. Pick the right one so answers stay accurate.",
+  "provenance.noneRecorded": "Not set",
+  "provenance.edit": "Edit",
+  "provenance.add": "Add",
+  "provenance.save": "Save",
+  "provenance.cancel": "Cancel",
+  "provenance.saving": "Saving…",
+  "provenance.saveFailed": "Could not save. Please try again."
 }

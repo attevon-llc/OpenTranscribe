@@ -28,6 +28,7 @@ from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.media import TranscriptSegmentUpdate
 from app.services.formatting_service import FormattingService
+from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
@@ -831,6 +832,20 @@ def update_media_file(
     # Track if title was updated for OpenSearch reindexing
     update_data = media_file_update.model_dump(exclude_unset=True)
     title_updated = "title" in update_data and update_data["title"] != db_file.title
+
+    # ``recorded_date`` is POPPED before the generic loop below, not handled after it.
+    # A bare ``setattr(db_file, "recorded_date", value)`` writes a date with no source,
+    # which ``ck_media_file_recorded_date_provenance`` rejects — so the whole update
+    # would fail with an IntegrityError, and the user's title edit would be lost along
+    # with their date edit. Routing it through ``set_manual_date`` is what stamps
+    # ``source='manual'`` and sets the lock that makes the correction permanent.
+    #
+    # ``exclude_unset=True`` is load-bearing here: it distinguishes "the client did not
+    # mention the date" (leave it alone) from "the client sent null" (clear the manual
+    # value and let automatic resolution run again). Without that distinction every
+    # rename would silently wipe the user's date.
+    if "recorded_date" in update_data:
+        set_manual_date(db_file, update_data.pop("recorded_date"))
 
     # Update fields
     for field, value in update_data.items():

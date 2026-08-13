@@ -4908,5 +4908,22 @@
   "chat.warnings.proceed": "Trotzdem verwenden",
   "chat.composer.charCount": "{{count}} / {{max}}",
   "chat.composer.tooLong": "Zu lang – bitte unter {{max}} Zeichen bleiben",
-  "gallery.bulk.chatTruncated": "Die ersten {{used}} von {{total}} Aufnahmen werden verwendet – mehr sind pro Chat nicht möglich."
+  "gallery.bulk.chatTruncated": "Die ersten {{used}} von {{total}} Aufnahmen werden verwendet – mehr sind pro Chat nicht möglich.",
+  "metadata.recordedDate": "Aufgenommen",
+  "provenance.source.container": "aus den Dateimetadaten",
+  "provenance.source.filename": "aus dem Dateinamen",
+  "provenance.source.transcript": "aus dem Transkript",
+  "provenance.source.llm": "aus der KI-Extraktion",
+  "provenance.source.manual": "von Ihnen festgelegt",
+  "provenance.source.none": "keine Quelle gefunden",
+  "provenance.source.unresolved": "noch nicht ermittelt",
+  "provenance.sourceTooltip": "Dieser Wert stammt {{source}}. Klicken Sie, um alle Quellen zu sehen.",
+  "provenance.conflictNote": "Die Quellen widersprechen sich. Wählen Sie die richtige, damit die Antworten korrekt bleiben.",
+  "provenance.noneRecorded": "Nicht gesetzt",
+  "provenance.edit": "Bearbeiten",
+  "provenance.add": "Hinzufügen",
+  "provenance.save": "Speichern",
+  "provenance.cancel": "Abbrechen",
+  "provenance.saving": "Wird gespeichert…",
+  "provenance.saveFailed": "Speichern fehlgeschlagen. Bitte erneut versuchen."
 }

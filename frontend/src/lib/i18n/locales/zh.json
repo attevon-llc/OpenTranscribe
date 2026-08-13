@@ -4908,5 +4908,22 @@
   "chat.warnings.proceed": "仍然使用",
   "chat.composer.charCount": "{{count}} / {{max}}",
   "chat.composer.tooLong": "太长了 — 请控制在 {{max}} 字符以内",
-  "gallery.bulk.chatTruncated": "将使用 {{total}} 个录音中的前 {{used}} 个 — 这是单次对话的上限。"
+  "gallery.bulk.chatTruncated": "将使用 {{total}} 个录音中的前 {{used}} 个 — 这是单次对话的上限。",
+  "metadata.recordedDate": "录制于",
+  "provenance.source.container": "来自文件元数据",
+  "provenance.source.filename": "来自文件名",
+  "provenance.source.transcript": "来自转录文本",
+  "provenance.source.llm": "来自 AI 提取",
+  "provenance.source.manual": "由你设置",
+  "provenance.source.none": "未找到来源",
+  "provenance.source.unresolved": "尚未确定",
+  "provenance.sourceTooltip": "此值{{source}}。点击查看所有来源。",
+  "provenance.conflictNote": "各来源对此值存在分歧。请选择正确的来源，以保证回答准确。",
+  "provenance.noneRecorded": "未设置",
+  "provenance.edit": "编辑",
+  "provenance.add": "添加",
+  "provenance.save": "保存",
+  "provenance.cancel": "取消",
+  "provenance.saving": "保存中…",
+  "provenance.saveFailed": "保存失败，请重试。"
 }

@@ -23,6 +23,7 @@ import logging
 from app.core.celery import celery_app
 from app.core.constants import NLPPriority
 from app.db.session_utils import session_scope
+from app.services.ingest_artifacts.recorded_date_service import resolve_for_file
 from app.services.ingest_artifacts.service import generate_file_artifacts
 from app.utils import benchmark_timing
 
@@ -56,15 +57,32 @@ def generate_file_facts_task(
     Returns:
         ``{"status": ..., "file_id": ..., "sections": ..., "digest_words": ...}``.
         ``status`` is ``"skipped"`` when the file has no segments — a real outcome, not a
-        failure, and one the caller must not treat as an error.
+        failure, and one the caller must not treat as an error. ``recorded_date_source`` is
+        present either way.
     """
     benchmark_timing.mark(pipeline_task_id, "file_facts_start")
     try:
         with session_scope() as db:
+            # BEFORE the no-segments early return, and that ordering is the point: a file
+            # whose transcription produced nothing still has a filename and a container
+            # stamp, and those are two of the three sources. Resolving after the return
+            # would leave every failed or empty transcript permanently undated.
+            resolution = resolve_for_file(db, file_id)
+            date_source = resolution.source.value if resolution else None
+
             row = generate_file_artifacts(db, file_id, force=force)
             if row is None:
-                return {"status": "skipped", "file_id": file_id, "reason": "no_segments"}
-            result = {
+                return {
+                    "status": "skipped",
+                    "file_id": file_id,
+                    "reason": "no_segments",
+                    "recorded_date_source": date_source,
+                }
+            # Annotated: the literal's mixed value types infer as a narrow union,
+            # and dict is invariant, so returning it from a dict[str, object]
+            # function fails without this.
+            result: dict[str, object] = {
+                "recorded_date_source": date_source,
                 "status": "success",
                 "file_id": file_id,
                 "sections": int(row.section_count),

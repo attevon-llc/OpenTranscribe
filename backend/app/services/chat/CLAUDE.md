@@ -190,6 +190,24 @@ Postgres and hands over a table. Three constraints are not negotiable:
   hybrid + collapse + RRF. This is a crash, not a style rule.
 - **A truncated bucket list is refused, never reported.** An aggregation that dropped a shard's
   tail is a wrong answer that looks like a right one.
+- **The DATE filter is resolved in Postgres, not on the index** (#403 R7). `_temporal_bounds`
+  is the pure half; `_files_in_period` intersects `media_file.recorded_date` into the scope's
+  uuid list and the OpenSearch body never sees a date at all. Two reasons, both correctness:
+  the index lags a user's correction by a whole reindex — and a user-correctable date is the
+  point of `recorded_date_locked`, so an index-side filter would make the correction silently
+  not apply — and scope resolves relationally everywhere else in this package for exactly the
+  same reason. Past `CHAT_MAX_SCOPE_FILES` it **declines** rather than truncating.
+  ⚠️ It filters `recorded_date`, which means it **excludes every file that has none**, so
+  `coverage["undated_files_excluded"]` is not optional decoration: on a library the resolver
+  has not swept, the count is a floor and the user has to be told. And `coverage["date_sources"]`
+  reports WHICH source dated each counted file — "3 meetings in March, dates from filenames"
+  is checkable; a bare 3 is not.
+  This replaced a `range` on the index field named `upload_time`, which was fed
+  `(creation_date or upload_time)` — so the field lied about what it held, and on the eval
+  corpus it held one distinct value across all 432 files. `_occurrence_count` never received
+  the clause at all while `coverage` reported the filter applied; because base rule 10 tells
+  the model to report a counted block **exactly**, that over-claim became a confident wrong
+  sentence in the answer rather than a stray dict key.
 - **Occurrences are counted over segments, not chunks.** Chunking overlaps a long turn's tail into
   the next chunk, so counting occurrences over chunk documents double-counts every overlap. File
   *coverage* is fine over chunks — a file is counted once either way.

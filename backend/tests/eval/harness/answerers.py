@@ -432,11 +432,20 @@ class ProductAnswerer:
             "shapes": list(SHAPES),
             "shapes_used": dict(sorted(self.shapes.items())),
             "hybrid_aggs": "never — OpenSearch 3.4 crashes on aggs over a hybrid body",
+            # Superseded by v390 (#403 R7). Kept as a *field* rather than deleted because
+            # what it records is the scope of the claim the number supports, and that is
+            # still narrower than "date questions work" — see below.
             "known_limitation": (
-                "the temporal filter is a range on upload_time, the only date this "
-                "application records. Injected corpus files carry their meeting date in "
-                "metadata_important, which no product code reads, so date-filtered "
-                "questions are expected to score 0 here until a recorded-date column exists."
+                "the temporal filter resolves media_file.recorded_date in Postgres (v390), "
+                "not upload_time, so date-scoped questions are answered on when the meeting "
+                "happened. What this corpus does NOT measure: recorded_date is written here "
+                "by the injector from the corpus record — the analogue of a container "
+                "creation_time — because these meetings encode their date in neither their "
+                "title, their filename, nor their dialogue. The filename and transcript "
+                "extractors are therefore UNEXERCISED by this score and rest entirely on "
+                "their unit tests. A file whose date no source knows is excluded from the "
+                "filter and counted in coverage.undated_files_excluded, so a count here is "
+                "a floor over any corpus that is not fully dated."
             ),
         }
 

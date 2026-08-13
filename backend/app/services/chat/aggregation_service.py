@@ -5,7 +5,11 @@ The pure half — subject extraction, shape choice, filter construction — live
 the half that talks to OpenSearch and Postgres.
 
 Worst case for any question, at any scope: **one** ``size: 0`` search plus at
-most **one** Postgres statement. The scope itself is capped at
+most **three** Postgres statements — one to resolve a date filter to file uuids,
+one to count the in-scope files that have no recorded date, and one for the
+occurrence count. It was one until the date filter moved off the index; see
+:func:`_files_in_period` for why that move was correctness and not preference.
+The scope itself is capped at
 :data:`app.core.constants.CHAT_MAX_SCOPE_FILES` upstream, and that cap is reused
 here rather than a second one being invented.
 
@@ -21,6 +25,7 @@ import logging
 import re
 from typing import Any
 
+from app.core.enums import RecordedDateSource
 from app.services.chat.aggregation import MAX_BUCKETS
 from app.services.chat.aggregation import SHAPE_COUNT_EVENTS
 from app.services.chat.aggregation import SHAPE_SPEAKER_FACET
@@ -46,16 +51,8 @@ _MENTION_FIELDS = ("content.exact",)
 _TITLE_FIELDS = ("title",)
 
 
-def _temporal_range(hint: TemporalHint | None) -> dict[str, Any] | None:
-    """A ``range`` on ``upload_time`` for an absolute month or year.
-
-    ⚠️ **``upload_time`` is the only date this application records.** There is no
-    "recorded at" column on ``media_file`` (only ``upload_time`` and
-    ``completed_at``), so "meetings in March 2025" means *uploaded* in March
-    2025. For files ingested long after they were recorded — a back-catalogue
-    import, or the eval corpus injector — that is the wrong date, and the answer
-    will be confidently wrong rather than absent. Filed rather than papered
-    over; a real recorded-date column is the fix, not a heuristic here.
+def _temporal_bounds(hint: TemporalHint | None) -> tuple[str, str] | None:
+    """``(start, end)`` ISO dates for an absolute month or year, half-open.
 
     Relative hints ("most recent", "last quarter") return ``None``: they need a
     reference clock and a definition of "recent" that nobody has agreed, and
@@ -64,13 +61,101 @@ def _temporal_range(hint: TemporalHint | None) -> dict[str, Any] | None:
     if hint is None or hint.year is None:
         return None
     if hint.month is None:
-        start, end = f"{hint.year:04d}-01-01", f"{hint.year + 1:04d}-01-01"
-    else:
-        year, month = hint.year, hint.month
-        next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
-        start = f"{year:04d}-{month:02d}-01"
-        end = f"{next_year:04d}-{next_month:02d}-01"
-    return {"range": {"upload_time": {"gte": start, "lt": end}}}
+        return f"{hint.year:04d}-01-01", f"{hint.year + 1:04d}-01-01"
+    year, month = hint.year, hint.month
+    next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
+    return f"{year:04d}-{month:02d}-01", f"{next_year:04d}-{next_month:02d}-01"
+
+
+def _files_in_period(
+    db,
+    bounds: tuple[str, str],
+    user_id: int,
+    organization_id: int | None,
+    file_uuids: list[str] | None,
+) -> tuple[list[str], dict[str, int], int] | None:
+    """Accessible files whose **recorded date** falls in the period, resolved in Postgres.
+
+    ⚠️ **Not an OpenSearch ``range``, and the reason is correctness rather than
+    cost.** Two of them:
+
+    1. The index lags the truth. A user correcting a wrong date is the whole
+       point of ``recorded_date_locked``, and an index-side filter would keep
+       answering with the old date until the next reindex — the correction would
+       silently not apply, which is worse than not offering one.
+    2. It is the package's existing rule. Scope resolves relationally
+       (``context_resolver``) precisely so a stale document cannot reach a
+       prompt; a date is scope.
+
+    The result narrows the caller's ``file_uuids``, so it composes with an
+    explicit scope instead of replacing it.
+
+    **Costs two statements when a date filter applies**, not one, and the second
+    is not optional: it counts the in-scope files that have *no* recorded date.
+    Filtering on ``recorded_date`` silently excludes every undated file, so on a
+    library the resolver has not reached the honest answer is "3, and 40 more I
+    could not date" — never a bare 3. Reporting the count is what keeps this
+    change from replacing one silent wrong answer with another.
+
+    Returns:
+        ``(uuids, source_tally, undated)``, or ``None`` to **decline** — no
+        session, or more matches than
+        :data:`~app.core.constants.CHAT_MAX_SCOPE_FILES`. Declining past the cap
+        is the same rule every other shape here follows: a truncated answer is a
+        wrong answer that looks like a right one, and the cap is the one the
+        scope already uses rather than a second invented number.
+    """
+    if db is None:
+        return None
+    from sqlalchemy import func
+    from sqlalchemy import select
+
+    from app.core.constants import CHAT_MAX_SCOPE_FILES
+    from app.models.media import MediaFile
+    from app.services.permission_service import PermissionService
+
+    start, end = bounds
+    accessible = PermissionService.get_accessible_file_ids_subquery(db, user_id)
+
+    def _scoped(statement):
+        statement = statement.where(MediaFile.id.in_(select(accessible.c[0])))
+        if organization_id is not None:
+            statement = statement.where(MediaFile.organization_id == organization_id)
+        if file_uuids is not None:
+            statement = statement.where(MediaFile.uuid.in_(list(file_uuids)))
+        return statement
+
+    matched = _scoped(
+        select(MediaFile.uuid, MediaFile.recorded_date_source)
+        .where(MediaFile.recorded_date.is_not(None))
+        .where(MediaFile.recorded_date >= start)
+        .where(MediaFile.recorded_date < end)
+    )
+    # One over the cap, so "too many" is distinguishable from "exactly the cap"
+    # without counting the whole table.
+    rows = db.execute(matched.limit(CHAT_MAX_SCOPE_FILES + 1)).all()
+    if len(rows) > CHAT_MAX_SCOPE_FILES:
+        logger.info(
+            "Declining a date-filtered aggregation: %s..%s matches more than %d files",
+            start,
+            end,
+            CHAT_MAX_SCOPE_FILES,
+        )
+        return None
+
+    undated = int(
+        db.execute(
+            _scoped(select(func.count()).select_from(MediaFile)).where(
+                MediaFile.recorded_date.is_(None)
+            )
+        ).scalar()
+        or 0
+    )
+    tally: dict[str, int] = {}
+    for _uuid, source in rows:
+        key = str(source or RecordedDateSource.NONE.value)
+        tally[key] = tally.get(key, 0) + 1
+    return [str(uuid) for uuid, _source in rows], tally, undated
 
 
 def _search(client, index: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -253,19 +338,42 @@ def answer_aggregation(
         return None
 
     subject = extract_subject(question, route.temporal)
-    filters = base_filters(user_id=user_id, organization_id=organization_id, file_uuids=file_uuids)
-    date_clause = _temporal_range(route.temporal)
-    if date_clause is not None:
-        filters.append(date_clause)
-
     coverage: dict[str, Any] = {
         "scope_files": "all accessible" if file_uuids is None else len(file_uuids),
         "subject_source": "phrase" if subject else "content words",
-        "date_filter": "upload_time" if date_clause is not None else None,
+        "date_filter": None,
     }
-    if route.temporal is not None and date_clause is None and not route.temporal.is_empty:
+
+    # The date filter NARROWS THE SCOPE rather than adding an index clause, so it
+    # applies identically to every shape — including the Postgres occurrence count,
+    # which used to ignore it while ``coverage`` reported it applied. Base rule 10
+    # tells the model to report a counted block exactly, so that over-claim became a
+    # confident wrong sentence in the answer rather than a stray dict key.
+    bounds = _temporal_bounds(route.temporal)
+    if bounds is not None:
+        in_period = _files_in_period(db, bounds, user_id, organization_id, file_uuids)
+        if in_period is None:
+            # Declined — too many matches, or no session. Answering without the
+            # filter the user asked for would be a different question's answer.
+            return None
+        file_uuids, date_sources, undated = in_period
+        coverage["date_filter"] = "recorded_date"
+        coverage["date_filter_period"] = f"{bounds[0]}..{bounds[1]}"
+        # WHICH source dated each file. "3 meetings in March — dates from filenames"
+        # is a checkable claim; a bare 3 is not, and a derived date the user cannot
+        # trace is worse than no date at all.
+        coverage["date_sources"] = date_sources
+        if undated:
+            # The honesty property the old ``upload_time`` disclosure carried, kept.
+            # Filtering on a recorded date silently drops every file that has none, so
+            # the count is a floor until this number is zero — and on a library the
+            # resolver has not swept, it is most of them.
+            coverage["undated_files_excluded"] = undated
+    elif route.temporal is not None and not route.temporal.is_empty:
         # Said out loud: the user asked for a period and did not get one.
         coverage["date_filter_skipped"] = route.temporal.relative or "unresolvable"
+
+    filters = base_filters(user_id=user_id, organization_id=organization_id, file_uuids=file_uuids)
 
     try:
         if shape == SHAPE_SPEAKER_FACET:

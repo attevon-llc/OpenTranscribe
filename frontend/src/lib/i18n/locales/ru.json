@@ -4908,5 +4908,22 @@
   "chat.warnings.proceed": "Всё равно использовать",
   "chat.composer.charCount": "{{count}} / {{max}}",
   "chat.composer.tooLong": "Слишком длинно — не более {{max}} символов",
-  "gallery.bulk.chatTruncated": "Используются первые {{used}} из {{total}} записей — это максимум для одного чата."
+  "gallery.bulk.chatTruncated": "Используются первые {{used}} из {{total}} записей — это максимум для одного чата.",
+  "metadata.recordedDate": "Записано",
+  "provenance.source.container": "из метаданных файла",
+  "provenance.source.filename": "из имени файла",
+  "provenance.source.transcript": "из расшифровки",
+  "provenance.source.llm": "из извлечения ИИ",
+  "provenance.source.manual": "указано вами",
+  "provenance.source.none": "источник не найден",
+  "provenance.source.unresolved": "ещё не определено",
+  "provenance.sourceTooltip": "Это значение получено {{source}}. Нажмите, чтобы увидеть все источники.",
+  "provenance.conflictNote": "Источники расходятся в этом значении. Выберите верный, чтобы ответы оставались точными.",
+  "provenance.noneRecorded": "Не задано",
+  "provenance.edit": "Изменить",
+  "provenance.add": "Добавить",
+  "provenance.save": "Сохранить",
+  "provenance.cancel": "Отмена",
+  "provenance.saving": "Сохранение…",
+  "provenance.saveFailed": "Не удалось сохранить. Попробуйте ещё раз."
 }

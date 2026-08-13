@@ -4908,5 +4908,22 @@
   "chat.warnings.proceed": "このまま使う",
   "chat.composer.charCount": "{{count}} / {{max}}",
   "chat.composer.tooLong": "長すぎます — {{max}} 文字以内にしてください",
-  "gallery.bulk.chatTruncated": "{{total}} 件のうち最初の {{used}} 件を使用します（1 チャットの上限です）。"
+  "gallery.bulk.chatTruncated": "{{total}} 件のうち最初の {{used}} 件を使用します（1 チャットの上限です）。",
+  "metadata.recordedDate": "収録日",
+  "provenance.source.container": "ファイルのメタデータから",
+  "provenance.source.filename": "ファイル名から",
+  "provenance.source.transcript": "文字起こしから",
+  "provenance.source.llm": "AI 抽出から",
+  "provenance.source.manual": "あなたが設定",
+  "provenance.source.none": "該当する情報源なし",
+  "provenance.source.unresolved": "未判定",
+  "provenance.sourceTooltip": "この値は{{source}}取得されました。クリックすると全ての情報源を表示します。",
+  "provenance.conflictNote": "情報源が一致していません。回答を正確に保つため、正しいものを選んでください。",
+  "provenance.noneRecorded": "未設定",
+  "provenance.edit": "編集",
+  "provenance.add": "追加",
+  "provenance.save": "保存",
+  "provenance.cancel": "キャンセル",
+  "provenance.saving": "保存中…",
+  "provenance.saveFailed": "保存できませんでした。もう一度お試しください。"
 }

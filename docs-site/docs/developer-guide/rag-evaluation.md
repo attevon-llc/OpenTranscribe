@@ -371,10 +371,12 @@ gold set moves from 0 to 1 purely on who answered. Both tables are committed und
 - **The index has to be complete for it to hold.** During indexing, the same R3 query that now scores
   exact returned 3 of 12 files: the mechanism reads the index, so an incomplete index produces a
   confidently wrong count. That is the failure mode the `answered`/EM split is meant to surface.
-- **R7's month filter reads the date the injector stamped into
-  `media_file.metadata_important`**, because no recorded-date column is populated for injected
-  files. A production answerer would read a real one; this is recorded as a limitation of the
-  measurement, not presented as the production mechanism.
+- **R7's month filter, in THIS reference-answerer table, reads the date the injector stamped
+  into `media_file.metadata_important`.** That is the harness's gold source and no product code
+  may read it. Since v390 the **product** answers R7 from `media_file.recorded_date` instead —
+  a real column, written at injection time the way ingest writes it — so the product path is no
+  longer scoring against the answer key. See "The product's aggregation path" below for what
+  that number does and does not cover.
 - **The intent parser is matched to the generator's five question frames.** It recovers the subject
   phrase from a natural-language question — the phrase is never the answer — but a differently
   worded question is *declined*, and a declined query scores 0.
@@ -738,23 +740,58 @@ cost a reduced excerpt budget and nothing else.
 `tiers` on the record is what distinguishes "the tier was not asked for" from "the tier was asked
 and returned nothing" — without it, `routed_to_digest_tier` would be unreadable.
 
-### The product's aggregation path: 0.800 against an exact ceiling
+### The product's aggregation path: 0.800 -> 1.000, once it knew when meetings happened
 
 | answerer | EM | R3 count | R4 list | R5 events | R6 speaker | R7 temporal |
 |---|---|---|---|---|---|---|
 | `none` (pre-Stage-4 floor) | 0.000 | 0/4 | 0/4 | 0/4 | 0/4 | 0/4 |
-| **`product`** | **0.800** | 4/4 | 4/4 | 4/4 | 4/4 | 0/4 |
+| `product` (before v390) | 0.800 | 4/4 | 4/4 | 4/4 | 4/4 | **0/4** |
+| **`product`** (v390) | **1.000** | 4/4 | 4/4 | 4/4 | 4/4 | **4/4** |
 | `reference` (harness ceiling) | 1.000 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 |
 
 The comparison means something only because the two share **no intent parsing**: the reference's
 regexes are matched to the generator's exact question frames, while the product strips a *generic*
-interrogative frame. Four of five rules reach the ceiling.
+interrogative frame.
 
-R7 fails for a reason that is a **product gap, not a harness artefact**: `media_file` records
-`upload_time` and nothing else, so "meetings in March 2025" filters on the date a file was
-*ingested*. All 432 corpus files share one upload date and the meeting dates live in metadata no
-product code reads. Every user with a back-catalogue has this problem; it is filed, and the answer
-states the limitation rather than hiding it.
+R7 used to fail for a reason that was a **product gap, not a harness artefact**: `media_file`
+recorded `upload_time` and nothing else, so "meetings in March 2025" filtered on the date a file
+was *ingested*. All 432 corpus files shared one upload date. Every user with a back-catalogue had
+that problem. `v390_add_recorded_date_provenance` added `recorded_date` **and its source**, and
+`services/chat/aggregation_service._files_in_period` now resolves the period against it in
+Postgres.
+
+#### What the 4/4 proves, and what it does not
+
+**It proves the product filters correctly on a recorded date. It does not prove we can derive
+one.** The distinction is the whole reason this subsection exists:
+
+- On this corpus the date reaches `recorded_date` from the **corpus record**, written by the
+  injector — the analogue of a container `creation_time` for a row that has no media. That is the
+  `container` source, and it is the only one exercised here.
+- The **filename** and **transcript** sources are **not measured by this number at all**: these
+  meetings are titled `"{Team} — {kind} #{n}"`, their filenames carry no date, and the generated
+  dialogue never states one. Their only evidence is their unit tests
+  (`tests/unit/test_recorded_date_sources.py`) and the mutants those kill.
+- A file no source can date is **excluded** from the filter and reported in
+  `coverage["undated_files_excluded"]`, so a count is a **floor** over any corpus that is not
+  fully dated. Here 200 of 432 files are dated (QMSum's meetings carry no date and are left
+  undated rather than given an invented one), and the R7 gold sets live entirely in the synthetic
+  half.
+
+#### The re-injection did not move the retrieval baselines, and that was checked
+
+Writing the dates required re-running the injector, which is exactly the operation that can
+invalidate every retrieval number measured against the previous injection. It did not, and the
+evidence is three-fold rather than assumed:
+
+- the injector's **skip path** refreshes the date and nothing else, so no segment was rewritten
+  (`--force` would have deleted and reinserted all 101,620 of them, re-chunking every file);
+- the OpenSearch index was **byte-identical** before and after — `docs.count`, `docs.deleted`,
+  `store.size` and, decisively, `indexing.total` (825,795) all unchanged, i.e. **not one document
+  was written**;
+- `stage4-control` re-run over **both** corpora came back **bit-identical on all six rows**
+  (every nDCG/R/MRR to within 1e-9), and two consecutive `stage4-aggregation` runs produced
+  byte-identical `metrics.json`.
 
 ### ⚠️ A metric we replaced, and why — do not quietly drop metrics
 

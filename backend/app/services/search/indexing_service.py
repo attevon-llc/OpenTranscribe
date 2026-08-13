@@ -1256,8 +1256,26 @@ class TranscriptIndexingService:
         try:
             from app.db.session_utils import session_scope
             from app.services.ingest_artifacts import generate_file_artifacts
+            from app.services.ingest_artifacts import resolve_recorded_date_for_file
 
             with session_scope() as db:
+                # **This is the back-catalogue backfill**, and it is here rather than in a
+                # one-off script because it needs no re-ingest: the filename and the
+                # transcript are already in Postgres for every existing row, so the first
+                # reindex after this ships dates the whole library. Unlike the artifacts
+                # below it has no fingerprint short-circuit, so an unchanged file is still
+                # resolved — which is the entire point for rows that predate the column.
+                #
+                # Its own try: a date is an enrichment and the chunks are already indexed
+                # and correct. A regex failure here must not cost the digest plane, and
+                # the outer handler would report the whole digest index as failed.
+                try:
+                    resolve_recorded_date_for_file(db, file_id)
+                except Exception as date_exc:  # noqa: BLE001 — enrichment, never fatal
+                    logger.warning(
+                        "Could not resolve recorded_date for file %s: %s", file_id, date_exc
+                    )
+
                 row = generate_file_artifacts(db, file_id)
                 if row is None:
                     return 0

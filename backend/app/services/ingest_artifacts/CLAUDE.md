@@ -10,6 +10,11 @@ Turns a finished transcript into three artifacts and stores them in Postgres:
 | `digest` | a **sectioned extractive** summary; every sentence is verbatim source text with provenance | Stage 3 indexes it as `doc_type: digest`; Stage 4 cites it |
 | `keyphrases` | top-20 stopword-bounded phrases, degree/frequency scored | facets, the no-LLM overview |
 
+…and a fourth thing that is not an artifact but belongs here for the same reason:
+**`recorded_date`** — when the recording actually happened — resolved from three
+deterministic sources with **no LLM** (`recorded_date.py`, `date_sources.py`,
+`recorded_date_service.py`). See "The recorded date" below.
+
 **Nothing here calls an LLM, loads a model, or touches OpenSearch.** That is the point:
 #403 **D6** makes the `LLM_PROVIDER`-empty deployment first class, and this package is what
 gives it a summary tier at all. If you find yourself reaching for a provider in this
@@ -125,3 +130,60 @@ against the live model, with a negative control that fails if the window ever gr
   (digest sentences are verbatim transcript text, which does not contain the display name), it
   carries no single-valued `speaker` field, and it is excluded from facets and from retrieval,
   so nothing user-visible is wrong today. Stage 4 turns the digest leg on and must close this.
+
+## The recorded date (#403 R7) — and why it is five columns, not one
+
+Every date-scoped question used to filter `upload_time`, so a 2019 meeting imported today
+counted as 2026. Measured on the eval corpus: `upload_time` had **one distinct value across
+all 432 files** while the meetings spanned a year, and R7 ("how many meetings in January 2025
+discussed X") scored 0/4 for that reason alone.
+
+Three deterministic sources, in `date_sources.py`, plus a seam for a fourth:
+
+| Source | Reads | Notes |
+|---|---|---|
+| `container` | `media_file.creation_date` | ffprobe/exiftool. For a row with no media (the eval injector) the corpus record plays this role |
+| `filename` | `media_file.filename` | `2024-03-15_standup.mp4`, `Meeting Mar 15 2024.m4a`, … |
+| `transcript` | the **opening** turns | The source unique to us — we have the words |
+| `llm` | *nothing yet* | Enum value reserved so Stage 7 needs no migration |
+
+- **Every extractor declines rather than guesses, and the refusals are the behaviour.**
+  `03/04/2024` is 3 April or 4 March depending on a locale nobody told us, so it returns
+  `None`. A spoken date needs a **deictic anchor** ("today is", "recorded on") *and* to be in
+  the opening turns, or "the deadline is March the fifteenth" dates the meeting to a deadline.
+  "It's Tuesday the fifteenth" is refused outright — completing it would mean assuming the
+  recording happened near its upload, which is the assumption this whole change removes.
+- **A date never travels without its source.** `ck_media_file_recorded_date_provenance` makes
+  a bare date unrepresentable in the database, `Resolution.source` has no `None`, and the
+  Pydantic validator on `schemas.media.MediaFile` assembles `recorded_date_provenance` on
+  *every* serialisation path. That last one is not tidiness: there are **three** paths that
+  serialise a MediaFile and hand-wiring covered two — `PUT /files/{uuid}` returns the ORM row
+  straight through `response_model` and shipped an unattributed date until a test caught it.
+- **Precedence is policy, confidence is a hint, and they are separate.** `PRECEDENCE`
+  (`core/enums.py`) decides between sources; confidence only orders forms *within* one and is
+  never blended with the conflict flag — a contested high-confidence value must stay
+  distinguishable from an uncontested mediocre one.
+- **Losing candidates are kept** in `recorded_date_candidates`. Sources legitimately disagree
+  (a recording made on the 14th about the 15th's meeting is ordinary), so a conflict is
+  surfaced to the user rather than settled by whichever branch ran first.
+- **`recorded_date_locked` makes a user's correction permanent.** `resolve_for_file` returns
+  early on a locked row; only an explicit `force=True` overrides it, and no automatic path
+  passes it. Clearing the date unlocks and re-enables resolution — a mistaken edit has to be
+  retractable, and a lock at NULL would disable the resolver for that file forever.
+- **It is its own backfill.** Unlike `generate_file_artifacts` it has **no fingerprint
+  short-circuit**, and `search/indexing_service._index_digest_plane` calls it on every
+  per-file index. The filename and the transcript are already in Postgres for every existing
+  row, so the first reindex after this ships dates the back-catalogue with no re-ingest.
+
+⚠️ **`media_file.creation_date` used to lie, and this is why there is no backfill from it.**
+It was the end of a silent chain — container metadata → filesystem mtime → `upload_time` —
+that recorded no provenance, so on an existing row a real container date is indistinguishable
+from a copy of the upload date. The chain is deleted (`tasks/transcription/metadata_extractor`)
+and `creation_date` now means only "what the container said". Seeding `recorded_date` from it
+would launder `upload_time` into a column claiming to know when the meeting happened. NULL
+reads honestly as "not yet resolved"; a laundered value does not.
+
+⚠️ **Nothing in the product may read `metadata_important['rag_eval']['date']`.** That block is
+the evaluation harness's gold source. The injector writes `recorded_date` at injection time,
+exactly as ingest would; a retrieval path reading the eval block instead would be scoring the
+corpus against its own answer key.

@@ -4,13 +4,48 @@
   import { formatDuration } from '$lib/utils/formatting';
   import { authStore } from '$stores/auth';
   import { t } from '$stores/locale';
+  import axiosInstance from '../lib/axios';
+  import ProvenanceField from './ProvenanceField.svelte';
 
   export let file: MediaFileDetail | null = null;
   export let showMetadata: boolean = false;
 
+  let savingRecordedDate = false;
+  let recordedDateError = '';
 
   function toggleMetadata() {
     showMetadata = !showMetadata;
+  }
+
+  function formatDateOnly(raw: string): string {
+    return new Date(raw).toLocaleDateString();
+  }
+
+  /**
+   * Persist a user's correction. Sending `null` CLEARS it and returns the file to
+   * automatic resolution — the backend treats an explicit null as "unlock and re-derive"
+   * rather than "lock at nothing", so a mistaken edit is retractable.
+   *
+   * The response is applied back onto `file` rather than the draft being assumed
+   * correct: the server decides the source and the lock, and rendering our guess of
+   * those would put an unverified provenance on screen — the precise failure this
+   * component exists to prevent.
+   */
+  async function saveRecordedDate(event: CustomEvent<{ value: string | null }>) {
+    if (!file) return;
+    savingRecordedDate = true;
+    recordedDateError = '';
+    try {
+      const { data } = await axiosInstance.put(`/files/${file.uuid}`, {
+        recorded_date: event.detail.value
+      });
+      file = { ...file, ...data };
+    } catch (error) {
+      recordedDateError = $t('provenance.saveFailed');
+      console.error('Failed to save recorded date', error);
+    } finally {
+      savingRecordedDate = false;
+    }
   }
 
 </script>
@@ -130,6 +165,25 @@
           </div>
         {/if}
 
+        <!-- When the recording HAPPENED, with its origin and an edit control. Distinct
+             from the upload date above and from the container's "created date" below;
+             every date-scoped answer in the product now filters on this one. -->
+        <div class="metadata-item">
+          <ProvenanceField
+            label={$t('metadata.recordedDate')}
+            value={file?.recorded_date}
+            provenance={file?.recorded_date_provenance}
+            format={formatDateOnly}
+            on:save={saveRecordedDate}
+          />
+          {#if savingRecordedDate}
+            <span class="metadata-value">{$t('provenance.saving')}</span>
+          {/if}
+          {#if recordedDateError}
+            <span class="metadata-value provenance-error">{recordedDateError}</span>
+          {/if}
+        </div>
+
         <div class="metadata-item">
           <span class="metadata-label">{$t('metadata.createdDate')}:</span>
           <span class="metadata-value">{file && 'creation_date' in file && file.creation_date ? new Date(file.creation_date).toLocaleDateString() : $t('metadata.unknown')}</span>
@@ -218,6 +272,10 @@
 </div>
 
 <style>
+  .provenance-error {
+    color: var(--error-color, #c62828);
+  }
+
   .metadata-dropdown-section {
     margin-bottom: 20px;
   }

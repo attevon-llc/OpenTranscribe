@@ -34,10 +34,10 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Boolean
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
+from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
-from sqlalchemy import UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
@@ -153,8 +153,12 @@ class WatchSourceEmail(Base):
         "EmailNotificationConfig", back_populates="links"
     )
 
+    # A unique INDEX, not a UniqueConstraint: ``v366`` created it with
+    # ``CREATE UNIQUE INDEX``, so ``pg_constraint`` holds nothing by this name.
+    # Same enforcement, different object class — declaring it as a constraint made
+    # autogenerate propose dropping the index and adding a constraint on every run.
     __table_args__ = (
-        UniqueConstraint("watch_source_id", "email_config_id", name="_watch_source_email_unique"),
+        Index("_watch_source_email_unique", "watch_source_id", "email_config_id", unique=True),
     )
 
     def __repr__(self) -> str:

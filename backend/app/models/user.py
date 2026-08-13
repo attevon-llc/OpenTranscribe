@@ -3,11 +3,15 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean
+from sqlalchemy import CheckConstraint
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
+from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
+from sqlalchemy import UniqueConstraint
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
@@ -76,8 +80,12 @@ class User(Base):
     oidc_subject: Mapped[str | None] = mapped_column(
         String(255), unique=True, nullable=True, index=True
     )
+    # Uniqueness lives in __table_args__ as the PARTIAL index the database
+    # actually has (uq_user_external_id ... WHERE external_id IS NOT NULL).
+    # A column-level unique=/index= here would describe a total index named
+    # ix_user_external_id that exists in no database.
     external_id: Mapped[str | None] = mapped_column(
-        String(255), unique=True, nullable=True, index=True
+        String(255), nullable=True
     )  # External IdP subject id
     external_org_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True
@@ -169,6 +177,67 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    # Every rule below is already enforced by Postgres and was, until now,
+    # declared nowhere in Python — this class carried no ``__table_args__`` at
+    # all despite holding five CHECKs and six UNIQUEs. Writing them down adds and
+    # drops no DDL; it makes the ORM describe the schema that already exists, so
+    # a violation reads as a rule someone can find in this file instead of a 500
+    # naming a constraint that appears nowhere in the tree.
+    __table_args__ = (
+        # v369/v377. ``role`` is the sole authorization truth (app/auth/roles.py).
+        CheckConstraint(
+            "role IN ('user', 'admin', 'super_admin')",
+            name="ck_user_role_valid",
+        ),
+        # v369. ``is_superuser`` is a derived mirror of ``role == 'super_admin'``;
+        # this CHECK is the only thing that stops a write setting one without the
+        # other.
+        CheckConstraint(
+            "is_superuser = (role = 'super_admin')",
+            name="ck_user_superuser_matches_role",
+        ),
+        # v377/v380/v383. ⚠️ The body is a LITERAL on purpose — do NOT rebuild it
+        # from ``app.auth.constants.VALID_AUTH_TYPES`` the way ``group.py`` builds
+        # its CHECK bodies from ``MEMBERSHIP_SOURCES_SQL``. ``auth/constants.py``
+        # requires this CHECK to be a **superset** of ``VALID_AUTH_TYPES``, so a
+        # value may be admitted by the database before any code supports it (that
+        # ordering is what lets a widening migration ship ahead of its provider).
+        # Deriving the body from the constant would encode equality and make the
+        # supported ordering illegal. Widen this string only when the DDL widens.
+        CheckConstraint(
+            "auth_type IN ('local', 'ldap', 'oidc', 'pki', 'proxy', 'saml')",
+            name="ck_user_auth_type_valid",
+        ),
+        # v381. The approval helpers read the column fail-safe; this is what keeps
+        # that sound.
+        CheckConstraint(
+            "approval_status IN ('pending', 'approved', 'rejected')",
+            name="ck_user_approval_status_valid",
+        ),
+        # v070. ⚠️ DEFERRABLE INITIALLY DEFERRED — this one fails at **COMMIT**,
+        # not at ``flush()``, so the statement that caused the violation has long
+        # since returned by the time it raises. ``deferrable=``/``initially=`` are
+        # not decoration: dropping them would declare a constraint that surfaces
+        # at a different time from the one the database enforces.
+        # ``tests/unit/test_schema_constraint_rejections.py`` pins it as the
+        # schema's only deferred constraint, in both directions.
+        UniqueConstraint(
+            "pki_serial_number",
+            "pki_issuer_dn",
+            name="user_pki_cert_unique",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        # v377. PARTIAL, not total — the predicate is part of the object's
+        # identity. See the note on ``external_id`` above.
+        Index(
+            "uq_user_external_id",
+            "external_id",
+            unique=True,
+            postgresql_where=text("external_id IS NOT NULL"),
+        ),
     )
 
     @property

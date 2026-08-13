@@ -65,6 +65,19 @@ class CollectionShare(Base):
             "(target_user_id IS NULL AND target_group_id IS NOT NULL)",
             name="_collection_share_target_check",
         ),
+        # v211. Both were enforced by the database and declared nowhere —
+        # ``TagShare`` below already declares its equivalents, which is what made
+        # the two missing halves here easy to read as intentional.
+        # ``PermissionService`` trusts the stored ``permission`` value, so an
+        # unknown one would be an unhandled branch in the authorization path.
+        CheckConstraint(
+            "permission IN ('viewer', 'editor')",
+            name="_collection_share_permission_check",
+        ),
+        CheckConstraint(
+            "target_type IN ('user', 'group')",
+            name="_collection_share_target_type_check",
+        ),
         Index(
             "_collection_share_user_uc",
             "collection_id",

@@ -19,6 +19,7 @@ from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import Numeric
 from sqlalchemy import String
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
@@ -34,6 +35,17 @@ class UsageEvent(Base):
     __table_args__ = (
         Index("idx_usage_event_org_type_time", "organization_id", "event_type", "created_at"),
         Index("idx_usage_event_user_time", "user_id", "created_at"),
+        # PARTIAL, not total. The column previously carried ``unique=True``, which
+        # declares a full unique constraint — a different object from what the
+        # database has. Behaviourally equivalent today (a total UNIQUE also admits
+        # many NULLs), but it made ``Base.metadata`` describe an index the
+        # migrations never build.
+        Index(
+            "uq_usage_event_idempotency_key",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid_pkg.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid7)
@@ -51,7 +63,9 @@ class UsageEvent(Base):
     file_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("media_file.id", ondelete="SET NULL"), nullable=True
     )
-    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
+    #: Uniqueness is the PARTIAL index in ``__table_args__``, not a column-level
+    #: ``unique=`` — see the note there.
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     event_metadata: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True
     )  # IDs/counts only — never content

@@ -7,10 +7,12 @@ from typing import TYPE_CHECKING
 from sqlalchemy import CheckConstraint
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
+from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy import UniqueConstraint
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
@@ -143,6 +145,14 @@ class UserGroupMember(Base):
         CheckConstraint(
             f"source IN ({MEMBERSHIP_SOURCES_SQL})", name="ck_user_group_member_source_valid"
         ),
+        # v211. Enforced by the database since v211 and declared nowhere until
+        # now — the sibling source CHECK directly above it is exactly what made
+        # its absence read as deliberate. Literal rather than derived: there is
+        # no Python-side tuple for these three, and inventing one here would put
+        # a second source of truth beside the DDL.
+        CheckConstraint(
+            "role IN ('owner', 'admin', 'member')", name="_user_group_member_role_check"
+        ),
     )
 
     # Relationships
@@ -198,6 +208,19 @@ class GroupMapping(Base):
         CheckConstraint(
             "user_group_id IS NOT NULL OR grants_role IS NOT NULL",
             name="ck_group_mapping_grants_something",
+        ),
+        # Expression AND partial: UNIQUE (lower(claim_value)) WHERE source='ldap'.
+        # An LDAP DN is case-insensitive, so two mappings differing only in case
+        # are the same mapping; OIDC/proxy claim values are case-sensitive and are
+        # covered by ``uq_group_mapping_source_claim`` above.
+        # ``api/endpoints/admin_group_mappings.py`` catches this index's
+        # IntegrityError to return 409 rather than 500 — the rule is load-bearing
+        # in the API, and was declared only in the DDL.
+        Index(
+            "uq_group_mapping_ldap_claim_ci",
+            text("lower(claim_value)"),
+            unique=True,
+            postgresql_where=text("source = 'ldap'"),
         ),
     )
 

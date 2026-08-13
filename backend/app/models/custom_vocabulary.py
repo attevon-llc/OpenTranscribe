@@ -18,6 +18,7 @@ from sqlalchemy import ForeignKey
 from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
+from sqlalchemy import text
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
@@ -60,14 +61,19 @@ class CustomVocabulary(Base):
     user: Mapped["User | None"] = relationship("User", back_populates="custom_vocabulary")
 
     __table_args__ = (
-        # NOTE: The uniqueness constraint for this table is a functional unique index on
-        # COALESCE(user_id, 0), term, domain — defined in the migration DDL as:
-        #   CONSTRAINT _custom_vocab_unique UNIQUE (COALESCE(user_id, 0), term, domain)
-        # SQLAlchemy's UniqueConstraint cannot express COALESCE-based functional constraints,
-        # so the constraint is intentionally omitted from __table_args__ to prevent
-        # autogenerate from emitting the wrong plain UNIQUE (user_id, term, domain) which
-        # would NOT deduplicate system terms (user_id IS NULL) because NULL != NULL in SQL.
-        # The actual constraint is enforced at the database level via the migration.
+        # UNIQUE (COALESCE(user_id, 0), term, domain). The COALESCE is the whole
+        # point: a plain UniqueConstraint("user_id", "term", "domain") would be
+        # WRONG, because NULL != NULL in SQL and duplicate *system* terms
+        # (user_id IS NULL) would slip through. That argument is against the wrong
+        # spelling, not against declaring it at all — an Index over a text()
+        # expression states the real rule exactly, which is what is written below.
+        Index(
+            "_custom_vocab_unique",
+            text("COALESCE(user_id, 0)"),
+            "term",
+            "domain",
+            unique=True,
+        ),
         Index("ix_custom_vocabulary_domain", "domain"),
         # Composite index for the hot query in _run_cloud_asr_pipeline:
         #   WHERE (user_id = :uid OR user_id IS NULL) AND is_active = TRUE

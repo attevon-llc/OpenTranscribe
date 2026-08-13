@@ -260,6 +260,125 @@ runs over the same corpus can disagree on how much re-indexing happened in betwe
 is ever issued against a hybrid body (the OpenSearch 3.4 `score-ranker-processor` crash applies to
 measurement code too); per-file coverage is derived from hits.
 
+## Scoring an answer, not a rank
+
+Three of the four query classes are scored by ranking. The fourth cannot be. An **aggregation**
+query's ground truth is an integer ("how many meetings discussed X"), a file set ("which meetings
+mention Y"), or a speaker with a session count — and no nDCG can say whether the answer was
+*right*. Those queries carry `scored_on: "answer"` and go to a second engine
+(`backend/tests/eval/harness/answers.py`) with its own measures, its own query set and its own
+table. **No column name appears in both tables**, so an answer score can never be misread as a
+retrieval score:
+
+| measure | meaning |
+|---|---|
+| **EM** | exact match under the policy below — **this is Stage 4's gate** |
+| `partial` | diagnostic partial credit; never a substitute for EM |
+| `answered` | the share of the class the system attempted at all |
+
+### The scoring rules, and why each is what it is
+
+Every rule is a **parameter written into the results file**, the way the retrieval side made its
+overlap thresholds parameters — a threshold nobody wrote down is a threshold nobody can challenge.
+
+- **A count is exact.** `--answer-count-tolerance` defaults to **0**. Aggregation is computed by an
+  exact mechanism (a terms aggregation, a `SUM`), so a tolerance would hide precisely the defects
+  this class exists to catch — a double-counted overlapping chunk, an unrefreshed index, a filter
+  that missed one file — and "off by one" is still a wrong answer to a user. A number gets no
+  interpolated partial credit either: `partial` equals EM for a count.
+- **A file set is exact-match for the gate, with F1 beside it.** A subset is *wrong*: 7 of 8 files
+  is a wrong answer to "which meetings discuss X". But EM alone cannot separate "the aggregation is
+  right and one file's phrase straddled a chunk boundary" from "the marker matched nothing", and
+  those have different fixes — so F1 is reported as a **diagnostic**, never in place of EM.
+  `--answer-set-credit exact` collapses it onto EM for anyone who considers partial credit
+  unjustified.
+- **A speaker answer is two fields** (name, session count) and needs both for EM. `partial` is the
+  fraction of fields correct, so "right person, wrong count" is visibly different from "wrong
+  person". Names are compared casefolded with whitespace collapsed — the only tolerance anywhere in
+  the answer path.
+- **An unanswered query scores zero and is counted.** `evaluate_answers` iterates the **gold** query
+  set exactly as the retrieval side iterates the qrels (`trec_eval -c` semantics). This is not
+  theoretical: a mean over what the system returned reads **1.000 where the truth is 0.500**, and
+  the suite ships that comparison as a test so the substitution cannot quietly regress.
+- **Every set is emitted sorted.** `PYTHONHASHSEED` is unpinned in this repo and set iteration order
+  varies per process; an unsorted `list(set())` has already been a real bug here.
+
+### Where the answer comes from — and why it is never a model
+
+#403 requires aggregation to be answered from **OpenSearch aggregations or Postgres, never by an
+LLM counting**, and D6 makes the no-LLM deployment first-class. An answer-scoring path that needed a
+model would contradict the property it exists to measure, so `--answerer` selects between two
+model-free sources:
+
+| answerer | what it is |
+|---|---|
+| `none` | declines every query. The **honest product floor**: no aggregation route exists before Stage 4, so it scores 0.000 EM with `answered` 0.000 saying why |
+| `reference` *(default)* | a rules intent parser over the five question frames, then a terms aggregation or SQL |
+
+Its mechanisms, recorded per intent in every results file:
+
+| rule | question | mechanism |
+|---|---|---|
+| R3 / R4 | how many / which meetings mention X | `match_phrase(content.exact)` + `terms(file_uuid)` aggregation |
+| R5 | how many times in total did we defer X | Postgres `regexp_count` over `transcript_segment.text` |
+| R6 | who attended the most \<kind\> sessions for \<team\> | title-scoped `terms(speakers)` × `terms(file_uuid)` |
+| R7 | how many meetings **in \<month\>** discussed X | the phrase aggregation ∩ a Postgres meeting-date filter |
+
+No aggregation is ever issued over a hybrid body (the OpenSearch 3.4 `score-ranker-processor`
+crash), occurrence *counts* come from Postgres because chunk overlap double-counts a long turn's
+tail, and a bucket list truncated at the size limit **raises** rather than reporting a count that
+looks right.
+
+:::warning The reference answerer is the instrument's control, not the product's answer
+It does not touch the chat path — there is no aggregation route in the product until Stage 4 — and
+`is_production_path: false` is recorded in every results file it writes. Its value is that Stage 4's
+router arrives with a number to beat and a per-rule breakdown of where the difficulty is, instead of
+a gate whose only prior reading is zero.
+:::
+
+### Measured: the synthetic tier at the 200-meeting budget
+
+432 files indexed (232 QMSum + 200 synthetic), 208,333 chunks. **20 aggregation queries are
+scoreable** — 21 have every gold file indexed, and one R7 query is dropped because 2 of its 4
+*out-of-month* mentions are not, which would have turned a filtered count into an unfiltered one
+that scores correct for the wrong reason.
+
+| corpus | tier | class | rule | n | unans. | EM | partial | answered |
+|---|---|---|---|---|---|---|---|---|
+| synthetic | A | aggregation | all | 20 | 0 | **1.0000** | 1.0000 | 1.0000 |
+| synthetic | A | aggregation | R3-agg-count-files | 4 | 0 | 1.0000 | 1.0000 | 1.0000 |
+| synthetic | A | aggregation | R4-agg-list-files | 4 | 0 | 1.0000 | 1.0000 | 1.0000 |
+| synthetic | A | aggregation | R5-agg-count-events | 4 | 0 | 1.0000 | 1.0000 | 1.0000 |
+| synthetic | A | aggregation | R6-agg-speaker-top | 4 | 0 | 1.0000 | 1.0000 | 1.0000 |
+| synthetic | A | aggregation | R7-agg-temporal-count | 4 | 0 | 1.0000 | 1.0000 | 1.0000 |
+
+The `none` control on the same 20 queries — **0.0000 EM, 20 unanswered, `answered` 0.0000** — is
+what makes the row above a measurement rather than a tautology: the same scoring path over the same
+gold set moves from 0 to 1 purely on who answered. Both tables are committed under
+`backend/tests/eval/baselines/stage1-synthetic-answers/` (`answers.md` and
+`answers-null-control.md`), and two consecutive runs produce **byte-identical** `metrics.json`,
+`metrics.md` and `answers.md` (verified by sha256; elapsed time lives in the gitignored
+`runinfo.json`, outside the claim).
+
+### What a 1.000 does *not* mean
+
+- **It is an upper bound on an easy surface, not a claim about real questions.** Aggregation markers
+  are exact multi-word phrases ("the Cedar Lantern compliance audit"), which is defensible only
+  because this class is answered by exact matching rather than by ranking — and it means the number
+  measures the *mechanism*, not robustness to paraphrase. A user asking "how many meetings covered
+  the Cedar Lantern audit" is not covered by any measurement here.
+- **It is 20 queries, four per rule.** The corpus holds 166; the rest need a larger injection budget.
+- **The index has to be complete for it to hold.** During indexing, the same R3 query that now scores
+  exact returned 3 of 12 files: the mechanism reads the index, so an incomplete index produces a
+  confidently wrong count. That is the failure mode the `answered`/EM split is meant to surface.
+- **R7's month filter reads the date the injector stamped into
+  `media_file.metadata_important`**, because no recorded-date column is populated for injected
+  files. A production answerer would read a real one; this is recorded as a limitation of the
+  measurement, not presented as the production mechanism.
+- **The intent parser is matched to the generator's five question frames.** It recovers the subject
+  phrase from a natural-language question — the phrase is never the answer — but a differently
+  worded question is *declined*, and a declined query scores 0.
+
 ## Reproducing the numbers
 
 ```bash
@@ -285,7 +404,8 @@ Results land in `backend/tests/eval/baselines/<control-name>/`:
 | file | contents | deterministic? |
 |---|---|---|
 | `metrics.json` | the full result: rows, corpus composition, licence tier, metric-engine provenance, relevance policy, retrieval config | **yes — byte-identical across runs** |
-| `metrics.md` | the metric table | **yes** |
+| `metrics.md` | the retrieval metric table | **yes** |
+| `answers.md` | the answer table (EM / partial / answered), per query class and per rule | **yes** |
 | `runinfo.json` | elapsed seconds and the resolved target | no, and deliberately outside the claim |
 
 Compare a later stage against the committed control with
@@ -413,17 +533,20 @@ Stated plainly, because a benchmark's limits are part of its result:
   the whole 2,000-meeting corpus and a query whose gold set is only partly present is correctly
   dropped. At the default budget (200 meetings, ~1.1× QMSum) that closes 25 `multi_file` and 21
   `aggregation` queries; a first-N-by-key subset would have closed 4.
-- **`aggregation` is resolvable but not yet *scored*.** Its queries carry `scored_on: "answer"` —
-  an integer, a file set, a speaker name — and the harness scores retrieval. Until an
-  answer-scoring path exists, that row reports coverage, not quality.
+- **`aggregation` is now scored on its answer** (exact match, see [Scoring an answer, not a
+  rank](#scoring-an-answer-not-a-rank)), but by the harness's own aggs+SQL reference answerer —
+  **the product has no aggregation route until Stage 4**, and measured through the `none` answerer
+  it scores 0.000. The published 1.000 characterises the corpus and the mechanism, not the shipped
+  system.
 - **Injecting synthetic data moves the QMSum numbers.** Retrieval runs corpus-wide, so the
   candidate pool roughly doubles and document frequencies shift. Run the QMSum-only control before
   and after and record the delta; **never compare a measurement taken across the injection.**
 - **Injecting the synthetic tier will move the QMSum numbers**, because both corpora share one
   index and its document frequencies. Any mixed-corpus baseline is a new control, not a comparison
   against this one.
-- **No answer-quality number exists.** Aggregation queries carry `scored_on: "answer"` and are
-  scored on exactness, not ranking; nothing in Stage 1 scores an answer.
+- **No *generation* quality number exists.** Aggregation exactness is scored; faithfulness,
+  citation correctness and answer prose are not, and the synthetic tier is explicitly not a source
+  of generation ground truth. Nothing in this harness evaluates what a model wrote.
 - **Scale is split**: the largest real corpus (MeetingBank, 31.7 M words) is internal-only.
 - **Multilingual coverage is 20 languages scored, not 100.** The unscored remainder is enumerated
   with a specific reason each — no public benchmark with relevance judgements, transcripts but no

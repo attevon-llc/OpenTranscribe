@@ -292,7 +292,10 @@ class ReferenceAnswerer:
         from sqlalchemy import text as sql_text
 
         statement = sql_text(
-            "SELECT COALESCE(SUM(regexp_count(ts.text, :pattern, 'i')), 0) "
+            # regexp_count(string, pattern, start, flags): the third argument is
+            # the 1-based start offset, NOT the flags — passing 'i' there is an
+            # integer cast error, which is how this was found.
+            "SELECT COALESCE(SUM(regexp_count(ts.text, :pattern, 1, 'i')), 0) "
             "FROM transcript_segment ts "
             "JOIN media_file mf ON mf.id = ts.media_file_id "
             "WHERE mf.user_id = :user_id AND ts.text ILIKE :like ESCAPE '\\'"

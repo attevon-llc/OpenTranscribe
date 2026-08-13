@@ -195,6 +195,11 @@ def get_unique_speaker_names(segments: list[dict[str, Any]]) -> list[str]:
         segments: List of transcript segments
 
     Returns:
-        List of unique speaker names
+        Unique speaker names, **sorted**. Sorted rather than ``list(set(...))``
+        because Python randomises string hashing per interpreter unless
+        PYTHONHASHSEED is pinned (it is not), so set order differs between worker
+        processes. This list is written into the indexed document, so an unsorted
+        one makes the same transcript index differently depending on which worker
+        ran it.
     """
-    return list(set([segment["speaker"] for segment in segments]))
+    return sorted({segment["speaker"] for segment in segments})

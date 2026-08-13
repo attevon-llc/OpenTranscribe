@@ -184,7 +184,13 @@ def index_transcript_search_task(  # noqa: C901
             # requires attached ORM state.
             meta = extract_file_index_metadata(db, media_file, file_id)
             title = meta["title"]
-            speaker_names = list(
+            # sorted(), not list(set(...)): Python randomises string hashing per
+            # interpreter unless PYTHONHASHSEED is pinned (it is not, anywhere), so
+            # set iteration order differs between worker processes. This list is
+            # written into every chunk document, so an unsorted one makes the same
+            # transcript index to different content — and therefore different
+            # embeddings — depending on which worker happened to pick up the task.
+            speaker_names = sorted(
                 {str(s["speaker"]) for s in segment_dicts if s["speaker"] != "Unknown"}
             )
             update_task_status(db, task_id, "in_progress", progress=0.4)

@@ -39,6 +39,13 @@ QUERIES: list[dict[str, Any]] = [
         "query_class": "aggregation",
         "text": "How many meetings discussed the Cedar Lantern compliance audit?",
         "scored_on": "answer",
+        # `answer_kind` + `answer` are REQUIRED for a scored_on="answer" record:
+        # `corpora._answer_query` returns None without them, and the query then
+        # silently disappears from the loaded set rather than failing. The real
+        # generator emits three kinds — integer, file_set, speaker_count.
+        "answer_kind": "integer",
+        "answer": 3,
+        "rule": "R3-agg-count-files",
         # First and last in sorted-key order, plus one in between: the shape
         # rng.sample(org.sessions, k) produces on the real corpus.
         "gold_files": [
@@ -58,6 +65,9 @@ QUERIES: list[dict[str, Any]] = [
         "query_class": "aggregation",
         "text": "How many meetings in March 2025 discussed the Slate Viaduct review?",
         "scored_on": "answer",
+        "answer_kind": "integer",
+        "answer": 1,
+        "rule": "R7-agg-count-files-in-month",
         "gold_files": ["corpusuuid-T000-S0-0002"],
         "gold_turns": {"corpusuuid-T000-S0-0002": [[5, 5]]},
         # R7's out-of-month mentions: not gold, but the query is only a

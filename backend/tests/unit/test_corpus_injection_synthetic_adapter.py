@@ -415,19 +415,26 @@ class TestGoldSpansReachChunkJudgements:
         queries = corpora.load_synthetic_queries(injected, corpus_root)
 
         span_uuids = sorted({span.file_uuid for query in queries for span in query.spans})
+        # Only the RETRIEVAL-scored queries contribute ranked gold spans. An
+        # aggregation query is scored on its answer, so `_answer_query` gives it
+        # `gold_answer` and no spans — its ranked numbers are context, not its
+        # score, and mixing them into a recall denominator would let a class the
+        # harness cannot rank inflate one it can.
         expected = sorted(
             str(ids.file_uuid("synthetic", key))
-            for key in (
-                "T000-S0-0000",
-                "T000-S0-0001",
-                "T000-S0-0002",
-                "T001-S0-0001",
-                "T001-S0-0002",
-                "T001-S0-0003",
-            )
+            # mf-00000's two gold files, plus lk-00000's one.
+            for key in ("T000-S0-0000", "T000-S0-0001", "T001-S0-0001")
         )
         assert span_uuids == expected
         assert not any(uuid_.startswith("corpusuuid-") for uuid_ in span_uuids)
+
+        # Pin the other half of that split, so a regression that silently routed
+        # aggregation back into the ranked set fails here rather than showing up
+        # as a quietly larger recall denominator.
+        by_id = {query.query_id: query for query in queries}
+        for answer_scored in ("synthetic:ag-00000", "synthetic:ag-00001"):
+            assert by_id[answer_scored].gold_answer is not None
+            assert not by_id[answer_scored].spans
 
     def test_a_partly_injected_gold_set_drops_the_query_rather_than_shrinking_recall(
         self, corpus_root, tmp_path

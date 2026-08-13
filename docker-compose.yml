@@ -350,6 +350,10 @@ services:
       # Shared scratch — writes the preprocessed WAV for GPU/embedding workers
       - pipeline_scratch:/scratch/opentranscribe
       - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
+      # punkt: `reindex_transcripts` runs on the cpu queue and re-chunks transcripts.
+      # Without this mount the sentence splitter silently falls back to a regex and
+      # cuts different chunk boundaries than every other process (issue #436).
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
     environment:
       - PRELOAD_CPU_WHISPER=true
       # ffmpeg preprocess threading (opt-in CPU-contention control; default off).
@@ -548,6 +552,11 @@ services:
     command: celery -A app.core.celery worker --loglevel=info -Q embedding --concurrency=1 --max-tasks-per-child=500 --hostname search-indexer@%h -E
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      # punkt: `index_transcript_search` runs on the embedding queue and is the
+      # process that chunks every newly transcribed file. Without this mount it
+      # cuts sentences with the regex fallback while every test process uses
+      # punkt — 49 files / 226 chunks apart on the eval corpus (issue #436).
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       # Shared scratch — so embedding worker can use the temp WAV if needed
       - pipeline_scratch:/scratch/opentranscribe
     environment:

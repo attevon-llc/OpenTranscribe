@@ -80,6 +80,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--relevance-high", type=float, default=0.5)
     parser.add_argument("--relevance-low", type=float, default=0.0)
     parser.add_argument("--binary-relevance", action="store_true")
+    parser.add_argument(
+        "--answerer",
+        default="reference",
+        choices=("none", "reference"),
+        help="Who answers the answer-scored (aggregation) queries. 'none' declines every "
+        "one of them — the honest pre-Stage-4 product floor. 'reference' is the harness's "
+        "own aggs+SQL control; it is NOT the chat path, and the results file says so.",
+    )
+    parser.add_argument(
+        "--answer-count-tolerance",
+        type=int,
+        default=0,
+        help="Absolute slack allowed on a count. 0: a count is exact.",
+    )
+    parser.add_argument(
+        "--answer-set-credit",
+        default="f1",
+        choices=("f1", "exact"),
+        help="What 'partial' means for a file-set answer. EM (the gate) is set equality "
+        "either way — a subset is never exact.",
+    )
     parser.add_argument("--compare", default=None, help="Baseline metrics.json to diff against")
     parser.add_argument(
         "--host",
@@ -138,6 +159,65 @@ def _load_corpus(key: str, manifest_root: Path, data_dir: Path):
     return corpus, turns, queries
 
 
+def _score_answers(args, queries: list, user_id: int, client, settings):
+    """Score the answer-scored queries, and record what produced each answer.
+
+    Returns:
+        ``(answers_block, answer_rows)``. The block is self-describing: it names
+        the answerer, its mechanism per intent, and the scoring policy, so an EM
+        value in it cannot be read without its provenance. Answering is serial
+        and in query-id order — the aggregations are cheap, and a thread pool
+        would buy wall clock at the cost of the one property that matters here.
+    """
+    from tests.eval.harness import answerers as answerers_mod
+    from tests.eval.harness import report as report_mod
+    from tests.eval.harness.answers import AnswerPolicy
+    from tests.eval.harness.answers import evaluate_answers
+    from tests.eval.harness.answers import scoring_provenance
+
+    policy = AnswerPolicy(
+        count_tolerance=args.answer_count_tolerance, set_credit=args.answer_set_credit
+    )
+    if not queries:
+        return {
+            "scored": 0,
+            "note": "no answer-scored queries resolved onto this stack",
+            "scoring": scoring_provenance(policy),
+        }, []
+
+    from app.db.base import engine
+
+    answerer = answerers_mod.build_answerer(
+        args.answerer,
+        client=client,
+        index=settings.OPENSEARCH_CHUNKS_INDEX,
+        user_id=user_id,
+        engine=engine,
+    )
+    gold = {q.query_id: q.gold_answer for q in queries if q.gold_answer is not None}
+    submitted = {
+        query.query_id: answerer.answer(query)
+        for query in sorted(queries, key=lambda q: q.query_id)
+    }
+    result = evaluate_answers(gold, submitted, policy=policy)
+    rows = report_mod.build_answer_rows(queries, result)
+    logger.info(
+        "Answers (%s): %d scored, %d unanswered, EM %.4f",
+        answerer.name,
+        result.query_count,
+        len(result.unanswered),
+        result.aggregate["EM"],
+    )
+    return {
+        "scored": result.query_count,
+        "unanswered": len(result.unanswered),
+        "answerer": answerer.describe(),
+        "scoring": scoring_provenance(policy),
+        "rows": rows,
+        "details": report_mod.build_answer_details(queries, result),
+    }, rows
+
+
 def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read top to bottom
     args = build_parser().parse_args(argv)
     logging.basicConfig(
@@ -194,6 +274,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
     index_state = index_reader.prepare_index(client, settings.OPENSEARCH_CHUNKS_INDEX)
 
     all_queries = []
+    answer_queries = []
     corpus_records = []
     qrels: dict[str, dict[str, int]] = {}
     unjudged: list[str] = []
@@ -208,7 +289,15 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
         )
         builder = QrelsBuilder(turns, chunks, policy)
         scored = 0
+        answer_scored = 0
         for query in queries:
+            # Two engines, two query sets. An aggregation query's ground truth is
+            # an integer or a file set; no ranking metric can express it, and
+            # scoring it as though one could is what left the class unmeasured.
+            if query.scored_on == "answer":
+                answer_queries.append(query)
+                answer_scored += 1
+                continue
             judged = builder.judgements(list(query.spans))
             if not judged:
                 # A query whose gold span maps to no chunk cannot discriminate
@@ -229,25 +318,32 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
                 "files_in_manifest": len(corpus.file_uuid_by_meeting),
                 "chunks_indexed": sum(len(v) for v in chunks.values()),
                 "queries_scored": scored,
-                "queries_dropped_unjudgeable": len(queries) - scored,
+                "queries_dropped_unjudgeable": len(queries) - scored - answer_scored,
+                "answer_queries_scored": answer_scored,
             }
         )
         logger.info(
-            "%s: %d files, %d chunks, %d scoreable queries",
+            "%s: %d files, %d chunks, %d retrieval queries, %d answer queries",
             corpus.key,
             len(chunks),
             sum(len(v) for v in chunks.values()),
             scored,
+            answer_scored,
         )
 
-    if not all_queries:
+    if not all_queries and not answer_queries:
         raise SystemExit("No scoreable queries — nothing to measure.")
 
-    run = runner_mod.execute(all_queries, user_id=user_id, config=config)
-    result = metrics_mod.evaluate(qrels, run)
-    rows = report_mod.build_rows(all_queries, result)
+    rows: list[dict] = []
+    result = None
+    if all_queries:
+        run = runner_mod.execute(all_queries, user_id=user_id, config=config)
+        result = metrics_mod.evaluate(qrels, run)
+        rows = report_mod.build_rows(all_queries, result)
 
-    judged_counts = [len(v) for v in qrels.values()]
+    answers_block, answer_rows = _score_answers(args, answer_queries, user_id, client, settings)
+
+    judged_counts = [len(v) for v in qrels.values()] or [0]
     results = report_mod.build_results(
         control_name=args.control_name,
         corpora=corpus_records,
@@ -259,9 +355,11 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
             "judged_documents": sum(judged_counts),
             "mean_judged_per_query": round(sum(judged_counts) / len(judged_counts), 4),
             "queries_dropped_unjudgeable": len(unjudged),
-            "unanswered_queries": len(result.unanswered),
+            "unanswered_queries": len(result.unanswered) if result is not None else 0,
+            "answer_scored_queries_in_their_own_table": len(answer_queries),
         },
         rows=rows,
+        answers=answers_block,
     )
 
     out_dir = Path(args.out) if args.out else DEFAULT_BASELINE_ROOT / args.control_name
@@ -269,6 +367,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
     table = report_mod.render_table(rows)
     (out_dir / "metrics.json").write_text(report_mod.dumps(results), encoding="utf-8")
     (out_dir / "metrics.md").write_text(table, encoding="utf-8")
+    if answer_rows:
+        answer_table = report_mod.render_answer_table(answer_rows)
+        (out_dir / "answers.md").write_text(answer_table, encoding="utf-8")
     elapsed = time.monotonic() - started
     (out_dir / "runinfo.json").write_text(
         json.dumps({"elapsed_seconds": round(elapsed, 1), "target": target}, indent=2) + "\n",
@@ -276,6 +377,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
     )
 
     print(table)
+    if answer_rows:
+        print(report_mod.render_answer_table(answer_rows))
     if args.compare:
         baseline = json.loads(Path(args.compare).read_text(encoding="utf-8"))
         print(f"\nΔ vs control '{baseline.get('control_name')}':")

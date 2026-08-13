@@ -15,6 +15,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from tests.eval.harness.answers import Answer
 from tests.eval.harness.qrels import GoldSpan
 
 #: The four #403 query classes. Stored underscored so a class name is a safe
@@ -33,7 +34,14 @@ _SUMMARY_PREFIXES = ("summarize", "summarise", "describe")
 
 @dataclass(frozen=True)
 class EvalQuery:
-    """One scoreable query."""
+    """One scoreable query.
+
+    ``scored_on`` decides which engine scores it, and the two never mix in one
+    table: ``retrieval`` goes to :mod:`tests.eval.harness.metrics` against gold
+    ``spans``; ``answer`` goes to :mod:`tests.eval.harness.answers` against
+    ``gold_answer``. An aggregation query's ranked numbers are context, not its
+    result (``.rag-403/synthetic-tier-design.md`` §12).
+    """
 
     query_id: str
     text: str
@@ -42,6 +50,12 @@ class EvalQuery:
     license_tier: str
     spans: tuple[GoldSpan, ...]
     scored_on: str = "retrieval"
+    #: Generator rule that built it (``R3-agg-count-files``, ...). Empty for
+    #: corpora that do not publish one; used to break the answer table down by
+    #: rule, because "aggregation" averages five different questions.
+    rule: str = ""
+    #: The exact answer, for ``scored_on == "answer"`` queries only.
+    gold_answer: Answer | None = None
 
 
 @dataclass
@@ -178,27 +192,73 @@ def load_synthetic_queries(corpus: InjectedCorpus, source_dir: Path) -> list[Eva
         if not line.strip():
             continue
         record = json.loads(line)
-        spans: list[GoldSpan] = []
-        missing = False
-        for corpus_uuid, ranges in (record.get("gold_turns") or {}).items():
-            app_uuid = alias.get(str(corpus_uuid))
-            if not app_uuid:
-                missing = True
-                break
-            spans.extend(GoldSpan(app_uuid, int(pair[0]), int(pair[1])) for pair in ranges)
+        built = (
+            _answer_query(record, corpus, alias)
+            if str(record.get("scored_on") or "retrieval") == "answer"
+            else _retrieval_query(record, corpus, alias)
+        )
+        if built is not None:
+            queries.append(built)
+    return queries
+
+
+def _retrieval_query(record: dict, corpus: InjectedCorpus, alias: dict[str, str]):
+    """A ranked-retrieval query, or ``None`` if its gold set is not fully indexed."""
+    spans: list[GoldSpan] = []
+    for corpus_uuid, ranges in (record.get("gold_turns") or {}).items():
+        app_uuid = alias.get(str(corpus_uuid))
         # A query whose gold set is only partly on the stack cannot be scored:
         # its recall denominator would silently shrink to whatever was injected.
-        if missing or not spans:
-            continue
-        queries.append(
-            EvalQuery(
-                query_id=f"synthetic:{record['query_id']}",
-                text=str(record["text"]),
-                query_class=str(record["query_class"]),
-                corpus=corpus.key,
-                license_tier=corpus.license_tier,
-                spans=tuple(spans),
-                scored_on=str(record.get("scored_on") or "retrieval"),
-            )
+        if not app_uuid:
+            return None
+        spans.extend(GoldSpan(app_uuid, int(pair[0]), int(pair[1])) for pair in ranges)
+    if not spans:
+        return None
+    return EvalQuery(
+        query_id=f"synthetic:{record['query_id']}",
+        text=str(record["text"]),
+        query_class=str(record["query_class"]),
+        corpus=corpus.key,
+        license_tier=corpus.license_tier,
+        spans=tuple(spans),
+        rule=str(record.get("rule") or ""),
+    )
+
+
+def _answer_query(record: dict, corpus: InjectedCorpus, alias: dict[str, str]):
+    """An answer-scored query, or ``None`` if the stack cannot support its answer.
+
+    The bar is higher than for a retrieval query, deliberately: the answer is a
+    property of **the whole corpus**, so a missing file does not merely shrink a
+    recall denominator, it changes the correct answer. Two rules:
+
+    * every ``gold_files`` entry must be indexed — otherwise the true count is
+      not the published count;
+    * every ``related_files`` entry must be indexed too. Those are R7's
+      out-of-month mentions of the same marker. Without them "how many meetings
+      **in March**" has the same answer as "how many meetings", and the query
+      stops testing the filter that is its entire point.
+    """
+    wanted = [str(u) for u in record.get("gold_files") or []]
+    wanted += [str(u) for u in record.get("related_files") or []]
+    if not wanted or any(uuid not in alias for uuid in wanted):
+        return None
+    try:
+        gold = Answer.from_record(
+            str(record.get("answer_kind") or ""), record.get("answer"), remap=alias
         )
-    return queries
+    except (ValueError, KeyError, TypeError):
+        # An answer shape the scorer does not know is a gap in the harness, not a
+        # zero for the system: it is dropped, never scored 0.
+        return None
+    return EvalQuery(
+        query_id=f"synthetic:{record['query_id']}",
+        text=str(record["text"]),
+        query_class=str(record["query_class"]),
+        corpus=corpus.key,
+        license_tier=corpus.license_tier,
+        spans=(),
+        scored_on="answer",
+        rule=str(record.get("rule") or ""),
+        gold_answer=gold,
+    )

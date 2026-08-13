@@ -9,6 +9,10 @@ Modules:
 ``corpora``       query + gold loading, mapped onto the uuids the app indexed.
 ``index_reader``  seed -> refresh -> force-merge, and reading chunks back.
 ``runner``        drives the production chat retrieval path.
+``answers``       answer scoring for the aggregation class: exact match, the
+                  partial-credit rule, and the zero for an unanswered query.
+``answerers``     where an aggregation answer comes from — OpenSearch aggs and
+                  Postgres, never a language model (D6).
 ``report``        deterministic results document and metric table.
 
 The metric engine is an **eval-only dependency** (``requirements-eval.txt``) and

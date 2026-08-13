@@ -17,6 +17,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from tests.eval.harness.answers import MEASURES as ANSWER_MEASURES
+from tests.eval.harness.answers import AnswerResult
+from tests.eval.harness.answers import subset_answers
 from tests.eval.harness.corpora import CLASSES
 from tests.eval.harness.corpora import EvalQuery
 from tests.eval.harness.metrics import MEASURES
@@ -33,11 +36,18 @@ def _round(values: dict[str, float]) -> dict[str, float]:
 def build_rows(queries: list[EvalQuery], result: EvalResult) -> list[dict[str, Any]]:
     """One row per (corpus, query class), plus an ``all`` row per corpus.
 
+    **Retrieval-scored queries only.** An answer-scored query (the aggregation
+    class) has its own table with its own measures; putting the two in one table
+    is how "aggregation" came to sit in the metric table with an nDCG beside it
+    and nothing scoring the count it actually asks for.
+
     A class with no queries is omitted rather than reported as zero: an empty
     class is missing data, and a 0.000 in a table reads as a measured failure.
     """
     by_corpus: dict[str, list[EvalQuery]] = {}
     for query in queries:
+        if query.scored_on != "retrieval":
+            continue
         by_corpus.setdefault(query.corpus, []).append(query)
 
     rows: list[dict[str, Any]] = []
@@ -89,6 +99,99 @@ def render_table(rows: list[dict[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def build_answer_rows(queries: list[EvalQuery], result: AnswerResult) -> list[dict[str, Any]]:
+    """Answer scores per (corpus, class) and per (corpus, class, rule).
+
+    The per-rule breakdown is not decoration: "aggregation" is five different
+    questions (count files, list files, count events, top speaker, count within
+    a month) answered by three different mechanisms, and a single class mean
+    hides which one is failing.
+    """
+    by_corpus: dict[str, list[EvalQuery]] = {}
+    for query in queries:
+        if query.scored_on != "answer":
+            continue
+        by_corpus.setdefault(query.corpus, []).append(query)
+
+    rows: list[dict[str, Any]] = []
+    for corpus in sorted(by_corpus):
+        members = by_corpus[corpus]
+        tier = members[0].license_tier
+        for query_class in sorted({q.query_class for q in members}):
+            in_class = [q for q in members if q.query_class == query_class]
+            groups: list[tuple[str, list[EvalQuery]]] = [("all", in_class)]
+            groups += [
+                (rule, [q for q in in_class if q.rule == rule])
+                for rule in sorted({q.rule for q in in_class if q.rule})
+            ]
+            for rule, selected in groups:
+                scoped = subset_answers(result, {q.query_id for q in selected})
+                rows.append(
+                    {
+                        "corpus": corpus,
+                        "license_tier": tier,
+                        "query_class": query_class,
+                        "rule": rule,
+                        "queries": scoped.query_count,
+                        "unanswered": len(scoped.unanswered),
+                        "scored_on": ["answer"],
+                        "metrics": _round(scoped.aggregate),
+                    }
+                )
+    return rows
+
+
+def render_answer_table(rows: list[dict[str, Any]]) -> str:
+    """The answer table. No column name it prints appears in the retrieval
+    table, so the two can never be read as the same measurement."""
+    names = list(ANSWER_MEASURES)
+    header = ["corpus", "tier", "class", "rule", "n", "unans."] + names
+    lines = [
+        "| " + " | ".join(header) + " |",
+        "|" + "|".join(["---"] * len(header)) + "|",
+    ]
+    for row in rows:
+        cells = [
+            row["corpus"],
+            row["license_tier"],
+            row["query_class"],
+            row["rule"],
+            str(row["queries"]),
+            str(row["unanswered"]),
+        ]
+        cells += [f"{row['metrics'].get(name, 0.0):.4f}" for name in names]
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def build_answer_details(queries: list[EvalQuery], result: AnswerResult) -> list[dict[str, Any]]:
+    """Per-query gold vs submitted, sorted by query id.
+
+    Twenty rows of "gold 12, submitted 3" is the difference between a failing
+    number and a diagnosable one, and it is what lets a reader who did not run
+    the harness check the exactness claim rather than take it.
+    """
+    by_id = {query.query_id: query for query in queries if query.scored_on == "answer"}
+    details: list[dict[str, Any]] = []
+    for query_id in sorted(result.per_query):
+        query = by_id.get(query_id)
+        if query is None or query.gold_answer is None:
+            continue
+        submitted = result.submitted.get(query_id)
+        details.append(
+            {
+                "query_id": query_id,
+                "license_tier": query.license_tier,
+                "rule": query.rule,
+                "kind": query.gold_answer.kind,
+                "gold": query.gold_answer.as_json(),
+                "submitted": None if submitted is None else submitted.as_json(),
+                "scores": _round(result.per_query[query_id]),
+            }
+        )
+    return details
+
+
 def build_results(
     *,
     control_name: str,
@@ -98,12 +201,18 @@ def build_results(
     index_state: dict[str, Any],
     qrels_stats: dict[str, Any],
     rows: list[dict[str, Any]],
+    answers: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """The committed results document. Deterministic by construction."""
+    """The committed results document. Deterministic by construction.
+
+    ``answers`` is a self-contained block — its own scoring provenance, its own
+    answerer identity, its own rows — so no reader can arrive at an EM value
+    without also reading what produced it.
+    """
     from tests.eval.harness.metrics import measure_provenance
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "control_name": control_name,
         "metric_engine": measure_provenance(),
         "relevance_policy": policy,
@@ -112,6 +221,7 @@ def build_results(
         "qrels": qrels_stats,
         "corpora": corpora,
         "rows": rows,
+        "answers": answers or {"scored": 0, "note": "no answer-scored queries in this run"},
     }
 
 

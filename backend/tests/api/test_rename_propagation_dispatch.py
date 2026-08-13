@@ -267,6 +267,12 @@ class TestTitleRename:
         full_doc_mock.assert_called_once_with(str(media_file.uuid), "New title")
         delay_mock.assert_called_once_with(file_uuid=str(media_file.uuid), new_title="New title")
 
+        # Mock bookkeeping alone would pass even if the rename never reached
+        # Postgres — the queued rewrite would then propagate a title the
+        # database does not hold. Assert the durable outcome too.
+        db_session.refresh(media_file)
+        assert media_file.title == "New title"
+
     def test_an_unchanged_title_queues_nothing(self, db_session, normal_user):
         from app.api.endpoints.files.crud import update_media_file
         from app.schemas.media import MediaFileUpdate
@@ -287,6 +293,11 @@ class TestTitleRename:
             )
 
         delay_mock.assert_not_called()
+
+        # ...and the no-op stayed a no-op: asserting only that nothing was
+        # queued would also pass if the update had silently cleared the title.
+        db_session.refresh(media_file)
+        assert media_file.title == "Same title"
 
 
 class TestDispatchHelper:

@@ -285,7 +285,14 @@ class TestChunksActuallyLand:
                 }
             },
         )["hits"]["hits"]
+
+        # "Non-empty" would pass on any chunk from any file that happened to
+        # match. Assert the engine returned *this* file's chunk and that the
+        # matched text is really in it, so a filter or scoring regression that
+        # returns the wrong document still fails.
         assert hits, "BM25 found nothing for text that was definitely indexed"
+        assert {h["_source"]["file_uuid"] for h in hits} == {record.file_uuid}
+        assert any("budget" in h["_source"]["content"].lower() for h in hits)
 
     def test_untimed_corpus_survives_the_duplicate_span_constraint(
         self, session, owner_id, opensearch, cleanup

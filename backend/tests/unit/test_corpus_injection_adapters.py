@@ -347,8 +347,21 @@ class TestGenericJsonAdapter:
         assert GenericJsonAdapter(root).describe().version == "gen-2026-08-12-a"
 
     def test_missing_version_still_records_something_identifying(self, tmp_path: Path):
+        """A truthy version is not enough — the manifest has to say *what* ran.
+
+        The fallback describes the content, so two corpora of different sizes
+        cannot record the same version string. Asserting only truthiness would
+        pass on a hardcoded ``"unknown"``.
+        """
         root = self._write(tmp_path, [{"meeting_id": "s1", "turns": []}])
-        assert GenericJsonAdapter(root).describe().version
+        assert GenericJsonAdapter(root).describe().version == "unversioned-1-meetings"
+
+        second = tmp_path / "two"
+        second.mkdir()
+        bigger = self._write(
+            second, [{"meeting_id": "s1", "turns": []}, {"meeting_id": "s2", "turns": []}]
+        )
+        assert GenericJsonAdapter(bigger).describe().version == "unversioned-2-meetings"
 
 
 class TestRegistry:

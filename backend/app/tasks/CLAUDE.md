@@ -28,6 +28,14 @@ indexing → WebSocket notification.
   chunk. Dispatch through `dispatch_speaker_rename` — it coalesces `(file_uuid, old_name)` pairs
   per file — and **capture the old name before the overwrite**: after the commit, Postgres
   cannot say what the chunks were indexed with.
+- `ingest_artifacts_task.py` — `artifacts.generate_file_facts` (**nlp** queue, #383 Phase 2).
+  Builds the deterministic ingest artifacts (statistics, extractive digest with per-sentence
+  provenance, keyphrases) and upserts `file_facts`. It rides the nlp pool because that is the
+  CPU-only enrichment pool, **not** because it calls a provider: unlike every other task on
+  that queue it must NOT return early when no LLM is configured — the no-LLM deployment is
+  exactly who it exists for (#403 D6). Dispatched fire-and-forget from
+  `transcription/postprocess.enrich_and_dispatch`; logic lives in
+  `services/ingest_artifacts/` (its own CLAUDE.md).
 - `recovery.py` / `recovery_tasks.py` — `system.startup_recovery` and the periodic
   `cleanup.health_check` reclaim files stuck in PROCESSING with no live Celery task.
 - `directory_sync_task.py` — LDAP reconciliation/deprovisioning, **cpu** queue.

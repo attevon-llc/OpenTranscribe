@@ -99,6 +99,17 @@ custom only, label style).
   When #383 Phase 3 adds digest documents to this index, the `doc_type` predicate goes in
   `chunk_plane_query` and nowhere else. `extra_filters=` lets a caller narrow *within* the
   chunk plane without forking the predicate — `tasks/rename_propagation_task.py` uses it.
+- **The v6 target mapping already exists, in `services/ingest_artifacts/index_mapping.py`**
+  (#403 Stage 2). It is *defined and applied nowhere*: `_INDEX_VERSION` is still 5, and
+  `tests/unit/test_digest_index_mapping.py` asserts that, so the mapping and the bump land
+  together in Stage 3. It owns `doc_type` (keyword, #403 **D1** — not `source_type`), the
+  compat-armed `chunk_plane_clause()` every reader must import, `embedding_text`, the
+  `{uuid}_digest_{n}` id scheme, the negative `chunk_index` sentinel, and a digest-document
+  builder carrying **both** `file_id` and `file_uuid`. The compat arm is mandatory for a
+  reason worth stating precisely: a bare `term` on `doc_type` is not broken by the dynamic
+  mapping (the four values are single lowercase tokens OpenSearch 3.4 matches fine) — it is
+  broken by **every document already indexed carrying no `doc_type` at all**, which makes the
+  #400 prune count return 0 for the whole installed corpus.
 - **Chunk docs snapshot `speaker` / `speakers` / `title`; renames must be propagated**
   (issue #405). Chat's speaker axis resolves the display name from **Postgres** and filters the
   index with an exact `terms` match on `speaker` (`hybrid_search_service:1107`), so an

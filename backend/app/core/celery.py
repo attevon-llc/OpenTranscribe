@@ -107,6 +107,7 @@ celery_app = Celery(
         "app.tasks.speaker_embedding_task",
         "app.tasks.speaker_attribute_task",
         "app.tasks.topic_extraction",
+        "app.tasks.ingest_artifacts_task",
         "app.tasks.reindex_task",
         "app.tasks.search_maintenance_task",
         "app.tasks.opensearch_integrity_task",
@@ -265,6 +266,10 @@ celery_app.conf.update(
         "ai.group_batch_files": {"queue": CeleryQueues.NLP},
         "ai.retroactive_auto_label": {"queue": CeleryQueues.NLP},
         "ai.auto_label_batch": {"queue": CeleryQueues.NLP},
+        # Deterministic ingest artifacts (#383 Phase 2). No LLM and no model load — it
+        # rides the nlp pool because that is the CPU-only enrichment pool, not because
+        # it calls a provider. It must still run when none is configured (#403 D6).
+        "artifacts.generate_file_facts": {"queue": CeleryQueues.NLP},
         # Redaction Queue - Content moderation detection (dedicated CPU service)
         "redaction.detect": {"queue": CeleryQueues.REDACTION},
         "redaction.reindex_all": {"queue": CeleryQueues.REDACTION},

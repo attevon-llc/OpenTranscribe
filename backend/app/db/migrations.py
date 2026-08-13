@@ -439,7 +439,49 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'user_group' AND column_name = 'organization_id')"
     )
 
+    # v389: file_facts — the deterministic ingest artifacts (#383 Phase 2). Probed on the
+    # table rather than on a column, because the whole revision is one CREATE TABLE.
+    has_file_facts = "file_facts" in tables
+
     # Return the highest version stamp that matches (newest first)
+    # v389: same as v388 plus the ingest-artifacts sidecar. Cumulative, so a database that
+    # somehow has file_facts but lost user_group.organization_id falls through to an
+    # earlier arm and re-runs both — which is safe, both revisions being idempotent.
+    if (
+        has_cloud_seams
+        and not has_legacy_varchar_uuid
+        and has_media_file_quarantine
+        and has_pre_quarantine_status
+        and has_external_identity_columns
+        and has_watch_source_org
+        and has_speaker_cluster_org
+        and has_tag_user_id
+        and has_chat_tables
+        and has_chat_projects
+        and has_auth_type_check
+        and has_user_invitation
+        and has_group_mapping
+        and has_membership_source
+        and not has_legacy_oidc_config_keys
+        and has_oidc_subject
+        and has_oidc_user_refresh_token
+        and has_session_id_token
+        and has_user_approval_status
+        and has_approval_status_check
+        and has_scim_token
+        and has_proxy_group_source
+        and has_saml_subject
+        and has_saml_auth_type_check
+        and has_chat_reasoning_content
+        and not has_orphan_tables
+        and has_tag_share
+        and has_actor_fk_set_null
+        and has_tag_share_type_check
+        and not has_legacy_role_check
+        and has_user_group_org
+        and has_file_facts
+    ):
+        return "v389_add_file_facts"
     # v388: same as v387 plus the group tenancy stamp.
     if (
         has_cloud_seams

@@ -47,6 +47,13 @@ authority. See `backend/app/db/CLAUDE.md`.
   behind. The relationship therefore uses `passive_deletes=True` and deliberately NOT
   `delete-orphan`. `ChatProject.default_scope` / `has_scope` mirror `ChatConversation.scope` so
   the resolver reads either shape without a second code path.
+- `file_facts.py` — `FileFacts` (`v389`), a **1:1 sidecar** on `media_file` holding the
+  deterministic ingest artifacts (#383 Phase 2): `facts`, `digest`, `keyphrases` JSONB plus
+  `generator_version` / `source_fingerprint` lifecycle state. A sidecar rather than columns on
+  `media_file` because that row is ~70 columns and is loaded whole by every gallery page,
+  while these have two readers — and because Stage 3 needs a narrow "which digests are stale"
+  scan. Its FK is the schema's one deliberate `ON DELETE CASCADE` on a derived row, and it is
+  **named explicitly** so the ORM declares the object Postgres actually enforces.
 - `__init__.py` — the canonical import surface. A new model must be added here.
 
 ## Conventions / patterns

@@ -311,6 +311,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Config, constants, celery wiring | `backend/app/core/CLAUDE.md` |
 | Shared backend helpers | `backend/app/utils/CLAUDE.md` |
 | Services overview, LLM features, yt-dlp ingestion | `backend/app/services/CLAUDE.md` |
+| Deterministic ingest artifacts (facts / extractive digest / keyphrases, no LLM) | `backend/app/services/ingest_artifacts/CLAUDE.md` |
 | RAG chat pipeline (retrieval, masking, prompting) | `backend/app/services/chat/CLAUDE.md` |
 | Pluggable ASR providers | `backend/app/services/asr/CLAUDE.md` |
 | Pluggable diarization providers | `backend/app/services/diarization/CLAUDE.md` |

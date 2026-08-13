@@ -23,6 +23,11 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
 - **Providers** — `asr/` and `diarization/`: `base.py` + `types.py` + `factory.py` + one file
   per vendor. Add a provider by adding a module and registering it in the factory; never
   branch on provider name at a call site.
+- **Deterministic ingest artifacts** — `ingest_artifacts/` (**own CLAUDE.md**): per-file
+  statistics, a sectioned extractive digest with provenance, and keyphrases, all with **no
+  LLM and no OpenSearch**. It is what gives an `LLM_PROVIDER`-empty deployment a summary
+  tier (#403 D6), and the digest sizing is derived from a *measured* 128-wordpiece
+  embedding window, not from the plan's assumed 256.
 - **Redaction** — `redaction/` (**own CLAUDE.md**). **Watch sources** — `watch_sources/`
   (**own CLAUDE.md**).
 - **Media in/out** — `media_download_service.py` (yt-dlp), `media_mirror_*.py`,

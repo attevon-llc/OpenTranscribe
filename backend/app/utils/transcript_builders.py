@@ -108,6 +108,46 @@ def build_speaker_segments(
     ]
 
 
+def compute_speaker_stats(transcript_segments) -> dict[str, Any]:
+    """Per-speaker talk time, segment count, word count and share of the conversation.
+
+    Split out of :func:`build_transcript_and_stats` for #383 Phase 2: these numbers were
+    computed on every summarization run and then **thrown away**, and were never computed
+    at all on a deployment with no LLM — yet they are the exact answer to "who talked
+    most / how long / who was in this". ``services/ingest_artifacts`` now persists them
+    (``file_facts``) on the transcription-completion path instead.
+
+    Reads the original text for word counts, never the masked text, so redaction settings
+    cannot change a statistic.
+
+    Args:
+        transcript_segments: ``TranscriptSegment`` rows, in any order — these are order-
+            independent aggregates.
+
+    Returns:
+        ``{speaker_name: {"total_time", "segment_count", "word_count", "percentage"}}``.
+    """
+    speaker_stats: dict[str, Any] = {}
+
+    for segment in transcript_segments:
+        speaker_name = get_speaker_name(segment)
+        if speaker_name not in speaker_stats:
+            speaker_stats[speaker_name] = {
+                "total_time": 0,
+                "segment_count": 0,
+                "word_count": 0,
+            }
+        speaker_stats[speaker_name]["total_time"] += segment.end_time - segment.start_time
+        speaker_stats[speaker_name]["segment_count"] += 1
+        speaker_stats[speaker_name]["word_count"] += len(str(segment.text or "").split())
+
+    total_time = sum(stats["total_time"] for stats in speaker_stats.values())
+    for stats in speaker_stats.values():
+        stats["percentage"] = (stats["total_time"] / total_time * 100) if total_time > 0 else 0
+
+    return speaker_stats
+
+
 def build_transcript_and_stats(
     transcript_segments,
     redaction_cfg=None,
@@ -122,21 +162,9 @@ def build_transcript_and_stats(
     """
     full_transcript = ""
     current_speaker: str | None = None
-    speaker_stats: dict[str, Any] = {}
 
     for segment in transcript_segments:
         speaker_name = get_speaker_name(segment)
-
-        segment_duration = segment.end_time - segment.start_time
-        if speaker_name not in speaker_stats:
-            speaker_stats[speaker_name] = {
-                "total_time": 0,
-                "segment_count": 0,
-                "word_count": 0,
-            }
-        speaker_stats[speaker_name]["total_time"] += segment_duration
-        speaker_stats[speaker_name]["segment_count"] += 1
-        speaker_stats[speaker_name]["word_count"] += len(str(segment.text or "").split())
 
         if speaker_name != current_speaker:
             full_transcript += f"\n\n{speaker_name}: "
@@ -147,8 +175,4 @@ def build_transcript_and_stats(
         timestamp = f"[{int(segment.start_time // 60):02d}:{int(segment.start_time % 60):02d}]"
         full_transcript += f"{timestamp} {mask_segment_text(segment, redaction_cfg)}"
 
-    total_time = sum(stats["total_time"] for stats in speaker_stats.values())
-    for stats in speaker_stats.values():
-        stats["percentage"] = (stats["total_time"] / total_time * 100) if total_time > 0 else 0
-
-    return full_transcript, speaker_stats
+    return full_transcript, compute_speaker_stats(transcript_segments)

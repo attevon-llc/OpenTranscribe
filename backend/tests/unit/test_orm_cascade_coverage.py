@@ -47,6 +47,7 @@ from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import IntegrityError
 
 from app.models.custom_vocabulary import CustomVocabulary
+from app.models.file_facts import FileFacts
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
 from app.models.media import Analytics
@@ -85,6 +86,10 @@ _MEDIA_FILE_CHILDREN: dict[str, tuple[Any, bool]] = {
     "collection_memberships": (CollectionMember, True),
     "speakers": (Speaker, True),
     "topic_suggestions": (TopicSuggestion, True),
+    # v389: the FK is ON DELETE CASCADE, so the database removes the row too — the one
+    # place in this schema where a derived row is deliberately cascaded rather than
+    # NO ACTION'd (there is nothing to re-expose by deleting a summary of a deleted file).
+    "facts_row": (FileFacts, True),
 }
 
 #: The four whose FK refuses a bulk parent delete, and the constraint that does the
@@ -159,6 +164,18 @@ def _seed_child(db, media_file: MediaFile, relationship_name: str) -> Any:
             media_file_id=media_file.id,
             user_id=user_id,
             suggested_tags=[{"name": "c"}],
+        )
+    elif relationship_name == "facts_row":
+        row = FileFacts(
+            media_file_id=media_file.id,
+            generator_version="1.1.1",
+            source_fingerprint="0" * 64,
+            language="en",
+            facts={},
+            digest={},
+            keyphrases={},
+            digest_word_count=0,
+            section_count=0,
         )
     else:  # pragma: no cover - a new relationship must be added to the map above
         raise AssertionError(f"no seeder for MediaFile.{relationship_name}")

@@ -253,6 +253,34 @@ backend/venv/bin/pre-commit run --all-files    # the gate CI mirrors
 
 Hook inventory is in `.pre-commit-config.yaml`. The frontend hook only fires when `frontend/src/**/*.{svelte,ts,js,css,html}` is staged. Note that `prettier` **rewrites files** and then reports failure — re-stage and re-run, don't "fix" anything by hand.
 
+### ⚠️ Fix the finding, never silence it
+
+**A hook failure is information, not an obstacle.** The lint gate has already caught real defects in
+this repo that review missed — an `Any` used but never imported, a `!=` status assertion that
+passes on a 500, a test whose every assertion sat inside a loop over an empty list. Silencing any
+of those would have shipped the bug with a clean gate.
+
+The test to apply: **would this change still be an improvement if the linter were deleted
+tomorrow?** A fix makes the code better; a suppression only makes the tool quieter.
+
+| Legitimate | Not legitimate |
+|---|---|
+| Re-staging after `prettier` / `ruff format` **rewrote** the file — they mutate, then report failure. That is the documented workflow, not a bypass. | Adding `# noqa`, `# type: ignore`, `# fmt: off`, or an eslint-disable to make a real finding go away |
+| A **type annotation** that tells the checker what an untyped third-party call returns (`response: dict[str, Any] = client.search(...)`). Every downstream use is still checked. | **Widening to `Any`** to stop mypy complaining about a genuine mismatch. That deletes the check. |
+| `# noqa: <RULE>` **with a written reason**, where the rule is genuinely inapplicable and no restructuring removes it | Moving an existing `noqa` so the tool finally honours it, without asking whether the suppression was ever right |
+| Fixing a test so the auditor's finding disappears | Adding an `audit-allowlist.txt` entry to clear a finding you could fix |
+| `--no-verify` | **Never.** Not once, not "just this commit". |
+
+**Worked example, because the wrong version looked reasonable.** `scripts/benchmark_rag.py` raised
+`E402` on an import that must follow a `sys.path.insert`. The first attempt relocated a stale
+`noqa` so ruff would honour it — quieter tool, unchanged code. The actual fix was to move the
+import **into the function that uses it**, which the same file already did eleven lines further
+down for the identical reason. Zero suppressions, ruff clean, and the file got *simpler*. Reaching
+for `noqa` also nearly buried the `F821` beside it: `Any` was used and never imported.
+
+**When a hook fails, read the finding before deciding it is spurious.** Roughly half the failures
+blamed on the stash window (above) were real.
+
 Manual frontend check: `./scripts/frontend-check.sh [--no-claude] [--check-only]`. Inside Claude Code: `/fix-frontend`.
 
 ## Testing

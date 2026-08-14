@@ -15,6 +15,7 @@ policy lives, not a fact hidden where the model loads.
 from __future__ import annotations
 
 import logging
+import threading
 
 from app.core import constants as C  # noqa: N812
 from app.services.redaction.detectors import DetectorUnavailableError
@@ -48,6 +49,14 @@ _MAX_CHARS = 2000
 _analyzer = None  # singleton
 _analyzer_gliner: bool | None = None  # which GLiNER mode the cached analyzer was built with
 _load_failed = False
+
+# Serializes the BUILD, not the reads. Building takes ~7-10 s, so without this two
+# callers arriving inside that window each built their OWN engine: measured 2
+# distinct engines, ~11.6 s apiece (vs 10.1 s solo — they contend for CPU), and
+# ~2x the ~500 MB peak. Neither caller benefited from the other's work. That is the
+# API process's normal case, not an edge case, because the warm-up below runs
+# concurrently with inbound requests by design.
+_analyzer_lock = threading.Lock()
 
 
 def _build_analyzer(use_gliner: bool):
@@ -120,22 +129,45 @@ def _build_analyzer(use_gliner: bool):
     return analyzer
 
 
-def _get_analyzer(use_gliner: bool):
-    """Return the analyzer, rebuilding it if the GLiNER mode changed (admin toggle)."""
-    global _analyzer, _analyzer_gliner, _load_failed
+def _cached(use_gliner: bool):
+    """The usable cached analyzer, or None if one must be built.
+
+    Split out only so the fast path and the post-lock re-check cannot drift apart.
+    """
     if _analyzer is not None and _analyzer_gliner == use_gliner:
         return _analyzer
     if _load_failed and _analyzer is not None:
         return _analyzer  # keep what we have if a rebuild previously failed
-    try:
-        _analyzer = _build_analyzer(use_gliner)
-        _analyzer_gliner = use_gliner
-        _load_failed = False
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Presidio analyzer failed to load — PII detection disabled: %s", exc)
-        _load_failed = True
-        return _analyzer  # may be None
-    return _analyzer
+    return None
+
+
+def _get_analyzer(use_gliner: bool):
+    """Return the analyzer, rebuilding it if the GLiNER mode changed (admin toggle).
+
+    Double-checked locking: the cache hit stays lock-free (measured at ~2 us, and
+    it is on every masked segment), while a **build** is serialized so a caller
+    arriving mid-build waits for that build instead of starting a second one.
+    Waiting is strictly the better outcome — it is the same engine, sooner, for
+    less CPU — and the caller was going to block for a cold build either way.
+    """
+    global _analyzer, _analyzer_gliner, _load_failed
+    cached = _cached(use_gliner)
+    if cached is not None:
+        return cached
+    with _analyzer_lock:
+        # Re-check: whoever held the lock may have built exactly what we need.
+        cached = _cached(use_gliner)
+        if cached is not None:
+            return cached
+        try:
+            _analyzer = _build_analyzer(use_gliner)
+            _analyzer_gliner = use_gliner
+            _load_failed = False
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Presidio analyzer failed to load — PII detection disabled: %s", exc)
+            _load_failed = True
+            return _analyzer  # may be None
+        return _analyzer
 
 
 def preload() -> bool:

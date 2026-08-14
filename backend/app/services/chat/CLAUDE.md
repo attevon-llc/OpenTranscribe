@@ -163,8 +163,13 @@ alternatives and neither substitutes for the other.
 
 Measured cost (gemma-4-e4b on the local vLLM, 400 deltas / 1,677 chars / 23.9 tok/s, real
 Presidio): **+549 ms to first visible token**, 12.7 ms of detector time per sentence, +318 ms
-over the whole 16.7 s answer. The one-off cost that actually hurts is the **~10 s Presidio cold
-load** on the first masked answer in a fresh API process — worth preloading, and not yet done.
+over the whole 16.7 s answer. The one-off cost that used to hurt was the **~10 s Presidio cold
+load** on the first masked answer in a fresh API process. That is **done** (issue #74):
+`redaction/warmup.py` builds the analyzer on a daemon thread at startup when the deployment
+actually redacts, taking the first `_mask_inline` from **9.927 s to 0.016 s**. It is a warm-up,
+not a dependency — an absent Presidio still fails closed exactly as before. Read that package's
+CLAUDE.md before touching it: the warm-up is only safe because `_get_analyzer` now holds a build
+lock, without which a request arriving mid-warm-up built a *second* engine.
 
 Pinned by `tests/unit/test_chat_output_redaction.py`, whose `models`-marked test is the only one
 that proves the *detector* — not the plumbing — catches a paraphrase.

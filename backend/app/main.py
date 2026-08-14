@@ -678,6 +678,26 @@ def _register_chat_usage_hook() -> None:
         logger.warning(f"Chat usage hook registration failed (non-fatal): {e}")
 
 
+def _start_pii_warmup() -> None:
+    """Warm Presidio in the API process if this deployment actually redacts (issue #74).
+
+    The API process runs three inline maskers — chat's fail-closed fallback, output
+    redaction, and segment-edit re-detection — and the first of them in a fresh
+    process paid a ~10 s ``AnalyzerEngine`` build on a user-facing request.
+
+    The gate query *and* the build both run on a daemon thread, so the lifespan pays
+    only ``Thread.start()`` (measured: 0.53 ms) and the backend's healthcheck window
+    is untouched. Deployments where nobody enabled redaction build nothing at all.
+    Never a startup dependency: Presidio is optional and its callers fail closed.
+    """
+    try:
+        from app.services.redaction.warmup import start_pii_warmup
+
+        start_pii_warmup()
+    except Exception as e:  # noqa: BLE001 — an optimisation never blocks startup
+        logger.warning(f"PII analyzer warm-up could not start (non-fatal): {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup and shutdown events."""
@@ -799,6 +819,8 @@ async def lifespan(app: FastAPI):
             _clear_stale_task_state()
     except Exception as e:
         logger.warning(f"Migration state cleanup failed (non-fatal): {e}")
+
+    _start_pii_warmup()
 
     logger.info("Setting up MinIO and task recovery...")
     minio_task = asyncio.create_task(run_in_threadpool(_setup_minio))

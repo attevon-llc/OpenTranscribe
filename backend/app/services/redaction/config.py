@@ -232,6 +232,48 @@ def resolve_effective_config(db: Session, user_id: int) -> EffectiveRedactionCon
     )
 
 
+def redaction_is_in_use(db: Session) -> bool:
+    """Does ANY user have redaction on, or does the admin floor force a category?
+
+    The question a process asks before spending ~7 s and ~500 MB warming a
+    detector it may never call (issue #74). Redaction is **opt-out**
+    (``DEFAULT_REDACTION_ENABLED`` is False), so on most deployments the answer
+    is no and nothing should be loaded.
+
+    It is deliberately not "does anyone mask the ``pii`` category". Every inline
+    masker runs :func:`detection_config_for_all`, which runs **all** detectors
+    regardless of which categories a user masks — so a single user with
+    ``redaction_enabled`` is enough to make Presidio load, whatever their
+    categories are. Narrowing this to ``pii`` would skip the warm-up on exactly
+    the deployments that still pay the cold load.
+
+    Any admin-forced category is likewise sufficient on its own:
+    :func:`resolve_effective_config` resolves ``enabled = user_enabled or
+    bool(forced_categories)``, so a floor turns masking on for everyone.
+
+    Args:
+        db: Database session. Two short reads; holds nothing open.
+
+    Returns:
+        True if some user's or the admin's policy can activate masking.
+    """
+    from app import models
+
+    if _load_admin_policy(db)["forced_categories"]:
+        return True
+
+    # DISTINCT over the values, not a row per user: the answer is a property of
+    # the deployment, and the parse stays the one in this module rather than a
+    # second truthiness rule written in SQL.
+    values = (
+        db.query(models.UserSetting.setting_value)
+        .filter(models.UserSetting.setting_key == "redaction_enabled")
+        .distinct()
+        .all()
+    )
+    return any(_parse_bool(row[0], False) for row in values)
+
+
 def blocking_detector_failures(
     failures: Iterable[str], enabled_categories: Collection[str]
 ) -> set[str]:

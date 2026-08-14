@@ -21,6 +21,8 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   actually ran**, against what the policy relies on. The read half of
   `media_file.redaction_coverage` (`v392`). See the gotcha below.
 - `device.py` — `resolve_device()` + `inference_guard()`: **runtime, per-scan VRAM probe**.
+- `warmup.py` — builds the Presidio analyzer **in the API process**, on a daemon thread,
+  only when this deployment actually redacts. See the gotcha below.
 - `detectors/` — `wordlist` (regex, read-time), `pii_presidio` (Presidio + spaCy, optional
   GLiNER), `toxicity` (`unitary/toxic-bert`; multilingual XLM-R for non-English), `llm`.
 
@@ -153,6 +155,42 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   so `toxicity.score_texts` must NOT re-acquire it (`score_text` does — single-segment path only).
 - **"CPU service" is a misnomer**: `REDACTION_DEVICE=auto` puts models on GPU whenever free VRAM
   ≥ `REDACTION_MIN_FREE_VRAM_GB` (1.5), re-probed per scan, moving them back under pressure.
+- **⚠️ The API process runs Presidio too, and `warmup.py` is why it no longer stalls
+  (issue #74).** `celery-redaction` is still the only `PRELOAD_REDACTION_MODELS=true`
+  container — that statement, and the identical ones in `tasks/CLAUDE.md` and
+  `.env.example`, stay true; the API warms by a **different mechanism and loads only
+  Presidio**, never the ~500 MB toxicity weights. Three live paths reach a detector in the
+  API process: `chat/redactor._mask_inline` (reached *more* often since `v392`, because a
+  scan that skipped `pii` now falls through to it), `chat/output_redactor`, and
+  `redetect_edited_segment`. Measured in a fresh process: **9.9 s** to build the
+  `AnalyzerEngine`, 0.2 s for the first `analyze()`, 0.01 s warm — the cost is the
+  **build**, not inference. First `_mask_inline` went **9.927 s → 0.016 s**; the lifespan
+  pays **0.53 ms** (`Thread.start()`).
+  - **The gate is DERIVED, not configured** — `config.redaction_is_in_use(db)`: any user
+    with `redaction_enabled`, or any admin `force_*` category. Redaction is opt-out, so
+    most deployments warm nothing. It is deliberately not "does anyone mask `pii`": every
+    inline masker runs `detection_config_for_all()`, which runs **all** detectors whatever
+    the user's categories are, so a category-based gate would skip exactly the deployments
+    that still pay the cold load. No new `.env` var, and `PRELOAD_REDACTION_MODELS` was
+    **not** reused — it means "load PII *and toxicity* on this worker", which is not what
+    the API needs, and re-scoping it would have made its own description wrong.
+  - **There is no force-OFF knob, on purpose.** An operator with redaction on cannot
+    decline the warm-up — but they would pay the same ~500 MB on the first masked answer
+    anyway. Warming only moves the cost earlier; it never adds any.
+  - **⚠️ `_get_analyzer` needed a LOCK before any warm-up was safe.** It had no mutual
+    exclusion, so two callers inside the build window each built their **own** engine:
+    measured 2 distinct engines at ~11.6 s apiece (vs 10.1 s solo — they contend) and ~2x
+    peak RAM. A warm-up thread runs concurrently with inbound requests *by design*, so
+    without the lock this change would have made its own target case slower. Now
+    double-checked: the cache hit stays lock-free (~2 us, on every masked segment) and a
+    caller arriving mid-build **waits for the remainder** — 3 s into a 10 s build it waits
+    7.0 s instead of 8.8 s building a duplicate. Never worse than cold, at any arrival time.
+  - **Failure is never fatal.** An absent Presidio logs and returns; `_get_analyzer` still
+    returns `None` and every caller's fail-closed handling is unchanged. The gate query
+    closes its session **before** the build starts — a ~10 s model load inside a
+    transaction is the defect `scripts/audit-session-lifetime.py` exists to catch.
+  - Pinned by `tests/redaction/test_pii_warmup.py` (the three lock tests are must-fire:
+    they go red against the pre-lock module with "the analyzer was built more than once").
 - **⚠️ Segment-edit re-detection is the one fail-closed path that WRITES** — and the API process
   it runs in never preloads Presidio/toxicity, so it is also where a detector is most likely to
   be unavailable. `crud.py`'s `text_changed` branch used to persist whatever

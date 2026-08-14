@@ -45,6 +45,67 @@ RUN_LOG="$OUT_DIR/run-$$.log"
 RUN_XML="$OUT_DIR/run-$$.xml"
 mkdir -p "$OUT_DIR"
 
+# ── Reporting from the saved artifacts (no pytest) ─────────────────────────
+
+report_summary() {
+    [[ -f "$XML" ]] || { echo -e "${YELLOW}no previous run at $XML${NC}" >&2; return 1; }
+    python3 - "$XML" <<'PY'
+import sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+suites = root.findall(".//testsuite") or [root]
+tot = fail = err = skip = 0
+for s in suites:
+    tot  += int(s.get("tests", 0))
+    fail += int(s.get("failures", 0))
+    err  += int(s.get("errors", 0))
+    skip += int(s.get("skipped", 0))
+passed = tot - fail - err - skip
+time = sum(float(s.get("time", 0)) for s in suites)
+status = "PASS" if (fail + err) == 0 else "FAIL"
+print(f"{status}  {passed} passed, {fail} failed, {err} errors, {skip} skipped "
+      f"({tot} total, {time:.1f}s)")
+# Exit non-zero when the RECORDED run failed, so `--summary && something` cannot
+# report success over a run with failures in it. Printing "FAIL" and exiting 0 is
+# the same defect this suite keeps finding in the product: a green signal that
+# means nothing. The run path below ignores this status, because there `rc` is
+# pytest's own and is the more direct answer.
+sys.exit(0 if (fail + err) == 0 else 1)
+PY
+}
+
+report_failures() {
+    [[ -f "$XML" ]] || { echo -e "${YELLOW}no previous run at $XML${NC}" >&2; return 1; }
+    python3 - "$XML" <<'PY'
+import sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+bad = []
+for case in root.iter("testcase"):
+    for kind in ("failure", "error"):
+        node = case.find(kind)
+        if node is not None:
+            name = f"{case.get('classname','')}::{case.get('name','')}".lstrip(":")
+            msg = (node.get("message") or "").strip().splitlines()
+            bad.append((kind, name, msg[0][:180] if msg else ""))
+if not bad:
+    print("no failures in the last run")
+else:
+    print(f"{len(bad)} failing test(s):\n")
+    for kind, name, msg in bad:
+        print(f"  [{kind}] {name}")
+        if msg:
+            print(f"      {msg}")
+PY
+}
+
+case "${1:-}" in
+    --summary)  report_summary; exit $? ;;
+    --failures) report_failures; exit $? ;;
+    --log)      echo "$LOG"; exit 0 ;;
+    -h|--help)  sed -n '2,28p' "$0" | sed 's/^# \?//'; exit 0 ;;
+esac
+
+# ── Interpreter resolution (only needed to RUN; the modes above do not) ────
+
 # A git worktree cannot use $REPO_ROOT/backend/venv: docker-compose.override.yml
 # declares an anonymous volume at /app/venv and /app binds ./backend, so Docker
 # CREATES backend/venv on the host — empty and root-owned — in order to mount over
@@ -112,58 +173,6 @@ if [[ -z "${OT_TEST_PYTHON:-}" && ! -x "$PY" ]]; then
     exit 2
 fi
 
-# ── Reporting from the saved artifacts (no pytest) ─────────────────────────
-
-report_summary() {
-    [[ -f "$XML" ]] || { echo -e "${YELLOW}no previous run at $XML${NC}" >&2; return 1; }
-    python3 - "$XML" <<'PY'
-import sys, xml.etree.ElementTree as ET
-root = ET.parse(sys.argv[1]).getroot()
-suites = root.findall(".//testsuite") or [root]
-tot = fail = err = skip = 0
-for s in suites:
-    tot  += int(s.get("tests", 0))
-    fail += int(s.get("failures", 0))
-    err  += int(s.get("errors", 0))
-    skip += int(s.get("skipped", 0))
-passed = tot - fail - err - skip
-time = sum(float(s.get("time", 0)) for s in suites)
-status = "PASS" if (fail + err) == 0 else "FAIL"
-print(f"{status}  {passed} passed, {fail} failed, {err} errors, {skip} skipped "
-      f"({tot} total, {time:.1f}s)")
-PY
-}
-
-report_failures() {
-    [[ -f "$XML" ]] || { echo -e "${YELLOW}no previous run at $XML${NC}" >&2; return 1; }
-    python3 - "$XML" <<'PY'
-import sys, xml.etree.ElementTree as ET
-root = ET.parse(sys.argv[1]).getroot()
-bad = []
-for case in root.iter("testcase"):
-    for kind in ("failure", "error"):
-        node = case.find(kind)
-        if node is not None:
-            name = f"{case.get('classname','')}::{case.get('name','')}".lstrip(":")
-            msg = (node.get("message") or "").strip().splitlines()
-            bad.append((kind, name, msg[0][:180] if msg else ""))
-if not bad:
-    print("no failures in the last run")
-else:
-    print(f"{len(bad)} failing test(s):\n")
-    for kind, name, msg in bad:
-        print(f"  [{kind}] {name}")
-        if msg:
-            print(f"      {msg}")
-PY
-}
-
-case "${1:-}" in
-    --summary)  report_summary; exit $? ;;
-    --failures) report_failures; exit $? ;;
-    --log)      echo "$LOG"; exit 0 ;;
-    -h|--help)  sed -n '2,28p' "$0" | sed 's/^# \?//'; exit 0 ;;
-esac
 
 # ── Run ────────────────────────────────────────────────────────────────────
 

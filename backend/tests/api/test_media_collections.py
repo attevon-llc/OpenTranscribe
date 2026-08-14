@@ -482,3 +482,104 @@ def test_delete_share_wrong_collection_404(
     )
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json()["detail"] == "Share not found on this collection"
+
+
+# ---------------------------------------------------------------------------
+# Collection sharing audit events (issue #443's smaller half — RESOURCE_SHARE
+# and RESOURCE_UNSHARE previously did not exist and nothing was emitted).
+# ---------------------------------------------------------------------------
+
+
+def test_create_share_emits_resource_share_audit_event(
+    client, user_token_headers, normal_user, other_user, db_session, monkeypatch
+):
+    from app.api.endpoints import media_collections as collections_module
+
+    events = []
+    monkeypatch.setattr(collections_module.audit_logger, "log", lambda **kw: events.append(kw))
+
+    col = _make_collection(db_session, normal_user)
+    response = client.post(
+        f"/api/collections/{col.uuid}/shares",
+        headers=user_token_headers,
+        json={
+            "target_type": "user",
+            "target_uuid": str(other_user.uuid),
+            "permission": "viewer",
+        },
+    )
+    assert response.status_code == status.HTTP_201_CREATED
+    assert len(events) == 1
+    event = events[0]
+    assert event["event_type"] == collections_module.AuditEventType.RESOURCE_SHARE
+    assert event["user_id"] == normal_user.id
+    assert event["target_user_id"] == other_user.id
+    assert event["details"]["resource_type"] == "collection"
+    assert event["details"]["resource_uuid"] == str(col.uuid)
+    assert event["details"]["permission"] == "viewer"
+
+
+def test_create_share_with_self_400_does_not_emit_audit_event(
+    client, user_token_headers, normal_user, db_session, monkeypatch
+):
+    """Control: a rejected share must not fire the event."""
+    from app.api.endpoints import media_collections as collections_module
+
+    events = []
+    monkeypatch.setattr(collections_module.audit_logger, "log", lambda **kw: events.append(kw))
+
+    col = _make_collection(db_session, normal_user)
+    response = client.post(
+        f"/api/collections/{col.uuid}/shares",
+        headers=user_token_headers,
+        json={"target_type": "user", "target_uuid": str(normal_user.uuid), "permission": "viewer"},
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert events == []
+
+
+def test_update_share_permission_emits_resource_share_audit_event(
+    client, user_token_headers, normal_user, other_user, db_session, monkeypatch
+):
+    from app.api.endpoints import media_collections as collections_module
+
+    events = []
+    monkeypatch.setattr(collections_module.audit_logger, "log", lambda **kw: events.append(kw))
+
+    col = _make_collection(db_session, normal_user)
+    share = _make_share(db_session, col, normal_user, target_user=other_user, permission="viewer")
+    response = client.put(
+        f"/api/collections/{col.uuid}/shares/{share.uuid}",
+        headers=user_token_headers,
+        json={"permission": "editor"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert len(events) == 1
+    event = events[0]
+    assert event["event_type"] == collections_module.AuditEventType.RESOURCE_SHARE
+    assert event["details"]["action"] == "permission_update"
+    assert event["details"]["previous_permission"] == "viewer"
+    assert event["details"]["permission"] == "editor"
+
+
+def test_delete_share_emits_resource_unshare_audit_event(
+    client, user_token_headers, normal_user, other_user, db_session, monkeypatch
+):
+    from app.api.endpoints import media_collections as collections_module
+
+    events = []
+    monkeypatch.setattr(collections_module.audit_logger, "log", lambda **kw: events.append(kw))
+
+    col = _make_collection(db_session, normal_user)
+    share = _make_share(db_session, col, normal_user, target_user=other_user)
+    response = client.delete(
+        f"/api/collections/{col.uuid}/shares/{share.uuid}", headers=user_token_headers
+    )
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    assert len(events) == 1
+    event = events[0]
+    assert event["event_type"] == collections_module.AuditEventType.RESOURCE_UNSHARE
+    assert event["user_id"] == normal_user.id
+    assert event["target_user_id"] == other_user.id
+    assert event["details"]["resource_type"] == "collection"
+    assert event["details"]["resource_uuid"] == str(col.uuid)

@@ -17,6 +17,7 @@ from .endpoints import chat
 from .endpoints import combined_speaker_migration
 from .endpoints import comments
 from .endpoints import custom_vocabulary
+from .endpoints import documents
 from .endpoints import embedding_migration
 from .endpoints import engine_settings
 from .endpoints import first_run_wizard
@@ -93,6 +94,7 @@ def include_router_with_consistency(router, prefix, tags=None, capability=None):
 include_router_with_consistency(auth.router, prefix="/auth", tags=["auth"])
 include_router_with_consistency(files_router, prefix="/files", tags=["files"])
 include_router_with_consistency(file_management_router, prefix="/files", tags=["file-management"])
+include_router_with_consistency(documents.router, prefix="/documents", tags=["documents"])
 include_router_with_consistency(search.router, prefix="/search", tags=["search"])
 include_router_with_consistency(speakers.router, prefix="/speakers", tags=["speakers"])
 include_router_with_consistency(

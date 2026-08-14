@@ -267,7 +267,7 @@ class RedactionService:
                 )
                 return {"status": "failed", "reason": "detector_failure", "detectors": failed}
 
-            # WHICH detectors this scan's spans reflect (v391). Written in the same
+            # WHICH detectors this scan's spans reflect (v392). Written in the same
             # commit as DONE, because the whole point is that the two must never be
             # read apart: `done` says the scan finished and this says what it looked
             # at. `skipped` already carries both reasons a detector did not run — the

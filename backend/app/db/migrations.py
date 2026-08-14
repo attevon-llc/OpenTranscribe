@@ -439,23 +439,33 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'user_group' AND column_name = 'organization_id')"
     )
 
-    # v389: file_facts — the deterministic ingest artifacts (#383 Phase 2). Probed on the
+    # v389: the GDPR Art. 17 erasure ledger. Probed on the CHECK rather than on the
+    # table, because the constraint is the part that carries the guarantee — a hand-made
+    # `erasure_ledger` without `ck_erasure_ledger_counters_numeric` is a table that can
+    # store the personal data the ledger exists not to retain, and re-running the
+    # revision is exactly the right repair for it.
+    has_erasure_ledger = "erasure_ledger" in tables and _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_erasure_ledger_counters_numeric')"
+    )
+
+    # v390: file_facts — the deterministic ingest artifacts (#383 Phase 2). Probed on the
     # table rather than on a column, because the whole revision is one CREATE TABLE.
     has_file_facts = "file_facts" in tables
 
-    # v390: recorded_date + its provenance on media_file. Probed on the CHECK rather than
+    # v391: recorded_date + its provenance on media_file. Probed on the CHECK rather than
     # on the column deliberately — the constraint is the half of the revision that carries
     # the design (a date with no source is unrepresentable), and keying on it means a
     # database left with the columns but not the CHECKs by a partial run falls through to
-    # v389 and re-runs v390, which the idempotent DDL handles. Keying on the column would
+    # v390 and re-runs v391, which the idempotent DDL handles. Keying on the column would
     # stamp that database as done and leave the rule unenforced.
     has_recorded_date_provenance = _check_exists(
         "SELECT EXISTS(SELECT 1 FROM pg_constraint "
         "WHERE conname = 'ck_media_file_recorded_date_provenance')"
     )
 
-    # v391: media_file.redaction_coverage — which detectors a finished scan actually ran.
-    # Single-marker revision (one ADD COLUMN, no constraint), so unlike v390 there is no
+    # v392: media_file.redaction_coverage — which detectors a finished scan actually ran.
+    # Single-marker revision (one ADD COLUMN, no constraint), so unlike v391 there is no
     # rule to key on and the column IS the fingerprint.
     has_redaction_coverage = _check_exists(
         "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
@@ -463,12 +473,13 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     )
 
     # Return the highest version stamp that matches (newest first)
-    # v389: same as v388 plus the ingest-artifacts sidecar. Cumulative, so a database that
-    # somehow has file_facts but lost user_group.organization_id falls through to an
-    # earlier arm and re-runs both — which is safe, both revisions being idempotent.
+    # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
+    # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
+    # strictly more specific and the ladder returns the FIRST match.
     #
-    # Bound to a name rather than inlined twice: v390 is v389's fingerprint plus one probe,
-    # and a copy-pasted 30-term conjunction is a place for the two to drift apart silently.
+    # Bound to a name rather than inlined four times: v390-v392 are each v389's
+    # fingerprint plus one more probe, and a copy-pasted 30-term conjunction is a place
+    # for them to drift apart silently.
     matches_v389 = (
         has_cloud_seams
         and not has_legacy_varchar_uuid
@@ -501,16 +512,19 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_tag_share_type_check
         and not has_legacy_role_check
         and has_user_group_org
-        and has_file_facts
+        and has_erasure_ledger
     )
-    # v391: same as v390 plus the redaction-coverage column.
-    if matches_v389 and has_recorded_date_provenance and has_redaction_coverage:
-        return "v391_add_redaction_coverage"
-    # v390: same as v389 plus the recorded-date provenance rule.
-    if matches_v389 and has_recorded_date_provenance:
-        return "v390_add_recorded_date_provenance"
+    # v392: same as v391 plus the redaction-coverage column.
+    if matches_v389 and has_file_facts and has_recorded_date_provenance and has_redaction_coverage:
+        return "v392_add_redaction_coverage"
+    # v391: same as v390 plus the recorded-date provenance rule.
+    if matches_v389 and has_file_facts and has_recorded_date_provenance:
+        return "v391_add_recorded_date_provenance"
+    # v390: same as v389 plus the ingest-artifacts sidecar.
+    if matches_v389 and has_file_facts:
+        return "v390_add_file_facts"
     if matches_v389:
-        return "v389_add_file_facts"
+        return "v389_add_erasure_ledger"
     # v388: same as v387 plus the group tenancy stamp.
     if (
         has_cloud_seams

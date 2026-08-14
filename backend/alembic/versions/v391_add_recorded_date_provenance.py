@@ -63,8 +63,8 @@ Create Date: 2026-08-13
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "v390_add_recorded_date_provenance"
-down_revision = "v389_add_file_facts"
+revision = "v391_add_recorded_date_provenance"
+down_revision = "v390_add_file_facts"
 branch_labels = None
 depends_on = None
 

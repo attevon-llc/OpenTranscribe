@@ -117,7 +117,7 @@ app/
 │   ├── cleanup.py                # Stuck file recovery
 │   └── youtube_processing.py     # yt-dlp URL processing
 ├── utils/                 # Common Utilities (~25 modules)
-│   ├── auth_decorators.py        # Authorization decorators
+│   ├── uuid_helpers.py           # Hybrid-ID lookup + the permission chokepoint
 │   ├── db_helpers.py             # Database query helpers
 │   ├── error_handlers.py         # Standardized HTTP exceptions
 │   ├── transcript_builders.py    # Shared transcript formatting (v0.4.0)
@@ -279,10 +279,9 @@ Postprocess no longer blocks GPU for enrichment — speaker embedding and LLM ta
 from app.utils.error_handlers import ErrorHandler
 raise ErrorHandler.not_found_error("Resource")
 
-# Authorization
-from app.utils.auth_decorators import require_file_ownership
-@require_file_ownership
-def update_file(...): pass
+# Authorization — a FastAPI dependency, never a decorator
+from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+file_obj = get_file_by_uuid_with_permission(db, file_uuid, current_user)
 
 # Database helpers
 from app.utils.db_helpers import get_user_files_query

@@ -105,12 +105,14 @@ def test_regex_fallback_is_reported_at_warning_level(flaky_punkt, caplog):
     """
     monkeypatch_free_language = "english"
     with caplog.at_level(logging.WARNING, logger=chunking_service.__name__):
-        chunking_service._nltk_unavailable.discard(monkeypatch_free_language)
+        chunking_service.reset_sentence_splitter_state()
         assert chunking_service._get_nltk_tokenizer(monkeypatch_free_language) is None
 
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert warnings, "regex fallback engaged without a WARNING"
-    assert "regex sentence splitter" in warnings[0].getMessage()
+    # Case-insensitive: the message emphasises REGEX in caps. What matters is
+    # that the operator is told which splitter is in force, not its casing.
+    assert "regex sentence splitter" in warnings[0].getMessage().lower()
 
 
 def test_punkt_unavailability_is_not_retried(flaky_punkt):
@@ -118,7 +120,7 @@ def test_punkt_unavailability_is_not_retried(flaky_punkt):
 
     Without this, the only thing stopping a flip is how much time passed.
     """
-    chunking_service._nltk_unavailable.discard("english")
+    chunking_service.reset_sentence_splitter_state()
 
     first = chunking_service._get_nltk_tokenizer("english")
     second = chunking_service._get_nltk_tokenizer("english")

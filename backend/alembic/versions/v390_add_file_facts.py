@@ -45,8 +45,8 @@ Create Date: 2026-08-12
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "v389_add_file_facts"
-down_revision = "v388_add_user_group_organization_id"
+revision = "v390_add_file_facts"
+down_revision = "v389_add_erasure_ledger"
 branch_labels = None
 depends_on = None
 

@@ -21,7 +21,6 @@ import tempfile
 from pathlib import Path
 
 import redis.asyncio as redis
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.constants import VIDEO_CHUNK_SIZE
@@ -915,46 +914,6 @@ class VideoProcessingService:
                 logger.debug(
                     f"Cache file {cache_key} not found or could not be deleted: {cache_error}"
                 )
-
-    def clear_cache_for_media_file(self, db: Session, file_id: int):
-        """Clear cached processed videos for a media file, resolving the name via ``db``.
-
-        ⚠️ **Known session-lifetime leak — do not call this from new code.** The
-        filename is looked up on the CALLER's session, so a caller that is
-        mid-transaction holds it across the five MinIO deletes below. Its
-        remaining callers are the two request handlers in
-        ``api/endpoints/speakers.py``, whose signature this change does not own;
-        it is catalogued in ``scripts/session-lifetime-allowlist.txt`` under its
-        own key until they move. Every other path resolves the filename in its
-        own short read phase and calls :meth:`clear_derived_cache` afterwards.
-
-        The delete loop is **deliberately inline rather than delegated** to
-        :meth:`clear_derived_cache`: delegating would hide the still-open leak
-        from ``scripts/audit-session-lifetime.py``, whose interprocedural rule
-        does not recurse. A gate that reports zero on a live defect is worse
-        than the six duplicated lines. Delete this method — not the duplication —
-        once ``speakers.py`` stops passing a session.
-        """
-        try:
-            # Get the MediaFile to access original filename
-            from app.models.media import MediaFile
-
-            db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-            if not db_file:
-                logger.warning(f"Media file {file_id} not found for cache clearing")
-                return
-
-            for cache_key in self.derived_cache_keys(file_id, str(db_file.filename)):
-                try:
-                    self.minio_service.delete_object(self.cache_bucket, cache_key)
-                    logger.info(f"Cleared cache for {cache_key}")
-                except Exception as cache_error:
-                    # Cache file might not exist, which is fine, but we should log for debugging
-                    logger.debug(
-                        f"Cache file {cache_key} not found or could not be deleted: {cache_error}"
-                    )
-        except Exception as e:
-            logger.error(f"Failed to clear cache for file {file_id}: {e}")
 
     def check_ffmpeg_availability(self) -> bool:
         """Check if ffmpeg is available on the system."""

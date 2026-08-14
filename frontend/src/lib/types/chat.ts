@@ -76,7 +76,7 @@ export interface ChatSource {
 }
 
 /** Diagnostics attached to an assistant message (ids/counts only). */
-interface ChatMessageMetadata {
+export interface ChatMessageMetadata {
   rewritten_query?: string;
   retrieved?: number;
   reranked?: number;
@@ -99,6 +99,21 @@ interface ChatMessageMetadata {
    * this to tell an empty search (`0`) from fail-closed masking (non-zero).
    */
   no_context?: boolean;
+  /**
+   * The turn's context included recordings in a language RAG is not tuned for.
+   * Transcription is multilingual; retrieval, reranking and prompting are
+   * English-only, so a non-English recording is effectively invisible to the
+   * question and the model answers from whatever English material remains.
+   * Set live from the `warning` frame and persisted, like `context_dropped`.
+   */
+  unsupported_language?: boolean;
+  /** Per-turn language diagnostics backing {@link unsupported_language}. */
+  context_languages?: {
+    languages?: string[];
+    files?: number;
+    unknown_files?: number;
+    supported?: string[];
+  };
 }
 
 export interface ChatMessage {
@@ -246,9 +261,17 @@ type StreamStage = 'rewriting' | 'retrieving' | 'reranking' | 'generating';
  * `no_context`: nothing reached the prompt at all (issue #438). Retrieval
  * degrades to an empty result on any failure, so this covers "nothing matched",
  * "the search backend was down", and "masking dropped every chunk" alike — the
- * `retrieved` count separates them. The two codes are mutually exclusive.
+ * `retrieved` count separates them. It and `context_dropped` are mutually
+ * exclusive branches of one server-side `if`.
+ *
+ * `unsupported_language`: the context included recordings in a language the
+ * English-only RAG stack cannot rank or read. Same principle: the answer looks
+ * complete while a recording was invisible to it.
+ *
+ * ⚠️ A code missing from this union is silently discarded by `stores/chat.ts`,
+ * so the server can emit a warning nobody ever sees. Widen both together.
  */
-export type ChatWarningCode = 'context_dropped' | 'no_context';
+export type ChatWarningCode = 'context_dropped' | 'no_context' | 'unsupported_language';
 
 export type ChatErrorCode =
   | 'llm_unconfigured'
@@ -270,9 +293,16 @@ export type ChatStreamEvent =
   | {
       type: 'warning';
       code: ChatWarningCode;
+      /**
+       * `context_dropped`: how many excerpts were retrieved but dropped.
+       * `no_context`: how many were retrieved at all — `0` is an empty or
+       * failed search, non-zero is masking having failed closed on every one.
+       */
       retrieved?: number;
-      /** Present on `no_context`: `'all'` for an unscoped turn, else a count. */
+      /** `no_context` only: `'all'` for an unscoped turn, else a count. */
       files_searched?: number | 'all';
+      /** `unsupported_language` only: the languages seen and how many files. */
+      context_languages?: ChatMessageMetadata['context_languages'];
     }
   | { type: 'delta'; text: string }
   /**

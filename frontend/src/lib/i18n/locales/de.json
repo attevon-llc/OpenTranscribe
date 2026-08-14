@@ -4780,6 +4780,7 @@
   "chat.message.aborted": "Gestoppt – diese Antwort ist unvollständig.",
   "chat.message.contextDropped": "Diese Antwort stützt sich nicht auf Ihre Aufnahmen: Es wurden Auszüge gefunden, aber keiner passte in das Kontextfenster des Modells. Versuchen Sie eine kürzere Unterhaltung, weniger Auszüge pro Antwort oder ein Modell mit größerem Kontextfenster.",
   "chat.message.noContext": "Für diese Antwort wurde nichts durchsucht: Es gelangten keine Auszüge aus Ihren Aufnahmen zum Modell, die Antwort stützt sich also nicht darauf. Prüfen Sie, ob die erwarteten Aufnahmen transkribiert und indexiert sind und ob die Suche verfügbar ist.",
+  "chat.message.unsupportedLanguage": "Einige Aufnahmen im Bereich dieser Unterhaltung sind auf {{languages}}. Chat und Suche sind derzeit nur auf Englisch ausgelegt, daher waren diese Aufnahmen für diese Frage weitgehend unsichtbar und die Antwort ist möglicherweise unvollständig. Die Transkription selbst unterstützt alle Sprachen des Modells.",
   "chat.message.copied": "Kopiert",
   "chat.message.copy": "Kopieren",
   "chat.message.edit": "Bearbeiten",

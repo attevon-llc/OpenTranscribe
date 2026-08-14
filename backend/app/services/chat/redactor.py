@@ -109,7 +109,7 @@ def _mask_from_segments(db: Session, chunk: ChunkHit, cfg) -> str | None:
         # Detection hasn't run (or didn't finish) — there are no spans to apply.
         return None
 
-    # `done` says the scan FINISHED, not that it LOOKED (v391). An unavailable
+    # `done` says the scan FINISHED, not that it LOOKED (v392). An unavailable
     # detector resolves to `done` + `skipped_detectors` rather than `failed`,
     # deliberately, so trusting the status alone here would serve cached spans
     # from a scan whose PII detector never ran — masking nothing and returning
@@ -337,7 +337,7 @@ def mask_digests(db: Session, digests: list[ChunkHit], user_id: int) -> list[Mas
                 .filter(MediaFile.id == digest.file_id)
                 .first()
             )
-            # Same v391 coverage gate as the chunk path: `done` means the scan
+            # Same v392 coverage gate as the chunk path: `done` means the scan
             # finished, not that every relied-on detector ran. A gap falls
             # through to the inline masker below rather than applying cached
             # spans that cover less than this policy masks.

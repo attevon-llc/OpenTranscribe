@@ -41,6 +41,19 @@ from typing import Any
 import numpy as np
 import pytest
 import requests
+
+# Flat import, NOT `from tests.e2e._visual_diff import ...`.
+#
+# This module only ever runs under `tests/e2e/pytest.ini`, which makes
+# `tests/e2e` the rootdir; `tests/` is not a package and never reaches sys.path
+# there, so the dotted form raises `ModuleNotFoundError: No module named 'tests'`
+# and the ENTIRE visual suite fails to collect. It shipped that way briefly and
+# was invisible because the eight baselines were already failing for unrelated
+# reasons, so nobody ran the module. `tests/unit/test_visual_diff_fraction.py`
+# keeps the dotted form, which is correct under the repo-root rootdir it runs in.
+from _visual_diff import CHANNEL_NOISE_THRESHOLD  # noqa: F401
+from _visual_diff import DIFF_TOLERANCE
+from _visual_diff import diff_fraction as _diff_fraction
 from PIL import Image
 from playwright.sync_api import Page
 from playwright.sync_api import expect
@@ -58,14 +71,6 @@ TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: 
 # Fixed viewport so baselines are deterministic across machines.
 VIEWPORT = {"width": 1280, "height": 800}
 
-# Allowed fraction of differing pixels before a comparison is treated as a real
-# visual change (covers sub-pixel anti-aliasing / font-hinting jitter).
-DIFF_TOLERANCE = 0.005  # 0.5%
-
-# Per-channel intensity delta below which a pixel is considered "same" (ignores
-# imperceptible 1-2/255 rendering noise).
-CHANNEL_NOISE_THRESHOLD = 12
-
 SCREENSHOT_DIR = Path(__file__).parent / "__screenshots__"
 
 # Set to "1" to (re)write baselines instead of comparing.
@@ -78,22 +83,6 @@ def _png_to_array(data: bytes) -> np.ndarray:
         return np.asarray(img.convert("RGB"), dtype=np.uint8)
 
 
-def _diff_fraction(a: np.ndarray, b: np.ndarray) -> float:
-    """Return the fraction of pixels that differ beyond the noise threshold.
-
-    Args:
-        a: First image as an RGB uint8 array.
-        b: Second image as an RGB uint8 array (must match ``a``'s shape).
-
-    Returns:
-        Differing-pixel count divided by total pixel count, in [0, 1].
-    """
-    delta = np.abs(a.astype(np.int16) - b.astype(np.int16))
-    # A pixel differs if ANY channel exceeds the per-channel noise threshold.
-    differing = np.any(delta > CHANNEL_NOISE_THRESHOLD, axis=-1)
-    return float(differing.sum()) / float(differing.size)
-
-
 def _compare_or_write(name: str, png_bytes: bytes) -> None:
     """Compare a screenshot against its baseline, or write it in update mode.
 
@@ -104,26 +93,30 @@ def _compare_or_write(name: str, png_bytes: bytes) -> None:
     SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
     baseline_path = SCREENSHOT_DIR / f"{name}.png"
 
-    if UPDATE_SCREENSHOTS or not baseline_path.exists():
+    if UPDATE_SCREENSHOTS:
         baseline_path.write_bytes(png_bytes)
-        if not UPDATE_SCREENSHOTS:
-            pytest.skip(
-                f"Wrote missing baseline {baseline_path.name}; re-run to compare "
-                f"(or use UPDATE_SCREENSHOTS=1 to refresh deliberately)."
-            )
         return
+
+    if not baseline_path.exists():
+        # A missing baseline is a FAILURE, never an auto-write.
+        #
+        # This used to write the file and `pytest.skip`, which made the suite
+        # self-approving in two runs with no human ever looking at the image:
+        # run once to write, run again to "pass" against what the possibly
+        # broken build just produced. `scripts/e2e/run-e2e.sh` treats skips as
+        # success, so the first run was green too.
+        pytest.fail(
+            f"No baseline for '{name}' at {baseline_path}. A screenshot is only "
+            f"a baseline once a human has looked at it. Generate it deliberately "
+            f"with UPDATE_SCREENSHOTS=1 and review the image in the diff before "
+            f"committing it."
+        )
 
     current = _png_to_array(png_bytes)
     baseline = _png_to_array(baseline_path.read_bytes())
 
-    if current.shape != baseline.shape:
-        # Full-page height can drift with content; crop both to the shared box so
-        # a comparison is still meaningful rather than auto-failing on shape.
-        h = min(current.shape[0], baseline.shape[0])
-        w = min(current.shape[1], baseline.shape[1])
-        current = current[:h, :w]
-        baseline = baseline[:h, :w]
-
+    # Shapes may differ; _diff_fraction charges the non-overlapping area as
+    # differing rather than cropping it away unseen.
     fraction = _diff_fraction(current, baseline)
     if fraction > DIFF_TOLERANCE:
         # Persist the failing capture next to the baseline for inspection.
@@ -231,6 +224,54 @@ SURFACES = ["gallery", "file_detail", "speakers", "settings"]
 THEMES = ["light", "dark"]
 
 
+#: Regions whose pixels change without the UI changing, per surface (issue #451).
+#:
+#: These are masked out of the capture rather than tolerated by the diff budget.
+#: Two back-to-back runs on identical code and data differ by 0.08–0.09% purely
+#: because of these elements — live CPU/disk/GPU-VRAM gauges and a relative
+#: "Last run: 21m ago" chip. That is inside the 0.5% tolerance today, so the suite
+#: passes, but the headroom is only ~5.5x and it shrinks as digit widths change
+#: over longer intervals. A tolerance absorbing known noise is a tolerance that
+#: cannot also catch a small real regression.
+#:
+#: The counters are masked for a second and more important reason: they render
+#: live dev-database totals (users, files, segments, clusters, profiles). A
+#: baseline containing them is invalidated by the next upload, which is exactly
+#: why the current 8 baselines cannot be honestly refreshed.
+#:
+#: ⚠️ Only selectors VERIFIED to match on the live app are listed. A first draft
+#: also carried `settings`: `.stat-value`, `.stat-detail`, `.progress-fill`,
+#: `.model-value` — all four matched **zero** elements, so that entry masked
+#: nothing while reading as though it did. Settings is deliberately absent until
+#: its selectors are confirmed against a modal that stays open long enough to
+#: query (it closed on its own in a scripted session, which is its own question).
+#: Do not add a selector here without checking `page.locator(sel).count()`.
+_VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
+    # "Last run: N minutes ago" (1 element) + per-cluster membership counts (20).
+    "speakers": (".last-clustered-chip", ".member-count"),
+}
+
+
+def _volatile_regions(page: Page, surface: str) -> list[Any]:
+    """Locators to paint over before comparing, for *surface*.
+
+    Only selectors that actually match are returned. Playwright masks every
+    element a locator resolves to, and a selector matching nothing is silently a
+    no-op — so a renamed class would quietly stop masking and reintroduce the
+    noise it was added to remove. That is not hypothetical: the first draft of
+    `_VOLATILE_SELECTORS` listed four settings selectors that matched **zero**
+    elements, and nothing about the run said so.
+
+    The masked surfaces therefore assert their own coverage below rather than
+    trusting the table.
+    """
+    return [
+        page.locator(selector)
+        for selector in _VOLATILE_SELECTORS.get(surface, ())
+        if page.locator(selector).count()
+    ]
+
+
 @pytest.mark.parametrize("theme", THEMES)
 @pytest.mark.parametrize("surface", SURFACES)
 def test_visual_regression(
@@ -262,6 +303,17 @@ def test_visual_regression(
             page.goto(f"{base_url}/speakers")
             page.wait_for_selector(".speakers-page", timeout=30000)
             _stabilize(page)
+            # A masked surface must actually mask something. Playwright treats a
+            # selector matching nothing as a silent no-op, so without this the
+            # relative-time chip and the live cluster counts would drift back
+            # into the baseline the moment a class is renamed — and the run would
+            # look identical. Asserted here rather than in a separate test
+            # because it is only knowable against the rendered page.
+            assert _volatile_regions(page, "speakers"), (
+                "None of _VOLATILE_SELECTORS['speakers'] matched anything on the "
+                "speakers page, so this capture masks nothing and its baseline "
+                "will absorb the 'Last run: N ago' chip and live cluster counts."
+            )
         elif surface == "settings":
             page.goto(base_url)
             page.wait_for_selector(".user-button", timeout=30000)
@@ -277,7 +329,12 @@ def test_visual_regression(
         # The settings modal is an overlay; capture the viewport (not full page)
         # so a long scrolled background doesn't add nondeterministic height.
         full_page = surface != "settings"
-        png_bytes = page.screenshot(full_page=full_page, animations="disabled")
+        png_bytes = page.screenshot(
+            full_page=full_page,
+            animations="disabled",
+            mask=_volatile_regions(page, surface),
+            mask_color="#ff00ff",
+        )
         _compare_or_write(f"{surface}-{theme}", png_bytes)
     finally:
         page.close()

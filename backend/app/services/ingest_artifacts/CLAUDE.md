@@ -38,7 +38,7 @@ directory, you have misread the stage.
 
 Task: `app/tasks/ingest_artifacts_task.py` (`artifacts.generate_file_facts`, **nlp** queue),
 dispatched fire-and-forget from `transcription/postprocess.enrich_and_dispatch`.
-Model + migration: `app/models/file_facts.py`, `alembic/versions/v389_add_file_facts.py`.
+Model + migration: `app/models/file_facts.py`, `alembic/versions/v390_add_file_facts.py`.
 
 ## The measured number, and why it is not the one in the plan
 

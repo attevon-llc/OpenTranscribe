@@ -19,7 +19,6 @@ This directory contains common utilities and helper functions that provide reusa
 
 ```
 utils/
-├── auth_decorators.py      # Authentication and authorization decorators
 ├── db_helpers.py           # Database query utilities and helpers
 ├── error_handlers.py       # Standardized error handling
 ├── error_classification.py # Fine-grained error classification
@@ -40,7 +39,8 @@ utils/
 ├── time_format.py          # Time formatting utilities
 ├── url_validation.py       # URL validation and platform detection
 ├── user_settings_helpers.py # User settings access helpers
-├── uuid_helpers.py         # UUID generation utilities
+├── uuid_helpers.py         # Hybrid-ID lookup + the permission chokepoint
+├── uuid7.py                # RFC 9562 UUIDv7 generation (the `default=` for every model)
 ├── websocket_notify.py     # WebSocket notification helpers
 ├── hardware_detection.py   # GPU/hardware detection
 ├── vram_profiler.py        # VRAM usage profiling
@@ -63,69 +63,42 @@ Key functions:
 
 Import from here rather than reimplementing formatting logic in task or service code.
 
-## Authentication Decorators (`auth_decorators.py`)
+## Authorization (`uuid_helpers.py`, `db_helpers.py`)
 
 ### Purpose
-Provides reusable decorators and helpers for authentication and authorization across endpoints.
+Resource-level authorization. There are **no authorization decorators** — the
+`auth_decorators.py` module that used to live here was deleted in issue #450, unreferenced by any
+route. Do not reintroduce that shape: it read `db` / `current_user` / `file_id` out of `kwargs`
+and so was silently bypassed by any positional call, and its `require_verified_user` gate checked
+`is_active` while its name and its 403 detail both said "verification".
 
-### Key Components
+Authorization is a FastAPI **dependency** or an explicit call, never a wrapper:
 
-#### Authorization Decorators
 ```python
-@require_file_ownership
-def update_file(file_id: int, db: Session, current_user: User):
-    """Decorator ensures user owns the file before proceeding."""
+# The permission chokepoint. Order: admin bypass → takedown 404 → public →
+# tenant gate → owner → shares.
+from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
-@require_admin
-def admin_operation(db: Session, current_user: User):
-    """Decorator ensures user has admin privileges."""
-
-@require_verified_user
-def verified_operation(db: Session, current_user: User):
-    """Decorator ensures user account is verified."""
-```
-
-#### Authorization Helper Class
-```python
-class AuthorizationHelper:
-    @staticmethod
-    def check_file_access(db: Session, file_id: int, user: User) -> MediaFile:
-        """Check if user has access to a file and return it."""
-
-    @staticmethod
-    def check_admin_or_owner(resource, user: User, owner_field: str = 'user_id') -> bool:
-        """Check if user is admin or owns the resource."""
-
-    @staticmethod
-    def require_resource_access(db: Session, model_class, resource_id: int,
-                               user: User, owner_field: str = 'user_id'):
-        """Generic function to check resource access."""
-```
-
-### Usage Examples
-```python
-# Endpoint with file ownership requirement
-@router.put("/files/{file_id}")
-@require_file_ownership
+@router.put("/files/{file_uuid}")
 def update_file(
-    file_id: int,
+    file_uuid: str,
     updates: FileUpdateSchema,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
 ):
-    # User ownership is automatically verified
-    return update_file_service(db, file_id, updates, current_user)
+    file_obj = get_file_by_uuid_with_permission(db, file_uuid, current_user)
+    ...
 
-# Service layer with authorization helper
-def get_file_with_permission_check(db: Session, file_id: int, user: User) -> MediaFile:
-    return AuthorizationHelper.check_file_access(db, file_id, user)
+# Ownership of a non-file resource
+from app.utils.uuid_helpers import require_resource_owner
+
+# SQL-plane tenant scoping (default-deny; mirrors api/deps_context.scope_to_context)
+from app.utils.db_helpers import apply_tenant_scope
 ```
 
-### Features
-- **Decorator-based Authorization**: Clean, reusable permission checks
-- **Flexible Resource Access**: Generic patterns for different resource types
-- **Admin/Owner Patterns**: Common authorization logic
-- **Error Consistency**: Standardized 403/404 responses
+Privilege gates (`require_admin`, `require_super_admin`) are FastAPI dependencies in
+`api/endpoints/auth/dependencies.py` — one of the six modules under mutation testing, because an
+inverted role comparison there is privilege escalation.
 
 ## 🗄️ Database Helpers (`db_helpers.py`)
 
@@ -323,7 +296,7 @@ def cleanup_completed_tasks(db: Session, older_than_days: int = 7) -> int:
 ### Usage Examples
 ```python
 # Task creation in service layer
-class TranscriptionService:
+class FileService:
     def start_transcription(self, file_id: int, user: User) -> Dict[str, Any]:
         # Dispatch Celery task
         task = transcribe_audio_task.delay(file_id)

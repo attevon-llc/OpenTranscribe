@@ -241,18 +241,38 @@ Run the full suite before committing — not just the staged subset:
 backend/venv/bin/pre-commit run --all-files    # the gate CI mirrors
 ```
 
-> ⚠️ **`--all-files` is UNSAFE in a checkout someone else is working in.** pre-commit
-> **stashes every unstaged change in the repo** for the duration of the run — including another
-> agent's or your own in-flight work in unrelated files — and restores it afterwards. If a hook
-> crashes inside that window, the only copy is `~/.cache/pre-commit/patch<timestamp>-<pid>`.
-> This has already happened here: two writers in one checkout, and one lost its uncommitted work
-> mid-run and got it back by luck. The same mechanism also produces **spurious**
-> `files were modified by this hook` failures whose output contains no findings at all (bandit
-> printing "No issues identified", frontend-check printing "All frontend checks passed") — the
-> stash/restore moved the files, not the hook. When anything else is writing to the tree, use
-> `pre-commit run --files <paths>`, or just commit (the hook runs on the staged set) and wait for
-> a quiet tree before the full sweep. `--all-files` is always correct in CI, where nothing else
-> is writing.
+> ⚠️ **NEVER run `pre-commit` OR `git commit` while anything else is writing to this
+> checkout.** Not `--all-files`, not `--files <paths>`, not a plain `git commit`. **All three
+> stash every unstaged change in the entire repo** — including another agent's in-flight work in
+> files you are not touching — and restore it when the run ends. What you staged is irrelevant:
+> the stash happens *before any hook runs* and covers the whole tree.
+>
+> This paragraph used to recommend `--files` or "just commit" as the safe alternative. **That
+> advice was wrong and caused the incident below.** There is no safe alternative; there is only
+> waiting for a quiet tree.
+>
+> Three failure modes, all observed here:
+>
+> 1. **Another writer's work is stashed mid-edit.** An agent's `Edit` failed with "file has been
+>    modified", it re-read and re-applied, and the restore then reinstated the *earlier* draft,
+>    silently discarding the newer one. Caught only by an unrelated `git diff`. Earlier the same
+>    day, a different agent's `conftest.py` was stashed during a failing commit and restored with
+>    `Stashed changes conflicted with hook auto-fixes... Rolling back fixes` — recovered, but by
+>    luck. If a hook crashes in that window the only copy is
+>    `~/.cache/pre-commit/patch<timestamp>-<pid>`.
+> 2. **A whole-tree hook fails against a tree that never existed.** `frontend-check` scans all of
+>    `frontend/src`, so with an unstaged type change stashed away and an untracked test file left
+>    behind, svelte-check failed with 5 errors about a property that *does* exist. Nothing was
+>    wrong. The natural response — "fixing" correct code — makes it worse.
+> 3. **Spurious `files were modified by this hook`** with no findings at all (bandit printing
+>    "No issues identified", frontend-check printing "All frontend checks passed"). The
+>    stash/restore moved the files, not the hook.
+>
+> A related trap that is *not* about concurrency: pre-commit's hooks see the **staged** snapshot.
+> If you `git add` a file and then edit it further, mypy/ruff check the stale staged copy and
+> report errors you have already fixed. Re-`git add` before committing.
+>
+> `--all-files` is always correct in CI, where nothing else is writing.
 
 Hook inventory is in `.pre-commit-config.yaml`. The frontend hook only fires when `frontend/src/**/*.{svelte,ts,js,css,html}` is staged. Note that `prettier` **rewrites files** and then reports failure — re-stage and re-run, don't "fix" anything by hand.
 

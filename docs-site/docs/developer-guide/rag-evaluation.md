@@ -373,7 +373,7 @@ gold set moves from 0 to 1 purely on who answered. Both tables are committed und
   confidently wrong count. That is the failure mode the `answered`/EM split is meant to surface.
 - **R7's month filter, in THIS reference-answerer table, reads the date the injector stamped
   into `media_file.metadata_important`.** That is the harness's gold source and no product code
-  may read it. Since v390 the **product** answers R7 from `media_file.recorded_date` instead —
+  may read it. Since v391 the **product** answers R7 from `media_file.recorded_date` instead —
   a real column, written at injection time the way ingest writes it — so the product path is no
   longer scoring against the answer key. See "The product's aggregation path" below for what
   that number does and does not cover.
@@ -745,8 +745,8 @@ and returned nothing" — without it, `routed_to_digest_tier` would be unreadabl
 | answerer | EM | R3 count | R4 list | R5 events | R6 speaker | R7 temporal |
 |---|---|---|---|---|---|---|
 | `none` (pre-Stage-4 floor) | 0.000 | 0/4 | 0/4 | 0/4 | 0/4 | 0/4 |
-| `product` (before v390) | 0.800 | 4/4 | 4/4 | 4/4 | 4/4 | **0/4** |
-| **`product`** (v390) | **1.000** | 4/4 | 4/4 | 4/4 | 4/4 | **4/4** |
+| `product` (before v391) | 0.800 | 4/4 | 4/4 | 4/4 | 4/4 | **0/4** |
+| **`product`** (v391) | **1.000** | 4/4 | 4/4 | 4/4 | 4/4 | **4/4** |
 | `reference` (harness ceiling) | 1.000 | 4/4 | 4/4 | 4/4 | 4/4 | 4/4 |
 
 The comparison means something only because the two share **no intent parsing**: the reference's
@@ -756,7 +756,7 @@ interrogative frame.
 R7 used to fail for a reason that was a **product gap, not a harness artefact**: `media_file`
 recorded `upload_time` and nothing else, so "meetings in March 2025" filtered on the date a file
 was *ingested*. All 432 corpus files shared one upload date. Every user with a back-catalogue had
-that problem. `v390_add_recorded_date_provenance` added `recorded_date` **and its source**, and
+that problem. `v391_add_recorded_date_provenance` added `recorded_date` **and its source**, and
 `services/chat/aggregation_service._files_in_period` now resolves the period against it in
 Postgres.
 

@@ -19,7 +19,7 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
 - `service.py` — `RedactionService.detect_and_store` / `mask_segment` / `is_segment_toxic`.
 - `coverage.py` — `uncovered_detectors(media_file, cfg)`: **which detectors a finished scan
   actually ran**, against what the policy relies on. The read half of
-  `media_file.redaction_coverage` (`v391`). See the gotcha below.
+  `media_file.redaction_coverage` (`v392`). See the gotcha below.
 - `device.py` — `resolve_device()` + `inference_guard()`: **runtime, per-scan VRAM probe**.
 - `detectors/` — `wordlist` (regex, read-time), `pii_presidio` (Presidio + spaCy, optional
   GLiNER), `toxicity` (`unitary/toxic-bert`; multilingual XLM-R for non-English), `llm`.
@@ -59,7 +59,7 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   `transcript.view_unredacted`. **Admin-forced categories never reveal.**
 - Settings `api/endpoints/redaction_settings.py` (`/user-settings/redaction`,
   `/admin/redaction-policy`); UI `ContentRedactionSettings.svelte` / `RedactionPolicySettings.svelte`.
-  Migrations `v364_add_content_redaction` and `v391_add_redaction_coverage`;
+  Migrations `v364_add_content_redaction` and `v392_add_redaction_coverage`;
   `redaction_{start,end}_ms` on `FilePipelineTiming`.
 - Tests: `tests/redaction/` (GPU-free; `test_detector_unavailability.py` pins the three detector
   outcomes and both `detect_and_store` dispositions, `test_scan_coverage.py` drives the real
@@ -92,14 +92,14 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   answers a different question from "did the detector that produced these spans have it". Only
   the scan knows, and `skipped_detectors` is a **task return value** that reaches a Celery
   result backend with a TTL and a WebSocket toast — nothing a masker can read an hour later.
-  So `detect_and_store` writes `media_file.redaction_coverage` (`v391`, `TEXT[]`) in the same
+  So `detect_and_store` writes `media_file.redaction_coverage` (`v392`, `TEXT[]`) in the same
   commit as `done`, and `coverage.uncovered_detectors` is the one reader.
   - **`TEXT[]`, not JSONB.** One reader, by primary key, over a closed four-name vocabulary;
     nothing filters, aggregates or joins. JSONB buys nesting nobody needs and invites the
     column to become a second, undocumented status. No CHECK on the vocabulary either — a
     stray name grants no coverage (the gap is `required - covered`), and the hazardous state,
     a *missing* name, is what no CHECK can see.
-  - **NULL is trusted, deliberately.** Pre-`v391` rows cannot be classified retroactively, and
+  - **NULL is trusted, deliberately.** Pre-`v392` rows cannot be classified retroactively, and
     refusing them would break every existing file on upgrade day. `redaction.reindex_all` is
     the remedy and re-scanning writes the column. That residual is real; it is stated in
     `coverage.py` and pinned by a control test.

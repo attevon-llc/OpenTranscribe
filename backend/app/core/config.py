@@ -13,6 +13,12 @@ from app.core.legacy_auth_env import oidc_int_env
 _config_logger = logging.getLogger(__name__)
 
 
+#: Shipped default for :attr:`Settings.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`.
+#: A module constant rather than a literal in the field so a test can pin the
+#: DEFAULT independently of whatever an operator set in the running environment.
+DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS = 300_000
+
+
 def _int_env(key: str, default: int) -> int:
     """Read an environment variable and convert to int with validation.
 
@@ -523,6 +529,26 @@ class Settings(BaseSettings):
     # their own engines, so these sizes mainly control API concurrency.
     DB_POOL_SIZE: int = max(_int_env("DB_POOL_SIZE", 20), 1)
     DB_MAX_OVERFLOW: int = max(_int_env("DB_MAX_OVERFLOW", 40), 0)
+
+    # Server-side backstop for the "transaction held open across slow work"
+    # bug class (issue #440). Postgres terminates a backend that has an OPEN
+    # transaction and is running NO query for this long. It cannot interrupt a
+    # slow *query* — only an idle one — so a legitimately long-running statement
+    # is never affected; the only thing it kills is a connection sitting on
+    # ACCESS SHARE locks and pinning the VACUUM horizon while the process does
+    # something else (HTTP call, model inference, file I/O).
+    #
+    # This is defence in depth, NOT the fix: the 35 real leaks were fixed in the
+    # code and `scripts/audit-session-lifetime.py` keeps the idiom from
+    # returning. 5 minutes is ~10x the slowest legitimate transaction here and
+    # ~1/10 of the 48-minute leak that motivated it. Set to 0 to disable.
+    #
+    # Applies to the shared app engine only. `db/migrations.py` builds its own
+    # engines, so a long `ALTER TABLE` and the advisory-lock holder are outside
+    # this timeout by construction.
+    DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: int = max(
+        _int_env("DB_IDLE_IN_TRANSACTION_TIMEOUT_MS", DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS), 0
+    )
 
     # Observability. LOG_FORMAT="json" switches the root logger to structured
     # JSON lines (Loki/CloudWatch-ready); "text" keeps the human-readable format.

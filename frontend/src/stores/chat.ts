@@ -20,6 +20,7 @@ import { streamChatMessage, streamEditMessage, streamRegenerate } from '$lib/api
 import {
   emptyScope,
   type ChatMessage,
+  type ChatMessageMetadata,
   type ChatScope,
   type ChatSource,
   type ChatStreamEvent,
@@ -190,34 +191,48 @@ function createChatStore() {
         }));
         break;
 
-      case 'warning':
+      case 'warning': {
         // Folded into msg_metadata rather than kept as separate stream state, so
         // ChatMessage has ONE render path: the same flag arrives on the
         // persisted message when the thread is reloaded.
-        if (event.code === 'context_dropped' || event.code === 'no_context') {
-          // `retrieved` is folded in too: on `no_context` it is what separates
-          // an empty search from masking having dropped everything, and the
-          // count is not otherwise on screen until the thread is reloaded.
+        //
+        // Keyed by code rather than an if-chain: an unhandled code used to fall
+        // through to nothing, so the server could emit a warning the SPA
+        // discarded in silence while still persisting it on the message — the
+        // notice then appeared only after a reload. Adding a code to
+        // ChatWarningCode without adding it here reintroduces exactly that.
+        const patch: Partial<ChatMessageMetadata> | undefined = {
+          context_dropped: {
+            context_dropped: true,
+            ...(event.retrieved === undefined ? {} : { retrieved: event.retrieved }),
+          },
+          // `retrieved` and `files_searched` are folded in because on
+          // `no_context` the count is what separates an empty search from
+          // masking having dropped every chunk, and neither is otherwise on
+          // screen until the thread is reloaded.
+          no_context: {
+            no_context: true,
+            ...(event.retrieved === undefined ? {} : { retrieved: event.retrieved }),
+            ...(event.files_searched === undefined ? {} : { files_searched: event.files_searched }),
+          },
+          unsupported_language: {
+            unsupported_language: true,
+            context_languages: event.context_languages,
+          },
+        }[event.code];
+
+        if (patch) {
           update((s) => ({
             ...s,
             messages: s.messages.map((m) =>
               m.uuid === s.streamingMessageId
-                ? {
-                    ...m,
-                    msg_metadata: {
-                      ...(m.msg_metadata ?? {}),
-                      [event.code]: true,
-                      ...(event.retrieved === undefined ? {} : { retrieved: event.retrieved }),
-                      ...(event.files_searched === undefined
-                        ? {}
-                        : { files_searched: event.files_searched }),
-                    },
-                  }
+                ? { ...m, msg_metadata: { ...(m.msg_metadata ?? {}), ...patch } }
                 : m
             ),
           }));
         }
         break;
+      }
 
       case 'reasoning':
         update((s) => ({

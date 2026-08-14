@@ -579,7 +579,7 @@ def delete_file_storage_artifacts(file_id: int, artifacts: dict[str, Any]) -> bo
     artifact — a failure on one never blocks the rest.
 
     **Takes no DB session.** It used to take the caller's, purely to hand it to
-    ``VideoProcessingService.clear_cache_for_media_file`` for a filename lookup,
+    ``VideoProcessingService.clear_derived_cache`` (which takes no session),
     which put up to seven MinIO round trips inside the caller's transaction.
     :func:`_load_purge_plan` reads the filename instead.
 

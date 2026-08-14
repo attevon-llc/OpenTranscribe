@@ -9,7 +9,7 @@ authoring the revision file itself.
 
 ## Key files
 
-- `versions/` — 74 revisions, `v010_baseline` … head `v388_add_user_group_organization_id`.
+- `versions/` — 75 revisions, `v010_baseline` … head `v389_add_erasure_ledger`.
 - `env.py` — builds the URL from `POSTGRES_*` env (`load_dotenv()`), `target_metadata =
   Base.metadata`. No `compare_type`, no naming convention.
 - `script.py.mako` — **stock alembic template**: it emits neither the `v###` id nor idempotent
@@ -49,6 +49,12 @@ authoring the revision file itself.
   proof the data loss works). Resolving it is a **design decision** — refuse to downgrade
   while non-`manual` rows exist, or move them to `manual` instead of deleting — not a test
   to write. Same question applies to any future narrowing revision.
+- **`v389_add_erasure_ledger`'s downgrade destroys compliance evidence.** `DROP TABLE
+  erasure_ledger` is the correct mirror of its upgrade, and the revision's docstring says so
+  out loud: running it after any erasure has occurred loses the Art. 30 record of it. The
+  on-disk journal (`DATA_DIR/gdpr/erasure-journal.jsonl`) is what survives that, which is
+  why the journal is not merely a nicety. Unlike `v382`'s, this downgrade IS executed by
+  its consistency test — it destroys a table this branch created, not user data.
 - Docstring first: **why**, which deployments are affected, and what "community edition"
   behaviour is. These docstrings are the change log for the schema.
 - Core stays vendor-neutral: the CI seam guard greps for `clerk|stripe`. A migration mentioning

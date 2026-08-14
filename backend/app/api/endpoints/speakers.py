@@ -1420,24 +1420,30 @@ def _clear_video_cache_for_speaker(media_file_id: int) -> None:
     ``process_speaker_update_background``, which used to hold ONE transaction across
     its whole body — including the storage client construction and the five object
     deletes underneath. It now opens its own session, and only for the single
-    filename SELECT that ``clear_cache_for_media_file`` needs; the storage client is
+    filename SELECT the deletes need; the storage client is
     built before that session exists.
 
-    A residual remains one frame down: ``VideoProcessingService.clear_cache_for_media_file``
-    still takes a session and issues its deletes through it (it is allowlisted under
-    its own key, and its signature is shared with request handlers this change does
-    not own). What changed is that the window is now that one call rather than the
-    entire task.
+    No residual: the filename is resolved in a short session that CLOSES before any
+    object is touched, and the deletes go through ``clear_derived_cache``, which takes
+    no session at all. The session-taking ``clear_cache_for_media_file`` it used to call
+    has been deleted outright.
     """
     try:
         from app.db.session_utils import session_scope
+        from app.models.media import MediaFile
         from app.services.minio_service import MinIOService
         from app.services.video_processing_service import VideoProcessingService
 
         minio_service = MinIOService()
         video_processing_service = VideoProcessingService(minio_service)
+        # Read phase: the filename, and nothing else. The scope closes before the
+        # five MinIO deletes below, so no transaction spans them.
         with session_scope() as db:
-            video_processing_service.clear_cache_for_media_file(db, media_file_id)
+            row = db.query(MediaFile.filename).filter(MediaFile.id == media_file_id).first()
+        if row is None:
+            logger.warning(f"Media file {media_file_id} not found for cache clearing")
+            return
+        video_processing_service.clear_derived_cache(media_file_id, str(row[0]))
     except Exception as e:
         logger.exception(f"Warning: Failed to clear video cache after speaker update: {e}")
 

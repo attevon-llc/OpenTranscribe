@@ -146,3 +146,42 @@ export function taskProgressPercent(progress: unknown): number {
   if (!Number.isFinite(value)) return 0;
   return Math.min(100, Math.max(0, Math.round(value * 100)));
 }
+
+/**
+ * Render ISO language codes as names in the reader's own language.
+ *
+ * Purely presentational, and one of the approved client-side transforms: it is
+ * `Intl.*` locale formatting over data the backend already sent, not a business
+ * rule. The backend deliberately sends codes rather than names — a name is a
+ * display choice that depends on who is reading.
+ *
+ * Falls back to the raw code for anything `Intl.DisplayNames` does not know, and
+ * for the whole call if the runtime lacks it, so an unrecognised code degrades to
+ * "es" rather than disappearing. A language silently dropped from this list would
+ * understate the warning it appears in.
+ *
+ * @param codes ISO 639-1 codes, e.g. `['es', 'fr']`.
+ * @param locale BCP-47 locale to render the names in; defaults to the browser's.
+ * @returns A localized, comma-joined list, or `''` when `codes` is empty.
+ */
+export function formatLanguageNames(codes: string[], locale?: string): string {
+  if (!codes.length) return '';
+
+  let display: Intl.DisplayNames | null = null;
+  try {
+    display = new Intl.DisplayNames([locale ?? navigator.language], { type: 'language' });
+  } catch {
+    display = null;
+  }
+
+  const names = codes.map((code) => {
+    if (!display) return code;
+    try {
+      return display.of(code) ?? code;
+    } catch {
+      return code;
+    }
+  });
+
+  return names.join(', ');
+}

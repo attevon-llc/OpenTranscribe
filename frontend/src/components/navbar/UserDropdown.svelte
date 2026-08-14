@@ -426,8 +426,12 @@
     margin-top: 0.125rem;
   }
 
-  /* iPad landscape — hide username + chevron */
-  @media (max-width: 1200px) {
+  /* Hide username + chevron.
+     ⚠️ Coordinated with the identical threshold in ../Navbar.svelte, which
+     drops the navbar gap to 1.5rem. Both must move together: raising only the
+     Navbar one left the username visible from 1281-1500px, where the bar still
+     needed 1355px and still overflowed. Measured while fixing issue #452. */
+  @media (max-width: 1500px) {
     .username {
       display: none;
     }

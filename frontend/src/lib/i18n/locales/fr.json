@@ -4780,6 +4780,7 @@
   "chat.message.aborted": "Arrêtée — cette réponse est incomplète.",
   "chat.message.contextDropped": "Cette réponse ne s'appuie pas sur vos enregistrements : des extraits ont été trouvés, mais aucun ne tenait dans la fenêtre de contexte du modèle. Essayez une conversation plus courte, moins d'extraits par réponse ou un modèle doté d'une fenêtre de contexte plus grande.",
   "chat.message.noContext": "Rien n'a été recherché pour cette réponse : aucun extrait de vos enregistrements n'est parvenu au modèle, la réponse ne s'appuie donc pas sur eux. Vérifiez que les enregistrements attendus sont transcrits et indexés et que la recherche est disponible.",
+  "chat.message.unsupportedLanguage": "Certains enregistrements dans le périmètre de cette conversation sont en {{languages}}. Le chat et la recherche sont actuellement optimisés pour l'anglais uniquement, ces enregistrements étaient donc en grande partie invisibles pour cette question et la réponse peut être incomplète. La transcription elle-même prend en charge toutes les langues du modèle.",
   "chat.message.copied": "Copié",
   "chat.message.copy": "Copier",
   "chat.message.edit": "Modifier",

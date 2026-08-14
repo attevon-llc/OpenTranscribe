@@ -9,7 +9,7 @@ would break summarization, speaker identification and topic extraction for good.
 
 So a scan can reach ``done`` having never run the PII detector, and a reader that trusts
 ``done`` alone will mask nothing, report success, and send the transcript on.
-``media_file.redaction_coverage`` (v391) is the durable record of the difference:
+``media_file.redaction_coverage`` (v392) is the durable record of the difference:
 the detectors whose results the cached spans reflect. Everything in this module is the
 read half of it.
 
@@ -75,7 +75,7 @@ def uncovered_detectors(media_file, cfg: EffectiveRedactionConfig) -> set[str]:
     """
     covered = getattr(media_file, "redaction_coverage", None)
     if covered is None:
-        # ⚠️ RESIDUAL, and deliberate. Rows scanned before v391 carry no coverage, and
+        # ⚠️ RESIDUAL, and deliberate. Rows scanned before v392 carry no coverage, and
         # nothing can recover retroactively whether that deployment had Presidio.
         # Reading NULL as "nothing was covered" would refuse every pre-existing file on
         # the day of the upgrade — including on deployments that were never at risk —

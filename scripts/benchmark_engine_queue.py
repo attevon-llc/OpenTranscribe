@@ -26,6 +26,7 @@ import csv
 import logging
 import os
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -527,7 +528,8 @@ def build_parser() -> argparse.ArgumentParser:
         '--output',
         default='',
         help=(
-            'CSV output path. Defaults to /tmp/engine_queue_<timestamp>.csv.'  # noqa: S108
+            'CSV output path. Defaults to '
+            f'{Path(tempfile.gettempdir()) / "engine_queue_<timestamp>.csv"}.'
         ),
     )
     parser.add_argument(
@@ -562,7 +564,9 @@ def main() -> int:
     )
 
     output_path = Path(
-        args.output if args.output else f'/tmp/engine_queue_{int(time.time())}.csv'  # noqa: S108
+        args.output
+        if args.output
+        else Path(tempfile.gettempdir()) / f'engine_queue_{int(time.time())}.csv'
     )
 
     state = BenchmarkState()

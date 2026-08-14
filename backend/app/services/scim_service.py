@@ -57,12 +57,27 @@ class SCIMForbiddenError(ValueError):
     """A rule refuses this write outright (403)."""
 
 
-def _audit(event: AuditEventType, *, actor: str, target: str, **details) -> None:
-    """Record a provisioning mutation with the token as the actor."""
+def _audit(
+    event: AuditEventType,
+    *,
+    actor: str,
+    target: str,
+    target_user_id: int | None = None,
+    **details,
+) -> None:
+    """Record a provisioning mutation with the token as the actor.
+
+    `user_id` stays None: the actor is a SCIM token, not a person, and inventing
+    a user id for it would attribute the change to whoever the connector happened
+    to touch. The subject goes in `target_username` / `target_user_id` (issue
+    #443) rather than only in `username`, which read as the actor.
+    """
     audit_logger.log(
         event_type=event,
         outcome=AuditOutcome.SUCCESS,
         username=target,
+        target_user_id=target_user_id,
+        target_username=target,
         details={"actor": f"scim:{actor}", "source": "scim", **details},
     )
 

@@ -6,6 +6,7 @@ import {
   formatTimeWithMillis,
   formatSrtTimestamp,
   formatVttTimestamp,
+  formatLanguageNames,
 } from './formatting';
 
 /**
@@ -90,5 +91,33 @@ describe('formatSrtTimestamp / formatVttTimestamp (always full HH)', () => {
   it('clamps invalid input to zero', () => {
     expect(formatSrtTimestamp(Number.NaN)).toBe('00:00:00,000');
     expect(formatVttTimestamp(-3)).toBe('00:00:00.000');
+  });
+});
+
+describe('formatLanguageNames', () => {
+  it('renders ISO codes as human language names', () => {
+    // The backend deliberately sends codes; the name is a display choice. A
+    // warning reading "recordings are in es, fr" is markedly worse than one
+    // naming Spanish and French, and this is the only place that conversion
+    // happens (the component test cannot see it — vitest loads no locale bundle).
+    expect(formatLanguageNames(['es', 'fr'], 'en')).toBe('Spanish, French');
+  });
+
+  it('renders the names in the READER’s language, not the content’s', () => {
+    // Intl.DisplayNames takes the display locale as its first argument. Getting
+    // this backwards would name Spanish "español" for an English reader —
+    // plausible-looking output that is wrong for everyone.
+    expect(formatLanguageNames(['es'], 'fr')).toBe('espagnol');
+  });
+
+  it('falls back to the raw code for a language it does not know', () => {
+    // A dropped language would UNDERSTATE the warning it appears in, which is
+    // worse than an ugly one: the user would be told fewer of their recordings
+    // were unsupported than actually were.
+    expect(formatLanguageNames(['zz'], 'en')).toBe('zz');
+  });
+
+  it('returns an empty string for no languages', () => {
+    expect(formatLanguageNames([], 'en')).toBe('');
   });
 });

@@ -23,7 +23,7 @@ the edge case:
   unavailable one is a reported *skip* and still reaches ``done``. Masking then
   applies a complete-looking span cache that simply has no PII in it, so the
   provider receives the transcript verbatim while every log line says masked.
-  ``media_file.redaction_coverage`` (v391) is what tells the two apart; see
+  ``media_file.redaction_coverage`` (v392) is what tells the two apart; see
   ``services/redaction/coverage.py``.
 
 ``resolve_llm_masking`` collapses all three into one decision a caller cannot get

@@ -50,6 +50,10 @@ from app.services.chat import citations as citations_mod
 from app.services.chat import limits
 from app.services.chat.hooks import ChatCompletionContext
 from app.services.chat.hooks import fire_message_complete
+from app.services.chat.language import METADATA_KEY as LANGUAGE_METADATA_KEY
+from app.services.chat.language import WARNING_CODE as LANGUAGE_WARNING_CODE
+from app.services.chat.language import describe_context_languages
+from app.services.chat.language import warning_payload as language_warning_payload
 from app.services.chat.output_redactor import OutputRedactor
 from app.services.chat.prompting import build_messages
 from app.services.chat.prompting import format_counted_block
@@ -353,6 +357,18 @@ def _prepare_context(
     # returning less, which is a different defect with a different fix.
     meta["chunks_dropped_empty_after_masking"] = len(masked) - len(kept)
     masked = kept
+
+    # RAG is English-only (see services/chat/language.py). Recording what the turn
+    # could draw on is what makes that limit visible instead of silent.
+    languages = describe_context_languages(
+        db,
+        scope_file_uuids=file_uuids,
+        grounded_file_uuids=[chunk.source.file_uuid for chunk in masked],
+    )
+    if languages.total_files:
+        meta[LANGUAGE_METADATA_KEY] = languages.as_metadata()
+    if languages.has_unsupported:
+        meta[LANGUAGE_WARNING_CODE] = True
 
     meta["retrieved"] = result.retrieved
     meta["reranked"] = result.reranked
@@ -763,11 +779,28 @@ class ChatService:
                         {"code": "context_dropped", "retrieved": len(masked)},
                     )
 
+                # Answering anyway is deliberate: a library is usually mixed, and
+                # refusing every question because one recording is Spanish would
+                # be worse than useless. The turn says what it could not serve
+                # well and answers from the rest.
+                language_warning = language_warning_payload(turn.metadata)
+                if language_warning is not None:
+                    logger.info(
+                        "Chat turn %s spans unsupported RAG languages %s "
+                        "(%d files, %d of unknown language)",
+                        assistant_message_uuid,
+                        language_warning["languages"],
+                        language_warning["files"],
+                        language_warning["unknown_files"],
+                    )
+                    yield sse("warning", language_warning)
+
             # Redaction of the model's OWN words. Offset masking covers the text
             # we gave it; nothing covered the text it writes about that material
             # until this. Resolved here rather than inside `_prepare_context`
             # because a `use_context=False` turn never runs that stage and its
-            # answer is just as visible.
+            # answer is just as visible — which is also why it sits OUTSIDE the
+            # use_context block above, unlike the language warning.
             output_policy = await run_in_threadpool(_resolve_output_policy, user_id)
             answer_redactor = OutputRedactor(output_policy)
             reasoning_redactor = OutputRedactor(output_policy)

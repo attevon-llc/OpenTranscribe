@@ -12,8 +12,9 @@ pending. `alembic upgrade head` by hand is **production-only**.
 
 - `migrations.py` — the runner plus `_detect_schema_version()`, a ~400-line ladder of
   `information_schema` probes that maps a schema fingerprint to a revision to stamp.
-- `base.py` — `engine`, `SessionLocal`, `Base`, `get_db()`. `session_utils.py` —
-  `session_scope()` (the contextmanager tasks use), `get_refreshed_object`.
+- `base.py` — `engine`, `SessionLocal`, `Base`, `get_db()`, `build_libpq_options()`.
+  `session_utils.py` — `session_scope()` (the contextmanager tasks use),
+  `get_refreshed_object`.
 - `README.md` — longer prose on the layering.
 
 ## Adding a schema change
@@ -48,12 +49,36 @@ helpers read the column fail-safe and it is the constraint that keeps that sound
 `v382_scim_tokens` (`scim_token` table + `group_mapping`'s `source`/membership CHECKs
 widened for `proxy`/`scim`), `v383_saml_auth_type` (`auth_type` CHECK
 widened for `'saml'` + `user.saml_subject`, mirroring `v380`'s identity-column shape
-for a fourth provider), head currently `v384_add_chat_reasoning_content` (nullable
+for a fourth provider), `v384_add_chat_reasoning_content` (nullable
 `chat_message.reasoning_content` — persists a provider's separately-streamed
 reasoning/"thinking" text for the collapsible reasoning display; single-marker
-revision, no CHECK involved).
+revision, no CHECK involved), `v389_add_erasure_ledger`
+(the GDPR Art. 17 ledger — note its detection arm keys on
+`ck_erasure_ledger_counters_numeric` rather than on the table, because a table
+without that CHECK can store the personal data the ledger exists not to retain and
+therefore *should* re-run the revision), `v390_add_file_facts`,
+`v391_add_recorded_date_provenance`, head currently
+`v392_add_redaction_coverage`. **Derive the head, never trust this sentence** —
+`scripts/release-tests/lib/alembic-head.py` walks the `down_revision` graph.
 
-**Renumbering note (2026-08).** This auth-identity chain originally used v375-v381,
+**Renumbering note 2 (2026-08-13) — and it happened EXACTLY the way note 1 warns.**
+The `#403` RAG chain added `v389_add_file_facts` while `chore/test-suite-perf-and-quality-overhaul`
+added `v389_add_erasure_ledger`, both chained off `v388_add_user_group_organization_id`.
+**Git merged both files CLEANLY** — different filenames, no textual overlap — so the
+20-file conflict list said nothing, and the fork existed only in the `down_revision`
+graph. Reconciled by renumbering the RAG chain (v389→v390, v390→v391, v391→v392) since
+the erasure ledger's number was already published on its own branch. Four places move
+per revision: the filename, `revision`/`down_revision`, the detection arm here, and
+`REVISION` in its consistency test.
+
+⚠️ **A rename sweep does not finish the job.** `test_v390_migration_consistency`
+asserted `down_revision == "v388_add_user_group_organization_id"` — a string that stayed
+**valid** while ceasing to be **correct**, so no search for the old identifiers found it.
+Only running the suite did. Likewise a live database stamped at a renumbered revision
+holds a `version_num` that no longer exists: re-stamp to the common ancestor and let the
+idempotent chain re-apply, which is what the ladder already computes.
+
+**Renumbering note 1 (2026-08).** This auth-identity chain originally used v375-v381,
 branched off `v374_add_tag_user_id` independently of the RAG-chat chain
 (`v375_add_chat_tables`/`v376_add_chat_projects`, issue #52/#360) — both sides revised
 v374, producing two heads on merge. Reconciled by renumbering the auth chain to
@@ -61,6 +86,32 @@ v377-v383 (after the chat chain) rather than renumbering chat's, since the chat 
 had already reached production. Nothing about any revision's DDL changed — only the
 seven files' names and their `revision`/`down_revision` strings, and everything that
 referenced them (detection arms, consistency tests, this file).
+
+## Never hold a transaction across slow work (issue #440)
+
+Open the session, do the database work, close it — then do the HTTP call / model inference /
+file I/O. A session left open while the process does something else holds `ACCESS SHARE` on
+every table it touched (which queues any `ALTER TABLE` behind it, including a migration) and
+pins the VACUUM horizon for the whole cluster. 35 leaks of this shape were found and fixed;
+one had a `celery-cpu-worker` connection `idle in transaction` for **48+ minutes**.
+
+Two things keep it from coming back, and neither replaces the other:
+
+- **`scripts/audit-session-lifetime.py`** — 9 AST detectors, wired into `.pre-commit-config.yaml`
+  (self-test first) and its own phase in `run-integration-tests.sh`. Allowlist entries need a
+  written reason and a **stale entry fails the run**, so an exemption cannot outlive its subject.
+- **`DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`** (default 5 min, 0 disables) — the server-side backstop.
+  `base.py:build_libpq_options` puts `idle_in_transaction_session_timeout` in the shared engine's
+  `connect_args`, so Postgres terminates a backend holding an open transaction and running no
+  query. It **cannot interrupt a slow query, only an idle one**, which is exactly why it is safe
+  to ship on: legitimate long statements are untouched. The migration engines in `migrations.py`
+  are built separately and are outside it by construction, so a long `ALTER TABLE` and the
+  advisory-lock holder are never at risk.
+
+`tests/unit/test_idle_in_transaction_backstop.py` proves the GUC really terminates an idle
+transaction **against a live server, with its own control** (same idle duration, no GUC → the
+connection survives) plus a second control that a `pg_sleep` inside a statement is *not* killed.
+Configuration-only assertions would have passed against a backstop that did nothing.
 
 ## Gotchas
 

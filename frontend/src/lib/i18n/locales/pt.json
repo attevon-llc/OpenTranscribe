@@ -4780,6 +4780,7 @@
   "chat.message.aborted": "Interrompida — esta resposta está incompleta.",
   "chat.message.contextDropped": "Esta resposta não se baseou nas suas gravações: foram encontrados excertos, mas nenhum coube na janela de contexto do modelo. Experimente uma conversa mais curta, menos excertos por resposta ou um modelo com uma janela de contexto maior.",
   "chat.message.noContext": "Nada foi pesquisado para esta resposta: nenhum excerto das suas gravações chegou ao modelo, por isso a resposta não se baseia nelas. Verifique se as gravações que esperava estão transcritas e indexadas e se a pesquisa está disponível.",
+  "chat.message.unsupportedLanguage": "Algumas gravações no âmbito desta conversa estão em {{languages}}. O chat e a pesquisa estão atualmente otimizados apenas para inglês, pelo que essas gravações foram em grande parte invisíveis para esta pergunta e a resposta pode estar incompleta. A transcrição em si suporta todos os idiomas do modelo.",
   "chat.message.copied": "Copiado",
   "chat.message.copy": "Copiar",
   "chat.message.edit": "Editar",

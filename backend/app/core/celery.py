@@ -115,6 +115,7 @@ celery_app = Celery(
         "app.tasks.rename_propagation_task",
         "app.tasks.redaction_task",
         "app.tasks.chat_retention",
+        "app.tasks.erasure_reconciliation",
         "app.tasks.thumbnail",
         "app.tasks.thumbnail_migration",
         "app.tasks.embedding_migration_v4",
@@ -311,6 +312,9 @@ celery_app.conf.update(
         # writes. CPU queue — never gpu.
         "directory.sync_check_schedule": {"queue": CeleryQueues.CPU},
         "directory.sync_run": {"queue": CeleryQueues.CPU},
+        # GDPR Art. 17 reconciliation (issue #442): small DB reads plus, when there is
+        # deferred work, object-storage and OpenSearch deletes. Utility — never gpu.
+        "gdpr.erasure_reconcile": {"queue": CeleryQueues.UTILITY},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
@@ -382,6 +386,17 @@ celery_app.conf.update(
             # Daily at 04:10. A no-op unless an admin sets chat.retention_days
             # above 0, so this costs one cheap settings read a day by default.
             "schedule": crontab(minute=10, hour=4),
+            "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
+        },
+        "gdpr-erasure-reconcile": {
+            "task": "gdpr.erasure_reconcile",
+            # Daily at 04:40, offset from the chat retention sweep. Two indexed
+            # queries returning nothing on a deployment that has never had an erasure
+            # request; real work only when one was deferred behind a legal hold or a
+            # restore resurrected a subject. Daily rather than hourly because the
+            # deadline it defends is one MONTH (Art. 12(3)) and the prompt path is
+            # the hook in tasks/erasure_reconciliation.notify_hold_released.
+            "schedule": crontab(minute=40, hour=4),
             "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
         },
         "media-mirror-check-schedule": {

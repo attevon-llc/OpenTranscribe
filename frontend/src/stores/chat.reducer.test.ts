@@ -320,6 +320,41 @@ describe('chat reducer — usage, sources and warnings', () => {
     expect(assistant().msg_metadata?.no_context).toBeUndefined();
   });
 
+  it('folds an unsupported_language warning, with its diagnostics, into msg_metadata', async () => {
+    // Task #37: transcription is multilingual but retrieval, reranking and
+    // prompting are English-only, so a non-English recording is effectively
+    // invisible to the question. The backend emitted this frame before the
+    // store handled it, so the notice was DISCARDED live and only appeared
+    // after a reload — the flag was persisted on the message either way.
+    await stream([
+      START,
+      {
+        type: 'warning',
+        code: 'unsupported_language',
+        context_languages: { languages: ['es', 'fr'], files: 3, unknown_files: 1 },
+      },
+      { type: 'done', finish_reason: 'stop' },
+    ]);
+
+    expect(assistant().msg_metadata?.unsupported_language).toBe(true);
+    // The codes must survive too: ChatMessage renders them, and a flag with no
+    // languages produces a warning that cannot say what is wrong.
+    expect(assistant().msg_metadata?.context_languages?.languages).toEqual(['es', 'fr']);
+  });
+
+  it('does not flag unsupported_language when no such warning arrives', async () => {
+    // The control. Without it, a reducer that set the flag unconditionally would
+    // satisfy the test above, and every answer would carry a language warning.
+    await stream([
+      START,
+      { type: 'warning', code: 'context_dropped', retrieved: 2 },
+      { type: 'done', finish_reason: 'stop' },
+    ]);
+
+    expect(assistant().msg_metadata?.unsupported_language).toBeUndefined();
+    expect(assistant().msg_metadata?.context_dropped).toBe(true);
+  });
+
   it('ignores an unrecognised warning code instead of throwing', async () => {
     await stream([
       START,

@@ -26,17 +26,22 @@ The properties asserted here, in the order they appear:
    ``must_not exists organization_id``, so an unconditionally-written field would make
    every personal chunk invisible to personal search.
 
-Three tests below are **characterization tests for reported defects**
-(``test_grouper_aliases_...``, ``test_rechunking_the_same_list_object_...``,
-``test_a_cjk_transcript_collapses_to_one_chunk``). They assert today's wrong behaviour on
-purpose, so the defect cannot drift unnoticed while it is open. Each says so in its
-docstring and states what to replace it with once the production fix lands.
+Two tests below are **characterization tests for reported defects**
+(``test_grouper_aliases_...``, ``test_rechunking_the_same_list_object_...``). They assert
+today's wrong behaviour on purpose, so the defect cannot drift unnoticed while it is open.
+Each says so in its docstring and states what to replace it with once the production fix
+lands.
+
+There were three. ``test_a_cjk_transcript_collapses_to_one_chunk`` pinned the CJK
+one-chunk defect and instructed its successor to make it fail when segmentation landed;
+issue #448 landed and it did, and it is now
+``test_a_cjk_transcript_is_split_into_many_chunks``. Script coverage beyond Japanese
+(zh/ko/ar/hi/th, with Latin controls) lives in ``test_chunking_scripts.py``.
 """
 
 from __future__ import annotations
 
 import copy
-import time
 from collections import Counter
 from itertools import pairwise
 from typing import Any
@@ -60,19 +65,24 @@ BASE_KWARGS: dict[str, Any] = {
 
 @pytest.fixture
 def sentence_splitter_state():
-    """Save/restore the module-level NLTK tokenizer cache and cooldown.
+    """Save/restore the module-level NLTK tokenizer cache and the failure latch.
 
-    ``chunking_service`` memoises punkt tokenizers in ``_nltk_tokenizers`` and records a
-    five-minute "NLTK is unavailable" cooldown in ``_nltk_unavailable_until``. Both are
-    process-global, so a test that touches either would otherwise leak its choice of
-    sentence splitter into every later test in the worker.
+    ``chunking_service`` memoises punkt tokenizers in ``_nltk_tokenizers`` and latches
+    ``_nltk_load_failed`` once a load fails. Both are process-global, so a test that
+    touches either would otherwise leak its choice of sentence splitter into every later
+    test in the worker.
+
+    The latch replaced a five-minute retry cooldown in issue #449: a cooldown meant the
+    splitter could change part-way through one re-index, so the same corpus was chunked
+    two different ways in a single pass. Restoring it here is what keeps that permanence
+    from making the suite order-dependent.
     """
     saved_tokenizers = dict(chunking_service._nltk_tokenizers)
-    saved_cooldown = chunking_service._nltk_unavailable_until
+    saved_latch = chunking_service._nltk_load_failed
     yield
     chunking_service._nltk_tokenizers.clear()
     chunking_service._nltk_tokenizers.update(saved_tokenizers)
-    chunking_service._nltk_unavailable_until = saved_cooldown
+    chunking_service._nltk_load_failed = saved_latch
 
 
 def _force_regex_sentence_split() -> None:
@@ -84,7 +94,7 @@ def _force_regex_sentence_split() -> None:
     ``sentence_splitter_state`` fixture.
     """
     chunking_service._nltk_tokenizers.clear()
-    chunking_service._nltk_unavailable_until = time.time() + 300
+    chunking_service._nltk_load_failed = True
 
 
 def _monologue(sentence_count: int = 50, words_per_sentence: int = 10) -> str:
@@ -665,20 +675,26 @@ def test_rechunking_the_same_list_object_can_change_the_output():
     assert third == first
 
 
-def test_a_cjk_transcript_collapses_to_one_chunk():
-    """DEFECT, pinned as-is: a Japanese transcript is never split, at any length.
+def test_a_cjk_transcript_is_split_into_many_chunks():
+    """FIXED (issue #448). This test was the defect's characterization and said so.
 
-    Every length decision in this module is ``len(text.split())``. Japanese and Chinese
-    do not delimit words with whitespace, so a 2,890-character transcript counts as
-    **one word**, compares as ``1 <= target_words``, and is emitted as a single chunk —
-    the sentence splitter is never reached. The app advertises 100+ transcription
-    languages, and ``_PUNKT_LANG_MAP`` has no entry for ``ja``/``zh`` either, so those
-    fall through to the English punkt model.
+    It previously asserted ``len(chunks) == 1`` and instructed its successor:
+    *"When CJK segmentation lands, this test must fail — replace the count with
+    the expected split."* It did exactly that, which is the whole point of pinning
+    a defect rather than merely filing it.
 
-    Consequences are on the retrieval side: one document per file destroys chunk
-    granularity for search, and chat retrieval hands the LLM an entire transcript as a
-    single "chunk". Reported, not fixed. **When CJK segmentation lands, this test must
-    fail** — replace the count with the expected split.
+    What was wrong, and all of it had to be fixed together:
+
+    * ``len(text.split())`` reported the entire transcript as **one word**, so
+      ``1 <= target_words`` held and the splitter was never reached;
+    * unmapped languages were handed to the ENGLISH punkt model, which returns
+      Japanese as one sentence — punkt had not failed, it was merely wrong;
+    * the regex fallback listed ``。！？`` but required whitespace after them,
+      which CJK text does not have.
+
+    The preconditions are kept as assertions, not comments: they are what makes
+    the outcome meaningful, and if ``str.split()`` ever stopped reporting 1 here
+    the test would be measuring something else.
     """
     japanese = "".join(f"これはテストの文章です{i}。" for i in range(200))
     segments = [_segment(japanese, "S1", 0.0, 600.0)]
@@ -686,28 +702,61 @@ def test_a_cjk_transcript_collapses_to_one_chunk():
     chunks = chunk_transcript_by_speaker_turns(segments, **BASE_KWARGS, language="ja")
 
     assert len(japanese) == 2890
-    assert len(japanese.split()) == 1
-    assert len(chunks) == 1
-    assert chunks[0]["content"] == japanese
+    assert len(japanese.split()) == 1, "precondition: whitespace cannot delimit this text"
+
+    assert len(chunks) > 5, f"2,890 characters produced only {len(chunks)} chunk(s)"
+    assert max(len(c["content"]) for c in chunks) < len(japanese) / 3
+
+    # Nothing invented and nothing lost: the concatenated chunks must still be
+    # the transcript. A splitter that inserted separators would corrupt both what
+    # the reader sees and what the embedding model receives.
+    for chunk in chunks:
+        assert chunk["content"] in japanese, "chunk text is not a slice of the transcript"
+
+
+class _AbbreviationAwareTokenizer:
+    """Stand-in for punkt: splits on '. ' except after a known abbreviation.
+
+    Module level so both splitter tests share ONE definition. Injected rather than
+    depending on real NLTK data, which is present in the dev image but not
+    necessarily in CI or the host venv — a test that silently degraded to the regex
+    on both sides would assert that the splitters agree, which is the opposite of
+    what it is for.
+    """
+
+    _ABBREVIATIONS = ("Dr.", "Mr.", "p.m.", "U.S.", "e.g.")
+
+    def tokenize(self, raw: str) -> list[str]:
+        sentences: list[str] = []
+        current: list[str] = []
+        for token in raw.split():
+            current.append(token)
+            if token.endswith(".") and token not in self._ABBREVIATIONS:
+                sentences.append(" ".join(current))
+                current = []
+        if current:
+            sentences.append(" ".join(current))
+        return sentences
 
 
 def test_sentence_splitter_availability_changes_the_chunk_boundaries(sentence_splitter_state):
-    """DEFECT (determinism), pinned as-is: boundaries depend on whether punkt is loadable.
+    """The two splitters DO disagree — which is why the choice must be latched (#449).
 
-    ``_split_into_sentences`` uses NLTK punkt when it can and a bare regex otherwise, and
+    ``split_into_sentences`` uses NLTK punkt when it can and a bare regex otherwise, and
     the two disagree on abbreviations — punkt keeps ``Dr.`` and ``p.m.`` inside a
-    sentence, the regex splits on them. Sentence boundaries drive chunk boundaries, so
-    the same transcript indexed on a worker with the punkt cache and one without produces
-    different documents.
+    sentence, the regex splits on them. Sentence boundaries drive chunk boundaries, so a
+    worker with the punkt corpora and one without produce different documents from the
+    same transcript.
 
-    It is also **time-dependent within one process**: a failed punkt load sets a
-    five-minute ``_nltk_unavailable_until`` cooldown, so files early in a re-index can be
-    chunked by the regex and later files by punkt.
+    That cross-process difference is **not** fixed here and cannot be fixed by this
+    module alone: it is decided by whether the image has the corpora. What IS fixed is
+    the far worse version — the splitter changing *within a single re-index*, which
+    ``test_the_splitter_choice_is_latched_for_the_process`` now pins. This test remains
+    because it is the evidence that the latch matters: if the two splitters agreed, none
+    of it would be worth the machinery.
 
-    Both splitters are exercised here through the module's own selection logic, so the
-    test asserts a real divergence rather than a hypothetical one. It is hermetic — the
-    "punkt" side uses an injected abbreviation-aware tokenizer, so the result does not
-    depend on whether NLTK data is present in this environment. Reported, not fixed.
+    Hermetic — the "punkt" side uses an injected abbreviation-aware tokenizer, so the
+    result does not depend on whether NLTK data is present in this environment.
     """
     unit = (
         "Dr. Smith met Mr. Jones at 3 p.m. in the U.S. office. "
@@ -716,29 +765,12 @@ def test_sentence_splitter_availability_changes_the_chunk_boundaries(sentence_sp
     text = (unit * 12).strip()
     segments = [_segment(text, "S1", 0.0, 300.0)]
 
-    class _AbbreviationAwareTokenizer:
-        """Stand-in for punkt: splits on '. ' except after a known abbreviation."""
-
-        _ABBREVIATIONS = ("Dr.", "Mr.", "p.m.", "U.S.", "e.g.")
-
-        def tokenize(self, raw: str) -> list[str]:
-            sentences: list[str] = []
-            current: list[str] = []
-            for token in raw.split():
-                current.append(token)
-                if token.endswith(".") and token not in self._ABBREVIATIONS:
-                    sentences.append(" ".join(current))
-                    current = []
-            if current:
-                sentences.append(" ".join(current))
-            return sentences
-
     _force_regex_sentence_split()
     with_regex = chunk_transcript_by_speaker_turns(
         segments, **BASE_KWARGS, target_words=40, overlap_words=8
     )
 
-    chunking_service._nltk_unavailable_until = 0.0
+    chunking_service._nltk_load_failed = False
     chunking_service._nltk_tokenizers["english"] = _AbbreviationAwareTokenizer()
     with_punkt = chunk_transcript_by_speaker_turns(
         segments, **BASE_KWARGS, target_words=40, overlap_words=8
@@ -747,3 +779,52 @@ def test_sentence_splitter_availability_changes_the_chunk_boundaries(sentence_sp
     assert len(with_regex) == 9
     assert len(with_punkt) == 12
     assert with_regex != with_punkt
+
+
+def test_the_splitter_choice_is_latched_for_the_process(sentence_splitter_state):
+    """Once punkt has failed to load, nothing switches the splitter back mid-run (#449).
+
+    The defect this replaces: a failed load set a five-minute
+    ``_nltk_unavailable_until`` cooldown, after which the module tried punkt again. A
+    re-index taking longer than five minutes therefore chunked its early files with the
+    regex and its later files with punkt — **the same corpus, chunked two ways, in one
+    pass**, with nothing recording which. That is issue #433's failure mode arriving by a
+    second route.
+
+    The latch is asserted through the module's own selection logic, not by reading the
+    flag: a tokenizer is made available AFTER the failure is latched, exactly as the
+    cooldown expiring used to make one available, and the output must not move.
+    """
+    unit = "Dr. Smith met Mr. Jones at 3 p.m. in the U.S. office. "
+    segments = [_segment((unit * 12).strip(), "S1", 0.0, 300.0)]
+
+    _force_regex_sentence_split()
+    before = chunk_transcript_by_speaker_turns(
+        segments, **BASE_KWARGS, target_words=40, overlap_words=8
+    )
+
+    # punkt becomes loadable. Under the cooldown this is precisely the moment the
+    # splitter flipped; under the latch it must be ignored for this process.
+    chunking_service._nltk_tokenizers["english"] = _AbbreviationAwareTokenizer()
+    after = chunk_transcript_by_speaker_turns(
+        segments, **BASE_KWARGS, target_words=40, overlap_words=8
+    )
+
+    assert after == before, (
+        "The sentence splitter changed part-way through a run: a tokenizer becoming "
+        "available after a failed load switched the boundaries. Chunk boundaries must "
+        "be stable for the life of the process."
+    )
+
+    # The control: clearing the latch — which only tests do — must let punkt back in,
+    # or the assertion above would hold for the trivial reason that the injected
+    # tokenizer is never consulted at all.
+    chunking_service.reset_sentence_splitter_state()
+    chunking_service._nltk_tokenizers["english"] = _AbbreviationAwareTokenizer()
+    unlatched = chunk_transcript_by_speaker_turns(
+        segments, **BASE_KWARGS, target_words=40, overlap_words=8
+    )
+    assert unlatched != before, (
+        "Clearing the latch did not change the boundaries, so this test cannot "
+        "distinguish a working latch from an unused tokenizer."
+    )

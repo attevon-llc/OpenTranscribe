@@ -153,6 +153,24 @@ async def upload_file(
 - **Tag Management**: File tagging operations
 - **Statistics**: User file statistics and analytics
 
+## 🎙️ Transcription — there is no `transcription_service.py`
+
+`transcription_service.py` was deleted in issue #450. It described a `TranscriptionService` class
+with twelve methods (start/status/segments/speakers/merge/analysis/summarization/search) that was
+**imported by nothing** — no router, no task, no test, no dynamic-import registry — while the live
+routers implemented all twelve independently. Two paths doing the same job, one of them never run.
+
+Where the work actually happens:
+
+- **Dispatch** — `app/tasks/transcription/dispatch.py` (per-file overrides for `source_language`,
+  `translate_to_english`, speaker counts) → the Celery pipeline in `app/tasks/`
+  (see `backend/app/tasks/CLAUDE.md`).
+- **The ASR/diarization engine** — `app/transcription/` (see its `CLAUDE.md` for hybrid mode and
+  boundary correction) behind the pluggable providers in `services/asr/` and
+  `services/diarization/`.
+- **HTTP surface** — `app/api/endpoints/` (files, transcript segments, speakers, tasks).
+- **Speaker merge / identification** — the `speaker_*_service.py` family in this directory.
+
 ## 🤖 LLM Service (`llm_service.py`)
 
 ### Purpose
@@ -611,12 +629,12 @@ class FileService:
 ### Service Dependencies
 ```python
 # Services can call other services when needed
-class TranscriptionService:
+class SummaryService:
     def __init__(self, db: Session):
         self.db = db
         self.file_service = FileService(db)  # Dependency injection
 
-    def start_transcription(self, file_id: int, user: User):
+    def start_summarization(self, file_id: int, user: User):
         # Use file service for validation
         file_obj = self.file_service.get_file_by_id(file_id, user)
         # Continue with transcription logic...
@@ -708,7 +726,7 @@ class FileService:
 ```python
 from functools import lru_cache
 
-class TranscriptionService:
+class SpeakerService:
     @lru_cache(maxsize=100)
     def get_user_speakers_cached(self, user_id: int) -> List[Speaker]:
         """Cache frequently accessed speaker data."""
@@ -734,7 +752,7 @@ from sqlalchemy.orm import Session
 
 from app.models.user import User
 from app.utils.error_handlers import ErrorHandler
-from app.utils.auth_decorators import AuthorizationHelper
+from app.utils.uuid_helpers import require_resource_owner
 
 class NewService:
     """Service for handling [specific domain] operations."""

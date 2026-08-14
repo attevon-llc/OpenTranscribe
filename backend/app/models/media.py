@@ -123,7 +123,7 @@ class MediaFile(Base):
     # the scan finished, not that every detector ran: an unavailable one is reported as
     # skipped and still reaches `done` (see detectors/DetectorUnavailableError). Without
     # this, a read path could mask nothing, report success, and send unexamined PII to a
-    # provider. NULL = scanned before v391, coverage unknown — see
+    # provider. NULL = scanned before v392, coverage unknown — see
     # `services/redaction/coverage.py` for why that is trusted rather than refused.
     redaction_coverage: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     # Client-declared content fingerprint of the source the user selected — the
@@ -191,8 +191,8 @@ class MediaFile(Base):
     # ``upload_time``) that recorded no provenance, so a value copied from
     # ``upload_time`` was indistinguishable from one read out of the file. That chain
     # is gone: the fallbacks are now explicit ``recorded_date_source`` values below.
-    # Rows written before v390 may still hold a laundered value, which is exactly why
-    # v390 does not backfill ``recorded_date`` from this column.
+    # Rows written before v391 may still hold a laundered value, which is exactly why
+    # v391 does not backfill ``recorded_date`` from this column.
     creation_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )  # Original creation date, as the container states it (NULL = the container did not)
@@ -200,7 +200,7 @@ class MediaFile(Base):
         DateTime(timezone=True), nullable=True
     )  # Last modified date
 
-    # --- When the recording actually happened, and how we know (v390, #403 R7) ---
+    # --- When the recording actually happened, and how we know (v391, #403 R7) ---
     #
     # Distinct from ``upload_time`` (when the bytes arrived) and from ``creation_date``
     # (what the container claims). This is the resolved answer to "when did this
@@ -332,7 +332,7 @@ class MediaFile(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
 
-    # Declared here, not only in v390, because a constraint the database enforces and
+    # Declared here, not only in v391, because a constraint the database enforces and
     # Python never states is invisible until it fires at runtime — see
     # ``tests/unit/test_orm_ddl_divergence.py``, whose allowlist is empty by
     # measurement. The two that carry design rather than hygiene:

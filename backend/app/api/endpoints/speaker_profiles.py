@@ -392,7 +392,6 @@ def _get_embedding_suggestions(
     speaker_embedding = get_speaker_embedding(str(speaker.uuid))
     if speaker_embedding:
         profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
-            db,
             speaker_embedding,
             current_user.id,
             threshold=threshold,

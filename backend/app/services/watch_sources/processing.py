@@ -21,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -215,6 +216,22 @@ def ingest_prepared_file(
     db.refresh(db_file)
 
     # 5. Upload to MinIO under the standard path.
+    #
+    # Suspend the server-side idle-in-transaction backstop
+    # (DB_IDLE_IN_TRANSACTION_TIMEOUT_MS, default 5 min) for THIS transaction
+    # only. The upload below is the known residual session hold documented in
+    # the docstring, and it is the one place where holding the transaction idle
+    # for minutes is expected rather than a bug: a 15 GB import over a slow link
+    # exceeds the default, and having Postgres terminate the connection would
+    # abort a legitimate ingest. SET LOCAL reverts at commit/rollback, so the
+    # exemption cannot leak to the next transaction on this pooled connection.
+    #
+    # This is scoped narrowly ON PURPOSE. Do not widen it, and delete it when
+    # the phased plain-data signature closes the residual — at that point the
+    # transaction is no longer open across the upload and the exemption is a
+    # silent hole rather than a documented one.
+    db.execute(sa_text("SET LOCAL idle_in_transaction_session_timeout = 0"))
+
     storage_path = get_safe_storage_filename(filename, owner_id, int(db_file.id))
     from app.services.minio_service import upload_file_tuned
 

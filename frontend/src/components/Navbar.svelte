@@ -813,16 +813,26 @@
     border-width: 0;
   }
 
-  /* iPad landscape — reduce gap, hide username, keep nav labels */
-  @media (max-width: 1200px) {
+  /* Reduce gap, hide username, keep nav labels.
+     MEASURED, not guessed: at full spacing with the username shown the navbar
+     needs 1435px, so this tier must start above that with real headroom — it
+     used to start at 1200px and the bar simply overflowed the viewport from
+     1201px to 1434px, clipping the user menu off-screen (issue #452).
+     ⚠️ This threshold is coordinated with the identical one in
+     navbar/UserDropdown.svelte, which hides `.username`. Both must move
+     together, and both must move UP whenever a nav item is added. */
+  @media (max-width: 1500px) {
     .navbar-container {
       gap: 1.5rem;
       padding: 0.5rem 1rem;
     }
   }
 
-  /* iPad portrait — icon-only nav links, tighter layout */
-  @media (max-width: 1024px) {
+  /* Icon-only nav links, tighter layout.
+     Reduced spacing with full text labels needs 1227px, so this tier starts at
+     1280 rather than the old 1024 — between 1025 and 1226 the bar overflowed
+     here too, which is why raising only the tier above would not have fixed it. */
+  @media (max-width: 1280px) {
     .navbar-container {
       gap: 1rem;
     }

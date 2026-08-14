@@ -147,7 +147,19 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 # Shared fixture modules. Registered here rather than imported so they are
 # available to every suite without a per-file import.
-pytest_plugins = ["fixtures.mock_llm"]
+#
+# NOTE: this line is why `tests/` must NOT gain an `__init__.py`. With one,
+# prepend import mode roots `tests/conftest.py` at `backend/` instead of
+# `backend/tests/`, so `backend/tests` never reaches sys.path and this dies with
+# `ImportError: Error importing plugin "fixtures.mock_llm": No module named
+# 'fixtures'` — the same reason `--import-mode=importlib` is unusable here.
+#
+# `fixtures.dir_collector_memo` contributes no fixtures at all: it is the
+# workaround for the pytest 9.1 regression that makes every subdirectory
+# conftest's fixtures vanish from a mixed file selection (issue #454). Read its
+# docstring before touching it; `unit/test_conftest_fixture_visibility.py` pins
+# both the workaround and the fact that pytest still needs it.
+pytest_plugins = ["fixtures.mock_llm", "fixtures.dir_collector_memo"]
 
 
 @pytest.fixture(autouse=True, scope="session")

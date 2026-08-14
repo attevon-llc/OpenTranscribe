@@ -31,29 +31,37 @@ _PUNKT_LANG_MAP: dict[str, str] = {
     "tr": "turkish",
 }
 
-# Resolved tokenizers, and the languages already proven unresolvable. BOTH are
-# permanent for the life of the process, and that is the point: punkt and the
-# regex fallback below cut sentences in different places, so which one answers
-# has to be a property of the process, never of when a document happened to be
-# chunked. This used to be a 5-minute wall-clock cooldown after a failed load,
-# which made `chunk_transcript_by_speaker_turns` a function of `time.time()`:
-# one transient failure while the nltk_data mount came up (the model cache is
-# chowned during stack startup) switched the splitter to regex, and 300 seconds
-# later it switched back, mid-reindex. The same corpus then indexed to different
-# chunk text depending on where in the run each file happened to land.
+# Cache of loaded NLTK tokenizers keyed by language name
 _nltk_tokenizers: dict[str, Any] = {}
-_nltk_unavailable: set[str] = set()
+
+#: Latched once per process: has an NLTK load already been attempted and failed?
+#:
+#: This replaces a 5-minute ``_nltk_unavailable_until`` retry cooldown, which made
+#: chunk boundaries **time-dependent within a single re-index** (issue #449). punkt
+#: and the regex fallback disagree on abbreviations — punkt keeps ``Dr.`` and
+#: ``p.m.`` inside a sentence, the regex splits on them — and sentence boundaries
+#: drive chunk boundaries. So after one failed load, files early in a pass were
+#: chunked by the regex and files more than five minutes later by punkt: the same
+#: corpus, chunked two different ways, in one run, with nothing recording which.
+#:
+#: That is issue #433's failure mode ("re-indexing one unchanged corpus produced
+#: three different chunk counts") arriving by a second route after the ordering
+#: bug behind it was fixed.
+#:
+#: Latching trades a retry for determinism, which is the right trade here: NLTK is
+#: either installed in the image with its corpora or it is not, and that does not
+#: change while the process runs. A worker that starts without punkt now chunks
+#: the whole pass consistently rather than switching part-way through.
+_nltk_load_failed: bool = False
 
 
 def _get_nltk_tokenizer(language: str = "english"):
     """Load the NLTK punkt sentence tokenizer for the given language.
 
-    Resolved **once per process**, positively or negatively. Falls back to
-    English if the requested language model is not available, then to None if
-    NLTK itself is unavailable -- and a None result is remembered, so a later
-    call cannot silently start splitting sentences differently. Picking up a
-    punkt model installed after the process started requires a restart; that is
-    the deliberate trade for reproducible chunk boundaries.
+    Tokenizers are cached after first load. Falls back to English if the
+    requested language model is not available, then to None if NLTK itself is
+    unavailable — and that None is **latched for the life of the process**, so a
+    re-index cannot switch splitters part-way through (issue #449).
 
     Args:
         language: NLTK punkt language name (e.g. "english", "german").
@@ -61,10 +69,13 @@ def _get_nltk_tokenizer(language: str = "english"):
     Returns:
         The tokenizer on success, or None if NLTK/punkt is unavailable.
     """
+    global _nltk_load_failed
+
+    if _nltk_load_failed:
+        return None
+
     if language in _nltk_tokenizers:
         return _nltk_tokenizers[language]
-    if language in _nltk_unavailable:
-        return None
 
     try:
         import nltk.data
@@ -76,23 +87,35 @@ def _get_nltk_tokenizer(language: str = "english"):
             _nltk_tokenizers[language] = tokenizer
             logger.debug(f"Loaded NLTK punkt tokenizer for '{language}'")
             return tokenizer
-        reason = "no punkt/punkt_tab model on any nltk.data.path"
     except Exception as e:
-        reason = f"{type(e).__name__}: {e}"
+        logger.debug(f"NLTK punkt tokenizer not available, using regex fallback: {e}")
 
-    _nltk_unavailable.add(language)
-    # WARNING, not DEBUG: this was invisible for long enough that nobody noticed
-    # the workers that actually do the indexing (celery-embedding-worker for
-    # `index_transcript_search`, celery-cpu-worker for `reindex_transcripts`)
-    # carry no nltk_data mount at all, so every chunk in the live index was cut
-    # by the regex fallback while every test process cut them with punkt.
+    # WARNING, not debug: this decides how every chunk in this process is split,
+    # and a worker that silently differs from its peers produces an index whose
+    # boundaries depend on which worker happened to handle each file. It is the
+    # one line that makes a mixed index detectable after the fact.
+    _nltk_load_failed = True
     logger.warning(
-        f"NLTK punkt unavailable for '{language}' ({reason}); using the regex "
-        f"sentence splitter for the life of this process. Chunk boundaries will "
-        f"NOT match a process that has punkt -- do not compare an index built "
-        f"here against one built elsewhere."
+        "NLTK punkt unavailable; this process will use the REGEX sentence "
+        "splitter for every transcript it chunks. The two disagree on "
+        "abbreviations, so chunks produced here will not match those from a "
+        "worker that has punkt. Install the punkt corpora to make the index "
+        "uniform."
     )
     return None
+
+
+def reset_sentence_splitter_state() -> None:
+    """Clear the latched splitter decision and the tokenizer cache.
+
+    For tests only. The latch is deliberately permanent in production — see
+    ``_nltk_load_failed`` — so a suite that exercises both splitters needs an
+    explicit way to undo it rather than waiting out a cooldown that no longer
+    exists.
+    """
+    global _nltk_load_failed
+    _nltk_load_failed = False
+    _nltk_tokenizers.clear()
 
 
 def _load_punkt_model(nltk_data_module: Any, language: str) -> Any:
@@ -107,16 +130,114 @@ def _load_punkt_model(nltk_data_module: Any, language: str) -> Any:
         return None
 
 
-# Regex fallback for sentence splitting when NLTK is unavailable
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?。！？।])\s+")
+# Scripts written WITHOUT spaces between words ("scriptio continua"): CJK
+# ideographs, kana, and the Thai/Lao/Khmer/Myanmar families. Deliberately EXCLUDES
+# Hangul — Korean is written with spaces, so counting it per-character would make
+# Korean chunks several times smaller than every other language's.
+_NO_SPACE_SCRIPT = (
+    "぀-ヿ"  # hiragana + katakana
+    "㐀-䶿"  # CJK ext A
+    "一-鿿"  # CJK unified
+    "豈-﫿"  # CJK compatibility
+    "ｦ-ﾟ"  # halfwidth katakana
+    "฀-๿"  # Thai
+    "຀-໿"  # Lao
+    "က-႟"  # Myanmar
+    "ក-៿"  # Khmer
+)
+_NO_SPACE_CHAR_RE = re.compile(f"[{_NO_SPACE_SCRIPT}]")
+
+#: Sentence terminators no punkt model recognises. Devanagari's danda is the one
+#: that matters in practice: Hindi uses spaces, so it clears the scriptio-continua
+#: check and would otherwise be handed to English punkt.
+_FOREIGN_TERMINATOR_RE = re.compile("[。！？।॥…‥]")
+
+#: One "word" for sizing purposes: either a single scriptio-continua character, or
+#: a run of anything else that is not whitespace. Chunk budgets are expressed in
+#: words, and ``str.split()`` reports a 10,000-character Chinese transcript as
+#: **one word** — so every size check passed and the whole transcript became a
+#: single chunk (issue #448). Counting each CJK character as a word is slightly
+#: conservative (a character is nearer a syllable than a word), which errs toward
+#: chunks that fit the embedding model's window rather than ones that overflow it.
+_WORD_SPAN_RE = re.compile(f"[{_NO_SPACE_SCRIPT}]|[^\\s{_NO_SPACE_SCRIPT}]+")
+
+# Regex fallback for sentence splitting when NLTK is unavailable, or when the
+# script is one punkt has no model for.
+#
+# TWO alternatives, because the whitespace requirement differs. A Latin full stop
+# needs the following space to avoid splitting "3.14" and "Dr. Chen"; the CJK and
+# Devanagari terminators are never used inside a token, and the text that uses
+# them has no spaces at all — so requiring ``\s+`` after them (as this pattern
+# did) meant it never matched a single Chinese or Japanese sentence boundary.
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|(?<=[。！？…‥।॥])\s*")
+
+
+def count_words(text: str) -> int:
+    """Count words for chunk sizing, correctly for scripts written without spaces.
+
+    Args:
+        text: The text to measure.
+
+    Returns:
+        Number of word-equivalents. For Latin/Cyrillic/Hangul text this equals
+        ``len(text.split())``; for CJK/Thai it counts characters, which
+        ``str.split()`` cannot do because there is nothing to split on.
+    """
+    return len(_WORD_SPAN_RE.findall(text))
+
+
+def _word_spans(text: str) -> list[tuple[int, int]]:
+    """Return ``(start, end)`` offsets of each word-equivalent in *text*.
+
+    Slicing the ORIGINAL string by these offsets preserves its spacing. The
+    alternative — ``" ".join(text.split()[i:j])`` — inserts a space between every
+    character of a Chinese chunk, corrupting both what the user reads and what
+    the embedding model receives.
+    """
+    return [m.span() for m in _WORD_SPAN_RE.finditer(text)]
+
+
+def _sentence_joiner(text: str) -> str:
+    """The separator to rejoin sentences of *text* with.
+
+    Empty for scriptio continua. The sentences were produced by splitting a
+    string that had no spaces in it, so rejoining them with `" "` inserts
+    separators the original never had — visible to the reader as
+    ``产品。 达娜`` and fed to the embedding model as different text than was
+    indexed elsewhere.
+    """
+    return "" if _NO_SPACE_CHAR_RE.search(text) else " "
+
+
+def _punkt_can_read(text: str, language: str) -> bool:
+    """Whether an NLTK punkt model is a sensible splitter for this text.
+
+    ``_PUNKT_LANG_MAP.get(language, "english")`` used to send every unmapped
+    language to the ENGLISH tokenizer, which loads fine, runs fine, and returns
+    a Chinese transcript as **one sentence** — English punkt looks for ``.``,
+    ``!``, ``?`` and Chinese uses ``。``, ``！``, ``？``. The regex fallback below
+    already handled those terminators but was never reached, because punkt had
+    not failed; it had merely been wrong.
+    """
+    if language in _PUNKT_LANG_MAP:
+        return True
+    # Two independent disqualifiers, and the second is easy to miss: Devanagari
+    # is written WITH spaces, so the scriptio-continua check alone passed it to
+    # English punkt, which does not know the danda `।` ends a sentence and
+    # returned a whole Hindi transcript as one sentence.
+    return not (_NO_SPACE_CHAR_RE.search(text) or _FOREIGN_TERMINATOR_RE.search(text))
 
 
 def split_into_sentences(text: str, language: str = "en") -> list[str]:
     """Split text into sentences using NLTK punkt with regex fallback.
 
-    Public: ``services/ingest_artifacts/digest.py`` splits the same transcript text the
-    same way, so the digest's sentence boundaries and the index's chunk boundaries stay
-    the same boundaries. A second implementation would drift.
+    **Public, and it has to be.** ``services/ingest_artifacts/digest.py`` and
+    ``services/documents/chunking.py`` split the same transcript text the same way,
+    so the digest's sentence boundaries and the index's chunk boundaries stay the
+    SAME boundaries — a second implementation would drift and the digest would cite
+    spans the chunks do not contain. ``test_compose_sentence_splitter_mounts`` also
+    derives which workers need the punkt mount by walking the import graph outward
+    from this name, so privatising it silently empties that check.
 
     Args:
         text: Input text to split.
@@ -128,13 +249,14 @@ def split_into_sentences(text: str, language: str = "en") -> list[str]:
     if not text or not text.strip():
         return []
 
-    nltk_lang = _PUNKT_LANG_MAP.get(language, "english")
-    tokenizer = _get_nltk_tokenizer(nltk_lang)
-    if tokenizer is not None:
-        try:
-            return list(tokenizer.tokenize(text))
-        except Exception as e:
-            logger.debug(f"NLTK tokenizer failed for language '{language}': {e}")
+    if _punkt_can_read(text, language):
+        nltk_lang = _PUNKT_LANG_MAP.get(language, "english")
+        tokenizer = _get_nltk_tokenizer(nltk_lang)
+        if tokenizer is not None:
+            try:
+                return list(tokenizer.tokenize(text))
+            except Exception as e:
+                logger.debug(f"NLTK tokenizer failed for language '{language}': {e}")
 
     # Regex fallback: split on sentence-ending punctuation followed by uppercase
     sentences = _SENTENCE_SPLIT_RE.split(text)
@@ -162,7 +284,7 @@ def _compute_overlap_sentences(sentences: list[str], target_words: int) -> list[
 
     max_words = target_words * 2  # Hard cap at 2x target to prevent runaway overlap
     for sentence in reversed(sentences):
-        sentence_words = len(sentence.split())
+        sentence_words = count_words(sentence)
         if word_count + sentence_words > target_words and overlap:
             break
         if word_count + sentence_words > max_words:
@@ -230,8 +352,7 @@ def chunk_transcript_by_speaker_turns(
 
     for turn in turns:
         turn_text = turn["text"]
-        turn_words = turn_text.split()
-        word_count = len(turn_words)
+        word_count = count_words(turn_text)
 
         if word_count < 20 and chunks:
             # Very short turn - try to merge with last chunk if same speaker
@@ -383,7 +504,7 @@ def _compute_chunk_timestamp(
             return chunk_start, chunk_end
 
     # Fallback: linear interpolation
-    total_words = max(len(turn["text"].split()), 1)
+    total_words = max(count_words(turn["text"]), 1)
     turn_duration = turn["end"] - turn["start"]
     time_per_word = turn_duration / total_words
     chunk_start = turn["start"] + (words_before * time_per_word)
@@ -453,12 +574,12 @@ def _split_long_turn(
     words_before_current = 0  # running word offset for timestamp interpolation
 
     for sentence in sentences:
-        sentence_words = len(sentence.split())
+        sentence_words = count_words(sentence)
 
         # If adding this sentence would exceed target and we already have content,
         # finalize the current chunk
         if current_word_count + sentence_words > target_words and current_sentences:
-            chunk_text = " ".join(current_sentences)
+            chunk_text = _sentence_joiner(text).join(current_sentences)
             chunk_word_count = current_word_count
 
             chunk_start, chunk_end = _compute_chunk_timestamp(
@@ -491,7 +612,7 @@ def _split_long_turn(
 
             # Compute overlap: select trailing sentences from current chunk
             overlap_sentences = _compute_overlap_sentences(current_sentences, overlap_words)
-            overlap_word_count = sum(len(s.split()) for s in overlap_sentences)
+            overlap_word_count = sum(count_words(s) for s in overlap_sentences)
 
             # Advance word offset past the non-overlapping portion
             words_before_current += chunk_word_count - overlap_word_count
@@ -505,9 +626,9 @@ def _split_long_turn(
 
     # Flush remaining sentences as the last chunk
     if current_sentences:
-        chunk_text = " ".join(current_sentences)
+        chunk_text = _sentence_joiner(text).join(current_sentences)
         chunk_start, _ = _compute_chunk_timestamp(
-            turn, words_before_current, len(chunk_text.split())
+            turn, words_before_current, count_words(chunk_text)
         )
         chunk_end = turn["end"]  # Last chunk extends to end of turn
 
@@ -562,15 +683,20 @@ def _split_long_turn_by_words(
     """
     # Defensive guard: ensure overlap cannot equal or exceed target (would cause infinite loop)
     overlap_words = min(overlap_words, target_words - 1)
-    words = turn["text"].split()
-    total_words = len(words)
+    text = turn["text"]
+    # Offsets into the ORIGINAL string, not a token list. Slicing the source keeps
+    # its spacing intact; `" ".join(text.split()[i:j])` would put a space between
+    # every character of a Chinese chunk, corrupting what the reader sees and what
+    # gets embedded. It also collapsed runs of whitespace in every other language.
+    spans = _word_spans(text)
+    total_words = len(spans)
     chunks = []
     pos = 0
     chunk_index = start_chunk_index
 
     while pos < total_words:
         end_pos = min(pos + target_words, total_words)
-        chunk_text = " ".join(words[pos:end_pos])
+        chunk_text = text[spans[pos][0] : spans[end_pos - 1][1]]
 
         chunk_start, chunk_end = _compute_chunk_timestamp(turn, pos, end_pos - pos)
 

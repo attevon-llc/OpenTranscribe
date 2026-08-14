@@ -25,13 +25,37 @@ For a **user** (``erase_user``) or an **organization** (``erase_organization``):
    not already swept by the per-file cleanup. This is the biometric-data
    guarantee the per-file path alone cannot make for orphaned docs.
 
+The ledger (issue #442)
+-----------------------
+Every call opens a row in ``erasure_ledger`` **before** it destroys anything and
+closes it afterwards (``services/erasure_ledger_service``). That row is what makes
+three otherwise-invisible things work, and none of them existed before:
+
+* **Art. 30 demonstrability.** The erasure used to leave a summary dict and a log
+  line. The ledger entry is the durable record, and its ``uuid`` comes back in
+  ``summary["ledger_uuid"]`` as a receipt.
+* **Deferred work is finished.** A legal hold makes the erasure ``deferred``, and
+  ``tasks/erasure_reconciliation`` re-runs it — on a schedule, and immediately when
+  ``takedown_service.release_file`` lifts the hold. Before, the deferral was simply
+  forgotten and the retention became permanent.
+* **A restore cannot quietly undo an erasure.** The same sweep re-checks completed
+  entries against the live schema and re-erases a subject that a restored dump
+  brought back.
+
+**What the ledger must never hold is the data it records the destruction of** —
+see ``models/erasure``'s docstring. The table has no free-text column at all, and
+this module passes it surrogate keys and integer counters only, never
+``user.email``, never a filename, and never ``summary["errors"]``.
+
 SLA
 ---
 **30-day completion** (GDPR Art. 12(3) "without undue delay and in any event
 within one month"). This service runs the erasure synchronously and is the
 callable the cloud ``user.deleted`` / ``organization.deleted`` webhooks invoke;
 the webhook handler is responsible only for *enqueueing* the call within the
-window. The operation is **idempotent** (re-running on an already-erased subject
+window. The deadline is stamped on the ledger entry as ``sla_due_at``, so it is a
+value something can be measured against rather than a constant echoed into a
+response. The operation is **idempotent** (re-running on an already-erased subject
 is a no-op that returns zeroed counters) and writes an ``admin.user.delete``
 audit event on completion so the erasure itself is on the compliance trail.
 
@@ -54,7 +78,6 @@ org path never triggers. ``erase_user`` works in both editions (the speaker
 ``delete_by_query`` simply matches the user's personal docs).
 """
 
-import contextlib
 import logging
 from typing import Any
 
@@ -64,6 +87,8 @@ from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.models.chat import ChatConversation
+from app.models.custom_vocabulary import CustomVocabulary
+from app.models.erasure import ErasureLedgerEntry
 from app.models.media import Collection
 from app.models.media import Comment
 from app.models.media import FileTag
@@ -74,13 +99,19 @@ from app.models.media import Tag
 from app.models.media import Task
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
+from app.models.prompt import SummaryPrompt
+from app.models.prompt import UserSetting
 from app.models.user import User
+from app.models.watch_source import WatchSource
+from app.services import erasure_ledger_service as ledger
 from app.services.file_cleanup_service import purge_media_file
 
 logger = logging.getLogger(__name__)
 
-# GDPR Art. 12(3): erasure must complete within one month of the request.
-ERASURE_SLA_DAYS = 30
+# GDPR Art. 12(3): erasure must complete within one month of the request. Re-exported
+# from the ledger service, which stamps every entry's `sla_due_at` with it — two
+# independent copies of the deadline is how the reported SLA and the measured one drift.
+ERASURE_SLA_DAYS = ledger.ERASURE_SLA_DAYS
 
 
 def _erase_speaker_voiceprints(
@@ -93,7 +124,13 @@ def _erase_speaker_voiceprints(
 
     Scopes by ``user_id`` and/or ``organization_id`` (both given = the
     intersection, i.e. one member's docs within one org) and runs a
-    ``delete_by_query`` across the v3 + v4 + alias speaker indices.
+    ``delete_by_query`` across the v3 + v4 + alias speaker indices **and the
+    legacy ``speakers_v3_backup``**. The backup index is not optional
+    housekeeping: ``opensearch_service/indices._restore_v3_from_backup``
+    reindexes it into ``speakers_v3`` whenever v3 is found empty, so on a small
+    deployment erasing its last subject, the next ``ensure_indices_exist()``
+    put their biometric embeddings straight back. Legacy installs only — the
+    index does not exist on a fresh one, and ``indices.exists`` skips it.
     Best-effort: a down/absent OpenSearch never blocks the relational +
     storage erasure (those are the legally-binding deletions; this catches
     orphaned biometric docs).
@@ -127,6 +164,7 @@ def _erase_speaker_voiceprints(
     try:
         from app.core.constants import get_speaker_index
         from app.core.constants import get_speaker_index_v3
+        from app.core.constants import get_speaker_index_v3_backup
         from app.core.constants import get_speaker_index_v4
         from app.services.opensearch_service import opensearch_client
 
@@ -142,7 +180,12 @@ def _erase_speaker_voiceprints(
             terms.append({"term": {"organization_id": organization_id}})
         body = {"query": {"bool": {"filter": terms}}}
 
-        indices = {get_speaker_index(), get_speaker_index_v3(), get_speaker_index_v4()}
+        indices = {
+            get_speaker_index(),
+            get_speaker_index_v3(),
+            get_speaker_index_v4(),
+            get_speaker_index_v3_backup(),
+        }
         for idx in indices:
             try:
                 if not opensearch_client.indices.exists(index=idx):
@@ -175,6 +218,24 @@ def _erase_speaker_voiceprints(
     return deleted
 
 
+def _erase_profile_embedding(profile_uuid: str, errors: list[dict[str, Any]]) -> None:
+    """Remove one speaker profile's embedding doc, recording a failure. Never raises.
+
+    This used to be ``contextlib.suppress(Exception)`` at all three call sites, which is
+    the same defect already fixed for the transcript document: a biometric embedding
+    that could not be deleted made the erasure report SUCCESS, and the DB row naming
+    which document to retry was destroyed in the same pass. Best-effort is right;
+    silent is not.
+    """
+    try:
+        from app.services.opensearch_service import remove_profile_embedding
+
+        remove_profile_embedding(profile_uuid)
+    except Exception as e:  # noqa: BLE001 — record, never abort the relational delete
+        logger.warning(f"Profile embedding removal failed for {profile_uuid}: {e}")
+        errors.append({"stage": "profile_embedding", "profile_uuid": profile_uuid, "error": str(e)})
+
+
 def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -> None:
     """Run the canonical per-file destroy for every file, accumulating counters.
 
@@ -182,8 +243,12 @@ def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -
     Art. 17(3)(e) exempts data retained for legal claims, and the takedown
     flow's evidence-preservation guarantee rests on the DB flag (S3
     object-lock is best-effort only). Skips are reported in the summary so
-    the erasure is auditable as partial, and a later hold release re-runs the
-    idempotent erasure to finish the job.
+    the erasure is auditable as partial, and the deferral is recorded in the
+    **erasure ledger** (``models/erasure``) so a later hold release re-runs the
+    idempotent erasure to finish the job. That last clause used to be a claim this
+    docstring made and nothing implemented — ``takedown_service.release_file``
+    cleared the hold and never called back, so the deferral was permanent
+    (issue #442). ``tasks/erasure_reconciliation`` is what makes it true.
 
     ``purge_media_file``'s ``residual_errors`` are surfaced for the same reason:
     a deleted DB row with the transcript, its RAG chunks or the media object
@@ -241,10 +306,7 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
     """
     profiles = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == user_id).all()
     for profile in profiles:
-        with contextlib.suppress(Exception):
-            from app.services.opensearch_service import remove_profile_embedding
-
-            remove_profile_embedding(str(profile.uuid))
+        _erase_profile_embedding(str(profile.uuid), summary["errors"])
         db.delete(profile)
         summary["speaker_profiles_deleted"] += 1
 
@@ -292,6 +354,12 @@ def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
         "comments_deleted": 0,
         "tasks_deleted": 0,
         "chat_conversations_deleted": 0,
+        # Only the org-member path fills these: the account-wide path reaches the same
+        # rows through the `user` row's FK CASCADE, so they legitimately stay 0 there.
+        "prompts_deleted": 0,
+        "user_settings_deleted": 0,
+        "custom_vocabularies_deleted": 0,
+        "watch_sources_deleted": 0,
         "voiceprints_deleted": 0,
         "users_deleted": 0,
         "legal_holds_skipped": 0,
@@ -299,7 +367,22 @@ def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
         "complete": True,
         "sla_days": ERASURE_SLA_DAYS,
         "already_erased": False,
+        # The receipt. A caller that scripts against the API gets a reference it can
+        # quote back — and, more to the point, the erasure now has an identity that
+        # outlives the request, which is what Art. 30 demonstrability needs.
+        "ledger_uuid": None,
     }
+
+
+def _actor_kind(actor_user_id: int | None, *, staff_role: str) -> str:
+    """Classify the caller for the ledger without recording who they are.
+
+    ``None`` means the cloud ``user.deleted`` / ``organization.deleted`` webhook, i.e.
+    the data subject deleted their own IdP account. Anything else is staff, and which
+    kind is decided by the endpoint that called us (the two entry points are
+    super-admin and org-admin scoped respectively).
+    """
+    return staff_role if actor_user_id is not None else "data_subject"
 
 
 def _resolve_outcome(summary: dict[str, Any]) -> AuditOutcome:
@@ -331,6 +414,7 @@ def erase_user(
     *,
     actor_user_id: int | None = None,
     actor_email: str | None = None,
+    ledger_entry: ErasureLedgerEntry | None = None,
 ) -> dict[str, Any]:
     """Permanently erase ALL of a user's personal data (GDPR Art. 17).
 
@@ -349,7 +433,17 @@ def erase_user(
     raises — errors are collected in ``summary["errors"]``, and anything left in
     that list makes ``summary["complete"]`` False and audits PARTIAL. Files under
     an active legal hold are skipped (Art. 17(3)(e)) and reported. SLA: data
-    erased within :data:`ERASURE_SLA_DAYS` days of the request.
+    erased within :data:`ERASURE_SLA_DAYS` days of the request, measured against
+    the ledger entry's ``sla_due_at``.
+
+    ``ledger_entry`` is passed by ``tasks/erasure_reconciliation`` when it retries a
+    deferred erasure, so the retry UPDATES the original entry instead of opening a
+    second one — an SLA clock that restarted on every sweep tick would never expire.
+    A first-time caller leaves it ``None`` and one is opened here.
+
+    **The ledger row is committed before anything is destroyed.** A worker that dies
+    part-way leaves a ``pending`` entry the sweep picks up; recording only on the way
+    out would leave the crash — the case that most needs a record — with none.
     """
     summary = _new_summary("user", user_id)
 
@@ -357,9 +451,22 @@ def erase_user(
     if user is None:
         summary["already_erased"] = True
         logger.info(f"erase_user: user {user_id} not present — idempotent no-op")
+        if ledger_entry is not None:
+            ledger.record_outcome(db, ledger_entry, summary)
+            summary["ledger_uuid"] = str(ledger_entry.uuid)
         return summary
 
     email = str(user.email)
+
+    if ledger_entry is None:
+        ledger_entry = ledger.record_request(
+            db,
+            subject_type="user",
+            subject_user_id=user_id,
+            subject_user_uuid=user.uuid,
+            actor_kind=_actor_kind(actor_user_id, staff_role="super_admin"),
+            actor_user_id=actor_user_id,
+        )
 
     files = db.query(MediaFile).filter(MediaFile.user_id == user_id).all()
     _purge_files(db, files, summary)
@@ -370,6 +477,12 @@ def erase_user(
     )
 
     if summary["legal_holds_skipped"]:
+        # The account row survives because it HAS to: ``media_file.user_id`` is a plain
+        # NO ACTION foreign key, so `DELETE FROM "user"` raises while a held file
+        # exists. Art. 17(3)(e) justifies retaining the FILE; retaining the account
+        # (credentials, MFA secrets, tokens) is a side effect of the FK, not of the
+        # exemption — see the ledger note in this module's docstring for what is and
+        # is not covered. The ledger entry below is what makes it temporary.
         logger.warning(
             f"erase_user({user_id}): {summary['legal_holds_skipped']} file(s) under "
             "legal hold were preserved; user row retained until holds release."
@@ -414,6 +527,9 @@ def erase_user(
             },
         },
     )
+    ledger.record_outcome(db, ledger_entry, summary)
+    if ledger_entry is not None:
+        summary["ledger_uuid"] = str(ledger_entry.uuid)
     logger.info(f"erase_user({user_id}) complete: {summary}")
     return summary
 
@@ -425,24 +541,48 @@ def erase_org_member_data(
     *,
     actor_user_id: int | None = None,
     actor_email: str | None = None,
+    ledger_entry: ErasureLedgerEntry | None = None,
 ) -> dict[str, Any]:
     """Erase ONE member's data WITHIN ONE organization (org-admin scope).
 
     The org-admin variant of erasure: destroys only the target's rows stamped
     with ``org_id`` — org media files, org-scoped speaker profiles/collections,
-    and the (user, org) voiceprint docs. The target's personal-scope data,
-    other orgs' data, and the ``user`` row itself are untouched: an org admin
-    has authority over their tenant's data, never over the person's account.
-    Full account erasure remains :func:`erase_user` (data subject / platform
-    super-admin only).
+    prompts, settings, vocabulary and watch sources, the comments and tasks they
+    authored on the tenant's files, and the (user, org) voiceprint docs. The
+    target's personal-scope data, other orgs' data, and the ``user`` row itself
+    are untouched: an org admin has authority over their tenant's data, never
+    over the person's account. Full account erasure remains :func:`erase_user`
+    (data subject / platform super-admin only).
 
-    Idempotent and never raises; legal-hold files are skipped and reported.
+    Four of those row types were missing until issue #442 — ``SummaryPrompt``,
+    ``UserSetting``, ``CustomVocabulary`` and ``WatchSource`` all carry an
+    ``organization_id`` and were swept by the account-wide path but not by this
+    one. ``WatchSource`` is the one that mattered: it stores **SMB/S3
+    credentials**, so an org-scoped erasure left the tenant holding the erased
+    member's encrypted secrets.
+
+    Idempotent and never raises; legal-hold files are skipped and reported, and
+    the request is recorded in the erasure ledger (``ledger_entry`` is passed by
+    the reconciliation sweep when retrying — see :func:`erase_user`).
     """
     summary = _new_summary("org_member", user_id)
     summary["organization_id"] = org_id
 
     user = db.query(User).filter(User.id == user_id).first()
     email = str(user.email) if user else None
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+
+    if ledger_entry is None:
+        ledger_entry = ledger.record_request(
+            db,
+            subject_type="org_member",
+            subject_user_id=user_id,
+            subject_user_uuid=user.uuid if user else None,
+            subject_organization_id=org_id,
+            subject_organization_uuid=org.uuid if org else None,
+            actor_kind=_actor_kind(actor_user_id, staff_role="org_admin"),
+            actor_user_id=actor_user_id,
+        )
 
     files = (
         db.query(MediaFile)
@@ -457,10 +597,7 @@ def erase_org_member_data(
         .all()
     )
     for profile in profiles:
-        with contextlib.suppress(Exception):
-            from app.services.opensearch_service import remove_profile_embedding
-
-            remove_profile_embedding(str(profile.uuid))
+        _erase_profile_embedding(str(profile.uuid), summary["errors"])
         db.delete(profile)
         summary["speaker_profiles_deleted"] += 1
 
@@ -470,6 +607,15 @@ def erase_org_member_data(
         # Only this member's conversations stamped with THIS org — their
         # personal-scope chats stay, exactly like their personal files.
         (ChatConversation, "chat_conversations_deleted"),
+        # Added in #442. All four are org-stamped and were only ever reached by the
+        # account-wide path's FK CASCADE off the `user` row — which this path never
+        # deletes, by design. WatchSource carries the encrypted SMB/S3 credentials,
+        # SummaryPrompt and CustomVocabulary are user-authored free text, and
+        # UserSetting is a key/value store the user fills in.
+        (SummaryPrompt, "prompts_deleted"),
+        (UserSetting, "user_settings_deleted"),
+        (CustomVocabulary, "custom_vocabularies_deleted"),
+        (WatchSource, "watch_sources_deleted"),
     ):
         rows = (
             db.query(model).filter(model.user_id == user_id, model.organization_id == org_id).all()
@@ -477,6 +623,23 @@ def erase_org_member_data(
         for row in rows:
             db.delete(row)
             summary[key] += 1
+
+    # Comments and tasks the member authored on the TENANT's files. Neither table has
+    # an `organization_id` of its own, so the tenant boundary is the file's — a
+    # subquery, not a column. Rows on the member's own org files are already gone with
+    # those files (MediaFile's delete-orphan cascade); what is left is what they wrote
+    # on other members' org files, which no per-file pass can see.
+    org_file_ids = db.query(MediaFile.id).filter(MediaFile.organization_id == org_id).subquery()
+    summary["comments_deleted"] = (
+        db.query(Comment)
+        .filter(Comment.user_id == user_id, Comment.media_file_id.in_(org_file_ids.select()))
+        .delete(synchronize_session=False)
+    )
+    summary["tasks_deleted"] = (
+        db.query(Task)
+        .filter(Task.user_id == user_id, Task.media_file_id.in_(org_file_ids.select()))
+        .delete(synchronize_session=False)
+    )
     db.commit()
 
     summary["voiceprints_deleted"] = _erase_speaker_voiceprints(
@@ -507,6 +670,9 @@ def erase_org_member_data(
             },
         },
     )
+    ledger.record_outcome(db, ledger_entry, summary)
+    if ledger_entry is not None:
+        summary["ledger_uuid"] = str(ledger_entry.uuid)
     logger.info(f"erase_org_member_data(user={user_id}, org={org_id}) complete: {summary}")
     return summary
 
@@ -517,6 +683,7 @@ def erase_organization(
     *,
     actor_user_id: int | None = None,
     actor_email: str | None = None,
+    ledger_entry: ErasureLedgerEntry | None = None,
 ) -> dict[str, Any]:
     """Permanently erase an organization's data and all member-owned org data.
 
@@ -537,9 +704,22 @@ def erase_organization(
     if org is None:
         summary["already_erased"] = True
         logger.info(f"erase_organization: org {org_id} not present — idempotent no-op")
+        if ledger_entry is not None:
+            ledger.record_outcome(db, ledger_entry, summary)
+            summary["ledger_uuid"] = str(ledger_entry.uuid)
         return summary
 
     org_name = str(org.name)
+
+    if ledger_entry is None:
+        ledger_entry = ledger.record_request(
+            db,
+            subject_type="organization",
+            subject_organization_id=org_id,
+            subject_organization_uuid=org.uuid,
+            actor_kind=_actor_kind(actor_user_id, staff_role="org_admin"),
+            actor_user_id=actor_user_id,
+        )
 
     files = db.query(MediaFile).filter(MediaFile.organization_id == org_id).all()
     _purge_files(db, files, summary)
@@ -548,10 +728,7 @@ def erase_organization(
     # the org's collections — across ALL members of the org.
     profiles = db.query(SpeakerProfile).filter(SpeakerProfile.organization_id == org_id).all()
     for profile in profiles:
-        with contextlib.suppress(Exception):
-            from app.services.opensearch_service import remove_profile_embedding
-
-            remove_profile_embedding(str(profile.uuid))
+        _erase_profile_embedding(str(profile.uuid), summary["errors"])
         db.delete(profile)
         summary["speaker_profiles_deleted"] += 1
 
@@ -615,5 +792,8 @@ def erase_organization(
             },
         },
     )
+    ledger.record_outcome(db, ledger_entry, summary)
+    if ledger_entry is not None:
+        summary["ledger_uuid"] = str(ledger_entry.uuid)
     logger.info(f"erase_organization({org_id}) complete: {summary}")
     return summary

@@ -61,6 +61,18 @@ for s in suites:
     skip += int(s.get("skipped", 0))
 passed = tot - fail - err - skip
 time = sum(float(s.get("time", 0)) for s in suites)
+# ZERO COLLECTED IS NOT A PASS. `(fail + err) == 0` is trivially true when the
+# selection matched nothing, so this printed "PASS  0 passed" for a path typo —
+# and `--summary` then exited 0 over it. That is the failure this whole suite's
+# auditors exist to catch (issue #431: a gate that selects nothing is
+# indistinguishable from a clean run), so the runner must not commit it itself.
+# pytest's own exit 5 says the same thing, but only on the run path; the saved
+# artifact has to carry the verdict too, because re-reporting is the point.
+if tot == 0:
+    print("EMPTY  0 tests collected — the selection matched nothing (check the paths; "
+          "they are relative to backend/)")
+    sys.exit(1)
+
 status = "PASS" if (fail + err) == 0 else "FAIL"
 print(f"{status}  {passed} passed, {fail} failed, {err} errors, {skip} skipped "
       f"({tot} total, {time:.1f}s)")

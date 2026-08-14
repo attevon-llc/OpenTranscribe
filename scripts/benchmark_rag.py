@@ -327,8 +327,13 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
     # retrieval number is a statement about a corpus AND the model that vectorised
     # it — swap the model and the same code over the same corpus produces a
     # different number, so a baseline that does not name it cannot be compared to
-    # anything. Every baseline before this one was measured on
-    # all-MiniLM-L6-v2/384d, verifiable from the cluster but nowhere in the files.
+    # anything. The nine baselines committed before this field existed name no
+    # model, and — measured, not assumed — the cluster cannot supply one for them
+    # either: all 210,908 documents carry `embedding_model: "neural"`, #437's
+    # single UNKNOWN bucket. Their model is circumstantial (a 384-dimension index
+    # and a configured all-MiniLM-L6-v2), never provable. That is the whole cost
+    # of having recorded it late, and why it is recorded here rather than argued
+    # about later; `backend/tests/eval/baselines/README.md` classifies each one.
     #
     # Sourced from the DOCUMENTS, not from get_search_embedding_settings(). #437
     # established that the settings are not authoritative about the vectors: two

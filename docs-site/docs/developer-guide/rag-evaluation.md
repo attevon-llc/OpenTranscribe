@@ -405,7 +405,7 @@ Results land in `backend/tests/eval/baselines/<control-name>/`:
 
 | file | contents | deterministic? |
 |---|---|---|
-| `metrics.json` | the full result: rows, corpus composition, licence tier, metric-engine provenance, relevance policy, retrieval config | **yes — byte-identical across runs** |
+| `metrics.json` | the full result: rows, corpus composition, licence tier, metric-engine provenance, **embedding provenance**, relevance policy, retrieval config | **yes — byte-identical across runs** |
 | `metrics.md` | the retrieval metric table | **yes** |
 | `answers.md` | the answer table (EM / partial / answered), per query class and per rule | **yes** |
 | `runinfo.json` | elapsed seconds and the resolved target | no, and deliberately outside the claim |
@@ -422,6 +422,80 @@ Reproduction requires four things to be pinned, and all four are recorded with e
    and word counts, and whether its timings are real or synthetic.
 3. **Seeds** — synthetic corpora regenerate byte-identically from their recorded seed.
 4. **Metric implementation and version** — per the divergence above.
+5. **Embedding model** — per the section immediately below. It is pinned in `metrics.json`'s
+   `index` block, not in `runinfo.json`, because it is part of the claim rather than part of the
+   run.
+
+## A retrieval number that does not name its embedding model is not comparable
+
+Swap the embedding model and the same code over the same corpus produces a different number. So the
+model belongs in the **claim**, beside the corpus and the metric engine — and the first nine
+committed baselines did not carry it.
+
+`metrics.json`'s `index` block now records five fields:
+
+| field | meaning |
+|---|---|
+| `embedding_models` | the models the indexed **documents themselves** report |
+| `embedding_verdict` | `empty` / `unattributed` / `uniform` / `partially_unattributed` / `mixed` |
+| `embedding_unattributed` | documents in the `"neural"` UNKNOWN bucket |
+| `embedding_dimension` | the index's `knn_vector` dimension |
+| `configured_embedding_model` | what the **settings** say |
+
+:::danger The settings are not authoritative about the vectors
+The label is surveyed from the documents, never from `get_search_embedding_settings()`. Issue #437
+established that two `SystemSettings` keys — `search.embedding_model`, which drives the index
+dimension, and `search.opensearch_model_id`, which drives the ingest pipeline — are written by
+**different endpoints with nothing reconciling them**. A settings-derived label can therefore name
+a model that never touched a single vector in the corpus being measured, which is worse than no
+label at all.
+
+`configured_embedding_model` is kept as a separate, differently-named field precisely so that drift
+between what is configured and what is indexed shows up in the committed baseline instead of being
+collapsed into one number that looks authoritative.
+
+The harness **refuses to write a baseline (exit 3) over a proven-mixed vector space** — two
+*named* models. Cosine similarity between two models is not a similarity, so a ranking scored over
+such an index fused two incomparable populations, and no later reading of that number could be
+correct.
+:::
+
+### The model behind the existing numbers is unknowable, and saying so is the result
+
+Every document in the epic's index — all 210,908 — carries `embedding_model: "neural"`. That is
+#437's single UNKNOWN bucket, kept deliberately as *one* unknown rather than backfilled with the
+current model, which would assert something nobody can know. So the verdict on every baseline here,
+re-derived ones included, is **`unattributed`**, and the only evidence for the model is
+circumstantial: a 384-dimension index and a configured
+`huggingface/sentence-transformers/all-MiniLM-L6-v2`.
+
+That is a weaker claim than "measured on all-MiniLM-L6-v2", and it is the honest one. What the
+re-derived baselines now record is not *which* model, but the auditable fact that **nobody can
+tell** — which a later comparison can check, where silence could not.
+
+### Which baselines were re-derived, and which are historical
+
+Full table and reasoning: `backend/tests/eval/baselines/README.md`.
+
+| baseline | index when measured | status |
+|---|---|---|
+| `stage3-index-v6`, `stage4-control`, `stage4-routed`, `stage4-aggregation` | 210,908 | **re-derived** with provenance |
+| `stage1-baseline`, `stage1-baseline-goldscope` | 119,950 | **historical** — pre-v6, pre-determinism-fix |
+| `stage1-synthetic-answers` | 208,333 | **historical** — pre-v6, pre-determinism-fix |
+| `stage3-control-pre-v6` | 208,332 | **historical by definition** — the *before* arm of the v6 A/B |
+| `stage4-router` | — | **not applicable** — a classifier over query strings, touches no index |
+
+The historical four measured an index that **no longer exists**. Re-running their commands today
+would not re-derive them; it would replace a measurement of one index with a measurement of a
+different one, under the old name. Nothing was deleted — `stage1-baseline` remains
+`--control-name`'s default and the documented `--compare` target, and
+`stage1-synthetic-answers/answers-null-control.md` holds the 0.0000-EM floor that exists nowhere
+else.
+
+**Re-deriving the four moved nothing.** Every metric row, every answer row and the whole
+`digest_leg` block came back identical to what was committed; `metrics.md` and `answers.md` were
+byte-identical files. The entire diff was the `index` block. That is the outcome a re-baseline
+wants: the numbers were already right, and they now say what they were measured with.
 
 ## Reproducibility: the index has to be stable, not just the measurement
 
@@ -429,7 +503,12 @@ A benchmark can be deterministic in the wrong place. This one was, and the gap t
 to expose.
 
 **The measurement is deterministic.** Two consecutive runs against an unchanged index produce
-byte-identical `metrics.json` and `metrics.md`. That was verified and is still true.
+byte-identical `metrics.json` and `metrics.md`. That was verified and is still true — re-checked at
+the provenance re-baseline, where `stage4-control` (1,651 queries) and `stage4-aggregation` were
+each run twice and matched on `metrics.json`, `metrics.md` **and** `answers.md` by sha256. Across
+that whole measurement window the index's `indexing.total` held at **825,795** — not one document
+was written — which is the cheap, non-invasive way to prove a control run measured the index it
+claimed to.
 
 **The index was not.** Re-indexing one *unchanged* corpus three times produced three different
 chunk counts and three different scores:
@@ -540,6 +619,16 @@ measurement changes what is being measured. Stop `celery-beat` for the duration 
 
 Committed at `backend/tests/eval/baselines/`. Every later stage reports its delta against these,
 per query class, per D5.
+
+:::warning These two tables are HISTORICAL — do not use them as a control for current work
+Both were measured on a **119,950-chunk, 232-file, qmsum-only** index, before the v6 reindex and
+before the three determinism fixes below. That index no longer exists, so neither table is
+re-derivable and neither carries embedding provenance. They are kept because they are the evidence
+for the file-selection result quoted throughout this page — and because re-running their commands
+today would quietly replace them with a measurement of a *different* index under the same name. The
+control for current work is `stage3-index-v6` / `stage4-control`. See
+[which baselines were re-derived](#which-baselines-were-re-derived-and-which-are-historical).
+:::
 
 **Composition:** all 232 QMSum meetings (Tier A, MIT), injected through the production indexer,
 **119,950 chunks**, 1,576 human queries, 0 dropped as unjudgeable, 0 unanswered. Chunk documents

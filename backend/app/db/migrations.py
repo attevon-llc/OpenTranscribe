@@ -472,6 +472,11 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'media_file' AND column_name = 'redaction_coverage')"
     )
 
+    # v393: document / document_chunk — the document ingestion plane (#362). Two brand new
+    # tables with no prior-revision dependency, so table existence IS the fingerprint, the
+    # same shape v390's has_file_facts uses.
+    has_document_table = "document" in tables and "document_chunk" in tables
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -514,6 +519,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
+    # v393: same as v392 plus the document ingestion tables.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+    ):
+        return "v393_add_document_tables"
     # v392: same as v391 plus the redaction-coverage column.
     if matches_v389 and has_file_facts and has_recorded_date_provenance and has_redaction_coverage:
         return "v392_add_redaction_coverage"

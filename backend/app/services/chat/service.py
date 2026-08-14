@@ -166,7 +166,6 @@ class ChatTurn:
 
 
 def _prepare_context(
-    db,
     *,
     user_id: int,
     organization_id: int | None,
@@ -181,14 +180,35 @@ def _prepare_context(
 ) -> tuple[list[MaskedChunk], dict[str, Any], Any, Any]:
     """Run the blocking RAG stages: rewrite → route → count → retrieve → mask.
 
-    Executed in a worker thread. Returns the masked chunks, diagnostics for the
-    message metadata (ids/counts/timings only, never text), and the counted
-    result when the router sent the turn to the aggregation tier.
+    Executed in a worker thread, and **phased**. It opens its own database
+    sessions rather than accepting one, because the caller's session would then
+    be held across the rewrite (an LLM round trip), the counted tier's
+    OpenSearch aggregation and retrieval (OpenSearch + cross-encoder + Redis) —
+    the shape that queues every ``ALTER TABLE`` behind a chat turn and hangs an
+    Alembic upgrade mid-release. ``scripts/audit-session-lifetime.py`` gates it.
+
+    The phases, in order:
+
+    1. rewrite + route — **no session**;
+    2. the counted tier — ``answer_aggregation`` takes a *factory* and opens a
+       short session per Postgres statement group, so its search runs clean;
+    3. retrieval — **no session**;
+    4. masking and the scope map — the ONE database phase, one short session,
+       returning plain dataclasses (``MaskedChunk``/``FileSummary``, never an
+       ORM instance: attribute access on a detached row would silently re-open
+       a session and undo the split);
+    5. overview composition and diagnostics — **no session**.
+
+    Returns the masked chunks, diagnostics for the message metadata (ids/counts/
+    timings only, never text), the counted result when the router sent the turn
+    to the aggregation tier, and the overview when it asked for a summary.
     """
     from app.core.config import settings as settings_config
+    from app.db.session_utils import session_scope
 
     meta: dict[str, Any] = {}
 
+    # --- Phase 1: rewrite + route. An LLM round trip; NO session. -------------
     effective_query = question
     llm_intent: str | None = None
     if rewrite_enabled and history:
@@ -214,10 +234,15 @@ def _prepare_context(
     )
     meta["route"] = decision.as_metadata()
 
-    # The counted tier runs BEFORE retrieval and is independent of it: "how many
-    # meetings mention X" is answered by an aggregation over the whole library,
-    # and the excerpts that follow are examples beside that number, never the
-    # thing it was derived from. ROUTE, DON'T FUSE — two queries, combined here.
+    # --- Phase 2: the counted tier. Postgres and OpenSearch, INTERLEAVED but
+    # never overlapping: `answer_aggregation` takes the factory below and opens a
+    # short session per statement group, so its `size: 0` search never inherits a
+    # transaction.
+    #
+    # It runs BEFORE retrieval and is independent of it: "how many meetings
+    # mention X" is answered by an aggregation over the whole library, and the
+    # excerpts that follow are examples beside that number, never the thing it
+    # was derived from. ROUTE, DON'T FUSE — two queries, combined here.
     counted = None
     overview = None
     if decision.wants_aggregate:
@@ -228,7 +253,7 @@ def _prepare_context(
         counted = answer_aggregation(
             question,
             decision,
-            db=db,
+            session_factory=session_scope,
             client=get_opensearch_client(),
             index=settings_config.OPENSEARCH_CHUNKS_INDEX,
             user_id=user_id,
@@ -254,6 +279,10 @@ def _prepare_context(
         retrieval_settings = _replace(settings, final_chunks=max(1, settings.final_chunks // 3))
         meta["chunk_leg_reduced_to"] = retrieval_settings.final_chunks
 
+    # --- Phase 3: retrieval. OpenSearch, the cross-encoder and Redis; the
+    # slowest stage of the turn, and NO session. `file_uuids` is passed through
+    # exactly as it arrived: `None` means "all accessible", `[]` means "match
+    # nothing", and substituting one for the other leaks the whole library.
     result = retrieve_context(
         query=effective_query,
         user_id=user_id,
@@ -265,39 +294,50 @@ def _prepare_context(
         wants_digest=decision.wants_digest,
     )
 
-    masked = mask_chunks(db, result.chunks, user_id)
+    # --- Phase 4: the ONE database phase. Everything it returns is a plain
+    # dataclass — an ORM instance would re-open a session on the first attribute
+    # read after this block and quietly undo the split.
+    digest_masked: list[MaskedChunk] = []
+    summaries: list[Any] = []
+    with session_scope() as db:
+        masked = mask_chunks(db, result.chunks, user_id)
+        if result.digests:
+            # A SEPARATE masking call, not an overload. A digest is
+            # non-contiguous selected sentences; `mask_chunks` would rebuild it
+            # from every segment overlapping its time range and hand back the
+            # whole span verbatim — more text than the digest holds, from a
+            # function whose name says it masked it. `mask_digests` goes through
+            # the per-sentence provenance.
+            from app.services.chat.mapreduce import build_file_summaries
+            from app.services.chat.mapreduce import scope_digest_hits
+            from app.services.chat.redactor import mask_digests
+
+            digest_masked = mask_digests(db, result.digests, user_id)
+            # The MAP output, read not computed: level 1 ran at ingest, so a
+            # summary over a large scope costs no map-time work (#403 Phase 4).
+            #
+            # A BOUNDED scope is mapped over in full; the ranked leg is only a
+            # fallback for "all accessible", where mapping over everything is not
+            # possible. Ranking picks the best passages, mapping covers every
+            # document — using the ranked leg as the map produced a block headed
+            # "recordings: 8" over a 25-file scope, and an answer that said so.
+            map_hits = scope_digest_hits(db, file_uuids or []) if file_uuids else []
+            if map_hits:
+                map_masked = mask_digests(db, map_hits, user_id)
+                summaries = build_file_summaries(
+                    db, map_hits, masked_text={id(m.source): m.content for m in map_masked}
+                )
+            else:
+                summaries = build_file_summaries(
+                    db,
+                    result.digests,
+                    masked_text={id(m.source): m.content for m in digest_masked},
+                )
+
+    # --- Phase 5: composition and diagnostics. Pure; NO session. --------------
     if result.digests:
-        # A SEPARATE masking call, not an overload. A digest is non-contiguous
-        # selected sentences; `mask_chunks` would rebuild it from every segment
-        # overlapping its time range and hand back the whole span verbatim —
-        # more text than the digest holds, from a function whose name says it
-        # masked it. `mask_digests` goes through the per-sentence provenance.
-        from app.services.chat.redactor import mask_digests
-
-        digest_masked = mask_digests(db, result.digests, user_id)
-        # The MAP output, read not computed: level 1 ran at ingest, so a summary
-        # over a large scope costs no map-time work (#403 Phase 4).
-        from app.services.chat.mapreduce import build_file_summaries
         from app.services.chat.mapreduce import build_overview
-        from app.services.chat.mapreduce import scope_digest_hits
 
-        # A BOUNDED scope is mapped over in full; the ranked leg is only a
-        # fallback for "all accessible", where mapping over everything is not
-        # possible. Ranking picks the best passages, mapping covers every
-        # document — using the ranked leg as the map produced a block headed
-        # "recordings: 8" over a 25-file scope, and an answer that said so.
-        map_hits = scope_digest_hits(db, file_uuids or []) if file_uuids else []
-        if map_hits:
-            map_masked = mask_digests(db, map_hits, user_id)
-            summaries = build_file_summaries(
-                db, map_hits, masked_text={id(m.source): m.content for m in map_masked}
-            )
-        else:
-            summaries = build_file_summaries(
-                db,
-                result.digests,
-                masked_text={id(m.source): m.content for m in digest_masked},
-            )
         overview = build_overview(
             question, summaries, files_in_scope=len(file_uuids) if file_uuids else 0
         )
@@ -579,8 +619,6 @@ class ChatService:
         Yields:
             SSE frame strings.
         """
-        from app.db.session_utils import session_scope
-
         turn = ChatTurn()
         keepalive_q: asyncio.Queue = asyncio.Queue()
         cancel_event = threading.Event()
@@ -617,21 +655,23 @@ class ChatService:
                 will_rewrite = settings.query_rewrite_enabled and bool(history)
                 yield sse("status", {"stage": "rewriting" if will_rewrite else "retrieving"})
 
+                # No `session_scope` here on purpose: `_prepare_context` is
+                # phased and opens its own short sessions. Wrapping it would put
+                # the turn back to holding one transaction across the rewrite,
+                # the counted tier's aggregation and retrieval.
                 def _prep():
-                    with session_scope() as db:
-                        return _prepare_context(
-                            db,
-                            user_id=user_id,
-                            organization_id=organization_id,
-                            question=question,
-                            history=history,
-                            settings=settings,
-                            file_uuids=file_uuids,
-                            speakers=speakers,
-                            search_mode=search_mode,
-                            llm=llm,
-                            rewrite_enabled=settings.query_rewrite_enabled,
-                        )
+                    return _prepare_context(
+                        user_id=user_id,
+                        organization_id=organization_id,
+                        question=question,
+                        history=history,
+                        settings=settings,
+                        file_uuids=file_uuids,
+                        speakers=speakers,
+                        search_mode=search_mode,
+                        llm=llm,
+                        rewrite_enabled=settings.query_rewrite_enabled,
+                    )
 
                 masked, meta, counted, overview = await _with_keepalive(
                     run_in_threadpool(_prep), keepalive_q

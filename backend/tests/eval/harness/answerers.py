@@ -415,6 +415,22 @@ class ProductAnswerer:
         self.engine = engine
         self.shapes: Counter = Counter()
 
+    def _session_factory(self):
+        """Open one short-lived session per call, closed on exit of the block."""
+        import contextlib
+
+        from sqlalchemy.orm import Session
+
+        @contextlib.contextmanager
+        def _scope():
+            session = Session(self.engine)
+            try:
+                yield session
+            finally:
+                session.close()
+
+        return _scope
+
     def describe(self) -> dict[str, Any]:
         from app.services.chat.aggregation import SHAPES
 
@@ -463,23 +479,17 @@ class ProductAnswerer:
             self.shapes["not-routed-to-aggregate"] += 1
             return None
 
-        session = None
-        try:
-            if self.engine is not None:
-                from sqlalchemy.orm import Session
-
-                session = Session(self.engine)
-            result = answer_aggregation(
-                query.text,
-                decision,
-                db=session,
-                client=self.client,
-                index=self.index,
-                user_id=self.user_id,
-            )
-        finally:
-            if session is not None:
-                session.close()
+        result = answer_aggregation(
+            query.text,
+            decision,
+            # A factory, not a session: `answer_aggregation` opens a short one per
+            # Postgres statement group so its OpenSearch search never inherits an
+            # open transaction. `None` = no engine, and those shapes decline.
+            session_factory=self._session_factory() if self.engine is not None else None,
+            client=self.client,
+            index=self.index,
+            user_id=self.user_id,
+        )
 
         if result is None:
             self.shapes["declined"] += 1

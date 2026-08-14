@@ -10,6 +10,8 @@ you think", which is why #385's class of silent wrongness keeps recurring.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 from app.services.chat import service as chat_service
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.retrieval import RetrievalResult
@@ -30,7 +32,15 @@ def _hit(index: int) -> ChunkHit:
     )
 
 
+@contextmanager
+def _null_session():
+    """`_prepare_context` opens its own short session for the masking phase; this
+    keeps the module free of Postgres, since `mask_chunks` is stubbed below."""
+    yield None
+
+
 def _prepare(monkeypatch, *, masked: list[MaskedChunk], retrieved: int) -> dict:
+    monkeypatch.setattr("app.db.session_utils.session_scope", _null_session)
     monkeypatch.setattr(
         chat_service,
         "retrieve_context",
@@ -42,7 +52,6 @@ def _prepare(monkeypatch, *, masked: list[MaskedChunk], retrieved: int) -> dict:
     # here, so the rest are discarded by name rather than by arity — a bare
     # `_, meta = ...` broke silently when the tuple grew from two to four.
     _, meta, _counted, _overview = chat_service._prepare_context(
-        None,
         user_id=1,
         organization_id=None,
         question="what did we decide?",

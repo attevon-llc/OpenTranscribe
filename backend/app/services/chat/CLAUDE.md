@@ -38,6 +38,43 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | `limits.py` | Per-user hourly + concurrency caps, cancel flags (fail open) |
 | `hooks.py` | Cloud seam, mirrors `tasks/transcription/hooks.py` exactly |
 
+## ⚠️ A turn holds NO database session while it talks to OpenSearch or an LLM
+
+`service._prepare_context` **opens its own sessions and does not accept one.** The turn is
+phased, and the phase boundaries are a correctness constraint rather than tidiness:
+
+```
+1  rewrite + route                     LLM round trip        NO session
+2  counted tier (answer_aggregation)   Postgres ↔ OpenSearch short sessions, opened inside
+3  retrieve_context                    OpenSearch/rerank     NO session
+4  mask_chunks / mask_digests /        Postgres              ONE short session
+   scope_digest_hits / build_file_summaries
+5  build_overview + diagnostics        pure                  NO session
+```
+
+A session held across phases 1–3 is this repo's most repeated defect: a plain `SELECT` holds
+`ACCESS SHARE` for the life of its transaction, so the hold queues every `ALTER TABLE` — it
+hangs an Alembic upgrade mid-release, and dev runs migrations on backend startup. Measured on
+the shape this replaced (real Postgres, 600 ms rewrite + 150 ms aggregation + 400 ms retrieval):
+one session held **1,504 ms**, **564 ms** of it `idle in transaction`. After the split: two
+short sessions, 260 ms total, longest transaction **23 ms**.
+
+Two rules that keep it fixed:
+
+- **Phase 4 returns PLAIN DATA — never an ORM instance.** `MaskedChunk`, `ChunkHit` and
+  `FileSummary` are dataclasses. Returning a `MediaFile` or a `TranscriptSegment` would
+  re-open a session on the first attribute read after the block, silently undoing the split;
+  that is how a "fixed" instance of this regressed elsewhere.
+- **`aggregation_service` takes a `session_factory`, not a `Session`** (`answer_aggregation`,
+  `_short_session`). Its date filter and occurrence count each get their own transaction,
+  released before the `size: 0` search. Pass `db.session_utils.session_scope`; `None` means
+  "no Postgres" and those shapes decline, exactly as the old `db=None` did.
+
+`tests/unit/test_chat_session_phases.py` drives the real `stream_reply` and asserts zero live
+sessions at each slow stage — with a control asserting masking still gets one, because "zero
+sessions everywhere" is also satisfied by deleting the session and failing closed on every
+chunk. `test_chat_recorded_date_filter.py` pins the aggregation half.
+
 ## ⚠️ The chunk index stores transcript text UNREDACTED
 
 That is correct for search — you should find your own words in your own

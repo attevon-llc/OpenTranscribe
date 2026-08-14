@@ -36,15 +36,46 @@ MARCH = ("2025-03-01", "2025-04-01")
 
 
 class _RecordingClient:
-    """Records every body it is handed and replays a canned response."""
+    """Records every body it is handed and replays a canned response.
 
-    def __init__(self, response: dict[str, Any] | None = None) -> None:
+    ``sessions_live_at_search`` is what pins the session-lifetime rule: the date
+    filter's Postgres statements must have finished and released their
+    transaction before this search runs. See ``scripts/audit-session-lifetime.py``.
+    """
+
+    def __init__(self, response: dict[str, Any] | None = None, ledger: list[int] | None = None):
         self.response = response or {"aggregations": {}}
         self.bodies: list[dict[str, Any]] = []
+        self.sessions_live_at_search: list[int] = []
+        self._ledger = ledger
 
     def search(self, index: str, body: dict[str, Any], **kwargs) -> dict[str, Any]:  # noqa: ARG002
         self.bodies.append(body)
+        if self._ledger is not None:
+            self.sessions_live_at_search.append(self._ledger[0])
         return self.response
+
+
+def _factory(db_session, ledger: list[int] | None = None):
+    """A ``session_factory`` over the test's own savepoint-isolated session.
+
+    The session cannot really be closed (the harness owns it), so ``ledger``
+    counts entries and exits of the scope instead — which is the property under
+    test: the scope must have been *left* before OpenSearch is called.
+    """
+    import contextlib
+
+    @contextlib.contextmanager
+    def _scope():
+        if ledger is not None:
+            ledger[0] += 1
+        try:
+            yield db_session
+        finally:
+            if ledger is not None:
+                ledger[0] -= 1
+
+    return _scope
 
 
 @pytest.fixture
@@ -265,7 +296,12 @@ def test_the_whole_shape_reports_which_source_dated_the_files_it_counted(db_sess
         }
     )
     result = answer_aggregation(
-        question, route(question), db=db_session, client=client, index="i", user_id=owner.id
+        question,
+        route(question),
+        session_factory=_factory(db_session),
+        client=client,
+        index="i",
+        user_id=owner.id,
     )
     assert result is not None
     assert result.count == 1
@@ -280,3 +316,36 @@ def test_the_whole_shape_reports_which_source_dated_the_files_it_counted(db_sess
     assert str(dated.uuid) in body
     assert "recorded_date" not in body
     assert "2025-03-01" not in body
+
+
+def test_the_date_filters_transaction_is_released_before_opensearch_is_called(db_session, owner):
+    """The Postgres phase must not still be open when the aggregation search runs.
+
+    This is the shape ``scripts/audit-session-lifetime.py`` gates: ``_files_in_period``
+    runs two statements, and if its transaction were still open across the ``size: 0``
+    search the turn would sit ``idle in transaction`` for an OpenSearch round trip —
+    holding ``ACCESS SHARE`` and queueing every ``ALTER TABLE`` behind a chat message.
+    """
+    _add_file(
+        db_session, owner, recorded=dt.datetime(2025, 3, 10, tzinfo=dt.UTC), source="filename"
+    )
+
+    ledger = [0]
+    question = "How many meetings in March 2025 discussed the Atlas migration?"
+    client = _RecordingClient(
+        {"aggregations": {"files": {"sum_other_doc_count": 0, "buckets": []}}}, ledger=ledger
+    )
+
+    answer_aggregation(
+        question,
+        route(question),
+        session_factory=_factory(db_session, ledger),
+        client=client,
+        index="i",
+        user_id=owner.id,
+    )
+
+    assert client.sessions_live_at_search == [0], (
+        "the date filter's session was still open during the OpenSearch aggregation"
+    )
+    assert ledger[0] == 0, "a session scope was left open after the aggregation returned"

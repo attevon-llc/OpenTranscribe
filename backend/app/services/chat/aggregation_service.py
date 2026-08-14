@@ -13,6 +13,13 @@ The scope itself is capped at
 :data:`app.core.constants.CHAT_MAX_SCOPE_FILES` upstream, and that cap is reused
 here rather than a second one being invented.
 
+**Those statements each get their own short session**, which is why this module
+takes a ``session_factory`` and not a ``Session``. Holding the caller's
+transaction open across the ``size: 0`` search would put a chat turn — a
+high-concurrency path — ``idle in transaction`` for the length of an OpenSearch
+round trip, queueing every ``ALTER TABLE`` behind it. See
+``scripts/audit-session-lifetime.py``.
+
 Every shape **declines** (returns ``None``) rather than guessing. A number from
 the wrong mechanism is indistinguishable from a number from the right one, so
 the turn falling back to ranked excerpts is strictly better than a confident
@@ -21,8 +28,11 @@ wrong count.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
+from collections.abc import Callable
+from collections.abc import Iterator
 from typing import Any
 
 from app.core.enums import RecordedDateSource
@@ -49,6 +59,27 @@ _MENTION_FIELDS = ("content.exact",)
 #: The speaker facet scopes by the recording's title, which is app metadata the
 #: indexer writes, not something a participant said.
 _TITLE_FIELDS = ("title",)
+
+
+#: A callable returning a session context manager — ``db.session_utils.session_scope``
+#: in production, the test's own session in the suites. ``None`` means "this caller has
+#: no Postgres", which every Postgres-backed shape treats as a decline.
+SessionFactory = Callable[[], contextlib.AbstractContextManager[Any]]
+
+
+@contextlib.contextmanager
+def _short_session(session_factory: SessionFactory | None) -> Iterator[Any]:
+    """A session for one group of statements, closed before anything slow runs.
+
+    Yields ``None`` when there is no factory, so the Postgres-backed shapes keep
+    their existing "no session → decline" branch rather than growing a second
+    way to say the same thing.
+    """
+    if session_factory is None:
+        yield None
+        return
+    with session_factory() as db:
+        yield db
 
 
 def _temporal_bounds(hint: TemporalHint | None) -> tuple[str, str] | None:
@@ -306,7 +337,7 @@ def answer_aggregation(
     question: str,
     route: Route,
     *,
-    db,
+    session_factory: SessionFactory | None,
     client,
     index: str,
     user_id: int,
@@ -319,7 +350,10 @@ def answer_aggregation(
         question: The user's question, as typed.
         route: The router's decision. Its ``signals`` choose the shape and its
             ``temporal`` hint becomes the date filter.
-        db: Session, for the shapes that count in Postgres.
+        session_factory: Opens a session for the shapes that count in Postgres.
+            A **factory**, not a session: each group of statements gets its own
+            short transaction, so the ``size: 0`` search below never runs with
+            one open. ``None`` = no Postgres, and those shapes decline.
         client: OpenSearch client. ``None`` declines.
         index: Chunk index name.
         user_id: Caller — enforced by ``accessible_user_ids`` and, on the
@@ -351,7 +385,9 @@ def answer_aggregation(
     # confident wrong sentence in the answer rather than a stray dict key.
     bounds = _temporal_bounds(route.temporal)
     if bounds is not None:
-        in_period = _files_in_period(db, bounds, user_id, organization_id, file_uuids)
+        # Its own transaction, closed here — the searches below must not inherit it.
+        with _short_session(session_factory) as db:
+            in_period = _files_in_period(db, bounds, user_id, organization_id, file_uuids)
         if in_period is None:
             # Declined — too many matches, or no session. Answering without the
             # filter the user asked for would be a different question's answer.
@@ -379,7 +415,8 @@ def answer_aggregation(
         if shape == SHAPE_SPEAKER_FACET:
             return _run_speaker_facet(client, index, filters, question, subject, coverage)
         if shape == SHAPE_COUNT_EVENTS:
-            total = _occurrence_count(db, subject, user_id, file_uuids)
+            with _short_session(session_factory) as db:
+                total = _occurrence_count(db, subject, user_id, file_uuids)
             if total is None:
                 return None
             coverage["counted_over"] = "transcript_segment (chunk overlap would double-count)"

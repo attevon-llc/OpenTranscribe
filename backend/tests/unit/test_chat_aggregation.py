@@ -264,7 +264,7 @@ def test_no_aggregation_body_carries_a_hybrid_clause_or_a_search_pipeline():
     answer_aggregation(
         "How many meetings discussed the Atlas migration?",
         route("How many meetings discussed the Atlas migration?"),
-        db=None,
+        session_factory=None,
         client=client,
         index="transcript_chunks",
         user_id=7,
@@ -282,7 +282,7 @@ def test_the_count_shape_issues_exactly_one_search():
     result = answer_aggregation(
         "How many meetings discussed the Atlas migration?",
         route("How many meetings discussed the Atlas migration?"),
-        db=None,
+        session_factory=None,
         client=client,
         index="transcript_chunks",
         user_id=7,
@@ -298,7 +298,7 @@ def test_the_list_shape_returns_the_file_uuids_sorted():
     result = answer_aggregation(
         "Which meetings mention the Atlas migration? List them.",
         route("Which meetings mention the Atlas migration? List them."),
-        db=None,
+        session_factory=None,
         client=client,
         index="transcript_chunks",
         user_id=7,
@@ -323,13 +323,15 @@ def test_a_temporal_question_declines_when_the_date_filter_cannot_be_resolved():
     question = "How many meetings in March 2025 discussed the Atlas migration?"
     client = _RecordingClient(_file_agg("f1"))
     assert (
-        answer_aggregation(question, route(question), db=None, client=client, index="i", user_id=7)
+        answer_aggregation(
+            question, route(question), session_factory=None, client=client, index="i", user_id=7
+        )
         is None
     )
 
 
 def test_a_question_with_no_period_still_answers_without_a_database():
-    """The control: the decline above must be caused by the PERIOD, not by ``db=None``.
+    """The control: the decline above must be caused by the PERIOD, not by the absent session.
 
     Without this, deleting the date-filter branch entirely would leave the test above
     green (a shape that always declines declines here too) and the suite would report a
@@ -338,7 +340,7 @@ def test_a_question_with_no_period_still_answers_without_a_database():
     question = "How many meetings discussed the Atlas migration?"
     client = _RecordingClient(_file_agg("f1"))
     result = answer_aggregation(
-        question, route(question), db=None, client=client, index="i", user_id=7
+        question, route(question), session_factory=None, client=client, index="i", user_id=7
     )
     assert result is not None
     assert result.coverage["date_filter"] is None
@@ -371,7 +373,7 @@ def test_the_speaker_facet_returns_the_top_attendee_by_distinct_files():
     question = "Who attended the most design review sessions for the billing team?"
     client = _RecordingClient(_people_agg(("Ada", 2), ("Bo", 5), ("Cy", 3)))
     result = answer_aggregation(
-        question, route(question), db=None, client=client, index="i", user_id=7
+        question, route(question), session_factory=None, client=client, index="i", user_id=7
     )
     assert result is not None
     assert (result.speaker, result.speaker_sessions) == ("Bo", 5)
@@ -382,7 +384,7 @@ def test_a_tie_at_the_top_declines_rather_than_flipping_a_coin():
     question = "Who attended the most design review sessions for the billing team?"
     client = _RecordingClient(_people_agg(("Ada", 5), ("Bo", 5)))
     result = answer_aggregation(
-        question, route(question), db=None, client=client, index="i", user_id=7
+        question, route(question), session_factory=None, client=client, index="i", user_id=7
     )
     assert result is not None
     assert result.speaker is None
@@ -396,7 +398,7 @@ def test_a_lookup_question_is_declined_so_the_turn_uses_ranked_excerpts():
     client = _RecordingClient()
     question = "What was the supplier we selected?"
     result = answer_aggregation(
-        question, route(question), db=None, client=client, index="i", user_id=7
+        question, route(question), session_factory=None, client=client, index="i", user_id=7
     )
     assert result is None
     assert client.bodies == []
@@ -405,7 +407,9 @@ def test_a_lookup_question_is_declined_so_the_turn_uses_ranked_excerpts():
 def test_no_client_declines_instead_of_raising():
     question = "How many meetings discussed the Atlas migration?"
     assert (
-        answer_aggregation(question, route(question), db=None, client=None, index="i", user_id=7)
+        answer_aggregation(
+            question, route(question), session_factory=None, client=None, index="i", user_id=7
+        )
         is None
     )
 
@@ -413,7 +417,12 @@ def test_no_client_declines_instead_of_raising():
 def test_a_failed_search_declines_instead_of_breaking_the_turn():
     question = "How many meetings discussed the Atlas migration?"
     result = answer_aggregation(
-        question, route(question), db=None, client=_ExplodingClient(), index="i", user_id=7
+        question,
+        route(question),
+        session_factory=None,
+        client=_ExplodingClient(),
+        index="i",
+        user_id=7,
     )
     assert result is None
 
@@ -423,7 +432,7 @@ def test_the_count_events_shape_declines_without_a_session():
     question = "How many times in total did we defer the headcount request?"
     client = _RecordingClient()
     result = answer_aggregation(
-        question, route(question), db=None, client=client, index="i", user_id=7
+        question, route(question), session_factory=None, client=client, index="i", user_id=7
     )
     assert result is None
     assert client.bodies == [], "it must not fall back to counting over chunks"
@@ -433,7 +442,7 @@ def test_as_metadata_reports_counts_and_never_content():
     question = "Which meetings mention the Atlas migration? List them."
     client = _RecordingClient(_file_agg("a", "b"))
     result = answer_aggregation(
-        question, route(question), db=None, client=client, index="i", user_id=7
+        question, route(question), session_factory=None, client=client, index="i", user_id=7
     )
     assert result is not None
     payload = result.as_metadata()

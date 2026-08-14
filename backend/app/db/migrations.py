@@ -486,6 +486,13 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'watch_source_file' AND column_name = 'document_id')"
     )
 
+    # v395: document_chunk.redactions / .toxicity — cached detection spans (#362).
+    # Single-marker revision (two ADD COLUMNs, no constraint), same shape v394 uses.
+    has_document_chunk_redaction_cache = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'document_chunk' AND column_name = 'redactions')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -528,6 +535,17 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
+    # v395: same as v394 plus document_chunk's redaction-cache columns.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+        and has_watch_source_file_document_id
+        and has_document_chunk_redaction_cache
+    ):
+        return "v395_add_document_chunk_redaction_cache"
     # v394: same as v393 plus watch_source_file.document_id.
     if (
         matches_v389

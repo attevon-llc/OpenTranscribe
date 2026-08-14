@@ -193,6 +193,16 @@ class DocumentChunk(Base):
     section_path: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     block_types: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
 
+    #: Cached detection spans (v395), mirroring ``TranscriptSegment.redactions`` — a list
+    #: of span dicts addressing ``text`` by offset. NULL means "never scanned"; an empty
+    #: list means "scanned, nothing found". Never recomputed except by a rescan; masking
+    #: is a read-time transform via ``RedactionService.mask_segment``, same as transcripts.
+    redactions: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
+    #: Cached toxicity score dict (v395), mirroring ``TranscriptSegment.toxicity``. A
+    #: score, not a span list — toxicity has no maskable offsets (see
+    #: ``redaction/CLAUDE.md``'s ``_DETECTOR_CATEGORIES`` gotcha).
+    toxicity: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     document: Mapped[Document] = relationship("Document", back_populates="chunks")
 
     __table_args__ = (

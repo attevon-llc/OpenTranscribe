@@ -278,6 +278,7 @@ celery_app.conf.update(
         "documents.parse": {"queue": CeleryQueues.CPU},
         # Redaction Queue - Content moderation detection (dedicated CPU service)
         "redaction.detect": {"queue": CeleryQueues.REDACTION},
+        "redaction.detect_document": {"queue": CeleryQueues.REDACTION},
         "redaction.reindex_all": {"queue": CeleryQueues.REDACTION},
         # Embedding Queue - Search indexing with embedding model (concurrency=1)
         "index_transcript_search": {"queue": CeleryQueues.EMBEDDING},

@@ -51,10 +51,24 @@ class ChunkHit:
     score: float = 0.0
     #: Section number for a digest document; ``None`` for a transcript chunk.
     digest_section: int | None = None
+    #: ``"media"`` (default) or ``"document"`` — which table ``file_id`` addresses.
+    #: **Load-bearing, not descriptive.** ``Document.id`` and ``MediaFile.id`` are
+    #: independent SERIAL sequences that WILL collide in any real deployment (both
+    #: get written into the same ``file_id`` index field), so any code that queries
+    #: a table by ``chunk.file_id`` — masking chief among them
+    #: (``services/chat/redactor.py``) — must dispatch on this field FIRST and never
+    #: infer the source from "the MediaFile lookup returned None". Populated from the
+    #: index document's ``doc_type`` (``document_chunk`` → ``"document"``, anything
+    #: else → ``"media"``) at construction time, never guessed downstream.
+    source_kind: str = "media"
 
     @property
     def is_digest(self) -> bool:
         return self.digest_section is not None
+
+    @property
+    def is_document(self) -> bool:
+        return self.source_kind == "document"
 
     def to_cache_dict(self) -> dict[str, Any]:
         return {
@@ -68,6 +82,7 @@ class ChunkHit:
             "end_time": self.end_time,
             "score": self.score,
             "digest_section": self.digest_section,
+            "source_kind": self.source_kind,
         }
 
     @classmethod
@@ -84,6 +99,7 @@ class ChunkHit:
             end_time=raw.get("end_time"),
             score=float(raw.get("score", 0.0)),
             digest_section=None if section is None else int(section),
+            source_kind=str(raw.get("source_kind") or "media"),
         )
 
 
@@ -98,6 +114,8 @@ def dynamic_rrf_window(size: int) -> int:
 
 
 def _hit_to_chunk(hit: dict[str, Any]) -> ChunkHit | None:
+    from app.services.ingest_artifacts.index_mapping import DOC_TYPE_DOCUMENT_CHUNK
+
     source = hit.get("_source") or {}
     file_uuid = source.get("file_uuid")
     content = source.get("content")
@@ -113,6 +131,7 @@ def _hit_to_chunk(hit: dict[str, Any]) -> ChunkHit | None:
         start_time=float(source.get("start_time") or 0.0),
         end_time=source.get("end_time"),
         score=float(hit.get("_score") or 0.0),
+        source_kind="document" if source.get("doc_type") == DOC_TYPE_DOCUMENT_CHUNK else "media",
     )
 
 
@@ -147,6 +166,7 @@ def _build_body(
         "speaker",
         "start_time",
         "end_time",
+        "doc_type",
     ]
 
     if use_neural and model_id:

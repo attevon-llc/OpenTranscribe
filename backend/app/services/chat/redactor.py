@@ -159,6 +159,107 @@ def _mask_from_segments(db: Session, chunk: ChunkHit, cfg) -> str | None:
     return " ".join(masked_parts).strip() or None
 
 
+def _mask_from_document_chunk(db: Session, chunk: ChunkHit, cfg) -> str | None:
+    """The document analog of :func:`_mask_from_segments`.
+
+    Simpler than the transcript case by construction: a ``document_chunk`` row
+    already **is** the retrieval unit indexed into OpenSearch (1:1) — there is no
+    "rebuild from several overlapping rows" step, just a direct lookup by
+    ``(document_id, chunk_index)`` and a read of that row's own cached spans.
+
+    Returns ``None`` whenever the cached-span path cannot be trusted (mirrors
+    ``_mask_from_segments`` exactly: unscanned, or scanned with a coverage gap
+    against this policy), so the caller falls back to inline detection.
+    """
+    from app.models.document import Document
+    from app.models.document import DocumentChunk
+    from app.services.redaction.coverage import uncovered_detectors
+
+    scan = (
+        db.query(
+            Document.id,
+            Document.redaction_status,
+            Document.redaction_coverage,
+            Document.language,
+        )
+        .filter(Document.id == chunk.file_id)
+        .first()
+    )
+    if scan is None or scan.redaction_status != C.REDACTION_STATUS_DONE:
+        return None
+
+    gap = uncovered_detectors(scan, cfg)
+    if gap:
+        logger.warning(
+            "Cached spans do not cover %s for document %s; masking inline instead",
+            sorted(gap),
+            chunk.file_id,
+        )
+        return None
+
+    from app.services.redaction.service import RedactionService
+
+    row = (
+        db.query(DocumentChunk.text, DocumentChunk.redactions)
+        .filter(
+            DocumentChunk.document_id == chunk.file_id,
+            DocumentChunk.chunk_index == chunk.chunk_index,
+        )
+        .first()
+    )
+    if row is None or not row.text:
+        return None
+
+    masked, _applied = RedactionService.mask_segment(
+        row.text, row.redactions or [], None, cfg, set()
+    )
+    return masked or None
+
+
+def _mask_one_document_chunk(db: Session, chunk: ChunkHit, cfg) -> MaskedChunk:
+    """Fail-closed wrapper mirroring ``mask_chunks``'s per-chunk loop body."""
+    try:
+        text = _mask_from_document_chunk(db, chunk, cfg)
+    except Exception:  # noqa: BLE001
+        logger.exception("Cached-span masking failed for document chunk; withholding content")
+        return MaskedChunk(source=chunk, content="", was_masked=True)
+
+    if text is None:
+        text = _mask_inline(chunk.content, cfg)
+    return MaskedChunk(source=chunk, content=text, was_masked=True)
+
+
+def mask_document_chunks(db: Session, chunks: list[ChunkHit], user_id: int) -> list[MaskedChunk]:
+    """Apply the requesting user's redact-before-LLM policy to document chunks.
+
+    The document counterpart of :func:`mask_chunks`, addressed by
+    ``(document_id, chunk_index)`` rather than a transcript's time range — a document
+    has no timeline, so ``chunk.char_start``/``char_end`` (stamped on every
+    ``DocumentChunk`` by the chunker) is the addressing scheme, exactly as
+    anticipated in this module's own history: "expect a new
+    ``mask_document_chunks``-style function keyed on char offsets, following the
+    same fail-closed contract." Same fail-closed contract as ``mask_chunks``:
+    unresolvable policy or unmaskable content becomes ``""``, never raw text.
+
+    Callers that already know they only have document-origin chunks can call this
+    directly; ``mask_chunks`` also routes to the same logic internally for a mixed
+    list, so calling the wrong one on a document chunk is not a safety hole — it is
+    redundant, not incorrect.
+    """
+    try:
+        from app.services.redaction.config import resolve_effective_config
+
+        cfg = resolve_effective_config(db, user_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not resolve redaction config; masking all document chunk content")
+        return [MaskedChunk(source=c, content="", was_masked=True) for c in chunks]
+
+    if not (cfg.enabled and cfg.redact_before_llm):
+        return [MaskedChunk(source=c, content=c.content) for c in chunks]
+
+    return [_mask_one_document_chunk(db, chunk, cfg) for chunk in chunks]
+
+
 def _mask_inline(text: str, cfg) -> str:
     """Detect and mask on the fly — for files whose cached spans aren't ready.
 
@@ -227,6 +328,17 @@ def mask_chunks(db: Session, chunks: list[ChunkHit], user_id: int) -> list[Maske
     masked: list[MaskedChunk] = []
     inline_fallbacks = 0
     for chunk in chunks:
+        # ⚠️ Document-origin chunks NEVER take the MediaFile lookup below.
+        # ``Document.id`` and ``MediaFile.id`` are independent SERIAL sequences that
+        # collide in any real deployment — a document chunk querying `MediaFile.id ==
+        # chunk.file_id` can silently match an UNRELATED media file and, if their time
+        # ranges happen to overlap, serve that file's transcript content as if it were
+        # this document's masked text. Route by ``source_kind`` before any query runs;
+        # never infer the source from "the lookup returned None".
+        if chunk.is_document:
+            masked.append(_mask_one_document_chunk(db, chunk, cfg))
+            continue
+
         try:
             text = _mask_from_segments(db, chunk, cfg)
         except Exception:  # noqa: BLE001

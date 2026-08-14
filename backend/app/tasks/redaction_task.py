@@ -134,6 +134,76 @@ def redaction_reindex_all_task(self, only_stale: bool = True, limit: int | None 
     return {"status": "dispatched", "files": dispatched}
 
 
+@celery_app.task(
+    bind=True,
+    name="redaction.detect_document",
+    priority=RedactionPriority.PIPELINE_AUTO,
+    max_retries=2,
+    default_retry_delay=30,
+)
+def redaction_detect_document_task(
+    self,
+    document_id: int,
+    user_id: int | None = None,
+) -> dict[str, Any]:
+    """Detect + cache redaction spans for every chunk of a document. Mirrors
+    ``redaction_detect_task`` — see its docstring for the dispatch-gating rationale,
+    identical here (opt-out by default, gated on the owner's effective config).
+    """
+    from app.db.session_utils import session_scope
+    from app.models.document import Document
+    from app.services.redaction.service import RedactionService
+
+    task_id = self.request.id
+    logger.info(
+        "Document redaction detection task %s started for document %s", task_id, document_id
+    )
+    total_start = time.time()
+
+    try:
+        with session_scope() as db:
+            doc = db.query(Document).filter(Document.id == document_id).first()
+            if doc is None:
+                return {"status": "skipped", "reason": "file_not_found"}
+            owner_id = int(doc.user_id)
+            result = RedactionService.detect_and_store_document(db, document_id)
+
+        _notify_document(user_id or owner_id, document_id, result)
+        logger.info(
+            "Document redaction detection done for document %s: %s (%.0f ms)",
+            document_id,
+            result.get("status"),
+            (time.time() - total_start) * 1000,
+        )
+        return {"document_id": document_id, **result}
+
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Document redaction detection failed for document %s: %s", document_id, exc)
+        if self.request.retries < self.max_retries:
+            raise self.retry(exc=exc, countdown=30 * (2**self.request.retries)) from exc
+        return {"status": "failed", "document_id": document_id, "error": str(exc)}
+
+
+def _notify_document(user_id: int, document_id: int, result: dict) -> None:
+    try:
+        from app.services.notification_service import send_task_notification
+
+        send_task_notification(
+            user_id,
+            NOTIFICATION_TYPE_REDACTION_STATUS,
+            status=result.get("status", ""),
+            file_id=document_id,
+            extra={
+                "redacted_chunks": result.get("chunks", 0),
+                "pii_entities_found": result.get("pii_entities_found", 0),
+                "language": result.get("language"),
+                "skipped_detectors": result.get("skipped_detectors", []),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Failed to send document redaction notification: %s", exc)
+
+
 def _notify(user_id: int, file_id: int, result: dict) -> None:
     try:
         from app.services.notification_service import send_task_notification

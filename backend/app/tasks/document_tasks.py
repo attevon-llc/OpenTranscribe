@@ -279,6 +279,7 @@ def _parse_document(document_id: int) -> dict[str, Any]:
 
     notify("completed", "Document ready", 100.0)
     dispatch_document_index(document_id)
+    _dispatch_document_redaction(document_id, user_id)
 
     return {
         "status": "success",
@@ -311,6 +312,34 @@ def parse_document_task(self, document_id: int) -> dict[str, Any]:
         outcome (malformed input, empty extraction) — not a task failure.
     """
     return _parse_document(document_id)
+
+
+def _dispatch_document_redaction(document_id: int, user_id: int) -> None:
+    """Dispatch content-redaction detection for a document — ONLY when the owner has
+    redaction enabled (or an admin forces it). Mirrors
+    ``transcription/postprocess.py::_dispatch_redaction`` exactly: redaction is
+    opt-out by default, so the (potentially expensive) scan is skipped for the common
+    case. NOTE: unlike transcripts, there is no lazy-dispatch-on-open path yet for a
+    user who enables redaction *after* upload (transcripts get this via
+    ``crud.py``'s ``_lazy_dispatch_redaction``) — a document parsed before redaction
+    was enabled stays unscanned until an admin backfill or a future lazy-open trigger
+    is added. Tracked as a residual gap, not silently missing.
+    """
+    try:
+        from app.services.redaction.config import resolve_effective_config
+
+        with session_scope() as db:
+            cfg = resolve_effective_config(db, user_id)
+        if not cfg.enabled:
+            logger.info("Redaction off for owner of document %s; skipping detection", document_id)
+            return
+
+        from app.tasks.redaction_task import redaction_detect_document_task
+
+        redaction_detect_document_task.delay(document_id=document_id, user_id=user_id)
+        logger.info("Dispatched document redaction detection for document %s", document_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to dispatch document redaction detection: %s", exc)
 
 
 def dispatch_document_parse(document_id: int) -> None:

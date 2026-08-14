@@ -430,7 +430,17 @@ class VideoProcessingService:
         )
         speaker_suffix = "_with_speakers" if include_speakers else "_no_speakers"
         redaction_suffix = f"_r{redaction_fingerprint}" if redaction_fingerprint else ""
-        return f"{self.DERIVED_CACHE_PREFIX}{base_name}{speaker_suffix}{redaction_suffix}.mp4"
+        # `file_id` FIRST, and it is what makes the key identifying. It was an
+        # accepted parameter that the key never used, so every file sharing a
+        # filename shared one cache object — in a single bucket with no user in
+        # the key, so two people who each uploaded "meeting.mp4" were served each
+        # other's derived artifact. Since #85 that artifact can be a burned-in
+        # video, i.e. one user's recording rendered for another. The filename is
+        # kept after it purely so a human can still read the object listing.
+        return (
+            f"{self.DERIVED_CACHE_PREFIX}{file_id}_{base_name}"
+            f"{speaker_suffix}{redaction_suffix}.mp4"
+        )
 
     def is_video_cached(self, cache_key: str) -> bool:
         """Check if a cached video exists."""
@@ -994,27 +1004,30 @@ class VideoProcessingService:
             self.audio_cache_key(filename, "original"),
         ]
 
-    def _masked_video_cache_keys(self, filename: str) -> list[str]:
+    def _masked_video_cache_keys(self, file_id: int, filename: str) -> list[str]:
         """List the policy-specific burned-in renders this file owns, from storage.
 
         A deleted file must not leave a video of its transcript behind, and the
         masked variants cannot be named without knowing every policy that ever
         rendered one — so they are listed rather than derived. The regex is not
-        decoration: a bare prefix sweep on ``derived/{base}_`` would also match the
-        neighbouring file ``{base}_2``.
+        decoration: a bare prefix sweep on ``derived/{file_id}_{base}_`` would also
+        match the neighbouring file ``{base}_2`` owned by the same id.
+
+        ``file_id`` leads, matching :meth:`generate_cache_key`. It must: the key
+        gained the id to stop two files sharing a filename from sharing one cache
+        object, and a sweep that still matched on filename alone would delete the
+        OTHER file's renders — turning a fixed collision into a destructive one.
 
         Best-effort: object storage being unavailable must not fail a delete that
         has already removed the rows.
         """
         base = filename.rsplit(".", 1)[0] if "." in filename else filename
-        pattern = re.compile(
-            rf"^{re.escape(self.DERIVED_CACHE_PREFIX)}{re.escape(base)}"
-            r"_(with|no)_speakers_r[0-9a-f]+\.mp4$"
-        )
+        owned = f"{self.DERIVED_CACHE_PREFIX}{file_id}_{base}"
+        pattern = re.compile(rf"^{re.escape(owned)}" r"_(with|no)_speakers_r[0-9a-f]+\.mp4$")
         try:
             objects = self.minio_service.list_objects(
                 self.cache_bucket,
-                prefix=f"{self.DERIVED_CACHE_PREFIX}{base}_",
+                prefix=f"{owned}_",
                 recursive=True,
             )
             return [obj.object_name for obj in objects if pattern.match(obj.object_name or "")]
@@ -1035,7 +1048,9 @@ class VideoProcessingService:
             file_id: Internal media file id.
             filename: The file's original filename.
         """
-        keys = self.derived_cache_keys(file_id, filename) + self._masked_video_cache_keys(filename)
+        keys = self.derived_cache_keys(file_id, filename) + self._masked_video_cache_keys(
+            file_id, filename
+        )
         for cache_key in keys:
             try:
                 self.minio_service.delete_object(self.cache_bucket, cache_key)

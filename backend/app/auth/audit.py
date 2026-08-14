@@ -250,14 +250,41 @@ class AuditLogger:
         error_code: str | None = None,
         details: dict[str, Any] | None = None,
         organization_id: int | None = None,
+        target_user_id: int | None = None,
+        target_username: str | None = None,
     ) -> None:
         """
         Log an audit event.
 
+        ``user_id`` is the ACTOR — who performed the action. ``target_user_id``
+        is who it was performed ON. For a self-service action they are the same
+        person and only ``user_id`` need be set; for an administrative action
+        they differ and BOTH are required (issue #443).
+
+        Why this is not a convention but a field: ``user_id`` is not a display
+        value. ``query_audit_logs`` filters on it, and ``build_org_scope_clause``
+        attributes un-stamped events to an org by member user-id — so whether an
+        emitter keyed it on the actor or the subject changed **who could see the
+        record**. Five emitters of ``auth.account.disabled`` disagreed three
+        ways (actor, subject, NULL), which meant "actions Bob performed" returned
+        Bob's own privilege escalation while "what the admin did" missed every
+        IdP-driven promotion.
+
+        The `details` dict was the previous workaround and it failed: the target
+        appears as ``details.target_user`` (a UUID string) in one place,
+        ``details.target_user_id`` (an int) in another, ``details.target_email``
+        in a third. ``details`` is a dynamic object mapping, so no single query
+        can answer "everything done TO user X" — which is the field's whole
+        purpose. These are top-level and typed instead.
+
+        Back-compatible: pre-existing documents simply lack the keys, and the
+        fields are omitted from the event entirely when unset rather than written
+        as null, so the OpenSearch mapping does not gain sparse nulls.
+
         Args:
             event_type: The type of audit event
             outcome: The outcome of the event (success/failure/partial)
-            user_id: The user's database ID (if known)
+            user_id: The ACTOR's database ID (if known)
             username: The username or email (for failed logins where user_id unknown)
             source_ip: The client's IP address
             user_agent: The client's User-Agent header
@@ -270,6 +297,13 @@ class AuditLogger:
                 no-context writers like local login) omits the field; those
                 events are attributed to an org at READ time via the member-id
                 legacy fallback in :func:`query_audit_logs`.
+            target_user_id: The database ID of the user the action was performed
+                ON, when that differs from the actor. Omitted for self-service
+                actions.
+            target_username: The target's username/email, for the same reason
+                ``username`` exists alongside ``user_id`` — it survives the
+                account being deleted, which is exactly when an administrative
+                audit record matters most.
         """
         if not settings.AUDIT_LOG_ENABLED:
             return
@@ -289,6 +323,14 @@ class AuditLogger:
             "error_code": error_code,
             "details": details or {},
         }
+
+        # Omitted rather than written as null when unset: `details` is a dynamic
+        # mapping but these are top-level, and a sparse null on every
+        # self-service event would bloat the index for no query value.
+        if target_user_id is not None:
+            event["target_user_id"] = target_user_id
+        if target_username is not None:
+            event["target_username"] = target_username
 
         # Log in configured format
         if settings.AUDIT_LOG_FORMAT.lower() == "cef":

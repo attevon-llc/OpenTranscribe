@@ -1501,6 +1501,8 @@ def admin_lock_account(
         source_ip=client_ip,
         user_agent=user_agent,
         outcome=AuditOutcome.SUCCESS,
+        target_user_id=int(user.id),
+        target_username=str(user.email),
         details={
             "target_user": user_uuid,
             "reason": reason,

@@ -199,6 +199,8 @@ def audit_role_change(
         username=str(actor.email),
         source_ip=client_ip,
         user_agent=user_agent,
+        target_user_id=int(user.id),
+        target_username=str(user.email),
         details={"target_user": str(user.uuid), "old_role": old_role, "new_role": new_role},
     )
 
@@ -216,6 +218,8 @@ def audit_account_status_change(
         username=str(actor.email),
         source_ip=client_ip,
         user_agent=user_agent,
+        target_user_id=int(user.id),
+        target_username=str(user.email),
         details={"target_user": str(user.uuid), "is_active": is_active},
     )
 

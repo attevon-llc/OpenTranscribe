@@ -616,6 +616,7 @@ class ChatService:
         temperature: float | None,
         max_tokens: int | None,
         top_p: float | None,
+        enable_thinking: bool | None = None,
         llm,
         on_teardown=None,
         assistant_message_uuid: str,
@@ -640,6 +641,11 @@ class ChatService:
             temperature: Per-conversation override, or None for the config default.
             max_tokens: Per-conversation answer-length override, clamped below.
             top_p: Per-conversation nucleus-sampling override, omitted when None.
+            enable_thinking: ``False`` sends the measured "reasoning off" arm;
+                ``None`` (the default) builds the payload exactly as it is built
+                today, keeping vLLM's issue-#439 activation intact. Already
+                gated on the model's measured capability by the endpoint --
+                never derive it from a raw user preference here.
             on_teardown: Called exactly once inside the shielded finally, however
                 the turn ends. Used to release the concurrency slot: a wrapping
                 generator's own ``finally`` does NOT reliably run when Starlette
@@ -832,6 +838,9 @@ class ChatService:
             # sending a "default" would override a provider-side tuned value.
             if top_p is not None:
                 kwargs["top_p"] = top_p
+            # Only ever narrows: None leaves the provider payload untouched.
+            if enable_thinking is not None:
+                kwargs["enable_thinking"] = enable_thinking
 
             first_token_deadline = time.monotonic() + C.DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S
             got_first_token = False

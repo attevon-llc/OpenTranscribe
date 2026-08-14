@@ -49,3 +49,46 @@ def test_the_tie_break_puts_a_chunk_ahead_of_a_digest_at_equal_score() -> None:
     """Ascending ``doc_type`` — 'chunk' < 'digest' — and it must not depend on the id."""
     chunk, digest = _to_run_docs([_Hit(FILE, 0), _Hit(FILE, -1)])
     assert chunk.tie_key() < digest.tie_key()
+
+
+def test_the_rerank_stage_is_scored_in_the_order_the_prompt_receives() -> None:
+    """``diversity_sample`` interleaves files on purpose; the metric must see that.
+
+    Scoring by the hit's own score re-sorts that interleaving away, so the
+    metric ranked a list the model is never given. Measured over 60 synthetic
+    queries before the fix: the re-sort changed the prompt order for **40**, and
+    made the scored top-5 depend on ``final_chunks`` for **23** — a parameter
+    that cannot move the prompt's top-5, because ``diversity_sample`` is
+    prefix-invariant in its ``cap``.
+    """
+    from tests.eval.harness.metrics import normalise_run
+
+    # A deliberately interleaved list: descending score order would be 0, 2, 1.
+    interleaved = [_Hit(FILE, 0, score=9.0), _Hit(FILE, 1, score=1.0), _Hit(FILE, 2, score=5.0)]
+
+    scored = normalise_run({"q": _to_run_docs(interleaved, preserve_order=True)})["q"]
+    assert sorted(scored, key=lambda doc: -scored[doc]) == [
+        f"{FILE}_0",
+        f"{FILE}_1",
+        f"{FILE}_2",
+    ], "the prompt's order was not what got scored"
+
+
+def test_the_retrieve_stage_still_scores_by_the_engine_score() -> None:
+    """The control must not move: OpenSearch order IS score order, and the
+    score-based tie-break is what keeps the metric id-scheme-blind (#32)."""
+    docs = _to_run_docs([_Hit(FILE, 0, score=9.0), _Hit(FILE, 1, score=1.0)])
+    assert [doc.score for doc in docs] == [9.0, 1.0]
+
+
+def test_a_reranked_tail_cannot_outrank_the_reranked_head() -> None:
+    """``rerank`` writes cross-encoder scores onto its first ``max_pairs`` hits
+    and leaves the tail carrying RRF scores. Cross-encoder scores are routinely
+    NEGATIVE and RRF scores are small positives, so a score sort floated the
+    UN-reranked tail above every reranked document whenever
+    ``candidate_pool > rerank_max_pairs``."""
+    from tests.eval.harness.metrics import normalise_run
+
+    head_then_tail = [_Hit(FILE, 0, score=-4.3), _Hit(FILE, 1, score=0.032)]
+    scored = normalise_run({"q": _to_run_docs(head_then_tail, preserve_order=True)})["q"]
+    assert scored[f"{FILE}_0"] > scored[f"{FILE}_1"]

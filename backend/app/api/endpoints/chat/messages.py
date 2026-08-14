@@ -47,6 +47,7 @@ from app.schemas.chat import ChatScope
 from app.schemas.chat import ContextEstimate
 from app.schemas.chat import MessageCreate
 from app.schemas.chat import MessageList
+from app.services import llm_reasoning
 from app.services.chat import limits
 from app.services.chat.context_resolver import count_scope_files
 from app.services.chat.context_resolver import resolve_scope_file_uuids
@@ -275,6 +276,16 @@ def _prepare_turn(
             "temperature": conv_settings.get("temperature"),
             "max_tokens": conv_settings.get("max_tokens"),
             "top_p": conv_settings.get("top_p"),
+            # Resolved HERE, against the model this turn will actually use,
+            # rather than trusted from the stored preference (issue #64). The
+            # conversation may have been pointed at a different model since the
+            # toggle was set, and honouring "no reasoning" on a model whose
+            # off-switch was never measured is the false claim this feature
+            # exists to avoid. `None` means "build the payload exactly as
+            # today", which keeps issue #439's activation intact.
+            "enable_thinking": llm_reasoning.resolve_enable_thinking(
+                db, llm, conv_settings.get("reasoning")
+            ),
             "llm": llm,
             "assistant_message_uuid": assistant_uuid,
             "user_message_uuid": str(user_message.uuid),

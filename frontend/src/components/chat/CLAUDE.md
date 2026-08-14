@@ -82,6 +82,28 @@ and reusing the word here would be read as the same concept. The reasoning phase
 ends (freezing `reasoningDurationMs`) on the first `delta` frame, or on
 `done`/`error`/an aborted stream if no answer content ever arrived.
 
+### ⚠️ The reasoning TOGGLE renders only where the off-switch was MEASURED (#64)
+
+`ChatControlsPanel` offers a "Model reasoning" checkbox (`chat-reasoning-toggle`, in the
+`advanced` block) **only** when the server reports `reasoning_off_switch === 'works'` for the
+configuration in play — the conversation's pinned one, else the account default, read from
+`LLMSettingsApi.getUserConfigurations()`. Every other verdict, a uuid missing from the map, and
+a failed lookup all render **nothing**.
+
+Do not relax that to "the provider accepts the parameter". Measured against a real vLLM serving
+gemma-4-e4b, `enable_thinking: false` returned HTTP 200 and produced 931 characters of reasoning
+— byte-identical to not sending the parameter at all. A toggle there tells the user reasoning is
+off while the model reasons anyway, which is worse than no toggle: it is a false claim rather
+than a missing feature. The verdict comes from a probe, per model; the whole design and the
+numbers are in `backend/app/services/CLAUDE.md`.
+
+Unchecking it writes `ConversationSettings.reasoning = false`; re-checking writes `null`
+("inherit"). The server re-checks the capability at send time, so a preference stored against a
+model that could honour it is silently not applied after a model switch.
+
+Note this is a **different thing** from `ChatReasoning`'s local `expanded`, which only collapses
+reasoning text that has already arrived.
+
 ## State machine
 
 `$lib/utils/chatStateMachine.ts` is a pure module, separate from the store,

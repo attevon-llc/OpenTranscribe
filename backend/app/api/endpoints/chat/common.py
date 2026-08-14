@@ -109,6 +109,7 @@ def conversation_settings(conversation: ChatConversation) -> ConversationSetting
         max_tokens=raw.get("max_tokens"),
         top_p=raw.get("top_p"),
         search_mode=raw.get("search_mode"),
+        reasoning=raw.get("reasoning"),
     )
 
 

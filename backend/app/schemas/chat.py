@@ -91,6 +91,14 @@ class ConversationSettings(BaseModel):
     max_tokens: int | None = Field(default=None, ge=256, le=200_000)
     top_p: float | None = Field(default=None, ge=0.0, le=1.0)
     search_mode: SearchMode | None = None
+    #: Whether the model should reason before answering (issue #64). ``False``
+    #: is honoured **only** where a probe measured a working off-switch for the
+    #: model in play (``services/llm_reasoning``); on every other model the
+    #: request is built exactly as it is today, because a provider accepting the
+    #: parameter is not evidence the model obeys it. Storing a preference the
+    #: current model cannot honour is deliberate — it applies again if the
+    #: conversation is later pointed at a model that can.
+    reasoning: bool | None = None
 
 
 class ConversationCreate(BaseModel):

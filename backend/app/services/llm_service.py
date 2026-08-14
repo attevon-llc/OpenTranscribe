@@ -355,8 +355,18 @@ class LLMService:
             # vLLM only: `chat_template_kwargs` is its extension, and "custom"
             # OpenAI-clones 400 on unknown payload keys — the same reason they are
             # excluded from `llm_stream.USAGE_OPTION_PROVIDERS`.
-            if kwargs.get("enable_thinking", True):
-                payload["chat_template_kwargs"] = {"enable_thinking": True}
+            #
+            # Three arms, because they are three different requests (issue #64):
+            #   absent / True -> {"enable_thinking": True}   the #439 fix, the default
+            #   False         -> {"enable_thinking": False}  the measured "off" arm
+            #   None          -> the key omitted entirely     the probe's control arm
+            # `False` sends the key rather than dropping it: on gemma-4-e4b the two
+            # are byte-identical, but on a template where the switch actually works
+            # they are not — and shipping the control arm as the off switch would
+            # mean the toggle a user presses is not the request that was measured.
+            enable_thinking = kwargs.get("enable_thinking", True)
+            if enable_thinking is not None:
+                payload["chat_template_kwargs"] = {"enable_thinking": bool(enable_thinking)}
 
         return payload
 
@@ -573,6 +583,38 @@ class LLMService:
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse LLM response: {response.text}")
             raise Exception(f"Invalid JSON response: {e}") from e
+
+    def chat_completion_raw(
+        self, messages: list[dict[str, str]], *, timeout: int = 300, **kwargs
+    ) -> dict[str, Any]:
+        """Send one chat completion and return the provider's parsed JSON, unshaped.
+
+        :meth:`chat_completion` normalizes into :class:`LLMResponse` and raises on
+        empty content, which is right for a summary and wrong for the reasoning
+        capability probe (``services/llm_reasoning.py``): its activated arm can
+        legitimately spend the whole budget in the thought channel and come back
+        with ``content: null`` and 1,656 characters of reasoning. That is a
+        successful measurement, not an error — and the fields the probe reads
+        (``reasoning`` / ``reasoning_content``) are dropped by the normalization
+        entirely.
+
+        Args:
+            messages: Messages in OpenAI format.
+            timeout: Per-request timeout in seconds.
+            **kwargs: Passed to :meth:`_prepare_payload`.
+
+        Returns:
+            The provider's decoded JSON response.
+
+        Raises:
+            LLMEndpointBlockedError: The endpoint is not a permitted target.
+            Exception: Any non-200 response or unparseable body.
+        """
+        url = self.endpoints[self.config.provider]
+        if url is None:
+            raise ValueError(f"No endpoint configured for provider {self.config.provider}")
+        payload = self._prepare_payload(messages, **kwargs)
+        return self._send_llm_request(url, payload, self._get_headers(), timeout)
 
     def chat_completion(self, messages: list[dict[str, str]], **kwargs) -> LLMResponse:
         """

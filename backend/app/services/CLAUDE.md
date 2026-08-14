@@ -204,6 +204,114 @@ deprecated alias for `anthropic`).
   predictions stored for manual verification (`tasks/speaker_identification_task.py`). Only
   tags/collections have an auto-apply path (`auto_label_service.auto_apply_suggestions`).
 
+### Reasoning is a per-MODEL capability, and it is MEASURED (`llm_reasoning.py`, issue #64)
+
+**A provider returning HTTP 200 for a "do not reason" parameter is not evidence the model
+honoured it.** Measured against the live vLLM (`localhost:5195`) serving **gemma-4-e4b**, at
+**temperature 0, max_tokens 1200**, summing **both** response spellings:
+
+| arm | reasoning | content | tokens |
+|---|---|---|---|
+| `chat_template_kwargs={"enable_thinking": true}` | 1656 | 843 | 1123 |
+| `chat_template_kwargs={"enable_thinking": false}` | **931** | 378 | 562 |
+| kwarg omitted (the control) | **931** | 378 | 562 |
+
+Three facts, all load-bearing:
+
+1. **`false` is byte-identical to omitting the kwarg.** The chat template ignores the off value.
+   vLLM answers **200** and silently does nothing — same shape as #437 and the
+   `_neural_pipeline_verified` bool.
+2. **Reasoning is produced in ALL THREE arms.** gemma-4-e4b has no off-switch at all.
+3. **`true` does change behaviour**, which is why `_prepare_openai_payload` still sends
+   `enable_thinking: true` unconditionally for vLLM.
+
+The numbers are true of *that model on that server*. A different model is precisely the case
+this design exists to serve, so nothing keys off the provider alone.
+
+**⚠️ THE METHOD TRAP: sum BOTH `reasoning` AND `reasoning_content`.** vLLM 0.19 reports
+`reasoning`; the parser convention and several gateways report `reasoning_content`. An earlier
+probe read only one, measured ~0 on every arm, and reported the behaviour as *non-deterministic*
+— it is perfectly deterministic. `llm_reasoning.reasoning_chars()` is the one reader; use it.
+
+**⚠️ The probe is NON-streaming, deliberately.** vLLM's *streaming* reasoning parser only enters
+reasoning mode on the template's opening token (that is #439), so a streaming probe measures the
+**parser** and would report a working off-switch for every model. The non-streaming parser
+separates the block in all three arms, which is what makes the comparison about *generation*.
+`LLMService.chat_completion_raw` exists for this: `chat_completion` raises on empty content, and
+the activated arm legitimately returns `content: null` with 1,656 characters of reasoning.
+
+#### The pieces
+
+| What | Where |
+|---|---|
+| Probe, verdict rule, storage helpers | `services/llm_reasoning.py` |
+| Verdict enum (3 layers read it) | `core/enums.ReasoningOffSwitch` |
+| Instrument settings (prompt, tolerance, floor, timeouts) | `core/constants.py`, `LLM_REASONING_*` |
+| Recorded verdict | `SystemSettings`, key `llm.reasoning.off_switch.<fp>` |
+| Run it | `POST /llm-settings/config/{uuid}/reasoning-probe` |
+| Read it | `GET /llm-settings/config/{uuid}/reasoning`, and `reasoning_off_switch` on the configurations list |
+| Applied to a turn | `endpoints/chat/messages.py` → `llm_reasoning.resolve_enable_thinking` |
+| UI condition | `ChatControlsPanel.svelte`, renders only on `'works'` |
+
+#### Adding a model (or a provider) — the repeatable procedure
+
+1. Configure it as an LLM configuration and press the probe (or `POST .../reasoning-probe`).
+   It runs three real generations at temperature 0 against **that** endpoint: `true`, then
+   `false`, then the parameter omitted.
+2. Read the verdict. `works` → the toggle appears. `absent` → probed, and the model ignored it.
+   `no_reasoning` → nothing to switch off. `unsupported` → this build has no off-switch
+   parameter for that provider. `unknown` → never probed, or the probe could not complete.
+   Every value except `works` renders no control and leaves the request as it is today.
+3. **A new PROVIDER needs two lines and a measurement**: an entry in
+   `llm_reasoning.PROBEABLE_PROVIDERS`, and the parameter in the matching
+   `LLMService._prepare_*_payload`. Ollama's native `think` and Anthropic's `thinking.type` are
+   real mechanisms and are deliberately **not** wired up: adding one without measuring it is
+   exactly the mistake this module exists to prevent. `custom` must never be added — those
+   OpenAI-clones **400 on unknown payload keys** (the same reason they are excluded from
+   `llm_stream.USAGE_OPTION_PROVIDERS`).
+
+**The tolerance, and why.** `off` must be ≤ **10%** of the omitted control *and* ≤ 10% of the
+activated arm; below `LLM_REASONING_PROBE_MIN_CHARS` (32) in every arm it is `no_reasoning`
+instead. 90% suppression is the weakest threshold under which the word "off" is honest — a
+switch that halves the thinking still leaves the user reading a false claim. Both conditions are
+required: the first catches the measured failure (`off == omitted`), the second stops a
+coincidentally-quiet control run from scoring a switch. The measured negative sits at 1.00 of
+the control and 0.56 of the activated arm, i.e. **5.6× clear** of the boundary on the tighter
+condition.
+
+#### Where the verdict is recorded, and why there
+
+`SystemSettings`, keyed by a **fingerprint of (provider, base_url, model)** — not a column on
+`user_llm_settings`. The capability belongs to the software answering at that URL, not to a
+config row: two users pointing at the same vLLM share one measurement instead of paying three
+generations each, and editing a config's model produces a key that was never written, so the old
+verdict is simply *unfindable* rather than stale. No migration, and no invalidation logic. The
+URL is hashed rather than stored so the deployment-wide table does not become a directory of
+everyone's private endpoints.
+
+It is a **measurement, not a setting** — no coded default is editable into it, no admin panel
+writes it, and the row's `description` says so, because an operator hand-editing it would be
+asserting a capability nobody measured.
+
+**When it runs: explicit user action only.** Three real generations is far too much in front of
+a user's first chat turn, and a background sweep would dial every configured third-party
+provider unprompted — an egress event, and a bill, nobody asked for. It sits beside "Test
+connection", where the cost is visible and chosen.
+
+#### ⚠️ #439's fix must stay, and a model with no off-switch must behave exactly as today
+
+`_prepare_openai_payload` has three arms and the **default is unchanged**: absent or `True` →
+`{"enable_thinking": True}` (the #439 fix), `False` → `{"enable_thinking": False}` (the measured
+off arm), `None` → the key omitted (the probe's control arm, nothing on the chat path passes it).
+Do not "clean up" that unconditional `true`: without it vLLM's streaming parser never engages and
+the whole chain-of-thought is rendered as the answer, closed by a literal `<channel|>` token.
+
+`resolve_enable_thinking` returns `None` — i.e. *change nothing* — unless the verdict is `works`.
+So a stored "reasoning off" preference on a model whose off-switch was never measured is
+deliberately **not applied**; it applies again if the conversation is later pointed at a model
+that can honour it. `tests/unit/test_llm_reasoning_capability.py` pins that non-regression, with
+a `works` control beside it so "always return None" cannot pass.
+
 ## User transcription settings
 
 Per-user prefs (Settings → Transcription) are `UserSetting` key/value rows shaped by

@@ -158,9 +158,17 @@ async def upload_document(
             content_type=mime,
         )
         db.add(doc)
-        db.flush()
+        # commit(), not flush(): flush() writes the INSERT inside the open transaction
+        # but does not persist it, and db.close() below rolls back an uncommitted
+        # transaction — silently discarding the row the later UPDATE then can't find
+        # (sqlalchemy.orm.exc.StaleDataError, "expected to update 1 row; 0 matched").
+        # Committing here matches files/upload.py's precedent one comment down: the row
+        # exists (with an empty storage_path) before the slow storage write, and a
+        # failed upload leaves a best-effort orphan rather than losing the insert.
+        db.commit()
         db.refresh(doc)
     except Exception:
+        db.rollback()
         spooled.close()
         raise
 

@@ -21,14 +21,27 @@ from app.core import constants as C  # noqa: N812
 
 logger = logging.getLogger(__name__)
 
-# Detector → categories it produces. The ONE copy of this mapping: every
-# fail-closed masker needs it to decide whether a detector failure is one the
-# user's policy cares about, and a second copy drifts silently
+# Detector → the categories whose MASKING depends on it. The ONE copy of this
+# mapping: every fail-closed masker needs it to decide whether a detector failure
+# is one the user's policy cares about, and a second copy drifts silently
 # (``blocking_detector_failures`` below is the shared reader).
+#
+# ⚠️ ``toxicity`` maps to NOTHING, and that is the entry with a decision in it. The
+# toxicity detector emits a per-segment SCORE, never a ``RedactionSpan`` — read
+# ``detectors/toxicity.py``, and note that ``is_segment_toxic`` is consumed only by
+# ``formatting_service`` to flag a segment in the UI. So its absence cannot leave one
+# character unmasked, and making it blocking would withhold text on the strength of a
+# detector that never masks any. The consequences are not hypothetical: ``toxicity``
+# IS a default category, so a box without the ~500 MB toxic-bert weights would mark
+# every default-configured user's file stale on every segment edit and refuse every
+# LLM feature — for a gap with no text in it. The ``toxicity`` *category* still has
+# maskable spans; they come from ``llm``, which is why that entry keeps all four.
+# A toxicity outage is reported instead — ``skipped_detectors`` and
+# ``media_file.redaction_coverage`` — which is what a missing toxicity FLAG deserves.
 _DETECTOR_CATEGORIES: dict[str, set[str]] = {
     "profanity": {"profanity", "custom"},
     "pii": {"pii"},
-    "toxicity": {"toxicity"},
+    "toxicity": set(),
     "llm": {"pii", "toxicity", "profanity", "custom"},
 }
 
@@ -236,8 +249,10 @@ def blocking_detector_failures(
     Only a failure of a detector feeding an *enabled* category may withhold.
 
     ``failures`` names DETECTORS while ``enabled_categories`` names CATEGORIES;
-    they coincide for ``pii`` and diverge for ``profanity`` (which also produces
-    ``custom``), so the mapping is written out rather than assumed.
+    they coincide for ``pii``, diverge for ``profanity`` (which also produces
+    ``custom``), and for ``toxicity`` do not correspond at all — it produces no
+    spans, so nothing it fails to find can be left unmasked. The mapping above is
+    written out rather than assumed for exactly those two cases.
 
     Args:
         failures: Detector names recorded by ``detect_segment_spans``.

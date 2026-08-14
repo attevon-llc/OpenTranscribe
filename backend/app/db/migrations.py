@@ -454,6 +454,14 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE conname = 'ck_media_file_recorded_date_provenance')"
     )
 
+    # v391: media_file.redaction_coverage — which detectors a finished scan actually ran.
+    # Single-marker revision (one ADD COLUMN, no constraint), so unlike v390 there is no
+    # rule to key on and the column IS the fingerprint.
+    has_redaction_coverage = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'media_file' AND column_name = 'redaction_coverage')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the ingest-artifacts sidecar. Cumulative, so a database that
     # somehow has file_facts but lost user_group.organization_id falls through to an
@@ -495,6 +503,9 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_file_facts
     )
+    # v391: same as v390 plus the redaction-coverage column.
+    if matches_v389 and has_recorded_date_provenance and has_redaction_coverage:
+        return "v391_add_redaction_coverage"
     # v390: same as v389 plus the recorded-date provenance rule.
     if matches_v389 and has_recorded_date_provenance:
         return "v390_add_recorded_date_provenance"

@@ -82,15 +82,29 @@ class RedactionService:
                 logger.warning("PII detection skipped for a segment: %s", exc)
                 if failures is not None:
                     failures.append("pii")
-        # Toxicity score (per-segment).
+        # Toxicity score (per-segment). Recorded in the same two sinks as PII, but
+        # note it can never make a masker withhold text: ``blocking_detector_failures``
+        # maps ``toxicity`` to no category, because this detector emits a score and
+        # never a span. What its absence costs is the toxic FLAG, which is a coverage
+        # fact — hence the sinks — not an unmasked-text fact.
         toxicity: dict | None = None
         if run_toxicity:
             try:
                 from app.services.redaction.detectors import toxicity as tox
 
                 toxicity = tox.score_text(text, det_cfg.get("language"))
+            except DetectorUnavailableError as exc:
+                logger.warning("Toxicity detector unavailable for a segment: %s", exc)
+                if failures is not None:
+                    failures.append("toxicity")
+                if unavailable is not None:
+                    unavailable.append("toxicity")
             except Exception as exc:  # noqa: BLE001
-                logger.debug("Toxicity scoring skipped for a segment: %s", exc)
+                # Was ``logger.debug`` and nothing else, so a toxicity-only fault
+                # reached neither sink and marked nothing — invisible by construction.
+                logger.warning("Toxicity scoring failed for a segment: %s", exc)
+                if failures is not None:
+                    failures.append("toxicity")
 
         return [s.model_dump() for s in spans], toxicity
 
@@ -184,7 +198,18 @@ class RedactionService:
                         tox_scores = tox.score_texts(
                             [str(s.text or "") for s in segments], media.language
                         )
+                    except DetectorUnavailableError as exc:
+                        # No weights on this box. Reported, never FAILED — re-running
+                        # downloads nothing, and `failed` is a permanent refusal in
+                        # `llm_guard`. `toxicity` is a DEFAULT category, so getting
+                        # this arm wrong breaks every redaction-enabled user at once.
+                        logger.warning(
+                            "Toxicity detector unavailable for file %s: %s", file_id, exc
+                        )
+                        detector_failures.append("toxicity")
+                        detector_unavailable.append("toxicity")
                     except Exception as exc:  # noqa: BLE001
+                        # It ran and threw. Worth re-running, so this one IS a failure.
                         logger.warning("Batch toxicity failed for file %s: %s", file_id, exc)
                         detector_failures.append("toxicity")
 
@@ -242,8 +267,19 @@ class RedactionService:
                 )
                 return {"status": "failed", "reason": "detector_failure", "detectors": failed}
 
+            # WHICH detectors this scan's spans reflect (v391). Written in the same
+            # commit as DONE, because the whole point is that the two must never be
+            # read apart: `done` says the scan finished and this says what it looked
+            # at. `skipped` already carries both reasons a detector did not run — the
+            # transcript's language, and unavailability recorded a few lines above.
+            ran = [
+                d for d in ("profanity", "pii", "toxicity") if d in supported and d not in skipped
+            ]
+            if run_llm:
+                ran.append("llm")
             media.redaction_status = C.REDACTION_STATUS_DONE  # type: ignore[assignment]
             media.redaction_model_version = C.REDACTION_MODEL_VERSION  # type: ignore[assignment]
+            media.redaction_coverage = ran  # type: ignore[assignment]
             db.commit()
         except Exception as exc:  # noqa: BLE001
             db.rollback()
@@ -252,9 +288,6 @@ class RedactionService:
             logger.error("Redaction detection failed for file %s: %s", file_id, exc)
             return {"status": "failed", "error": str(exc)}
 
-        ran = [d for d in ("profanity", "pii", "toxicity") if d in supported and d not in skipped]
-        if run_llm:
-            ran.append("llm")
         return {
             "status": "done",
             "segments": len(segments),

@@ -23,11 +23,10 @@ band's edges (start/end) instead of fabricating shard-level granularity it doesn
 Revisit once a real fan-out lands — the stage-band math in ``progress.py`` already
 supports it, only the dispatch side does not exist yet.
 
-**Indexing is NOT dispatched from here.** Writing document chunks into the v6
-``transcript_chunks`` index is the next step in the build order (its own Celery task, its
-own commit) — this task's job ends at ``document``/``document_chunk`` rows in Postgres.
-Once that task exists, dispatch it from the end of :func:`_parse_document` the same way
-``transcription/postprocess.enrich_and_dispatch`` dispatches ``search_indexing_task``.
+Indexing (#362 Stage 6c, ``documents.index`` in ``document_indexing_task.py``) is
+dispatched fire-and-forget at the end of a successful parse, mirroring how
+``transcription/postprocess.enrich_and_dispatch`` dispatches ``search_indexing_task`` as a
+separate task rather than indexing inline.
 """
 
 from __future__ import annotations
@@ -55,6 +54,7 @@ from app.services.documents.chunking import chunk_document
 from app.services.documents.progress import overall_progress
 from app.services.documents.registry import mark_unavailable
 from app.services.minio_service import download_file
+from app.tasks.document_indexing_task import dispatch_document_index
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
@@ -278,6 +278,7 @@ def _parse_document(document_id: int) -> dict[str, Any]:
         db.commit()
 
     notify("completed", "Document ready", 100.0)
+    dispatch_document_index(document_id)
 
     return {
         "status": "success",

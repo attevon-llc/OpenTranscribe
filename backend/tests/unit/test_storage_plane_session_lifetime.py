@@ -530,9 +530,14 @@ def test_clear_derived_cache_opens_no_session_and_targets_all_variants(
         "clear_derived_cache opened a session — the filename must come from the "
         "caller's read phase, not a lookup wedged between the deletes"
     )
+    # The video keys lead with the file id (#88): the key was filename-derived only,
+    # in one bucket with no user in it, so two people who each uploaded "meeting.mp4"
+    # were served each other's derived artifact — which since #85 can be a burned-in
+    # video. The audio keys are unchanged and still filename-only.
+    fid = int(media_file.id)
     assert all(key.startswith("derived/") for key in deleted), deleted
-    assert "derived/talk_with_speakers.mp4" in deleted
-    assert "derived/talk_no_speakers.mp4" in deleted
+    assert f"derived/{fid}_talk_with_speakers.mp4" in deleted
+    assert f"derived/{fid}_talk_no_speakers.mp4" in deleted
     assert "derived/talk_audio_mp3.mp3" in deleted
     assert "derived/talk_audio_wav.wav" in deleted
     assert "derived/talk_audio_original" in deleted

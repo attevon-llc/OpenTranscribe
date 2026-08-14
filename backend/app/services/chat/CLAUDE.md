@@ -48,9 +48,10 @@ phased, and the phase boundaries are a correctness constraint rather than tidine
 1  rewrite + route                     LLM round trip        NO session
 2  counted tier (answer_aggregation)   Postgres ↔ OpenSearch short sessions, opened inside
 3  retrieve_context                    OpenSearch/rerank     NO session
-4  mask_chunks / mask_digests /        Postgres              ONE short session
-   scope_digest_hits / build_file_summaries
+4  mask_chunks / mask_digests          Postgres + Presidio   short sessions, opened inside
+   scope_digest_hits / build_file_summaries   Postgres       one short session each
 5  build_overview + diagnostics        pure                  NO session
+   describe_context_languages          Postgres              ONE short session
 ```
 
 A session held across phases 1–3 is this repo's most repeated defect: a plain `SELECT` holds
@@ -60,7 +61,7 @@ the shape this replaced (real Postgres, 600 ms rewrite + 150 ms aggregation + 40
 one session held **1,504 ms**, **564 ms** of it `idle in transaction`. After the split: two
 short sessions, 260 ms total, longest transaction **23 ms**.
 
-Two rules that keep it fixed:
+Three rules that keep it fixed:
 
 - **Phase 4 returns PLAIN DATA — never an ORM instance.** `MaskedChunk`, `ChunkHit` and
   `FileSummary` are dataclasses. Returning a `MediaFile` or a `TranscriptSegment` would
@@ -70,11 +71,35 @@ Two rules that keep it fixed:
   `_short_session`). Its date filter and occurrence count each get their own transaction,
   released before the `size: 0` search. Pass `db.session_utils.session_scope`; `None` means
   "no Postgres" and those shapes decline, exactly as the old `db=None` did.
+- **`mask_chunks` / `mask_digests` take the factory too (issue #83), because MASKING IS NOT
+  ALWAYS FAST.** The cached-span path is sub-millisecond, but a file whose scan cannot be
+  trusted falls through to `_mask_inline`, which runs Presidio *here and now* — and a cold
+  `AnalyzerEngine` build is ~10 s. Measured through the real masker against real Postgres, one
+  chunk, cold process: the session was open **14,262 ms** with **13,898 ms** of it
+  `idle in transaction`; after the split, **266 ms** open and **0 ms** idle in transaction
+  (0 of 540 samples), with byte-identical masked output. Warm, the same call went 15.2 ms open
+  / 7 ms idle → 10.4 ms open / 0 ms idle. So both maskers are two-phase: **gather → close →
+  mask**, and the gather returns `_SegmentSpans` (plain data), never a `TranscriptSegment`.
+  `redaction/warmup.py` makes the cold build rare, not impossible — its gate is evaluated
+  **once** at API startup, so a deployment that enables redaction afterwards still pays it, and
+  a request arriving mid-warm-up waits for the remainder. The fallback is also reached *more*
+  often since `v392`: a scan that skipped the `pii` detector now takes it too.
+
+Related, and found while splitting phase 4: the language read was handed the phase-4 `db`
+**after** its `with` block had closed it. SQLAlchemy answers a query on a closed session by
+beginning a new transaction on a newly checked-out connection — measured with
+`pg_stat_activity`: `idle in transaction` inside the block, `idle` after it, and
+`idle in transaction` again after one query on the closed session — which nothing then returns.
+Every turn leaked one such backend until the GC reached the connection. It has its own short
+session now.
 
 `tests/unit/test_chat_session_phases.py` drives the real `stream_reply` and asserts zero live
-sessions at each slow stage — with a control asserting masking still gets one, because "zero
-sessions everywhere" is also satisfied by deleting the session and failing closed on every
-chunk. `test_chat_recorded_date_filter.py` pins the aggregation half.
+sessions at each slow stage — with a control asserting masking still OPENS one (from the factory
+it is handed), because "zero sessions everywhere" is also satisfied by deleting the session and
+failing closed on every chunk. The same pairing is in `test_chat_redactor.py`
+(`test_the_inline_detector_runs_with_no_db_session_open` + the cached-span control +
+"one session per turn, not per chunk") and in `test_chat_digest_masking.py`.
+`test_chat_recorded_date_filter.py` pins the aggregation half.
 
 ## ⚠️ The chunk index stores transcript text UNREDACTED
 

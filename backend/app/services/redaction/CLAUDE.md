@@ -127,7 +127,7 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
     file until it is re-scanned. That was already true of the span cache; the column makes it
     enforced rather than tacit.
 - **Both LLM egress paths are wired to coverage — `llm_guard` AND `chat/redactor`.**
-  `_mask_from_segments` and `mask_digests` each call `uncovered_detectors` beside their existing
+  `_gather_chunk_segments` and `mask_digests`' gather each call `uncovered_detectors` beside their existing
   `redaction_status == done` check; a gap returns `None` (chunks) or skips the provenance read
   (digests), and both fall through to `_mask_inline`, which runs the detector here and now and
   fails closed. **The subject differs between them and that is deliberate**: `llm_guard` resolves
@@ -179,6 +179,15 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   `AnalyzerEngine`, 0.2 s for the first `analyze()`, 0.01 s warm — the cost is the
   **build**, not inference. First `_mask_inline` went **9.927 s → 0.016 s**; the lifespan
   pays **0.53 ms** (`Thread.start()`).
+  - **⚠️ The warm-up bounds the cost; it does not remove the cold path — so no caller may
+    hold a DB transaction across a detector.** The gate is evaluated ONCE at startup, so a
+    deployment that enables redaction afterwards still takes a cold build, and a request
+    arriving mid-warm-up waits for the remainder. `chat/redactor` therefore gathers its
+    cached spans, **closes the session**, and only then masks (issue #83): measured before
+    that split, one chunk on a cold process sat **13,898 ms `idle in transaction`**, which
+    queues every `ALTER TABLE` behind a chat turn. The other three API-process callers
+    (`output_redactor`, `redetect_edited_segment`, `snippet_redaction`) are a separate
+    question and were not changed by #83.
   - **The gate is DERIVED, not configured** — `config.redaction_is_in_use(db)`: any user
     with `redaction_enabled`, or any admin `force_*` category. Redaction is opt-out, so
     most deployments warm nothing. It is deliberately not "does anyone mask `pii`": every
@@ -217,7 +226,7 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   because nothing can realign them to edited text), and on a **blocking** failure sets the file
   to `pending` + queues `redaction_detect_task`.
   `pending`, not a new sentinel: every status-aware reader already honours it (`_redaction_pending`
-  withholds, `chat/_mask_from_segments` refuses non-`done` and falls through to inline
+  withholds, `chat/_gather_chunk_segments` refuses non-`done` and falls through to inline
   fail-closed masking, `llm_guard` defers **retryably**). Not `failed` — that is non-retryable in
   `llm_guard`. Not a 4xx — a detector outage must not block a user fixing a typo.
   **The queue drains in one hop**: `detect_and_store` writes `processing` then `done` or

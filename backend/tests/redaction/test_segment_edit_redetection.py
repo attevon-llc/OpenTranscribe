@@ -283,6 +283,8 @@ def test_a_later_chat_turn_does_not_send_the_edited_segment_unmasked(
     what it WROTE. This drives the real chat input masker over a chunk covering
     the edited segment, which is the path that egresses to a provider.
     """
+    from contextlib import contextmanager
+
     from app.services.chat.redactor import mask_chunks
     from app.services.search.chunk_retrieval import ChunkHit
 
@@ -298,7 +300,15 @@ def test_a_later_chat_turn_does_not_send_the_edited_segment_unmasked(
         start_time=0.0,
         end_time=5.0,
     )
-    masked = mask_chunks(db_session, [chunk], pii_masking_user.id)
+
+    # The masker owns its transaction boundary (#83), so it takes a factory. The
+    # fixture session is yielded from one, because the seeded rows live in this
+    # test's uncommitted savepoint and a real `session_scope` would not see them.
+    @contextmanager
+    def _fixture_scope():
+        yield db_session
+
+    masked = mask_chunks(_fixture_scope, [chunk], pii_masking_user.id)
 
     assert len(masked) == 1
     assert PHONE not in masked[0].content, "the cached outage leaked the edited text to the LLM"

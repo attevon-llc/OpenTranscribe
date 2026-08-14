@@ -197,11 +197,15 @@ def _prepare_context(
     2. the counted tier — ``answer_aggregation`` takes a *factory* and opens a
        short session per Postgres statement group, so its search runs clean;
     3. retrieval — **no session**;
-    4. masking and the scope map — the ONE database phase, one short session,
-       returning plain dataclasses (``MaskedChunk``/``FileSummary``, never an
-       ORM instance: attribute access on a detached row would silently re-open
-       a session and undo the split);
-    5. overview composition and diagnostics — **no session**.
+    4. masking and the scope map — the database phase. ``mask_chunks`` /
+       ``mask_digests`` take the *factory* too (#83) and gather-then-close, so
+       the inline Presidio fallback never runs inside a transaction; the scope
+       map and the summaries get their own short sessions. Everything returned
+       is a plain dataclass (``MaskedChunk``/``FileSummary``, never an ORM
+       instance: attribute access on a detached row would silently re-open a
+       session and undo the split);
+    5. overview composition and diagnostics — pure, except one short session for
+       the language read.
 
     Returns the masked chunks, diagnostics for the message metadata (ids/counts/
     timings only, never text), the counted result when the router sent the turn
@@ -298,47 +302,54 @@ def _prepare_context(
         wants_digest=decision.wants_digest,
     )
 
-    # --- Phase 4: the ONE database phase. Everything it returns is a plain
-    # dataclass — an ORM instance would re-open a session on the first attribute
-    # read after this block and quietly undo the split.
+    # --- Phase 4: the database phase. Every session here is SHORT and every
+    # value that leaves it is a plain dataclass — an ORM instance would re-open a
+    # session on the first attribute read afterwards and quietly undo the split.
+    #
+    # The maskers take the FACTORY, not a session (#83): each one gathers its
+    # cached spans, closes, and only then runs the detector. A file whose scan
+    # cannot be trusted falls through to inline Presidio, and a cold analyzer
+    # build is ~10 s — measured at 13.9 s `idle in transaction` when it ran
+    # inside this phase's session.
     digest_masked: list[MaskedChunk] = []
     summaries: list[Any] = []
-    with session_scope() as db:
-        masked = mask_chunks(db, result.chunks, user_id)
-        if result.digests:
-            # A SEPARATE masking call, not an overload. A digest is
-            # non-contiguous selected sentences; `mask_chunks` would rebuild it
-            # from every segment overlapping its time range and hand back the
-            # whole span verbatim — more text than the digest holds, from a
-            # function whose name says it masked it. `mask_digests` goes through
-            # the per-sentence provenance.
-            from app.services.chat.mapreduce import build_file_summaries
-            from app.services.chat.mapreduce import scope_digest_hits
-            from app.services.chat.redactor import mask_digests
+    masked = mask_chunks(session_scope, result.chunks, user_id)
+    if result.digests:
+        # A SEPARATE masking call, not an overload. A digest is
+        # non-contiguous selected sentences; `mask_chunks` would rebuild it
+        # from every segment overlapping its time range and hand back the
+        # whole span verbatim — more text than the digest holds, from a
+        # function whose name says it masked it. `mask_digests` goes through
+        # the per-sentence provenance.
+        from app.services.chat.mapreduce import build_file_summaries
+        from app.services.chat.mapreduce import scope_digest_hits
+        from app.services.chat.redactor import mask_digests
 
-            digest_masked = mask_digests(db, result.digests, user_id)
-            # The MAP output, read not computed: level 1 ran at ingest, so a
-            # summary over a large scope costs no map-time work (#403 Phase 4).
-            #
-            # A BOUNDED scope is mapped over in full; the ranked leg is only a
-            # fallback for "all accessible", where mapping over everything is not
-            # possible. Ranking picks the best passages, mapping covers every
-            # document — using the ranked leg as the map produced a block headed
-            # "recordings: 8" over a 25-file scope, and an answer that said so.
+        digest_masked = mask_digests(session_scope, result.digests, user_id)
+        # The MAP output, read not computed: level 1 ran at ingest, so a
+        # summary over a large scope costs no map-time work (#403 Phase 4).
+        #
+        # A BOUNDED scope is mapped over in full; the ranked leg is only a
+        # fallback for "all accessible", where mapping over everything is not
+        # possible. Ranking picks the best passages, mapping covers every
+        # document — using the ranked leg as the map produced a block headed
+        # "recordings: 8" over a 25-file scope, and an answer that said so.
+        with session_scope() as db:
             map_hits = scope_digest_hits(db, file_uuids or []) if file_uuids else []
-            if map_hits:
-                map_masked = mask_digests(db, map_hits, user_id)
-                summaries = build_file_summaries(
-                    db, map_hits, masked_text={id(m.source): m.content for m in map_masked}
-                )
-            else:
-                summaries = build_file_summaries(
-                    db,
-                    result.digests,
-                    masked_text={id(m.source): m.content for m in digest_masked},
-                )
+        if map_hits:
+            map_masked = mask_digests(session_scope, map_hits, user_id)
+            summary_hits, summary_masked = map_hits, map_masked
+        else:
+            summary_hits, summary_masked = result.digests, digest_masked
+        with session_scope() as db:
+            summaries = build_file_summaries(
+                db,
+                summary_hits,
+                masked_text={id(m.source): m.content for m in summary_masked},
+            )
 
-    # --- Phase 5: composition and diagnostics. Pure; NO session. --------------
+    # --- Phase 5: composition and diagnostics. Pure, except the language read
+    # below, which takes one short session of its own. -------------------------
     if result.digests:
         from app.services.chat.mapreduce import build_overview
 
@@ -360,11 +371,18 @@ def _prepare_context(
 
     # RAG is English-only (see services/chat/language.py). Recording what the turn
     # could draw on is what makes that limit visible instead of silent.
-    languages = describe_context_languages(
-        db,
-        scope_file_uuids=file_uuids,
-        grounded_file_uuids=[chunk.source.file_uuid for chunk in masked],
-    )
+    #
+    # Its own short session, and it must stay one: this read used to be handed the
+    # phase-4 session AFTER that `with` block had closed it, which SQLAlchemy
+    # answers by silently opening a fresh transaction on a connection nothing ever
+    # returns — an `idle in transaction` backend left behind by every turn, freed
+    # only when the garbage collector reaches the connection.
+    with session_scope() as db:
+        languages = describe_context_languages(
+            db,
+            scope_file_uuids=file_uuids,
+            grounded_file_uuids=[chunk.source.file_uuid for chunk in masked],
+        )
     if languages.total_files:
         meta[LANGUAGE_METADATA_KEY] = languages.as_metadata()
     if languages.has_unsupported:

@@ -150,9 +150,15 @@ async def _run_turn(monkeypatch, *, file_uuids=None, history=None) -> tuple[_Led
 
     monkeypatch.setattr(chat_service, "retrieve_context", _retrieve)
 
-    def _mask(db, chunks, _user_id):
+    def _mask(session_factory, chunks, _user_id):
+        # The masker is handed the FACTORY, not a session (#83): it gathers its
+        # cached spans, closes, and only then runs a detector that may cost a
+        # ~10 s Presidio build. So the stub records BOTH — the depth at entry
+        # (must be 0) and the depth inside the gather it opens (must be 1).
         ledger.note("masking")
-        ledger.sessions_seen.setdefault("masking", []).append(db)
+        with session_factory() as db:
+            ledger.note("masking-gather")
+            ledger.sessions_seen.setdefault("masking", []).append(db)
         return [MaskedChunk(source=chunk, content=chunk.content) for chunk in chunks]
 
     monkeypatch.setattr(chat_service, "mask_chunks", _mask)
@@ -243,11 +249,19 @@ async def test_masking_still_runs_inside_a_session(monkeypatch):
     refactor left it without a session it would fail closed on every chunk and
     every answer would be ungrounded — which the assertions above would happily
     call a pass.
+
+    Since #83 the masker opens that session **itself**, from the factory the turn
+    hands it, so that it can close it before the inline Presidio fallback runs.
+    Both halves are asserted: the call is entered with none live, and the gather
+    inside it gets exactly one, on a real session object.
     """
     ledger, _seen = await _run_turn(monkeypatch)
 
-    assert ledger.live_during["masking"] == [1], (
-        f"masking must run with exactly one live session: {ledger.live_during}"
+    assert ledger.live_during["masking"] == [0], (
+        f"the turn must hand masking a FACTORY, not an open session: {ledger.live_during}"
+    )
+    assert ledger.live_during["masking-gather"] == [1], (
+        f"masking's gather must run with exactly one live session: {ledger.live_during}"
     )
     handed = ledger.sessions_seen["masking"]
     assert len(handed) == 1

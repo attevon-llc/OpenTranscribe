@@ -132,7 +132,7 @@ declare -A MODULE_TESTS=(
     # run, which is failure mode 1 (a test that is not selected kills nothing) applied to the
     # fix for failure mode 1. Adding a test file here can only lower a count; leaving one out
     # manufactures findings.
-    [security]="tests/api/endpoints/test_auth_comprehensive.py tests/unit/test_token_type_binding.py tests/test_fips_140_3.py tests/unit/test_bcrypt_test_rounds.py tests/unit/test_local_auth_policy.py tests/unit/test_jwt_algorithm_downgrade.py tests/unit/test_verify_token_claims.py"
+    [security]="tests/api/endpoints/test_auth_comprehensive.py tests/unit/test_token_type_binding.py tests/test_fips_140_3.py tests/unit/test_bcrypt_test_rounds.py tests/unit/test_local_auth_policy.py tests/unit/test_jwt_algorithm_downgrade.py tests/unit/test_verify_token_claims.py tests/unit/test_security_survivor_mutants.py"
     # ⚠️ THIS LIST IS THE MEASUREMENT. An omitted file is not a smaller run — it is a
     # batch of FALSE survivors that look exactly like real findings. The first run of
     # this target reported 41 survivors in `_enforce_proxy_identity_consistency` and

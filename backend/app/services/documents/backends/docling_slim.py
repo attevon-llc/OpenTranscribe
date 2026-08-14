@@ -140,8 +140,48 @@ def linearize_table(grid: list[list[str]]) -> str:
     return "\n".join(lines)
 
 
-def _table_grid(item: Any) -> list[list[str]]:
-    """Extract row-major cell text from a Docling ``TableItem``, defensively."""
+def _resolve_ref_text(ref: Any, doc: Any, *, seen: set[int] | None = None, depth: int = 0) -> str:
+    """Recursively collect text from a resolved ``RichTableCell.ref`` subtree.
+
+    A cell docling classifies as "rich" (mixed formatting, multiple paragraphs, a nested
+    element) stores its content off to the side as a ``GroupItem`` referenced by
+    ``cell.ref``, and ``cell.text`` itself is always empty for that cell — reading only
+    ``.text`` (the natural thing to do, and what this function used to do) silently drops
+    the cell. Real tables commonly have a handful of rich cells (a label plus a link, a
+    multi-line note), so a table where enough cells are rich linearizes to nothing and the
+    whole block is dropped by ``IRBuilder.add``'s empty-text guard (#69). ``depth`` bounds
+    a malformed or cyclic ref chain; 25 comfortably exceeds any real cell's nesting.
+    """
+    if depth > 25:
+        return ""
+    if seen is None:
+        seen = set()
+    try:
+        node = ref.resolve(doc) if hasattr(ref, "resolve") else ref
+    except Exception:  # noqa: BLE001 - a broken ref means "no text", not a crash
+        return ""
+    if id(node) in seen:
+        return ""
+    seen.add(id(node))
+
+    parts: list[str] = []
+    text = getattr(node, "text", None)
+    if text and str(text).strip():
+        parts.append(str(text))
+    for child in getattr(node, "children", None) or []:
+        child_text = _resolve_ref_text(child, doc, seen=seen, depth=depth + 1)
+        if child_text:
+            parts.append(child_text)
+    return " ".join(parts)
+
+
+def _table_grid(item: Any, doc: Any = None) -> list[list[str]]:
+    """Extract row-major cell text from a Docling ``TableItem``, defensively.
+
+    ``doc`` resolves a ``RichTableCell``'s ``ref`` when its own ``text`` is empty — see
+    :func:`_resolve_ref_text`. Plain ``TableCell`` has no ``ref`` attribute at all, so this
+    is a no-op for every table that has no rich cells.
+    """
     data = getattr(item, "data", None)
     if data is None:
         return []
@@ -150,7 +190,15 @@ def _table_grid(item: Any) -> list[list[str]]:
         return []
     out: list[list[str]] = []
     for row in grid:
-        out.append([str(getattr(cell, "text", "") or "") for cell in row])
+        row_out: list[str] = []
+        for cell in row:
+            text = str(getattr(cell, "text", "") or "")
+            if not text.strip() and doc is not None:
+                ref = getattr(cell, "ref", None)
+                if ref is not None:
+                    text = _resolve_ref_text(ref, doc)
+            row_out.append(text)
+        out.append(row_out)
     return out
 
 
@@ -217,7 +265,7 @@ def _blocks_from_docling(doc: Any, builder: IRBuilder) -> set[int]:
         page = _page_of(item, doc)
 
         if block_type == "table":
-            grid = _table_grid(item)
+            grid = _table_grid(item, doc)
             text = linearize_table(grid)
             if builder.add("table", text, page=page, table=grid or None) and page:
                 pages_with_text.add(page)
@@ -237,6 +285,66 @@ def _blocks_from_docling(doc: Any, builder: IRBuilder) -> set[int]:
     return pages_with_text
 
 
+def _repair_html_tree(data: bytes) -> bytes:
+    """Work around two upstream Docling HTML-backend defects that silently drop tables.
+
+    Measured on ``govdocs1/thread0/758/758458.html`` (140 ``<table>`` tags, a real
+    government report exported by a legacy authoring tool): Docling's own
+    ``HTMLDocumentBackend.convert()`` returns **17** ``TableItem``s — an 88% loss, and
+    silent, because the document still parses and produces non-empty text (issue #69).
+    Two independent defects compound:
+
+    1. **``html_backend.py`` hardcodes ``BeautifulSoup(raw, "html.parser")``.** The stdlib
+       parser does not implement the HTML5 tree-construction rule that a ``<table>`` start
+       tag implicitly closes an open ``<p>`` — a spec-compliant parser (``lxml``, or any
+       real browser) does. So a ``<table>`` that a browser would render as a *sibling* of
+       the ``<p>`` stays a *descendant* of it in Docling's tree, and ``_handle_block``'s
+       ``<p>`` branch flattens its whole subtree to plain text via
+       ``_extract_text_and_hyperlink_recursively`` — never dispatching the nested table to
+       ``doc.add_table``. Re-parsing with ``lxml`` and re-serialising fixes this before
+       Docling ever sees the bytes: measured 138/138 of this file's ``<table>``-under-``<p>``
+       occurrences become 0 after the round-trip.
+    2. **``HTMLDocumentBackend._handle_list`` only recognises ``li``/``ul``/``ol`` as direct
+       children of a list** (``tag.find_all({"li","ul","ol"}, recursive=False)``), and even
+       when the offending ``<table>`` is wrapped in a synthetic ``<li>``,
+       ``_add_list_item_with_content`` extracts that ``<li>``'s text with
+       ``ignore_list=True`` (which excludes table content) — so a list item whose *only*
+       content is a table extracts to an empty string, returns ``None``, and the
+       ``if list_item or inputs_in_li or …`` gate that would otherwise call
+       ``_process_list_item_nested_content`` (the one code path that *does* dispatch a
+       nested table) never runs. **The whole list item is dropped, table and all.** This is
+       exactly the shape of this file: 123 of its 140 tables are direct children of a
+       ``<ul>``, not wrapped in ``<li>`` at all — invalid HTML that Docling's iteration
+       skips outright rather than errors on. There is no parser choice that fixes this one;
+       it is a gap in Docling's own list walk. The only reachable path for a table nested
+       in a list is Docling's ordinary top-level block dispatch (the same path a top-level
+       ``<table>`` takes), so this hoists every ``<table>`` found under a ``<ul>``/``<ol>``
+       out to be a sibling immediately after that list, preserving each table's relative
+       order. The cost is real but bounded: a table that had inline caption text in its
+       original ``<li>`` loses that positional association (the caption stays in the list,
+       the table moves after it) — better than losing the table's content outright.
+
+    Combined, both fixes take this file from 17/140 to **140/140**
+    (``test_document_parser_backends.py::TestHTMLTableRecovery``). Runs only for
+    ``text/html``; any exception here — this is third-party HTML, not validated input —
+    falls back to the original bytes rather than failing the parse over a repair step.
+    """
+    from bs4 import BeautifulSoup
+
+    try:
+        soup = BeautifulSoup(data, "lxml")
+        for list_tag in soup.find_all(["ul", "ol"]):
+            anchor = list_tag
+            for table in list_tag.find_all("table"):
+                table.extract()
+                anchor.insert_after(table)
+                anchor = table
+        return str(soup).encode("utf-8")
+    except Exception:  # noqa: BLE001 - a failed repair must not fail the parse
+        logger.warning("HTML tree repair failed; parsing the original bytes", exc_info=True)
+        return data
+
+
 def _convert_declarative(source: ParseSource, mime: str, builder: IRBuilder) -> Any:
     """Instantiate the matching declarative backend and convert. Never uses the pipeline."""
     import importlib
@@ -253,6 +361,8 @@ def _convert_declarative(source: ParseSource, mime: str, builder: IRBuilder) -> 
         ) from exc
 
     data = source.read_bytes()
+    if mime == "text/html":
+        data = _repair_html_tree(data)
     in_doc = InputDocument(
         path_or_stream=BytesIO(data),
         format=getattr(InputFormat, fmt_name),

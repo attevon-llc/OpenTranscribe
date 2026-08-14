@@ -1,5 +1,13 @@
 """
 API endpoints for subtitle generation.
+
+**An export is a transcript read surface, and it is gated like one.**
+``SubtitleService`` masks with the segment's *cached* spans, so on a file whose
+detection scan never ran, is queued, or is mid-flight there is nothing to apply
+and the export writes the raw transcript to disk — with nothing in the resulting
+file to say the scan was incomplete. :func:`_redaction_pending` (the same helper
+``GET /files/{uuid}`` and ``GET /files/{uuid}/segments`` use) decides that here
+too, so the download cannot be a way around the gate the page already applies.
 """
 
 import logging
@@ -22,6 +30,8 @@ from app.models.user import User
 from app.schemas.media import SubtitleValidationResult
 from app.services.subtitle_service import SubtitleService
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+
+from .crud import _redaction_pending
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -86,6 +96,24 @@ def get_subtitles(
 
     # Resolve read-time redaction (export honors the censor toggle + admin floor).
     cfg, reveal = _resolve_subtitle_redaction(db, media_file, current_user, redact)
+
+    # Withhold the export until detection has produced spans to apply. Note this
+    # is checked AFTER the reveal is resolved and ignores it: `?redact=false`
+    # reveals categories that were masked, and on an unscanned file there is
+    # nothing to reveal from — honoring it here would make the gate opt-out via a
+    # query parameter. Deliberately NOT an inline scan: a cold PII model load is
+    # ~10 s on a download request, and the transcript view already answers
+    # "not yet" for this file, so an export that scanned on demand would hand
+    # back content the page refused. 409 rather than the 503 above because the
+    # server is fine; the file is not ready, and that is a retryable state.
+    if _redaction_pending(db, cfg, media_file):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Content redaction has not finished for this file, so an export "
+                "could not be masked. Try again once detection completes."
+            ),
+        )
 
     try:
         # Generate subtitle content based on format

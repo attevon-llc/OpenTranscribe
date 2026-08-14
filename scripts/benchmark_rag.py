@@ -329,20 +329,54 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
     # different number, so a baseline that does not name it cannot be compared to
     # anything. Every baseline before this one was measured on
     # all-MiniLM-L6-v2/384d, verifiable from the cluster but nowhere in the files.
+    #
+    # Sourced from the DOCUMENTS, not from get_search_embedding_settings(). #437
+    # established that the settings are not authoritative about the vectors: two
+    # SystemSettings keys (search.embedding_model drives the index dimension,
+    # search.opensearch_model_id drives the pipeline) are written by different
+    # endpoints with nothing reconciling them, so a settings-derived label can
+    # name a model that never touched a single vector in this corpus. The survey
+    # aggregates what the indexed documents themselves report, which is the only
+    # thing that can be true about a measurement already taken.
     try:
+        from app.services.search.embedding_provenance import survey_embedding_models
         from app.services.search.settings_service import get_search_embedding_settings
 
-        embedding_model, embedding_dimension = get_search_embedding_settings()
+        provenance = survey_embedding_models(settings.OPENSEARCH_CHUNKS_INDEX)
+        configured_model, embedding_dimension = get_search_embedding_settings()
         index_state = {
             **index_state,
-            'embedding_model': embedding_model,
+            'embedding_models': list(provenance.known_models),
+            'embedding_verdict': provenance.verdict,
+            'embedding_unattributed': provenance.unattributed,
             'embedding_dimension': embedding_dimension,
+            # Kept as a separate, differently-named field precisely so that
+            # drift between what is configured and what is indexed is visible
+            # in the committed baseline rather than collapsed into one number.
+            'configured_embedding_model': configured_model,
         }
     except Exception as exc:  # noqa: BLE001 - recorded, never fatal to a measurement
         # Recorded rather than swallowed: "we could not read the model" and "the
         # model is X" must not look the same in a committed baseline.
-        logger.warning('Could not resolve the embedding model: %s', exc)
-        index_state = {**index_state, 'embedding_model': 'UNRESOLVED', 'embedding_dimension': 0}
+        logger.warning('Could not resolve the embedding provenance: %s', exc)
+        index_state = {
+            **index_state,
+            'embedding_models': [],
+            'embedding_verdict': 'UNRESOLVED',
+            'embedding_dimension': 0,
+        }
+    else:
+        # A mixed corpus makes the measurement meaningless rather than merely
+        # unlabelled: cosine between two models is not a similarity, so the
+        # ranking being scored fused two incomparable vector populations. Refuse
+        # to write a baseline nobody could correctly interpret later.
+        if provenance.mixed:
+            logger.error('%s', provenance.describe())
+            logger.error(
+                'Refusing to record a baseline over a mixed vector space — '
+                'reindex to one model first (GET /search/models/neural/status).'
+            )
+            return 3
 
     if settled is not None:
         # Only the settled counters go in the committed document. How many polls

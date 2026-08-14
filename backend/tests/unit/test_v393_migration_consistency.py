@@ -73,6 +73,26 @@ def _new_document(conn, user_id: int, **overrides) -> int:
     )
 
 
+def _drop_v394_dependent_fk(conn) -> None:
+    """Drop the one FK a later revision (v394) added onto ``document`` before this
+    revision's own DOWNGRADE_SQL runs.
+
+    A real ``alembic downgrade`` walks the chain newest-first, so v394's downgrade (which
+    drops ``watch_source_file.document_id`` and its FK) always runs before v393's — this
+    reproduces just that ordering for a test that otherwise calls v393's DOWNGRADE_SQL in
+    isolation. Same shape the module docstring on "each new migration breaks the previous
+    suite's detection assertion" describes for detection arms, applied to a downgrade
+    instead: a later revision growing a real DB dependency on an earlier one's tables is
+    expected, not a regression in either revision.
+    """
+    conn.execute(
+        text(
+            "ALTER TABLE watch_source_file "
+            "DROP CONSTRAINT IF EXISTS watch_source_file_document_id_fkey"
+        )
+    )
+
+
 def _new_chunk(conn, document_id: int, chunk_index: int = 0, **overrides) -> int:
     params = {
         "d": document_id,
@@ -349,6 +369,7 @@ def test_detection_stamps_lower_without_the_tables(db_session):
 
     conn = db_session.connection()
     try:
+        _drop_v394_dependent_fk(conn)
         conn.execute(text("DROP TABLE document_chunk"))
         conn.execute(text("DROP TABLE document"))
         tables = [
@@ -437,6 +458,7 @@ def test_the_downgrade_removes_both_tables_and_the_upgrade_restores_them(db_sess
     module = _revision_module()
     conn = db_session.connection()
     try:
+        _drop_v394_dependent_fk(conn)
         conn.execute(text(module.DOWNGRADE_SQL))
         conn.execute(text(module.DOWNGRADE_SQL))  # idempotent both ways
         tables = inspect(conn).get_table_names()

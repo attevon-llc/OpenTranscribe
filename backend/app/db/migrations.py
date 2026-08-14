@@ -477,6 +477,15 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
     # same shape v390's has_file_facts uses.
     has_document_table = "document" in tables and "document_chunk" in tables
 
+    # v394: watch_source_file.document_id — auto-import routes documents too (#362).
+    # Single-marker revision (one ADD COLUMN, no constraint the column itself doesn't
+    # already carry), so the column IS the fingerprint, the same shape v392's
+    # has_redaction_coverage uses.
+    has_watch_source_file_document_id = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'watch_source_file' AND column_name = 'document_id')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -519,6 +528,16 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
+    # v394: same as v393 plus watch_source_file.document_id.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+        and has_watch_source_file_document_id
+    ):
+        return "v394_add_watch_source_file_document_id"
     # v393: same as v392 plus the document ingestion tables.
     if (
         matches_v389

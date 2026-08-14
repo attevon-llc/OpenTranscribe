@@ -176,7 +176,11 @@ def index_transcript_search_task(  # noqa: C901
             # requires attached ORM state.
             meta = extract_file_index_metadata(db, media_file, file_id)
             title = meta["title"]
-            speaker_names = list(
+            # SORTED, not `list(set(...))` — see storage.get_unique_speaker_names.
+            # Python randomises string hashing per process, so an unsorted set
+            # made re-indexing an unchanged file write a different document each
+            # time (issue #455).
+            speaker_names = sorted(
                 {str(s["speaker"]) for s in segment_dicts if s["speaker"] != "Unknown"}
             )
             update_task_status(db, task_id, "in_progress", progress=0.4)

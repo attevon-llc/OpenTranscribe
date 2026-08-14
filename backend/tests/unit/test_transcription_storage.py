@@ -425,45 +425,38 @@ def test_a_missing_media_file_is_logged_and_skipped_rather_than_raising(db_sessi
 # --------------------------------------------------------------------------------------
 
 
-def test_completing_with_no_segments_zeroes_the_probed_duration(db_session, media_file):
-    """CHARACTERIZATION — pins current WRONG behaviour. DEFECT: storage.py L147.
+def test_completing_with_no_segments_keeps_the_probed_duration(db_session, media_file):
+    """A file that produced no segments must KEEP its probed duration (issue #455).
 
-    ``duration = segments[-1]["end"] if segments else 0.0`` unconditionally overwrites
-    ``MediaFile.duration``. When ASR returns no segments — a silent or music-only
-    recording, or a provider that returned nothing — the real ffprobe duration written by
-    ``metadata_extractor.py`` L455 is replaced with **0.0**, and the file is then marked
-    COMPLETED. The true length is not recoverable from the DB afterwards.
+    It used to write **0.0**: ``duration = segments[-1]["end"] if segments else 0.0``
+    unconditionally overwrote the column, so a silent or music-only recording — or a
+    provider that returned nothing — lost the real ffprobe duration written by
+    ``metadata_extractor.py`` L455 and was then marked COMPLETED. The true length was not
+    recoverable from the DB afterwards.
 
-    Downstream this is not cosmetic: ``recovery_tasks.youtube_metadata_backfill`` matches
-    recovered rows to YouTube metadata *by duration*, and the gallery renders
-    ``formatted_duration`` from this column.
-
-    WHEN FIXED (duration should be left alone when there are no segments, e.g.
-    ``if segments: media_file.duration = ...``) this test will fail. Replace it with
-    ``assert media_file.duration == pytest.approx(PROBED_DURATION)`` and rename it to
-    ``test_completing_with_no_segments_keeps_the_probed_duration``.
+    Not cosmetic downstream: ``recovery_tasks.youtube_metadata_backfill`` matches recovered
+    rows to YouTube metadata *by duration*, so a zeroed row could never be matched again,
+    and the gallery renders ``formatted_duration`` from this column.
     """
     assert media_file.duration == pytest.approx(PROBED_DURATION), "precondition: ffprobe ran"
 
     update_media_file_transcription_status(db_session, media_file.id, [])
 
     db_session.refresh(media_file)
-    assert media_file.duration == 0.0  # WRONG — should still be PROBED_DURATION
+    assert media_file.duration == pytest.approx(PROBED_DURATION), (
+        "the probed duration was overwritten for a file with no segments"
+    )
     assert media_file.status == FileStatus.COMPLETED
 
 
-def test_duration_comes_from_the_last_segment_not_the_latest_one(db_session, media_file):
-    """CHARACTERIZATION — pins current WRONG behaviour. DEFECT: storage.py L147.
+def test_duration_is_the_latest_segment_end(db_session, media_file):
+    """Duration is the LATEST end, not the last list element (issue #455).
 
-    ``segments[-1]["end"]`` assumes the list is sorted by time. Overlap marking and the
+    ``segments[-1]["end"]`` assumed the list was sorted by time. Overlap marking and the
     speaker-boundary resegmentation both reorder segments, and the cloud-ASR adapters emit
     provider order — so the last element is not necessarily the one that ends last. When it
-    is not, the file's stored duration is **shorter than its transcript**, and the player
-    cannot seek to the end of it.
-
-    WHEN FIXED (``max(s["end"] for s in segments)``) this test will fail. Replace the
-    assertion with ``== pytest.approx(30.0)`` and rename to
-    ``test_duration_is_the_latest_segment_end``.
+    was not, the stored duration was **shorter than the transcript**, and the player could
+    not seek to the end of it.
     """
     out_of_order = [
         _segment(0.0, 10.0, "first"),
@@ -474,15 +467,17 @@ def test_duration_comes_from_the_last_segment_not_the_latest_one(db_session, med
     update_media_file_transcription_status(db_session, media_file.id, out_of_order)
 
     db_session.refresh(media_file)
-    assert media_file.duration == pytest.approx(20.0)  # WRONG — the transcript runs to 30.0
+    assert media_file.duration == pytest.approx(30.0), (
+        "duration must be max(end), not the end of whichever segment happens to be last"
+    )
 
 
-def test_unique_speaker_name_order_is_not_stable_across_processes(run_in_clean_process):
-    """CHARACTERIZATION — pins current WRONG behaviour. DEFECT: storage.py L200.
+def test_unique_speaker_names_are_returned_in_a_stable_order(run_in_clean_process):
+    """Byte-identical input must give a byte-identical list, in any process (issue #455).
 
-    ``get_unique_speaker_names`` is ``list(set(...))``. Python randomises string hashing per
-    process (``PYTHONHASHSEED``), so the order of the returned list changes between worker
-    restarts for byte-identical input.
+    ``get_unique_speaker_names`` was ``list(set(...))``. Python randomises string hashing per
+    process (``PYTHONHASHSEED``), so the order changed between worker restarts for
+    byte-identical input.
 
     That list is written straight into the full-document OpenSearch record
     (``search_indexing_task.py`` L191 → ``index_transcript(...)``), so **re-indexing an
@@ -494,11 +489,10 @@ def test_unique_speaker_name_order_is_not_stable_across_processes(run_in_clean_p
     control: that proves the difference is ordering alone and not the child having produced
     different data.
 
-    WHEN FIXED (``sorted(set(...))``) this test will fail. Replace it with an assertion that
-    the two seeds give the *same* list and rename to
-    ``test_unique_speaker_names_are_returned_in_a_stable_order``. The sibling
-    ``search_indexing_task.py`` L179-181 builds ``speaker_names`` the same unsorted way and
-    should be fixed in the same change.
+    Two children with DIFFERENT ``PYTHONHASHSEED`` values are the only way to observe this —
+    an in-process test cannot, because the seed is fixed for the life of the interpreter.
+    That is why it survived. The sibling in ``search_indexing_task.py`` builds
+    ``speaker_names`` the same way and was fixed in the same change.
     """
     code = (
         "from app.tasks.transcription.storage import get_unique_speaker_names\n"
@@ -510,10 +504,14 @@ def test_unique_speaker_name_order_is_not_stable_across_processes(run_in_clean_p
     first = run_in_clean_process(code, PYTHONHASHSEED="1")
     second = run_in_clean_process(code, PYTHONHASHSEED="4")
 
-    assert first != second  # WRONG — identical input should give an identical list
-    assert sorted(eval(first)) == sorted(eval(second)), (  # noqa: S307
-        "control: both children must have produced the same set, differing only in order"
+    assert first == second, (
+        "the same speakers produced different list ORDER under a different hash seed, so "
+        "re-indexing an unchanged file writes a different OpenSearch document"
     )
+    # Control: the children really did run with different seeds and really did
+    # produce the full set — otherwise equality above could hold trivially.
+    assert sorted(eval(first)) == sorted(eval(second))  # noqa: S307
+    assert len(eval(first)) == 8  # noqa: S307
 
 
 # --------------------------------------------------------------------------------------

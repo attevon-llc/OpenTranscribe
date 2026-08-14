@@ -88,11 +88,44 @@ def _mask_from_segments(db: Session, chunk: ChunkHit, cfg) -> str | None:
     """
     from app.models.media import MediaFile
     from app.models.media import TranscriptSegment
+    from app.services.redaction.coverage import uncovered_detectors
     from app.services.redaction.service import RedactionService
 
-    status = db.query(MediaFile.redaction_status).filter(MediaFile.id == chunk.file_id).scalar()
-    if status != C.REDACTION_STATUS_DONE:
+    # Four columns rather than the ORM row: `uncovered_detectors` reads
+    # `redaction_coverage` and `language` by getattr, and a Row exposes both by
+    # label. Keeping this a plain Row also honours the phase-4 rule that nothing
+    # ORM-shaped escapes the masking session (see this package's CLAUDE.md).
+    scan = (
+        db.query(
+            MediaFile.id,
+            MediaFile.redaction_status,
+            MediaFile.redaction_coverage,
+            MediaFile.language,
+        )
+        .filter(MediaFile.id == chunk.file_id)
+        .first()
+    )
+    if scan is None or scan.redaction_status != C.REDACTION_STATUS_DONE:
         # Detection hasn't run (or didn't finish) — there are no spans to apply.
+        return None
+
+    # `done` says the scan FINISHED, not that it LOOKED (v391). An unavailable
+    # detector resolves to `done` + `skipped_detectors` rather than `failed`,
+    # deliberately, so trusting the status alone here would serve cached spans
+    # from a scan whose PII detector never ran — masking nothing and returning
+    # raw text the caller treats as safe. Returning None falls through to
+    # `_mask_inline`, which fails closed.
+    #
+    # `cfg` is the REQUESTING USER's policy, not the file owner's: one chat turn
+    # retrieves across a library of shared recordings with no single owner. That
+    # is the opposite subject from `llm_guard`, and deliberately so.
+    gap = uncovered_detectors(scan, cfg)
+    if gap:
+        logger.warning(
+            "Cached spans do not cover %s for file %s; masking inline instead",
+            sorted(gap),
+            chunk.file_id,
+        )
         return None
 
     end_time = chunk.end_time if chunk.end_time is not None else chunk.start_time
@@ -286,6 +319,7 @@ def mask_digests(db: Session, digests: list[ChunkHit], user_id: int) -> list[Mas
         return [MaskedChunk(source=d, content=d.content) for d in digests]
 
     from app.models.media import MediaFile
+    from app.services.redaction.coverage import uncovered_detectors
     from app.services.redaction.service import RedactionService
 
     masked: list[MaskedChunk] = []
@@ -293,10 +327,25 @@ def mask_digests(db: Session, digests: list[ChunkHit], user_id: int) -> list[Mas
     for digest in digests:
         sentences = None
         try:
-            status = (
-                db.query(MediaFile.redaction_status).filter(MediaFile.id == digest.file_id).scalar()
+            scan = (
+                db.query(
+                    MediaFile.id,
+                    MediaFile.redaction_status,
+                    MediaFile.redaction_coverage,
+                    MediaFile.language,
+                )
+                .filter(MediaFile.id == digest.file_id)
+                .first()
             )
-            if status == C.REDACTION_STATUS_DONE:
+            # Same v391 coverage gate as the chunk path: `done` means the scan
+            # finished, not that every relied-on detector ran. A gap falls
+            # through to the inline masker below rather than applying cached
+            # spans that cover less than this policy masks.
+            if (
+                scan is not None
+                and scan.redaction_status == C.REDACTION_STATUS_DONE
+                and not uncovered_detectors(scan, cfg)
+            ):
                 sentences = _digest_sentences(db, digest)
         except Exception:  # noqa: BLE001
             logger.exception("Digest provenance lookup failed; withholding the section")

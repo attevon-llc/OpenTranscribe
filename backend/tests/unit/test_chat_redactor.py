@@ -83,14 +83,32 @@ def test_redaction_disabled_entirely_passes_content_through():
     assert masked[0].was_masked is False
 
 
-def _db_with(status, segments):
-    """A db mock that answers the status probe and the segment query distinctly."""
+def _db_with(status, segments, coverage=None, language="en"):
+    """A db mock that answers the scan probe and the segment query distinctly.
+
+    ``coverage`` is what ``media_file.redaction_coverage`` holds (v391): the
+    detectors the finished scan actually ran. ``None`` is a pre-v391 row, which
+    :func:`~app.services.redaction.coverage.uncovered_detectors` trusts on
+    purpose — so a test that wants the coverage gate to BITE must pass a list
+    that omits the detector, not leave this defaulted.
+    """
     db = MagicMock()
-    status_q = MagicMock()
-    status_q.filter.return_value.scalar.return_value = status
+    scan_q = MagicMock()
+    # Both accessors, deliberately: the pre-coverage code read `.scalar()` for the
+    # status alone and the current code reads `.first()` for the whole scan row.
+    # Answering only one couples the fixture to an implementation detail, and a
+    # red run against the older code then fails on the fixture rather than on the
+    # behaviour under test — which is indistinguishable from real evidence.
+    scan_q.filter.return_value.scalar.return_value = status
+    scan_q.filter.return_value.first.return_value = SimpleNamespace(
+        id=1,
+        redaction_status=status,
+        redaction_coverage=coverage,
+        language=language,
+    )
     seg_q = MagicMock()
     seg_q.filter.return_value.order_by.return_value.all.return_value = segments
-    db.query.side_effect = [status_q, seg_q]
+    db.query.side_effect = [scan_q, seg_q]
     return db
 
 
@@ -472,8 +490,8 @@ def test_an_absent_presidio_still_answers_when_pii_was_never_enabled():
     assert masked[0].was_masked is True
 
 
-def test_the_cached_path_still_trusts_a_scan_that_never_ran_pii():
-    """MUST-FIRE. The residual hole the fix above does NOT close (task #78).
+def test_the_cached_path_refuses_a_scan_that_never_ran_pii():
+    """The primary path discriminates on detector COVERAGE, not just status (#78).
 
     ``_mask_inline`` is the FALLBACK. The path most requests take is
     ``_mask_from_segments``, which trusts cached spans whenever
@@ -489,36 +507,39 @@ def test_the_cached_path_still_trusts_a_scan_that_never_ran_pii():
     masker cannot probe for itself — the API process and the ``celery-redaction``
     worker load different models, so "can I load Presidio here" answers a
     different question from "did the detector that produced these spans have it".
-    Closing it needs durable per-file **detector coverage**, which is a schema
-    change.
+    Closing it needed durable per-file **detector coverage**, which arrived as
+    ``media_file.redaction_coverage`` (v391). ``uncovered_detectors`` now sits
+    beside the status check, and a gap returns None so the chunk falls through to
+    ``_mask_inline`` — which runs the detector here and now, and fails closed.
 
-    **This test asserts the hazard, not the desired behaviour**, exactly like the
-    guard it replaces. This fixture is a DONE file with no recorded PII coverage,
-    so any fail-closed implementation of #78 must withhold it — when that lands,
-    this goes RED. Delete it then and assert the chunk is withheld. Do not "fix"
-    it by relaxing the assertion.
+    The subject is the **requesting user's** policy, not the file owner's: one
+    turn retrieves across a library of shared recordings with no single owner.
+    That is the opposite of ``llm_guard``, deliberately.
     """
+    # A REAL phone number, not the old 555-1234. Presidio does not recognise a
+    # 7-digit fragment, so the previous version of this guard passed whether the
+    # cached path or the inline path ran — it asserted the hazard with a string
+    # that could not demonstrate it either way.
+    leaky = "my number is 555-867-5309"
     segment = SimpleNamespace(
-        text="my number is 555-1234",
+        text=leaky,
         redactions=None,  # the scan cached nothing for PII because it never looked
         words=None,
     )
-    db = _db_with("done", [segment])
+    # DONE, but the scan ran without `pii` — the exact state v391 records.
+    db = _db_with("done", [segment], coverage=["profanity", "toxicity"])
 
     with patch(
         "app.services.redaction.config.resolve_effective_config",
         return_value=_real_cfg({"pii"}),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(db, [_chunk(leaky)], user_id=1)
 
-    assert masked[0].content == "my number is 555-1234", (
-        "the cached path now discriminates on detector coverage — #78 landed, so "
-        "delete this guard and assert the chunk is WITHHELD instead"
+    assert "555-867-5309" not in masked[0].content, (
+        "the cached path trusted a scan whose PII detector never ran: the raw "
+        "number reached the prompt with was_masked=True"
     )
-    assert masked[0].was_masked is True, (
-        "and it still claims to have masked it, which is what makes this a leak "
-        "rather than a visible failure"
-    )
+    assert masked[0].was_masked is True
 
 
 def test_unresolvable_policy_fails_closed():

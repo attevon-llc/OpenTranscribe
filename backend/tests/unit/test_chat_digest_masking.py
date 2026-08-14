@@ -114,11 +114,29 @@ def _facts_db(sentences, *, status="completed", segment_batches=None):
     db = MagicMock()
     digest_payload = {"sections": [{"index": 0, "sentences": sentences}]}
 
-    def _query(target):
+    # *targets, not one: the scan probe selects four columns (id, status,
+    # redaction_coverage, language) so it can answer the v391 coverage gate as
+    # well as the status check. A single-arg signature raises TypeError inside
+    # the caller's try/except and every section is withheld — a stub failure
+    # that reads exactly like the fail-closed behaviour under test.
+    def _query(*targets):
+        # Each target stringified SEPARATELY. `str(targets)` on the tuple calls
+        # repr() on its elements, and InstrumentedAttribute has no custom repr —
+        # so the key becomes "<sqlalchemy...object at 0x7f...>" and matches
+        # nothing. Every probe then fell to the segment branch and the caller
+        # reported "no cached provenance", which is indistinguishable from the
+        # fail-closed path it was supposed to be testing.
+        key = " ".join(str(t) for t in targets)
         result = MagicMock()
-        if "redaction_status" in str(target):
+        if "redaction_status" in key:
             result.filter.return_value.scalar.return_value = resolved_status
-        elif "digest" in str(target):
+            result.filter.return_value.first.return_value = SimpleNamespace(
+                id=1,
+                redaction_status=resolved_status,
+                redaction_coverage=None,  # pre-v391 row: trusted, so the gate stays open
+                language="en",
+            )
+        elif "digest" in key:
             result.filter.return_value.first.return_value = (digest_payload,)
         else:
             ordered = result.filter.return_value.order_by.return_value
@@ -145,6 +163,12 @@ def test_the_chunk_path_over_discloses_a_digest():
     from app.core import constants as C  # noqa: N812
 
     status_q.filter.return_value.scalar.return_value = C.REDACTION_STATUS_DONE
+    status_q.filter.return_value.first.return_value = SimpleNamespace(
+        id=1,
+        redaction_status=C.REDACTION_STATUS_DONE,
+        redaction_coverage=None,  # pre-v391 row: trusted, so the coverage gate stays open
+        language="en",
+    )
     seg_q = MagicMock()
     seg_q.filter.return_value.order_by.return_value.all.return_value = list(segments.values())
     db.query.side_effect = [status_q, seg_q]

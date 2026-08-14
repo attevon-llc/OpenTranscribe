@@ -430,11 +430,16 @@ erDiagram
 
 ### OpenSearch Indices
 
-OpenSearch is used for full-text search and vector similarity operations. The system maintains four primary indices:
+OpenSearch is used for full-text search and vector similarity operations. The system maintains three primary indices:
 
 1. **transcripts** - Full-text and semantic search on transcriptions
 2. **speakers** - Voice embedding storage and similarity matching (both individual speakers and profiles)
-3. **transcript_summaries** - AI-generated summaries with structured data
+3. **transcript_chunks** - the chat/RAG plane (chunk documents plus, since index v6, `doc_type: "digest"` sections)
+
+> **Retired: `transcript_summaries`** (#67). AI summaries lived here *and* in
+> `media_file.summary_data`; the column was always what the file page rendered, and grounding for
+> chat moved to the digest plane above. Nothing writes or reads the index now. An upgraded
+> deployment still has it on disk — see the operator note in the AI Summary flow below.
 
 **Key Implementation Notes:**
 - PostgreSQL stores relational data and references OpenSearch document IDs
@@ -555,7 +560,7 @@ The application uses a multi-tier storage architecture optimized for different d
    - Metadata → PostgreSQL `media_file` table
    - Transcription → PostgreSQL `transcript_segment` table + OpenSearch `transcripts` index
    - Speaker embeddings → OpenSearch `speakers` index (referenced from PostgreSQL `speaker` table)
-   - AI summary → OpenSearch `transcript_summaries` index (ID stored in PostgreSQL)
+   - AI summary → PostgreSQL `media_file.summary_data` (the only copy since #67)
 
 2. **Speaker Identification**:
    - Speaker instance → PostgreSQL `speaker` table
@@ -660,11 +665,23 @@ graph TB
    - Formats transcript with speaker info
    - Calls LLM service (OpenAI/Claude/vLLM/Ollama)
    - Parses structured JSON response
-   - Stores summary → OpenSearch (transcript_summaries index)
-   - Updates media_file.summary_opensearch_id → PostgreSQL
+   - Stores summary → PostgreSQL `media_file.summary_data`
 5. WebSocket notifies UI
-6. UI fetches summary from OpenSearch
+6. UI fetches summary from `GET /api/files/{uuid}/summary` (PostgreSQL)
 ```
+
+**Operator note for deployments upgraded across #67.** The retired `transcript_summaries` index
+is not deleted for you: dropping it is data loss and a migration must never do that on the
+operator's behalf. Nothing writes it, file deletion and GDPR erasure still sweep it, and
+`GET /api/admin/data-integrity/counts` reports whether it still exists and how many documents
+remain. When that count is acceptable to lose, delete it once by hand:
+
+```bash
+curl -X DELETE "http://localhost:5180/transcript_summaries"
+```
+
+`media_file.summary_opensearch_id` is left in place for the same reason — it is a dead pointer
+that drains as summaries are regenerated, not a column worth a destructive migration.
 
 ## File Locations
 
@@ -672,4 +689,3 @@ graph TB
 - **SQLAlchemy Models**: [backend/app/models/](../backend/app/models/)
 - **Pydantic Schemas**: [backend/app/schemas/](../backend/app/schemas/)
 - **OpenSearch Service**: [backend/app/services/opensearch_service.py](../backend/app/services/opensearch_service.py)
-- **Summary Service**: [backend/app/services/opensearch_summary_service.py](../backend/app/services/opensearch_summary_service.py)

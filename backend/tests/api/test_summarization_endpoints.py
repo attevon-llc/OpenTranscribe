@@ -6,8 +6,12 @@ Covers ``summarization.py`` (mounted at ``/api/files`` + ``/api/files/...``):
 - ``GET    /api/files/{uuid}/summary``            (get; no-summary 404)
 - ``DELETE /api/files/{uuid}/summary``            (delete; no-summary 404)
 - ``POST   /api/files/{uuid}/identify-speakers``  (LLM speaker-id)
-- ``POST   /api/files/search``                    (envelope)
 - ``GET    /api/files/analytics``                 (handler removed — still 422, shadowed)
+
+``POST /api/files/search`` used to be covered here. It searched the retired
+``transcript_summaries`` OpenSearch index and was unmounted with it (#67); the
+404 and the wider retirement are pinned in
+``tests/unit/test_transcript_summaries_index_retired.py``.
 
 This stack has NO LLM provider configured, so the live default for the
 LLM-gated endpoints is the 503 unconfigured path — that is the primary thing we
@@ -138,7 +142,7 @@ def test_get_summary_other_user_403(client, other_user_auth_headers, normal_user
 
 
 def test_get_summary_none_available_404(client, user_token_headers, normal_user, db_session):
-    """A file with no summary in OpenSearch or PostgreSQL is a 404."""
+    """A file with no ``summary_data`` is a 404."""
     mf = _make_file(db_session, normal_user)
     response = client.get(f"/api/files/{mf.uuid}/summary", headers=user_token_headers)
     assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -147,14 +151,18 @@ def test_get_summary_none_available_404(client, user_token_headers, normal_user,
     )
 
 
-def test_get_summary_postgres_fallback(client, user_token_headers, normal_user, db_session):
-    """When summary_data exists in PostgreSQL it is returned (source=postgresql)."""
+def test_get_summary_reads_the_postgres_column(client, user_token_headers, normal_user, db_session):
+    """``media_file.summary_data`` is the source, and since #67 the only one.
+
+    This used to be titled "postgres fallback" and could not distinguish the
+    column from the ``transcript_summaries`` copy the handler preferred: whether
+    OpenSearch was reachable changed which store answered, and both held the same
+    dict, so the assertion passed either way.
+    """
     mf = _make_file(db_session, normal_user)
     mf.summary_data = {"bluf": "A short summary."}
     db_session.commit()
     response = client.get(f"/api/files/{mf.uuid}/summary", headers=user_token_headers)
-    # OpenSearch may or may not be reachable; either it has no doc (→ PG fallback,
-    # source=postgresql) or returns the same data. Pin the success + PG fallback.
     assert response.status_code == status.HTTP_200_OK
     body = response.json()
     assert body["file_id"] == str(mf.uuid)
@@ -239,24 +247,8 @@ def test_identify_speakers_other_user_403(client, other_user_auth_headers, norma
 
 
 # ---------------------------------------------------------------------------
-# POST /search  +  GET /analytics  (OpenSearch-backed envelopes)
+# GET /analytics  (never-mounted, permanently shadowed)
 # ---------------------------------------------------------------------------
-
-
-def test_search_summaries_unauthorized(client):
-    response = client.post("/api/files/search", json={"query": "x"})
-    assert response.status_code == status.HTTP_401_UNAUTHORIZED
-
-
-def test_search_summaries_envelope(client, user_token_headers):
-    """Returns the search envelope (hits/total) for the calling user."""
-    response = client.post(
-        "/api/files/search", headers=user_token_headers, json={"query": "budget"}
-    )
-    assert response.status_code == status.HTTP_200_OK
-    body = response.json()
-    assert "hits" in body and "total" in body
-    assert body["query"] == "budget"
 
 
 def test_analytics_path_shadowed_by_file_detail_route(client, user_token_headers):

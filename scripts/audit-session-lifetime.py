@@ -190,9 +190,11 @@ RULES: tuple[Rule, ...] = (
         'session-search-engine',
         frozenset(
             {
-                'index_summary',
-                'delete_summary',
-                'get_max_version',
+                # (``index_summary`` / ``delete_summary`` / ``get_max_version`` were
+                # here for the retired ``transcript_summaries`` index, #67. Two of
+                # those names no longer exist anywhere; ``delete_summary`` now names
+                # a Postgres-only endpoint handler, so keeping it would make this
+                # detector fire on a call that touches no search engine.)
                 'reindex_transcript',
                 'store_profile_embedding_v4',
                 'bulk_add_speaker_embeddings_v4',

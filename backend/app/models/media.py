@@ -21,6 +21,7 @@ from sqlalchemy import text
 # ``sqlalchemy.text`` inside that class body. The alias is the only way to reach
 # the SQL construct from there.
 from sqlalchemy import text as sa_text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
@@ -94,9 +95,13 @@ class MediaFile(Base):
     summary_data: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True
     )  # Complete structured AI summary (flexible format)
-    summary_opensearch_id: Mapped[str | None] = mapped_column(
-        String, nullable=True
-    )  # OpenSearch document ID for summary
+    # Vestigial (#67): a document id in the retired ``transcript_summaries`` index.
+    # Nothing sets it any more — ``summary_data`` above is the only copy of a
+    # summary — but existing rows on an upgraded deployment still carry one, so
+    # readers tolerate it and the clear paths (regenerate / reprocess / delete)
+    # drain it. Kept rather than dropped because a migration that removes it is a
+    # destructive change to user rows for no functional gain.
+    summary_opensearch_id: Mapped[str | None] = mapped_column(String, nullable=True)
     summary_status: Mapped[str | None] = mapped_column(
         String, default="pending", nullable=True
     )  # pending, processing, completed, failed, not_configured, disabled
@@ -114,6 +119,13 @@ class MediaFile(Base):
     redaction_model_version: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # Detector model version that produced the cached spans (for upgrade re-index)
+    # Which detectors the cached spans actually REFLECT. `redaction_status = done` says
+    # the scan finished, not that every detector ran: an unavailable one is reported as
+    # skipped and still reaches `done` (see detectors/DetectorUnavailableError). Without
+    # this, a read path could mask nothing, report success, and send unexamined PII to a
+    # provider. NULL = scanned before v391, coverage unknown — see
+    # `services/redaction/coverage.py` for why that is trusted rather than refused.
+    redaction_coverage: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     # Client-declared content fingerprint of the source the user selected — the
     # file itself for a plain upload, the SOURCE VIDEO for client-extracted audio.
     # imohash (32 hex) since issue #342; SHA-256 (64 hex) on rows predating it.

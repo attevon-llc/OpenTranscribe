@@ -131,7 +131,7 @@ OpenSearch Cluster
 │  │ Indices                                                    │ │
 │  │  - transcripts: Full transcripts with embeddings          │ │
 │  │  - speakers: Speaker embeddings for voice fingerprinting  │ │
-│  │  - transcript_summaries: AI-generated summaries           │ │
+│  │  - transcript_chunks: chat/RAG chunk + digest plane       │ │
 │  │  - topic_suggestions: Auto-generated topics              │ │
 │  └────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
@@ -959,7 +959,6 @@ class Settings:
     # Index names
     OPENSEARCH_TRANSCRIPT_INDEX: str = "transcripts"
     OPENSEARCH_SPEAKER_INDEX: str = "speakers"
-    OPENSEARCH_SUMMARY_INDEX: str = "transcript_summaries"
 
     # Neural search
     OPENSEARCH_NEURAL_SEARCH_ENABLED: bool = True

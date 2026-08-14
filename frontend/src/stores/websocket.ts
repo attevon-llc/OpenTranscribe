@@ -71,7 +71,6 @@ export interface NotificationData {
   message?: string;
   progress?: number;
   summary?: string;
-  summary_opensearch_id?: string;
   auto_applied_count?: number;
   suggested_count?: number;
   skipped_detectors?: string[];

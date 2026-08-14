@@ -99,8 +99,6 @@ from .summary import ActionItem
 from .summary import MajorTopic
 from .summary import SummaryData
 from .summary import SummaryResponse
-from .summary import SummarySearchHit
-from .summary import SummarySearchResponse
 from .summary import SummaryTaskStatus
 from .transcription_settings import TranscriptionSettings
 from .transcription_settings import TranscriptionSettingsUpdate
@@ -133,8 +131,6 @@ __all__ = [
     "SummaryResponse",
     "MajorTopic",
     "ActionItem",
-    "SummarySearchHit",
-    "SummarySearchResponse",
     "SummaryTaskStatus",
     "SummaryPromptBase",
     "SummaryPromptCreate",

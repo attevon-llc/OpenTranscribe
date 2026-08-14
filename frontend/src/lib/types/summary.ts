@@ -71,36 +71,18 @@ export interface SummaryData {
   [key: string]: any;
 }
 
+// `GET /files/{uuid}/summary`. The `source` / `document_id` / `created_at` /
+// `updated_at` fields named which document in the `transcript_summaries`
+// OpenSearch index answered; that index is retired (#67), the summary is served
+// from `media_file.summary_data`, and nothing here ever read them.
 export interface SummaryResponse {
   file_id: string; // UUID
   summary_data: SummaryData; // Flexible structure
-  source: 'opensearch' | 'postgresql';
-  document_id?: string;
-  created_at?: string;
-  updated_at?: string;
 }
 
-export interface SummarySearchHit {
-  document_id: string;
-  score: number;
-  file_id: string; // UUID
-  bluf: string;
-  brief_summary: string;
-  created_at: string;
-  provider: string;
-  model: string;
-  highlights?: {
-    [field: string]: string[];
-  };
-}
-
-export interface SummarySearchResponse {
-  hits: SummarySearchHit[];
-  total: number;
-  max_score?: number;
-  query: string;
-  filters: Record<string, any>;
-}
+// `SummarySearchHit` / `SummarySearchResponse` described `POST /api/files/search`,
+// which queried only that index and was unmounted with it (#67). They had no
+// importer outside this file.
 
 export interface SpeakerIdentificationResponse {
   message: string;

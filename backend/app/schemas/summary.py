@@ -101,54 +101,24 @@ class SummaryData(BaseModel):
 
 
 class SummaryResponse(BaseModel):
-    """Response containing flexible summary data"""
+    """Response containing flexible summary data.
+
+    ``source`` / ``document_id`` / ``created_at`` / ``updated_at`` used to name
+    *which OpenSearch document in ``transcript_summaries`` answered*. That index is
+    retired (#67), the summary lives only in ``media_file.summary_data``, and no
+    frontend ever read those fields — a ``source`` that can hold exactly one value
+    is a field pretending to be a choice.
+    """
 
     file_id: UUID
     filename: str | None = None
     summary_data: dict[str, Any]  # Flexible structure - accepts any JSON
-    source: Literal["opensearch", "postgresql"]
-    document_id: str | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
 
 
-class SummarySearchRequest(BaseModel):
-    query: str | None = None
-    speakers: list[str] | None = None
-    date_from: datetime | None = None
-    date_to: datetime | None = None
-    has_pending_actions: bool | None = None
-    size: int = 20
-    offset: int = 0
-
-
-class SummarySearchHit(BaseModel):
-    document_id: str
-    score: float
-    file_id: UUID  # Changed from int to UUID
-    bluf: str
-    brief_summary: str
-    created_at: str
-    provider: str
-    model: str
-    highlights: dict[str, list[str]] | None = None
-
-
-class SummarySearchResponse(BaseModel):
-    hits: list[SummarySearchHit]
-    total: int
-    max_score: float | None = None
-    query: str | None = None
-    filters: dict[str, Any]
-
-
-class SummaryAnalyticsResponse(BaseModel):
-    total_summaries: int
-    speaker_stats: list[dict[str, Any]]
-    action_items_trend: list[dict[str, Any]]
-    common_topics: list[dict[str, Any]]
-    summary_statistics: dict[str, Any]
-    provider_usage: list[dict[str, Any]]
+# NOTE: ``SummarySearchRequest`` / ``SummarySearchHit`` / ``SummarySearchResponse``
+# and ``SummaryAnalyticsResponse`` were removed here. They shaped
+# ``POST /api/files/search`` and the never-mounted ``GET /analytics``, both of which
+# queried the retired ``transcript_summaries`` index (#67) and nothing else.
 
 
 class SpeakerIdentificationResponse(BaseModel):

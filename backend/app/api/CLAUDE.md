@@ -49,7 +49,9 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 - Responses carry **pre-formatted display fields** built by `services/formatting_service.py`
   (`formatted_duration`, `display_status`, `resolved_speaker_name`, …). The SPA renders them.
 - Read surfaces mask transcript text at read time via `services/redaction/spans.py`; owner
-  reveal is `?redact=false` and is audited (`files/crud.py`, `files/subtitles.py`).
+  reveal is `?redact=false`. `files/crud.py` audits it (`transcript.view_unredacted`);
+  **`files/subtitles.py` does not** — an owner can download their originals with no audit
+  event, which this file claimed otherwise until it was checked.
 - **Owner-scoped listings go through `PermissionService.get_accessible_file_ids_subquery`** —
   it already covers owned files plus collections shared directly and via groups, and applies the
   org tenant gate. Never write a second sharing rule beside it.
@@ -74,8 +76,7 @@ both before believing it:
   is a redundant second rendering of the same data. Same shape for `/files/{uuid}/retry` vs the
   `POST /my-files/{uuid}/retry` the SPA actually calls (`user_files.py`).
 
-**Method matters and several of these are not GET.** `POST /files/search`,
-`DELETE /tags/cleanup`, `DELETE /custom-vocabulary/all`, `PUT /search/models/neural/active`,
+**Method matters and several of these are not GET.** `DELETE /tags/cleanup`, `DELETE /custom-vocabulary/all`, `PUT /search/models/neural/active`,
 `DELETE /admin/users/{uuid}`, `DELETE /files/{uuid}/force`, and DELETE-only
 `/speakers/combined-migration/progress` + `/speaker-attributes/migration/progress`. Generating
 a client that assumes GET from the route table will collect 405s.
@@ -143,9 +144,8 @@ Shaped for a script or agent rather than a screen.
 |---|---|
 | `GET /files/{uuid}/info` | Lightweight identity/size/duration/language/status with no transcript — the integration read |
 | `GET /files/{uuid}/status-detail` | Status + stuck detection + retry counters + `active_task_id`. Mixed shape: also carries English `recommendations` |
-| `POST /files/search` | **POST.** Full-text search over generated summaries in OpenSearch (BLUF / decisions / action items) with `<mark>` highlighting |
 | `GET /files/supported-formats` | Static `{"subtitle_formats": [...]}`. **No auth dependency at all** — the only ungated route in that router |
-| `GET /files/{uuid}/subtitles` | Renders srt/webvtt/txt as an attachment with redaction applied; the player builds its own VTT client-side, hence no SPA caller |
+| `GET /files/{uuid}/subtitles` | Renders srt/webvtt/txt as an attachment with redaction applied; the player builds its own VTT client-side, hence no SPA caller. **409 while the file's redaction scan is incomplete** — see Gotchas |
 | `GET /usage/me` · `GET /usage/me/daily` | Per-user LLM token/cost reporting. **Core, not a cloud seam** — `usage.py`'s docstring is explicit that a self-hoster paying an OpenAI bill is the intended reader. Reporting only; quotas and billing are the part that was carved out. The only usage UI in this repo is the `isCloudEdition`-gated managed-edition stub, so the self-host panel these promise does not exist yet |
 | `GET /prompts/by-content-type/{type}` | System + user prompts for one of 5 content types |
 | `GET /search/filters` | Available filter facets from OpenSearch aggs; degrades to empty lists when the index is absent |
@@ -325,6 +325,24 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   Note the sibling `GET /system/stats` spells the same list `gpus` and is what the SPA reads —
   `/admin/stats`' `gpu` has no frontend consumer, so don't "align" the names without checking the
   runbooks.
+- **`GET /files/{uuid}/subtitles` is a transcript read surface and is gated like one.**
+  `SubtitleService` masks with the segment's **cached** spans (`seg.redactions or []`), so on a
+  file whose detection scan never ran, is queued, or is mid-flight there is nothing to apply and
+  the export writes the **raw transcript to disk** — with nothing in the file to say the scan was
+  incomplete. The endpoint therefore calls the same `_redaction_pending` (`files/crud.py`) the
+  detail and segments endpoints use, and answers **409** when it returns True. Not 503: that code
+  is already taken by `_resolve_subtitle_redaction`'s "the policy could not be resolved", and the
+  two are different problems (the server is fine; the *file* is not ready). Deliberately not an
+  on-demand inline scan either — a cold PII model load is ~10 s on a download request, and the
+  page the file would be exported from already answers "not yet".
+  ⚠️ **Two sibling paths are NOT covered and are a wider hole**: `build_subtitle_archive` (the
+  `POST /files/bulk-export/prepare` ZIP, via `tasks/media_download.py`) and
+  `video_processing_service.generate_srt_content` (burned-in subtitles) call the generators with
+  **no redaction config at all**, so they export unmasked regardless of policy — including under
+  the admin `force_export_redacted` floor. `cfg=None` means "redaction disabled" to
+  `_redact_segments_inplace`, which is indistinguishable from "the caller forgot", so the 409
+  gate does not fire there either. Fixing it needs the caller's config threaded through the
+  Celery signature; it is a separate change from this gate.
 - **Both SSE streams go check → subscribe → re-check.** `download_stream` (`files/__init__.py`)
   and `bulk_export_stream` (`files/subtitles.py`) read their readiness signal, subscribe to the
   pub/sub channel, then read it **again**. A single check-then-subscribe loses a worker

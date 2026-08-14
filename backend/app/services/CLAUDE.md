@@ -15,8 +15,11 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   speaker/voiceprint kNN plane + file docs; a package since #284 A3.5 — `client` owns the
   singleton, `aliases`/`indices`/`repair` the index plane, `speaker_*` the documents, and
   `matching`/`profiles`/`clusters` the kNN reads. Its `__init__` re-exports every name the
-  old flat module exported), `opensearch_summary_service.py`, `opensearch_snapshot.py`,
-  `similarity_service.py`.
+  old flat module exported), `opensearch_snapshot.py`, `similarity_service.py`.
+  (`opensearch_summary_service.py` is **gone** — the `transcript_summaries` index it owned
+  is retired, #67. A summary lives in `media_file.summary_data` and nowhere else; the only
+  code that still names that index purges legacy documents, in `file_cleanup_service.py`
+  and `tasks/opensearch_integrity_task.py`.)
 - **Speakers** — `speaker_*_service.py`, `profile_embedding_service.py`,
   `smart_speaker_suggestion_service.py`, `optimized_embedding_service.py`,
   `embedding_mode_service.py`, `metadata_speaker_extractor.py`.

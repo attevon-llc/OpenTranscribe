@@ -159,7 +159,7 @@ declare -A MODULE_TESTS=(
     # distinction it drew -- a target can report survivors because nothing tests the
     # code, not because the tests are weak -- is now checked mechanically by the
     # coverage pre-flight rather than remembered in a comment.
-    [session]="tests/unit/test_session_lifetime.py tests/unit/test_auth_state_degradation.py tests/unit/test_oidc_state_single_use.py"
+    [session]="tests/unit/test_session_lifetime.py tests/unit/test_auth_state_degradation.py tests/unit/test_oidc_state_single_use.py tests/unit/test_session_survivor_mutants.py"
 )
 
 

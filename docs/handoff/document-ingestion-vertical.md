@@ -111,6 +111,44 @@ hours. So:
 - `./opentr.sh data-paths` prints the resolved LIVE paths. A `.opentranscribe-live-data` marker
   in a directory means **do not delete**.
 
+## Your isolated stack — set this up first
+
+This worktree already has a `.env` copied in (no sudo required; it is your own tree).
+
+```bash
+cd /mnt/nvm/repos/transcribe-app/.claude/worktrees/doc-ingest
+
+# Your own compose project + volumes. Offset 200; the RAG lane is on 100.
+./opentr.sh start dev --fresh docingest --port-offset 200
+
+# Tests: borrow the main checkout's interpreter, point at YOUR postgres (5176 + 200)
+POSTGRES_PORT=5376 \
+OT_TEST_PYTHON=/mnt/nvm/repos/transcribe-app/backend/venv/bin/python \
+  ./scripts/run-backend-tests.sh
+
+./opentr.sh status --fresh docingest     # health
+./opentr.sh logs --fresh docingest backend
+./opentr.sh stop --fresh docingest       # stops, KEEPS volumes
+```
+
+Your resolved ports: frontend **5373**, backend **5374**, postgres **5376**, redis 5377,
+minio 5378, opensearch **5380**.
+
+**Why `--fresh` and not the plain dev stack:** a fresh deployment runs in its own
+`otfresh-docingest-*` compose project with its own named volumes, and the NAS/bind overlay is
+**never** loaded — so the real dataset cannot be touched. `--port-offset` works by exporting the
+`*_PORT` variables the compose files already read; never add a second `ports:` list, because
+compose *appends* them and you would republish the base port (issue #343).
+
+> ⚠️ **Never point anything at `otfresh-rag403` (ports 52xx).** That stack holds the
+> 210,908-document index the RAG/chat lane is measuring against. Re-indexing it is a multi-hour
+> setback for another lane. Corrupting *your own* dev database is fine — test data is cheap to
+> recreate — but a large sample-dataset ingestion is the one genuinely expensive thing here, so
+> prove any bulk path on `--limit 10` before you run it wide.
+
+`./opentr.sh data-paths` prints the resolved LIVE data paths. A `.opentranscribe-live-data`
+marker file in a directory means you are looking at live data: do not delete.
+
 ## Git discipline
 
 ```bash

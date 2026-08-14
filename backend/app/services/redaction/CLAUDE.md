@@ -55,7 +55,8 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
 - Worker `tasks/redaction_task.py` (`redaction.detect`, `redaction.reindex_all`) on the
   `redaction` queue → the `celery-redaction` container (the only `PRELOAD_REDACTION_MODELS=true`).
 - Read surfaces: `formatting_service::_apply_redaction`, `subtitle_service` (SRT/VTT/TXT),
-  `utils/transcript_builders` (redact-before-LLM), `search/hybrid_search_service` (snippets).
+  `utils/transcript_builders` (redact-before-LLM), `search/snippet_redaction` (search snippets
+  — see the gotcha below).
 - **Redact-before-LLM is centralized in `llm_guard.py`.** Every path that ships transcript text
   to a provider resolves its config through `resolve_llm_masking(db, media_file)` — summarization,
   speaker identification and topic extraction (chat has its own, see below). Do not call
@@ -170,10 +171,11 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   (issue #74).** `celery-redaction` is still the only `PRELOAD_REDACTION_MODELS=true`
   container — that statement, and the identical ones in `tasks/CLAUDE.md` and
   `.env.example`, stay true; the API warms by a **different mechanism and loads only
-  Presidio**, never the ~500 MB toxicity weights. Three live paths reach a detector in the
+  Presidio**, never the ~500 MB toxicity weights. **Four** live paths reach a detector in the
   API process: `chat/redactor._mask_inline` (reached *more* often since `v392`, because a
-  scan that skipped `pii` now falls through to it), `chat/output_redactor`, and
-  `redetect_edited_segment`. Measured in a fresh process: **9.9 s** to build the
+  scan that skipped `pii` now falls through to it), `chat/output_redactor`,
+  `redetect_edited_segment`, and — since #86 — `search/snippet_redaction`, which is the only
+  one on an ordinary GET. Measured in a fresh process: **9.9 s** to build the
   `AnalyzerEngine`, 0.2 s for the first `analyze()`, 0.01 s warm — the cost is the
   **build**, not inference. First `_mask_inline` went **9.927 s → 0.016 s**; the lifespan
   pays **0.53 ms** (`Thread.start()`).
@@ -241,6 +243,29 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   `formatting_service` to flag a segment in the UI; the `toxicity` *category*'s maskable spans
   come from the `llm` detector, which keeps all four categories. Pinned by
   `tests/redaction/test_scan_coverage.py` (the storm control drives the real edit endpoint).
+- **⚠️ There are now FOUR live detector callers in the API process, and the newest is a
+  SEARCH request** (`search/snippet_redaction`, issue #86). Search snippets come from the
+  `transcript_chunks` index, which stores transcript text UNREDACTED, so they carry PII; the
+  masker there ran `profanity` + `custom` only and its docstring asserted "this path never
+  carries PII spans", so a user whose policy masked **only** `pii` intersected to the empty
+  set and read every snippet verbatim. Three consequences for this package:
+  - **It is a live-detection path, not a cached-span one, so `redaction_status` is
+    irrelevant to it.** No stored offset addresses a snippet: a snippet is a highlighted,
+    HTML-escaped, re-fragmented rendering of `transcript_segment.text`. Do not "fix" it by
+    adding a status gate — there is nothing cached for the gate to protect.
+  - **⚠️ It must call `detect_segment_spans` ONCE PER SNIPPET.** Batching a page's snippets
+    into shared `analyze()` calls is 2.2-3.0x faster and loses PII: `en_core_web_sm` reports
+    each distinct `PERSON` **once per document**, so a repeated name is found in the first
+    fragment and nowhere else. Measured through the live API, the batched version left the
+    name in clear in 31 of the 32 snippets containing it. This is a property of the detector
+    in this package, so it bites any future caller that batches — including anything that
+    tries to speed up `detect_and_store`.
+  - **The category gate is on `enabled_categories`, not on `enabled`.** Every other inline
+    masker runs `detection_config_for_all()` — all detectors, whatever the user masks —
+    because it is about to hand text to a provider. A search page is 0.8-2.1 s of Presidio
+    and happens on every uncached query, so here a profanity-only user must not load it at
+    all. That is the one deliberate divergence from `redaction_is_in_use`'s reasoning above,
+    which stays correct for warm-up: the warm-up still fires for any redacting deployment.
 - PII is detected and cached but **not** in `DEFAULT_REDACTION_CATEGORIES` (too aggressive on
   conversation); `ORGANIZATION` is excluded from default entities (spaCy over-tags acronyms).
 - Profanity and PII are **English-only** (`REDACTION_*_LANGUAGES`); unsupported languages come

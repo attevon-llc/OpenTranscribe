@@ -26,8 +26,22 @@ from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import opensearch_client
 from app.services.search.indexing_service import ensure_chunks_index_exists
 from app.services.search.indexing_service import ensure_search_pipeline_exists
+from app.services.search.snippet_redaction import MASKABLE_CATEGORIES
+from app.services.search.snippet_redaction import mask_snippets
 
 logger = logging.getLogger(__name__)
+
+#: What a snippet becomes when its policy cannot be applied. Withholding the
+#: preview is a fail-closed choice: an unmasked one is a policy bypass, and the
+#: result itself (title, timestamps, ranking) is unaffected.
+WITHHELD_SNIPPET = "[redacted — masking unavailable]"
+
+
+def _withhold_snippets(occurrences: list) -> None:
+    """Replace every snippet with the withheld placeholder."""
+    for occ in occurrences:
+        occ.snippet = WITHHELD_SNIPPET
+
 
 # Module-level caches for index/pipeline existence checks
 _index_verified = False
@@ -636,12 +650,9 @@ class HybridSearchService:
             use_neural=use_neural,
         )
 
-        # Read-time content redaction of snippets (profanity + custom words). This is
-        # the cheap, model-free path that runs safely in the API process; PII masking
-        # of short snippets is not applied here (it needs the redaction worker's models)
-        # — the full transcript view + exports remain the enforced PII boundary.
-        # Applied before caching so the per-user cache (cache_key includes user_id)
-        # holds the masked version.
+        # Read-time content redaction of snippets, for whichever of PII / profanity /
+        # custom words this user's policy masks. Applied before caching so the
+        # per-user cache (cache_key includes user_id) holds the masked version.
         self._redact_snippets(result, user_id)
 
         # Cache the response — but NOT if it fell back to BM25-only due to
@@ -654,12 +665,40 @@ class HybridSearchService:
         return result
 
     def _redact_snippets(self, result: SearchResponse, user_id: int) -> None:
-        """Mask profanity/custom words in search snippets per the user's redaction config.
+        """Mask this page's snippets under the requesting user's redaction policy.
 
-        HTML-safe: the wordlist regex only matches word-boundary alphanumeric runs, never
-        ``<``/``>``, so ``<mark>`` highlight tags are preserved. Label style is used for
-        previews regardless of the user's chosen style.
+        Snippets come out of the ``transcript_chunks`` index, which stores
+        transcript text **UNREDACTED**, so they carry whatever the recording
+        carried — including PII. This used to mask ``profanity`` and ``custom``
+        only, on the stated grounds that "this path never carries PII spans";
+        that was false in the way that matters, and a user whose policy masks
+        **only** ``pii`` therefore had every snippet rendered verbatim, on a
+        surface that spans collection and group shares (issue #86).
+
+        The masking itself lives in ``snippet_redaction`` — ``<mark>`` handling,
+        batching and the detector gate are all its problem. This method owns two
+        decisions:
+
+        - **Where the session ends.** The config read closes its session *before*
+          any detector runs. A ~1 s Presidio pass inside an open transaction
+          holds ``ACCESS SHARE`` for its duration and queues every ``ALTER
+          TABLE`` behind it — the defect ``scripts/audit-session-lifetime.py``
+          exists to catch.
+        - **Failing CLOSED, once.** Neither an unresolvable config nor an
+          unavailable detector may render an unmasked preview, so both withhold
+          the page's snippet text. Results, counts and ranking are unaffected.
+          Which detector failures count is
+          ``redaction.config.blocking_detector_failures``, not a second rule
+          written here: a broken Presidio must not cost their snippets to a user
+          who never asked for PII masking.
         """
+        occurrences = [
+            occ
+            for hit in getattr(result, "results", []) or []
+            for occ in getattr(hit, "occurrences", []) or []
+            if getattr(occ, "snippet", None)
+        ]
+
         try:
             from app.db.session_utils import session_scope
             from app.services.redaction.config import resolve_effective_config
@@ -667,44 +706,24 @@ class HybridSearchService:
             with session_scope() as db:
                 cfg = resolve_effective_config(db, user_id)
         except Exception:  # noqa: BLE001 — never break search on redaction failure
-            # FAIL CLOSED. Returning here rendered every snippet unmasked. The
-            # scope is narrow (profanity + custom wordlist only — this path
-            # never carries PII spans), but it is still a policy bypass, so drop
-            # the snippets rather than show unmasked ones. Results, counts and
-            # ranking are unaffected; only the preview text is withheld.
             logger.exception("Snippet redaction config unavailable; withholding snippet text")
-            for hit in getattr(result, "results", []) or []:
-                for occ in getattr(hit, "occurrences", []) or []:
-                    if getattr(occ, "snippet", None):
-                        occ.snippet = "[redacted — masking unavailable]"
+            _withhold_snippets(occurrences)
             return
 
-        if not cfg.enabled:
+        if not occurrences:
             return
-        cats = cfg.enabled_categories & {"profanity", "custom"}
-        if not cats:
+        if not cfg.enabled or not (set(cfg.enabled_categories) & MASKABLE_CATEGORIES):
             return
 
-        from app.services.redaction.detectors import wordlist
-        from app.services.redaction.spans import apply_redactions
+        try:
+            masked = mask_snippets([occ.snippet for occ in occurrences], cfg)
+        except Exception:  # noqa: BLE001 — never break search on redaction failure
+            logger.exception("Snippet masking failed; withholding snippet text")
+            _withhold_snippets(occurrences)
+            return
 
-        for hit in getattr(result, "results", []) or []:
-            for occ in getattr(hit, "occurrences", []) or []:
-                snippet = getattr(occ, "snippet", "") or ""
-                if not snippet:
-                    continue
-                spans = []
-                if "profanity" in cats:
-                    spans += wordlist.find_profanity_spans(snippet, None, cfg.allowlist)
-                if "custom" in cats and cfg.custom_words:
-                    spans += wordlist.find_custom_spans(
-                        snippet, cfg.custom_words, None, cfg.allowlist
-                    )
-                if spans:
-                    masked, _ = apply_redactions(
-                        snippet, spans, style="label", enabled_categories=cats
-                    )
-                    occ.snippet = masked
+        for occ, text in zip(occurrences, masked, strict=True):
+            occ.snippet = text
 
     def _check_neural_search_available(self) -> bool:
         """Check if neural search is available in OpenSearch.

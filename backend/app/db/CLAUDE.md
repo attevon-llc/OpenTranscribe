@@ -100,6 +100,15 @@ Two things keep it from coming back, and neither replaces the other:
 - **`scripts/audit-session-lifetime.py`** — 9 AST detectors, wired into `.pre-commit-config.yaml`
   (self-test first) and its own phase in `run-integration-tests.sh`. Allowlist entries need a
   written reason and a **stale entry fails the run**, so an exemption cannot outlive its subject.
+  ⚠️ **A session opened any way `_SESSION_OPENERS` does not name is INVISIBLE to all nine
+  detectors** — not under-reported, unreachable. When the chat turn was phased (`e486f948`)
+  `answer_aggregation` began taking a `session_factory` instead of a `Session`, and neither
+  `with session_factory() as db:` nor its `_short_session` wrapper was recognised, so that
+  subsystem scored 0 findings because nothing could fire in it. Both names are in the set now.
+  Adding a new way to open a session means adding its name here **and** a must-fire plus a
+  must-stay-clean self-test case — then verifying by MUTATION: delete the name and the
+  self-test must break. Reading the code is not verification; a name that matches nothing
+  looks exactly like a clean subsystem.
 - **`DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`** (default 5 min, 0 disables) — the server-side backstop.
   `base.py:build_libpq_options` puts `idle_in_transaction_session_timeout` in the shared engine's
   `connect_args`, so Postgres terminates a backend holding an open transaction and running no

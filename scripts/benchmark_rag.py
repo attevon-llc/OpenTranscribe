@@ -43,6 +43,169 @@ DEFAULT_BASELINE_ROOT = BACKEND / 'tests' / 'eval' / 'baselines'
 DEFAULT_DATA_DIR = Path('/mnt/nas/opentranscribe-benchmarks')
 
 
+#: The fusion flags, in one place, because "was this arm explicitly selected?"
+#: is answered by whether ANY of them was passed — and a flag added to the
+#: parser but forgotten here would silently read as the configured default.
+FUSION_FLAGS = (
+    'fusion',
+    'rank_constant',
+    'normalization_technique',
+    'combination_technique',
+    'combination_weights',
+)
+
+
+def _add_fusion_arguments(parser: argparse.ArgumentParser) -> None:
+    """The #363 A/B arm selector.
+
+    Every flag defaults to ``None`` rather than to the shipped value, so
+    "measure whatever this deployment is configured for" and "measure RRF at
+    k=30" stay distinguishable in the results file. A sweep arm that cannot be
+    told apart from the default is how a table of numbers loses its labels.
+    """
+    group = parser.add_argument_group(
+        'fusion (#363)',
+        'Hybrid fusion strategy for THIS run. Pass nothing to measure the '
+        "deployment's configured default. The pipeline id is derived from these "
+        'parameters, so two arms are never aliased onto one pipeline.',
+    )
+    group.add_argument(
+        '--fusion',
+        default=None,
+        choices=('rrf', 'normalization'),
+        help='rrf = score-ranker-processor; normalization = normalization-processor',
+    )
+    group.add_argument(
+        '--rank-constant', type=int, default=None, help='RRF only. #363 asks for 30 and 60.'
+    )
+    group.add_argument(
+        '--normalization-technique',
+        default=None,
+        choices=('min_max', 'l2', 'z_score'),
+        help='normalization only: how each leg is normalised before combining',
+    )
+    group.add_argument(
+        '--combination-technique',
+        default=None,
+        choices=('arithmetic_mean', 'geometric_mean', 'harmonic_mean'),
+        help='normalization only: how the normalised legs are combined',
+    )
+    group.add_argument(
+        '--combination-weights',
+        default=None,
+        help='normalization only: per-leg weights, e.g. "0.7,0.3" (BM25 leg first). '
+        'Encoded into the pipeline id as integer percent; more precision is refused.',
+    )
+
+
+def _build_fusion(args):
+    """Resolve the fusion flags into a ``FusionConfig``, or None for the default.
+
+    Unspecified parameters inherit from the *configured* default rather than
+    from a second set of literals here — one source of truth for what
+    "unspecified" means, and it keeps ``--fusion rrf`` alone meaning "RRF as
+    this deployment configures it".
+
+    Args:
+        args: Parsed CLI namespace.
+
+    Returns:
+        The requested config, or None when no fusion flag was passed.
+
+    Raises:
+        SystemExit: If the requested combination is one OpenSearch would reject.
+            Refused here rather than at the wire, because a pipeline that was
+            never created makes the next search run UNFUSED — a plausible
+            number, not an error.
+    """
+    if all(getattr(args, name) is None for name in FUSION_FLAGS):
+        return None
+
+    from app.services.search.fusion import FusionConfig, FusionConfigError, parse_weights
+
+    base = FusionConfig.default()
+    try:
+        return FusionConfig(
+            strategy=args.fusion or base.strategy,
+            rank_constant=(
+                base.rank_constant if args.rank_constant is None else args.rank_constant
+            ),
+            normalization_technique=(args.normalization_technique or base.normalization_technique),
+            combination_technique=(args.combination_technique or base.combination_technique),
+            weights=(
+                base.weights
+                if args.combination_weights is None
+                else parse_weights(args.combination_weights)
+            ),
+        )
+    except FusionConfigError as exc:
+        raise SystemExit(f'Unusable --fusion configuration: {exc}') from exc
+
+
+def _latency_summary(samples: list[float], workers: int) -> dict[str, Any]:
+    """Quantiles of the per-query retrieval cost, for the Phase 7 p95 gate.
+
+    Lives in ``runinfo.json``, never in ``metrics.json``: a duration cannot be
+    byte-identical across runs, and the results document's determinism is what
+    makes an arm-to-arm difference attributable.
+
+    ``concurrency`` is recorded beside the numbers because these are measured
+    under the harness's own worker pool, so they are a **comparable cost signal
+    between arms**, not a user-facing latency figure. Reading them as the
+    latter is the mistake the field is named against.
+
+    Args:
+        samples: Per-call durations in milliseconds.
+        workers: Concurrent retrieval requests in flight during the run.
+
+    Returns:
+        Quantiles plus the concurrency they were taken at.
+    """
+    if not samples:
+        return {'samples': 0}
+    ordered = sorted(samples)
+
+    def _q(fraction: float) -> float:
+        # Nearest-rank: no interpolation, so the value reported is one that was
+        # actually observed.
+        index = min(len(ordered) - 1, max(0, int(round(fraction * len(ordered))) - 1))
+        return round(ordered[index], 1)
+
+    return {
+        'samples': len(ordered),
+        'concurrency': workers,
+        'p50': _q(0.50),
+        'p95': _q(0.95),
+        'p99': _q(0.99),
+        'max': round(ordered[-1], 1),
+        'mean': round(sum(ordered) / len(ordered), 1),
+    }
+
+
+def _build_budget(args) -> dict[str, int]:
+    """The 48/12/4 sweep's overrides, omitting anything the caller did not set.
+
+    Omitted rather than defaulted here so the harness's own defaults — which
+    are pinned to the shipped ``chat.rag.*`` values — remain the single source
+    of what "the production budget" is.
+
+    Args:
+        args: Parsed CLI namespace.
+
+    Returns:
+        Keyword overrides for ``RetrievalConfig``.
+    """
+    return {
+        name: value
+        for name, value in (
+            ('final_chunks', args.final_chunks),
+            ('max_per_file', args.max_per_file),
+            ('rerank_max_pairs', args.rerank_max_pairs),
+        )
+        if value is not None
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -75,7 +238,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--search-mode', default='hybrid', choices=('hybrid', 'semantic', 'keyword')
     )
+    _add_fusion_arguments(parser)
     parser.add_argument('--size', type=int, default=48, help='Candidate pool per query')
+    parser.add_argument(
+        '--final-chunks',
+        type=int,
+        default=None,
+        help='rerank stage: chunks that reach the prompt. Default: the shipped '
+        'chat.rag.final_chunks. One third of the 48/12/4 budget sweep.',
+    )
+    parser.add_argument(
+        '--max-per-file',
+        type=int,
+        default=None,
+        help='rerank stage: ceiling on chunks contributed by any one recording. '
+        'Default: the shipped chat.rag.max_chunks_per_file.',
+    )
+    parser.add_argument(
+        '--rerank-max-pairs',
+        type=int,
+        default=None,
+        help='rerank stage: pairs the cross-encoder scores. Default: the shipped '
+        'chat.rag.rerank_max_pairs.',
+    )
     parser.add_argument(
         '--workers',
         type=int,
@@ -296,6 +481,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
         search_mode=args.search_mode,
         scope=args.scope,
         workers=args.workers,
+        fusion=_build_fusion(args),
+        **_build_budget(args),
     )
 
     client = get_opensearch_client()
@@ -458,12 +645,14 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
     result = None
     route_records: dict[str, runner_mod.RouteRecord] = {}
     digest_leg = None
+    retrieval_ms: list[float] = []
     if all_queries:
         run = runner_mod.execute(
             all_queries,
             user_id=user_id,
             config=config,
             records=route_records if config.stage == 'route' else None,
+            retrieval_ms=retrieval_ms,
         )
         result = metrics_mod.evaluate(qrels, run)
         rows = report_mod.build_rows(all_queries, result)
@@ -517,6 +706,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
                 'elapsed_seconds': round(elapsed, 1),
                 'target': target,
                 'settle': settled,
+                'retrieval_latency_ms': _latency_summary(retrieval_ms, config.workers),
             },
             indent=2,
         )

@@ -291,6 +291,45 @@ per-process cache and returns the id to attach.
   `2/(k+1)` = 0.0645 at k=30 and the normalization arm measurably exceeds it (0.500 on the
   210,908-document eval index), with the same-pipeline-twice run as the control.
 
+### MEASURED: RRF stays. Ten arms, zero both-corpus wins (#363 closed, #403 Stage 5)
+
+**The default did not change, and the sweep is why — not inertia.** `scripts/benchmark_rag.py`
+takes `--fusion` / `--rank-constant` / `--normalization-technique` / `--combination-technique` /
+`--combination-weights`, and ten arms were measured over 1,651 queries against one unchanged
+index (`indexing.total` 825,795 throughout). Headline nDCG@10 on the `all` row, control
+`rrf-30-default` = 0.0983 (QMSum) / 0.2952 (synthetic):
+
+| arm | QMSum | synthetic |
+|---|---|---|
+| `rrf-60` | −0.4% | **+2.1%** |
+| `norm-z_score-arithmetic_mean` | **+1.5%** | −23.3% |
+| `norm-min_max-arithmetic_mean` | **+0.8%** | −18.8% |
+| `norm-min_max-arithmetic_mean` w70/30 | **+1.4%** | −49.1% |
+| `norm-min_max-geometric_mean` | −15.5% | −67.2% |
+| `norm-min_max-harmonic_mean` | −16.4% | −69.7% |
+
+Four things to know before re-opening this:
+
+- **OpenSearch's BEIR result (normalization +3.86% nDCG@10 over RRF) does not transfer.** Best
+  case here is +1.5% on one corpus while losing 23% on the other. #363 was opened on the
+  hypothesis that a BEIR average says nothing about transcript retrieval; it does not.
+- **Geometric and harmonic mean are structurally wrong for this index, not merely worse.** Both
+  are zero if either input is zero, and a normalised single-leg hit scores 0 on the leg that
+  missed it — so they *annihilate* single-leg hits where RRF still gives them `1/(k+rank)`.
+  Speaker-turn chunks average 17 words, so single-leg hits are the common case. Only worth
+  retesting if chunk granularity changes.
+- **The two corpora want opposite leg weights** — BM25-heavy is the best arm on QMSum lookup and
+  the second-worst on synthetic lookup; vector-heavy is the exact mirror. Either would pass a
+  single-corpus gate and regress the other half. This is the concrete case D5's both-tier rule
+  exists for.
+- **No arm is measurably faster or slower.** p50 ≈ 178 ms, p95 ≈ 260–274 ms for all of them. One
+  run put `rrf-60` at +50% p95; it did **not** reproduce across two interleaved re-measurements
+  and was machine noise. Do not quote a single latency run.
+
+Full method, every arm's command line, the negative results with their margins, and the
+reranker licence gate: `docs-site/docs/developer-guide/rag-evaluation.md` → "Stage 5 — the
+retrieval tuning bake-off".
+
 ## Switching the embedding model (#437) — one implementation, and it fans out
 
 **Clearing a cache re-embeds nothing.** Two vectors from two different models occupy the same

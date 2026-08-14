@@ -64,8 +64,12 @@ class FusionConfigError(ValueError):
     """
 
 
-def _parse_weights(raw: str) -> tuple[float, ...] | None:
-    """Parse ``SEARCH_COMBINATION_WEIGHTS`` (``"0.7,0.3"``) into a tuple.
+def parse_weights(raw: str) -> tuple[float, ...] | None:
+    """Parse a weights string (``"0.7,0.3"``) into a tuple.
+
+    Public because the sweep harness parses the same format from a CLI flag:
+    a second parser for one wire format is how ``"0.7, 0.3"`` comes to mean two
+    different things depending on which entry point read it.
 
     Args:
         raw: Comma-separated weights, or an empty/blank string for "unweighted".
@@ -180,7 +184,7 @@ class FusionConfig:
             rank_constant=settings.SEARCH_RRF_RANK_CONSTANT,
             normalization_technique=settings.SEARCH_NORMALIZATION_TECHNIQUE,
             combination_technique=settings.SEARCH_COMBINATION_TECHNIQUE,
-            weights=_parse_weights(settings.SEARCH_COMBINATION_WEIGHTS),
+            weights=parse_weights(settings.SEARCH_COMBINATION_WEIGHTS),
         )
 
     def slug(self) -> str:

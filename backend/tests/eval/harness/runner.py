@@ -27,11 +27,16 @@ quietly make the no-LLM path unmeasurable.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from tests.eval.harness.corpora import EvalQuery
 from tests.eval.harness.metrics import RunDoc
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from app.services.search.fusion import FusionConfig
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +52,17 @@ STAGES = ("retrieve", "rerank", "route")
 #:                 corpus-wide number cannot tell them apart.
 SCOPES = ("corpus", "gold-files")
 
-#: Candidate pool the harness always asks for, independent of admin settings.
-#: Phase 7 sweeps ``final_chunks``; pinning the pool here is what keeps
-#: phase-over-phase deltas comparable (addendum §4, fixed-k metrics).
+#: The production retrieval budget — candidate pool, what reaches the prompt,
+#: and the per-file ceiling. These are Stage 5's ``48/12/4`` sweep axes, and they
+#: are the **shipped** values (``core/constants.DEFAULT_CHAT_RAG_*``): a rerank
+#: measurement taken at some other budget describes a deployment nobody runs.
+#: Restated rather than imported because ``app.core.constants`` pulls
+#: ``faster_whisper`` in at import time and these logic tests must stay
+#: stack-free; ``test_eval_fusion_arm`` fails if the two ever drift apart.
 DEFAULT_SIZE = 48
+DEFAULT_FINAL_CHUNKS = 12
+DEFAULT_MAX_PER_FILE = 4
+DEFAULT_RERANK_MAX_PAIRS = 50
 
 
 @dataclass
@@ -65,9 +77,54 @@ class RetrievalConfig:
     search_mode: str = "hybrid"
     scope: str = "corpus"
     workers: int = 4
-    max_per_file: int = 3
-    final_chunks: int = 20
-    rerank_max_pairs: int = 50
+    max_per_file: int = DEFAULT_MAX_PER_FILE
+    final_chunks: int = DEFAULT_FINAL_CHUNKS
+    rerank_max_pairs: int = DEFAULT_RERANK_MAX_PAIRS
+    #: Hybrid fusion strategy for every retrieval call in this run (#363).
+    #: ``None`` means the deployment's configured default, which is a different
+    #: statement from naming ``rrf`` explicitly and is recorded as such.
+    fusion: FusionConfig | None = None
+
+    def fusion_provenance(self) -> dict[str, object]:
+        """The fusion arm this run used, resolved and named.
+
+        A sweep whose results files do not identify their own arm is a table of
+        numbers nobody can attribute, and the arms differ by one CLI flag. So
+        the *resolved* strategy is recorded — never the flag — together with the
+        OpenSearch pipeline id it derives, which is the thing actually attached
+        to every query and therefore the only unforgeable label.
+
+        Only the parameters that apply to the strategy are emitted, mirroring
+        ``FusionConfig.slug()``: ``rank_constant`` is inert under
+        ``normalization`` and recording it there would describe a knob the run
+        did not turn.
+
+        Returns:
+            A JSON-safe description, or a reason string when the app layer is
+            not importable (logic tests run without a stack).
+        """
+        try:
+            from app.services.search.fusion import RRF
+            from app.services.search.fusion import resolve_fusion
+            from app.services.search.fusion import search_pipeline_id
+        except Exception as exc:  # noqa: BLE001 - recorded, never fatal
+            return {"resolved": "UNRESOLVED", "reason": str(exc)}
+
+        cfg = resolve_fusion(self.fusion)
+        described: dict[str, object] = {
+            "strategy": cfg.strategy,
+            "pipeline_id": search_pipeline_id(cfg),
+            # "the deployment default happened to be RRF" and "this arm asked
+            # for RRF" are different claims about the same numbers.
+            "selected_explicitly": self.fusion is not None,
+        }
+        if cfg.strategy == RRF:
+            described["rank_constant"] = cfg.rank_constant
+        else:
+            described["normalization_technique"] = cfg.normalization_technique
+            described["combination_technique"] = cfg.combination_technique
+            described["weights"] = list(cfg.weights) if cfg.weights is not None else None
+        return described
 
     def as_dict(self) -> dict[str, object]:
         base: dict[str, object] = {
@@ -77,6 +134,7 @@ class RetrievalConfig:
             "search_mode": self.search_mode,
             "scope": self.scope,
             "workers": self.workers,
+            "fusion": self.fusion_provenance(),
             "scope_note": (
                 "corpus-wide, file_uuids=None"
                 if self.scope == "corpus"
@@ -149,7 +207,7 @@ def _ordered_files(hits) -> tuple[str, ...]:
     return tuple(seen)
 
 
-def _to_run_docs(hits) -> list[RunDoc]:
+def _to_run_docs(hits, *, preserve_order: bool = False) -> list[RunDoc]:
     """Retrieved hits as run documents, labelled by the plane they came from.
 
     A negative ``chunk_index`` is the digest sentinel (index v6), so it is also
@@ -161,13 +219,45 @@ def _to_run_docs(hits) -> list[RunDoc]:
     Stage 3 the chat filter excludes digests, so this branch should not fire;
     it exists because it will in Stage 4, and because a mislabelled document is
     worse than an excluded one.
+
+    ⚠️ **``preserve_order`` exists because scoring the rerank stage by SCORE
+    measured a pipeline that does not exist.** ``normalise_run`` re-sorts every
+    run by ``-score``, which is right for ``retrieve`` (OpenSearch already
+    returns score order, and the re-sort only makes the tie-break id-blind) and
+    **wrong** after ``diversity_sample``, whose whole job is to interleave files
+    so one recording cannot crowd out the rest. Re-sorting by score undoes that
+    interleaving, so the metric saw a score-ordered list the model is never
+    given. Measured over 60 synthetic queries: the re-sort changed the prompt
+    order for **40**, and made the scored top-5 depend on ``final_chunks`` — a
+    parameter that provably cannot move the prompt's top-5, since
+    ``diversity_sample`` is prefix-invariant in its ``cap`` — for **23**.
+
+    A second defect went with it. ``rerank`` writes the cross-encoder score back
+    onto its first ``max_pairs`` hits and leaves the tail carrying RRF scores;
+    cross-encoder scores are routinely **negative** while RRF scores are small
+    positives, so with ``candidate_pool > rerank_max_pairs`` a score sort floats
+    the *un-reranked* tail above every reranked document. Production never had
+    this bug — ``diversity_sample`` walks list order — it was purely the
+    harness reading a ranking out of two incomparable score scales.
+
+    With ``preserve_order`` the score is derived from the hit's **position**, so
+    the metric ranks exactly what the prompt receives and no tie can occur.
+
+    Args:
+        hits: Chunk hits in the order the stage produced them.
+        preserve_order: Score by rank rather than by the hit's own score. Set
+            for stages whose output order is deliberate rather than score-sorted.
+
+    Returns:
+        Run documents in input order.
     """
     from app.services.ingest_artifacts.index_mapping import DOC_TYPE_CHUNK
     from app.services.ingest_artifacts.index_mapping import DOC_TYPE_DIGEST
     from app.services.ingest_artifacts.index_mapping import digest_document_id
 
+    total = len(hits)
     docs: list[RunDoc] = []
-    for hit in hits:
+    for position, hit in enumerate(hits):
         chunk_index = int(hit.chunk_index)
         is_digest = chunk_index < 0
         docs.append(
@@ -177,7 +267,7 @@ def _to_run_docs(hits) -> list[RunDoc]:
                     if is_digest
                     else f"{hit.file_uuid}_{chunk_index}"
                 ),
-                score=float(hit.score),
+                score=float(total - position) if preserve_order else float(hit.score),
                 doc_type=DOC_TYPE_DIGEST if is_digest else DOC_TYPE_CHUNK,
                 file_uuid=hit.file_uuid,
                 chunk_index=chunk_index,
@@ -194,6 +284,7 @@ def execute(
     organization_id: int | None = None,
     progress_every: int = 200,
     records: dict[str, RouteRecord] | None = None,
+    retrieval_ms: list[float] | None = None,
 ) -> dict[str, list[RunDoc]]:
     """Run every query through the production retriever.
 
@@ -207,6 +298,15 @@ def execute(
             :class:`RouteRecord` per query. Follows the same shape as
             ``prompting.build_messages(diagnostics=...)`` rather than changing
             the return type, so every existing caller is unaffected.
+        retrieval_ms: Optional out-parameter collecting the wall-clock cost of
+            each ``retrieve_chunks`` call. #383 Phase 7 gates each A/B on
+            "nDCG@10, recall and **p95 added latency**", and a fusion processor
+            is exactly the kind of change that can buy relevance with time.
+            Only the chunk leg is timed: a rerank or digest cost belongs to
+            those stages, not to the fusion arm under test. The caller writes
+            it to ``runinfo.json``, never to ``metrics.json`` — a duration
+            cannot be byte-identical across runs, and the deterministic
+            document must stay deterministic.
 
     Returns:
         ``query_id -> [RunDoc]`` in provider-ranked order. A query that retrieved
@@ -263,6 +363,7 @@ def execute(
         scope: list[str] | None = None
         if config.scope == "gold-files":
             scope = sorted({span.file_uuid for span in query.spans})
+        started = time.perf_counter()
         hits = retrieve_chunks(
             query.text,
             user_id=user_id,
@@ -270,7 +371,12 @@ def execute(
             file_uuids=scope,
             size=config.size,
             search_mode=config.search_mode,
+            fusion=config.fusion,
         )
+        if retrieval_ms is not None:
+            # list.append is atomic under the GIL, so the worker pool needs no
+            # lock; order is not meaningful anyway — the caller takes quantiles.
+            retrieval_ms.append((time.perf_counter() - started) * 1000.0)
         if router is not None:
             # The production router, on the production question text. No
             # harness-side classifier: a second copy would drift, and then the
@@ -285,6 +391,7 @@ def execute(
                     file_uuids=scope,
                     size=config.digest_size,
                     search_mode=config.search_mode,
+                    fusion=config.fusion,
                 )
             assert records is not None  # guaranteed by the guard above
             records[query.query_id] = RouteRecord(
@@ -296,7 +403,9 @@ def execute(
         if reranker is not None:
             hits = reranker(query.text, hits, max_pairs=config.rerank_max_pairs)
             hits = diversity_sample(hits, max_per_file=config.max_per_file, cap=config.final_chunks)
-        return query.query_id, _to_run_docs(hits)
+        # Only the rerank stage produces an order that is deliberate rather than
+        # score-sorted; see `_to_run_docs`.
+        return query.query_id, _to_run_docs(hits, preserve_order=reranker is not None)
 
     run: dict[str, list[RunDoc]] = {}
     results: Iterable[tuple[str, list[RunDoc]]]

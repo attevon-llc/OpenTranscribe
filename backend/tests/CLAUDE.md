@@ -381,7 +381,7 @@ corpus with ground truth known by construction; `harness/` measures.
 | `harness/qrels.py` | gold turn ranges -> chunk-level graded judgements. **One adapter for QMSum and the synthetic tier** — they share the inclusive turn-range convention deliberately |
 | `harness/corpora.py` | queries + gold, remapped onto the uuids the app indexed, with the licence tier attached |
 | `harness/index_reader.py` | **settle** (complete + stable + nothing predating the run) -> refresh -> force-merge -> refresh, then read chunks back |
-| `harness/runner.py` | drives `retrieve_chunks` (the chat path), never `/api/search` |
+| `harness/runner.py` | drives `retrieve_chunks` (the chat path), never `/api/search`; owns the per-request fusion arm and the 48/12/4 budget |
 | `harness/report.py` | the deterministic results document and metric table |
 
 ```bash
@@ -408,6 +408,24 @@ Three things to know before touching it:
   alone are satisfied by a reindex that has been dispatched and has not started, which certifies
   the old index as the new one. Polling the chunk total alone produced phantom deltas of
   223 / 357 / 591 chunks over an unchanged corpus.
+- **A sweep arm is one flag combination, and the results file names it.** `--fusion` /
+  `--rank-constant` / `--normalization-technique` / `--combination-technique` /
+  `--combination-weights` select the hybrid fusion strategy per run (#363); `--size` /
+  `--final-chunks` / `--max-per-file` / `--rerank-max-pairs` are the 48/12/4 budget, whose
+  defaults are pinned to the shipped `chat.rag.*` constants by `test_eval_fusion_arm.py` (they
+  used to be 20/3 — every `--stage rerank` number described a deployment nobody runs).
+  `metrics.json`'s `retrieval.fusion` records the *resolved* strategy and pipeline id, so no arm
+  can be unattributable; per-query latency lands in `runinfo.json`, outside the deterministic
+  claim. **Never quote a single latency run** — one put `rrf-60` at +50% p95 and it did not
+  reproduce.
+- ⚠️ **`--stage rerank` is scored in the order the PROMPT receives, not by score.**
+  `_to_run_docs(..., preserve_order=True)`. `normalise_run` re-sorts by `-score`, which is right
+  for `retrieve` and wrong after `diversity_sample`, whose job is to interleave files — the
+  re-sort undid that for **40 of 60** measured queries and made the scored top-5 depend on
+  `final_chunks`, which provably cannot move the prompt's top-5. It also let the *un-reranked*
+  tail outrank reranked hits whenever `candidate_pool > rerank_max_pairs`, because `rerank`
+  leaves the tail on RRF scores (small positives) while cross-encoder scores are routinely
+  negative. Production was never affected; it walks list order.
 - **`scripts/reindex_eval_corpus.py`** dispatches the real `reindex_transcripts` task and waits
   for the settle. Two consecutive runs must report the same chunk count; that equality is the
   precondition for any phase-over-phase delta, and it is measured, not assumed.

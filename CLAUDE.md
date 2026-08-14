@@ -195,11 +195,18 @@ Host venv for pre-commit / mypy / ruff / bandit / pytest outside Docker lives at
 
 **Every commit must pass pre-commit — no exceptions, and never `--no-verify`.** The hooks are installed locally and are the *same* checks CI runs in its "Run Pre-commit Hooks" job, so anything you skip locally fails the PR instead. Running `ruff` (or any single hook) by hand is **not** a substitute: mypy and prettier catch a different class of problem and have both blocked a PR that was otherwise green locally.
 
-Run the full suite before committing — not just the staged subset:
+Run the full suite before committing — not just the staged subset, and through the
+concurrency-guarded wrapper, not bare `pre-commit` (issue #434):
 
 ```bash
-backend/venv/bin/pre-commit run --all-files    # the gate CI mirrors
+scripts/safe-precommit.sh run --all-files    # the gate CI mirrors
 ```
+
+The wrapper (`scripts/safe-precommit.sh`, self-test: `scripts/safe-precommit-selftest.sh`)
+refuses to start — rather than racing silently — when either of the two *known* unsafe
+overlaps below is already in flight: another `safe-precommit.sh` run, or a
+`run-mutation-tests.sh --verify` run holding one of its per-module locks. **It does not make
+an arbitrary unstaged edit elsewhere in the tree safe** — only those two specific hazards.
 
 > ⚠️ **NEVER run `pre-commit` OR `git commit` while anything else is writing to this
 > checkout.** Not `--all-files`, not `--files <paths>`, not a plain `git commit`. **All three
@@ -208,8 +215,10 @@ backend/venv/bin/pre-commit run --all-files    # the gate CI mirrors
 > the stash happens *before any hook runs* and covers the whole tree.
 >
 > This paragraph used to recommend `--files` or "just commit" as the safe alternative. **That
-> advice was wrong and caused the incident below.** There is no safe alternative; there is only
-> waiting for a quiet tree.
+> advice was wrong and caused the incident below.** There is no safe alternative for a tree with
+> unrelated unstaged work in progress; there is only waiting for a quiet tree. The wrapper above
+> catches the two overlaps that have actually bitten this repo — a second pre-commit run, and a
+> mutation `--verify` mutation left live — it is not a general fix for the hazard in this box.
 >
 > Three failure modes, all observed here:
 >

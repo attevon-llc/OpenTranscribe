@@ -139,7 +139,10 @@ module's whole suite, not just the tests you touched.
 
 - **Never `pre-commit run --all-files`** unless the tree is quiet. It stashes every unstaged
   change in the repo before any hook runs, regardless of what is staged. Nothing else should be
-  writing during this session — if something is, do not commit at all.
+  writing during this session — if something is, do not commit at all. Use
+  `scripts/safe-precommit.sh run --all-files` (issue #434) instead of the bare command — it
+  refuses to start rather than race when another pre-commit run or a `--verify` mutation run is
+  already in flight, which is exactly the overlap a `--verify` batch in this same session risks.
 - Hooks see the **staged** snapshot: `git add`, then further edits, means mypy/ruff check the
   stale copy and report errors you already fixed. Re-`git add` before committing.
 - Never `--no-verify`. If a hook fails, fix the finding. If a detector fires on a new test,

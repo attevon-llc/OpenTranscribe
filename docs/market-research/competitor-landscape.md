@@ -385,6 +385,63 @@ OpenTranscribe capability.)*
 
 ---
 
+## A Second Competitive Front: Multi-Source Knowledge & RAG Tools (New, August 2026)
+
+Documents-as-first-class-citizens (issue #362, in progress on `feat/doc-ingestion`) puts
+OpenTranscribe into a second market none of the tables above cover: tools that do retrieval-augmented
+chat over a mixed corpus of sources. No Tier 3 transcription competitor above competes here — this is
+a different buyer intent ("find something across everything I have," not "transcribe this
+recording") — but three products define the pattern worth measuring against.
+
+### Google NotebookLM
+
+| Attribute | Detail |
+|---|---|
+| **Owner** | Google |
+| **Business model** | Free / bundled with Google One AI Premium |
+| **Self-hosting** | No (Google-hosted only) |
+
+Multi-source RAG done well: upload PDFs, Google Docs, websites, YouTube videos, and audio into a
+"notebook," get one chat interface over all of them, and every answer carries numbered citations that
+open the exact source — scrolled and highlighted to the cited passage — in a per-type viewer (PDF
+renders as PDF, a video shows its transcript). This is the closest existing UX precedent for
+OpenTranscribe's citation-jump requirement across the fused `transcript_chunks` v6 index (both
+`doc_type: chunk` and `doc_type: digest`, transcripts and documents ranked together via RRF).
+
+**What it does not have, and cannot get to**: no diarization, no per-speaker attribution, no
+organizational voice-fingerprint identity across a corpus, and it is not self-hostable — the same
+disqualifier that rules out every Tier 3 competitor above for regulated buyers. NotebookLM proves the
+citation-jump multi-source pattern works at consumer scale; it does not compete on the axis
+OpenTranscribe actually owns.
+
+### Obsidian / Roam Research / Logseq (UX pattern reference, not a direct competitor)
+
+Personal-knowledge-management tools whose defining feature is **bidirectional backlinks**: a link
+created once, in either direction, surfaces automatically on both linked notes ("Linked
+References"). No diarization, no audio ingestion as a first-class source, no team/enterprise
+retrieval — not a competitor in the buyer-intent sense, but the direct design precedent for how
+OpenTranscribe should implement document ↔ recording linking (see roadmap in
+`market-and-roadmap.md`) without inventing new UX vocabulary.
+
+### Dovetail / Grain (research-repository tools, closest adjacent category)
+
+Qualitative-research-repository tools: clips from interview recordings get organized into synthesized
+"insight" documents, with some cross-referencing between raw source and derived document. Closest
+existing analog to "recording ↔ supporting document" linking, but neither offers self-hosted
+deployment, neither does diarization at OpenTranscribe's accuracy, and neither treats arbitrary
+external documents (news articles, reports, case files) as first-class retrievable corpus members —
+Dovetail's "documents" are internal synthesis output, not ingested external sources.
+
+### The gap this second front confirms
+
+No product combines: (1) best-in-class diarization, (2) arbitrary external-document RAG at equal
+citation quality to the audio side, (3) one fused retrieval plane across both, (4) speaker attribution
+extended into text (a quote in a document resolved to the same speaker identity as a transcript
+segment), and (5) self-hosted deployment. OpenTranscribe is the only product attempting all five at
+once — see `market-and-roadmap.md`'s "Full-Product Vision" for the resulting positioning statement.
+
+---
+
 ## Self-Hosting Availability
 
 | Company | Self-hosting |

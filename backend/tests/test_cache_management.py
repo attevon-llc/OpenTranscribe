@@ -45,9 +45,33 @@ class TestDerivedCachePrefix:
 
     def test_video_cache_key_is_prefixed(self):
         svc = self._svc()
-        key = svc.generate_cache_key(1, "meeting.mp4", include_speakers=True)
+        key = svc.generate_cache_key(
+            1, "meeting.mp4", include_speakers=True, redaction_fingerprint=""
+        )
         assert key.startswith("derived/")
         assert key.endswith("_with_speakers.mp4")
+
+    def test_a_masking_policy_gets_its_own_cache_key(self):
+        """Burned-in text cannot be masked afterwards, so the key names the policy.
+
+        Sharing one key across policies is what let an already-cached unmasked render
+        keep being served after an admin turned ``force_export_redacted`` on (#85).
+        """
+        svc = self._svc()
+        unmasked = svc.generate_cache_key(
+            1, "meeting.mp4", include_speakers=True, redaction_fingerprint=""
+        )
+        masked = svc.generate_cache_key(
+            1, "meeting.mp4", include_speakers=True, redaction_fingerprint="abc123def456"
+        )
+        other_policy = svc.generate_cache_key(
+            1, "meeting.mp4", include_speakers=True, redaction_fingerprint="0123456789ab"
+        )
+        assert unmasked == "derived/meeting_with_speakers.mp4", (
+            "a deployment that masks nothing must keep its existing keys valid"
+        )
+        assert masked == "derived/meeting_with_speakers_rabc123def456.mp4"
+        assert len({unmasked, masked, other_policy}) == 3
 
     def test_audio_cache_keys_are_prefixed(self):
         svc = self._svc()
@@ -138,6 +162,23 @@ class TestClearCacheOnDelete:
             "delete_object",
             lambda bucket, key: deleted.append(key),
         )
+
+        # Policy-specific renders (#85) cannot be named by a pure function -- one file
+        # owns one video per redaction policy that ever rendered it -- so the sweep
+        # lists them. `talk_2_...` is a DIFFERENT file whose name shares the prefix.
+        class _Obj:
+            def __init__(self, name):
+                self.object_name = name
+
+        monkeypatch.setattr(
+            svc.minio_service,
+            "list_objects",
+            lambda bucket, prefix=None, recursive=False: [
+                _Obj("derived/talk_with_speakers_rdeadbeef1234.mp4"),
+                _Obj("derived/talk_no_speakers_r0123456789ab.mp4"),
+                _Obj("derived/talk_2_with_speakers_rfeedface5678.mp4"),
+            ],
+        )
         # `clear_cache_for_media_file` took a caller-owned Session and issued its five
         # MinIO deletes through it. It is gone; `clear_derived_cache` takes no session,
         # so the caller resolves the filename in a short read that closes first.
@@ -148,6 +189,13 @@ class TestClearCacheOnDelete:
         assert "derived/talk_with_speakers.mp4" in deleted
         assert "derived/talk_no_speakers.mp4" in deleted
         assert "derived/talk_audio_mp3.mp3" in deleted
+        # ...plus every masked render, or a deleted file leaves a video of its
+        # transcript behind in object storage.
+        assert "derived/talk_with_speakers_rdeadbeef1234.mp4" in deleted
+        assert "derived/talk_no_speakers_r0123456789ab.mp4" in deleted
+        assert "derived/talk_2_with_speakers_rfeedface5678.mp4" not in deleted, (
+            "the sweep must not delete a neighbouring file whose name shares the prefix"
+        )
         assert "derived/talk_audio_wav.wav" in deleted
         assert "derived/talk_audio_original" in deleted
 

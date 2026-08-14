@@ -639,11 +639,21 @@ def _audio_passthrough(db_file: MediaFile, mode: str) -> bool:
     )
 
 
-def _resolve_ready_download(db_file: MediaFile, mode: str) -> dict | None:
+def _resolve_ready_download(
+    db_file: MediaFile, mode: str, redaction_fingerprint: str = ""
+) -> dict | None:
     """Return ``{"url", "filename"}`` if the asset can be served now, else None.
 
     "Ready" means a direct passthrough (original bytes) or an already-cached derived
     asset — both yield an instant presigned URL with no ffmpeg work.
+
+    Args:
+        db_file: The media file.
+        mode: Download mode.
+        redaction_fingerprint: The CALLER's redaction policy digest (issue #85). It is
+            part of the burned-in-subtitle cache key, so a cache hit means "a video
+            masked under *your* policy exists" rather than "somebody once rendered this
+            file". Empty for audio modes and for policies that mask nothing.
     """
     from app.services.minio_service import MinIOService
     from app.services.minio_service import get_presigned_download_url
@@ -665,7 +675,12 @@ def _resolve_ready_download(db_file: MediaFile, mode: str) -> dict | None:
     if mode == "video_subtitles":
         if db_file.status != "completed":
             raise HTTPException(status_code=422, detail="Transcript is not ready yet.")
-        cache_key = service.generate_cache_key(db_file.id, filename, include_speakers=True)
+        cache_key = service.generate_cache_key(
+            db_file.id,
+            filename,
+            include_speakers=True,
+            redaction_fingerprint=redaction_fingerprint,
+        )
         if service.is_video_cached(cache_key):
             dl_name = f"{base_name}_with_subtitles.mp4"
             return {
@@ -686,12 +701,70 @@ def _resolve_ready_download(db_file: MediaFile, mode: str) -> dict | None:
     return None
 
 
-def _ensure_prepare_enqueued(db_file: MediaFile, user_id: int, mode: str) -> None:
-    """Queue the ffmpeg prep task at most once per (file, mode) in-flight window.
+def _download_redaction_variant(db: Session, db_file: MediaFile, user_id: int, mode: str) -> str:
+    """The caller's redaction fingerprint for a burned-in-subtitle download.
+
+    Only ``video_subtitles`` carries transcript text; every audio mode is the original
+    waveform and has no policy to apply, so they stay on the empty variant and their
+    cache keys, guard keys and events are byte-identical to before #85.
+
+    Refuses the download when the reader's policy masks this file and its detection
+    scan has not produced spans yet — burned-in text cannot be masked afterwards.
+
+    Raises:
+        HTTPException: 503 when the policy cannot be resolved, 409 while the file's
+            redaction scan is incomplete. The same two codes, for the same two
+            reasons, as ``GET /files/{uuid}/subtitles``.
+    """
+    if mode != "video_subtitles":
+        return ""
+    if db_file.status != "completed":
+        # There is no transcript yet, so there is nothing to mask and no render can be
+        # dispatched: `_resolve_ready_download` answers 422 ("Transcript is not ready
+        # yet") a few lines on. Reporting "redaction has not finished" for a file that
+        # has not been TRANSCRIBED would name the wrong problem.
+        return ""
+
+    from app.services.redaction.config import resolve_effective_config
+    from app.services.redaction.export_policy import export_masking_is_pending
+    from app.services.redaction.export_policy import export_policy_fingerprint
+
+    try:
+        cfg = resolve_effective_config(db, user_id)
+    except Exception as e:
+        # FAIL CLOSED, as the subtitle endpoint does: an unresolvable policy must not
+        # degrade to "no policy", which is exactly what produced the unmasked renders.
+        logger.exception("Failed to resolve redaction config; refusing the subtitle burn-in")
+        raise HTTPException(
+            status_code=503,
+            detail="Redaction policy is temporarily unavailable; download withheld.",
+        ) from e
+
+    if export_masking_is_pending(cfg, getattr(db_file, "redaction_status", None)):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Content redaction has not finished for this file, so its subtitles "
+                "could not be masked. Try again once detection completes."
+            ),
+        )
+    return export_policy_fingerprint(cfg)
+
+
+def _ensure_prepare_enqueued(
+    db_file: MediaFile, user_id: int, mode: str, variant: str = ""
+) -> None:
+    """Queue the ffmpeg prep task at most once per (file, mode, variant) window.
 
     A short-lived Redis NX guard collapses duplicate requests (double-click, a POST
     plus the SSE stream, multiple tabs) into a single worker task. Once cached, the
     ready path short-circuits before reaching here.
+
+    ``variant`` is the caller's redaction fingerprint (issue #85). Two readers whose
+    policies mask differently must NOT dedupe onto one build: the winner's render is
+    published to a channel both are listening on, and the loser would receive a video
+    masked under someone else's policy. It is ``""`` for audio and for unmasked
+    policies, so those guard keys are unchanged.
     """
     from app.core.redis import get_redis
     from app.services.download_events import download_prep_guard_key
@@ -699,7 +772,7 @@ def _ensure_prepare_enqueued(db_file: MediaFile, user_id: int, mode: str) -> Non
 
     # Shared with the worker, which RELEASES this key when it finishes -- the expiry
     # below is only a backstop. See release_download_prep_guard().
-    guard_key = download_prep_guard_key(db_file.id, mode)
+    guard_key = download_prep_guard_key(db_file.id, mode, variant)
     try:
         first = get_redis().set(guard_key, "1", nx=True, ex=900)
     except Exception:
@@ -708,7 +781,9 @@ def _ensure_prepare_enqueued(db_file: MediaFile, user_id: int, mode: str) -> Non
         logger.exception("Download-prepare dedup guard unavailable; dispatching anyway")
         first = True
     if first:
-        prepare_media_download_task.delay(file_id=db_file.id, user_id=user_id, mode=mode)
+        prepare_media_download_task.delay(
+            file_id=db_file.id, user_id=user_id, mode=mode, variant=variant
+        )
 
 
 @router.post("/{file_uuid}/prepare-download")
@@ -737,22 +812,25 @@ def prepare_download(
         db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
 
-    ready = _resolve_ready_download(db_file, mode)
+    variant = _download_redaction_variant(db, db_file, current_user.id, mode)
+
+    ready = _resolve_ready_download(db_file, mode, variant)
     if ready:
         return {"status": "ready", **ready}
 
-    _ensure_prepare_enqueued(db_file, current_user.id, mode)
+    _ensure_prepare_enqueued(db_file, current_user.id, mode, variant)
     return {"status": "processing", "file_id": str(db_file.uuid)}
 
 
-def _download_event_frame(data: dict, mode: str) -> tuple[str | None, bool]:
+def _download_event_frame(data: dict, mode: str, variant: str = "") -> tuple[str | None, bool]:
     """Map one download pub/sub event to an SSE frame.
 
     Returns:
-        ``(frame, terminal)`` — *frame* is None when the event is for another mode and
-        should be ignored; *terminal* means the stream should close after yielding it.
+        ``(frame, terminal)`` — *frame* is None when the event is for another mode or
+        another redaction variant and should be ignored; *terminal* means the stream
+        should close after yielding it.
     """
-    if data.get("mode") != mode:
+    if data.get("mode") != mode or data.get("variant", "") != variant:
         return None, False
     status = data.get("status")
     if status == "completed" and data.get("url"):
@@ -798,6 +876,9 @@ def download_stream(
         db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
     )
     user_id = current_user.id
+    # Resolved once, on the request thread, while the request's session is open: the
+    # generator below runs on the event loop and its DB work is threadpooled.
+    variant = _download_redaction_variant(db, db_file, user_id, mode)
 
     def sse(event: str, payload: dict) -> str:
         return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
@@ -810,7 +891,7 @@ def download_stream(
         every call goes through ``run_in_threadpool`` (issue #320).
         """
         try:
-            ready = _resolve_ready_download(db_file, mode)
+            ready = _resolve_ready_download(db_file, mode, variant)
         except HTTPException as e:
             return sse("error", {"message": e.detail})
         return sse("ready", ready) if ready else None
@@ -850,7 +931,7 @@ def download_stream(
             # Threadpooled because it is a synchronous Redis SETNX plus a Celery
             # dispatch (another blocking broker round trip) — running it inline
             # stalled the loop for every other request (issue #320).
-            await run_in_threadpool(_ensure_prepare_enqueued, db_file, user_id, mode)
+            await run_in_threadpool(_ensure_prepare_enqueued, db_file, user_id, mode, variant)
             yield sse("progress", {"message": "Preparing your download…", "progress": 0})
 
             while True:
@@ -871,7 +952,7 @@ def download_stream(
                 except Exception:
                     logger.debug("Skipping malformed download event payload")
                     continue
-                frame, terminal = _download_event_frame(data, mode)
+                frame, terminal = _download_event_frame(data, mode, variant)
                 if frame is None:
                     continue
                 yield frame

@@ -32,6 +32,7 @@ from app.services.subtitle_service import SubtitleService
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 from .crud import _redaction_pending
+from .crud import audit_unredacted_reveal
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -66,6 +67,12 @@ def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool):
         return cfg, set()  # forced — never reveal on export
     can_reveal = (media_file.user_id == current_user.id) or current_user.is_admin
     reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)
+    # Audit the reveal, exactly as the transcript read does (issue #85). This path
+    # wrote NO audit event: an owner could download the unredacted original to disk —
+    # the more consequential of the two, because the file leaves the application —
+    # with nothing in the compliance trail. `api/CLAUDE.md` claimed both were audited
+    # until it was checked; the doc was corrected first and this is the code half.
+    audit_unredacted_reveal(media_file, current_user, reveal, surface="subtitle_export")
     return cfg, reveal
 
 
@@ -245,6 +252,10 @@ def prepare_bulk_export(
     delivered to the browser as a presigned URL over the ``bulk-export-stream`` SSE
     channel — the API never proxies the archive bytes. UUIDs are permission-filtered
     here so the worker can trust the resolved file ids without re-authorizing.
+
+    Redaction is applied on the worker with **this** user's effective policy; files
+    whose detection scan has not finished are skipped there rather than exported raw
+    (the single-file endpoint answers 409 for the same condition).
     """
     if not request.file_uuids:
         raise HTTPException(status_code=400, detail="No file UUIDs provided")
@@ -289,6 +300,10 @@ def prepare_bulk_export(
         subtitle_format=request.subtitle_format,
         include_speakers=request.include_speakers,
         job_id=job_id,
+        # The subject whose redaction policy masks the archive — the REQUESTING user,
+        # matching the single-file export beside it (issue #85). The worker re-resolves
+        # the policy from this id at run time; nothing about the policy is sent here.
+        user_id=current_user.id,
     )
     return {"status": "processing", "job_id": job_id}
 

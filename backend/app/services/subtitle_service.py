@@ -128,14 +128,31 @@ class SubtitleService:
 
         Mutating the loaded ORM objects' ``text`` makes every downstream subtitle
         formatter (overlap merge, long-segment split) inherit the masked text without
-        touching each extraction site. The DB row is never updated (no commit here).
+        touching each extraction site.
+
+        ⚠️ **Each segment is EXPUNGED from its session before it is mutated**, and that
+        is not tidiness. "The DB row is never updated (no commit here)" was true only of
+        the API request path, where ``get_db`` closes without committing. Both export
+        workers run inside ``session_scope``, which **commits on exit** — so wiring
+        masking into them (issue #85) would have flushed the masked text back into
+        ``transcript_segment.text`` and destroyed the original transcript, the one thing
+        this whole subsystem promises never to do (read-time masking over cached spans).
+        Detaching makes the guarantee structural instead of a property of whichever
+        caller happens to hold the session. Only already-loaded column values are read
+        downstream (``speaker_id`` and a separately-queried speaker map, never
+        ``seg.speaker``), so nothing lazy-loads off a detached instance.
         """
         if redaction_cfg is None or not getattr(redaction_cfg, "enabled", False):
             return
 
+        from sqlalchemy.orm import object_session
+
         from app.services.redaction.service import RedactionService
 
         for seg in segments:
+            session = object_session(seg)
+            if session is not None:
+                session.expunge(seg)
             try:
                 masked, _ = RedactionService.mask_segment(
                     str(seg.text or ""),
@@ -663,8 +680,22 @@ class SubtitleService:
         file_specs: list[tuple[int, str]],
         subtitle_format: str,
         include_speakers: bool,
+        redaction_cfg: "EffectiveRedactionConfig",
     ) -> tuple[bytes, int, int]:
         """Build a ZIP of subtitle files for a batch of media files.
+
+        ``redaction_cfg`` is **required and not optional** (issue #85). It used to be
+        absent entirely, so every generator here received ``None`` — which
+        :meth:`_redact_segments_inplace` reads as "redaction is disabled", a state
+        indistinguishable from "the caller forgot to pass one". The batch therefore
+        exported the raw transcript for every user, including under the admin
+        ``force_export_redacted`` floor. A disabled policy is now spelled by an
+        ``EffectiveRedactionConfig`` whose ``enabled`` is False, and there is no
+        argument value that means "unspecified".
+
+        Nothing is ever revealed here: the bulk endpoint has no ``?redact=false``
+        counterpart, so the archive is always the masked view of the requesting user's
+        policy.
 
         Args:
             db: Database session.
@@ -672,30 +703,45 @@ class SubtitleService:
                 permission-filtered by the caller.
             subtitle_format: ``srt`` | ``webvtt`` | ``txt``.
             include_speakers: Whether to embed speaker labels.
+            redaction_cfg: The **requesting user's** effective policy — see
+                ``services/redaction/export_policy.py`` for why the reader and not the
+                file owner.
 
         Returns:
-            ``(zip_bytes, exported, skipped)``. Files whose subtitle generation
-            fails or yields empty content are counted as skipped, never aborting
-            the batch.
+            ``(zip_bytes, exported, skipped)``. Files whose subtitle generation fails,
+            whose redaction scan has not produced spans yet, or that yield empty
+            content are counted as skipped, never aborting the batch.
         """
         fmt = subtitle_format.lower()
         ext = "vtt" if fmt == "webvtt" else fmt
         buf = io.BytesIO()
         exported = skipped = 0
+        withheld = SubtitleService._files_awaiting_redaction(
+            db, [fid for fid, _ in file_specs], redaction_cfg
+        )
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for file_id, base_name in file_specs:
                 try:
+                    if file_id in withheld:
+                        # The single-file export answers 409 for this; a batch skips
+                        # the file rather than failing the other 99.
+                        logger.info(
+                            f"Skipping file {file_id} in bulk export: "
+                            "content redaction has not finished for it"
+                        )
+                        skipped += 1
+                        continue
                     if fmt == "webvtt":
                         content = SubtitleService.generate_webvtt_content(
-                            db, file_id, include_speakers
+                            db, file_id, include_speakers, redaction_cfg
                         )
                     elif fmt == "txt":
                         content = SubtitleService.generate_txt_content(
-                            db, file_id, include_speakers
+                            db, file_id, include_speakers, redaction_cfg
                         )
                     else:
                         content = SubtitleService.generate_srt_content(
-                            db, file_id, include_speakers
+                            db, file_id, include_speakers, redaction_cfg
                         )
                     if not content.strip():
                         skipped += 1
@@ -705,6 +751,34 @@ class SubtitleService:
                 except Exception:  # noqa: BLE001 - one bad file shouldn't abort the batch
                     skipped += 1
         return buf.getvalue(), exported, skipped
+
+    @staticmethod
+    def _files_awaiting_redaction(
+        db: Session, file_ids: list[int], redaction_cfg: "EffectiveRedactionConfig"
+    ) -> set[int]:
+        """Which of ``file_ids`` must not be exported yet, in ONE query.
+
+        Masking reads each segment's *cached* spans, so a file whose scan never ran or
+        is still running has nothing to apply and would export raw — with nothing in
+        the produced file to say so.
+        """
+        from app.services.redaction.export_policy import export_masking_is_pending
+
+        if not redaction_cfg.enabled or not file_ids:
+            return set()
+        rows = (
+            db.query(MediaFile.id, MediaFile.redaction_status)
+            .filter(MediaFile.id.in_(file_ids))
+            .all()
+        )
+        known = {int(fid): status for fid, status in rows}
+        # A file id with no row at all is left to the generator, which raises and
+        # counts it as skipped like any other unusable entry.
+        return {
+            fid
+            for fid in file_ids
+            if fid in known and export_masking_is_pending(redaction_cfg, known[fid])
+        }
 
     @staticmethod
     def validate_subtitle_timing(db: Session, media_file_id: int) -> list[str]:

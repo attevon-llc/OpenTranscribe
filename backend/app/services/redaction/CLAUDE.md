@@ -17,6 +17,10 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   `UserSetting` prefs ∪ admin `SystemSettings` `redaction.force_*` floor);
   `detection_config_for_all`, `detector_language_support`.
 - `service.py` — `RedactionService.detect_and_store` / `mask_segment` / `is_segment_toxic`.
+- `export_policy.py` — **who** an export is masked for, **whether** it may be produced yet
+  (`export_masking_is_pending`), and the policy digest that keys a cached burned-in render
+  (`export_policy_fingerprint`). Its module docstring is the argument, not a summary — read it
+  before adding an export surface.
 - `coverage.py` — `uncovered_detectors(media_file, cfg)`: **which detectors a finished scan
   actually ran**, against what the policy relies on. The read half of
   `media_file.redaction_coverage` (`v392`). See the gotcha below.
@@ -57,8 +61,15 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   speaker identification and topic extraction (chat has its own, see below). Do not call
   `resolve_effective_config` directly from a new LLM path; see the gotcha below for why.
 - Reveal via `?redact=false` → `cfg.reveal_categories(...)` in `api/endpoints/files/crud.py`
-  (`_resolve_redaction_for_request`) and `files/subtitles.py`; audited as
-  `transcript.view_unredacted`. **Admin-forced categories never reveal.**
+  (`_resolve_redaction_for_request`) and `files/subtitles.py`; both audited as
+  `transcript.view_unredacted` through the single `crud.audit_unredacted_reveal` (the export
+  half was missing until #85). **Admin-forced categories never reveal.**
+- **The three EXPORT surfaces** (single-file subtitles, the bulk ZIP, burned-in subtitles) each
+  take a **required** config and resolve the **requesting user's** policy — the two worker paths
+  resolved none at all until #85 and ignored the `force_export_redacted` floor. The subject and
+  timing arguments live in `export_policy.py`; the ORM-mutation/commit trap that comes with
+  masking inside a Celery task is in `services/CLAUDE.md`. Tests:
+  `tests/redaction/test_export_redaction_paths.py`.
 - Settings `api/endpoints/redaction_settings.py` (`/user-settings/redaction`,
   `/admin/redaction-policy`); UI `ContentRedactionSettings.svelte` / `RedactionPolicySettings.svelte`.
   Migrations `v364_add_content_redaction` and `v392_add_redaction_coverage`;

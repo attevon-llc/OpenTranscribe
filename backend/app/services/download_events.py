@@ -25,18 +25,25 @@ def bulk_export_channel(job_id: str) -> str:
     return f"download_events:bulk:{job_id}"
 
 
-def download_prep_guard_key(file_id: int, mode: str) -> str:
+def download_prep_guard_key(file_id: int, mode: str, variant: str = "") -> str:
     """Redis NX key that collapses duplicate prepare dispatches for one (file, mode).
 
     Lives here, beside the channel helpers, because **two** places must agree on it:
     the endpoint sets it (``_ensure_prepare_enqueued``) and the worker task clears it
     when it finishes (``release_download_prep_guard``). While it was an inline f-string
     in the endpoint only, nothing released it — see that function for what that cost.
+
+    ``variant`` distinguishes derived assets that differ in CONTENT rather than mode —
+    today only the redaction fingerprint of a burned-in-subtitle render (issue #85).
+    Without it, two readers whose policies mask differently collapse onto one build and
+    the second receives the first one's video. It is empty for every audio mode and for
+    any deployment that masks nothing, so those keys are unchanged.
     """
-    return f"download:prep:{file_id}:{mode}"
+    suffix = f":{variant}" if variant else ""
+    return f"download:prep:{file_id}:{mode}{suffix}"
 
 
-def release_download_prep_guard(file_id: int, mode: str) -> None:
+def release_download_prep_guard(file_id: int, mode: str, variant: str = "") -> None:
     """Clear the prepare-dispatch guard so the next request can re-dispatch.
 
     MUST run on every exit path of the prepare task, success or failure. The guard has
@@ -54,7 +61,7 @@ def release_download_prep_guard(file_id: int, mode: str) -> None:
     must never propagate into the task's result.
     """
     try:
-        get_redis().delete(download_prep_guard_key(file_id, mode))
+        get_redis().delete(download_prep_guard_key(file_id, mode, variant))
     except Exception as e:  # pragma: no cover - guard release is advisory
         logger.warning(f"Could not release download-prep guard for file {file_id}/{mode}: {e}")
 
@@ -72,6 +79,7 @@ def publish_download_event(
     *,
     status: str,
     mode: str,
+    variant: str = "",
     message: str = "",
     progress: int = 0,
     url: str | None = None,
@@ -81,10 +89,16 @@ def publish_download_event(
 
     ``completed`` events carry the presigned ``url`` + ``filename`` the browser uses
     to download the prepared asset. Failures are logged, never raised.
+
+    The channel is per FILE, so every reader of that file sees every event on it — the
+    subscriber filters on ``(mode, variant)``. ``variant`` is what keeps a burned-in
+    video masked under one reader's policy from being handed to a reader with another
+    (issue #85); it is always ``""`` for audio modes and unmasked deployments.
     """
     payload: dict[str, object] = {
         "status": status,
         "mode": mode,
+        "variant": variant,
         "message": message,
         "progress": progress,
     }

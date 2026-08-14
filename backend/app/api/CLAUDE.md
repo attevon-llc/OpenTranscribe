@@ -49,9 +49,12 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 - Responses carry **pre-formatted display fields** built by `services/formatting_service.py`
   (`formatted_duration`, `display_status`, `resolved_speaker_name`, …). The SPA renders them.
 - Read surfaces mask transcript text at read time via `services/redaction/spans.py`; owner
-  reveal is `?redact=false`. `files/crud.py` audits it (`transcript.view_unredacted`);
-  **`files/subtitles.py` does not** — an owner can download their originals with no audit
-  event, which this file claimed otherwise until it was checked.
+  reveal is `?redact=false`, audited as `transcript.view_unredacted` by **one** implementation,
+  `files/crud.py::audit_unredacted_reveal`, called from the transcript read and from
+  `files/subtitles.py` (`surface` distinguishes them). The export half was missing entirely
+  until #85 — the more consequential of the two, since that reveal leaves the application as a
+  file on disk — and this file claimed both were audited until it was checked. Two copies of a
+  compliance trail is how one of them silently stops matching the other.
 - **Owner-scoped listings go through `PermissionService.get_accessible_file_ids_subquery`** —
   it already covers owned files plus collections shared directly and via groups, and applies the
   org tenant gate. Never write a second sharing rule beside it.
@@ -335,14 +338,30 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   two are different problems (the server is fine; the *file* is not ready). Deliberately not an
   on-demand inline scan either — a cold PII model load is ~10 s on a download request, and the
   page the file would be exported from already answers "not yet".
-  ⚠️ **Two sibling paths are NOT covered and are a wider hole**: `build_subtitle_archive` (the
-  `POST /files/bulk-export/prepare` ZIP, via `tasks/media_download.py`) and
-  `video_processing_service.generate_srt_content` (burned-in subtitles) call the generators with
-  **no redaction config at all**, so they export unmasked regardless of policy — including under
-  the admin `force_export_redacted` floor. `cfg=None` means "redaction disabled" to
-  `_redact_segments_inplace`, which is indistinguishable from "the caller forgot", so the 409
-  gate does not fire there either. Fixing it needs the caller's config threaded through the
-  Celery signature; it is a separate change from this gate.
+  Its **two sibling export paths are now covered too** (#85): `build_subtitle_archive` (the
+  `POST /files/bulk-export/prepare` ZIP, via `tasks/media_download.py`) and the burned-in-subtitle
+  render in `video_processing_service`. Both used to call the generators with **no redaction
+  config at all** and exported unmasked regardless of policy — including under the admin
+  `force_export_redacted` floor, i.e. a control that read as enforced and was not. `cfg=None`
+  meant "redaction disabled" to `_redact_segments_inplace`, which is indistinguishable from "the
+  caller forgot", so no gate could fire; the parameter is now **required and non-optional** on
+  both, and a disabled policy is spelled by a config whose `enabled` is False. Whose policy, when
+  it is resolved, and what the alternatives leak: `services/redaction/export_policy.py`. The
+  short version — the **requesting user** (matching the single-file endpoint beside it; the file
+  owner is `llm_guard`'s subject, and that governs third-party egress rather than a read), and at
+  **run time inside the task** from a `user_id`, never a config serialized into the Celery
+  signature. A file whose scan is unfinished is *skipped* by the batch (one file must not fail
+  the other 99) and *refused* by the burn-in, which cannot be un-burned.
+- **A burned-in-subtitle download is keyed by the caller's redaction policy, in three
+  places at once** (#85): the object-storage cache key, the Redis dedup guard
+  (`download_prep_guard_key`), and the `variant` field every `download_events` message
+  carries and `_download_event_frame` filters on. All three must move together. The cache key
+  alone is not enough — the dedup guard collapses concurrent requests for one `(file, mode)`
+  into a single build and the channel is per FILE, so two readers whose policies mask
+  differently would share one render and the second would receive the first one's video. The
+  variant is `export_policy_fingerprint(cfg)`, empty for every audio mode and for any policy
+  that masks nothing, so those keys/guards/events are byte-identical to before. It is
+  **routing only**: the worker re-resolves the real policy at run time and never trusts it.
 - **Both SSE streams go check → subscribe → re-check.** `download_stream` (`files/__init__.py`)
   and `bulk_export_stream` (`files/subtitles.py`) read their readiness signal, subscribe to the
   pub/sub channel, then read it **again**. A single check-then-subscribe loses a worker

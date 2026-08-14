@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -26,6 +27,11 @@ from app.core.config import settings
 from app.core.constants import VIDEO_CHUNK_SIZE
 from app.db.session_utils import session_scope
 from app.services.minio_service import MinIOService
+from app.services.redaction.config import EffectiveRedactionConfig
+from app.services.redaction.config import resolve_effective_config
+from app.services.redaction.export_policy import ExportRedactionNotReadyError
+from app.services.redaction.export_policy import export_masking_is_pending
+from app.services.redaction.export_policy import export_policy_fingerprint
 from app.services.subtitle_service import SubtitleService
 
 logger = logging.getLogger(__name__)
@@ -398,19 +404,33 @@ class VideoProcessingService:
             self.minio_service.remove_lifecycle_rule(self.cache_bucket, "expire-derived-cache")
 
     def generate_cache_key(
-        self, file_id: int, original_filename: str, include_speakers: bool = True
+        self,
+        file_id: int,
+        original_filename: str,
+        include_speakers: bool = True,
+        *,
+        redaction_fingerprint: str,
     ) -> str:
         """Generate a cache key for processed video using original filename.
 
         Lives under the ``derived/`` prefix so a single MinIO lifecycle rule can
         auto-expire the regenerable derived cache (see ``DERIVED_CACHE_PREFIX``).
+
+        ``redaction_fingerprint`` names the policy the subtitles were **rendered
+        under** and is keyword-only and required so no call site can omit it by
+        accident (issue #85). Burned-in text cannot be masked after the fact, so a
+        policy-blind key freezes the first reader's masking for everyone: an admin
+        enabling ``force_export_redacted`` would keep serving the already-cached
+        unmasked video. It is ``""`` whenever nothing masks, which keeps the key
+        byte-identical on a deployment with redaction disabled.
         """
         # Get base filename without extension
         base_name = (
             original_filename.rsplit(".", 1)[0] if "." in original_filename else original_filename
         )
         speaker_suffix = "_with_speakers" if include_speakers else "_no_speakers"
-        return f"{self.DERIVED_CACHE_PREFIX}{base_name}{speaker_suffix}.mp4"
+        redaction_suffix = f"_r{redaction_fingerprint}" if redaction_fingerprint else ""
+        return f"{self.DERIVED_CACHE_PREFIX}{base_name}{speaker_suffix}{redaction_suffix}.mp4"
 
     def is_video_cached(self, cache_key: str) -> bool:
         """Check if a cached video exists."""
@@ -517,6 +537,31 @@ class VideoProcessingService:
             self._send_download_progress_sync(user_id, file_id, status, progress, error)
 
     @staticmethod
+    def _resolve_export_policy(file_id: int, redaction_user_id: int) -> EffectiveRedactionConfig:
+        """The reader's effective policy for this render, in a short session of its own.
+
+        Resolved at RUN time, not captured at dispatch: an admin who tightens the
+        redaction floor while an ffmpeg job is queued should be obeyed by the video
+        that comes out. See ``services/redaction/export_policy.py`` for why the
+        requesting user rather than the file owner.
+
+        Raises:
+            ExportRedactionNotReadyError: The policy masks this file but its detection
+                scan has produced no spans yet.
+        """
+        from app.models.media import MediaFile
+
+        with session_scope() as db:
+            cfg = resolve_effective_config(db, redaction_user_id)
+            status = db.query(MediaFile.redaction_status).filter(MediaFile.id == file_id).scalar()
+        if export_masking_is_pending(cfg, status):
+            raise ExportRedactionNotReadyError(
+                "Content redaction has not finished for this file, so its subtitles "
+                "could not be masked. Try again once detection completes."
+            )
+        return cfg
+
+    @staticmethod
     def _media_filename(file_id: int) -> str:
         """Read the file's original name in a short session of its own.
 
@@ -532,16 +577,27 @@ class VideoProcessingService:
             return str(row[0])
 
     def _generate_subtitle_file(
-        self, file_id: int, subtitle_path: Path, include_speakers: bool
+        self,
+        file_id: int,
+        subtitle_path: Path,
+        include_speakers: bool,
+        redaction_cfg: EffectiveRedactionConfig,
     ) -> None:
         """Generate subtitle file from transcript segments.
 
         The transcript read gets its **own** short session, and the file write
         happens after it closes — this runs between a MinIO download and an
         ffmpeg transcode, so nothing here may leave a transaction open.
+
+        ``redaction_cfg`` is required (issue #85). This SRT is about to be burned
+        into pixels, so it is the least recoverable export surface in the product;
+        it used to be rendered with no policy at all. Nothing is ever revealed
+        here — the burn-in has no ``?redact=false`` counterpart.
         """
         with session_scope() as db:
-            subtitle_content = SubtitleService.generate_srt_content(db, file_id, include_speakers)
+            subtitle_content = SubtitleService.generate_srt_content(
+                db, file_id, include_speakers, redaction_cfg
+            )
         subtitle_path.write_text(subtitle_content, encoding="utf-8")
 
     def _upload_to_cache(
@@ -576,6 +632,7 @@ class VideoProcessingService:
         include_speakers: bool,
         output_format: str,
         cache_key: str,
+        redaction_cfg: EffectiveRedactionConfig,
     ) -> str:
         """Process video with subtitles in temporary directory."""
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -584,7 +641,7 @@ class VideoProcessingService:
 
             # Generate subtitle file
             self._notify_progress(user_id, file_id, "processing", 20)
-            self._generate_subtitle_file(file_id, subtitle_path, include_speakers)
+            self._generate_subtitle_file(file_id, subtitle_path, include_speakers, redaction_cfg)
             self._notify_progress(user_id, file_id, "processing", 30)
 
             # Get codecs and normalize format
@@ -623,6 +680,8 @@ class VideoProcessingService:
         include_speakers: bool = True,
         output_format: str = "mp4",
         original_filename: str | None = None,
+        *,
+        redaction_cfg: EffectiveRedactionConfig,
     ) -> str:
         """
         Embed subtitles into a video file using ffmpeg.
@@ -639,12 +698,21 @@ class VideoProcessingService:
             output_format: Output video format (mp4, mkv, etc.)
             original_filename: Pre-read filename, so a caller that already has it
                 does not pay for a second lookup.
+            redaction_cfg: The reader's effective policy. Keyword-only and required —
+                the burned-in subtitles are masked with it, and its fingerprint keys
+                the cache so one reader's render is never served to another whose
+                policy differs (issue #85).
 
         Returns:
             Path to the processed video file with embedded subtitles
         """
         filename = original_filename or self._media_filename(file_id)
-        cache_key = self.generate_cache_key(file_id, filename, include_speakers)
+        cache_key = self.generate_cache_key(
+            file_id,
+            filename,
+            include_speakers,
+            redaction_fingerprint=export_policy_fingerprint(redaction_cfg),
+        )
 
         # Return cached version if available
         if self.is_video_cached(cache_key):
@@ -662,6 +730,7 @@ class VideoProcessingService:
                 include_speakers,
                 output_format,
                 cache_key,
+                redaction_cfg,
             )
         except subprocess.TimeoutExpired as e:
             logger.error(f"ffmpeg timeout for file {file_id}")
@@ -679,6 +748,8 @@ class VideoProcessingService:
         user_id: int | None = None,
         include_speakers: bool = True,
         output_format: str = "mp4",
+        *,
+        redaction_user_id: int,
     ) -> str:
         """
         Complete workflow to process a video with embedded subtitles.
@@ -692,12 +763,29 @@ class VideoProcessingService:
             user_id: Recipient of progress notifications, if any
             include_speakers: Whether to include speaker labels
             output_format: Output video format
+            redaction_user_id: Whose redaction policy masks the burned-in subtitles.
+                Keyword-only and required: this render used to apply no policy at all,
+                which is unrecoverable once the text is pixels (issue #85). Distinct
+                from ``user_id``, which only addresses progress notifications and is
+                deliberately ``None`` on the SSE path.
 
         Returns:
             Presigned URL to download the processed video
+
+        Raises:
+            ExportRedactionNotReadyError: The reader's policy masks this file and its
+                detection scan has not produced spans yet.
         """
+        # Resolved BEFORE the cache probe: the fingerprint is part of the key, and a
+        # file whose scan is still running must be refused rather than served.
+        redaction_cfg = self._resolve_export_policy(file_id, redaction_user_id)
         filename = self._media_filename(file_id)
-        cache_key = self.generate_cache_key(file_id, filename, include_speakers)
+        cache_key = self.generate_cache_key(
+            file_id,
+            filename,
+            include_speakers,
+            redaction_fingerprint=export_policy_fingerprint(redaction_cfg),
+        )
 
         # Check cache first
         if self.is_video_cached(cache_key):
@@ -724,6 +812,7 @@ class VideoProcessingService:
                     include_speakers=include_speakers,
                     output_format=output_format,
                     original_filename=filename,
+                    redaction_cfg=redaction_cfg,
                 )
 
             except Exception as e:
@@ -873,11 +962,18 @@ class VideoProcessingService:
             return cache_key, ext, content_type
 
     def derived_cache_keys(self, file_id: int, filename: str) -> list[str]:
-        """Every derived-cache key a media file can own. Pure — no I/O, no DB.
+        """Every derived-cache key a media file can own **at a known name**. Pure.
 
         Both subtitle-embedded video variants and all three audio-extract
         variants. Shared by the delete paths so the list cannot drift between
         them.
+
+        ⚠️ This list is no longer exhaustive on its own. Since #85 a burned-in
+        render is keyed by the redaction policy it was rendered under, so one file
+        can own one video per distinct policy and no pure function can enumerate
+        them. The two keys here are the *unmasked* renders (fingerprint ``""``);
+        :meth:`clear_derived_cache` sweeps the masked variants by listing. Anything
+        that only reads this list deletes less than it thinks it does.
 
         Args:
             file_id: Internal media file id.
@@ -887,25 +983,60 @@ class VideoProcessingService:
             Cache keys under ``DERIVED_CACHE_PREFIX``.
         """
         return [
-            self.generate_cache_key(file_id, filename, include_speakers=True),
-            self.generate_cache_key(file_id, filename, include_speakers=False),
+            self.generate_cache_key(
+                file_id, filename, include_speakers=True, redaction_fingerprint=""
+            ),
+            self.generate_cache_key(
+                file_id, filename, include_speakers=False, redaction_fingerprint=""
+            ),
             self.audio_cache_key(filename, "mp3"),
             self.audio_cache_key(filename, "wav"),
             self.audio_cache_key(filename, "original"),
         ]
 
+    def _masked_video_cache_keys(self, filename: str) -> list[str]:
+        """List the policy-specific burned-in renders this file owns, from storage.
+
+        A deleted file must not leave a video of its transcript behind, and the
+        masked variants cannot be named without knowing every policy that ever
+        rendered one — so they are listed rather than derived. The regex is not
+        decoration: a bare prefix sweep on ``derived/{base}_`` would also match the
+        neighbouring file ``{base}_2``.
+
+        Best-effort: object storage being unavailable must not fail a delete that
+        has already removed the rows.
+        """
+        base = filename.rsplit(".", 1)[0] if "." in filename else filename
+        pattern = re.compile(
+            rf"^{re.escape(self.DERIVED_CACHE_PREFIX)}{re.escape(base)}"
+            r"_(with|no)_speakers_r[0-9a-f]+\.mp4$"
+        )
+        try:
+            objects = self.minio_service.list_objects(
+                self.cache_bucket,
+                prefix=f"{self.DERIVED_CACHE_PREFIX}{base}_",
+                recursive=True,
+            )
+            return [obj.object_name for obj in objects if pattern.match(obj.object_name or "")]
+        except Exception as e:  # noqa: BLE001 - listing is a best-effort sweep
+            logger.warning(f"Could not list masked derived renders for {filename}: {e}")
+            return []
+
     def clear_derived_cache(self, file_id: int, filename: str) -> None:
         """Delete a file's derived-cache objects. **Takes no DB session.**
 
-        Five MinIO round trips, so callers must not be holding a transaction:
-        take the filename in the read phase and call this afterwards. Absent
-        objects are not an error — these deletes are idempotent.
+        Five MinIO round trips plus one listing, so callers must not be holding a
+        transaction: take the filename in the read phase and call this afterwards.
+        Absent objects are not an error — these deletes are idempotent. The listing
+        finds the policy-specific burned-in renders, which cannot be named without
+        it (see :meth:`_masked_video_cache_keys`).
 
         Args:
             file_id: Internal media file id.
             filename: The file's original filename.
         """
-        for cache_key in self.derived_cache_keys(file_id, filename):
+        keys = self.derived_cache_keys(file_id, filename) + self._masked_video_cache_keys(filename)
+        for cache_key in keys:
             try:
                 self.minio_service.delete_object(self.cache_bucket, cache_key)
                 logger.info(f"Cleared cache for {cache_key}")

@@ -14,7 +14,13 @@ import pytest
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import TranscriptSegment
+from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.subtitle_service import SubtitleService
+
+# What `resolve_effective_config` returns on a deployment where nobody enabled
+# redaction and no admin floor is set -- the argument these tests are about is
+# covered by tests/redaction/test_export_redaction_paths.py.
+NO_REDACTION = EffectiveRedactionConfig(enabled=False)
 
 
 def _make_file(db_session, sample_user, filename: str) -> MediaFile:
@@ -85,7 +91,8 @@ class TestBuildSubtitleArchive:
             db_session,
             [(int(file_with_transcript.id), base)],
             fmt,
-            include_speakers=True,
+            True,
+            NO_REDACTION,
         )
         assert exported == 1
         assert skipped == 0
@@ -105,7 +112,8 @@ class TestBuildSubtitleArchive:
                 (int(file_without_transcript.id), "no_transcript"),
             ],
             "srt",
-            include_speakers=True,
+            True,
+            NO_REDACTION,
         )
         assert exported == 1
         assert skipped == 1
@@ -117,7 +125,8 @@ class TestBuildSubtitleArchive:
             db_session,
             [(int(file_without_transcript.id), "no_transcript")],
             "srt",
-            include_speakers=True,
+            True,
+            NO_REDACTION,
         )
         assert exported == 0
         assert skipped == 1
@@ -129,7 +138,8 @@ class TestBuildSubtitleArchive:
             db_session,
             [(int(file_with_transcript.id), "with_transcript")],
             "txt",
-            include_speakers=True,
+            True,
+            NO_REDACTION,
         )
         assert exported == 1
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:

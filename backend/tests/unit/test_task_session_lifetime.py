@@ -912,7 +912,7 @@ def test_video_service_reads_use_their_own_short_sessions(db_session, normal_use
 
     class _FakeSubtitles:
         @staticmethod
-        def generate_srt_content(db, file_id, include_speakers):
+        def generate_srt_content(db, file_id, include_speakers, redaction_cfg=None):
             written["depth_during_render"] = tracker.depth
             return "1\n00:00:00,000 --> 00:00:04,000\nhello there\n"
 
@@ -926,7 +926,11 @@ def test_video_service_reads_use_their_own_short_sessions(db_session, normal_use
             written["content"] = content
 
     service = vps.VideoProcessingService.__new__(vps.VideoProcessingService)
-    service._generate_subtitle_file(int(media_file.id), _RecordingPath(), True)
+    from app.services.redaction.config import EffectiveRedactionConfig
+
+    service._generate_subtitle_file(
+        int(media_file.id), _RecordingPath(), True, EffectiveRedactionConfig(enabled=False)
+    )
 
     # The transcript read needs a session; the FILE WRITE that follows must not
     # still be inside it, and neither may the ffmpeg run after that.

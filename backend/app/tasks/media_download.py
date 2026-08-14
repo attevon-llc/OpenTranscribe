@@ -18,6 +18,7 @@ from app.models.media import MediaFile
 from app.services.download_events import publish_download_event
 from app.services.download_events import release_download_prep_guard
 from app.services.minio_service import MinIOService
+from app.services.redaction.export_policy import ExportRedactionNotReadyError
 from app.services.video_processing_service import NoAudioTrackError
 from app.services.video_processing_service import VideoProcessingService
 
@@ -31,13 +32,21 @@ logger = logging.getLogger(__name__)
     max_retries=1,
     retry_backoff=True,
 )
-def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> dict:
+def prepare_media_download_task(
+    self, file_id: int, user_id: int, mode: str, variant: str = ""
+) -> dict:
     """Prepare a derived download asset and push a presigned URL over SSE.
 
     Args:
         file_id: MediaFile database ID.
-        user_id: Requesting user (kept for context / future authz).
+        user_id: Requesting user. **Load-bearing since #85**: for ``video_subtitles``
+            it is the subject whose redaction policy masks the burned-in text.
         mode: One of ``audio_mp3``, ``audio_wav``, ``audio_original``, ``video_subtitles``.
+        variant: Opaque routing token from the dispatcher (the redaction fingerprint at
+            click time, ``""`` when nothing masks). It scopes the Redis dedup guard and
+            the SSE events so two readers with different policies do not collapse onto
+            one build and receive each other's artifact. It is **never** a masking
+            input — the policy itself is re-resolved below, at run time.
 
     Returns:
         Result dict with ``status`` and (on success) the cache key.
@@ -61,14 +70,22 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
         base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
 
         publish_download_event(
-            file_uuid, status="processing", mode=mode, message="Preparing your download…"
+            file_uuid,
+            status="processing",
+            mode=mode,
+            variant=variant,
+            message="Preparing your download…",
         )
 
         service = VideoProcessingService(MinIOService())
 
         if mode not in ("video_subtitles",) and not mode.startswith("audio_"):
             publish_download_event(
-                file_uuid, status="error", mode=mode, message=f"Unsupported mode: {mode}"
+                file_uuid,
+                status="error",
+                mode=mode,
+                variant=variant,
+                message=f"Unsupported mode: {mode}",
             )
             return {"status": "error", "message": f"Unsupported mode {mode}"}
 
@@ -86,6 +103,7 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
                 user_id=None,  # SSE owns the messaging for this download
                 include_speakers=True,
                 output_format="mp4",
+                redaction_user_id=user_id,
             )
             content_type = "video/mp4"
             download_filename = f"{base_name}_with_subtitles.mp4"
@@ -104,21 +122,38 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
             file_uuid,
             status="completed",
             mode=mode,
+            variant=variant,
             message="Download ready.",
             url=url,
             filename=download_filename,
         )
         return {"status": "success", "cache_key": cache_key}
 
+    except ExportRedactionNotReadyError as e:
+        # The reader's policy masks this file and its scan has produced no spans yet.
+        # Burning the raw transcript into a video is unrecoverable, so nothing is
+        # produced; the message mirrors the single-file export's 409.
+        logger.info(f"Withholding {mode} for file {file_id}: {e}")
+        if file_uuid:
+            publish_download_event(
+                file_uuid, status="error", mode=mode, variant=variant, message=str(e)
+            )
+        return {"status": "error", "message": str(e)}
     except NoAudioTrackError as e:
         if file_uuid:
-            publish_download_event(file_uuid, status="error", mode=mode, message=str(e))
+            publish_download_event(
+                file_uuid, status="error", mode=mode, variant=variant, message=str(e)
+            )
         return {"status": "error", "message": str(e)}
     except Exception as e:
         logger.error(f"prepare_media_download_task failed for file {file_id} ({mode}): {e}")
         if file_uuid:
             publish_download_event(
-                file_uuid, status="error", mode=mode, message="Failed to prepare download."
+                file_uuid,
+                status="error",
+                mode=mode,
+                variant=variant,
+                message="Failed to prepare download.",
             )
         return {"status": "error", "message": str(e)}
     finally:
@@ -126,7 +161,7 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
         # backstop: while the guard outlived the task, a download whose readiness
         # could not be resolved was unrecoverable for 15 minutes -- NX refused to
         # re-dispatch, so the SSE stream waited on an event nobody would publish.
-        release_download_prep_guard(file_id, mode)
+        release_download_prep_guard(file_id, mode, variant)
 
 
 @celery_app.task(
@@ -137,9 +172,19 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
     retry_backoff=True,
 )
 def prepare_bulk_subtitles_task(
-    self, file_specs: list, subtitle_format: str, include_speakers: bool, job_id: str
+    self,
+    file_specs: list,
+    subtitle_format: str,
+    include_speakers: bool,
+    job_id: str,
+    user_id: int | None = None,
 ) -> dict:
     """Build a ZIP of subtitles for a batch of files and push a presigned URL over SSE.
+
+    The archive is masked with the **requesting user's** effective redaction policy,
+    resolved here rather than at dispatch so an admin who tightens the floor between
+    the click and the build is obeyed. ``services/redaction/export_policy.py`` carries
+    both decisions and what the alternatives would have leaked (issue #85).
 
     Args:
         file_specs: ``[[file_id, base_filename], ...]`` — already permission-filtered
@@ -147,23 +192,36 @@ def prepare_bulk_subtitles_task(
         subtitle_format: ``srt`` | ``webvtt`` | ``txt``.
         include_speakers: Whether to embed speaker labels.
         job_id: Opaque per-request id keying the SSE channel + reconnect result cache.
+        user_id: Whose redaction policy masks the archive. Optional **only** so a
+            message queued by a pre-#85 API container cannot crash a new worker with a
+            ``TypeError``; ``None`` refuses the export rather than exporting raw.
     """
     import json
 
     from app.core.redis import get_redis
     from app.services.download_events import publish_bulk_event
     from app.services.minio_service import get_presigned_download_url
+    from app.services.redaction.config import resolve_effective_config
     from app.services.subtitle_service import SubtitleService
+
+    if user_id is None:
+        # FAIL CLOSED. No subject means no resolvable policy, and an export is
+        # unrecoverable once it reaches the browser.
+        logger.error(f"Bulk export job {job_id} has no requesting user; refusing to build it")
+        publish_bulk_event(job_id, status="error", message="Failed to build export.")
+        return {"status": "error", "message": "No requesting user for the export"}
 
     try:
         # session_scope auto-commits/rolls-back/closes; the archive build is read-only.
         with session_scope() as db:
             publish_bulk_event(job_id, status="processing", message="Building subtitle archive…")
+            redaction_cfg = resolve_effective_config(db, user_id)
             zip_bytes, exported, skipped = SubtitleService.build_subtitle_archive(
                 db,
                 [(int(fid), str(name)) for fid, name in file_specs],
                 subtitle_format,
                 include_speakers,
+                redaction_cfg,
             )
         if exported == 0:
             publish_bulk_event(

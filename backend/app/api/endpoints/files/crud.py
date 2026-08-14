@@ -523,30 +523,51 @@ def _resolve_redaction_for_request(
     can_reveal = bool(db_file.user_id == current_user.id) or bool(is_admin)
     reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)
 
-    if reveal:
-        # Audit any unredacted view (compliance trail).
-        try:
-            from app.auth.audit import AuditOutcome
-            from app.auth.audit import audit_logger
-
-            audit_logger.log(
-                event_type="transcript.view_unredacted",  # type: ignore[arg-type]
-                outcome=AuditOutcome.SUCCESS,
-                user_id=current_user.id,
-                username=str(current_user.email),
-                # Org attribution (issue #262a): the reveal concerns this file's
-                # tenant, so its org admins see it in the org audit read.
-                organization_id=int(db_file.organization_id) if db_file.organization_id else None,
-                details={
-                    "file_id": db_file.id,
-                    "file_uuid": str(db_file.uuid),
-                    "revealed_categories": sorted(reveal),
-                },
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"Audit log for unredacted view failed: {e}")
+    audit_unredacted_reveal(db_file, current_user, reveal, surface="transcript")
 
     return cfg, reveal
+
+
+def audit_unredacted_reveal(
+    db_file: MediaFile, current_user: User, reveal: set[str], *, surface: str
+) -> None:
+    """Write the ``transcript.view_unredacted`` compliance event, if anything revealed.
+
+    The ONE implementation. It lived inline in ``_resolve_redaction_for_request`` while
+    ``files/subtitles.py`` — the path that writes the revealed transcript to a **file on
+    the user's disk** — wrote no audit event at all (issue #85). Two copies of a
+    compliance trail is how one of them silently stops matching the other.
+
+    Args:
+        db_file: The file whose transcript was revealed.
+        current_user: Who revealed it.
+        reveal: Categories actually revealed. Empty → nothing was revealed, no event.
+        surface: Which read surface (``transcript`` | ``subtitle_export``). Admin-forced
+            categories never appear here; they cannot be revealed on any surface.
+    """
+    if not reveal:
+        return
+    try:
+        from app.auth.audit import AuditOutcome
+        from app.auth.audit import audit_logger
+
+        audit_logger.log(
+            event_type="transcript.view_unredacted",  # type: ignore[arg-type]
+            outcome=AuditOutcome.SUCCESS,
+            user_id=current_user.id,
+            username=str(current_user.email),
+            # Org attribution (issue #262a): the reveal concerns this file's
+            # tenant, so its org admins see it in the org audit read.
+            organization_id=int(db_file.organization_id) if db_file.organization_id else None,
+            details={
+                "file_id": db_file.id,
+                "file_uuid": str(db_file.uuid),
+                "revealed_categories": sorted(reveal),
+                "surface": surface,
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"Audit log for unredacted view failed: {e}")
 
 
 def _lazy_dispatch_redaction(db: Session, db_file: MediaFile) -> None:
@@ -571,15 +592,18 @@ def _redaction_pending(db: Session, cfg: Any, db_file: MediaFile) -> bool:
     (failed = redaction couldn't run; don't trap the user). A file that never had
     detection (legacy, status None) is dispatched lazily and treated as pending.
     """
-    if cfg is None or not getattr(cfg, "enabled", False):
-        return False
+    from app.services.redaction.export_policy import export_masking_is_pending
+
     status = getattr(db_file, "redaction_status", None)
-    if status in (C.REDACTION_STATUS_DONE, C.REDACTION_STATUS_FAILED):
+    # The status rule itself lives in `services/redaction/export_policy.py`, because the
+    # bulk-export and burned-in-subtitle workers need the identical rule and cannot
+    # import an API endpoint module. Only the lazy re-dispatch is local: it is a DB
+    # write, which belongs on a read a user is waiting on and not in a download worker.
+    if not export_masking_is_pending(cfg, status):
         return False
     if status is None:
         _lazy_dispatch_redaction(db, db_file)
-        return True
-    return True  # pending | processing
+    return True  # None (just dispatched) | pending | processing
 
 
 def _build_media_file_response(

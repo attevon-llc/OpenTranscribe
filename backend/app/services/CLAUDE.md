@@ -36,6 +36,7 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
 - **Media in/out** — `media_download_service.py` (yt-dlp), `media_mirror_*.py`,
   `protected_media_providers.py` + `protected_media_plugins/`, `minio_service.py` +
   `storage_backend.py` (**see below**), `subtitle_service.py`, `formatting_service.py`.
+  **Every export surface takes a required redaction config** (#85, see the gotcha below).
 - **Ops** — backup/recovery, cleanup, migration lock+progress, task detection/filtering/recovery,
   system settings, usage, GDPR erasure (`gdpr_erasure_service.py` +
   `erasure_ledger_service.py` — **see below**).
@@ -223,6 +224,39 @@ YouTube PO tokens; `_YOUTUBE_EXTRACTOR_ARGS` rotates player clients).
 - `create_user_friendly_error` maps raw yt-dlp errors → guidance via `AUTH_ERROR_PATTERNS` +
   `PLATFORM_GUIDANCE`. `RECOMMENDED_PLATFORMS = ["YouTube", "Dailymotion", "Twitter/X"]`.
   Vimeo / Instagram / Facebook / LinkedIn / Patreon usually need auth.
+
+## Exports and redaction — three rules that are not obvious (issue #85)
+
+`subtitle_service.build_subtitle_archive` (the bulk ZIP) and the burned-in-subtitle render
+in `video_processing_service` used to call the subtitle generators with **no redaction
+config**, exporting the raw transcript for everyone — including under the admin
+`redaction.force_export_redacted` floor, which the UI presents as covering exports.
+
+- **A "disabled" policy and an absent one must not be the same value.** `cfg=None` read as
+  "redaction is off" to `_redact_segments_inplace`, and that is exactly what "the caller
+  forgot" looks like, so no gate could ever fire on it. The parameter is now required and
+  non-`Optional` on both paths; a disabled policy is an `EffectiveRedactionConfig` whose
+  `enabled` is False. There is no argument value meaning "unspecified".
+- **⚠️ The subtitle masker mutates the loaded ORM objects, and both export workers COMMIT.**
+  `session_scope` commits on exit, so wiring masking into those tasks would have flushed the
+  masked text into `transcript_segment.text` and destroyed the original transcript — the one
+  thing read-time masking exists to preserve. The API path never noticed because `get_db`
+  closes without committing. `_redact_segments_inplace` now **expunges each segment before
+  mutating it**, so the guarantee is structural rather than a property of whichever caller
+  holds the session. (`formatting_service._apply_redaction` was never exposed: it masks a
+  dict copy.) Pinned by `test_export_redaction_paths.py`'s
+  `test_the_export_never_writes_the_masked_text_back`, which is red without the expunge.
+- **A cached artifact must name the policy it was rendered under.** Burned-in text cannot be
+  masked afterwards, so `generate_cache_key` takes a required keyword-only
+  `redaction_fingerprint`; without it the first reader's render is served to everyone, and an
+  admin enabling the floor would keep serving an already-cached unmasked video. Consequence:
+  `derived_cache_keys` can no longer enumerate a file's objects, so `clear_derived_cache`
+  **lists** the masked variants — a delete that only reads that list leaves a video of the
+  transcript in storage.
+
+Whose policy applies (the **requesting user**, not the file owner) and when it is resolved
+(**run time inside the task**, from a `user_id`, never a serialized config) are argued in
+`redaction/export_policy.py`.
 
 ## Gotchas
 

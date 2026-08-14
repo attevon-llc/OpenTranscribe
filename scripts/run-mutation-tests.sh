@@ -125,7 +125,7 @@ declare -A MODULE_PATH=(
 
 declare -A MODULE_TESTS=(
     [spans]="tests/redaction/test_apply_redactions.py tests/redaction/test_apply_redactions_mutants.py tests/redaction/test_span_merge_boundaries.py tests/redaction/test_word_offset_alignment.py tests/redaction/test_non_ascii_masking.py"
-    [password_policy]="tests/unit/test_auth_config_behaviour.py tests/test_fedramp_compliance.py tests/unit/test_account_lifecycle.py tests/unit/test_auth_policy_source_of_truth.py tests/unit/test_password_policy_controls.py"
+    [password_policy]="tests/unit/test_auth_config_behaviour.py tests/test_fedramp_compliance.py tests/unit/test_account_lifecycle.py tests/unit/test_auth_policy_source_of_truth.py tests/unit/test_password_policy_controls.py tests/unit/test_password_policy_mutants.py"
     # tests/unit/test_verify_token_claims.py is here because it was WRITTEN from this module's
     # survivors ("Written from surviving mutants (issue #431)") and then never added to the
     # selection — so the very mutants it kills would have come back as survivors on the next

@@ -849,7 +849,7 @@ Stated plainly, because a benchmark's limits are part of its result:
 - **`aggregation` is now scored on its answer** (exact match, see [Scoring an answer, not a
   rank](#scoring-an-answer-not-a-rank)). The reference answerer's 1.000 characterises the corpus and
   the mechanism, not the shipped system; **the shipped system scores 0.800** through
-  `--answerer product` (see [Stage 4](#the-products-aggregation-path-0800-against-an-exact-ceiling)),
+  `--answerer product` (see [Stage 4](#the-products-aggregation-path-0800---1000-once-it-knew-when-meetings-happened)),
   and the gap is one rule with a named structural cause.
 - **Injecting synthetic data moves the QMSum numbers.** Retrieval runs corpus-wide, so the
   candidate pool roughly doubles and document frequencies shift. Run the QMSum-only control before

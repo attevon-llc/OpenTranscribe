@@ -53,8 +53,10 @@ separate and lives in the `../opensearch_service/` package (alias `speakers` →
     returns a Chinese transcript as one sentence, so the regex fallback was never reached.
     `reset_sentence_splitter_state()` exists for tests only.
 - `indexing_service.py` — index body + `_INDEX_VERSION` (bump ⇒ startup logs a "run a full
-  reindex" warning, it does **not** migrate), RRF + neural ingest pipelines,
+  reindex" warning, it does **not** migrate), search + neural ingest pipeline lifecycle,
   `TranscriptIndexingService`.
+- `fusion.py` — **what a fusion strategy IS**: `FusionConfig`, the derived pipeline id, the
+  pipeline body, and drift detection. See "Fusion is selectable per request" below.
 - `hybrid_search_service.py` — `HybridSearchService.search`, the only query path.
 - `snippet_redaction.py` — read-time masking of the snippets on a search page. See
   "Snippets are masked, and the tags make that non-obvious" below.
@@ -175,6 +177,8 @@ speaker plane exists to let people *set*.
 - Availability, index, and pipeline checks are cached in module globals behind `_state_lock`.
   After recreating an index call `reset_infrastructure_state()` / `reset_neural_search_state()`,
   or the worker keeps trusting stale state (neural-failure TTL is only 30 s, success 120 s).
+  **`reset_infrastructure_state()` clears a SET of verified pipeline ids**, not a flag — see
+  below.
 - `SEARCH_RRF_RANK_CONSTANT` defaults to **30** — grep the symbol in `core/config.py`; a line
   number cited here has already rotted once. A mismatch against the live **search** pipeline
   triggers automatic recreation on startup (`ensure_search_pipeline_exists`). Since #401 the
@@ -231,6 +235,61 @@ speaker plane exists to let people *set*.
   Both bump the chat corpus version, or chat keeps serving the pre-rename retrieval for the
   cache TTL. Once #383's digest tier lands, rename joins the digest-regeneration triggers
   (addendum G1) — the seam is that module's `_finish`.
+
+## Fusion is selectable per request (#363, #403 Stage 5 plumbing)
+
+A search pipeline is **query-time** metadata: it is attached per request via the
+`search_pipeline` parameter and it touches no document. That is why two fusion strategies can
+be A/B'd against one live index with **no reindex and no global state swap** — the property
+#363's A/B is built on. Adding a pipeline is safe; changing a *mapping* is not.
+
+`fusion.py` owns what a strategy is; `indexing_service.ensure_search_pipeline_exists(cfg)` owns
+its lifecycle in the cluster; `hybrid_search_service.ensure_fusion_pipeline(cfg)` owns the
+per-process cache and returns the id to attach.
+
+| strategy | processor | knobs |
+|---|---|---|
+| `rrf` *(default)* | `score-ranker-processor` | `rank_constant` (`SEARCH_RRF_RANK_CONSTANT`, 30) |
+| `normalization` | `normalization-processor` | `min_max`/`l2`/`z_score` × arithmetic/geometric/harmonic mean, optional per-leg weights |
+
+- **The pipeline id is DERIVED from the parameters, never chosen** — `rrf-60`,
+  `norm-min_max-arithmetic_mean`, `norm-l2-harmonic_mean-w70_30`. Two sweep arms that differ in
+  any parameter therefore get two ids and can be in flight at once. Weights are encoded as
+  integer percent and a weight needing more precision is **refused**, because two arms quietly
+  aliased onto one id means one of them measured the other's pipeline.
+- **`transcript-hybrid-search` is reserved for RRF at the configured rank constant.** No value
+  of `SEARCH_FUSION_STRATEGY` can repoint that name at a normalization body — every deployment
+  already holds that pipeline, and overwriting it in place is how a "measurement" silently
+  becomes a migration. `SEARCH_FUSION_STRATEGY` selects the *default request-time strategy*,
+  nothing about the name.
+- **Four attach sites, all threaded** (#363's review comment named the first three; the fourth
+  arrived with Stage 4): `hybrid_search_service._search_with_two_phase` (phase 1),
+  `hybrid_search_service._search_with_collapse` (main hybrid), `chunk_retrieval.retrieve_chunks`,
+  `chunk_retrieval.retrieve_digests`. The id is passed *down* rather than re-read from
+  `settings` at each site, so an arm cannot lose its strategy on the way to the wire.
+- **`_verified_pipelines` is a set, and it is why `reset_infrastructure_state` matters.** A
+  single "the pipeline is verified" bool let the first strategy a process saw certify every
+  later one, so arm B would attach an id nobody created and OpenSearch would run the query
+  **unfused** — a plausible number, not an error.
+- **The search response cache keys on the resolved pipeline id.** Without it arm B replays arm
+  A's page for `SEARCH_CACHE_TTL_SECONDS`. Same rule as `redaction/export_policy.py`: a cached
+  artifact must name the policy it was rendered under.
+- **The self-heal now compares the whole processor block**, not just `rank_constant`.
+  OpenSearch echoes a pipeline body back verbatim (no defaults injected), so the comparison is
+  exact. A hand-written test stand-in that omits a field therefore reads as drift.
+- **A one-leg body still attaches nothing.** `semantic` and `keyword` modes have nothing to
+  fuse; selecting a strategy must not change that.
+- **Config is env-only and deliberately NOT in `SystemSettings`**, matching the sibling
+  `SEARCH_RRF_RANK_CONSTANT`: `SEARCH_FUSION_STRATEGY`, `SEARCH_NORMALIZATION_TECHNIQUE`,
+  `SEARCH_COMBINATION_TECHNIQUE`, `SEARCH_COMBINATION_WEIGHTS`. These are measurement knobs, and
+  a per-request argument is the supported way to use them. Nothing is exposed on `/api/search`.
+- ⚠️ **Measure the chat path and the search path separately.** They fuse over different
+  candidate depths — search always over `SEARCH_RRF_WINDOW_SIZE` (500), chat over
+  `dynamic_rrf_window(size) = max(100, min(size*4, 500))`. An A/B on one does not characterise
+  the other. Evidence that the switch is honoured, not merely accepted, lives in
+  `tests/integration/test_fusion_strategy_switch.py`: RRF scores are structurally bounded by
+  `2/(k+1)` = 0.0645 at k=30 and the normalization arm measurably exceeds it (0.500 on the
+  210,908-document eval index), with the same-pipeline-twice run as the control.
 
 ## Switching the embedding model (#437) — one implementation, and it fans out
 

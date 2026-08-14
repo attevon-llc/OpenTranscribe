@@ -20,7 +20,9 @@ from typing import Any
 
 from app.core.config import settings
 from app.services.opensearch_service import get_opensearch_client
+from app.services.search.fusion import FusionConfig
 from app.services.search.hybrid_search_service import HybridSearchService
+from app.services.search.hybrid_search_service import ensure_fusion_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +202,7 @@ def retrieve_chunks(
     speakers: list[str] | None = None,
     size: int = 48,
     search_mode: str = "hybrid",
+    fusion: FusionConfig | None = None,
 ) -> list[ChunkHit]:
     """Retrieve the best-matching transcript chunks for ``query``.
 
@@ -213,6 +216,10 @@ def retrieve_chunks(
             chunks are speaker turns — one chunk is one person talking.
         size: Candidate pool size to return before reranking.
         search_mode: ``hybrid`` (BM25 + vector), ``semantic``, or ``keyword``.
+        fusion: Hybrid fusion strategy for **this call** (#363). None uses the
+            configured default. Chat fuses over ``dynamic_rrf_window(size)``
+            while the search UI always fuses over 500, so an A/B here does not
+            characterise ``/api/search`` and vice versa — measure both.
 
     Returns:
         Chunk hits in provider-ranked order; empty on any retrieval failure —
@@ -246,10 +253,10 @@ def retrieve_chunks(
     body = _build_body(clean, filters, size, use_neural_query, model_id, service, search_mode)
 
     params = {}
-    # The RRF pipeline fuses the two legs of a hybrid query. A semantic-only or
+    # The fusion pipeline fuses the two legs of a hybrid query. A semantic-only or
     # BM25-only body has one leg, so applying it would be meaningless work.
     if use_neural_query and model_id and search_mode != "semantic":
-        params["search_pipeline"] = settings.OPENSEARCH_SEARCH_PIPELINE
+        params["search_pipeline"] = ensure_fusion_pipeline(fusion)
 
     try:
         response = client.search(
@@ -312,6 +319,7 @@ def retrieve_digests(
     file_uuids: list[str] | None = None,
     size: int = 12,
     search_mode: str = "hybrid",
+    fusion: FusionConfig | None = None,
 ) -> list[ChunkHit]:
     """Retrieve digest-plane documents for ``query`` (#403 Stage 4).
 
@@ -337,6 +345,10 @@ def retrieve_digests(
             empty list matches nothing.
         size: How many digest sections to return.
         search_mode: ``hybrid`` | ``semantic`` | ``keyword``.
+        fusion: Hybrid fusion strategy for **this call** (#363); None uses the
+            configured default. Threaded separately from ``retrieve_chunks``
+            because the two legs are routed, never fused together — a sweep may
+            legitimately want a different strategy on each.
 
     Returns:
         Digest hits in provider-ranked order; empty on any failure, so a broken
@@ -380,7 +392,7 @@ def retrieve_digests(
 
     params = {}
     if use_neural_query and model_id and search_mode != "semantic":
-        params["search_pipeline"] = settings.OPENSEARCH_SEARCH_PIPELINE
+        params["search_pipeline"] = ensure_fusion_pipeline(fusion)
 
     try:
         response = client.search(

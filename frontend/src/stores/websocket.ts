@@ -10,6 +10,7 @@ import { isCloudEdition } from '$lib/edition';
 // Define notification types
 export type NotificationType =
   | 'transcription_status'
+  | 'document_status'
   | 'summarization_status'
   | 'redaction_status'
   | 'topic_extraction_status'
@@ -567,6 +568,23 @@ function createWebSocketStore() {
                 window.dispatchEvent(new CustomEvent('auto-label-status', { detail: data.data }));
               }
               // Fall through to progressive notification handler
+            }
+
+            // Dispatch document-parse status for the document detail page. Keyed on
+            // `document_id`, not `file_id` (backend/app/tasks/document_tasks.py:_notify),
+            // so it cannot be routed through the progressive-notification grouping below —
+            // that machinery keys every progressId off `data.data.file_id` throughout this
+            // file, and document_status genuinely doesn't have one. Same precedent as
+            // auto-label-status above: a raw window CustomEvent, consumed directly by the
+            // one page that needs it. Unlike that one, this RETURNS rather than falling
+            // through: an unmatched type lands in the final `else` below and becomes a
+            // persisted, visible notification-panel entry — exactly what the progressive
+            // path exists to avoid, and parsing emits several progress ticks per document.
+            if (data.type === 'document_status') {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('document-status', { detail: data.data }));
+              }
+              return;
             }
 
             // Handle progressive notifications

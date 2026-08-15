@@ -8,11 +8,19 @@
   The suggestions are written for transcript work specifically — action items,
   decisions, follow-ups — so a first-time user immediately sees what the feature
   is FOR rather than facing a blank box.
+
+  The hero subtitle makes an accuracy claim ("cite the exact moment they came
+  from"), so the retrieval-quality notice (#461) is amended onto it right here
+  rather than banner-ing every conversation. This is also the ONE place in chat
+  where such a notice renders exactly once: `ChatSources` was the other
+  candidate, but it renders per assistant message, so expanding three source
+  lists would put three copies of the same sentence on screen.
 -->
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
+  import RetrievalQualityNotice from '$components/RetrievalQualityNotice.svelte';
 
   /** LLM availability — false shows the setup CTA instead of suggestions. */
   export let llmAvailable = true;
@@ -49,6 +57,7 @@
       </div>
       <h1>{$t('chat.empty.heroTitle')}</h1>
       <p>{$t('chat.empty.heroSubtitle')}</p>
+      <RetrievalQualityNotice surface="chat" />
     </div>
 
     <div class="suggestions">

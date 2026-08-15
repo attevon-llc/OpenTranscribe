@@ -42,7 +42,10 @@ coordinator), plus the full-transcript match browser opened from a result card.
 
 - **E2E-guarded selectors owned here** (`backend/tests/e2e/test_search.py`): `.search-input` and
   `.clear-btn` in `SearchAutocomplete`. The card's root must also stay a direct child of the page's
-  `.results-list` — the test counts `.results-list > *`.
+  `.results-list` — the test counts `.results-list > *`. That is why the page's
+  `RetrievalQualityNotice` (#461) sits in `.quality-notice-slot` **above** `.results-list` rather
+  than inside it; it is also gated to `searchMode === 'hybrid'`, since Exact mode is literal BM25
+  and none of the fusion ranking #461 measured applies to it.
 - `SearchTranscriptModal` re-fetches on the redaction toggle (`?redact=false`, owner-only) and
   rebuilds the loaded range **in place** — don't flip `loading` there or the view flickers.
 - `SearchResultCard` re-implements `formatDuration`/`formatFileSize`/`formatDate` locally instead of

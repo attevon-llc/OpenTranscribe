@@ -44,6 +44,25 @@ there as `e5861700`.
   improvement? Stage 5 measured them actively disagreeing (+1.4% vs −49.1% on one arm), so this
   decides whether single-corpus tuning is evidence at all.
 
+## 🚦 Coming back to this after a break? Start at issue #461
+
+**[#461](https://github.com/attevon-llc/OpenTranscribe/issues/461) opens with a "START HERE"
+box carrying the phased execution order.** That is the entry point — it says what to do first
+and why, and links everything else. Do not start from this file; it is an index.
+
+The four tracking issues:
+
+| | |
+|---|---|
+| **#461** | RAG retrieval quality — measured findings, dependency map, datasets, eval packages. **Has the execution order.** |
+| **#463** | Answer quality — QMSum's human-written answers are on disk and unused. Gates the reranker decision. |
+| **#464** | Tiered map output — use LLM summaries for the overview when an LLM is configured. |
+| **#462** | Summary search — a separate product feature, parallel to all retrieval work. |
+
+**The one-line version:** per-query nDCG first (cheap, gates credibility) → measure answer
+quality (#463) → then the reranker A/B, which is the highest product impact and is **blocked**
+until an answer-quality measure exists.
+
 ## Open queue, in dependency order
 
 1. **#51 — generation quality is unmeasured.** No faithfulness or citation-correctness scoring

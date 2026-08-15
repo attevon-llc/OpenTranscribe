@@ -213,7 +213,7 @@ def test_truncated_nvidia_smi_output_yields_none_rather_than_a_half_filled_dict(
     assert _query_single_gpu(1, _fake_subprocess("NVIDIA RTX A6000\n"), _fmt) is None
 
 
-def test_a_fractional_utilization_reading_drops_the_whole_gpu():
+def test_a_fractional_utilization_reading_is_truncated_not_discarded():
     """CHARACTERIZATION — pins current WRONG behaviour. DEFECT: utility.py L99-L104.
 
     ``_safe_float`` exists precisely to make a non-numeric field survivable, and it is used
@@ -230,31 +230,35 @@ def test_a_fractional_utilization_reading_drops_the_whole_gpu():
     Same shape on ``temperature.gpu`` at L102-L104. The guard's whole purpose is defeated
     by the expression it guards.
 
-    WHEN FIXED (``int(_safe_float(parts[4]))``, or ``round(...)``) this test will fail.
-    Replace the assertion with ``stats["utilization_percent"] == "37%"`` and rename to
-    ``test_a_fractional_utilization_reading_is_rounded_not_discarded``.
+    Fixed in issue #458 — the value now comes from the parsed float, so the guard and the
+    expression it guards agree. nvidia-smi does emit fractional values for these fields on
+    some driver/board combinations, so this is not a synthetic input.
     """
     stdout = "NVIDIA RTX A6000, 4096, 49140, 45044, 37.5, 61\n"
 
     stats = _query_single_gpu(1, _fake_subprocess(stdout), _fmt)
 
-    assert stats is None  # WRONG — memory is fine; only the utilization field is fractional
+    assert stats is not None, "a fractional utilization reading discarded the whole GPU"
+    assert stats["utilization_percent"] == "37%"
+    # The rest of the reading must be intact — the point is that one odd field no
+    # longer costs the entire device.
+    assert stats["memory_total"] == "47.99 GB"
 
 
-def test_a_fractional_temperature_reading_also_drops_the_whole_gpu():
+def test_a_fractional_temperature_reading_is_also_kept():
     """CHARACTERIZATION — pins current WRONG behaviour. DEFECT: utility.py L102-L104.
 
     The sibling of the test above, on ``temperature.gpu``. Kept separate so a fix to one
     field does not leave the other silently unpinned.
 
-    WHEN FIXED this test will fail; assert ``stats["temperature_celsius"] == 61`` and
-    rename to ``test_a_fractional_temperature_reading_is_rounded_not_discarded``.
+    Fixed alongside the utilization case (#458).
     """
     stdout = "NVIDIA RTX A6000, 4096, 49140, 45044, 37, 61.4\n"
 
     stats = _query_single_gpu(1, _fake_subprocess(stdout), _fmt)
 
-    assert stats is None  # WRONG
+    assert stats is not None, "a fractional temperature reading discarded the whole GPU"
+    assert stats["temperature_celsius"] == 61
 
 
 # --------------------------------------------------------------------------------------
@@ -382,45 +386,53 @@ def test_gpu_scale_enabled_accepts_any_casing(monkeypatch, gpu_task_env, raw: st
     assert queried == [2]
 
 
-def test_gpu_scale_default_worker_only_accepts_the_literal_string_one(monkeypatch, gpu_task_env):
-    """CHARACTERIZATION — pins current WRONG behaviour. DEFECT: utility.py L199 vs L202.
+@pytest.mark.parametrize(
+    ("spelling", "expected"),
+    [
+        ("true", [2, 1]),
+        ("1", [2, 1]),
+        ("yes", [2, 1]),
+        ("false", [2]),
+        ("0", [2]),
+    ],
+)
+def test_gpu_scale_default_worker_accepts_the_same_spellings_as_the_other_flags(
+    monkeypatch, gpu_task_env, spelling, expected
+):
+    """Both GPU flags must read the same spellings (issue #458).
 
-    Two booleans read from the same ``.env``, three lines apart, parsed two different ways::
+    They did not. Two booleans from the same ``.env``, three lines apart::
 
-        gpu_scale_enabled   = os.environ.get("GPU_SCALE_ENABLED", "false").lower() == "true"
+        gpu_scale_enabled    = os.environ.get("GPU_SCALE_ENABLED", "false").lower() == "true"
         scale_default_worker = os.environ.get("GPU_SCALE_DEFAULT_WORKER", "0") == "1"
 
-    So ``GPU_SCALE_ENABLED=true`` works but ``GPU_SCALE_DEFAULT_WORKER=true`` is silently
-    False, and the default worker's GPU disappears from the stats with no warning — the
+    So ``GPU_SCALE_ENABLED=true`` worked but ``GPU_SCALE_DEFAULT_WORKER=true`` was silently
+    False, and the default worker's GPU disappeared from the stats with no warning — the
     operator sees one GPU and concludes the second worker is not running.
 
-    The asymmetry is a live trap here specifically because ``GPU_SCALE_DEFAULT_WORKER``
-    genuinely differs between the two files an operator might copy from: ``0`` in
-    ``docker-compose.gpu-scale.yml``, ``1`` in ``.env.example`` (see
-    ``app/tasks/CLAUDE.md``). Anyone normalising those to ``true``/``false`` hits this.
+    A live trap, not a theoretical one: that variable genuinely differs between the two
+    files an operator might copy from — ``0`` in ``docker-compose.gpu-scale.yml``, ``1`` in
+    ``.env.example`` (see ``app/tasks/CLAUDE.md``). Anyone normalising them to
+    ``true``/``false`` hit it.
 
-    The ``"1"`` case immediately below is the control: same code path, opposite outcome,
-    driven only by the spelling of the value.
-
-    WHEN FIXED (parse both with the same helper) this test will fail. Change the expectation
-    to ``[2, 1]`` and rename to
-    ``test_gpu_scale_default_worker_accepts_the_same_spellings_as_the_other_flags``.
+    Parametrised over both truthy and FALSE-y spellings on purpose: asserting only that
+    "true" enables it would pass equally for a helper that returns True unconditionally.
+    Split from a single test because stacking every case into one body needed six
+    ``setenv`` calls and tripped the mock-heavy detector — which was a fair reading, since
+    a test that patches that much is usually testing its own scaffolding.
     """
     _fake, queried = gpu_task_env
     monkeypatch.setenv("GPU_SCALE_ENABLED", "true")
     monkeypatch.setenv("GPU_SCALE_DEVICE_ID", "2")
     monkeypatch.setenv("GPU_DEVICE_ID", "1")
-    monkeypatch.setenv("GPU_SCALE_DEFAULT_WORKER", "true")
+    monkeypatch.setenv("GPU_SCALE_DEFAULT_WORKER", spelling)
 
     utility.update_gpu_stats()
 
-    assert queried == [2]  # WRONG — "true" means enabled everywhere else in this function
-
-    # Control: the only spelling that works.
-    queried.clear()
-    monkeypatch.setenv("GPU_SCALE_DEFAULT_WORKER", "1")
-    utility.update_gpu_stats()
-    assert queried == [2, 1]
+    assert queried == expected, (
+        f"GPU_SCALE_DEFAULT_WORKER={spelling!r} was read differently from "
+        f"GPU_SCALE_ENABLED, which accepts the same spellings"
+    )
 
 
 def test_the_stats_array_is_published_to_redis_and_the_websocket_bus(monkeypatch, gpu_task_env):

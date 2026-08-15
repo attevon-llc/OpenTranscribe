@@ -295,7 +295,7 @@ def test_a_failed_fetch_is_counted_and_does_not_poison_the_cache(recovery_seams)
     assert sorted(recovery_seams.saves[-1]) == ["aaa", "ccc"]
 
 
-def test_limit_does_not_bound_requests_when_fetches_fail(recovery_seams):
+def test_limit_bounds_requests_regardless_of_whether_they_succeed(recovery_seams):
     """CHARACTERIZATION — pins current WRONG behaviour. DEFECT: recovery_tasks.py L81-L91.
 
     ``new_this_run`` is incremented only in the *success* branch (L91), while the ``limit``
@@ -313,18 +313,20 @@ def test_limit_does_not_bound_requests_when_fetches_fail(recovery_seams):
     ``test_a_failed_fetch_is_counted_and_does_not_poison_the_cache``), so every subsequent
     run repeats the whole sweep from the start.
 
-    WHEN FIXED (increment the budget for every attempt, i.e. move ``new_this_run += 1``
-    out of the ``else`` branch) this test will fail. Replace the assertion with
-    ``len(recovery_seams.fetch_calls) == 2`` and rename to
-    ``test_limit_bounds_requests_regardless_of_whether_they_succeed``.
+    Fixed in issue #457: the budget advances on every ATTEMPT. All-failing is the
+    scenario that matters — it is the state most likely to mean the remote has already
+    soft-blocked this host, which is the reason the module rate-limits itself at all.
     """
     recovery_seams.ids = [f"id{n:02d}" for n in range(10)]
     recovery_seams.responses = {}  # every fetch fails
 
     summary = recovery_tasks.youtube_metadata_fetch(user_id=1, limit=2)
 
-    assert len(recovery_seams.fetch_calls) == 10  # WRONG — limit=2 should have capped this
-    assert summary["failed"] == 10
+    assert len(recovery_seams.fetch_calls) == 2, (
+        "limit=2 must cap REQUESTS; counting only successes meant an all-failing run "
+        "swept every id, which is exactly when a soft block is most likely"
+    )
+    assert summary["failed"] == 2
     assert summary["fetched"] == 0
 
 

@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
 
@@ -14,8 +15,14 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.tags._common import _share_target
 from app.api.endpoints.tags._common import _writable_tag_ids
 from app.api.endpoints.tags._common import router
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
+from app.auth.audit import request_org_id
 from app.db.base import get_db
+from app.middleware.audit import get_request_context
 from app.models.media import Tag
+from app.models.sharing import TagShare
 from app.models.user import User
 from app.schemas.media import TagShareCreate
 from app.schemas.media import TagShareTarget
@@ -48,6 +55,7 @@ def list_tag_shares(
 def create_tag_share(
     tag_uuid: UUID,
     payload: TagShareCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -90,6 +98,25 @@ def create_tag_share(
         ) from exc
 
     on_tags_changed(db, user_id=current_user.id)
+
+    req_ctx = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.RESOURCE_SHARE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=req_ctx["source_ip"],
+        user_agent=req_ctx["user_agent"],
+        organization_id=request_org_id(request),
+        target_user_id=target_user_id,
+        details={
+            "resource_type": "tag",
+            "resource_uuid": str(tag.uuid),
+            "resource_name": tag.name,
+            "target_group_id": target_group_id,
+        },
+    )
+
     return _share_target(share)
 
 
@@ -97,6 +124,7 @@ def create_tag_share(
 def revoke_tag_share(
     tag_uuid: UUID,
     share_uuid: UUID,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
@@ -110,6 +138,30 @@ def revoke_tag_share(
     tag_id = _writable_tag_ids(
         db, [tag_uuid], user_id=current_user.id, is_admin=current_user.is_admin
     )[0]
-    if not revoke_share(db, tag_id, share_uuid):
+    # Captured before revoke_share() deletes the row -- the audit event needs to
+    # say WHO the grant was to, and that information is gone once it's gone.
+    share = (
+        db.query(TagShare).filter(TagShare.tag_id == tag_id, TagShare.uuid == share_uuid).first()
+    )
+    if share is None or not revoke_share(db, tag_id, share_uuid):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found")
     on_tags_changed(db, user_id=current_user.id)
+
+    tag = db.query(Tag).filter(Tag.id == tag_id).one()
+    req_ctx = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.RESOURCE_UNSHARE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=req_ctx["source_ip"],
+        user_agent=req_ctx["user_agent"],
+        organization_id=request_org_id(request),
+        target_user_id=share.target_user_id,
+        details={
+            "resource_type": "tag",
+            "resource_uuid": str(tag.uuid),
+            "resource_name": tag.name,
+            "target_group_id": share.target_group_id,
+        },
+    )

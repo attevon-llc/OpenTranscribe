@@ -8,12 +8,28 @@ have been moved to app.tasks.recovery for better organization.
 import contextlib
 import json
 import logging
+import os
 
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
 from app.core.redis import get_redis
 
 logger = logging.getLogger(__name__)
+
+
+def _env_flag(name: str, *, default: bool = False) -> bool:
+    """Read a boolean environment variable, one way for every caller.
+
+    `GPU_SCALE_ENABLED` used `.lower() == "true"` while `GPU_SCALE_DEFAULT_WORKER`
+    three lines later required the literal `"1"` — two booleans from the same
+    `.env`, parsed differently (issue #458). `GPU_SCALE_DEFAULT_WORKER=true` was
+    silently False, and the two documented sources already disagree on the
+    spelling: docker-compose.yml sets `0`, `.env.example` sets `1`.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _safe_float(value: str | None) -> float | None:
@@ -96,12 +112,15 @@ def _query_single_gpu(device_id: int, subprocess_mod, format_bytes) -> dict | No
         memory_used_mib = _safe_float(parts[1])
         memory_total_mib = _safe_float(parts[2])
         memory_free_mib = _safe_float(parts[3])
-        utilization_percent = (
-            int(parts[4]) if len(parts) > 4 and _safe_float(parts[4]) is not None else None
-        )
-        temperature_celsius = (
-            int(parts[5]) if len(parts) > 5 and _safe_float(parts[5]) is not None else None
-        )
+        # int(float(...)), never int(raw) — issue #458. `_safe_float` was used as the
+        # GUARD while `int()` took the raw string, so nvidia-smi emitting "37.5" (which
+        # it does on some driver/board combinations) passed the guard and then raised
+        # ValueError inside int(). That was swallowed by the broad except below and the
+        # task reported "No GPU Available" for a perfectly healthy GPU.
+        _utilization = _safe_float(parts[4]) if len(parts) > 4 else None
+        utilization_percent = int(_utilization) if _utilization is not None else None
+        _temperature = _safe_float(parts[5]) if len(parts) > 5 else None
+        temperature_celsius = int(_temperature) if _temperature is not None else None
 
         memory_source = "nvidia-smi"
 
@@ -196,10 +215,10 @@ def update_gpu_stats(self):
 
         # Determine which GPU devices the app workers are using.
         # All values come from .env via env_file on the cpu-worker service.
-        gpu_scale_enabled = os.environ.get("GPU_SCALE_ENABLED", "false").lower() == "true"
+        gpu_scale_enabled = _env_flag("GPU_SCALE_ENABLED", default=False)
         scale_device_id = int(os.environ.get("GPU_SCALE_DEVICE_ID", "2"))
         default_device_id = int(os.environ.get("GPU_DEVICE_ID", "0"))
-        scale_default_worker = os.environ.get("GPU_SCALE_DEFAULT_WORKER", "0") == "1"
+        scale_default_worker = _env_flag("GPU_SCALE_DEFAULT_WORKER", default=False)
 
         if gpu_scale_enabled:
             # Scaled worker is always the primary; add default worker if also active.
@@ -255,22 +274,11 @@ def update_gpu_stats(self):
         logger.debug(f"Updated GPU stats in Redis: {gpu_stats_list}")
         return gpu_stats_list
 
-    except FileNotFoundError:
-        logger.warning("nvidia-smi not found — no GPU available")
-        fallback = [
-            {
-                "available": False,
-                "device_id": 0,
-                "name": "No GPU Available",
-                "memory_total": "N/A",
-                "memory_used": "N/A",
-                "memory_free": "N/A",
-                "memory_percent": "N/A",
-            }
-        ]
-        with contextlib.suppress(Exception):
-            celery_app.backend.client.setex("gpu_stats", 600, json.dumps(fallback))
-        return fallback
+    # There is no `except FileNotFoundError` arm: `_query_single_gpu` catches
+    # Exception one frame down, so it was unreachable (issue #458). It also reported
+    # `device_id: 0` where the live path reports `device_ids[0]`, so it documented
+    # behaviour the product does not have — and its log line is exactly what an
+    # operator would grep for after a failure and never find.
     except Exception as e:
         logger.error(f"Error updating GPU stats: {str(e)}")
         fallback = [

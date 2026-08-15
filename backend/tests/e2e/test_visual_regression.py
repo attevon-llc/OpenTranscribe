@@ -25,10 +25,26 @@ Then re-run WITHOUT the env var to compare against the committed baselines::
     pytest backend/tests/e2e/test_visual_regression.py -v
 
 Requirements:
-- Dev environment running: ./opentr.sh start dev
-- At least one completed, transcribed file in the dev dataset
-- Frontend at localhost:5173, Backend at localhost:5174
-  (admin@example.com / password)
+- An ISOLATED, seeded stack — never the shared live dev stack (issue #451):
+  ``./opentr.sh start dev --fresh <name> --port-offset N --seed-benchmark``,
+  then point ``--base-url``/``--backend-url`` (or ``base_url``/``backend_url``,
+  see conftest) at its ports.
+- At least one completed, transcribed file with segments in that dataset
+  (``--seed-benchmark`` uploads a fixed, small set via
+  ``scripts/seed-fresh-deployment.sh``; wait for all of them to leave
+  "processing" before running this suite)
+- admin@example.com / password (seeded automatically on a fresh deployment)
+
+Why isolation is not optional here (issue #451): ``gallery`` and ``file_detail``
+are full-page captures of live, mutable, newest-first content, and
+``transcribed_file_uuid`` below deliberately selects the NEWEST completed file
+with segments — the same query the app itself uses. Against the shared dev
+stack, any upload from any other session repoints that query at a different
+file and invalidates the baseline; the fix is not to make the query
+order-independent (the app's own "newest first" behavior is exactly what
+should be under test) but to run against a stack nothing else will ever touch.
+On a single-purpose ``--fresh`` deployment, "newest" is as deterministic as a
+hard-coded UUID, because nothing else can upload to it between two runs.
 """
 
 from __future__ import annotations
@@ -135,7 +151,20 @@ def _compare_or_write(name: str, png_bytes: bytes) -> None:
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="module")
 def api_token(backend_url: str) -> str:
-    """Authenticate once per module via the backend API."""
+    """Authenticate once per module via the backend API.
+
+    Also dismisses the FirstRunWizard (``FirstRunWizard.svelte`` +
+    ``POST /admin/first-run-wizard/complete``) for the super_admin account. It
+    mounts unconditionally in the root layout and, on an account that has never
+    completed it — true of a brand-new ``--fresh --seed-benchmark`` admin —
+    opens a `BaseModal` on first authenticated page load whose backdrop
+    intercepts every click, including the settings surface's `.user-button`.
+    There is no localStorage/query-param gate to suppress it with; its
+    visibility is entirely server-derived from `SystemSettings`, so the only
+    way to keep it from appearing is to call the same completion endpoint the
+    UI's own skip button calls. Idempotent — safe to call even if already
+    completed.
+    """
     resp = requests.post(
         f"{backend_url}/api/auth/token",
         data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
@@ -144,7 +173,13 @@ def api_token(backend_url: str) -> str:
     )
     if resp.status_code != 200:
         pytest.skip(f"Cannot authenticate against dev stack (HTTP {resp.status_code})")
-    return str(resp.json()["access_token"])
+    token = str(resp.json()["access_token"])
+    requests.post(
+        f"{backend_url}/api/admin/first-run-wizard/complete",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=10,
+    )
+    return token
 
 
 @pytest.fixture(scope="module")
@@ -241,14 +276,32 @@ THEMES = ["light", "dark"]
 #:
 #: ⚠️ Only selectors VERIFIED to match on the live app are listed. A first draft
 #: also carried `settings`: `.stat-value`, `.stat-detail`, `.progress-fill`,
-#: `.model-value` — all four matched **zero** elements, so that entry masked
-#: nothing while reading as though it did. Settings is deliberately absent until
-#: its selectors are confirmed against a modal that stays open long enough to
-#: query (it closed on its own in a scripted session, which is its own question).
+#: `.model-value` — all four matched **zero** elements, because the query was
+#: made right after `.settings-modal` became visible, before its default
+#: `system-statistics` section finished its own async `GET /system/stats` call
+#: (`SystemStatisticsPanel.svelte`; `statsLoading` gates the whole grid, and the
+#: GPU card can retry once more with its own 5s delay). The settings branch of
+#: `test_visual_regression` now waits for `.stats-grid` itself before capturing,
+#: which is what makes the entry below actually match something.
+#:
+#: `settings` masks the ENTIRE `.stats-grid`, not the individual `.stat-value` /
+#: `.stat-detail` / `.progress-fill` classes inside it. Those classes are reused
+#: across every card in the grid (users, files, tasks, throughput, queue depth,
+#: model names, CPU/mem/disk/GPU) with no per-metric class, and one card
+#: (Search Index) only renders once its own async status has loaded — so
+#: `:nth-child` targeting is order-fragile in a way a single outer selector is
+#: not. Every number in that grid is either live host telemetry (CPU/disk/GPU%)
+#: or a DB total that is only stable because nothing else can write to this
+#: isolated stack between two runs; masking the whole region is the box that
+#: still lets the surrounding chrome (sidebar nav, modal frame, section header)
+#: be compared for real.
 #: Do not add a selector here without checking `page.locator(sel).count()`.
 _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
     # "Last run: N minutes ago" (1 element) + per-cluster membership counts (20).
     "speakers": (".last-clustered-chip", ".member-count"),
+    # Users/files/tasks/throughput/queue/model/CPU/mem/disk/GPU cards — live
+    # telemetry and DB totals, all inside one wrapper (see comment above).
+    "settings": (".settings-modal .stats-grid",),
 }
 
 
@@ -322,7 +375,21 @@ def test_visual_regression(
             expect(settings_item.first).to_be_visible(timeout=5000)
             settings_item.first.click()
             expect(page.locator(".settings-modal")).to_be_visible(timeout=10000)
+            # The modal opens directly into the "System Statistics" section
+            # (Navbar.svelte + settingsModalStore's default), but that section's
+            # numbers arrive from its own async GET /system/stats — waiting on
+            # `.settings-modal` alone races that call and is why an earlier draft
+            # of _VOLATILE_SELECTORS found nothing to mask.
+            page.wait_for_selector(".settings-modal .stats-grid", timeout=15000)
             _stabilize(page)
+            # See the speakers branch above for why this assertion exists: a
+            # masked surface must actually mask something, or a class rename
+            # silently lets the live gauges/DB totals back into the baseline.
+            assert _volatile_regions(page, "settings"), (
+                "_VOLATILE_SELECTORS['settings'] matched nothing on the settings "
+                "modal, so this capture masks nothing and its baseline will "
+                "absorb live CPU/disk/GPU gauges and DB totals."
+            )
         else:  # pragma: no cover - defensive
             pytest.fail(f"Unknown surface: {surface}")
 

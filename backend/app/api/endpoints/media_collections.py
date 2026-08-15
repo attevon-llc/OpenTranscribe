@@ -19,6 +19,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
 from fastapi import status
 from sqlalchemy import func
 from sqlalchemy import or_
@@ -33,10 +34,14 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import set_file_urls
 from app.api.endpoints.files.filtering import apply_all_filters
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARED
 from app.db.base import get_db
+from app.middleware.audit import get_request_context
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
 from app.models.media import Collection
@@ -1109,6 +1114,7 @@ def list_collection_shares(
 def create_collection_share(
     collection_uuid: str,
     share_in: ShareCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -1277,6 +1283,25 @@ def create_collection_share(
     # Notify affected user(s) about the new share
     _notify_share_event(db, share, collection, NOTIFICATION_TYPE_COLLECTION_SHARED)
 
+    req_ctx = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.RESOURCE_SHARE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=req_ctx["source_ip"],
+        user_agent=req_ctx["user_agent"],
+        organization_id=ctx.org_id,
+        target_user_id=target_user_id,
+        details={
+            "resource_type": "collection",
+            "resource_uuid": str(collection.uuid),
+            "resource_name": collection.name,
+            "target_group_id": target_group_id,
+            "permission": share_in.permission,
+        },
+    )
+
     return _build_share_response(db, share)
 
 
@@ -1285,6 +1310,7 @@ def update_collection_share(
     collection_uuid: str,
     share_uuid: str,
     share_update: ShareUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -1304,6 +1330,7 @@ def update_collection_share(
             detail="Share not found on this collection",
         )
 
+    previous_permission = share.permission
     share.permission = share_update.permission
     db.commit()
     db.refresh(share)
@@ -1335,6 +1362,27 @@ def update_collection_share(
     # Notify affected user(s) about the permission change
     _notify_share_event(db, share, collection, NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED)
 
+    req_ctx = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.RESOURCE_SHARE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=req_ctx["source_ip"],
+        user_agent=req_ctx["user_agent"],
+        organization_id=ctx.org_id,
+        target_user_id=share.target_user_id,
+        details={
+            "resource_type": "collection",
+            "resource_uuid": str(collection.uuid),
+            "resource_name": collection.name,
+            "target_group_id": share.target_group_id,
+            "action": "permission_update",
+            "previous_permission": previous_permission,
+            "permission": share.permission,
+        },
+    )
+
     return _build_share_response(db, share)
 
 
@@ -1345,6 +1393,7 @@ def update_collection_share(
 def delete_collection_share(
     collection_uuid: str,
     share_uuid: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -1364,8 +1413,11 @@ def delete_collection_share(
             detail="Share not found on this collection",
         )
 
-    # Capture notification data before deletion
+    # Capture notification/audit data before deletion -- gone from the row after.
     target_user_ids = _get_share_target_user_ids(db, share)
+    revoked_target_user_id = share.target_user_id
+    revoked_target_group_id = share.target_group_id
+    revoked_permission = share.permission
     revoke_data: dict = {
         "collection_uuid": str(collection.uuid),
         "collection_name": collection.name,
@@ -1386,6 +1438,25 @@ def delete_collection_share(
     ]
     if file_ids:
         update_file_access_index.delay(file_ids)
+
+    req_ctx = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.RESOURCE_UNSHARE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=req_ctx["source_ip"],
+        user_agent=req_ctx["user_agent"],
+        organization_id=ctx.org_id,
+        target_user_id=revoked_target_user_id,
+        details={
+            "resource_type": "collection",
+            "resource_uuid": str(collection.uuid),
+            "resource_name": collection.name,
+            "target_group_id": revoked_target_group_id,
+            "permission": revoked_permission,
+        },
+    )
 
     # Notify affected user(s) about the revocation
     for uid in target_user_ids:

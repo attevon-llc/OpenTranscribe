@@ -132,7 +132,7 @@ declare -A MODULE_TESTS=(
     # run, which is failure mode 1 (a test that is not selected kills nothing) applied to the
     # fix for failure mode 1. Adding a test file here can only lower a count; leaving one out
     # manufactures findings.
-    [security]="tests/api/endpoints/test_auth_comprehensive.py tests/unit/test_token_type_binding.py tests/test_fips_140_3.py tests/unit/test_bcrypt_test_rounds.py tests/unit/test_local_auth_policy.py tests/unit/test_jwt_algorithm_downgrade.py tests/unit/test_verify_token_claims.py"
+    [security]="tests/api/endpoints/test_auth_comprehensive.py tests/unit/test_token_type_binding.py tests/test_fips_140_3.py tests/unit/test_bcrypt_test_rounds.py tests/unit/test_local_auth_policy.py tests/unit/test_jwt_algorithm_downgrade.py tests/unit/test_verify_token_claims.py tests/unit/test_security_survivor_mutants.py"
     # ⚠️ THIS LIST IS THE MEASUREMENT. An omitted file is not a smaller run — it is a
     # batch of FALSE survivors that look exactly like real findings. The first run of
     # this target reported 41 survivors in `_enforce_proxy_identity_consistency` and
@@ -145,12 +145,12 @@ declare -A MODULE_TESTS=(
     # the module nor its helpers -- they drive it over HTTP and through the provider
     # registry -- so nothing static could derive them. The coverage pre-flight below
     # measures the property directly instead.
-    [dependencies]="tests/unit/test_route_privilege_tiers.py tests/unit/test_account_lifecycle.py tests/unit/test_account_approval.py tests/unit/test_mfa_enforcement.py tests/unit/test_flower_access.py tests/unit/test_banner_acknowledgment.py tests/unit/test_token_type_binding.py tests/unit/test_access_token_revocation_epoch.py tests/unit/test_credential_gate_fail_closed.py tests/api/test_proxy_auth_endpoint.py tests/test_cloud_seams.py tests/unit/test_proxy_identity_consistency.py tests/unit/test_lifecycle_denial_audit_records.py tests/unit/test_optional_current_user.py tests/unit/test_external_token_auth.py"
+    [dependencies]="tests/unit/test_route_privilege_tiers.py tests/unit/test_account_lifecycle.py tests/unit/test_account_approval.py tests/unit/test_mfa_enforcement.py tests/unit/test_flower_access.py tests/unit/test_banner_acknowledgment.py tests/unit/test_token_type_binding.py tests/unit/test_access_token_revocation_epoch.py tests/unit/test_credential_gate_fail_closed.py tests/api/test_proxy_auth_endpoint.py tests/test_cloud_seams.py tests/unit/test_proxy_identity_consistency.py tests/unit/test_lifecycle_denial_audit_records.py tests/unit/test_optional_current_user.py tests/unit/test_external_token_auth.py tests/unit/test_dependencies_survivor_mutants.py"
     # Coverage pre-flight caught this list at 56% of the module on its first real run:
     # it omitted test_lockout_atomicity.py (named for the module it tests) and
     # test_auth_config_behaviour.py, both of which import app.auth.lockout directly, plus
     # the login path that drives it end to end. Now 80.4%.
-    [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py"
+    [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py"
     # HISTORY, kept because the reasoning still applies to the next target like it:
     # this entry used to warn that ~every OIDCStateStore mutant would survive, because
     # `store_state`/`get_state`/`delete_state` had no test at all and the target
@@ -159,7 +159,7 @@ declare -A MODULE_TESTS=(
     # distinction it drew -- a target can report survivors because nothing tests the
     # code, not because the tests are weak -- is now checked mechanically by the
     # coverage pre-flight rather than remembered in a comment.
-    [session]="tests/unit/test_session_lifetime.py tests/unit/test_auth_state_degradation.py tests/unit/test_oidc_state_single_use.py"
+    [session]="tests/unit/test_session_lifetime.py tests/unit/test_auth_state_degradation.py tests/unit/test_oidc_state_single_use.py tests/unit/test_session_survivor_mutants.py"
 )
 
 
@@ -424,63 +424,20 @@ _verify_survivor_locked() {
     # which is what disambiguates a context block that appears in more than one place --
     # and it does here: the Redis and in-memory lockout paths are near-duplicates, so 7
     # mutants came back UNVERIFIABLE until the search was scoped to the right function.
+    #
+    # Class methods carry their class in the id too, joined with U+01C1 (`ǁ`) --
+    # `xǁInMemoryStoreǁdelete__mutmut_2` -- and mutmut's own diff for those is printed
+    # DEDENTED to the method body's own frame (as if `def delete` started at column 0),
+    # not at the method's real column in the file. A top-level function's diff has no such
+    # offset (the function already starts at column 0), which is why this went unnoticed
+    # until the first `--verify` of a class-method mutant: the context block was searched
+    # for at the wrong indentation and matched nowhere. Root-caused and fixed in
+    # scripts/mutation-verify-apply.py (issue #459) -- read that file's docstring, not a
+    # copy inlined here, so the two never drift.
     mut_func="${mutant##*.}"; mut_func="${mut_func%%__mutmut_*}"; mut_func="${mut_func#x}"
     out=$("$VENV_BIN/mutmut" show "$mutant" 2>/dev/null | MUT_TARGET="$BACKEND/$path" \
         MUT_FUNC="$mut_func" \
-        "$VENV_BIN/python" -c '
-import os, pathlib, sys
-
-show = sys.stdin.read().splitlines()
-old, new = [], []
-for line in show:
-    if line.startswith(("---", "+++", "@@", "#")):
-        continue
-    if line.startswith("-"):
-        old.append(line[1:])
-    elif line.startswith("+"):
-        new.append(line[1:])
-    else:
-        old.append(line[1:] if line.startswith(" ") else line)
-        new.append(line[1:] if line.startswith(" ") else line)
-
-if not old or old == new:
-    print("NODIFF"); raise SystemExit(0)
-
-old_block, new_block = "\n".join(old), "\n".join(new)
-target = pathlib.Path(os.environ["MUT_TARGET"])
-source = target.read_text()
-
-# Narrow to the mutated function when its name is known, so a context block shared by two
-# near-duplicate functions is no longer ambiguous.
-lo, hi = 0, len(source)
-want = os.environ.get("MUT_FUNC", "")
-if want:
-    import ast
-    lines = source.splitlines(keepends=True)
-    offsets, run = [], 0
-    for line in lines:
-        offsets.append(run); run += len(line)
-    offsets.append(run)
-    for node in ast.walk(ast.parse(source)):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == want:
-            lo = offsets[node.lineno - 1]
-            hi = offsets[min(node.end_lineno, len(lines))]
-            break
-
-region = source[lo:hi]
-count = region.count(old_block)
-if count != 1:
-    # Fall back to the whole file: mutmut names nested/decorated helpers in ways ast may
-    # not match, and a whole-file unique match is still unambiguous.
-    count = source.count(old_block)
-    if count != 1:
-        print(f"AMBIGUOUS {count}"); raise SystemExit(0)
-    target.write_text(source.replace(old_block, new_block))
-    print("APPLIED"); raise SystemExit(0)
-
-target.write_text(source[:lo] + region.replace(old_block, new_block) + source[hi:])
-print("APPLIED")
-')
+        "$VENV_BIN/python" "$REPO_ROOT/scripts/mutation-verify-apply.py")
 
     case "$out" in
         APPLIED) : ;;

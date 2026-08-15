@@ -27,6 +27,7 @@ import socket
 import pytest
 
 from app.core.config import settings
+from tests.db_locks import acquire_ddl_lock_exclusive_raw
 
 # The exact convert block from v368's upgrade().
 _GUARD_SQL = """
@@ -82,6 +83,14 @@ def test_v368_guard_converts_legacy_varchar_uuid_and_is_idempotent():
     )
     try:
         cur = conn.cursor()
+        # `_GUARD_SQL` below scans the PUBLIC schema and runs `ALTER TABLE` on every match,
+        # so it needs the same cross-worker exclusion `db_session` gives DDL tests. This
+        # connection is opened by hand (the point is to exercise the raw guard block), so
+        # the `ddl_exclusive` marker cannot reach it — take the lock explicitly instead.
+        # The loop is empty on a correctly migrated database, but that is a runtime
+        # accident, not isolation: a match would ALTER a real table uncoordinated.
+        acquire_ddl_lock_exclusive_raw(cur)
+
         # Everything happens inside a transaction we roll back — dev data untouched.
         cur.execute("CREATE TEMP TABLE _uuid7_probe (id serial PRIMARY KEY, uuid varchar(36))")
         cur.execute(

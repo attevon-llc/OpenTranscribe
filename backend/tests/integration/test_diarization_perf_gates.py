@@ -29,6 +29,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.helpers import does_not_raise
+
 pytestmark = [pytest.mark.gpu, pytest.mark.slow]
 
 BENCHMARK_ROOT = Path("/app/benchmark/test_audio")
@@ -182,10 +184,13 @@ def test_coexistence_under_simulated_cap(
 
     # Apply the simulated cap on a fresh process-frac; must run BEFORE any
     # CUDA allocation in this test to take effect.
+    # Narrowed from a bare `except Exception`, which would have reported any failure in this
+    # block — including a genuine CUDA/driver fault — as a skip (issue #431). Only an absent or
+    # unusable device should skip; anything else is a real problem and must fail.
     try:
         total_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-    except Exception:
-        pytest.skip("cannot read device properties")
+    except (RuntimeError, AssertionError, AttributeError) as exc:
+        pytest.skip(f"cannot read CUDA device properties: {exc}")
     frac = cap_gb / total_gb
     if frac > 1.0:
         pytest.skip(f"device smaller than cap={cap_gb}GB")
@@ -215,23 +220,37 @@ def test_coexistence_under_simulated_cap(
         hf_token=os.environ.get("HUGGINGFACE_TOKEN"),
     )
 
+    torch.cuda.reset_peak_memory_stats(0)
+
     # Whisper
-    t = Transcriber(cfg)
-    t.load_model()
-    t.transcribe(audio)
-    t.unload_model()
-    del t
-    gc.collect()
-    torch.cuda.empty_cache()
+    with does_not_raise(f"Whisper small must fit and run under a simulated {cap_gb} GB cap"):
+        t = Transcriber(cfg)
+        t.load_model()
+        t.transcribe(audio)
+        t.unload_model()
+        del t
+        gc.collect()
+        torch.cuda.empty_cache()
 
     # Diarization with budget matching the simulated cap headroom.
     # cap_gb*1024 - 500(cuda) - 750(whisper reserve) = budget_mb
     budget_mb = max(800, int(cap_gb * 1024 - 500 - 750))
     os.environ["DIARIZATION_VRAM_BUDGET_MB"] = str(budget_mb)
 
-    d = SpeakerDiarizer(cfg)
-    d.load_model()
-    d.unload_model()
+    with does_not_raise(f"diarization must fit in its {budget_mb} MB share of the cap"):
+        d = SpeakerDiarizer(cfg)
+        d.load_model()
+        d.unload_model()
 
-    # Pass criterion: neither call OOM'd. The try/OOMError path is
-    # implicit — OOM would raise and fail the test.
+    # The old pass criterion was entirely implicit: "neither call OOM'd", with no assertion in
+    # the test at all, so it read as an empty test and any future change that stopped applying
+    # the cap would still pass (issue #431). `set_per_process_memory_fraction` above does make
+    # an over-budget allocation raise — now stated via does_not_raise — but the claim in this
+    # test's NAME is that the stack fits under cap_gb, and that is directly measurable.
+    peak_gb = torch.cuda.max_memory_allocated(0) / (1024**3)
+    assert peak_gb <= cap_gb, (
+        f"peak allocation {peak_gb:.2f} GB exceeded the simulated cap of {cap_gb} GB"
+    )
+    assert peak_gb > 0, (
+        "no CUDA memory was ever allocated, so this run did not exercise the cap at all"
+    )

@@ -11,6 +11,8 @@ from fastapi import Response
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.api.deps_context import RequestContext
+from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
 from app.api.endpoints.auth.dependencies import _get_client_info
@@ -22,12 +24,13 @@ from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.constants import VALID_AUTH_TYPES
 from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
+from app.auth.password_policy import password_min_age_remaining
+from app.auth.password_policy import password_policy
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import VALID_ROLES
 from app.auth.roles import role_implies_superuser
 from app.auth.utils import local_password_allowed
-from app.core.config import settings
 from app.core.security import get_password_hash
 from app.core.security import verify_password
 from app.db.base import get_db
@@ -166,10 +169,47 @@ def list_users(
 
 @router.get("/me", response_model=UserSchema)
 def get_current_user_info(current_user: User = Depends(get_current_active_user)):
-    """
-    Get current user info
+    """The caller's own account record.
+
+    The SPA's identity call after a successful login, and the canonical "who am I"
+    probe for a script or agent holding a session cookie — a 200 here confirms both a
+    valid session and an account that passes the lifecycle gates. Any active user;
+    it returns only the caller's own row, so there is no privilege check to make.
+
+    Distinct from ``GET /api/auth/session``, which is the SPA's *anonymous-safe*
+    probe and answers 200 with no user. This one 401s when unauthenticated.
+    ``get_current_active_user`` also rejects an account that is inactive, expired, or
+    flagged ``must_change_password``, so this is not merely a token-decode.
     """
     return current_user
+
+
+def _assert_password_old_enough_to_change(user: User) -> None:
+    """Refuse a voluntary password change made too soon after the last one.
+
+    Split out of ``update_current_user`` so the branch count there stays readable
+    and so the refusal message has one owner.
+
+    Args:
+        user: The account whose password is being changed.
+
+    Raises:
+        HTTPException: 400 while the minimum age has not elapsed.
+    """
+    remaining = password_min_age_remaining(user.password_changed_at)
+    if remaining is None:
+        return
+
+    hours = max(1, -(-int(remaining.total_seconds()) // 3600))
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=(
+            f"Password was changed too recently. It must be kept for at least "
+            f"{password_policy.min_age_hours} hours before it can be changed again "
+            f"(about {hours} more to go). Ask an administrator to reset it if you "
+            f"believe it has been compromised."
+        ),
+    )
 
 
 @router.put("/me", response_model=UserSchema)
@@ -240,12 +280,28 @@ def update_current_user(
         # self-service change could set a password the policy forbids.
         enforce_password_policy(new_password, current_user)
 
+        # Minimum password age (FedRAMP IA-5(1)(d)). Without it the bounded history
+        # is self-defeating: nothing rate-limits this endpoint, so a user could run
+        # `password_history_count` throwaway changes back to back, flush the row
+        # holding their original out of the retained window, and set the original
+        # again — the reuse control defeated with no privilege at all.
+        #
+        # Applied here and NOT on the admin paths (`update_user` below,
+        # `admin.reset_user_password`, the emailed reset) on purpose: this is a
+        # restriction on *voluntary* change, and an administrator recovering an
+        # account must never be blocked by the age of a password they are replacing.
+        # `must_change_password` is exempt for the same reason — a user held for a
+        # forced change is being told to change a password that was, by definition,
+        # just set. Refusing them here would be a lockout with no exit.
+        if not current_user.must_change_password:
+            _assert_password_old_enough_to_change(current_user)
+
         # Check password history (FedRAMP IA-5)
         if not check_password_against_history(db, current_user.id, new_password):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Password has been used recently. Please choose a different password. "
-                f"(Cannot reuse last {settings.PASSWORD_HISTORY_COUNT} passwords)",
+                f"(Cannot reuse last {password_policy.history_count} passwords)",
             )
 
         new_hash = get_password_hash(new_password)
@@ -308,20 +364,48 @@ def update_current_user(
 def search_users(
     q: str = Query(..., min_length=2, max_length=100, description="Search query (min 2 chars)"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
     """Search users by name or email for sharing autocomplete.
 
-    Returns up to 20 results, excluding the current user.
+    Returns up to 20 results, excluding the caller.
+
+    **Tenant-gated.** This is the only plain-``user``-tier route that reads other
+    accounts' identities, and it carried no tenant scope at all — not even the
+    ``UNSCOPED`` sentinel, because no ``RequestContext`` reached it. In an org
+    deployment that made it a cross-tenant directory: any authenticated member of
+    any tenant could page every *other* tenant's active accounts — email plus
+    full name — out of it, 20 at a time, from a two-character query, with no
+    admin privilege and nothing in the response to say the rows came from
+    somewhere else.
+
+    The gate mirrors ``scope_to_context``: in org context only members of THAT
+    org are candidates; in personal scope only accounts with no org membership
+    are. Community-edition invariance holds exactly — the membership table is
+    empty there, so every account is in personal scope and the result set is
+    unchanged.
     """
+    from sqlalchemy import exists
     from sqlalchemy import or_
+
+    from app.models.organization import OrganizationMembership
+
+    # Correlated EXISTS against the outer `user` row, so the tenant gate is one
+    # subquery rather than a join that could duplicate rows per membership.
+    caller_org_member = exists().where(
+        OrganizationMembership.user_id == User.id,
+        OrganizationMembership.organization_id == ctx.org_id,
+    )
+    any_org_member = exists().where(OrganizationMembership.user_id == User.id)
+    tenant_gate = caller_org_member if ctx.is_org_context else ~any_org_member
 
     pattern = f"%{q}%"
     users = (
         db.query(User)
         .filter(
-            User.id != current_user.id,
+            User.id != ctx.user.id,
             User.is_active == True,  # noqa: E712
+            tenant_gate,
             or_(
                 User.email.ilike(pattern),
                 User.full_name.ilike(pattern),
@@ -416,12 +500,16 @@ def update_user(
         # Admins are not exempt from the policy — this path skipped it entirely.
         enforce_password_policy(new_password, user)
 
-        # Check password history (FedRAMP IA-5) - admins must also comply
+        # Check password history (FedRAMP IA-5) - admins must also comply.
+        # The count in the message is the ENFORCED one — `password_policy.history_count`
+        # resolves DB `auth_config` > .env > coded default, while the .env value this
+        # used to interpolate is only the second of those three. A deployment that set
+        # the DB value to 2 told the user "cannot reuse last 24".
         if not check_password_against_history(db, user.id, new_password):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Password has been used recently. Please choose a different password. "
-                f"(Cannot reuse last {settings.PASSWORD_HISTORY_COUNT} passwords)",
+                f"(Cannot reuse last {password_policy.history_count} passwords)",
             )
 
         new_hash = get_password_hash(new_password)

@@ -15,6 +15,8 @@ import importlib
 
 import pytest
 
+from tests.helpers import does_not_raise
+
 ASR_PROVIDER_MODULES = [
     "deepgram_provider",
     "assemblyai_provider",
@@ -32,14 +34,18 @@ ASR_PROVIDER_MODULES = [
 @pytest.mark.parametrize("module_name", ASR_PROVIDER_MODULES)
 def test_asr_provider_module_imports(module_name: str) -> None:
     """Every ASR provider module must import against installed SDK versions."""
-    importlib.import_module(f"app.services.asr.{module_name}")
+    with does_not_raise("every ASR provider module must import on a bare install"):
+        importlib.import_module(f"app.services.asr.{module_name}")
 
 
 class TestDeepgramSdkContract:
     """deepgram-sdk symbols/call path used by deepgram_provider.py."""
 
     def test_client_importable(self) -> None:
-        from deepgram import DeepgramClient  # noqa: F401
+        """The symbol must exist AND be constructible — a bare import only proves the former."""
+        from deepgram import DeepgramClient
+
+        assert callable(DeepgramClient)
 
     def test_transcribe_file_call_path(self) -> None:
         """provider calls client.listen.v1.media.transcribe_file(...)."""
@@ -65,7 +71,10 @@ class TestOpenAiSdkContract:
     """openai symbols used by openai_provider.py and llm_service.py."""
 
     def test_client_importable(self) -> None:
-        from openai import OpenAI  # noqa: F401
+        """The symbol must exist AND be constructible — a bare import only proves the former."""
+        from openai import OpenAI
+
+        assert callable(OpenAI)
 
 
 class TestSpeechmaticsSdkContract:
@@ -76,5 +85,10 @@ class TestSpeechmaticsSdkContract:
     """
 
     def test_batch_client_importable(self) -> None:
-        from speechmatics.batch import AsyncClient  # noqa: F401
-        from speechmatics.batch import FormatType  # noqa: F401
+        """speechmatics-batch, not the deprecated speechmatics-python (which drops speakers)."""
+        from speechmatics.batch import AsyncClient
+        from speechmatics.batch import FormatType
+
+        assert callable(AsyncClient)
+        # FormatType is the enum the provider passes for the transcript format.
+        assert hasattr(FormatType, "__members__")

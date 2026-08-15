@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from app.services.chat import limits
+from tests.helpers import does_not_raise
 
 
 def _redis(**behaviour) -> MagicMock:
@@ -166,7 +167,13 @@ def test_release_without_an_id_prunes_by_age_and_never_clears_the_key():
 def test_release_is_silent_when_redis_is_down():
     client = _redis(zrem=ConnectionError("redis down"))
     with patch("app.core.redis.get_redis", return_value=client):
-        limits.release_stream_slot(user_id=1, slot_id="slot-abc")  # must not raise
+        with does_not_raise("a Redis outage must not surface when releasing a stream slot"):
+            limits.release_stream_slot(user_id=1, slot_id="slot-abc")
+
+    # Assert the raising path actually ran. Without this the test also passes when
+    # release_stream_slot never touches Redis at all, which would prove nothing about
+    # containment (issue #431).
+    client.zrem.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -203,4 +210,7 @@ def test_is_cancelled_reports_false_when_redis_is_down():
 def test_clear_cancel_is_contained():
     client = _redis(delete=ConnectionError("redis down"))
     with patch("app.core.redis.get_redis", return_value=client):
-        limits.clear_cancel("msg-uuid")  # must not raise
+        with does_not_raise("a Redis outage must not surface when clearing a cancel flag"):
+            limits.clear_cancel("msg-uuid")
+
+    client.delete.assert_called_once()

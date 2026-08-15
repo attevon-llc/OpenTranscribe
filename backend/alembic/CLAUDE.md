@@ -9,7 +9,7 @@ authoring the revision file itself.
 
 ## Key files
 
-- `versions/` — 70 revisions, `v010_baseline` … head `v384_add_chat_reasoning_content`.
+- `versions/` — 75 revisions, `v010_baseline` … head `v389_add_erasure_ledger`.
 - `env.py` — builds the URL from `POSTGRES_*` env (`load_dotenv()`), `target_metadata =
   Base.metadata`. No `compare_type`, no naming convention.
 - `script.py.mako` — **stock alembic template**: it emits neither the `v###` id nor idempotent
@@ -23,8 +23,9 @@ authoring the revision file itself.
   `down_revision` string literals yourself. `alembic revision --autogenerate` produces a hash id
   and non-idempotent `op.add_column` — never ship its output as-is. (The runner widens
   `alembic_version.version_num` to `VARCHAR(128)` on every start to fit these names.)
-- **All SQL must be idempotent.** 56 of 59 revisions are raw `op.execute` (only 3 use
-  `op.add_column`/`create_table`); 49 use `IF NOT EXISTS`, 41 wrap DDL in
+- **All SQL must be idempotent.** 70 of 73 revisions are raw `op.execute` (the 5 files using
+  `op.create_table`/`add_column`/`create_index` are all ≤ `v040`); 60 use `IF NOT EXISTS`,
+  49 wrap DDL in
   `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM information_schema.columns …) THEN … END IF; END $$;`.
   Reason: the startup runner stamps *untracked* production DBs by schema fingerprint, so a
   revision routinely re-runs against a database that already has part of its changes. Read
@@ -35,6 +36,25 @@ authoring the revision file itself.
   the *absence* of the old data rather than on a column).
 - `downgrade()` mirrors with `DROP … IF EXISTS`. Repair revisions may deliberately implement
   only the additive half — say so in the docstring (see `v371`).
+- **One downgrade in this chain destroys data, and it is deliberately untested.**
+  `v382_scim_tokens.NARROW_SOURCE_CHECKS_SQL` (lines 111-112) runs
+  `DELETE FROM group_mapping WHERE source NOT IN ('ldap','oidc')` and
+  `DELETE FROM user_group_member WHERE source NOT IN ('manual','ldap','oidc')` before
+  re-narrowing the CHECKs — scoped, and unavoidable if the old constraint is to be
+  re-addable, but it silently deletes every `scim`-sourced membership, i.e. exactly the
+  source `models/group.MEMBERSHIP_SOURCES_PROTECTED` says no pass may ever delete. There is
+  **no downgrade test, and it must not be given one that executes** (a suite that ran it
+  against the shared dev database would delete real provisioning rows — savepoint rollback
+  covers the DB, but the deletion is the *point* of the statement, so a green test would be
+  proof the data loss works). Resolving it is a **design decision** — refuse to downgrade
+  while non-`manual` rows exist, or move them to `manual` instead of deleting — not a test
+  to write. Same question applies to any future narrowing revision.
+- **`v389_add_erasure_ledger`'s downgrade destroys compliance evidence.** `DROP TABLE
+  erasure_ledger` is the correct mirror of its upgrade, and the revision's docstring says so
+  out loud: running it after any erasure has occurred loses the Art. 30 record of it. The
+  on-disk journal (`DATA_DIR/gdpr/erasure-journal.jsonl`) is what survives that, which is
+  why the journal is not merely a nicety. Unlike `v382`'s, this downgrade IS executed by
+  its consistency test — it destroys a table this branch created, not user data.
 - Docstring first: **why**, which deployments are affected, and what "community edition"
   behaviour is. These docstrings are the change log for the schema.
 - Core stays vendor-neutral: the CI seam guard greps for `clerk|stripe`. A migration mentioning
@@ -52,8 +72,9 @@ authoring the revision file itself.
   `tests/unit/_migration_detection.assert_detected_at_or_after` — that
   `_detect_schema_version()` never stamps the live schema *earlier* than this revision.
   Do not write `== REVISION`: it goes red the day the next revision lands.
-- The known `pg_advisory_lock(42)` race in the startup runner is documented in
-  `app/db/CLAUDE.md` — unfixed, don't re-diagnose it here.
+- The `pg_advisory_lock(42)` guard in the startup runner is **fixed** (dedicated connection
+  held across `command.upgrade()`, issue #284 A1.4) and documented in `app/db/CLAUDE.md` —
+  don't re-diagnose it here.
 
 ## Gotchas
 

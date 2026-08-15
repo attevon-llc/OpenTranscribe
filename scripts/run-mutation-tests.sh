@@ -1,0 +1,1143 @@
+#!/bin/bash
+# Mutation-test the security-critical modules — OPT-IN, never part of any gate.
+#
+# WHY
+#
+# Coverage tells you a line RAN. It cannot tell you the suite would NOTICE if the line
+# were wrong. Mutation testing answers that directly: it edits the source (flips `<` to
+# `<=`, drops an `and` clause, changes a constant, returns None) and re-runs the tests.
+# A mutant that dies proves a test was really checking that behaviour. A mutant that
+# SURVIVES is a line the suite executes without asserting anything about — and for an
+# auth predicate that means the control could be deleted with the suite still green.
+#
+# Scoped to a small, high-value set (`[tool.mutmut] only_mutate` in
+# backend/pyproject.toml — this script reads it, so there is one source of truth). A
+# whole-codebase run is hours and is not the point.
+#
+# EXPECTED RUNTIME — read this before starting one
+#
+#   redaction/spans.py      ~1-3 min    pure functions, no DB, ~200 lines
+#   auth/password_policy.py ~5-15 min   pure predicates over DB-backed settings
+#   core/security.py        ~10-30 min  bcrypt/JWT — each mutant pays a KDF round
+#   auth/dependencies.py    ~20-60 min  every mutant boots the FastAPI test client
+#   auth/lockout.py         ~30-90 min  1,068 lines, Redis-backed
+#   auth/session.py         ~15-45 min
+#   ALL of them             hours       do not do this casually
+#
+# Always start with ONE module (`--module spans`), and start with `spans` — it is the
+# fastest and its tests are the only fully hermetic ones in the set.
+#
+# SAFETY
+#
+# - Requires the dev stack ONLY for Postgres (5176) and Redis (5177); it never uploads,
+#   never touches MinIO or OpenSearch, and every DB write goes through the suite's
+#   savepoint rollback.
+# - It does NOT touch the GPU. It is CPU-only and will happily saturate every core, so
+#   do not start one while a transcription benchmark is running.
+# - It writes only to backend/mutants/ (mutmut's working copy, gitignored) and to
+#   $OT_MUTATION_OUT_DIR (default .mutation/ in the repo, gitignored — NOT /tmp, which is
+#   cleared on reboot and silently disarmed the ratchet). Each module leaves two files there:
+#   <key>.log (the run) and <key>.meta (what the run was measured against). See "EVIDENCE"
+#   below — the .meta is not a convenience, it is what makes the .log admissible.
+# - backend/mutants/ is left in place on purpose: --results and --show read it, and
+#   mutmut reuses it as a cache across runs. It is ~330k lines of DELIBERATELY
+#   CORRUPTED source, so nothing may scan it. bandit is the one that bit us — it walks
+#   the filesystem, not the git index, so gitignoring was not enough and pre-commit
+#   failed on a finding inside a mutant. It is excluded in backend/pyproject.toml
+#   ([tool.bandit] exclude_dirs). Add any new repo-wide scanner to that list too, and
+#   use --clean when you are done with a run.
+#
+# Usage:
+#   ./scripts/run-mutation-tests.sh --check              # preconditions only, mutate nothing
+#   ./scripts/run-mutation-tests.sh --list               # the configured targets + their tests
+#   ./scripts/run-mutation-tests.sh --module spans       # ONE module (start here)
+#   ./scripts/run-mutation-tests.sh --module spans --dry-run   # print the commands, run nothing
+#   ./scripts/run-mutation-tests.sh --all                # every configured module (hours)
+#   ./scripts/run-mutation-tests.sh --results            # re-report the last run, no re-run
+#   ./scripts/run-mutation-tests.sh --show <mutant-id>   # the diff for one surviving mutant
+#   ./scripts/run-mutation-tests.sh --check-baseline [m] # the RATCHET, mutates nothing
+#
+# Exit codes (stable — --check-baseline is meant to be read by a gate):
+#   0  pass
+#   1  a REGRESSION: survivors rose above the baseline, or coverage fell below its floor
+#   2  misuse (unknown flag/module, --module twice)
+#   3  misconfigured: no run log at all, or a module with no baseline row
+#   4  NOT MEASURED — the check could not be performed. An unfinished run, a log that does not
+#      match the current source or tests, an unmeasurable coverage pre-flight, a cache mixing
+#      two test lists, or zero modules checked. NEVER render 4 as a pass; it is the state this
+#      script has been wrong about more often than any other.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+BACKEND="$REPO_ROOT/backend"
+VENV_BIN="$BACKEND/venv/bin"
+
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+
+# Run artifacts live in the REPO, not /tmp, and the reason is the ratchet.
+#
+# `--check-baseline` compares the LAST run's log against scripts/mutation-baselines.tsv.
+# A measurement costs 30-90 minutes per module, so the log IS the evidence — and under the
+# old /tmp default the OS deleted that evidence on every reboot. The gate then found no logs,
+# checked nothing, and printed a pass (see the aggregate loop below, and the `unmeasured`
+# accounting that now makes that state visible). The baselines were always durable; the
+# evidence they are compared against was not.
+OUT_DIR="${OT_MUTATION_OUT_DIR:-$REPO_ROOT/.mutation}"
+mkdir -p "$OUT_DIR"
+
+# One-time adoption of logs written by the previous /tmp default, so upgrading does not
+# silently discard a measurement someone spent an hour producing.
+#
+# ONLY when OUT_DIR is the default. An explicit OT_MUTATION_OUT_DIR means "look here and
+# nowhere else" — usually to test the ratchet's own behaviour against a known-empty
+# directory. Adopting into it silently refilled that directory and made the empty-evidence
+# case unreachable, i.e. it broke the one experiment that proves this gate works.
+_LEGACY_OUT_DIR="/tmp/ot-mutation"
+if [[ -z "${OT_MUTATION_OUT_DIR:-}" && -d "$_LEGACY_OUT_DIR" && "$OUT_DIR" != "$_LEGACY_OUT_DIR" ]]; then
+    for _legacy in "$_LEGACY_OUT_DIR"/*.log "$_LEGACY_OUT_DIR"/*.testhash; do
+        [[ -e "$_legacy" ]] || continue
+        [[ -e "$OUT_DIR/$(basename "$_legacy")" ]] && continue
+        cp -p "$_legacy" "$OUT_DIR/" 2>/dev/null &&
+            echo -e "${YELLOW}adopted $(basename "$_legacy") from $_LEGACY_OUT_DIR${NC}" >&2
+    done
+fi
+
+# ---------------------------------------------------------------------------
+# Module -> the tests that actually exercise it.
+#
+# Narrowing is not just an optimisation. mutmut re-runs the selected tests once per
+# mutant, so pointing it at all ~5,300 tests would multiply a 4-minute suite by the
+# mutant count. The selection has to be honest in the other direction too: a test that
+# SKIPS kills no mutant, so an under-selected (or gate-disabled) set reports false
+# survivors that look exactly like real findings. That is why the RUN_* gates are
+# exported below.
+# ---------------------------------------------------------------------------
+declare -A MODULE_PATH=(
+    [spans]="app/services/redaction/spans.py"
+    [password_policy]="app/auth/password_policy.py"
+    [security]="app/core/security.py"
+    [dependencies]="app/api/endpoints/auth/dependencies.py"
+    [lockout]="app/auth/lockout.py"
+    [session]="app/auth/session.py"
+)
+
+declare -A MODULE_TESTS=(
+    [spans]="tests/redaction/test_apply_redactions.py tests/redaction/test_apply_redactions_mutants.py tests/redaction/test_span_merge_boundaries.py tests/redaction/test_word_offset_alignment.py tests/redaction/test_non_ascii_masking.py"
+    [password_policy]="tests/unit/test_auth_config_behaviour.py tests/test_fedramp_compliance.py tests/unit/test_account_lifecycle.py tests/unit/test_auth_policy_source_of_truth.py tests/unit/test_password_policy_controls.py tests/unit/test_password_policy_mutants.py"
+    # tests/unit/test_verify_token_claims.py is here because it was WRITTEN from this module's
+    # survivors ("Written from surviving mutants (issue #431)") and then never added to the
+    # selection — so the very mutants it kills would have come back as survivors on the next
+    # run, which is failure mode 1 (a test that is not selected kills nothing) applied to the
+    # fix for failure mode 1. Adding a test file here can only lower a count; leaving one out
+    # manufactures findings.
+    [security]="tests/api/endpoints/test_auth_comprehensive.py tests/unit/test_token_type_binding.py tests/test_fips_140_3.py tests/unit/test_bcrypt_test_rounds.py tests/unit/test_local_auth_policy.py tests/unit/test_jwt_algorithm_downgrade.py tests/unit/test_verify_token_claims.py tests/unit/test_security_survivor_mutants.py"
+    # ⚠️ THIS LIST IS THE MEASUREMENT. An omitted file is not a smaller run — it is a
+    # batch of FALSE survivors that look exactly like real findings. The first run of
+    # this target reported 41 survivors in `_enforce_proxy_identity_consistency` and
+    # was read as "proxy header spoofing has no coverage"; in fact
+    # tests/api/test_proxy_auth_endpoint.py had covered both the untrusted-peer and
+    # identity-mismatch cases all along, and simply was not selected. Same failure
+    # mode as the RUN_* gate trap in backend/tests/CLAUDE.md.
+    # A static reference-based guard for this list was tried and REJECTED: the two files
+    # it needed to find (test_proxy_auth_endpoint.py, test_cloud_seams.py) name neither
+    # the module nor its helpers -- they drive it over HTTP and through the provider
+    # registry -- so nothing static could derive them. The coverage pre-flight below
+    # measures the property directly instead.
+    [dependencies]="tests/unit/test_route_privilege_tiers.py tests/unit/test_account_lifecycle.py tests/unit/test_account_approval.py tests/unit/test_mfa_enforcement.py tests/unit/test_flower_access.py tests/unit/test_banner_acknowledgment.py tests/unit/test_token_type_binding.py tests/unit/test_access_token_revocation_epoch.py tests/unit/test_credential_gate_fail_closed.py tests/api/test_proxy_auth_endpoint.py tests/test_cloud_seams.py tests/unit/test_proxy_identity_consistency.py tests/unit/test_lifecycle_denial_audit_records.py tests/unit/test_optional_current_user.py tests/unit/test_external_token_auth.py tests/unit/test_dependencies_survivor_mutants.py"
+    # Coverage pre-flight caught this list at 56% of the module on its first real run:
+    # it omitted test_lockout_atomicity.py (named for the module it tests) and
+    # test_auth_config_behaviour.py, both of which import app.auth.lockout directly, plus
+    # the login path that drives it end to end. Now 80.4%.
+    [lockout]="tests/unit/test_lockout_identifier_canonical.py tests/unit/test_auth_state_degradation.py tests/test_fedramp_controls.py tests/unit/test_lockout_cleanup_sweep.py tests/unit/test_lockout_atomicity.py tests/unit/test_auth_config_behaviour.py tests/api/test_auth_endpoints.py tests/unit/test_lockout_survivor_mutants.py"
+    # HISTORY, kept because the reasoning still applies to the next target like it:
+    # this entry used to warn that ~every OIDCStateStore mutant would survive, because
+    # `store_state`/`get_state`/`delete_state` had no test at all and the target
+    # therefore measured ABSENCE, not weakness. #33 landed those tests and the
+    # 2026-08-12 run kills the store_state mutants, so the warning is retired. The
+    # distinction it drew -- a target can report survivors because nothing tests the
+    # code, not because the tests are weak -- is now checked mechanically by the
+    # coverage pre-flight rather than remembered in a comment.
+    [session]="tests/unit/test_session_lifetime.py tests/unit/test_auth_state_degradation.py tests/unit/test_oidc_state_single_use.py tests/unit/test_session_survivor_mutants.py"
+)
+
+
+# Warn when a target's cached mutmut verdicts were produced by a DIFFERENT test list.
+#
+# mutmut keeps results in backend/mutants/ and reuses them across runs, so the report can
+# mix records from a previous run with this one. That matters the moment MODULE_TESTS
+# changes: after widening lockout's list from 56% to 80% coverage, the report still listed
+# survivors recorded under the old list -- including one ("a locked account reports NOT
+# locked") that the widened suite demonstrably kills. A cached survivor from a weaker test
+# set reads exactly like a real finding: the same trap as an incomplete list, one level up.
+#
+# A function rather than inline code so it is testable without a 30-90 minute run.
+# Args: $1 = module key, $2 = the test list, $3 = cache dir, $4 = mutants dir.
+# Echoes "stale" when the results must not be trusted, "" otherwise. Always rewrites the
+# fingerprint, so the warning fires once per change and not forever after.
+warn_if_test_list_changed() {
+    local key=$1 tests=$2 out_dir=$3 mutants_dir=$4
+    local tests_hash prev_hash hash_file
+    tests_hash=$(printf '%s' "$tests" | sha256sum | cut -c1-16)
+    hash_file="$out_dir/$key.testhash"
+    prev_hash=$(cat "$hash_file" 2>/dev/null || true)
+    printf '%s' "$tests_hash" > "$hash_file"
+    if [[ -n "$prev_hash" && "$prev_hash" != "$tests_hash" && -d "$mutants_dir" ]]; then
+        echo stale
+    fi
+}
+
+
+# ---------------------------------------------------------------------------
+# EVIDENCE — what makes a log a MEASUREMENT rather than a file
+#
+# A log does not validate itself, and every guard below is a way that mattered.
+#
+# 1. A TRUNCATED LOG READ AS AN IMPROVEMENT. The survivor count was a `grep -c` over the
+#    whole log. A run killed at 40% has already printed "--- mutating <path> ---", so the
+#    wrong-module guard passed, and the partial list yielded a LOWER count — only a count
+#    ABOVE the baseline ever failed. The tool printed "✓ improved (149 -> 40) — lower the
+#    baseline in scripts/mutation-baselines.tsv", i.e. it instructed the operator to ratchet
+#    DOWN to a number produced by a crash. An incomplete run must be NOT MEASURED, never an
+#    improvement.
+# 2. NOTHING BOUND A LOG TO THE SOURCE IT MEASURED. No commit, no hash, no mtime. A log from
+#    an arbitrarily old tree passed indefinitely. Live example, found by this change:
+#    app/core/security.py and tests/test_fips_140_3.py (in MODULE_TESTS[security]) both
+#    changed in c0c462aa, hours after security.log was written — and --check-baseline still
+#    reported "✓ holding at 133". Regenerating mutmut's mutants from today's source confirms
+#    the drift independently: the log names 10 mutants the current file cannot produce.
+# 3. THE COUNT WAS PARSED FROM OUTPUT THE RUN DOES NOT WRITE. `mutmut run`'s tee'd output ends
+#    with an EMOJI list; the "<mutant>: survived" lines the old grep looked for come from
+#    `mutmut results`, which the script prints AFTER the tee. The six logs in .mutation/ only
+#    contain them because that session captured the whole script's stdout. A log produced by
+#    the run path as written would have matched zero lines and scored a perfect 0.
+#
+# So a run now writes, at the END and only on completion:
+#
+#   * a delimited SUMMARY BLOCK appended to the log — one line per mutant of that module,
+#     verdicts included, with the counts repeated on the END marker. No END marker means the
+#     run did not finish. A recount that disagrees with the marker means the log was truncated
+#     or edited after the fact. A mutant still marked "not checked" means mutmut itself stopped
+#     early, which is the exact shape of failure (1).
+#   * a <key>.meta sidecar recording the sha256 of the module source and of every file in
+#     MODULE_TESTS, plus the coverage and cache-staleness verdicts of that run.
+#
+# The meta is DELETED when a run starts and written only when it finishes, so its mere
+# existence is completion evidence, independent of the log.
+# ---------------------------------------------------------------------------
+SUMMARY_BEGIN="=== OT-MUTATION-SUMMARY BEGIN"
+SUMMARY_END="=== OT-MUTATION-SUMMARY END"
+
+sha_of_file() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
+
+module_source_sha() { sha_of_file "$BACKEND/${MODULE_PATH[$1]}"; }
+
+# One hash over the CONTENT of every selected test file. It has to be content and not the
+# file LIST: the case that was live here is a test file that gained a test after the run
+# (d8df6b6c added the verify_token exp/essential test that security's own baseline note says
+# closed a gap), which leaves the list identical and the measurement obsolete.
+module_tests_sha() {
+    local key=$1 f h acc=""
+    for f in ${MODULE_TESTS[$key]}; do
+        h=$(sha_of_file "$BACKEND/$f")
+        [[ -n "$h" ]] || { printf 'MISSING:%s' "$f"; return 1; }
+        acc+="$f $h"$'\n'
+    done
+    printf '%s' "$acc" | sha256sum | cut -d' ' -f1
+}
+
+# Read one key out of a .meta. Deliberately NOT `source`: a meta is generated data, and
+# sourcing generated data executes it.
+meta_value() { sed -n "s/^$2=//p" "$1" 2>/dev/null | tail -1; }
+
+# mutmut's own status vocabulary (mutmut/__main__.py: emoji_by_status). Read from the log
+# rather than from `mutmut results`, and that is not interchangeable: `mutmut results` prints
+# only the mutants it has something to complain about — for spans it listed the 10 survivors
+# and NONE of the 196 killed — so a "total" taken from it is really "survivors + unchecked" and
+# would move with the finding it is supposed to bound.
+declare -A STATUS_BY_EMOJI=(
+    ["🎉"]=killed      ["🙁"]=survived   ["🫥"]="no tests"  ["⏰"]=timeout
+    ["🤔"]=suspicious  ["🔇"]=skipped    ["🧙"]="caught by type check"
+    ["💥"]=segfault    ["🛑"]=interrupted ["?"]="not checked"
+)
+
+# Append the summary block to $log and write $key.meta.
+#
+# The body is `mutmut run`'s own end-of-run list, which is inside the tee and carries EVERY
+# mutant of the module. The last progress line carries mutmut's independent tally of the same
+# run; both go into the marker so the checker can compare them. This function only records —
+# every judgement is check_baseline's, so there is one place to read for what makes a run
+# admissible.
+#
+# Deliberately callable without a 30-90 minute run: point it at a recorded log and it produces
+# the same artifacts, which is how the guards downstream are tested at all.
+finalize_run_evidence() {
+    local key=$1 log=$2 coverage=$3 stale=$4 lowcov=$5
+    local dotted esc plain body total survived notchecked tsha prog run_total run_surv
+    dotted="${MODULE_PATH[$key]%.py}"; dotted="${dotted//\//.}"
+    esc="${dotted//./[.]}"
+
+    plain=$(tr '\r' '\n' < "$log" | sed $'s/\033\\[[0-9;]*m//g')
+    body=$(printf '%s\n' "$plain" \
+        | awk '/^Mutant results$/ {f = 1} f' \
+        | grep -E "^[^[:space:]]+[[:space:]]+${esc}[.][^[:space:]]+[[:space:]]*$" \
+        | while read -r emoji name _; do
+              [[ -n "${STATUS_BY_EMOJI[$emoji]:-}" ]] || continue
+              printf '%s: %s\n' "$name" "${STATUS_BY_EMOJI[$emoji]}"
+          done | sort -u)
+    total=$(printf '%s' "$body" | grep -c . || true)
+    survived=$(printf '%s' "$body" | grep -c ': survived$' || true)
+    notchecked=$(printf '%s' "$body" | grep -c ': not checked$' || true)
+
+    # mutmut's own counter: "<processed>/<all mutants>  🎉 k 🫥 n  ⏰ t  🤔 s  🙁 v  🔇 sk  🧙 c"
+    prog=$(printf '%s\n' "$plain" | grep -oE '[0-9]+/[0-9]+ +🎉 [0-9]+.*🙁 [0-9]+' | tail -1)
+    run_total=$(sed -n 's|^\([0-9]*\)/.*|\1|p' <<<"$prog")
+    run_surv=$(sed -n 's/.*🙁 \([0-9]*\).*/\1/p' <<<"$prog")
+
+    {
+        echo "$SUMMARY_BEGIN key=$key path=${MODULE_PATH[$key]} ==="
+        [[ -n "$body" ]] && printf '%s\n' "$body"
+        echo "$SUMMARY_END key=$key mutants=$total survived=$survived not_checked=$notchecked" \
+             "run_mutants=${run_total:-?} run_survived=${run_surv:-?} ==="
+    } >> "$log"
+
+    tsha=$(module_tests_sha "$key" || true)
+    {
+        echo "schema=1"
+        echo "module=$key"
+        echo "path=${MODULE_PATH[$key]}"
+        echo "run_at=$(date -Is)"
+        echo "git_commit=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+        echo "source_sha=$(module_source_sha "$key")"
+        echo "tests_sha=$tsha"
+        echo "tests_list_sha=$(printf '%s' "${MODULE_TESTS[$key]}" | sha256sum | cut -c1-16)"
+        for f in ${MODULE_TESTS[$key]}; do
+            echo "test_file=$f $(sha_of_file "$BACKEND/$f")"
+        done
+        echo "coverage=$coverage"
+        echo "stale_cache=$stale"
+        echo "low_coverage=$lowcov"
+        echo "mutants=$total"
+        echo "survived=$survived"
+        echo "not_checked=$notchecked"
+        echo "run_mutants=${run_total:-}"
+        echo "run_survived=${run_surv:-}"
+        # LAST, always: a reader that finds this line knows every line above it was written.
+        echo "completed=1"
+    } > "$OUT_DIR/$key.meta"
+}
+
+# Exit status for a RUN (not for --check-baseline).
+#
+# A red banner that does not change the exit code is a banner no caller can see: `--all` printed
+# "⚠ SURVIVORS FROM THESE TARGETS ARE NOT TRUSTWORTHY" and exited 0, so a run with a stale cache
+# and 20% target coverage was indistinguishable to a script from a clean one. 4 outranks 1 on
+# purpose — when coverage is below the floor or the cache mixes two test lists, the survivor
+# count is not a smaller finding, it is not a finding at all.
+mutation_run_exit_code() {
+    local failed=$1 lowcov=$2 stale=$3 nocov=$4
+    if (( lowcov > 0 || stale > 0 || nocov > 0 )); then echo 4; return; fi
+    if (( failed > 0 )); then echo 1; return; fi
+    echo 0
+}
+
+
+# Verify ONE claimed survivor by applying its mutation to the real source and running the
+# module's tests. This exists because mutmut's own verdict has been wrong here.
+#
+# `app.auth.lockout.x__check_and_record_attempt_memory__mutmut_13` turns
+# `return True, locked_until_dt` into `return False, ...` -- a locked account reporting NOT
+# locked -- and mutmut recorded it as SURVIVED. Applied directly to app/auth/lockout.py it
+# fails `test_lockout_atomicity.py::test_locked_account_short_circuits_without_writing`
+# immediately. So the survivor list has false positives from a THIRD mechanism, after the
+# incomplete test list and the stale cache: mutmut's own per-mutant environment and test
+# selection. The coverage pre-flight cannot see this one, because it measures coverage
+# OUTSIDE mutmut.
+#
+# A survivor is a claim about the test suite. This turns it into a checked claim. Only
+# single-line mutations are handled, and a non-unique or multi-line diff is reported as
+# UNVERIFIABLE rather than guessed at.
+verify_survivor() {
+    # Serialised per module. TWO verifies running against the same file is not a slow
+    # verify, it is a corrupt one: each applies a mutation and restores from its own
+    # backup, so one process's restore can reinstate the other's mutation -- or leave one
+    # behind entirely. Observed here: two mutations applied to lockout.py simultaneously,
+    # because a second verify was started while a batch was already looping.
+    #
+    # The lock is taken on fd 9 for the whole body, so `--verify` in a shell loop is safe
+    # and two operators are safe. flock is util-linux, already required elsewhere in this
+    # repo's tooling.
+    local _lock_file="$OUT_DIR/.verify-$2.lock"
+    exec 9>"$_lock_file"
+    flock 9
+    _verify_survivor_locked "$@"
+    local _rc=$?
+    exec 9>&-
+    return $_rc
+}
+
+_verify_survivor_locked() {
+    local mutant=$1 module_key=$2
+    # A dirty target file is the signature of a verify that DIED between applying its
+    # mutation and restoring it. The trap covers INT/TERM/ERR/EXIT, but nothing survives a
+    # SIGKILL of the process group -- which is exactly what happened when a batch loop was
+    # stopped mid-cycle and left `now < locked_until_dt` mutated to `now <= locked_until_dt`
+    # in app/auth/lockout.py. Verifying against an already-mutated file silently reports the
+    # wrong verdict, so say so before doing any work. A warning, not a refusal: legitimate
+    # uncommitted edits to the module are normal during development.
+    if git -C "$REPO_ROOT" diff --quiet -- "backend/${MODULE_PATH[$module_key]}" 2>/dev/null; then
+        :
+    else
+        echo -e "${YELLOW}  ⚠ backend/${MODULE_PATH[$module_key]} has uncommitted changes.${NC}" >&2
+        echo -e "${YELLOW}    If a previous --verify was killed, this is its leftover mutation and${NC}" >&2
+        echo -e "${YELLOW}    every verdict below is measured against the wrong source. Check with:${NC}" >&2
+        echo -e "${YELLOW}      git diff -- backend/${MODULE_PATH[$module_key]}${NC}" >&2
+    fi
+    local path tests backup rc out
+    path="${MODULE_PATH[$module_key]:-}"
+    tests="${MODULE_TESTS[$module_key]:-}"
+    if [[ -z "$path" ]]; then
+        echo "UNVERIFIABLE  unknown module key '$module_key'"; return 2
+    fi
+
+    # SAFETY: this transiently mutates the LIVE source file. Two consequences, both real:
+    #
+    #  * A Ctrl-C, timeout or crash between the write and the restore leaves a mutated
+    #    production file behind. Hence the trap: it restores on INT/TERM/ERR/EXIT, not just
+    #    on the happy path.
+    #  * Do not commit while a verify is running. pre-commit stashes the whole tree, so it
+    #    can capture the mutated file mid-cycle -- which has already happened on this branch,
+    #    to another agent's in-flight mutation. The batch case is worse than the single case,
+    #    so `--verify` says so out loud.
+    backup=$(mktemp)
+    cp "$BACKEND/$path" "$backup"
+    # shellcheck disable=SC2064  # expand $backup and $path NOW, not when the trap fires
+    trap "cp '$backup' '$BACKEND/$path' 2>/dev/null; rm -f '$backup'" INT TERM ERR EXIT
+
+    # The hunk is applied via its CONTEXT lines, not by line number: mutmut prints the
+    # diff relative to the mutated FUNCTION, so `@@ -24,7 +24,7 @@` is not a file offset.
+    # Context also disambiguates a changed line that occurs more than once -- e.g.
+    # `return True, locked_until_dt` appears twice in lockout.py, and a bare
+    # search-and-replace either picks the wrong one or gives up.
+    # The mutant id carries its function (`...x__check_and_record_attempt_memory__mutmut_13`),
+    # which is what disambiguates a context block that appears in more than one place --
+    # and it does here: the Redis and in-memory lockout paths are near-duplicates, so 7
+    # mutants came back UNVERIFIABLE until the search was scoped to the right function.
+    #
+    # Class methods carry their class in the id too, joined with U+01C1 (`ǁ`) --
+    # `xǁInMemoryStoreǁdelete__mutmut_2` -- and mutmut's own diff for those is printed
+    # DEDENTED to the method body's own frame (as if `def delete` started at column 0),
+    # not at the method's real column in the file. A top-level function's diff has no such
+    # offset (the function already starts at column 0), which is why this went unnoticed
+    # until the first `--verify` of a class-method mutant: the context block was searched
+    # for at the wrong indentation and matched nowhere. Root-caused and fixed in
+    # scripts/mutation-verify-apply.py (issue #459) -- read that file's docstring, not a
+    # copy inlined here, so the two never drift.
+    mut_func="${mutant##*.}"; mut_func="${mut_func%%__mutmut_*}"; mut_func="${mut_func#x}"
+    out=$("$VENV_BIN/mutmut" show "$mutant" 2>/dev/null | MUT_TARGET="$BACKEND/$path" \
+        MUT_FUNC="$mut_func" \
+        "$VENV_BIN/python" "$REPO_ROOT/scripts/mutation-verify-apply.py")
+
+    case "$out" in
+        APPLIED) : ;;
+        NODIFF)
+            trap - INT TERM ERR EXIT
+            cp "$backup" "$BACKEND/$path"; rm -f "$backup"
+            echo "UNVERIFIABLE  $mutant (mutmut show produced no usable diff)"; return 2 ;;
+        *)
+            trap - INT TERM ERR EXIT
+            cp "$backup" "$BACKEND/$path"; rm -f "$backup"
+            echo "UNVERIFIABLE  $mutant (context block matched ${out#AMBIGUOUS } times)"; return 2 ;;
+    esac
+
+    # STAGED, and this is a correctness-preserving optimisation rather than a shortcut: a
+    # mutant is KILLED iff ANY selected test fails, so the fast files run first with `-x`
+    # and a failure short-circuits the rest. Only a SURVIVED verdict has to pay for the
+    # whole list.
+    #
+    # It matters because `--verify` re-runs the module's ENTIRE list, while mutmut itself
+    # runs only the tests covering each mutant. That asymmetry made verification 28-48 s per
+    # mutant (lockout's list includes tests/api/test_auth_endpoints.py, a DB + HTTP suite),
+    # i.e. hours for one module -- so the tool that exists to make survivors trustworthy was
+    # too slow to use on them. KILLED is the common case once tests exist, and it is now the
+    # cheap one.
+    local fast="" slow=""
+    for f in $tests; do
+        case "$f" in tests/unit/*) fast="$fast $f" ;; *) slow="$slow $f" ;; esac
+    done
+
+    rc=0
+    for stage in "$fast" "$slow"; do
+        [[ -n "${stage// /}" ]] || continue
+        ( cd "$BACKEND" && env "${GATES[@]}" "$VENV_BIN/python" -m pytest $stage \
+            -o addopts= -p no:cacheprovider -q --no-header -x >/dev/null 2>&1 )
+        rc=$?
+        [[ $rc -ne 0 ]] && break
+    done
+    trap - INT TERM ERR EXIT
+    cp "$backup" "$BACKEND/$path"
+    rm -f "$backup"
+
+    if [[ $rc -eq 0 ]]; then
+        echo "SURVIVED      $mutant  (confirmed: the suite does not notice)"
+        return 1
+    fi
+    # Two ways to get here, and the message must not pick one: mutmut's verdict can be
+    # wrong, or the suite can have gained a test since the run. --verify always uses the
+    # CURRENT suite, which is the question worth answering either way.
+    echo "KILLED        $mutant  (the CURRENT suite catches it -- the recorded survivor verdict is stale or wrong)"
+    return 0
+}
+
+# Compare a module's survivor count against its committed baseline — the RATCHET.
+#
+# "Kill every mutant" is not finishable here: an AST census of lockout's 149 survivors puts 66
+# of them (58 log strings + 8 conditions guarding only a log call) beyond any caller's
+# observation. Without a bounded definition of done, every pass closes a few real gaps and
+# leaves a large residue, which reads as no progress. So the rule is: the count may go DOWN,
+# never UP. It is a ratchet, NOT a claim that the remaining survivors are harmless — the same
+# census says 83 of lockout's are ordinary predicates and assignments.
+#
+# Reads scripts/mutation-baselines.tsv. That file is READ here, deliberately — a checked-in
+# table nothing reads goes stale, which is how expected-schemas.tsv died.
+#
+# Returns 0 pass · 1 REGRESSION · 3 misconfigured (no log, no baseline row) · 4 NOT MEASURED.
+# 4 is never summable into a pass: it means the check could not be performed at all.
+check_baseline() {
+    local key=$1 log="$OUT_DIR/$1.log" meta="$OUT_DIR/$1.meta"
+    local baselines="$REPO_ROOT/scripts/mutation-baselines.tsv"
+    local dotted survivors max_survivors coverage min_coverage line
+
+    if [[ ! -f "$log" ]]; then
+        echo -e "${RED}no run log at $log — run --module $key first${NC}" >&2
+        return 3
+    fi
+    line=$(grep -P "^${key}\t" "$baselines" 2>/dev/null || true)
+    if [[ -z "$line" ]]; then
+        echo -e "${RED}$key has no baseline in scripts/mutation-baselines.tsv.${NC}" >&2
+        echo -e "${RED}  Add one from a clean run rather than skipping it: a module with no${NC}" >&2
+        echo -e "${RED}  baseline is a module nothing is ratcheting.${NC}" >&2
+        return 3
+    fi
+    max_survivors=$(printf '%s' "$line" | cut -f2)
+    min_coverage=$(printf '%s' "$line" | cut -f3)
+
+    dotted="${MODULE_PATH[$key]%.py}"; dotted="${dotted//\//.}"
+
+    # The log must be evidence that THIS module was actually mutated. A stale or truncated log
+    # yields zero matching survivor lines, which the comparison below would read as a perfect
+    # score and invite lowering the baseline to 0 — after which nothing is ratcheting anything.
+    # Observed: `--check-baseline` reported "improved (77 -> 0)" for session and "(10 -> 0)" for
+    # spans from logs left behind by earlier runs.
+    #
+    # The BINDING IS THE .meta SIDECAR, not a string in the log. `tee` captures mutmut's stdout
+    # only — the script's own "--- mutating <path> ---" banner is printed by this script and
+    # never reaches the log file. Greping the log for that banner therefore rejected every log
+    # the run path produces, which would have pinned the ratchet at NOT MEASURED forever: a
+    # false negative that looks exactly like the true one it was written to catch. It matched
+    # historically only because those logs were captured from the whole script's stdout rather
+    # than by this tee. `.meta` records `path=` explicitly and is written only on completion.
+    local meta="${log%.log}.meta" meta_path=""
+    if [[ -f "$meta" ]]; then
+        meta_path=$(sed -n 's/^path=//p' "$meta" | head -1)
+    fi
+    if [[ -n "$meta_path" ]]; then
+        if [[ "$meta_path" != "${MODULE_PATH[$key]}" ]]; then
+            echo -e "${YELLOW}$key: $meta records a run of $meta_path, not ${MODULE_PATH[$key]} — NOT MEASURED.${NC}" >&2
+            echo -e "${YELLOW}  Re-run: --clean then --module $key.${NC}" >&2
+            return 4
+        fi
+    elif ! grep -q -- "--- mutating ${MODULE_PATH[$key]} ---" "$log"; then
+        # No sidecar: a pre-#37 log. Fall back to the banner, which those logs do carry.
+        echo -e "${YELLOW}$key: $log is not a run of ${MODULE_PATH[$key]} — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  Re-run: --clean then --module $key. A count of 0 from the wrong log${NC}" >&2
+        echo -e "${YELLOW}  looks like a perfect score.${NC}" >&2
+        # 4, not 0: "I could not check this" must never be summed into a pass. Returning 0
+        # here made a stale log indistinguishable from a clean ratchet.
+        return 4
+    fi
+    # --- Did the run FINISH? (hole 1: a truncated log used to read as an improvement) ------
+    local esc blk end_line rec_total rec_surv rec_nc run_total run_surv
+    local cnt_total cnt_surv cnt_nc
+    esc="${dotted//./[.]}"
+    blk=$(tr '\r' '\n' < "$log" | sed $'s/\033\\[[0-9;]*m//g' \
+          | sed -n "/^$SUMMARY_BEGIN key=$key /,/^$SUMMARY_END key=$key /p")
+    end_line=$(printf '%s\n' "$blk" | grep -m1 -F "$SUMMARY_END key=$key " || true)
+    if [[ -z "$end_line" ]]; then
+        echo -e "${YELLOW}$key: $log has no completed-run marker — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  The summary block is written only when the run finishes, so an${NC}" >&2
+        echo -e "${YELLOW}  interrupted, truncated or pre-#37 log lands here. It is NOT a score of${NC}" >&2
+        echo -e "${YELLOW}  0 and must never be ratcheted to. Re-run: --clean then --module $key.${NC}" >&2
+        return 4
+    fi
+    rec_total=$(sed -n 's/.* mutants=\([0-9]*\) .*/\1/p' <<<"$end_line")
+    rec_surv=$(sed -n 's/.* survived=\([0-9]*\) .*/\1/p' <<<"$end_line")
+    rec_nc=$(sed -n 's/.* not_checked=\([0-9]*\) .*/\1/p' <<<"$end_line")
+    run_total=$(sed -n 's/.* run_mutants=\([0-9?]*\) .*/\1/p' <<<"$end_line")
+    run_surv=$(sed -n 's/.* run_survived=\([0-9?]*\) .*/\1/p' <<<"$end_line")
+    cnt_total=$(printf '%s\n' "$blk" | grep -cE "^${esc}[.][^[:space:]]+: " || true)
+    cnt_surv=$(printf '%s\n' "$blk" | grep -cE "^${esc}[.][^[:space:]]+: survived$" || true)
+    cnt_nc=$(printf '%s\n' "$blk" | grep -cE "^${esc}[.][^[:space:]]+: not checked$" || true)
+
+    if [[ -z "$rec_total" ]] || (( rec_total == 0 )); then
+        echo -e "${YELLOW}$key: the run recorded $rec_total mutants — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  Zero mutants is an empty backend/mutants/ or a glob that matched${NC}" >&2
+        echo -e "${YELLOW}  nothing, not a module with no findings.${NC}" >&2
+        return 4
+    fi
+    # The recount is what catches a log truncated (or edited) AFTER the marker was written.
+    if (( cnt_total != rec_total || cnt_surv != rec_surv )); then
+        echo -e "${YELLOW}$key: summary block disagrees with its own marker — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  marker says mutants=$rec_total survived=$rec_surv; the block holds${NC}" >&2
+        echo -e "${YELLOW}  $cnt_total / $cnt_surv. The log was truncated or edited after the run.${NC}" >&2
+        return 4
+    fi
+    # mutmut leaves everything it never reached as "not checked". A run that mutmut aborted
+    # part-way still reaches the summary, and its remaining mutants say so — this is the arm
+    # that catches a partial run which DID write a marker.
+    if (( cnt_nc > 0 || rec_nc > 0 )); then
+        echo -e "${YELLOW}$key: $cnt_nc of $cnt_total mutants were never checked — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  mutmut stopped before finishing the module. The survivors it did${NC}" >&2
+        echo -e "${YELLOW}  record are a PREFIX of the run, not a lower count — this is the shape${NC}" >&2
+        echo -e "${YELLOW}  that used to print '✓ improved' and ask for the baseline to be lowered.${NC}" >&2
+        return 4
+    fi
+    # mutmut's own tally of the same run, taken from its progress counter rather than from its
+    # results list. Two numbers derived independently must agree; if they do not, the log was
+    # assembled from more than one run and neither count means anything.
+    if [[ "$run_total" != "$rec_total" || "$run_surv" != "$rec_surv" ]]; then
+        echo -e "${YELLOW}$key: mutmut's own tally disagrees with the summary — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  progress counter: ${run_total:-?} mutants / ${run_surv:-?} survived;${NC}" >&2
+        echo -e "${YELLOW}  summary block: $rec_total / $rec_surv. This log is not one run.${NC}" >&2
+        return 4
+    fi
+    survivors=$cnt_surv
+
+    # --- Was it measured against THIS source? (hole 2) -------------------------------------
+    if [[ ! -f "$meta" ]] || [[ "$(meta_value "$meta" completed)" != "1" ]]; then
+        echo -e "${YELLOW}$key: no completed $meta — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  The sidecar records what the run measured (source + test hashes).${NC}" >&2
+        echo -e "${YELLOW}  Without it nothing binds this log to a tree, so it cannot expire.${NC}" >&2
+        return 4
+    fi
+    local now_src now_tests rec_src rec_tests
+    now_src=$(module_source_sha "$key"); rec_src=$(meta_value "$meta" source_sha)
+    if [[ -z "$now_src" || "$now_src" != "$rec_src" ]]; then
+        echo -e "${YELLOW}$key: ${MODULE_PATH[$key]} has changed since the run — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  measured ${rec_src:0:12}… , current ${now_src:0:12}… (run at${NC}" >&2
+        echo -e "${YELLOW}  $(meta_value "$meta" run_at), commit $(meta_value "$meta" git_commit)).${NC}" >&2
+        return 4
+    fi
+    now_tests=$(module_tests_sha "$key" || true); rec_tests=$(meta_value "$meta" tests_sha)
+    if [[ -z "$now_tests" || "$now_tests" != "$rec_tests" ]]; then
+        echo -e "${YELLOW}$key: MODULE_TESTS content has changed since the run — NOT MEASURED.${NC}" >&2
+        # Name the files, because "a test changed" is the interesting half: a test ADDED after
+        # the run is precisely what makes a survivor count too high rather than too low.
+        local rec_line f h
+        while read -r rec_line; do
+            [[ -n "$rec_line" ]] || continue
+            f=${rec_line%% *}; h=${rec_line##* }
+            if [[ ! -f "$BACKEND/$f" ]]; then
+                echo -e "${YELLOW}    gone:    $f${NC}" >&2
+            elif [[ "$(sha_of_file "$BACKEND/$f")" != "$h" ]]; then
+                echo -e "${YELLOW}    changed: $f${NC}" >&2
+            fi
+        done < <(sed -n 's/^test_file=//p' "$meta")
+        for f in ${MODULE_TESTS[$key]}; do
+            grep -qF "test_file=$f " "$meta" || echo -e "${YELLOW}    added:   $f${NC}" >&2
+        done
+        return 4
+    fi
+
+    # --- Was the run itself trustworthy? (hole 3) ------------------------------------------
+    if [[ "$(meta_value "$meta" stale_cache)" == "1" ]]; then
+        echo -e "${YELLOW}$key: the run mixed cached verdicts from two test lists — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  Re-run: --clean then --module $key.${NC}" >&2
+        return 4
+    fi
+
+    coverage=$(meta_value "$meta" coverage)
+    # hole 3/4: this used to warn and fall through, and only when min_coverage > 0 — so for
+    # `spans`, the one module whose coverage could not be measured and whose floor is
+    # therefore 0, the guard was inert in both directions and the count was accepted with no
+    # evidence the selected tests execute the module at all.
+    if [[ -z "$coverage" ]]; then
+        echo -e "${YELLOW}$key: the run recorded no target coverage — NOT MEASURED.${NC}" >&2
+        echo -e "${YELLOW}  Without it the survivor count may be measuring test SELECTION.${NC}" >&2
+        echo -e "${YELLOW}  Re-run --module $key and fix the pre-flight if it still can't measure.${NC}" >&2
+        return 4
+    fi
+
+    echo -e "${BLUE}$key: $survivors survivor(s) of $cnt_total vs baseline $max_survivors; coverage ${coverage}% vs floor ${min_coverage}%${NC}"
+
+    local failed=0
+    if (( survivors > max_survivors )); then
+        echo -e "${RED}✗ survivors ROSE ($max_survivors -> $survivors). A predicate lost its test,${NC}" >&2
+        echo -e "${RED}  or new untested code landed. Do NOT raise the baseline to make this pass.${NC}" >&2
+        failed=1
+    elif (( survivors < max_survivors )); then
+        echo -e "${GREEN}✓ improved ($max_survivors -> $survivors) — lower the baseline in${NC}"
+        echo -e "${GREEN}  scripts/mutation-baselines.tsv so the ratchet holds the new level.${NC}"
+    else
+        echo -e "${GREEN}✓ holding at $survivors${NC}"
+    fi
+    # Coverage guards the count's MEANING: below the floor, survivors measure test selection.
+    # (The "no coverage recorded" case is handled above, as NOT MEASURED — it used to warn
+    # here and fall through to a pass.)
+    if (( coverage < min_coverage )); then
+        echo -e "${RED}✗ coverage fell (${min_coverage}% -> ${coverage}%): the survivor count above${NC}" >&2
+        echo -e "${RED}  measures test SELECTION, not test strength. Fix MODULE_TESTS first.${NC}" >&2
+        failed=1
+    fi
+    return $failed
+}
+
+# Same set scripts/run-backend-tests.sh --gated enables. Mandatory here: three of the
+# test files above are behind a module-level skipif, and a skipped test cannot kill a
+# mutant — an ungated run would report their mutants as survivors.
+GATES=(RUN_PKI_TESTS=true RUN_MFA_TESTS=true RUN_LLM_TESTS=true
+       RUN_FEDRAMP_TESTS=true RUN_FIPS_TESTS=true
+       RUN_AUTH_CONFIG_TESTS=true RUN_ADVANCED_ADMIN_TESTS=true)
+
+# Service credentials must be EXPORTED, not left to conftest's .env read.
+#
+# mutmut runs pytest from inside backend/mutants/, so conftest's
+# `_project_root = _backend_dir.parent` resolves to backend/ and looks for
+# backend/.env — which does not exist (the real one is at the repo root). The DB
+# credentials then fall back to defaults and every DB-backed test ERRORS at setup,
+# which aborts mutmut's baseline before a single mutant runs. `spans` never hit this
+# because its tests are pure functions.
+#
+# conftest uses `os.environ.setdefault`, and documents that explicitly exported
+# values win over .env precisely so CI and throwaway-DB runs can override — this is
+# that escape hatch. Read straight into the environment; never echoed.
+if [[ -f "$REPO_ROOT/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1090  # a filtered subset of .env, by design
+    source <(grep -E '^(POSTGRES_(USER|PASSWORD|DB)|MINIO_ROOT_(USER|PASSWORD)|MEDIA_BUCKET_NAME)=' \
+             "$REPO_ROOT/.env" || true)
+    set +a
+fi
+
+# ---------------------------------------------------------------------------
+# Args
+# ---------------------------------------------------------------------------
+MODE=""
+MODULE=""
+DRY_RUN=false
+SHOW_ID=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --check)   MODE=check ;;
+        --list)    MODE=list ;;
+        --all)     MODE=run; MODULE=ALL ;;
+        --results) MODE=results ;;
+        --clean)   MODE=clean ;;
+        --show)    MODE=show; SHOW_ID="${2:-}"; shift ;;
+        --verify)  MODE=verify; SHOW_ID="${2:-}"; shift ;;
+        # Refuse a second --module rather than silently keeping the last one. Passing
+        # `--module lockout --module session` looked like it ran both and ran only session,
+        # so the missing module read as "no findings there" — the same silently-dropped-work
+        # shape this script's own MODULE_TESTS bug had. One module at a time is deliberate
+        # (see the header); make the misuse loud instead of plausible.
+        --check-baseline) MODE=baseline; MODULE="${2:-}"; shift ;;
+        --module)
+            if [[ -n "$MODULE" ]]; then
+                echo -e "${RED}--module given twice ('$MODULE' then '${2:-}').${NC}" >&2
+                echo -e "${RED}Run one module at a time, or use --all.${NC}" >&2
+                exit 2
+            fi
+            MODE=run; MODULE="${2:-}"; shift ;;
+        --dry-run) DRY_RUN=true ;;
+        -h|--help) sed -n '2,50p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        *) echo -e "${RED}Unknown option: $1${NC}" >&2; exit 2 ;;
+    esac
+    shift
+done
+
+if [[ -z "$MODE" ]]; then
+    echo -e "${YELLOW}Mutation testing is opt-in and slow. Pick a mode:${NC}" >&2
+    sed -n '/^# Usage:/,/^$/p' "$0" | sed 's/^# \?//' >&2
+    exit 2
+fi
+
+# ---------------------------------------------------------------------------
+# Preconditions
+# ---------------------------------------------------------------------------
+port_open() { (exec 3<>"/dev/tcp/localhost/$1") 2>/dev/null && exec 3>&- && return 0 || return 1; }
+
+check_preconditions() {
+    local ok=true
+
+    if [[ ! -x "$VENV_BIN/python" ]]; then
+        echo -e "${RED}✗ backend/venv missing — create it per CLAUDE.md${NC}"; ok=false
+    else
+        echo -e "${GREEN}✓ backend/venv${NC}"
+    fi
+
+    if [[ ! -x "$VENV_BIN/mutmut" ]]; then
+        echo -e "${RED}✗ mutmut not installed${NC}"
+        echo -e "  ${YELLOW}$VENV_BIN/pip install 'mutmut>=3.2.0'${NC}  (it is in backend/requirements-dev.txt)"
+        ok=false
+    else
+        echo -e "${GREEN}✓ mutmut $("$VENV_BIN/mutmut" version 2>/dev/null || echo '(version unknown)')${NC}"
+    fi
+
+    # Postgres is the only hard service dependency: the root conftest points the suite at
+    # localhost:5176 and the auth modules' tests need real rows. MinIO/OpenSearch tests
+    # auto-skip, which is fine — none of the target modules touch them.
+    if port_open 5176; then
+        echo -e "${GREEN}✓ Postgres up (5176)${NC}"
+    else
+        echo -e "${RED}✗ Postgres not reachable on 5176 — ./opentr.sh start dev${NC}"; ok=false
+    fi
+    if port_open 5177; then
+        echo -e "${GREEN}✓ Redis up (5177) — lockout/session mutants need it${NC}"
+    else
+        echo -e "${YELLOW}! Redis not reachable on 5177 — the lockout/session modules will${NC}"
+        echo -e "${YELLOW}  report false survivors. Fine for --module spans.${NC}"
+    fi
+
+    # A mutation run must be SERIAL. pyproject's addopts carry `-n auto`; every mutant
+    # would otherwise fork one xdist worker per core against a single shared Postgres,
+    # which is both slower and the known deadlock shape (issues #389, #431).
+    echo -e "${BLUE}  serialisation: PYTEST_ADDOPTS clears addopts entirely ('-o addopts=') -- mutmut runs pytest in-process${NC}"
+
+    $ok
+}
+
+# ---------------------------------------------------------------------------
+# Modes that do not mutate anything
+# ---------------------------------------------------------------------------
+if [[ "$MODE" == check ]]; then
+    echo -e "${BLUE}Mutation-test preconditions${NC}"
+    check_preconditions || exit 1
+    echo
+    echo -e "${BLUE}Verify the pytest selection resolves (collection only — runs no test):${NC}"
+    echo "  cd $BACKEND && PYTEST_ADDOPTS=\"-n0 ${MODULE_TESTS[spans]}\" venv/bin/pytest --collect-only -q | tail -3"
+    exit 0
+fi
+
+if [[ "$MODE" == list ]]; then
+    echo -e "${BLUE}Configured mutation targets ([tool.mutmut] in backend/pyproject.toml)${NC}"
+    "$VENV_BIN/python" - "$BACKEND/pyproject.toml" <<'PY'
+import sys, tomllib
+with open(sys.argv[1], "rb") as fh:
+    cfg = tomllib.load(fh)["tool"]["mutmut"]
+for path in cfg["only_mutate"]:
+    print(f"  {path}")
+# NOT cfg['runner'] -- that key does not exist and must not come back (see the
+# comment on it in pyproject.toml). Reading it made --list crash with KeyError.
+print(f"\n  source_paths: {cfg['source_paths']}")
+print(f"  timeout_constant: {cfg.get('timeout_constant', 'unset')}s")
+PY
+    echo
+    echo -e "${BLUE}Module aliases and the tests each one runs${NC}"
+    for key in spans password_policy security dependencies lockout session; do
+        printf "  %-16s %s\n" "$key" "${MODULE_PATH[$key]}"
+        printf "  %-16s   tests: %s\n" "" "${MODULE_TESTS[$key]}"
+    done
+    exit 0
+fi
+
+cd "$BACKEND" || exit 2
+
+if [[ "$MODE" == results ]]; then
+    [[ -x "$VENV_BIN/mutmut" ]] || { echo -e "${RED}mutmut not installed${NC}" >&2; exit 1; }
+    "$VENV_BIN/mutmut" results
+    rc=$?
+    echo
+    echo -e "${YELLOW}A SURVIVED mutant is a finding. See its diff with:${NC}"
+    echo -e "  $0 --show <mutant-id>"
+    exit $rc
+fi
+
+if [[ "$MODE" == show ]]; then
+    [[ -n "$SHOW_ID" ]] || { echo -e "${RED}--show needs a mutant id (see --results)${NC}" >&2; exit 2; }
+    exec "$VENV_BIN/mutmut" show "$SHOW_ID"
+fi
+
+if [[ "$MODE" == baseline ]]; then
+    if [[ -n "$MODULE" && "$MODULE" != ALL ]]; then
+        check_baseline "$MODULE"; exit $?
+    fi
+    # Skipping an unmeasured module is DELIBERATE — a measurement is 30-90 minutes and stays
+    # opt-in, so the gate must not block on a benchmark nobody asked for. What was wrong was
+    # doing it SILENTLY: with no logs the loop skipped all six, exited 0, and the gate printed
+    # "passed" for a check that examined nothing. Indistinguishable, in the output, from a
+    # genuine six-module pass. So the skip stays; the silence does not.
+    rc=0
+    local_measured=0
+    unmeasured=()
+    for key in "${!MODULE_PATH[@]}"; do
+        if [[ ! -f "$OUT_DIR/$key.log" ]]; then
+            unmeasured+=("$key")
+            continue
+        fi
+        check_baseline "$key"
+        case $? in
+            0) local_measured=$((local_measured + 1)) ;;
+            4) unmeasured+=("$key") ;;      # stale/wrong log — checked nothing
+            *) local_measured=$((local_measured + 1)); rc=1 ;;
+        esac
+    done
+
+    total=${#MODULE_PATH[@]}
+    if (( ${#unmeasured[@]} > 0 )); then
+        IFS=' ' read -r -a _sorted <<< "$(printf '%s\n' "${unmeasured[@]}" | sort | tr '\n' ' ')"
+        echo -e "${YELLOW}⊘ NOT MEASURED (${#unmeasured[@]}/$total): ${_sorted[*]}${NC}" >&2
+        echo -e "${YELLOW}  These modules are ratcheting NOTHING in this run. Measure with:${NC}" >&2
+        echo -e "${YELLOW}    ./scripts/run-mutation-tests.sh --module <name>${NC}" >&2
+    fi
+
+    if (( local_measured == 0 )); then
+        echo -e "${RED}✗ the ratchet checked 0 of $total modules — this proves nothing.${NC}" >&2
+        echo -e "${RED}  Exiting 4 (NOT MEASURED) so no caller can render this as a pass.${NC}" >&2
+        # Not exit 1: nothing regressed. Not exit 0: nothing was verified either. A gate
+        # needs to be able to tell those two apart, and before this it could not.
+        exit 4
+    fi
+    echo -e "${BLUE}ratchet checked $local_measured/$total module(s)${NC}"
+    exit $rc
+fi
+
+if [[ "$MODE" == verify ]]; then
+    # Turn a claimed survivor into a CHECKED claim. See verify_survivor's comment for the
+    # mutant whose verdict was wrong and prompted this.
+    [[ -n "$SHOW_ID" ]] || {
+        echo -e "${RED}--verify needs a mutant id, e.g.${NC}" >&2
+        echo -e "${RED}  --verify app.auth.lockout.x__check_and_record_attempt_memory__mutmut_13${NC}" >&2
+        exit 2
+    }
+    # Derive the module key from the mutant id so the caller cannot pair a mutant with the
+    # wrong module's test list — which would silently verify against the wrong suite.
+    verify_key=""
+    for k in "${!MODULE_PATH[@]}"; do
+        dotted="${MODULE_PATH[$k]%.py}"; dotted="${dotted//\//.}"
+        case "$SHOW_ID" in "$dotted".*) verify_key="$k" ;; esac
+    done
+    [[ -n "$verify_key" ]] || {
+        echo -e "${RED}Cannot tell which configured module '$SHOW_ID' belongs to.${NC}" >&2
+        exit 2
+    }
+    echo -e "${BLUE}Verifying against MODULE_TESTS[$verify_key]${NC}"
+    echo -e "${YELLOW}  NOTE: this transiently edits ${MODULE_PATH[$verify_key]}.${NC}" >&2
+    echo -e "${YELLOW}  Do not commit while it runs: pre-commit stashes the whole tree and${NC}" >&2
+    echo -e "${YELLOW}  can capture the mutation mid-cycle.${NC}" >&2
+    verify_survivor "$SHOW_ID" "$verify_key"
+    exit $?
+fi
+
+if [[ "$MODE" == clean ]]; then
+    # Deletes ONLY backend/mutants/ and the mutmut cache, both generated and
+    # gitignored. Deliberately not automatic after a run: --results and --show read
+    # that tree, and mutmut reuses it as a cache. Run this when you are done, so
+    # ~330k lines of deliberately corrupted source are not left for the next
+    # filesystem-walking tool to trip over.
+    for target in "$BACKEND/mutants" "$BACKEND/.mutmut-cache"; do
+        if [[ -e "$target" ]]; then
+            rm -rf "$target"
+            echo -e "${GREEN}✓ removed $target${NC}"
+        else
+            echo -e "${BLUE}  already absent: $target${NC}"
+        fi
+    done
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Run
+# ---------------------------------------------------------------------------
+if [[ "$MODULE" == ALL ]]; then
+    MODULES=(spans password_policy security dependencies lockout session)
+    echo -e "${YELLOW}--all mutates every configured module. Expect HOURS.${NC}"
+    echo -e "${YELLOW}Prefer one module at a time (--module spans).${NC}"
+    echo
+else
+    [[ -n "${MODULE_PATH[$MODULE]:-}" ]] || {
+        echo -e "${RED}Unknown module '$MODULE'. Known: ${!MODULE_PATH[*]}${NC}" >&2
+        exit 2
+    }
+    MODULES=("$MODULE")
+fi
+
+$DRY_RUN || check_preconditions || exit 1
+echo
+
+
+FAILED=()
+#: Percent of the target module the SELECTED tests must execute before survivors mean
+#: anything. Not a coverage target for the codebase — a sanity check on MODULE_TESTS.
+MIN_TARGET_COVERAGE=${MIN_TARGET_COVERAGE:-60}
+LOW_COVERAGE=()
+STALE_CACHE=()
+NO_COVERAGE=()
+for key in "${MODULES[@]}"; do
+    path="${MODULE_PATH[$key]}"
+    tests="${MODULE_TESTS[$key]}"
+    log="$OUT_DIR/$key.log"
+    stale_flag=0
+    lowcov_flag=0
+
+    # The sidecar is this run's completion certificate, so the OLD one goes first. Leaving it
+    # in place would let a run that dies half way be checked against the previous run's hashes.
+    $DRY_RUN || rm -f "$OUT_DIR/$key.meta"
+
+    echo -e "${BLUE}--- mutating $path ---${NC}"
+    echo -e "    tests: $tests"
+    echo -e "    log:   $log"
+
+    # `-n0` overrides addopts' `-n auto` (last -n wins) so each mutant runs SERIALLY.
+    # The test paths ride in PYTEST_ADDOPTS because pytest prepends its contents to the
+    # command line, and [tool.mutmut] runner deliberately names no paths — that is what
+    # makes per-module narrowing possible without a mutmut-version-specific flag.
+    # `-o addopts=` CLEARS pyproject's addopts rather than fighting them. mutmut runs
+    # pytest in-process, so the inherited `-n auto --dist loadgroup` cannot be satisfied
+    # (appending `-n0` was not enough -- xdist still initialises) and the inherited
+    # `-m 'not integration and not gpu'` would deselect by marker inside every mutant.
+    # This is the same override scripts/run-integration-tests.sh uses for its phases.
+    addopts="-o addopts= -p no:cacheprovider $tests"
+
+    # mutmut 3.x has NO --paths-to-mutate flag (it exits 2 on the unknown option) and
+    # takes MUTANT_NAMES positionally instead, so per-module scoping is a dotted-path
+    # glob over the mutant ids: app/services/redaction/spans.py -> app.services.redaction.spans*
+    mutant_glob="${path%.py}"
+    mutant_glob="${mutant_glob//\//.}*"
+
+    if ! $DRY_RUN && [[ -n $(warn_if_test_list_changed "$key" "$tests" "$OUT_DIR" "$BACKEND/mutants") ]]; then
+        echo -e "${RED}    ⚠ MODULE_TESTS[$key] changed since the cached results were written.${NC}" >&2
+        echo -e "${RED}      backend/mutants/ still holds verdicts from the OLD list, and the${NC}" >&2
+        echo -e "${RED}      report cannot tell them apart from this run's. Re-run as:${NC}" >&2
+        echo -e "${RED}        ./scripts/run-mutation-tests.sh --clean${NC}" >&2
+        echo -e "${RED}        ./scripts/run-mutation-tests.sh --module $key${NC}" >&2
+        STALE_CACHE+=("$key")
+        stale_flag=1
+    fi
+
+    # PRE-FLIGHT: do the selected tests actually EXECUTE this module?
+    #
+    # This exists because a run of `dependencies` reported 41 survivors in
+    # `_enforce_proxy_identity_consistency` and they were read as "proxy header spoofing
+    # has no coverage". It had coverage — in tests/api/test_proxy_auth_endpoint.py, which
+    # simply was not in MODULE_TESTS. A test that is never selected kills no mutant, so an
+    # incomplete list does not produce a smaller run; it produces FALSE survivors that are
+    # indistinguishable from real findings, and the natural reading of them is a
+    # vulnerability report about code that is in fact tested.
+    #
+    # Coverage of the target module is the cheap, direct check: below the floor, the
+    # survivors measure test SELECTION, not test strength, and the report says so instead
+    # of leaving the reader to infer it.
+    if ! $DRY_RUN; then
+        # --cov takes the module's DIRECTORY, not its dotted name, and the row for the file is
+        # read rather than TOTAL. That is not a style choice — the dotted form CANNOT measure
+        # `spans`:
+        #
+        #   coverage resolves each dotted `source` entry by importing it inside
+        #   `sys_modules_saved()` (coverage/inorout.py), a context manager that DELETES every
+        #   module the import pulled in. Importing app.services.redaction.spans runs the
+        #   package __init__, which reaches numpy and torch. numpy's C extension is
+        #   single-phase-init and cannot be initialised twice in one process, so when conftest
+        #   later imported it for real, collection died with
+        #   `ImportError: cannot load module more than once per process`, pytest never ran, and
+        #   the pre-flight reported "could not measure target coverage" — for a full year of
+        #   this file's life, on the one module whose floor was therefore recorded as 0.
+        #   spans.py itself is pure; it is the PACKAGE that is heavy, and only the dotted form
+        #   imports it. A directory `source` is never imported, so no module is unloaded.
+        #
+        # --cov-report=term is required: an empty --cov-report prints no table to parse, which
+        # silently made this check a no-op the first time it was written. The Cover column is
+        # found by scanning the row from the right for a field ending in `%`, because
+        # [tool.coverage.report] show_missing puts the line list in the LAST column.
+        cov_pct=$(cd "$BACKEND" && env "${GATES[@]}" "$VENV_BIN/python" -m pytest $tests \
+            -o addopts= -p no:cacheprovider -q --no-header \
+            --cov="$(dirname "$path")" --cov-report=term 2>/dev/null \
+            | awk -v f="$path" '$1 == f {
+                   for (i = NF; i > 0; i--) if ($i ~ /%$/) { gsub(/%/, "", $i); print $i; break }
+               }' | tail -1 | cut -d. -f1)
+        if [[ -n "${cov_pct:-}" ]]; then
+            if (( cov_pct < MIN_TARGET_COVERAGE )); then
+                echo -e "${RED}    ⚠ selected tests cover only ${cov_pct}% of $path${NC}"
+                echo -e "${RED}      Survivors below ${MIN_TARGET_COVERAGE}% measure SELECTION, not weakness —${NC}"
+                echo -e "${RED}      add the missing test files to MODULE_TESTS[$key] before believing them.${NC}"
+                LOW_COVERAGE+=("$key:${cov_pct}%")
+                lowcov_flag=1
+            else
+                echo -e "    coverage of target by selected tests: ${GREEN}${cov_pct}%${NC}"
+            fi
+        else
+            # Not a shrug any more. An unmeasurable pre-flight means nothing establishes that
+            # the selected tests execute the module at all, so the survivor count that follows
+            # is unreadable — and `--check-baseline` refuses a run whose meta records no
+            # coverage rather than accepting the count.
+            echo -e "${RED}    ⚠ could not measure coverage of $path — the run is NOT a measurement.${NC}"
+            echo -e "${RED}      Fix the pre-flight before triaging survivors; --check-baseline will${NC}"
+            echo -e "${RED}      report this module NOT MEASURED.${NC}"
+            NO_COVERAGE+=("$key")
+        fi
+    fi
+
+    if $DRY_RUN; then
+        echo -e "${YELLOW}    would run:${NC}"
+        echo "      cd $BACKEND"
+        echo "      env ${GATES[*]} PYTEST_ADDOPTS=\"$addopts\" \\"
+        echo "        venv/bin/mutmut run '$mutant_glob'"
+        echo
+        continue
+    fi
+
+    if env "${GATES[@]}" PYTEST_ADDOPTS="$addopts" \
+        "$VENV_BIN/mutmut" run "$mutant_glob" 2>&1 | tee "$log"; then
+        echo -e "${GREEN}✓ $key complete${NC}"
+    else
+        # A non-zero exit from mutmut means "mutants survived", which is a FINDING, not a
+        # broken run. Record it and keep going; the report at the end names them.
+        echo -e "${YELLOW}! $key: mutmut exited non-zero (survivors, or a run error)${NC}"
+        FAILED+=("$key")
+    fi
+
+    # THE COMPLETION RECORD. Reached only if the run above returned, which is what makes its
+    # absence meaningful.
+    finalize_run_evidence "$key" "$log" "${cov_pct:-}" "$stale_flag" "$lowcov_flag"
+    echo -e "    evidence: $OUT_DIR/$key.meta ($(meta_value "$OUT_DIR/$key.meta" mutants) mutants,"\
+            "$(meta_value "$OUT_DIR/$key.meta" survived) survived)"
+    echo
+done
+
+$DRY_RUN && exit 0
+
+echo -e "${BLUE}========================================${NC}"
+"$VENV_BIN/mutmut" results || true
+echo
+echo -e "${BLUE}How to read this${NC}"
+echo -e "  ${GREEN}killed${NC}    a test noticed the edit — the line is genuinely checked"
+echo -e "  ${RED}survived${NC}  THE FINDING: the suite runs that line but asserts nothing about it."
+echo -e "            Inspect the diff ($0 --show <id>), then either add the missing"
+echo -e "            assertion or conclude the line is dead and delete it."
+echo -e "  ${YELLOW}timeout${NC}   the edit caused a hang; counts as killed, but check it is not a"
+echo -e "            real infinite loop the tests were papering over"
+echo -e "  ${YELLOW}suspicious${NC} much slower than baseline — usually a mutated retry/sleep bound"
+echo
+echo -e "Logs: $OUT_DIR/"
+if [[ ${#STALE_CACHE[@]} -gt 0 ]]; then
+    echo -e "${RED}⚠ RESULTS FOR THESE TARGETS MIX TWO TEST SETS: ${STALE_CACHE[*]}${NC}"
+    echo -e "${RED}  Their MODULE_TESTS changed since the cache was written. Run --clean, then${NC}"
+    echo -e "${RED}  re-run the module, before triaging a single survivor.${NC}"
+fi
+if [[ ${#LOW_COVERAGE[@]} -gt 0 ]]; then
+    # Printed AFTER the survivor list on purpose: it is the caveat that decides how to read
+    # everything above it. Without it, a reader takes a survivor count at face value.
+    echo -e "${RED}⚠ SURVIVORS FROM THESE TARGETS ARE NOT TRUSTWORTHY: ${LOW_COVERAGE[*]}${NC}"
+    echo -e "${RED}  The selected tests barely execute the module, so a survivor mostly means${NC}"
+    echo -e "${RED}  'no selected test runs this line' — fix MODULE_TESTS before triaging.${NC}"
+fi
+if [[ ${#NO_COVERAGE[@]} -gt 0 ]]; then
+    echo -e "${RED}⚠ TARGET COVERAGE COULD NOT BE MEASURED: ${NO_COVERAGE[*]}${NC}"
+    echo -e "${RED}  Nothing establishes that the selected tests execute these modules, so${NC}"
+    echo -e "${RED}  their counts are not measurements. --check-baseline will refuse them.${NC}"
+fi
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+    echo -e "${YELLOW}Modules with survivors or errors: ${FAILED[*]}${NC}"
+fi
+exit "$(mutation_run_exit_code "${#FAILED[@]}" "${#LOW_COVERAGE[@]}" "${#STALE_CACHE[@]}" "${#NO_COVERAGE[@]}")"

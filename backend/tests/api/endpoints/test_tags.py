@@ -318,6 +318,132 @@ def test_cleanup_unused_tags_requires_admin(client, user_token_headers):
     assert response.status_code == 403
 
 
+# ---------------------------------------------------------------------------
+# DELETE /api/tags/cleanup — scope
+#
+# The endpoint used to be unconditionally deployment-wide while its inspection
+# sibling GET /tags/unused is caller-scoped, so an admin who read the list and
+# then called cleanup irreversibly deleted rows they were never shown. It now
+# defaults to the caller's own tags; the wide sweep must be named AND confirmed.
+#
+# The `scope=all_users` tests really do issue a table-wide DELETE (rolled back
+# with the savepoint), so they share an xdist group: two of them running on
+# different workers would sit on each other's row locks for no reason.
+# ---------------------------------------------------------------------------
+
+_WIDE_SWEEP_GROUP = pytest.mark.xdist_group("tag_cleanup_wide_sweep")
+
+
+def test_cleanup_deletes_the_callers_own_unused_tag(
+    client, admin_token_headers, admin_user, db_session
+):
+    """The default scope sweeps the admin's own unreferenced tags."""
+    # Capture ids BEFORE the sweep: the endpoint deletes with
+    # synchronize_session=False, so these instances stay in the session's
+    # identity map with their rows gone, and touching `.id` afterwards raises
+    # ObjectDeletedError instead of asserting anything.
+    mine_id = _make_tag(db_session, name=_unique("admin-unused"), user_id=admin_user.id).id
+
+    response = client.delete("/api/tags/cleanup", headers=admin_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["scope"] == "mine"
+    assert db_session.query(Tag).filter(Tag.id == mine_id).count() == 0
+
+
+def test_cleanup_spares_another_users_unused_tag_by_default(
+    client, admin_token_headers, admin_user, other_user, db_session
+):
+    """A second user's unreferenced tag survives the default sweep.
+
+    This is the data-loss footgun: the admin cannot see this row through
+    ``GET /tags/unused``, so the destructive default must not reach it.
+    """
+    # Ids captured before the sweep -- see the note in the test above.
+    mine_id = _make_tag(db_session, name=_unique("admin-unused"), user_id=admin_user.id).id
+    theirs_id = _make_tag(db_session, name=_unique("other-unused"), user_id=other_user.id).id
+
+    response = client.delete("/api/tags/cleanup", headers=admin_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert db_session.query(Tag).filter(Tag.id == mine_id).count() == 0
+    assert db_session.query(Tag).filter(Tag.id == theirs_id).count() == 1
+
+
+def test_cleanup_all_users_refuses_without_confirmation(
+    client, admin_token_headers, other_user, db_session
+):
+    """``scope=all_users`` without ``confirm`` is a 400 that deletes nothing."""
+    # Safe to read after the call today (nothing is deleted), but captured up
+    # front anyway: if this ever regressed to deleting, the failure should read
+    # "count == 1 failed", not ObjectDeletedError.
+    theirs_id = _make_tag(db_session, name=_unique("other-unused"), user_id=other_user.id).id
+
+    response = client.delete("/api/tags/cleanup?scope=all_users", headers=admin_token_headers)
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "confirm=true" in response.json()["detail"]
+    assert db_session.query(Tag).filter(Tag.id == theirs_id).count() == 1
+
+
+@_WIDE_SWEEP_GROUP
+def test_cleanup_all_users_with_confirmation_sweeps_every_account(
+    client, admin_token_headers, other_user, db_session
+):
+    """The wide sweep is still reachable — deliberately, and only on request."""
+    # Id captured before the sweep -- see the note in
+    # test_cleanup_deletes_the_callers_own_unused_tag.
+    theirs_id = _make_tag(db_session, name=_unique("other-unused"), user_id=other_user.id).id
+
+    response = client.delete(
+        "/api/tags/cleanup?scope=all_users&confirm=true", headers=admin_token_headers
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["scope"] == "all_users"
+    assert db_session.query(Tag).filter(Tag.id == theirs_id).count() == 0
+
+
+def test_cleanup_rejects_an_unknown_scope(client, admin_token_headers):
+    """Only the two declared scopes exist, so a typo cannot fall through to one."""
+    response = client.delete("/api/tags/cleanup?scope=everything", headers=admin_token_headers)
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+@_WIDE_SWEEP_GROUP
+def test_cleanup_keeps_a_tag_that_is_still_attached_somewhere(
+    client, admin_token_headers, admin_user, db_session
+):
+    """Unusedness is measured against every file_tag row, not accessible files.
+
+    An owned tag on a file the caller can no longer see must survive: deleting it
+    would strip the tag off that file.
+    """
+    attached = _make_tag(db_session, name=_unique("admin-attached"), user_id=admin_user.id)
+    media_file = _make_file(db_session, admin_user)
+    _attach(db_session, media_file, attached)
+
+    response = client.delete(
+        "/api/tags/cleanup?scope=all_users&confirm=true", headers=admin_token_headers
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert db_session.query(Tag).filter(Tag.id == attached.id).count() == 1
+
+
+@_WIDE_SWEEP_GROUP
+def test_cleanup_never_deletes_system_tags(client, admin_token_headers, db_session):
+    """System tags (``user_id IS NULL``) are the shared picker; unattached is normal."""
+    system_tag = _make_tag(db_session, name=_unique("system-unused"), user_id=None)
+
+    response = client.delete(
+        "/api/tags/cleanup?scope=all_users&confirm=true", headers=admin_token_headers
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert db_session.query(Tag).filter(Tag.id == system_tag.id).count() == 1
+
+
 def test_create_tag_case_insensitive_returns_existing(client, user_token_headers, db_session):
     """A name differing only by case resolves to the existing tag."""
     name = f"Interview-{uuid.uuid4().hex[:8]}"

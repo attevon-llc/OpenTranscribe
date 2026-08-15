@@ -38,7 +38,10 @@ from axe_playwright_python.sync_playwright import Axe
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
+# This module used to define its own ``FRONTEND_URL`` constant here. A module constant is
+# evaluated at import time, so it could not see ``--base-url`` and this file always drove
+# whatever was on the default port — even when the run was aimed at an isolated stack
+# (issue #431). Everything below takes conftest's ``base_url`` fixture instead.
 
 # Impacts we gate on. "minor"/"moderate" are tolerated (legacy debt, low value).
 GATED_IMPACTS = frozenset({"serious", "critical"})
@@ -89,12 +92,12 @@ def _run_axe(page: Page) -> Any:
 # Per-test form logins trip the backend's per-IP auth rate limiting, so we save
 # storage state once and hand each test a pre-authenticated context.
 # ---------------------------------------------------------------------------
-def _form_login_with_retry(page: Page, attempts: int = 4) -> None:
+def _form_login_with_retry(page: Page, base_url: str, attempts: int = 4) -> None:
     """Submit the login form, retrying through transient auth rate-limiting."""
     last_error: Exception | None = None
     for attempt in range(attempts):
         try:
-            page.goto(FRONTEND_URL)
+            page.goto(base_url)
             # Already authenticated (cookie still valid) — no form to fill.
             if page.locator(".user-button").count():
                 page.wait_for_selector(".user-button", timeout=10000)
@@ -107,12 +110,14 @@ def _form_login_with_retry(page: Page, attempts: int = 4) -> None:
             return
         except Exception as exc:  # noqa: BLE001 - retry on any login-flow failure
             last_error = exc
+            # Kept deliberately: this wait IS the rate-limit backoff, not a settle for
+            # something a locator could poll for (issue #431).
             page.wait_for_timeout(5000 * (attempt + 1))
     raise AssertionError(f"Could not log in via form after {attempts} attempts: {last_error}")
 
 
 @pytest.fixture(scope="module")
-def auth_storage_state(browser: Any) -> Any:
+def auth_storage_state(browser: Any, base_url: str) -> Any:
     """Log in once and persist browser storage state for reuse across tests."""
     import tempfile
 
@@ -120,7 +125,7 @@ def auth_storage_state(browser: Any) -> Any:
         viewport={"width": 1920, "height": 1080}, ignore_https_errors=True
     )
     page = context.new_page()
-    _form_login_with_retry(page)
+    _form_login_with_retry(page, base_url)
 
     fd, state_file = tempfile.mkstemp(suffix=".json")
     os.close(fd)
@@ -135,7 +140,7 @@ def auth_storage_state(browser: Any) -> Any:
 
 
 @pytest.fixture
-def authed_page(browser: Any, auth_storage_state: str) -> Any:
+def authed_page(browser: Any, auth_storage_state: str, base_url: str) -> Any:
     """A pre-authenticated page on the app home."""
     context = browser.new_context(
         storage_state=auth_storage_state,
@@ -143,7 +148,7 @@ def authed_page(browser: Any, auth_storage_state: str) -> Any:
         ignore_https_errors=True,
     )
     page = context.new_page()
-    page.goto(FRONTEND_URL)
+    page.goto(base_url)
     page.wait_for_selector(".user-button", timeout=30000)
     yield page
     page.close()
@@ -222,6 +227,10 @@ class TestAccessibility:
         expect(settings_item.first).to_be_visible(timeout=5000)
         settings_item.first.click()
         expect(page.locator(".settings-modal")).to_be_visible(timeout=10000)
+        # Kept deliberately: the modal's open transition must finish before axe reads
+        # computed styles — scanning mid-animation reports contrast/visibility findings
+        # that do not exist once it settles. _run_axe is an evaluate(), not a locator, so
+        # there is nothing to auto-wait on (issue #431).
         page.wait_for_timeout(500)
         results = _run_axe(page)
         _assert_no_new_violations("Settings modal", results, _load_baseline(), discovered_rule_ids)
@@ -230,13 +239,16 @@ class TestAccessibility:
         self,
         authed_page: Page,
         discovered_rule_ids: dict[str, set[str]],
+        base_url: str,
     ) -> None:
         """The /speakers page has no new serious/critical violations."""
         page = authed_page
-        page.goto(f"{FRONTEND_URL}/speakers")
+        page.goto(f"{base_url}/speakers")
         page.wait_for_load_state("networkidle")
         # Wait for the speakers route to render its main container.
         page.wait_for_selector("main, .speakers-page, .page-container", timeout=15000)
+        # Kept deliberately: same reason as the modal scan above — let the route's entry
+        # transition finish before axe reads computed styles (issue #431).
         page.wait_for_timeout(500)
         results = _run_axe(page)
         _assert_no_new_violations("/speakers", results, _load_baseline(), discovered_rule_ids)

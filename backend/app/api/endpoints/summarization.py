@@ -3,6 +3,17 @@ API endpoints for transcript summarization and related functionality
 
 Provides REST API access to AI-powered summarization features including
 summary generation, search, analytics, and speaker identification suggestions.
+
+**The request session is released before any OpenSearch hop.** ``db`` here comes
+from ``Depends(get_db)``, so it lives for the whole REQUEST rather than for a
+``with`` block — an OpenSearch round trip made while it is open holds a Postgres
+transaction, and a plain SELECT takes ACCESS SHARE for the life of that
+transaction. Shorter-lived than a Celery task, but it is the same lock on the
+same tables, and a slow cluster under concurrency is how a pool gets exhausted.
+The handlers below therefore read what they need as **plain data**, call
+``db.close()``, and only then talk to OpenSearch (see
+``backend/app/tasks/CLAUDE.md`` for the rule and ``tasks/summarization.py`` for
+the task-side worked example).
 """
 
 import logging
@@ -19,6 +30,7 @@ from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
+from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.summary import SpeakerIdentificationResponse
 from app.schemas.summary import SummaryResponse
@@ -33,6 +45,43 @@ from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _load_summary_snapshot(
+    db: Session, file_uuid: str, current_user: User, ctx: RequestContext
+) -> dict[str, Any]:
+    """Read everything the summary handlers need from Postgres, as **plain data**.
+
+    No ORM instance escapes. The callers release the request transaction the moment
+    this returns; an escaping instance would lazy-load during the OpenSearch round
+    trip that follows and silently reopen a transaction — the exact defect the
+    release exists to remove.
+
+    Raises:
+        HTTPException: 404/403 from the ownership + takedown + tenant gate.
+    """
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+    )
+    return {
+        "file_id": int(media_file.id),
+        "file_uuid": UUID(str(media_file.uuid)),
+        "filename": media_file.title or media_file.filename,
+        "summary_data": dict(media_file.summary_data) if media_file.summary_data else None,
+        "summary_opensearch_id": (
+            str(media_file.summary_opensearch_id) if media_file.summary_opensearch_id else None
+        ),
+    }
+
+
+def _fetch_indexed_summary(file_id: int, user_id: int) -> dict[str, Any] | None:
+    """Read the structured summary from OpenSearch. **No DB session is held.**"""
+    return OpenSearchSummaryService().get_summary_by_file_id(file_id, user_id)
+
+
+def _delete_indexed_summary(document_id: str) -> bool:
+    """Drop one summary document from OpenSearch. **No DB session is held.**"""
+    return bool(OpenSearchSummaryService().delete_summary(document_id))
 
 
 @router.post("/{file_uuid}/summarize", response_model=dict[str, Any])
@@ -154,6 +203,11 @@ async def trigger_summarization(
             "model": model,
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error(
             "Failed to start summarization task for file %s: %s", file_id, e, exc_info=True
@@ -186,16 +240,18 @@ def get_file_summary(
     - Processing metadata (provider, model, timing)
     - Search-optimized content for highlighting
     """
-    # Verify file exists and belongs to user (tenant-gated via ctx.org_id)
-    media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
-    )
-    file_id = media_file.id
+    # Phase 1 — read (request transaction open, Postgres only).
+    user_id = current_user.id
+    snapshot = _load_summary_snapshot(db, file_uuid, current_user, ctx)
+    file_id = snapshot["file_id"]
+
+    # Release the request transaction BEFORE the OpenSearch hop below. Everything
+    # the response needs is already plain data in ``snapshot``.
+    db.close()
 
     try:
-        # Try to get structured summary from OpenSearch
-        summary_service = OpenSearchSummaryService()
-        opensearch_result = summary_service.get_summary_by_file_id(file_id, current_user.id)
+        # Phase 2 — OpenSearch, with no Postgres transaction held.
+        opensearch_result = _fetch_indexed_summary(file_id, user_id)
 
         if opensearch_result and opensearch_result.get("summary_data"):
             # Return flexible summary structure - no field normalization needed
@@ -203,8 +259,8 @@ def get_file_summary(
             summary_data = opensearch_result.get("summary_data", {})
 
             return SummaryResponse(
-                file_id=UUID(str(media_file.uuid)),
-                filename=media_file.title or media_file.filename,
+                file_id=snapshot["file_uuid"],
+                filename=snapshot["filename"],
                 summary_data=summary_data,
                 source="opensearch",
                 document_id=opensearch_result.get("document_id"),
@@ -213,12 +269,12 @@ def get_file_summary(
             )
 
         # Fallback: Try to get from PostgreSQL if OpenSearch failed
-        if media_file.summary_data:
+        if snapshot["summary_data"]:
             logger.info(f"Returning summary from PostgreSQL for file {file_id}")
             return SummaryResponse(
-                file_id=UUID(str(media_file.uuid)),
-                filename=media_file.title or media_file.filename,
-                summary_data=dict(media_file.summary_data),
+                file_id=snapshot["file_uuid"],
+                filename=snapshot["filename"],
+                summary_data=snapshot["summary_data"],
                 source="postgresql",
             )
 
@@ -293,6 +349,11 @@ def search_summaries(
             filters=search_params,
         )
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Summary search failed for user %s: %s", current_user.id, e, exc_info=True)
         raise HTTPException(
@@ -374,6 +435,11 @@ async def identify_speakers(
             speaker_count=len(media_file.speakers),
         )
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error(
             "Failed to start speaker identification for file %s: %s", file_id, e, exc_info=True
@@ -405,34 +471,40 @@ def delete_summary(
     - Document ID references
     - Search index entries
     """
-    # Verify file exists and belongs to user (tenant-gated via ctx.org_id)
-    media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
-    )
-    file_id = media_file.id
+    # Phase 1 — read (request transaction open, Postgres only).
+    snapshot = _load_summary_snapshot(db, file_uuid, current_user, ctx)
+    file_id = snapshot["file_id"]
+
+    # Release the request transaction BEFORE the OpenSearch delete below. The write
+    # further down reopens one — a second short transaction, not a held one.
+    db.close()
 
     try:
-        summary_service = OpenSearchSummaryService()
-        deleted = False
+        # ``dict[Any, Any]`` because ``Query.update`` accepts string OR column keys
+        # and its parameter type is invariant in the key.
+        updates: dict[Any, Any] = {}
 
-        # Delete from OpenSearch if document ID exists
-        if hasattr(media_file, "summary_opensearch_id") and media_file.summary_opensearch_id:
-            opensearch_deleted = summary_service.delete_summary(
-                str(media_file.summary_opensearch_id)
-            )
-            if opensearch_deleted:
-                media_file.summary_opensearch_id = None  # type: ignore[assignment]
-                deleted = True
+        # Phase 2 — OpenSearch, with no Postgres transaction held.
+        if snapshot["summary_opensearch_id"] and _delete_indexed_summary(
+            snapshot["summary_opensearch_id"]
+        ):
+            updates["summary_opensearch_id"] = None
 
         # Clear PostgreSQL summary
-        if media_file.summary_data:
-            media_file.summary_data = None  # type: ignore[assignment]
-            deleted = True
+        if snapshot["summary_data"]:
+            updates["summary_data"] = None
 
-        if deleted:
+        if updates:
+            # Phase 3 — write (a fresh short transaction, Postgres only).
+            db.query(MediaFile).filter(MediaFile.id == file_id).update(
+                updates, synchronize_session=False
+            )
             db.commit()
             logger.info(f"Deleted summary for file {file_id}")
-            return {"message": "Summary deleted successfully", "file_id": str(media_file.uuid)}
+            return {
+                "message": "Summary deleted successfully",
+                "file_id": str(snapshot["file_uuid"]),
+            }
         else:
             raise HTTPException(status_code=404, detail="No summary found to delete")
 

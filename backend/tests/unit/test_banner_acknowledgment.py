@@ -37,6 +37,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi import Response
 
+from app.api.endpoints.auth import dependencies as deps_module
 from app.api.endpoints.auth.dependencies import BANNER_EXEMPT_PATHS
 from app.api.endpoints.auth.dependencies import ERROR_CODE_BANNER_ACKNOWLEDGMENT_REQUIRED
 from app.api.endpoints.auth.dependencies import ERROR_CODE_PASSWORD_CHANGE_REQUIRED
@@ -373,6 +374,27 @@ class TestTheGateIsOffByDefault:
             is user
         )
 
+    def test_an_env_enabled_banner_with_no_stored_row_is_still_enforced(self, monkeypatch):
+        """The ``.env`` fallback is a VALUE, not a shrug.
+
+        Every refusal above reaches the gate through a stored ``auth_config`` row.
+        A deployment that set ``LOGIN_BANNER_ENABLED=true`` and never opened the
+        admin panel has no row at all, and the fallback is the only thing that
+        engages the gate for it. Nothing asserted that: a fallback resolving to
+        anything falsy turns AC-8 off for precisely the deployments that
+        configured it the documented way, and every existing test still passes
+        because they all assert the gate does *not* engage.
+        """
+        monkeypatch.setattr(settings, "LOGIN_BANNER_ENABLED", True)
+
+        with pytest.raises(HTTPException) as exc:
+            get_current_active_user(
+                request=_request(ORDINARY_PATH), current_user=_user(), db=_FakeDB([])
+            )
+
+        assert exc.value.status_code == 403
+        assert exc.value.detail["code"] == ERROR_CODE_BANNER_ACKNOWLEDGMENT_REQUIRED
+
     def test_inactive_user_still_gets_the_original_400(self, banner_off):
         """The banner gate must not swallow the pre-existing deactivation check."""
         with pytest.raises(HTTPException) as exc:
@@ -381,3 +403,63 @@ class TestTheGateIsOffByDefault:
             )
 
         assert exc.value.status_code == 400
+
+
+# ── the query itself, against a real session ─────────────────────────────────────
+
+
+class TestTheStoredConfigurationIsFoundByKey:
+    """The two ``login_banner_*`` keys are a PREDICATE, and fakes cannot see it.
+
+    ``_ConfigQuery.filter()`` above returns the same rows whatever it is handed —
+    the right shape for testing the gate's decisions, and blind to the query that
+    produced them. A mistyped key, a dropped ``filter``, or the wrong model all
+    return exactly those rows from the fake and exactly **nothing** from Postgres,
+    at which point ``_banner_requirement`` swallows the failure (it must: it runs
+    on every authenticated request) and silently answers from ``.env``. A banner
+    an administrator switched on in the admin UI would then be displayed by
+    ``GET /auth/banner`` and enforced by nobody — the exact defect this gate
+    exists to close, reintroduced invisibly.
+
+    So these two run against the real session, which is the only thing that can
+    tell "found the row" from "found nothing and fell back".
+    """
+
+    @staticmethod
+    def _store(db, key: str, value: str, updated_at: datetime | None = None):
+        """Upsert one ``auth_config`` row. Upsert, not insert: ``config_key`` is
+        UNIQUE and a dev database may already carry either of these."""
+        from app.models.auth_config import AuthConfig
+
+        row = db.query(AuthConfig).filter(AuthConfig.config_key == key).first()
+        if row is None:
+            row = AuthConfig(config_key=key, category="local")
+            db.add(row)
+        row.config_value = value
+        if updated_at is not None:
+            row.updated_at = updated_at
+        db.flush()
+        return row
+
+    def test_the_enabled_row_is_read_from_the_database(self, db_session, monkeypatch):
+        """``.env`` says off; the stored row says on. Only a query that really
+        finds ``login_banner_enabled`` can report on."""
+        monkeypatch.setattr(settings, "LOGIN_BANNER_ENABLED", False)
+        self._store(db_session, "login_banner_enabled", "true")
+
+        enabled, _ = deps_module._banner_requirement(db_session)
+
+        assert enabled is True
+
+    def test_the_text_row_is_read_from_the_database(self, db_session, monkeypatch):
+        """``text_last_changed_at`` is what expires an acknowledgment when the
+        wording changes, and it is ``None`` whenever the row is not found — so a
+        query that misses it does not fail loudly, it just stops expiring
+        anything."""
+        monkeypatch.setattr(settings, "LOGIN_BANNER_ENABLED", False)
+        edited_at = datetime(2026, 8, 13, 9, 30, tzinfo=UTC)
+        self._store(db_session, "login_banner_text", "AUTHORIZED USE ONLY", updated_at=edited_at)
+
+        _, text_changed_at = deps_module._banner_requirement(db_session)
+
+        assert text_changed_at == edited_at

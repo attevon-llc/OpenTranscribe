@@ -185,7 +185,20 @@ def schemas(_token: SCIMToken = Depends(require_scim_token)):
 
 @router.get("/Schemas/{schema_id}")
 def schema_by_id(schema_id: str, _token: SCIMToken = Depends(require_scim_token)):
-    """One schema by its URN."""
+    """One schema by its URN (RFC 7644 §4).
+
+    Consumed by an external SCIM client — an IdP's provisioning connector fetching
+    the attribute definition for ``urn:ietf:params:scim:schemas:core:2.0:User`` or
+    ``:Group`` before it maps its own directory fields. Never called by the SPA.
+
+    Authorized by ``require_scim_token`` (a Bearer SCIM token, not a session), like
+    every other route in this package — see the module docstring on why these are not
+    anonymous even though the RFC permits it.
+
+    ``schema_id`` is matched against the served ``_SCHEMAS`` literally, so it must be
+    the full URN, not a short name; a miss raises a SCIM ``Error`` resource via
+    ``not_found``, not FastAPI's default 404 body.
+    """
     match = next((s for s in _SCHEMAS if s["id"] == schema_id), None)
     if match is None:
         raise not_found("Schema", schema_id)

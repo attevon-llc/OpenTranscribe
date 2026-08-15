@@ -12,7 +12,11 @@ Alembic migrations in `backend/alembic/versions/` are the **sole authority** for
 
 ## Current Migration Chain
 
-The chain spans v010 (baseline) through the current head, **59 revisions**. Run
+The chain spans v010 (baseline) through the current head. The revision COUNT is deliberately
+not written down here: it was recorded as "59" and was 74 by the time anyone checked, which is
+the same way `expected-schemas.tsv` died. Derive it —
+`scripts/release-tests/lib/alembic-head.py` walks the `down_revision` graph, and
+`ls backend/alembic/versions/*.py | wc -l` is the crude version. Run
 `alembic history` for the authoritative list and `alembic heads` to confirm exactly one head —
 the ranges below are a rough map, and the chain is neither numerically contiguous nor
 guaranteed to match filename order (see `CLAUDE.md` in this directory for the `v270` branch).

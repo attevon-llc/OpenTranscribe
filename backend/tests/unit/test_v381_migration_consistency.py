@@ -29,13 +29,13 @@ import pytest
 from sqlalchemy import inspect
 from sqlalchemy import text
 
-#: These suites perform schema DDL (dropping a column or constraint to recreate the
-#: pre-revision shape). Postgres takes an ACCESS EXCLUSIVE lock for that, so they must
-#: not run beside other database tests — `--dist loadgroup` keeps a group on one worker.
-#: That alone only protects against other `migration_ddl` tests; `ddl_exclusive` makes
-#: `db_session` take a DB-wide advisory lock so this group can't deadlock against an
-#: unrelated worker's ordinary DML either (issue #389).
-pytestmark = [pytest.mark.xdist_group("migration_ddl"), pytest.mark.ddl_exclusive]
+#: `ddl_exclusive` is applied PER TEST below, never to the module. An EXCLUSIVE advisory-lock
+#: acquisition drains every other xdist worker, so spending one on a read-only schema
+#: assertion turns that assertion into a full-suite barrier — that is what made this group
+#: 414 s of a 511 s wall clock. Only the tests that actually execute ALTER/DROP/CREATE carry
+#: it; the lock's EXCLUSIVE mode already serialises them against each other across workers,
+#: so `xdist_group` is not needed on top (issue #389, #431).
+#: Both directions are enforced by `tests/unit/test_ddl_marker_discipline.py`.
 
 REVISION = "v381_approval_state"
 _REVISION_PATH = Path(__file__).resolve().parents[2] / "alembic" / "versions" / f"{REVISION}.py"
@@ -100,6 +100,7 @@ def test_detection_arm_returns_v381_or_later_on_current_schema(db_session):
     assert_detected_at_or_after(conn, tables, REVISION)
 
 
+@pytest.mark.ddl_exclusive
 def test_detection_needs_the_column(db_session):
     """Without the column the ladder must stamp lower so the DDL still runs."""
     from app.db.migrations import _detect_schema_version
@@ -111,6 +112,7 @@ def test_detection_needs_the_column(db_session):
     db_session.rollback()
 
 
+@pytest.mark.ddl_exclusive
 def test_detection_needs_the_check_constraint(db_session):
     """The column alone is not the revision — see this module's docstring."""
     from app.db.migrations import _detect_schema_version
@@ -141,6 +143,7 @@ def test_approved_by_is_a_self_fk_that_does_not_cascade_deletes(db_session):
     assert rule == "n", f"expected ON DELETE SET NULL ('n'), got {rule!r}"
 
 
+@pytest.mark.ddl_exclusive
 def test_existing_rows_are_approved_not_pending(db_session):
     """The entire upgrade story: nobody is locked out by taking this revision.
 
@@ -217,8 +220,16 @@ def test_the_application_constant_matches_the_check():
     assert set(VALID_APPROVAL_STATUSES) == allowed
 
 
+@pytest.mark.ddl_exclusive
 def test_rerunning_the_upgrade_is_a_no_op(db_session):
-    """The startup runner stamps by fingerprint, so a revision re-runs routinely."""
+    """The startup runner stamps by fingerprint, so a revision re-runs routinely.
+
+    ``UPGRADE_SQL`` and ``CONSTRAINT_SQL`` are ``ALTER TABLE "user" ADD COLUMN`` /
+    ``ADD CONSTRAINT`` / ``CREATE INDEX``, run twice each — ACCESS EXCLUSIVE on the one
+    table nearly every other test inserts into. This ran unmarked because the marker
+    scanner could not see DDL that arrives through an attribute lookup on a revision
+    module (``module.UPGRADE_SQL``); it can now.
+    """
     module = _revision_module()
     conn = db_session.connection()
 

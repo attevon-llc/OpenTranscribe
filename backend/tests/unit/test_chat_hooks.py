@@ -11,6 +11,7 @@ import dataclasses
 import pytest
 
 from app.services.chat import hooks
+from tests.helpers import does_not_raise
 
 
 @pytest.fixture(autouse=True)
@@ -51,7 +52,8 @@ def _completion_ctx(success: bool = True) -> hooks.ChatCompletionContext:
 def test_no_hooks_registered_is_a_noop():
     """Community edition: zero hooks, zero overhead, no errors."""
     hooks.fire_before_message(_dispatch_ctx())
-    hooks.fire_message_complete(_completion_ctx())
+    with does_not_raise("dispatching with no registered hooks is a no-op"):
+        hooks.fire_message_complete(_completion_ctx())
 
 
 def test_before_message_hook_receives_context():
@@ -92,7 +94,8 @@ def test_completion_hook_failures_are_always_contained():
         raise RuntimeError("usage spine down")
 
     hooks.register_message_complete(broken)
-    hooks.fire_message_complete(_completion_ctx())  # must not raise
+    with does_not_raise("a failing completion hook must never break the chat response"):
+        hooks.fire_message_complete(_completion_ctx())  # must not raise
 
 
 def test_completion_context_carries_metering_fields():

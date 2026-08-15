@@ -17,14 +17,14 @@ from app.models.media import TranscriptSegment
 from app.services.subtitle_service import SubtitleService
 
 
-def _make_file(db_session, test_user, filename: str) -> MediaFile:
+def _make_file(db_session, sample_user, filename: str) -> MediaFile:
     file = MediaFile(
         uuid=str(uuid.uuid4()),
         filename=filename,
         storage_path=f"media/test/{filename}",
         content_type="video/mp4",
         file_size=1024,
-        user_id=test_user.id,
+        user_id=sample_user.id,
         status="completed",
         is_public=False,
     )
@@ -34,10 +34,10 @@ def _make_file(db_session, test_user, filename: str) -> MediaFile:
     return file
 
 
-def _add_segments(db_session, test_user, file: MediaFile, n: int = 2) -> None:
+def _add_segments(db_session, sample_user, file: MediaFile, n: int = 2) -> None:
     speaker = Speaker(
         uuid=str(uuid.uuid4()),
-        user_id=test_user.id,
+        user_id=sample_user.id,
         media_file_id=file.id,
         name="SPEAKER_01",
         display_name="Alice",
@@ -60,16 +60,16 @@ def _add_segments(db_session, test_user, file: MediaFile, n: int = 2) -> None:
 
 
 @pytest.fixture
-def file_with_transcript(db_session, test_user):
-    file = _make_file(db_session, test_user, "with_transcript.mp4")
-    _add_segments(db_session, test_user, file, n=3)
+def file_with_transcript(db_session, sample_user):
+    file = _make_file(db_session, sample_user, "with_transcript.mp4")
+    _add_segments(db_session, sample_user, file, n=3)
     return file
 
 
 @pytest.fixture
-def file_without_transcript(db_session, test_user):
+def file_without_transcript(db_session, sample_user):
     # Completed but no segments -> generators raise -> counts as skipped.
-    return _make_file(db_session, test_user, "no_transcript.mp4")
+    return _make_file(db_session, sample_user, "no_transcript.mp4")
 
 
 class TestBuildSubtitleArchive:

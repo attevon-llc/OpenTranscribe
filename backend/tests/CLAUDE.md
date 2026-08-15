@@ -39,27 +39,147 @@ Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
   `test_fedramp_compliance`+`_controls`, `RUN_FIPS_TESTS`→`test_fips_140_3`,
   `RUN_AUTH_CONFIG_TESTS`→`test_auth_config_service`, `RUN_ADVANCED_ADMIN_TESTS`→
   `test_admin_security`, `RUN_SEARCH_QUALITY_TESTS`→`test_search_quality` (corpus-dependent,
-  deliberately never in CI), `RUN_AUTH_E2E`→`e2e/test_ldap_oidc` + LDAP half of
+  deliberately never in CI), `RUN_SCHEMA_DRIFT_TESTS`→`unit/test_schema_drift` (needs the live
+  migrated DB; now its own phase in `run-integration-tests.sh` — it was previously set only by
+  the release pipeline's `warn`-severity `schema-drift` criterion, so it never ran pre-merge),
+  `RUN_AUTH_E2E`→`e2e/test_ldap_oidc` + LDAP half of
   `e2e/test_auth_buttons`, `RUN_PKI_E2E`→`e2e/test_pki`.
 - **MinIO/OpenSearch tests auto-enable by TCP probe.** Root conftest `_service_reachable`
   (0.3 s) `setdefault`s `SKIP_S3` from `localhost:5178` and `SKIP_OPENSEARCH` from
   `localhost:5180`, then points the clients at those host ports; an explicit shell value wins.
   Stack down → those suites **skip silently**, so a green local run proves less than it looks.
 
-## Safety rules (non-negotiable)
+## Test-quality gate — `scripts/audit-tests.py` + `audit-allowlist.txt`
+
+**Runs on every commit** (`.pre-commit-config.yaml`: `audit-tests-selftest` then `audit-tests`)
+and in the `backend-tests` CI job. Before this it was in neither — `rg audit-tests` found only
+prose. 16 AST detectors; full inventory and the calibration traps live in `scripts/CLAUDE.md`.
+What matters when you are writing a test here:
+
+- **`tests/e2e` is scanned too.** It used to be excluded, which hid 21 findings in the only
+  suite that drives a real browser.
+- **The shapes it rejects**, and the fix each one wants:
+  - `assert r.status_code != 403` → assert the exact status. `!=` passes on a **500**, so
+    seven "admin can access" tests in `api/endpoints/test_permissions.py` passed against a
+    completely broken endpoint.
+  - the real assertion inside `if r.status_code == 200:` → assert `== 200` unconditionally
+    first, then assert the payload. Two of these survived in `test_permissions.py` after their
+    siblings were fixed, because a weak unguarded assert beside them hid them from
+    `conditional-only`.
+  - every assertion inside `for x in <runtime iterable>` → add a non-emptiness assertion
+    *outside* the loop. `redaction/test_presidio.py::test_offsets_slice_back` is the fix shape:
+    zero detected spans ran the loop zero times and passed, on the invariant that
+    `redaction/spans.py` is a mutation target *for*.
+  - `assert some_local` where the local is an `or` chain → assert the value you mean.
+  - only `mock.assert_called_once_with(...)` → assert real state as well. See
+    `unit/test_dispatch.py`: it patched `update_media_file_status`/`update_task_status`/
+    `send_error_notification` — **the effects `on_pipeline_error` exists to produce** — so a
+    handler that left a file `processing` forever kept 13 of 15 tests green. It now creates real
+    `MediaFile`/`Task` rows and asserts on them, patching only `session_scope` (the handler
+    opens its own session, invisible under the savepoint harness) plus the MinIO/Redis/WebSocket
+    seams, once, in one fixture.
+  - `except ...: pass` in a test body → let it raise. The assertions inside the `try` silently
+    stop running and nothing reports it.
+- **Allowlist entries are `<file>::<test>::<category>  # reason`, all three segments required.**
+  A reason starting `BACKLOG` marks deferred work and is counted and printed separately on
+  every run, so a green gate is never read as a clean tree. A **stale** entry — one whose
+  finding is gone — **fails the run**: fix a test, delete its line. Never widen an assertion to
+  clear a finding.
+- **Run `python3 scripts/audit-tests.py --selftest` after touching a detector**, and give any
+  new one a must-fire *and* a must-stay-clean fixture. `unit/test_audit_tests_selftest.py` runs
+  all 54 cases under pytest for the same reason: a detector that matches nothing reports zero
+  findings, which is indistinguishable from a clean suite.
+
+## Safety rules (non-negotiable) — enforced by `unit/test_e2e_data_hygiene.py`
+
+These three rules used to be prose only, and had already been broken: a registration test
+with a hard-coded `test@example.com` created a real account on the live stack that had to be
+deleted by hand. `unit/test_e2e_data_hygiene.py` now enforces all three by AST over
+`tests/e2e/*.py`, in the **fast unit suite** — before any browser touches the stack. Each
+check has an allow-list requiring a **written reason** (the `test_ddl_marker_discipline.py`
+pattern), and six "guard the guard" tests so a scanner that silently matches nothing cannot
+pass everything — one of which caught exactly that: the UI-creation half matched by string
+equality against selectors that embed the label (`"button:has-text('Create Account')"`), so it
+was finding nothing at all.
 
 - **E2E must never persist changes to dev data.** Upload tests delete what they create (API
   delete, falling back to `/force`); transcript-edit tests use the **cancel path only**.
-- **Negative-login tests must use a nonexistent account** (`nonexistent@example.com`), never a
-  wrong password for `admin@example.com` — progressive per-account lockout poisons every later
-  test in the suite.
+  Cleanup must be in a `finally`, a fixture teardown that deletes, or an `addfinalizer` — **a
+  delete on the happy path does not count**, because the assertion most likely to fail is the
+  one *after* the object was created. A fixture's `page.close()`/`context.close()` teardown is
+  explicitly not accepted as data cleanup.
+- **Never name a persistent object with a fixed identity.** Emails, created-object
+  `name`/`title` payloads, and values typed into a name field all need a `uuid4`/random
+  suffix. `admin@example.com` / `password`, `nonexistent@example.com`,
+  `nosuchuser-e2e@example.com` and the `ldap-*`/`kc-*` IdP fixtures are the allow-listed
+  shared identities. `scripts/cleanup-test-users.py`'s `ORPHAN_PATTERNS` is the backstop for
+  runs that die mid-flight — **add your prefix there in the same commit** (`mfa-e2e-` was
+  missing for as long as `test_mfa.py` leaked one account per run).
+- **Negative-login tests must use a nonexistent account** (`nonexistent@example.com`,
+  `nosuchuser-e2e@example.com`, `ldap-nosuchuser-e2e`), never a wrong password for
+  `admin@example.com` — lockout is keyed on the **resolved account** (`canonical_identifier`
+  collapses an `ldap_uid` onto the account's email) and escalates, so one such test poisons
+  every later test that logs in as that account. Where the real-user branch genuinely differs
+  — an LDAP bind rejection — use an account that never authenticates successfully anywhere in
+  the suite (`test_ldap_oidc.py`'s `LDAP_NEGATIVE_USER`), so no local `User` is ever
+  provisioned and its lockout bucket belongs to nothing. Registration forms are exempt from
+  this check: they have `#email`/`#password` fields but submitting one is not a login.
 - Dev relaxes auth limits (`docker-compose.override.yml`: `RATE_LIMIT_AUTH_PER_MINUTE=120`,
   `ACCOUNT_LOCKOUT_THRESHOLD=100`, `DEV_*`-tunable). **Prod never loads that overlay** — don't
   write a test that only passes under the relaxed values. `shared_auth_state`/`gallery_page`
   exist to log in **once per session** for the same reason.
 
+## Before you debug a "flaky" E2E test, rule out the STACK (issue #431)
+
+Three separate mystifying per-test failures all turned out to be the environment, not the
+tests. `scripts/e2e/run-e2e.sh` only checked that **ports 5173/5174 were open** — and a
+restarting container keeps its published port open, so that check passed throughout. A
+session-scoped autouse preflight in `e2e/conftest.py` now catches both causes in ~3.4 s:
+
+- **A flapping backend.** `+layout.svelte` renders the ENTIRE app behind `{#if $authReady}`,
+  and `authReady` is set only after `initAuth()`'s `GET /auth/session` resolves — behind a
+  **60 s** axios timeout. So any backend stall makes `#email` absent for up to a minute and
+  *every* login-page fixture times out at once, with a different subset landing in each stall
+  window. That reads exactly like order-dependent flakiness and is not. Observed: uvicorn
+  reloading **19× in 5 minutes** (`/health` up on 9 of 40 samples) while a `pre-commit` run
+  stashed and restored the tree — **so running `pre-commit` while E2E runs manufactures E2E
+  failures.** The preflight requires **3 consecutive** `/health` 200s; one lucky probe cannot
+  clear a flapping backend.
+- **A split Vite module graph.** ES modules are keyed by URL, so a store served under two
+  `?t=` stamps becomes **two independent store instances** — one written by the layout, one
+  subscribed by a component that then sees `null` forever. This made a promote button's
+  `canPromote` false with correct code, correct data and a correctly-authenticated session;
+  a content-free `touch` fixed it. `split_store_modules` detects it; it degrades to a no-op
+  on the prod/nginx overlays.
+
+Both have must-fire and must-stay-clean cases in `e2e/test_preflight_guard.py`.
+
+⚠️ **An absence-asserting sibling cannot catch this class.** `test_promote_control_absent_for_
+an_already_shared_tag` passed throughout, because a broken store produces absence too.
+
 ## Gotchas
 
+- **Subdirectory-conftest fixtures vanish from a mixed file selection (issue #454, pytest 9.1).**
+  `pytest tests/unit/a.py tests/b.py tests/unit/c.py` used to give
+  `fixture 'run_in_clean_process' not found` — **3 setup ERRORS, not failures**, so the
+  fail-closed-environment and Celery-reliability guards silently stopped running. Mechanism:
+  pytest ≥ 9.1 matches a conftest's fixtures to tests by **collector-node object identity**
+  (`FixtureManager._matchfactories`) and registers each conftest exactly once (`pop` from
+  `_pending_conftests`), while `Session.collect` **rebuilds a directory's children** whenever an
+  argument ends at a file inside it (`handle_dupes=False`). Leaving a subdirectory and returning
+  therefore hangs the later file off a second, unregistered collector.
+  **The `__init__.py` asymmetry is NOT the cause** — a minimal repro errors identically with
+  both, neither, or either present, and `tests/api/` (no `__init__.py`) breaks the same way.
+  Bisected: 8.4.2 and 9.0.3 clean, 9.1.0/9.1.1 broken, 9.1.1 is newest. Worked around by
+  `fixtures/dir_collector_memo.py` (memoises directory collectors; registered from the root
+  conftest's `pytest_plugins`) and pinned by `unit/test_conftest_fixture_visibility.py`, whose
+  must-fire control **skips with removal instructions** once upstream fixes it. Confirmed
+  victims were `run_in_clean_process` + `revisions_at_or_after` (`unit/conftest.py`) and
+  `org_context` + `organizations_capability_on` (`api/conftest.py`).
+- **`tests/` must never gain an `__init__.py`.** Prepend import mode would then root
+  `tests/conftest.py` at `backend/`, `backend/tests` would never reach `sys.path`, and
+  `pytest_plugins = ["fixtures.mock_llm", ...]` dies with `No module named 'fixtures'` — the
+  same reason `--import-mode=importlib` is unusable here.
 - **`tests/integration/` is a directory name, not a marker.** Its contents split three ways:
   `integration`-marked (need the live stack), `gpu`-marked (boundary/diarization regression,
   lifecycle, perf gates), and three deliberately service-free tests in
@@ -73,27 +193,125 @@ Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
   into the live dev cluster.
 - `--dist loadgroup`: tests sharing mutable global state need
   `pytestmark = pytest.mark.xdist_group("<name>")` (`test_auth_config_integration.py`,
-  `unit/test_media_mirror_service.py`, `api/test_scim.py`, `api/test_proxy_auth_endpoint.py`,
+  `unit/test_media_mirror_service.py`, `api/test_proxy_auth_endpoint.py`,
   and — group per overlapping `SystemSettings` key namespace, issue #389 — `"backup_system_settings"`
   on `unit/test_backup_metrics.py` + `unit/test_backup_service.py` + `unit/test_backup_alerts.py`,
   `"engine_system_settings"` on `test_engine_settings.py` + `api/test_engine_settings_endpoints.py`)
   or they interleave across workers and can deadlock on `system_settings_key_key`
   (two workers inserting the same overlapping keys in reversed order). User fixtures
   use UUID-suffixed emails for the same reason.
-- **DDL tests need more than `xdist_group`.** `xdist_group("migration_ddl")` only stops those
-  tests from colliding with *each other*; it does nothing about an unrelated worker's ordinary
-  DML running at the same moment. `DROP TABLE`/`ALTER TABLE ... DROP CONSTRAINT` takes
-  `ACCESS EXCLUSIVE`, and when the dropped object is a foreign key, Postgres needs that lock on
-  the *referenced* table too (removing the FK's enforcement trigger, which lives there) — e.g.
-  dropping `scim_token` also locks `user`, and `v377`/`v381`'s tests `ALTER TABLE "user"`
-  directly. Since nearly every other test touches a `user` row, this could deadlock against any
-  worker in the suite (issue #389). `@pytest.mark.ddl_exclusive` (on all six
-  `unit/test_v37{7,8}_*`/`test_v38{0,1,2,3}_migration_consistency.py` files) makes `db_session`
-  take a Postgres advisory lock (`tests/conftest.py`'s `_DDL_ISOLATION_LOCK_KEY`) — SHARED for
-  every ordinary test, EXCLUSIVE for a `ddl_exclusive` test — giving real cross-worker mutual
-  exclusion that `xdist_group` alone can't.
+- **DDL tests need more than `xdist_group`, and the marker goes on the TEST, never the module.**
+  `DROP TABLE`/`ALTER TABLE ... DROP CONSTRAINT` takes `ACCESS EXCLUSIVE`, and when the dropped
+  object is a foreign key Postgres needs that lock on the *referenced* table too (removing the
+  FK's enforcement trigger, which lives there) — dropping `scim_token` also locks `user`, and
+  `v377`/`v381` `ALTER TABLE "user"` directly. Since nearly every other test touches a `user`
+  row, that can deadlock against any worker (issue #389). `xdist_group` cannot fix it: sharing a
+  worker only stops DDL tests colliding with *each other*. `@pytest.mark.ddl_exclusive` makes
+  `db_session` take a Postgres advisory lock (`tests/db_locks.py`) — SHARED for every ordinary
+  test, EXCLUSIVE for a `ddl_exclusive` test — which is real cross-worker mutual exclusion.
+  **Every EXCLUSIVE acquisition is a stop-the-world barrier**: it drains all other workers and
+  queues every new one behind it. Applying the marker at module scope therefore turns each
+  read-only schema assertion in the module into a full-suite barrier — that is how the
+  `migration_ddl` group came to be 414 s of a 511 s wall clock with 111 tests marked and ~12
+  actually running DDL (issue #431). `unit/test_ddl_marker_discipline.py` enforces both
+  directions by AST: DDL without the marker fails, and the marker without DDL fails. It
+  discriminates *executed* DDL from DDL merely mentioned in a string, because three suites
+  assert on a migration's own source text and one passes `"'; DROP TABLE media_file; --"` as an
+  injection payload. `CREATE TEMP TABLE` is exempt (session-private `pg_temp_*` schema).
+  A test that opens its **own** connection cannot be reached by the marker — it must call
+  `tests/db_locks.py`'s `acquire_ddl_lock_exclusive[_raw]()` itself, as
+  `unit/test_uuid7_migration_guard.py` does for the raw v368 guard block.
 - E2E runs from the repo root against `backend/tests/e2e/`, so `e2e/pytest.ini` becomes the
   rootdir config — pyproject `addopts` (`-n auto`, `-m 'not integration'`) do **not** apply.
+
+## Mutation testing (opt-in, never in the gate or CI)
+
+**What it is for.** Coverage says a line *ran*. It cannot say the suite would *notice* if the
+line were wrong — and this repo has already shipped tests that could not fail (an `or` chain
+ending in `"register" in page.url`; a `gpu` marker that selected nothing). Mutation testing
+answers the question directly: edit the source (flip `<` to `<=`, drop an `and` clause, change
+a constant, return `None`) and re-run the tests. A mutant that **dies** proves a test really
+checked that behaviour. A mutant that **SURVIVES** is the finding: the suite executes that line
+and asserts nothing about it, so the line could be deleted with the suite still green. For an
+auth predicate that is a removable security control.
+
+**Tool: `mutmut`** (`backend/requirements-dev.txt` — deliberately *not* `requirements-ci.txt`,
+which CI installs and must stay fast). Chosen over `cosmic-ray` because it needs no session
+database or job queue (config is `[tool.mutmut]` in `backend/pyproject.toml`, entry point is one
+script), and because cosmic-ray's main advantage — distributed parallel execution — is exactly
+what must **not** happen here: every mutant's tests share the one live Postgres, and
+cross-worker concurrency on it is this repo's known deadlock shape (the advisory lock and
+`system_settings` collisions of issues #389/#431). Serial is correct, not a limitation.
+
+**Scope: six security-critical modules only** (`[tool.mutmut] paths_to_mutate`) —
+`redaction/spans.py` (masking off-by-one leaks the character it should hide),
+`auth/password_policy.py` (five independent `require_*` predicates), `core/security.py`
+(JWT/bcrypt), `api/endpoints/auth/dependencies.py` (the privilege gates — an inverted role
+comparison is privilege escalation), `auth/lockout.py`, `auth/session.py`. A whole-codebase run
+is hours and is not the point.
+
+```bash
+./scripts/run-mutation-tests.sh --check            # preconditions, mutates nothing
+./scripts/run-mutation-tests.sh --list             # targets + the tests each one runs
+./scripts/run-mutation-tests.sh --module spans     # START HERE (~1-3 min)
+./scripts/run-mutation-tests.sh --module spans --dry-run
+./scripts/run-mutation-tests.sh --results          # re-report, no re-run
+./scripts/run-mutation-tests.sh --show <id>        # the diff for one survivor
+./scripts/run-mutation-tests.sh --verify <id>      # does that survivor really survive?
+./scripts/run-mutation-tests.sh --check-baseline   # the RATCHET (also gate phase 7)
+python3 scripts/triage-mutants.py <log> <module>   # observable vs unobservable
+```
+
+**"Kill every mutant" is not the goal, and treating it as one is why this stalled for a day.**
+A clean run of `lockout` reports 149 survivors of which **77 edit a log message and 12 flip a
+condition guarding only a log call** — unobservable by the repo's own rule, and asserting on log
+text produces tests that break on every reword. So the gate is a **ratchet**:
+`scripts/mutation-baselines.tsv` records each module's measured count and
+`--check-baseline` fails when one RISES. Down is progress; up means a predicate lost its test.
+Lower the baseline when you add tests; **never raise it to make a run pass**.
+
+`triage-mutants.py` splits survivors into `noise-string`, `noise-log-branch` and `logic` so the
+count you act on is the last one. Its rules were wrong three times, twice by over-reporting and
+once — the dangerous direction — by under-reporting: a string inside a **predicate**
+(`hashed_password.startswith("$pbkdf2-sha256$")`) *is* the logic, and calling it a log edit hid
+a FIPS-rehash finding. Every rule now has a must-fire and a must-stay-clean case in
+`--selftest`.
+
+**A survivor is a claim, not a fact — `--verify` makes it prove itself.** It applies the
+mutation to the real source, runs the module's tests, restores, and reports
+CONFIRMED-SURVIVED / KILLED / UNVERIFIABLE. Needed because the harness produced wrong numbers
+four different ways: an incomplete `MODULE_TESTS` list (41 false survivors in `dependencies`,
+which I reported as a proxy header-spoofing vulnerability before checking), a second `--module`
+silently replacing the first, cached verdicts from an older test list presented as current, and
+a survivor list read from a **stale log** that never ran that module. Each now has a guard —
+respectively a coverage pre-flight, an error, a test-list fingerprint, and a
+`--- mutating <path> ---` check.
+
+⚠️ **`--verify` transiently edits live source.** It holds a per-module `flock` (two concurrent
+verifies each restore from their own backup, so one reinstates the other's mutation — observed)
+and restores on INT/TERM/ERR/EXIT, but nothing survives a SIGKILL of the process group: a
+stopped batch left `now <` mutated to `now <=` in `app/auth/lockout.py`. **Do not commit while
+one runs** (pre-commit stashes the whole tree, issue #434), and check
+`git diff backend/app/` after any interrupted run.
+
+**Runtime** (per module, serial): `spans` ~1-3 min · `password_policy` ~5-15 min · `security`
+~10-30 min (each mutant pays a bcrypt round) · `dependencies` ~20-60 min (each mutant boots the
+test client) · `lockout` ~30-90 min · `session` ~15-45 min · `--all` is **hours**. Needs
+Postgres (5176) and, for lockout/session, Redis (5177). CPU-only — it never touches the GPU,
+but it will saturate every core, so don't start one beside a benchmark.
+
+**Two traps the script handles, and you must not undo.** `-n0` is appended via
+`PYTEST_ADDOPTS` to override pyproject's `-n auto`: without it every mutant forks one xdist
+worker per core against the shared DB. And the `RUN_*` gates are exported, because three of the
+selected test files are behind a module-level `skipif` and **a skipped test kills no mutant** —
+an ungated run reports false survivors that look exactly like real findings.
+
+**Reading a surviving mutant.** `--results` lists ids; `--show <id>` prints the diff.
+`killed` = genuinely checked. `survived` = the finding; add the missing assertion, or conclude
+the line is dead and delete it. `timeout` counts as killed but check it is not a real infinite
+loop the tests were papering over. `suspicious` = far slower than baseline, usually a mutated
+retry/sleep bound. Survivors in *log lines and error strings* are noise — judge by whether a
+real caller could observe the difference.
 
 ## Running DB-backed tests without the dev stack
 

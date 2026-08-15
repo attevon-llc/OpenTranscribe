@@ -38,6 +38,7 @@ import difflib
 import logging
 import re
 from collections.abc import Iterable
+from typing import Literal
 
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
@@ -174,13 +175,19 @@ def names_are_similar(a: str, b: str, threshold: float = FUZZY_MATCH_THRESHOLD) 
 #: Not a boolean. ``is_shared`` already means "shared *with* me, not mine" on
 #: ``CollectionWithCount``; reusing it here for "in the shared vocabulary" gave
 #: one name two opposite meanings in one schema module.
-OWNERSHIP_MINE = "mine"
-OWNERSHIP_SYSTEM = "system"
-OWNERSHIP_SHARED_WITH_ME = "shared_with_me"
+#: Typed so the value flows into the schemas' ``Literal`` field without a cast:
+#: ``TagOnSelection.ownership`` and ``GET /tags?scope=`` both declare these three
+#: strings, and a bare ``str`` return made every call site an mypy ``arg-type``
+#: error.
+TagOwnership = Literal["mine", "system", "shared_with_me"]
+
+OWNERSHIP_MINE: TagOwnership = "mine"
+OWNERSHIP_SYSTEM: TagOwnership = "system"
+OWNERSHIP_SHARED_WITH_ME: TagOwnership = "shared_with_me"
 TAG_OWNERSHIPS = (OWNERSHIP_MINE, OWNERSHIP_SYSTEM, OWNERSHIP_SHARED_WITH_ME)
 
 
-def tag_ownership(tag: Tag, user_id: int) -> str:
+def tag_ownership(tag: Tag, user_id: int) -> TagOwnership:
     """Classify a tag by the caller's relationship to it.
 
     The single definition, so the list, the collision clusters, and the

@@ -25,11 +25,16 @@ from unittest.mock import patch
 
 import pytest
 
-# Skip all tests - FedRAMP control implementations in development
-pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_FEDRAMP_TESTS", "false").lower() != "true",
-    reason="FedRAMP control implementations in development (set RUN_FEDRAMP_TESTS=true to run)",
-)
+# Runs by DEFAULT. This module was gated behind RUN_FEDRAMP_TESTS with the reason
+# "FedRAMP control implementations in development" — but every test in it passes, and did so on the first run once the gate
+# was lifted. The gate was stale: it kept 38 security tests out of every local run and
+# out of CI, visible only as `s` in the progress dots, while reading as a deliberate
+# decision someone had made. That is how `test_super_admin_can_export_audit_logs` came to
+# assert `status_code in [200, 400]` — 400 being exactly 'could not export' — without
+# anyone noticing (issue #431).
+#
+# The pre-merge gate still runs these; the difference is they now also run by default,
+# so a regression surfaces on the commit that causes it rather than at merge time.
 
 
 class TestConcurrentSessionEnforcementAC10:
@@ -90,7 +95,9 @@ class TestConcurrentSessionEnforcementAC10:
 
             # Should reject with 429 Too Many Requests
             # Note: actual behavior depends on implementation
-            assert response.status_code in [200, 429]
+            assert response.status_code == 429, (
+                response.text
+            )  # AC-10: the reject policy must actually reject
 
     def test_session_limit_terminate_oldest_policy(self, client, db_session, admin_user):
         """Test that terminate_oldest policy revokes oldest session when limit reached."""
@@ -314,7 +321,7 @@ class TestAuditLogQueryExportAU6:
             headers=user_token_headers,
         )
         # Regular user should be forbidden
-        assert response.status_code in [401, 403]
+        assert response.status_code == 403, response.text
 
     def test_audit_log_query_parameters(self, client, super_admin_token_headers):
         """Test that audit log endpoint supports filtering parameters."""
@@ -338,24 +345,58 @@ class TestAuditLogQueryExportAU6:
         assert "logs" in data or "error" in data
 
     def test_audit_log_export_csv_format(self, client, super_admin_token_headers):
-        """Test that audit log export supports CSV format."""
+        """Audit log export returns CSV — when the OpenSearch audit sink is enabled.
+
+        Was ``in [200, 400]``, which passed either way and so never verified the format at
+        all. ``export_audit_logs`` returns 400 outright when ``AUDIT_LOG_TO_OPENSEARCH`` is
+        false (``admin.py:1754``), and the root conftest forces it false on purpose —
+        savepoint rollback cannot undo OpenSearch writes, so leaving it on would pollute the
+        live audit index. So the precondition is real and belongs in a visible skip, not in a
+        widened assertion: with the sink off this states plainly that it did not run, and with
+        it on it now checks the actual content type (issue #431).
+        """
+        from app.core.config import settings
+
         response = client.get(
             "/api/admin/audit-logs/export",
             params={"export_format": "csv"},
             headers=super_admin_token_headers,
         )
-        # Should return CSV or error if OpenSearch not enabled
-        assert response.status_code in [200, 400]
+        if not settings.AUDIT_LOG_TO_OPENSEARCH:
+            assert response.status_code == 400, response.text
+            pytest.skip(
+                "audit export requires AUDIT_LOG_TO_OPENSEARCH=true; conftest forces it off "
+                "because savepoint rollback cannot undo OpenSearch writes"
+            )
+        assert response.status_code == 200, response.text
+        assert response.headers["content-type"].startswith("text/csv")
 
     def test_audit_log_export_json_format(self, client, super_admin_token_headers):
-        """Test that audit log export supports JSON format."""
+        """Audit log export returns JSON — when the OpenSearch audit sink is enabled.
+
+        Was ``in [200, 400]``, which passed either way and so never verified the format at
+        all. ``export_audit_logs`` returns 400 outright when ``AUDIT_LOG_TO_OPENSEARCH`` is
+        false (``admin.py:1754``), and the root conftest forces it false on purpose —
+        savepoint rollback cannot undo OpenSearch writes, so leaving it on would pollute the
+        live audit index. So the precondition is real and belongs in a visible skip, not in a
+        widened assertion: with the sink off this states plainly that it did not run, and with
+        it on it now checks the actual content type (issue #431).
+        """
+        from app.core.config import settings
+
         response = client.get(
             "/api/admin/audit-logs/export",
             params={"export_format": "json"},
             headers=super_admin_token_headers,
         )
-        # Should return JSON or error if OpenSearch not enabled
-        assert response.status_code in [200, 400]
+        if not settings.AUDIT_LOG_TO_OPENSEARCH:
+            assert response.status_code == 400, response.text
+            pytest.skip(
+                "audit export requires AUDIT_LOG_TO_OPENSEARCH=true; conftest forces it off "
+                "because savepoint rollback cannot undo OpenSearch writes"
+            )
+        assert response.status_code == 200, response.text
+        assert response.headers["content-type"].startswith("application/json")
 
     def test_audit_log_export_invalid_format_rejected(self, client, super_admin_token_headers):
         """Test that invalid export formats are rejected."""
@@ -676,15 +717,15 @@ class TestAtomicLockoutMechanism:
         from app.auth.lockout import get_lockout_info
         from app.core.config import settings
 
-        test_user = f"lockout_test_{datetime.now().timestamp()}@example.com"
+        sample_user = f"lockout_test_{datetime.now().timestamp()}@example.com"
 
         try:
             # Make failed attempts up to threshold
             for i in range(settings.ACCOUNT_LOCKOUT_THRESHOLD):
-                is_locked, unlock_time = check_and_record_attempt(test_user, success=False)
+                is_locked, unlock_time = check_and_record_attempt(sample_user, success=False)
 
             # Account should now be locked
-            info = get_lockout_info(test_user)
+            info = get_lockout_info(sample_user)
             assert info["is_locked"] is True
             assert info["lockout_count"] >= 1
 
@@ -692,28 +733,28 @@ class TestAtomicLockoutMechanism:
             # Cleanup - unlock account
             from app.auth.lockout import unlock_account
 
-            unlock_account(test_user)
+            unlock_account(sample_user)
 
     def test_successful_login_clears_failed_attempts(self):
         """Test that successful login clears failed attempt counter."""
         from app.auth.lockout import check_and_record_attempt
         from app.auth.lockout import get_lockout_info
 
-        test_user = f"clear_test_{datetime.now().timestamp()}@example.com"
+        sample_user = f"clear_test_{datetime.now().timestamp()}@example.com"
 
         # Record some failed attempts (but not enough to lock)
-        check_and_record_attempt(test_user, success=False)
-        check_and_record_attempt(test_user, success=False)
+        check_and_record_attempt(sample_user, success=False)
+        check_and_record_attempt(sample_user, success=False)
 
         # Verify failed attempts recorded
-        info = get_lockout_info(test_user)
+        info = get_lockout_info(sample_user)
         assert info["failed_attempts"] == 2
 
         # Successful login
-        check_and_record_attempt(test_user, success=True)
+        check_and_record_attempt(sample_user, success=True)
 
         # Failed attempts should be cleared
-        info = get_lockout_info(test_user)
+        info = get_lockout_info(sample_user)
         assert info["failed_attempts"] == 0
 
 

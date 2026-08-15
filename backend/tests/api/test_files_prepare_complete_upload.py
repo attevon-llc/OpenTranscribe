@@ -427,7 +427,7 @@ def test_complete_object_never_uploaded_400(client, user_token_headers, normal_u
 
 
 @pytest.mark.skipif(not S3_LIVE, reason="full presigned round-trip requires MinIO (SKIP_S3=False)")
-def test_prepare_then_complete_round_trip(client, user_token_headers, test_wav_bytes):
+def test_prepare_then_complete_round_trip(client, user_token_headers, sample_wav_bytes):
     """End-to-end presigned flow: prepare → land bytes in MinIO → complete.
 
     The dev stack's presigned URL is the relative ``/s3`` proxy path (no host),
@@ -447,7 +447,7 @@ def test_prepare_then_complete_round_trip(client, user_token_headers, test_wav_b
         "/api/files/prepare",
         headers=user_token_headers,
         json=_prepare_payload(
-            filename="roundtrip.wav", file_size=len(test_wav_bytes), use_presigned=True
+            filename="roundtrip.wav", file_size=len(sample_wav_bytes), use_presigned=True
         ),
     )
     assert prep.status_code == status.HTTP_200_OK, prep.json()
@@ -461,8 +461,8 @@ def test_prepare_then_complete_round_trip(client, user_token_headers, test_wav_b
     minio_client.put_object(
         settings.MEDIA_BUCKET_NAME,
         storage_path,
-        io.BytesIO(test_wav_bytes),
-        length=len(test_wav_bytes),
+        io.BytesIO(sample_wav_bytes),
+        length=len(sample_wav_bytes),
         content_type="audio/wav",
     )
 
@@ -473,14 +473,14 @@ def test_prepare_then_complete_round_trip(client, user_token_headers, test_wav_b
             json={
                 "file_id": file_id,
                 "task_id": task_id,
-                "file_size": len(test_wav_bytes),
+                "file_size": len(sample_wav_bytes),
             },
         )
         assert complete.status_code == status.HTTP_200_OK, complete.json()
         body = complete.json()
         assert body["file_id"] == file_id
         assert body["status"] == "pending"
-        assert body["file_size"] == len(test_wav_bytes)
+        assert body["file_size"] == len(sample_wav_bytes)
     finally:
         try:
             minio_client.remove_object(settings.MEDIA_BUCKET_NAME, storage_path)

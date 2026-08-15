@@ -86,7 +86,10 @@ def get_auth_token(backend_url: str, email: str, password: str, verify: bool = T
 
 
 def get_file_metadata(
-    backend_url: str, file_uuid: str, token: str, verify: bool = True,
+    backend_url: str,
+    file_uuid: str,
+    token: str,
+    verify: bool = True,
 ) -> dict:
     """Get file metadata (duration, filename, segments, speakers)."""
     resp = requests.get(
@@ -117,10 +120,27 @@ DB_NAME = 'opentranscribe'
 def _db_query(sql: str) -> list[list[str]]:
     """Run a SQL query via docker exec and return rows."""
     import subprocess
+
     result = subprocess.run(
-        ['docker', 'exec', DB_CONTAINER, 'psql', '-U', DB_USER, '-d', DB_NAME,
-         '-t', '-A', '-F', '\t', '-c', sql],
-        capture_output=True, text=True, timeout=15,
+        [
+            'docker',
+            'exec',
+            DB_CONTAINER,
+            'psql',
+            '-U',
+            DB_USER,
+            '-d',
+            DB_NAME,
+            '-t',
+            '-A',
+            '-F',
+            '\t',
+            '-c',
+            sql,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
     )
     if result.returncode != 0:
         return []
@@ -141,13 +161,11 @@ def trigger_reprocess(backend_url: str, file_uuid: str, token: str, verify: bool
 def get_task_id_for_file(file_uuid: str) -> str:
     """Get the active_task_id for a file from the DB (with retry)."""
     for _attempt in range(5):
-        rows = _db_query(
-            f"SELECT active_task_id FROM media_file WHERE uuid = '{file_uuid}'"
-        )
+        rows = _db_query(f"SELECT active_task_id FROM media_file WHERE uuid = '{file_uuid}'")
         if rows and rows[0][0].strip():
             return rows[0][0].strip()
         time.sleep(1)
-    return ""
+    return ''
 
 
 def find_benchmark_task_id(
@@ -162,7 +180,7 @@ def find_benchmark_task_id(
     upload-mode callers can pass ``match_field='http_request_received'`` to
     resolve the task_id using the earliest marker we control client-side.
     """
-    best_key = ""
+    best_key = ''
     best_delta = float('inf')
 
     for key in r.scan_iter(match='benchmark:*'):
@@ -178,7 +196,7 @@ def find_benchmark_task_id(
 
     if best_delta < max_delta:
         return best_key
-    return ""
+    return ''
 
 
 def upload_file_via_api(
@@ -255,8 +273,11 @@ def get_task_id_for_file_via_api(
 
 
 def poll_task_completion(
-    backend_url: str, file_uuid: str, token: str,
-    timeout: int = POLL_TIMEOUT, verify: bool = True,
+    backend_url: str,
+    file_uuid: str,
+    token: str,
+    timeout: int = POLL_TIMEOUT,
+    verify: bool = True,
 ) -> bool:
     """Poll until the file status is completed or error."""
     deadline = time.time() + timeout
@@ -378,7 +399,6 @@ def calculate_stages(data: dict) -> dict:
 
     # ---------- Stage 13-14: postprocess ----------
     post_recv = data.get('postprocess_received')
-    post_pre = data.get('postprocess_task_prerun')
     post_end = data.get('postprocess_end')
     completion = data.get('completion_notified')
 
@@ -447,11 +467,11 @@ def _fmt_size(bytes_val: int) -> str:
     """Format bytes into human-readable size."""
     if bytes_val < 1024:
         return f'{bytes_val}B'
-    if bytes_val < 1024 ** 2:
+    if bytes_val < 1024**2:
         return f'{bytes_val / 1024:.1f}KB'
-    if bytes_val < 1024 ** 3:
-        return f'{bytes_val / (1024 ** 2):.1f}MB'
-    return f'{bytes_val / (1024 ** 3):.2f}GB'
+    if bytes_val < 1024**3:
+        return f'{bytes_val / (1024**2):.1f}MB'
+    return f'{bytes_val / (1024**3):.2f}GB'
 
 
 # ---------------------------------------------------------------------------
@@ -530,7 +550,7 @@ def print_detailed_report(
     rt_total = audio_duration / total_mean if total_mean > 0 else 0
 
     # WAV size estimate (16kHz mono PCM_S16LE)
-    wav_size_mb = (audio_duration * 16000 * 2) / (1024 ** 2) if audio_duration > 0 else 0
+    wav_size_mb = (audio_duration * 16000 * 2) / (1024**2) if audio_duration > 0 else 0
 
     print('\n' + '=' * 76)
     print('SINGLE FILE BENCHMARK REPORT')
@@ -547,12 +567,20 @@ def print_detailed_report(
     print('-' * 76)
     print(f'{"Stage":<40} {"Mean":>8} {"Min":>8} {"Max":>8} {"% Total":>8}')
     print('-' * 76)
-    print(f'{"1. CPU Preprocess":<40} {pre_mean:>7.1f}s {pre_min:>7.1f}s {pre_max:>7.1f}s {_pct(pre_mean):>8}')
+    print(
+        f'{"1. CPU Preprocess":<40} {pre_mean:>7.1f}s {pre_min:>7.1f}s {pre_max:>7.1f}s {_pct(pre_mean):>8}'
+    )
     print(f'{"2. Queue: CPU -> GPU":<40} {gap1_mean:>7.1f}s {"":>8} {"":>8} {_pct(gap1_mean):>8}')
-    print(f'{"3. GPU Transcribe + Diarize":<40} {gpu_mean:>7.1f}s {gpu_min:>7.1f}s {gpu_max:>7.1f}s {_pct(gpu_mean):>8}')
-    print(f'{"4. Queue: GPU -> Postprocess":<40} {gap2_mean:>7.1f}s {"":>8} {"":>8} {_pct(gap2_mean):>8}')
+    print(
+        f'{"3. GPU Transcribe + Diarize":<40} {gpu_mean:>7.1f}s {gpu_min:>7.1f}s {gpu_max:>7.1f}s {_pct(gpu_mean):>8}'
+    )
+    print(
+        f'{"4. Queue: GPU -> Postprocess":<40} {gap2_mean:>7.1f}s {"":>8} {"":>8} {_pct(gap2_mean):>8}'
+    )
     print('-' * 76)
-    print(f'{"TOTAL (dispatch to postprocess)":<40} {total_mean:>7.1f}s {total_min:>7.1f}s {total_max:>7.1f}s {"100.0%":>8}')
+    print(
+        f'{"TOTAL (dispatch to postprocess)":<40} {total_mean:>7.1f}s {total_min:>7.1f}s {total_max:>7.1f}s {"100.0%":>8}'
+    )
 
     # VRAM profile from the last successful run
     valid_vram = [v for v in all_vram if v is not None]
@@ -563,11 +591,12 @@ def print_detailed_report(
         if steps:
             print(f'\n{"VRAM PROFILE (last run)":}')
             print('-' * 76)
-            print(f'{"Step":<30} {"Duration":>10} {"Before MB":>10} {"After MB":>10} {"Delta MB":>10}')
+            print(
+                f'{"Step":<30} {"Duration":>10} {"Before MB":>10} {"After MB":>10} {"Delta MB":>10}'
+            )
             print('-' * 76)
 
             # Group steps: snapshots (duration=0) and timed steps
-            snapshots = [s for s in steps if s.get('name', '').startswith('snapshot:')]
             timed = [s for s in steps if not s.get('name', '').startswith('snapshot:')]
 
             for step in timed:
@@ -577,13 +606,14 @@ def print_detailed_report(
                 after = step.get('device_used_after_mb', 0)
                 delta = step.get('device_delta_mb', 0)
                 sign = '+' if delta >= 0 else ''
-                print(f'{name:<30} {_fmt_duration(dur):>10} {before:>9.0f} {after:>9.0f} {sign}{delta:>9.0f}')
+                print(
+                    f'{name:<30} {_fmt_duration(dur):>10} {before:>9.0f} {after:>9.0f} {sign}{delta:>9.0f}'
+                )
 
             # Summary metrics from report
             peak_device = last.get('peak_device_used_mb', 0)
             peak_pytorch = last.get('peak_pytorch_mb', 0)
             total_prof_dur = last.get('total_duration_s', 0)
-            audio_dur_prof = last.get('audio_duration_s', 0)
             num_spk = last.get('num_speakers', 0)
 
             print(f'\n  Peak device VRAM:     {peak_device:.0f} MB')
@@ -596,7 +626,9 @@ def print_detailed_report(
             # Extract sub-stage timings from VRAM profile
             transcription_step = next((s for s in timed if s['name'] == 'transcription'), None)
             diarization_step = next((s for s in timed if s['name'] == 'diarization'), None)
-            model_load_step = next((s for s in timed if s['name'] == 'model_load_transcriber'), None)
+            model_load_step = next(
+                (s for s in timed if s['name'] == 'model_load_transcriber'), None
+            )
             speaker_step = next((s for s in timed if s['name'] == 'speaker_assignment'), None)
 
             if transcription_step or diarization_step:
@@ -608,34 +640,51 @@ def print_detailed_report(
                 if model_load_step:
                     dur = model_load_step['duration_s']
                     pct = (dur / gpu_mean * 100) if gpu_mean > 0 else 0
-                    print(f'{"  Model load/warmup":<30} {_fmt_duration(dur):>10} {pct:>9.1f}% {"":>10}')
+                    print(
+                        f'{"  Model load/warmup":<30} {_fmt_duration(dur):>10} {pct:>9.1f}% {"":>10}'
+                    )
 
                 if transcription_step:
                     dur = transcription_step['duration_s']
                     pct = (dur / gpu_mean * 100) if gpu_mean > 0 else 0
                     rt = audio_duration / dur if dur > 0 else 0
-                    print(f'{"  Whisper transcription":<30} {_fmt_duration(dur):>10} {pct:>9.1f}% {rt:>9.1f}x')
+                    print(
+                        f'{"  Whisper transcription":<30} {_fmt_duration(dur):>10} {pct:>9.1f}% {rt:>9.1f}x'
+                    )
 
                 if diarization_step:
                     dur = diarization_step['duration_s']
                     pct = (dur / gpu_mean * 100) if gpu_mean > 0 else 0
                     rt = audio_duration / dur if dur > 0 else 0
-                    print(f'{"  PyAnnote diarization":<30} {_fmt_duration(dur):>10} {pct:>9.1f}% {rt:>9.1f}x')
+                    print(
+                        f'{"  PyAnnote diarization":<30} {_fmt_duration(dur):>10} {pct:>9.1f}% {rt:>9.1f}x'
+                    )
 
                 if speaker_step:
                     dur = speaker_step['duration_s']
                     pct = (dur / gpu_mean * 100) if gpu_mean > 0 else 0
-                    print(f'{"  Speaker assignment":<30} {_fmt_duration(dur):>10} {pct:>9.1f}% {"":>10}')
+                    print(
+                        f'{"  Speaker assignment":<30} {_fmt_duration(dur):>10} {pct:>9.1f}% {"":>10}'
+                    )
 
                 # Accounted vs unaccounted GPU time
                 accounted = sum(
-                    s['duration_s'] for s in timed
-                    if s['name'] in ('model_load_transcriber', 'transcription', 'diarization', 'speaker_assignment')
+                    s['duration_s']
+                    for s in timed
+                    if s['name']
+                    in (
+                        'model_load_transcriber',
+                        'transcription',
+                        'diarization',
+                        'speaker_assignment',
+                    )
                 )
                 unaccounted = gpu_mean - accounted
                 if unaccounted > 1:
                     pct = (unaccounted / gpu_mean * 100) if gpu_mean > 0 else 0
-                    print(f'{"  Other (DB save, cleanup)":<30} {_fmt_duration(unaccounted):>10} {pct:>9.1f}% {"":>10}')
+                    print(
+                        f'{"  Other (DB save, cleanup)":<30} {_fmt_duration(unaccounted):>10} {pct:>9.1f}% {"":>10}'
+                    )
 
     else:
         print('\n  (No VRAM profile data — set ENABLE_VRAM_PROFILING=true in .env)')
@@ -643,10 +692,14 @@ def print_detailed_report(
     # Performance metrics
     print(f'\n{"PERFORMANCE METRICS":}')
     print('-' * 76)
-    print(f'  Realtime Factor (GPU only):  {rt_factor:.1f}x '
-          f'({_fmt_duration(audio_duration)} audio in {_fmt_duration(gpu_mean)})')
-    print(f'  Realtime Factor (total):     {rt_total:.1f}x '
-          f'({_fmt_duration(audio_duration)} audio in {_fmt_duration(total_mean)})')
+    print(
+        f'  Realtime Factor (GPU only):  {rt_factor:.1f}x '
+        f'({_fmt_duration(audio_duration)} audio in {_fmt_duration(gpu_mean)})'
+    )
+    print(
+        f'  Realtime Factor (total):     {rt_total:.1f}x '
+        f'({_fmt_duration(audio_duration)} audio in {_fmt_duration(total_mean)})'
+    )
     gpu_util = (gpu_mean / total_mean * 100) if total_mean > 0 else 0
     print(f'  GPU Utilization:             {gpu_util:.1f}% (GPU time / total wall clock)')
     print(f'  Segments:                    {segment_count}')
@@ -659,14 +712,13 @@ def print_detailed_report(
         print(f'  If avg file = {_fmt_duration(audio_duration)} at {rt_factor:.1f}x realtime:')
         for workers in [1, 2, 4, 5, 9]:
             # Sub-linear scaling: ~15% overhead per additional concurrent task
-            if workers == 1:
-                eff = 1.0
-            else:
-                eff = workers * (1 / (1 + 0.15 * (workers - 1)))
+            eff = 1.0 if workers == 1 else workers * (1 / (1 + 0.15 * (workers - 1)))
             time_per_file = total_mean / eff
             total_1400 = 1400 * time_per_file
-            print(f'    {workers} worker(s):  ~{_fmt_duration(total_1400)} for 1400 files '
-                  f'({total_1400 / 3600:.1f} hours)')
+            print(
+                f'    {workers} worker(s):  ~{_fmt_duration(total_1400)} for 1400 files '
+                f'({total_1400 / 3600:.1f} hours)'
+            )
 
     print('=' * 76)
 
@@ -754,26 +806,47 @@ Examples:
   python scripts/benchmark_e2e.py --file-uuid abc123 --timeout 3600 --detailed
         """,
     )
-    parser.add_argument('--mode', choices=['reprocess', 'upload'], default='reprocess',
-                        help='reprocess: re-run pipeline on existing file (default). '
-                             'upload: POST a fixture to /api/files end-to-end.')
-    parser.add_argument('--file-uuid',
-                        help='UUID of file to benchmark (required for --mode reprocess)')
-    parser.add_argument('--fixture-file',
-                        help='Path to a file to upload (required for --mode upload)')
-    parser.add_argument('--flow', choices=['legacy', 'presigned'], default='legacy',
-                        help='Upload flow to use when --mode upload. legacy: POST to '
-                             '/api/files. presigned: new direct-to-MinIO flow (future).')
-    parser.add_argument('--iterations', type=int, default=3,
-                        help='Number of iterations (default: 3). In upload mode each '
-                             'iteration creates a new MediaFile row.')
+    parser.add_argument(
+        '--mode',
+        choices=['reprocess', 'upload'],
+        default='reprocess',
+        help='reprocess: re-run pipeline on existing file (default). '
+        'upload: POST a fixture to /api/files end-to-end.',
+    )
+    parser.add_argument(
+        '--file-uuid', help='UUID of file to benchmark (required for --mode reprocess)'
+    )
+    parser.add_argument(
+        '--fixture-file', help='Path to a file to upload (required for --mode upload)'
+    )
+    parser.add_argument(
+        '--flow',
+        choices=['legacy', 'presigned'],
+        default='legacy',
+        help='Upload flow to use when --mode upload. legacy: POST to '
+        '/api/files. presigned: new direct-to-MinIO flow (future).',
+    )
+    parser.add_argument(
+        '--iterations',
+        type=int,
+        default=3,
+        help='Number of iterations (default: 3). In upload mode each '
+        'iteration creates a new MediaFile row.',
+    )
     parser.add_argument('--output', default='benchmark_results.csv', help='Output CSV path')
     parser.add_argument('--backend-url', default=DEFAULT_BACKEND_URL, help='Backend URL')
     parser.add_argument('--redis-url', default=DEFAULT_REDIS_URL, help='Redis URL')
-    parser.add_argument('--timeout', type=int, default=POLL_TIMEOUT,
-                        help=f'Max seconds to wait for completion (default: {POLL_TIMEOUT})')
-    parser.add_argument('--detailed', action='store_true',
-                        help='Print detailed report with VRAM breakdown and realtime factor')
+    parser.add_argument(
+        '--timeout',
+        type=int,
+        default=POLL_TIMEOUT,
+        help=f'Max seconds to wait for completion (default: {POLL_TIMEOUT})',
+    )
+    parser.add_argument(
+        '--detailed',
+        action='store_true',
+        help='Print detailed report with VRAM breakdown and realtime factor',
+    )
     parser.add_argument(
         '--no-verify',
         action='store_true',
@@ -808,7 +881,7 @@ Examples:
             print(f'  Duration: {_fmt_duration(dur)} ({dur:.0f}s)')
             print(f'  Size: {_fmt_size(file_meta.get("file_size", 0))}')
         else:
-            print(f'  WARNING: Could not fetch file metadata', file=sys.stderr)
+            print('  WARNING: Could not fetch file metadata', file=sys.stderr)
 
     r = redis.from_url(args.redis_url, decode_responses=False)
 
@@ -834,10 +907,12 @@ Examples:
                 continue
             current_file_uuid = str(upload_resp.get('uuid') or upload_resp.get('id') or '')
             if not current_file_uuid:
-                print(f'  Upload returned no UUID', file=sys.stderr)
+                print('  Upload returned no UUID', file=sys.stderr)
                 continue
-            print(f'  Uploaded file {current_file_uuid} '
-                  f'(hash={client_hash_elapsed:.1f}s, put={put_elapsed:.1f}s)')
+            print(
+                f'  Uploaded file {current_file_uuid} '
+                f'(hash={client_hash_elapsed:.1f}s, put={put_elapsed:.1f}s)'
+            )
             # Brief delay to let the dispatch write hit Redis
             time.sleep(1.5)
             resolved_id = find_benchmark_task_id(
@@ -862,8 +937,11 @@ Examples:
         print('  Waiting for completion...')
         wall_start = dispatch_time  # measure from dispatch/upload-start, not poll-start
         success = poll_task_completion(
-            args.backend_url, current_file_uuid, token,
-            timeout=args.timeout, verify=verify,
+            args.backend_url,
+            current_file_uuid,
+            token,
+            timeout=args.timeout,
+            verify=verify,
         )
         wall_elapsed = time.time() - wall_start
 
@@ -882,7 +960,7 @@ Examples:
             if resolved_id:
                 task_id = resolved_id
             else:
-                print(f'  WARNING: Could not resolve task_id from Redis or DB')
+                print('  WARNING: Could not resolve task_id from Redis or DB')
                 continue
 
         bench_data = collect_benchmark_data(r, task_id)
@@ -912,13 +990,15 @@ Examples:
                 f'GPU: {gpu_dur:.1f}s | User-perceived: {perc_fmt}'
             )
         else:
-            print(f'  Preprocess: {pre_dur:.1f}s | GPU: {gpu_dur:.1f}s | '
-                  f'Gaps: {stages.get("preprocess_to_gpu_gap", 0):.1f}s + '
-                  f'{stages.get("gpu_to_postprocess_gap", 0):.1f}s')
+            print(
+                f'  Preprocess: {pre_dur:.1f}s | GPU: {gpu_dur:.1f}s | '
+                f'Gaps: {stages.get("preprocess_to_gpu_gap", 0):.1f}s + '
+                f'{stages.get("gpu_to_postprocess_gap", 0):.1f}s'
+            )
         if vram_data:
             print(f'  VRAM profile: {len(vram_data.get("steps", []))} steps captured')
         else:
-            print(f'  VRAM profile: None (enable ENABLE_VRAM_PROFILING=true)')
+            print('  VRAM profile: None (enable ENABLE_VRAM_PROFILING=true)')
 
     # Refresh file metadata after processing (to get segment/speaker counts)
     if all_results:
@@ -934,15 +1014,13 @@ Examples:
 
         with open(args.output, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(
-                ['iteration', 'task_id', 'file_uuid', 'wall_elapsed'] + stage_keys
-            )
+            writer.writerow(['iteration', 'task_id', 'file_uuid', 'wall_elapsed'] + stage_keys)
             for r_item in all_results:
                 row = [
                     r_item['iteration'],
                     r_item['task_id'],
                     r_item.get('file_uuid', ''),
-                    f"{r_item['wall_elapsed']:.3f}",
+                    f'{r_item["wall_elapsed"]:.3f}',
                 ]
                 row += [r_item['stages'].get(k, '') for k in stage_keys]
                 writer.writerow(row)

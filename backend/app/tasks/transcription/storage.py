@@ -143,11 +143,23 @@ def update_media_file_transcription_status(
         logger.error(f"Media file with ID {file_id} not found when updating transcription status")
         return
 
-    # Calculate duration from segments
-    duration = segments[-1]["end"] if segments else 0.0
+    # Duration from the segments, but ONLY when there are segments (issue #455).
+    #
+    # This used to be `segments[-1]["end"] if segments else 0.0`, which was wrong
+    # twice. `0.0` OVERWROTE the real ffprobe duration written at
+    # metadata_extractor.py for any file that produced no segments — a silent or
+    # music-only recording, or a provider that returned nothing — and then marked
+    # it COMPLETED, with no path that recovers the value. It also broke
+    # recovery_tasks.youtube_metadata_backfill, which matches rows BY DURATION.
+    #
+    # `[-1]` also assumed the segments were sorted. Overlap marking, boundary
+    # resegmentation and the cloud-ASR adapters can all reorder them, so the
+    # stored duration could be SHORTER than the transcript it describes.
+    duration = max((segment["end"] for segment in segments), default=None)
 
     # Update media file
-    media_file.duration = duration
+    if duration is not None:
+        media_file.duration = duration
     media_file.language = language
     media_file.status = FileStatus.COMPLETED
     media_file.completed_at = datetime.datetime.now(datetime.UTC)
@@ -195,6 +207,12 @@ def get_unique_speaker_names(segments: list[dict[str, Any]]) -> list[str]:
         segments: List of transcript segments
 
     Returns:
-        List of unique speaker names
+        Unique speaker names, SORTED.
+
+    Sorted, not `list(set(...))` (issue #455). Python randomises string hashing
+    per process, so an unsorted set produced a different order in every worker —
+    and this list is written into the OpenSearch document, so re-indexing an
+    unchanged file yielded a different document each time. Same class as issue
+    #433, where a non-total sort order moved chunk boundaries.
     """
-    return list(set([segment["speaker"] for segment in segments]))
+    return sorted({segment["speaker"] for segment in segments})

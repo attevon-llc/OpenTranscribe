@@ -11,6 +11,7 @@ genuinely gains an ``await``.
 """
 
 import logging
+from datetime import UTC
 from datetime import datetime
 from uuid import UUID
 
@@ -18,6 +19,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
 from fastapi import status
 from sqlalchemy import func
 from sqlalchemy import or_
@@ -32,10 +34,14 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.crud import set_file_urls
 from app.api.endpoints.files.filtering import apply_all_filters
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_SHARED
 from app.db.base import get_db
+from app.middleware.audit import get_request_context
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
 from app.models.media import Collection
@@ -73,6 +79,17 @@ from app.utils.websocket_notify import send_ws_event
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+#: Substituted for a NULL ``created_at`` on a share or a collection.
+#:
+#: ``collection_share.created_at`` and ``collection.created_at`` are both ``nullable`` in
+#: Postgres — a ``server_default`` only fills a column an INSERT omits, so a raw-SQL insert
+#: naming it, a backfill or an explicit ``UPDATE ... SET created_at = NULL`` leaves NULL.
+#: ``Share.created_at`` and ``SharedCollectionInfo.shared_at`` are required ``datetime``
+#: fields, so a NULL must become some timestamp or Pydantic fails the whole response.
+#: The epoch, not ``datetime.now(UTC)``: "now" would claim the share was just created and
+#: would sort a timestamp-less share to the top of the shared-with-me list.
+UNKNOWN_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def _visible_media_counts(
@@ -206,7 +223,6 @@ def _build_share_response(db: Session, share: CollectionShare) -> Share:
     else:
         raise HTTPException(status_code=500, detail="Invalid share target")
 
-    assert share.created_at is not None  # server_default=now()
     return Share(
         uuid=share.uuid,
         target_type=share.target_type,
@@ -216,7 +232,7 @@ def _build_share_response(db: Session, share: CollectionShare) -> Share:
         member_count=member_count,
         permission=share.permission,
         shared_by=shared_by_brief,
-        created_at=share.created_at,
+        created_at=share.created_at or UNKNOWN_TIMESTAMP,
     )
 
 
@@ -294,8 +310,9 @@ def list_shared_collections(
             full_name=coll.user.full_name,
             email=coll.user.email,
         )
-        shared_at = coll_share.created_at if coll_share else coll.created_at
-        assert shared_at is not None  # both created_at columns have server_default=now()
+        # Both source columns are nullable, so this falls through to the sentinel rather
+        # than asserting on a premise a server_default does not establish.
+        shared_at = (coll_share.created_at if coll_share else coll.created_at) or UNKNOWN_TIMESTAMP
         if coll_share and coll_share.shared_by:
             shared_by_brief = UserBrief(
                 uuid=coll_share.shared_by.uuid,
@@ -560,7 +577,19 @@ def create_collection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Create a new collection"""
+    """Create a collection owned by the caller.
+
+    Consumed by the gallery's "New collection" dialog and by scripts organising an
+    imported library. Any active user; the collection is stamped with
+    ``current_user.id`` and there is no way to create one for someone else.
+
+    Names are unique **per owner**, not globally — a duplicate for this user is 400,
+    while another user may hold the same name. ``default_prompt_id`` arrives as a
+    prompt *uuid* and is resolved to the internal id by ``_resolve_prompt_uuid``,
+    which accepts only an active prompt the caller owns or a system default and 404s
+    otherwise; the response carries the uuid back, never the internal id. A new
+    collection starts with no members and no shares.
+    """
     # Check if collection with same name exists for user
     existing = (
         db.query(Collection)
@@ -1085,6 +1114,7 @@ def list_collection_shares(
 def create_collection_share(
     collection_uuid: str,
     share_in: ShareCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -1253,6 +1283,25 @@ def create_collection_share(
     # Notify affected user(s) about the new share
     _notify_share_event(db, share, collection, NOTIFICATION_TYPE_COLLECTION_SHARED)
 
+    req_ctx = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.RESOURCE_SHARE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=req_ctx["source_ip"],
+        user_agent=req_ctx["user_agent"],
+        organization_id=ctx.org_id,
+        target_user_id=target_user_id,
+        details={
+            "resource_type": "collection",
+            "resource_uuid": str(collection.uuid),
+            "resource_name": collection.name,
+            "target_group_id": target_group_id,
+            "permission": share_in.permission,
+        },
+    )
+
     return _build_share_response(db, share)
 
 
@@ -1261,6 +1310,7 @@ def update_collection_share(
     collection_uuid: str,
     share_uuid: str,
     share_update: ShareUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -1280,6 +1330,7 @@ def update_collection_share(
             detail="Share not found on this collection",
         )
 
+    previous_permission = share.permission
     share.permission = share_update.permission
     db.commit()
     db.refresh(share)
@@ -1311,6 +1362,27 @@ def update_collection_share(
     # Notify affected user(s) about the permission change
     _notify_share_event(db, share, collection, NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED)
 
+    req_ctx = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.RESOURCE_SHARE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=req_ctx["source_ip"],
+        user_agent=req_ctx["user_agent"],
+        organization_id=ctx.org_id,
+        target_user_id=share.target_user_id,
+        details={
+            "resource_type": "collection",
+            "resource_uuid": str(collection.uuid),
+            "resource_name": collection.name,
+            "target_group_id": share.target_group_id,
+            "action": "permission_update",
+            "previous_permission": previous_permission,
+            "permission": share.permission,
+        },
+    )
+
     return _build_share_response(db, share)
 
 
@@ -1321,6 +1393,7 @@ def update_collection_share(
 def delete_collection_share(
     collection_uuid: str,
     share_uuid: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -1340,8 +1413,11 @@ def delete_collection_share(
             detail="Share not found on this collection",
         )
 
-    # Capture notification data before deletion
+    # Capture notification/audit data before deletion -- gone from the row after.
     target_user_ids = _get_share_target_user_ids(db, share)
+    revoked_target_user_id = share.target_user_id
+    revoked_target_group_id = share.target_group_id
+    revoked_permission = share.permission
     revoke_data: dict = {
         "collection_uuid": str(collection.uuid),
         "collection_name": collection.name,
@@ -1362,6 +1438,25 @@ def delete_collection_share(
     ]
     if file_ids:
         update_file_access_index.delay(file_ids)
+
+    req_ctx = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.RESOURCE_UNSHARE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=req_ctx["source_ip"],
+        user_agent=req_ctx["user_agent"],
+        organization_id=ctx.org_id,
+        target_user_id=revoked_target_user_id,
+        details={
+            "resource_type": "collection",
+            "resource_uuid": str(collection.uuid),
+            "resource_name": collection.name,
+            "target_group_id": revoked_target_group_id,
+            "permission": revoked_permission,
+        },
+    )
 
     # Notify affected user(s) about the revocation
     for uid in target_user_ids:

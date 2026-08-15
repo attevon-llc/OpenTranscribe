@@ -41,6 +41,17 @@ Samba test share. Seed data: `bash scripts/setup-watch-source-test-data.sh ./wat
   `imohash_package_recompute_complete`, regenerated all rows — **breaking** vs the old blake2b).
 - One bad file never aborts a scan: `import_single_file` catches, rolls back, then writes the
   error status in a **fresh session** (`_record_error`) so the rollback can't eat it.
+- **No DB session is open during a transfer.** `scan_single` is three phases —
+  `_load_scan_plan` (short read; it `expunge`s the `WatchSource` because `LocalWatchClient`
+  keeps a reference to it, so a stray lazy load raises `DetachedInstanceError` instead of
+  quietly opening a second transaction mid-scan) → `_perform_scan` with **nothing** held
+  across `list_files()` or the per-file downloads → `_record_scan_result`. `import_single_file`
+  takes a `source_id`, not a `db`, for the same reason. Before this, one transaction spanned
+  the remote listing plus a download **and** a MinIO upload for every file up to
+  `watch.max_imports_per_scan`. ⚠️ **Residual**: `ingest_prepared_file` still holds a short
+  session across its MinIO upload — the object key derives from the `MediaFile` primary key,
+  so the upload cannot precede the row. It is now one *file* wide, not one *scan* wide, and is
+  an allowlisted `BACKLOG` entry in `scripts/session-lifetime-allowlist.txt`.
 - Local paths are validated with `os.path.realpath` against `WatchSource.resolved_local_path`;
   symlinks are never followed.
 

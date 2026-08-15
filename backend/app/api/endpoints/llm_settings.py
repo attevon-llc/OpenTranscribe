@@ -27,6 +27,7 @@ from app.services.llm_service import LLMService
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
+from app.utils.url_validation import PinnedTarget
 from app.utils.uuid_helpers import get_llm_config_by_uuid
 from app.utils.uuid_helpers import require_resource_owner
 
@@ -158,6 +159,13 @@ def _assert_safe_llm_endpoint(base_url: str | None, purpose: str) -> None:
     the deployment's private network and cloud instance metadata (issue #284 A0.1).
     Set ``LLM_ALLOW_PRIVATE_ENDPOINTS=true`` on a single-tenant deployment that genuinely
     runs Ollama/vLLM on a private LAN.
+
+    **This check is validate-only and cannot pin.** It is used where the fetch happens
+    somewhere else entirely — ``POST /test-connection`` validates here and connects inside
+    ``LLMService.validate_connection``, and a saved ``base_url`` is fetched later by a
+    Celery task — so there is no single call frame in which one resolution could serve both
+    steps. Where the handler *does* fetch, use :func:`_pin_llm_endpoint` instead; it keeps
+    the resolved address and hands it to the client.
     """
     if not base_url:
         return
@@ -169,6 +177,44 @@ def _assert_safe_llm_endpoint(base_url: str | None, purpose: str) -> None:
         purpose=purpose,
         allow_private=settings.LLM_ALLOW_PRIVATE_ENDPOINTS,
     )
+
+
+def _pin_llm_endpoint(url: str, purpose: str) -> PinnedTarget:
+    """Validate *url* and return the address to dial, for a handler that fetches inline.
+
+    The model-discovery handlers below take ``base_url`` as a query parameter from any
+    authenticated user and fetch it in the same function. Validating the hostname and then
+    passing the hostname to aiohttp lets it resolve a **second** time, so a host whose DNS
+    alternates public/``127.0.0.1`` passes the guard and is connected somewhere else.
+    Pinning removes that window; see ``app.utils.url_validation`` for why it does not
+    weaken TLS.
+
+    Args:
+        url: The user-supplied URL about to be fetched.
+        purpose: Short label for the server-side log line.
+
+    Returns:
+        The pinned target.
+
+    Raises:
+        fastapi.HTTPException: 400, with a generic detail — the rejection reason
+            distinguishes "private IP" from "cannot resolve" and would turn the endpoint
+            into a network scanner.
+    """
+    from app.core.config import settings
+    from app.utils.url_validation import resolve_pinned_target
+
+    target, reason = resolve_pinned_target(url, allow_private=settings.LLM_ALLOW_PRIVATE_ENDPOINTS)
+    if target is None:
+        logger.warning("Blocked %s to %r: %s", purpose, url, reason)
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "The provided URL could not be used. It must be a publicly reachable "
+                "http(s) address."
+            ),
+        )
+    return target
 
 
 @router.get("/providers", response_model=schemas.SupportedProvidersResponse)
@@ -769,7 +815,11 @@ def test_active_configuration(
         base_url=str(user_config.base_url) if user_config.base_url else None,
     )
 
-    result = test_llm_connection(test_request=test_request, current_user=current_user)
+    # `db=db` is not optional: `test_llm_connection` declares `db: Session = Depends(get_db)`,
+    # so calling it in-process without it binds `db` to the `fastapi.params.Depends` OBJECT.
+    # Harmless only while these two callers never set `config_id` on the request they build —
+    # the first one that does gets an AttributeError on a Depends instance.
+    result = test_llm_connection(test_request=test_request, current_user=current_user, db=db)
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
@@ -816,7 +866,11 @@ def test_specific_configuration(
         base_url=str(user_config.base_url) if user_config.base_url else None,
     )
 
-    result = test_llm_connection(test_request=test_request, current_user=current_user)
+    # `db=db` is not optional: `test_llm_connection` declares `db: Session = Depends(get_db)`,
+    # so calling it in-process without it binds `db` to the `fastapi.params.Depends` OBJECT.
+    # Harmless only while these two callers never set `config_id` on the request they build —
+    # the first one that does gets an AttributeError on a Depends instance.
+    result = test_llm_connection(test_request=test_request, current_user=current_user, db=db)
 
     # Only write back test status if the current user owns the config
     if user_config.user_id == current_user.id:
@@ -867,21 +921,30 @@ async def get_ollama_models(
     """
     Get available models from an Ollama instance
     """
-    _assert_safe_llm_endpoint(base_url, "Ollama model discovery")
     import aiohttp
 
+    from app.utils.url_validation import pinned_aiohttp_session
+
+    # Clean up base URL
+    clean_url = base_url.strip().rstrip("/")
+    if clean_url.endswith("/v1"):
+        clean_url = clean_url[:-3]  # Remove /v1 suffix
+
+    models_url = f"{clean_url}/api/tags"
+
+    # Validate and PIN the URL actually fetched, not `base_url` — they differ, and a
+    # validate-only check would let aiohttp re-resolve at connect time. This stays OUTSIDE
+    # the try: the bare `except Exception` below would turn the 400 into a 200 carrying
+    # `success: false`, i.e. a refused SSRF reported as a connection problem.
+    target = _pin_llm_endpoint(models_url, "Ollama model discovery")
+
     try:
-        # Clean up base URL
-        clean_url = base_url.strip().rstrip("/")
-        if clean_url.endswith("/v1"):
-            clean_url = clean_url[:-3]  # Remove /v1 suffix
-
-        models_url = f"{clean_url}/api/tags"
-
-        timeout = aiohttp.ClientTimeout(total=10)
         async with (
-            aiohttp.ClientSession(timeout=timeout) as session,
-            session.get(models_url) as response,
+            pinned_aiohttp_session(target, timeout_seconds=10) as session,
+            # `original_url`: the resolver does the pinning, so the request keeps its
+            # hostname and aiohttp derives SNI + certificate name from it unaided.
+            # `allow_redirects=False`: a pin covers one hop.
+            session.get(target.original_url, allow_redirects=False) as response,
         ):
             if response.status == 200:
                 data = await response.json()
@@ -1047,8 +1110,6 @@ async def get_openai_compatible_models(
     Supports: OpenAI, vLLM, OpenRouter, and other OpenAI-compatible providers.
     If config_id is provided and no api_key, will use the stored API key from that config.
     """
-    _assert_safe_llm_endpoint(base_url, "OpenAI-compatible model discovery")
-
     import aiohttp
 
     # Resolve effective API key
@@ -1065,8 +1126,12 @@ async def get_openai_compatible_models(
     # Prepare headers
     headers = {"Authorization": f"Bearer {effective_api_key}"} if effective_api_key else {}
 
+    # Validate and PIN the URL actually fetched (`models_url`, not `base_url`). Outside the
+    # try, so the 400 is not swallowed into a `success: false` 200 by the handlers below.
+    target = _pin_llm_endpoint(models_url, "OpenAI-compatible model discovery")
+
     try:
-        return await _fetch_and_parse_models(models_url, headers, base_url)
+        return await _fetch_and_parse_models(target, headers, base_url)
     except aiohttp.ClientConnectorError:
         logger.warning(f"Model discovery: Connection failed to {base_url}")
         return _model_discovery_response(
@@ -1087,14 +1152,23 @@ async def get_openai_compatible_models(
         return _model_discovery_response(False, message=f"Unexpected error: {str(e)}")
 
 
-async def _fetch_and_parse_models(models_url: str, headers: dict, base_url: str) -> dict[str, Any]:
-    """Fetch models from URL and parse the response."""
-    import aiohttp
+async def _fetch_and_parse_models(
+    target: PinnedTarget, headers: dict, base_url: str
+) -> dict[str, Any]:
+    """Fetch models from a **pinned** target and parse the response.
 
-    timeout = aiohttp.ClientTimeout(total=10)
+    Takes a ``PinnedTarget`` rather than a URL string so the address that the SSRF guard
+    validated is the address dialled — passing a URL here would let aiohttp resolve the
+    hostname a second time, which is the whole DNS-rebinding window.
+    """
+    from app.utils.url_validation import pinned_aiohttp_session
+
+    models_url = target.original_url
     async with (
-        aiohttp.ClientSession(timeout=timeout) as session,
-        session.get(models_url, headers=headers) as response,
+        pinned_aiohttp_session(target, timeout_seconds=10) as session,
+        # A pin covers one hop; a 302 to an internal address would otherwise be followed
+        # with no check at all.
+        session.get(models_url, headers=headers, allow_redirects=False) as response,
     ):
         if response.status != 200:
             error_text = await response.text() if response.status not in (401, 403, 404) else ""

@@ -81,9 +81,13 @@ def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
         # download_file returns a tuple of (BytesIO, content_length, content_type)
         thumbnail_io, content_length, _ = download_file(thumbnail_path)
 
-        # Generate ETag from thumbnail path (changes when thumbnail is regenerated)
-        # Using MD5 for ETag generation is safe - it's not used for security purposes
-        etag = hashlib.md5(thumbnail_path.encode()).hexdigest()  # noqa: S324  # nosec B324
+        # Generate ETag from thumbnail path (changes when thumbnail is regenerated).
+        # MD5 is a cache key here, never a security control — which is exactly why
+        # usedforsecurity=False is required and not merely tidy: without it this call
+        # RAISES on a host whose OpenSSL enforces FIPS, and every thumbnail fetch 500s.
+        # Declaring it to the runtime also satisfies the linters, so the suppression
+        # comments this line used to carry are gone (matches hybrid_search_service.py).
+        etag = hashlib.md5(thumbnail_path.encode(), usedforsecurity=False).hexdigest()
 
         return StreamingResponse(
             content=thumbnail_io,
@@ -104,6 +108,11 @@ def get_thumbnail_streaming_response(db_file: MediaFile) -> StreamingResponse:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Thumbnail not found in storage",
         ) from e
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Error retrieving thumbnail: {e}")
         raise HTTPException(

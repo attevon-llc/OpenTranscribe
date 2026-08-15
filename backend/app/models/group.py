@@ -76,6 +76,14 @@ class UserGroup(Base):
     owner_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    #: Tenant stamp (v388). NULL = personal scope, exactly like every other org-stamped
+    #: table; the community edition leaves it NULL for every row because
+    #: `organization_membership` is empty there. No `ondelete`, matching the other 11 FKs
+    #: into `organization`: deleting a tenant must not silently strip rows of their
+    #: tenancy and re-expose them as personal data.
+    organization_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("organization.id"), nullable=True
+    )
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

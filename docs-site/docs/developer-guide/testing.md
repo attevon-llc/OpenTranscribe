@@ -92,6 +92,134 @@ pytest backend/tests/e2e/test_login.py::TestLoginSuccess -v
 | `TestRegistrationSuccess` | Success flow |
 | `TestRegistrationUI` | UI elements |
 
+## Test quality: a test that cannot fail is worse than no test
+
+It buys false confidence and hides the defect it was written to catch. This repo has
+shipped every variant of that, so four tools now check for it — and each was calibrated
+against a real instance found here (issue #431).
+
+```bash
+python3 scripts/audit-tests.py backend/tests   # 16 AST detectors, exits 1 on new offenders
+cd frontend && npm run test:audit              # the vitest sibling, 10 detectors
+npm run test:audit:selftest                    #   ...and ITS self-test
+python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
+./scripts/run-mutation-tests.sh --module spans # opt-in, never in the gate or CI
+```
+
+### The shapes the auditors reject
+
+| detector | why it matters |
+|---|---|
+| `permissive-status` | `assert code in (200, 403)` accepts success *and* authorization failure. One real case accepted `400` — literally "could not export" — in a super-admin export test. |
+| `conditional-only` | every assertion inside an `if` with no `else` is vacuous whenever the condition is false, and nothing reports it. |
+| `conditional-skip` | `if cond: <asserts> else: pytest.skip()` *looks* honest, but a guard that can never be true is a permanent skip. The only test of `GET /tasks/{task_id}` skipped on every run for 11 months this way, while the endpoint returned a hardcoded progress value. |
+| `no-assertion` | "it did not raise" is an assertion only when written as one — use `tests/helpers.does_not_raise`, whose reason string is mandatory. |
+| `failure-masking` | `except ...: pytest.skip()` turns a *failure* into a *skip*, so a genuine regression reads as "skipped" forever. |
+| `mock-heavy` / `mock-only` | asserting mock wiring instead of behaviour. A client that built a perfect request and dropped the response passed nine such tests. |
+| `fixture-named-test` | a `@pytest.fixture` named `test_*` never runs as a test but corrupts every count of tests-without-assertions. |
+| `external-service-mock` | a test whose **id claims integration with a service that is actually substituted**. See the convention below. |
+| `readiness-probe-target` | a health/readiness probe aimed at a **hardcoded** host/port instead of the stack under test. `wait_for_bench_backend_health` polled `opentranscribe-backend` — the *dev* stack — so the bench stack's readiness wait reported "healthy" whenever dev was up, green-lighting a benchmark against a stack that might not exist. |
+
+Allowlists live beside each auditor, keyed `file::test::category` with a **mandatory written
+reason**. The category is part of the key on purpose: keyed by test alone, one entry
+exempted a test from all six detectors at once.
+
+**Run the self-test after touching any detector.** It caught two detectors in *each*
+auditor that matched nothing at all — reporting zero findings, which is indistinguishable
+from a clean suite. A new detector needs a must-fire case and a must-stay-clean case.
+
+### The real-vs-stand-in convention
+
+**"Ran against the real engine" and "ran against a stand-in" must be different test ids.** A
+stand-in is never quietly substituted under the same id.
+
+Twelve tests for an OpenSearch `delete_by_query` body once passed without ever reaching
+OpenSearch: no stack was up, so they ran against a well-built in-memory stand-in, under ids
+that read as real-engine coverage. Nothing was *wrong* with the stand-in — it cannot simply
+prove that OpenSearch 3.4 executes that `bool`/`filter`/`range` body, and the suite was green
+on an assumption about the engine. Under one id, that is invisible to JUnit history and to
+`analyze-test-timing.py`.
+
+So:
+
+- **using a stand-in is fine** — name or locate the test honestly (`tests/unit/`, a `fake_*`
+  fixture) and `external-service-mock` stays silent;
+- **claiming the real service is a declaration**, and the auditor holds you to it. A claim
+  counts when it comes from a marker or env gate (`@pytest.mark.integration`,
+  `@pytest.mark.needs_opensearch`, `skipif(SKIP_OPENSEARCH, …)`, a module `pytestmark`), from a
+  realness word in the test's own name (`real`, `live`, `actual`, `end_to_end`), or from the
+  module path (`tests/integration/`, `tests/e2e/`);
+- **on CI, skip explicitly with a reason.** Never silently pass, and never swap the stand-in in
+  under the same id.
+
+The service's own name in a test id is deliberately **not** a claim — it names the subject, not
+the engine. `test_blacklist_token_redis_unavailable_fails_secure` is a correct unit-test name,
+and counting that tier fired on 20 honestly-named tests.
+
+Substitution is detected through the fixture graph, not just the test body: the suite above
+installed its stand-in in a fixture called `fake_index`, which names no service, so reading
+only the test body (no `patch` call at all) or only the parameter name saw nothing. The auditor
+resolves a fixture's own `patch`/`monkeypatch` targets and inherits them transitively — 388
+tests in this tree substitute a service and **264 are visible only that way**.
+
+### Two calibration traps
+
+Both cost a debugging cycle, and both make an auditor over-report by a third:
+
+- Playwright's `expect()` and Testing Library's `getBy*`/`findBy*` **throw** — they *are*
+  assertions. Miss that and a third of the E2E/component suite reads as assertion-free.
+- `expect.arrayContaining(...)` is a matcher **argument**, not an assertion head.
+
+### The shell scripts are tested too
+
+`backend/tests/unit/test_shell_expansion_guards.py` asserts that every `$VAR` expansion in
+`opentr.sh` and `scripts/common.sh` is **defaulted** — `${VAR:-x}`, or `: "${VAR:=}"` in the
+`opentr.sh` prologue. Both scripts run under `set -uo pipefail`, so an unguarded optional
+`.env` variable is not a style nit: it is a hard abort. `common.sh` read a bare
+`[ -n "$GPU_DEVICE_ID" ]` while `opentr.sh` defaulted five *other* optional variables and not
+that one, so `./opentr.sh` died with `GPU_DEVICE_ID: unbound variable` in **any checkout
+without a `.env`** — every git worktree, since `.env` is gitignored and never comes along. The
+crash therefore blocked precisely the isolated-worktree workflow it was needed for.
+
+It is static (a parse, not an execution), so it costs milliseconds and runs in the fast unit
+suite before anything tries to start a stack. Exemptions live in a `_ALLOWLIST` dict keyed
+`<script>::<VAR>` with a mandatory reason, and a **stale entry fails** — default the variable,
+delete the line.
+
+Precision matters more than reach here, and three shapes each produced a false positive in a
+draft: an escaped `\$USER` in help text (printed as instructions, not expanded), a `$VAR` inside
+single quotes, and a `$VAR` named in a comment. `${#VAR}` and `${VAR%…}` are **not** guards —
+both still abort under `set -u`. Positional parameters are out of scope by design: a missing
+argument wants a usage message, not a default.
+
+### Timing: look for barriers, not slow tests
+
+`analyze-test-timing.py` reports wall clock vs Σ durations, effective parallelism,
+per-`xdist_group` totals, and duration **clusters**. Unrelated tests from several files
+sharing a sub-second band is a released lock queue, not a coincidence — that is how a
+single worker was found owning 81% of the wall clock. A test named
+`test_timing_unauthorized`, one GET asserting 401, took 40.56 s; no such test contains 40
+seconds of work.
+
+Profile before theorising. `python -m cProfile -o out.prof -m pytest <test>` found a
+71-second `time.sleep` inside a Redis retry policy in one pass, after two plausible
+hypotheses had each cost a full measurement cycle.
+
+### Mutation testing
+
+Coverage says a line **ran**. Mutation testing says the suite would **notice** if the line
+were wrong: it edits the source (flips `<` to `<=`, drops an `and`, returns `None`) and
+re-runs the tests. A surviving mutant is a line the suite executes and asserts nothing
+about — for a security predicate, a control that can be deleted with the suite still green.
+
+Scoped to six security-critical modules. The first run on the PII-masking module found
+that flipping `char_start < last.char_end` to `<=` survived, meaning nothing decided
+whether two *exactly adjacent* redaction spans merge into one placeholder or stay two.
+
+A survivor is a finding: add the missing assertion, or conclude the line is dead and
+delete it. **Never loosen a test to kill one.** Survivors inside log lines and error
+strings are noise — judge by whether a real caller could observe the difference.
+
 ## Writing Tests
 
 ### Unit Test Example

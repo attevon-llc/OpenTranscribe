@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`DELETE /api/tags/cleanup` now defaults to the caller's own tags.** It previously always
+  swept every account's unreferenced tags, while its inspection sibling `GET /api/tags/unused`
+  is caller-scoped — so an admin who read the list and then ran cleanup irreversibly deleted
+  rows they were never shown. The deployment-wide sweep is still available but must now be
+  named *and* acknowledged: `?scope=all_users&confirm=true`, the same double opt-in as
+  `POST /api/org-admin/gdpr/erase-organization`. `scope=all_users` without `confirm` is a 400.
+  The response gained a `scope` field; `deleted_count` and `message` are unchanged.
+  **Breaking for any script or runbook that relied on the wide default** — add
+  `?scope=all_users&confirm=true` to preserve the old behaviour. There is no frontend caller.
+
+### Fixed
+
+- **An unreachable Redis made every cached request pay retry sleeps.** The cache service never
+  remembered a failed connection — it re-dialled on every call, and each attempt paid redis-py's
+  default exponential backoff. So with Redis down, a degraded cache presented as a dead API:
+  tag lists, file listings and status summaries each slept through several retries. Now a failed
+  attempt opens a 30-second circuit and the client is built with retries disabled, since the
+  cooldown is the retry policy. Measured on one request path: 75.2s → 0.16s.
+- **The task progress bar was frozen at 50%.** `GET /api/tasks` and `GET /api/tasks/{task_id}`
+  synthesized their response from the media file's status instead of reading the `task` table,
+  so `progress` was hardcoded to `0.5` for every in-progress file and the Task Status bar never
+  moved — making a running transcription indistinguishable from a wedged one. The pipeline had
+  been recording real per-stage progress all along. Also fixed in the same response: the task id
+  is now the real Celery id (so it can be passed to `POST /api/tasks/system/recover-task/{id}`,
+  which previously could only 404), `task_type` reports the actual type instead of always
+  `"transcription"`, and a failed file surfaces its real error instead of the literal
+  `"Transcription failed"`.
+- **Account-lifecycle controls were not enforced on ~100 endpoints.** `get_current_context` —
+  the credential entry point for chat, tags, collections, comments, search, file upload and
+  org-admin — depended on the credential layer rather than the account-lifecycle gate, so a
+  deactivated, expired, unapproved or force-password-change account could still act. That
+  included `POST /api/org-admin/gdpr/erase-organization`, an irreversible whole-tenant erasure.
+  `endpoints/files/management.py` had the same gap on all 8 of its handlers, including
+  `DELETE /api/files/{uuid}/force`.
+- `GET /api/admin/stats` reported a hardcoded version `1.0.0` instead of the real build version,
+  and its `gpu` field changed type from a list to a dict whenever stats collection failed.
+- `POST /api/files/management/cleanup-orphaned` returned a `marked_orphaned` counter that was
+  never incremented, so it reported `0` in every deployment. The field is gone and the endpoint
+  now describes what it actually does (bulk stuck-file recovery). Real orphan cleanup is
+  `POST /api/admin/data-integrity`.
+
 ## [0.5.0] - 2026-08-10
 
 > **Planned release: `v0.5.0`** — version is pending; this release is not yet published and remains subject to further change.

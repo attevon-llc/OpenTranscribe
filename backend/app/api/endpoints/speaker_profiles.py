@@ -146,9 +146,11 @@ def list_speaker_profiles(
 
         result = []
         for profile in profiles:
-            # created_at/updated_at have server_default=now() (non-None on persisted rows)
-            assert profile.created_at is not None
-            assert profile.updated_at is not None
+            # created_at/updated_at are nullable: a server_default fills a column only for
+            # an INSERT that omits it, so a raw-SQL insert, a backfill or an explicit UPDATE
+            # leaves NULL on a persisted row. These are plain dict fields, so an unknown
+            # timestamp is reported as null — asserting here 500s the caller's entire
+            # profile list over one row, and vanishes under `python -O` anyway.
             profile_id = profile.id
             is_shared = profile_id not in owned_ids
             media_count, instance_count = counts_by_profile.get(profile_id, (0, 0))
@@ -165,8 +167,8 @@ def list_speaker_profiles(
                     "uuid": str(profile.uuid),
                     "name": profile.name,
                     "description": profile.description,
-                    "created_at": profile.created_at.isoformat(),
-                    "updated_at": profile.updated_at.isoformat(),
+                    "created_at": profile.created_at.isoformat() if profile.created_at else None,
+                    "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
                     "instance_count": instance_count,
                     "media_count": media_count,
                     "predicted_gender": gender_by_profile.get(profile_id),
@@ -390,7 +392,6 @@ def _get_embedding_suggestions(
     speaker_embedding = get_speaker_embedding(str(speaker.uuid))
     if speaker_embedding:
         profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
-            db,
             speaker_embedding,
             current_user.id,
             threshold=threshold,
@@ -823,23 +824,31 @@ def list_speaker_collections(
 
         result = []
         for collection in collections:
-            # created_at/updated_at have server_default=now() (non-None on persisted rows)
-            assert collection.created_at is not None
-            assert collection.updated_at is not None
+            # Nullable timestamps on a persisted row (see the profiles listing above):
+            # reported as null rather than asserted, so one bad row cannot 500 the list.
             result.append(
                 {
                     "uuid": str(collection.uuid),
                     "name": collection.name,
                     "description": collection.description,
                     "is_public": collection.is_public,
-                    "created_at": collection.created_at.isoformat(),
-                    "updated_at": collection.updated_at.isoformat(),
+                    "created_at": collection.created_at.isoformat()
+                    if collection.created_at
+                    else None,
+                    "updated_at": collection.updated_at.isoformat()
+                    if collection.updated_at
+                    else None,
                     "member_count": member_counts.get(collection.id, 0),
                 }
             )
 
         return result
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Error listing speaker collections: {e}")
         raise ErrorHandler.internal_error() from e

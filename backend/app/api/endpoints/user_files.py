@@ -38,6 +38,37 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _status_fields(file_status: FileStatus | None) -> dict[str, Any]:
+    """The three status fields every file payload in this module carries.
+
+    ``MediaFile.status`` is declared ``nullable=True`` with a **Python-side**
+    ``default=FileStatus.PENDING``, so a row written by raw SQL, a migration backfill or
+    an explicit ``UPDATE`` holds NULL — the column's ``DEFAULT 'pending'`` only applies to
+    an INSERT that omits it and does not repair such a row. Reading ``.status.value`` off
+    one is an ``AttributeError``, which the broad handlers here turn into a 500 for the
+    whole listing rather than for the one bad row. Report the unknown status instead,
+    matching the already-guarded sibling reads in ``endpoints/speakers.py`` and
+    ``endpoints/files/complete_upload.py``.
+
+    Args:
+        file_status: The file's status, possibly NULL.
+
+    Returns:
+        The ``status`` / ``display_status`` / ``status_badge_class`` response fields.
+    """
+    if file_status is None:
+        return {
+            "status": None,
+            "display_status": "Unknown",
+            "status_badge_class": "status-unknown",
+        }
+    return {
+        "status": file_status.value,
+        "display_status": FormattingService.format_status(file_status),
+        "status_badge_class": FormattingService.get_status_badge_class(file_status.value),
+    }
+
+
 @router.get("/status", response_model=dict[str, Any])
 def get_user_file_status(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
@@ -102,15 +133,17 @@ def get_user_file_status(
 
         problem_files = []
         for file in problem_query.all():
-            assert file.upload_time is not None  # filtered on upload_time above
-            file_age = now - file.upload_time
+            # `upload_time` is nullable and the ERROR arm of the filter above places NO
+            # predicate on it, so a NULL row genuinely reaches this loop. An unknown
+            # upload time means an unknown age — reported as null, not raised.
+            file_age = now - file.upload_time if file.upload_time is not None else None
             problem_files.append(
                 {
                     "uuid": str(file.uuid),
                     "filename": file.filename,
-                    "status": file.status.value,
+                    **_status_fields(file.status),
                     "upload_time": file.upload_time,
-                    "age_hours": file_age.total_seconds() / 3600,
+                    "age_hours": file_age.total_seconds() / 3600 if file_age is not None else None,
                     "can_retry": file.status in [FileStatus.ERROR, FileStatus.PROCESSING],
                     "formatted_duration": FormattingService.format_duration(
                         float(file.duration) if file.duration is not None else None
@@ -118,10 +151,6 @@ def get_user_file_status(
                     "formatted_file_age": FormattingService.format_file_age(file.upload_time),
                     "formatted_file_size": FormattingService.format_bytes_detailed(
                         int(file.file_size) if file.file_size is not None else None
-                    ),
-                    "display_status": FormattingService.format_status(FileStatus(file.status)),
-                    "status_badge_class": FormattingService.get_status_badge_class(
-                        file.status.value
                     ),
                 }
             )
@@ -148,26 +177,25 @@ def get_user_file_status(
 
         recent_files = []
         for file in recent_query.all():
-            assert file.upload_time is not None  # filtered on upload_time above
-            file_age = now - file.upload_time
+            # `upload_time >= ...` above excludes NULL by SQL three-valued logic, so unlike
+            # the problem-files loop a NULL row cannot reach here. Guarded identically all
+            # the same: the two loops build the same payload and a reader must not have to
+            # re-derive which one the filter happens to protect.
+            file_age = now - file.upload_time if file.upload_time is not None else None
             recent_files.append(
                 {
                     "uuid": str(file.uuid),
                     "filename": file.filename,
-                    "status": file.status.value,
+                    **_status_fields(file.status),
                     "upload_time": file.upload_time,
                     "duration": file.duration,
-                    "age_hours": file_age.total_seconds() / 3600,
+                    "age_hours": file_age.total_seconds() / 3600 if file_age is not None else None,
                     "formatted_duration": FormattingService.format_duration(
                         float(file.duration) if file.duration is not None else None
                     ),
                     "formatted_file_age": FormattingService.format_file_age(file.upload_time),
                     "formatted_file_size": FormattingService.format_bytes_detailed(
                         int(file.file_size) if file.file_size is not None else None
-                    ),
-                    "display_status": FormattingService.format_status(FileStatus(file.status)),
-                    "status_badge_class": FormattingService.get_status_badge_class(
-                        file.status.value
                     ),
                 }
             )
@@ -183,6 +211,11 @@ def get_user_file_status(
             "timestamp": now,
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error getting user file status: %s", e, exc_info=True)
         raise HTTPException(
@@ -242,9 +275,16 @@ def get_file_detailed_status(
                 task_detail["diarization_model"] = media_file.diarization_model
             task_details.append(task_detail)
 
-        # Calculate file age and determine if retry is available
-        assert media_file.upload_time is not None  # server_default=now() on persisted row
-        file_age = datetime.now(UTC) - media_file.upload_time
+        # Calculate file age and determine if retry is available. `upload_time` is nullable
+        # (its server_default only covers an INSERT that omits the column), and this handler
+        # is reached by UUID with no filter on it at all, so NULL is directly reachable.
+        # An unknown age counts as zero: the stuck-file heuristic below needs a real
+        # measured age of >1 h before it accuses the file of being stuck.
+        file_age = (
+            datetime.now(UTC) - media_file.upload_time
+            if media_file.upload_time is not None
+            else timedelta(0)
+        )
         can_retry = media_file.status in [FileStatus.ERROR, FileStatus.PROCESSING]
 
         # Check if file might be stuck
@@ -258,7 +298,7 @@ def get_file_detailed_status(
             "file": {
                 "uuid": str(media_file.uuid),
                 "filename": media_file.filename,
-                "status": media_file.status.value,
+                **_status_fields(media_file.status),
                 "upload_time": media_file.upload_time,
                 "completed_at": media_file.completed_at,
                 "file_size": media_file.file_size,
@@ -272,10 +312,6 @@ def get_file_detailed_status(
                     float(media_file.duration) if media_file.duration is not None else None
                 ),
                 "formatted_file_age": FormattingService.format_file_age(media_file.upload_time),
-                "display_status": FormattingService.format_status(FileStatus(media_file.status)),
-                "status_badge_class": FormattingService.get_status_badge_class(
-                    media_file.status.value
-                ),
                 "whisper_model": media_file.whisper_model,
                 "requested_whisper_model": media_file.requested_whisper_model,
                 "model_fallback_occurred": (
@@ -329,11 +365,14 @@ def retry_file_processing(
         )
         file_id = media_file.id
 
-        # Check if retry is appropriate
+        # Check if retry is appropriate. A NULL `status` fails this membership test and so
+        # lands in this branch — where `.status.value` would raise AttributeError and turn a
+        # deliberate 400 into an opaque 500.
         if media_file.status not in [FileStatus.ERROR, FileStatus.PROCESSING]:
+            current_status = media_file.status.value if media_file.status else "unknown"
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot retry file in {media_file.status.value} status. Only error or stuck processing files can be retried.",
+                detail=f"Cannot retry file in {current_status} status. Only error or stuck processing files can be retried.",
             )
 
         # Check rate limiting (prevent spam retries)
@@ -434,6 +473,11 @@ def request_user_recovery(
             "user_id": str(current_user.uuid),
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error requesting user recovery: %s", e, exc_info=True)
         raise HTTPException(

@@ -280,13 +280,19 @@ def _reindex_and_alias(source_index: str, target_index: str, alias_name: str) ->
         wait_for_completion=True,
     )
 
-    # Verify
+    # Verify BEFORE deleting the source. The bar is every document, not 95% of
+    # them: the next statement destroys the only other copy, so a 5% tolerance
+    # was standing permission to silently lose one voiceprint in twenty — and at
+    # 50k embeddings that is 2,500 speakers whose identity cannot be recovered.
+    # An equal count is the pass; a larger target (a partially pre-populated
+    # index) is not this function's business to judge.
     source_count = _client.opensearch_client.count(index=source_index)["count"]
     target_count = _client.opensearch_client.count(index=target_index)["count"]
-    if target_count < source_count * 0.95:
+    if target_count < source_count:
         raise RuntimeError(
             f"Reindex verification failed: {source_index} has {source_count} docs "
-            f"but {target_index} only has {target_count}"
+            f"but {target_index} only has {target_count}. Leaving '{source_index}' "
+            "in place — the next startup retries the migration."
         )
 
     # Delete source and create alias

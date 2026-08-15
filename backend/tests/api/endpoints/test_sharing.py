@@ -12,6 +12,7 @@ from app.models.prompt import UserSetting
 from app.models.user_asr_settings import UserASRSettings
 from app.models.user_llm_settings import UserLLMSettings
 from app.utils.encryption import encrypt_api_key
+from tests.helpers import does_not_raise
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -386,7 +387,7 @@ class TestASRSharingAPIKeySecurity:
         resp = client.get(
             f"/api/asr-settings/config/{cfg.uuid}/api-key", headers=other_user_auth_headers
         )
-        assert resp.status_code in (403, 404)
+        assert resp.status_code == 404, resp.text  # a non-owner must not learn the config exists
 
     def test_owner_can_get_asr_api_key(self, client, db_session, normal_user, user_token_headers):
         """Owner can retrieve their own ASR API key."""
@@ -411,7 +412,7 @@ class TestASRSharingAccessControl:
             json={"name": "Hacked"},
             headers=other_user_auth_headers,
         )
-        assert resp.status_code in (403, 404)
+        assert resp.status_code == 404, resp.text  # a non-owner must not learn the config exists
 
     def test_non_owner_cannot_delete_shared_asr(
         self, client, db_session, normal_user, other_user, other_user_auth_headers
@@ -421,7 +422,7 @@ class TestASRSharingAccessControl:
         resp = client.delete(
             f"/api/asr-settings/config/{cfg.uuid}", headers=other_user_auth_headers
         )
-        assert resp.status_code in (403, 404)
+        assert resp.status_code == 404, resp.text  # a non-owner must not learn the config exists
 
     def test_non_owner_can_activate_shared_asr(
         self, client, db_session, normal_user, other_user, other_user_auth_headers
@@ -613,7 +614,7 @@ class TestPromptTags:
             },
             headers=user_token_headers,
         )
-        assert resp.status_code in (200, 201)
+        assert resp.status_code == 200, resp.text
         data = resp.json()
         assert "meeting" in data["tags"]
         assert "action-items" in data["tags"]
@@ -720,7 +721,7 @@ class TestSharedConfigDeletionCleanup:
 
         # Owner deletes
         resp = client.delete(f"/api/llm-settings/config/{cfg.uuid}", headers=user_token_headers)
-        assert resp.status_code in (200, 204)
+        assert resp.status_code == 200, resp.text
 
         # Verify other_user's active reference is cleaned up
         db_session.expire_all()
@@ -989,7 +990,8 @@ class TestPromptUsageCount:
         """Incrementing a non-existent prompt does not raise."""
         from app.utils.prompt_manager import increment_prompt_usage
 
-        increment_prompt_usage(db_session, 999_999_999)  # no row; must not raise
+        with does_not_raise("incrementing a prompt that does not exist is a no-op, not an error"):
+            increment_prompt_usage(db_session, 999_999_999)  # no row; must not raise
 
     def test_shared_library_popular_sort_reflects_usage(
         self, client, db_session, normal_user, other_user, other_user_auth_headers

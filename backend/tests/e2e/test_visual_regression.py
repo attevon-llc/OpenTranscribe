@@ -25,10 +25,26 @@ Then re-run WITHOUT the env var to compare against the committed baselines::
     pytest backend/tests/e2e/test_visual_regression.py -v
 
 Requirements:
-- Dev environment running: ./opentr.sh start dev
-- At least one completed, transcribed file in the dev dataset
-- Frontend at localhost:5173, Backend at localhost:5174
-  (admin@example.com / password)
+- An ISOLATED, seeded stack — never the shared live dev stack (issue #451):
+  ``./opentr.sh start dev --fresh <name> --port-offset N --seed-benchmark``,
+  then point ``--base-url``/``--backend-url`` (or ``base_url``/``backend_url``,
+  see conftest) at its ports.
+- At least one completed, transcribed file with segments in that dataset
+  (``--seed-benchmark`` uploads a fixed, small set via
+  ``scripts/seed-fresh-deployment.sh``; wait for all of them to leave
+  "processing" before running this suite)
+- admin@example.com / password (seeded automatically on a fresh deployment)
+
+Why isolation is not optional here (issue #451): ``gallery`` and ``file_detail``
+are full-page captures of live, mutable, newest-first content, and
+``transcribed_file_uuid`` below deliberately selects the NEWEST completed file
+with segments — the same query the app itself uses. Against the shared dev
+stack, any upload from any other session repoints that query at a different
+file and invalidates the baseline; the fix is not to make the query
+order-independent (the app's own "newest first" behavior is exactly what
+should be under test) but to run against a stack nothing else will ever touch.
+On a single-purpose ``--fresh`` deployment, "newest" is as deterministic as a
+hard-coded UUID, because nothing else can upload to it between two runs.
 """
 
 from __future__ import annotations
@@ -41,27 +57,35 @@ from typing import Any
 import numpy as np
 import pytest
 import requests
+
+# Flat import, NOT `from tests.e2e._visual_diff import ...`.
+#
+# This module only ever runs under `tests/e2e/pytest.ini`, which makes
+# `tests/e2e` the rootdir; `tests/` is not a package and never reaches sys.path
+# there, so the dotted form raises `ModuleNotFoundError: No module named 'tests'`
+# and the ENTIRE visual suite fails to collect. It shipped that way briefly and
+# was invisible because the eight baselines were already failing for unrelated
+# reasons, so nobody ran the module. `tests/unit/test_visual_diff_fraction.py`
+# keeps the dotted form, which is correct under the repo-root rootdir it runs in.
+from _visual_diff import CHANNEL_NOISE_THRESHOLD  # noqa: F401
+from _visual_diff import DIFF_TOLERANCE
+from _visual_diff import diff_fraction as _diff_fraction
 from PIL import Image
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
 pytestmark = pytest.mark.visual  # run-e2e.sh runs visual tests serially (quiet stack)
 
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+# This module used to define its own ``FRONTEND_URL``/``BACKEND_URL`` constants here.
+# A module constant is evaluated at import time, so it could not see ``--base-url`` /
+# ``--backend-url`` and this file always drove whatever was on the default ports — even
+# when the run was aimed at an isolated stack (issue #431). Everything below takes
+# conftest's ``base_url`` / ``backend_url`` fixtures instead.
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
 
 # Fixed viewport so baselines are deterministic across machines.
 VIEWPORT = {"width": 1280, "height": 800}
-
-# Allowed fraction of differing pixels before a comparison is treated as a real
-# visual change (covers sub-pixel anti-aliasing / font-hinting jitter).
-DIFF_TOLERANCE = 0.005  # 0.5%
-
-# Per-channel intensity delta below which a pixel is considered "same" (ignores
-# imperceptible 1-2/255 rendering noise).
-CHANNEL_NOISE_THRESHOLD = 12
 
 SCREENSHOT_DIR = Path(__file__).parent / "__screenshots__"
 
@@ -75,22 +99,6 @@ def _png_to_array(data: bytes) -> np.ndarray:
         return np.asarray(img.convert("RGB"), dtype=np.uint8)
 
 
-def _diff_fraction(a: np.ndarray, b: np.ndarray) -> float:
-    """Return the fraction of pixels that differ beyond the noise threshold.
-
-    Args:
-        a: First image as an RGB uint8 array.
-        b: Second image as an RGB uint8 array (must match ``a``'s shape).
-
-    Returns:
-        Differing-pixel count divided by total pixel count, in [0, 1].
-    """
-    delta = np.abs(a.astype(np.int16) - b.astype(np.int16))
-    # A pixel differs if ANY channel exceeds the per-channel noise threshold.
-    differing = np.any(delta > CHANNEL_NOISE_THRESHOLD, axis=-1)
-    return float(differing.sum()) / float(differing.size)
-
-
 def _compare_or_write(name: str, png_bytes: bytes) -> None:
     """Compare a screenshot against its baseline, or write it in update mode.
 
@@ -101,26 +109,30 @@ def _compare_or_write(name: str, png_bytes: bytes) -> None:
     SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
     baseline_path = SCREENSHOT_DIR / f"{name}.png"
 
-    if UPDATE_SCREENSHOTS or not baseline_path.exists():
+    if UPDATE_SCREENSHOTS:
         baseline_path.write_bytes(png_bytes)
-        if not UPDATE_SCREENSHOTS:
-            pytest.skip(
-                f"Wrote missing baseline {baseline_path.name}; re-run to compare "
-                f"(or use UPDATE_SCREENSHOTS=1 to refresh deliberately)."
-            )
         return
+
+    if not baseline_path.exists():
+        # A missing baseline is a FAILURE, never an auto-write.
+        #
+        # This used to write the file and `pytest.skip`, which made the suite
+        # self-approving in two runs with no human ever looking at the image:
+        # run once to write, run again to "pass" against what the possibly
+        # broken build just produced. `scripts/e2e/run-e2e.sh` treats skips as
+        # success, so the first run was green too.
+        pytest.fail(
+            f"No baseline for '{name}' at {baseline_path}. A screenshot is only "
+            f"a baseline once a human has looked at it. Generate it deliberately "
+            f"with UPDATE_SCREENSHOTS=1 and review the image in the diff before "
+            f"committing it."
+        )
 
     current = _png_to_array(png_bytes)
     baseline = _png_to_array(baseline_path.read_bytes())
 
-    if current.shape != baseline.shape:
-        # Full-page height can drift with content; crop both to the shared box so
-        # a comparison is still meaningful rather than auto-failing on shape.
-        h = min(current.shape[0], baseline.shape[0])
-        w = min(current.shape[1], baseline.shape[1])
-        current = current[:h, :w]
-        baseline = baseline[:h, :w]
-
+    # Shapes may differ; _diff_fraction charges the non-overlapping area as
+    # differing rather than cropping it away unseen.
     fraction = _diff_fraction(current, baseline)
     if fraction > DIFF_TOLERANCE:
         # Persist the failing capture next to the baseline for inspection.
@@ -138,24 +150,43 @@ def _compare_or_write(name: str, png_bytes: bytes) -> None:
 # Discover a transcribed file for the file-detail surface.
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="module")
-def api_token() -> str:
-    """Authenticate once per module via the backend API."""
+def api_token(backend_url: str) -> str:
+    """Authenticate once per module via the backend API.
+
+    Also dismisses the FirstRunWizard (``FirstRunWizard.svelte`` +
+    ``POST /admin/first-run-wizard/complete``) for the super_admin account. It
+    mounts unconditionally in the root layout and, on an account that has never
+    completed it — true of a brand-new ``--fresh --seed-benchmark`` admin —
+    opens a `BaseModal` on first authenticated page load whose backdrop
+    intercepts every click, including the settings surface's `.user-button`.
+    There is no localStorage/query-param gate to suppress it with; its
+    visibility is entirely server-derived from `SystemSettings`, so the only
+    way to keep it from appearing is to call the same completion endpoint the
+    UI's own skip button calls. Idempotent — safe to call even if already
+    completed.
+    """
     resp = requests.post(
-        f"{BACKEND_URL}/api/auth/token",
+        f"{backend_url}/api/auth/token",
         data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=30,
     )
     if resp.status_code != 200:
         pytest.skip(f"Cannot authenticate against dev stack (HTTP {resp.status_code})")
-    return str(resp.json()["access_token"])
+    token = str(resp.json()["access_token"])
+    requests.post(
+        f"{backend_url}/api/admin/first-run-wizard/complete",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=10,
+    )
+    return token
 
 
 @pytest.fixture(scope="module")
-def transcribed_file_uuid(api_token: str) -> str:
+def transcribed_file_uuid(api_token: str, backend_url: str) -> str:
     """Discover a completed file that has transcript segments (or skip)."""
     listing = requests.get(
-        f"{BACKEND_URL}/api/files",
+        f"{backend_url}/api/files",
         headers={"Authorization": f"Bearer {api_token}"},
         params={"page": "1", "page_size": "100", "sort_by": "upload_time", "sort_order": "desc"},
         timeout=30,
@@ -165,7 +196,7 @@ def transcribed_file_uuid(api_token: str) -> str:
         if f.get("status") != "completed":
             continue
         detail = requests.get(
-            f"{BACKEND_URL}/api/files/{f['uuid']}",
+            f"{backend_url}/api/files/{f['uuid']}",
             headers={"Authorization": f"Bearer {api_token}"},
             timeout=30,
         ).json()
@@ -179,9 +210,9 @@ def transcribed_file_uuid(api_token: str) -> str:
 # Per-theme authenticated context. Theme is forced via localStorage in an init
 # script BEFORE first paint (matches static/theme.js, which reads it on load).
 # ---------------------------------------------------------------------------
-def _login(page: Page) -> None:
+def _login(page: Page, base_url: str) -> None:
     """Log in via the form, tolerating an already-authenticated context."""
-    page.goto(FRONTEND_URL)
+    page.goto(base_url)
     if page.locator(".user-button").count():
         page.wait_for_selector(".user-button", timeout=10000)
         return
@@ -218,12 +249,80 @@ def _stabilize(page: Page) -> None:
         "document.querySelectorAll('video,audio').forEach(m=>{try{m.pause();"
         "m.currentTime=0;}catch(e){}})"
     )
+    # Kept deliberately: a paint/layout settle before a screenshot. The comparison is a
+    # pixel diff, not a locator, so there is nothing to auto-wait on (issue #431).
     page.wait_for_timeout(600)
 
 
 # Surfaces parametrized over both themes. Each entry: (surface, theme).
 SURFACES = ["gallery", "file_detail", "speakers", "settings"]
 THEMES = ["light", "dark"]
+
+
+#: Regions whose pixels change without the UI changing, per surface (issue #451).
+#:
+#: These are masked out of the capture rather than tolerated by the diff budget.
+#: Two back-to-back runs on identical code and data differ by 0.08–0.09% purely
+#: because of these elements — live CPU/disk/GPU-VRAM gauges and a relative
+#: "Last run: 21m ago" chip. That is inside the 0.5% tolerance today, so the suite
+#: passes, but the headroom is only ~5.5x and it shrinks as digit widths change
+#: over longer intervals. A tolerance absorbing known noise is a tolerance that
+#: cannot also catch a small real regression.
+#:
+#: The counters are masked for a second and more important reason: they render
+#: live dev-database totals (users, files, segments, clusters, profiles). A
+#: baseline containing them is invalidated by the next upload, which is exactly
+#: why the current 8 baselines cannot be honestly refreshed.
+#:
+#: ⚠️ Only selectors VERIFIED to match on the live app are listed. A first draft
+#: also carried `settings`: `.stat-value`, `.stat-detail`, `.progress-fill`,
+#: `.model-value` — all four matched **zero** elements, because the query was
+#: made right after `.settings-modal` became visible, before its default
+#: `system-statistics` section finished its own async `GET /system/stats` call
+#: (`SystemStatisticsPanel.svelte`; `statsLoading` gates the whole grid, and the
+#: GPU card can retry once more with its own 5s delay). The settings branch of
+#: `test_visual_regression` now waits for `.stats-grid` itself before capturing,
+#: which is what makes the entry below actually match something.
+#:
+#: `settings` masks the ENTIRE `.stats-grid`, not the individual `.stat-value` /
+#: `.stat-detail` / `.progress-fill` classes inside it. Those classes are reused
+#: across every card in the grid (users, files, tasks, throughput, queue depth,
+#: model names, CPU/mem/disk/GPU) with no per-metric class, and one card
+#: (Search Index) only renders once its own async status has loaded — so
+#: `:nth-child` targeting is order-fragile in a way a single outer selector is
+#: not. Every number in that grid is either live host telemetry (CPU/disk/GPU%)
+#: or a DB total that is only stable because nothing else can write to this
+#: isolated stack between two runs; masking the whole region is the box that
+#: still lets the surrounding chrome (sidebar nav, modal frame, section header)
+#: be compared for real.
+#: Do not add a selector here without checking `page.locator(sel).count()`.
+_VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
+    # "Last run: N minutes ago" (1 element) + per-cluster membership counts (20).
+    "speakers": (".last-clustered-chip", ".member-count"),
+    # Users/files/tasks/throughput/queue/model/CPU/mem/disk/GPU cards — live
+    # telemetry and DB totals, all inside one wrapper (see comment above).
+    "settings": (".settings-modal .stats-grid",),
+}
+
+
+def _volatile_regions(page: Page, surface: str) -> list[Any]:
+    """Locators to paint over before comparing, for *surface*.
+
+    Only selectors that actually match are returned. Playwright masks every
+    element a locator resolves to, and a selector matching nothing is silently a
+    no-op — so a renamed class would quietly stop masking and reintroduce the
+    noise it was added to remove. That is not hypothetical: the first draft of
+    `_VOLATILE_SELECTORS` listed four settings selectors that matched **zero**
+    elements, and nothing about the run said so.
+
+    The masked surfaces therefore assert their own coverage below rather than
+    trusting the table.
+    """
+    return [
+        page.locator(selector)
+        for selector in _VOLATILE_SELECTORS.get(surface, ())
+        if page.locator(selector).count()
+    ]
 
 
 @pytest.mark.parametrize("theme", THEMES)
@@ -233,45 +332,76 @@ def test_visual_regression(
     theme: str,
     surface: str,
     transcribed_file_uuid: str,
+    base_url: str,
 ) -> None:
     """Capture and compare a full-page screenshot for each surface and theme."""
     context = _make_context(browser, theme)
     page = context.new_page()
     try:
-        _login(page)
+        _login(page, base_url)
         # Confirm the forced theme actually took effect.
         applied = page.evaluate("document.documentElement.getAttribute('data-theme')")
         assert applied == theme, f"Expected data-theme={theme}, got {applied}"
 
         if surface == "gallery":
-            page.goto(FRONTEND_URL)
+            page.goto(base_url)
             page.wait_for_selector(".gallery-action-buttons", timeout=30000)
             page.wait_for_selector(".file-card, .file-list-row", timeout=30000)
             _stabilize(page)
         elif surface == "file_detail":
-            page.goto(f"{FRONTEND_URL}/files/{transcribed_file_uuid}")
+            page.goto(f"{base_url}/files/{transcribed_file_uuid}")
             page.wait_for_selector(".transcript-segment", timeout=30000)
             _stabilize(page)
         elif surface == "speakers":
-            page.goto(f"{FRONTEND_URL}/speakers")
+            page.goto(f"{base_url}/speakers")
             page.wait_for_selector(".speakers-page", timeout=30000)
             _stabilize(page)
+            # A masked surface must actually mask something. Playwright treats a
+            # selector matching nothing as a silent no-op, so without this the
+            # relative-time chip and the live cluster counts would drift back
+            # into the baseline the moment a class is renamed — and the run would
+            # look identical. Asserted here rather than in a separate test
+            # because it is only knowable against the rendered page.
+            assert _volatile_regions(page, "speakers"), (
+                "None of _VOLATILE_SELECTORS['speakers'] matched anything on the "
+                "speakers page, so this capture masks nothing and its baseline "
+                "will absorb the 'Last run: N ago' chip and live cluster counts."
+            )
         elif surface == "settings":
-            page.goto(FRONTEND_URL)
+            page.goto(base_url)
             page.wait_for_selector(".user-button", timeout=30000)
             page.locator(".user-button").click()
             settings_item = page.locator(".dropdown-menu .dropdown-item", has_text="Settings")
             expect(settings_item.first).to_be_visible(timeout=5000)
             settings_item.first.click()
             expect(page.locator(".settings-modal")).to_be_visible(timeout=10000)
+            # The modal opens directly into the "System Statistics" section
+            # (Navbar.svelte + settingsModalStore's default), but that section's
+            # numbers arrive from its own async GET /system/stats — waiting on
+            # `.settings-modal` alone races that call and is why an earlier draft
+            # of _VOLATILE_SELECTORS found nothing to mask.
+            page.wait_for_selector(".settings-modal .stats-grid", timeout=15000)
             _stabilize(page)
+            # See the speakers branch above for why this assertion exists: a
+            # masked surface must actually mask something, or a class rename
+            # silently lets the live gauges/DB totals back into the baseline.
+            assert _volatile_regions(page, "settings"), (
+                "_VOLATILE_SELECTORS['settings'] matched nothing on the settings "
+                "modal, so this capture masks nothing and its baseline will "
+                "absorb live CPU/disk/GPU gauges and DB totals."
+            )
         else:  # pragma: no cover - defensive
             pytest.fail(f"Unknown surface: {surface}")
 
         # The settings modal is an overlay; capture the viewport (not full page)
         # so a long scrolled background doesn't add nondeterministic height.
         full_page = surface != "settings"
-        png_bytes = page.screenshot(full_page=full_page, animations="disabled")
+        png_bytes = page.screenshot(
+            full_page=full_page,
+            animations="disabled",
+            mask=_volatile_regions(page, surface),
+            mask_color="#ff00ff",
+        )
         _compare_or_write(f"{surface}-{theme}", png_bytes)
     finally:
         page.close()

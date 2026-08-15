@@ -41,6 +41,7 @@ from app.auth.roles import role_implies_superuser
 from app.core.config import settings
 from app.core.constants import CeleryQueues
 from app.core.security import get_password_hash
+from app.core.version import APP_VERSION
 from app.db.base import get_db
 from app.models.media import Analytics
 from app.models.media import Collection
@@ -87,9 +88,11 @@ from app.schemas.user import AdminPasswordResetRequest
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
 from app.services import system_settings_service
+from app.services.account_security_service import DeletedUser
 from app.services.account_security_service import assert_password_auth_possible
 from app.services.account_security_service import audit_password_change
 from app.services.account_security_service import audit_role_change
+from app.services.account_security_service import audit_user_deleted
 from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import revoke_all_sessions
 
@@ -314,16 +317,39 @@ def _delete_user_speakers(db: Session, user_id: int) -> None:
     Collects speaker UUIDs before bulk SQL delete so OpenSearch can be cleaned
     even though the bulk operation bypasses ORM instance-level callbacks.
 
+    **The segment detach is not optional.** ``transcript_segment.speaker_id`` is a
+    plain FK with ``ON DELETE NO ACTION``, and this runs *before*
+    ``_delete_user_media_files`` removes the segments — so deleting a speaker any
+    segment still points at raises ``ForeignKeyViolation`` on
+    ``transcript_segment_speaker_id_fkey``. Every diarized segment carries a
+    ``speaker_id``, which made this the first thing to fail for any account with a
+    transcribed file: the endpoint's blanket ``except Exception`` reported it as
+    ``500 "User deletion failed"`` and named nothing. It went unnoticed because
+    both deletion tests deleted a fixture account that owned no files at all.
+
+    The column is nullable, so detaching is a legitimate transient state; the rows
+    are deleted moments later by ``_delete_user_media_files``.
+
     Args:
         db: Database session
         user_id: ID of the user whose speakers to delete
     """
-    speaker_rows = db.query(Speaker.uuid).filter(Speaker.user_id == user_id).all()
+    speaker_rows = db.query(Speaker.id, Speaker.uuid).filter(Speaker.user_id == user_id).all()
     if not speaker_rows:
         return
 
-    speaker_uuids = [str(row[0]) for row in speaker_rows]
+    speaker_ids = [row[0] for row in speaker_rows]
+    speaker_uuids = [str(row[1]) for row in speaker_rows]
     logger.info(f"Deleting {len(speaker_uuids)} speakers for user {user_id}")
+
+    detached = (
+        db.query(TranscriptSegment)
+        .filter(TranscriptSegment.speaker_id.in_(speaker_ids))
+        .update({TranscriptSegment.speaker_id: None}, synchronize_session=False)
+    )
+    if detached:
+        logger.info(f"Detached {detached} transcript segments from these speakers")
+
     db.query(Speaker).filter(Speaker.user_id == user_id).delete(synchronize_session=False)
     logger.info("Speakers deleted from DB")
 
@@ -344,6 +370,23 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
     Cleans up: SpeakerProfile, SpeakerCollection (+ members), Collection (+ members),
     Comment, Task, SummaryPrompt, and Tag records. Must be called BEFORE deleting
     MediaFile rows since some of these tables have FK references to media_file.
+
+    **This list is hand-maintained and its twin is
+    ``services/gdpr_erasure_service._delete_owner_scoped_rows``.** Nothing in the
+    application compares the two, and neither is derived from the schema, so a new
+    table with a plain ``user_id`` FK breaks account deletion with no code change
+    here. ``tests/unit/test_user_deletion_fk_coverage.py`` derives every NO-ACTION
+    foreign key into ``user`` / ``media_file`` from the live schema and fails when
+    one is not accounted for by *both* paths — add the branch here, or record the
+    FK there with a reason.
+
+    Rows recording an action this user took on **somebody else's** row are
+    deliberately absent: ``auth_config.created_by``/``updated_by``,
+    ``auth_config_audit.changed_by``, ``media_file.quarantined_by`` and
+    ``summary_prompt.shared_by`` are not owner-scoped, so no query keyed on
+    ``user_id`` can find them. They are ``ON DELETE SET NULL`` at the database
+    level instead (``v387``), which is enforced for every deletion path including
+    ones that do not exist yet.
     """
     # Speaker collections and their members
     sc_ids = [
@@ -411,10 +454,12 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
         logger.info(f"Deleted {prompts_deleted} summary prompts for user {user_id}")
 
     # Tags owned by the user (v374). tag.user_id is a plain FK, so the rows must
-    # go before the user row or the delete fails. Detach them first: a tag of
-    # theirs may hang off ANOTHER user's file (they tagged a file shared with
-    # them), and file_tag.tag_id has no ON DELETE clause. System tags
-    # (user_id IS NULL) are shared vocabulary and are never touched.
+    # go before the user row or the delete fails. The file_tag pass is belt and
+    # braces rather than load-bearing: file_tag.tag_id IS ON DELETE CASCADE
+    # (verified against the live schema Aug 2026), so the database would sweep
+    # those rows anyway — including the ones hanging off ANOTHER user's file,
+    # which is the case worth naming. System tags (user_id IS NULL) are shared
+    # vocabulary and are never touched.
     tag_ids = [t.id for t in db.query(Tag.id).filter(Tag.user_id == user_id).all()]
     if tag_ids:
         db.query(FileTag).filter(FileTag.tag_id.in_(tag_ids)).delete(synchronize_session=False)
@@ -424,6 +469,33 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
 
 def _delete_user_media_files(db: Session, user_id: int) -> None:
     """Delete all media files and related records for a user.
+
+    **Why the children are deleted by hand here.** ``MediaFile`` declares
+    ``cascade="all, delete-orphan"`` on eight relationships, but four of the
+    underlying foreign keys — ``transcript_segment``, ``comment``, ``task`` and
+    ``analytics`` on ``media_file_id`` — are ``ON DELETE NO ACTION`` in the
+    database. The ORM cascade only fires for an *instance* delete
+    (``db.delete(file)``, which is what ``file_cleanup_service.purge_media_file``
+    and therefore the GDPR path use). This function ends in a **bulk**
+    ``query(MediaFile).delete()``, which emits one ``DELETE`` statement and never
+    loads the instances, so the ORM cascade is bypassed entirely and the database
+    is the only thing left enforcing anything — and for those four it enforces
+    *refusal*. Every hand-delete below is therefore load-bearing: remove one and
+    this function raises ``ForeignKeyViolation``, which the endpoint's blanket
+    ``except Exception`` reports as ``500 "User deletion failed"``.
+
+    ``file_tag``, ``collection_member``, ``speaker`` and ``topic_suggestion`` are the
+    other four children; those FKs *are* ``ON DELETE CASCADE``, so the database
+    sweeps them whichever delete shape is used. ``file_tag`` is still deleted
+    explicitly because ``_delete_user_owned_records`` has already detached the rows
+    pointing at this user's tags and the cost of the second pass is nil.
+
+    ``comment`` and ``task`` are **not** covered by the owner-scoped sweep in
+    ``_delete_user_owned_records``: a non-owner can comment on a file shared with
+    them (``endpoints/comments.create_comment_for_file_nested`` requires viewer+,
+    "commenting is collaborative"), so another account's comment on this user's
+    file would block the bulk delete. Scope both by ``media_file_id``, not by
+    ``user_id``.
 
     Args:
         db: Database session
@@ -464,6 +536,28 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
         if analytics_deleted:
             logger.info(f"Deleted {analytics_deleted} analytics records")
 
+        # Comments on these files, whoever wrote them. `comment.media_file_id` is
+        # NO ACTION and commenting is collaborative, so a viewer's comment on a
+        # shared file is another account's row that still has to go with the file.
+        comments_deleted = (
+            db.query(Comment)
+            .filter(Comment.media_file_id.in_(media_ids))
+            .delete(synchronize_session=False)
+        )
+        if comments_deleted:
+            logger.info(f"Deleted {comments_deleted} comments on these media files")
+
+        # Tasks against these files, whoever owns them. `task.media_file_id` is
+        # NO ACTION too; scoping only by `task.user_id` (as the owner-scoped sweep
+        # does) leaves any task another account queued against this file behind.
+        tasks_deleted = (
+            db.query(TaskModel)
+            .filter(TaskModel.media_file_id.in_(media_ids))
+            .delete(synchronize_session=False)
+        )
+        if tasks_deleted:
+            logger.info(f"Deleted {tasks_deleted} tasks against these media files")
+
         # Now delete the media files
         db.query(MediaFile).filter(MediaFile.user_id == user_id).delete(synchronize_session=False)
         logger.info(f"Deleted {media_count} media files for user {user_id}")
@@ -497,8 +591,24 @@ def _validate_user_deletion(user: User, current_user: User) -> None:
 async def get_admin_stats(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)
 ):
-    """
-    Get admin statistics about the application and system
+    """Report application and host statistics for the admin dashboard.
+
+    Two fields have a fixed contract worth stating, because both were wrong:
+
+    - ``system.version`` is ``app.core.version.APP_VERSION`` — the build identity
+      every other surface reports (``/health``, ``/api/system/stats``, the About
+      dialog's staleness check). It was a hardcoded ``"1.0.0"`` that never moved
+      through any release.
+    - ``system.gpu`` is **always a list** of per-device dicts, one per active GPU
+      (``--gpu-scale`` runs more than one). The stats-collection fallback below
+      used to substitute a bare dict, so the key's type depended on whether
+      psutil raised.
+
+    Returns:
+        Nested user/file/transcript/speaker/model/system/task statistics.
+
+    Raises:
+        HTTPException: 500 if the aggregation fails.
     """
     logger.info(f"Admin stats requested by user {current_user.email}")
 
@@ -527,14 +637,20 @@ async def get_admin_stats(
                     "logical_cores": 0,
                     "physical_cores": 0,
                 },
-                "gpu": {
-                    "available": False,
-                    "name": "Error",
-                    "memory_total": "Unknown",
-                    "memory_used": "Unknown",
-                    "memory_free": "Unknown",
-                    "memory_percent": "Unknown",
-                },
+                # A LIST, like every `get_gpu_usage()` return: one entry per GPU
+                # (`--gpu-scale` runs several). A bare dict here made the key's
+                # type depend on whether psutil happened to raise, so a client
+                # indexing `gpu[0]` broke only in the failure path.
+                "gpu": [
+                    {
+                        "available": False,
+                        "name": "Error",
+                        "memory_total": "Unknown",
+                        "memory_used": "Unknown",
+                        "memory_free": "Unknown",
+                        "memory_percent": "Unknown",
+                    }
+                ],
                 "memory": {
                     "total": "Unknown",
                     "available": "Unknown",
@@ -599,7 +715,7 @@ async def get_admin_stats(
             },
             "models": models_info,
             "system": {
-                "version": "1.0.0",
+                "version": APP_VERSION,
                 "uptime": system_stats["uptime"],
                 "memory": system_stats["memory"],
                 "cpu": system_stats["cpu"],
@@ -612,6 +728,11 @@ async def get_admin_stats(
         }
 
         return stats
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error getting admin stats: %s", e, exc_info=True)
         raise HTTPException(
@@ -638,6 +759,11 @@ def get_admin_users(
             db.query(User).order_by(func.lower(User.full_name)).offset(offset).limit(limit).all()
         )
         return users
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error getting admin users: %s", e, exc_info=True)
         raise HTTPException(
@@ -690,6 +816,7 @@ def create_admin_user(
 @router.delete("/users/{user_uuid}", response_model=dict[str, str])
 def delete_admin_user(
     user_uuid: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
@@ -717,6 +844,22 @@ def delete_admin_user(
         # Validate deletion is allowed
         _validate_user_deletion(user, current_user)
 
+        # Defence in depth, and UNREACHABLE as the guards above stand today — kept
+        # deliberately, not as a live fix (issue #431). The composition already makes
+        # it impossible to delete the last super_admin: deleting one requires BEING
+        # one (the 403 above), and you cannot target yourself (the 400 above), so the
+        # caller always remains. This fires only if a future change relaxes either of
+        # those, which is exactly when nobody would be looking. It lives here rather
+        # than in _validate_user_deletion because that helper takes no Session.
+        from app.api.endpoints.users import _assert_not_last_super_admin
+
+        _assert_not_last_super_admin(db, user, ROLE_USER)
+
+        # Capture what the audit record needs before the row is gone: after the commit
+        # the ORM object is expired, so reading user.email would re-query a deleted row.
+        deleted_snapshot = DeletedUser.of(user)
+        client_ip, user_agent = _get_client_info(request)
+
         # Delete all user data atomically using a savepoint
         savepoint = db.begin_nested()
         try:
@@ -730,6 +873,13 @@ def delete_admin_user(
             savepoint.rollback()
             raise
         db.commit()
+
+        # This endpoint destroys a user, their files and their transcripts irreversibly
+        # and recorded NOTHING — while its twin, DELETE /api/users/{uuid}, performs the
+        # identical deletion through these same three helpers and does audit it. Emitted
+        # after the commit, matching that twin, so a failed delete leaves no record of a
+        # deletion that did not happen. FedRAMP AU-2/AU-12, GDPR Art. 30(2)(d).
+        audit_user_deleted(deleted_snapshot, current_user, client_ip, user_agent)
 
         logger.info(f"User deletion completed successfully: {user_id}")
         return {"message": "User deleted successfully"}
@@ -1273,6 +1423,7 @@ def admin_reset_user_password(
 
 @router.post("/users/{user_uuid}/unlock")
 def admin_unlock_account(
+    request: Request,
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
@@ -1290,6 +1441,8 @@ def admin_unlock_account(
     ``PUT /users/{uuid}`` with ``is_active``. Two endpoints named lock/unlock
     that are not inverses is a trap, not an API.
     """
+    client_ip, user_agent = _get_client_info(request)
+
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -1306,6 +1459,8 @@ def admin_unlock_account(
         event_type=AuditEventType.AUTH_ACCOUNT_UNLOCK,
         user_id=current_user.id,
         username=str(current_user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
         outcome=AuditOutcome.SUCCESS,
         details={
             "target_user": user_uuid,
@@ -1320,12 +1475,15 @@ def admin_unlock_account(
 
 @router.post("/users/{user_uuid}/lock")
 def admin_lock_account(
+    request: Request,
     user_uuid: str,
     reason: str = Query("Admin action", description="Reason for locking the account"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
     """Admin lock of user account."""
+    client_ip, user_agent = _get_client_info(request)
+
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -1340,7 +1498,11 @@ def admin_lock_account(
         event_type=AuditEventType.AUTH_ACCOUNT_DISABLED,
         user_id=current_user.id,
         username=str(current_user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
         outcome=AuditOutcome.SUCCESS,
+        target_user_id=int(user.id),
+        target_username=str(user.email),
         details={
             "target_user": user_uuid,
             "reason": reason,
@@ -1353,37 +1515,37 @@ def admin_lock_account(
 
 @router.delete("/users/{user_uuid}/sessions")
 def admin_terminate_user_sessions(
+    request: Request,
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    """Force logout user by terminating all sessions."""
+    """Force logout user by terminating all sessions.
+
+    Goes through ``revoke_all_sessions`` — i.e. ``token_service`` — like every
+    other revocation path. It used to set ``RefreshToken.revoked_at`` inline,
+    which made it the one termination that wrote **no Redis blacklist entry and
+    no per-user revocation epoch**. That is a correctness bug before it is an
+    audit one: the epoch is the only thing that reaches already-issued *access*
+    tokens (they are stateless, so there is no row to revoke), so an admin force-
+    logging-out a compromised account left it authenticated for the remaining
+    access-token lifetime.
+    """
+    client_ip, user_agent = _get_client_info(request)
+
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Revoke all refresh tokens
-    now = datetime.now(UTC)
-    tokens = (
-        db.query(RefreshToken)
-        .filter(
-            RefreshToken.user_id == user.id,
-            RefreshToken.revoked_at.is_(None),
-        )
-        .all()
-    )
-
-    count = 0
-    for token in tokens:
-        token.revoked_at = now  # type: ignore[assignment]
-        count += 1
-
+    count = revoke_all_sessions(db, user, reason="admin session termination")
     db.commit()
 
     audit_logger.log(
         event_type=AuditEventType.AUTH_LOGOUT_ALL,
         user_id=current_user.id,
         username=str(current_user.email),
+        source_ip=client_ip,
+        user_agent=user_agent,
         outcome=AuditOutcome.SUCCESS,
         details={
             "target_user": user_uuid,
@@ -1562,20 +1724,41 @@ def admin_link_external_identity(
 
 @router.post("/users/{user_uuid}/mfa/reset")
 def admin_reset_user_mfa(
+    request: Request,
     user_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_super_admin_user),
 ):
-    """Admin reset of user MFA (if user loses device). Requires super_admin role."""
+    """Admin reset of user MFA (if user loses device). Requires super_admin role.
+
+    The audit record reports what actually happened. It used to sit OUTSIDE the
+    ``if mfa_settings:`` block and always log ``MFA_DISABLE`` / ``SUCCESS``, so a
+    reset against an account with no second factor enrolled recorded a disable
+    that did nothing — an event a reviewer would read as "this account's MFA was
+    removed on this date". The attempt is still recorded either way (a run of
+    resets against accounts that have no MFA is itself worth seeing); only the
+    outcome changes.
+    """
+    client_ip, user_agent = _get_client_info(request)
+
     user = db.query(User).filter(User.uuid == user_uuid).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     mfa_settings = db.query(UserMFA).filter(UserMFA.user_id == user.id).first()
+    # A row that exists with `totp_enabled` already false is the same non-event as
+    # no row at all: nothing was in force, so nothing was disabled.
+    was_enabled = bool(mfa_settings and mfa_settings.totp_enabled)
+
     if mfa_settings:
-        mfa_settings.totp_enabled = False  # type: ignore[assignment]
-        mfa_settings.totp_secret = None  # type: ignore[assignment]
-        mfa_settings.backup_codes = []  # type: ignore[assignment]
+        # DELETE the row, like the user-facing `POST /auth/mfa/disable` does.
+        # This branch used to null `totp_secret`, which `v200` made NOT NULL — so
+        # the reset raised an IntegrityError (a 500) for every account that
+        # actually had a second factor, i.e. the only case the endpoint exists
+        # for. Nothing caught it because the audit call, and the `{"success":
+        # true}` response, both sat outside this block: an account with no MFA
+        # took the no-op path and answered 200.
+        db.delete(mfa_settings)
         # Dropping the second factor must not leave sessions that were minted
         # while it was still in force.
         revoke_all_sessions(db, user, reason="admin MFA reset")
@@ -1585,10 +1768,14 @@ def admin_reset_user_mfa(
         event_type=AuditEventType.AUTH_MFA_DISABLE,
         user_id=current_user.id,
         username=str(current_user.email),
-        outcome=AuditOutcome.SUCCESS,
+        source_ip=client_ip,
+        user_agent=user_agent,
+        outcome=AuditOutcome.SUCCESS if was_enabled else AuditOutcome.FAILURE,
+        error_code=None if was_enabled else "MFA_NOT_ENROLLED",
         details={
             "target_user": user_uuid,
             "reset_by": "admin",
+            "mfa_was_enabled": was_enabled,
         },
     )
 
@@ -1807,6 +1994,11 @@ def export_audit_logs(
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error exporting audit logs: %s", e, exc_info=True)
         raise HTTPException(
@@ -1836,9 +2028,38 @@ def admin_erase_user(
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # THE self-erasure guard is the real fix here (issue #431). This is the most
+    # destructive account operation in the app — it cascades object storage,
+    # OpenSearch voiceprints and the relational rows before dropping the account —
+    # and it was the only such route that let a super_admin erase THEMSELVES,
+    # mid-request. Its sibling delete routes have always refused that.
+    if int(target.id) == int(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot erase your own account",
+        )
+
+    # Also defence in depth, and also unreachable as written: this route is
+    # super_admin-gated, and the self guard above means the target is someone else,
+    # so the caller always remains. Kept for the same reason as its twin on
+    # DELETE /admin/users/{uuid} — it is the backstop if either premise changes.
+    from app.api.endpoints.users import _assert_not_last_super_admin
+
+    _assert_not_last_super_admin(db, target, ROLE_USER)
+
     from app.services.gdpr_erasure_service import erase_user
 
-    return erase_user(db, int(target.id))
+    # Name the ACTING super_admin. Without these, every platform erasure recorded
+    # actor_email "data-subject-webhook" — the service's default, meaning "the user
+    # deleted their own IdP account" — so a staff-initiated erasure was attributed
+    # to a self-service deletion that never happened, 100% of the time. The
+    # org-admin twin (erase_org_member_data) has always passed them.
+    return erase_user(
+        db,
+        int(target.id),
+        actor_user_id=int(current_user.id),
+        actor_email=str(current_user.email),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1862,7 +2083,10 @@ def start_data_integrity_check(
     if status.get("running"):
         return {"status": "already_running"}
 
-    result = opensearch_orphan_cleanup_task.delay()
+    # Pass the requester so progress reaches THEM. The task used to publish to a
+    # hardcoded user_id=1, so an admin who was not account 1 triggered a sweep and
+    # then waited forever while whoever held id 1 got the toasts (issue #431).
+    result = opensearch_orphan_cleanup_task.delay(user_id=int(current_user.id))
     return {"status": "started", "task_id": str(result.id)}
 
 
@@ -1961,6 +2185,11 @@ def get_gpu_profiles(
                 raw = data if isinstance(data, str) else data.decode()
                 profiles.append(json.loads(raw))
         return profiles
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception("Failed to read GPU profiles from Redis")
         raise HTTPException(status_code=500, detail="Failed to read GPU profiles.") from e

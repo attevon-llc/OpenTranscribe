@@ -230,8 +230,12 @@ def _disable_user(db: Session, user: User, reason: str) -> int:
     audit_logger.log(
         event_type=AuditEventType.AUTH_ACCOUNT_DISABLED,
         outcome=AuditOutcome.SUCCESS,
-        user_id=user.id,
-        username=str(user.email),
+        # No human actor: this is the periodic sweep. `user_id` is the ACTOR
+        # (issue #443), so leaving the SUBJECT there made "actions performed by
+        # this user" return the deactivation of that same user, by nobody.
+        user_id=None,
+        target_user_id=int(user.id),
+        target_username=str(user.email),
         details={
             "actor": "directory_sync",
             "reason": reason,

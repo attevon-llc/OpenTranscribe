@@ -14,9 +14,11 @@ Captures NVML peaks at every handoff, so the output identifies:
 
 MUST run inside the benchmark container. See A.0.0.
 """
+
 from __future__ import annotations
 
 import sys
+
 sys.path.insert(0, '/app')
 
 import argparse
@@ -25,7 +27,6 @@ import gc
 import json
 import logging
 import os
-import subprocess
 import sys
 import threading
 import time
@@ -87,11 +88,13 @@ class Sampler:
     def _run(self) -> None:
         while not self._stop.wait(NVML_SAMPLE_INTERVAL_S):
             try:
-                self._samples.append((
-                    time.perf_counter() - self._t0,
-                    self._stage,
-                    _nvml_used_mb(self.lib, self.handle),
-                ))
+                self._samples.append(
+                    (
+                        time.perf_counter() - self._t0,
+                        self._stage,
+                        _nvml_used_mb(self.lib, self.handle),
+                    )
+                )
             except Exception:
                 continue
 
@@ -145,6 +148,7 @@ def apply_cap(cap_gb: str) -> float | None:
     if cap_gb in ('unlimited', 'unl', 'none'):
         return None
     import torch
+
     cap = float(cap_gb)
     frac = cap / A6000_TOTAL_GB
     torch.cuda.set_per_process_memory_fraction(frac, 0)
@@ -188,6 +192,7 @@ def measure_stage(
 
 def run_one(args: argparse.Namespace) -> WholeStackResult:
     import torch
+
     from app.transcription.config import TranscriptionConfig
     from app.transcription.diarizer import SpeakerDiarizer
     from app.transcription.transcriber import Transcriber
@@ -250,7 +255,9 @@ def run_one(args: argparse.Namespace) -> WholeStackResult:
         torch.cuda.empty_cache()
         time.sleep(0.5)  # give NVML a few samples to settle
         t_whisper_gone = time.perf_counter() - sampler._t0
-        stages.append(measure_stage(sampler._samples, 'whisper_release', t_whisper_ran, t_whisper_gone))
+        stages.append(
+            measure_stage(sampler._samples, 'whisper_release', t_whisper_ran, t_whisper_gone)
+        )
         post_release_samples = [s for s in sampler._samples if s[1] == 'whisper_release']
         post_release_mb = (
             min(s[2] for s in post_release_samples) if post_release_samples else baseline_mb
@@ -303,15 +310,21 @@ def run_one(args: argparse.Namespace) -> WholeStackResult:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument('--audio-file', default='0.5h_1899s.wav')
     p.add_argument('--whisper-model', default='small')
     p.add_argument('--whisper-compute-type', default='float16')
     p.add_argument('--diarization-batch-size', type=int, default=16)
-    p.add_argument('--diarization-mp', action='store_true', help='Enable fp16 autocast in diarization')
+    p.add_argument(
+        '--diarization-mp', action='store_true', help='Enable fp16 autocast in diarization'
+    )
     p.add_argument('--cap-gb', default='unlimited', help='e.g. 4, 6, 8, unlimited')
     p.add_argument('--out', default='/app/docs/diarization-vram-profile/raw/whole-stack/')
-    p.add_argument('--sweep', action='store_true', help='Run predefined caps × whisper-models matrix')
+    p.add_argument(
+        '--sweep', action='store_true', help='Run predefined caps × whisper-models matrix'
+    )
     return p.parse_args()
 
 
@@ -349,7 +362,9 @@ def run_sweep(args: argparse.Namespace) -> int:
             except Exception as e:
                 log.error(f'Sweep run {idx} failed: {e}')
                 fails += 1
-            log.info(f'Sweep {idx}/{total} fails={fails} elapsed={(time.perf_counter()-t0)/60:.1f}min')
+            log.info(
+                f'Sweep {idx}/{total} fails={fails} elapsed={(time.perf_counter() - t0) / 60:.1f}min'
+            )
     log.info(f'Whole-stack sweep complete: {idx} runs, {fails} failures')
     return 0 if fails == 0 else 2
 

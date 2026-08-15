@@ -16,6 +16,7 @@ from app.core.constants import DownloadPriority
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.download_events import publish_download_event
+from app.services.download_events import release_download_prep_guard
 from app.services.minio_service import MinIOService
 from app.services.video_processing_service import NoAudioTrackError
 from app.services.video_processing_service import VideoProcessingService
@@ -43,50 +44,59 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
     """
     file_uuid = ""
     try:
-        # session_scope auto-commits/rolls-back/closes. This task only reads the
-        # MediaFile row (the heavy ffmpeg/MinIO work writes its own cache rows via
-        # the service), so there are no mid-task commits to preserve.
+        # Phase 1 — read (short, DB only). Plain scalars, no ORM instance
+        # escapes: the scope closes before any MinIO/ffmpeg work starts.
         with session_scope() as db:
-            db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-            if not db_file:
-                return {"status": "error", "message": "File not found"}
-
-            file_uuid = str(db_file.uuid)
-            filename = str(db_file.filename)
-            base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
-            storage_path = str(db_file.storage_path)
-
-            publish_download_event(
-                file_uuid, status="processing", mode=mode, message="Preparing your download…"
+            row = (
+                db.query(MediaFile.uuid, MediaFile.filename, MediaFile.storage_path)
+                .filter(MediaFile.id == file_id)
+                .first()
             )
+            if not row:
+                return {"status": "error", "message": "File not found"}
+            file_uuid = str(row[0])
+            filename = str(row[1])
+            storage_path = str(row[2])
 
-            service = VideoProcessingService(MinIOService())
+        base_name = filename.rsplit(".", 1)[0] if "." in filename else filename
 
-            if mode == "video_subtitles":
-                cache_key = service.process_video_with_subtitles(
-                    db=db,
-                    file_id=file_id,
-                    original_object_name=storage_path,
-                    user_id=None,  # SSE owns the messaging for this download
-                    include_speakers=True,
-                    output_format="mp4",
-                )
-                content_type = "video/mp4"
-                download_filename = f"{base_name}_with_subtitles.mp4"
-            elif mode.startswith("audio_"):
-                audio_format = mode.split("_", 1)[1]  # mp3 | wav | original
-                cache_key, ext, content_type = service.extract_audio(
-                    db=db,
-                    file_id=file_id,
-                    original_object_name=storage_path,
-                    audio_format=audio_format,
-                )
-                download_filename = f"{base_name}.{ext}"
-            else:
-                publish_download_event(
-                    file_uuid, status="error", mode=mode, message=f"Unsupported mode: {mode}"
-                )
-                return {"status": "error", "message": f"Unsupported mode {mode}"}
+        publish_download_event(
+            file_uuid, status="processing", mode=mode, message="Preparing your download…"
+        )
+
+        service = VideoProcessingService(MinIOService())
+
+        if mode not in ("video_subtitles",) and not mode.startswith("audio_"):
+            publish_download_event(
+                file_uuid, status="error", mode=mode, message=f"Unsupported mode: {mode}"
+            )
+            return {"status": "error", "message": f"Unsupported mode {mode}"}
+
+        # Phase 2 — MinIO download + ffmpeg transcode. NO DB session is held.
+        #
+        # This used to be wrapped in a ``session_scope`` because
+        # ``VideoProcessingService`` took a ``Session`` and kept it open across
+        # the whole transcode. It now opens its own short sessions for the two
+        # reads it needs (the filename, and the transcript for the SRT), so
+        # nothing here holds a transaction.
+        if mode == "video_subtitles":
+            cache_key = service.process_video_with_subtitles(
+                file_id=file_id,
+                original_object_name=storage_path,
+                user_id=None,  # SSE owns the messaging for this download
+                include_speakers=True,
+                output_format="mp4",
+            )
+            content_type = "video/mp4"
+            download_filename = f"{base_name}_with_subtitles.mp4"
+        else:
+            audio_format = mode.split("_", 1)[1]  # mp3 | wav | original
+            cache_key, ext, content_type = service.extract_audio(
+                file_id=file_id,
+                original_object_name=storage_path,
+                audio_format=audio_format,
+            )
+            download_filename = f"{base_name}.{ext}"
 
         url = service.presigned_download_url(cache_key, download_filename, content_type)
 
@@ -111,6 +121,12 @@ def prepare_media_download_task(self, file_id: int, user_id: int, mode: str) -> 
                 file_uuid, status="error", mode=mode, message="Failed to prepare download."
             )
         return {"status": "error", "message": str(e)}
+    finally:
+        # Release the dispatch guard on EVERY path. Its 900 s expiry is only a
+        # backstop: while the guard outlived the task, a download whose readiness
+        # could not be resolved was unrecoverable for 15 minutes -- NX refused to
+        # re-dispatch, so the SSE stream waited on an event nobody would publish.
+        release_download_prep_guard(file_id, mode)
 
 
 @celery_app.task(

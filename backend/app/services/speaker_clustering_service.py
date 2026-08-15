@@ -15,10 +15,6 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
-import torch
-from scipy.cluster.hierarchy import fcluster
-from scipy.cluster.hierarchy import linkage
-from scipy.spatial.distance import squareform
 from sqlalchemy import case
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
@@ -947,6 +943,15 @@ class SpeakerClusteringService:
           sim chunk   = 2000 x 15000 x 2  ~  60 MB VRAM
           peak total  ~  90 MB VRAM (trivial for any GPU)
         """
+        # torch and scipy are imported here, not at module scope, per the repo convention
+        # for heavy optional deps. This module is reachable from `app.api.router`, so a
+        # top-level `import torch` was pulled into every process that imports `app.main` —
+        # including all 48 pytest-xdist workers, at ~6.3 s of CPU each (issue #431).
+        import torch
+        from scipy.cluster.hierarchy import fcluster
+        from scipy.cluster.hierarchy import linkage
+        from scipy.spatial.distance import squareform
+
         n = len(emb_rows)
         if n < 2:
             return {}

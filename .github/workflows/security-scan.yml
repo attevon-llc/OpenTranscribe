@@ -1,5 +1,31 @@
 name: Security Scanning
 
+# WHAT CAN FAIL THIS WORKFLOW
+#
+# Every scanner here used to run in report-only mode: the Trivy steps omitted
+# `exit-code` (which defaults to '0'), Dockle passed `exit-code: '0'`, and Grype
+# passed `fail-build: false`. Of six jobs only `dockerfile-lint` could turn the
+# run red, and the `summary` job printed a wall of ✅ that was hardcoded rather
+# than read from any job's result. Dispatching it and seeing green proved that
+# two Dockerfiles lint.
+#
+# The gates now are:
+#
+#   Trivy (images + repo fs + repo config)  CRITICAL, --ignore-unfixed
+#   Dockle (images)                         FATAL only
+#   Grype (SBOMs)                           critical, --only-fixed
+#
+# CRITICAL-and-FIXABLE, deliberately. A base image routinely carries CRITICAL
+# CVEs with no fixed version published; failing on those would make this red
+# permanently for something no change to this repo can resolve, and a gate that
+# is always red gets switched off — which is how it ended up report-only in the
+# first place. Every finding this fails on is one somebody here can act on by
+# bumping a pinned version. HIGH and below stay visible (the SARIF upload and
+# the table output both keep CRITICAL,HIGH,MEDIUM) without blocking.
+#
+# The SARIF steps stay report-only on purpose: they exist to populate the
+# Security tab, and a failing scan step must not cost us the upload.
+
 on:
   workflow_dispatch:  # Manual triggering ONLY - automatic runs disabled
     inputs:
@@ -42,6 +68,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Run Hadolint on backend Dockerfile
+        if: inputs.component == 'all' || inputs.component == 'backend'
         uses: hadolint/hadolint-action@v3.4.0
         with:
           dockerfile: backend/Dockerfile.prod
@@ -49,6 +76,7 @@ jobs:
           failure-threshold: warning
 
       - name: Run Hadolint on frontend Dockerfile
+        if: inputs.component == 'all' || inputs.component == 'frontend'
         uses: hadolint/hadolint-action@v3.4.0
         with:
           dockerfile: frontend/Dockerfile.prod
@@ -57,6 +85,7 @@ jobs:
 
   build-and-scan-backend:
     name: Build & Scan Backend
+    if: inputs.component == 'all' || inputs.component == 'backend'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -78,6 +107,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Report-only by design: this step's job is to produce the SARIF the next
+      # step uploads. Gating here would trade the Security tab for a red X.
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -93,6 +124,8 @@ jobs:
           sarif_file: 'trivy-backend-results.sarif'
           category: 'trivy-backend'
 
+      # THE GATE. Prints everything CRITICAL..MEDIUM for the human reading the
+      # log, and fails only on CRITICAL with a published fix.
       - name: Run Trivy vulnerability scanner (table output)
         uses: aquasecurity/trivy-action@master
         with:
@@ -100,12 +133,24 @@ jobs:
           format: 'table'
           severity: 'CRITICAL,HIGH,MEDIUM'
 
+      - name: Fail on fixable CRITICAL CVEs (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: opentranscribe-backend:${{ github.sha }}
+          format: 'table'
+          severity: 'CRITICAL'
+          ignore-unfixed: true
+          exit-code: '1'
+
+      # FATAL only: Dockle's WARN tier flags things like a missing HEALTHCHECK,
+      # which is a compose concern here. FATAL is "runs as root" / "credentials
+      # baked into the image".
       - name: Run Dockle
         uses: erzz/dockle-action@v1
         with:
           image: opentranscribe-backend:${{ github.sha }}
-          exit-code: '0'
-          failure-threshold: warn
+          exit-code: '1'
+          failure-threshold: fatal
 
       - name: Generate SBOM with Syft
         uses: anchore/sbom-action@v0
@@ -118,8 +163,9 @@ jobs:
         uses: anchore/scan-action@v7
         with:
           sbom: backend-sbom.spdx.json
-          fail-build: false
-          severity-cutoff: medium
+          fail-build: true
+          severity-cutoff: critical
+          only-fixed: true
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v7
@@ -131,6 +177,7 @@ jobs:
 
   build-and-scan-frontend:
     name: Build & Scan Frontend
+    if: inputs.component == 'all' || inputs.component == 'frontend'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -174,12 +221,21 @@ jobs:
           format: 'table'
           severity: 'CRITICAL,HIGH,MEDIUM'
 
+      - name: Fail on fixable CRITICAL CVEs (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: opentranscribe-frontend:${{ github.sha }}
+          format: 'table'
+          severity: 'CRITICAL'
+          ignore-unfixed: true
+          exit-code: '1'
+
       - name: Run Dockle
         uses: erzz/dockle-action@v1
         with:
           image: opentranscribe-frontend:${{ github.sha }}
-          exit-code: '0'
-          failure-threshold: warn
+          exit-code: '1'
+          failure-threshold: fatal
 
       - name: Generate SBOM with Syft
         uses: anchore/sbom-action@v0
@@ -192,8 +248,9 @@ jobs:
         uses: anchore/scan-action@v7
         with:
           sbom: frontend-sbom.spdx.json
-          fail-build: false
-          severity-cutoff: medium
+          fail-build: true
+          severity-cutoff: critical
+          only-fixed: true
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v7
@@ -204,6 +261,8 @@ jobs:
           retention-days: 90
 
   dependency-scan:
+    # Repo-wide (lock files and compose/Dockerfile config), so it runs for every
+    # `component` choice.
     name: Scan Dependencies
     runs-on: ubuntu-latest
     steps:
@@ -219,6 +278,17 @@ jobs:
           severity: 'CRITICAL,HIGH'
           skip-dirs: 'node_modules,venv,.venv'
 
+      - name: Fail on fixable CRITICAL dependency CVEs
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          severity: 'CRITICAL'
+          ignore-unfixed: true
+          exit-code: '1'
+          skip-dirs: 'node_modules,venv,.venv'
+
       - name: Run Trivy config scanner
         uses: aquasecurity/trivy-action@master
         with:
@@ -228,7 +298,23 @@ jobs:
           severity: 'CRITICAL,HIGH'
           skip-dirs: 'node_modules,venv,.venv'
 
+      # `ignore-unfixed` is meaningless for misconfiguration: every finding is
+      # fixable by editing the file it points at.
+      - name: Fail on CRITICAL misconfiguration
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'table'
+          severity: 'CRITICAL'
+          exit-code: '1'
+          skip-dirs: 'node_modules,venv,.venv'
+
   dependency-audit:
+    # REPORT-ONLY, deliberately and visibly: both tools below swallow their exit
+    # code and emit ::warning::. They are advisory feeds with a different noise
+    # profile from Trivy/Grype, and the summary labels this job as report-only so
+    # a green result is not read as "no advisories".
     name: Dependency Audit (npm + pip)
     runs-on: ubuntu-latest
     steps:
@@ -264,19 +350,67 @@ jobs:
     needs: [dockerfile-lint, build-and-scan-backend, build-and-scan-frontend, dependency-scan, dependency-audit]
     if: always()
     steps:
-      - name: Check scan results
+      # This step used to echo a fixed list of ✅ lines. It read the result of
+      # nothing, so it reported success for jobs that had failed and for jobs
+      # that never ran. It now renders `needs.<job>.result` and FAILS when any
+      # of them failed or was cancelled — so the last job in the run cannot be
+      # green while an earlier one is red.
+      - name: Report actual job results
+        env:
+          COMPONENT: ${{ inputs.component }}
+          R_LINT: ${{ needs.dockerfile-lint.result }}
+          R_BACKEND: ${{ needs.build-and-scan-backend.result }}
+          R_FRONTEND: ${{ needs.build-and-scan-frontend.result }}
+          R_DEPSCAN: ${{ needs.dependency-scan.result }}
+          R_DEPAUDIT: ${{ needs.dependency-audit.result }}
         run: |
-          echo "## Security Scan Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All security scans completed. Check individual job logs for details." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Completed Scans:" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Dockerfile Linting (Hadolint)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Backend Image Scanning (Trivy, Dockle, Grype)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Frontend Image Scanning (Trivy, Dockle, Grype)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Dependency Scanning (Trivy)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Dependency Audit (npm audit, pip-audit)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Reports Available:" >> $GITHUB_STEP_SUMMARY
-          echo "- SBOM artifacts uploaded for both backend and frontend" >> $GITHUB_STEP_SUMMARY
-          echo "- Vulnerability results uploaded to GitHub Security tab" >> $GITHUB_STEP_SUMMARY
+          set -euo pipefail
+
+          render() {
+            case "$1" in
+              success)   echo "✅ passed" ;;
+              failure)   echo "❌ FAILED" ;;
+              cancelled) echo "🚫 cancelled" ;;
+              skipped)   echo "⊘ did not run" ;;
+              *)         echo "❔ $1" ;;
+            esac
+          }
+
+          {
+            echo "## Security Scan Summary"
+            echo
+            echo "Component requested: \`${COMPONENT}\`"
+            echo
+            echo "| Job | Result |"
+            echo "|---|---|"
+            echo "| Dockerfile linting (Hadolint) | $(render "$R_LINT") |"
+            echo "| Backend image (Trivy, Dockle, Grype) | $(render "$R_BACKEND") |"
+            echo "| Frontend image (Trivy, Dockle, Grype) | $(render "$R_FRONTEND") |"
+            echo "| Dependency + config scanning (Trivy) | $(render "$R_DEPSCAN") |"
+            echo "| Dependency audit (npm audit, pip-audit) — **report-only** | $(render "$R_DEPAUDIT") |"
+            echo
+            echo "### What these results mean"
+            echo
+            echo "- Gating: Trivy **CRITICAL and fixable**, Dockle **FATAL**, Grype **critical, fixed-only**."
+            echo "- Not gating: HIGH/MEDIUM findings, unfixable CRITICALs, and the whole dependency-audit job."
+            echo "- \`⊘ did not run\` means the component filter excluded it — it was **not** scanned."
+            echo
+            echo "### Reports"
+            echo
+            echo "- SBOM artifacts uploaded for each scanned component"
+            echo "- Trivy results uploaded to the GitHub Security tab"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          failed=""
+          for pair in "dockerfile-lint:$R_LINT" "backend:$R_BACKEND" "frontend:$R_FRONTEND" \
+                      "dependency-scan:$R_DEPSCAN" "dependency-audit:$R_DEPAUDIT"; do
+            case "${pair#*:}" in
+              failure|cancelled) failed="$failed ${pair%%:*}" ;;
+            esac
+          done
+
+          if [ -n "$failed" ]; then
+            echo "::error::security scan jobs did not pass:$failed"
+            exit 1
+          fi
+          echo "all scan jobs that ran passed"

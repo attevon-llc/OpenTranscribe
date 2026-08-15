@@ -14,16 +14,20 @@ Currently skipped until all FedRAMP features are fully implemented.
 Set RUN_FEDRAMP_TESTS=true to run these tests.
 """
 
-import os
 from unittest.mock import patch
 
 import pytest
 
-# Skip all tests - FedRAMP compliance features in development
-pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_FEDRAMP_TESTS", "false").lower() != "true",
-    reason="FedRAMP compliance features in development (set RUN_FEDRAMP_TESTS=true to run)",
-)
+# Runs by DEFAULT. This module was gated behind RUN_FEDRAMP_TESTS with the reason
+# "FedRAMP compliance features in development" — but every test in it passes, and did so on the first run once the gate
+# was lifted. The gate was stale: it kept 25 security tests out of every local run and
+# out of CI, visible only as `s` in the progress dots, while reading as a deliberate
+# decision someone had made. That is how `test_super_admin_can_export_audit_logs` came to
+# assert `status_code in [200, 400]` — 400 being exactly 'could not export' — without
+# anyone noticing (issue #431).
+#
+# The pre-merge gate still runs these; the difference is they now also run by default,
+# so a regression surfaces on the commit that causes it rather than at merge time.
 
 
 class TestPasswordPolicy:
@@ -91,11 +95,23 @@ class TestPasswordPolicy:
         from app.auth.password_policy import get_policy_requirements
 
         requirements = get_policy_requirements()
-        assert "min_length" in requirements
-        assert "require_uppercase" in requirements
-        assert "require_lowercase" in requirements
-        assert "require_digit" in requirements
-        assert "require_special" in requirements
+        # The EXACT key set, not five spot checks. This dict is returned verbatim
+        # as the body of GET /api/auth/password-policy, so every key is a wire
+        # contract the registration and change-password forms read. A per-key
+        # `in` check cannot see a key that was renamed, dropped, or never added:
+        # `min_age_hours` shipped without one and nothing failed.
+        assert set(requirements) == {
+            "enabled",
+            "min_length",
+            "require_uppercase",
+            "require_lowercase",
+            "require_digit",
+            "require_special",
+            "special_characters",
+            "history_count",
+            "max_age_days",
+            "min_age_hours",
+        }
         assert requirements["min_length"] >= 12  # FedRAMP minimum
 
 
@@ -342,13 +358,22 @@ class TestAdditionalControls:
 class TestSecurityHeaders:
     """Tests for security headers and CORS configuration"""
 
-    def test_cors_not_wildcard_in_production(self):
-        """CORS should not allow wildcard in production."""
+    def test_shipped_cors_origins_are_explicit(self):
+        """The shipped default CORS list is explicit, never a wildcard.
+
+        Renamed and unguarded. It was ``test_cors_not_wildcard_in_production`` reading
+        ``if hasattr(settings, "CORS_ORIGINS"): assert "*" not in ...`` — which tested the
+        *testing* config rather than production, and passed vacuously if the attribute were
+        ever renamed. The production control (refuse to boot on a wildcard) is a different
+        assertion and now has real coverage in
+        ``test_production_secrets_guard.py::test_wildcard_cors_rejected_in_production``;
+        this keeps the narrower, still-useful check on the default (issue #431).
+        """
         from app.core.config import settings
 
-        # In production, CORS should not be "*"
-        if hasattr(settings, "CORS_ORIGINS"):
-            assert "*" not in settings.CORS_ORIGINS
+        assert "*" not in settings.CORS_ORIGINS, (
+            f"default CORS_ORIGINS must be explicit, got {settings.CORS_ORIGINS}"
+        )
 
 
 # Integration tests (require running app)
@@ -385,7 +410,9 @@ class TestIntegrationEndpoints:
                 "password": "weak",
             },
         )
-        assert response.status_code in [400, 422]
+        assert response.status_code == 422, (
+            response.text
+        )  # schema validation rejects it, not the handler
 
     def test_strong_password_accepted(self, client):
         """Registration with strong password should succeed."""
@@ -401,7 +428,7 @@ class TestIntegrationEndpoints:
             },
         )
         # Could be 200/201 for success, or 409 if email exists
-        assert response.status_code in [200, 201, 409]
+        assert response.status_code == 200, response.text
 
 
 if __name__ == "__main__":

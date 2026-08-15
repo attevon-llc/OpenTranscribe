@@ -7,6 +7,8 @@ added for FedRAMP compliance: password reset, role management, user search,
 and audit log access.
 """
 
+import pytest
+
 
 class TestAdminAccountManagement:
     """Test admin account management endpoints."""
@@ -19,7 +21,7 @@ class TestAdminAccountManagement:
             json={"new_password": "NewPassword123!"},
         )
         # Regular user should be forbidden
-        assert response.status_code in [401, 403]
+        assert response.status_code == 403, response.text
 
     def test_super_admin_can_update_user_role(self, client, super_admin_token_headers, normal_user):
         """Test that a super admin can update user roles (query param API)."""
@@ -59,7 +61,7 @@ class TestAdminUserSearch:
             headers=user_token_headers,
             params={"query": "test"},
         )
-        assert response.status_code in [401, 403]
+        assert response.status_code == 403, response.text
 
 
 class TestAdminAuditLog:
@@ -73,13 +75,28 @@ class TestAdminAuditLog:
         assert "logs" in data
 
     def test_super_admin_can_export_audit_logs(self, client, super_admin_token_headers):
-        """Test that a super admin can export audit logs."""
+        """A super admin can export audit logs — when the OpenSearch audit sink is enabled.
+
+        Was ``in [200, 400]``. The test claims a super admin *can* export, but 400 is exactly
+        "could not export", so it passed while asserting the opposite of its own name.
+        ``export_audit_logs`` returns 400 when ``AUDIT_LOG_TO_OPENSEARCH`` is false
+        (``admin.py:1754``) and conftest forces it false, since savepoint rollback cannot undo
+        OpenSearch writes. That precondition is now a visible skip rather than a false pass,
+        and the authorization half stays covered unconditionally (issue #431).
+        """
+        from app.core.config import settings
+
         response = client.get(
             "/api/admin/audit-logs/export",
             headers=super_admin_token_headers,
             params={"export_format": "csv"},
         )
-        assert response.status_code in [200, 400]
+        # Whatever the sink state, a super admin must not be refused on authorization.
+        assert response.status_code not in (401, 403), response.text
+        if not settings.AUDIT_LOG_TO_OPENSEARCH:
+            assert response.status_code == 400, response.text
+            pytest.skip("audit export needs AUDIT_LOG_TO_OPENSEARCH=true (conftest forces it off)")
+        assert response.status_code == 200, response.text
 
     def test_admin_cannot_view_audit_logs(self, client, admin_token_headers):
         """Audit logs are super-admin only — a plain admin is forbidden."""

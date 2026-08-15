@@ -37,8 +37,10 @@ TIER_SUPER_ADMIN = "super_admin"
 SUPER_ADMIN_PREFIXES = (
     "/api/admin/auth-config",
     "/api/admin/engine-settings",
+    # Covers the mirror routes too: they are mounted at /api/admin/backup/mirror. There
+    # used to be a separate "/api/admin/media-mirror" entry here, which matched NO route
+    # and therefore asserted nothing — see test_every_super_admin_prefix_matches_a_route.
     "/api/admin/backup",
-    "/api/admin/media-mirror",
     "/api/admin/redaction-policy",
     # A group mapping decides who a directory claim hands admin to — that is
     # authorization configuration, not team management.
@@ -199,6 +201,28 @@ class TestDeploymentConfigurationIsSuperAdmin:
         assert not offenders, (
             "these routes configure the deployment or hold infrastructure "
             f"credentials and must be super_admin: {offenders}"
+        )
+
+    def test_every_super_admin_prefix_matches_a_route(self, routes):
+        """Guard the guard: a prefix matching nothing asserts nothing.
+
+        The test above is a filter over `SUPER_ADMIN_PREFIXES`, so an entry that matches no
+        route contributes zero offenders and reads as coverage — indistinguishable from a
+        prefix that is genuinely all super_admin. `/api/admin/media-mirror` sat here doing
+        exactly that: the mirror routes are mounted under `/api/admin/backup/mirror`, so
+        the entry protected nothing while implying that surface was checked.
+
+        Also catches the live case — a prefix left behind after routes move — which is how
+        a gate silently stops covering the thing it names.
+        """
+        unmatched = [
+            prefix
+            for prefix in SUPER_ADMIN_PREFIXES
+            if not any(r.path.startswith(prefix) for r in routes)
+        ]
+        assert not unmatched, (
+            "these SUPER_ADMIN_PREFIXES entries match no mounted route, so they assert "
+            f"nothing — delete them or fix the prefix: {unmatched}"
         )
 
 

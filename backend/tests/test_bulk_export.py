@@ -15,14 +15,14 @@ from app.models.media import MediaFile
 
 
 @pytest.fixture
-def completed_file(db_session, test_user):
+def completed_file(db_session, sample_user):
     file = MediaFile(
         uuid=str(uuid.uuid4()),
         filename="meeting.mp4",
         storage_path="media/test/meeting.mp4",
         content_type="video/mp4",
         file_size=2048,
-        user_id=test_user.id,
+        user_id=sample_user.id,
         status="completed",
         is_public=False,
     )
@@ -33,14 +33,14 @@ def completed_file(db_session, test_user):
 
 
 @pytest.fixture
-def processing_file(db_session, test_user):
+def processing_file(db_session, sample_user):
     file = MediaFile(
         uuid=str(uuid.uuid4()),
         filename="pending.mp4",
         storage_path="media/test/pending.mp4",
         content_type="video/mp4",
         file_size=2048,
-        user_id=test_user.id,
+        user_id=sample_user.id,
         status="processing",
         is_public=False,
     )

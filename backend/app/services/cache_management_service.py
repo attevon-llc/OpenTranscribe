@@ -36,10 +36,27 @@ def resolve_retention_days(db: Session) -> int:
     )
 
 
+def _push_lifecycle_rule(days: int) -> None:
+    """Push the retention window to object storage. **Takes no DB session.**
+
+    Deliberately separate from the two callers below: constructing the service
+    contacts the bucket and applying the rule is a second round trip, and both
+    used to run on the caller's session — a request-scoped one in the admin
+    endpoint's case. See ``app/tasks/CLAUDE.md``.
+
+    Args:
+        days: Retention window in days; 0 removes the rule (keep forever).
+    """
+    VideoProcessingService(MinIOService()).apply_derived_retention(days)
+
+
 def apply_retention(db: Session) -> int:
     """(Re)apply the MinIO lifecycle rule from the current setting. Returns the days used."""
     days = resolve_retention_days(db)
-    VideoProcessingService(MinIOService()).apply_derived_retention(days)
+    # Release the read transaction before the object-storage round trips: nothing
+    # below this line touches Postgres.
+    db.commit()
+    _push_lifecycle_rule(days)
     return days
 
 
@@ -52,7 +69,11 @@ def set_retention_days(db: Session, days: int) -> int:
         description="Days before regenerable derived media (processed-videos/derived/) "
         "auto-expires. 0 = keep forever.",
     )
-    VideoProcessingService(MinIOService()).apply_derived_retention(int(days))
+    # ``set_setting`` commits and then ``refresh``es, which opens a fresh
+    # transaction; end it before the object-storage work rather than holding it
+    # across two network round trips on a request session.
+    db.commit()
+    _push_lifecycle_rule(int(days))
     return int(days)
 
 

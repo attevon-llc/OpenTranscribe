@@ -221,6 +221,18 @@ that a super_admin issues at `/api/admin/scim-tokens` and can revoke.
 - TOTP per RFC 6238/4226 (Google Authenticator / Authy compatible). MFA tokens are
   single-use — the JTI is blacklisted in Redis after verification.
 - Auth events go to the **audit log, which is OpenSearch-backed** (`audit.py`), not a table.
+- **`user_id` is the ACTOR; the subject goes in `target_user_id` / `target_username`**
+  (issue #443). This is an access-control invariant, not a style rule: `query_audit_logs`
+  filters on `user_id` and `build_org_scope_clause` attributes un-stamped events to an org by
+  member user-id, so keying it on the subject changes **who can see the record**. Five emitters
+  of `auth.account.disabled` disagreed three ways and `admin.role.change` two, which meant
+  "actions Bob performed" returned Bob's own privilege escalation while filtering by the acting
+  admin missed every IdP-driven promotion. For a **system** actor — the directory-sync sweep,
+  IdP reconciliation, a SCIM token — `user_id` is `None`, never the subject. The target fields
+  are omitted when unset (absent, not null) so pre-#443 documents stay shape-compatible.
+  `tests/unit/test_audit_actor_target.py` enforces it by AST over every administrative emitter;
+  putting the subject only in `details` is what failed before, because `details` is a dynamic
+  mapping no single query can search.
 - DB models: `UserMFA`, `PasswordHistory`, `RefreshToken` (`app/models/`).
 
 ## How it connects

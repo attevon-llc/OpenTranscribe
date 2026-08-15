@@ -1,5 +1,6 @@
 import logging
 from typing import Any
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -92,6 +93,7 @@ def _writable_tag_ids(
 
 def _share_target(share) -> TagShareTarget:
     """Project a grant onto the wire, naming the target rather than its id."""
+    kind: Literal["user", "group"]
     if share.target_user_id is not None:
         target = share.target_user
         name = getattr(target, "full_name", None) or getattr(target, "email", "") or "user"

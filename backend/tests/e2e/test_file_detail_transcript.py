@@ -38,8 +38,11 @@ from playwright.sync_api import expect
 
 pytestmark = pytest.mark.transcription
 
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+# This module used to define its own ``FRONTEND_URL``/``BACKEND_URL`` constants here.
+# A module constant is evaluated at import time, so it could not see ``--base-url`` /
+# ``--backend-url`` and this file always drove whatever was on the default ports — even
+# when the run was aimed at an isolated stack (issue #431). Everything below takes
+# conftest's ``base_url`` / ``backend_url`` fixtures instead.
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
 
@@ -68,10 +71,10 @@ def _unexpected_console_errors(errors: list[str]) -> list[str]:
 
 
 @pytest.fixture(scope="module")
-def api_token() -> str:
+def api_token(backend_url: str) -> str:
     """Authenticate once per module via the backend API."""
     resp = requests.post(
-        f"{BACKEND_URL}/api/auth/token",
+        f"{backend_url}/api/auth/token",
         data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=30,
@@ -82,7 +85,7 @@ def api_token() -> str:
 
 
 @pytest.fixture(scope="module")
-def transcribed_file(api_token: str) -> dict[str, Any]:
+def transcribed_file(api_token: str, backend_url: str) -> dict[str, Any]:
     """Discover a completed file that actually has transcript segments.
 
     Prefers a file with diarization (>1 distinct speaker) so the
@@ -90,7 +93,7 @@ def transcribed_file(api_token: str) -> dict[str, Any]:
     transcribed file. Skips (rather than fails) if the dev dataset has none.
     """
     listing = requests.get(
-        f"{BACKEND_URL}/api/files",
+        f"{backend_url}/api/files",
         headers={"Authorization": f"Bearer {api_token}"},
         params={"page": "1", "page_size": "100", "sort_by": "upload_time", "sort_order": "desc"},
         timeout=30,
@@ -104,7 +107,7 @@ def transcribed_file(api_token: str) -> dict[str, Any]:
     fallback: dict[str, Any] | None = None
     for f in completed:
         detail = requests.get(
-            f"{BACKEND_URL}/api/files/{f['uuid']}",
+            f"{backend_url}/api/files/{f['uuid']}",
             headers={"Authorization": f"Bearer {api_token}"},
             timeout=30,
         ).json()
@@ -137,12 +140,12 @@ def transcribed_file(api_token: str) -> dict[str, Any]:
 # the wider e2e suite has already spent the rate-limit budget, the login can
 # briefly bounce; retry through that window rather than flapping.
 # ---------------------------------------------------------------------------
-def _form_login_with_retry(page, attempts: int = 4) -> None:
+def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
     """Submit the login form, retrying through transient auth rate-limiting."""
     last_error: Exception | None = None
     for attempt in range(attempts):
         try:
-            page.goto(FRONTEND_URL)
+            page.goto(base_url)
             # Already authenticated (cookie still valid) — no form to fill.
             if page.locator(".user-button").count():
                 page.wait_for_selector(".user-button", timeout=10000)
@@ -155,18 +158,20 @@ def _form_login_with_retry(page, attempts: int = 4) -> None:
             return
         except Exception as exc:  # noqa: BLE001 - retry on any login-flow failure
             last_error = exc
+            # Kept deliberately: this wait IS the rate-limit backoff, not a settle for
+            # something a locator could poll for (issue #431).
             page.wait_for_timeout(5000 * (attempt + 1))
     raise AssertionError(f"Could not log in via form after {attempts} attempts: {last_error}")
 
 
 @pytest.fixture(scope="module")
-def auth_storage_state(browser):  # type: ignore[no-untyped-def]
+def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
     """Login once and persist browser storage state for reuse across tests."""
     context = browser.new_context(
         viewport={"width": 1920, "height": 1080}, ignore_https_errors=True
     )
     page = context.new_page()
-    _form_login_with_retry(page)
+    _form_login_with_retry(page, base_url)
 
     fd, state_file = tempfile.mkstemp(suffix=".json")
     os.close(fd)
@@ -181,7 +186,7 @@ def auth_storage_state(browser):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture
-def detail_page(browser, auth_storage_state: str, transcribed_file: dict[str, Any]):  # type: ignore[no-untyped-def]
+def detail_page(browser, auth_storage_state: str, transcribed_file: dict[str, Any], base_url: str):  # type: ignore[no-untyped-def]
     """A pre-authenticated page on a real file-detail view with a transcript.
 
     Exposes captured console errors on ``page._console_errors``.
@@ -197,7 +202,7 @@ def detail_page(browser, auth_storage_state: str, transcribed_file: dict[str, An
     page._console_errors = errors  # type: ignore[attr-defined]
 
     uuid = transcribed_file["uuid"]
-    page.goto(f"{FRONTEND_URL}/files/{uuid}")
+    page.goto(f"{base_url}/files/{uuid}")
     page.wait_for_load_state("networkidle")
     # Transcript is the load-bearing surface — wait for at least one segment.
     page.wait_for_selector(".transcript-segment", timeout=25000)
@@ -211,7 +216,10 @@ class TestTranscriptRenders:
 
     def test_file_detail_loads_without_unexpected_console_errors(self, detail_page: Page) -> None:
         """Page settles and emits no *new* (non-benign) console errors."""
-        detail_page.wait_for_timeout(1500)
+        # Deterministic settle rather than a guessed 1.5 s: both assertions below are about
+        # the ABSENCE of something (a navigation away, a console error), which no locator
+        # can auto-wait for (issue #431).
+        detail_page.wait_for_load_state("networkidle")
         assert "/files/" in detail_page.url
         unexpected = _unexpected_console_errors(detail_page._console_errors)  # type: ignore[attr-defined]
         assert not unexpected, f"Unexpected console errors on file detail: {unexpected}"
@@ -363,14 +371,14 @@ class TestSpeakerRenameRepaint:
 
 
 @pytest.fixture(scope="module")
-def paginated_file(api_token: str) -> dict[str, Any]:
+def paginated_file(api_token: str, backend_url: str) -> dict[str, Any]:
     """Discover a file with more segments than one page (>500).
 
     Skips when the dev dataset has none — the pagination invariants below cannot be
     exercised without a genuinely paginated transcript.
     """
     listing = requests.get(
-        f"{BACKEND_URL}/api/files",
+        f"{backend_url}/api/files",
         headers={"Authorization": f"Bearer {api_token}"},
         params={"page": "1", "page_size": "100"},
         timeout=30,
@@ -379,7 +387,7 @@ def paginated_file(api_token: str) -> dict[str, Any]:
     target: dict[str, Any] | None = None
     for f in (x for x in items if x.get("status") == "completed"):
         page_one = requests.get(
-            f"{BACKEND_URL}/api/files/{f['uuid']}/segments",
+            f"{backend_url}/api/files/{f['uuid']}/segments",
             headers={"Authorization": f"Bearer {api_token}"},
             params={"segment_limit": "1"},
             timeout=30,
@@ -409,7 +417,7 @@ class TestTranscriptPagination:
     """
 
     def test_scrolling_loads_and_renders_every_segment(
-        self, browser, auth_storage_state: str, paginated_file: dict[str, Any]
+        self, browser, auth_storage_state: str, paginated_file: dict[str, Any], base_url: str
     ) -> None:  # type: ignore[no-untyped-def]
         context = browser.new_context(
             storage_state=auth_storage_state,
@@ -420,7 +428,7 @@ class TestTranscriptPagination:
         errors: list[str] = []
         page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
         try:
-            page.goto(f"{FRONTEND_URL}/files/{paginated_file['uuid']}")
+            page.goto(f"{base_url}/files/{paginated_file['uuid']}")
             page.wait_for_load_state("networkidle")
             page.wait_for_selector(".transcript-segment", timeout=25000)
 
@@ -438,6 +446,9 @@ class TestTranscriptPagination:
                 if count == previous:
                     break
                 previous = count
+                # Kept deliberately: this is the poll interval of the loop itself. The exit
+                # condition is "the row count STOPPED growing", i.e. the absence of new
+                # rows, which no locator can auto-wait for (issue #431).
                 page.wait_for_timeout(900)
 
             ids = page.eval_on_selector_all(
@@ -537,6 +548,9 @@ class TestTranscriptSearch:
         """Searching the transcript produces no new (non-benign) console errors."""
         search_input = _open_transcript_search(detail_page)
         search_input.fill(_pick_search_word(detail_page))
-        detail_page.wait_for_timeout(3500)  # allow the backend completeness probe to resolve
+        # Kept deliberately: allow the debounced backend completeness probe to fire AND
+        # resolve. networkidle can return before a debounced request has even started, and
+        # the assertion is the absence of console errors from it (issue #431).
+        detail_page.wait_for_timeout(3500)
         unexpected = _unexpected_console_errors(detail_page._console_errors)  # type: ignore[attr-defined]
         assert not unexpected, f"Unexpected console errors during transcript search: {unexpected}"

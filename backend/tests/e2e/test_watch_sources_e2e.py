@@ -17,20 +17,24 @@ from __future__ import annotations
 
 import os
 import tempfile
+import uuid
 
 import pytest
 import requests
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+# This module used to define its own ``FRONTEND_URL``/``BACKEND_URL`` constants here.
+# A module constant is evaluated at import time, so it could not see ``--base-url`` /
+# ``--backend-url`` and this file always drove whatever was on the default ports — even
+# when the run was aimed at an isolated stack (issue #431). Everything below takes
+# conftest's ``base_url`` / ``backend_url`` fixtures instead.
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
 
 
 @pytest.fixture(scope="module")
-def local_watch_capability() -> bool:
+def local_watch_capability(backend_url: str) -> bool:
     """Whether the stack exposes the local-folder watch capability.
 
     The stepper defaults to a *local* source when the watch overlay is up
@@ -40,13 +44,13 @@ def local_watch_capability() -> bool:
     """
     try:
         resp = requests.post(
-            f"{BACKEND_URL}/api/auth/token",
+            f"{backend_url}/api/auth/token",
             data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
             timeout=15,
         )
         token = resp.json().get("access_token")
         caps = requests.get(
-            f"{BACKEND_URL}/api/watch-sources/capabilities",
+            f"{backend_url}/api/watch-sources/capabilities",
             headers={"Authorization": f"Bearer {token}"},
             timeout=15,
         ).json()
@@ -64,6 +68,60 @@ def require_local_watch(local_watch_capability: bool) -> None:
         )
 
 
+#: Every watch source this file types a name into carries this prefix, so the teardown
+#: below can sweep by name even when a test aborted before its own UI delete.
+SOURCE_PREFIX = "e2e-watch-"
+
+
+def _unique_source_name() -> str:
+    return f"{SOURCE_PREFIX}{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture
+def watch_source_names(backend_url: str):
+    """Hand out run-unique watch-source names and delete anything left behind.
+
+    Two hygiene problems this closes, both real:
+
+    * The names were fixed (``"E2E Created Source"``), so a run interrupted before its
+      UI delete left a row that the next run could not tell from its own — and a watch
+      source is not inert, it is a configured ingestion path against a host directory.
+    * The delete lived at the END of the test, on the happy path. The assertion that the
+      new card appears is the one most likely to fail, and it fires *after* Save has
+      already created the row — precisely the case where cleanup was skipped.
+
+    Teardown sweeps by prefix through the API rather than by remembered ids, so it also
+    reaps rows from earlier aborted runs.
+    """
+    names: list[str] = []
+
+    def _make() -> str:
+        name = _unique_source_name()
+        names.append(name)
+        return name
+
+    yield _make
+
+    try:
+        token = requests.post(
+            f"{backend_url}/api/auth/token",
+            data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
+            timeout=15,
+        ).json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        listing = requests.get(f"{backend_url}/api/watch-sources", headers=headers, timeout=15)
+        payload = listing.json() if listing.status_code == 200 else {}
+        sources = payload if isinstance(payload, list) else payload.get("items", [])
+        for source in sources:
+            if str(source.get("name", "")).startswith(SOURCE_PREFIX):
+                requests.delete(
+                    f"{backend_url}/api/watch-sources/{source['uuid']}", headers=headers, timeout=15
+                )
+    except (requests.RequestException, KeyError, ValueError) as exc:
+        # A teardown must not mask the test result; report and move on.
+        print(f"watch-source teardown failed (leaves orphan {SOURCE_PREFIX}* sources): {exc}")
+
+
 BENIGN_CONSOLE_SUBSTRINGS = (
     "Failed to load resource",
     "status code 401",
@@ -79,11 +137,11 @@ def _unexpected_console_errors(errors: list[str]) -> list[str]:
     return [e for e in errors if not any(sub in e for sub in BENIGN_CONSOLE_SUBSTRINGS)]
 
 
-def _form_login_with_retry(page, attempts: int = 4) -> None:
+def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
     last_error: Exception | None = None
     for attempt in range(attempts):
         try:
-            page.goto(FRONTEND_URL)
+            page.goto(base_url)
             if page.locator(".user-button").count():
                 page.wait_for_selector(".user-button", timeout=10000)
                 return
@@ -95,17 +153,19 @@ def _form_login_with_retry(page, attempts: int = 4) -> None:
             return
         except Exception as exc:  # noqa: BLE001
             last_error = exc
+            # Kept deliberately: this wait IS the rate-limit backoff, not a settle for
+            # something a locator could poll for (issue #431).
             page.wait_for_timeout(5000 * (attempt + 1))
     raise AssertionError(f"Could not log in via form after {attempts} attempts: {last_error}")
 
 
 @pytest.fixture(scope="module")
-def auth_storage_state(browser):  # type: ignore[no-untyped-def]
+def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
     context = browser.new_context(
         viewport={"width": 1920, "height": 1080}, ignore_https_errors=True
     )
     page = context.new_page()
-    _form_login_with_retry(page)
+    _form_login_with_retry(page, base_url)
     fd, state_file = tempfile.mkstemp(suffix=".json")
     os.close(fd)
     context.storage_state(path=state_file)
@@ -117,7 +177,7 @@ def auth_storage_state(browser):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture
-def app_page(browser, auth_storage_state: str):  # type: ignore[no-untyped-def]
+def app_page(browser, auth_storage_state: str, base_url: str):  # type: ignore[no-untyped-def]
     context = browser.new_context(
         storage_state=auth_storage_state,
         viewport={"width": 1920, "height": 1080},
@@ -127,7 +187,7 @@ def app_page(browser, auth_storage_state: str):  # type: ignore[no-untyped-def]
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page._console_errors = errors  # type: ignore[attr-defined]
-    page.goto(FRONTEND_URL)
+    page.goto(base_url)
     page.wait_for_selector(".user-button", timeout=30000)
     yield page
     page.close()
@@ -153,21 +213,32 @@ class TestWatchSourcesPanel:
         # The "Add Watch Source" button should be present.
         expect(app_page.get_by_role("button", name="Add Watch Source")).to_be_visible(timeout=8000)
 
-    def test_stepper_walks_all_steps(self, app_page: Page, require_local_watch: None) -> None:
-        """The Add editor is a guided stepper: Next walks every step to Save."""
+    def test_stepper_walks_all_steps(
+        self, app_page: Page, require_local_watch: None, watch_source_names
+    ) -> None:
+        """The Add editor is a guided stepper: Next walks every step to Save.
+
+        Stops at Save without clicking it, so nothing is created — but the name still
+        comes from ``watch_source_names``, because "this walkthrough never saves" is a
+        property of today's assertions, not of the form.
+        """
         _open_watch_sources(app_page)
         app_page.get_by_role("button", name="Add Watch Source").click()
         expect(app_page.get_by_text("Add Watch Source").first).to_be_visible(timeout=8000)
 
         dialog = app_page.locator(".modal-container")
         # Name is required before the connection step can advance.
-        app_page.fill("#ws-name", "E2E Stepper Source")
+        app_page.fill("#ws-name", watch_source_names())
 
         # Walk Connection → Processing → Advanced → Organize via Next.
         for _ in range(3):
             nxt = dialog.get_by_role("button", name="Next", exact=True)
             expect(nxt).to_be_enabled(timeout=5000)
             nxt.click()
+            # Kept deliberately: every step renders its OWN enabled "Next", so the
+            # expect() at the top of the next iteration cannot tell "this step advanced"
+            # from "the step hasn't re-rendered yet" — dropping the settle risks clicking
+            # one step twice and never reaching Save (issue #431).
             app_page.wait_for_timeout(200)
 
         # On the last step the primary action is Save.
@@ -180,11 +251,16 @@ class TestWatchSourcesPanel:
         assert not unexpected, f"Unexpected console errors: {unexpected}"
 
     def test_create_and_delete_local_source(
-        self, app_page: Page, require_local_watch: None
+        self, app_page: Page, require_local_watch: None, watch_source_names
     ) -> None:
-        """Create a local watch source through the stepper, see it listed, delete it."""
+        """Create a local watch source through the stepper, see it listed, delete it.
+
+        The UI delete below is the behaviour under test. ``watch_source_names``'s teardown
+        is the safety net for the case the UI path never reaches — a failure between Save
+        and the delete click used to leave a live watch source configured on the stack.
+        """
         _open_watch_sources(app_page)
-        name = "E2E Created Source"
+        name = watch_source_names()
         app_page.get_by_role("button", name="Add Watch Source").click()
         dialog = app_page.locator(".modal-container")
         app_page.fill("#ws-name", name)
@@ -192,6 +268,10 @@ class TestWatchSourcesPanel:
             nxt = dialog.get_by_role("button", name="Next", exact=True)
             expect(nxt).to_be_enabled(timeout=5000)
             nxt.click()
+            # Kept deliberately: every step renders its OWN enabled "Next", so the
+            # expect() at the top of the next iteration cannot tell "this step advanced"
+            # from "the step hasn't re-rendered yet" — dropping the settle risks clicking
+            # one step twice and never reaching Save (issue #431).
             app_page.wait_for_timeout(200)
         dialog.get_by_role("button", name="Save", exact=True).click()
 

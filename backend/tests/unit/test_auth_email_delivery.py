@@ -33,6 +33,7 @@ from app.core.constants import DEFAULT_FRONTEND_URL
 from app.services import email_service as mod
 from app.services.email_service import EmailDeliveryError
 from app.services.email_service import EmailService
+from tests.helpers import does_not_raise
 
 RESET_URL = "https://transcribe.example.org/reset-password?token=SUPERSECRETTOKEN"
 LOCALHOST_RESET_URL = f"{DEFAULT_FRONTEND_URL}/reset-password?token=SUPERSECRETTOKEN"
@@ -347,7 +348,8 @@ class TestSensitiveBodiesAreNeverLogged:
         caplog.set_level(logging.DEBUG)
         session = FakeSession(setting_value=CONFIG_UUID, config=FakeConfig())
         _service(session).send_password_reset(RECIPIENT, RESET_URL)
-        self._assert_clean(caplog)
+        with does_not_raise("a successful send must complete without logging the message body"):
+            self._assert_clean(caplog)
 
     def test_invitation_and_verification_bodies_are_sensitive_too(self, no_env_smtp, caplog):
         caplog.set_level(logging.DEBUG)

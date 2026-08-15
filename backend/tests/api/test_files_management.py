@@ -9,7 +9,8 @@ Covers ``files/management.py`` (mounted under ``/api/files``):
 - ``DELETE /api/files/{uuid}/force``          (admin only)
 - ``GET    /api/files/management/stuck``
 - ``POST   /api/files/management/bulk-action``
-- ``POST   /api/files/management/cleanup-orphaned`` (admin only)
+- ``POST   /api/files/management/cleanup-orphaned`` (admin only; recovers STUCK
+  files despite the path — real orphan cleanup is ``POST /admin/data-integrity``)
 
 Celery dispatch is stubbed (``SKIP_CELERY=True``), so the *task-firing* branches
 take their "test mode" paths and we assert DB/status transitions and the
@@ -24,6 +25,7 @@ the result list, NOT a top-level 403 (the overall request is still 200).
 from __future__ import annotations
 
 import uuid
+from unittest.mock import patch
 
 import pytest
 from fastapi import status
@@ -300,17 +302,21 @@ def test_bulk_action_missing_fields_422(client, user_token_headers):
 
 # ---------------------------------------------------------------------------
 # POST /api/files/management/cleanup-orphaned  (admin only)
+#
+# The path says "orphaned"; the handler recovers STUCK files. The response used
+# to advertise a `marked_orphaned` counter that was initialized and never
+# incremented, so it reported 0 on every call in every deployment.
 # ---------------------------------------------------------------------------
 
 
 def test_cleanup_orphaned_non_admin_403(client, user_token_headers):
     response = client.post("/api/files/management/cleanup-orphaned", headers=user_token_headers)
     assert response.status_code == status.HTTP_403_FORBIDDEN
-    assert response.json()["detail"] == "Only administrators can cleanup orphaned files"
+    assert response.json()["detail"] == "Only administrators can recover stuck files"
 
 
 def test_cleanup_orphaned_admin_dry_run(client, admin_token_headers):
-    """An admin dry-run returns the cleanup summary without mutating anything."""
+    """An admin dry-run returns the recovery summary without mutating anything."""
     response = client.post(
         "/api/files/management/cleanup-orphaned",
         headers=admin_token_headers,
@@ -319,7 +325,59 @@ def test_cleanup_orphaned_admin_dry_run(client, admin_token_headers):
     assert response.status_code == status.HTTP_200_OK
     body = response.json()
     assert body["dry_run"] is True
+    assert body["recovered"] == 0
     assert "stuck_files_found" in body
+
+
+def test_cleanup_orphaned_response_promises_no_orphan_accounting(client, admin_token_headers):
+    """The response carries only counters the handler actually maintains.
+
+    ``marked_orphaned`` was dead: nothing in this handler marks a file orphaned
+    (that is ``POST /admin/data-integrity``), so the key could only ever report 0
+    and an operator reading it concluded there was nothing to clean up.
+    """
+    response = client.post(
+        "/api/files/management/cleanup-orphaned",
+        headers=admin_token_headers,
+        params={"dry_run": True},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert set(response.json()) == {"stuck_files_found", "recovered", "errors", "dry_run"}
+
+
+def test_cleanup_orphaned_recovers_a_stuck_file(
+    client, admin_token_headers, db_session, admin_user
+):
+    """A non-dry run recovers what the stuck detector found and counts it.
+
+    Pins the endpoint to its real job — ``check_for_stuck_files`` +
+    ``recover_stuck_file`` — rather than to the orphan cleanup its name promises.
+    """
+    media_file = _make_file(db_session, admin_user, file_status="processing")
+
+    def _one_stuck_file(db, stuck_threshold_hours=6):
+        return [media_file.id]
+
+    recovered: list[int] = []
+
+    def _recover(db, file_id):
+        recovered.append(file_id)
+        return True
+
+    with (
+        patch("app.api.endpoints.files.management.check_for_stuck_files", _one_stuck_file),
+        patch("app.api.endpoints.files.management.recover_stuck_file", _recover),
+    ):
+        response = client.post(
+            "/api/files/management/cleanup-orphaned", headers=admin_token_headers
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["stuck_files_found"] == 1
+    assert body["recovered"] == 1
+    assert body["errors"] == []
+    assert recovered == [media_file.id]
 
 
 @pytest.mark.parametrize(

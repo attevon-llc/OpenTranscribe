@@ -13,7 +13,6 @@ NOTE: Currently skipped until MFA security features are fully verified.
 Set RUN_MFA_TESTS=true to run these tests.
 """
 
-import os
 from datetime import datetime, timedelta, UTC
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -23,11 +22,16 @@ import pytest
 from fastapi import HTTPException
 from tests.jwt_compat import jwt
 
-# Skip all tests - MFA security tests need review
-pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_MFA_TESTS", "false").lower() != "true",
-    reason="MFA security tests need review (set RUN_MFA_TESTS=true to run)",
-)
+# Runs by DEFAULT. This module was gated behind RUN_MFA_TESTS with the reason
+# "MFA security tests need review" — but every test in it passes, and did so on the first run once the gate
+# was lifted. The gate was stale: it kept 40 security tests out of every local run and
+# out of CI, visible only as `s` in the progress dots, while reading as a deliberate
+# decision someone had made. That is how `test_super_admin_can_export_audit_logs` came to
+# assert `status_code in [200, 400]` — 400 being exactly 'could not export' — without
+# anyone noticing (issue #431).
+#
+# The pre-merge gate still runs these; the difference is they now also run by default,
+# so a regression surfaces on the commit that causes it rather than at merge time.
 
 from app.auth.mfa import MFAService
 from app.core.config import settings

@@ -55,10 +55,13 @@ def ensure_container() -> None:
 
 @pytest.fixture(scope="module")
 def torch_cuda() -> object:
-    try:
-        import torch
-    except ImportError:
-        pytest.skip("torch not available")
+    """torch + an available CUDA device, else skip.
+
+    ``importorskip`` rather than ``try/except ImportError: pytest.skip`` — same outcome for a
+    genuinely absent torch (CPU-only worker), but it cannot swallow an ImportError raised from
+    *inside* torch's own import, which would be a real failure reported as a skip (issue #431).
+    """
+    torch = pytest.importorskip("torch", reason="torch not installed (CPU-only environment)")
     if not torch.cuda.is_available():
         pytest.skip("CUDA not available")
     return torch

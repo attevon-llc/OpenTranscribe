@@ -291,6 +291,8 @@ class TestMatchCounts:
         """All keyword-matched files must have keyword_occurrences > 0."""
         for q in ["china", "fight", "Trump", "NASA"]:
             data = search(headers, q)
+            # Filtered invariant; an empty result list would make it vacuous (issue #431).
+            assert data["results"], f"no results for {q!r} — is the pinned corpus indexed?"
             for r in data["results"]:
                 if not r["semantic_only"]:
                     assert r["keyword_occurrences"] > 0, (
@@ -300,6 +302,10 @@ class TestMatchCounts:
     def test_semantic_files_zero_keyword_count(self, headers):
         """Semantic-only files must have keyword_occurrences == 0."""
         data = search(headers, "geopolitics")
+        # A filtered invariant, not a guard — but an EMPTY result list made the loop body
+        # never run, so the whole test passed vacuously against an unindexed corpus
+        # (issue #431). Assert the search returned something first.
+        assert data["results"], "no results for 'geopolitics' — is the pinned corpus indexed?"
         for r in data["results"]:
             if r["semantic_only"]:
                 assert r["keyword_occurrences"] == 0
@@ -314,6 +320,10 @@ class TestSpeakerSearch:
     def test_joe_rogan_metadata_speaker(self, headers):
         """All files with Joe Rogan as speaker must have metadata_speaker source."""
         data = search(headers, "Joe Rogan")
+        # A filtered invariant, not a guard — but an EMPTY result list made the loop body
+        # never run, so the whole test passed vacuously against an unindexed corpus
+        # (issue #431). Assert the search returned something first.
+        assert data["results"], "no results for 'Joe Rogan' — is the pinned corpus indexed?"
         for r in data["results"]:
             if "Joe Rogan" in r.get("speakers", []):
                 assert "metadata_speaker" in r["match_sources"], (
@@ -351,6 +361,10 @@ class TestHighlightType:
     def test_keyword_type(self, headers):
         """Keyword-matched files must have at least one keyword-type occurrence."""
         data = search(headers, "china")
+        # A filtered invariant, not a guard — but an EMPTY result list made the loop body
+        # never run, so the whole test passed vacuously against an unindexed corpus
+        # (issue #431). Assert the search returned something first.
+        assert data["results"], "no results for 'china' — is the pinned corpus indexed?"
         for r in data["results"]:
             if not r["semantic_only"]:
                 types = {occ.get("highlight_type") for occ in r["occurrences"]}
@@ -361,6 +375,10 @@ class TestHighlightType:
     def test_semantic_type(self, headers):
         """Semantic-only occurrences must have highlight_type='semantic'."""
         data = search(headers, "international relations between superpowers")
+        # A filtered invariant, not a guard — but an EMPTY result list made the loop body
+        # never run, so the whole test passed vacuously against an unindexed corpus
+        # (issue #431). Assert the search returned something first.
+        assert data["results"], "no semantic results — is the pinned corpus indexed?"
         for r in data["results"]:
             if r["semantic_only"]:
                 for occ in r["occurrences"]:

@@ -195,11 +195,53 @@ Host venv for pre-commit / mypy / ruff / bandit / pytest outside Docker lives at
 
 **Every commit must pass pre-commit — no exceptions, and never `--no-verify`.** The hooks are installed locally and are the *same* checks CI runs in its "Run Pre-commit Hooks" job, so anything you skip locally fails the PR instead. Running `ruff` (or any single hook) by hand is **not** a substitute: mypy and prettier catch a different class of problem and have both blocked a PR that was otherwise green locally.
 
-Run the full suite before committing — not just the staged subset:
+Run the full suite before committing — not just the staged subset, and through the
+concurrency-guarded wrapper, not bare `pre-commit` (issue #434):
 
 ```bash
-backend/venv/bin/pre-commit run --all-files    # the gate CI mirrors
+scripts/safe-precommit.sh run --all-files    # the gate CI mirrors
 ```
+
+The wrapper (`scripts/safe-precommit.sh`, self-test: `scripts/safe-precommit-selftest.sh`)
+refuses to start — rather than racing silently — when either of the two *known* unsafe
+overlaps below is already in flight: another `safe-precommit.sh` run, or a
+`run-mutation-tests.sh --verify` run holding one of its per-module locks. **It does not make
+an arbitrary unstaged edit elsewhere in the tree safe** — only those two specific hazards.
+
+> ⚠️ **NEVER run `pre-commit` OR `git commit` while anything else is writing to this
+> checkout.** Not `--all-files`, not `--files <paths>`, not a plain `git commit`. **All three
+> stash every unstaged change in the entire repo** — including another agent's in-flight work in
+> files you are not touching — and restore it when the run ends. What you staged is irrelevant:
+> the stash happens *before any hook runs* and covers the whole tree.
+>
+> This paragraph used to recommend `--files` or "just commit" as the safe alternative. **That
+> advice was wrong and caused the incident below.** There is no safe alternative for a tree with
+> unrelated unstaged work in progress; there is only waiting for a quiet tree. The wrapper above
+> catches the two overlaps that have actually bitten this repo — a second pre-commit run, and a
+> mutation `--verify` mutation left live — it is not a general fix for the hazard in this box.
+>
+> Three failure modes, all observed here:
+>
+> 1. **Another writer's work is stashed mid-edit.** An agent's `Edit` failed with "file has been
+>    modified", it re-read and re-applied, and the restore then reinstated the *earlier* draft,
+>    silently discarding the newer one. Caught only by an unrelated `git diff`. Earlier the same
+>    day, a different agent's `conftest.py` was stashed during a failing commit and restored with
+>    `Stashed changes conflicted with hook auto-fixes... Rolling back fixes` — recovered, but by
+>    luck. If a hook crashes in that window the only copy is
+>    `~/.cache/pre-commit/patch<timestamp>-<pid>`.
+> 2. **A whole-tree hook fails against a tree that never existed.** `frontend-check` scans all of
+>    `frontend/src`, so with an unstaged type change stashed away and an untracked test file left
+>    behind, svelte-check failed with 5 errors about a property that *does* exist. Nothing was
+>    wrong. The natural response — "fixing" correct code — makes it worse.
+> 3. **Spurious `files were modified by this hook`** with no findings at all (bandit printing
+>    "No issues identified", frontend-check printing "All frontend checks passed"). The
+>    stash/restore moved the files, not the hook.
+>
+> A related trap that is *not* about concurrency: pre-commit's hooks see the **staged** snapshot.
+> If you `git add` a file and then edit it further, mypy/ruff check the stale staged copy and
+> report errors you have already fixed. Re-`git add` before committing.
+>
+> `--all-files` is always correct in CI, where nothing else is writing.
 
 Hook inventory is in `.pre-commit-config.yaml`. The frontend hook only fires when `frontend/src/**/*.{svelte,ts,js,css,html}` is staged. Note that `prettier` **rewrites files** and then reports failure — re-stage and re-run, don't "fix" anything by hand.
 
@@ -217,6 +259,57 @@ Manual frontend check: `./scripts/frontend-check.sh [--no-claude] [--check-only]
 ```
 
 MinIO/OpenSearch-backed tests **auto-enable** when the dev stack is reachable (conftest TCP-probes localhost:5178/5180) and skip otherwise. Coverage is configured report-only (`pytest --cov=app`, `npm run test:coverage`).
+
+### Four tools that keep the suite honest (issue #431)
+
+A test that cannot fail is worse than no test: it buys false confidence and hides the defect it
+was written to catch. These exist because this repo had shipped all four failure modes — an
+assertion that passed against an empty index, a `gpu` marker that selected nothing, 240 security
+tests gated off behind stale env vars, and a progress endpoint returning a hardcoded value that
+no test referenced.
+
+```bash
+python3 scripts/audit-tests.py backend/tests        # 16 AST detectors, exits 1 on new offenders
+cd frontend && npm run test:audit                   # the vitest sibling, 10 detectors
+npm run test:audit:selftest                         #   ...and ITS 21-case self-test
+python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
+./scripts/run-mutation-tests.sh --module spans      # opt-in, never in the gate or CI
+```
+
+- **The auditors are allowlist-gated**, keyed `<file>::<test>::<category>` with a mandatory
+  written reason. The category is part of the key on purpose: an entry keyed by test alone once
+  exempted a test from all six detectors at once.
+- **`--selftest` is not optional ceremony.** It caught two detectors in each auditor that matched
+  *nothing* — silently reporting 0 findings, which is indistinguishable from a clean suite. Any
+  new detector needs a must-fire case and a must-stay-clean case.
+- **`analyze-test-timing.py` finds barriers, not just slow tests.** Unrelated tests from many
+  files sharing a sub-second duration band is a released lock queue, not a coincidence; that is
+  how one worker was found owning 81% of the wall clock.
+- **Coverage says a line RAN; mutation testing says the suite would NOTICE if it were wrong.**
+  Scoped to six security-critical modules. A surviving mutant is a finding — add the missing
+  assertion, or conclude the line is dead and delete it. Never loosen a test to kill one.
+- **Profile before theorising about test speed.** Two plausible hypotheses cost two full
+  measurement cycles on the Redis-retry bug; `python -m cProfile -o out.prof -m pytest <test>`
+  found it in one.
+
+Current (measured 2026-08-13, load average ~10 on 48 cores — quote the command, not the
+number, if you are unsure): backend **6,623 passed / 62 real skips / 104 s** (from
+4,752 / 458 / 511 s); frontend **669 passed / 76 files / 21.6 s**; e2e **341 collected,
+271 passed / 1 failed** (`test_promote_publishes_to_the_shared_vocabulary`), plus 8
+visual-regression baselines currently failing. The junit XML reports 146 skipped because
+it counts the 84 xfails; 62 is the real skip count.
+
+**These numbers rot — re-derive rather than trust them.** The previous values above were
+wrong by 1,294 backend tests and 188 frontend tests when checked. `./scripts/run-backend-tests.sh
+--summary` and `cd frontend && npm run test` answer in seconds.
+
+Barrier clusters: none remain at sub-second scale, but a residual ~9 s DDL cluster does —
+21 of the 35 tests over 5 s are `v3xx_migration_consistency` tests from 8 different modules
+all landing near 9 s, which is the `ddl_exclusive` advisory-lock queue. DDL modules are
+~418 s of the ~1,197 s summed CPU. Far better than the 414-of-511 s it started from, but
+"zero barrier clusters" overstates it. Regenerate the timing baseline with
+`./scripts/run-backend-tests.sh && cp /tmp/ot-backend-tests/last.xml baseline.xml` — it is
+gitignored, because a committed measurement rots.
 
 ### E2E (pytest + Playwright)
 

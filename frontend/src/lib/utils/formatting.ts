@@ -120,3 +120,68 @@ export function formatSrtTimestamp(totalSeconds: number): string {
 export function formatVttTimestamp(totalSeconds: number): string {
   return formatSrtTimestamp(totalSeconds).replace(',', '.');
 }
+
+/**
+ * Task progress (a backend `float` in 0..1) as an integer percentage 0-100.
+ *
+ * Guards three real failure modes in `TasksGrid.svelte` / `FileDetailModal.svelte`,
+ * which each rendered `task.progress * 100` inline from an `any`-typed prop:
+ *
+ *  - **Missing/`null`/`NaN` → 0**, not `NaN`. `TasksGrid` had no guard at all, so a
+ *    task row without `progress` rendered `style="width: NaN%"` (an invalid
+ *    declaration the browser drops, leaving a zero-width bar and `NaN%` text).
+ *    `FileDetailModal` guarded `!== undefined`, which `null` PASSES, so a nullable
+ *    `progress` would have printed `Math.round(null * 100)` = "0%" — a plausible
+ *    value, which is worse than a visibly broken one.
+ *  - **Out-of-range → clamped.** The backend reported a hardcoded `0.5` for eleven
+ *    months before it started reporting truthfully; if it ever switches to a 0-100
+ *    scale, an unclamped `* 100` renders a 5000%-wide bar and no test fails.
+ *    Clamping bounds the damage to "pinned at 100%", which is visible and safe.
+ *
+ * Deliberately does NOT try to auto-detect the scale: silently reinterpreting
+ * `1` as either "1%" or "100%" would hide a contract change instead of surfacing it.
+ */
+export function taskProgressPercent(progress: unknown): number {
+  const value = typeof progress === 'number' ? progress : Number.NaN;
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(100, Math.max(0, Math.round(value * 100)));
+}
+
+/**
+ * Render ISO language codes as names in the reader's own language.
+ *
+ * Purely presentational, and one of the approved client-side transforms: it is
+ * `Intl.*` locale formatting over data the backend already sent, not a business
+ * rule. The backend deliberately sends codes rather than names — a name is a
+ * display choice that depends on who is reading.
+ *
+ * Falls back to the raw code for anything `Intl.DisplayNames` does not know, and
+ * for the whole call if the runtime lacks it, so an unrecognised code degrades to
+ * "es" rather than disappearing. A language silently dropped from this list would
+ * understate the warning it appears in.
+ *
+ * @param codes ISO 639-1 codes, e.g. `['es', 'fr']`.
+ * @param locale BCP-47 locale to render the names in; defaults to the browser's.
+ * @returns A localized, comma-joined list, or `''` when `codes` is empty.
+ */
+export function formatLanguageNames(codes: string[], locale?: string): string {
+  if (!codes.length) return '';
+
+  let display: Intl.DisplayNames | null = null;
+  try {
+    display = new Intl.DisplayNames([locale ?? navigator.language], { type: 'language' });
+  } catch {
+    display = null;
+  }
+
+  const names = codes.map((code) => {
+    if (!display) return code;
+    try {
+      return display.of(code) ?? code;
+    } catch {
+      return code;
+    }
+  });
+
+  return names.join(', ');
+}

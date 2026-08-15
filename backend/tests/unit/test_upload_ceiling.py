@@ -16,6 +16,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.endpoints.files.upload import validate_file_size_for_tenant
+from tests.helpers import does_not_raise
 
 GB = 1024**3
 
@@ -27,11 +28,14 @@ def test_default_ceiling_matches_the_advertised_limit():
 
 
 def test_file_under_the_ceiling_is_accepted():
-    validate_file_size_for_tenant(5 * GB, None)  # must not raise
+    with does_not_raise("5 GB is well under the 15 GB ceiling"):
+        validate_file_size_for_tenant(5 * GB, None)
 
 
 def test_file_exactly_at_the_ceiling_is_accepted():
-    validate_file_size_for_tenant(15 * GB, None)
+    """The boundary is inclusive — 15 GB is the advertised limit, not one byte over it."""
+    with does_not_raise("15 GB is exactly the advertised ceiling, so it must be accepted"):
+        validate_file_size_for_tenant(15 * GB, None)
 
 
 def test_file_over_the_ceiling_is_rejected():
@@ -51,7 +55,8 @@ def test_wildly_oversized_upload_is_rejected():
 @pytest.mark.parametrize("size", [0, -1, None])
 def test_unknown_size_is_not_rejected_here(size):
     """0/unknown is re-checked at complete against the size MinIO observed."""
-    validate_file_size_for_tenant(size, None)  # type: ignore[arg-type]
+    with does_not_raise(f"size={size!r} is unknown, not oversized, so this gate must pass it"):
+        validate_file_size_for_tenant(size, None)  # type: ignore[arg-type]
 
 
 def test_tenant_ceiling_tightens_the_global_one(monkeypatch):
@@ -88,7 +93,8 @@ def test_ceiling_can_be_disabled(monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "MAX_UPLOAD_BYTES", None)
-    validate_file_size_for_tenant(500 * GB, None)  # must not raise
+    with does_not_raise("MAX_UPLOAD_BYTES=None disables the ceiling entirely"):
+        validate_file_size_for_tenant(500 * GB, None)
 
 
 def test_complete_upload_enforces_against_the_observed_size():

@@ -23,7 +23,7 @@ from fastapi import status
 from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
 
-from app.api.endpoints.auth import get_current_user
+from app.api.endpoints.auth import get_current_active_user
 from app.core.tenancy import UNSCOPED  # noqa: F401 — re-exported for callers
 from app.core.tenancy import OrgScope  # noqa: F401 — re-exported for callers
 from app.core.tenancy import _Unscoped  # noqa: F401 — re-exported for callers
@@ -104,9 +104,17 @@ def resolve_org_context(request: Request, db: Session, user: User) -> tuple[int 
 def get_current_context(
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_active_user),
 ) -> RequestContext:
-    """Resolve the request's tenant context (personal when no org applies)."""
+    """Resolve the request's tenant context (personal when no org applies).
+
+    Chains through ``get_current_active_user``, not ``get_current_user``: this is
+    the credential entry point for ~100 routes (all of chat, org-admin, tags,
+    collections, upload prepare/cancel), and depending on the credential layer
+    meant every one of them silently opted out of the account-lifecycle gate —
+    a deactivated, expired, unapproved or ``must_change_password`` account could
+    still create conversations, delete files and read an org's audit log.
+    """
     org_id, org_role = resolve_org_context(request, db, current_user)
     return RequestContext(user=current_user, org_id=org_id, org_role=org_role)
 

@@ -28,7 +28,6 @@ from app.core.constants import get_speaker_index
 from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.services.opensearch_service import get_speaker_embedding
-from app.services.profile_embedding_service import ProfileEmbeddingService
 
 logger = logging.getLogger(__name__)
 
@@ -317,11 +316,12 @@ class SmartSpeakerSuggestionService:
             int(speaker.media_file_id)
         )
 
-        # Step 2: Profile suggestions (speaker-to-profile matching)
+        # Step 2: Profile suggestions (speaker-to-profile matching).
+        # Deliberately takes no session: it is an OpenSearch round trip, and every
+        # frame that can reach it must be free of a DB transaction.
         profile_suggestions = SmartSpeakerSuggestionService._get_profile_suggestions_optimized(
             embedding_array,
             user_id,
-            db,
             confidence_threshold,
             accessible_profile_ids=accessible_profile_ids,
             organization_id=organization_id,
@@ -370,12 +370,19 @@ class SmartSpeakerSuggestionService:
     def _get_profile_suggestions_optimized(
         embedding: np.ndarray,
         user_id: int,
-        db: Session,
         threshold: float,
         accessible_profile_ids: set[int] | None = None,
         organization_id: int | None = None,
     ) -> list[ConsolidatedSuggestion]:
-        """Get suggestions from speaker profiles using OpenSearch native similarity."""
+        """Get suggestions from speaker profiles using OpenSearch native similarity.
+
+        **Takes no ``Session`` on purpose.** Every call in this body is an OpenSearch
+        round trip; accepting a caller-owned session would let one run with a Postgres
+        transaction open one frame up, which is the ``session-param-slow-work`` defect
+        (see ``backend/app/tasks/CLAUDE.md``). The tenant scope it needs
+        (``organization_id``) is resolved by the caller's short read phase and handed
+        over as plain data.
+        """
         try:
             from app.services.opensearch_service import opensearch_client
 
@@ -417,62 +424,21 @@ class SmartSpeakerSuggestionService:
             return suggestions
 
         except Exception as e:
+            # There used to be a ``_get_profile_suggestions`` fallback here that
+            # re-ran the SAME kNN through ``ProfileEmbeddingService`` — a second
+            # implementation of one query, and the only reason this function
+            # needed a ``Session`` at all (that method takes one and ignores it).
+            # When the cluster is the thing that failed, the retry failed
+            # identically and swallowed its own error, so it only ever converted
+            # this ``return []`` into a slower ``return []``.
             logger.error(f"Error in optimized profile suggestions: {e}")
-            # Fallback to original method
-            return SmartSpeakerSuggestionService._get_profile_suggestions(
-                embedding,
-                user_id,
-                db,
-                threshold,
-                accessible_profile_ids=accessible_profile_ids,
-                organization_id=organization_id,
-            )
-
-    @staticmethod
-    def _get_profile_suggestions(
-        embedding: np.ndarray,
-        user_id: int,
-        db: Session,
-        threshold: float,
-        accessible_profile_ids: set[int] | None = None,
-        organization_id: int | None = None,
-    ) -> list[ConsolidatedSuggestion]:
-        """Get suggestions from speaker profiles"""
-        suggestions = []
-
-        try:
-            # Use ProfileEmbeddingService to find matching profiles
-            profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
-                db,
-                embedding.tolist(),
-                user_id,
-                threshold=threshold,
-                accessible_profile_ids=accessible_profile_ids,
-                organization_id=organization_id,
-            )
-
-            for match in profile_matches:
-                # Convert match to suggestion format expected by helper
-                suggestion_match = {
-                    "profile_id": match["profile_id"],
-                    "profile_name": match["profile_name"],
-                    "speaker_count": match["embedding_count"],
-                    "similarity": match["similarity"],
-                }
-                suggestion = _convert_profile_match_to_suggestion(suggestion_match)
-                if suggestion:
-                    suggestions.append(suggestion)
-
-        except Exception as e:
-            logger.error(f"Error getting profile suggestions: {e}")
-
-        return suggestions
+            return []
 
     @staticmethod
     def consolidate_suggestions_batch(
         speakers: list[Speaker],
         user_id: int,
-        db: Session,
+        file_org_map: dict[int, int | None],
         confidence_threshold: float = 0.5,
         max_suggestions: int = 10,
     ) -> dict[int, list[ConsolidatedSuggestion]]:
@@ -482,6 +448,20 @@ class SmartSpeakerSuggestionService:
         1. One mget for all speaker embeddings
         2. One search to check if profiles exist
         3. One msearch for all kNN profile queries
+
+        **Takes no ``Session``.** Phases 2-4 below are three OpenSearch round trips;
+        holding a caller-owned transaction across them is the
+        ``session-param-slow-work`` defect. The one thing this needed the DB for —
+        each speaker's file-level tenant scope — is now resolved by the caller's
+        short read phase (``_media_file_org_ids``) and passed in as ``file_org_map``.
+
+        Args:
+            speakers: Speakers to generate suggestions for. Only already-loaded
+                columns are read, so no lazy load (and therefore no new
+                transaction) can be triggered from here.
+            user_id: Owner, for the profile-document filter.
+            file_org_map: ``media_file_id -> organization_id`` for every file the
+                ``speakers`` span, from ``_media_file_org_ids``.
 
         Returns dict mapping speaker.id (int) -> list[ConsolidatedSuggestion].
         """
@@ -493,10 +473,10 @@ class SmartSpeakerSuggestionService:
         if not speakers:
             return result
 
-        # Phase 1: Collect LLM suggestions (pure DB, no OS calls)
-        # Also resolve each speaker's tenant scope (its file's org) for the
-        # gated kNN phase below — speakers in the list may span files.
-        file_org_map = _media_file_org_ids(db, {int(s.media_file_id) for s in speakers})
+        # Phase 1: Collect LLM suggestions from data already loaded on the rows
+        # (no query, no OS call). Each speaker's tenant scope — its file's org,
+        # for the gated kNN phase below — comes from the caller-supplied
+        # ``file_org_map``; speakers in the list may span files.
         uuid_to_id: dict[str, int] = {}
         org_by_uuid: dict[str, int | None] = {}
         for speaker in speakers:

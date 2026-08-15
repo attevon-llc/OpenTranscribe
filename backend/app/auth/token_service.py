@@ -11,7 +11,8 @@ Security Features:
 - JTI-based revocation via Redis with TTL = remaining token lifetime
 - Automatic cleanup of expired tokens
 - Rate limiting on token refresh operations
-- Dual JWT verification for FIPS 140-3 migration (HS512/HS256 fallback)
+- Dual JWT verification for FIPS 140-3 migration, via the single owner of that
+  decision: ``core.security.accepted_algorithms``
 """
 
 import hashlib
@@ -30,9 +31,13 @@ from sqlalchemy.orm import Session
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.auth.constants import TOKEN_TYPE_ACCESS
+from app.auth.constants import TOKEN_TYPE_REFRESH
 from app.auth.session import InMemoryStore
 from app.auth.session import get_redis_client
 from app.core.config import settings
+from app.core.security import accepted_algorithms
+from app.core.security import signing_algorithm
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
@@ -177,11 +182,19 @@ class TokenService:
 
     def verify_token_with_fallback(self, token: str) -> dict:
         """
-        Verify JWT token with algorithm fallback for FIPS 140-3 migration.
+        Verify a refresh token's signature, accepting the dual-algorithm set.
 
-        Tries HS512 first (FIPS 140-3), falls back to HS256 (legacy).
-        This allows for seamless migration from legacy tokens to FIPS 140-3
-        compliant tokens without forcing all users to re-authenticate.
+        The accepted algorithms come from ``core.security.accepted_algorithms`` —
+        the single owner of that question, shared with ``core.security.verify_token``
+        and both request-path verifiers in ``api/endpoints/auth/dependencies.py``.
+
+        This method used to hardcode its own ordered pair gated on ``FIPS_VERSION``
+        alone. Because ``FIPS_VERSION`` defaults to ``"140-3"``, that pair happened
+        to accept both algorithms on every deployment — which is the only reason
+        nobody noticed that :meth:`create_refresh_token` had been signing HS512 on
+        non-FIPS installs. It also meant this verifier ignored
+        ``FIPS_MIGRATION_MODE`` entirely, so a deployment that had closed its
+        migration window still accepted legacy refresh tokens forever.
 
         Args:
             token: The JWT token string to verify
@@ -190,31 +203,15 @@ class TokenService:
             The decoded token payload as a dictionary
 
         Raises:
-            JoseError: If token verification fails with all algorithms
+            JoseError: If token verification fails (including an expired token,
+                which raises ``ExpiredTokenError``, a ``JoseError`` subclass).
         """
-        algorithms_to_try = []
-
-        # FIPS 140-3 uses HS512
-        if settings.FIPS_VERSION == "140-3":
-            algorithms_to_try = ["HS512", "HS256"]
-        else:
-            algorithms_to_try = ["HS256", "HS512"]
-
         key = OctKey.import_key(settings.JWT_SECRET_KEY)
-        last_error = None
-        for algorithm in algorithms_to_try:
-            try:
-                token_obj = jwt.decode(token, key, algorithms=[algorithm])
-                # joserfc verifies the signature/algorithm only — exp is not
-                # checked automatically (unlike python-jose), so it's validated
-                # explicitly here.
-                jwt.JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
-                return dict(token_obj.claims)
-            except JoseError as e:
-                last_error = e
-                continue
-
-        raise last_error or JoseError("Token verification failed")
+        token_obj = jwt.decode(token, key, algorithms=accepted_algorithms(TOKEN_TYPE_REFRESH))
+        # joserfc verifies the signature/algorithm only — exp is not checked
+        # automatically (unlike python-jose), so it's validated explicitly here.
+        jwt.JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
+        return dict(token_obj.claims)
 
     def create_token(
         self,
@@ -223,10 +220,14 @@ class TokenService:
         token_type: str = "access",  # noqa: S107 - JWT type identifier, not a password  # nosec B107
     ) -> str:
         """
-        Create JWT token with FIPS-compliant algorithm.
+        Create a JWT token, signed with ``core.security.signing_algorithm``.
 
         Creates a JWT token with the provided data and appropriate claims.
-        Uses HS512 algorithm when FIPS 140-3 mode is enabled, otherwise HS256.
+
+        **No production caller reaches this method** — every login path mints its
+        access token through ``auth.direct_auth.create_access_token``. It is kept
+        because the FIPS suite exercises it, and it is held to the same single-owner
+        rule so it cannot become the template for re-introducing a divergent copy.
 
         Args:
             data: Dictionary of claims to include in the token
@@ -252,40 +253,38 @@ class TokenService:
             }
         )
 
-        # Use FIPS 140-3 compliant algorithm. FIPS_MODE is the master switch —
-        # FIPS_VERSION alone defaults to "140-3" even on non-FIPS deployments
-        # (keeps token creation consistent with core/security.create_access_token).
-        algorithm = (
-            settings.JWT_ALGORITHM_V3
-            if settings.FIPS_MODE and settings.FIPS_VERSION == "140-3"
-            else "HS256"
-        )
+        algorithm = signing_algorithm(token_type)
 
         key = OctKey.import_key(settings.JWT_SECRET_KEY)
         return jwt.encode({"alg": algorithm}, to_encode, key, algorithms=[algorithm])
 
     def token_needs_upgrade(self, token: str) -> bool:
         """
-        Check if token was issued with legacy algorithm and needs upgrade.
+        Check whether a token was signed with something other than the current
+        algorithm, and so should be re-issued.
 
-        Used during migration to FIPS 140-3 to identify tokens that should
-        be re-issued with the new HS512 algorithm.
+        Gated on ``settings.fips_140_3_active`` — i.e. on ``FIPS_MODE``, not on
+        ``FIPS_VERSION`` alone. ``FIPS_VERSION`` defaults to ``"140-3"`` on every
+        deployment, so the old form reported "needs upgrade" for perfectly current
+        tokens on ordinary non-FIPS installs. Same defect shape as
+        ``auth/mfa.py:needs_backup_code_regeneration``, fixed the same way.
 
         Args:
             token: The JWT token string to check
 
         Returns:
-            True if token is legacy (HS256) and system is in FIPS 140-3 mode,
-            False otherwise
+            True if the token is verifiable but was not signed with
+            :func:`~app.core.security.signing_algorithm`, on a FIPS 140-3
+            deployment. False otherwise.
         """
+        if not settings.fips_140_3_active:
+            return False
         try:
-            # Try to decode with HS256 only - if it works, token is legacy
             key = OctKey.import_key(settings.JWT_SECRET_KEY)
-            jwt.decode(token, key, algorithms=["HS256"])
-            # If we're in FIPS 140-3 mode, this token needs upgrade
-            return settings.FIPS_VERSION == "140-3"
+            token_obj = jwt.decode(token, key, algorithms=accepted_algorithms(TOKEN_TYPE_ACCESS))
         except JoseError:
             return False
+        return bool(token_obj.header.get("alg") != signing_algorithm(TOKEN_TYPE_ACCESS))
 
     def create_refresh_token(
         self,
@@ -347,8 +346,17 @@ class TokenService:
             "type": "refresh",
         }
 
-        # Encode token with FIPS-compliant algorithm
-        algorithm = settings.JWT_ALGORITHM_V3 if settings.FIPS_VERSION == "140-3" else "HS256"
+        # One owner for "which algorithm signs this", shared with every other issuer.
+        #
+        # This line read `JWT_ALGORITHM_V3 if FIPS_VERSION == "140-3" else "HS256"`,
+        # gated on FIPS_VERSION — which defaults to "140-3". So EVERY deployment,
+        # FIPS or not, signed its refresh tokens with HS512 while its access tokens
+        # were HS256. It was invisible because the only refresh verifier tried both
+        # algorithms; the visible symptom was that `POST /auth/logout` presented with
+        # a refresh token (which sessions.py explicitly supports — "logging out with a
+        # refresh token is still a logout") decoded with `[settings.JWT_ALGORITHM]`
+        # and therefore never revoked anything.
+        algorithm = signing_algorithm(TOKEN_TYPE_REFRESH)
         key = OctKey.import_key(settings.JWT_SECRET_KEY)
         token = jwt.encode({"alg": algorithm}, token_data, key, algorithms=[algorithm])
 
@@ -627,7 +635,7 @@ class TokenService:
         return issued_at < epoch
 
     def revoke_all_user_tokens_in_transaction(
-        self, db: Session, user_id: int, user_uuid: str | None = None
+        self, db: Session, user_id: int, user_uuid: str | None = None, reason: str | None = None
     ) -> int:
         """
         Revoke all refresh tokens for a user **without** committing.
@@ -643,6 +651,14 @@ class TokenService:
         Args:
             db: Database session (transaction owned by the caller)
             user_id: User ID whose tokens should be revoked
+            user_uuid: The user's UUID, resolved from *user_id* when omitted. It
+                is what the revocation epoch is keyed on.
+            reason: Free-text cause, carried into the audit record. The callers
+                that have one (``account_security_service.revoke_all_sessions``
+                and everything above it — admin password reset, role change,
+                lock, MFA reset, SCIM deactivation, directory sync) already
+                phrase it for their log line; passing it here is what turns
+                "sessions were revoked" into "sessions were revoked *because*".
 
         Returns:
             Number of tokens revoked
@@ -673,8 +689,35 @@ class TokenService:
             count += 1
 
         # Access tokens have no rows to revoke — kill them by epoch instead.
-        self.stamp_user_revocation_epoch(
-            user_uuid or self._user_uuid_for(db, user_id),
+        resolved_uuid = user_uuid or self._user_uuid_for(db, user_id)
+        self.stamp_user_revocation_epoch(resolved_uuid)
+
+        # MASS revocation is audited here, not left to the callers.
+        #
+        # :meth:`revoke_token` calls itself "the single choke point for every
+        # revocation path" and audits accordingly — but it is the SINGLE-token
+        # path, and this method is not routed through it. So the bulk path, which
+        # is the one admin password reset, role change, lock, MFA reset, SCIM
+        # deactivation and directory sync all use, produced no audit record at
+        # all (FedRAMP AU-2/AU-12).
+        #
+        # ``user_id``/``username`` name the TARGET, matching :meth:`revoke_token`
+        # above (which stamps the token owner) — this layer has no request and
+        # therefore no actor. Callers that DO know the actor emit their own
+        # actor-keyed record alongside; the two are correlated by ``request_id``.
+        # It fires even when ``count`` is 0: the epoch stamp above still happened
+        # and still invalidated every outstanding access token, so "0 sessions"
+        # is a real revocation, not a no-op.
+        audit_logger.log(
+            event_type=AuditEventType.AUTH_TOKEN_REVOKE,
+            outcome=AuditOutcome.SUCCESS,
+            user_id=user_id,
+            details={
+                "scope": "all_user_tokens",
+                "sessions_revoked": count,
+                "reason": reason,
+                "user_uuid": resolved_uuid,
+            },
         )
 
         return count

@@ -12,12 +12,11 @@ This script downloads:
 Models are cached to standard locations and a manifest is created.
 """
 
+import json
 import os
 import sys
-import json
-import hashlib
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 # PyTorch 2.6+ compatibility fix - MUST be done BEFORE any ML library imports
 # Patch torch.load to default to weights_only=False for trusted HuggingFace models
@@ -29,59 +28,61 @@ try:
 
     def _patched_torch_load(*args, **kwargs):
         # Handle both missing weights_only AND weights_only=None (which PyTorch 2.8 treats as True)
-        if kwargs.get("weights_only") is None:
-            kwargs["weights_only"] = False
+        if kwargs.get('weights_only') is None:
+            kwargs['weights_only'] = False
         return _original_torch_load(*args, **kwargs)
 
     torch.load = _patched_torch_load
-    print("ℹ️  PyTorch 2.6+ compatibility: Patched torch.load for weights_only=False")
+    print('ℹ️  PyTorch 2.6+ compatibility: Patched torch.load for weights_only=False')
 except ImportError:
     # torch not available yet, will be imported later
     pass
 
+
 def print_header(text):
     """Print formatted header"""
-    print(f"\n{'='*60}")
-    print(f"  {text}")
-    print(f"{'='*60}\n")
+    print(f'\n{"=" * 60}')
+    print(f'  {text}')
+    print(f'{"=" * 60}\n')
+
 
 def print_info(text):
     """Print info message"""
-    print(f"ℹ️  {text}")
+    print(f'ℹ️  {text}')
+
 
 def print_success(text):
     """Print success message"""
-    print(f"✅ {text}")
+    print(f'✅ {text}')
+
 
 def print_error(text):
     """Print error message"""
-    print(f"❌ {text}")
+    print(f'❌ {text}')
+
 
 def print_warning(text):
     """Print warning message"""
-    print(f"⚠️  {text}")
+    print(f'⚠️  {text}')
+
 
 def download_whisperx_models():
     """Download WhisperX models"""
-    print_header("Downloading WhisperX Models")
+    print_header('Downloading WhisperX Models')
 
     try:
         import whisperx
 
-        model_name = os.environ.get("WHISPER_MODEL", "large-v3-turbo")
-        device = "cuda" if os.environ.get("USE_GPU", "true").lower() == "true" else "cpu"
-        compute_type = os.environ.get("COMPUTE_TYPE", "float16")
+        model_name = os.environ.get('WHISPER_MODEL', 'large-v3-turbo')
+        device = 'cuda' if os.environ.get('USE_GPU', 'true').lower() == 'true' else 'cpu'
+        compute_type = os.environ.get('COMPUTE_TYPE', 'float16')
 
-        print_info(f"Model: {model_name}")
-        print_info(f"Device: {device}")
-        print_info(f"Compute type: {compute_type}")
+        print_info(f'Model: {model_name}')
+        print_info(f'Device: {device}')
+        print_info(f'Compute type: {compute_type}')
 
-        print_info("Loading WhisperX model (this will download if needed)...")
-        model = whisperx.load_model(
-            model_name,
-            device=device,
-            compute_type=compute_type
-        )
+        print_info('Loading WhisperX model (this will download if needed)...')
+        model = whisperx.load_model(model_name, device=device, compute_type=compute_type)
 
         print_success(f"WhisperX model '{model_name}' downloaded successfully")
 
@@ -89,33 +90,34 @@ def download_whisperx_models():
         del model
 
         return {
-            "whisperx": {
-                "model": model_name,
-                "device": device,
-                "compute_type": compute_type,
-                "status": "downloaded"
+            'whisperx': {
+                'model': model_name,
+                'device': device,
+                'compute_type': compute_type,
+                'status': 'downloaded',
             }
         }
 
     except Exception as e:
-        print_error(f"Failed to download WhisperX models: {e}")
-        return {"whisperx": {"status": "failed", "error": str(e)}}
+        print_error(f'Failed to download WhisperX models: {e}')
+        return {'whisperx': {'status': 'failed', 'error': str(e)}}
+
 
 def validate_gated_model_access():
     """Validate access to gated PyAnnote models before attempting download"""
-    print_info("Validating access to gated PyAnnote models...")
-    print_info("")
+    print_info('Validating access to gated PyAnnote models...')
+    print_info('')
 
     try:
         from huggingface_hub import HfApi
 
-        hf_token = os.environ.get("HUGGINGFACE_TOKEN")
+        hf_token = os.environ.get('HUGGINGFACE_TOKEN')
         if not hf_token:
-            return False, "No HuggingFace token provided"
+            return False, 'No HuggingFace token provided'
 
         # List of REQUIRED gated models (community-1 is not gated)
         gated_models = [
-            "pyannote/segmentation-3.0",
+            'pyannote/segmentation-3.0',
         ]
 
         api = HfApi()
@@ -125,163 +127,163 @@ def validate_gated_model_access():
         for model_id in gated_models:
             try:
                 # Try to get model info - this will fail if user hasn't accepted the license
-                model_info = api.model_info(model_id, token=hf_token)
-                print_success(f"  ✓ Access confirmed: {model_id}")
+                api.model_info(model_id, token=hf_token)
+                print_success(f'  ✓ Access confirmed: {model_id}')
             except Exception as e:
                 error_msg = str(e)
                 inaccessible_models.append(model_id)
                 access_errors[model_id] = error_msg
 
                 # Determine error type
-                if "401" in error_msg or "Unauthorized" in error_msg:
-                    print_error(f"  ✗ Access DENIED (401 Unauthorized): {model_id}")
-                    print_error(f"     You have NOT accepted the model agreement!")
-                elif "403" in error_msg or "Forbidden" in error_msg:
-                    print_error(f"  ✗ Access DENIED (403 Forbidden): {model_id}")
-                    print_error(f"     Token may not have required permissions")
+                if '401' in error_msg or 'Unauthorized' in error_msg:
+                    print_error(f'  ✗ Access DENIED (401 Unauthorized): {model_id}')
+                    print_error('     You have NOT accepted the model agreement!')
+                elif '403' in error_msg or 'Forbidden' in error_msg:
+                    print_error(f'  ✗ Access DENIED (403 Forbidden): {model_id}')
+                    print_error('     Token may not have required permissions')
                 else:
-                    print_error(f"  ✗ Cannot access: {model_id}")
-                    print_error(f"     Error: {error_msg[:80]}")
+                    print_error(f'  ✗ Cannot access: {model_id}')
+                    print_error(f'     Error: {error_msg[:80]}')
 
-        print_info("")
+        print_info('')
 
         if inaccessible_models:
-            error_msg = f"Cannot access {len(inaccessible_models)} required gated model(s)"
-            print_error("VALIDATION FAILED: Missing gated model access!")
+            error_msg = f'Cannot access {len(inaccessible_models)} required gated model(s)'
+            print_error('VALIDATION FAILED: Missing gated model access!')
             return False, (error_msg, access_errors)
 
-        print_success("✅ All required gated models are accessible!")
-        print_info("")
+        print_success('✅ All required gated models are accessible!')
+        print_info('')
         return True, None
 
     except ImportError:
         # huggingface_hub might not be available, skip validation but warn
-        print_info("  ⚠️  Skipping gated model validation (huggingface_hub not available)")
-        print_info("  This is not recommended - validation may fail during download")
-        print_info("")
+        print_info('  ⚠️  Skipping gated model validation (huggingface_hub not available)')
+        print_info('  This is not recommended - validation may fail during download')
+        print_info('')
         return True, None
     except Exception as e:
         # Unexpected error during validation - don't block but warn strongly
-        print_error(f"  ⚠️  Could not validate gated models: {e}")
-        print_info("  Proceeding anyway, but download may fail...")
-        print_info("")
+        print_error(f'  ⚠️  Could not validate gated models: {e}')
+        print_info('  Proceeding anyway, but download may fail...')
+        print_info('')
         return True, None
+
 
 def validate_pyannote_download():
     """Validate that all expected PyAnnote models were downloaded to the torch cache"""
-    torch_cache = Path.home() / ".cache" / "torch" / "pyannote"
+    torch_cache = Path.home() / '.cache' / 'torch' / 'pyannote'
 
     # Expected PyAnnote model directories
     expected_models = {
-        "segmentation-3.0": "models--pyannote--segmentation-3.0",
-        "speaker-diarization-community-1": "models--pyannote--speaker-diarization-community-1",
-        "wespeaker-voxceleb": "models--pyannote--wespeaker-voxceleb-resnet34-LM"
+        'segmentation-3.0': 'models--pyannote--segmentation-3.0',
+        'speaker-diarization-community-1': 'models--pyannote--speaker-diarization-community-1',
+        'wespeaker-voxceleb': 'models--pyannote--wespeaker-voxceleb-resnet34-LM',
     }
 
-    validation_result = {
-        "all_present": True,
-        "models": {}
-    }
+    validation_result = {'all_present': True, 'models': {}}
 
     if not torch_cache.exists():
-        validation_result["all_present"] = False
-        for model_name in expected_models.keys():
-            validation_result["models"][model_name] = False
+        validation_result['all_present'] = False
+        for model_name in expected_models:
+            validation_result['models'][model_name] = False
         return validation_result
 
     for model_name, model_dir in expected_models.items():
         model_path = torch_cache / model_dir
         is_present = model_path.exists() and model_path.is_dir()
-        validation_result["models"][model_name] = is_present
+        validation_result['models'][model_name] = is_present
         if not is_present:
-            validation_result["all_present"] = False
+            validation_result['all_present'] = False
 
     return validation_result
 
+
 def download_pyannote_models():
     """Download PyAnnote models by running full WhisperX pipeline (same as backend)"""
-    print_header("Downloading PyAnnote Models")
+    print_header('Downloading PyAnnote Models')
 
     try:
-        import warnings
         import logging
-        import whisperx
-        import torch
+        import warnings
+
         import numpy as np
+        import torch
+        import whisperx
 
         # Suppress noisy-but-harmless library warnings that confuse users:
         # - Lightning checkpoint auto-upgrade notice (cosmetic, not an error)
         # - PyAnnote TF32 reproducibility advisory (we accept the trade-off)
         # - WhisperX / transformers INFO logs during model load
-        warnings.filterwarnings("ignore", message=".*Lightning automatically upgraded.*")
-        warnings.filterwarnings("ignore", category=UserWarning, module="pyannote")
-        logging.getLogger("whisperx").setLevel(logging.WARNING)
-        logging.getLogger("pyannote").setLevel(logging.WARNING)
-        logging.getLogger("lightning").setLevel(logging.ERROR)
+        warnings.filterwarnings('ignore', message='.*Lightning automatically upgraded.*')
+        warnings.filterwarnings('ignore', category=UserWarning, module='pyannote')
+        logging.getLogger('whisperx').setLevel(logging.WARNING)
+        logging.getLogger('pyannote').setLevel(logging.WARNING)
+        logging.getLogger('lightning').setLevel(logging.ERROR)
 
-        hf_token = os.environ.get("HUGGINGFACE_TOKEN")
+        hf_token = os.environ.get('HUGGINGFACE_TOKEN')
         if not hf_token:
-            print_error("HUGGINGFACE_TOKEN not set!")
-            print_error("")
-            print_error("A HuggingFace token is REQUIRED for speaker diarization models.")
-            print_error("")
-            print_error("To get your FREE token:")
-            print_error("  1. Visit: https://huggingface.co/settings/tokens")
+            print_error('HUGGINGFACE_TOKEN not set!')
+            print_error('')
+            print_error('A HuggingFace token is REQUIRED for speaker diarization models.')
+            print_error('')
+            print_error('To get your FREE token:')
+            print_error('  1. Visit: https://huggingface.co/settings/tokens')
             print_error("  2. Click 'New token' and select 'Read' permissions")
-            print_error("  3. Copy the token")
-            print_error("")
-            print_error("Then set it as an environment variable:")
-            print_error("  export HUGGINGFACE_TOKEN=your_token_here")
-            return {"pyannote": {"status": "failed", "error": "No HuggingFace token"}}
+            print_error('  3. Copy the token')
+            print_error('')
+            print_error('Then set it as an environment variable:')
+            print_error('  export HUGGINGFACE_TOKEN=your_token_here')
+            return {'pyannote': {'status': 'failed', 'error': 'No HuggingFace token'}}
 
         # Validate access to gated models BEFORE attempting download
         has_access, access_result = validate_gated_model_access()
         if not has_access:
-            print_error("")
-            print_error("=" * 80)
-            print_error("❌ GATED MODEL ACCESS DENIED - DOWNLOAD CANNOT PROCEED")
-            print_error("=" * 80)
-            print_error("")
-            print_error("⚠️  YOUR TOKEN DOES NOT HAVE ACCESS TO REQUIRED PYANNOTE MODELS")
-            print_error("")
-            print_error("This means you have NOT accepted the model user agreements.")
-            print_error("")
-            print_error("╔════════════════════════════════════════════════════════════════════╗")
-            print_error("║  REQUIRED ACTION: Accept BOTH model agreements on HuggingFace      ║")
-            print_error("╚════════════════════════════════════════════════════════════════════╝")
-            print_error("")
-            print_error("Step 1: Visit the Segmentation Model page")
-            print_error("   URL: https://huggingface.co/pyannote/segmentation-3.0")
+            print_error('')
+            print_error('=' * 80)
+            print_error('❌ GATED MODEL ACCESS DENIED - DOWNLOAD CANNOT PROCEED')
+            print_error('=' * 80)
+            print_error('')
+            print_error('⚠️  YOUR TOKEN DOES NOT HAVE ACCESS TO REQUIRED PYANNOTE MODELS')
+            print_error('')
+            print_error('This means you have NOT accepted the model user agreements.')
+            print_error('')
+            print_error('╔════════════════════════════════════════════════════════════════════╗')
+            print_error('║  REQUIRED ACTION: Accept BOTH model agreements on HuggingFace      ║')
+            print_error('╚════════════════════════════════════════════════════════════════════╝')
+            print_error('')
+            print_error('Step 1: Visit the Segmentation Model page')
+            print_error('   URL: https://huggingface.co/pyannote/segmentation-3.0')
             print_error("   → Look for the 'Agree and access repository' button")
-            print_error("   → Click it to accept the terms")
-            print_error("")
-            print_error("Step 2: Visit the Speaker Diarization Model page")
-            print_error("   URL: https://huggingface.co/pyannote/speaker-diarization-community-1")
+            print_error('   → Click it to accept the terms')
+            print_error('')
+            print_error('Step 2: Visit the Speaker Diarization Model page')
+            print_error('   URL: https://huggingface.co/pyannote/speaker-diarization-community-1')
             print_error("   → Look for the 'Agree and access repository' button")
-            print_error("   → Click it to accept the terms")
-            print_error("")
-            print_error("Step 3: Wait 1-2 minutes for permissions to propagate")
-            print_error("")
-            print_error("Step 4: Run this script again:")
-            print_error("   bash scripts/download-models.sh models")
-            print_error("")
-            print_error("=" * 80)
-            print_error("")
+            print_error('   → Click it to accept the terms')
+            print_error('')
+            print_error('Step 3: Wait 1-2 minutes for permissions to propagate')
+            print_error('')
+            print_error('Step 4: Run this script again:')
+            print_error('   bash scripts/download-models.sh models')
+            print_error('')
+            print_error('=' * 80)
+            print_error('')
 
             error_msg = access_result[0] if isinstance(access_result, tuple) else access_result
-            return {"pyannote": {"status": "failed", "error": error_msg}}
+            return {'pyannote': {'status': 'failed', 'error': error_msg}}
 
         # Use default paths (same as backend) - let WhisperX/PyAnnote handle caching
-        print_info("Using WhisperX full pipeline (same as backend) to download all models")
-        print_info("Models will be cached to default locations (managed by WhisperX/PyAnnote)")
+        print_info('Using WhisperX full pipeline (same as backend) to download all models')
+        print_info('Models will be cached to default locations (managed by WhisperX/PyAnnote)')
 
         # Detect device
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        compute_type = "float16" if device == "cuda" else "float32"
-        print_info(f"Using device: {device}")
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        compute_type = 'float16' if device == 'cuda' else 'float32'
+        print_info(f'Using device: {device}')
 
         # Create synthetic audio (30 seconds of silence with some noise for testing)
-        print_info("Creating synthetic test audio (30 seconds)...")
+        print_info('Creating synthetic test audio (30 seconds)...')
         sample_rate = 16000
         duration = 30  # 30 seconds
 
@@ -298,174 +300,164 @@ def download_pyannote_models():
 
         # Normalize
         audio = audio.astype(np.float32)
-        print_success("  Synthetic audio created")
+        print_success('  Synthetic audio created')
 
         # Use WhisperX full pipeline (same as backend)
-        print_info("Step 1/3: Audio ready...")
-        print_success("  Audio prepared")
+        print_info('Step 1/3: Audio ready...')
+        print_success('  Audio prepared')
 
         # Step 2: Transcribe (same as backend)
-        print_info("Step 2/3: Running WhisperX transcription...")
+        print_info('Step 2/3: Running WhisperX transcription...')
         model = whisperx.load_model(
-            os.environ.get("WHISPER_MODEL", "base"),
-            device=device,
-            compute_type=compute_type
+            os.environ.get('WHISPER_MODEL', 'base'), device=device, compute_type=compute_type
         )
-        result = model.transcribe(audio, batch_size=16 if device == "cuda" else 1)
-        print_success("  Transcription completed")
+        model.transcribe(audio, batch_size=16 if device == 'cuda' else 1)
+        print_success('  Transcription completed')
         del model
-        torch.cuda.empty_cache() if device == "cuda" else None
+        torch.cuda.empty_cache() if device == 'cuda' else None
 
         # Step 3: Diarize (same as backend - downloads PyAnnote models)
-        print_info("Step 3/3: Running speaker diarization (downloads PyAnnote models)...")
-        print_info("  This downloads: segmentation-3.0, embedding, wespeaker-voxceleb...")
+        print_info('Step 3/3: Running speaker diarization (downloads PyAnnote models)...')
+        print_info('  This downloads: segmentation-3.0, embedding, wespeaker-voxceleb...')
 
         try:
             diarize_model = whisperx.diarize.DiarizationPipeline(
-                use_auth_token=hf_token,
-                device=device
+                use_auth_token=hf_token, device=device
             )
         except TypeError:
             # pyannote-audio 3.3+ renamed use_auth_token → token
-            diarize_model = whisperx.diarize.DiarizationPipeline(
-                token=hf_token,
-                device=device
-            )
+            diarize_model = whisperx.diarize.DiarizationPipeline(token=hf_token, device=device)
 
-        diarize_segments = diarize_model(
-            audio,
-            min_speakers=1,
-            max_speakers=20
-        )
+        diarize_model(audio, min_speakers=1, max_speakers=20)
 
-        print_success("  Diarization completed")
-        print_success("  All PyAnnote model weights downloaded")
+        print_success('  Diarization completed')
+        print_success('  All PyAnnote model weights downloaded')
 
         # Clean up
         del diarize_model
         del audio
-        torch.cuda.empty_cache() if device == "cuda" else None
+        torch.cuda.empty_cache() if device == 'cuda' else None
 
         # Diarization ran without exception — models are present and working.
         # (PyAnnote 3.x stores weights in ~/.cache/huggingface/hub/, not the
         #  old ~/.cache/torch/pyannote/ path, so directory-name checks are
         #  unreliable. A successful pipeline run is the definitive proof.)
         return {
-            "pyannote": {
-                "model": "pyannote/speaker-diarization-community-1",
-                "status": "downloaded",
-                "validation": {"all_present": True}
+            'pyannote': {
+                'model': 'pyannote/speaker-diarization-community-1',
+                'status': 'downloaded',
+                'validation': {'all_present': True},
             }
         }
 
     except Exception as e:
         error_msg = str(e)
-        print_error(f"Failed to download PyAnnote models: {error_msg}")
+        print_error(f'Failed to download PyAnnote models: {error_msg}')
 
         # Check if this looks like a gated model access error
-        if "cannot find the requested files" in error_msg.lower() or \
-           "locate the file on the hub" in error_msg.lower() or \
-           "403" in error_msg or \
-           "401" in error_msg:
-            print_error("")
-            print_error("=" * 70)
-            print_error("⚠️  THIS LOOKS LIKE A GATED MODEL ACCESS ERROR!")
-            print_error("=" * 70)
-            print_error("")
+        if (
+            'cannot find the requested files' in error_msg.lower()
+            or 'locate the file on the hub' in error_msg.lower()
+            or '403' in error_msg
+            or '401' in error_msg
+        ):
+            print_error('')
+            print_error('=' * 70)
+            print_error('⚠️  THIS LOOKS LIKE A GATED MODEL ACCESS ERROR!')
+            print_error('=' * 70)
+            print_error('')
             print_error("This error usually means you haven't accepted the model agreements.")
-            print_error("")
-            print_error("You MUST accept BOTH PyAnnote gated model agreements:")
-            print_error("")
-            print_error("  1. Segmentation Model:")
-            print_error("     https://huggingface.co/pyannote/segmentation-3.0")
+            print_error('')
+            print_error('You MUST accept BOTH PyAnnote gated model agreements:')
+            print_error('')
+            print_error('  1. Segmentation Model:')
+            print_error('     https://huggingface.co/pyannote/segmentation-3.0')
             print_error("     → Click 'Agree and access repository'")
-            print_error("")
-            print_error("  2. Speaker Diarization Model:")
-            print_error("     https://huggingface.co/pyannote/speaker-diarization-community-1")
+            print_error('')
+            print_error('  2. Speaker Diarization Model:')
+            print_error('     https://huggingface.co/pyannote/speaker-diarization-community-1')
             print_error("     → Click 'Agree and access repository' (if prompted)")
-            print_error("")
-            print_error("After accepting BOTH agreements:")
-            print_error("  • Wait 1-2 minutes for permissions to propagate")
-            print_error("  • Run this script again: bash scripts/download-models.sh models")
-            print_error("")
-            print_error("=" * 70)
+            print_error('')
+            print_error('After accepting BOTH agreements:')
+            print_error('  • Wait 1-2 minutes for permissions to propagate')
+            print_error('  • Run this script again: bash scripts/download-models.sh models')
+            print_error('')
+            print_error('=' * 70)
 
-        return {"pyannote": {"status": "failed", "error": str(e)}}
+        return {'pyannote': {'status': 'failed', 'error': str(e)}}
+
 
 def download_nltk_data():
     """Download NLTK data files required by transformers/whisperx"""
-    print_header("Downloading NLTK Data")
+    print_header('Downloading NLTK Data')
 
     try:
         import nltk
 
         # Set NLTK data path to user's cache directory
-        nltk_data_path = Path.home() / ".cache" / "nltk_data"
+        nltk_data_path = Path.home() / '.cache' / 'nltk_data'
         nltk_data_path.mkdir(parents=True, exist_ok=True)
 
         # Add to NLTK's data path
         if str(nltk_data_path) not in nltk.data.path:
             nltk.data.path.insert(0, str(nltk_data_path))
 
-        print_info(f"NLTK data path: {nltk_data_path}")
+        print_info(f'NLTK data path: {nltk_data_path}')
 
         # Download required NLTK data packages
         required_packages = [
-            'punkt_tab',       # Punkt tokenizer (new tabular format)
-            'punkt',           # Punkt tokenizer (legacy format for compatibility)
+            'punkt_tab',  # Punkt tokenizer (new tabular format)
+            'punkt',  # Punkt tokenizer (legacy format for compatibility)
             'averaged_perceptron_tagger_eng',  # POS tagger for NER
-            'maxent_ne_chunker_tab',           # Named entity chunker for speaker name extraction
-            'words',                           # English word corpus (required by NE chunker)
+            'maxent_ne_chunker_tab',  # Named entity chunker for speaker name extraction
+            'words',  # English word corpus (required by NE chunker)
         ]
 
         downloaded = []
         for package in required_packages:
             try:
-                print_info(f"Downloading NLTK package: {package}")
+                print_info(f'Downloading NLTK package: {package}')
                 nltk.download(package, download_dir=str(nltk_data_path), quiet=False)
                 downloaded.append(package)
-                print_success(f"  Downloaded: {package}")
+                print_success(f'  Downloaded: {package}')
             except Exception as pkg_error:
-                print_error(f"  Failed to download {package}: {pkg_error}")
+                print_error(f'  Failed to download {package}: {pkg_error}')
 
         if downloaded:
-            print_success(f"NLTK data downloaded successfully ({len(downloaded)} packages)")
+            print_success(f'NLTK data downloaded successfully ({len(downloaded)} packages)')
         else:
-            raise Exception("No NLTK packages were downloaded")
+            raise Exception('No NLTK packages were downloaded')
 
         return {
-            "nltk": {
-                "packages": downloaded,
-                "path": str(nltk_data_path),
-                "status": "downloaded"
-            }
+            'nltk': {'packages': downloaded, 'path': str(nltk_data_path), 'status': 'downloaded'}
         }
 
     except Exception as e:
-        print_error(f"Failed to download NLTK data: {e}")
-        return {"nltk": {"status": "failed", "error": str(e)}}
+        print_error(f'Failed to download NLTK data: {e}')
+        return {'nltk': {'status': 'failed', 'error': str(e)}}
+
 
 def download_sentence_transformers():
     """Download sentence-transformers model for semantic search"""
-    print_header("Downloading Sentence-Transformers Model")
+    print_header('Downloading Sentence-Transformers Model')
 
     try:
         from sentence_transformers import SentenceTransformer
 
-        model_name = "all-MiniLM-L6-v2"
-        cache_path = Path.home() / ".cache" / "sentence-transformers"
+        model_name = 'all-MiniLM-L6-v2'
+        cache_path = Path.home() / '.cache' / 'sentence-transformers'
         cache_path.mkdir(parents=True, exist_ok=True)
 
-        print_info(f"Model: {model_name}")
-        print_info(f"Cache path: {cache_path}")
-        print_info("Loading sentence-transformers model (this will download if needed)...")
+        print_info(f'Model: {model_name}')
+        print_info(f'Cache path: {cache_path}')
+        print_info('Loading sentence-transformers model (this will download if needed)...')
 
         # Load model (will download to cache if not present)
         model = SentenceTransformer(model_name, cache_folder=str(cache_path))
 
         # Test the model with a sample text to ensure it works
-        test_embedding = model.encode("This is a test sentence.")
-        print_info(f"  Embedding dimension: {len(test_embedding)}")
+        test_embedding = model.encode('This is a test sentence.')
+        print_info(f'  Embedding dimension: {len(test_embedding)}')
 
         print_success(f"Sentence-transformers model '{model_name}' downloaded successfully")
 
@@ -473,17 +465,18 @@ def download_sentence_transformers():
         del model
 
         return {
-            "sentence_transformers": {
-                "model": model_name,
-                "path": str(cache_path),
-                "dimension": len(test_embedding),
-                "status": "downloaded"
+            'sentence_transformers': {
+                'model': model_name,
+                'path': str(cache_path),
+                'dimension': len(test_embedding),
+                'status': 'downloaded',
             }
         }
 
     except Exception as e:
-        print_error(f"Failed to download sentence-transformers model: {e}")
-        return {"sentence_transformers": {"status": "failed", "error": str(e)}}
+        print_error(f'Failed to download sentence-transformers model: {e}')
+        return {'sentence_transformers': {'status': 'failed', 'error': str(e)}}
+
 
 def download_chat_reranker():
     """Download the cross-encoder used to rerank RAG chat retrieval results.
@@ -493,40 +486,40 @@ def download_chat_reranker():
     offline/air-gapped deployments work. Chat degrades gracefully without it
     (reranking simply switches off), so a failure here is not fatal.
     """
-    print_header("Downloading Chat Reranker Model")
+    print_header('Downloading Chat Reranker Model')
 
     try:
         from sentence_transformers import CrossEncoder
 
-        model_name = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-        cache_path = Path.home() / ".cache" / "huggingface"
+        model_name = 'cross-encoder/ms-marco-MiniLM-L-6-v2'
+        cache_path = Path.home() / '.cache' / 'huggingface'
         cache_path.mkdir(parents=True, exist_ok=True)
 
-        print_info(f"Model: {model_name}")
-        print_info(f"Cache path: {cache_path}")
-        print_info("Loading cross-encoder (this will download if needed)...")
+        print_info(f'Model: {model_name}')
+        print_info(f'Cache path: {cache_path}')
+        print_info('Loading cross-encoder (this will download if needed)...')
 
-        model = CrossEncoder(model_name, device="cpu", max_length=512)
+        model = CrossEncoder(model_name, device='cpu', max_length=512)
 
         # Score a trivial pair so a broken download surfaces here, not at runtime.
-        scores = model.predict([("what was decided", "we agreed to ship on Tuesday")])
-        print_info(f"  Test relevance score: {float(scores[0]):.4f}")
+        scores = model.predict([('what was decided', 'we agreed to ship on Tuesday')])
+        print_info(f'  Test relevance score: {float(scores[0]):.4f}')
 
         print_success(f"Chat reranker '{model_name}' downloaded successfully")
 
         del model
 
         return {
-            "chat_reranker": {
-                "model": model_name,
-                "path": str(cache_path),
-                "status": "downloaded",
+            'chat_reranker': {
+                'model': model_name,
+                'path': str(cache_path),
+                'status': 'downloaded',
             }
         }
 
     except Exception as e:
-        print_error(f"Failed to download chat reranker: {e}")
-        return {"chat_reranker": {"status": "failed", "error": str(e)}}
+        print_error(f'Failed to download chat reranker: {e}')
+        return {'chat_reranker': {'status': 'failed', 'error': str(e)}}
 
 
 def download_speaker_attribute_models():
@@ -536,14 +529,14 @@ def download_speaker_attribute_models():
     is fine-tuned from wav2vec2-base-960h for gender classification (98.46% accuracy).
     Must be pre-downloaded for offline/air-gapped deployments.
     """
-    print_header("Downloading Speaker Attribute Model (gender)")
+    print_header('Downloading Speaker Attribute Model (gender)')
 
     try:
         from transformers import Wav2Vec2FeatureExtractor, Wav2Vec2ForSequenceClassification
 
-        model_name = "prithivMLmods/Common-Voice-Gender-Detection"
-        print_info(f"Model: {model_name}")
-        print_info("Loading gender classifier model (this will download if needed)...")
+        model_name = 'prithivMLmods/Common-Voice-Gender-Detection'
+        print_info(f'Model: {model_name}')
+        print_info('Loading gender classifier model (this will download if needed)...')
 
         feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(model_name)
         model = Wav2Vec2ForSequenceClassification.from_pretrained(model_name)
@@ -554,17 +547,17 @@ def download_speaker_attribute_models():
         del feature_extractor, model
 
         return {
-            "speaker_attributes": {
-                "model": model_name,
-                "status": "downloaded",
+            'speaker_attributes': {
+                'model': model_name,
+                'status': 'downloaded',
             }
         }
 
     except Exception as e:
-        print_error(f"Failed to download speaker attribute model: {e}")
-        print_info("Speaker gender detection will not work offline.")
-        print_info("This is non-critical - transcription will still function normally.")
-        return {"speaker_attributes": {"status": "failed", "error": str(e)}}
+        print_error(f'Failed to download speaker attribute model: {e}')
+        print_info('Speaker gender detection will not work offline.')
+        print_info('This is non-critical - transcription will still function normally.')
+        return {'speaker_attributes': {'status': 'failed', 'error': str(e)}}
 
 
 def download_opensearch_neural_models():
@@ -587,72 +580,72 @@ def download_opensearch_neural_models():
         - paraphrase-multilingual-mpnet-base-v2 (balanced multilingual, 1.1GB)
         - distiluse-base-multilingual-cased-v1 (best multilingual, 480MB)
     """
-    print_header("Downloading OpenSearch Neural Search Models")
+    print_header('Downloading OpenSearch Neural Search Models')
 
     # Complete registry of available models - matches OPENSEARCH_EMBEDDING_MODELS in constants.py
     all_available_models = {
         # Fast tier - 384 dimensions
-        "all-MiniLM-L6-v2": {
-            "name": "huggingface/sentence-transformers/all-MiniLM-L6-v2",
-            "version": "1.0.1",
-            "format": "torch_script",
-            "dimension": 384,
-            "size_mb": 80,
-            "tier": "fast",
-            "languages": "English",
-            "description": "Fast, lightweight. Good baseline for keyword-heavy searches.",
+        'all-MiniLM-L6-v2': {
+            'name': 'huggingface/sentence-transformers/all-MiniLM-L6-v2',
+            'version': '1.0.1',
+            'format': 'torch_script',
+            'dimension': 384,
+            'size_mb': 80,
+            'tier': 'fast',
+            'languages': 'English',
+            'description': 'Fast, lightweight. Good baseline for keyword-heavy searches.',
         },
-        "paraphrase-multilingual-MiniLM-L12-v2": {
-            "name": "huggingface/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-            "version": "1.0.1",
-            "format": "torch_script",
-            "dimension": 384,
-            "size_mb": 420,
-            "tier": "fast",
-            "languages": "Multilingual (50+)",
-            "description": "Fast multilingual model. 50+ languages with good quality.",
+        'paraphrase-multilingual-MiniLM-L12-v2': {
+            'name': 'huggingface/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2',
+            'version': '1.0.1',
+            'format': 'torch_script',
+            'dimension': 384,
+            'size_mb': 420,
+            'tier': 'fast',
+            'languages': 'Multilingual (50+)',
+            'description': 'Fast multilingual model. 50+ languages with good quality.',
         },
         # Balanced tier - 768 dimensions
-        "all-mpnet-base-v2": {
-            "name": "huggingface/sentence-transformers/all-mpnet-base-v2",
-            "version": "1.0.1",
-            "format": "torch_script",
-            "dimension": 768,
-            "size_mb": 420,
-            "tier": "balanced",
-            "languages": "English",
-            "description": "Better semantic understanding. Good balance of speed and quality.",
+        'all-mpnet-base-v2': {
+            'name': 'huggingface/sentence-transformers/all-mpnet-base-v2',
+            'version': '1.0.1',
+            'format': 'torch_script',
+            'dimension': 768,
+            'size_mb': 420,
+            'tier': 'balanced',
+            'languages': 'English',
+            'description': 'Better semantic understanding. Good balance of speed and quality.',
         },
-        "paraphrase-multilingual-mpnet-base-v2": {
-            "name": "huggingface/sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
-            "version": "1.0.1",
-            "format": "torch_script",
-            "dimension": 768,
-            "size_mb": 1100,
-            "tier": "balanced",
-            "languages": "Multilingual (50+)",
-            "description": "Higher quality multilingual embeddings.",
+        'paraphrase-multilingual-mpnet-base-v2': {
+            'name': 'huggingface/sentence-transformers/paraphrase-multilingual-mpnet-base-v2',
+            'version': '1.0.1',
+            'format': 'torch_script',
+            'dimension': 768,
+            'size_mb': 1100,
+            'tier': 'balanced',
+            'languages': 'Multilingual (50+)',
+            'description': 'Higher quality multilingual embeddings.',
         },
         # Best quality tier
-        "all-distilroberta-v1": {
-            "name": "huggingface/sentence-transformers/all-distilroberta-v1",
-            "version": "1.0.1",
-            "format": "torch_script",
-            "dimension": 768,
-            "size_mb": 290,
-            "tier": "best",
-            "languages": "English",
-            "description": "Best retrieval quality for English.",
+        'all-distilroberta-v1': {
+            'name': 'huggingface/sentence-transformers/all-distilroberta-v1',
+            'version': '1.0.1',
+            'format': 'torch_script',
+            'dimension': 768,
+            'size_mb': 290,
+            'tier': 'best',
+            'languages': 'English',
+            'description': 'Best retrieval quality for English.',
         },
-        "distiluse-base-multilingual-cased-v1": {
-            "name": "huggingface/sentence-transformers/distiluse-base-multilingual-cased-v1",
-            "version": "1.0.1",
-            "format": "torch_script",
-            "dimension": 512,
-            "size_mb": 480,
-            "tier": "best",
-            "languages": "Multilingual (15)",
-            "description": "Best quality for common languages (15 languages).",
+        'distiluse-base-multilingual-cased-v1': {
+            'name': 'huggingface/sentence-transformers/distiluse-base-multilingual-cased-v1',
+            'version': '1.0.1',
+            'format': 'torch_script',
+            'dimension': 512,
+            'size_mb': 480,
+            'tier': 'best',
+            'languages': 'Multilingual (15)',
+            'description': 'Best quality for common languages (15 languages).',
         },
     }
 
@@ -660,150 +653,160 @@ def download_opensearch_neural_models():
     models_to_download = []
 
     # Check for OPENSEARCH_MODELS environment variable (comma-separated short names)
-    selected_models = os.environ.get("OPENSEARCH_MODELS", "").strip()
-    download_all = os.environ.get("DOWNLOAD_ALL_OPENSEARCH_MODELS", "false").lower() == "true"
+    selected_models = os.environ.get('OPENSEARCH_MODELS', '').strip()
+    download_all = os.environ.get('DOWNLOAD_ALL_OPENSEARCH_MODELS', 'false').lower() == 'true'
 
     if download_all:
         # Download all available models
         models_to_download = list(all_available_models.values())
-        print_info(f"Downloading ALL {len(models_to_download)} OpenSearch neural models")
-        print_info("(DOWNLOAD_ALL_OPENSEARCH_MODELS=true)")
+        print_info(f'Downloading ALL {len(models_to_download)} OpenSearch neural models')
+        print_info('(DOWNLOAD_ALL_OPENSEARCH_MODELS=true)')
     elif selected_models:
         # User specified specific models
-        model_names = [m.strip() for m in selected_models.split(",") if m.strip()]
-        print_info(f"Selected models: {', '.join(model_names)}")
+        model_names = [m.strip() for m in selected_models.split(',') if m.strip()]
+        print_info(f'Selected models: {", ".join(model_names)}')
 
         for short_name in model_names:
             if short_name in all_available_models:
                 models_to_download.append(all_available_models[short_name])
             else:
-                print_error(f"Unknown model: {short_name}")
-                print_info(f"Available models: {', '.join(all_available_models.keys())}")
+                print_error(f'Unknown model: {short_name}')
+                print_info(f'Available models: {", ".join(all_available_models.keys())}')
 
         if not models_to_download:
-            print_error("No valid models specified. Using default.")
-            models_to_download = [all_available_models["all-MiniLM-L6-v2"]]
+            print_error('No valid models specified. Using default.')
+            models_to_download = [all_available_models['all-MiniLM-L6-v2']]
     else:
         # Default: download only the default model
-        models_to_download = [all_available_models["all-MiniLM-L6-v2"]]
-        print_info("Downloading default OpenSearch model (all-MiniLM-L6-v2)")
-        print_info("")
-        print_info("To download additional models, set OPENSEARCH_MODELS:")
-        print_info("  OPENSEARCH_MODELS=\"all-MiniLM-L6-v2,all-mpnet-base-v2\"")
-        print_info("")
-        print_info("Available models:")
+        models_to_download = [all_available_models['all-MiniLM-L6-v2']]
+        print_info('Downloading default OpenSearch model (all-MiniLM-L6-v2)')
+        print_info('')
+        print_info('To download additional models, set OPENSEARCH_MODELS:')
+        print_info('  OPENSEARCH_MODELS="all-MiniLM-L6-v2,all-mpnet-base-v2"')
+        print_info('')
+        print_info('Available models:')
         for short_name, info in all_available_models.items():
-            print_info(f"  {short_name} ({info['tier']}, {info['languages']}, {info['size_mb']}MB)")
+            print_info(f'  {short_name} ({info["tier"]}, {info["languages"]}, {info["size_mb"]}MB)')
 
-    print_info(f"\nDownloading {len(models_to_download)} model(s)...")
+    print_info(f'\nDownloading {len(models_to_download)} model(s)...')
 
     # Create output directory
-    output_dir = Path.home() / ".cache" / "opensearch-ml"
+    output_dir = Path.home() / '.cache' / 'opensearch-ml'
     output_dir.mkdir(parents=True, exist_ok=True)
 
     downloaded_models = []
     failed_models = []
 
     for model_info in models_to_download:
-        model_name = model_info["name"]
-        version = model_info["version"]
-        model_format = model_info["format"]
+        model_name = model_info['name']
+        version = model_info['version']
+        model_format = model_info['format']
 
         # Build the artifact URL
         # Format: https://artifacts.opensearch.org/models/ml-models/{name}/{version}/{format}/{filename}.zip
         # Example: huggingface/sentence-transformers/all-MiniLM-L6-v2 -> sentence-transformers_all-MiniLM-L6-v2
-        name_parts = model_name.split("/")
+        name_parts = model_name.split('/')
         if len(name_parts) >= 3:
             # huggingface/sentence-transformers/all-MiniLM-L6-v2
-            model_short_name = f"{name_parts[1]}_{name_parts[2]}"
+            model_short_name = f'{name_parts[1]}_{name_parts[2]}'
         else:
-            model_short_name = model_name.replace("/", "_")
+            model_short_name = model_name.replace('/', '_')
 
-        filename = f"{model_short_name}-{version}-{model_format}.zip"
-        url = f"https://artifacts.opensearch.org/models/ml-models/{model_name}/{version}/{model_format}/{filename}"
+        filename = f'{model_short_name}-{version}-{model_format}.zip'
+        url = f'https://artifacts.opensearch.org/models/ml-models/{model_name}/{version}/{model_format}/{filename}'
 
         # Output path - use model short name as directory
-        model_dir = output_dir / name_parts[-1] if len(name_parts) >= 1 else output_dir / model_short_name
+        model_dir = (
+            output_dir / name_parts[-1] if len(name_parts) >= 1 else output_dir / model_short_name
+        )
         model_dir.mkdir(parents=True, exist_ok=True)
         output_path = model_dir / filename
 
-        print_info(f"Downloading: {model_name}")
-        print_info(f"  URL: {url}")
-        print_info(f"  Output: {output_path}")
+        print_info(f'Downloading: {model_name}')
+        print_info(f'  URL: {url}')
+        print_info(f'  Output: {output_path}')
 
         try:
-            import urllib.request
             import urllib.error
+            import urllib.request
 
             # Check if already downloaded
             if output_path.exists():
-                print_success(f"  Already exists, skipping download")
-                downloaded_models.append({
-                    "name": model_name,
-                    "path": str(output_path),
-                    "dimension": model_info["dimension"],
-                    "version": version,
-                    "format": model_format,
-                })
+                print_success('  Already exists, skipping download')
+                downloaded_models.append(
+                    {
+                        'name': model_name,
+                        'path': str(output_path),
+                        'dimension': model_info['dimension'],
+                        'version': version,
+                        'format': model_format,
+                    }
+                )
                 continue
 
             # Download the model
-            print_info(f"  Downloading...")
+            print_info('  Downloading...')
             urllib.request.urlretrieve(url, output_path)
 
             # Verify file exists and has content
             if output_path.exists() and output_path.stat().st_size > 0:
                 size_mb = round(output_path.stat().st_size / (1024 * 1024), 1)
-                print_success(f"  Downloaded successfully ({size_mb} MB)")
-                downloaded_models.append({
-                    "name": model_name,
-                    "path": str(output_path),
-                    "dimension": model_info["dimension"],
-                    "version": version,
-                    "format": model_format,
-                })
+                print_success(f'  Downloaded successfully ({size_mb} MB)')
+                downloaded_models.append(
+                    {
+                        'name': model_name,
+                        'path': str(output_path),
+                        'dimension': model_info['dimension'],
+                        'version': version,
+                        'format': model_format,
+                    }
+                )
             else:
-                print_error(f"  Download failed - file is empty or missing")
+                print_error('  Download failed - file is empty or missing')
                 failed_models.append(model_name)
 
         except urllib.error.HTTPError as e:
-            print_error(f"  HTTP Error {e.code}: {e.reason}")
-            print_error(f"  URL may not be available from OpenSearch artifacts")
+            print_error(f'  HTTP Error {e.code}: {e.reason}')
+            print_error('  URL may not be available from OpenSearch artifacts')
             failed_models.append(model_name)
         except Exception as e:
-            print_error(f"  Failed to download: {e}")
+            print_error(f'  Failed to download: {e}')
             failed_models.append(model_name)
 
     # Create manifest file
-    manifest_path = output_dir / "model_manifest.json"
+    manifest_path = output_dir / 'model_manifest.json'
     manifest = {
-        "downloaded_at": datetime.now().isoformat(),
-        "models": downloaded_models,
-        "failed": failed_models,
+        'downloaded_at': datetime.now().isoformat(),
+        'models': downloaded_models,
+        'failed': failed_models,
     }
 
     with open(manifest_path, 'w') as f:
         json.dump(manifest, f, indent=2)
 
-    print_info(f"Manifest saved to: {manifest_path}")
+    print_info(f'Manifest saved to: {manifest_path}')
 
     if failed_models:
-        print_warning(f"Failed to download {len(failed_models)} model(s): {', '.join(failed_models)}")
+        print_warning(
+            f'Failed to download {len(failed_models)} model(s): {", ".join(failed_models)}'
+        )
         return {
-            "opensearch_neural": {
-                "status": "partial",
-                "downloaded": len(downloaded_models),
-                "failed": failed_models,
-                "path": str(output_dir),
+            'opensearch_neural': {
+                'status': 'partial',
+                'downloaded': len(downloaded_models),
+                'failed': failed_models,
+                'path': str(output_dir),
             }
         }
 
-    print_success(f"All {len(downloaded_models)} OpenSearch neural model(s) downloaded successfully")
+    print_success(
+        f'All {len(downloaded_models)} OpenSearch neural model(s) downloaded successfully'
+    )
     return {
-        "opensearch_neural": {
-            "status": "downloaded",
-            "models": downloaded_models,
-            "path": str(output_dir),
+        'opensearch_neural': {
+            'status': 'downloaded',
+            'models': downloaded_models,
+            'path': str(output_dir),
         }
     }
 
@@ -818,66 +821,66 @@ def download_redaction_models():
     Skipped unless DOWNLOAD_REDACTION_MODELS=true (default true in the prod image).
     Non-critical: redaction simply runs with fewer detectors if a model is missing.
     """
-    print_header("Downloading Content Redaction Models (PII + toxicity)")
+    print_header('Downloading Content Redaction Models (PII + toxicity)')
 
-    if os.environ.get("DOWNLOAD_REDACTION_MODELS", "true").lower() != "true":
-        print_info("Skipping redaction models (DOWNLOAD_REDACTION_MODELS != true)")
-        return {"redaction": {"status": "skipped"}}
+    if os.environ.get('DOWNLOAD_REDACTION_MODELS', 'true').lower() != 'true':
+        print_info('Skipping redaction models (DOWNLOAD_REDACTION_MODELS != true)')
+        return {'redaction': {'status': 'skipped'}}
 
-    results = {"status": "downloaded", "models": []}
+    results = {'status': 'downloaded', 'models': []}
 
     # GLiNER PII model
     try:
         from gliner import GLiNER
 
-        gliner_model = "knowledgator/gliner-pii-base-v1.0"
-        print_info(f"Downloading GLiNER PII model: {gliner_model}")
+        gliner_model = 'knowledgator/gliner-pii-base-v1.0'
+        print_info(f'Downloading GLiNER PII model: {gliner_model}')
         GLiNER.from_pretrained(gliner_model)
-        print_success(f"  Downloaded: {gliner_model}")
-        results["models"].append(gliner_model)
+        print_success(f'  Downloaded: {gliner_model}')
+        results['models'].append(gliner_model)
     except Exception as e:
-        print_error(f"  Failed GLiNER PII model: {e}")
-        results["status"] = "partial"
+        print_error(f'  Failed GLiNER PII model: {e}')
+        results['status'] = 'partial'
 
     # Toxicity models (via transformers AutoModel)
     try:
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
         for tox_model in (
-            "unitary/toxic-bert",
-            "unitary/multilingual-toxic-xlm-roberta",
+            'unitary/toxic-bert',
+            'unitary/multilingual-toxic-xlm-roberta',
         ):
             try:
-                print_info(f"Downloading toxicity model: {tox_model}")
+                print_info(f'Downloading toxicity model: {tox_model}')
                 AutoTokenizer.from_pretrained(tox_model)
                 AutoModelForSequenceClassification.from_pretrained(tox_model)
-                print_success(f"  Downloaded: {tox_model}")
-                results["models"].append(tox_model)
+                print_success(f'  Downloaded: {tox_model}')
+                results['models'].append(tox_model)
             except Exception as e:
-                print_error(f"  Failed toxicity model {tox_model}: {e}")
-                results["status"] = "partial"
+                print_error(f'  Failed toxicity model {tox_model}: {e}')
+                results['status'] = 'partial'
     except Exception as e:
-        print_error(f"  transformers unavailable for toxicity models: {e}")
-        results["status"] = "partial"
+        print_error(f'  transformers unavailable for toxicity models: {e}')
+        results['status'] = 'partial'
 
-    return {"redaction": results}
+    return {'redaction': results}
 
 
 def get_cache_info():
     """Get information about cached models"""
     # Use default paths (same as backend)
-    hf_home = str(Path.home() / ".cache" / "huggingface")
-    torch_home = str(Path.home() / ".cache" / "torch")
-    nltk_home = str(Path.home() / ".cache" / "nltk_data")
-    sent_home = str(Path.home() / ".cache" / "sentence-transformers")
-    opensearch_ml_home = str(Path.home() / ".cache" / "opensearch-ml")
+    hf_home = str(Path.home() / '.cache' / 'huggingface')
+    torch_home = str(Path.home() / '.cache' / 'torch')
+    nltk_home = str(Path.home() / '.cache' / 'nltk_data')
+    sent_home = str(Path.home() / '.cache' / 'sentence-transformers')
+    opensearch_ml_home = str(Path.home() / '.cache' / 'opensearch-ml')
 
     cache_dirs = {
-        "huggingface": Path(hf_home),
-        "torch": Path(torch_home),
-        "nltk_data": Path(nltk_home),
-        "sentence_transformers": Path(sent_home),
-        "opensearch_ml": Path(opensearch_ml_home),
+        'huggingface': Path(hf_home),
+        'torch': Path(torch_home),
+        'nltk_data': Path(nltk_home),
+        'sentence_transformers': Path(sent_home),
+        'opensearch_ml': Path(opensearch_ml_home),
     }
 
     info = {}
@@ -888,60 +891,61 @@ def get_cache_info():
             size = sum(f.stat().st_size for f in path.rglob('*') if f.is_file())
             total_size += size
             info[name] = {
-                "path": str(path),
-                "size_bytes": size,
-                "size_gb": round(size / (1024**3), 2)
+                'path': str(path),
+                'size_bytes': size,
+                'size_gb': round(size / (1024**3), 2),
             }
         else:
-            info[name] = {
-                "path": str(path),
-                "exists": False
-            }
+            info[name] = {'path': str(path), 'exists': False}
 
-    info["total_size_gb"] = round(total_size / (1024**3), 2)
+    info['total_size_gb'] = round(total_size / (1024**3), 2)
 
     return info
 
+
 def create_manifest(download_results):
     """Create manifest file with model information"""
-    print_header("Creating Model Manifest")
+    print_header('Creating Model Manifest')
 
     manifest = {
-        "created_at": datetime.now().isoformat(),
-        "models": download_results,
-        "cache": get_cache_info(),
-        "environment": {
-            "whisper_model": os.environ.get("WHISPER_MODEL", "large-v3-turbo"),
-            "diarization_model": os.environ.get("DIARIZATION_MODEL", "pyannote/speaker-diarization-community-1"),
-            "use_gpu": os.environ.get("USE_GPU", "true"),
-            "compute_type": os.environ.get("COMPUTE_TYPE", "float16")
-        }
+        'created_at': datetime.now().isoformat(),
+        'models': download_results,
+        'cache': get_cache_info(),
+        'environment': {
+            'whisper_model': os.environ.get('WHISPER_MODEL', 'large-v3-turbo'),
+            'diarization_model': os.environ.get(
+                'DIARIZATION_MODEL', 'pyannote/speaker-diarization-community-1'
+            ),
+            'use_gpu': os.environ.get('USE_GPU', 'true'),
+            'compute_type': os.environ.get('COMPUTE_TYPE', 'float16'),
+        },
     }
 
     # Write manifest to HF_HOME directory (inside the cache dir, not parent)
-    cache_base = os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface"))
-    manifest_path = Path(cache_base) / "model_manifest.json"
+    cache_base = os.environ.get('HF_HOME', str(Path.home() / '.cache' / 'huggingface'))
+    manifest_path = Path(cache_base) / 'model_manifest.json'
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(manifest_path, 'w') as f:
         json.dump(manifest, f, indent=2)
 
-    print_success(f"Manifest created at: {manifest_path}")
-    print_info(f"Total model cache size: {manifest['cache']['total_size_gb']} GB")
+    print_success(f'Manifest created at: {manifest_path}')
+    print_info(f'Total model cache size: {manifest["cache"]["total_size_gb"]} GB')
 
     return manifest
 
+
 def main():
     """Main execution"""
-    print_header("OpenTranscribe Model Downloader")
+    print_header('OpenTranscribe Model Downloader')
 
-    print_info("This script will download all required AI models")
-    print_info("Models will be cached for offline packaging\n")
+    print_info('This script will download all required AI models')
+    print_info('Models will be cached for offline packaging\n')
 
     # Check for required environment variables
-    if not os.environ.get("HUGGINGFACE_TOKEN"):
-        print_error("HUGGINGFACE_TOKEN environment variable not set!")
-        print_info("Get your token at: https://huggingface.co/settings/tokens")
+    if not os.environ.get('HUGGINGFACE_TOKEN'):
+        print_error('HUGGINGFACE_TOKEN environment variable not set!')
+        print_info('Get your token at: https://huggingface.co/settings/tokens')
         sys.exit(1)
 
     results = {}
@@ -960,26 +964,27 @@ def main():
     manifest = create_manifest(results)
 
     # Summary
-    print_header("Download Summary")
+    print_header('Download Summary')
 
-    failed = [k for k, v in results.items() if v.get("status") == "failed"]
-    succeeded = [k for k, v in results.items() if v.get("status") == "downloaded"]
+    failed = [k for k, v in results.items() if v.get('status') == 'failed']
+    succeeded = [k for k, v in results.items() if v.get('status') == 'downloaded']
 
     if failed:
-        print_error(f"Failed to download: {', '.join(failed)}")
+        print_error(f'Failed to download: {", ".join(failed)}')
         for model in failed:
-            print_error(f"  {model}: {results[model].get('error', 'Unknown error')}")
+            print_error(f'  {model}: {results[model].get("error", "Unknown error")}')
         sys.exit(1)
 
-    print_success(f"Successfully downloaded {len(succeeded)} model(s)")
-    print_success(f"Total cache size: {manifest['cache']['total_size_gb']} GB")
+    print_success(f'Successfully downloaded {len(succeeded)} model(s)')
+    print_success(f'Total cache size: {manifest["cache"]["total_size_gb"]} GB')
 
-    print("\nCache locations:")
+    print('\nCache locations:')
     for name, info in manifest['cache'].items():
-        if name != "total_size_gb":
-            print(f"  {name}: {info['path']} ({info.get('size_gb', 0)} GB)")
+        if name != 'total_size_gb':
+            print(f'  {name}: {info["path"]} ({info.get("size_gb", 0)} GB)')
 
-    print_success("\n✨ All models downloaded successfully!")
+    print_success('\n✨ All models downloaded successfully!')
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     main()

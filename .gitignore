@@ -178,6 +178,12 @@ Thumbs.db
 .docker/
 backend/VERSION  # Ghost file created by Docker bind mount (real VERSION is at repo root)
 
+# Frozen test-timing baseline for scripts/analyze-test-timing.py --baseline.
+# Deliberately NOT committed: it is a measurement of one machine at one moment, and a
+# checked-in copy would rot exactly the way expected-schemas.tsv did. Regenerate with
+#   ./scripts/run-backend-tests.sh && cp /tmp/ot-backend-tests/last.xml baseline.xml
+baseline.xml
+
 # Test files
 test-output/
 /screenshots/
@@ -210,7 +216,11 @@ test_videos/
 /test_uploads/
 uploads/
 downloads/
-media/
+# Anchored, like /uploads/ and /test_uploads/ above. Unanchored, `media/` matched a directory
+# named `media` at ANY depth, which silently swallowed backend/tests/fixtures/media/ — small
+# committed audio/transcript fixtures the suite needs. It was protecting nothing: no
+# root-level media/ exists, and the only other match is inside venv/ (already ignored).
+/media/
 
 # Security and SSL certificates
 *.pem
@@ -308,3 +318,14 @@ test-results/
 
 # Release orchestrator ledger (scripts/release.sh) — per-release stage state
 .release/
+
+# Mutation testing (scripts/run-mutation-tests.sh). mutmut 3 copies the source tree
+# into backend/mutants/ and mutates the copy; both it and the older cache are
+# regenerated on every run and must never be committed.
+backend/mutants/
+backend/.mutmut-cache
+.mutmut-cache
+# Run logs + test-list fingerprints. These are the EVIDENCE `--check-baseline` compares
+# against scripts/mutation-baselines.tsv (which IS committed). They live in the repo rather
+# than /tmp because /tmp is cleared on reboot, which silently disarmed the ratchet.
+.mutation/

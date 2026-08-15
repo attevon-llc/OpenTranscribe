@@ -13,7 +13,6 @@ from fastapi import Query
 from fastapi import Request
 from fastapi import status
 from sqlalchemy import func
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
@@ -32,6 +31,7 @@ from app.schemas.media import TagBase
 from app.schemas.media import TagWithCount
 from app.services.tag_collisions import list_tags_filtered
 from app.services.tag_collisions import list_unused_tag_rows
+from app.services.tag_operations import cleanup_unreferenced_tags
 from app.services.tag_service import on_tags_changed
 
 
@@ -136,16 +136,47 @@ def list_unused_tags(
 
 @router.delete("/cleanup", response_model=dict[str, Any])
 def cleanup_unused_tags(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
+    scope: Literal["mine", "all_users"] = Query(
+        "mine",
+        description=(
+            "Whose unused tags to delete. `mine` is the caller's own tags — the "
+            "default, because it is the only scope the caller can inspect first. "
+            "`all_users` sweeps every account and requires `confirm=true`."
+        ),
+    ),
+    confirm: bool = Query(
+        False, description="Required acknowledgement for `scope=all_users`. Ignored otherwise."
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
 ):
-    """Delete every user-owned tag no file anywhere carries (admin only).
+    """Delete owned tags no file anywhere carries (admin only).
 
-    Deliberately **deployment-wide**, unlike ``GET /tags/unused``, which is
-    scoped to what the caller can see: this deletes rows, and a tag that merely
-    looks unused to one admin may be carrying someone else's files. System tags
-    (``user_id IS NULL``) are exempt — they are the shared vocabulary every
-    user's picker shows, and being unattached is their normal state, so sweeping
-    them would empty the picker for everyone.
+    **Defaults to the caller's own tags.** This used to be unconditionally
+    deployment-wide while its inspection sibling ``GET /tags/unused`` is
+    caller-scoped, so an admin who read the list and then called this deleted
+    rows they were never shown — irreversibly, with no impact preview and no
+    parameter that could have warned them. The wide sweep is still available, but
+    only by naming it (``scope=all_users``) *and* acknowledging it
+    (``confirm=true``), the same shape as ``POST /org-admin/gdpr/erase-organization``.
+
+    "Unused" is measured against every ``file_tag`` row in the deployment, not
+    the caller's accessible files, so a tag still attached to a file the caller
+    can no longer see survives: ``GET /tags/unused`` may therefore list a tag
+    this endpoint declines to delete. That gap is deliberate — the alternative is
+    stripping a tag off another account's file. System tags (``user_id IS NULL``)
+    are exempt in both scopes; being unattached is their normal state.
+
+    Args:
+        scope: ``mine`` (default) or ``all_users``.
+        confirm: Must be true for ``scope=all_users``.
+
+    Returns:
+        ``deleted_count``, the ``scope`` that was applied, and a message.
+
+    Raises:
+        HTTPException: 403 for a non-admin caller, 400 for ``all_users`` without
+        ``confirm``, 500 if the sweep fails.
     """
     # Only allow admin users to perform this operation
     if not current_user.is_admin:
@@ -154,24 +185,32 @@ def cleanup_unused_tags(
             detail="Only admin users can clean up unused tags",
         )
 
+    if scope == "all_users" and not confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Deployment-wide tag cleanup deletes other users' tags and cannot be "
+                "undone. Retry with confirm=true, or use scope=mine."
+            ),
+        )
+
     try:
-        used_tag_ids = select(FileTag.tag_id).where(FileTag.tag_id.is_not(None))
-
-        delete_query = db.query(Tag).filter(~Tag.id.in_(used_tag_ids), Tag.user_id.is_not(None))
-
-        # Get the count for the response
-        count = delete_query.count()
-
-        # Delete the tags
-        if count > 0:
-            delete_query.delete(synchronize_session=False)
-            db.commit()
-            logger.info(f"Deleted {count} unused tags")
+        count = cleanup_unreferenced_tags(
+            db, acting_user_id=current_user.id, all_users=scope == "all_users"
+        )
+        if count:
+            logger.info(f"Deleted {count} unused tags (scope={scope})")
 
         return {
             "deleted_count": count,
+            "scope": scope,
             "message": f"{count} unused tags deleted successfully",
         }
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception(f"Error in cleanup_unused_tags: {e}")
         db.rollback()
@@ -190,6 +229,28 @@ def add_tag_to_file(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
+    """Attach one tag to a media file, creating the tag if the caller lacks it.
+
+    Consumed by the file-detail and gallery tag pickers; also the single-tag entry
+    point for a script or agent labelling an imported library (bulk paths must use
+    the batched resolver instead — see ``prepare_upload.add_tags_to_file``).
+
+    Authorized by ``get_file_by_uuid_with_permission``, which applies the sharing,
+    takedown and tenant (``ctx.org_id``) gates in one place — write access to the
+    *file* is the whole requirement, because tagging does not touch anyone else's
+    vocabulary.
+
+    The body is a raw ``dict`` rather than a schema, so a missing ``name`` is
+    rejected as 422 by hand. The resolved tag belongs to the **caller**, not the file
+    owner: tagging a shared file adds the word to your own vocabulary and the owner
+    still sees it because it is now attached to a file they can access.
+    ``_resolve_tag`` is race-safe and resolves normalized-exact against the caller's
+    own vocabulary plus the system one; it does **not** pass ``file_id``, so it does
+    not take ``resolve_or_create_tag``'s "already on this file" branch. The
+    duplicate-suppression here is by tag *id* on ``FileTag``, which makes a repeat
+    post by the same user idempotent (no second row, no second ``on_tags_changed``)
+    but lets two users attach same-named rows of their own to one shared file.
+    """
     from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
     # Get file by UUID and verify permission (tenant-gated via ctx.org_id)

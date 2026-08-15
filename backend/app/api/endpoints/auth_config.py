@@ -21,6 +21,10 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
+from app.api.endpoints.auth.dependencies import _get_client_info
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
 from app.db.base import get_db
 from app.models.auth_config import AuthConfig
 from app.models.user import User
@@ -62,6 +66,94 @@ def _require_valid_category(category: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid category. Must be one of: {', '.join(VALID_CATEGORIES)}",
         )
+
+
+def _change_summary(results: dict[str, AuthConfig]) -> dict[str, Any]:
+    """Describe what a category write changed, without carrying any secret VALUE.
+
+    A key is treated as sensitive when EITHER its stored ``is_sensitive`` flag or
+    the service's ``SENSITIVE_KEYS`` set says so — fail closed, so a row written
+    before a key joined that set still cannot leak its value here. Sensitive keys
+    contribute their NAME only: "the OIDC client secret was rotated, by this
+    person, from this address" is the auditable fact; the secret itself is
+    deliberately unobtainable from every other surface of this API
+    (``config_value`` is ``None`` for a sensitive key and ``is_set`` carries the
+    signal), and the audit log must not become the one place it appears.
+
+    Args:
+        results: The ``AuthConfig`` rows ``bulk_update_category`` actually wrote —
+            not the request payload, which may name sensitive keys whose
+            "leave the stored one alone" sentinel was skipped.
+
+    Returns:
+        Details fragment: every changed key, the new values of the non-sensitive
+        ones, and the names of the sensitive ones.
+    """
+    changes: dict[str, Any] = {}
+    sensitive_changed: list[str] = []
+
+    for key, config in results.items():
+        if config.is_sensitive or key in AuthConfigService.SENSITIVE_KEYS:
+            sensitive_changed.append(key)
+        else:
+            changes[key] = config.config_value
+
+    return {
+        "changed_keys": sorted(results),
+        "changes": changes,
+        "sensitive_keys_changed": sorted(sensitive_changed),
+    }
+
+
+def _audit_auth_config_event(
+    request: Request,
+    actor_id: int,
+    actor_email: str,
+    *,
+    action: str,
+    outcome: AuditOutcome,
+    details: dict[str, Any],
+    error_code: str | None = None,
+) -> None:
+    """Mirror an authentication-configuration change into the central audit log.
+
+    Every write here also writes an ``auth_config_audit`` row, but that table is
+    readable only through ``GET /api/auth-config/audit/{category}`` — one category
+    at a time, no time range, no export. It is invisible to
+    ``GET /admin/audit-logs``, the export endpoint, the CEF/SIEM stream and the
+    org-admin view, so the configuration deciding *who may authenticate at all*
+    was the one change class that never reached the compliance record
+    (FedRAMP AU-2/AU-3/AU-12, GDPR Art. 30).
+
+    ``ADMIN_SETTINGS_CHANGE`` is the established member for "an administrator
+    changed deployment configuration" (SCIM tokens, group mappings, chat and mail
+    settings all use it); ``details["action"]`` discriminates the surface.
+
+    Args:
+        request: Live request — the ONLY source of the client address and agent.
+        actor_id: The acting super_admin's id, **snapshotted before any DB work**.
+            The refusal paths audit after ``db.rollback()``, which expires every
+            ORM instance in the session — reading ``current_user.id`` there costs
+            a re-SELECT at best and raises ``ObjectDeletedError`` at worst.
+        actor_email: The acting super_admin's email, snapshotted likewise.
+            ``user_id``/``username`` name the ACTOR here; auth config has no
+            target user.
+        action: Surface discriminator, e.g. ``auth_config_update``.
+        outcome: Whether the change was applied.
+        details: Event-specific fields, merged after ``action``.
+        error_code: Set on a refusal so a failed change is greppable.
+    """
+    client_ip, user_agent = _get_client_info(request)
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_SETTINGS_CHANGE,
+        outcome=outcome,
+        user_id=actor_id,
+        username=actor_email,
+        source_ip=client_ip,
+        user_agent=user_agent,
+        error_code=error_code,
+        details={"action": action, **details},
+    )
 
 
 @router.get("", response_model=dict[str, list[AuthConfigResponse]])
@@ -186,8 +278,12 @@ def update_config_category(
     """
     _require_valid_category(category)
 
+    # Snapshot the actor BEFORE any DB work: the refusal paths below audit after
+    # db.rollback(), which expires every ORM instance in this session.
+    actor_id, actor_email = int(current_user.id), str(current_user.email)
+
     logger.info(
-        f"Auth config category '{category}' update by super admin {current_user.email}: "
+        f"Auth config category '{category}' update by super admin {actor_email}: "
         f"{list(config.keys())}"
     )
 
@@ -198,6 +294,15 @@ def update_config_category(
             config_dict=config,
             user_id=current_user.id,
             request=request,
+        )
+
+        _audit_auth_config_event(
+            request,
+            actor_id,
+            actor_email,
+            action="auth_config_update",
+            outcome=AuditOutcome.SUCCESS,
+            details={"category": category, **_change_summary(results)},
         )
 
         return {
@@ -212,11 +317,39 @@ def update_config_category(
         # return: it names the offending keys so the admin can fix the request.
         # Reaching the generic handler below would have turned it into a 500.
         db.rollback()
+        # A refused change is auditable too: repeated attempts to disable a
+        # control are exactly the pattern a reviewer is looking for, and a log
+        # that records only successes cannot show them. Key NAMES only — the
+        # rejected payload's values are unvalidated caller input and may include
+        # a secret the admin meant to set.
+        _audit_auth_config_event(
+            request,
+            actor_id,
+            actor_email,
+            action="auth_config_update",
+            outcome=AuditOutcome.FAILURE,
+            error_code="INVALID_AUTH_CONFIG",
+            details={"category": category, "requested_keys": sorted(config)},
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Failed to update %s config: %s", category, e, exc_info=True)
         db.rollback()
+        _audit_auth_config_event(
+            request,
+            actor_id,
+            actor_email,
+            action="auth_config_update",
+            outcome=AuditOutcome.FAILURE,
+            error_code="AUTH_CONFIG_UPDATE_FAILED",
+            details={"category": category, "requested_keys": sorted(config)},
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An internal error occurred. Please try again.",
@@ -299,10 +432,11 @@ def get_audit_log(
         offset=offset,
     )
 
-    # Resolve the actors in one query rather than per row. `changed_by` is a NOT
-    # NULL FK, but the referenced account may have been deleted since, so a miss
-    # is rendered as unknown rather than dropping the entry — losing the record
-    # of a change because its author left is the opposite of an audit trail.
+    # Resolve the actors in one query rather than per row. Since v387 `changed_by` is
+    # nullable and ON DELETE SET NULL, so it is genuinely NULL once the author's
+    # account is deleted — this None branch used to be unreachable. Either way a miss
+    # renders as unknown rather than dropping the entry: losing the record of a change
+    # because its author left is the opposite of an audit trail.
     actor_ids = {audit.changed_by for audit in audits if audit.changed_by is not None}
     actor_emails: dict[int, str] = {}
     if actor_ids:
@@ -342,10 +476,26 @@ def migrate_from_env(
     Returns:
         Success message with count of migrated settings
     """
-    logger.info(f"Auth config migration from env initiated by super admin {current_user.email}")
+    # Snapshot the actor before any DB work, for the same reason the category
+    # update does: the failure path rolls back and expires every ORM instance.
+    actor_id, actor_email = int(current_user.id), str(current_user.email)
+
+    logger.info(f"Auth config migration from env initiated by super admin {actor_email}")
 
     try:
-        count = AuthConfigService.migrate_from_env(db, current_user.id)
+        count = AuthConfigService.migrate_from_env(db, actor_id)
+
+        # Bulk-seeds every unset auth key from the environment, so it is a
+        # configuration change of the widest possible blast radius — including
+        # the enable flags for every auth method — under one request.
+        _audit_auth_config_event(
+            request,
+            actor_id,
+            actor_email,
+            action="auth_config_migrate_from_env",
+            outcome=AuditOutcome.SUCCESS,
+            details={"migrated_count": count},
+        )
 
         return {
             "success": True,
@@ -353,6 +503,11 @@ def migrate_from_env(
             "message": f"Successfully migrated {count} settings from environment to database",
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Migration failed: %s", e, exc_info=True)
         db.rollback()

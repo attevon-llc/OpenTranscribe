@@ -42,7 +42,16 @@ class DownloadSettings(BaseModel):
 
 
 class DownloadSettingsUpdate(BaseModel):
-    """Request schema for updating user download settings. All fields optional."""
+    """Request schema for updating user download settings. All fields optional.
+
+    ``extra="forbid"`` so an unknown key is a 422 instead of being silently dropped.
+    Without it, Pydantic discarded unrecognised keys, ``update_data`` came back empty and
+    the handler returned the *current* settings with a 200 — so a client with a typo
+    (``videoQuality`` for ``video_quality``) got a success response and no change, and
+    ``update_download_settings``' own ``Unknown download setting field`` 422 could never
+    fire. Safe to tighten: the only caller is `frontend/src/lib/api/downloadSettings.ts`,
+    whose `DownloadSettingsUpdate` interface declares exactly these three fields.
+    """
 
     video_quality: str | None = Field(
         default=None,
@@ -58,6 +67,10 @@ class DownloadSettingsUpdate(BaseModel):
     )
 
     class Config:
+        # Set here rather than as a `model_config` dict: pydantic raises
+        # `config-both` if a class-based `Config` and `model_config` are both present,
+        # and this module uses the class-based style throughout.
+        extra = "forbid"
         json_schema_extra = {
             "example": {
                 "video_quality": "1080p",

@@ -17,16 +17,20 @@ import pytest
 import requests
 from playwright.sync_api import Page
 
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+# This module used to define its own ``BACKEND_URL`` constant here. A module constant is
+# evaluated at import time, so it could not see ``--backend-url`` and this file always
+# talked to whatever was on the default port — even when the run was aimed at an isolated
+# stack (issue #431). Everything below takes conftest's ``backend_url`` fixture instead
+# (the browser side already used ``base_url``).
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")
 
 
 @pytest.fixture(scope="module")
-def completed_uuid():
+def completed_uuid(backend_url: str):
     """UUID of a completed file in the dev dataset (one API login per module)."""
     tok = requests.post(
-        f"{BACKEND_URL}/api/auth/token",
+        f"{backend_url}/api/auth/token",
         data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=30,
@@ -34,7 +38,7 @@ def completed_uuid():
     if tok.status_code != 200:
         pytest.skip(f"Cannot authenticate against dev stack (HTTP {tok.status_code})")
     files = requests.get(
-        f"{BACKEND_URL}/api/files?limit=100",
+        f"{backend_url}/api/files?limit=100",
         headers={"Authorization": f"Bearer {tok.json()['access_token']}"},
         timeout=30,
     ).json()

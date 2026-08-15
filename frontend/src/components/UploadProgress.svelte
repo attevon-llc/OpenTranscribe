@@ -70,7 +70,12 @@
             <span class="upload-size">{formatFileSize(upload.size)}</span>
           {/if}
           {#if upload.estimatedTime}
+            <!-- `estimatedTime` is a DURATION only. It used to double as the
+                 phase-status field, so this row rendered "Calculating file
+                 hash... remaining". Phase text now has its own field. -->
             <span class="upload-time">{upload.estimatedTime} {$t('upload.remaining')}</span>
+          {:else if upload.statusText}
+            <span class="upload-status-text">{upload.statusText}</span>
           {/if}
           {#if upload.dedupSkipped}
             <!-- The fingerprint failed, so this upload was never checked against

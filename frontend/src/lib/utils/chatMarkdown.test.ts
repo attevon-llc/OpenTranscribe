@@ -109,10 +109,23 @@ describe('renderChatMarkdown — formatting', () => {
     expect(html).toContain('[2]');
   });
 
-  it('handles partial markdown mid-stream without throwing', () => {
-    expect(() => renderChatMarkdown('| a | b |\n| --- ')).not.toThrow();
-    expect(() => renderChatMarkdown('**unclosed bold')).not.toThrow();
-    expect(() => renderChatMarkdown('```python\nprint(')).not.toThrow();
+  it('keeps partial markdown mid-stream visible instead of blanking the message', () => {
+    // Three `not.toThrow()` calls used to be the whole test, which passed for the one
+    // failure mode that actually matters: the documented contract is "a half-written table
+    // mid-stream shouldn't blank the message" (see the catch branch in chatMarkdown.ts), and
+    // a fallback returning '' satisfies not.toThrow() while the user watches the answer
+    // vanish and reappear on every tick. Assert the text SURVIVES.
+    const halfTable = renderChatMarkdown('| a | b |\n| --- ');
+    expect(halfTable).toContain('| a | b |');
+
+    const halfBold = renderChatMarkdown('**unclosed bold');
+    expect(halfBold).toContain('unclosed bold');
+
+    // A fence opened but not closed still renders as code, so the block doesn't reflow
+    // into a paragraph and back once the closing fence arrives.
+    const halfFence = renderChatMarkdown('```python\nprint(');
+    expect(halfFence).toContain('language-python');
+    expect(halfFence).toContain('print(');
   });
 
   it('returns empty string for empty input', () => {

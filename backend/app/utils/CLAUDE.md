@@ -20,9 +20,14 @@ so keep heavy imports lazy.
   → shares, in that order), `require_resource_owner`.
 - `db_helpers.py` — `apply_tenant_scope` (SQL-plane default-deny tenant filter mirroring
   `api/deps_context.scope_to_context`), user file/tag/speaker query builders, tag-cache busting.
-- `auth_decorators.py` — `require_file_ownership`, `require_admin`, `AuthorizationHelper`.
-  **kwargs-only**: they read `db`/`current_user`/`file_id` out of `kwargs` and raise `ValueError`
-  if the caller passed positionally. Prefer FastAPI `Depends` for new endpoints.
+- **There are no authorization decorators here, and reintroducing one is the mistake to avoid.**
+  `auth_decorators.py` was deleted in issue #450: zero call sites for its four gates, and its only
+  importer (`services/transcription_service.py`, a whole parallel copy of the transcription
+  routers) was itself imported by nothing. Two reasons not to revive the shape — the gates were
+  **kwargs-only**, reading `db`/`current_user`/`file_id` out of `kwargs`, so any positional call
+  skipped the check; and `require_verified_user` gated on `is_active` while both its name and its
+  403 detail said "verification". Authorization is a FastAPI `Depends`
+  (`api/endpoints/auth/dependencies.py` for privilege, `uuid_helpers` for resource access).
 - `error_handlers.py` — `handle_database_errors` (rolls back the session in `kwargs["db"]`) and
   `ErrorHandler` builders for opaque 5xx. `pagination.py` — `paginate()` replaces the
   count+offset+limit boilerplate (counts with `order_by(None)`).

@@ -74,6 +74,11 @@ def list_clusters(
             has_label=has_label,
             search=search,
         )
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception("Error listing clusters: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error") from e
@@ -114,6 +119,11 @@ def trigger_recluster(
             "task_id": task.id,
             "message": "Re-clustering started in background",
         }
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.exception("Error triggering recluster: %s", e)
         raise HTTPException(status_code=500, detail="Failed to start re-clustering") from e
@@ -194,7 +204,12 @@ def get_speaker_media_preview(
     best_seg = (
         db.query(TranscriptSegment)
         .filter(TranscriptSegment.speaker_id == speaker.id)
-        .order_by((TranscriptSegment.end_time - TranscriptSegment.start_time).desc())
+        .order_by(
+            (TranscriptSegment.end_time - TranscriptSegment.start_time).desc(),
+            # Equal-duration segments would otherwise rank in physical storage order,
+            # which a delete-then-bulk-insert reshuffles (issue #433).
+            TranscriptSegment.id,
+        )
         .first()
     )
     seg_start = float(best_seg.start_time) if best_seg else 0.0
@@ -355,7 +370,18 @@ def delete_cluster(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Delete a cluster."""
+    """Delete a speaker cluster, detaching its members rather than deleting them.
+
+    Consumed by the speaker-cluster management UI when the operator rejects a
+    proposed grouping. Any active user, but scoped to their own clusters: the lookup
+    filters on ``user_id``, so someone else's cluster is 404.
+
+    Destroys only the grouping. Member speakers survive with ``cluster_id`` reset to
+    null, so the transcripts and their labels are untouched and the speakers become
+    candidates for re-clustering. Removing the cluster's centroid embedding from
+    OpenSearch is best-effort — a failure there is logged at debug and does not fail
+    the request, because Postgres is the source of truth for cluster membership.
+    """
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     try:
         cluster = (

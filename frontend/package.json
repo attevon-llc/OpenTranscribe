@@ -23,7 +23,9 @@
     "test:coverage": "vitest run --coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "check:i18n": "node scripts/check-i18n-parity.mjs"
+    "check:i18n": "node scripts/check-i18n-parity.mjs",
+    "test:audit": "node scripts/audit-frontend-tests.mjs",
+    "test:audit:selftest": "node scripts/audit-frontend-tests.mjs --selftest"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

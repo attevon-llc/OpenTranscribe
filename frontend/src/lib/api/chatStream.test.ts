@@ -208,6 +208,10 @@ describe('createSseParser', () => {
 
 describe('streamChatMessage', () => {
   it('POSTs the message body and sends the CSRF header', async () => {
+    // `getCsrfToken()` reads document.cookie, so give it a known value to carry through.
+    // Without this the header is '' and the old `toBeDefined()` still passed (issue #431).
+    document.cookie = 'csrf_token=test-csrf-value';
+
     const { streamChatMessage } = await import('./chatStream');
 
     const fetchMock = vi.fn().mockResolvedValue({
@@ -244,7 +248,11 @@ describe('streamChatMessage', () => {
     // Prompt text goes in the body, never the URL.
     expect(url).not.toContain('hello');
     expect(JSON.parse(init.body)).toEqual({ content: 'hello' });
-    expect(init.headers['X-CSRF-Token']).toBeDefined();
+    // `chatStream.ts` sends `getCsrfToken() ?? ''`, so a missing token yields an EMPTY
+    // header — and `toBeDefined()` passes on ''. This test is named "sends the CSRF header"
+    // yet would have passed while sending no token at all. Assert it carries the cookie's
+    // actual value, which is the only form that can fail (issue #431).
+    expect(init.headers['X-CSRF-Token']).toBe('test-csrf-value');
     expect(events).toEqual([{ type: 'done', finish_reason: 'stop' }]);
 
     vi.unstubAllGlobals();

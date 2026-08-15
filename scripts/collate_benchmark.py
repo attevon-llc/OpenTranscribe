@@ -216,7 +216,7 @@ def write_master_csv(rows: list[dict], out: Path) -> None:
 def md_table(rows: list[dict]) -> list[str]:
     headers = [h for _, h in COLUMNS]
     lines = ['| ' + ' | '.join(headers) + ' |', '| ' + ' | '.join('---' for _ in headers) + ' |']
-    for r in sorted(rows, key=lambda x: (x.get('conc') or 0)):
+    for r in sorted(rows, key=lambda x: x.get('conc') or 0):
         cells = []
         for key, _ in COLUMNS:
             v = r.get(key, '')

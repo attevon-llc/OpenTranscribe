@@ -12,23 +12,27 @@ NOTE: These tests are for the dynamic auth configuration service planned in the
 FedRAMP compliance plan. They are currently skipped until the service is fully implemented.
 """
 
-import os
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
 
-# Skip all tests - auth config service in development
-pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_AUTH_CONFIG_TESTS", "false").lower() != "true",
-    reason="Auth config service in development (set RUN_AUTH_CONFIG_TESTS=true to run)",
-)
-
+# Runs by DEFAULT. This module was gated behind RUN_AUTH_CONFIG_TESTS with the reason
+# "Auth config service in development" — but every test in it passes, and did so on the first run once the gate
+# was lifted. The gate was stale: it kept 40 security tests out of every local run and
+# out of CI, visible only as `s` in the progress dots, while reading as a deliberate
+# decision someone had made. That is how `test_super_admin_can_export_audit_logs` came to
+# assert `status_code in [200, 400]` — 400 being exactly 'could not export' — without
+# anyone noticing (issue #431).
+#
+# The pre-merge gate still runs these; the difference is they now also run by default,
+# so a regression surfaces on the commit that causes it rather than at merge time.
 from sqlalchemy.orm import Session
 
 from app.models.auth_config import AuthConfig
 from app.models.auth_config import AuthConfigAudit
 from app.services.auth_config_service import AuthConfigService
+from tests.helpers import does_not_raise
 
 
 class TestAuthConfigServiceGetConfig:
@@ -263,9 +267,10 @@ class TestAuthConfigServiceBulkUpdate:
             "ldap_server": "ldap.example.com",  # Non-sensitive
         }
 
-        AuthConfigService.bulk_update_category(
-            db=mock_db, category="ldap", config_dict=config, user_id=1
-        )
+        with does_not_raise("an empty sensitive value is skipped, not written or rejected"):
+            AuthConfigService.bulk_update_category(
+                db=mock_db, category="ldap", config_dict=config, user_id=1
+            )
 
         # ldap_server should be processed, ldap_bind_password should be skipped
         # Due to the skip, we expect fewer calls
@@ -322,7 +327,12 @@ class TestAuthConfigServiceEffectiveConfig:
         with patch("app.services.auth_config_service.settings") as mock_settings:
             mock_settings.LDAP_ENABLED = True
             result = AuthConfigService.get_effective_config(mock_db, "ldap_enabled")
-            # Should return the settings value when not in DB
+
+        # The assertion was simply never written: `result` was computed, the comment stated
+        # the expectation, and nothing checked it — so the env-fallback branch was unverified
+        # (issue #431). get_effective_config falls back to
+        # `getattr(settings, env_var_for(key))`, which is the patched True.
+        assert result is True
 
     def test_get_effective_config_bool_conversion(self, mock_db):
         """Test boolean conversion for effective config."""
@@ -452,9 +462,16 @@ class TestAuthConfigAudit:
                 audit_call = obj
                 break
 
-        # The audit entry should have redacted value
-        if audit_call:
-            assert audit_call.new_value == "***REDACTED***"
+        # `if audit_call:` made this pass when NO audit row was created at all — so if audit
+        # logging broke entirely, a test whose whole purpose is "secrets are masked in the
+        # audit log" still went green. The existence of the row is half the guarantee
+        # (issue #431).
+        assert audit_call is not None, (
+            "set_config must add an AuthConfigAudit row; without one there is no audit trail "
+            f"to mask. Added objects: {[type(c[0][0]).__name__ for c in add_calls]}"
+        )
+        assert audit_call.new_value == "***REDACTED***"
+        assert "secret" not in str(audit_call.new_value)
 
     def test_get_audit_log(self, mock_db):
         """Test getting audit log entries."""

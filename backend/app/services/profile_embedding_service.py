@@ -538,7 +538,6 @@ class ProfileEmbeddingService:
 
     @staticmethod
     def calculate_profile_similarity(
-        db: Session,
         embedding: list[float],
         user_id: int,
         threshold: float = 0.7,
@@ -552,7 +551,6 @@ class ProfileEmbeddingService:
         instead of manual calculations for maximum efficiency.
 
         Args:
-            db: Database session
             embedding: The embedding to compare against
             user_id: User ID to filter profiles
             threshold: Minimum similarity threshold

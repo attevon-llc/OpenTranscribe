@@ -11,7 +11,6 @@ RUN_LLM_TESTS=true (they exercise the multi-configuration LLM settings API
 against the test database — no external LLM calls are made).
 """
 
-import os
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -25,10 +24,10 @@ from app.utils.encryption import encrypt_api_key
 # Alias so pytest doesn't collect the imported utility as a test function
 from app.utils.encryption import test_encryption as encryption_self_test
 
-_llm_gate = pytest.mark.skipif(
-    os.environ.get("RUN_LLM_TESTS", "false").lower() != "true",
-    reason="LLM settings tests are opt-in (set RUN_LLM_TESTS=true to run)",
-)
+# Runs by DEFAULT. Was `skipif(RUN_LLM_TESTS != "true")`, described as "opt-in" — but the
+# suite needs no provider, no key and no network: it exercises settings CRUD and validation.
+# All 20 pass. Kept as a no-op mark so the call sites stay valid (issue #431).
+_llm_gate = pytest.mark.unit
 
 
 class TestEncryption:

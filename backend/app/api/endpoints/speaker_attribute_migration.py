@@ -76,6 +76,11 @@ def get_attribute_migration_status(
             "progress": progress,
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error getting attribute migration status: %s", e, exc_info=True)
         raise HTTPException(
@@ -116,6 +121,11 @@ def start_attribute_migration(
             "message": "Speaker attribute migration dispatched.",
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error starting attribute migration: %s", e, exc_info=True)
         raise HTTPException(
@@ -199,6 +209,11 @@ def stop_attribute_migration(
                 "message": "Failed to stop migration",
             }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error stopping attribute migration: %s", e, exc_info=True)
         raise HTTPException(
@@ -227,6 +242,11 @@ def clear_attribute_progress(
         else:
             return {"status": "error", "message": "Failed to clear progress."}
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error clearing attribute progress: %s", e, exc_info=True)
         raise HTTPException(

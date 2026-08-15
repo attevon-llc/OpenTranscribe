@@ -10,6 +10,7 @@ import pytest
 
 from app.core.config import settings
 from app.main import _validate_production_secrets
+from tests.helpers import does_not_raise
 
 STRONG_JWT = "a" * 128
 STRONG_ENCRYPTION = "opentranscribe_" + "b" * 64
@@ -31,7 +32,40 @@ def production_settings(monkeypatch):
 
 
 def test_strong_secrets_pass(production_settings):
-    _validate_production_secrets()  # must not raise
+    """The baseline passes. Written as an explicit non-raise, not a bare call.
+
+    ``pytest.raises`` is the only assertion the other tests here need, so this one had no
+    assertion at all and read as an empty test. Failing on the exception with its message
+    attached says what "must not raise" actually means.
+    """
+    try:
+        _validate_production_secrets()
+    except ValueError as exc:  # pragma: no cover - only on a real regression
+        pytest.fail(f"baseline production settings must pass validation, got: {exc}")
+
+
+def test_wildcard_cors_rejected_in_production(production_settings):
+    """A wildcard CORS origin must refuse to boot production.
+
+    ``allow_credentials=True`` plus ``*`` would let any site read authenticated responses
+    (issue #284 A0.8), so ``_validate_production_secrets`` raises rather than starting. This
+    control had NO coverage: the only test naming it asserted
+    ``if hasattr(settings, "CORS_ORIGINS"): assert "*" not in settings.CORS_ORIGINS`` against
+    the *testing* config, which never exercised the production path and passed vacuously if
+    the attribute were ever renamed (issue #431).
+    """
+    production_settings.setattr(settings, "CORS_ORIGINS", ["*"])
+    with pytest.raises(ValueError, match="CORS"):
+        _validate_production_secrets()
+
+
+def test_explicit_cors_origins_pass_in_production(production_settings):
+    """The control must not fire on a legitimate explicit origin list."""
+    production_settings.setattr(settings, "CORS_ORIGINS", ["https://app.example.com"])
+    try:
+        _validate_production_secrets()
+    except ValueError as exc:  # pragma: no cover - only on a real regression
+        pytest.fail(f"explicit CORS origins must be accepted, got: {exc}")
 
 
 def test_env_example_placeholder_jwt_rejected(production_settings):
@@ -82,4 +116,5 @@ def test_placeholders_allowed_in_development(production_settings):
     production_settings.setattr(settings, "JWT_SECRET_KEY", PLACEHOLDER)
     production_settings.setattr(settings, "ENCRYPTION_KEY", PLACEHOLDER)
     production_settings.setattr(settings, "REDIS_PASSWORD", "")
-    _validate_production_secrets()  # must not raise
+    with does_not_raise("placeholders are allowed outside production, so validation must pass"):
+        _validate_production_secrets()  # must not raise

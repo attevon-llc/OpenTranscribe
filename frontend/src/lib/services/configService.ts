@@ -41,6 +41,20 @@ export async function loadProtectedMediaAuthConfig(): Promise<void> {
   return loadingPromise;
 }
 
+/**
+ * Drop the cached config so the next session re-fetches it.
+ *
+ * Registered in `$lib/session/clearUserState`. `hosts_with_stored_credentials`
+ * is PER-USER — it is what drives the "credentials already stored" affordance —
+ * and `loaded` is a once-only latch, so without this reset User B was shown
+ * which protected hosts User A had saved credentials for until a hard reload.
+ */
+export function resetProtectedMediaAuthConfig(): void {
+  protectedConfigs = [];
+  loaded = false;
+  loadingPromise = null;
+}
+
 export function getAuthConfigForHost(hostname: string): ProtectedMediaAuthConfig | null {
   for (const cfg of protectedConfigs) {
     if (cfg.hosts?.includes(hostname)) {

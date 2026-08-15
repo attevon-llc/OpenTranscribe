@@ -532,15 +532,20 @@ class TestCrossReferenceAttributes:
         ):
             results = cross_reference_attributes(hints, speaker_attrs, speaker_segments=[])
 
-        if len(results) >= 2:
-            alignments = [r["alignment"] for r in results]
-            # All 'match' entries should precede all 'mismatch' entries
-            seen_mismatch = False
-            for a in alignments:
-                if a == "mismatch":
-                    seen_mismatch = True
-                if seen_mismatch:
-                    assert a != "match", "match entry found after mismatch entry"
+        # The two hints above are constructed to produce one match and one mismatch, so this
+        # is a precondition to assert, not a condition to hide behind: as `if len(results) >=
+        # 2:` the whole ordering check vanished whenever the function returned fewer results —
+        # including if it returned none at all (issue #431).
+        assert len(results) >= 2, f"expected at least 2 cross-referenced results, got {results}"
+
+        alignments = [r["alignment"] for r in results]
+        # All 'match' entries must precede all 'mismatch' entries.
+        seen_mismatch = False
+        for a in alignments:
+            if a == "mismatch":
+                seen_mismatch = True
+            if seen_mismatch:
+                assert a != "match", f"match entry found after mismatch entry: {alignments}"
 
     def test_results_capped_at_10(self):
         """Results should be capped at 10 entries."""

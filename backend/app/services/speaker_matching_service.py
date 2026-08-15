@@ -188,7 +188,6 @@ class SpeakerMatchingService:
 
             # Get profile matches using the ProfileEmbeddingService
             profile_matches = ProfileEmbeddingService.calculate_profile_similarity(
-                self.db,
                 embedding.tolist(),
                 user_id,
                 threshold=ConfidenceLevel.LOW,
@@ -930,21 +929,27 @@ class SpeakerMatchingService:
         occurrences = []
         for speaker in speakers:
             media_file = speaker.media_file
-            assert media_file.upload_time is not None  # server_default=now()
+            # `upload_time` is nullable: the server_default covers only an INSERT that omits
+            # the column, so a backfilled or explicitly-updated row can hold NULL. Report it
+            # as null rather than raising — one such row must not take out the whole
+            # occurrences list for a profile.
             occurrences.append(
                 {
                     "media_file_id": media_file.id,
                     "filename": media_file.filename,
                     "title": media_file.title or media_file.filename,
-                    "upload_time": media_file.upload_time.isoformat(),
+                    "upload_time": media_file.upload_time.isoformat()
+                    if media_file.upload_time
+                    else None,
                     "speaker_label": speaker.name,
                     "confidence": speaker.confidence,
                     "verified": speaker.verified,
                 }
             )
 
-        # Sort by upload time (newest first)
-        occurrences.sort(key=lambda x: str(x["upload_time"]), reverse=True)
+        # Sort by upload time (newest first). `or ""` keeps an unknown upload time at the
+        # END under reverse=True; `str(None)` would sort "None" ahead of every ISO date.
+        occurrences.sort(key=lambda x: str(x["upload_time"] or ""), reverse=True)
 
         return occurrences
 

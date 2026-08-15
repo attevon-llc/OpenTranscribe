@@ -1,23 +1,59 @@
-"""Tests for transcription pipeline dispatch: error handling, batch dispatch, and helpers."""
+"""Tests for transcription pipeline dispatch: error handling, batch dispatch, and helpers.
 
-from unittest.mock import MagicMock
+**Written against real rows, deliberately.** The previous version patched
+``update_media_file_status``, ``update_task_status`` and ``send_error_notification`` — the
+very effects ``on_pipeline_error`` exists to produce — and then asserted
+``mock.assert_called_once_with(...)``. Every test therefore proved only that the handler
+called the functions it was mocked into calling: ``on_pipeline_error`` could have left a file
+stuck in ``processing`` forever, or written the wrong file's id, and 13 of 15 tests stayed
+green (issue #431). Each test here now creates a real ``MediaFile``/``Task`` and asserts on
+the row afterwards, which is the thing the handler is for.
+
+Only genuinely out-of-process seams are patched, once, in the ``dispatch_seams`` fixture:
+
+* ``session_scope`` — the handler opens its OWN session, which under the savepoint harness
+  cannot see the uncommitted fixture rows. Pointing it at ``db_session`` is what makes real
+  rows observable at all; it is not a stand-in for any behaviour under test.
+* ``cleanup_temp_audio`` (MinIO), ``send_error_notification`` (Redis/WebSocket) and
+  ``get_redis`` — network calls. Their *arguments* are part of the contract, so the mocks are
+  exposed for assertion, always alongside an assertion on real state.
+* ``group`` — ``group(...).apply_async()`` is the only line that needs a live broker. The
+  Celery ``chain`` it wraps is built for real: construction touches no broker, and building
+  it for real is what proves the signatures are well-formed.
+* ``_log_oom_diagnostics`` — **must stay patched.** It imports torch and calls
+  ``torch.cuda.mem_get_info(i)`` for EVERY device, which creates a CUDA context on each one.
+  This host has three GPUs and two of them are reserved for unrelated work, so a unit test
+  may not touch them. Its output is log lines only; the OOM behaviour that matters is the
+  user-facing message stored on the task row, which these tests assert directly instead of
+  asserting that a logger was called.
+"""
+
+from __future__ import annotations
+
+import json
+import uuid as uuid_pkg
+from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.models.media import FileStatus
+import pytest
 
-# Patch paths — these are imported at the top of dispatch.py
+from app.models.media import FileStatus
+from app.models.media import MediaFile
+from app.models.media import Task
+
 _DISPATCH = "app.tasks.transcription.dispatch"
 _SESSION_SCOPE = f"{_DISPATCH}.session_scope"
-_UPDATE_FILE_STATUS = f"{_DISPATCH}.update_media_file_status"
-_UPDATE_TASK_STATUS = f"{_DISPATCH}.update_task_status"
-_CREATE_TASK_RECORD = f"{_DISPATCH}.create_task_record"
-_RESOLVE_GPU_QUEUE = f"{_DISPATCH}._resolve_gpu_queue"
+_GROUP = f"{_DISPATCH}.group"
 
-# Lazy imports inside on_pipeline_error — patch at source
+# Lazy imports inside on_pipeline_error / dispatch_batch_transcription — patch at source.
 _CLEANUP_TEMP = "app.services.minio_service.cleanup_temp_audio"
-_GET_FILE_BY_UUID = "app.utils.uuid_helpers.get_file_by_uuid"
 _SEND_ERROR = "app.tasks.transcription.notifications.send_error_notification"
+_GET_REDIS = "app.core.redis.get_redis"
 _LOG_OOM = f"{_DISPATCH}._log_oom_diagnostics"
+
+_BATCH_ID = "batch-under-test"
+_GENERIC_ERROR = "Transcription pipeline failed unexpectedly"
 
 
 class TestGetPipelineErrorMessage:
@@ -33,7 +69,7 @@ class TestGetPipelineErrorMessage:
         from app.tasks.transcription.dispatch import _get_pipeline_error_message
 
         result = _get_pipeline_error_message("some traceback", is_oom=False)
-        assert result == "Transcription pipeline failed unexpectedly"
+        assert result == _GENERIC_ERROR
 
     def test_oom_flag_takes_precedence(self):
         from app.tasks.transcription.dispatch import _get_pipeline_error_message
@@ -47,600 +83,311 @@ class TestGetPipelineErrorMessage:
 
         # Error text mentions OOM but flag is False — flag is what matters
         result = _get_pipeline_error_message("CUDA out of memory", is_oom=False)
-        assert result == "Transcription pipeline failed unexpectedly"
+        assert result == _GENERIC_ERROR
 
 
-def _make_session_scope_mock():
-    """Helper: create a mock session_scope context manager returning a mock db."""
-    mock_db = MagicMock()
-    mock_scope = MagicMock()
-    mock_scope.return_value.__enter__ = MagicMock(return_value=mock_db)
-    mock_scope.return_value.__exit__ = MagicMock(return_value=False)
-    return mock_scope, mock_db
+@contextmanager
+def _yield_session(db):
+    """Stand-in for ``session_scope()`` that hands out the test's savepoint session."""
+    yield db
 
 
-def _make_task_mock(status="in_progress", error_message=""):
-    """Helper: create a mock Task object for DB queries."""
-    mock_task = MagicMock()
-    mock_task.status = status
-    mock_task.error_message = error_message
-    return mock_task
+@pytest.fixture
+def dispatch_seams(db_session):
+    """Patch the out-of-process seams and expose their mocks. See the module docstring."""
+    with (
+        patch(_SESSION_SCOPE, lambda: _yield_session(db_session)),
+        patch(_CLEANUP_TEMP) as cleanup_temp,
+        patch(_SEND_ERROR) as send_error,
+        patch(_GROUP) as group,
+        patch(_GET_REDIS) as get_redis,
+        patch(_LOG_OOM) as log_oom,
+    ):
+        group.return_value.apply_async.return_value.id = _BATCH_ID
+        yield SimpleNamespace(
+            cleanup_temp=cleanup_temp,
+            send_error=send_error,
+            group=group,
+            get_redis=get_redis,
+            log_oom=log_oom,
+        )
 
 
-def _make_media_file_mock(status=FileStatus.PROCESSING, file_id=42, user_id=1):
-    """Helper: create a mock MediaFile object."""
-    mock_file = MagicMock()
-    mock_file.status = status
-    mock_file.id = file_id
-    mock_file.user_id = user_id
-    return mock_file
+@pytest.fixture
+def make_media_file(db_session, normal_user):
+    """Factory for a real MediaFile row owned by ``normal_user``."""
+
+    def _make(status: FileStatus = FileStatus.PROCESSING) -> MediaFile:
+        media_file = MediaFile(
+            uuid=uuid_pkg.uuid4(),
+            user_id=normal_user.id,
+            filename="dispatch_test.mp3",
+            storage_path="dispatch/dispatch_test.mp3",
+            file_size=2048,
+            content_type="audio/mpeg",
+            status=status,
+        )
+        db_session.add(media_file)
+        db_session.commit()
+        db_session.refresh(media_file)
+        return media_file
+
+    return _make
+
+
+@pytest.fixture
+def make_task(db_session, normal_user):
+    """Factory for a real Task row, as the pipeline's own dispatch would have created it."""
+
+    def _make(media_file: MediaFile, status: str = "in_progress", error_message: str = "") -> Task:
+        task = Task(
+            id=str(uuid_pkg.uuid4()),
+            user_id=normal_user.id,
+            media_file_id=media_file.id,
+            task_type="transcription",
+            status=status,
+            progress=0.5,
+            error_message=error_message,
+        )
+        db_session.add(task)
+        db_session.commit()
+        db_session.refresh(task)
+        return task
+
+    return _make
 
 
 class TestOnPipelineError:
-    """Tests for on_pipeline_error() Celery task."""
+    """``on_pipeline_error()`` is the safety net: after it runs, nothing may still look busy."""
 
-    @patch(_SEND_ERROR)
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_LOG_OOM)
-    @patch(_GET_FILE_BY_UUID)
-    @patch(_SESSION_SCOPE)
-    @patch(_CLEANUP_TEMP)
-    def test_cleanup_temp_audio_called(
-        self,
-        mock_cleanup,
-        mock_scope,
-        mock_get_file,
-        mock_log_oom,
-        mock_update_file,
-        mock_update_task,
-        mock_send_error,
-    ):
+    @staticmethod
+    def _run(media_file: MediaFile, task_id: str) -> None:
         from app.tasks.transcription.dispatch import on_pipeline_error
 
-        scope, mock_db = _make_session_scope_mock()
-        mock_scope.side_effect = scope.side_effect
-        mock_scope.return_value = scope.return_value
-        mock_get_file.return_value = _make_media_file_mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = _make_task_mock()
+        on_pipeline_error(str(media_file.uuid), task_id)
 
-        on_pipeline_error("file-uuid-1", "task-id-1")
-
-        mock_cleanup.assert_called_once_with("file-uuid-1")
-
-    @patch(_SEND_ERROR)
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_LOG_OOM)
-    @patch(_GET_FILE_BY_UUID)
-    @patch(_SESSION_SCOPE)
-    @patch(_CLEANUP_TEMP)
-    def test_oom_detected_from_cuda_message(
-        self,
-        mock_cleanup,
-        mock_scope,
-        mock_get_file,
-        mock_log_oom,
-        mock_update_file,
-        mock_update_task,
-        mock_send_error,
+    def test_marks_file_and_task_error(
+        self, db_session, dispatch_seams, make_media_file, make_task, normal_user
     ):
-        from app.tasks.transcription.dispatch import on_pipeline_error
+        """The whole point of the handler: a file mid-pipeline must not stay 'processing'."""
+        media_file = make_media_file(FileStatus.PROCESSING)
+        task = make_task(media_file)
 
-        scope, mock_db = _make_session_scope_mock()
-        mock_scope.side_effect = scope.side_effect
-        mock_scope.return_value = scope.return_value
-        mock_get_file.return_value = _make_media_file_mock()
-        task = _make_task_mock(error_message="CUDA out of memory in allocator")
-        mock_db.query.return_value.filter.return_value.first.return_value = task
+        self._run(media_file, task.id)
 
-        on_pipeline_error("file-uuid-1", "task-id-1")
-
-        mock_log_oom.assert_called_once()
-        # Task error message should be the user-friendly OOM message
-        mock_update_task.assert_called_once()
-        error_msg = mock_update_task.call_args[1].get(
-            "error_message",
-            mock_update_task.call_args[0][3] if len(mock_update_task.call_args[0]) > 3 else "",
-        )
-        assert "GPU ran out of memory" in str(error_msg) or any(
-            "GPU ran out of memory" in str(a)
-            for a in mock_update_task.call_args[0] + tuple(mock_update_task.call_args[1].values())
+        db_session.refresh(media_file)
+        db_session.refresh(task)
+        assert media_file.status == FileStatus.ERROR
+        assert task.status == "failed"
+        assert task.error_message == _GENERIC_ERROR
+        assert task.completed_at is not None
+        dispatch_seams.send_error.assert_called_once_with(
+            normal_user.id, media_file.id, _GENERIC_ERROR
         )
 
-    @patch(_SEND_ERROR)
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_LOG_OOM)
-    @patch(_GET_FILE_BY_UUID)
-    @patch(_SESSION_SCOPE)
-    @patch(_CLEANUP_TEMP)
-    def test_oom_detected_from_oom_error(
-        self,
-        mock_cleanup,
-        mock_scope,
-        mock_get_file,
-        mock_log_oom,
-        mock_update_file,
-        mock_update_task,
-        mock_send_error,
+    @pytest.mark.parametrize(
+        "raw_error",
+        [
+            "CUDA out of memory in allocator",
+            "OutOfMemoryError: GPU",
+        ],
+    )
+    def test_oom_is_translated_for_the_user(
+        self, db_session, dispatch_seams, make_media_file, make_task, raw_error
     ):
-        from app.tasks.transcription.dispatch import on_pipeline_error
+        """OOM detection is observable in the STORED message, not in a mocked log call."""
+        media_file = make_media_file(FileStatus.PROCESSING)
+        task = make_task(media_file, error_message=raw_error)
 
-        scope, mock_db = _make_session_scope_mock()
-        mock_scope.side_effect = scope.side_effect
-        mock_scope.return_value = scope.return_value
-        mock_get_file.return_value = _make_media_file_mock()
-        task = _make_task_mock(error_message="OutOfMemoryError: GPU")
-        mock_db.query.return_value.filter.return_value.first.return_value = task
+        self._run(media_file, task.id)
 
-        on_pipeline_error("file-uuid-1", "task-id-1")
+        db_session.refresh(task)
+        assert "GPU ran out of memory" in (task.error_message or "")
+        assert task.status == "failed"
+        # The VRAM dump is the operator half of the same decision; see the module docstring
+        # for why it cannot be allowed to run for real.
+        dispatch_seams.log_oom.assert_called_once()
 
-        mock_log_oom.assert_called_once()
-
-    @patch(_SEND_ERROR)
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_LOG_OOM)
-    @patch(_GET_FILE_BY_UUID)
-    @patch(_SESSION_SCOPE)
-    @patch(_CLEANUP_TEMP)
-    def test_postprocess_only_keeps_completed(
-        self,
-        mock_cleanup,
-        mock_scope,
-        mock_get_file,
-        mock_log_oom,
-        mock_update_file,
-        mock_update_task,
-        mock_send_error,
+    def test_a_non_oom_failure_does_not_claim_it_was_oom(
+        self, db_session, dispatch_seams, make_media_file, make_task
     ):
-        """When task.status == 'completed', postprocess failed after segments saved.
-        File should stay COMPLETED — early return, no status changes."""
-        from app.tasks.transcription.dispatch import on_pipeline_error
+        """Control for the pair above: same code path, opposite classification."""
+        media_file = make_media_file(FileStatus.PROCESSING)
+        task = make_task(media_file, error_message="ffmpeg: Invalid data found")
 
-        scope, mock_db = _make_session_scope_mock()
-        mock_scope.side_effect = scope.side_effect
-        mock_scope.return_value = scope.return_value
-        mock_get_file.return_value = _make_media_file_mock()
-        task = _make_task_mock(status="completed", error_message="postprocess error")
-        mock_db.query.return_value.filter.return_value.first.return_value = task
+        self._run(media_file, task.id)
 
-        on_pipeline_error("file-uuid-1", "task-id-1")
+        db_session.refresh(task)
+        assert task.error_message == _GENERIC_ERROR
+        dispatch_seams.log_oom.assert_not_called()
 
-        # Should NOT update file or task status — early return
-        mock_update_file.assert_not_called()
-        mock_update_task.assert_not_called()
-        mock_send_error.assert_not_called()
-
-    @patch(_SEND_ERROR)
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_LOG_OOM)
-    @patch(_GET_FILE_BY_UUID)
-    @patch(_SESSION_SCOPE)
-    @patch(_CLEANUP_TEMP)
-    def test_marks_error_for_processing_file(
-        self,
-        mock_cleanup,
-        mock_scope,
-        mock_get_file,
-        mock_log_oom,
-        mock_update_file,
-        mock_update_task,
-        mock_send_error,
+    def test_postprocess_failure_keeps_completed(
+        self, db_session, dispatch_seams, make_media_file, make_task
     ):
-        from app.tasks.transcription.dispatch import on_pipeline_error
+        """A postprocess failure arrives with the task already completed and segments saved.
 
-        scope, mock_db = _make_session_scope_mock()
-        mock_scope.side_effect = scope.side_effect
-        mock_scope.return_value = scope.return_value
-        media_file = _make_media_file_mock(status=FileStatus.PROCESSING, file_id=42, user_id=1)
-        mock_get_file.return_value = media_file
-        task = _make_task_mock(status="in_progress")
-        mock_db.query.return_value.filter.return_value.first.return_value = task
+        The transcript is intact, so nothing may be downgraded and the user must not be told
+        the job failed.
+        """
+        media_file = make_media_file(FileStatus.COMPLETED)
+        task = make_task(media_file, status="completed", error_message="postprocess boom")
 
-        on_pipeline_error("file-uuid-1", "task-id-1")
+        self._run(media_file, task.id)
 
-        mock_update_file.assert_called_once()
-        assert mock_update_file.call_args[0][1] == 42  # file_id
-        assert mock_update_file.call_args[0][2] == FileStatus.ERROR
+        db_session.refresh(media_file)
+        db_session.refresh(task)
+        assert media_file.status == FileStatus.COMPLETED
+        assert task.status == "completed"
+        assert task.error_message == "postprocess boom"
+        dispatch_seams.send_error.assert_not_called()
 
-    @patch(_SEND_ERROR)
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_LOG_OOM)
-    @patch(_GET_FILE_BY_UUID)
-    @patch(_SESSION_SCOPE)
-    @patch(_CLEANUP_TEMP)
-    def test_skips_already_errored_file(
-        self,
-        mock_cleanup,
-        mock_scope,
-        mock_get_file,
-        mock_log_oom,
-        mock_update_file,
-        mock_update_task,
-        mock_send_error,
+    def test_already_errored_file_is_left_alone_but_task_is_finalized(
+        self, db_session, dispatch_seams, make_media_file, make_task
     ):
-        from app.tasks.transcription.dispatch import on_pipeline_error
+        """The failing task's own handler usually got there first; this must be idempotent."""
+        media_file = make_media_file(FileStatus.ERROR)
+        task = make_task(media_file)
 
-        scope, mock_db = _make_session_scope_mock()
-        mock_scope.side_effect = scope.side_effect
-        mock_scope.return_value = scope.return_value
-        media_file = _make_media_file_mock(status=FileStatus.ERROR)
-        mock_get_file.return_value = media_file
-        task = _make_task_mock(status="in_progress")
-        mock_db.query.return_value.filter.return_value.first.return_value = task
+        self._run(media_file, task.id)
 
-        on_pipeline_error("file-uuid-1", "task-id-1")
+        db_session.refresh(media_file)
+        db_session.refresh(task)
+        assert media_file.status == FileStatus.ERROR
+        assert task.status == "failed"
 
-        # File already ERROR — should NOT update file status
-        mock_update_file.assert_not_called()
-
-    @patch(_SEND_ERROR)
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_LOG_OOM)
-    @patch(_GET_FILE_BY_UUID)
-    @patch(_SESSION_SCOPE)
-    @patch(_CLEANUP_TEMP)
-    def test_skips_already_failed_task(
-        self,
-        mock_cleanup,
-        mock_scope,
-        mock_get_file,
-        mock_log_oom,
-        mock_update_file,
-        mock_update_task,
-        mock_send_error,
+    def test_already_failed_task_keeps_its_original_message(
+        self, db_session, dispatch_seams, make_media_file, make_task
     ):
-        from app.tasks.transcription.dispatch import on_pipeline_error
+        """A specific diagnosis already recorded must not be overwritten by the generic one."""
+        media_file = make_media_file(FileStatus.PROCESSING)
+        task = make_task(media_file, status="failed", error_message="ffmpeg exited 1")
 
-        scope, mock_db = _make_session_scope_mock()
-        mock_scope.side_effect = scope.side_effect
-        mock_scope.return_value = scope.return_value
-        mock_get_file.return_value = _make_media_file_mock()
-        task = _make_task_mock(status="failed")
-        mock_db.query.return_value.filter.return_value.first.return_value = task
+        self._run(media_file, task.id)
 
-        on_pipeline_error("file-uuid-1", "task-id-1")
+        db_session.refresh(media_file)
+        db_session.refresh(task)
+        assert media_file.status == FileStatus.ERROR
+        assert task.status == "failed"
+        assert task.error_message == "ffmpeg exited 1"
+        dispatch_seams.send_error.assert_not_called()
 
-        # Task already failed — should NOT update task status
-        mock_update_task.assert_not_called()
-
-    @patch(_SEND_ERROR)
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_LOG_OOM)
-    @patch(_GET_FILE_BY_UUID)
-    @patch(_SESSION_SCOPE)
-    @patch(_CLEANUP_TEMP)
-    def test_sends_error_notification(
-        self,
-        mock_cleanup,
-        mock_scope,
-        mock_get_file,
-        mock_log_oom,
-        mock_update_file,
-        mock_update_task,
-        mock_send_error,
+    def test_missing_task_row_still_errors_the_file(
+        self, db_session, dispatch_seams, make_media_file
     ):
-        from app.tasks.transcription.dispatch import on_pipeline_error
+        """A crash before the task record existed still must not leave the file processing."""
+        media_file = make_media_file(FileStatus.PROCESSING)
 
-        scope, mock_db = _make_session_scope_mock()
-        mock_scope.side_effect = scope.side_effect
-        mock_scope.return_value = scope.return_value
-        media_file = _make_media_file_mock(file_id=42, user_id=7)
-        mock_get_file.return_value = media_file
-        task = _make_task_mock(status="in_progress")
-        mock_db.query.return_value.filter.return_value.first.return_value = task
+        self._run(media_file, str(uuid_pkg.uuid4()))
 
-        on_pipeline_error("file-uuid-1", "task-id-1")
+        db_session.refresh(media_file)
+        assert media_file.status == FileStatus.ERROR
+        dispatch_seams.send_error.assert_not_called()
 
-        mock_send_error.assert_called_once_with(7, 42, "Transcription pipeline failed unexpectedly")
+    def test_temp_audio_is_cleaned_up(self, db_session, dispatch_seams, make_media_file, make_task):
+        """Temp audio is the handler's other job — an orphan costs storage forever."""
+        media_file = make_media_file(FileStatus.PROCESSING)
+        task = make_task(media_file)
 
-    @patch(_SEND_ERROR)
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_LOG_OOM)
-    @patch(_GET_FILE_BY_UUID)
-    @patch(_SESSION_SCOPE)
-    @patch(_CLEANUP_TEMP)
-    def test_handles_db_exception_gracefully(
-        self,
-        mock_cleanup,
-        mock_scope,
-        mock_get_file,
-        mock_log_oom,
-        mock_update_file,
-        mock_update_task,
-        mock_send_error,
+        self._run(media_file, task.id)
+
+        db_session.refresh(media_file)
+        assert media_file.status == FileStatus.ERROR
+        dispatch_seams.cleanup_temp.assert_called_once_with(str(media_file.uuid))
+
+    def test_db_failure_is_swallowed_and_changes_nothing(
+        self, db_session, dispatch_seams, make_media_file, make_task
     ):
-        """If session_scope raises, the error is caught and logged — no crash."""
-        from app.tasks.transcription.dispatch import on_pipeline_error
+        """The handler runs as a link_error callback: raising would lose the original error."""
+        media_file = make_media_file(FileStatus.PROCESSING)
+        task = make_task(media_file)
 
-        mock_scope.return_value.__enter__ = MagicMock(side_effect=RuntimeError("DB down"))
-        mock_scope.return_value.__exit__ = MagicMock(return_value=False)
+        def _broken_scope():
+            raise RuntimeError("DB down")
 
-        # Should not raise
-        on_pipeline_error("file-uuid-1", "task-id-1")
+        with patch(_SESSION_SCOPE, _broken_scope):
+            self._run(media_file, task.id)
 
-        mock_update_file.assert_not_called()
-        mock_update_task.assert_not_called()
+        db_session.refresh(media_file)
+        db_session.refresh(task)
+        assert media_file.status == FileStatus.PROCESSING
+        assert task.status == "in_progress"
 
 
 class TestDispatchBatchTranscription:
-    """Tests for dispatch_batch_transcription()."""
+    """``dispatch_batch_transcription()`` must create real task records, skip real gaps."""
 
-    def _setup_db_mock(self, mock_scope, file_uuids_to_ids):
-        """Set up session_scope mock that returns MediaFile objects for known UUIDs."""
-        mock_db = MagicMock()
-        mock_scope.return_value.__enter__ = MagicMock(return_value=mock_db)
-        mock_scope.return_value.__exit__ = MagicMock(return_value=False)
-
-        def query_side_effect(*args):
-            mock_query = MagicMock()
-
-            def filter_side_effect(*filter_args):
-                mock_filter = MagicMock()
-
-                def first_side_effect():
-                    # Check if any known UUID is being queried
-                    for uuid_str, (fid, uid) in file_uuids_to_ids.items():
-                        # The filter call uses MediaFile.uuid == file_uuid
-                        if any(uuid_str in str(a) for a in filter_args):
-                            mock_file = MagicMock()
-                            mock_file.id = fid
-                            mock_file.user_id = uid
-                            return mock_file
-                    return None
-
-                mock_filter.first = first_side_effect
-                return mock_filter
-
-            mock_query.filter = filter_side_effect
-            return mock_query
-
-        mock_db.query = query_side_effect
-        return mock_db
-
-    @patch(f"{_DISPATCH}.group")
-    @patch(f"{_DISPATCH}.chain")
-    @patch(_RESOLVE_GPU_QUEUE, return_value="gpu")
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_CREATE_TASK_RECORD)
-    @patch(_SESSION_SCOPE)
-    def test_returns_dict_format(
-        self,
-        mock_scope,
-        mock_create_task,
-        mock_update_file,
-        mock_update_task,
-        mock_resolve,
-        mock_chain,
-        mock_group,
-    ):
+    @staticmethod
+    def _dispatch(file_uuids: list[str]) -> dict:
         from app.tasks.transcription.dispatch import dispatch_batch_transcription
 
-        # Set up DB to find both files
-        mock_db = MagicMock()
-        mock_scope.return_value.__enter__ = MagicMock(return_value=mock_db)
-        mock_scope.return_value.__exit__ = MagicMock(return_value=False)
-        mock_file = MagicMock()
-        mock_file.id = 1
-        mock_file.user_id = 1
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_file
+        return dispatch_batch_transcription(file_uuids, gpu_queue="gpu")
 
-        mock_chain_instance = MagicMock()
-        mock_chain.return_value = mock_chain_instance
-        mock_group_result = MagicMock()
-        mock_group_result.id = "batch-123"
-        mock_group.return_value.apply_async.return_value = mock_group_result
+    def test_returns_dict_format_and_records_every_task(
+        self, db_session, dispatch_seams, make_media_file
+    ):
+        first, second = make_media_file(FileStatus.PENDING), make_media_file(FileStatus.PENDING)
 
-        result = dispatch_batch_transcription(["uuid-1", "uuid-2"], gpu_queue="gpu")
+        result = self._dispatch([str(first.uuid), str(second.uuid)])
 
-        assert isinstance(result, dict)
-        assert "batch_id" in result
-        assert "task_ids" in result
-        assert result["batch_id"] == "batch-123"
+        assert result["batch_id"] == _BATCH_ID
         assert len(result["task_ids"]) == 2
+        # The mocked group proves nothing about the DB; these rows are what the UI polls.
+        for file_obj, task_id in zip([first, second], result["task_ids"], strict=True):
+            db_session.refresh(file_obj)
+            assert file_obj.status == FileStatus.PROCESSING
+            task = db_session.query(Task).filter(Task.id == task_id).one()
+            assert task.media_file_id == file_obj.id
+            assert task.status == "in_progress"
+            assert task.task_type == "transcription"
 
-    @patch(f"{_DISPATCH}.group")
-    @patch(f"{_DISPATCH}.chain")
-    @patch(_RESOLVE_GPU_QUEUE, return_value="gpu")
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_CREATE_TASK_RECORD)
-    @patch(_SESSION_SCOPE)
-    def test_missing_file_skipped(
-        self,
-        mock_scope,
-        mock_create_task,
-        mock_update_file,
-        mock_update_task,
-        mock_resolve,
-        mock_chain,
-        mock_group,
-    ):
-        from app.tasks.transcription.dispatch import dispatch_batch_transcription
+    def test_missing_file_skipped(self, db_session, dispatch_seams, make_media_file):
+        """A UUID with no row is skipped without aborting the rest of the batch."""
+        first, second = make_media_file(FileStatus.PENDING), make_media_file(FileStatus.PENDING)
+        absent = str(uuid_pkg.uuid4())
 
-        mock_db = MagicMock()
-        mock_scope.return_value.__enter__ = MagicMock(return_value=mock_db)
-        mock_scope.return_value.__exit__ = MagicMock(return_value=False)
+        result = self._dispatch([str(first.uuid), absent, str(second.uuid)])
 
-        call_count = [0]
+        assert len(result["task_ids"]) == 2
+        recorded = {
+            t.media_file_id
+            for t in db_session.query(Task).filter(Task.id.in_(result["task_ids"])).all()
+        }
+        assert recorded == {first.id, second.id}
 
-        def first_side_effect():
-            call_count[0] += 1
-            if call_count[0] == 2:  # Second file not found
-                return None
-            mock_file = MagicMock()
-            mock_file.id = call_count[0]
-            mock_file.user_id = 1
-            return mock_file
+    def test_all_missing_returns_empty(self, db_session, dispatch_seams):
+        absent = [str(uuid_pkg.uuid4()), str(uuid_pkg.uuid4())]
 
-        mock_db.query.return_value.filter.return_value.first = first_side_effect
-
-        mock_chain.return_value = MagicMock()
-        mock_group_result = MagicMock()
-        mock_group_result.id = "batch-456"
-        mock_group.return_value.apply_async.return_value = mock_group_result
-
-        result = dispatch_batch_transcription(["uuid-1", "uuid-missing", "uuid-3"], gpu_queue="gpu")
-
-        assert len(result["task_ids"]) == 2  # Only 2 of 3 succeeded
-
-    @patch(f"{_DISPATCH}.group")
-    @patch(f"{_DISPATCH}.chain")
-    @patch(_RESOLVE_GPU_QUEUE, return_value="gpu")
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_CREATE_TASK_RECORD)
-    @patch(_SESSION_SCOPE)
-    def test_all_missing_returns_empty(
-        self,
-        mock_scope,
-        mock_create_task,
-        mock_update_file,
-        mock_update_task,
-        mock_resolve,
-        mock_chain,
-        mock_group,
-    ):
-        from app.tasks.transcription.dispatch import dispatch_batch_transcription
-
-        mock_db = MagicMock()
-        mock_scope.return_value.__enter__ = MagicMock(return_value=mock_db)
-        mock_scope.return_value.__exit__ = MagicMock(return_value=False)
-        mock_db.query.return_value.filter.return_value.first.return_value = None
-
-        result = dispatch_batch_transcription(["uuid-1", "uuid-2"], gpu_queue="gpu")
+        result = self._dispatch(absent)
 
         assert result == {"batch_id": None, "task_ids": []}
-        mock_group.assert_not_called()
+        # Nothing dispatched means nothing queued — an empty group would hang a worker.
+        dispatch_seams.group.assert_not_called()
 
-    @patch("app.core.redis.get_redis")
-    @patch(f"{_DISPATCH}.group")
-    @patch(f"{_DISPATCH}.chain")
-    @patch(_RESOLVE_GPU_QUEUE, return_value="gpu")
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_CREATE_TASK_RECORD)
-    @patch(_SESSION_SCOPE)
-    def test_batch_metadata_stored_in_redis(
-        self,
-        mock_scope,
-        mock_create_task,
-        mock_update_file,
-        mock_update_task,
-        mock_resolve,
-        mock_chain,
-        mock_group,
-        mock_get_redis,
-    ):
-        from app.tasks.transcription.dispatch import dispatch_batch_transcription
+    def test_batch_metadata_stored_in_redis(self, db_session, dispatch_seams, make_media_file):
+        media_file = make_media_file(FileStatus.PENDING)
 
-        mock_db = MagicMock()
-        mock_scope.return_value.__enter__ = MagicMock(return_value=mock_db)
-        mock_scope.return_value.__exit__ = MagicMock(return_value=False)
-        mock_file = MagicMock()
-        mock_file.id = 1
-        mock_file.user_id = 1
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_file
+        result = self._dispatch([str(media_file.uuid)])
 
-        mock_chain.return_value = MagicMock()
-        mock_group_result = MagicMock()
-        mock_group_result.id = "batch-789"
-        mock_group.return_value.apply_async.return_value = mock_group_result
-
-        mock_redis = MagicMock()
-        mock_get_redis.return_value = mock_redis
-
-        dispatch_batch_transcription(["uuid-1"], gpu_queue="gpu")
-
-        mock_redis.set.assert_called_once()
-        call_args = mock_redis.set.call_args
-        assert call_args[0][0] == "batch:batch-789"
-        assert call_args[1]["ex"] == 86400  # 24h TTL
-
-    @patch("app.core.redis.get_redis")
-    @patch(f"{_DISPATCH}.group")
-    @patch(f"{_DISPATCH}.chain")
-    @patch(_RESOLVE_GPU_QUEUE, return_value="gpu")
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_CREATE_TASK_RECORD)
-    @patch(_SESSION_SCOPE)
-    def test_redis_failure_non_fatal(
-        self,
-        mock_scope,
-        mock_create_task,
-        mock_update_file,
-        mock_update_task,
-        mock_resolve,
-        mock_chain,
-        mock_group,
-        mock_get_redis,
-    ):
-        from app.tasks.transcription.dispatch import dispatch_batch_transcription
-
-        mock_db = MagicMock()
-        mock_scope.return_value.__enter__ = MagicMock(return_value=mock_db)
-        mock_scope.return_value.__exit__ = MagicMock(return_value=False)
-        mock_file = MagicMock()
-        mock_file.id = 1
-        mock_file.user_id = 1
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_file
-
-        mock_chain.return_value = MagicMock()
-        mock_group_result = MagicMock()
-        mock_group_result.id = "batch-fail"
-        mock_group.return_value.apply_async.return_value = mock_group_result
-
-        mock_get_redis.side_effect = RuntimeError("Redis down")
-
-        # Should not raise
-        result = dispatch_batch_transcription(["uuid-1"], gpu_queue="gpu")
-
-        assert result["batch_id"] == "batch-fail"
         assert len(result["task_ids"]) == 1
+        redis_set = dispatch_seams.get_redis.return_value.set
+        redis_set.assert_called_once()
+        key, payload = redis_set.call_args[0]
+        assert key == f"batch:{_BATCH_ID}"
+        assert redis_set.call_args[1]["ex"] == 86400  # 24h TTL
+        assert json.loads(payload) == {
+            "file_uuids": [str(media_file.uuid)],
+            "task_ids": result["task_ids"],
+        }
 
-    @patch(f"{_DISPATCH}.group")
-    @patch(f"{_DISPATCH}.chain")
-    @patch(_RESOLVE_GPU_QUEUE, return_value="gpu")
-    @patch(_UPDATE_TASK_STATUS)
-    @patch(_UPDATE_FILE_STATUS)
-    @patch(_CREATE_TASK_RECORD)
-    @patch(_SESSION_SCOPE)
-    def test_group_apply_async_called(
-        self,
-        mock_scope,
-        mock_create_task,
-        mock_update_file,
-        mock_update_task,
-        mock_resolve,
-        mock_chain,
-        mock_group,
-    ):
-        from app.tasks.transcription.dispatch import dispatch_batch_transcription
+    def test_redis_failure_non_fatal(self, db_session, dispatch_seams, make_media_file):
+        """Batch tracking is a convenience; losing it must not lose the transcriptions."""
+        media_file = make_media_file(FileStatus.PENDING)
+        dispatch_seams.get_redis.side_effect = RuntimeError("Redis down")
 
-        mock_db = MagicMock()
-        mock_scope.return_value.__enter__ = MagicMock(return_value=mock_db)
-        mock_scope.return_value.__exit__ = MagicMock(return_value=False)
-        mock_file = MagicMock()
-        mock_file.id = 1
-        mock_file.user_id = 1
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_file
+        result = self._dispatch([str(media_file.uuid)])
 
-        mock_chain.return_value = MagicMock()
-        mock_group_instance = MagicMock()
-        mock_group_result = MagicMock()
-        mock_group_result.id = "batch-async"
-        mock_group_instance.apply_async.return_value = mock_group_result
-        mock_group.return_value = mock_group_instance
-
-        dispatch_batch_transcription(["uuid-1", "uuid-2"], gpu_queue="gpu")
-
-        mock_group_instance.apply_async.assert_called_once()
+        assert result["batch_id"] == _BATCH_ID
+        assert len(result["task_ids"]) == 1
+        db_session.refresh(media_file)
+        assert media_file.status == FileStatus.PROCESSING
+        assert db_session.query(Task).filter(Task.id == result["task_ids"][0]).one() is not None

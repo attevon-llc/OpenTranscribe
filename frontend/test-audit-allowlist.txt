@@ -1,0 +1,36 @@
+# Allowlist for `node scripts/audit-frontend-tests.mjs` (the vitest counterpart of
+# `scripts/audit-tests.py` + `backend/tests/audit-allowlist.txt`).
+#
+# Format, one per line:
+#     <path relative to frontend/src>::<full test name>::<category>  # reason
+#
+# The full test name is the `describe > describe > it` chain, exactly as the auditor
+# prints it.
+#
+# THE CATEGORY IS REQUIRED. An entry keyed only by test would exempt that test from every
+# detector at once — that is how a `failure-masking` exemption silently granted a
+# `no-assertion` one in the Python version. One line buys one exemption from one detector.
+#
+# A REASON IS REQUIRED. Adding an entry is a deliberate, reviewable act; widening an
+# assertion to restore green is not. "flaky" and "TODO" are not reasons.
+#
+# THIS FILE CAN ONLY SHRINK. An entry with no finding left to cover FAILS the run — fix a
+# test, delete its line. Until the stale rail was ported from the Python side this file had no
+# such check at all, so an exemption could outlive its subject indefinitely AND pre-exempt any
+# future test that reused the name (a `describe > it` title is a string anyone can retype).
+#
+# ONE LINE BUYS ONE FINDING. Duplicate keys are a COUNT, not a mistake: three lines mean three
+# known findings under that key. Fix one and the surplus line is reported as stale, which is
+# the partial fix a set difference cannot see.
+#
+# TWO KINDS OF ENTRY:
+#   ACCEPTED — the pattern is correct here, and the reason says why. No prefix.
+#   BACKLOG  — the finding is real and DEFERRED. The reason starts with `BACKLOG`, and the
+#              auditor counts and prints these separately on every run, so a green gate is
+#              never mistaken for a clean tree.
+#
+# Nothing should ever be allowlisted for `only-leak`. A committed `.only` silently disables
+# every other test in the file; there is no version of that which is intentional in a
+# committed test. Delete the `.only` instead.
+
+lib/api/tags.test.ts::tag list + file attachment > url-encodes the tag name when detaching::mock-only  # removeTagFromFile returns void (DELETE, no body), so the encoded request path IS the entire observable behaviour — there is no return value or rendered output to assert. The encoding is what matters: an unencoded `a/b c` becomes a different route and a 404.

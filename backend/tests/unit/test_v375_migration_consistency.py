@@ -75,14 +75,18 @@ def test_detection_arm_returns_at_least_v375_on_current_schema(db_session):
     revision, so pinning an exact value here would break on every subsequent
     migration. The exact stamp for a revision belongs in that revision's own
     suite — v376's is in ``test_v376_migration_consistency.py``.
+
+    "Or newer" is decided by **position in the alembic chain**, not by comparing the
+    revision ids as strings. The string form (``detected >= "v375_add_chat_tables"``) reads
+    as the same assertion but is lexicographic, so it holds only while every revision
+    number has the same number of digits: ``"v3100_…" < "v375_…"``, and a chain that
+    reaches v3100 would fail this test for a ladder that was answering correctly.
     """
-    from app.db.migrations import _detect_schema_version
+    from tests.unit._migration_detection import assert_detected_at_or_after
 
     conn = db_session.connection()
     tables = inspect(conn).get_table_names()
-    detected = _detect_schema_version(conn, tables)
-    assert detected is not None
-    assert detected >= "v375_add_chat_tables"
+    assert_detected_at_or_after(conn, tables, "v375_add_chat_tables")
 
 
 def test_chat_tables_have_expected_shape(db_session):

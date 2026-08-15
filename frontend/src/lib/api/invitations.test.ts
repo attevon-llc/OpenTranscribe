@@ -100,13 +100,19 @@ describe('invitation errors are rendered, not classified', () => {
       response: { status: 400, data: { detail: 'Password does not meet policy requirements: …' } },
     });
 
+    // Without the guard this passes when acceptInvitation RESOLVES: the catch never runs,
+    // so the only assertion never executes. The sibling test above already does this
+    // correctly; this one omitted it (issue #431).
+    let caught: unknown;
     try {
       await acceptInvitation({ token: 't', password: 'weak' });
+      throw new Error('expected acceptInvitation to reject on a 400');
     } catch (err) {
-      expect(invitationErrorMessage(err, 'fallback')).toBe(
-        'Password does not meet policy requirements: …'
-      );
+      caught = err;
     }
+    expect(invitationErrorMessage(caught, 'fallback')).toBe(
+      'Password does not meet policy requirements: …'
+    );
   });
 
   it('falls back only when the server sent no usable detail', () => {

@@ -80,7 +80,7 @@ def no_opensearch():
             "app.services.analytics_service.AnalyticsService.refresh_analytics"
         ) as analytics_mock,
         patch(
-            "app.services.video_processing_service.VideoProcessingService.clear_cache_for_media_file"
+            "app.services.video_processing_service.VideoProcessingService.clear_derived_cache"
         ) as cache_mock,
     ):
         yield {
@@ -92,7 +92,7 @@ def no_opensearch():
             "update_profile_embedding": embed_mock,
             "remove_speaker_from_profile_embedding": remove_mock,
             "refresh_analytics": analytics_mock,
-            "clear_cache_for_media_file": cache_mock,
+            "clear_derived_cache": cache_mock,
         }
 
 
@@ -265,7 +265,7 @@ class TestMergeOffloading:
             "update_profile_embedding",
             "remove_speaker_from_profile_embedding",
             "refresh_analytics",
-            "clear_cache_for_media_file",
+            "clear_derived_cache",
         ):
             no_opensearch[name].assert_not_called()
 

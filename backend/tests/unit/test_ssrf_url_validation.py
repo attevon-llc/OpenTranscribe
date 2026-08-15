@@ -16,6 +16,7 @@ import pytest
 
 from app.utils.url_validation import assert_safe_outbound_url
 from app.utils.url_validation import is_safe_url
+from tests.helpers import does_not_raise
 
 
 @pytest.mark.parametrize(
@@ -76,6 +77,50 @@ def test_allow_private_still_rejects_non_http_schemes():
     """The escape hatch loosens the address range, not the scheme allowlist."""
     safe, _ = is_safe_url("file:///etc/passwd", allow_private=True)
     assert safe is False
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://169.254.169.254/latest/meta-data/",  # AWS/Azure IMDS
+        "http://[fd00:ec2::254]/latest/meta-data/",  # AWS IPv6 IMDS
+        "http://[::ffff:169.254.169.254]/latest/meta-data/",  # IPv6-mapped IPv4
+        "http://metadata.google.internal/computeMetadata/v1/",
+        "http://instance-data/latest/meta-data/",
+    ],
+)
+def test_allow_private_never_reaches_instance_metadata(url):
+    """The absence of THIS test is why the bypass shipped.
+
+    ``allow_private=True`` used to skip the rejection check wholesale, and the
+    cloud-metadata carve-out lived inside it — so every caller passing the flag would
+    happily resolve and dial ``169.254.169.254``. That includes
+    ``auth/oidc/discovery.py``, which fetches discovery/JWKS at **login time**, so the
+    reachable surface was not limited to an admin action.
+
+    The suite had `test_allow_private_permits_lan_targets` (the loosening) and
+    `test_allow_private_still_rejects_non_http_schemes` (one thing it must not loosen),
+    but nothing pinning the metadata carve-out under the flag — the exact gap between
+    "the flag works" and "the flag does not disable everything else".
+
+    The IPv6-mapped form is included because a mapped address is a *different* Python
+    object than its IPv4 form, so a check written only against `METADATA_ADDRESSES`
+    strings misses it unless it unmaps first.
+    """
+    safe, reason = is_safe_url(url, allow_private=True)
+    assert safe is False, f"{url} must be refused even with allow_private=True"
+    assert reason, "a refusal must state a reason for the audit record"
+
+
+def test_allow_private_is_not_a_no_op_for_the_same_range():
+    """Control for the test above: link-local that is NOT metadata still gets through.
+
+    Without this, blanket-refusing everything in 169.254.0.0/16 would satisfy the metadata
+    test while quietly breaking a legitimate link-local LAN target — a fix that passes by
+    being too strict is still a regression.
+    """
+    safe, reason = is_safe_url("http://169.254.10.20:11434/v1", allow_private=True)
+    assert safe is True, f"non-metadata link-local should be allowed: {reason}"
 
 
 def test_assert_raises_generic_error_without_leaking_the_reason():
@@ -169,11 +214,13 @@ def test_watch_private_targets_allowed_by_default(monkeypatch):
 
     monkeypatch.setattr(settings, "WATCH_ALLOW_PRIVATE_ENDPOINTS", True)
     _assert_safe_watch_target("192.168.1.10", source_type="smb")  # must not raise
-    _assert_safe_watch_target("http://10.0.0.9:9000", source_type="s3")
+    with does_not_raise("watch sources may target private hosts by default"):
+        _assert_safe_watch_target("http://10.0.0.9:9000", source_type="s3")
 
 
 def test_watch_guard_ignores_empty_target(monkeypatch):
     from app.services.watch_sources.base import _assert_safe_watch_target
 
     _assert_safe_watch_target(None, source_type="s3")
-    _assert_safe_watch_target("", source_type="smb")
+    with does_not_raise("an empty target is ignored by the guard, not rejected"):
+        _assert_safe_watch_target("", source_type="smb")

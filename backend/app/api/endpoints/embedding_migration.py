@@ -129,6 +129,11 @@ def get_migration_status(
 
         return status
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error getting migration status: %s", e, exc_info=True)
         raise HTTPException(
@@ -156,6 +161,11 @@ def get_migration_progress(
     """
     try:
         return migration_progress.get_status()
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error getting migration progress: %s", e, exc_info=True)
         raise HTTPException(
@@ -223,6 +233,11 @@ def start_migration(
             "force": force,
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error starting migration: %s", e, exc_info=True)
         raise HTTPException(
@@ -310,6 +325,11 @@ def stop_migration(
                 "message": "Failed to stop migration",
             }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error stopping migration: %s", e, exc_info=True)
         raise HTTPException(
@@ -360,6 +380,11 @@ def finalize_migration(
             "message": "Finalization task dispatched.",
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error starting finalization: %s", e, exc_info=True)
         raise HTTPException(
@@ -401,6 +426,11 @@ def clear_progress(
                 "message": "Failed to clear progress. Redis may be unavailable.",
             }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error clearing progress: %s", e, exc_info=True)
         raise HTTPException(
@@ -482,6 +512,11 @@ def retry_failed_files(
             "total_files": total_retry,
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error retrying failed files: %s", e, exc_info=True)
         raise HTTPException(
@@ -534,6 +569,11 @@ def force_complete_migration(
             "skipped_files": skipped_count,
         }
 
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error force-completing migration: %s", e, exc_info=True)
         raise HTTPException(

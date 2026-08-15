@@ -66,7 +66,11 @@ docstring-quotes = "double"
 convention = "google"
 
 [tool.bandit]
-exclude_dirs = ["tests"]
+# `mutants` is mutmut's generated tree (gitignored, but bandit walks the FILESYSTEM,
+# not the index). Without it a mutation run leaves ~330k lines of deliberately
+# corrupted source behind and bandit reports findings in mutated code — the first
+# run failed pre-commit on a `token_algorithm = ""` in mutants/app/core/security.py.
+exclude_dirs = ["tests", "*/mutants/*"]
 # Test files have legitimate use of hardcoded credentials and other security patterns
 # These are flagged by bandit but are appropriate for test fixtures
 
@@ -95,7 +99,15 @@ testpaths = ["tests"]
 # `integration` marker, so they ran in the fast suite AND in CPU-only CI, passing only on
 # their own runtime skip guards, while the gate's `-m integration` phase never selected
 # them. Register every marker you use — see scripts/run-integration-tests.sh for the phases.
-addopts = "-n auto --dist loadgroup --tb=short -q --strict-markers -m 'not integration and not gpu'"
+# --durations surfaces the slow tail every run. Without it, a 40 s test that is really 40 s
+# of lock queue is invisible; that is how one worker came to own 81% of the wall clock.
+# --timeout converts a hang into a failure. DDL tests serialise behind a Postgres advisory
+# lock that only covers connections opting into it, so a genuine cross-connection cycle is
+# possible and would otherwise stall the run indefinitely. 300 s is ~5x the slowest observed
+# test (54.6 s), so it cannot fire on a merely slow test — tighten it once the suite is fast.
+# Both require pytest-timeout, which is therefore MANDATORY in requirements-dev/-ci: a
+# missing plugin makes --timeout a collection error, not a no-op (issue #431).
+addopts = "-n auto --dist loadgroup --tb=short -q --strict-markers --durations=25 --timeout=300 -m 'not integration and not gpu'"
 markers = [
     "slow: marks tests as slow",
     "unit: pure unit test, no external service",
@@ -125,3 +137,55 @@ show_missing = true
 skip_empty = true
 precision = 1
 fail_under = 37
+
+# ---------------------------------------------------------------------------
+# Mutation testing (opt-in — NEVER part of the default gate or CI).
+#
+# Coverage says a line RAN. Mutation testing says a line MATTERS: it edits the
+# source (flips a comparison, drops a condition, changes a constant) and asks
+# whether any test notices. A surviving mutant is a line the suite executes but
+# does not actually check — for a security predicate that means the control can
+# be silently removed with the suite still green.
+#
+# Scoped to security-critical modules ONLY. A whole-codebase run on ~40k lines is
+# hours of GPU-idle CPU and is not what this is for; the point is a small set where
+# a survivor is unambiguously a bug. `scripts/run-mutation-tests.sh` reads
+# `paths_to_mutate` from here, so this list is the single source of truth.
+#
+# `runner` deliberately carries NO test paths and NO -n: the script supplies both
+# through PYTEST_ADDOPTS, which pytest prepends to the command line. That is how a
+# per-module test subset is selected, and how the project's `-n auto` is overridden
+# to `-n0` — a mutant run that forks 24 xdist workers per mutant is slower than
+# serial and, against this repo's single shared Postgres, deadlock-prone
+# (the advisory-lock/system_settings collisions of issues #389 and #431).
+[tool.mutmut]
+# source_paths must be the WHOLE package, not just the targets. mutmut copies it
+# into backend/mutants/ and runs pytest THERE; listing only the six files left
+# mutants/app/ holding 6 modules out of hundreds, and tests/conftest.py died with
+# ModuleNotFoundError: No module named 'app.core.config'. Narrow the MUTATION set
+# with only_mutate — that is also what scripts/run-mutation-tests.sh reads to build
+# its per-module list.
+source_paths = ["app"]
+only_mutate = [
+    "app/services/redaction/spans.py",
+    "app/auth/password_policy.py",
+    "app/core/security.py",
+    "app/api/endpoints/auth/dependencies.py",
+    "app/auth/lockout.py",
+    "app/auth/session.py",
+]
+# Test SELECTION is per-module and comes from scripts/run-mutation-tests.sh via
+# PYTEST_ADDOPTS, not from here: mutating spans.py should only run the redaction
+# tests, and one static list cannot express that.
+#
+# Do NOT reintroduce `tests_dir` or `runner`. In mutmut 3.x `tests_dir` is
+# deprecated and must be a LIST (a string crashes config loading with
+# "can only concatenate list (not str) to list"), and `runner` is not a
+# recognized key at all — it is read by nothing, so flags put there are silently
+# dropped. Runner flags belong in pytest_add_cli_args.
+# mutmut supplies its own --tb=native -x -q -p no:randomly, so runner flags here
+# would only duplicate them. Its own timeout is timeout_constant (seconds), NOT a
+# pytest --timeout flag: mutmut runs pytest IN-PROCESS, and pytest-timeout's
+# thread method plus the inherited addopts is what made the first run die with
+# BadTestExecutionCommandsException.
+timeout_constant = 120

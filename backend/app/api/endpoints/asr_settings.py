@@ -1050,6 +1050,11 @@ def restart_gpu_worker(
         logger.warning("No GPU workers found via inspect, sending broadcast shutdown")
         try:
             celery_app.control.broadcast("shutdown")
+        except HTTPException:
+            # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+            # anything it catches into a 500, which would report a deliberate 401/403/404/422
+            # raised inside this block as an internal server error (issue #431).
+            raise
         except Exception as exc:
             logger.exception("Failed to broadcast shutdown")
             raise HTTPException(
@@ -1080,6 +1085,11 @@ def restart_gpu_worker(
     # Send warm shutdown to GPU workers only
     try:
         celery_app.control.broadcast("shutdown", destination=gpu_workers)
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as exc:
         logger.exception("Failed to send shutdown to GPU workers")
         raise HTTPException(

@@ -15,6 +15,7 @@ import pytest
 from app.services import backup_alerts
 from app.services import backup_service as bs
 from app.services import system_settings_service as sss
+from tests.helpers import does_not_raise
 
 # This file, test_backup_metrics.py, and test_backup_service.py all upsert the same
 # backup.* SystemSettings keys (bs.KEY_*) with no coordination between them — under
@@ -109,8 +110,13 @@ def test_failure_alerting_never_raises(db_session, admin_user):
     with mock.patch(
         "app.services.notification_service.send_task_notification",
         side_effect=RuntimeError("redis down"),
-    ):
-        backup_alerts.notify_backup_result(db_session, {"ok": False, "error": "x"})
+    ) as notify:
+        with does_not_raise("a failing notification layer must not fail the backup run"):
+            backup_alerts.notify_backup_result(db_session, {"ok": False, "error": "x"})
+
+    # The comment above already warned this is "vacuous on a fresh DB" if the raising mock is
+    # never called. That warning is now enforced instead of trusted (issue #431).
+    assert notify.called, "the raising notifier was never invoked — containment is unproven"
 
 
 # =============================================================================

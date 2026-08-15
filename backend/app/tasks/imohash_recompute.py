@@ -20,8 +20,6 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy.orm import defer
-
 from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
@@ -57,6 +55,69 @@ def _count_eligible(db) -> int:
     )
 
 
+def _load_recompute_batch(after_id: int, batch_size: int) -> tuple[list[dict], bool]:
+    """Read one batch of rows to fingerprint, then release the DB session.
+
+    Returns **plain data only** — no ORM instances — so the caller can run the
+    MinIO ranged reads with no transaction open. An escaping instance would
+    lazy-load during the slow phase and silently reopen one.
+
+    Args:
+        after_id: Stable id cursor; only rows with ``id > after_id`` are read.
+        batch_size: Maximum number of rows in the returned batch.
+
+    Returns:
+        ``(batch, has_more)`` where each batch item is
+        ``{"id", "uuid", "storage_path", "file_size"}``.
+    """
+    with session_scope() as db:
+        rows = (
+            db.query(
+                MediaFile.id,
+                MediaFile.uuid,
+                MediaFile.storage_path,
+                MediaFile.file_size,
+            )
+            .filter(
+                MediaFile.id > after_id,
+                MediaFile.storage_path.isnot(None),
+                MediaFile.storage_path != "",
+                MediaFile.status.notin_(_SKIP_STATUSES),
+            )
+            .order_by(MediaFile.id.asc())
+            .limit(batch_size + 1)  # one extra to detect more
+            .all()
+        )
+
+    has_more = len(rows) > batch_size
+    batch = [
+        {
+            "id": int(row[0]),
+            "uuid": str(row[1]),
+            "storage_path": str(row[2]),
+            "file_size": row[3],
+        }
+        for row in rows[:batch_size]
+    ]
+    return batch, has_more
+
+
+def _store_fingerprints(fingerprints: dict[int, str]) -> None:
+    """Write the computed fingerprints back in one short session.
+
+    Args:
+        fingerprints: ``{media_file_id: imohash}`` for the rows that produced one.
+    """
+    if not fingerprints:
+        return
+    with session_scope() as db:
+        for file_id, fingerprint in fingerprints.items():
+            db.query(MediaFile).filter(MediaFile.id == file_id).update(
+                {"imohash": fingerprint}, synchronize_session=False
+            )
+        db.commit()
+
+
 @celery_app.task(
     name="imohash_recompute.recompute_all", bind=True, priority=CPUPriority.ADMIN_BATCH
 )
@@ -67,6 +128,14 @@ def recompute_all(self, batch_size: int = 100, after_id: int = 0) -> dict:
         batch_size: Number of rows to recompute per batch (default 100).
         after_id: Stable id cursor — only rows with ``id > after_id`` are
             processed. Used for self-rescheduling; callers leave it at 0.
+
+    Runs in three phases per batch, and the split is load-bearing: the DB
+    session is open only for the two short DB-only phases (read the batch, write
+    the fingerprints) and is **closed** across the middle phase, which does one
+    MinIO ranged read per file. Holding the batch session across those reads
+    kept a Postgres transaction — and therefore ``ACCESS SHARE`` on
+    ``media_file`` — open for the whole batch, queueing any ``ALTER TABLE``
+    (i.e. an Alembic upgrade) behind it. See ``app/tasks/CLAUDE.md``.
 
     Returns:
         Per-batch statistics dict.
@@ -88,51 +157,31 @@ def recompute_all(self, batch_size: int = 100, after_id: int = 0) -> dict:
             recompute_progress.start_migration(total_files=total)
             logger.info("imohash recompute starting: %d eligible files", total)
 
-        with session_scope() as db:
-            rows = (
-                db.query(MediaFile)
-                .options(
-                    defer(MediaFile.summary_data),
-                    defer(MediaFile.metadata_raw),
-                    defer(MediaFile.waveform_data),
-                )
-                .filter(
-                    MediaFile.id > after_id,
-                    MediaFile.storage_path.isnot(None),
-                    MediaFile.storage_path != "",
-                    MediaFile.status.notin_(_SKIP_STATUSES),
-                )
-                .order_by(MediaFile.id.asc())
-                .limit(batch_size + 1)  # one extra to detect more
-                .all()
-            )
+        # Phase 1 — read (DB session open, Postgres only).
+        batch, has_more = _load_recompute_batch(after_id, batch_size)
+        summary["has_more"] = has_more
+        summary["files_found"] = len(batch)
 
-            summary["has_more"] = len(rows) > batch_size
-            batch = rows[:batch_size]
-            summary["files_found"] = len(batch)
+        # Phase 2 — MinIO ranged reads. NO DB session is held here.
+        fingerprints: dict[int, str] = {}
+        for row in batch:
+            summary["last_id"] = row["id"]
+            try:
+                fingerprint = compute_from_minio(row["storage_path"], size=row["file_size"])
+                if fingerprint:
+                    fingerprints[row["id"]] = fingerprint
+                    summary["files_recomputed"] += 1
+                    recompute_progress.increment_processed(success=True)
+                else:
+                    summary["files_skipped"] += 1
+                    recompute_progress.increment_processed(success=False, file_uuid=row["uuid"])
+            except Exception as e:  # noqa: BLE001 - one bad file must not abort the batch
+                logger.warning("imohash recompute failed for file %s: %s", row["id"], e)
+                summary["files_failed"] += 1
+                recompute_progress.increment_processed(success=False, file_uuid=row["uuid"])
 
-            for media_file in batch:
-                summary["last_id"] = media_file.id
-                try:
-                    fingerprint = compute_from_minio(
-                        str(media_file.storage_path), size=media_file.file_size
-                    )
-                    if fingerprint:
-                        media_file.imohash = fingerprint
-                        summary["files_recomputed"] += 1
-                        recompute_progress.increment_processed(success=True)
-                    else:
-                        summary["files_skipped"] += 1
-                        recompute_progress.increment_processed(
-                            success=False, file_uuid=str(media_file.uuid)
-                        )
-                except Exception as e:  # noqa: BLE001 - one bad file must not abort the batch
-                    logger.warning("imohash recompute failed for file %s: %s", media_file.id, e)
-                    summary["files_failed"] += 1
-                    recompute_progress.increment_processed(
-                        success=False, file_uuid=str(media_file.uuid)
-                    )
-            db.commit()
+        # Phase 3 — write (DB session reopened, Postgres only).
+        _store_fingerprints(fingerprints)
 
         if summary["has_more"]:
             logger.info(

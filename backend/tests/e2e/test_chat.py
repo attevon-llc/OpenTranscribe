@@ -23,9 +23,9 @@ here is deleted in the same test, and no transcript is modified.
 
 from __future__ import annotations
 
-import os
 import re
 import socket
+import uuid as uuid_pkg
 
 import pytest
 import requests
@@ -39,8 +39,11 @@ from playwright.sync_api import expect
 
 pytestmark = pytest.mark.chat
 
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+# This module used to define its own ``FRONTEND_URL``/``BACKEND_URL`` constants here.
+# A module constant is evaluated at import time, so it could not see ``--base-url`` /
+# ``--backend-url`` and this file always drove whatever was on the default ports — even
+# when the run was aimed at an isolated stack (issue #431). Everything below takes
+# conftest's ``base_url`` / ``backend_url`` fixtures instead.
 
 # Generous: a first message pays for model load + retrieval + first token.
 STREAM_TIMEOUT_MS = 90_000
@@ -52,11 +55,11 @@ STREAM_TIMEOUT_MS = 90_000
 
 
 @pytest.fixture(scope="module")
-def api_session() -> requests.Session:
+def api_session(backend_url: str) -> requests.Session:
     """An authenticated API session for arranging and cleaning up test state."""
     session = requests.Session()
     response = session.post(
-        f"{BACKEND_URL}/api/auth/token",
+        f"{backend_url}/api/auth/token",
         data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
         timeout=30,
     )
@@ -74,19 +77,33 @@ def api_session() -> requests.Session:
 
 
 @pytest.fixture
-def cleanup_conversations(api_session: requests.Session):
+def cleanup_conversations(api_session: requests.Session, backend_url: str):
     """Delete every conversation created during a test, pass or fail."""
     created: list[str] = []
     yield created
     for uuid in created:
         try:
-            api_session.delete(f"{BACKEND_URL}/api/chat/conversations/{uuid}", timeout=15)
+            api_session.delete(f"{backend_url}/api/chat/conversations/{uuid}", timeout=15)
         except requests.RequestException:
             pass
 
 
 MOCK_LLM_PORT = 5199
 MOCK_LLM_URL_FOR_BACKEND = f"http://mock-llm:{MOCK_LLM_PORT}/v1"
+
+
+def _unique(label: str) -> str:
+    """Suffix a display name so it cannot collide with, or outlive, another run.
+
+    Two distinct problems, both real here. An LLM config **name is unique per user**, so a
+    fixed one 409s against the leftovers of any run killed before its teardown — the same
+    trap ``test_chat_grounding.py``'s ``llm_config_factory`` already documents. A
+    conversation **title is not** unique, which is worse for the browser side: the sidebar
+    is addressed with ``filter(has_text=<title>)``, so a leftover row with the same title
+    makes the locator match twice and Playwright's strict mode fails on a test that is
+    working correctly.
+    """
+    return f"{label} {uuid_pkg.uuid4().hex[:8]}"
 
 
 def _mock_llm_running() -> bool:
@@ -99,7 +116,7 @@ def _mock_llm_running() -> bool:
 # Module-scoped to match api_session; a session-scoped fixture cannot depend
 # on a narrower one.
 @pytest.fixture(scope="module", autouse=True)
-def ensure_llm_provider(api_session: requests.Session):
+def ensure_llm_provider(api_session: requests.Session, backend_url: str):
     """Give the streaming tests a provider when the mock LLM is available.
 
     Without this the streaming tests self-skip, so the most valuable part of the
@@ -110,16 +127,16 @@ def ensure_llm_provider(api_session: requests.Session):
     cloud model should keep it), and removes anything it registers itself, since
     E2E must never persist changes to dev data.
     """
-    if _llm_configured(api_session) or not _mock_llm_running():
+    if _llm_configured(api_session, backend_url) or not _mock_llm_running():
         yield
         return
 
     created_uuid = None
     try:
         response = api_session.post(
-            f"{BACKEND_URL}/api/llm-settings",
+            f"{backend_url}/api/llm-settings",
             json={
-                "name": "Mock LLM (e2e)",
+                "name": _unique("Mock LLM (e2e)"),
                 "provider": "custom",
                 "model_name": "mock-gpt",
                 "base_url": MOCK_LLM_URL_FOR_BACKEND,
@@ -137,25 +154,25 @@ def ensure_llm_provider(api_session: requests.Session):
     if created_uuid:
         try:
             api_session.delete(
-                f"{BACKEND_URL}/api/llm-settings/config/{created_uuid}",
+                f"{backend_url}/api/llm-settings/config/{created_uuid}",
                 timeout=30,
             )
         except requests.RequestException:
             pass
 
 
-def _llm_configured(api_session: requests.Session) -> bool:
+def _llm_configured(api_session: requests.Session, backend_url: str) -> bool:
     try:
-        response = api_session.get(f"{BACKEND_URL}/api/llm/status", timeout=15)
+        response = api_session.get(f"{backend_url}/api/llm/status", timeout=15)
         return bool(response.ok and response.json().get("available"))
     except (requests.RequestException, ValueError):
         return False
 
 
-def _has_completed_file(api_session: requests.Session) -> bool:
+def _has_completed_file(api_session: requests.Session, backend_url: str) -> bool:
     try:
         response = api_session.get(
-            f"{BACKEND_URL}/api/files",
+            f"{backend_url}/api/files",
             params={"status": "completed", "page_size": "1"},
             timeout=20,
         )
@@ -168,8 +185,8 @@ def _has_completed_file(api_session: requests.Session) -> bool:
         return False
 
 
-def _open_chat(page: Page) -> None:
-    page.goto(f"{FRONTEND_URL}/chat")
+def _open_chat(page: Page, base_url: str) -> None:
+    page.goto(f"{base_url}/chat")
     page.wait_for_selector('[data-testid="chat-composer-input"]', timeout=30_000)
 
 
@@ -188,11 +205,13 @@ def test_chat_link_in_navbar(gallery_page: Page):
     expect(gallery_page.locator('[data-testid="chat-composer-input"]')).to_be_visible()
 
 
-def test_empty_state_offers_suggestions(gallery_page: Page, api_session: requests.Session):
+def test_empty_state_offers_suggestions(
+    gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
+):
     """A new chat shows starter prompts rather than a blank box."""
-    _open_chat(gallery_page)
+    _open_chat(gallery_page, base_url)
 
-    if not _llm_configured(api_session):
+    if not _llm_configured(api_session, backend_url):
         # Without an LLM the page shows the setup CTA instead — covered below.
         expect(gallery_page.locator('[data-testid="chat-open-llm-settings"]')).to_be_visible()
         return
@@ -206,19 +225,21 @@ def test_empty_state_offers_suggestions(gallery_page: Page, api_session: request
     expect(composer).not_to_have_value("")
 
 
-def test_setup_cta_when_no_llm(gallery_page: Page, api_session: requests.Session):
+def test_setup_cta_when_no_llm(
+    gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
+):
     """With no provider configured, chat explains what to do instead of failing."""
-    if _llm_configured(api_session):
+    if _llm_configured(api_session, backend_url):
         pytest.skip("LLM is configured — the setup CTA path does not apply")
 
-    _open_chat(gallery_page)
+    _open_chat(gallery_page, base_url)
     expect(gallery_page.locator('[data-testid="chat-open-llm-settings"]')).to_be_visible()
     expect(gallery_page.locator('[data-testid="chat-composer-input"]')).to_be_disabled()
 
 
-def test_context_bar_defaults_to_all_transcripts(gallery_page: Page):
+def test_context_bar_defaults_to_all_transcripts(gallery_page: Page, base_url: str):
     """An unscoped conversation says so explicitly rather than showing nothing."""
-    _open_chat(gallery_page)
+    _open_chat(gallery_page, base_url)
     expect(gallery_page.locator('[data-testid="chat-scope-all"]')).to_be_visible()
 
 
@@ -227,11 +248,13 @@ def test_context_bar_defaults_to_all_transcripts(gallery_page: Page):
 # ---------------------------------------------------------------------------
 
 
-def test_send_button_disabled_until_text_entered(gallery_page: Page, api_session: requests.Session):
-    if not _llm_configured(api_session):
+def test_send_button_disabled_until_text_entered(
+    gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
+):
+    if not _llm_configured(api_session, backend_url):
         pytest.skip("Requires a configured LLM")
 
-    _open_chat(gallery_page)
+    _open_chat(gallery_page, base_url)
     send = gallery_page.locator('[data-testid="chat-send"]')
     expect(send).to_be_disabled()
 
@@ -240,12 +263,12 @@ def test_send_button_disabled_until_text_entered(gallery_page: Page, api_session
 
 
 def test_shift_enter_inserts_newline_without_sending(
-    gallery_page: Page, api_session: requests.Session
+    gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
 ):
-    if not _llm_configured(api_session):
+    if not _llm_configured(api_session, backend_url):
         pytest.skip("Requires a configured LLM")
 
-    _open_chat(gallery_page)
+    _open_chat(gallery_page, base_url)
     composer = gallery_page.locator('[data-testid="chat-composer-input"]')
     composer.fill("first line")
     composer.press("Shift+Enter")
@@ -262,15 +285,19 @@ def test_shift_enter_inserts_newline_without_sending(
 
 
 def test_send_message_streams_answer_with_citations(
-    gallery_page: Page, api_session: requests.Session, cleanup_conversations: list[str]
+    gallery_page: Page,
+    api_session: requests.Session,
+    cleanup_conversations: list[str],
+    base_url: str,
+    backend_url: str,
 ):
     """The end-to-end value of the feature: a grounded, cited answer."""
-    if not _llm_configured(api_session):
+    if not _llm_configured(api_session, backend_url):
         pytest.skip("Requires a configured LLM")
-    if not _has_completed_file(api_session):
+    if not _has_completed_file(api_session, backend_url):
         pytest.skip("Requires at least one completed transcript")
 
-    _open_chat(gallery_page)
+    _open_chat(gallery_page, base_url)
 
     composer = gallery_page.locator('[data-testid="chat-composer-input"]')
     composer.fill("What topics are discussed in these recordings?")
@@ -300,15 +327,19 @@ def test_send_message_streams_answer_with_citations(
 
 
 def test_citation_navigates_to_transcript_at_timestamp(
-    gallery_page: Page, api_session: requests.Session, cleanup_conversations: list[str]
+    gallery_page: Page,
+    api_session: requests.Session,
+    cleanup_conversations: list[str],
+    base_url: str,
+    backend_url: str,
 ):
     """Clicking a citation opens the recording at the moment it came from."""
-    if not _llm_configured(api_session):
+    if not _llm_configured(api_session, backend_url):
         pytest.skip("Requires a configured LLM")
-    if not _has_completed_file(api_session):
+    if not _has_completed_file(api_session, backend_url):
         pytest.skip("Requires at least one completed transcript")
 
-    _open_chat(gallery_page)
+    _open_chat(gallery_page, base_url)
     gallery_page.locator('[data-testid="chat-composer-input"]').fill("Summarise the key points.")
     gallery_page.locator('[data-testid="chat-send"]').click()
 
@@ -335,13 +366,17 @@ def test_citation_navigates_to_transcript_at_timestamp(
 
 
 def test_stop_generation_keeps_partial_answer(
-    gallery_page: Page, api_session: requests.Session, cleanup_conversations: list[str]
+    gallery_page: Page,
+    api_session: requests.Session,
+    cleanup_conversations: list[str],
+    base_url: str,
+    backend_url: str,
 ):
     """Stopping mid-stream keeps what arrived rather than discarding it."""
-    if not _llm_configured(api_session):
+    if not _llm_configured(api_session, backend_url):
         pytest.skip("Requires a configured LLM")
 
-    _open_chat(gallery_page)
+    _open_chat(gallery_page, base_url)
     gallery_page.locator('[data-testid="chat-composer-input"]').fill(
         "Give me a long, detailed summary of everything discussed."
     )
@@ -364,26 +399,25 @@ def test_stop_generation_keeps_partial_answer(
 
 
 def test_conversation_appears_in_sidebar_and_can_be_deleted(
-    gallery_page: Page, api_session: requests.Session
+    gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
 ):
     """Create via API, verify it lists, then delete it through the UI."""
+    title = _unique("E2E temporary conversation")
     response = api_session.post(
-        f"{BACKEND_URL}/api/chat/conversations",
-        json={"title": "E2E temporary conversation"},
+        f"{backend_url}/api/chat/conversations",
+        json={"title": title},
         timeout=20,
     )
     assert response.status_code == 201, response.text
     uuid = response.json()["uuid"]
 
     try:
-        _open_chat(gallery_page)
+        _open_chat(gallery_page, base_url)
         sidebar = gallery_page.locator('[data-testid="chat-sidebar"]')
         expect(sidebar).to_be_visible()
-        expect(sidebar.get_by_text("E2E temporary conversation")).to_be_visible(timeout=15_000)
+        expect(sidebar.get_by_text(title)).to_be_visible(timeout=15_000)
 
-        item = gallery_page.locator('[data-testid="chat-conversation-item"]').filter(
-            has_text="E2E temporary conversation"
-        )
+        item = gallery_page.locator('[data-testid="chat-conversation-item"]').filter(has_text=title)
         item.hover()
         item.locator('[data-testid="chat-delete"]').click()
         # The confirm prompt REPLACES the row's title, so `item` — which is
@@ -391,20 +425,24 @@ def test_conversation_appears_in_sidebar_and_can_be_deleted(
         # confirm button directly; only one row can be confirming at a time.
         gallery_page.locator('[data-testid="chat-delete-confirm"]').click()
 
-        expect(sidebar.get_by_text("E2E temporary conversation")).to_have_count(0, timeout=15_000)
+        expect(sidebar.get_by_text(title)).to_have_count(0, timeout=15_000)
     finally:
         # Idempotent: already deleted via the UI in the happy path.
-        api_session.delete(f"{BACKEND_URL}/api/chat/conversations/{uuid}", timeout=15)
+        api_session.delete(f"{backend_url}/api/chat/conversations/{uuid}", timeout=15)
 
 
 def test_conversation_reload_replays_history(
-    gallery_page: Page, api_session: requests.Session, cleanup_conversations: list[str]
+    gallery_page: Page,
+    api_session: requests.Session,
+    cleanup_conversations: list[str],
+    base_url: str,
+    backend_url: str,
 ):
     """A conversation URL is durable — reloading replays the thread."""
-    if not _llm_configured(api_session):
+    if not _llm_configured(api_session, backend_url):
         pytest.skip("Requires a configured LLM")
 
-    _open_chat(gallery_page)
+    _open_chat(gallery_page, base_url)
     question = "What was discussed?"
     gallery_page.locator('[data-testid="chat-composer-input"]').fill(question)
     gallery_page.locator('[data-testid="chat-send"]').click()
@@ -429,13 +467,17 @@ def test_conversation_reload_replays_history(
 
 
 def test_file_picker_scopes_the_conversation(
-    gallery_page: Page, api_session: requests.Session, cleanup_conversations: list[str]
+    gallery_page: Page,
+    api_session: requests.Session,
+    cleanup_conversations: list[str],
+    base_url: str,
+    backend_url: str,
 ):
     """Selecting recordings replaces 'All transcripts' with an explicit scope."""
-    if not _has_completed_file(api_session):
+    if not _has_completed_file(api_session, backend_url):
         pytest.skip("Requires at least one completed transcript")
 
-    _open_chat(gallery_page)
+    _open_chat(gallery_page, base_url)
     gallery_page.locator('[data-testid="chat-add-context"]').click()
 
     checkbox = gallery_page.locator('[data-testid="picker-file-checkbox"]').first
@@ -466,18 +508,21 @@ def test_gallery_chat_with_selection_hands_off_context(gallery_page: Page):
 # ---------------------------------------------------------------------------
 
 
-def test_context_can_be_turned_off(gallery_page: Page, api_session: requests.Session):
+def test_context_can_be_turned_off(
+    gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
+):
     """Context-off mode is visibly distinct — no transcripts, no citations."""
+    title = _unique("E2E context toggle")
     response = api_session.post(
-        f"{BACKEND_URL}/api/chat/conversations",
-        json={"title": "E2E context toggle"},
+        f"{backend_url}/api/chat/conversations",
+        json={"title": title},
         timeout=20,
     )
     assert response.status_code == 201, response.text
     uuid = response.json()["uuid"]
 
     try:
-        gallery_page.goto(f"{FRONTEND_URL}/chat/{uuid}")
+        gallery_page.goto(f"{base_url}/chat/{uuid}")
         gallery_page.wait_for_selector('[data-testid="chat-composer-input"]', timeout=30_000)
 
         gallery_page.locator('[data-testid="chat-controls-toggle"]').click()
@@ -490,21 +535,24 @@ def test_context_can_be_turned_off(gallery_page: Page, api_session: requests.Ses
             timeout=15_000
         )
     finally:
-        api_session.delete(f"{BACKEND_URL}/api/chat/conversations/{uuid}", timeout=15)
+        api_session.delete(f"{backend_url}/api/chat/conversations/{uuid}", timeout=15)
 
 
-def test_chat_controls_persist_across_reload(gallery_page: Page, api_session: requests.Session):
+def test_chat_controls_persist_across_reload(
+    gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
+):
     """Per-conversation settings are stored server-side, not just in the tab."""
+    title = _unique("E2E persistence")
     response = api_session.post(
-        f"{BACKEND_URL}/api/chat/conversations",
-        json={"title": "E2E persistence"},
+        f"{backend_url}/api/chat/conversations",
+        json={"title": title},
         timeout=20,
     )
     assert response.status_code == 201, response.text
     uuid = response.json()["uuid"]
 
     try:
-        gallery_page.goto(f"{FRONTEND_URL}/chat/{uuid}")
+        gallery_page.goto(f"{base_url}/chat/{uuid}")
         gallery_page.wait_for_selector('[data-testid="chat-composer-input"]', timeout=30_000)
 
         gallery_page.locator('[data-testid="chat-controls-toggle"]').click()
@@ -518,7 +566,7 @@ def test_chat_controls_persist_across_reload(gallery_page: Page, api_session: re
             timeout=30_000
         )
     finally:
-        api_session.delete(f"{BACKEND_URL}/api/chat/conversations/{uuid}", timeout=15)
+        api_session.delete(f"{backend_url}/api/chat/conversations/{uuid}", timeout=15)
 
 
 # ---------------------------------------------------------------------------
@@ -526,13 +574,13 @@ def test_chat_controls_persist_across_reload(gallery_page: Page, api_session: re
 # ---------------------------------------------------------------------------
 
 
-def test_chat_settings_section_saves(gallery_page: Page):
+def test_chat_settings_section_saves(gallery_page: Page, base_url: str):
     """Settings → Chat round-trips the user's defaults."""
-    gallery_page.goto(f"{FRONTEND_URL}/chat")
+    gallery_page.goto(f"{base_url}/chat")
     gallery_page.wait_for_selector('[data-testid="chat-composer-input"]', timeout=30_000)
 
     # Reach the settings modal the same way a user does.
-    gallery_page.goto(f"{FRONTEND_URL}/")
+    gallery_page.goto(f"{base_url}/")
     gallery_page.wait_for_selector(".gallery-action-buttons", timeout=30_000)
     gallery_page.evaluate(
         "() => window.dispatchEvent(new CustomEvent('open-settings', { detail: 'chat' }))"
@@ -551,17 +599,21 @@ def test_chat_settings_section_saves(gallery_page: Page):
 
 
 def test_speaker_tab_scopes_the_conversation(
-    gallery_page: Page, api_session: requests.Session, cleanup_conversations: list[str]
+    gallery_page: Page,
+    api_session: requests.Session,
+    cleanup_conversations: list[str],
+    base_url: str,
+    backend_url: str,
 ):
     """Select a speaker and the conversation shows a speaker chip."""
     response = api_session.get(
-        f"{BACKEND_URL}/api/speakers", params={"for_filter": "true"}, timeout=20
+        f"{backend_url}/api/speakers", params={"for_filter": "true"}, timeout=20
     )
     named = [s for s in (response.json() if response.ok else []) if s.get("display_name")]
     if not named:
         pytest.skip("No named speakers — label a speaker on a transcript first")
 
-    _open_chat(gallery_page)
+    _open_chat(gallery_page, base_url)
     gallery_page.locator('[data-testid="chat-add-context"]').click()
 
     gallery_page.get_by_role("tab", name=re.compile("speaker", re.I)).click()
@@ -581,13 +633,17 @@ def test_speaker_tab_scopes_the_conversation(
 
 
 def test_edit_a_question_and_resend(
-    gallery_page: Page, api_session: requests.Session, cleanup_conversations: list[str]
+    gallery_page: Page,
+    api_session: requests.Session,
+    cleanup_conversations: list[str],
+    base_url: str,
+    backend_url: str,
 ):
     """Editing an earlier question re-answers from that point."""
-    if not _llm_configured(api_session):
+    if not _llm_configured(api_session, backend_url):
         pytest.skip("Requires a configured LLM")
 
-    _open_chat(gallery_page)
+    _open_chat(gallery_page, base_url)
     gallery_page.locator('[data-testid="chat-composer-input"]').fill("First question")
     gallery_page.locator('[data-testid="chat-send"]').click()
 
@@ -611,18 +667,21 @@ def test_edit_a_question_and_resend(
     )
 
 
-def test_export_downloads_the_conversation(gallery_page: Page, api_session: requests.Session):
+def test_export_downloads_the_conversation(
+    gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
+):
     """Export produces a Markdown file the user can keep."""
+    title = _unique("E2E export")
     response = api_session.post(
-        f"{BACKEND_URL}/api/chat/conversations",
-        json={"title": "E2E export"},
+        f"{backend_url}/api/chat/conversations",
+        json={"title": title},
         timeout=20,
     )
     assert response.status_code == 201, response.text
     uuid = response.json()["uuid"]
 
     try:
-        gallery_page.goto(f"{FRONTEND_URL}/chat/{uuid}")
+        gallery_page.goto(f"{base_url}/chat/{uuid}")
         gallery_page.wait_for_selector('[data-testid="chat-composer-input"]', timeout=30_000)
 
         with gallery_page.expect_download(timeout=20_000) as download_info:
@@ -631,46 +690,51 @@ def test_export_downloads_the_conversation(gallery_page: Page, api_session: requ
         download = download_info.value
         assert download.suggested_filename.endswith(".md")
     finally:
-        api_session.delete(f"{BACKEND_URL}/api/chat/conversations/{uuid}", timeout=15)
+        api_session.delete(f"{backend_url}/api/chat/conversations/{uuid}", timeout=15)
 
 
-def test_archive_and_restore_a_conversation(gallery_page: Page, api_session: requests.Session):
+def test_archive_and_restore_a_conversation(
+    gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
+):
     """Archiving hides a conversation; the archived view brings it back."""
+    title = _unique("E2E archive target")
     response = api_session.post(
-        f"{BACKEND_URL}/api/chat/conversations",
-        json={"title": "E2E archive target"},
+        f"{backend_url}/api/chat/conversations",
+        json={"title": title},
         timeout=20,
     )
     assert response.status_code == 201, response.text
     uuid = response.json()["uuid"]
 
     try:
-        _open_chat(gallery_page)
+        _open_chat(gallery_page, base_url)
         sidebar = gallery_page.locator('[data-testid="chat-sidebar"]')
-        item = gallery_page.locator('[data-testid="chat-conversation-item"]').filter(
-            has_text="E2E archive target"
-        )
+        item = gallery_page.locator('[data-testid="chat-conversation-item"]').filter(has_text=title)
         expect(item).to_be_visible(timeout=15_000)
 
         item.hover()
         item.locator('[data-testid="chat-archive"]').click()
-        expect(sidebar.get_by_text("E2E archive target")).to_have_count(0, timeout=15_000)
+        expect(sidebar.get_by_text(title)).to_have_count(0, timeout=15_000)
 
         # It is not gone — it moved.
         gallery_page.locator('[data-testid="chat-toggle-archived"]').click()
-        expect(sidebar.get_by_text("E2E archive target")).to_be_visible(timeout=15_000)
+        expect(sidebar.get_by_text(title)).to_be_visible(timeout=15_000)
     finally:
-        api_session.delete(f"{BACKEND_URL}/api/chat/conversations/{uuid}", timeout=15)
+        api_session.delete(f"{backend_url}/api/chat/conversations/{uuid}", timeout=15)
 
 
 def test_escape_stops_generation(
-    gallery_page: Page, api_session: requests.Session, cleanup_conversations: list[str]
+    gallery_page: Page,
+    api_session: requests.Session,
+    cleanup_conversations: list[str],
+    base_url: str,
+    backend_url: str,
 ):
     """Escape is the conventional stop key and must reach the stream."""
-    if not _llm_configured(api_session):
+    if not _llm_configured(api_session, backend_url):
         pytest.skip("Requires a configured LLM")
 
-    _open_chat(gallery_page)
+    _open_chat(gallery_page, base_url)
     gallery_page.locator('[data-testid="chat-composer-input"]').fill(
         "Write an extremely long and detailed summary."
     )

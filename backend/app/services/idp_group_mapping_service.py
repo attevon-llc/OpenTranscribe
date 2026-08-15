@@ -295,8 +295,14 @@ def _apply_role(
     audit_logger.log(
         event_type=AuditEventType.ADMIN_ROLE_CHANGE,
         outcome=AuditOutcome.SUCCESS,
-        user_id=user.id,
-        username=str(user.email),
+        # The actor is the IdP reconciliation, not a person — so `user_id` is
+        # None rather than the promoted user (issue #443). Keying it on the
+        # subject meant "privilege changes Bob performed" returned Bob's own
+        # promotion, and filtering by the acting admin missed every IdP-driven
+        # one entirely.
+        user_id=None,
+        target_user_id=int(user.id),
+        target_username=str(user.email),
         details={
             "actor": reason,
             "source": source,

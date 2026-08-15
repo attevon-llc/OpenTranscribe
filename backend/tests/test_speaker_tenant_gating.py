@@ -186,7 +186,7 @@ class TestSpeakerMatchingOrgGate:
         def fake_add_speaker_embedding(**kwargs):
             calls["add"].append(kwargs.get("organization_id"))
 
-        def fake_calculate_profile_similarity(db, embedding, user_id, **kwargs):
+        def fake_calculate_profile_similarity(embedding, user_id, **kwargs):
             calls["profile_knn"].append(kwargs.get("organization_id"))
             return []
 

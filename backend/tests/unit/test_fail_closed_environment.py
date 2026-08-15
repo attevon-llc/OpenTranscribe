@@ -16,6 +16,7 @@ import pytest
 
 from app.core.config import RELAXED_ENVIRONMENTS
 from app.core.config import is_relaxed_environment
+from tests.helpers import does_not_raise
 
 # ── The gate itself ──────────────────────────────────────────────────────────────
 
@@ -201,4 +202,5 @@ def test_development_boots_with_defaults(monkeypatch):
     monkeypatch.setattr(settings, "ENVIRONMENT", "development")
     monkeypatch.setattr(settings, "JWT_SECRET_KEY", "this_should_be_changed_in_production")
 
-    _validate_production_secrets()  # must not raise
+    with does_not_raise("development tolerates the shipped defaults, so boot validation must pass"):
+        _validate_production_secrets()  # must not raise

@@ -3,6 +3,7 @@ Celery tasks for file cleanup and system maintenance.
 """
 
 import logging
+import math
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -17,6 +18,20 @@ from app.db.session_utils import session_scope
 from app.services.file_cleanup_service import cleanup_service
 
 logger = logging.getLogger(__name__)
+
+#: Slowest upload rate the orphan sweeper assumes a real client can sustain
+#: (~1.1 Mbit/s). A PENDING row younger than ``file_size`` at this rate may still
+#: be an upload in flight, so it is left alone: the browser multipart path accepts
+#: objects up to 15 GB, which no fixed 30-minute window can cover.
+_MIN_UPLOAD_THROUGHPUT_BYTES_PER_MINUTE = 8 * 1024 * 1024
+
+#: Hard cap on that derived window, so a wrong ``file_size`` cannot make a row
+#: permanently un-sweepable.
+_MAX_UPLOAD_GRACE_MINUTES = 48 * 60
+
+#: Hour used when ``files.retention_run_time`` cannot be parsed. Matches the
+#: ``"02:00"`` default in ``system_settings_service.get_retention_config``.
+_DEFAULT_RETENTION_HOUR = 2
 
 
 @shared_task(bind=True, name="cleanup.run_periodic_cleanup", priority=UtilityPriority.ROUTINE)
@@ -179,6 +194,40 @@ def emergency_file_recovery(self, file_uuids: list):
         raise
 
 
+def _minutes_since(timestamp: datetime | None) -> float | None:
+    """Age of ``timestamp`` in minutes, treating a naive value as UTC.
+
+    Args:
+        timestamp: Instant to measure from.
+
+    Returns:
+        Age in minutes, or None when ``timestamp`` is None.
+    """
+    if timestamp is None:
+        return None
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - timestamp).total_seconds() / 60.0
+
+
+def _upload_grace_minutes(file_size: int | None, base_minutes: int) -> int:
+    """How long a PENDING row of this size must be left alone.
+
+    Args:
+        file_size: Declared upload size in bytes, if known.
+        base_minutes: The sweeper's floor (``max_age_minutes``).
+
+    Returns:
+        The larger of the floor and the time this many bytes needs at
+        :data:`_MIN_UPLOAD_THROUGHPUT_BYTES_PER_MINUTE`, capped at
+        :data:`_MAX_UPLOAD_GRACE_MINUTES`.
+    """
+    if not file_size or file_size <= 0:
+        return base_minutes
+    needed = math.ceil(file_size / _MIN_UPLOAD_THROUGHPUT_BYTES_PER_MINUTE)
+    return min(max(base_minutes, needed), _MAX_UPLOAD_GRACE_MINUTES)
+
+
 @shared_task(bind=True, name="cleanup.orphan_upload_sweeper", priority=UtilityPriority.ROUTINE)
 def orphan_upload_sweeper(self, max_age_minutes: int = 30) -> dict[str, int]:
     """Delete PENDING MediaFile rows abandoned before MinIO finished storing.
@@ -186,29 +235,41 @@ def orphan_upload_sweeper(self, max_age_minutes: int = 30) -> dict[str, int]:
     A client disconnect mid-upload (or a prepare_upload call that never
     got a complete_upload) leaves a PENDING row that will never make
     progress. This sweeper looks for PENDING rows older than
-    ``max_age_minutes`` and:
+    ``max_age_minutes`` and, per row:
 
-    - deletes the matching MinIO object if ``storage_path`` is set (best
-      effort — a missing object is expected if the client never made it
-      to the PUT)
-    - deletes the DB row (cascades remove any Task / timing rows)
+    - **skips it while the upload could still be in flight.** A browser
+      multipart upload may legitimately run for hours (the ceiling is 15 GB),
+      and it holds its row at PENDING the whole time, so the window is derived
+      from the declared ``file_size`` — see :func:`_upload_grace_minutes`. A
+      fixed 30 minutes deleted the row, and the object, out from under a
+      running upload.
+    - **deletes the DB row FIRST, re-checking that it is still PENDING**, and
+      only then the MinIO object. The old order deleted the object first, so a
+      row that completed between the scan and the delete — or a row whose own
+      delete failed — was left pointing at storage that no longer existed: a
+      file the user still sees and can never open. The status re-check is the
+      race guard; ``SELECT … FOR UPDATE SKIP LOCKED`` steps aside from a
+      concurrent ``complete_upload``.
 
-    Scheduled every 15 minutes via ``celery_app.conf.beat_schedule``. The
-    30-minute default window is generous enough for normal slow
-    connections while still cleaning up same-day abandonments.
+    Scheduled every 15 minutes via ``celery_app.conf.beat_schedule``.
 
     Args:
-        max_age_minutes: Only sweep rows created more than this many
-            minutes ago. Raise for noisy test environments; lower for
-            tight dedup requirements.
+        max_age_minutes: Floor for the per-row window. Raise for noisy test
+            environments; lower for tight dedup requirements.
+
+    Returns:
+        ``deleted_rows``, ``deleted_objects``, ``skipped_in_progress`` and
+        ``errors``.
     """
     from app.models.media import FileStatus
     from app.models.media import MediaFile
     from app.services.minio_service import delete_file
 
-    cutoff = datetime.now(UTC) - timedelta(minutes=max(1, int(max_age_minutes)))
+    base_minutes = max(1, int(max_age_minutes))
+    cutoff = datetime.now(UTC) - timedelta(minutes=base_minutes)
     deleted_rows = 0
     deleted_objects = 0
+    skipped_in_progress = 0
     errors = 0
 
     try:
@@ -225,39 +286,70 @@ def orphan_upload_sweeper(self, max_age_minutes: int = 30) -> dict[str, int]:
             for media_file in stale:
                 file_id = int(media_file.id)
                 storage_path = media_file.storage_path or ""
+                age = _minutes_since(media_file.upload_time)
+                grace = _upload_grace_minutes(media_file.file_size, base_minutes)
+                if age is not None and age < grace:
+                    skipped_in_progress += 1
+                    logger.debug(
+                        f"orphan_upload_sweeper: file {file_id} is {age:.0f} min old and its "
+                        f"size allows {grace} min — could still be uploading, skipping"
+                    )
+                    continue
+
                 try:
-                    if storage_path:
-                        try:
-                            delete_file(storage_path)
-                            deleted_objects += 1
-                        except Exception as obj_err:
-                            # Missing object is the common case — client never
-                            # completed the PUT. Log at debug and move on.
-                            logger.debug(
-                                f"orphan_upload_sweeper: {storage_path} not deletable "
-                                f"({obj_err}); proceeding with row deletion"
-                            )
-                    db.delete(media_file)
+                    # Re-read under a row lock and confirm the row is STILL pending;
+                    # complete_upload may have finished it since the scan above.
+                    pending = (
+                        db.query(MediaFile)
+                        .filter(
+                            MediaFile.id == file_id,
+                            MediaFile.status == FileStatus.PENDING,
+                        )
+                        .with_for_update(skip_locked=True)
+                        .first()
+                    )
+                    if pending is None:
+                        skipped_in_progress += 1
+                        logger.info(
+                            f"orphan_upload_sweeper: file {file_id} is no longer pending "
+                            "(or is locked by an active upload), leaving it alone"
+                        )
+                        continue
+
+                    db.delete(pending)
+                    db.commit()
                     deleted_rows += 1
                 except Exception as row_err:
                     errors += 1
+                    db.rollback()
                     logger.warning(f"orphan_upload_sweeper failed on file {file_id}: {row_err}")
+                    continue
 
-            if deleted_rows:
-                db.commit()
+                # The row is gone; the object is now unreachable garbage. A missing
+                # object is the common case — the client never made it to the PUT.
+                if storage_path:
+                    try:
+                        delete_file(storage_path)
+                        deleted_objects += 1
+                    except Exception as obj_err:
+                        logger.debug(
+                            f"orphan_upload_sweeper: {storage_path} not deletable "
+                            f"({obj_err}); its row is already gone"
+                        )
     except Exception as e:
         logger.error(f"orphan_upload_sweeper error: {e}")
         errors += 1
 
-    if deleted_rows or deleted_objects or errors:
+    if deleted_rows or deleted_objects or errors or skipped_in_progress:
         logger.info(
             f"orphan_upload_sweeper: removed {deleted_rows} row(s), "
-            f"{deleted_objects} object(s), {errors} error(s) "
-            f"(cutoff={cutoff.isoformat()})"
+            f"{deleted_objects} object(s), skipped {skipped_in_progress} in-progress, "
+            f"{errors} error(s) (cutoff={cutoff.isoformat()})"
         )
     return {
         "deleted_rows": deleted_rows,
         "deleted_objects": deleted_objects,
+        "skipped_in_progress": skipped_in_progress,
         "errors": errors,
     }
 
@@ -286,6 +378,130 @@ def scratch_janitor(self, ttl_seconds: int | None = None) -> dict[str, int]:
     return {"removed": removed, "errors": errors, "ttl_seconds": ttl}
 
 
+def _scheduled_retention_hour(run_time: Any) -> int:
+    """Parse ``files.retention_run_time`` (``"HH:MM"``) into an hour.
+
+    Args:
+        run_time: The configured value, whatever type it came back as.
+
+    Returns:
+        The hour 0-23, or :data:`_DEFAULT_RETENTION_HOUR` when the value cannot
+        be parsed. A malformed value used to raise out of the guard block into
+        the task's catch-all handler, which Celery recorded as SUCCESS — so one
+        bad settings row silently stopped retention for good.
+    """
+    try:
+        hour = int(str(run_time).split(":")[0])
+    except (TypeError, ValueError):
+        hour = -1
+    if not 0 <= hour <= 23:
+        logger.error(
+            f"cleanup_expired_files: files.retention_run_time is {run_time!r}, which is not "
+            f"HH:MM — falling back to {_DEFAULT_RETENTION_HOUR:02d}:00. Fix the setting."
+        )
+        return _DEFAULT_RETENTION_HOUR
+    return hour
+
+
+def _select_expired_files(
+    db,
+    config: dict,
+    cutoff: datetime,
+    query_cutoff: datetime,
+    resolve_retention_days,
+) -> list[tuple[int, str]]:
+    """Return ``(file_id, file_uuid)`` for every file past its effective retention.
+
+    Plain tuples, never ``MediaFile`` instances: the deletion phase runs with no
+    session open, and an escaping instance would lazy-load (reopening a
+    transaction) the moment ``purge_media_file`` touched it.
+    """
+    from app.models.media import FileStatus
+    from app.models.media import MediaFile
+
+    eligible_statuses = [FileStatus.COMPLETED.value]
+    if config["delete_error_files"]:
+        eligible_statuses.append(FileStatus.ERROR.value)
+
+    candidates = (
+        db.query(
+            MediaFile.id,
+            MediaFile.uuid,
+            MediaFile.organization_id,
+            MediaFile.completed_at,
+            MediaFile.upload_time,
+        )
+        .filter(
+            MediaFile.status.in_(eligible_statuses),
+            ((MediaFile.completed_at.isnot(None)) & (MediaFile.completed_at < query_cutoff))
+            | ((MediaFile.completed_at.is_(None)) & (MediaFile.upload_time < query_cutoff)),
+        )
+        .all()
+    )
+    logger.info(f"cleanup_expired_files: found {len(candidates)} candidate file(s)")
+
+    expired: list[tuple[int, str]] = []
+    for file_id, file_uuid, organization_id, completed_at, upload_time in candidates:
+        # Per-file expiry against the file's EFFECTIVE retention: the per-org
+        # override when present (cloud), else the global cutoff. Lets
+        # longer-retention tenants keep files past the global window and
+        # free-tier tenants expire them sooner — all from one candidate query.
+        override = resolve_retention_days(organization_id)
+        file_cutoff = cutoff if override is None else datetime.now(UTC) - timedelta(days=override)
+        ref = completed_at or upload_time
+        if ref is not None and ref < file_cutoff:
+            expired.append((int(file_id), str(file_uuid)))
+    return expired
+
+
+def _purge_expired_files(expired: list[tuple[int, str]]) -> tuple[int, int]:
+    """Delete each expired file in its **own short session**. Returns (deleted, failed).
+
+    ``purge_media_file`` deletes from object storage and OpenSearch before it
+    commits the row, so it needs a session — but it needs it for ONE file. The
+    previous shape held a single transaction across the whole pass, i.e. across
+    every one of those round trips for every expired file at once.
+    """
+    from app.models.media import MediaFile
+    from app.services.file_cleanup_service import auto_delete_media_file
+
+    deleted = 0
+    failed = 0
+    for file_id, file_uuid in expired:
+        try:
+            with session_scope() as db:
+                # Eager-load speakers to avoid N+1 queries when
+                # auto_delete_media_file iterates file.speakers.
+                from sqlalchemy.orm import selectinload
+
+                media_file = (
+                    db.query(MediaFile)
+                    .options(selectinload(MediaFile.speakers))
+                    .filter(MediaFile.id == file_id)
+                    .first()
+                )
+                if media_file is None:
+                    continue
+                result = auto_delete_media_file(db, media_file)
+        except Exception as e:  # noqa: BLE001 - one bad file must not abort the pass
+            failed += 1
+            logger.error(
+                f"cleanup_expired_files: failed to delete file id={file_id} uuid={file_uuid}: {e}"
+            )
+            continue
+
+        if result["deleted"]:
+            deleted += 1
+            logger.info(f"cleanup_expired_files: deleted file id={file_id} uuid={file_uuid}")
+        else:
+            failed += 1
+            logger.error(
+                f"cleanup_expired_files: failed to delete file id={file_id} "
+                f"uuid={file_uuid}: {result.get('error')}"
+            )
+    return deleted, failed
+
+
 @celery_app.task(name="cleanup_expired_files", priority=UtilityPriority.ROUTINE)
 def cleanup_expired_files(force: bool = False):
     """
@@ -298,7 +514,10 @@ def cleanup_expired_files(force: bool = False):
 
     Args:
         force: When True, skip the enabled/hour/already-ran-today guards and
-               execute the deletion pass unconditionally.
+               execute the deletion pass unconditionally. A forced run does
+               **not** stamp ``files.retention_last_run``: that field is what the
+               already-ran-today guard reads, so an admin pressing "run now"
+               used to cancel the day's scheduled pass.
 
     Returns:
         A dict with one of the following shapes:
@@ -309,16 +528,20 @@ def cleanup_expired_files(force: bool = False):
           successfully today in the configured timezone and force is False.
         - ``{"status": "completed", "deleted": int, "failed": int}`` – the
           deletion pass finished; deleted/failed counts reflect file outcomes.
-        - ``{"status": "error", "error": str}`` – an unexpected exception
-          occurred; details are included for diagnostics.
+
+    Raises:
+        Exception: Any unexpected error propagates so Celery records the task as
+            FAILURE. It used to be swallowed into ``{"status": "error"}``, which
+            Celery records as SUCCESS — a permanently broken retention job then
+            looked healthy on every one of its hourly runs.
     """
-    from app.models.media import FileStatus
-    from app.models.media import MediaFile
-    from app.services.file_cleanup_service import auto_delete_media_file
     from app.services.system_settings_service import get_retention_config
     from app.services.system_settings_service import set_setting
 
     try:
+        # Phase 1 — read (short session, Postgres only). Everything that leaves
+        # is plain data: the deletions below are MinIO + OpenSearch round trips
+        # and must not run with this session open.
         with session_scope() as db:
             config = get_retention_config(db)
 
@@ -331,7 +554,7 @@ def cleanup_expired_files(force: bool = False):
                 # Guard 2: current hour must match the scheduled run hour
                 tz = ZoneInfo(config["timezone"])
                 now_local = datetime.now(tz)
-                scheduled_hour = int(config["run_time"].split(":")[0])
+                scheduled_hour = _scheduled_retention_hour(config["run_time"])
                 if now_local.hour != scheduled_hour:
                     logger.debug(
                         f"cleanup_expired_files: not scheduled hour "
@@ -377,76 +600,36 @@ def cleanup_expired_files(force: bool = False):
             )
             query_cutoff = datetime.now(UTC) - timedelta(days=query_days)
 
-            # Determine which statuses are eligible for deletion
-            eligible_statuses = [FileStatus.COMPLETED.value]
-            if config["delete_error_files"]:
-                eligible_statuses.append(FileStatus.ERROR.value)
+            expired = _select_expired_files(
+                db, config, cutoff, query_cutoff, resolve_retention_days
+            )
 
-            # Query files that have aged out; eager-load speakers to avoid N+1 queries
-            # when auto_delete_media_file iterates file.speakers for embedding cleanup.
-            from sqlalchemy.orm import selectinload
+        logger.info(
+            f"cleanup_expired_files: {len(expired)} file(s) past their effective retention "
+            f"(query_cutoff={query_cutoff.isoformat()}, global_days={global_retention_days})"
+        )
 
-            eligible_files = (
-                db.query(MediaFile)
-                .options(selectinload(MediaFile.speakers))
-                .filter(
-                    MediaFile.status.in_(eligible_statuses),
-                    ((MediaFile.completed_at.isnot(None)) & (MediaFile.completed_at < query_cutoff))
-                    | ((MediaFile.completed_at.is_(None)) & (MediaFile.upload_time < query_cutoff)),
+        # Phase 2 — delete. One SHORT session PER FILE, so a pass over hundreds
+        # of files no longer holds a single transaction across hundreds of MinIO
+        # and OpenSearch round trips.
+        deleted, failed = _purge_expired_files(expired)
+
+        # Phase 3 — write (short session, Postgres only).
+        # Persist run metadata to system settings — store with explicit UTC offset
+        # so the already_ran_today guard parses correctly on any server timezone.
+        # A FORCED run deliberately does not claim the day: retention_last_run is
+        # the already-ran-today guard's input, so stamping it from a manual run
+        # suppressed that day's scheduled pass, which is the one that respects the
+        # configured window.
+        with session_scope() as db:
+            if not force:
+                run_timestamp = datetime.now(UTC).isoformat()
+                set_setting(
+                    db,
+                    "files.retention_last_run",
+                    run_timestamp,
+                    "ISO UTC timestamp of the last retention cleanup run",
                 )
-                .all()
-            )
-
-            logger.info(
-                f"cleanup_expired_files: found {len(eligible_files)} candidate file(s) "
-                f"(query_cutoff={query_cutoff.isoformat()}, global_days={global_retention_days})"
-            )
-
-            def _is_expired(mf: MediaFile) -> bool:
-                """Per-file expiry against the file's EFFECTIVE retention.
-
-                Uses the per-org override when present (cloud), else the global
-                cutoff. Lets longer-retention tenants keep files past the global
-                window and free-tier tenants expire them sooner — all from one
-                candidate query.
-                """
-                override = resolve_retention_days(getattr(mf, "organization_id", None))
-                if override is None:
-                    file_cutoff = cutoff
-                else:
-                    file_cutoff = datetime.now(UTC) - timedelta(days=override)
-                ref = mf.completed_at or mf.upload_time
-                return ref is not None and ref < file_cutoff
-
-            deleted = 0
-            failed = 0
-
-            for media_file in eligible_files:
-                if not _is_expired(media_file):
-                    continue
-                result = auto_delete_media_file(db, media_file)
-                if result["deleted"]:
-                    deleted += 1
-                    logger.info(
-                        f"cleanup_expired_files: deleted file id={media_file.id} "
-                        f"uuid={media_file.uuid}"
-                    )
-                else:
-                    failed += 1
-                    logger.error(
-                        f"cleanup_expired_files: failed to delete file "
-                        f"id={media_file.id} uuid={media_file.uuid}: {result.get('error')}"
-                    )
-
-            # Persist run metadata to system settings — store with explicit UTC offset
-            # so the already_ran_today guard parses correctly on any server timezone
-            run_timestamp = datetime.now(UTC).isoformat()
-            set_setting(
-                db,
-                "files.retention_last_run",
-                run_timestamp,
-                "ISO UTC timestamp of the last retention cleanup run",
-            )
             set_setting(
                 db,
                 "files.retention_last_run_deleted",
@@ -454,9 +637,12 @@ def cleanup_expired_files(force: bool = False):
                 "Number of files deleted in the most recent retention cleanup run",
             )
 
-            logger.info(f"cleanup_expired_files: completed — deleted={deleted}, failed={failed}")
-            return {"status": "completed", "deleted": deleted, "failed": failed}
+        logger.info(f"cleanup_expired_files: completed — deleted={deleted}, failed={failed}")
+        return {"status": "completed", "deleted": deleted, "failed": failed}
 
     except Exception as exc:
+        # Re-raise: an hourly task that deletes user media must report a failure AS a
+        # failure. Returning an error dict made Celery record SUCCESS, so a retention
+        # job broken by a bad setting or an unreachable MinIO was invisible.
         logger.error(f"cleanup_expired_files: unexpected error: {exc}", exc_info=True)
-        return {"status": "error", "error": str(exc)}
+        raise

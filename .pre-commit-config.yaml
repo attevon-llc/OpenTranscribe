@@ -25,14 +25,28 @@ repos:
       - id: check-shebang-scripts-are-executable
 
   # Python formatting and linting with Ruff (replaces Black, isort, flake8)
+  #
+  # `scripts/` was UNLINTED until this change: 40 Python files, including every piece of
+  # gate tooling the suite's honesty rests on (audit-tests.py, audit-route-coverage.py,
+  # triage-mutants.py, check-schema-drift.py, analyze-test-timing.py). The tools that guard
+  # the tests were the least-guarded code in the repo, and it showed — enabling ruff turned
+  # up 109 findings, among them `benchmark-diarization.py` reading `os.environ` with no
+  # `import os` at module scope, i.e. a script that has raised NameError on import for as
+  # long as that line has existed and that nobody could have run since.
+  #
+  # Two configs are in play and that is deliberate, not an oversight: `backend/` resolves
+  # `backend/pyproject.toml` (double quotes, force-single-line isort) and `scripts/` resolves
+  # the root `pyproject.toml` (single quotes). Ruff picks the nearest config per file, so one
+  # `files:` pattern gets both. Do NOT "unify" them by deleting a config — that reformats a
+  # thousand files to settle a question nobody asked.
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.0
     hooks:
       - id: ruff
         args: [--fix, --show-fixes]
-        files: ^backend/
+        files: ^(backend|scripts)/
       - id: ruff-format
-        files: ^backend/
+        files: ^(backend|scripts)/
 
   # Python type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
@@ -110,7 +124,13 @@ repos:
     hooks:
       - id: bandit
         files: ^backend/
-        args: [-c, pyproject.toml, -r, backend/]
+        # --exclude on the CLI, not just [tool.bandit] exclude_dirs: the pyproject
+        # glob does NOT reliably match here (the hook runs from the repo root, so paths
+        # are `backend/mutants/...`), and bandit walks the FILESYSTEM, so gitignoring
+        # mutmut's generated tree is not enough. Without this, a mutation run left ~330k
+        # lines of deliberately corrupted source that failed the commit on a finding
+        # inside a mutant.
+        args: [-c, pyproject.toml, -x, backend/mutants, -r, backend/]
         additional_dependencies: ["bandit[toml]"]
 
   # Import-linter — enforce the cloud seam direction: the open-source core
@@ -158,6 +178,65 @@ repos:
         language: system
         pass_filenames: false
         files: ^(VERSION|pyproject\.toml|frontend/package\.json|frontend/package-lock\.json|backend/alembic/versions/.*\.py|backend/Dockerfile\.prod|docs-site/blog/.*\.md)$
+
+  # Test-suite quality gate (issue #431) — finds tests that pass whether the code
+  # works or not. The vitest counterpart (`npm run test:audit`) has run in CI since
+  # #431; the pytest one, `scripts/audit-tests.py`, was in NEITHER pre-commit NOR CI
+  # and appeared only in prose. A gate nothing invokes is documentation.
+  #
+  # SELF-TEST FIRST, and never reorder these two. The detectors are code, and a
+  # detector that silently stops matching reports zero findings — indistinguishable
+  # from a clean suite, which is the exact failure this script exists to catch. The
+  # frontend sibling's self-test caught two dead detectors that way.
+  #
+  # language: system + python3 because the auditor is deliberately stdlib-only (ast,
+  # json, argparse) and must also run on the bare CI runner, which installs only
+  # `pre-commit` — no backend venv, no project deps. Same rationale as
+  # version-consistency below.
+  #
+  # `files:` keeps the ~9 s tree scan off commits that cannot change its outcome; the
+  # allowlist is included because deleting a line there must re-verify the finding is
+  # really gone (the auditor fails on a stale entry).
+  - repo: local
+    hooks:
+      - id: audit-tests-selftest
+        name: audit-tests self-test (every detector must still fire)
+        entry: python3 scripts/audit-tests.py --selftest
+        language: system
+        pass_filenames: false
+        files: ^(backend/tests/.*\.py|scripts/audit-tests\.py)$
+      - id: audit-tests
+        name: audit backend test quality (tests that cannot fail)
+        entry: python3 scripts/audit-tests.py backend/tests
+        language: system
+        pass_filenames: false
+        files: ^(backend/tests/.*\.py|backend/tests/audit-allowlist\.txt|scripts/audit-tests\.py)$
+
+  # DB session-lifetime gate (issue #440) — a session held across slow non-DB work keeps a
+  # transaction open, and a plain SELECT holds ACCESS SHARE for its life. That QUEUES
+  # `ALTER TABLE`, i.e. it hangs an Alembic upgrade mid-release (and dev migrates on backend
+  # startup), pins the VACUUM horizon on the largest table, and burns a pool connection.
+  # Measured live twice in one day on two different workers: 48 min and 1h26m
+  # idle-in-transaction, found only because DDL tests started failing with LockNotAvailable.
+  #
+  # Wired here on purpose. This audit's very first finding was that `audit-route-coverage.py`
+  # could never fail AND nothing invoked it — a gate nothing runs is documentation. Adding a
+  # detector without wiring it would have repeated that on the same day it was diagnosed.
+  #
+  # SELF-TEST FIRST, same rule as audit-tests above: a detector that silently stops matching
+  # reports zero findings, which is indistinguishable from a clean codebase.
+      - id: audit-session-lifetime-selftest
+        name: session-lifetime self-test (every detector must still fire)
+        entry: python3 scripts/audit-session-lifetime.py --selftest
+        language: system
+        pass_filenames: false
+        files: ^scripts/audit-session-lifetime\.py$
+      - id: audit-session-lifetime
+        name: audit DB session lifetime (no transaction held across slow work)
+        entry: python3 scripts/audit-session-lifetime.py backend/app
+        language: system
+        pass_filenames: false
+        files: ^(backend/app/.*\.py|scripts/session-lifetime-allowlist\.txt|scripts/audit-session-lifetime\.py)$
 
   # Shell script linting
   - repo: https://github.com/shellcheck-py/shellcheck-py

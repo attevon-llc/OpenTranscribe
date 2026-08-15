@@ -12,6 +12,7 @@ from .chat import ChatProject
 from .custom_vocabulary import CustomVocabulary
 from .email_notification_config import EmailNotificationConfig
 from .email_notification_config import WatchSourceEmail
+from .erasure import ErasureLedgerEntry
 from .group import GroupMapping
 from .group import UserGroup
 from .group import UserGroupMember
@@ -112,4 +113,5 @@ __all__ = [
     "ChatConversation",
     "ChatMessage",
     "ChatProject",
+    "ErasureLedgerEntry",
 ]

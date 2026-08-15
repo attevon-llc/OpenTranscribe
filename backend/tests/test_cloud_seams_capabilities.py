@@ -36,6 +36,7 @@ from app.tasks.transcription.hooks import fire_before_dispatch
 from app.tasks.transcription.hooks import fire_transcription_complete
 from app.tasks.transcription.hooks import register_before_dispatch
 from app.tasks.transcription.hooks import register_transcription_complete
+from tests.helpers import does_not_raise
 
 
 def _fake_request(**state: Any) -> Request:
@@ -171,7 +172,8 @@ class TestPipelineHooks:
         return DispatchContext(**defaults)
 
     def test_no_hooks_is_noop(self):
-        fire_before_dispatch(self._dispatch_ctx())  # no raise
+        with does_not_raise("dispatching with no registered hooks is a no-op"):
+            fire_before_dispatch(self._dispatch_ctx())  # no raise
 
     def test_quota_exceeded_propagates_as_402(self):
         def quota_hook(ctx: DispatchContext) -> None:
@@ -185,7 +187,8 @@ class TestPipelineHooks:
 
     def test_other_dispatch_hook_errors_contained(self):
         register_before_dispatch(lambda ctx: (_ for _ in ()).throw(RuntimeError("boom")))
-        fire_before_dispatch(self._dispatch_ctx())  # contained, no raise
+        with does_not_raise("one hook raising must not stop the others or reach the caller"):
+            fire_before_dispatch(self._dispatch_ctx())  # contained, no raise
 
     def test_completion_hook_receives_context_and_errors_contained(self):
         seen: list[CompletionContext] = []

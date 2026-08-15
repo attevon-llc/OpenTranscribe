@@ -30,6 +30,7 @@ from app.auth.constants import TOKEN_TYPE_ACCESS
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
 from app.core.config import settings
+from app.core.security import accepted_algorithms
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.user import TokenPayload
@@ -464,15 +465,21 @@ def _enforce_banner_acknowledgment(user: User, request: Request | None, db: Sess
     )
 
 
-def _get_client_info(request: Request) -> tuple[str, str]:
+def _get_client_info(request: Request | None) -> tuple[str, str]:
     """Extract client IP and user agent from request.
 
     Args:
-        request: FastAPI request object
+        request: FastAPI request object, or ``None`` where none is in scope.
 
     Returns:
-        Tuple of (client_ip, user_agent)
+        Tuple of (client_ip, user_agent); ``("unknown", "unknown")`` when *request* is
+        ``None``. Callers audit from service-layer and background paths that genuinely
+        have no request, and an audit record that cannot resolve an address must never
+        turn the operation it is recording into a 500.
     """
+    if request is None:
+        return "unknown", "unknown"
+
     # Resolve through the trusted-proxy chain, not the raw peer: behind a reverse proxy
     # request.client.host is the PROXY, so every audited login recorded the proxy's
     # address instead of the user's (issue #284 A0.5).
@@ -574,7 +581,14 @@ def get_current_user(
 
     try:
         key = OctKey.import_key(settings.JWT_SECRET_KEY)
-        token_obj = jwt.decode(token, key, algorithms=[settings.JWT_ALGORITHM])
+        # ONE owner for "which algorithms are accepted" — core.security.
+        # accepted_algorithms — shared with get_optional_current_user below,
+        # core.security.verify_token (the WebSocket/SAML verifier) and
+        # token_service.verify_token_with_fallback. This site used to hardcode
+        # [settings.JWT_ALGORITHM] while verify_token ran its own FIPS-aware list, so
+        # a FIPS-strict deployment authenticated HTTP requests and refused every
+        # WebSocket handshake.
+        token_obj = jwt.decode(token, key, algorithms=accepted_algorithms(TOKEN_TYPE_ACCESS))
         # joserfc verifies the signature/algorithm only — exp is not checked
         # automatically (unlike python-jose), so it's validated explicitly here.
         JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
@@ -780,7 +794,8 @@ def get_optional_current_user(
 
     try:
         key = OctKey.import_key(settings.JWT_SECRET_KEY)
-        token_obj = jwt.decode(token, key, algorithms=[settings.JWT_ALGORITHM])
+        # Same single owner as get_current_user — see the comment there.
+        token_obj = jwt.decode(token, key, algorithms=accepted_algorithms(TOKEN_TYPE_ACCESS))
         # joserfc verifies the signature/algorithm only — exp is not checked
         # automatically (unlike python-jose), so it's validated explicitly here.
         JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)

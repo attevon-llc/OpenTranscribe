@@ -174,6 +174,23 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Mirrors the frontend-tests job below: self-test the auditor, THEN run it.
+      # Duplicated with the pre-commit hooks on purpose — this is where the verdict
+      # belongs in the log, right next to the suite whose quality it is judging, and
+      # the auditor is stdlib-only so it costs ~10 s and needs no extra install.
+      #
+      # A detector that stops matching reports zero findings, which reads exactly like
+      # a clean suite. Never reorder these two steps.
+      - name: Self-test the test auditor
+        run: python3 scripts/audit-tests.py --selftest
+
+      # Fails on any un-allowlisted test that passes whether the code works or not.
+      # Also prints the DEFERRED-WORK (BACKLOG) count from
+      # backend/tests/audit-allowlist.txt, so a green gate is never mistaken for a
+      # clean tree, and fails on a stale allowlist entry so the list can only shrink.
+      - name: Audit backend test quality
+        run: python3 scripts/audit-tests.py backend/tests
+
       - name: Run security-gated suites (FIPS 140-3 mode)
         working-directory: backend
         env:
@@ -226,6 +243,19 @@ jobs:
       - name: Run Vitest
         working-directory: frontend
         run: npm run test
+
+      # Self-test FIRST: the auditor's detectors are themselves code that can silently stop
+      # matching, and a broken detector is indistinguishable from a clean suite.
+      - name: Self-test the test auditor
+        working-directory: frontend
+        run: npm run test:audit:selftest
+
+      # Fails on any test that passes whether the code works or not (.only leaks, assertions
+      # that cannot fail, conditional-only assertions, un-awaited rejects chains). Exemptions
+      # go in frontend/test-audit-allowlist.txt with a mandatory reason.
+      - name: Audit test quality
+        working-directory: frontend
+        run: npm run test:audit
 
       # Report-only dev-tooling: surface dead code and import cycles in the job log
       # without failing CI yet (|| true). Tighten to hard-fail once the existing

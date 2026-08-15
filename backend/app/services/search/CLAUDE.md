@@ -37,6 +37,21 @@ separate and lives in the `../opensearch_service/` package (alias `speakers` →
 - `chunking_service.py` — `chunk_transcript_by_speaker_turns`: groups consecutive same-speaker
   segments into turns, splits over-long turns with sliding-window overlap
   (`SEARCH_CHUNK_TARGET_WORDS` 200 / `SEARCH_CHUNK_OVERLAP_WORDS` 40).
+  **Two invariants here are load-bearing and both were broken (#448, #449):**
+  - **Size is measured with `count_words`, never `str.split()`.** CJK and Thai are written
+    without spaces, so `split()` reports a 10,000-character Chinese transcript as **one
+    word** — every size check passed and the whole recording became a single chunk.
+    `count_words` counts scriptio-continua characters individually and is identical to
+    `split()` for Latin, so no existing boundary moves. Chunk text is sliced from the
+    ORIGINAL string via `_word_spans`; `" ".join(...)` would put a space between every
+    Chinese character.
+  - **The sentence-splitter choice is latched per process** (`_nltk_load_failed`). It used
+    to be a 5-minute retry cooldown, which let a single re-index chunk its early files with
+    the regex and its later files with punkt — the two disagree on abbreviations, so that
+    is one corpus chunked two ways in one pass. Never reintroduce a retry here. Unmapped
+    languages also must NOT fall back to English punkt: it loads fine, runs fine, and
+    returns a Chinese transcript as one sentence, so the regex fallback was never reached.
+    `reset_sentence_splitter_state()` exists for tests only.
 - `indexing_service.py` — index body + `_INDEX_VERSION` (bump ⇒ startup logs a "run a full
   reindex" warning, it does **not** migrate), RRF + neural ingest pipelines,
   `TranscriptIndexingService`.

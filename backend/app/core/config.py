@@ -13,6 +13,12 @@ from app.core.legacy_auth_env import oidc_int_env
 _config_logger = logging.getLogger(__name__)
 
 
+#: Shipped default for :attr:`Settings.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`.
+#: A module constant rather than a literal in the field so a test can pin the
+#: DEFAULT independently of whatever an operator set in the running environment.
+DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS = 300_000
+
+
 def _int_env(key: str, default: int) -> int:
     """Read an environment variable and convert to int with validation.
 
@@ -524,6 +530,26 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = max(_int_env("DB_POOL_SIZE", 20), 1)
     DB_MAX_OVERFLOW: int = max(_int_env("DB_MAX_OVERFLOW", 40), 0)
 
+    # Server-side backstop for the "transaction held open across slow work"
+    # bug class (issue #440). Postgres terminates a backend that has an OPEN
+    # transaction and is running NO query for this long. It cannot interrupt a
+    # slow *query* — only an idle one — so a legitimately long-running statement
+    # is never affected; the only thing it kills is a connection sitting on
+    # ACCESS SHARE locks and pinning the VACUUM horizon while the process does
+    # something else (HTTP call, model inference, file I/O).
+    #
+    # This is defence in depth, NOT the fix: the 35 real leaks were fixed in the
+    # code and `scripts/audit-session-lifetime.py` keeps the idiom from
+    # returning. 5 minutes is ~10x the slowest legitimate transaction here and
+    # ~1/10 of the 48-minute leak that motivated it. Set to 0 to disable.
+    #
+    # Applies to the shared app engine only. `db/migrations.py` builds its own
+    # engines, so a long `ALTER TABLE` and the advisory-lock holder are outside
+    # this timeout by construction.
+    DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: int = max(
+        _int_env("DB_IDLE_IN_TRANSACTION_TIMEOUT_MS", DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS), 0
+    )
+
     # Observability. LOG_FORMAT="json" switches the root logger to structured
     # JSON lines (Loki/CloudWatch-ready); "text" keeps the human-readable format.
     # SLOW_QUERY_MS gates the slow-query WARNING in app.core.db_metrics.
@@ -572,6 +598,26 @@ class Settings(BaseSettings):
         """
         return not is_relaxed_environment(self.ENVIRONMENT)
 
+    @property
+    def fips_140_3_active(self) -> bool:
+        """Whether this deployment runs the FIPS 140-3 cryptographic profile.
+
+        **``FIPS_MODE`` is the operator's switch; ``FIPS_VERSION`` selects which
+        profile once it is on.** Read this property — never ``FIPS_VERSION`` alone.
+
+        ``FIPS_VERSION`` defaults to ``"140-3"`` on EVERY deployment (see its
+        declaration above), so a gate that reads it by itself is unconditionally
+        true. That is not a hypothetical: it is why ordinary non-FIPS installs
+        signed their *refresh* tokens with HS512 while their access tokens were
+        HS256 — ``token_service.create_refresh_token`` read ``FIPS_VERSION`` alone.
+        The same class of defect was already fixed twice, in
+        ``token_service.create_token`` and ``auth/mfa.py``'s backup-code context
+        ("Non-FIPS deployments issued FIPS-profile credentials", CHANGELOG), each
+        time by adding ``FIPS_MODE`` to the condition. This property exists so the
+        third fix is the last one.
+        """
+        return self.FIPS_MODE and self.FIPS_VERSION == "140-3"
+
     # CORS settings
     # Note: Remove "*" in production and specify exact origins for security
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -605,8 +651,14 @@ class Settings(BaseSettings):
         if self.JWT_SECRET_KEY == "this_should_be_changed_in_production":  # noqa: S105 - checking for default value  # nosec B105
             warnings.warn("SECURITY: Using default JWT_SECRET_KEY!", RuntimeWarning, stacklevel=2)
 
-        # Warn if JWT key is too short for HS512 in FIPS 140-3 mode
-        if self.FIPS_VERSION == "140-3" and len(self.JWT_SECRET_KEY) < 64:
+        # Warn if the key is too short for the algorithm this deployment SIGNS with.
+        # Gated on JWT_ALGORITHM, not on FIPS_VERSION: FIPS_VERSION defaults to
+        # "140-3" everywhere, so the old form warned on every deployment with a
+        # short key regardless of whether HS512 was ever used — noise that trains
+        # operators to ignore the one case that matters. Issuance reads
+        # JWT_ALGORITHM in every mode (core/security.signing_algorithm), so that is
+        # the setting that decides whether a 512-bit key is required.
+        if self.JWT_ALGORITHM == "HS512" and len(self.JWT_SECRET_KEY) < 64:
             warnings.warn(
                 f"JWT_SECRET_KEY is {len(self.JWT_SECRET_KEY)} bytes but HS512 requires 64+ bytes",
                 RuntimeWarning,
@@ -1109,7 +1161,19 @@ class Settings(BaseSettings):
         self.TEMP_DIR.mkdir(exist_ok=True, parents=True)
 
     class Config:
-        env_file = ".env"
+        # `env_file` is resolved against the WORKING DIRECTORY, which made the whole test
+        # suite CWD-sensitive: `pytest` from `backend/` found no env file and used the
+        # values conftest exports, while the same command from the repo root loaded the
+        # operator's real `.env` into a unit-test run. That is not a cosmetic difference —
+        # it produced two false failures, one of them a security test that stopped
+        # exercising the SSRF guard and started asserting that nothing happened to be
+        # listening on a local port, i.e. a control that passed for the wrong reason.
+        #
+        # Under `TESTING` no env file is loaded at all, so both invocations see exactly the
+        # environment the fixtures set. This is also already the de-facto contract: the
+        # supported `backend/`-relative run never found a file here, which is why conftest
+        # carries its own defaults for the DB connection.
+        env_file = None if os.getenv("TESTING", "").lower() in ("1", "true") else ".env"
         case_sensitive = True
         extra = "ignore"  # Ignore env vars not defined in Settings (e.g., from docker-compose)
 

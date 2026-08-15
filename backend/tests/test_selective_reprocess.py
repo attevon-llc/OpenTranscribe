@@ -302,7 +302,9 @@ class TestValidation:
     def test_invalid_uuid_returns_error(self, headers):
         """Nonexistent UUID should return 404."""
         resp = _reprocess(headers, "00000000-0000-0000-0000-000000000000", ["analytics"])
-        assert resp.status_code in (404, 400)
+        assert resp.status_code == 404, (
+            resp.text
+        )  # the docstring says 404; accepting 400 too made it unfalsifiable
 
     def test_transcription_and_rediarize_together(self, headers, completed_file):
         """Both core stages — transcription subsumes rediarize."""

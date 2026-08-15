@@ -3,6 +3,7 @@ import axiosInstance, { abortAllRequests } from '../lib/axios';
 import { t } from '$stores/locale';
 import { clearUserState } from '$lib/session/clearUserState';
 import { isCloudEdition } from '$lib/edition';
+import { loadCapabilities } from '$stores/capabilities';
 
 /**
  * Minimal shape of an axios error used for status- and detail-based message
@@ -525,6 +526,11 @@ export async function login(
 
     authStore.setReady(true);
 
+    // Re-fetch the (tier-scoped) capability map for the NEW user. `clearUserState()`
+    // above reset it, and `routes/+layout.svelte`'s onMount — the only other call
+    // site — does not re-run on an SPA login. Every login path below repeats this.
+    void loadCapabilities();
+
     // `/auth/me` resolves through `get_current_user`, which does NOT run the
     // lifecycle gate, so this flag is the earliest honest signal. Surfacing it
     // here means the forced-change screen appears instead of the app shell
@@ -675,11 +681,27 @@ export async function loginWithExternalAuth(): Promise<{ success: boolean; messa
     }
     authStore.setToken('external');
     authStore.setReady(true);
+    void loadCapabilities();
     return { success: true };
   } catch (error) {
     console.error('auth.ts: external-auth login hydration failed:', error);
     authStore.reset();
     return { success: false, message: get(t)('auth.error.externalSignInIncomplete') };
+  }
+}
+
+/**
+ * Close the realtime socket so no further frames can be handled.
+ *
+ * Best-effort and never throws: logout must complete even if the websocket
+ * module fails to load.
+ */
+async function disconnectRealtime(): Promise<void> {
+  try {
+    const { websocketStore } = await import('$stores/websocket');
+    websocketStore.disconnect();
+  } catch {
+    /* nothing to disconnect */
   }
 }
 
@@ -689,6 +711,23 @@ export async function logout() {
   // re-publishes it afterwards for `account_expired`, which must survive the
   // teardown so the login page can explain why the session ended.
   clearAccountLifecycle();
+
+  // Close the WebSocket FIRST — before clearUserState(), not as a side effect of
+  // authStore.reset() afterwards.
+  //
+  // DEFECT: the socket only closed because `websocket.ts` subscribes to
+  // `authStore.token` and disconnects on null, and `authStore.reset()` ran AFTER
+  // `clearUserState()`. In that window the socket was still open and still
+  // handling frames, so one inbound notification re-populated
+  // `state.notifications` AND re-wrote `localStorage['notifications']` (every
+  // notification handler calls `saveNotificationsToStorage`) after
+  // clearUserState had just deleted the key — leaking the previous user's
+  // notifications into the next session, on disk. `disconnect()` closes with
+  // code 1000, which `onclose` treats as clean and does not reconnect.
+  //
+  // Dynamic import: `websocket.ts` statically imports this module, so a static
+  // import here would be a cycle.
+  await disconnectRealtime();
 
   // Cloud edition: the hosted IdP owns the session. Sign out there (revokes its
   // session + clears its cookies) instead of hitting the local revoke endpoint.
@@ -827,6 +866,7 @@ export async function handleOIDCCallback(
 
       await fetchUserInfo();
       authStore.setReady(true);
+      void loadCapabilities();
 
       return { success: true };
     }
@@ -863,6 +903,7 @@ export async function loginWithPKI(): Promise<{
 
       await fetchUserInfo();
       authStore.setReady(true);
+      void loadCapabilities();
 
       return { success: true };
     }
@@ -908,6 +949,7 @@ export async function verifyMFA(
 
       await fetchUserInfo();
       authStore.setReady(true);
+      void loadCapabilities();
 
       return { success: true };
     }
@@ -1058,6 +1100,7 @@ export async function verifyMfaEnrollment(
     authStore.setToken('cookie');
     await fetchUserInfo();
     authStore.setReady(true);
+    void loadCapabilities();
 
     return { success: true, backupCodes: response.data?.backup_codes ?? [] };
   } catch (rawError: unknown) {

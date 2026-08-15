@@ -14,7 +14,6 @@ import pytest
 from dotenv import dotenv_values
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 # Add backend directory to Python path for imports
@@ -75,18 +74,39 @@ os.environ["RATE_LIMIT_ENABLED"] = "false"  # Disable rate limiting for tests
 # Auto-detect MinIO and OpenSearch from the dev stack so the gated S3/search tests
 # run when the services are up and skip when they aren't (e.g. bare CI runners).
 # An explicit SKIP_S3 / SKIP_OPENSEARCH in the shell always wins over detection.
-os.environ.setdefault("SKIP_S3", "False" if _service_reachable("localhost", 5178) else "True")
+#
+# Probe the endpoint the tests will ACTUALLY use, resolved from the environment first.
+# The probe used to be hard-coded to the dev stack's 5178/5180 while the client honoured
+# MINIO_PORT/OPENSEARCH_PORT, so detection and use could disagree. Against an isolated
+# `--fresh --port-offset` stack that had two failure modes, both silent:
+#   * forget to export MINIO_PORT and it probed 5178 and *used* 5178 — live storage paired
+#     with the throwaway Postgres, which is exactly the mixed-stack state --fresh exists to
+#     prevent;
+#   * export it and the enable/disable decision still came from the *live* stack, so with
+#     the fresh MinIO down the S3 suites ran against an unreachable port and failed
+#     confusingly instead of skipping.
+# Deriving both from one value removes the disagreement and lets `--port-offset` work.
+# POSTGRES_PORT below has always behaved this way; this brings MinIO/OpenSearch in line.
+_MINIO_PROBE_HOST = os.environ.get("MINIO_HOST", "localhost")
+_MINIO_PROBE_PORT = int(os.environ.get("MINIO_PORT", "5178"))
+_OPENSEARCH_PROBE_HOST = os.environ.get("OPENSEARCH_HOST", "localhost")
+_OPENSEARCH_PROBE_PORT = int(os.environ.get("OPENSEARCH_PORT", "5180"))
+
 os.environ.setdefault(
-    "SKIP_OPENSEARCH", "False" if _service_reachable("localhost", 5180) else "True"
+    "SKIP_S3", "False" if _service_reachable(_MINIO_PROBE_HOST, _MINIO_PROBE_PORT) else "True"
+)
+os.environ.setdefault(
+    "SKIP_OPENSEARCH",
+    "False" if _service_reachable(_OPENSEARCH_PROBE_HOST, _OPENSEARCH_PROBE_PORT) else "True",
 )
 if os.environ["SKIP_S3"] == "False":
     # The dev stack maps the MinIO S3 API to localhost:5178 (console is 5179).
-    os.environ.setdefault("MINIO_HOST", "localhost")
-    os.environ.setdefault("MINIO_PORT", "5178")
+    os.environ["MINIO_HOST"] = _MINIO_PROBE_HOST
+    os.environ["MINIO_PORT"] = str(_MINIO_PROBE_PORT)
 if os.environ["SKIP_OPENSEARCH"] == "False":
     # The dev stack exposes OpenSearch on localhost:5180 (not the in-cluster 9200).
-    os.environ.setdefault("OPENSEARCH_HOST", "localhost")
-    os.environ.setdefault("OPENSEARCH_PORT", "5180")
+    os.environ["OPENSEARCH_HOST"] = _OPENSEARCH_PROBE_HOST
+    os.environ["OPENSEARCH_PORT"] = str(_OPENSEARCH_PROBE_PORT)
 # NOTE on Celery dispatch in tests: endpoints that .delay() a task (e.g.
 # PUT /speakers/{uuid}) used to publish into whatever Redis answered on the
 # host's default localhost:6379 — an unrelated container on this machine —
@@ -127,7 +147,19 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 # Shared fixture modules. Registered here rather than imported so they are
 # available to every suite without a per-file import.
-pytest_plugins = ["fixtures.mock_llm"]
+#
+# NOTE: this line is why `tests/` must NOT gain an `__init__.py`. With one,
+# prepend import mode roots `tests/conftest.py` at `backend/` instead of
+# `backend/tests/`, so `backend/tests` never reaches sys.path and this dies with
+# `ImportError: Error importing plugin "fixtures.mock_llm": No module named
+# 'fixtures'` — the same reason `--import-mode=importlib` is unusable here.
+#
+# `fixtures.dir_collector_memo` contributes no fixtures at all: it is the
+# workaround for the pytest 9.1 regression that makes every subdirectory
+# conftest's fixtures vanish from a mixed file selection (issue #454). Read its
+# docstring before touching it; `unit/test_conftest_fixture_visibility.py` pins
+# both the workaround and the fact that pytest still needs it.
+pytest_plugins = ["fixtures.mock_llm", "fixtures.dir_collector_memo"]
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -171,11 +203,11 @@ def _clear_process_auth_cache():
     clear_process_auth_settings_cache()
 
 
-#: Postgres advisory-lock namespace reserved for test-suite DDL isolation (issue #389).
-#: Uses the 2-key `(classid, objid)` form, which hashes into a lock space entirely
-#: separate from single-key `pg_advisory_lock(N)` calls (e.g. app/db/migrations.py's
-#: startup guard uses `pg_advisory_lock(42)`) — the two can never collide.
-_DDL_ISOLATION_LOCK_KEY = (990389, 1)
+#: The DDL isolation lock is defined in `tests/db_locks.py` so that this fixture and the
+#: tests that open their own DB connection share ONE definition of the key. A second copy
+#: of the literal would stop protecting anything the moment either copy changed.
+from tests.db_locks import acquire_ddl_lock_exclusive  # noqa: E402
+from tests.db_locks import acquire_ddl_lock_shared  # noqa: E402
 
 
 @pytest.fixture(scope="function")
@@ -207,6 +239,14 @@ def db_session(request):
     blocks every new one from starting until the DDL transaction ends (commit or
     rollback — `pg_advisory_xact_lock*` auto-releases either way, so a failed test
     can't leave the suite wedged).
+
+    Apply ``ddl_exclusive`` to the **individual tests that execute DDL, never to a
+    module**. Every EXCLUSIVE acquisition is a stop-the-world barrier: it drains all
+    other workers and queues every new one behind it, so a read-only schema assertion
+    that carries the marker costs a full drain for nothing. Module-scope application is
+    what made the `migration_ddl` group 414 s of a 511 s wall clock — 111 tests marked,
+    ~12 actually running DDL (issue #431). `tests/unit/test_ddl_marker_discipline.py`
+    enforces both directions and fails on either mistake.
     """
     from sqlalchemy import event
 
@@ -214,15 +254,13 @@ def db_session(request):
     transaction = connection.begin()
 
     if request.node.get_closest_marker("ddl_exclusive") is not None:
-        connection.execute(
-            text("SELECT pg_advisory_xact_lock(:k1, :k2)"),
-            {"k1": _DDL_ISOLATION_LOCK_KEY[0], "k2": _DDL_ISOLATION_LOCK_KEY[1]},
-        )
+        # Also sets lock_timeout, so a genuine cross-connection cycle fails loudly instead
+        # of hanging. This lock only covers connections that opt in; ~20 app paths open
+        # their own `SessionLocal()` during a TestClient request
+        # (app/db/session_utils.py, app/utils/prompt_manager.py, …) and are invisible to it.
+        acquire_ddl_lock_exclusive(connection)
     else:
-        connection.execute(
-            text("SELECT pg_advisory_xact_lock_shared(:k1, :k2)"),
-            {"k1": _DDL_ISOLATION_LOCK_KEY[0], "k2": _DDL_ISOLATION_LOCK_KEY[1]},
-        )
+        acquire_ddl_lock_shared(connection)
 
     # Create a session bound to this connection
     session = TestingSessionLocal(bind=connection)
@@ -399,7 +437,7 @@ def super_admin_token_headers(client, super_admin_user):
 
 
 @pytest.fixture(scope="session")
-def test_wav_bytes() -> bytes:
+def sample_wav_bytes() -> bytes:
     """A minimal valid PCM WAV file that passes magic-byte upload validation.
 
     0.1 s of 16 kHz mono silence (~3.2 KB). Generated with the stdlib so tests
@@ -418,7 +456,7 @@ def test_wav_bytes() -> bytes:
 
 
 @pytest.fixture
-def upload_test_file(client, test_wav_bytes):
+def upload_test_file(client, sample_wav_bytes):
     """Factory that uploads a real WAV via the API and cleans up MinIO afterwards.
 
     The DB row rolls back with the savepoint, but the MinIO object does not —
@@ -429,7 +467,7 @@ def upload_test_file(client, test_wav_bytes):
     uploaded: list[tuple[str, dict]] = []
 
     def _upload(headers: dict, filename: str = "test_audio.wav") -> dict:
-        files = {"file": (filename, io.BytesIO(test_wav_bytes), "audio/wav")}
+        files = {"file": (filename, io.BytesIO(sample_wav_bytes), "audio/wav")}
         response = client.post("/api/files", headers=headers, files=files)
         assert response.status_code == 200, f"File upload failed: {response.json()}"
         data: dict = response.json()
@@ -449,7 +487,7 @@ def upload_test_file(client, test_wav_bytes):
 
 
 @pytest.fixture(scope="function")
-def test_user(normal_user):
+def sample_user(normal_user):
     """Alias for normal_user fixture."""
     return normal_user
 

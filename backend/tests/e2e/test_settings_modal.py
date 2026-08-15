@@ -30,7 +30,10 @@ from playwright.sync_api import expect
 
 pytestmark = pytest.mark.settings
 
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
+# This module used to define its own ``FRONTEND_URL`` constant here. A module constant is
+# evaluated at import time, so it could not see ``--base-url`` and this file always drove
+# whatever was on the default port — even when the run was aimed at an isolated stack
+# (issue #431). Everything below takes conftest's ``base_url`` fixture instead.
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
 TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
 
@@ -68,12 +71,12 @@ def _unexpected_console_errors(errors: list[str]) -> list[str]:
 # the wider e2e suite has already spent the rate-limit budget, the login can
 # briefly bounce; retry through that window rather than flapping.
 # ---------------------------------------------------------------------------
-def _form_login_with_retry(page, attempts: int = 4) -> None:
+def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
     """Submit the login form, retrying through transient auth rate-limiting."""
     last_error: Exception | None = None
     for attempt in range(attempts):
         try:
-            page.goto(FRONTEND_URL)
+            page.goto(base_url)
             # Already authenticated (cookie still valid) — no form to fill.
             if page.locator(".user-button").count():
                 page.wait_for_selector(".user-button", timeout=10000)
@@ -86,18 +89,20 @@ def _form_login_with_retry(page, attempts: int = 4) -> None:
             return
         except Exception as exc:  # noqa: BLE001 - retry on any login-flow failure
             last_error = exc
+            # Kept deliberately: this wait IS the rate-limit backoff, not a settle for
+            # something a locator could poll for (issue #431).
             page.wait_for_timeout(5000 * (attempt + 1))
     raise AssertionError(f"Could not log in via form after {attempts} attempts: {last_error}")
 
 
 @pytest.fixture(scope="module")
-def auth_storage_state(browser):  # type: ignore[no-untyped-def]
+def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
     """Login once and persist browser storage state for reuse across tests."""
     context = browser.new_context(
         viewport={"width": 1920, "height": 1080}, ignore_https_errors=True
     )
     page = context.new_page()
-    _form_login_with_retry(page)
+    _form_login_with_retry(page, base_url)
 
     fd, state_file = tempfile.mkstemp(suffix=".json")
     os.close(fd)
@@ -112,7 +117,7 @@ def auth_storage_state(browser):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture
-def app_page(browser, auth_storage_state: str):  # type: ignore[no-untyped-def]
+def app_page(browser, auth_storage_state: str, base_url: str):  # type: ignore[no-untyped-def]
     """A pre-authenticated page on the app home, with console-error capture."""
     context = browser.new_context(
         storage_state=auth_storage_state,
@@ -123,7 +128,7 @@ def app_page(browser, auth_storage_state: str):  # type: ignore[no-untyped-def]
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page._console_errors = errors  # type: ignore[attr-defined]
-    page.goto(FRONTEND_URL)
+    page.goto(base_url)
     page.wait_for_selector(".user-button", timeout=30000)
     yield page
     page.close()
@@ -171,6 +176,9 @@ class TestSettingsModal:
             title = app_page.locator(".settings-content .section-title").first
             expect(title).to_be_visible(timeout=8000)
             expect(title).to_contain_text(expected_title, timeout=8000)
+            # Kept deliberately: a settle between section switches so a section's own
+            # async work lands before the next click. The test's final assertion is the
+            # ABSENCE of console errors, which no locator can wait for (issue #431).
             app_page.wait_for_timeout(300)
             switched += 1
 
@@ -313,9 +321,13 @@ class TestSettingsSearch:
         """Searching + navigating produces no new (non-benign) console errors."""
         search_input = _open_settings_search(app_page)
         search_input.fill("redaction")
+        # Kept deliberately: the search box is debounced and `.count()` below does NOT
+        # auto-wait — reading it too early would silently skip the click (issue #431).
         app_page.wait_for_timeout(400)
         if app_page.locator(RESULT_ITEMS).count():
             app_page.locator(RESULT_ITEMS).first.click()
-            app_page.wait_for_timeout(400)
+            # Deterministic settle rather than a guessed 400 ms before the console-error
+            # assertion, whose subject is an absence (issue #431).
+            app_page.wait_for_load_state("networkidle")
         unexpected = _unexpected_console_errors(app_page._console_errors)  # type: ignore[attr-defined]
         assert not unexpected, f"Unexpected console errors during settings search: {unexpected}"

@@ -25,6 +25,11 @@ from .storage import update_media_file_transcription_status
 logger = logging.getLogger(__name__)
 
 
+#: What a garbage token is replaced with, in BOTH the text and the word array.
+#: One constant so the two can never drift apart (issue #456).
+GARBAGE_PLACEHOLDER = "[background noise]"
+
+
 def clean_garbage_words(segments: list, max_word_length: int = 50) -> tuple[list, int]:
     """
     Clean garbage words from transcript segments.
@@ -42,24 +47,63 @@ def clean_garbage_words(segments: list, max_word_length: int = 50) -> tuple[list
     garbage_count = 0
     cleaned_segments = []
 
+    def _is_garbage(token: str) -> bool:
+        """One rule, applied to both the text and the word array.
+
+        The `" " not in token` clause this replaced was dead: tokens came from
+        `text.split()`, which splits on whitespace, so it could never be False.
+        """
+        return len(token) > max_word_length
+
     for segment in segments:
         text = segment.get("text", "")
         words = text.split()
         cleaned_words = []
+        replaced_here = 0
 
         for word in words:
-            # Check if word exceeds max length and has no spaces
-            # (spaces would indicate it's not a single garbage word)
-            if len(word) > max_word_length and " " not in word:
-                cleaned_words.append("[background noise]")
-                garbage_count += 1
+            if _is_garbage(word):
+                cleaned_words.append(GARBAGE_PLACEHOLDER)
+                replaced_here += 1
                 logger.debug(f"Replaced garbage word ({len(word)} chars): {word[:30]}...")
             else:
                 cleaned_words.append(word)
 
-        # Create a copy of the segment with cleaned text
+        garbage_count += replaced_here
+
+        # Shallow copy is deliberate, but `words` must NOT be shared: the caller
+        # keeps using `result["segments"]` for embeddings and indexing, so
+        # rewriting the list in place would mutate their data too (issue #456).
         cleaned_segment = segment.copy()
-        cleaned_segment["text"] = " ".join(cleaned_words)
+
+        if replaced_here:
+            cleaned_segment["text"] = " ".join(cleaned_words)
+
+            # The word array is persisted ALONGSIDE the text (storage.py) and is
+            # what the UI renders for click-to-seek. Cleaning only the text left
+            # the raw artefact visible in the view users interact with most.
+            #
+            # A NEW list, never an in-place rewrite: the caller keeps using
+            # `result["segments"]` for embeddings and indexing, and `segment.copy()`
+            # is shallow, so mutating it would change their data too.
+            word_entries = segment.get("words")
+            if isinstance(word_entries, list):
+                cleaned_segment["words"] = [
+                    {**entry, "word": GARBAGE_PLACEHOLDER}
+                    if isinstance(entry, dict) and _is_garbage(str(entry.get("word", "")))
+                    else entry
+                    for entry in word_entries
+                ]
+        elif "text" not in cleaned_segment:
+            # Preserve the pre-existing guarantee that `text` always exists: it is
+            # persisted directly by storage.py, which would KeyError on a segment
+            # that never had one. Only the REWRITE is now conditional, not the key.
+            cleaned_segment["text"] = ""
+        # Otherwise the segment is left EXACTLY as it came in. `" ".join(split())`
+        # used to run unconditionally, which stripped Whisper's leading space,
+        # collapsed internal whitespace and dropped newlines for every transcript
+        # in the product — irreversibly, and even when nothing was replaced.
+
         cleaned_segments.append(cleaned_segment)
 
     return cleaned_segments, garbage_count

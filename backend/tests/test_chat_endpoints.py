@@ -112,7 +112,7 @@ def test_every_chat_route_requires_authentication(client):
     ):
         kwargs: dict = {"json": {}} if method == "post" else {}
         response = getattr(client, method)(path, **kwargs)
-        assert response.status_code in (401, 403), f"{method} {path} -> {response.status_code}"
+        assert response.status_code == 401, f"{method} {path} -> {response.status_code}"
 
 
 # ---------------------------------------------------------------------------

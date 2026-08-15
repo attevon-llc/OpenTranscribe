@@ -16,15 +16,16 @@ Run:
     DISPLAY=:11 pytest backend/tests/e2e/test_search.py -v --headed
 """
 
-import os
-
 import pytest
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
 pytestmark = pytest.mark.search
 
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
+# This module used to define its own ``FRONTEND_URL`` constant here. A module constant is
+# evaluated at import time, so it could not see ``--base-url`` and this file always drove
+# whatever was on the default port — even when the run was aimed at an isolated stack
+# (issue #431). Everything below takes conftest's ``base_url`` fixture instead.
 
 # A term present in the standard dev corpus; result tests skip if absent.
 KNOWN_QUERY = "PyTorch"
@@ -32,9 +33,9 @@ NONSENSE_QUERY = "zxqv-no-such-term-9817263"
 
 
 @pytest.fixture
-def search_page(gallery_page: Page) -> Page:
+def search_page(gallery_page: Page, base_url: str) -> Page:
     """Navigate the pre-authenticated session to /search."""
-    gallery_page.goto(f"{FRONTEND_URL}/search")
+    gallery_page.goto(f"{base_url}/search")
     gallery_page.wait_for_selector(".search-page", timeout=15000)
     return gallery_page
 
@@ -80,6 +81,9 @@ class TestSearchExecution:
         return semantic-only results flagged with the no-keyword notice.
         """
         _run_search(search_page, NONSENSE_QUERY)
+        # Kept deliberately: the outcome is read with `.count()`, which does NOT auto-wait,
+        # and either count being 0 fails the assertion below. `_run_search` already waits
+        # for networkidle, so this is the render settle on top of it (issue #431).
         search_page.wait_for_timeout(2000)
         # The welcome state must be replaced by an outcome state
         expect(search_page.locator(".state-container.welcome")).to_have_count(0)
@@ -95,9 +99,9 @@ class TestSearchExecution:
         clear_btn.click()
         expect(search_page.locator(".search-input")).to_have_value("")
 
-    def test_url_query_param_restores_search(self, search_page: Page):
+    def test_url_query_param_restores_search(self, search_page: Page, base_url: str):
         """Visiting /search?q=... prefills the input and runs the search."""
-        search_page.goto(f"{FRONTEND_URL}/search?q={NONSENSE_QUERY}")
+        search_page.goto(f"{base_url}/search?q={NONSENSE_QUERY}")
         search_page.wait_for_load_state("networkidle")
         expect(search_page.locator(".search-input")).to_have_value(NONSENSE_QUERY, timeout=10000)
         # The restored query executes — welcome state must be gone
@@ -106,6 +110,9 @@ class TestSearchExecution:
     def test_known_query_returns_result_cards(self, search_page: Page):
         """Searching the dev corpus returns result cards (skips if no corpus)."""
         _run_search(search_page, KNOWN_QUERY)
+        # Kept deliberately: the next statement is a `.count()`-based SKIP gate, which does
+        # not auto-wait. Removing the settle would turn "results not rendered yet" into a
+        # silent skip — passing for the wrong reason (issue #431).
         search_page.wait_for_timeout(2000)
         results = search_page.locator(".results-list")
         if results.count() == 0:
@@ -120,6 +127,9 @@ class TestSearchControls:
     def test_mode_toggle_buttons_present(self, search_page: Page):
         """Keyword/semantic mode toggle appears with search results info."""
         _run_search(search_page, KNOWN_QUERY)
+        # Kept deliberately: the next statement is a `.count()`-based SKIP gate, which does
+        # not auto-wait. Removing the settle would turn "results not rendered yet" into a
+        # silent skip — passing for the wrong reason (issue #431).
         search_page.wait_for_timeout(2000)
         if search_page.locator(".results-list").count() == 0:
             pytest.skip(f"No indexed media matching '{KNOWN_QUERY}' in this environment")
@@ -129,6 +139,9 @@ class TestSearchControls:
     def test_results_info_shows_summary(self, search_page: Page):
         """The result summary line is shown for a successful search."""
         _run_search(search_page, KNOWN_QUERY)
+        # Kept deliberately: the next statement is a `.count()`-based SKIP gate, which does
+        # not auto-wait. Removing the settle would turn "results not rendered yet" into a
+        # silent skip — passing for the wrong reason (issue #431).
         search_page.wait_for_timeout(2000)
         if search_page.locator(".results-list").count() == 0:
             pytest.skip(f"No indexed media matching '{KNOWN_QUERY}' in this environment")

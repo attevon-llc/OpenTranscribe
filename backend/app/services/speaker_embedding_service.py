@@ -1,11 +1,22 @@
+from __future__ import annotations
+
 import logging
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 from typing import Any
 from typing import cast
 
 import numpy as np
-import torch
+
+if TYPE_CHECKING:
+    # Annotations only. `from __future__ import annotations` above makes every annotation a
+    # string, so `torch.Tensor` in a signature no longer needs torch at import time — while
+    # type checkers still resolve it. torch itself is imported inside each function that
+    # uses it, per the repo convention for heavy optional deps: this module is reachable
+    # from `app.api.router`, so a top-level `import torch` was paid by every process that
+    # imports `app.main`, including all 48 pytest-xdist workers (issue #431).
+    import torch
 
 from app.core.config import settings
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
@@ -33,6 +44,8 @@ class SpeakerEmbeddingService:
             models_dir: Directory to cache models
             mode: Embedding mode ('v3' or 'v4', auto-detected if None)
         """
+        import torch
+
         # Detect embedding mode if not specified
         self.mode: EmbeddingMode = mode or EmbeddingModeService.detect_mode()
 
@@ -113,6 +126,8 @@ class SpeakerEmbeddingService:
         Returns:
             Tuple of (waveform tensor [1, samples], sample_rate).
         """
+        import torch
+
         # 1. FFmpeg: handles any audio format reliably
         try:
             import subprocess
@@ -179,6 +194,7 @@ class SpeakerEmbeddingService:
         Returns:
             Numpy array of the embedding or None if failed
         """
+
         try:
             waveform, sample_rate = self._load_audio(audio_path)
 
@@ -230,6 +246,8 @@ class SpeakerEmbeddingService:
         Returns:
             Waveform tensor [1, samples] or None on failure.
         """
+        import torch
+
         from app.services.audio_segment_utils import extract_audio_segment_np
 
         audio_np = extract_audio_segment_np(audio_source, start, duration, target_sr)
@@ -298,6 +316,7 @@ class SpeakerEmbeddingService:
         Returns:
             L2-normalized embedding array, or None on failure.
         """
+
         try:
             wav = waveform
             if segment:
@@ -436,6 +455,8 @@ class SpeakerEmbeddingService:
         proper GPU memory management, especially when multiple models are used
         in sequence during transcription processing.
         """
+        import torch
+
         self.hardware_config.log_vram_usage("before embedding model cleanup")
 
         if hasattr(self, "inference"):

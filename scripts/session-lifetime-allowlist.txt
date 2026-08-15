@@ -1,0 +1,24 @@
+# Allowlist for scripts/audit-session-lifetime.py
+#
+#   <file>::<scope>::<category>  # reason
+#
+# All three key segments and the reason are REQUIRED. The category is part of the key on
+# purpose: an entry keyed by function alone would exempt it from all nine detectors at once.
+#
+# ONE LINE BUYS ONE FINDING. Duplicate keys encode a count, so a partial fix is visible —
+# fix one call of three and the surplus line is reported as STALE and fails the run. This
+# file can therefore only ever SHRINK. Fix a call, delete its line; never widen the rule.
+#
+# A reason beginning `BACKLOG` marks DEFERRED WORK, not an accepted pattern. Those are
+# counted and printed separately on every run, so a green gate is never mistaken for a
+# clean tree — the failure mode that let a hand-maintained table rot for four months.
+#
+# Everything below was measured on 2026-08-13, when the six worst instances (summarization,
+# speaker identification, watch-source scan, media download/ffmpeg, retention cleanup and
+# v4 profile staging) were fixed. None of these entries covers those. The fix pattern is in
+# backend/app/tasks/CLAUDE.md; backend/app/tasks/speaker_attribute_task.py is the example.
+
+# --------------------------------------------------------------------------------------
+# Services — the callee half of the interprocedural rule.
+# --------------------------------------------------------------------------------------
+services/watch_sources/processing.py::ingest_prepared_file::session-param-slow-work  # BACKLOG KNOWN RESIDUAL, documented in the function's docstring: the MinIO object key is derived from the MediaFile primary key, so the upload cannot happen before the row exists. watch_source.scan_single now keeps this window to ONE file instead of a whole scan. Closing it means giving this function the phased plain-data signature, which changes its public contract and its test.

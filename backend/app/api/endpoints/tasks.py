@@ -87,11 +87,58 @@ def _get_user_media_files(db: Session, current_user: User) -> list[MediaFile]:
         MediaFile.completed_at,
         MediaFile.media_format,
         MediaFile.codec,
+        MediaFile.active_task_id,
+        MediaFile.last_error_message,
     ]
     query = db.query(*columns)
     if not current_user.is_admin:
         query = query.filter(MediaFile.user_id == current_user.id)
     return query.all()  # type: ignore[no-any-return]
+
+
+def _latest_task_by_file(
+    db: Session, current_user: User, file_id: int | None = None
+) -> dict[int, Any]:
+    """Map ``media_file_id`` to the task row that represents the file's current work.
+
+    A file accumulates one task row per pipeline stage (transcription,
+    summarization, speaker_embedding, ...), so "the" task for a file is the one
+    the pipeline is currently running — ``MediaFile.active_task_id`` — falling
+    back to the most recently created row once that clears.
+
+    Joins through ``MediaFile`` rather than passing an ``IN`` list of file ids so
+    the query cost does not scale with the caller's library size.
+    """
+    query = (
+        db.query(
+            TaskModel.id,
+            TaskModel.media_file_id,
+            TaskModel.task_type,
+            TaskModel.status,
+            TaskModel.progress,
+            TaskModel.error_message,
+            TaskModel.created_at,
+            TaskModel.updated_at,
+            TaskModel.completed_at,
+            MediaFile.active_task_id,
+        )
+        .join(MediaFile, TaskModel.media_file_id == MediaFile.id)
+        .order_by(TaskModel.media_file_id, TaskModel.created_at)
+    )
+    if not current_user.is_admin:
+        query = query.filter(MediaFile.user_id == current_user.id)
+    if file_id is not None:
+        query = query.filter(TaskModel.media_file_id == file_id)
+
+    best: dict[int, Any] = {}
+    for row in query.all():
+        incumbent = best.get(row.media_file_id)
+        if incumbent is None or row.id == row.active_task_id:
+            best[row.media_file_id] = row
+        elif incumbent.id != incumbent.active_task_id:
+            # Rows arrive in created_at order, so a later row is the newer one.
+            best[row.media_file_id] = row
+    return best
 
 
 def _map_file_status_to_task_status(file_status: FileStatus) -> str:
@@ -114,33 +161,51 @@ def _extract_file_format(content_type: str, filename: str) -> str | None:
     return None
 
 
-def _create_task_dict_from_media_file(file: Any, current_user: User) -> dict:
-    """Convert a media file row (ORM or named tuple) to a task dictionary."""
+def _create_task_dict_from_media_file(
+    file: Any, current_user: User, task: Any | None = None
+) -> dict:
+    """Convert a media file row (ORM or named tuple) to a task dictionary.
+
+    When the file's ``task`` row is supplied, every task-shaped field is read
+    from it: the pipeline records real Celery ids, real fractional progress and
+    real error text there via ``app.utils.task_utils``. Without one, the file's
+    own columns are used and progress stays unknown rather than invented — a
+    fabricated mid-point renders as a permanently half-full progress bar in the
+    UI, which is what this endpoint used to emit for every processing file.
+    """
     file_status = file.status
-    task_status = _map_file_status_to_task_status(file_status)  # type: ignore[arg-type]
-
     completed_at = file.completed_at if hasattr(file, "completed_at") else None
-
     file_format = _extract_file_format(str(file.content_type), str(file.filename))
 
-    if file_status == FileStatus.COMPLETED:
-        progress = 1.0
-    elif file_status == FileStatus.PROCESSING:
-        progress = 0.5
+    if task is not None:
+        task_id = task.id
+        task_type = task.task_type
+        task_status = task.status
+        progress = float(task.progress) if task.progress is not None else 0.0
+        error_message = task.error_message
+        created_at = task.created_at or file.upload_time
+        updated_at = task.updated_at or task.created_at or file.upload_time
+        completed_at = task.completed_at or completed_at
     else:
-        progress = 0.0
-
-    error_message = "Transcription failed" if file_status == FileStatus.ERROR else None
+        task_id = f"task_{file.id}"
+        task_type = "transcription"
+        task_status = _map_file_status_to_task_status(file_status)  # type: ignore[arg-type]
+        progress = 1.0 if file_status == FileStatus.COMPLETED else 0.0
+        error_message = (
+            getattr(file, "last_error_message", None) if file_status == FileStatus.ERROR else None
+        )
+        created_at = file.upload_time
+        updated_at = file.upload_time
 
     return {
-        "id": f"task_{file.id}",
+        "id": task_id,
         "user_id": str(current_user.uuid),
-        "task_type": "transcription",
+        "task_type": task_type,
         "status": task_status,
         "media_file_id": str(file.uuid),
         "progress": progress,
-        "created_at": file.upload_time,
-        "updated_at": file.upload_time,
+        "created_at": created_at,
+        "updated_at": updated_at,
         "completed_at": completed_at,
         "error_message": error_message,
         "media_file": {
@@ -201,8 +266,13 @@ def list_tasks(
         # Get media files based on user permissions
         media_files = _get_user_media_files(db, current_user)
 
-        # Convert media files to task dictionaries
-        tasks = [_create_task_dict_from_media_file(file, current_user) for file in media_files]
+        # Convert media files to task dictionaries, pairing each with its real
+        # task row so status/progress/task_type filters act on recorded values.
+        tasks_by_file = _latest_task_by_file(db, current_user)
+        tasks = [
+            _create_task_dict_from_media_file(file, current_user, tasks_by_file.get(file.id))
+            for file in media_files
+        ]
 
         # Apply server-side filtering
         filtered_tasks = TaskFilteringService.filter_tasks_by_criteria(
@@ -232,11 +302,21 @@ def list_tasks(
             has_more=page < total_pages,
         )
 
+    except HTTPException:
+        # A deliberate status raised below (or by a helper) must reach the client as
+        # itself, not be relabelled 500 by the broad handler.
+        raise
     except Exception as e:
+        # Never answer 200 with an empty page here: a failed query is
+        # indistinguishable from "this user has no tasks", so the SPA renders an
+        # empty task list and the operator sees nothing wrong (issue #431).
         logger.exception(f"Error in list_tasks: {e}")
-        return PaginatedTaskResponse(
-            items=[], total=0, page=1, page_size=page_size, total_pages=0, has_more=False
-        )
+        # Literal 500: this handler's `status` query param shadows `fastapi.status`,
+        # so `status.HTTP_500_INTERNAL_SERVER_ERROR` here raises AttributeError.
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred. Please try again.",
+        ) from e
 
 
 @router.get("/system/health", response_model=dict[str, Any])
@@ -313,7 +393,11 @@ def task_system_health(
                 {
                     "uuid": str(file.uuid),
                     "filename": file.filename,
-                    "status": file.status.value,
+                    # `MediaFile.status` is nullable with a Python-side default, so a row
+                    # written by raw SQL or an explicit UPDATE holds NULL; guarded like the
+                    # sibling read in endpoints/speakers.py rather than raising
+                    # AttributeError and 500-ing the whole health report.
+                    "status": file.status.value if file.status else None,
                     "user_id": str(file.user.uuid) if file.user else None,
                     "upload_time": file.upload_time,
                     "age_seconds": calculate_age_seconds(file.upload_time),
@@ -330,6 +414,11 @@ def task_system_health(
             },
             "timestamp": datetime.now(UTC),
         }
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error in task_system_health: %s", e, exc_info=True)
         raise HTTPException(
@@ -388,6 +477,11 @@ def recover_all_stuck_tasks(
             "total": len(stuck_tasks),
             "message": f"Successfully recovered {recovered_count} of {len(stuck_tasks)} tasks",
         }
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error in recover_all_stuck_tasks: %s", e, exc_info=True)
         raise HTTPException(
@@ -425,6 +519,11 @@ def trigger_startup_recovery(
             "success": True,
             "message": "Startup recovery task scheduled successfully",
         }
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error triggering startup recovery: %s", e, exc_info=True)
         raise HTTPException(
@@ -458,6 +557,11 @@ def trigger_all_user_file_recovery(
         background_tasks.add_task(run_all_user_recovery)
 
         return {"success": True, "message": "File recovery scheduled for all users"}
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error triggering all user file recovery: %s", e, exc_info=True)
         raise HTTPException(
@@ -590,7 +694,8 @@ def fix_inconsistent_file(
             "success": success,
             "file_id": str(media_file.uuid),  # Use UUID for frontend
             "message": "File fixed successfully" if success else "Failed to fix file",
-            "new_status": media_file.status.value,
+            # Nullable status: a fix that could not determine a status leaves it as it was.
+            "new_status": media_file.status.value if media_file.status else None,
         }
     except HTTPException:
         raise
@@ -632,6 +737,11 @@ def fix_all_inconsistent_files(
             "total": len(inconsistent_files),
             "message": f"Successfully fixed {fixed_count} of {len(inconsistent_files)} files",
         }
+    except HTTPException:
+        # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
+        # anything it catches into a 500, which would report a deliberate 401/403/404/422
+        # raised inside this block as an internal server error (issue #431).
+        raise
     except Exception as e:
         logger.error("Error in fix_all_inconsistent_files: %s", e, exc_info=True)
         raise HTTPException(
@@ -668,11 +778,14 @@ def retry_file_processing(
 
         file_id = media_file.id
 
-        # Check if the file is in a state where retry makes sense
+        # Check if the file is in a state where retry makes sense. A NULL status fails this
+        # membership test and lands here, where `.status.value` would raise AttributeError
+        # and downgrade a deliberate 400 into an opaque 500.
         if media_file.status not in [FileStatus.ERROR, FileStatus.PROCESSING]:
+            current_status = media_file.status.value if media_file.status else "unknown"
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot retry file in {media_file.status.value} status",
+                detail=f"Cannot retry file in {current_status} status",
             )
 
         # Reset the file status to PENDING
@@ -729,6 +842,20 @@ def retry_file_processing(
 # =============================================================================
 
 
+def _get_task_row_by_id(db: Session, task_id: str, current_user: User) -> Any | None:
+    """Look up a real task row by its Celery id, or ``None`` if there is no such row.
+
+    Returns ``None`` for a row with no ``media_file_id`` so the caller falls
+    through to the legacy id path rather than trying to build a file-shaped
+    response with no file.
+    """
+    query = db.query(TaskModel).filter(TaskModel.id == task_id)
+    if not current_user.is_admin:
+        query = query.filter(TaskModel.user_id == current_user.id)
+    task = query.first()
+    return task if task is not None and task.media_file_id is not None else None
+
+
 def _parse_task_id(task_id: str) -> int:
     """Parse task ID to extract media file ID."""
     if not task_id.startswith("task_"):
@@ -762,11 +889,19 @@ def get_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """
-    Get a specific task by its ID
+    """Get a specific task by its ID.
+
+    Accepts either form of id this API issues: a real Celery task id (what the
+    pipeline records, and what ``POST /tasks/system/recover-task/{task_id}``
+    expects) or the legacy ``task_<media_file_id>`` form, which is still returned
+    for files that have no task row yet.
     """
     try:
-        # Parse task ID and get file ID
+        task_row = _get_task_row_by_id(db, task_id, current_user)
+        if task_row is not None:
+            media_file = _get_media_file_by_id(db, task_row.media_file_id, current_user)
+            return Task(**_create_task_dict_from_media_file(media_file, current_user, task_row))
+
         try:
             file_id = _parse_task_id(task_id)
         except ValueError as e:
@@ -777,9 +912,13 @@ def get_task(
         # Get media file with permission checking
         media_file = _get_media_file_by_id(db, file_id, current_user)
 
-        # Create task dictionary and convert to Task object
-        task_dict = _create_task_dict_from_media_file(media_file, current_user)
-        task_dict["id"] = task_id  # Ensure we use the original task_id
+        # Prefer the file's real task row; the legacy id form only identifies the file.
+        task_dict = _create_task_dict_from_media_file(
+            media_file,
+            current_user,
+            _latest_task_by_file(db, current_user, media_file.id).get(media_file.id),
+        )
+        task_dict["id"] = task_id  # Honour the id form the caller asked with
 
         return Task(**task_dict)
 

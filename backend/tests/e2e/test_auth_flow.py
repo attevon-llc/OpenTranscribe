@@ -12,15 +12,25 @@ Run with visible browser:
 """
 
 import uuid
+from collections.abc import Iterator
 
+import pytest
 from conftest import TEST_ADMIN_EMAIL
 from conftest import TEST_ADMIN_PASSWORD
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
+#: Every address the tests in this file register begins with one of these; the cleanup
+#: helper deletes ONLY matching addresses. Positively scoped for the same reason as the
+#: identical list in ``test_registration.py``: the duplicate-email test deliberately
+#: submits the shared admin address, which must survive its own teardown.
+_TEST_CREATED_PREFIXES = ("reg-e2e-", "testuser_")
+
 
 def _delete_user_by_email(api_helper, email: str) -> None:
     """Best-effort cleanup of a user this test registered (dev data hygiene)."""
+    if not email.strip().lower().startswith(_TEST_CREATED_PREFIXES):
+        return
     try:
         api_helper.login(TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD)
         users = api_helper.get("/api/admin/users")
@@ -31,6 +41,20 @@ def _delete_user_by_email(api_helper, email: str) -> None:
                 return
     except Exception:
         pass  # cleanup is best-effort; scripts/cleanup-test-users.py catches strays
+
+
+@pytest.fixture
+def registration_email(api_helper) -> Iterator[str]:
+    """A run-unique address for a registration attempt, removed on the way out.
+
+    Mirrors ``test_registration.py``'s fixture of the same name, for the same reason: a
+    fixed address submitted to the live register endpoint is how a real account ended up
+    in the dev database. Teardown always runs and is a no-op when nothing was created,
+    so it is correct even on the tests here that expect the submission to be rejected.
+    """
+    email = f"reg-e2e-{uuid.uuid4().hex[:8]}@example.com"
+    yield email
+    _delete_user_by_email(api_helper, email)
 
 
 class TestLoginFlow:
@@ -74,19 +98,21 @@ class TestLoginFlow:
         login_page.fill("#password", "wrongpassword")
         login_page.click("button[type=submit]")
 
-        # Should show error message
-        login_page.wait_for_timeout(2000)
-
-        # Check for error indication (could be alert, toast, or inline error)
-        error_visible = (
-            login_page.locator("[role=alert]").is_visible()
-            or login_page.locator(".error").is_visible()
-            or login_page.locator("text=Invalid").is_visible()
-            or login_page.locator("text=incorrect").is_visible()
+        # `[role=alert]` is the app's error surface (one node, "Incorrect username
+        # or password"), and `expect` AUTO-WAITS for it.
+        #
+        # The previous chain of synchronous `.is_visible()` calls was a SNAPSHOT
+        # taken the instant `networkidle` settled. When the alert had not painted
+        # yet the chain fell through to `text=Invalid` / `text=incorrect` — bare
+        # text selectors that can match several nodes, and a multi-match locator
+        # makes Playwright's strict mode RAISE rather than return False. So the
+        # test ERRORED under parallel load instead of failing, non-deterministically.
+        # Its final `or login_page.url.endswith("/login")` could not fail either:
+        # a rejected login stays on /login by definition.
+        expect(login_page.get_by_role("alert")).to_contain_text(
+            "Incorrect username or password", timeout=15000
         )
-        assert error_visible or login_page.url.endswith("/login"), (
-            "Should show error or stay on login page"
-        )
+        assert login_page.url.endswith("/login"), "a rejected login must not navigate away"
 
     def test_login_failure_nonexistent_user(self, login_page: Page):
         """Test login fails for non-existent user."""
@@ -94,8 +120,8 @@ class TestLoginFlow:
         login_page.fill("#password", "anypassword")
         login_page.click("button[type=submit]")
 
-        login_page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        login_page.wait_for_load_state("networkidle")
         # Should stay on login page
         assert "/login" in login_page.url or login_page.locator("#email").is_visible()
 
@@ -105,8 +131,9 @@ class TestLoginFlow:
         login_page.click("button[type=submit]")
 
         # Should show validation or stay on page
-        login_page.wait_for_timeout(1000)
-        assert login_page.locator("#email").is_visible(), "Should stay on login page"
+        # Deterministic settle rather than a guessed duration (issue #431).
+        login_page.wait_for_load_state("networkidle")
+        expect(login_page.locator("#email")).to_be_visible()
 
     def test_password_visibility_toggle(self, login_page: Page):
         """Test password visibility toggle if available."""
@@ -133,8 +160,7 @@ class TestLogoutFlow:
         user_menu = authenticated_page.locator(".user-button").first
         expect(user_menu).to_be_visible(timeout=5000)
         user_menu.click()
-        authenticated_page.wait_for_timeout(500)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         # Click logout in dropdown
         logout_btn = authenticated_page.locator(
             "button:has-text('Logout'), button:has-text('Sign Out'), "
@@ -159,8 +185,7 @@ class TestRegistrationFlow:
     def test_registration_page_loads(self, login_page: Page):
         """Test registration page loads correctly."""
         login_page.click("a[href*=register]")
-        login_page.wait_for_timeout(1000)
-
+        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         # Check for all registration form fields
         expect(login_page.locator("#username")).to_be_visible()
         expect(login_page.locator("#email")).to_be_visible()
@@ -180,7 +205,8 @@ class TestRegistrationFlow:
             page.goto(f"{base_url}/login")
             page.wait_for_selector("a[href*=register]")
             page.click("a[href*=register]")
-            page.wait_for_timeout(1000)
+            # The `page.fill("#username", ...)` below auto-waits for the register form to
+            # mount, so the old fixed 1 s wait bought nothing (issue #431).
 
             # Fill registration form
             page.fill("#username", username)
@@ -200,42 +226,46 @@ class TestRegistrationFlow:
         finally:
             _delete_user_by_email(api_helper, email)
 
-    def test_registration_password_mismatch(self, page: Page, base_url: str):
+    def test_registration_password_mismatch(
+        self, page: Page, base_url: str, registration_email: str
+    ):
         """Test registration fails when passwords don't match."""
         page.goto(f"{base_url}/login")
         page.wait_for_selector("a[href*=register]")
         page.click("a[href*=register]")
-        page.wait_for_timeout(1000)
+        # The `page.fill("#username", ...)` below auto-waits for the register form to
+        # mount, so the old fixed 1 s wait bought nothing (issue #431).
 
         # Fill form with mismatched passwords
         page.fill("#username", "testuser")
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
         page.fill("#password", "Password123!")
         page.fill("#confirmPassword", "DifferentPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         # Should show error or stay on registration page
         still_on_register = "register" in page.url or page.locator("#confirmPassword").is_visible()
         assert still_on_register, "Should not proceed with mismatched passwords"
 
-    def test_registration_weak_password(self, page: Page, base_url: str):
+    def test_registration_weak_password(self, page: Page, base_url: str, registration_email: str):
         """Test registration validates password strength."""
         page.goto(f"{base_url}/login")
         page.wait_for_selector("a[href*=register]")
         page.click("a[href*=register]")
-        page.wait_for_timeout(1000)
+        # The `page.fill("#username", ...)` below auto-waits for the register form to
+        # mount, so the old fixed 1 s wait bought nothing (issue #431).
 
         # Fill form with weak password
         page.fill("#username", "testuser")
-        page.fill("#email", "test@example.com")
+        page.fill("#email", registration_email)
         page.fill("#password", "weak")
         page.fill("#confirmPassword", "weak")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         # Should show error or validation message
         still_on_register = "register" in page.url or page.locator("#password").is_visible()
         assert still_on_register, "Should validate password strength"
@@ -245,7 +275,8 @@ class TestRegistrationFlow:
         page.goto(f"{base_url}/login")
         page.wait_for_selector("a[href*=register]")
         page.click("a[href*=register]")
-        page.wait_for_timeout(1000)
+        # The `page.fill("#username", ...)` below auto-waits for the register form to
+        # mount, so the old fixed 1 s wait bought nothing (issue #431).
 
         # Try to register with existing admin email
         page.fill("#username", "newadmin")
@@ -254,16 +285,16 @@ class TestRegistrationFlow:
         page.fill("#confirmPassword", "ValidPassword123!")
 
         page.click("button:has-text('Create Account')")
-        page.wait_for_timeout(2000)
 
-        # Should show error about existing user
-        error_shown = (
-            page.locator("[role=alert]").is_visible()
-            or page.locator("text=exists").is_visible()
-            or page.locator("text=already").is_visible()
-            or "register" in page.url  # Still on register page
-        )
-        assert error_shown, "Should show error for duplicate email"
+        # Same fix as test_login_failure_invalid_password, and this one was the
+        # observed offender: `text=already` matches TWO nodes on this page — the
+        # alert ("Email already registered") AND the "Already have an account?
+        # Login" link — so every time the alert had not rendered by the time the
+        # snapshot chain reached that term, strict mode raised and the test ERRORED.
+        # That is the entirety of its parallel-load flakiness; standalone it always
+        # short-circuited on `[role=alert]` first and looked stable.
+        expect(page.get_by_role("alert")).to_contain_text("already registered", timeout=15000)
+        assert "register" in page.url, "a duplicate email must not create an account"
 
     # NOTE: there is deliberately no "duplicate username" test — the register
     # form's "username" maps to User.full_name, which is NOT unique (only
@@ -289,8 +320,8 @@ class TestAuthenticationPersistence:
         # Try to access gallery directly without logging in
         page.goto(f"{base_url}/gallery")
         page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        page.wait_for_load_state("networkidle")
         # Should be redirected to login
         assert "/login" in page.url or page.locator("#email").is_visible(), (
             "Should redirect to login when not authenticated"
@@ -328,8 +359,8 @@ class TestConsoleErrors:
     def test_login_page_no_console_errors(self, login_page: Page, console_errors: list):
         """Login page should load without console errors."""
         login_page.wait_for_load_state("networkidle")
-        login_page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        login_page.wait_for_load_state("networkidle")
         # Filter out non-critical errors
         critical_errors = [
             e for e in console_errors if "favicon" not in e.lower() and "404" not in e
@@ -342,8 +373,8 @@ class TestConsoleErrors:
     ):
         """Authenticated pages should load without console errors."""
         authenticated_page.wait_for_load_state("networkidle")
-        authenticated_page.wait_for_timeout(2000)
-
+        # Deterministic settle rather than a guessed duration (issue #431).
+        authenticated_page.wait_for_load_state("networkidle")
         critical_errors = [
             e for e in console_errors if "favicon" not in e.lower() and "404" not in e
         ]

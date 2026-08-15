@@ -126,7 +126,7 @@
 
   async function loadAutoSummarySetting() {
     try {
-      const res = await axiosInstance.get('/settings/ai-summary');
+      const res = await axiosInstance.get('/user-settings/ai-summary');
       autoSummaryEnabled = res.data.ai_summary_enabled;
     } catch (err) {
       console.warn('Failed to load auto-summary setting:', err);
@@ -136,7 +136,7 @@
   async function saveAutoSummary() {
     autoSummaryLoading = true;
     try {
-      const res = await axiosInstance.put('/settings/ai-summary', { enabled: autoSummaryEnabled });
+      const res = await axiosInstance.put('/user-settings/ai-summary', { enabled: autoSummaryEnabled });
       autoSummaryEnabled = res.data.ai_summary_enabled;
       toastStore.success(res.data.message, 3000);
     } catch (err: unknown) {

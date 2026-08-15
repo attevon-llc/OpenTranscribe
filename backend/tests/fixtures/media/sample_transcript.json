@@ -1,0 +1,450 @@
+{
+  "_fixture": {
+    "purpose": "Deterministic completed-transcript fixture. Shapes mirror the real pipeline: `segments` is the processed-segment list that app/tasks/transcription/speaker_processor.py:process_segments_with_speakers produces and app/tasks/transcription/storage.py:save_transcript_segments consumes; `speakers` mirrors the Speaker rows created by speaker_processor.create_or_get_speaker; `media_file` mirrors the columns storage.update_media_file_transcription_status writes on completion.",
+    "audio": "sample_short.wav (same directory) \u2014 all times fall inside its 10.0 s.",
+    "text_is_synthetic": "Hand-authored dialogue, NOT an ASR transcription of sample_short.wav (the clip is single-voice narration and this fixture needs 2 speakers). Treat the two files as independent fixtures unless a test only needs shape.",
+    "speaker_id_is_null": "TranscriptSegment.speaker_id is an integer FK assigned at insert time. Load `speakers` first, then map segment['speaker'] (the diarization label, equal to Speaker.name) to the new row ids \u2014 that is exactly what create_speaker_mapping returns.",
+    "display_fields_absent": "formatted_timestamp / display_timestamp / speaker_label / resolved_speaker_name / computed_status are computed at read time by services/formatting_service.py and SpeakerStatusService, never stored."
+  },
+  "media_file": {
+    "filename": "sample_short.wav",
+    "storage_path": "test-user/sample_short.wav",
+    "content_type": "audio/wav",
+    "file_size": 320078,
+    "duration": 9.96,
+    "language": "en",
+    "status": "completed",
+    "media_format": "wav",
+    "codec": "pcm_s16le",
+    "audio_channels": 1,
+    "audio_sample_rate": 16000,
+    "audio_bit_depth": 16,
+    "title": "Sample Short Interview Clip",
+    "whisper_model": "large-v3-turbo",
+    "diarization_model": "pyannote/speaker-diarization-community-1",
+    "embedding_mode": "v4",
+    "asr_provider": "local",
+    "asr_model": "large-v3-turbo",
+    "diarization_disabled": false,
+    "is_public": false
+  },
+  "speakers": [
+    {
+      "name": "SPEAKER_00",
+      "display_name": "Alex Rivera",
+      "suggested_name": "Alex Rivera",
+      "suggestion_source": "llm_analysis",
+      "verified": true,
+      "confidence": 0.91
+    },
+    {
+      "name": "SPEAKER_01",
+      "display_name": null,
+      "suggested_name": "Jordan Chen",
+      "suggestion_source": "voice_match",
+      "verified": false,
+      "confidence": 0.68
+    }
+  ],
+  "segments": [
+    {
+      "start": 0.02,
+      "end": 2.28,
+      "text": "So what actually changed for speech recognition this year?",
+      "speaker": "SPEAKER_00",
+      "speaker_id": null,
+      "words": [
+        {
+          "word": "So",
+          "start": 0.02,
+          "end": 0.13,
+          "score": 0.806
+        },
+        {
+          "word": " what",
+          "start": 0.13,
+          "end": 0.32,
+          "score": 0.8932
+        },
+        {
+          "word": " actually",
+          "start": 0.32,
+          "end": 0.66,
+          "score": 0.8305
+        },
+        {
+          "word": " changed",
+          "start": 0.66,
+          "end": 0.97,
+          "score": 0.8597
+        },
+        {
+          "word": " for",
+          "start": 0.97,
+          "end": 1.12,
+          "score": 0.9034
+        },
+        {
+          "word": " speech",
+          "start": 1.12,
+          "end": 1.39,
+          "score": 0.82
+        },
+        {
+          "word": " recognition",
+          "start": 1.39,
+          "end": 1.85,
+          "score": 0.8419
+        },
+        {
+          "word": " this",
+          "start": 1.85,
+          "end": 2.04,
+          "score": 0.9111
+        },
+        {
+          "word": " year?",
+          "start": 2.04,
+          "end": 2.28,
+          "score": 0.7837
+        }
+      ],
+      "confidence": 0.8499,
+      "is_overlap": false
+    },
+    {
+      "start": 2.46,
+      "end": 4.9,
+      "text": "The models got smaller, and the decoding got a lot faster.",
+      "speaker": "SPEAKER_01",
+      "speaker_id": null,
+      "words": [
+        {
+          "word": "The",
+          "start": 2.46,
+          "end": 2.63,
+          "score": 0.8573
+        },
+        {
+          "word": " models",
+          "start": 2.63,
+          "end": 2.92,
+          "score": 0.8221
+        },
+        {
+          "word": " got",
+          "start": 2.92,
+          "end": 3.09,
+          "score": 0.9168
+        },
+        {
+          "word": " smaller,",
+          "start": 3.09,
+          "end": 3.46,
+          "score": 0.9452
+        },
+        {
+          "word": " and",
+          "start": 3.46,
+          "end": 3.63,
+          "score": 0.8579
+        },
+        {
+          "word": " the",
+          "start": 3.63,
+          "end": 3.8,
+          "score": 0.8596
+        },
+        {
+          "word": " decoding",
+          "start": 3.8,
+          "end": 4.17,
+          "score": 0.7971
+        },
+        {
+          "word": " got",
+          "start": 4.17,
+          "end": 4.34,
+          "score": 0.8869
+        },
+        {
+          "word": " a",
+          "start": 4.34,
+          "end": 4.42,
+          "score": 0.9198
+        },
+        {
+          "word": " lot",
+          "start": 4.42,
+          "end": 4.59,
+          "score": 0.9892
+        },
+        {
+          "word": " faster.",
+          "start": 4.59,
+          "end": 4.9,
+          "score": 0.9663
+        }
+      ],
+      "confidence": 0.8926,
+      "is_overlap": false
+    },
+    {
+      "start": 5.06,
+      "end": 5.98,
+      "text": "Faster on the same hardware?",
+      "speaker": "SPEAKER_00",
+      "speaker_id": null,
+      "words": [
+        {
+          "word": "Faster",
+          "start": 5.06,
+          "end": 5.28,
+          "score": 0.8205
+        },
+        {
+          "word": " on",
+          "start": 5.28,
+          "end": 5.38,
+          "score": 0.9598
+        },
+        {
+          "word": " the",
+          "start": 5.38,
+          "end": 5.51,
+          "score": 0.945
+        },
+        {
+          "word": " same",
+          "start": 5.51,
+          "end": 5.67,
+          "score": 0.9889
+        },
+        {
+          "word": " hardware?",
+          "start": 5.67,
+          "end": 5.98,
+          "score": 0.8142
+        }
+      ],
+      "confidence": 0.9057,
+      "is_overlap": false
+    },
+    {
+      "start": 6.14,
+      "end": 7.52,
+      "text": "Same hardware, yes, and the accuracy actually held.",
+      "speaker": "SPEAKER_01",
+      "speaker_id": null,
+      "words": [
+        {
+          "word": "Same",
+          "start": 6.14,
+          "end": 6.27,
+          "score": 0.9579
+        },
+        {
+          "word": " hardware,",
+          "start": 6.27,
+          "end": 6.54,
+          "score": 0.8455
+        },
+        {
+          "word": " yes,",
+          "start": 6.54,
+          "end": 6.67,
+          "score": 0.9829
+        },
+        {
+          "word": " and",
+          "start": 6.67,
+          "end": 6.78,
+          "score": 0.7502
+        },
+        {
+          "word": " the",
+          "start": 6.78,
+          "end": 6.89,
+          "score": 0.9266
+        },
+        {
+          "word": " accuracy",
+          "start": 6.89,
+          "end": 7.13,
+          "score": 0.8784
+        },
+        {
+          "word": " actually",
+          "start": 7.13,
+          "end": 7.37,
+          "score": 0.8437
+        },
+        {
+          "word": " held.",
+          "start": 7.37,
+          "end": 7.52,
+          "score": 0.9581
+        }
+      ],
+      "confidence": 0.8929,
+      "is_overlap": true,
+      "overlap_group_id": "019ec90a-3f41-7c2e-8000-0000000000f1",
+      "overlap_confidence": 0.82
+    },
+    {
+      "start": 7.2,
+      "end": 7.68,
+      "text": "Right, exactly.",
+      "speaker": "SPEAKER_00",
+      "speaker_id": null,
+      "words": [
+        {
+          "word": "Right,",
+          "start": 7.2,
+          "end": 7.41,
+          "score": 0.9476
+        },
+        {
+          "word": " exactly.",
+          "start": 7.41,
+          "end": 7.68,
+          "score": 0.8073
+        }
+      ],
+      "confidence": 0.8775,
+      "is_overlap": true,
+      "overlap_group_id": "019ec90a-3f41-7c2e-8000-0000000000f1",
+      "overlap_confidence": 0.82
+    },
+    {
+      "start": 7.86,
+      "end": 9.42,
+      "text": "So the whole pipeline fits on one consumer GPU now.",
+      "speaker": "SPEAKER_01",
+      "speaker_id": null,
+      "words": [
+        {
+          "word": "So",
+          "start": 7.86,
+          "end": 7.95,
+          "score": 0.9987
+        },
+        {
+          "word": " the",
+          "start": 7.95,
+          "end": 8.07,
+          "score": 0.871
+        },
+        {
+          "word": " whole",
+          "start": 8.07,
+          "end": 8.25,
+          "score": 0.8029
+        },
+        {
+          "word": " pipeline",
+          "start": 8.25,
+          "end": 8.52,
+          "score": 0.8746
+        },
+        {
+          "word": " fits",
+          "start": 8.52,
+          "end": 8.67,
+          "score": 0.7603
+        },
+        {
+          "word": " on",
+          "start": 8.67,
+          "end": 8.76,
+          "score": 0.7815
+        },
+        {
+          "word": " one",
+          "start": 8.76,
+          "end": 8.88,
+          "score": 0.905
+        },
+        {
+          "word": " consumer",
+          "start": 8.88,
+          "end": 9.15,
+          "score": 0.937
+        },
+        {
+          "word": " GPU",
+          "start": 9.15,
+          "end": 9.27,
+          "score": 0.751
+        },
+        {
+          "word": " now.",
+          "start": 9.27,
+          "end": 9.42,
+          "score": 0.8985
+        }
+      ],
+      "confidence": 0.8581,
+      "is_overlap": false
+    },
+    {
+      "start": 9.54,
+      "end": 9.96,
+      "text": "That is the part I did not expect.",
+      "speaker": "SPEAKER_00",
+      "speaker_id": null,
+      "words": [
+        {
+          "word": "That",
+          "start": 9.54,
+          "end": 9.6,
+          "score": 0.8968
+        },
+        {
+          "word": " is",
+          "start": 9.6,
+          "end": 9.64,
+          "score": 0.8089
+        },
+        {
+          "word": " the",
+          "start": 9.64,
+          "end": 9.69,
+          "score": 0.9021
+        },
+        {
+          "word": " part",
+          "start": 9.69,
+          "end": 9.75,
+          "score": 0.8348
+        },
+        {
+          "word": " I",
+          "start": 9.75,
+          "end": 9.77,
+          "score": 0.81
+        },
+        {
+          "word": " did",
+          "start": 9.77,
+          "end": 9.82,
+          "score": 0.9338
+        },
+        {
+          "word": " not",
+          "start": 9.82,
+          "end": 9.87,
+          "score": 0.9663
+        },
+        {
+          "word": " expect.",
+          "start": 9.87,
+          "end": 9.96,
+          "score": 0.9057
+        }
+      ],
+      "confidence": 0.8823,
+      "is_overlap": false
+    }
+  ]
+}

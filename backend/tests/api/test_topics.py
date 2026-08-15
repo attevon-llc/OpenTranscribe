@@ -197,7 +197,7 @@ def test_auto_label_no_suggestion_404(client, user_token_headers, normal_user, d
     """
     mf = _make_file(db_session, normal_user)
     response = client.post(f"/api/files/{mf.uuid}/auto-label", headers=user_token_headers)
-    assert response.status_code in (status.HTTP_400_BAD_REQUEST, status.HTTP_404_NOT_FOUND)
+    assert response.status_code == status.HTTP_404_NOT_FOUND, response.text
     if response.status_code == status.HTTP_404_NOT_FOUND:
         assert response.json()["detail"] == "No AI suggestions found for this file"
     else:

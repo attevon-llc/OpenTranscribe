@@ -21,11 +21,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
+from app.models.watch_source import WatchSource
 from app.models.watch_source import WatchSourceFile
 from app.services.imohash_service import compute_from_path
 from app.services.watch_sources.base import RemoteFileInfo
@@ -35,7 +38,6 @@ from app.utils.filename import get_safe_storage_filename
 from app.utils.filename import sanitize_filename
 
 if TYPE_CHECKING:
-    from app.models.watch_source import WatchSource
     from app.services.watch_sources.base import BaseWatchSourceClient
 
 logger = logging.getLogger(__name__)
@@ -137,6 +139,15 @@ def ingest_prepared_file(
     stitcher (after concat). Commits on skip/success; raises on hard failure so
     the caller can roll back and record the error. ``row`` is the tracking row
     to finalize (status ``importing``/``downloading``).
+
+    ⚠️ **Known residual session hold** (``app/tasks/CLAUDE.md``, the
+    session-lifetime rule): step 5 below runs a MinIO upload while the caller's
+    session is open, because the object key is derived from the ``MediaFile``
+    primary key and therefore cannot be computed before the row exists. Callers
+    keep that window to ONE file (see :func:`import_single_file`), never a whole
+    scan. Closing it properly means giving this function the phased
+    plain-data signature the rule asks for, which changes its public contract —
+    tracked as a follow-up, not fixed here.
     """
     owner_id = int(source.user_id)
     file_size = int(size) if size is not None else os.path.getsize(local_path)
@@ -205,6 +216,22 @@ def ingest_prepared_file(
     db.refresh(db_file)
 
     # 5. Upload to MinIO under the standard path.
+    #
+    # Suspend the server-side idle-in-transaction backstop
+    # (DB_IDLE_IN_TRANSACTION_TIMEOUT_MS, default 5 min) for THIS transaction
+    # only. The upload below is the known residual session hold documented in
+    # the docstring, and it is the one place where holding the transaction idle
+    # for minutes is expected rather than a bug: a 15 GB import over a slow link
+    # exceeds the default, and having Postgres terminate the connection would
+    # abort a legitimate ingest. SET LOCAL reverts at commit/rollback, so the
+    # exemption cannot leak to the next transaction on this pooled connection.
+    #
+    # This is scoped narrowly ON PURPOSE. Do not widen it, and delete it when
+    # the phased plain-data signature closes the residual — at that point the
+    # transaction is no longer open across the upload and the exemption is a
+    # silent hole rather than a documented one.
+    db.execute(sa_text("SET LOCAL idle_in_transaction_session_timeout = 0"))
+
     storage_path = get_safe_storage_filename(filename, owner_id, int(db_file.id))
     from app.services.minio_service import upload_file_tuned
 
@@ -242,62 +269,102 @@ def ingest_prepared_file(
     return row
 
 
+def _claim_import(source_id: int, file_info: RemoteFileInfo) -> tuple[int, str, bool] | None:
+    """Phase 1 — take the tracking row for this path in a short session.
+
+    Returns ``(row_id, source_type, delete_after_import)`` or ``None`` when the
+    path is already terminal / the source has vanished. Plain scalars only: the
+    download that follows must run with no session open.
+    """
+    with session_scope() as db:
+        source = db.query(WatchSource).filter(WatchSource.id == source_id).first()
+        if source is None:
+            return None
+
+        row = _get_or_create_tracking_row(db, source, file_info)
+        if row is None:
+            return None
+
+        source_type = str(source.source_type)
+        if source_type != "local":
+            # Surfaces "downloading" in the UI for the whole transfer, which is
+            # exactly the window this session must NOT stay open for.
+            row.status = "downloading"
+        db.flush()
+        return int(row.id), source_type, bool(source.delete_after_import)
+
+
 def import_single_file(
-    db: Session,
-    source: WatchSource,
+    source_id: int,
     file_info: RemoteFileInfo,
     client: BaseWatchSourceClient,
-) -> WatchSourceFile | None:
-    """Import one discovered file. Returns the tracking row (None if skipped early).
+) -> str | None:
+    """Import one discovered file. Returns its final tracking status.
 
-    Materializes the bytes locally (no-op for local sources), then delegates to
-    :func:`ingest_prepared_file`. Idempotent on ``(source, remote_path)``.
+    ``None`` means the file was skipped before any work started (already in a
+    terminal state, or the source disappeared).
+
+    **Phased so that no DB session is open during the transfer.** The download of
+    a single remote file is minutes over SMB/S3 and unbounded if the share
+    stalls; the previous shape ran it — for up to ``max_imports_per_scan`` files
+    — inside the one transaction that ``scan_single`` held open for the whole
+    scan. That transaction kept ACCESS SHARE on tables an Alembic upgrade needs
+    to ``ALTER``, pinned the vacuum horizon, and held a pool connection for the
+    duration. See ``app/tasks/CLAUDE.md``.
+
+    ⚠️ **Residual**: the ingest below still holds a short session across the
+    MinIO upload (``ingest_prepared_file`` takes a ``Session`` by contract). It
+    is now one short per-file transaction instead of one spanning the entire
+    scan; see the note on :func:`ingest_prepared_file`.
     """
-    # Path-level dedup (within source).
-    row = _get_or_create_tracking_row(db, source, file_info)
-    if row is None:
+    claim = _claim_import(source_id, file_info)
+    if claim is None:
         return None
+    row_id, source_type, delete_after_import = claim
 
     temp_path: str | None = None
 
     try:
-        # Materialize the bytes locally (no-op for local sources).
-        if source.source_type == "local":
+        # Phase 2 — materialize the bytes locally. NO DB session is held here
+        # (a no-op for local sources, which are read in place).
+        if source_type == "local":
             local_path = file_info.path
         else:
             temp_dir = settings.watch_temp_dir
             temp_dir.mkdir(parents=True, exist_ok=True)
             ext = Path(file_info.name).suffix
-            temp_path = str(temp_dir / f"watch_{source.id}_{uuid_pkg.uuid4().hex}{ext}")
-            row.status = "downloading"
-            db.flush()
+            temp_path = str(temp_dir / f"watch_{source_id}_{uuid_pkg.uuid4().hex}{ext}")
             written = client.download_file(file_info.path, temp_path)
             if written <= 0 or not os.path.exists(temp_path):
                 raise RuntimeError("download produced no bytes")
             local_path = temp_path
 
-        result = ingest_prepared_file(
-            db, source, local_path, filename=file_info.name, row=row, size=file_info.size
-        )
+        # Phase 3 — ingest (short session, one file). The ORM objects are
+        # re-read here because the ones from phase 1 belong to a closed session.
+        with session_scope() as db:
+            source = db.query(WatchSource).filter(WatchSource.id == source_id).first()
+            row = db.query(WatchSourceFile).filter(WatchSourceFile.id == row_id).first()
+            if source is None or row is None:
+                return None
+            result = ingest_prepared_file(
+                db, source, local_path, filename=file_info.name, row=row, size=file_info.size
+            )
+            status = str(result.status)
 
-        # Delete local original if configured (remote sources never deleted).
-        if (
-            result.status == "imported"
-            and source.source_type == "local"
-            and source.delete_after_import
-        ):
+        # Phase 4 — delete the local original if configured. NO session held;
+        # remote originals are never deleted.
+        if status == "imported" and source_type == "local" and delete_after_import:
             try:
                 client.delete_file(file_info.path)  # type: ignore[attr-defined]
             except Exception as e:  # noqa: BLE001
                 logger.warning("delete_after_import failed for %s: %s", file_info.path, e)
 
-        return result
+        return status
 
     except Exception as e:  # noqa: BLE001 - one bad file must not abort the whole scan
         logger.error("Watch import failed for %s: %s", file_info.path, e, exc_info=True)
-        db.rollback()
-        _record_error(source.id, file_info.path, str(e))
-        return None
+        _record_error(source_id, file_info.path, str(e))
+        return "error"
     finally:
         if temp_path and os.path.exists(temp_path):
             with contextlib.suppress(OSError):

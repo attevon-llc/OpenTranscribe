@@ -476,8 +476,16 @@ class TaskDetectionService:
 
         eligible_files = []
         for media_file in oom_files:
-            # Calculate exponential backoff delay: 2^retry_count * 10 minutes
-            backoff_minutes = (2**media_file.retry_count) * self.config.OOM_BACKOFF_BASE_MINUTES  # type: ignore[operator]
+            # Calculate exponential backoff delay: 2^retry_count * 10 minutes.
+            # `retry_count` is a nullable Integer whose 0 is a *default*, not a NOT NULL
+            # constraint, so a row can legitimately hold NULL. Every other read of it in
+            # this module and in task_recovery_service normalizes with `or 0`; this one
+            # did not, and `2 ** None` raises TypeError. That exception is uncaught in
+            # `periodic_health_check` step 4, so a single NULL row aborted the whole pass
+            # and silently disabled steps 5-7 (retriable errors, stuck LLM tasks,
+            # false-positive resets, post-transcription recovery) on every cycle.
+            retry_count = int(media_file.retry_count or 0)
+            backoff_minutes = (2**retry_count) * self.config.OOM_BACKOFF_BASE_MINUTES
             backoff_delay = timedelta(minutes=backoff_minutes)
 
             # Check if enough time has passed since last recovery attempt
@@ -677,7 +685,15 @@ class TaskDetectionService:
         age_threshold = timedelta(hours=self.config.FILE_RECOVERY_AGE_THRESHOLD)
 
         for media_file in problem_files:
-            assert media_file.upload_time is not None  # server_default=now()
+            # `server_default=now()` is NOT a NOT NULL constraint — the premise this
+            # assert rested on is the one the retry_count bug disproved (issue #431).
+            # The query above filters only on status and user_id, and this loop has no
+            # try/except, so a single NULL upload_time aborted the whole sweep with an
+            # AssertionError (and vanished entirely under `python -O`). A row with no
+            # upload time cannot be aged, so it is not yet old enough to recover.
+            if media_file.upload_time is None:
+                logger.warning("File %s has no upload_time; skipping age check", media_file.id)
+                continue
             file_age = datetime.now(UTC) - media_file.upload_time
             if file_age > age_threshold:
                 aged_files.append(media_file)

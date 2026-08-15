@@ -29,7 +29,8 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `protected_media_providers.py` + `protected_media_plugins/`, `minio_service.py` +
   `storage_backend.py` (**see below**), `subtitle_service.py`, `formatting_service.py`.
 - **Ops** — backup/recovery, cleanup, migration lock+progress, task detection/filtering/recovery,
-  system settings, usage, GDPR erasure.
+  system settings, usage, GDPR erasure (`gdpr_erasure_service.py` +
+  `erasure_ledger_service.py` — **see below**).
 - **Identity / account security** — see below. `auth_config_service.py` (DB > .env > coded
   default, AES-256-GCM at rest), `account_security_service.py`,
   `idp_group_mapping_service.py`, `directory_sync_service.py`, `auth_mail_config_service.py`,
@@ -75,6 +76,54 @@ second is the specific failure mode they were written to prevent.
   expiry checked on the same read that finds the row, revocation one-way.
 
 `README.md` in this directory is the older long-form tour; it drifts — trust the code.
+
+## GDPR Art. 17 erasure — the three rules that are not obvious (issue #442)
+
+`gdpr_erasure_service.py` destroys the data; `erasure_ledger_service.py` records that it
+was asked for; `tasks/erasure_reconciliation.py` finishes what could not finish. All
+three are needed, and dropping any one reproduces a defect that shipped.
+
+- **The ledger must not contain the personal data it records the destruction of.** "We
+  erased alice@example.com" *containing* the address is a copy of the thing that was
+  supposed to be destroyed, in a table designed to outlive it. So `erasure_ledger` has
+  **no free-text column at all** — every textual column is a short enum with a CHECK —
+  and the one JSONB column is nailed shut by `ck_erasure_ledger_counters_numeric`
+  (`jsonb_path_exists`, IMMUTABLE, so it is legal in a CHECK where a subquery is not).
+  There is deliberately **no email hash** either: a hash of a value from a guessable
+  space is pseudonymous personal data (Recital 26), not anonymous. Subjects are named by
+  `id` + `uuid` only, which are meaningless once the row they point at is gone — and
+  meaningful again exactly when a restore brings it back, which is the property the
+  resurrection check relies on. `record_outcome` drops `summary["errors"]` entirely: its
+  entries carry file UUIDs and driver messages that quote filenames and storage paths.
+- **`subject_user_id` / `subject_organization_id` are NOT foreign keys, on purpose.**
+  They name the rows the table records the destruction of. A real FK would either block
+  the delete (`NO ACTION`) or null the column (`SET NULL`) — and nulling it destroys the
+  only key the reconciliation sweep has. Referential integrity is the property these
+  columns must not have. `actor_user_id` **is** an FK, `ON DELETE SET NULL` like every
+  actor FK since v387; `tests/unit/test_user_deletion_fk_coverage.py` records the
+  disposition.
+- **The ledger cannot only be a table.** It lives in Postgres, so restoring a dump taken
+  *before* an erasure destroys the record of the erasure along with the erasure — it
+  would have to survive its own failure mode. Every entry is therefore also appended to
+  a line-delimited journal under `DATA_DIR/gdpr/`, outside the dump;
+  `restore_from_journal` re-opens anything the database has lost, keeping the ORIGINAL
+  `requested_at`/`sla_due_at` so a restore cannot buy another month of Art. 12(3) time.
+  Its limit is honest: one file on one volume. Off-host replication is deployment
+  config; the audit stream is the second copy that already leaves the host.
+
+Two judgement calls worth not re-litigating blindly:
+
+- **A legal hold retains the ACCOUNT, not just the file, and that is forced by the
+  schema** — `media_file.user_id` is a plain `NO ACTION` FK, so `DELETE FROM "user"`
+  raises while a held file exists. Art. 17(3)(e) only justifies retaining the *file*, so
+  the account's survival is a side effect, made temporary by the ledger entry and the
+  sweep. Making it genuinely file-granular means anonymising the account instead —
+  a design change, not a patch.
+- **`org_member` entries are never auto-re-erased after a restore.** That scope never
+  deletes the `user` row, so "is the subject present" is always true; the only other
+  signal ("does the member have org rows again?") is indistinguishable from the member
+  legitimately uploading to that tenant the next day, and acting on it would destroy
+  data nobody asked to erase. They are counted as `org_member_manual_review` instead.
 
 ## Object storage: `storage_backend.py` + `minio_service.py`
 

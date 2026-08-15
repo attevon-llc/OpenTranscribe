@@ -18,6 +18,7 @@ from app.services.search.chunk_retrieval import diversity_sample
 from app.services.search.chunk_retrieval import dynamic_rrf_window
 from app.services.search.chunk_retrieval import retrieve_chunks
 from app.services.search.hybrid_search_service import HybridSearchService
+from tests.helpers import does_not_raise
 
 
 def _hit(file_uuid: str, index: int, score: float = 1.0) -> ChunkHit:
@@ -500,8 +501,11 @@ def test_corpus_bump_failure_never_breaks_indexing():
     with patch(
         "app.services.chat.retrieval_cache.bump_corpus_version",
         side_effect=RuntimeError("redis down"),
-    ):
-        indexing_service._invalidate_chat_retrieval_cache()  # must not raise
+    ) as bump:
+        with does_not_raise("a Redis outage must not fail transcription indexing"):
+            indexing_service._invalidate_chat_retrieval_cache()
+
+    bump.assert_called_once()
 
 
 def test_corpus_version_degrades_to_zero_without_redis():

@@ -23,6 +23,13 @@ indexing → WebSocket notification.
   alive; must stay in `celery_app`'s `include=` list.
 - `recovery.py` / `recovery_tasks.py` — `system.startup_recovery` and the periodic
   `cleanup.health_check` reclaim files stuck in PROCESSING with no live Celery task.
+- `erasure_reconciliation.py` — `gdpr.erasure_reconcile`, **utility** queue, daily 04:40.
+  Finishes GDPR Art. 17 erasures that a legal hold deferred, and re-erases subjects a
+  backup restore brought back. `takedown_service.release_file` calls its
+  `notify_hold_released` for latency; **the schedule is the guarantee** — a hold can also
+  be cleared by a DB edit or a restore, and a hook alone has a silent failure mode.
+  Design rationale (what the ledger must never store, and why `org_member` entries are
+  never auto-re-erased) lives in `app/services/CLAUDE.md`.
 - `directory_sync_task.py` — LDAP reconciliation/deprovisioning, **cpu** queue.
   `directory.sync_check_schedule` runs from beat every 15 min, reads the DB-stored cron
   (`directory_sync.schedule`), and dispatches `directory.sync_run` when due — so changing the
@@ -43,6 +50,64 @@ indexing → WebSocket notification.
 - Workers run `--pool=threads`, so `worker_process_init` does not fire — logging is wired via
   `setup_logging`. `request_id` is stamped on task headers at publish and cleared in
   `task_postrun`; never assume a ContextVar survives into the next task.
+- **NEVER hold a DB session across slow non-DB work.** Three phases, always: a short read
+  session returning **plain data**, the slow work with **no session open**, then a short
+  write session. This is the single most repeated defect in this package — see below.
+
+## The session-lifetime rule (read before writing any task)
+
+A task that wraps its whole body in one `with session_scope() as db:` and then does MinIO,
+ffmpeg, a model load, an LLM call, SMTP or OpenSearch **inside** it holds an open transaction
+for the duration. `session_scope` is not at fault; it simply never gets to exit.
+
+**This has wedged the live database twice, on two different workers, in one day.** The CPU
+worker sat `idle in transaction` for 48 minutes (a 3-hour task, killed by the hard time
+limit); the NLP worker for 1h26m. Both on a full-entity `transcript_segment` SELECT.
+
+Why it matters beyond the hang — a plain SELECT takes `ACCESS SHARE` for the life of the
+transaction, so:
+
+1. **It queues `ALTER TABLE`.** That is an Alembic upgrade hanging mid-release, and dev runs
+   migrations automatically on backend startup. It is how the bug was found: DDL migration
+   tests started failing with `psycopg2.errors.LockNotAvailable`.
+2. **It pins the VACUUM horizon** on `transcript_segment`, the largest table in the product.
+3. **It consumes a pool connection permanently.**
+
+**The fix pattern** (`speaker_attribute_task.py` is the worked example — read it):
+
+- Read phase returns **plain data, never ORM instances**. An instance escaping the session can
+  lazy-load later and silently reopen a transaction, reintroducing the bug invisibly.
+- Narrow the query to the columns you use, and `outerjoin` rather than letting `seg.speaker`
+  lazy-load per row.
+- Where a callee takes `db` and does the slow work itself, change it to take the data — or to
+  open its own short session. Passing `db` down is how the idiom spreads.
+- Watch for objects that **hold** an ORM row (`LocalWatchClient` did) and for ORM attribute
+  reads after scope exit. `db.expunge()` turns a silent lazy load into a loud
+  `DetachedInstanceError`.
+
+**`ThreadPoolExecutor` does not bound anything.** `__exit__` calls `shutdown(wait=True)` with
+no timeout, so a per-future `result(timeout=30)` is decorative — one wedged child holds the
+block, and the transaction, indefinitely.
+
+**The gate: `scripts/audit-session-lifetime.py`.** Nine AST detectors (subprocess/ffmpeg,
+object storage, OpenSearch, HTTP, LLM, model load, SMTP, thread pool, plus the
+interprocedural one), an allowlist at `scripts/session-lifetime-allowlist.txt` keyed
+`<file>::<scope>::<category>` with a **mandatory** reason, count-aware so one line buys one
+finding, and a **stale entry fails the run** — the file can only shrink. `--selftest` after
+touching a detector; `backend/tests/unit/test_session_lifetime_audit.py` runs the same cases
+under pytest *and* mutation-checks every rule, because a detector that matches nothing
+reports zero findings and reads exactly like a clean codebase.
+
+> **The interprocedural rule exists because a body-scan is not enough.** `scan_single`'s
+> `session_scope` wrapped `_perform_scan(db, ...)`; the remote listing, the per-file download
+> and the MinIO upload were all one frame further down, so the first AST sweep — which only
+> looked *inside* `with` bodies — reported it clean. The rule therefore also flags any
+> function that both **accepts a `Session`** and does slow work, whichever end the leak is at.
+
+**Testing it**: `tests/unit/test_task_session_lifetime.py` swaps the module's `session_scope`
+for a depth-tracking stand-in and has each slow-call stub report the open-scope depth at the
+moment it runs. Assert `>= 2` scopes opened, so a task that never touches the DB cannot pass.
+A structural "does it call session_scope" test is not enough.
 
 ## How it connects
 

@@ -25,8 +25,6 @@ from playwright.sync_api import expect
 
 pytestmark = pytest.mark.upload
 
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
-
 
 @pytest.fixture
 def upload_modal(gallery_page: Page) -> Page:
@@ -163,7 +161,14 @@ class TestFullUploadFlow:
     """End-to-end: select -> review with defaults -> submit -> file in gallery."""
 
     def test_submit_creates_file_and_cleans_up(self, upload_modal: Page, unique_audio, api_helper):
-        """A submitted upload reaches the backend; teardown deletes it."""
+        """A submitted upload reaches the backend; teardown deletes it.
+
+        The delete runs in a ``finally``. It used to run only on the happy path, after
+        ``assert file_uuid``, which is the one assertion here that can fail *while the
+        upload has already landed* — a slow pipeline pushing the file past the 30 s poll
+        window left it permanently in the dev library, which is exactly what this suite is
+        required never to do. The lookup therefore also moved inside the ``try``.
+        """
         page = upload_modal
         filename = unique_audio.name
 
@@ -179,33 +184,56 @@ class TestFullUploadFlow:
         expect(submit_btn).to_be_enabled(timeout=10000)
         submit_btn.click()
 
-        # Verify via API that the file was created, then clean it up
         login = api_helper.login("admin@example.com", "password")
         assert "access_token" in login, f"API login failed: {login}"
 
         file_uuid = None
-        deadline = time.time() + 30
-        while time.time() < deadline and file_uuid is None:
-            listing = api_helper.get("/api/files?page=1&page_size=20&sort_by=upload_time")
-            for item in listing.get("items", []):
-                if item.get("filename") == filename:
-                    file_uuid = item["uuid"]
-                    break
+        try:
+            # Verify via API that the file was created.
+            deadline = time.time() + 30
+            while time.time() < deadline and file_uuid is None:
+                listing = api_helper.get("/api/files?page=1&page_size=20&sort_by=upload_time")
+                for item in listing.get("items", []):
+                    if item.get("filename") == filename:
+                        file_uuid = item["uuid"]
+                        break
+                if file_uuid is None:
+                    time.sleep(1)
+
+            assert file_uuid, f"Uploaded file '{filename}' never appeared in /api/files"
+        finally:
             if file_uuid is None:
-                time.sleep(1)
+                # The poll timed out but the upload may still be in flight — look the
+                # file up one last time before giving up on removing it.
+                file_uuid = self._find_uploaded_file(api_helper, filename)
+            if file_uuid is not None:
+                self._delete_uploaded_file(api_helper, file_uuid)
 
-        assert file_uuid, f"Uploaded file '{filename}' never appeared in /api/files"
+    @staticmethod
+    def _find_uploaded_file(api_helper, filename: str) -> str | None:
+        """Locate an upload by filename, tolerating a still-settling backend."""
+        try:
+            listing = api_helper.get("/api/files?page=1&page_size=50&sort_by=upload_time")
+        except Exception:  # noqa: BLE001 - a lookup failure must not mask the test result
+            return None
+        for item in listing.get("items", []):
+            if item.get("filename") == filename:
+                return str(item["uuid"])
+        return None
 
-        # Teardown: remove the test upload so dev data stays untouched.
-        # 409 means the pipeline is still processing the clip — wait for it,
-        # then fall back to the admin force-delete endpoint if needed.
+    @staticmethod
+    def _delete_uploaded_file(api_helper, file_uuid: str) -> None:
+        """Remove the test upload so dev data stays untouched.
+
+        409 means the pipeline is still processing the clip — wait for it, then fall back
+        to the admin force-delete endpoint.
+        """
         status = None
         deadline = time.time() + 90
         while time.time() < deadline:
             status = api_helper.delete(f"/api/files/{file_uuid}")
             if status in (200, 204):
-                break
+                return
             time.sleep(3)
-        if status not in (200, 204):
-            status = api_helper.delete(f"/api/files/{file_uuid}/force")
+        status = api_helper.delete(f"/api/files/{file_uuid}/force")
         assert status in (200, 204), f"Cleanup delete failed with {status}"

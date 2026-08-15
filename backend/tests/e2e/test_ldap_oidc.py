@@ -29,6 +29,7 @@ Run:
 
 import json
 import os
+import re
 import socket
 import subprocess
 import time
@@ -37,6 +38,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from playwright.sync_api import expect
 
 # Skip entire module unless explicitly enabled
 pytestmark = pytest.mark.skipif(
@@ -45,8 +47,11 @@ pytestmark = pytest.mark.skipif(
 )
 
 # URLs
-FRONTEND_URL = os.environ.get("E2E_FRONTEND_URL", "http://localhost:5173")
-BACKEND_URL = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+# The app's own frontend/backend URLs come from the `base_url` / `backend_url` fixtures in
+# tests/e2e/conftest.py rather than module-level constants: a constant is evaluated at import
+# time, so it can never see `--base-url` / `--backend-url` and a run aimed at an isolated stack
+# silently drove the LIVE stack instead (issue #431). The IdP container URLs below stay
+# constants — they are container endpoints, not the stack under test.
 LLDAP_URL = os.environ.get("LLDAP_URL", "http://localhost:17170")
 LLDAP_LDAP_PORT = int(os.environ.get("LLDAP_LDAP_PORT", "3890"))
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8180")
@@ -69,6 +74,21 @@ LDAP_ADMIN_PASSWORD = "LdapAdmin123"
 LDAP_REGULAR_USER = "ldap-user"
 LDAP_REGULAR_EMAIL = "ldap-user@example.com"
 LDAP_REGULAR_PASSWORD = "LdapUser123"
+
+# A real LLDAP account that is NEVER logged in successfully, reserved for the
+# wrong-password test. Rejecting a bad bind for a user that exists is a different branch
+# from rejecting an unknown user, so the coverage has to keep a real account — but
+# pointing it at ldap-admin fed failures into that account's lockout bucket
+# (canonical_identifier resolves an ldap_uid to the local account's email), and lockout is
+# progressive. Because this uid never authenticates successfully, the app never provisions
+# a local User for it, so its bucket belongs to no account and locking it costs nothing.
+LDAP_NEGATIVE_USER = "ldap-negative"
+LDAP_NEGATIVE_EMAIL = "ldap-negative@example.com"
+# Deliberately not this account's password — the test asserts the bind is REJECTED, so any
+# value that is wrong will do. Spelled out rather than made to look like a credential: a
+# realistic-looking string here is both a secret-scanner finding and a standing invitation
+# for someone to "fix" it into a working password, which would silently invert the test.
+LDAP_NEGATIVE_PASSWORD = "wrong-password-on-purpose"  # noqa: S105
 
 KC_ADMIN_USER = "kc-admin"
 KC_ADMIN_EMAIL = "kc-admin@example.com"
@@ -222,6 +242,7 @@ def ensure_lldap_running():
     for uid, email, name in [
         (LDAP_ADMIN_USER, LDAP_ADMIN_EMAIL, "LDAP Admin"),
         (LDAP_REGULAR_USER, LDAP_REGULAR_EMAIL, "LDAP Regular User"),
+        (LDAP_NEGATIVE_USER, LDAP_NEGATIVE_EMAIL, "LDAP Negative Fixture"),
     ]:
         try:
             _lldap_graphql(
@@ -235,6 +256,7 @@ def ensure_lldap_running():
     for uid, pw in [
         (LDAP_ADMIN_USER, LDAP_ADMIN_PASSWORD),
         (LDAP_REGULAR_USER, LDAP_REGULAR_PASSWORD),
+        (LDAP_NEGATIVE_USER, LDAP_NEGATIVE_PASSWORD),
     ]:
         subprocess.run(
             [
@@ -276,7 +298,7 @@ def ensure_lldap_running():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def ensure_keycloak_running():
+def ensure_keycloak_running(base_url: str, backend_url: str):
     """Ensure Keycloak container is running and has test realm/users."""
     project_root = Path(__file__).resolve().parents[3]
 
@@ -320,10 +342,10 @@ def ensure_keycloak_running():
             "publicClient": False,
             "secret": KC_CLIENT_SECRET,
             "redirectUris": [
-                f"{FRONTEND_URL}/*",
-                f"{BACKEND_URL}/*",
+                f"{base_url}/*",
+                f"{backend_url}/*",
             ],
-            "webOrigins": [FRONTEND_URL, BACKEND_URL],
+            "webOrigins": [base_url, backend_url],
             "directAccessGrantsEnabled": True,
             "standardFlowEnabled": True,
             "protocol": "openid-connect",
@@ -401,7 +423,8 @@ def _open_settings_auth_tab(page, tab_name: str = "LDAP/AD"):
 
     # Wait for the settings modal to fully render
     page.wait_for_selector(".settings-sidebar", state="visible", timeout=10000)
-    page.wait_for_timeout(1000)
+    # The nav item's own `wait_for(state="visible")` below already polls, so a fixed
+    # wait here is pure waste (issue #431).
 
     # Click Authentication nav item in the sidebar
     auth_nav = page.locator(".settings-sidebar button.nav-item:has-text('Authentication')")
@@ -433,20 +456,24 @@ def _open_settings_auth_tab(page, tab_name: str = "LDAP/AD"):
     }
     idx = tab_index.get(tab_name, 1)
     page.evaluate(f"document.querySelectorAll('.auth-settings .tabs button.tab')[{idx}].click()")
+    # Kept (issue #431): the tab swap is a local Svelte re-render with no network activity,
+    # and every caller's first move is a non-auto-waiting `is_checked()` on a checkbox that
+    # only exists once the new tab's panel has rendered.
     page.wait_for_timeout(1000)
 
 
 @pytest.fixture
-def admin_page(browser_context):
+def admin_page(browser_context, base_url: str):
     """Log in as the local super_admin and return the page."""
     page = browser_context.new_page()
-    page.goto(f"{FRONTEND_URL}/login")
+    page.goto(f"{base_url}/login")
     page.wait_for_load_state("networkidle")
 
     page.fill("#email", APP_ADMIN_EMAIL)
     page.fill("#password", APP_ADMIN_PASSWORD)
     page.click("button[type=submit]")
-    page.wait_for_timeout(3000)
+    # Auto-wait for the redirect off /login instead of a fixed 3 s (issue #431).
+    expect(page).not_to_have_url(re.compile(r"/login"), timeout=15000)
 
     # Should be on gallery/dashboard now
     assert "/login" not in page.url, f"Admin login failed, still at {page.url}"
@@ -474,6 +501,9 @@ class TestLDAPConfiguration:
         enable_checkbox = enable_label.locator("input[type=checkbox]")
         if not enable_checkbox.is_checked():
             enable_checkbox.check()
+            # Kept (issue #431): enabling LDAP reveals the config fields via a local Svelte
+            # re-render — no network activity to settle on, and the `is_checked()` calls
+            # further down cannot auto-wait.
             page.wait_for_timeout(500)
 
         # Fill in LLDAP connection details
@@ -521,7 +551,9 @@ class TestLDAPConfiguration:
 
         # Save
         page.locator(".auth-settings button:has-text('Save Configuration')").click()
-        page.wait_for_timeout(2000)
+        # Settle on the save request instead of a fixed 2 s; the check below is the
+        # ABSENCE of an error toast, which no locator can auto-wait for (issue #431).
+        page.wait_for_load_state("networkidle")
 
         # Verify save succeeded - look for success toast or no error
         error_visible = page.locator(".toast-error, .error").count() > 0
@@ -533,7 +565,9 @@ class TestLDAPConfiguration:
         _open_settings_auth_tab(page, "LDAP/AD")
 
         page.locator(".auth-settings button:has-text('Test Connection')").click()
-        page.wait_for_timeout(5000)
+        # The test-connection round trip is a backend call; settle on it rather than
+        # sleeping 5 s, since the feedback check below reads page.content() once (issue #431).
+        page.wait_for_load_state("networkidle")
 
         # Look for success indicator (toast or inline feedback)
         page_content = page.content()
@@ -550,60 +584,75 @@ class TestLDAPConfiguration:
 class TestLDAPLogin:
     """Test LDAP user login through the frontend."""
 
-    def test_ldap_admin_login(self, browser_context):
+    def test_ldap_admin_login(self, browser_context, base_url: str):
         """LDAP admin user should be able to log in via the login form."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         page.fill("#email", LDAP_ADMIN_USER)
         page.fill("#password", LDAP_ADMIN_PASSWORD)
         page.click("button[type=submit]")
-        page.wait_for_timeout(5000)
+        # Auto-wait for the redirect off /login instead of a fixed 5 s (issue #431).
+        expect(page).not_to_have_url(re.compile(r"/login"), timeout=15000)
 
         assert "/login" not in page.url, f"LDAP admin login failed, still at {page.url}"
         page.close()
 
-    def test_ldap_regular_user_login(self, browser_context):
+    def test_ldap_regular_user_login(self, browser_context, base_url: str):
         """LDAP regular user should be able to log in."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         page.fill("#email", LDAP_REGULAR_USER)
         page.fill("#password", LDAP_REGULAR_PASSWORD)
         page.click("button[type=submit]")
-        page.wait_for_timeout(5000)
+        # Auto-wait for the redirect off /login instead of a fixed 5 s (issue #431).
+        expect(page).not_to_have_url(re.compile(r"/login"), timeout=15000)
 
         assert "/login" not in page.url, f"LDAP user login failed, still at {page.url}"
         page.close()
 
-    def test_ldap_wrong_password_rejected(self, browser_context):
-        """Wrong password should be rejected for LDAP users."""
+    def test_ldap_wrong_password_rejected(self, browser_context, base_url: str):
+        """Wrong password should be rejected for LDAP users.
+
+        Uses ``LDAP_NEGATIVE_USER``, not ``LDAP_ADMIN_USER``. The account is real in LLDAP
+        — which is the point, since a bad bind for an existing user is a different code
+        path from an unknown user — but it is never logged in successfully anywhere in this
+        suite, so the app never provisions a local ``User`` row for it and its lockout
+        bucket belongs to no account. Aimed at ``ldap-admin``, these failures landed in the
+        bucket of the account ``test_ldap_admin_login`` needs (``canonical_identifier``
+        collapses an ``ldap_uid`` onto the resolved account's email), and lockout is
+        progressive — see the rule in ``backend/tests/CLAUDE.md``.
+        """
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
-        page.fill("#email", LDAP_ADMIN_USER)
+        page.fill("#email", LDAP_NEGATIVE_USER)
         page.fill("#password", "wrongpassword")
         page.click("button[type=submit]")
-        page.wait_for_timeout(3000)
+        # Settle on the rejected login request; the assertion is that we did NOT
+        # navigate, which no locator can auto-wait for (issue #431).
+        page.wait_for_load_state("networkidle")
 
         # Should still be on login page or show error
         still_on_login = "/login" in page.url or page.locator("#password").is_visible()
         assert still_on_login, "Wrong LDAP password should not grant access"
         page.close()
 
-    def test_ldap_login_with_email(self, browser_context):
+    def test_ldap_login_with_email(self, browser_context, base_url: str):
         """LDAP user should also be able to log in using their email."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         page.fill("#email", LDAP_ADMIN_EMAIL)
         page.fill("#password", LDAP_ADMIN_PASSWORD)
         page.click("button[type=submit]")
-        page.wait_for_timeout(5000)
+        # Auto-wait for the redirect off /login instead of a fixed 5 s (issue #431).
+        expect(page).not_to_have_url(re.compile(r"/login"), timeout=15000)
 
         assert "/login" not in page.url, f"LDAP email login failed, still at {page.url}"
         page.close()
@@ -618,7 +667,7 @@ class TestLDAPLogin:
 class TestOIDCConfiguration:
     """Configure Keycloak via the admin UI."""
 
-    def test_configure_oidc_settings(self, admin_page):
+    def test_configure_oidc_settings(self, admin_page, backend_url: str):
         """Open settings, go to Authentication > OIDC/Keycloak, fill in config, and save."""
         page = admin_page
         _open_settings_auth_tab(page, "OIDC")
@@ -628,6 +677,9 @@ class TestOIDCConfiguration:
         enable_checkbox = enable_label.locator("input[type=checkbox]")
         if not enable_checkbox.is_checked():
             enable_checkbox.check()
+            # Kept (issue #431): enabling OIDC reveals the config fields via a local Svelte
+            # re-render — no network activity to settle on, and the `is_checked()` calls
+            # further down cannot auto-wait.
             page.wait_for_timeout(500)
 
         # Server config - public URL (browser accesses this)
@@ -641,7 +693,7 @@ class TestOIDCConfiguration:
         page.fill("#oidc_client_secret", KC_CLIENT_SECRET)
 
         # Callback URL - must point to the backend callback endpoint
-        page.fill("#oidc_callback_url", f"{BACKEND_URL}/api/auth/oidc/callback")
+        page.fill("#oidc_callback_url", f"{backend_url}/api/auth/oidc/callback")
 
         # Role mapping
         page.fill("#oidc_admin_role", "admin")
@@ -659,7 +711,9 @@ class TestOIDCConfiguration:
 
         # Save
         page.locator(".auth-settings button:has-text('Save Configuration')").click()
-        page.wait_for_timeout(2000)
+        # Settle on the save request instead of a fixed 2 s; the check below is the
+        # ABSENCE of an error toast, which no locator can auto-wait for (issue #431).
+        page.wait_for_load_state("networkidle")
 
         error_visible = page.locator(".toast-error, .error").count() > 0
         assert not error_visible, "Error appeared after saving Keycloak config"
@@ -669,10 +723,10 @@ class TestOIDCConfiguration:
 class TestOIDCLogin:
     """Test Keycloak OIDC login flow through the frontend."""
 
-    def test_oidc_redirect_flow(self, browser_context):
+    def test_oidc_redirect_flow(self, browser_context, base_url: str):
         """Clicking the SSO button should redirect to the provider's login page."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         # Use the specific CSS class for the Keycloak button
@@ -697,10 +751,10 @@ class TestOIDCLogin:
         )
         page.close()
 
-    def test_oidc_admin_login_full_flow(self, browser_context):
+    def test_oidc_admin_login_full_flow(self, browser_context, base_url: str):
         """Complete the full Keycloak OIDC login flow with the admin user."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         kc_button = page.locator("button.oidc-button")
@@ -723,18 +777,20 @@ class TestOIDCLogin:
 
         # Wait for redirect back to the app after Keycloak auth
         try:
-            page.wait_for_url(f"{FRONTEND_URL}/**", timeout=15000)
+            page.wait_for_url(f"{base_url}/**", timeout=15000)
         except Exception:
             pass
 
-        page.wait_for_timeout(3000)
+        # Auto-wait for the post-callback redirect off /login instead of a fixed 3 s
+        # (issue #431).
+        expect(page).not_to_have_url(re.compile(r"/login"), timeout=15000)
         assert "/login" not in page.url, f"Keycloak login did not complete, still at {page.url}"
         page.close()
 
-    def test_keycloak_regular_user_login(self, browser_context):
+    def test_keycloak_regular_user_login(self, browser_context, base_url: str):
         """Regular Keycloak user can log in via OIDC flow."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         kc_button = page.locator("button.oidc-button")
@@ -754,18 +810,20 @@ class TestOIDCLogin:
         page.click("#kc-login")
 
         try:
-            page.wait_for_url(f"{FRONTEND_URL}/**", timeout=15000)
+            page.wait_for_url(f"{base_url}/**", timeout=15000)
         except Exception:
             pass
 
-        page.wait_for_timeout(3000)
+        # Auto-wait for the post-callback redirect off /login instead of a fixed 3 s
+        # (issue #431).
+        expect(page).not_to_have_url(re.compile(r"/login"), timeout=15000)
         assert "/login" not in page.url, f"Keycloak regular user login failed, still at {page.url}"
         page.close()
 
-    def test_keycloak_wrong_credentials_rejected(self, browser_context):
+    def test_keycloak_wrong_credentials_rejected(self, browser_context, base_url: str):
         """Wrong Keycloak credentials should show error on Keycloak login page."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         kc_button = page.locator("button.oidc-button")
@@ -783,7 +841,9 @@ class TestOIDCLogin:
         page.fill("#username", KC_ADMIN_USER)
         page.fill("#password", "wrongpassword")
         page.click("#kc-login")
-        page.wait_for_timeout(3000)
+        # Settle on Keycloak's rejected form POST; the assertion is that we did NOT
+        # leave the IdP login page, which no locator can auto-wait for (issue #431).
+        page.wait_for_load_state("networkidle")
 
         # Should still be on the Keycloak login page with an error
         assert "/realms/" in page.url or "8180" in page.url, (
@@ -801,24 +861,25 @@ class TestOIDCLogin:
 class TestHybridAuthentication:
     """Test that multiple auth methods work simultaneously."""
 
-    def test_local_login_still_works(self, browser_context):
+    def test_local_login_still_works(self, browser_context, base_url: str):
         """Local admin login should still work alongside LDAP and Keycloak."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         page.fill("#email", APP_ADMIN_EMAIL)
         page.fill("#password", APP_ADMIN_PASSWORD)
         page.click("button[type=submit]")
-        page.wait_for_timeout(3000)
+        # Auto-wait for the redirect off /login instead of a fixed 3 s (issue #431).
+        expect(page).not_to_have_url(re.compile(r"/login"), timeout=15000)
 
         assert "/login" not in page.url, "Local admin login should still work in hybrid mode"
         page.close()
 
-    def test_auth_methods_endpoint_shows_all(self, browser_context):
+    def test_auth_methods_endpoint_shows_all(self, browser_context, backend_url: str):
         """The /auth/methods endpoint should report LDAP and Keycloak as enabled."""
         page = browser_context.new_page()
-        resp = page.request.get(f"{BACKEND_URL}/api/auth/methods")
+        resp = page.request.get(f"{backend_url}/api/auth/methods")
         data = resp.json()
 
         assert data.get("ldap_enabled") is True, "LDAP should be reported as enabled"
@@ -826,10 +887,10 @@ class TestHybridAuthentication:
         assert "local" in data.get("methods", []), "Local auth should still be available"
         page.close()
 
-    def test_login_page_shows_keycloak_button(self, browser_context):
+    def test_login_page_shows_keycloak_button(self, browser_context, base_url: str):
         """Login page should display the Keycloak/SSO login button when Keycloak is enabled."""
         page = browser_context.new_page()
-        page.goto(f"{FRONTEND_URL}/login")
+        page.goto(f"{base_url}/login")
         page.wait_for_load_state("networkidle")
 
         kc_button = page.locator("button.oidc-button")

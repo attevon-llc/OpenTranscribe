@@ -444,7 +444,10 @@ def _update_recovery_tracking(db: Session, media_file: MediaFile) -> None:
         db: Database session
         media_file: The media file to update
     """
-    media_file.recovery_attempts += 1  # type: ignore[assignment,operator]
+    # `recovery_attempts` is a nullable Integer whose 0 is a PYTHON-side default, so any
+    # row written by raw SQL, a migration backfill or an explicit UPDATE holds NULL and a
+    # bare `+= 1` is a TypeError. Normalize on read the way every other counter read here does.
+    media_file.recovery_attempts = int(media_file.recovery_attempts or 0) + 1
     media_file.last_recovery_attempt = datetime.now(UTC)  # type: ignore[assignment]
     media_file.active_task_id = None  # type: ignore[assignment]
     media_file.task_started_at = None  # type: ignore[assignment]
@@ -475,7 +478,7 @@ def recover_stuck_file(db: Session, file_id: int) -> bool:
             return _recover_pending_file(db, media_file)
 
         if media_file.status == FileStatus.ERROR and system_settings_service.should_retry_file(
-            db, int(media_file.retry_count)
+            db, int(media_file.retry_count or 0)
         ):
             return _recover_failed_file(db, media_file)
 
@@ -570,11 +573,14 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
         if media_file.active_task_id:
             cancel_active_task(db, file_id)
 
-        # Reset retry count if requested
+        # Reset retry count if requested. `retry_count` is nullable with a Python-side
+        # default of 0, so a NULL row must be normalized rather than incremented in place —
+        # this is the manual-retry entry point (POST /my-files/{uuid}/retry), and a bare
+        # `+= 1` here turns a NULL row into a 500 the user cannot get past.
         if reset_retry_count:
             media_file.retry_count = 0
         else:
-            media_file.retry_count += 1
+            media_file.retry_count = int(media_file.retry_count or 0) + 1
 
         # Reset file state
         media_file.status = FileStatus.PENDING

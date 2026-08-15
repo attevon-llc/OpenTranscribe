@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ast
 import re
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -86,12 +87,20 @@ def _documented_keys() -> set[str]:
     return keys
 
 
-def _keys_read_by_code() -> set[str]:
+@lru_cache(maxsize=1)
+def _keys_read_by_code() -> frozenset[str]:
     """Every env var name the backend reads.
 
     Union of Settings field names and the string literal passed to os.getenv /
     os.environ.get / the oidc_*_env helpers, found by walking the AST rather than
     grepping, so a name split across lines or wrapped in a helper still counts.
+
+    CACHED, and returning a frozenset so the cached value cannot be mutated by a
+    caller. This walks and AST-parses every file under app/, and
+    ``test_compose_vars_without_defaults_are_documented`` called it *inside* its loop
+    over the 26 ``docker-compose*.yml`` files — recomputing an identical
+    loop-invariant set 26 times, which made that one test 57.6 s of a 139 s suite
+    (the next slowest test was 9.9 s).
     """
     names: set[str] = set()
 
@@ -122,7 +131,7 @@ def _keys_read_by_code() -> set[str]:
                 if isinstance(value, str) and re.fullmatch(r"[A-Z_][A-Z0-9_]*", value):
                     names.add(value)
 
-    return names
+    return frozenset(names)
 
 
 def _keys_consumed_on_the_surface() -> set[str]:

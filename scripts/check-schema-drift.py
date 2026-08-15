@@ -50,6 +50,7 @@ Exit codes: 0 clean (for the selected categories), 1 drift found, 2 misuse,
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import sys
@@ -57,69 +58,83 @@ from collections import defaultdict
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-BACKEND = REPO_ROOT / "backend"
+BACKEND = REPO_ROOT / 'backend'
 
 # Categories worth gating on: each one means the application will hit a runtime
 # error (a query against a column or table that is not there).
 SIGNAL_CATEGORIES = {
-    "add_table": "tables",
-    "remove_table": "tables",
-    "add_column": "columns",
-    "remove_column": "columns",
-    "modify_type": "types",
-    "modify_nullable": "types",
+    'add_table': 'tables',
+    'remove_table': 'tables',
+    'add_column': 'columns',
+    'remove_column': 'columns',
+    'modify_type': 'types',
+    'modify_nullable': 'types',
 }
 # Categories dominated by the naming mismatch described above.
 COSMETIC_CATEGORIES = {
-    "add_index": "indexes",
-    "remove_index": "indexes",
-    "add_constraint": "constraints",
-    "remove_constraint": "constraints",
-    "add_fk": "constraints",
-    "remove_fk": "constraints",
+    'add_index': 'indexes',
+    'remove_index': 'indexes',
+    'add_constraint': 'constraints',
+    'remove_constraint': 'constraints',
+    'add_fk': 'constraints',
+    'remove_fk': 'constraints',
 }
 
 
 def _bootstrap_env() -> None:
     """Point the app at the dev stack's Postgres without importing conftest."""
-    os.environ.setdefault("POSTGRES_HOST", "localhost")
-    os.environ.setdefault("POSTGRES_PORT", "5176")
-    os.environ.setdefault("SKIP_S3", "True")
-    os.environ.setdefault("SKIP_OPENSEARCH", "True")
-    scratch = Path(os.environ.get("TMPDIR", "/tmp")) / "ot-schema-drift"
+    os.environ.setdefault('POSTGRES_HOST', 'localhost')
+    os.environ.setdefault('POSTGRES_PORT', '5176')
+    os.environ.setdefault('SKIP_S3', 'True')
+    os.environ.setdefault('SKIP_OPENSEARCH', 'True')
+    scratch = Path(os.environ.get('TMPDIR', '/tmp')) / 'ot-schema-drift'
     scratch.mkdir(parents=True, exist_ok=True)
-    for key in ("DATA_DIR", "MODELS_DIR", "TEMP_DIR"):
+    for key in ('DATA_DIR', 'MODELS_DIR', 'TEMP_DIR'):
         os.environ.setdefault(key, str(scratch))
 
     try:
         from dotenv import dotenv_values
     except ImportError:
         return
-    for key, value in (dotenv_values(REPO_ROOT / ".env") or {}).items():
-        if key.startswith("POSTGRES_") and key not in ("POSTGRES_HOST", "POSTGRES_PORT"):
-            os.environ.setdefault(key, value or "")
+    for key, value in (dotenv_values(REPO_ROOT / '.env') or {}).items():
+        if key.startswith('POSTGRES_') and key not in ('POSTGRES_HOST', 'POSTGRES_PORT'):
+            os.environ.setdefault(key, value or '')
+
+
+def _include_object(_obj, name, _type, _reflected, _compare_to) -> bool:
+    """Alembic's include_object hook: skip alembic's own bookkeeping table.
+
+    Alembic dictates this five-argument signature, so four parameters are unused. They are
+    underscore-prefixed to say that deliberately rather than silenced with a blanket
+    `noqa: ARG005` — a named function also gives the rule somewhere to grow if more tables
+    need excluding, which a lambda inside a dict literal does not.
+    """
+    return name != 'alembic_version'
 
 
 def collect_diffs() -> list:
     from alembic.autogenerate import compare_metadata
     from alembic.migration import MigrationContext
 
+    # Imported for its SIDE EFFECT: importing the package registers every model on
+    # Base.metadata, and without it the comparison below runs against an EMPTY metadata
+    # and reports "no drift" for a schema it never looked at. Done via import_module
+    # rather than a bare `import app.models` so the intent is explicit and there is no
+    # unused-import finding to suppress — alembic/env.py omitting exactly this import is
+    # why --autogenerate compared 0 tables against 54 and had never worked as a drift check.
+    importlib.import_module('app.models')
     from app.db.base import Base, engine
-
-    import app.models  # noqa: F401  registers every model on Base.metadata
 
     with engine.connect() as conn:
         context = MigrationContext.configure(
             conn,
             opts={
-                "compare_type": True,
+                'compare_type': True,
                 # Server defaults are the single largest false-positive source
                 # (now() vs CURRENT_TIMESTAMP, '{}'::jsonb vs '{}'). Off until the
                 # signal categories are clean.
-                "compare_server_default": False,
-                "include_object": lambda obj, name, type_, reflected, compare_to: (
-                    name != "alembic_version"
-                ),
+                'compare_server_default': False,
+                'include_object': _include_object,
             },
         )
         return compare_metadata(context, Base.metadata)
@@ -132,21 +147,21 @@ def classify(diffs: list) -> dict[str, list[str]]:
         entries = diff if isinstance(diff, list) else [diff]
         for entry in entries:
             if not isinstance(entry, tuple) or not entry:
-                grouped["other"].append(str(entry)[:200])
+                grouped['other'].append(str(entry)[:200])
                 continue
             kind = str(entry[0])
-            group = SIGNAL_CATEGORIES.get(kind) or COSMETIC_CATEGORIES.get(kind) or "other"
-            grouped[f"{group}:{kind}"].append(str(entry)[:200])
+            group = SIGNAL_CATEGORIES.get(kind) or COSMETIC_CATEGORIES.get(kind) or 'other'
+            grouped[f'{group}:{kind}'].append(str(entry)[:200])
     return dict(grouped)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--json", action="store_true")
+    parser.add_argument('--json', action='store_true')
     parser.add_argument(
-        "--fail-on",
-        default="",
-        help="comma-separated categories to exit non-zero on (tables,columns,types,indexes,constraints)",
+        '--fail-on',
+        default='',
+        help='comma-separated categories to exit non-zero on (tables,columns,types,indexes,constraints)',
     )
     args = parser.parse_args()
 
@@ -157,16 +172,16 @@ def main() -> int:
     try:
         diffs = collect_diffs()
     except Exception as exc:  # noqa: BLE001
-        print(f"ERROR: could not compare schema: {type(exc).__name__}: {exc}", file=sys.stderr)
-        print("Is the dev stack up? `./opentr.sh start dev`", file=sys.stderr)
+        print(f'ERROR: could not compare schema: {type(exc).__name__}: {exc}', file=sys.stderr)
+        print('Is the dev stack up? `./opentr.sh start dev`', file=sys.stderr)
         return 3
 
     grouped = classify(diffs)
-    fail_on = {c.strip() for c in args.fail_on.split(",") if c.strip()}
+    fail_on = {c.strip() for c in args.fail_on.split(',') if c.strip()}
 
     totals: dict[str, int] = defaultdict(int)
     for key, items in grouped.items():
-        totals[key.split(":")[0]] += len(items)
+        totals[key.split(':')[0]] += len(items)
 
     offending = sorted(fail_on & set(totals))
 
@@ -174,38 +189,38 @@ def main() -> int:
         print(
             json.dumps(
                 {
-                    "stage": "schema-drift",
-                    "status": "fail" if offending else "pass",
-                    "total_diffs": sum(totals.values()),
-                    "by_category": dict(totals),
-                    "by_kind": {k: len(v) for k, v in sorted(grouped.items())},
-                    "gated_categories": sorted(fail_on),
-                    "violations": offending,
+                    'stage': 'schema-drift',
+                    'status': 'fail' if offending else 'pass',
+                    'total_diffs': sum(totals.values()),
+                    'by_category': dict(totals),
+                    'by_kind': {k: len(v) for k, v in sorted(grouped.items())},
+                    'gated_categories': sorted(fail_on),
+                    'violations': offending,
                 },
                 indent=2,
             )
         )
         return 1 if offending else 0
 
-    print(f"Model-vs-schema diffs: {sum(totals.values())}\n")
+    print(f'Model-vs-schema diffs: {sum(totals.values())}\n')
     for category in sorted(totals):
-        marker = "  <-- GATED" if category in fail_on else ""
-        print(f"  {category:<14} {totals[category]:>4}{marker}")
+        marker = '  <-- GATED' if category in fail_on else ''
+        print(f'  {category:<14} {totals[category]:>4}{marker}')
     print()
     for key in sorted(grouped):
-        category = key.split(":")[0]
-        if category in {"tables", "columns", "types", "other"}:
-            print(f"[{key}]")
+        category = key.split(':')[0]
+        if category in {'tables', 'columns', 'types', 'other'}:
+            print(f'[{key}]')
             for item in grouped[key][:15]:
-                print(f"    {item}")
+                print(f'    {item}')
             if len(grouped[key]) > 15:
-                print(f"    ... and {len(grouped[key]) - 15} more")
+                print(f'    ... and {len(grouped[key]) - 15} more')
     if offending:
-        print(f"\nFAIL: drift in gated categories: {offending}")
+        print(f'\nFAIL: drift in gated categories: {offending}')
         return 1
-    print("\nOK for the gated categories:", sorted(fail_on) or "(none gated)")
+    print('\nOK for the gated categories:', sorted(fail_on) or '(none gated)')
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

@@ -20,7 +20,13 @@ from sqlalchemy import text
 REVISION = "v385_drop_orphan_tables"
 ORPHAN_TABLES = ("upload_session", "speaker_audio_clip", "user_certificate_preferences")
 
-pytestmark = pytest.mark.ddl_exclusive
+#: `ddl_exclusive` is applied PER TEST below, never to the module. An EXCLUSIVE advisory-lock
+#: acquisition drains every other xdist worker, so spending one on a read-only schema
+#: assertion turns that assertion into a full-suite barrier — that is what made this group
+#: 414 s of a 511 s wall clock. Only the tests that actually execute ALTER/DROP/CREATE carry
+#: it; the lock's EXCLUSIVE mode already serialises them against each other across workers,
+#: so `xdist_group` is not needed on top (issue #389, #431).
+#: Both directions are enforced by `tests/unit/test_ddl_marker_discipline.py`.
 
 
 def test_v385_revision_chain():
@@ -100,21 +106,22 @@ def test_detection_recognizes_a_v385_database(db_session):
 
     Step 4 of the 5-step procedure in backend/app/db/CLAUDE.md — the step that
     gets skipped, and skipping it silently mis-stamps untracked databases.
+
+    The comparison goes through ``_migration_detection.assert_detected_at_or_after``, which
+    compares **positions in the alembic chain**. The string form this replaced
+    (``detected >= REVISION``) was lexicographic: it holds today only because every
+    revision id happens to be three digits, and would silently invert the day one is not —
+    ``"v3100_…" < "v385_…"``, so a *newer* revision would read as older and the test would
+    fail while the ladder was correct.
     """
-    from app.db.migrations import _detect_schema_version
+    from tests.unit._migration_detection import assert_detected_at_or_after
 
     conn = db_session.connection()
     tables = inspect(conn).get_table_names()
-    detected = _detect_schema_version(conn, tables)
-
-    assert detected is not None
-    # At-or-after, not equality: a later revision may have landed since.
-    assert detected >= REVISION, (
-        f"a database with the orphan tables dropped detected as {detected!r}, "
-        f"which is older than {REVISION}"
-    )
+    assert_detected_at_or_after(conn, tables, REVISION)
 
 
+@pytest.mark.ddl_exclusive
 def test_detection_stamps_lower_when_an_orphan_table_is_present(db_session):
     """Re-create one orphan table and the fingerprint must stop matching v385.
 

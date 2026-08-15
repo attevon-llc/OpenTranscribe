@@ -188,125 +188,176 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
                 _guard.delete(_guard_key)
 
 
-def _detect_speaker_attributes(file_uuid: str, user_id: int):
-    """Inner implementation of detect_speaker_attributes_task."""
+def _load_detection_inputs(file_uuid: str) -> dict | None:
+    """Read everything the inference phase needs, then release the DB session.
+
+    Returns plain data only — no ORM instances — so the caller can run the slow
+    audio/model phase with no session (and therefore no transaction) open.
+    Returns None when the media file does not exist.
+    """
     from app.models.media import Speaker
     from app.models.media import TranscriptSegment
-    from app.services.minio_service import minio_client
-    from app.services.speaker_attribute_service import get_cached_attribute_service
     from app.utils.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:
-        try:
-            if not _is_speaker_attribute_detection_enabled(user_id):
-                logger.info("Speaker attribute detection disabled, skipping")
-                _dispatch_llm_speaker_identification(file_uuid)
-                return {"status": "skipped", "reason": "disabled"}
+        media_file = get_file_by_uuid(db, file_uuid)
+        if not media_file:
+            return None
 
-            media_file = get_file_by_uuid(db, file_uuid)
-            if not media_file:
-                logger.error(f"Media file {file_uuid} not found for attribute detection")
-                return {"status": "error", "reason": "file_not_found"}
+        file_id = int(media_file.id)
+        storage_path = str(media_file.storage_path)
 
-            file_id = int(media_file.id)
-            storage_path = str(media_file.storage_path)
+        speaker_ids = [
+            int(row[0])
+            for row in db.query(Speaker.id).filter(Speaker.media_file_id == file_id).all()
+        ]
+        segment_rows = (
+            db.query(
+                TranscriptSegment.speaker_id,
+                TranscriptSegment.start_time,
+                TranscriptSegment.end_time,
+            )
+            .filter(TranscriptSegment.media_file_id == file_id)
+            .order_by(
+                TranscriptSegment.start_time,
+                TranscriptSegment.end_time,
+                TranscriptSegment.id,
+            )
+            .all()
+        )
 
+    # Grouping is pure CPU over values already fetched — deliberately outside
+    # the session above.
+    speaker_segments: dict[int, list[dict]] = {}
+    for speaker_id, start_time, end_time in segment_rows:
+        if not speaker_id:
+            continue
+        speaker_segments.setdefault(int(speaker_id), []).append(
+            {"start": float(start_time), "end": float(end_time)}
+        )
+
+    return {
+        "file_id": file_id,
+        "storage_path": storage_path,
+        "speaker_ids": speaker_ids,
+        "speaker_segments": speaker_segments,
+        "segment_count": len(segment_rows),
+    }
+
+
+def _detect_speaker_attributes(file_uuid: str, user_id: int):
+    """Inner implementation of detect_speaker_attributes_task.
+
+    Runs in three phases, and the split is load-bearing: the DB session is open
+    only for the two short DB-only phases (read the work list, write the
+    results) and is **closed** across the slow middle phase — model load, ffmpeg
+    segment fetches over a presigned URL, and wav2vec2 inference. That middle
+    phase is minutes on a long file and unbounded if a fetch stalls.
+
+    Wrapping all of it in one ``session_scope`` left a Postgres backend "idle in
+    transaction" for the whole run (observed: a task that hung for 3 h until
+    Celery's hard time limit, holding a transaction whose last statement was the
+    ``transcript_segment`` SELECT below). Such a transaction keeps ACCESS SHARE
+    on ``transcript_segment``, so any ALTER TABLE — i.e. an Alembic upgrade —
+    queues behind it, it pins the vacuum horizon on the largest table in the
+    product, and it consumes a pool connection for as long as it lives.
+    """
+    from app.models.media import Speaker
+    from app.services.minio_service import minio_client
+    from app.services.speaker_attribute_service import get_cached_attribute_service
+
+    try:
+        if not _is_speaker_attribute_detection_enabled(user_id):
+            logger.info("Speaker attribute detection disabled, skipping")
+            _dispatch_llm_speaker_identification(file_uuid)
+            return {"status": "skipped", "reason": "disabled"}
+
+        # Phase 1 — read (DB session open, Postgres only).
+        inputs = _load_detection_inputs(file_uuid)
+        if inputs is None:
+            logger.error(f"Media file {file_uuid} not found for attribute detection")
+            return {"status": "error", "reason": "file_not_found"}
+
+        file_id = inputs["file_id"]
+        if not inputs["speaker_ids"]:
+            logger.info(f"No speakers found for file {file_id}, skipping")
+            _dispatch_llm_speaker_identification(file_uuid)
+            return {"status": "skipped", "reason": "no_speakers"}
+
+        if not inputs["segment_count"]:
+            _dispatch_llm_speaker_identification(file_uuid)
+            return {"status": "skipped", "reason": "no_segments"}
+
+        # Phase 2 — audio + inference. NO DB session is held here.
+        audio_source = minio_client.presigned_get_object(
+            bucket_name=settings.MEDIA_BUCKET_NAME,
+            object_name=inputs["storage_path"],
+            expires=datetime.timedelta(hours=1),
+        )
+
+        work_items = []
+        for speaker_id in inputs["speaker_ids"]:
+            segs = inputs["speaker_segments"].get(speaker_id, [])
+            if not segs:
+                continue
+            merged = merge_adjacent_segments(segs)
+            selected = select_top_segments(
+                merged, min_duration=SPEAKER_SHORT_SEGMENT_MIN_DURATION, max_segments=5
+            )
+            for seg in selected:
+                work_items.append((speaker_id, seg))
+
+        service = get_cached_attribute_service()
+        service.load_models()
+
+        speaker_probs, speaker_clip_counts = _run_gender_inference_parallel(
+            audio_source,
+            work_items,
+            service,
+        )
+
+        # Phase 3 — write (DB session reopened, Postgres only). Speakers are
+        # re-read here because the objects from phase 1 belong to a session that
+        # is already closed.
+        with session_scope() as db:
             speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
-            if not speakers:
-                logger.info(f"No speakers found for file {file_id}, skipping")
-                _dispatch_llm_speaker_identification(file_uuid)
-                return {"status": "skipped", "reason": "no_speakers"}
-
-            segments = (
-                db.query(TranscriptSegment)
-                .filter(TranscriptSegment.media_file_id == file_id)
-                .order_by(TranscriptSegment.start_time)
-                .all()
-            )
-
-            if not segments:
-                _dispatch_llm_speaker_identification(file_uuid)
-                return {"status": "skipped", "reason": "no_segments"}
-
-            # Group, merge, and select top segments per speaker
-            speaker_segments: dict[int, list[dict]] = {}
-            for seg in segments:
-                if not seg.speaker_id:
-                    continue
-                sid = int(seg.speaker_id)
-                if sid not in speaker_segments:
-                    speaker_segments[sid] = []
-                speaker_segments[sid].append(
-                    {
-                        "start": float(seg.start_time),
-                        "end": float(seg.end_time),
-                    }
-                )
-
-            audio_source = minio_client.presigned_get_object(
-                bucket_name=settings.MEDIA_BUCKET_NAME,
-                object_name=storage_path,
-                expires=datetime.timedelta(hours=1),
-            )
-
-            work_items = []
-            for speaker in speakers:
-                segs = speaker_segments.get(int(speaker.id), [])
-                if not segs:
-                    continue
-                merged = merge_adjacent_segments(segs)
-                selected = select_top_segments(
-                    merged, min_duration=SPEAKER_SHORT_SEGMENT_MIN_DURATION, max_segments=5
-                )
-                for seg in selected:
-                    work_items.append((int(speaker.id), seg))
-
-            service = get_cached_attribute_service()
-            service.load_models()
-
-            speaker_probs, speaker_clip_counts = _run_gender_inference_parallel(
-                audio_source,
-                work_items,
-                service,
-            )
-
             updated_count = _store_gender_results(speakers, speaker_probs, speaker_clip_counts)
-            db.commit()
+            total_speakers = len(speakers)
 
-            logger.info(
-                f"Speaker attribute detection complete for file {file_uuid}: "
-                f"{updated_count}/{len(speakers)} speakers updated"
-            )
+        logger.info(
+            f"Speaker attribute detection complete for file {file_uuid}: "
+            f"{updated_count}/{total_speakers} speakers updated"
+        )
 
-            if updated_count > 0:
-                send_ws_event(
-                    user_id,
-                    "speaker_updated",
-                    {
-                        "file_id": file_uuid,
-                        "reason": "speaker_attributes_detected",
-                        "speakers_updated": updated_count,
-                    },
-                )
-
-            # Notify enrichment tracker that speaker attributes are done
+        if updated_count > 0:
             send_ws_event(
                 user_id,
-                "enrichment_task_complete",
-                {"file_id": file_uuid, "task": "speaker_attributes"},
+                "speaker_updated",
+                {
+                    "file_id": file_uuid,
+                    "reason": "speaker_attributes_detected",
+                    "speakers_updated": updated_count,
+                },
             )
 
-            _dispatch_llm_speaker_identification(file_uuid)
+        # Notify enrichment tracker that speaker attributes are done
+        send_ws_event(
+            user_id,
+            "enrichment_task_complete",
+            {"file_id": file_uuid, "task": "speaker_attributes"},
+        )
 
-            return {
-                "status": "success",
-                "file_uuid": file_uuid,
-                "speakers_updated": updated_count,
-                "total_speakers": len(speakers),
-            }
+        _dispatch_llm_speaker_identification(file_uuid)
 
-        except Exception as e:
-            logger.error(f"Speaker attribute detection failed for {file_uuid}: {e}")
-            logger.error("Full traceback:", exc_info=True)
-            _dispatch_llm_speaker_identification(file_uuid)
-            return {"status": "error", "message": str(e)}
+        return {
+            "status": "success",
+            "file_uuid": file_uuid,
+            "speakers_updated": updated_count,
+            "total_speakers": total_speakers,
+        }
+
+    except Exception as e:
+        logger.error(f"Speaker attribute detection failed for {file_uuid}: {e}")
+        logger.error("Full traceback:", exc_info=True)
+        _dispatch_llm_speaker_identification(file_uuid)
+        return {"status": "error", "message": str(e)}

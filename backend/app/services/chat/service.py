@@ -43,6 +43,10 @@ from app.services.chat import citations as citations_mod
 from app.services.chat import limits
 from app.services.chat.hooks import ChatCompletionContext
 from app.services.chat.hooks import fire_message_complete
+from app.services.chat.language import METADATA_KEY as LANGUAGE_METADATA_KEY
+from app.services.chat.language import WARNING_CODE as LANGUAGE_WARNING_CODE
+from app.services.chat.language import describe_context_languages
+from app.services.chat.language import warning_payload as language_warning_payload
 from app.services.chat.prompting import build_messages
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.redactor import mask_chunks
@@ -201,6 +205,18 @@ def _prepare_context(
 
     masked = mask_chunks(db, result.chunks, user_id)
     masked = [chunk for chunk in masked if chunk.content.strip()]
+
+    # RAG is English-only (see services/chat/language.py). Recording what the turn
+    # could draw on is what makes that limit visible instead of silent.
+    languages = describe_context_languages(
+        db,
+        scope_file_uuids=file_uuids,
+        grounded_file_uuids=[chunk.source.file_uuid for chunk in masked],
+    )
+    if languages.total_files:
+        meta[LANGUAGE_METADATA_KEY] = languages.as_metadata()
+    if languages.has_unsupported:
+        meta[LANGUAGE_WARNING_CODE] = True
 
     meta["retrieved"] = result.retrieved
     meta["reranked"] = result.reranked
@@ -483,6 +499,22 @@ class ChatService:
                         "warning",
                         {"code": "context_dropped", "retrieved": len(masked)},
                     )
+
+                # Answering anyway is deliberate: a library is usually mixed, and
+                # refusing every question because one recording is Spanish would
+                # be worse than useless. The turn says what it could not serve
+                # well and answers from the rest.
+                language_warning = language_warning_payload(turn.metadata)
+                if language_warning is not None:
+                    logger.info(
+                        "Chat turn %s spans unsupported RAG languages %s "
+                        "(%d files, %d of unknown language)",
+                        assistant_message_uuid,
+                        language_warning["languages"],
+                        language_warning["files"],
+                        language_warning["unknown_files"],
+                    )
+                    yield sse("warning", language_warning)
 
             yield sse("status", {"stage": "generating"})
 

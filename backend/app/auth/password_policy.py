@@ -6,6 +6,7 @@ Implements NIST SP 800-63B password requirements:
 - Character complexity requirements (uppercase, lowercase, digits, special)
 - Password history tracking (prevent reuse of last N passwords)
 - Password expiration (max age before forced reset)
+- Minimum password age (how soon a password may be changed *again*)
 
 Every setting is admin-editable at runtime (Settings -> Authentication ->
 Password Policy) and resolves DB ``auth_config`` > ``.env`` > coded default, the
@@ -30,6 +31,17 @@ logger = logging.getLogger(__name__)
 # Special characters allowed in passwords (OWASP recommended set)
 SPECIAL_CHARACTERS = r"""!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~"""
 SPECIAL_CHARS_DISPLAY = "!@#$%^&*()_+-=[]{}|;':\",./<>?`~"
+
+#: Coded default for ``password_min_age_hours`` — FedRAMP IA-5(1)(d)'s "minimum
+#: lifetime restriction", whose baseline value is one day.
+#:
+#: Nonzero by default on purpose. With no minimum age, the bounded history is
+#: self-defeating: ``_cleanup_old_history`` keeps only the newest
+#: ``password_history_count`` rows, so any user can issue that many back-to-back
+#: changes with throwaway passwords, flush the row holding their original, and set
+#: the original again. At 24 h that attack costs ``password_history_count`` days
+#: (24 by default) instead of one uninterrupted minute.
+DEFAULT_PASSWORD_MIN_AGE_HOURS = 24
 
 
 @dataclass
@@ -79,7 +91,14 @@ class PasswordPolicy:
     Configuration keys (category ``password_policy``):
         password_policy_enabled, password_min_length, password_require_uppercase,
         password_require_lowercase, password_require_digit,
-        password_require_special, password_history_count, password_max_age_days.
+        password_require_special, password_history_count, password_max_age_days,
+        password_min_age_hours.
+
+    ``password_min_age_hours`` resolves through the same layered accessor but is
+    **not yet registered** in ``AuthConfigService.CONFIG_TYPES`` / the
+    ``PasswordPolicyConfig`` schema / the admin panel, so today it is settable only
+    by writing the ``auth_config`` row directly. Registering it there is the
+    remaining wiring, not a second implementation.
     """
 
     # Common password patterns to avoid (compiled for performance)
@@ -131,6 +150,19 @@ class PasswordPolicy:
     def max_age_days(self) -> int:
         """Days before a password expires. 0 disables expiry."""
         return get_process_auth_settings().password_max_age_days
+
+    @property
+    def min_age_hours(self) -> int:
+        """Hours a password must be kept before it may be changed again. 0 disables.
+
+        The other bookend of :attr:`max_age_days`. Read through the same layered
+        accessor, but with its coded default here rather than as a
+        ``DynamicAuthSettings`` property, because ``get_int`` resolves an unknown
+        key the same way — DB ``auth_config`` > ``.env`` > this default.
+        """
+        return get_process_auth_settings().get_int(
+            "password_min_age_hours", DEFAULT_PASSWORD_MIN_AGE_HOURS
+        )
 
     def _check_character_requirements(self, password: str) -> list[str]:
         """
@@ -292,6 +324,10 @@ class PasswordPolicy:
         """
         Check if a password has been used recently.
 
+        **Fails OPEN on an entry the verifier cannot read**, and that is deliberate —
+        see the comment on the ``unverifiable`` branch below. Do not "fix" it into a
+        refusal without reading it.
+
         Args:
             new_password_hash: The hash of the new password (unused, kept for API compatibility)
             password_history: List of previous password hashes (most recent first)
@@ -331,13 +367,30 @@ class PasswordPolicy:
             # Deliberately NOT fail-closed. Rejecting the new password would leave
             # the user on their CURRENT password — a guaranteed reuse — which is
             # worse than possibly permitting an old one. So allow the change and
-            # make the degradation alertable instead.
+            # make the degradation alertable instead. `password_history.py` narrows
+            # the blast radius by refusing the CURRENT password from the live
+            # `hashed_password` column separately, which does not depend on any
+            # history row being readable.
+            #
+            # The cause is NOT FIPS_MODE, whatever this message used to say, and a
+            # runbook that starts by checking FIPS_MODE will find nothing wrong.
+            # `core/security._create_password_context` registers pbkdf2_sha256,
+            # bcrypt_sha256 AND bcrypt in *both* branches — only the default for
+            # NEW hashes differs — so flipping FIPS_MODE leaves every existing hash
+            # verifiable. What actually reaches this branch is a stored value that
+            # is not a readable passlib hash: the `EXTERNAL_AUTH_NO_PASSWORD`
+            # sentinel, a truncated or otherwise corrupted row, a hash written by
+            # some other application against a shared database, or a scheme whose
+            # passlib backend is missing at runtime (e.g. an incompatible `bcrypt`
+            # wheel), which raises rather than returning False.
             level = logger.critical if checked == 0 else logger.error
             level(
                 "Password-history check was %s: %d of %d entries could not be "
-                "verified. The reuse control is %s. This usually means the stored "
-                "hashes were written under a different scheme (see FIPS_MODE / "
-                "FIPS_VERSION) and can no longer be verified.",
+                "verified. The reuse control is %s. Inspect those password_history "
+                "rows: something is stored there that this build's password context "
+                "cannot parse (corrupt/truncated row, a non-passlib sentinel, or a "
+                "hashing backend that failed to load). Changing FIPS_MODE is NOT a "
+                "cause — every scheme is registered for verification in both modes.",
                 "completely blind" if checked == 0 else "degraded",
                 unverifiable,
                 unverifiable + checked,
@@ -345,6 +398,51 @@ class PasswordPolicy:
             )
 
         return True
+
+    def min_age_remaining(
+        self,
+        password_changed_at: datetime | None,
+        current_time: datetime | None = None,
+    ) -> timedelta | None:
+        """How long until this password may be changed again (FedRAMP IA-5(1)(d)).
+
+        Returns ``None`` when the change is permitted — which is the answer for a
+        disabled policy, ``min_age_hours <= 0``, a password whose age is unknown,
+        and one already old enough. A caller therefore refuses on
+        ``if remaining is not None``, never on a truthiness test: the last second
+        of the window is a truthy timedelta but the *zero* case means "allowed".
+
+        ``password_changed_at is None`` deliberately permits the change rather
+        than refusing it. NULL is "no recorded change" (external identities, rows
+        seeded before the column was maintained), and reading absent data as a
+        fresh password would lock those accounts out of the one operation that
+        would populate it.
+
+        This control is about *voluntary* changes only. Callers must exempt an
+        administrator-initiated reset and a ``must_change_password`` hold — a user
+        held for a forced change whose password was set moments ago by the admin
+        doing the holding would otherwise be refused at both ends: unable to use
+        the app, and unable to change the password that is the reason.
+
+        Args:
+            password_changed_at: When the password was last changed (UTC).
+            current_time: Current time for comparison (default: now UTC).
+
+        Returns:
+            The remaining wait, or None when the change is permitted now.
+        """
+        if not self.enabled or self.min_age_hours <= 0 or password_changed_at is None:
+            return None
+
+        if current_time is None:
+            current_time = datetime.now(UTC)
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=UTC)
+        if password_changed_at.tzinfo is None:
+            password_changed_at = password_changed_at.replace(tzinfo=UTC)
+
+        remaining = (password_changed_at + timedelta(hours=self.min_age_hours)) - current_time
+        return remaining if remaining > timedelta(0) else None
 
     def expiry_cutoff(self, current_time: datetime | None = None) -> datetime | None:
         """
@@ -452,6 +550,7 @@ class PasswordPolicy:
             "special_characters": SPECIAL_CHARS_DISPLAY,
             "history_count": self.history_count,
             "max_age_days": self.max_age_days,
+            "min_age_hours": self.min_age_hours,
         }
 
 
@@ -544,6 +643,26 @@ def get_days_until_expiration(
         Days until expiration (negative if expired), None if policy disabled
     """
     return password_policy.get_days_until_expiration(password_changed_at, current_time)
+
+
+def password_min_age_remaining(
+    password_changed_at: datetime | None,
+    current_time: datetime | None = None,
+) -> timedelta | None:
+    """How long until a password may be changed again (FedRAMP IA-5(1)(d)).
+
+    Convenience function that uses the global password policy instance. ``None``
+    means the change is permitted now — see
+    :meth:`PasswordPolicy.min_age_remaining` for why ``None`` and not ``0``.
+
+    Args:
+        password_changed_at: When the password was last changed (UTC)
+        current_time: Current time for comparison (default: now UTC)
+
+    Returns:
+        The remaining wait, or None when the change is permitted now.
+    """
+    return password_policy.min_age_remaining(password_changed_at, current_time)
 
 
 def password_expiry_cutoff(current_time: datetime | None = None) -> datetime | None:

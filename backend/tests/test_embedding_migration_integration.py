@@ -319,6 +319,22 @@ class TestThroughputBenchmark:
         print(f"\n  Model load (one-time): {model_time:.1f}s")
         print(f"{'=' * 70}")
 
+        # This printed a report and asserted nothing, so it could only fail by raising — a
+        # benchmark wearing a test's clothes (issue #431). A throughput floor would be
+        # machine-dependent and flaky, but these are not: the pipeline must actually have
+        # processed the sample it was given, and must not have failed every file. That makes
+        # it a genuine end-to-end smoke test of the v3->v4 migration on real data, while the
+        # timings above stay purely informational.
+        assert processed > 0, "the benchmark prepared no files, so it measured nothing"
+        assert success_count + fail_count == processed, (
+            f"pipeline accounting is inconsistent: {success_count} + {fail_count} != {processed}"
+        )
+        assert success_count > 0, (
+            f"every file failed the migration pipeline ({fail_count} failures) — the numbers "
+            "above describe a broken run, not a slow one"
+        )
+        assert avg_speakers > 0, "no speakers were extracted from any sampled file"
+
 
 def _fmt_duration(seconds: float) -> str:
     """Format duration in human-readable form."""

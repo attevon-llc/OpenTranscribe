@@ -152,7 +152,13 @@ services:
       - "127.0.0.1:${OPENSEARCH_PORT:-5180}:9200"
       - "127.0.0.1:${OPENSEARCH_ADMIN_PORT:-5181}:9600"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sS http://localhost:9200 || exit 1"]
+      # `-f` is required, not cosmetic: without it curl exits 0 on ANY HTTP
+      # response, so this reported healthy for an OpenSearch that was up and
+      # erroring. Measured on the live container: a request returning HTTP 400
+      # exits 0 without `-f` and 22 with it. It matters most in production,
+      # where OPENSEARCH_SECURITY_ENABLED makes `/` return 401 to an
+      # unauthenticated probe — which the old form would have called healthy.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200 || exit 1"]
       interval: 5s
       timeout: 10s
       retries: 20
@@ -347,6 +353,12 @@ services:
     # transcription tasks cannot head-of-line-block postprocess.
     command: celery -A app.core.celery worker --loglevel=info -Q cpu,utility,cpu-transcribe --concurrency=${CPU_WORKER_CONCURRENCY:-8} --max-tasks-per-child=20 --hostname cpu-processor@%h -E
     volumes:
+      # Sentence tokenizer corpora. THIS WORKER CHUNKS TRANSCRIPTS (issue #436) —
+      # without the mount, punkt is absent and every chunk it writes is cut by the
+      # regex fallback, which splits on abbreviations punkt keeps intact. The two
+      # splitters disagree, so a missing mount here silently produces different
+      # boundaries from any worker that has it.
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       # Shared scratch — writes the preprocessed WAV for GPU/embedding workers
       - pipeline_scratch:/scratch/opentranscribe
       - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
@@ -548,6 +560,12 @@ services:
     command: celery -A app.core.celery worker --loglevel=info -Q embedding --concurrency=1 --max-tasks-per-child=500 --hostname search-indexer@%h -E
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      # Sentence tokenizer corpora. THIS WORKER CHUNKS TRANSCRIPTS (issue #436) —
+      # without the mount, punkt is absent and every chunk it writes is cut by the
+      # regex fallback, which splits on abbreviations punkt keeps intact. The two
+      # splitters disagree, so a missing mount here silently produces different
+      # boundaries from any worker that has it.
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       # Shared scratch — so embedding worker can use the temp WAV if needed
       - pipeline_scratch:/scratch/opentranscribe
     environment:
@@ -607,7 +625,22 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "python3 -c 'import os,time; exit(0 if os.path.exists(\"/app/celerybeat-schedule\") and time.time()-os.path.getmtime(\"/app/celerybeat-schedule\")<300 else 1)'"]
+      # Liveness = "the schedule store was written recently". Take the NEWEST
+      # mtime across celerybeat-schedule*, not the base file alone.
+      #
+      # Beat's PersistentScheduler uses `shelve`, whose default backend became
+      # `dbm.sqlite3` in Python 3.13 (this image runs 3.13). SQLite runs in WAL
+      # mode, so writes land in `-wal` and the base file's mtime only moves on
+      # checkpoint. Probing the base file alone therefore reported UNHEALTHY on a
+      # beat that was dispatching tasks every minute — observed FailingStreak=627
+      # with the base file 19,162 s stale and `-wal` 86 s old. A version bump
+      # silently turned a working check into one that can never pass.
+      #
+      # `not files` is load-bearing: max() over an empty glob would otherwise
+      # raise, and an earlier draft that defaulted it would have made the probe
+      # pass when the schedule store did not exist at all — the opposite defect,
+      # and the harder one to notice.
+      test: ["CMD-SHELL", "python3 -c 'import glob,os,time,sys; files=glob.glob(\"/app/celerybeat-schedule*\"); sys.exit(1 if not files else (0 if time.time()-max(os.path.getmtime(f) for f in files)<300 else 1))'"]
       interval: 30s
       timeout: 10s
       retries: 3

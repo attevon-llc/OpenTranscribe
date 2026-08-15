@@ -964,6 +964,11 @@ That is the discipline every Stage 3 and Stage 4 table already used ("it rose in
 it is what D5's *"a win in one tier and a loss in the other is not a win"* was enforcing in
 practice, and — as [the weighted arms below](#the-two-corpora-want-opposite-leg-weights) show —
 it is not a formality: two arms won on one corpus and lost heavily on the other.
+
+That rule has since been **measured rather than asserted**: over these 24 arms the two corpora
+rank changes at Kendall tau-b **+0.301** overall and **−0.005 on the lookup class**, and on the
+fusion arms that are genuine candidates they are significantly **anti**-correlated. See [Do the
+two corpora agree?](#corpus-agreement) — the analysis tightens this gate rather than relaxing it.
 :::
 
 ### Method — how to re-run this, or add an eleventh arm
@@ -1501,6 +1506,263 @@ So the honest status is: **unmeasured, with a named blocker**, not "tried and re
 prerequisite is a domain vocabulary to put in the filter, and this corpus does not have one —
 QMSum is a remote-control design scenario and the synthetic tier's jargon is generated. Testing
 synonym expansion against a corpus with no real domain vocabulary would measure the generator.
+
+## Do the two corpora agree? {#corpus-agreement}
+
+Every run on this page scores QMSum and the synthetic tier in the same pass, so both numbers
+have always been present. What was never produced is the **statement about whether they
+agree** — and the whole both-corpora gate rests on the answer. If the two corpora rank changes
+the same way, the gate is a redundancy check and a single-corpus result is nearly as good. If
+they do not, then **a tuning decision taken on one corpus is not evidence**, and several
+decisions on this page would rest on nothing.
+
+They do not agree. On the class the gate protects, they agree **less than a coin flip would**.
+
+### The two rules that make the comparison legitimate
+
+**Absolute nDCG is never compared.** QMSum's control is 0.0983 and the synthetic tier's is
+0.2952. That 3× gap is a property of the corpora — 17-word QMSum speaker turns against
+generated meetings carrying a title-and-roster header in the embedded text — and it says
+nothing about any arm. Every arm is therefore reduced to a **delta against its own family's
+control**, and only that delta's **sign** and **rank** are used.
+
+**An arm is only compared to arms sharing its control, stage and query set.** The fusion arms
+are `--stage retrieve` over 1,651 queries; the budget arms are `--stage rerank` over the
+475-query subset; the pool arms are `--stage rerank` over the full set. Per-family coefficients
+are the result; the pooled one is a summary and is reported with that caveat rather than
+instead of them.
+
+### Method — how to reproduce it, or redo it with a 25th arm
+
+```bash
+# the 24 arms already measured, no re-run — reads /tmp/sweep403/*/metrics.json
+scripts/rag_corpus_agreement.py
+scripts/rag_corpus_agreement.py --class lookup              # the class D5 protects
+scripts/rag_corpus_agreement.py --drop norm-minmax-geom --drop norm-minmax-harm
+scripts/rag_corpus_agreement.py --exclude-inert             # tie-artefact sensitivity
+scripts/rag_corpus_agreement.py --json                      # machine-readable
+```
+
+**No benchmark was re-run for this analysis and no index was touched.** It reads the
+`metrics.json` files the Stage 5 sweep already wrote; `indexing.total` was **825,795** before
+and after, `docs.count` 210,908, `docs.deleted` 0, `_meta.version` 6 — the same numbers the
+sweep reports, because reading a results file cannot move them.
+
+Adding a 25th arm needs **no code edit**: `--emit-manifest` prints the built-in arm table as
+JSON, add the new arm's `{name, run, axis}` under the family whose control it was measured
+against, and pass it back with `--manifest`. The only requirement on the new run is the one
+`benchmark_rag.py` already meets — a `metrics.json` with `rows[].corpus` /
+`rows[].query_class` / `rows[].metrics`.
+
+**Kendall's tau-b is the headline coefficient**, and the choice is forced rather than
+stylistic:
+
+- The arm set contains **exact ties**. Four budget arms move nothing on either corpus, because
+  `diversity_sample` is prefix-invariant in `cap`. tau-b has a defined tie correction; Spearman's
+  midrank merely does not crash. Spearman is printed beside it and agrees throughout.
+- **Pearson is printed to be distrusted, not used.** Pooled it reads **+0.697 (p = 0.0004)**,
+  which looks like strong agreement. Drop the two arms that collapse for a structural reason
+  (`geometric_mean` / `harmonic_mean` annihilate single-leg hits) and it falls to **+0.115
+  (p = 0.64)**, while tau-b moves from +0.301 to +0.131. A correlation carried by two outliers
+  is not a finding about the other nineteen arms.
+- Rank measures are invariant to any monotone per-corpus transform, so Δ and Δ% give identical
+  coefficients. That is asserted in `backend/tests/eval/test_corpus_agreement.py`, not assumed.
+
+Arithmetic and edge cases are pinned by that test module (20 tests; tau-b reads ±1 on the
+extremes, a constant corpus returns *undefined* rather than 0.0, inert arms are counted
+separately from agreement). `scipy` — **BSD-3-Clause**, verified from the installed
+distribution's own metadata — is the only dependency, and it is not a new one: it is a hard
+requirement of `sentence-transformers`, so it is already present in `requirements.txt`,
+`requirements-ci.txt` and the eval venv. It is **not** the licence-restricted case
+`requirements-eval.txt` documents for `pytrec_eval_terrier`.
+
+### The per-arm result — 21 arms, `all` class, nDCG@10
+
+Δ is against each arm's own family control. `inert` means the arm moved **nothing** on either
+corpus and is counted separately: two zeros are a metric that cannot see the knob, not two
+corpora concurring.
+
+| family | arm | axis | Δ qmsum | Δ synthetic | |
+|---|---|---|---|---|---|
+| fusion | `rrf-30-explicit` | flag-inertness control | +0.0000 | +0.0000 | inert |
+| fusion | `rrf-60` | rank_constant | −0.0003 | +0.0063 | **disagree** |
+| fusion | `norm-minmax-arith` | normalization | +0.0008 | −0.0555 | **disagree** |
+| fusion | `norm-l2-arith` | normalization | +0.0010 | −0.0633 | **disagree** |
+| fusion | `norm-zscore-arith` | normalization | +0.0015 | −0.0687 | **disagree** |
+| fusion | `norm-minmax-geom` | combination | −0.0152 | −0.1984 | agree |
+| fusion | `norm-minmax-harm` | combination | −0.0161 | −0.2059 | agree |
+| fusion | `norm-minmax-arith-w70-30` | weighting | +0.0014 | −0.1450 | **disagree** |
+| fusion | `norm-minmax-arith-w30-70` | weighting | −0.0093 | −0.0082 | agree |
+| budget | `budget-48-12-4-repeat` | repeatability control | +0.0000 | +0.0000 | inert |
+| budget | `budget-48-20-4` | final_chunks | +0.0000 | +0.0000 | inert |
+| budget | `budget-48-08-4` | final_chunks | −0.0013 | −0.0028 | agree |
+| budget | `budget-48-12-2` | max_chunks_per_file | +0.0000 | +0.0000 | inert |
+| budget | `budget-48-12-8` | max_chunks_per_file | +0.0000 | +0.0000 | inert |
+| budget | `budget-24-12-4` | candidate_pool | +0.0009 | +0.0095 | agree |
+| budget | `budget-96-12-4` | candidate_pool | +0.0004 | +0.0091 | agree |
+| budget | `budget-96-12-4-pairs96` | rerank_max_pairs | +0.0007 | +0.0057 | agree |
+| pool | `pool-12` | candidate_pool | +0.0128 | +0.0342 | agree |
+| pool | `pool-24` | candidate_pool | +0.0036 | +0.0095 | agree |
+| pool | `pool-32` | candidate_pool | +0.0013 | +0.0170 | agree |
+| pool | `pool-96` | candidate_pool | −0.0009 | +0.0091 | **disagree** |
+
+(21 rows, not 24: the three family controls are Δ = 0 against themselves by construction.)
+
+**Sign agreement, `all` class: 10 agree, 6 disagree, 5 inert — 10 of the 16 arms that moved
+on both corpora, 62.5%.** A fair coin gives 50%.
+
+**Sign agreement, `lookup` class: 6 agree, 9 disagree, 5 inert, 1 one-sided — 6 of 15, 40.0%.**
+On the class D5 says must never regress, the corpora are **more often opposed than aligned**.
+
+### The coefficients
+
+`all` class, nDCG@10, Δ vs family control:
+
+| set | n | Kendall tau-b | p | Spearman rho | p |
+|---|---|---|---|---|---|
+| fusion | 9 | **+0.000** | 1.000 | +0.133 | 0.732 |
+| budget | 8 | +0.909 | 0.004 | +0.973 | 0.00005 |
+| pool | 4 | +0.667 | 0.333 | +0.800 | 0.200 |
+| **pooled** | **21** | **+0.301** | **0.066** | +0.378 | 0.091 |
+
+`lookup` class — the same arms, the class the gate protects:
+
+| set | n | Kendall tau-b | p | Spearman rho | p |
+|---|---|---|---|---|---|
+| fusion | 9 | −0.111 | 0.761 | +0.083 | 0.831 |
+| budget | 8 | +0.201 | 0.540 | +0.116 | 0.784 |
+| pool | 4 | +0.000 | 1.000 | +0.200 | 0.800 |
+| **pooled** | **21** | **−0.005** | **0.975** | +0.056 | 0.809 |
+
+**tau-b = −0.005 on `lookup` is not weak agreement; it is the absence of any relationship.**
+Knowing what an arm did to QMSum lookup tells you nothing whatever about what it did to
+synthetic lookup.
+
+Two artefacts have to be read off before either table is quoted:
+
+- **The budget family's +0.909 is substantially a tie artefact.** Half its arms are exact zeros
+  on both corpora, and a zero pairs concordantly with almost everything. `--exclude-inert`
+  drops it to **+0.667 at p = 0.333** (n = 4) — the difference between "significant agreement"
+  and "four arms and no evidence". On `lookup`, excluding inert arms takes *every* family to
+  tau-b = 0.000.
+- **Excluding `geometric_mean` / `harmonic_mean` flips the fusion result from null to
+  significantly negative** (next section). Those two are not a tuning choice that lost; they
+  collapse structurally, and both corpora notice, which is why they are the only reason the
+  fusion coefficient reaches zero rather than going negative.
+
+### Where they disagree: the fusion axis, and it is ANTI-correlated
+
+`geometric_mean` and `harmonic_mean` are zero if either leg is zero, so a single-leg hit is
+annihilated rather than ranked — a structural collapse both corpora agree about, and the only
+concordant pair in the family. Removing those two leaves the seven arms that are genuine
+tuning candidates:
+
+| set (fusion, geom/harm removed) | n | Kendall tau-b | p | Spearman rho | p |
+|---|---|---|---|---|---|
+| `all` class | 7 | **−0.714** | **0.030** | −0.857 | 0.014 |
+| `lookup` class | 7 | **−0.905** | **0.003** | −0.964 | 0.001 |
+
+**Among the fusion arms anyone would actually consider adopting, improving QMSum predicts
+harming the synthetic tier, almost monotonically, and the relationship is statistically
+significant at n = 7.** This is much stronger than "the corpora sometimes disagree": on this
+axis one corpus's ranking is close to the *reverse* of the other's.
+
+Per axis, `all` / `lookup`:
+
+| axis | arms | agree | disagree | reading |
+|---|---|---|---|---|
+| `normalization` (min_max / l2 / z_score) | 3 | 0 / 0 | **3 / 3** | **total disagreement, both classes.** Every normalization arm gains on QMSum and loses on synthetic |
+| `weighting` (BM25/vector split) | 2 | 1 / 0 | 1 / **2** | **the worst axis on `lookup`**: `w70_30` is QMSum lookup's best arm and synthetic lookup's second-worst; `w30_70` is the exact mirror |
+| `rank_constant` (RRF 30 vs 60) | 1 | 0 / 0 | 1 / 1 | the one arm disagrees on both classes |
+| `candidate_pool` | 6 | 5 / 3 | 1 / **3** | agrees on `all`, **splits evenly on `lookup`** |
+| `combination` (geom / harm) | 2 | 2 / 2 | 0 / 0 | agrees — and both arms are structural collapses, not tuning |
+| `final_chunks`, `max_chunks_per_file`, `rerank_max_pairs` | 5 | 2 / 1 | 0 / 0 | three of the five are inert; a ranking metric cannot see these knobs at all |
+
+The Stage 5 write-up already named the weighting axis as the worst offender. **Confirmed on
+`lookup`, and extended: `normalization` is just as bad and has three arms rather than two.**
+The `all` class understates weighting because `w30_70` loses on both corpora at corpus level
+while *winning* synthetic lookup.
+
+### Would the two corpora pick the same winner?
+
+| family | QMSum picks | synthetic picks | |
+|---|---|---|---|
+| fusion, `all` | `norm-zscore-arith` (+0.0015) | `rrf-60` (+0.0063) | **different** |
+| fusion, `lookup` | `norm-minmax-arith-w70-30` (+0.0013) | `norm-minmax-arith-w30-70` (+0.0146) | **different — and opposite** |
+| budget, `all` | `budget-24-12-4` (+0.0009) | `budget-24-12-4` (+0.0095) | same |
+| budget, `lookup` | `budget-24-12-4` (+0.0012) | `budget-96-12-4` (+0.0110) | **different** |
+| pool, `all` | `pool-12` (+0.0128) | `pool-12` (+0.0342) | same |
+| pool, `lookup` | `pool-12` (+0.0125) | `pool-12` (+0.0180) | same |
+
+**The fusion axis picks a different winner on both classes, and on `lookup` the two winners
+are the two halves of the same knob turned opposite ways.** The pool axis picks the same winner
+every time — which is the one place a single-corpus result would have been safe, and it is
+also the axis where Stage 5's strongest candidate (`candidate_pool` 12) sits.
+
+### One more asymmetry: QMSum barely moves on the fusion axis
+
+| family | QMSum Δ range | synthetic Δ range | synthetic / QMSum |
+|---|---|---|---|
+| fusion | 0.0176 | 0.2122 | **12.1×** |
+| budget | 0.0022 | 0.0123 | 5.6× |
+| pool | 0.0137 | 0.0251 | 1.8× |
+
+The entire QMSum fusion spread is 0.0176 nDCG@10, and the "wins" inside it are 0.0008–0.0015 —
+around 1% relative on a control of 0.0983. So the anti-correlation above is a near-reversal of
+a ranking whose QMSum side has almost **no dynamic range**. That cuts in an uncomfortable
+direction rather than a convenient one: it does not rescue the synthetic tier, it says the
+QMSum side of a fusion A/B is a weak signal being read as a strong one. Both readings end at
+the same rule.
+
+### The consequence: the both-corpora gate is TIGHTENED, not relaxed
+
+The Stage 5 gate — *a win must hold on **both corpora**, with the lookup class never regressing
+on either* — is now measured rather than asserted, and this analysis **supports and tightens
+it**:
+
+1. **A single-corpus tuning result is not evidence, and that is now a number.** Kendall tau-b
+   = +0.301 (p = 0.066, n = 21) pooled, and **−0.005 (p = 0.975) on the lookup class**. Where
+   the corpora were most likely to be used as a shortcut — the fusion axis — the coefficient is
+   **−0.714 / −0.905** among genuine candidates. "It won on QMSum" and "it won on synthetic" are
+   not weak evidence of each other; on that axis they are mild evidence *against* each other.
+2. **Report the lookup class separately, always.** Corpus-level agreement (62.5% signs, tau-b
+   +0.301) is meaningfully better than lookup-class agreement (40.0%, tau-b −0.005). Quoting
+   only the `all` row would overstate agreement on the exact class the gate protects.
+3. **Do not treat "both corpora agreed" as strong on its own when the arms are inert.** Four
+   budget arms agree at exactly zero. `--exclude-inert` before quoting a family coefficient.
+4. **Neither corpus is the arbiter.** Nothing here says synthetic is right and QMSum is wrong,
+   or the reverse. The likely mechanism is Stage 3's `embedding_text` result — synthetic queries
+   discriminate on the embedded title/roster header, so their answer lives in the vector leg,
+   while QMSum's conversational queries are literal-word matches BM25 finds. Both are real
+   retrieval regimes; a deployment has both kinds of user. **An arm that helps one and hurts the
+   other is a trade-off to be decided deliberately, not a win.**
+5. **A third corpus would be worth more than a 25th arm.** Two corpora that disagree can only
+   veto; they cannot adjudicate. This is the concrete argument for the additional Tier A
+   English meeting-retrieval judgements [this page lists as
+   missing](#what-we-cannot-currently-claim).
+
+### What this analysis cannot claim
+
+- **No per-query significance test, and it is blocked by an artifact, not by the maths.** These
+  are 21 paired *aggregate* deltas. `MetricResult.per_query` exists in the harness but
+  `report.py` writes per-query rows only for the answer measures, so `metrics.json` carries no
+  per-query nDCG and a paired bootstrap or t-test over queries cannot be computed from the
+  files on disk. **Dumping per-query retrieval measures is the single highest-value improvement
+  to this instrument** — it would turn every Δ on this page from a point estimate into an
+  interval, and it needs no re-run of anything already measured, only of the arms you want
+  intervals for.
+- **n is small and the p-values are fragile.** 21 arms pooled, 4–9 per family. The pooled
+  `all`-class coefficient (p = 0.066) is not significant at α = 0.05, and the pool family's
+  +0.667 at n = 4 is not evidence of anything on its own. Only the fusion anti-correlation
+  (p = 0.030 / 0.003) and the tie-inflated budget figure clear α = 0.05.
+- **The pooled coefficient mixes incomparable families.** Different stages, different query
+  sets, and `budget-24-12-4` / `budget-96-12-4` share their synthetic measurement with
+  `pool-24` / `pool-96` (all 75 synthetic queries are in both sets, so those two synthetic
+  deltas are literally the same number twice). Dropping the two duplicates moves pooled tau-b
+  from +0.301 to +0.242 — the caveat is real but it is not what produces the result.
+- **This is agreement about *retrieval ranking*, nothing else.** No LLM was involved (D6), so
+  it says nothing about whether the two corpora would agree about answer quality — the axis on
+  which the reranker and `final_chunks` decisions actually turn.
 
 ## What we cannot currently claim
 

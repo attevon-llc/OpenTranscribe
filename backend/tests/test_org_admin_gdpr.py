@@ -1214,6 +1214,15 @@ class TestPartialErasureIsReportedAsPartial:
                 "app.services.video_processing_service.VideoProcessingService.clear_derived_cache",
                 return_value=None,
             ),
+            # __init__ itself makes a real MinIO call (_ensure_cache_bucket_exists)
+            # before clear_derived_cache is ever reached — mocking the method alone
+            # still hit live MinIO at construction time (issue #460 CI failure; passed
+            # locally only because a dev-stack MinIO happened to be reachable).
+            patch(
+                "app.services.video_processing_service.VideoProcessingService."
+                "_ensure_cache_bucket_exists",
+                return_value=None,
+            ),
             fake_opensearch(),
             captured_audit() as fake_audit,
         ):
@@ -1239,6 +1248,15 @@ class TestPartialErasureIsReportedAsPartial:
             patch("app.services.minio_service.delete_file", lambda _object_name: None),
             patch(
                 "app.services.video_processing_service.VideoProcessingService.clear_derived_cache",
+                return_value=None,
+            ),
+            # __init__ itself makes a real MinIO call (_ensure_cache_bucket_exists)
+            # before clear_derived_cache is ever reached — mocking the method alone
+            # still hit live MinIO at construction time (issue #460 CI failure; passed
+            # locally only because a dev-stack MinIO happened to be reachable).
+            patch(
+                "app.services.video_processing_service.VideoProcessingService."
+                "_ensure_cache_bucket_exists",
                 return_value=None,
             ),
             fake_opensearch(),

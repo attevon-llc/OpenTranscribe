@@ -36,6 +36,23 @@ from app.services.search.chunking_service import _split_into_sentences
 from app.services.search.chunking_service import chunk_transcript_by_speaker_turns
 from app.services.search.chunking_service import count_words
 
+
+@pytest.fixture(autouse=True, scope="module")
+def _ensure_punkt():
+    """`_split_into_sentences` falls back to a regex silently when punkt is
+    missing (chunking_service.py's own documented, deliberate degradation for
+    a worker that hasn't downloaded it yet) — and the regex disagrees with
+    punkt on abbreviations by design (`test_english_boundaries_are_unchanged`
+    exists to pin that difference). A clean CI checkout has no cached
+    nltk_data, so without this the "Dr. Chen" case silently exercises the
+    fallback instead of the smart path this file is meant to regression-test.
+    Same download call already used elsewhere in this codebase
+    (`app/utils/text_preprocessing.py`, `app/utils/segment_dedup.py`)."""
+    import nltk
+
+    nltk.download("punkt_tab", quiet=True)
+
+
 #: Three sentences each, in the script's own terminators.
 THREE_SENTENCES: dict[str, str] = {
     "en": "The team shipped on Tuesday. Dana raised a concern. We agreed to revisit it.",

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.config import settings
 from app.services.llm_service import LLMConfig
 from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
@@ -28,6 +29,25 @@ CONTROL_TOKENS = ("<channel|>", "<|channel>", "<|think|>", "<turn|>", "<|turn>")
 REASONING_PHRASE = "Let me look at what was actually retrieved"
 
 QUESTION = "what did the team decide about the remote control buttons?"
+
+
+@pytest.fixture(autouse=True)
+def _allow_the_loopback_mock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let the SSRF guard reach the mock LLM, which is always on loopback.
+
+    ``LLM_ALLOW_PRIVATE_ENDPOINTS`` defaults to False and `llm_service` refuses a
+    private address, so without this every request here is blocked and the stream
+    comes back EMPTY — the assertions then fail as ``assert '<channel|>' in ''``,
+    which reads like a parser bug rather than a refused connection. That cost this
+    repo several rounds of "known pre-existing failure".
+
+    Set on the TEST, deliberately, not exported by ``run-backend-tests.sh``:
+    flipping it for the whole suite would weaken the guard's coverage for every
+    other test, and the file would still fail under bare ``pytest`` and in CI. A
+    test that needs a relaxed setting should declare it, the same way the
+    ``RUN_*`` suites carry their own module-level gates.
+    """
+    monkeypatch.setattr(settings, "LLM_ALLOW_PRIVATE_ENDPOINTS", True)
 
 
 def _stream(url: str, model: str, **kwargs) -> list[LLMStreamEvent]:

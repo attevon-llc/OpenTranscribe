@@ -24,6 +24,7 @@ whatever cluster is configured, including none.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -58,23 +59,52 @@ class _RecordingTask:
     the ``mock-only`` detector has nothing to flag.
     """
 
-    def __init__(self, task_id: str = "stand-in-reindex-id") -> None:
+    def __init__(
+        self, task_id: str = "stand-in-reindex-id", order: list[str] | None = None
+    ) -> None:
         self.task_id = task_id
         self.dispatches: list[dict] = []
+        #: Shared with ``_RecordingSetter`` when a test needs the ORDER of the two.
+        self.order = order if order is not None else []
 
     def delay(self, **kwargs) -> SimpleNamespace:
         self.dispatches.append(kwargs)
+        self.order.append("dispatch")
         return SimpleNamespace(id=self.task_id)
+
+
+class _UnreachableBrokerTask:
+    """A task whose ``.delay()`` fails the way a dead broker really fails.
+
+    Measured against a Celery app pointed at a closed port: ``.delay()`` raises a
+    plain ``builtins.RuntimeError`` — "Retry limit exceeded while trying to
+    reconnect to the Celery result store backend" — with an empty ``__cause__``
+    chain. Not ``kombu.exceptions.OperationalError``, not an ``OSError``. The
+    stand-in reproduces that type on purpose: a test that raised a bespoke
+    exception would pass against a handler narrowed to the wrong one.
+    """
+
+    def __init__(self) -> None:
+        self.attempts: list[dict] = []
+
+    def delay(self, **kwargs):
+        self.attempts.append(kwargs)
+        raise RuntimeError(
+            "Retry limit exceeded while trying to reconnect to the Celery result "
+            "store backend. The Celery application must be restarted."
+        )
 
 
 class _RecordingSetter:
     """Stand-in for ``save_search_embedding_model``: records, never persists."""
 
-    def __init__(self) -> None:
+    def __init__(self, order: list[str] | None = None) -> None:
         self.saved: list[tuple[str, int]] = []
+        self.order = order if order is not None else []
 
     def __call__(self, model_id: str, dimension: int) -> None:
         self.saved.append((model_id, dimension))
+        self.order.append("save_dimension")
 
 
 class _StandInRedis:
@@ -112,6 +142,108 @@ def reindex_task():
     recorder = _RecordingTask()
     with patch("app.tasks.reindex_task.reindex_transcripts_task", recorder):
         yield recorder
+
+
+class _StandInMLService:
+    """The four ``ml_model_service`` calls a model switch makes, recording each.
+
+    A real recorder rather than a ``Mock`` so the assertions read as "the pipeline
+    was pointed at this model", which is the behaviour #437 is about.
+    """
+
+    def __init__(self) -> None:
+        self.activated: list[str] = []
+
+    def find_model_by_name(self, model_name: str) -> str:
+        return f"ml-id-for-{model_name}"
+
+    def get_model_status(self, model_id: str) -> dict:
+        return {"model_id": model_id, "deployed": True}
+
+    def set_active_model_id(self, model_id: str) -> None:
+        self.activated.append(model_id)
+
+
+@pytest.fixture
+def deployed_model():
+    """Every model in the registry answers as registered and deployed.
+
+    Also records the two side effects a switch must have beyond the settings row:
+    which model the ingest pipeline was pointed at, and which dimension the index
+    was reconciled to. Both are stand-ins — the real calls talk to OpenSearch and
+    ``recreate_index_for_dimension`` **deletes the chunks index**.
+    """
+    service = _StandInMLService()
+    recorder = SimpleNamespace(
+        activated=service.activated,
+        pipelines=[],
+        dimensions=[],
+    )
+    with (
+        patch(
+            "app.services.search.ml_model_service.get_ml_model_service",
+            return_value=service,
+        ),
+        patch(
+            "app.services.search.indexing_service.ensure_neural_ingest_pipeline",
+            side_effect=lambda model_id: recorder.pipelines.append(model_id) or True,
+        ),
+        patch("app.services.search.indexing_service.reset_neural_pipeline_state"),
+        patch(
+            "app.services.search.indexing_service.recreate_index_for_dimension",
+            side_effect=lambda dim: recorder.dimensions.append(dim) or True,
+        ),
+        patch("app.services.search.hybrid_search_service.clear_search_cache"),
+        patch("app.services.search.hybrid_search_service.reset_neural_search_state"),
+    ):
+        yield recorder
+
+
+@pytest.fixture
+def other_users_files(db_session):
+    """A second account owning a COMPLETED file — the user a scoped reindex skips.
+
+    ``_dispatch_reindex_for_every_owner`` opens its **own** ``session_scope``,
+    which under the savepoint harness cannot see uncommitted fixture rows, so the
+    scope is pointed at ``db_session``. That is what makes the row observable at
+    all; it stands in for no behaviour under test.
+    """
+    import uuid as _uuid
+
+    from app.core.security import get_password_hash
+    from app.models.media import FileStatus
+    from app.models.media import MediaFile
+    from app.models.user import User
+
+    suffix = str(_uuid.uuid4())[:8]
+    owner = User(
+        email=f"otherowner_{suffix}@example.com",
+        full_name="Other Owner",
+        hashed_password=get_password_hash("otherpass"),
+        is_active=True,
+        role="user",
+    )
+    db_session.add(owner)
+    db_session.flush()
+
+    media = MediaFile(
+        uuid=str(_uuid.uuid4()),
+        user_id=owner.id,
+        filename=f"other_{suffix}.wav",
+        storage_path=f"other/{suffix}.wav",
+        file_size=1024,
+        content_type="audio/wav",
+        status=FileStatus.COMPLETED,
+    )
+    db_session.add(media)
+    db_session.flush()
+
+    @contextmanager
+    def _savepoint_scope():
+        yield db_session
+
+    with patch("app.db.session_utils.session_scope", _savepoint_scope):
+        yield SimpleNamespace(owner_id=owner.id, file_uuid=media.uuid)
 
 
 @pytest.fixture
@@ -158,7 +290,7 @@ def test_models_requires_authentication(client):
 # POST /models — admin only, and it must store the model's own dimension
 # ---------------------------------------------------------------------------
 def test_setting_a_model_stores_its_dimension_and_reports_the_reindex(
-    client, admin_token_headers, admin_user, reindex_task
+    client, admin_token_headers, admin_user, reindex_task, deployed_model
 ):
     """The dimension is derived from the registry, never from the request.
 
@@ -177,11 +309,145 @@ def test_setting_a_model_stores_its_dimension_and_reports_the_reindex(
     body = response.json()
     assert body["status"] == "model_changed"
     assert body["model_id"] == model_id
-    assert body["reindex_task_id"] == reindex_task.task_id
     assert setter.saved == [(model_id, info["dimension"])]
-    # Changing the model MUST reindex everything — a scoped reindex would leave
-    # old-dimension vectors behind.
-    assert reindex_task.dispatches == [{"user_id": admin_user.id, "file_uuids": None}]
+    assert str(admin_user.id) in body["reindex_task_ids"]
+
+
+def test_the_dimension_is_persisted_before_any_reindex_is_dispatched(
+    client, admin_token_headers, reindex_task, deployed_model
+):
+    """Ordering is what makes fanning the reindex out over every user safe (#437).
+
+    Each coordinator reconciles the index against
+    ``get_search_embedding_dimension()``, and ``recreate_index_for_dimension``
+    **deletes the index** when that disagrees with the mapping. With the setting
+    already written every coordinator sees a match and no-ops; with a stale one,
+    N coordinators race to delete the index out from under each other's workers.
+    ``PUT /models/neural/active`` never wrote it at all, so a dimension-changing
+    switch recreated the index a second time at the *old* size.
+    """
+    model_id = next(iter(OPENSEARCH_EMBEDDING_MODELS))
+    order: list[str] = []
+    setter = _RecordingSetter(order=order)
+    dispatcher = _RecordingTask(order=order)
+
+    with (
+        patch("app.services.search.settings_service.save_search_embedding_model", setter),
+        patch("app.tasks.reindex_task.reindex_transcripts_task", dispatcher),
+    ):
+        response = client.post(MODELS, headers=admin_token_headers, json={"model_id": model_id})
+
+    assert response.status_code == status.HTTP_200_OK
+    assert order, "neither the setting nor the dispatch was reached"
+    assert order[0] == "save_dimension"
+    assert "dispatch" in order
+
+
+def test_switching_the_model_repoints_the_ingest_pipeline_not_only_the_setting(
+    client, admin_token_headers, reindex_task, deployed_model
+):
+    """Writing the setting alone changes nothing about the vectors (issue #437).
+
+    ``POST /search/models`` used to save ``search.embedding_model`` and dispatch a
+    reindex while never touching the ML active model or the ingest pipeline — so
+    the reindex re-embedded everything with the **previous** model and the setting
+    simply lied. Worse, the coordinator reads the new dimension from that setting
+    and ``recreate_index_for_dimension`` *deletes* the index when it disagrees
+    with the mapping, so the lie was destructive rather than inert.
+    """
+    model_id = next(iter(OPENSEARCH_EMBEDDING_MODELS))
+
+    with patch(
+        "app.services.search.settings_service.save_search_embedding_model", _RecordingSetter()
+    ):
+        response = client.post(MODELS, headers=admin_token_headers, json={"model_id": model_id})
+
+    assert response.status_code == status.HTTP_200_OK
+    assert deployed_model.activated == ["ml-id-for-" + model_id]
+    assert deployed_model.pipelines == ["ml-id-for-" + model_id]
+    assert deployed_model.dimensions == [OPENSEARCH_EMBEDDING_MODELS[model_id]["dimension"]]
+
+
+def test_switching_the_model_reindexes_every_owner_not_only_the_caller(
+    client, admin_token_headers, admin_user, reindex_task, deployed_model, other_users_files
+):
+    """A per-caller reindex leaves every other user in the OLD vector space (#437).
+
+    ``reindex_transcripts_task`` filters ``MediaFile.user_id == user_id``, so the
+    "full reindex" the endpoint advertised covered only the admin who pressed the
+    button. On a multi-user deployment that is not a race — it is what the
+    documented happy path does, permanently and silently, and the resulting index
+    ranks two models' vectors against each other.
+    """
+    model_id = next(iter(OPENSEARCH_EMBEDDING_MODELS))
+
+    with patch(
+        "app.services.search.settings_service.save_search_embedding_model", _RecordingSetter()
+    ):
+        response = client.post(MODELS, headers=admin_token_headers, json={"model_id": model_id})
+
+    assert response.status_code == status.HTTP_200_OK
+    dispatched_for = {d["user_id"] for d in reindex_task.dispatches}
+    assert other_users_files.owner_id in dispatched_for
+    assert admin_user.id in dispatched_for
+    assert all(d["file_uuids"] is None for d in reindex_task.dispatches)
+    assert response.json()["reindex_users"] == len(dispatched_for)
+
+
+def test_a_switch_whose_reindex_cannot_be_queued_fails_loudly(
+    client, admin_token_headers, deployed_model
+):
+    """A half-applied switch must never answer 200 (issue #437).
+
+    By the time the dispatch runs, the settings, the ingest pipeline and the index
+    mapping have all changed. If the re-embed cannot be queued, new documents get
+    the new model and every existing document keeps the old one — the exact mixed
+    vector space this issue exists to prevent. Catching the dispatch failure would
+    report that as success with "Re-indexing the transcripts of 0 user(s)": a
+    swallowed signal indistinguishable from a working switch.
+
+    There is deliberately no per-user catch either. Only ``user_id`` differs
+    between the calls, so no failure can be partial, and a per-call catch would
+    buy nothing while converting the global failure into a 200.
+    """
+    model_id = next(iter(OPENSEARCH_EMBEDDING_MODELS))
+    dead_broker = _UnreachableBrokerTask()
+
+    with (
+        patch(
+            "app.services.search.settings_service.save_search_embedding_model", _RecordingSetter()
+        ),
+        patch("app.tasks.reindex_task.reindex_transcripts_task", dead_broker),
+    ):
+        response = client.post(MODELS, headers=admin_token_headers, json={"model_id": model_id})
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert dead_broker.attempts, "the dispatch was never attempted"
+    detail = response.json()["detail"]
+    # The operator has to learn that the switch WAS applied — otherwise they retry
+    # against a deployment they believe is untouched.
+    assert "was switched" in detail
+    assert "mixed vector space" in detail
+
+
+def test_switching_to_an_undeployed_model_is_refused_and_dispatches_nothing(
+    client, admin_token_headers, reindex_task
+):
+    """No deployed model means nothing can embed, so the switch must not be recorded.
+
+    Recording it anyway is what made the legacy path destructive: the coordinator
+    would honour the new dimension, delete the whole chunks index, and then fail
+    every write because the untouched pipeline still emits the old model's width.
+    """
+    model_id = next(iter(OPENSEARCH_EMBEDDING_MODELS))
+    setter = _RecordingSetter()
+
+    with patch("app.services.search.settings_service.save_search_embedding_model", setter):
+        response = client.post(MODELS, headers=admin_token_headers, json={"model_id": model_id})
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert setter.saved == []
+    assert reindex_task.dispatches == []
 
 
 def test_setting_an_unknown_model_is_400_and_dispatches_nothing(

@@ -51,6 +51,7 @@ from .llm_settings import ConnectionTestResponse
 from .llm_settings import LLMProvider
 from .llm_settings import LLMSettingsStatus
 from .llm_settings import ProviderDefaults
+from .llm_settings import ReasoningCapability
 from .llm_settings import SetActiveConfigRequest
 from .llm_settings import SupportedProvidersResponse
 from .llm_settings import UserLLMConfigurationsList
@@ -99,8 +100,6 @@ from .summary import ActionItem
 from .summary import MajorTopic
 from .summary import SummaryData
 from .summary import SummaryResponse
-from .summary import SummarySearchHit
-from .summary import SummarySearchResponse
 from .summary import SummaryTaskStatus
 from .transcription_settings import TranscriptionSettings
 from .transcription_settings import TranscriptionSettingsUpdate
@@ -133,8 +132,6 @@ __all__ = [
     "SummaryResponse",
     "MajorTopic",
     "ActionItem",
-    "SummarySearchHit",
-    "SummarySearchResponse",
     "SummaryTaskStatus",
     "SummaryPromptBase",
     "SummaryPromptCreate",
@@ -166,6 +163,7 @@ __all__ = [
     "ProviderDefaults",
     "SupportedProvidersResponse",
     "LLMSettingsStatus",
+    "ReasoningCapability",
     "TranscriptionSettings",
     "TranscriptionSettingsUpdate",
     "TranscriptionSystemDefaults",

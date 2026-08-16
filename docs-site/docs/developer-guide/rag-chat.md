@@ -71,7 +71,36 @@ never from the (denormalized, occasionally stale) OpenSearch document, so an uns
 quarantined file can't reach a prompt through a stale index entry. An empty resolved scope
 means **match nothing**; `None` means "all accessible." Inverting that check leaks the whole
 library to a query that should have matched nothing — `retrieve_chunks` returns `[]` for
-`file_uuids == []`.
+`file_uuids == []`. Note which is which: a conversation created with **no scope** is
+`is_empty`, resolves to `None`, and searches everything the caller can access. "Match
+nothing" is only ever the *result* of resolving a selection the caller may not read.
+
+## An ungrounded answer must not look grounded
+
+The stream emits a `warning` frame rather than letting the model's "I don't have enough
+information" pass for a grounded negative. Two codes, mutually exclusive:
+
+| Code | Meaning | `msg_metadata` |
+|---|---|---|
+| `context_dropped` | Excerpts were retrieved; the prompt budget fit none of them (#384) | `context_dropped: true` |
+| `no_context` | Nothing reached the prompt at all (#438) | `no_context: true` |
+
+```
+event: warning
+data: {"code": "no_context", "retrieved": 0, "files_searched": "all"}
+```
+
+`no_context` exists because **retrieval fails soft**: `retrieve_chunks` returns `[]` for a
+missing OpenSearch client, a query exception, or a genuinely empty result, so a transient
+backend failure and an empty library are the same value. The run that motivated it was a
+`503 search_phase_execution_exception` raised while the chunk index was being rebuilt — the
+answer that came back read exactly like a confident, grounded "I don't know". `retrieved`
+narrows what happened: `0` is an empty or failed search, non-zero means masking failed closed
+on every chunk (a redaction-configuration problem, not an empty index).
+
+Warning **codes** are part of the frozen frame contract. A new one needs an entry in
+`frontend/src/lib/types/chat.ts`'s `ChatWarningCode`, a branch in the store's fold, and a
+rendering — otherwise the server reports a problem the user never sees.
 
 ## Audit logging: metadata only
 

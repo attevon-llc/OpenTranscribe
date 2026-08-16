@@ -228,8 +228,16 @@ def _punkt_can_read(text: str, language: str) -> bool:
     return not (_NO_SPACE_CHAR_RE.search(text) or _FOREIGN_TERMINATOR_RE.search(text))
 
 
-def _split_into_sentences(text: str, language: str = "en") -> list[str]:
+def split_into_sentences(text: str, language: str = "en") -> list[str]:
     """Split text into sentences using NLTK punkt with regex fallback.
+
+    **Public, and it has to be.** ``services/ingest_artifacts/digest.py`` and
+    ``services/documents/chunking.py`` split the same transcript text the same way,
+    so the digest's sentence boundaries and the index's chunk boundaries stay the
+    SAME boundaries — a second implementation would drift and the digest would cite
+    spans the chunks do not contain. ``test_compose_sentence_splitter_mounts`` also
+    derives which workers need the punkt mount by walking the import graph outward
+    from this name, so privatising it silently empties that check.
 
     Args:
         text: Input text to split.
@@ -536,7 +544,7 @@ def _split_long_turn(
     overlap_words = min(overlap_words, target_words - 1)
 
     # Split into sentences using language-aware tokenizer
-    sentences = _split_into_sentences(text, language)
+    sentences = split_into_sentences(text, language)
 
     if len(sentences) <= 1:
         # Single sentence or splitting failed -- fall back to word-count splitting

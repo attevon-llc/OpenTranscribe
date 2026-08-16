@@ -1450,7 +1450,7 @@ def _clear_video_cache_for_speaker(media_file_id: int) -> None:
 
 def _handle_update_profile_action(
     profile_id: int, new_name: str, current_user: User, db: Session
-) -> bool:
+) -> list[tuple[str, str]] | None:
     """Handle 'update_profile' action - update profile name globally.
 
     Postgres only. The OpenSearch fan-out this used to do inline — one
@@ -1461,9 +1461,16 @@ def _handle_update_profile_action(
     a dozen linked speakers used to cost a dozen-plus synchronous OpenSearch calls
     before the PUT could answer.
 
+    The ``(file_uuid, old_name)`` pairs are collected **before** the overwrite and
+    handed back, because a profile rename spans files and this is the last moment
+    the previous names exist anywhere: once committed, nothing in Postgres can say
+    what the chunk plane was indexed with (issue #405).
+
     Returns:
-        True when a profile was found and renamed, so the caller knows to ask the
-        background task to replay the rename into OpenSearch.
+        ``None`` when no such profile exists. Otherwise the renames to replay into
+        the chunk index — an empty list when the profile had no linked speakers.
+        A non-``None`` return also tells the caller a profile was renamed, so it can
+        ask the background task to replay the rename into the speaker index.
     """
     profile = (
         db.query(SpeakerProfile)
@@ -1472,7 +1479,7 @@ def _handle_update_profile_action(
     )
 
     if not profile:
-        return False
+        return None
 
     profile.name = new_name  # type: ignore[assignment]
     logger.info(f"Updated profile {profile.id} name to '{new_name}' globally")
@@ -1483,11 +1490,27 @@ def _handle_update_profile_action(
         linked_query = linked_query.filter(Speaker.user_id == current_user.id)
     linked_speakers = linked_query.all()
 
+    # One grouped lookup, not a lazy `speaker.media_file.uuid` per row.
+    file_uuids: dict[int, str] = {}
+    media_file_ids = {int(s.media_file_id) for s in linked_speakers if s.media_file_id}
+    if media_file_ids:
+        file_uuids = {
+            int(row[0]): str(row[1])
+            for row in db.query(MediaFile.id, MediaFile.uuid).filter(
+                MediaFile.id.in_(media_file_ids)
+            )
+        }
+
+    renames: list[tuple[str, str]] = []
     for linked_speaker in linked_speakers:
+        old_chunk_name = str(linked_speaker.display_name or linked_speaker.name or "")
+        file_uuid = file_uuids.get(int(linked_speaker.media_file_id or 0))
+        if file_uuid and old_chunk_name:
+            renames.append((file_uuid, old_chunk_name))
         linked_speaker.display_name = new_name  # type: ignore[assignment]
 
     logger.info(f"Updated {len(linked_speakers)} speakers with new profile name '{new_name}'")
-    return True
+    return renames
 
 
 def _load_profile_speaker_names(db: Session, profile_id: int) -> list[tuple[str, str]]:
@@ -1569,24 +1592,27 @@ def _handle_profile_action(
     old_profile_id: int | None,
     current_user: User,
     db: Session,
-) -> int | None:
+) -> tuple[int | None, list[tuple[str, str]]]:
     """Handle profile actions (update_profile or create_new_profile).
 
     Returns:
-        The id of a profile that was renamed in place, so the caller can hand the
-        OpenSearch replay to the background task; None otherwise.
+        ``(renamed_profile_id, chunk_renames)`` — the id of a profile that was
+        renamed in place, so the caller can hand the OpenSearch replay to the
+        background task (``None`` otherwise), and the ``(file_uuid, old_name)``
+        pairs whose chunk documents still carry a pre-rename speaker name.
     """
     if not (profile_action and speaker_update.display_name):
-        return None
+        return None, []
 
     new_name = speaker_update.display_name.strip()
 
     if profile_action == "update_profile" and old_profile_id:
-        if _handle_update_profile_action(old_profile_id, new_name, current_user, db):
-            return old_profile_id
+        renames = _handle_update_profile_action(old_profile_id, new_name, current_user, db)
+        if renames is not None:
+            return old_profile_id, renames
     elif profile_action == "create_new_profile":
         _handle_create_new_profile_action(speaker, new_name, current_user, db)
-    return None
+    return None, []
 
 
 def _get_profile_uuid(speaker: Speaker, db: Session) -> str | None:
@@ -1699,6 +1725,37 @@ def _apply_verification_on_display_name(speaker: Speaker, speaker_update: Speake
         speaker.confidence = None  # type: ignore[assignment]
 
 
+def _propagate_speaker_rename_to_chunks(
+    *,
+    file_uuid: str | None,
+    previous_chunk_name: str,
+    new_display_name: str,
+    profile_renames: list[tuple[str, str]],
+) -> None:
+    """Queue the chunk-plane rewrite for everything this request renamed.
+
+    Two sources feed it: the speaker the request targeted, and — when the request
+    carried ``profile_action="update_profile"`` — every other speaker the profile
+    rename swept along, which may sit in other files entirely. Both go through
+    ``dispatch_speaker_rename``, which coalesces per file.
+
+    Best-effort by design: a rename that reached Postgres must not 500 because the
+    broker was unreachable. The chunk plane stays stale until the next reindex,
+    which is exactly the pre-#405 behaviour.
+    """
+    if not new_display_name:
+        return
+    try:
+        from app.tasks.rename_propagation_task import dispatch_speaker_rename
+
+        renames: list[tuple[str | None, str | None]] = list(profile_renames)
+        if file_uuid and previous_chunk_name:
+            renames.append((file_uuid, previous_chunk_name))
+        dispatch_speaker_rename(renames, new_display_name)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Could not queue chunk-plane speaker rename propagation: {exc}")
+
+
 @router.put("/{speaker_uuid}", response_model=SpeakerSchema)
 def update_speaker(
     speaker_uuid: str,
@@ -1731,6 +1788,11 @@ def update_speaker(
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
     was_auto_labeled = speaker.suggested_name is not None and not speaker.verified
     media_file_id = int(speaker.media_file_id)
+    # The exact string the chunk plane was indexed with — display_name when the
+    # speaker had one, else the diarizer's raw label. Captured here because the
+    # overwrite below is the last moment it exists (issue #405).
+    previous_chunk_name = str(speaker.display_name or speaker.name or "")
+    speaker_file_uuid = _get_media_file_uuid(speaker, db)
 
     # Update speaker fields
     update_data = speaker_update.model_dump(exclude_unset=True)
@@ -1744,7 +1806,7 @@ def update_speaker(
 
     # Handle profile actions. Postgres writes only — they shape the immediate
     # response; the OpenSearch replay rides along with the background task below.
-    renamed_profile_id = _handle_profile_action(
+    renamed_profile_id, profile_chunk_renames = _handle_profile_action(
         profile_action, speaker_update, speaker, old_profile_id, current_user, db
     )
 
@@ -1776,6 +1838,17 @@ def update_speaker(
             renamed_profile_id=renamed_profile_id,
         )
         logger.info(f"Queued background processing for speaker {speaker_uuid}")
+
+    # Rewrite the speaker name the transcript chunks were indexed with. Without
+    # this, chat's speaker scope (an exact `terms` match on the CURRENT name) and
+    # the search facet dropdown keep working off the pre-rename snapshot — see
+    # app/tasks/rename_propagation_task.py (issue #405).
+    _propagate_speaker_rename_to_chunks(
+        file_uuid=speaker_file_uuid,
+        previous_chunk_name=previous_chunk_name,
+        new_display_name=display_name,
+        profile_renames=profile_chunk_renames,
+    )
 
     # Invalidate caches so speaker lists and file data refresh
     try:

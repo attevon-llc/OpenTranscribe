@@ -1,4 +1,34 @@
 /**
+ * Where a derived value came from — deliberately NOT specific to dates.
+ *
+ * Participants, topics and titles are the same shape: a value the system inferred from
+ * one of several sources, which may disagree, which the user must be able to see the
+ * origin of and override. The next one to ship reuses this type and
+ * `ProvenanceField.svelte` rather than inventing a second vocabulary.
+ */
+export type DerivedSource = 'container' | 'filename' | 'transcript' | 'llm' | 'manual' | 'none';
+
+export interface DerivedCandidate {
+  source: DerivedSource;
+  date?: string | null;
+  confidence?: number | null;
+  /** What the source actually said — the matched filename substring, the spoken phrase. */
+  evidence?: string | null;
+}
+
+export interface DerivedFieldProvenance {
+  source: DerivedSource;
+  /** Ordinal, not a calibrated probability. Ranks forms within a source. */
+  confidence?: number | null;
+  /** A human entered this. It outranks every derived source permanently. */
+  locked: boolean;
+  /** Two or more sources named different days — shown, never silently resolved. */
+  conflict: boolean;
+  /** Every observation, winner and losers alike, so a disagreement is inspectable. */
+  candidates: DerivedCandidate[];
+}
+
+/**
  * Shared media file types used across gallery components.
  */
 import type { Tag } from '$lib/types/tag';
@@ -66,6 +96,13 @@ export interface MediaFile {
   // Creation info
   creation_date?: string;
   last_modified_date?: string;
+
+  // When the recording actually happened — distinct from upload_time (when the bytes
+  // arrived) and from creation_date (what the container claims). NEVER render this
+  // without its provenance: a derived date whose origin the user cannot see, and cannot
+  // correct, is worse than no date at all.
+  recorded_date?: string | null;
+  recorded_date_provenance?: DerivedFieldProvenance | null;
   device_make?: string;
   device_model?: string;
 

@@ -127,6 +127,14 @@ def index_transcript_search_task(  # noqa: C901
             if not media_file:
                 raise ValueError(f"Media file {file_id} not found")
 
+            # start_time alone is NOT a total order: overlapping speech and
+            # interpolated backchannels routinely share an onset (measured on the
+            # eval corpus: 3,072 tie groups covering 6,152 segments). Postgres then
+            # returns tied rows in physical order, which a delete-then-bulk-insert
+            # reshuffles — so the same transcript re-indexed produced a DIFFERENT
+            # speaker-turn grouping, a different chunk count, and a different
+            # nDCG@10. Ordering by (start_time, end_time, id) makes the sequence a
+            # function of the data alone, so re-indexing is reproducible.
             segments = (
                 db.query(TranscriptSegment)
                 .options(joinedload(TranscriptSegment.speaker))
@@ -176,10 +184,13 @@ def index_transcript_search_task(  # noqa: C901
             # requires attached ORM state.
             meta = extract_file_index_metadata(db, media_file, file_id)
             title = meta["title"]
-            # SORTED, not `list(set(...))` — see storage.get_unique_speaker_names.
-            # Python randomises string hashing per process, so an unsorted set
-            # made re-indexing an unchanged file write a different document each
-            # time (issue #455).
+            # SORTED, not `list(set(...))` — see storage.get_unique_speaker_names
+            # (issue #455). Python randomises string hashing per process unless
+            # PYTHONHASHSEED is pinned (it is not, anywhere), so set iteration
+            # order differed between workers. This list goes into every chunk
+            # document, so an unsorted one made the same transcript index to
+            # different content — and therefore different EMBEDDINGS — depending
+            # on which worker happened to pick up the task.
             speaker_names = sorted(
                 {str(s["speaker"]) for s in segment_dicts if s["speaker"] != "Unknown"}
             )

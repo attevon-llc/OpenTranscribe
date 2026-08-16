@@ -101,6 +101,38 @@ OT_MUTATION_OUT_DIR="$CASE4/mutation" OT_PRECOMMIT_LOCK="$PLOCK" \
 kill "$holder_pid" 2>/dev/null || true
 wait "$holder_pid" 2>/dev/null || true
 
+# --- Case: the DEFAULT lock path resolves inside a git WORKTREE -------------------------
+# Every case above overrides OT_PRECOMMIT_LOCK, which is exactly why the default path could
+# be broken and this file stay green: the wrapper derived it as "$REPO_ROOT/.git/...", and
+# in a worktree `.git` is a FILE, so `mkdir -p` died with "File exists" and the wrapper was
+# unusable in the checkout style CLAUDE.md tells you to work in. This case therefore leaves
+# OT_PRECOMMIT_LOCK UNSET, which is the whole point of it.
+CASE6="$TMP_ROOT/case6"
+mkdir -p "$CASE6/mutation"
+git init -q "$CASE6/main"
+git -C "$CASE6/main" -c user.email=selftest@example.com -c user.name=selftest \
+    commit -q --allow-empty -m "root"
+git -C "$CASE6/main" worktree add -q -b selftest-wt "$CASE6/wt" >/dev/null 2>&1
+mkdir -p "$CASE6/wt/scripts"
+cp "$WRAPPER" "$CASE6/wt/scripts/safe-precommit.sh"
+
+[[ -f "$CASE6/wt/.git" ]] || { echo "  FAIL - fixture: worktree .git is not a file"; fail=$((fail + 1)); }
+
+OT_MUTATION_OUT_DIR="$CASE6/mutation" SAFE_PRECOMMIT_DRY_RUN=1 \
+    run_case "inside a git worktree, default lock path: guards clear" 0 \
+    "$CASE6/wt/scripts/safe-precommit.sh" run --all-files
+
+# ...and the lock must land in the worktree's OWN git dir, not the shared common dir:
+# serialising lanes that cannot interfere would throw away the isolation worktrees exist for.
+wt_git_dir="$(git -C "$CASE6/wt" rev-parse --absolute-git-dir)"
+if [[ -e "$wt_git_dir/safe-precommit.lock" ]]; then
+    echo "  ok   - worktree lock is per-worktree, not in the shared common dir"
+    pass=$((pass + 1))
+else
+    echo "  FAIL - no lock at $wt_git_dir/safe-precommit.lock"
+    fail=$((fail + 1))
+fi
+
 # --- Case: no arguments -> usage error, not a silent no-op ------------------------------
 CASE5="$TMP_ROOT/case5"
 mkdir -p "$CASE5/mutation" "$CASE5/git"

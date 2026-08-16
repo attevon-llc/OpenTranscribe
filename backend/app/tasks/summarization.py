@@ -3,8 +3,16 @@
 **Three phases, and the split is load-bearing.** The DB session is open only for
 the two short DB-only phases (read the transcript + settings, write the result)
 and is **closed** across the slow middle phase: an LLM completion over a whole
-transcript plus the OpenSearch index write. That middle phase is multi-minute on
-a long file and, if the provider stalls, is bounded only by the HTTP timeout.
+transcript. That middle phase is multi-minute on a long file and, if the provider
+stalls, is bounded only by the HTTP timeout.
+
+**The result lands in ``media_file.summary_data`` and nowhere else (#67).** This
+task used to mirror the same dict into a ``transcript_summaries`` OpenSearch
+index and stamp the document id onto ``summary_opensearch_id``. That index is
+retired — chat grounding moved to the digest plane in the v6 ``transcript_chunks``
+index, and the file page always rendered the column — so a second copy bought a
+versioning history nothing read, a second GDPR erasure surface, and a store that
+could disagree with the column it was copied from.
 
 Before the split, one ``session_scope`` wrapped the entire task body, so Postgres
 sat ``idle in transaction`` for the whole provider round trip with its last
@@ -33,7 +41,6 @@ from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.services.llm_service import LLMService
-from app.services.opensearch_summary_service import OpenSearchSummaryService
 from app.services.redaction.llm_guard import RedactionNotReadyError
 from app.services.redaction.llm_guard import defer_for_redaction
 from app.services.redaction.llm_guard import resolve_llm_masking
@@ -42,21 +49,6 @@ from app.utils.user_settings_helpers import get_user_llm_output_language
 
 # Setup logging
 logger = logging.getLogger(__name__)
-
-
-def _clear_stale_opensearch_summary(document_id: str | None) -> None:
-    """Drop the previous OpenSearch summary doc for a forced regeneration.
-
-    Runs with **no DB session open** — it is an OpenSearch round trip. The
-    matching PostgreSQL columns are cleared in the read phase.
-    """
-    if not document_id:
-        return
-    try:
-        OpenSearchSummaryService().delete_summary(document_id)
-        logger.info(f"Cleared OpenSearch document {document_id}")
-    except Exception as e:
-        logger.warning(f"Could not clear OpenSearch summary: {e}")
 
 
 def _handle_no_llm_configured(
@@ -146,41 +138,10 @@ def _handle_llm_error(
     ) from e
 
 
-def _store_summary_to_opensearch(
-    summary_data: dict[str, Any], file_id: int, user_id: int
-) -> str | None:
-    """Store summary to OpenSearch and return document ID.
-
-    Called with **no DB session open** — two OpenSearch round trips.
-    """
-    summary_service = OpenSearchSummaryService()
-
-    # Get the latest version number for proper versioning
-    max_version = summary_service.get_max_version(file_id, user_id)
-
-    # Make a copy for OpenSearch indexing with tracking fields
-    opensearch_data = summary_data.copy()
-    opensearch_data.update(
-        {
-            "file_id": file_id,
-            "user_id": user_id,
-            "summary_version": max_version + 1,
-            "provider": summary_data["metadata"].get("provider", "unknown"),
-            "model": summary_data["metadata"].get("model", "unknown"),
-        }
-    )
-
-    # Index in OpenSearch
-    document_id = summary_service.index_summary(opensearch_data)
-
-    return document_id
-
-
 def _send_completion_notification(
     user_id: int,
     file_id: int,
     summary_data: dict[str, Any],
-    document_id: str | None,
     message: str,
 ) -> None:
     """Send completion notification with summary preview."""
@@ -196,32 +157,7 @@ def _send_completion_notification(
         message,
         100,
         summary_data=summary_preview,
-        summary_opensearch_id=document_id,
     )
-
-
-def _index_summary(
-    summary_data: dict[str, Any], file_id: int, user_id: int
-) -> tuple[str | None, str]:
-    """Index the summary in OpenSearch. Returns ``(document_id, message)``.
-
-    Phase 2 work: **no DB session is open** while this runs. Indexing failure is
-    not fatal — the summary still lands in PostgreSQL — so the message explains
-    which of the three outcomes happened.
-    """
-    try:
-        document_id = _store_summary_to_opensearch(summary_data, file_id, user_id)
-    except Exception as e:
-        logger.error(f"Failed to store summary in OpenSearch: {e}")
-        logger.info("Summary generated successfully but OpenSearch indexing failed")
-        return None, "AI summary generation completed (search indexing failed)"
-
-    if document_id:
-        logger.info(f"Summary indexed in OpenSearch: {document_id}")
-        return document_id, "AI summary generation completed successfully"
-
-    logger.warning("OpenSearch client not available, summary saved to PostgreSQL only")
-    return None, "AI summary generation completed (search not available)"
 
 
 def send_summary_notification(
@@ -231,7 +167,6 @@ def send_summary_notification(
     message: str,
     progress: int = 0,
     summary_data: dict[str, Any] | str | None = None,
-    summary_opensearch_id: str | None = None,
 ) -> bool:
     """Send summary status notification via WebSocket."""
     from app.services.notification_service import send_task_notification
@@ -239,8 +174,6 @@ def send_summary_notification(
     extra: dict[str, Any] = {}
     if status == "completed" and summary_data:
         extra["summary"] = summary_data
-    if status == "completed" and summary_opensearch_id:
-        extra["summary_opensearch_id"] = summary_opensearch_id
 
     return send_task_notification(
         user_id,
@@ -390,14 +323,13 @@ def _load_summarization_inputs(
 
         update_task_status(db, task_id, "in_progress", progress=0.1)
 
-        stale_opensearch_id: str | None = None
         if force_regenerate:
             logger.info(
                 f"Force regenerate requested - clearing existing summaries for file {file_id}"
             )
-            if media_file.summary_opensearch_id:
-                stale_opensearch_id = str(media_file.summary_opensearch_id)
             media_file.summary_data = None  # type: ignore[assignment]
+            # Vestigial pointer into the retired transcript_summaries index (#67);
+            # nothing sets it any more, so this only drains upgraded rows.
             media_file.summary_opensearch_id = None  # type: ignore[assignment]
 
         media_file.summary_status = "processing"  # type: ignore[assignment]
@@ -468,7 +400,6 @@ def _load_summarization_inputs(
         "speaker_stats": speaker_stats,
         "output_language": output_language,
         "organization_context": organization_context,
-        "stale_opensearch_id": stale_opensearch_id,
     }
 
 
@@ -547,10 +478,12 @@ def _persist_summary(
     user_id: int,
     task_id: str,
     summary_data: dict[str, Any],
-    document_id: str | None,
     prompt_uuid: str | None,
 ) -> None:
-    """Phase 3 — write (short session, Postgres only)."""
+    """Phase 3 — write (short session, Postgres only).
+
+    ``summary_data`` is the whole summary and the only copy of it (#67).
+    """
     from app.utils.task_utils import update_task_status
 
     with session_scope() as db:
@@ -560,7 +493,6 @@ def _persist_summary(
 
         media_file.summary_data = summary_data  # type: ignore[assignment]
         media_file.summary_schema_version = 1  # type: ignore[assignment]
-        media_file.summary_opensearch_id = document_id  # type: ignore[assignment]
         media_file.summary_status = "completed"  # type: ignore[assignment]
 
         # Bump usage_count on the prompt actually used (best-effort; never
@@ -657,10 +589,7 @@ def summarize_transcript_task(
         user_id = inputs["user_id"]
 
         # Phase 2 — the slow phase. NO DB session is held from here until the
-        # write below: an LLM completion over the whole transcript, plus the
-        # OpenSearch delete/index round trips.
-        _clear_stale_opensearch_summary(inputs["stale_opensearch_id"])
-
+        # write below: an LLM completion over the whole transcript.
         action = "regeneration" if force_regenerate else "generation"
         send_summary_notification(
             user_id, file_id, "processing", f"AI summary {action} started", 10
@@ -680,13 +609,11 @@ def summarize_transcript_task(
         if summary_data is None:
             return _handle_no_llm_configured(file_id, user_id, inputs["filename"], task_id)
 
-        document_id, completion_message = _index_summary(summary_data, file_id, user_id)
-
         # Phase 3 — write (DB session reopened, Postgres only).
-        _persist_summary(file_id, user_id, task_id, summary_data, document_id, prompt_uuid)
+        _persist_summary(file_id, user_id, task_id, summary_data, prompt_uuid)
 
         _send_completion_notification(
-            user_id, file_id, summary_data, document_id, completion_message
+            user_id, file_id, summary_data, "AI summary generation completed successfully"
         )
 
         logger.info("=== Summarization Task Completed Successfully ===")
@@ -701,7 +628,6 @@ def summarize_transcript_task(
                 "bluf": summary_data.get("bluf", ""),
                 "speakers_analyzed": len(inputs["speaker_stats"]),
                 "processing_time_ms": summary_data["metadata"].get("processing_time_ms"),
-                "opensearch_document_id": document_id,
             },
         }
 

@@ -329,3 +329,7 @@ backend/.mutmut-cache
 # against scripts/mutation-baselines.tsv (which IS committed). They live in the repo rather
 # than /tmp because /tmp is cleared on reboot, which silently disarmed the ratchet.
 .mutation/
+
+# Scratch working directory for the #403 RAG epic: cached issues/gists, injection
+# manifests, probe scripts and file backups. Never part of the product.
+.rag-403/

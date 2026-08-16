@@ -207,12 +207,13 @@ def get_unique_speaker_names(segments: list[dict[str, Any]]) -> list[str]:
         segments: List of transcript segments
 
     Returns:
-        Unique speaker names, SORTED.
+        Unique speaker names, **sorted** (issue #455).
 
-    Sorted, not `list(set(...))` (issue #455). Python randomises string hashing
-    per process, so an unsorted set produced a different order in every worker —
-    and this list is written into the OpenSearch document, so re-indexing an
-    unchanged file yielded a different document each time. Same class as issue
-    #433, where a non-total sort order moved chunk boundaries.
+    Sorted, not ``list(set(...))``: Python randomises string hashing per process
+    unless ``PYTHONHASHSEED`` is pinned (it is not, anywhere), so set order
+    differed in every worker. This list is written into the OpenSearch document,
+    so re-indexing an unchanged file yielded a different document each time —
+    the same class as issue #433, where a non-total sort order moved chunk
+    boundaries.
     """
     return sorted({segment["speaker"] for segment in segments})

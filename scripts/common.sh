@@ -4,6 +4,15 @@
 # These functions are used by opentr.sh to provide common functionality
 #
 # Usage: source ./scripts/common.sh
+#
+# NOTE: opentr.sh runs under `set -uo pipefail`, and this file is sourced INTO
+# that shell — so every expansion here of a variable this file does not itself
+# assign must carry a `:-` default, or the whole script aborts with "unbound
+# variable". Relying on the caller's defaults block is not enough: it defaults
+# the vars it happens to know about, and `GPU_DEVICE_ID` was missing from it for
+# as long as the check below existed, which killed `./opentr.sh start dev` on
+# every checkout with no .env (a fresh clone, and every git worktree — .env is
+# gitignored, so it never comes along).
 
 #######################
 # UTILITY FUNCTIONS
@@ -24,8 +33,9 @@ check_docker() {
     # `${USER:-$(id -un)}`: USER is not maintained by bash, so it is unset under `env -i`,
     # in a bare container and in some cron/systemd units — and this is the message whose
     # whole job is to EXPLAIN a permission failure, so under `set -u` the explanation was
-    # itself the crash.
-    echo "Your user (${USER:-$(id -un)}) is not in the 'docker' group."
+    # itself the crash. `id -un` can fail too (a container with no passwd entry for the
+    # uid), so it falls back again rather than substituting an empty parenthetical.
+    echo "Your user (${USER:-$(id -un 2>/dev/null || echo "unknown")}) is not in the 'docker' group."
     echo "Run the following commands, then log out and back in:"
     echo ""
     echo "  sudo usermod -aG docker \$USER"
@@ -232,7 +242,7 @@ ensure_opensearch_models() {
   local gpu_args=""
   if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
     use_gpu="true"
-    if [ -n "$GPU_DEVICE_ID" ]; then
+    if [ -n "${GPU_DEVICE_ID:-}" ]; then
       gpu_args="--gpus device=${GPU_DEVICE_ID}"
     else
       gpu_args="--gpus all"
@@ -284,9 +294,9 @@ print_access_info() {
   local https_port="${NGINX_HTTPS_PORT:-443}"
 
   # Only show NGINX info in production mode
-  if [ "$ENVIRONMENT" != "dev" ]; then
+  if [ "${ENVIRONMENT:-dev}" != "dev" ]; then
     # Check environment variable first
-    if [ -n "$NGINX_SERVER_NAME" ]; then
+    if [ -n "${NGINX_SERVER_NAME:-}" ]; then
       domain="$NGINX_SERVER_NAME"
     # Then check .env file
     elif [ -f .env ]; then

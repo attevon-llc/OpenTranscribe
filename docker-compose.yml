@@ -362,6 +362,10 @@ services:
       # Shared scratch — writes the preprocessed WAV for GPU/embedding workers
       - pipeline_scratch:/scratch/opentranscribe
       - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
+      # punkt: `reindex_transcripts` runs on the cpu queue and re-chunks transcripts.
+      # Without this mount the sentence splitter silently falls back to a regex and
+      # cuts different chunk boundaries than every other process (issue #436).
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
     environment:
       - PRELOAD_CPU_WHISPER=true
       # ffmpeg preprocess threading (opt-in CPU-contention control; default off).
@@ -561,10 +565,13 @@ services:
     volumes:
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       # Sentence tokenizer corpora. THIS WORKER CHUNKS TRANSCRIPTS (issue #436) —
-      # without the mount, punkt is absent and every chunk it writes is cut by the
-      # regex fallback, which splits on abbreviations punkt keeps intact. The two
-      # splitters disagree, so a missing mount here silently produces different
-      # boundaries from any worker that has it.
+      # `index_transcript_search` runs on the embedding queue and is the process
+      # that chunks every newly transcribed file. Without the mount, punkt is
+      # absent and every chunk it writes is cut by the regex fallback, which
+      # splits on abbreviations punkt keeps intact. The two splitters disagree, so
+      # a missing mount here silently produces different boundaries from any
+      # worker that has it — measured at 49 files / 226 chunks apart on the eval
+      # corpus, i.e. the live index and every test process disagreed.
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       # Shared scratch — so embedding worker can use the temp WAV if needed
       - pipeline_scratch:/scratch/opentranscribe

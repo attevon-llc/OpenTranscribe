@@ -17,7 +17,16 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   `UserSetting` prefs ∪ admin `SystemSettings` `redaction.force_*` floor);
   `detection_config_for_all`, `detector_language_support`.
 - `service.py` — `RedactionService.detect_and_store` / `mask_segment` / `is_segment_toxic`.
+- `export_policy.py` — **who** an export is masked for, **whether** it may be produced yet
+  (`export_masking_is_pending`), and the policy digest that keys a cached burned-in render
+  (`export_policy_fingerprint`). Its module docstring is the argument, not a summary — read it
+  before adding an export surface.
+- `coverage.py` — `uncovered_detectors(media_file, cfg)`: **which detectors a finished scan
+  actually ran**, against what the policy relies on. The read half of
+  `media_file.redaction_coverage` (`v392`). See the gotcha below.
 - `device.py` — `resolve_device()` + `inference_guard()`: **runtime, per-scan VRAM probe**.
+- `warmup.py` — builds the Presidio analyzer **in the API process**, on a daemon thread,
+  only when this deployment actually redacts. See the gotcha below.
 - `detectors/` — `wordlist` (regex, read-time), `pii_presidio` (Presidio + spaCy, optional
   GLiNER), `toxicity` (`unitary/toxic-bert`; multilingual XLM-R for non-English), `llm`.
 
@@ -30,7 +39,14 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
 - `detection_config_for_all()` deliberately ignores user/admin config (threshold `0.0`, all PII
   entities) so toggling a category later applies instantly.
 - Overlapping spans merge; higher priority wins (`pii > toxicity > profanity > custom`).
-- Detectors degrade to "no spans" on missing deps/failure — they never block the pipeline.
+- **A detector reports THREE outcomes, not two** (`detectors/DetectorUnavailableError`):
+  found nothing (`[]`), ran and raised (a plain exception), could not run at all (that
+  exception). The third used to be the first — `pii_presidio._get_analyzer` caught an absent
+  Presidio, returned `None`, and `detect_pii` returned `[]`, which is a clean segment. See the
+  gotcha below; degrading to "no spans" is still what the *pipeline* does, but that is now a
+  decision made where the policy lives. **`toxicity` follows the same three outcomes** (its
+  `None` now means "blank text" and nothing else) — but with a different blocking disposition,
+  because it produces no spans. See its gotcha below.
 - NO `.env` vars for behavior; coded `DEFAULT_REDACTION_*` in `core/constants.py`.
   `REDACTION_DEVICE` / `REDACTION_MIN_FREE_VRAM_GB` / `REDACTION_PII_USE_GLINER` are ops knobs.
 
@@ -39,23 +55,89 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
 - Worker `tasks/redaction_task.py` (`redaction.detect`, `redaction.reindex_all`) on the
   `redaction` queue → the `celery-redaction` container (the only `PRELOAD_REDACTION_MODELS=true`).
 - Read surfaces: `formatting_service::_apply_redaction`, `subtitle_service` (SRT/VTT/TXT),
-  `utils/transcript_builders` (redact-before-LLM), `search/hybrid_search_service` (snippets).
+  `utils/transcript_builders` (redact-before-LLM), `search/snippet_redaction` (search snippets
+  — see the gotcha below).
 - **Redact-before-LLM is centralized in `llm_guard.py`.** Every path that ships transcript text
   to a provider resolves its config through `resolve_llm_masking(db, media_file)` — summarization,
   speaker identification and topic extraction (chat has its own, see below). Do not call
   `resolve_effective_config` directly from a new LLM path; see the gotcha below for why.
 - Reveal via `?redact=false` → `cfg.reveal_categories(...)` in `api/endpoints/files/crud.py`
-  (`_resolve_redaction_for_request`) and `files/subtitles.py`; audited as
-  `transcript.view_unredacted`. **Admin-forced categories never reveal.**
+  (`_resolve_redaction_for_request`) and `files/subtitles.py`; both audited as
+  `transcript.view_unredacted` through the single `crud.audit_unredacted_reveal` (the export
+  half was missing until #85). **Admin-forced categories never reveal.**
+- **The three EXPORT surfaces** (single-file subtitles, the bulk ZIP, burned-in subtitles) each
+  take a **required** config and resolve the **requesting user's** policy — the two worker paths
+  resolved none at all until #85 and ignored the `force_export_redacted` floor. The subject and
+  timing arguments live in `export_policy.py`; the ORM-mutation/commit trap that comes with
+  masking inside a Celery task is in `services/CLAUDE.md`. Tests:
+  `tests/redaction/test_export_redaction_paths.py`.
 - Settings `api/endpoints/redaction_settings.py` (`/user-settings/redaction`,
   `/admin/redaction-policy`); UI `ContentRedactionSettings.svelte` / `RedactionPolicySettings.svelte`.
-  Migration `v364_add_content_redaction`; `redaction_{start,end}_ms` on `FilePipelineTiming`.
-- Tests: `tests/redaction/` (GPU-free), `tests/integration/test_redaction_pipeline.py`,
+  Migrations `v364_add_content_redaction` and `v392_add_redaction_coverage`;
+  `redaction_{start,end}_ms` on `FilePipelineTiming`.
+- Tests: `tests/redaction/` (GPU-free; `test_detector_unavailability.py` pins the three detector
+  outcomes and both `detect_and_store` dispositions, `test_scan_coverage.py` drives the real
+  pre-LLM egress path — `resolve_llm_masking` → `build_full_transcript` — and carries the four
+  controls that keep the gate narrow), `tests/integration/test_redaction_pipeline.py`,
   `tests/e2e/test_redaction_e2e.py`, fixtures `tests/fixtures/redaction/`. ML detector tests are
   `@pytest.mark.models`. Docs: `docs-site/docs/features/content-redaction.md`.
 
 ## Gotchas
 
+- **⚠️ "Unavailable" and "failed" are one sink and two dispositions — do not collapse them.**
+  `detect_segment_spans` takes `failures` (issue #324) and `unavailable`, a strict SUBSET of it.
+  **Every masker reads only `failures`**, so a dead detector and a broken one both withhold text
+  — correct, because both mean "could not look" and the next step is a provider. Only
+  `detect_and_store` reads `unavailable`, and it **subtracts it before deciding FAILED**.
+  That subtraction is load-bearing: `redaction_status = failed` is not an inert label, because
+  `llm_guard.resolve_llm_masking` turns it into a **non-retryable** `RedactionNotReadyError`
+  that `defer_for_redaction` re-raises at once. Marking every file FAILED on a deployment that
+  simply has no Presidio would permanently break summarization, speaker-ID **and** topic
+  extraction for every user with `redact_before_llm` on. Unavailable detectors go into
+  `skipped_detectors` instead — which the frontend already toasts
+  (`fileDetail/notificationHandler.ts`), so the operator sees it with no UI change. Re-running
+  a scan does not install a dependency, so FAILED ("re-run me") is also just the wrong word.
+- **⚠️ `done` says the scan FINISHED, not that it LOOKED — `redaction_coverage` is the
+  difference.** Once unavailability became a skip (above), a scan could reach `done` having
+  never run the PII detector. Every reader that trusted `done` alone then masked nothing,
+  reported success, and sent the transcript on: `mask_segment` over an empty span list returns
+  the input, with no error and no log line. The masker **cannot probe for itself** — the API
+  process and `celery-redaction` preload different models, so "can I load Presidio *here*"
+  answers a different question from "did the detector that produced these spans have it". Only
+  the scan knows, and `skipped_detectors` is a **task return value** that reaches a Celery
+  result backend with a TTL and a WebSocket toast — nothing a masker can read an hour later.
+  So `detect_and_store` writes `media_file.redaction_coverage` (`v392`, `TEXT[]`) in the same
+  commit as `done`, and `coverage.uncovered_detectors` is the one reader.
+  - **`TEXT[]`, not JSONB.** One reader, by primary key, over a closed four-name vocabulary;
+    nothing filters, aggregates or joins. JSONB buys nesting nobody needs and invites the
+    column to become a second, undocumented status. No CHECK on the vocabulary either — a
+    stray name grants no coverage (the gap is `required - covered`), and the hazardous state,
+    a *missing* name, is what no CHECK can see.
+  - **NULL is trusted, deliberately.** Pre-`v392` rows cannot be classified retroactively, and
+    refusing them would break every existing file on upgrade day. `redaction.reindex_all` is
+    the remedy and re-scanning writes the column. That residual is real; it is stated in
+    `coverage.py` and pinned by a control test.
+  - **A language skip is NOT a gap.** `detector_language_support` is subtracted first. Profanity
+    and PII are English-only *by design*, identically on every future scan and unfixable by any
+    operator action, so treating that as a gap would withhold every non-English transcript from
+    every LLM feature permanently — a different decision from this one. An unavailable detector
+    is the opposite on every count: a deployment fault, fixable by installing the dependency.
+  - **A new detector needs a `REDACTION_MODEL_VERSION` bump.** Coverage records what ran, so a
+    detector added to `DEFAULT_REDACTION_DETECTORS` reads as a gap on every previously scanned
+    file until it is re-scanned. That was already true of the span cache; the column makes it
+    enforced rather than tacit.
+- **Both LLM egress paths are wired to coverage — `llm_guard` AND `chat/redactor`.**
+  `_gather_chunk_segments` and `mask_digests`' gather each call `uncovered_detectors` beside their existing
+  `redaction_status == done` check; a gap returns `None` (chunks) or skips the provenance read
+  (digests), and both fall through to `_mask_inline`, which runs the detector here and now and
+  fails closed. **The subject differs between them and that is deliberate**: `llm_guard` resolves
+  the FILE OWNER's policy (the content is theirs), chat resolves the REQUESTING USER's (one turn
+  spans a library of shared recordings with no single owner). Pinned by
+  `tests/unit/test_chat_redactor.py::test_the_cached_path_refuses_a_scan_that_never_ran_pii`.
+  ⚠️ That guard's predecessor was **unfalsifiable**: it used `555-1234`, which Presidio does not
+  recognise as a phone number, so it passed whether the cached path or the inline path ran — it
+  asserted the hazard with a string that could not demonstrate it either way. Any test here that
+  claims to prove a leak must use PII the detector actually detects.
 - **⚠️ `mask_segment` with no cached spans masks NOTHING and returns the text unchanged.** This is
   the trap behind redact-before-LLM: `_dispatch_redaction` queues detection from the *same*
   post-processing step that queues summarization / speaker-ID / topic-extraction, onto a
@@ -85,8 +167,114 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   so `toxicity.score_texts` must NOT re-acquire it (`score_text` does — single-segment path only).
 - **"CPU service" is a misnomer**: `REDACTION_DEVICE=auto` puts models on GPU whenever free VRAM
   ≥ `REDACTION_MIN_FREE_VRAM_GB` (1.5), re-probed per scan, moving them back under pressure.
-- **Segment-edit re-detection runs inline in the API process** (`crud.py`, `text_changed` branch),
-  which never preloads Presidio/toxicity — ML detectors are best-effort there.
+- **⚠️ The API process runs Presidio too, and `warmup.py` is why it no longer stalls
+  (issue #74).** `celery-redaction` is still the only `PRELOAD_REDACTION_MODELS=true`
+  container — that statement, and the identical ones in `tasks/CLAUDE.md` and
+  `.env.example`, stay true; the API warms by a **different mechanism and loads only
+  Presidio**, never the ~500 MB toxicity weights. **Four** live paths reach a detector in the
+  API process: `chat/redactor._mask_inline` (reached *more* often since `v392`, because a
+  scan that skipped `pii` now falls through to it), `chat/output_redactor`,
+  `redetect_edited_segment`, and — since #86 — `search/snippet_redaction`, which is the only
+  one on an ordinary GET. Measured in a fresh process: **9.9 s** to build the
+  `AnalyzerEngine`, 0.2 s for the first `analyze()`, 0.01 s warm — the cost is the
+  **build**, not inference. First `_mask_inline` went **9.927 s → 0.016 s**; the lifespan
+  pays **0.53 ms** (`Thread.start()`).
+  - **⚠️ The warm-up bounds the cost; it does not remove the cold path — so no caller may
+    hold a DB transaction across a detector.** The gate is evaluated ONCE at startup, so a
+    deployment that enables redaction afterwards still takes a cold build, and a request
+    arriving mid-warm-up waits for the remainder. `chat/redactor` therefore gathers its
+    cached spans, **closes the session**, and only then masks (issue #83): measured before
+    that split, one chunk on a cold process sat **13,898 ms `idle in transaction`**, which
+    queues every `ALTER TABLE` behind a chat turn. The other three API-process callers
+    (`output_redactor`, `redetect_edited_segment`, `snippet_redaction`) are a separate
+    question and were not changed by #83.
+  - **The gate is DERIVED, not configured** — `config.redaction_is_in_use(db)`: any user
+    with `redaction_enabled`, or any admin `force_*` category. Redaction is opt-out, so
+    most deployments warm nothing. It is deliberately not "does anyone mask `pii`": every
+    inline masker runs `detection_config_for_all()`, which runs **all** detectors whatever
+    the user's categories are, so a category-based gate would skip exactly the deployments
+    that still pay the cold load. No new `.env` var, and `PRELOAD_REDACTION_MODELS` was
+    **not** reused — it means "load PII *and toxicity* on this worker", which is not what
+    the API needs, and re-scoping it would have made its own description wrong.
+  - **There is no force-OFF knob, on purpose.** An operator with redaction on cannot
+    decline the warm-up — but they would pay the same ~500 MB on the first masked answer
+    anyway. Warming only moves the cost earlier; it never adds any.
+  - **⚠️ `_get_analyzer` needed a LOCK before any warm-up was safe.** It had no mutual
+    exclusion, so two callers inside the build window each built their **own** engine:
+    measured 2 distinct engines at ~11.6 s apiece (vs 10.1 s solo — they contend) and ~2x
+    peak RAM. A warm-up thread runs concurrently with inbound requests *by design*, so
+    without the lock this change would have made its own target case slower. Now
+    double-checked: the cache hit stays lock-free (~2 us, on every masked segment) and a
+    caller arriving mid-build **waits for the remainder** — 3 s into a 10 s build it waits
+    7.0 s instead of 8.8 s building a duplicate. Never worse than cold, at any arrival time.
+  - **Failure is never fatal.** An absent Presidio logs and returns; `_get_analyzer` still
+    returns `None` and every caller's fail-closed handling is unchanged. The gate query
+    closes its session **before** the build starts — a ~10 s model load inside a
+    transaction is the defect `scripts/audit-session-lifetime.py` exists to catch.
+  - Pinned by `tests/redaction/test_pii_warmup.py` (the three lock tests are must-fire:
+    they go red against the pre-lock module with "the analyzer was built more than once").
+- **⚠️ Segment-edit re-detection is the one fail-closed path that WRITES** — and the API process
+  it runs in never preloads Presidio/toxicity, so it is also where a detector is most likely to
+  be unavailable. `crud.py`'s `text_changed` branch used to persist whatever
+  `detect_segment_spans` returned; since that call swallows a detector exception, an outage was
+  cached as `redactions = NULL` under `redaction_status = done`, and **every later read then
+  took the cached-span path and found nothing to mask**. Unlike the request-scoped fixes in
+  `chat/redactor.py`, the leak outlived its cause — the detector never had to fail again.
+  `RedactionService.redetect_edited_segment` now owns the decision: it keeps the spans the
+  detectors that DID run found (real findings, and detected against the NEW text so their
+  offsets address the text they are stored beside — the previous spans are simply dropped,
+  because nothing can realign them to edited text), and on a **blocking** failure sets the file
+  to `pending` + queues `redaction_detect_task`.
+  `pending`, not a new sentinel: every status-aware reader already honours it (`_redaction_pending`
+  withholds, `chat/_gather_chunk_segments` refuses non-`done` and falls through to inline
+  fail-closed masking, `llm_guard` defers **retryably**). Not `failed` — that is non-retryable in
+  `llm_guard`. Not a 4xx — a detector outage must not block a user fixing a typo.
+  **The queue drains in one hop**: `detect_and_store` writes `processing` then `done` or
+  `failed` and never `pending`, so only an edit can set it and there is no cycle; a second edit
+  while a scan is pending rides the first one's dispatch. Blocking is `blocking_detector_failures`
+  against the **file owner's** policy (the subject `llm_guard` uses — the editor may be an admin
+  whose own redaction is off), so a CPU-only deployment that never enabled `pii` is untouched.
+  Pinned by `tests/redaction/test_segment_edit_redetection.py`.
+- **⚠️ The toxicity detector emits a SCORE, never a span — so `_DETECTOR_CATEGORIES` maps
+  `toxicity` to NOTHING.** That entry is the one with a decision in it, and it is what makes
+  reporting toxicity failures safe. Its outcomes used to be swallowed entirely
+  (`detect_segment_spans` logged them at `logger.debug`; `score_texts` caught its own
+  exceptions and returned `[None] * len(texts)`, the same value a transcript of blank segments
+  produces), so a toxicity-only fault marked nothing, reported nothing, and left a column of
+  NULL scores that read as "scored, not toxic". Both now follow the PII split — absent weights
+  raise `DetectorUnavailableError` (reported, `done`, in `skipped_detectors` and out of
+  `redaction_coverage`), a thrown inference is a hard failure (`failed`, worth re-running).
+  **What they must NOT do is withhold text.** `toxicity` *is* a default category, so routing it
+  into the blocking sink the obvious way would, on any box without the ~500 MB toxic-bert
+  weights, mark every default-configured user's file stale on every segment edit, queue a full
+  re-scan that ends in the same state, and refuse every LLM feature — for a detector whose
+  absence cannot leave one character unmasked. `is_segment_toxic` is consumed only by
+  `formatting_service` to flag a segment in the UI; the `toxicity` *category*'s maskable spans
+  come from the `llm` detector, which keeps all four categories. Pinned by
+  `tests/redaction/test_scan_coverage.py` (the storm control drives the real edit endpoint).
+- **⚠️ There are now FOUR live detector callers in the API process, and the newest is a
+  SEARCH request** (`search/snippet_redaction`, issue #86). Search snippets come from the
+  `transcript_chunks` index, which stores transcript text UNREDACTED, so they carry PII; the
+  masker there ran `profanity` + `custom` only and its docstring asserted "this path never
+  carries PII spans", so a user whose policy masked **only** `pii` intersected to the empty
+  set and read every snippet verbatim. Three consequences for this package:
+  - **It is a live-detection path, not a cached-span one, so `redaction_status` is
+    irrelevant to it.** No stored offset addresses a snippet: a snippet is a highlighted,
+    HTML-escaped, re-fragmented rendering of `transcript_segment.text`. Do not "fix" it by
+    adding a status gate — there is nothing cached for the gate to protect.
+  - **⚠️ It must call `detect_segment_spans` ONCE PER SNIPPET.** Batching a page's snippets
+    into shared `analyze()` calls is 2.2-3.0x faster and loses PII: `en_core_web_sm` reports
+    each distinct `PERSON` **once per document**, so a repeated name is found in the first
+    fragment and nowhere else. Measured through the live API, the batched version left the
+    name in clear in 31 of the 32 snippets containing it. This is a property of the detector
+    in this package, so it bites any future caller that batches — including anything that
+    tries to speed up `detect_and_store`.
+  - **The category gate is on `enabled_categories`, not on `enabled`.** Every other inline
+    masker runs `detection_config_for_all()` — all detectors, whatever the user masks —
+    because it is about to hand text to a provider. A search page is 0.8-2.1 s of Presidio
+    and happens on every uncached query, so here a profanity-only user must not load it at
+    all. That is the one deliberate divergence from `redaction_is_in_use`'s reasoning above,
+    which stays correct for warm-up: the warm-up still fires for any redacting deployment.
 - PII is detected and cached but **not** in `DEFAULT_REDACTION_CATEGORIES` (too aggressive on
   conversation); `ORGANIZATION` is excluded from default entities (spaCy over-tags acronyms).
 - Profanity and PII are **English-only** (`REDACTION_*_LANGUAGES`); unsupported languages come

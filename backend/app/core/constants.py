@@ -729,6 +729,65 @@ LLM_OUTPUT_LANGUAGES = {
 }
 
 # =============================================================================
+# Reasoning ("thinking") as a per-MODEL capability (issue #64)
+# =============================================================================
+# A provider accepting an "off" parameter is NOT evidence the model honours it.
+# Measured against a real vLLM serving gemma-4-e4b, `enable_thinking: false` was
+# byte-identical to omitting the key: HTTP 200, and 931 characters of reasoning
+# either way. So the off-switch is *probed*, per model, and the UI control only
+# exists where the probe proved it works. Everything below is the probe's
+# instrument settings; there are deliberately no `.env` vars, and the recorded
+# verdict is a measurement rather than an admin-editable setting (see
+# `services/llm_reasoning.py`).
+
+#: `SystemSettings` key prefix. The suffix is a fingerprint of
+#: (provider, base_url, model) — see `llm_reasoning.capability_key`.
+LLM_REASONING_CAPABILITY_KEY_PREFIX = "llm.reasoning.off_switch."
+
+#: What an unprobed model reports. "unknown" must render no control at all:
+#: a toggle the user believes turns reasoning off, over a model that reasons
+#: anyway, is worse than having no toggle.
+DEFAULT_LLM_REASONING_OFF_SWITCH = "unknown"
+
+#: Temperature for every probe arm. Not a "make it deterministic" claim —
+#: greedy decoding merely removes sampling as an explanation for a difference
+#: between the arms, which is the whole measurement.
+LLM_REASONING_PROBE_TEMPERATURE = 0.0
+
+#: Ceiling per arm. Large enough that a truncated thought is not read as a
+#: suppressed one (the measured "on" arm spent 1,123 tokens).
+LLM_REASONING_PROBE_MAX_TOKENS = 1200
+
+#: Per-arm HTTP timeout. Three arms, so the whole probe is bounded well inside
+#: a request's patience; a slow endpoint yields UNKNOWN rather than hanging.
+LLM_REASONING_PROBE_TIMEOUT_S = 120
+
+#: The "off" arm must remove at least 90% of the reasoning the control arms
+#: produced before the switch is called real. Justification: the control is
+#: labelled *off*. A switch that halves the thinking still leaves the user
+#: reading a claim that is false, which is the failure this whole capability
+#: exists to prevent — so 90% suppression is the weakest threshold under which
+#: "off" is an honest word. The measured negative sits at 1.00 of the omitted
+#: control and 0.56 of the activated arm, i.e. 5.6x clear of the boundary on
+#: the tighter of the two conditions.
+LLM_REASONING_PROBE_SUPPRESSION_RATIO = 0.1
+
+#: Below this many characters the "reasoning" is a stray boundary token rather
+#: than a chain of thought, and a ratio computed over it is noise. Observed
+#: arms were 931-1,656 characters, ~30x above it.
+LLM_REASONING_PROBE_MIN_CHARS = 32
+
+#: Elicits multi-step arithmetic in a couple of hundred tokens. Deliberately
+#: not a transcript question: the probe must not depend on retrieval, on the
+#: user's library, or on anything that could send recorded content to a
+#: provider as a side effect of pressing a button.
+LLM_REASONING_PROBE_PROMPT = (
+    "A meeting had three speakers. Two of them each spoke for 12 minutes and "
+    "the third spoke for half as long as one of them. How many minutes were "
+    "spoken in total? Show your working."
+)
+
+# =============================================================================
 # Organization Context Settings
 # =============================================================================
 
@@ -967,3 +1026,76 @@ DEFAULT_CHAT_SEARCH_MODE = "hybrid"
 # Resolved-scope ceiling: a selection resolving to more files than this is
 # rejected (HTTP 400) rather than silently truncated.
 CHAT_MAX_SCOPE_FILES = 500
+
+
+# =============================================================================
+# Document ingestion (issue #362 / #403 Stage 6)
+# =============================================================================
+# Two env vars only, and both are *wiring* (where a container lives), not policy —
+# per the repo rule, everything a user or admin would tune is a DB-backed
+# `SystemSettings` row with a `DEFAULT_DOCUMENT_*` coded default below.
+
+# Which parsing tier to use: auto | slim | serve | tika.
+#   auto  — the sidecar when DOCUMENT_PARSER_URL health-checks, else the in-worker
+#           slim tier, else Tika. This is the single branch point
+#           (`services/documents/registry.get_parser_for`).
+#   slim  — in-worker only. No OCR, no layout model, no table structure.
+#   serve — sidecar only. Unreachable becomes a RETRYABLE failure, not a parse failure.
+#   tika  — the legacy OLE2/RTF tier, on its own, for exercising that path.
+DOCUMENT_PARSER_BACKEND = _os.environ.get("DOCUMENT_PARSER_BACKEND", "auto").lower()
+
+# Base URL of the docling-serve sidecar. Empty (the default) disables the tier entirely,
+# which is what a lean deployment wants; `./opentr.sh start dev --with-documents` sets it to
+# http://docling-serve:5001. The sidecar converts arbitrary user bytes with no
+# authentication, so docker-compose.documents.yml publishes it on **127.0.0.1 only**
+# (DOCLING_SERVE_PORT, default 5197) — never on 0.0.0.0. It is published at all for one
+# reason: host-side pytest has to drive the OCR path against a real sidecar, because a mock
+# would only prove the mock.
+DOCUMENT_PARSER_URL = _os.environ.get("DOCUMENT_PARSER_URL", "").strip()
+
+# Base URL of the optional Apache Tika container. Empty (the default) means legacy OLE2
+# and RTF uploads are refused with "convert to .docx or .pdf first" — a better answer
+# than a worse parse. Same loopback-only publication as the sidecar above (TIKA_PORT,
+# default 5198), for the same reason.
+DOCUMENT_TIKA_URL = _os.environ.get("DOCUMENT_TIKA_URL", "").strip()
+
+# --- DB-backed defaults (SystemSettings keys in the comments) ----------------
+
+# `documents.ocr_enabled` — the global OCR switch. On by default: OCR is day-one scope,
+# and a scanned PDF that silently indexes as empty is the failure mode this exists to
+# avoid.
+DEFAULT_DOCUMENT_OCR_ENABLED = True
+
+# `documents.ocr_policy` — auto | force | never. `auto` OCRs only what has no usable
+# text layer.
+DEFAULT_DOCUMENT_OCR_POLICY = "auto"
+
+# `documents.ocr_text_threshold` — characters per page below which a PDF is treated as
+# having no usable text layer. Measured over the corpora: olmOCR-bench `old_scans` sits
+# at 0 chars/page across 60 PDFs, `tables` at ~2,300, so 100 separates them by an order
+# of magnitude at both ends.
+DEFAULT_DOCUMENT_OCR_TEXT_THRESHOLD = 100
+
+# `documents.ocr_shard_pages` — pages per OCR shard. The whole point of sharding is
+# fairness, not throughput: a 500-page scan becomes ~25 interleaved ~1-minute tasks
+# instead of one 25-minute queue-starver (worker_prefetch_multiplier=1 is global).
+DEFAULT_DOCUMENT_OCR_SHARD_PAGES = 20
+
+# `documents.ocr_batch_size` — pages per ONNX batch INSIDE one shard. Follows the
+# SEARCH_NEURAL_BATCH_SIZE precedent: batch by default, retry once unbatched on failure
+# so one malformed page cannot fail a whole shard. Bounded by GPU HOLD TIME, not just
+# VRAM — a bigger batch holds the admission lock longer, which is exactly the contention
+# transcription must not lose.
+DEFAULT_DOCUMENT_OCR_BATCH_SIZE = 4
+
+# `documents.max_pages` — hard page ceiling. A trip truncates WITH a warning rather than
+# failing: half of a 5,000-page document beats none of it, as long as it is said.
+DEFAULT_DOCUMENT_MAX_PAGES = 2000
+
+# `documents.max_upload_bytes` — separate from MAX_UPLOAD_BYTES (15 GB, sized for video).
+# A 15 GB "document" is an attack, not a use case.
+DEFAULT_DOCUMENT_MAX_UPLOAD_BYTES = 256 * 1024 * 1024
+
+# `documents.chunk_target_words` — deliberately reads the transcript chunker's target at
+# call time rather than declaring a second number: heterogeneous chunk lengths distort
+# RRF, and two settings that must agree are one that will not.

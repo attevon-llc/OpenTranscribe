@@ -24,17 +24,20 @@ is why these needed their own harness:
 
 The fix, and what these tests pin: read what the response needs as **plain data**,
 release the request transaction with ``db.close()``, then do the network work.
-Where a write follows (``delete_summary``) the handler reuses ``db``, which begins
-a **second short** transaction rather than resuming a held one.
+Where a write follows, the handler reuses ``db``, which begins a **second short**
+transaction rather than resuming a held one.
 
 ========================================  =============================================
 handler                                   network call formerly on the request session
 ========================================  =============================================
-``GET /files/{uuid}/summary``             OpenSearch summary read
-``DELETE /files/{uuid}/summary``          OpenSearch index probe + document delete
 ``POST /search/repair-indices``           8 OpenSearch probes across 4 indices
 ``GET /admin/backup/status``              OpenSearch snapshot reachability probe
 ========================================  =============================================
+
+The two summarization handlers used to head that table. They no longer make a
+network call at all — the ``transcript_summaries`` index is retired (#67) — so
+their tests were deleted rather than kept as assertions about a call that cannot
+happen; see the note where section 1 was.
 
 The tests are behavioural, not structural: each wraps the real savepointed
 ``db_session`` in :class:`_TrackedRequestSession` and has the stub for each
@@ -43,9 +46,7 @@ also asserts the handler really did read (or write) Postgres, so a handler that
 never touches the DB — or one gutted into returning a constant — cannot pass.
 """
 
-import uuid as uuid_mod
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 
@@ -163,215 +164,18 @@ def _ctx(user):
 
 
 # --------------------------------------------------------------------------- #
-# 1. GET /files/{uuid}/summary — OpenSearch read on the request session
+# 1. (removed) GET/DELETE /files/{uuid}/summary — the OpenSearch read on the
+#    request session.
+#
+#    Those handlers no longer make one. The ``transcript_summaries`` index they
+#    read and deleted from is retired (#67) and the summary is served straight
+#    from ``media_file.summary_data``, so the read/release/write phase split went
+#    with it. Tests asserting "the OpenSearch hop ran with no transaction open"
+#    would now be asserting that a call which does not exist is not made inside a
+#    transaction — green forever, and unable to fail. Endpoint behaviour is
+#    covered by ``tests/api/test_summarization_endpoints.py``; the retirement
+#    itself by ``tests/unit/test_transcript_summaries_index_retired.py``.
 # --------------------------------------------------------------------------- #
-class _FakeSummaryIndex:
-    """Stands in for ``OpenSearchSummaryService``.
-
-    Its **constructor** is a round trip too — the real one calls
-    ``indices.exists`` (and may ``indices.create``) from ``__init__``, which is
-    why the auditor flagged the bare construction as well as the query.
-    """
-
-    def __init__(self, tracker, recorded, *, summary: dict[str, Any] | None = None):
-        self._tracker = tracker
-        self._recorded = recorded
-        self._summary = summary
-        tracker.observe("opensearch_connect")
-
-    def get_summary_by_file_id(self, file_id, user_id):
-        self._tracker.observe("opensearch_get_summary")
-        self._recorded["get_args"] = (file_id, user_id)
-        return self._summary
-
-    def delete_summary(self, document_id):
-        self._tracker.observe("opensearch_delete_summary")
-        self._recorded["deleted"] = document_id
-        return True
-
-
-def _make_summarised_file(db_session, user, **overrides):
-    media_file = MediaFile(
-        uuid=str(uuid_mod.uuid4()),
-        user_id=user.id,
-        filename="meeting.mp4",
-        storage_path="test/meeting.mp4",
-        content_type="video/mp4",
-        file_size=1000,
-        **overrides,
-    )
-    db_session.add(media_file)
-    db_session.flush()
-    return media_file
-
-
-@pytest.fixture
-def summary_endpoint_env(monkeypatch):
-    """Patch the summarization endpoints' OpenSearch seam; keep the DB real."""
-    from app.api.endpoints import summarization as summ
-
-    recorded: dict = {}
-
-    def _install(tracker, *, summary=None):
-        monkeypatch.setattr(
-            summ,
-            "OpenSearchSummaryService",
-            lambda: _FakeSummaryIndex(tracker, recorded, summary=summary),
-        )
-        return recorded
-
-    return _install
-
-
-def test_get_file_summary_reads_opensearch_with_no_transaction_open(
-    db_session, normal_user, tracked_db, summary_endpoint_env
-):
-    """The regression: the OpenSearch read must run with the request transaction closed."""
-    from app.api.endpoints import summarization as summ
-
-    media_file = _make_summarised_file(db_session, normal_user, title="Weekly sync")
-    recorded = summary_endpoint_env(
-        tracked_db,
-        summary={
-            "summary_data": {"bluf": "They agreed."},
-            "document_id": "summary-doc-1",
-            "created_at": None,
-            "updated_at": None,
-        },
-    )
-
-    response = summ.get_file_summary(
-        file_uuid=str(media_file.uuid),
-        current_user=normal_user,
-        ctx=_ctx(normal_user),
-        db=tracked_db,
-    )
-
-    assert tracked_db.seen["opensearch_connect"] is False, _leak(tracked_db, "opensearch_connect")
-    assert tracked_db.seen["opensearch_get_summary"] is False, _leak(
-        tracked_db, "opensearch_get_summary"
-    )
-    assert tracked_db.open is False
-
-    # The read phase really happened, so "no transaction open" cannot be satisfied
-    # by a handler that never touched Postgres.
-    assert tracked_db.opened == 1, f"expected exactly one read transaction, got {tracked_db.opened}"
-    assert recorded["get_args"] == (media_file.id, normal_user.id)
-    assert response.source == "opensearch"
-    assert response.filename == "Weekly sync"
-    assert str(response.file_id) == str(media_file.uuid)
-    assert response.summary_data == {"bluf": "They agreed."}
-
-
-def test_get_file_summary_falls_back_to_postgres_from_the_snapshot(
-    db_session, normal_user, tracked_db, summary_endpoint_env
-):
-    """The PostgreSQL fallback must be served from plain data read BEFORE the release."""
-    from app.api.endpoints import summarization as summ
-
-    media_file = _make_summarised_file(
-        db_session, normal_user, summary_data={"bluf": "From Postgres."}
-    )
-    summary_endpoint_env(tracked_db, summary=None)
-
-    response = summ.get_file_summary(
-        file_uuid=str(media_file.uuid),
-        current_user=normal_user,
-        ctx=_ctx(normal_user),
-        db=tracked_db,
-    )
-
-    assert response.source == "postgresql"
-    assert response.summary_data == {"bluf": "From Postgres."}
-    assert tracked_db.seen["opensearch_get_summary"] is False, _leak(
-        tracked_db, "opensearch_get_summary"
-    )
-    # Served without reopening a transaction after the release.
-    assert tracked_db.opened == 1
-
-
-def test_summary_snapshot_returns_plain_data(db_session, normal_user, tracked_db):
-    """``_load_summary_snapshot`` must not hand back live ORM instances."""
-    from app.api.endpoints import summarization as summ
-
-    media_file = _make_summarised_file(
-        db_session,
-        normal_user,
-        summary_data={"bluf": "x"},
-        summary_opensearch_id="summary-doc-1",
-    )
-
-    snapshot = summ._load_summary_snapshot(
-        tracked_db, str(media_file.uuid), normal_user, _ctx(normal_user)
-    )
-
-    assert snapshot["file_id"] == media_file.id
-    assert snapshot["summary_opensearch_id"] == "summary-doc-1"
-    assert snapshot["summary_data"] == {"bluf": "x"}
-    for value in snapshot.values():
-        assert not isinstance(value, MediaFile)
-
-
-def test_delete_summary_calls_opensearch_outside_the_transaction(
-    db_session, normal_user, tracked_db, summary_endpoint_env
-):
-    """Read, then delete the document with nothing held, then write in a NEW transaction."""
-    from app.api.endpoints import summarization as summ
-
-    media_file = _make_summarised_file(
-        db_session,
-        normal_user,
-        summary_data={"bluf": "gone soon"},
-        summary_opensearch_id="summary-doc-1",
-    )
-    recorded = summary_endpoint_env(tracked_db)
-
-    result = summ.delete_summary(
-        file_uuid=str(media_file.uuid),
-        current_user=normal_user,
-        ctx=_ctx(normal_user),
-        db=tracked_db,
-    )
-
-    assert tracked_db.seen["opensearch_connect"] is False, _leak(tracked_db, "opensearch_connect")
-    assert tracked_db.seen["opensearch_delete_summary"] is False, _leak(
-        tracked_db, "opensearch_delete_summary"
-    )
-    assert recorded["deleted"] == "summary-doc-1"
-
-    # A read transaction and a separate write transaction — not one long one.
-    assert tracked_db.opened >= 2, (
-        f"expected a read transaction and a write transaction, got {tracked_db.opened}"
-    )
-    assert result["file_id"] == str(media_file.uuid)
-
-    db_session.expire_all()
-    refreshed = db_session.query(MediaFile).filter(MediaFile.id == media_file.id).first()
-    assert refreshed.summary_data is None
-    assert refreshed.summary_opensearch_id is None
-
-
-def test_delete_summary_without_a_summary_is_404(
-    db_session, normal_user, tracked_db, summary_endpoint_env
-):
-    """The 404 path must survive the restructure — and still not touch OpenSearch."""
-    from fastapi import HTTPException
-
-    from app.api.endpoints import summarization as summ
-
-    media_file = _make_summarised_file(db_session, normal_user)
-    summary_endpoint_env(tracked_db)
-
-    with pytest.raises(HTTPException) as exc:
-        summ.delete_summary(
-            file_uuid=str(media_file.uuid),
-            current_user=normal_user,
-            ctx=_ctx(normal_user),
-            db=tracked_db,
-        )
-
-    assert exc.value.status_code == 404
-    assert "opensearch_delete_summary" not in tracked_db.seen
 
 
 # --------------------------------------------------------------------------- #

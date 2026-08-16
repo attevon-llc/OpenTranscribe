@@ -227,6 +227,47 @@ LLM (fails closed), streamed answers with timestamp-linked citations, searchable
 history, and per-conversation model switching. Full feature list: `CHANGELOG.md` → "AI Chat with RAG
 over your transcripts (issue #52)".
 
+**#52 follow-on — retrieval quality is now MEASURED, and that is itself the differentiator
+(2026-08).** Shipping RAG and being able to say how well it works are different claims, and the
+second is rarer. What exists now: a reproducible eval harness over a 210,908-document corpus
+scored with `trec_eval` (via `pytrec_eval_terrier`) and `ir_measures` — not hand-rolled metrics —
+with baselines that reproduce **byte-identically across runs**. Tracked in #461, #463, #464.
+
+Three findings that should shape positioning rather than be buried:
+
+- **A 24-arm fusion bake-off adopted nothing.** OpenSearch's published BEIR **+3.86%** for score
+  normalization **did not transfer** to this corpus. Publishing a negative result is a
+  credibility asset for an open-source project, not an embarrassment.
+- **Our two eval corpora are anti-correlated** on the arms anyone would adopt (Kendall tau-b
+  −0.714 / −0.905). Improving one predicts harming the other, which means *any* competitor
+  quoting a single-corpus tuning number is quoting something weaker than it looks — including
+  us, before this was measured.
+- **The shipped cross-encoder reranker may be hurting result ordering** (20.6% / 32.7% worse on
+  nDCG@10, where the prior estimate was a 0.3–3.1% gain). Deliberately not acted on: a ranking
+  metric cannot see whether the *answer* improved. #463 is the work that would settle it.
+
+**Competitive note, researched rather than assumed.** Open WebUI is the usual open-source
+comparison, and on corpus-scale summarization **it does not solve the problem and its maintainers
+say so** — top-k retrieval answers "which passages match this query", a different question from
+"what does this corpus say", and Full Context Mode simply truncates at the window. The
+[auto-switch proposal](https://github.com/open-webui/open-webui/discussions/19177) is unbuilt, and
+an [older issue](https://github.com/open-webui/open-webui/issues/3129) concedes a real pipeline
+"requires significantly more implementation effort". A widely-reported symptom is that the same
+model which summarizes a PDF well in ChatGPT returns a stub there — **the model is not the
+variable, the retrieval strategy is.**
+
+We already ship the pattern they lack: `tree_summarize` (LangChain's map-reduce) over a digest
+plane whose per-file map output is **precomputed at ingest**, so an overview across 1,000
+recordings costs zero map-time work — and it runs with **no LLM at all** (D6), which no
+comparable product does. So on the "summarize everything" query class there is no open-source
+prior art to import; we are not behind it. **The honest gap is that answer quality is not yet
+measured** (#463) — retrieval is. Claiming "better RAG" before that lands would be exactly the
+unfalsifiable marketing this project's engineering culture rejects.
+
+Full method, per-arm command lines and every negative result:
+`docs-site/docs/developer-guide/rag-evaluation.md`. Pattern taxonomy and prior art:
+`rag-prior-art-and-packages.md`.
+
 **#26 — Watch Folder / Automatic Bucket Processing — SHIPPED (v0.5.0).** Local mounted folder,
 S3-compatible bucket, and SMB/CIFS share sources (not Google Drive, which was in the original issue
 scope but did not ship), three-layer content-hash dedup, multi-part recording stitching, and

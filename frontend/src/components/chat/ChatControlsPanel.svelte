@@ -12,6 +12,8 @@
   import { clickOutside } from '$lib/actions/clickOutside';
   import { focusTrap } from '$lib/actions/focusTrap';
   import ModelSwitcher from './ModelSwitcher.svelte';
+  import { LLMSettingsApi } from '$lib/api/llmSettings';
+  import type { ReasoningOffSwitch } from '$lib/api/llmSettings';
   import type { ConversationSettings, SearchMode } from '$lib/types/chat';
 
   export let isOpen = false;
@@ -41,6 +43,38 @@
 
   $: temperature = settings.temperature ?? 0.3;
   $: searchMode = settings.search_mode ?? 'hybrid';
+
+  /**
+   * The model's MEASURED reasoning off-switch (issue #64).
+   *
+   * Null until the server answers, and null whenever the server has no verdict
+   * — both render nothing, which is the point: a provider accepting a "no
+   * reasoning" parameter is not evidence the model obeys it, so the control
+   * exists only where a probe proved it does. On the measured gemma-4-e4b this
+   * reports `'absent'` and no toggle appears, because a switch that silently
+   * does nothing is worse than a missing one.
+   */
+  let reasoningOffSwitch: ReasoningOffSwitch | null = null;
+  let reasoningLoadedFor: string | null | undefined = undefined;
+  $: reasoningSupported = reasoningOffSwitch === 'works';
+  $: reasoningOn = settings.reasoning !== false;
+
+  async function loadReasoningCapability(pinned: string | null): Promise<void> {
+    reasoningLoadedFor = pinned;
+    try {
+      const data = await LLMSettingsApi.getUserConfigurations();
+      const uuid = pinned ?? data.active_configuration_id ?? null;
+      reasoningOffSwitch = uuid ? (data.reasoning_off_switch?.[uuid] ?? null) : null;
+    } catch {
+      // A capability lookup must never break the panel: no verdict, no control,
+      // and every other setting still works.
+      reasoningOffSwitch = null;
+    }
+  }
+
+  $: if (isOpen && reasoningLoadedFor !== llmConfigUuid) {
+    loadReasoningCapability(llmConfigUuid);
+  }
 
   function toggleContext(): void {
     dispatch('change', { use_context: !useContext });
@@ -178,6 +212,30 @@
          friendlier without two extra numeric fields competing for attention. -->
     <details class="advanced">
       <summary data-testid="chat-advanced-toggle">{$t('chat.controls.advanced')}</summary>
+
+      <!-- Rendered ONLY where the server measured a working off-switch for this
+           model. Do not relax this condition to "the provider accepts the
+           parameter": that is exactly what the measurement disproved. -->
+      {#if reasoningSupported}
+        <div class="control-group">
+          <label class="toggle-row">
+            <input
+              type="checkbox"
+              checked={reasoningOn}
+              on:change={(e) =>
+                dispatch('change', {
+                  reasoning: (e.target as HTMLInputElement).checked ? null : false
+                })}
+              {disabled}
+              data-testid="chat-reasoning-toggle"
+            />
+            <span>
+              <span class="toggle-label">{$t('chat.controls.reasoning')}</span>
+              <span class="toggle-hint">{$t('chat.controls.reasoningHint')}</span>
+            </span>
+          </label>
+        </div>
+      {/if}
 
       <div class="control-group">
         <label class="field-label" for="chat-max-tokens">

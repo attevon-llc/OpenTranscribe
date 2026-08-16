@@ -1,5 +1,13 @@
 """
 API endpoints for subtitle generation.
+
+**An export is a transcript read surface, and it is gated like one.**
+``SubtitleService`` masks with the segment's *cached* spans, so on a file whose
+detection scan never ran, is queued, or is mid-flight there is nothing to apply
+and the export writes the raw transcript to disk — with nothing in the resulting
+file to say the scan was incomplete. :func:`_redaction_pending` (the same helper
+``GET /files/{uuid}`` and ``GET /files/{uuid}/segments`` use) decides that here
+too, so the download cannot be a way around the gate the page already applies.
 """
 
 import logging
@@ -22,6 +30,9 @@ from app.models.user import User
 from app.schemas.media import SubtitleValidationResult
 from app.services.subtitle_service import SubtitleService
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
+
+from .crud import _redaction_pending
+from .crud import audit_unredacted_reveal
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -56,6 +67,12 @@ def _resolve_subtitle_redaction(db, media_file, current_user, redact: bool):
         return cfg, set()  # forced — never reveal on export
     can_reveal = (media_file.user_id == current_user.id) or current_user.is_admin
     reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)
+    # Audit the reveal, exactly as the transcript read does (issue #85). This path
+    # wrote NO audit event: an owner could download the unredacted original to disk —
+    # the more consequential of the two, because the file leaves the application —
+    # with nothing in the compliance trail. `api/CLAUDE.md` claimed both were audited
+    # until it was checked; the doc was corrected first and this is the code half.
+    audit_unredacted_reveal(media_file, current_user, reveal, surface="subtitle_export")
     return cfg, reveal
 
 
@@ -86,6 +103,24 @@ def get_subtitles(
 
     # Resolve read-time redaction (export honors the censor toggle + admin floor).
     cfg, reveal = _resolve_subtitle_redaction(db, media_file, current_user, redact)
+
+    # Withhold the export until detection has produced spans to apply. Note this
+    # is checked AFTER the reveal is resolved and ignores it: `?redact=false`
+    # reveals categories that were masked, and on an unscanned file there is
+    # nothing to reveal from — honoring it here would make the gate opt-out via a
+    # query parameter. Deliberately NOT an inline scan: a cold PII model load is
+    # ~10 s on a download request, and the transcript view already answers
+    # "not yet" for this file, so an export that scanned on demand would hand
+    # back content the page refused. 409 rather than the 503 above because the
+    # server is fine; the file is not ready, and that is a retryable state.
+    if _redaction_pending(db, cfg, media_file):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Content redaction has not finished for this file, so an export "
+                "could not be masked. Try again once detection completes."
+            ),
+        )
 
     try:
         # Generate subtitle content based on format
@@ -217,6 +252,10 @@ def prepare_bulk_export(
     delivered to the browser as a presigned URL over the ``bulk-export-stream`` SSE
     channel — the API never proxies the archive bytes. UUIDs are permission-filtered
     here so the worker can trust the resolved file ids without re-authorizing.
+
+    Redaction is applied on the worker with **this** user's effective policy; files
+    whose detection scan has not finished are skipped there rather than exported raw
+    (the single-file endpoint answers 409 for the same condition).
     """
     if not request.file_uuids:
         raise HTTPException(status_code=400, detail="No file UUIDs provided")
@@ -261,6 +300,10 @@ def prepare_bulk_export(
         subtitle_format=request.subtitle_format,
         include_speakers=request.include_speakers,
         job_id=job_id,
+        # The subject whose redaction policy masks the archive — the REQUESTING user,
+        # matching the single-file export beside it (issue #85). The worker re-resolves
+        # the policy from this id at run time; nothing about the policy is sent here.
+        user_id=current_user.id,
     )
     return {"status": "processing", "job_id": job_id}
 

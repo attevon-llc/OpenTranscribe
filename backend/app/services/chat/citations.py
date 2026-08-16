@@ -30,16 +30,40 @@ def _snippet(text: str) -> str:
     return cut + "…"
 
 
+#: What a citation points at. ``chunk`` is somebody's words at a timestamp;
+#: ``digest`` is derived text summarising a span of the same recording. The
+#: frontend must render them differently — a digest quoted as speech would
+#: attribute to a person words nobody said (addendum **G7**).
+KIND_CHUNK = "chunk"
+KIND_DIGEST = "digest"
+
+
 def build_citation(index: int, chunk: MaskedChunk) -> dict:
-    """Serialize one chunk as a citation payload (snippet already masked)."""
+    """Serialize one retrieved document as a citation payload (snippet masked).
+
+    A digest citation differs in three ways, each of which is a wrong answer if
+    omitted (addendum **G7**):
+
+    * ``kind`` is ``digest``, so the UI can label it as a summary rather than
+      render it as a quote;
+    * ``speaker`` is ``None`` — a digest section spans several speakers and
+      naming one of them merges people, which base rule 5 forbids;
+    * ``start_time`` is the section's **real** start, carried through from the
+      extractive builder's provenance. A digest indexed at ``start_time=0``
+      would deep-link every summary citation to ``0:00``, which looks like a
+      working link and is not.
+    """
+    is_digest = getattr(chunk.source, "is_digest", False)
     return {
         "id": index,
+        "kind": KIND_DIGEST if is_digest else KIND_CHUNK,
         "file_uuid": chunk.file_uuid,
         "title": chunk.title,
         "chunk_index": chunk.chunk_index,
+        "digest_section": getattr(chunk.source, "digest_section", None),
         "start_time": chunk.start_time,
         "end_time": chunk.end_time,
-        "speaker": chunk.speaker,
+        "speaker": None if is_digest else chunk.speaker,
         "snippet": _snippet(chunk.content),
     }
 

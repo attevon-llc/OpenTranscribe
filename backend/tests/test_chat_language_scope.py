@@ -283,11 +283,29 @@ def _run_prepare_context(monkeypatch, db, *, file_uuids, chunk_file_uuids):
     monkeypatch.setattr(
         chat_service,
         "mask_chunks",
-        lambda _db, hits, _user_id: [MaskedChunk(source=h, content=h.content) for h in hits],
+        # First arg is the session FACTORY, not a session (#83) — the masker owns
+        # its own short transaction so the detector never runs inside one.
+        lambda _factory, hits, _user_id: [MaskedChunk(source=h, content=h.content) for h in hits],
     )
 
-    return chat_service._prepare_context(
-        db,
+    # `_prepare_context` takes no `db` and opens its OWN session per phase, so a
+    # caller cannot reintroduce a session held across OpenSearch or an LLM round
+    # trip (services/chat/CLAUDE.md). That means it would open a SECOND connection
+    # here and see none of the rows this test seeded — the fixture's transaction is
+    # never committed. Point the phase factory at the fixture session so the phases
+    # read the rows under test; the lifetime property itself is covered by
+    # tests/unit/test_chat_session_phases.py.
+    @contextmanager
+    def _fixture_session():
+        yield db
+
+    monkeypatch.setattr("app.db.session_utils.session_scope", _fixture_session)
+
+    # It returns FOUR values — (masked, meta, counted, overview) — since the
+    # router gained the counted and overview tiers. Only the first two matter
+    # here; unpacking all four keeps this helper honest about the contract
+    # rather than silently swallowing a future fifth.
+    masked, meta, _counted, _overview = chat_service._prepare_context(
         user_id=1,
         organization_id=None,
         question="What did they decide?",
@@ -299,6 +317,7 @@ def _run_prepare_context(monkeypatch, db, *, file_uuids, chunk_file_uuids):
         llm=None,
         rewrite_enabled=False,
     )
+    return masked, meta
 
 
 def test_prepare_context_flags_a_non_english_scope(monkeypatch, db_session, normal_user):
@@ -380,8 +399,12 @@ async def _stream_warnings(monkeypatch, *, meta, use_context=True):
     chunks = [MaskedChunk(source=chunk, content=chunk.content)]
 
     monkeypatch.setattr("app.db.session_utils.session_scope", _null_session)
+    # Four values: (masked, meta, counted, overview). The last two are the router's
+    # structured blocks and are None for this turn — but the arity has to match, or
+    # the unpack raises inside the generator and the warning frame under test is
+    # never reached, which reads as "no warning emitted" rather than as an error.
     monkeypatch.setattr(
-        chat_service, "_prepare_context", lambda *_a, **_kw: (list(chunks), dict(meta))
+        chat_service, "_prepare_context", lambda *_a, **_kw: (list(chunks), dict(meta), None, None)
     )
     monkeypatch.setattr(chat_service.limits, "is_cancelled", lambda _uuid: False)
 

@@ -45,9 +45,70 @@ class TestDerivedCachePrefix:
 
     def test_video_cache_key_is_prefixed(self):
         svc = self._svc()
-        key = svc.generate_cache_key(1, "meeting.mp4", include_speakers=True)
+        key = svc.generate_cache_key(
+            1, "meeting.mp4", include_speakers=True, redaction_fingerprint=""
+        )
         assert key.startswith("derived/")
         assert key.endswith("_with_speakers.mp4")
+
+    def test_a_masking_policy_gets_its_own_cache_key(self):
+        """Burned-in text cannot be masked afterwards, so the key names the policy.
+
+        Sharing one key across policies is what let an already-cached unmasked render
+        keep being served after an admin turned ``force_export_redacted`` on (#85).
+        """
+        svc = self._svc()
+        unmasked = svc.generate_cache_key(
+            1, "meeting.mp4", include_speakers=True, redaction_fingerprint=""
+        )
+        masked = svc.generate_cache_key(
+            1, "meeting.mp4", include_speakers=True, redaction_fingerprint="abc123def456"
+        )
+        other_policy = svc.generate_cache_key(
+            1, "meeting.mp4", include_speakers=True, redaction_fingerprint="0123456789ab"
+        )
+        assert unmasked == "derived/1_meeting_with_speakers.mp4"
+        assert masked == "derived/1_meeting_with_speakers_rabc123def456.mp4"
+        assert len({unmasked, masked, other_policy}) == 3
+
+    def test_two_files_sharing_a_filename_do_not_share_a_cache_object(self):
+        """`file_id` was an accepted parameter the key never used.
+
+        The key was filename-derived only, in ONE bucket with no user in it, so two
+        people who each uploaded "meeting.mp4" were served each other's derived
+        artifact — and since #85 that artifact can be a burned-in VIDEO, i.e. one
+        user's recording rendered for another.
+
+        Measured against HEAD before the fix: file 11 and file 9999 both produced
+        `derived/meeting_with_speakers.mp4`.
+        """
+        svc = self._svc()
+        mine = svc.generate_cache_key(
+            11, "meeting.mp4", include_speakers=True, redaction_fingerprint=""
+        )
+        theirs = svc.generate_cache_key(
+            9999, "meeting.mp4", include_speakers=True, redaction_fingerprint=""
+        )
+        assert mine != theirs, "two different files still share one cache object"
+        assert mine == "derived/11_meeting_with_speakers.mp4"
+        assert theirs == "derived/9999_meeting_with_speakers.mp4"
+
+    def test_the_id_prefix_cannot_be_confused_with_a_longer_id(self):
+        """`11_` must not prefix-match `119_`, or a delete sweeps another file.
+
+        The sweep in `_masked_video_cache_keys` lists by `derived/{id}_{base}_`, so
+        an id that is a numeric prefix of another is the case that would turn a
+        fixed collision into a destructive one.
+        """
+        svc = self._svc()
+        short = svc.generate_cache_key(
+            11, "meeting.mp4", include_speakers=True, redaction_fingerprint=""
+        )
+        longer = svc.generate_cache_key(
+            119, "meeting.mp4", include_speakers=True, redaction_fingerprint=""
+        )
+        assert not longer.startswith(short.removesuffix("_with_speakers.mp4"))
+        assert short != longer
 
     def test_audio_cache_keys_are_prefixed(self):
         svc = self._svc()
@@ -138,6 +199,29 @@ class TestClearCacheOnDelete:
             "delete_object",
             lambda bucket, key: deleted.append(key),
         )
+
+        # Policy-specific renders (#85) cannot be named by a pure function -- one file
+        # owns one video per redaction policy that ever rendered it -- so the sweep
+        # lists them. `talk_2_...` is a DIFFERENT file whose name shares the prefix.
+        class _Obj:
+            def __init__(self, name):
+                self.object_name = name
+
+        fid = int(file.id)
+        monkeypatch.setattr(
+            svc.minio_service,
+            "list_objects",
+            lambda bucket, prefix=None, recursive=False: [
+                _Obj(f"derived/{fid}_talk_with_speakers_rdeadbeef1234.mp4"),
+                _Obj(f"derived/{fid}_talk_no_speakers_r0123456789ab.mp4"),
+                # Same owner, a name that shares the prefix — what the regex guards.
+                _Obj(f"derived/{fid}_talk_2_with_speakers_rfeedface5678.mp4"),
+                # A DIFFERENT file whose id shares a numeric prefix. Before the id
+                # led the key these two were indistinguishable; the sweep must not
+                # reach across into it.
+                _Obj(f"derived/{fid}9_talk_with_speakers_rcafebabe9999.mp4"),
+            ],
+        )
         # `clear_cache_for_media_file` took a caller-owned Session and issued its five
         # MinIO deletes through it. It is gone; `clear_derived_cache` takes no session,
         # so the caller resolves the filename in a short read that closes first.
@@ -145,9 +229,19 @@ class TestClearCacheOnDelete:
 
         # Both video variants + all three audio variants, all under derived/.
         assert all(k.startswith("derived/") for k in deleted)
-        assert "derived/talk_with_speakers.mp4" in deleted
-        assert "derived/talk_no_speakers.mp4" in deleted
+        assert f"derived/{fid}_talk_with_speakers.mp4" in deleted
+        assert f"derived/{fid}_talk_no_speakers.mp4" in deleted
         assert "derived/talk_audio_mp3.mp3" in deleted
+        # ...plus every masked render, or a deleted file leaves a video of its
+        # transcript behind in object storage.
+        assert f"derived/{fid}_talk_with_speakers_rdeadbeef1234.mp4" in deleted
+        assert f"derived/{fid}_talk_no_speakers_r0123456789ab.mp4" in deleted
+        assert f"derived/{fid}_talk_2_with_speakers_rfeedface5678.mp4" not in deleted, (
+            "the sweep must not delete a neighbouring file whose name shares the prefix"
+        )
+        assert f"derived/{fid}9_talk_with_speakers_rcafebabe9999.mp4" not in deleted, (
+            "the sweep must not reach into a file whose ID shares a numeric prefix"
+        )
         assert "derived/talk_audio_wav.wav" in deleted
         assert "derived/talk_audio_original" in deleted
 

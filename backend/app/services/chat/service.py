@@ -10,6 +10,13 @@ in its own collapsed-by-default block rather than mixed into the answer.
 ``sources`` is emitted only once the excerpt budget is known, and lists only the
 excerpts that actually reached the prompt — see the comment at its yield site.
 
+``warning`` carries a ``code`` naming exactly one way the answer ended up
+ungrounded: ``context_dropped`` (excerpts were retrieved and the budget fit none
+of them) or ``no_context`` (nothing reached masking at all — retrieval matched
+nothing, every chunk failed closed under masking, or the search backend was
+unavailable and degraded to a context-free answer). Adding a code means teaching
+``frontend/src/lib/types/chat.ts``'s ``ChatWarningCode`` about it too.
+
 Threading model: everything except the SSE plumbing is synchronous (OpenSearch,
 SQLAlchemy, ``requests``), so the blocking stages run via Starlette's threadpool
 and the provider's token stream is bridged with ``iterate_in_threadpool``.
@@ -47,7 +54,9 @@ from app.services.chat.language import METADATA_KEY as LANGUAGE_METADATA_KEY
 from app.services.chat.language import WARNING_CODE as LANGUAGE_WARNING_CODE
 from app.services.chat.language import describe_context_languages
 from app.services.chat.language import warning_payload as language_warning_payload
+from app.services.chat.output_redactor import OutputRedactor
 from app.services.chat.prompting import build_messages
+from app.services.chat.prompting import format_counted_block
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.redactor import mask_chunks
 from app.services.chat.retrieval import retrieve_context
@@ -161,7 +170,6 @@ class ChatTurn:
 
 
 def _prepare_context(
-    db,
     *,
     user_id: int,
     organization_id: int | None,
@@ -173,46 +181,208 @@ def _prepare_context(
     search_mode: str,
     llm,
     rewrite_enabled: bool,
-) -> tuple[list[MaskedChunk], dict[str, Any]]:
-    """Run the blocking RAG stages: rewrite → retrieve → mask.
+) -> tuple[list[MaskedChunk], dict[str, Any], Any, Any]:
+    """Run the blocking RAG stages: rewrite → route → count → retrieve → mask.
 
-    Executed in a worker thread; returns the masked chunks plus diagnostics for
-    the message metadata (ids/counts/timings only, never text).
+    Executed in a worker thread, and **phased**. It opens its own database
+    sessions rather than accepting one, because the caller's session would then
+    be held across the rewrite (an LLM round trip), the counted tier's
+    OpenSearch aggregation and retrieval (OpenSearch + cross-encoder + Redis) —
+    the shape that queues every ``ALTER TABLE`` behind a chat turn and hangs an
+    Alembic upgrade mid-release. ``scripts/audit-session-lifetime.py`` gates it.
+
+    The phases, in order:
+
+    1. rewrite + route — **no session**;
+    2. the counted tier — ``answer_aggregation`` takes a *factory* and opens a
+       short session per Postgres statement group, so its search runs clean;
+    3. retrieval — **no session**;
+    4. masking and the scope map — the database phase. ``mask_chunks`` /
+       ``mask_digests`` take the *factory* too (#83) and gather-then-close, so
+       the inline Presidio fallback never runs inside a transaction; the scope
+       map and the summaries get their own short sessions. Everything returned
+       is a plain dataclass (``MaskedChunk``/``FileSummary``, never an ORM
+       instance: attribute access on a detached row would silently re-open a
+       session and undo the split);
+    5. overview composition and diagnostics — pure, except one short session for
+       the language read.
+
+    Returns the masked chunks, diagnostics for the message metadata (ids/counts/
+    timings only, never text), the counted result when the router sent the turn
+    to the aggregation tier, and the overview when it asked for a summary.
     """
+    from app.core.config import settings as settings_config
+    from app.db.session_utils import session_scope
+
     meta: dict[str, Any] = {}
 
+    # --- Phase 1: rewrite + route. An LLM round trip; NO session. -------------
     effective_query = question
+    llm_intent: str | None = None
     if rewrite_enabled and history:
         from app.services.chat.query_rewriter import rewrite_query
 
         rewrite_started = time.monotonic()
-        effective_query = rewrite_query(llm, history, question)
+        rewrite = rewrite_query(llm, history, question)
+        effective_query = rewrite.query
+        llm_intent = rewrite.intent
         if effective_query != question:
             meta["rewritten_query"] = effective_query
         meta.setdefault("timings_ms", {})["rewrite"] = int(
             (time.monotonic() - rewrite_started) * 1000
         )
 
+    from app.services.chat.router import route
+
+    decision = route(
+        question,
+        rewritten=effective_query if effective_query != question else None,
+        llm_intent=llm_intent,
+        speakers=speakers,
+    )
+    meta["route"] = decision.as_metadata()
+
+    # --- Phase 2: the counted tier. Postgres and OpenSearch, INTERLEAVED but
+    # never overlapping: `answer_aggregation` takes the factory below and opens a
+    # short session per statement group, so its `size: 0` search never inherits a
+    # transaction.
+    #
+    # It runs BEFORE retrieval and is independent of it: "how many meetings
+    # mention X" is answered by an aggregation over the whole library, and the
+    # excerpts that follow are examples beside that number, never the thing it
+    # was derived from. ROUTE, DON'T FUSE — two queries, combined here.
+    counted = None
+    overview = None
+    if decision.wants_aggregate:
+        from app.services.chat.aggregation_service import answer_aggregation
+        from app.services.opensearch_service import get_opensearch_client
+
+        counted_started = time.monotonic()
+        counted = answer_aggregation(
+            question,
+            decision,
+            session_factory=session_scope,
+            client=get_opensearch_client(),
+            index=settings_config.OPENSEARCH_CHUNKS_INDEX,
+            user_id=user_id,
+            organization_id=organization_id,
+            file_uuids=file_uuids,
+        )
+        meta.setdefault("timings_ms", {})["aggregate"] = int(
+            (time.monotonic() - counted_started) * 1000
+        )
+        # Recorded either way. "The router said aggregate and the mechanism
+        # declined" is a different fact from "it was never an aggregation", and
+        # only the metadata can tell them apart after the fact.
+        meta["aggregation"] = counted.as_metadata() if counted is not None else {"declined": True}
+
+    # A counted turn still retrieves — a reduced leg, so a misroute always has
+    # evidence and every `[n]` marker still resolves to a clickable timestamp.
+    # The plan's ratio: a third of the usual excerpts, because the number above
+    # them is the answer and the excerpts are illustration.
+    retrieval_settings = settings
+    if counted is not None:
+        from dataclasses import replace as _replace
+
+        retrieval_settings = _replace(settings, final_chunks=max(1, settings.final_chunks // 3))
+        meta["chunk_leg_reduced_to"] = retrieval_settings.final_chunks
+
+    # --- Phase 3: retrieval. OpenSearch, the cross-encoder and Redis; the
+    # slowest stage of the turn, and NO session. `file_uuids` is passed through
+    # exactly as it arrived: `None` means "all accessible", `[]` means "match
+    # nothing", and substituting one for the other leaks the whole library.
     result = retrieve_context(
         query=effective_query,
         user_id=user_id,
         organization_id=organization_id,
         file_uuids=file_uuids,
         speakers=speakers,
-        settings=settings,
+        settings=retrieval_settings,
         search_mode=search_mode,
+        wants_digest=decision.wants_digest,
     )
 
-    masked = mask_chunks(db, result.chunks, user_id)
-    masked = [chunk for chunk in masked if chunk.content.strip()]
+    # --- Phase 4: the database phase. Every session here is SHORT and every
+    # value that leaves it is a plain dataclass — an ORM instance would re-open a
+    # session on the first attribute read afterwards and quietly undo the split.
+    #
+    # The maskers take the FACTORY, not a session (#83): each one gathers its
+    # cached spans, closes, and only then runs the detector. A file whose scan
+    # cannot be trusted falls through to inline Presidio, and a cold analyzer
+    # build is ~10 s — measured at 13.9 s `idle in transaction` when it ran
+    # inside this phase's session.
+    digest_masked: list[MaskedChunk] = []
+    summaries: list[Any] = []
+    masked = mask_chunks(session_scope, result.chunks, user_id)
+    if result.digests:
+        # A SEPARATE masking call, not an overload. A digest is
+        # non-contiguous selected sentences; `mask_chunks` would rebuild it
+        # from every segment overlapping its time range and hand back the
+        # whole span verbatim — more text than the digest holds, from a
+        # function whose name says it masked it. `mask_digests` goes through
+        # the per-sentence provenance.
+        from app.services.chat.mapreduce import build_file_summaries
+        from app.services.chat.mapreduce import scope_digest_hits
+        from app.services.chat.redactor import mask_digests
+
+        digest_masked = mask_digests(session_scope, result.digests, user_id)
+        # The MAP output, read not computed: level 1 ran at ingest, so a
+        # summary over a large scope costs no map-time work (#403 Phase 4).
+        #
+        # A BOUNDED scope is mapped over in full; the ranked leg is only a
+        # fallback for "all accessible", where mapping over everything is not
+        # possible. Ranking picks the best passages, mapping covers every
+        # document — using the ranked leg as the map produced a block headed
+        # "recordings: 8" over a 25-file scope, and an answer that said so.
+        with session_scope() as db:
+            map_hits = scope_digest_hits(db, file_uuids or []) if file_uuids else []
+        if map_hits:
+            map_masked = mask_digests(session_scope, map_hits, user_id)
+            summary_hits, summary_masked = map_hits, map_masked
+        else:
+            summary_hits, summary_masked = result.digests, digest_masked
+        with session_scope() as db:
+            summaries = build_file_summaries(
+                db,
+                summary_hits,
+                masked_text={id(m.source): m.content for m in summary_masked},
+            )
+
+    # --- Phase 5: composition and diagnostics. Pure, except the language read
+    # below, which takes one short session of its own. -------------------------
+    if result.digests:
+        from app.services.chat.mapreduce import build_overview
+
+        overview = build_overview(
+            question, summaries, files_in_scope=len(file_uuids) if file_uuids else 0
+        )
+        meta["overview"] = overview.as_metadata()
+        # Digests lead: they are the recording-level answer a summarize turn
+        # asked for, and the chunk excerpts under them are the evidence.
+        masked = digest_masked + masked
+        meta["digests_retrieved"] = len(result.digests)
+
+    kept = [chunk for chunk in masked if chunk.content.strip()]
+    # Masking fails CLOSED: an unmaskable chunk becomes "" and contributes
+    # nothing. Without this counter that is indistinguishable from retrieval
+    # returning less, which is a different defect with a different fix.
+    meta["chunks_dropped_empty_after_masking"] = len(masked) - len(kept)
+    masked = kept
 
     # RAG is English-only (see services/chat/language.py). Recording what the turn
     # could draw on is what makes that limit visible instead of silent.
-    languages = describe_context_languages(
-        db,
-        scope_file_uuids=file_uuids,
-        grounded_file_uuids=[chunk.source.file_uuid for chunk in masked],
-    )
+    #
+    # Its own short session, and it must stay one: this read used to be handed the
+    # phase-4 session AFTER that `with` block had closed it, which SQLAlchemy
+    # answers by silently opening a fresh transaction on a connection nothing ever
+    # returns — an `idle in transaction` backend left behind by every turn, freed
+    # only when the garbage collector reaches the connection.
+    with session_scope() as db:
+        languages = describe_context_languages(
+            db,
+            scope_file_uuids=file_uuids,
+            grounded_file_uuids=[chunk.source.file_uuid for chunk in masked],
+        )
     if languages.total_files:
         meta[LANGUAGE_METADATA_KEY] = languages.as_metadata()
     if languages.has_unsupported:
@@ -226,7 +396,7 @@ def _prepare_context(
         meta["speakers_filtered"] = list(speakers)
     timings = meta.setdefault("timings_ms", {})
     timings.update(result.timings_ms)
-    return masked, meta
+    return masked, meta, counted, overview
 
 
 # SSE comment lines are ignored by every client but keep the connection warm.
@@ -251,6 +421,85 @@ async def _drain(queue: asyncio.Queue):
     """Yield everything buffered in ``queue`` without blocking."""
     while not queue.empty():
         yield queue.get_nowait()
+
+
+def _resolve_output_policy(user_id: int):
+    """The requesting user's effective redaction config, or None if unresolvable.
+
+    Its own short-lived session: this runs on every turn including
+    ``use_context=False`` ones, which never open the retrieval session at all.
+    ``None`` is not "no redaction" — ``OutputRedactor`` reads it as "mask
+    everything", because being unable to resolve the policy must not mean
+    sending generated text out unexamined.
+    """
+    from app.db.session_utils import session_scope
+    from app.services.redaction.config import resolve_effective_config
+
+    try:
+        with session_scope() as db:
+            return resolve_effective_config(db, user_id)
+    except Exception:  # noqa: BLE001 — the redactor fails closed on None
+        logger.exception("Could not resolve the output redaction policy for user %s", user_id)
+        return None
+
+
+async def _redact_delta(redactor: OutputRedactor, text: str) -> str:
+    """Buffer one generated delta; return what is safe to put on the wire now.
+
+    Returns ``""`` while a sentence is still arriving. Detection is CPU-bound
+    (Presidio), so it goes to a thread — buffering itself is string work and
+    stays on the loop.
+    """
+    if not redactor.active:
+        return text
+    span = redactor.buffer(text)
+    if not span:
+        return ""
+    # Annotated: run_in_threadpool is typed as returning Any, and returning it
+    # straight out of a str-declared function trips no-any-return.
+    # OutputRedactor.mask genuinely returns str.
+    masked: str = await run_in_threadpool(redactor.mask, span)
+    return masked
+
+
+def _record_output_redaction(
+    turn: ChatTurn, answer: OutputRedactor | None, reasoning: OutputRedactor | None
+) -> None:
+    """Stamp what output redaction did on the turn's metadata.
+
+    Only when it was active, so a deployment with redaction off carries no new
+    key. ``withheld_spans`` is the one that matters: a sentence replaced by the
+    failsafe placeholder is otherwise indistinguishable from a short answer.
+    """
+    if answer is None or not answer.active:
+        return
+    withheld = answer.withheld_spans + (reasoning.withheld_spans if reasoning else 0)
+    turn.metadata["output_redaction"] = {
+        "masked_spans": answer.masked_spans + (reasoning.masked_spans if reasoning else 0),
+        "withheld_spans": withheld,
+    }
+    turn.metadata.setdefault("timings_ms", {})["output_redaction"] = answer.mask_ms + (
+        reasoning.mask_ms if reasoning else 0
+    )
+    if withheld:
+        logger.warning(
+            "Chat output redaction withheld %d generated span(s): detectors were "
+            "unavailable for an enabled category, so the text was replaced rather than sent",
+            withheld,
+        )
+
+
+async def _flush_redactor(redactor: OutputRedactor | None) -> str:
+    """Mask and return the unemitted tail. Idempotent — later calls return ``""``."""
+    if redactor is None:
+        return ""
+    tail = redactor.drain()
+    if not tail:
+        return ""
+    if not redactor.active:
+        return tail
+    masked_tail: str = await run_in_threadpool(redactor.mask, tail)
+    return masked_tail
 
 
 async def _finalize_turn(
@@ -281,7 +530,11 @@ async def _finalize_turn(
     if turn.prompt_tokens is None and turn.completion_tokens is None:
         try:
             turn.prompt_tokens = llm.estimate_tokens("".join(m["content"] for m in messages))
-            turn.completion_tokens = llm.estimate_tokens(turn.answer)
+            # Reasoning counts, even though it is not the answer (issue #439). The
+            # model generated and was billed for those tokens; separating them out
+            # of `answer` so they stop rendering must not also delete them from the
+            # meter. Providers that report usage already include them.
+            turn.completion_tokens = llm.estimate_tokens(turn.answer + turn.reasoning)
             turn.tokens_estimated = True
         except Exception:  # noqa: BLE001
             logger.exception("Token estimation failed")
@@ -363,6 +616,7 @@ class ChatService:
         temperature: float | None,
         max_tokens: int | None,
         top_p: float | None,
+        enable_thinking: bool | None = None,
         llm,
         on_teardown=None,
         assistant_message_uuid: str,
@@ -387,6 +641,11 @@ class ChatService:
             temperature: Per-conversation override, or None for the config default.
             max_tokens: Per-conversation answer-length override, clamped below.
             top_p: Per-conversation nucleus-sampling override, omitted when None.
+            enable_thinking: ``False`` sends the measured "reasoning off" arm;
+                ``None`` (the default) builds the payload exactly as it is built
+                today, keeping vLLM's issue-#439 activation intact. Already
+                gated on the model's measured capability by the endpoint --
+                never derive it from a raw user preference here.
             on_teardown: Called exactly once inside the shielded finally, however
                 the turn ends. Used to release the concurrency slot: a wrapping
                 generator's own ``finally`` does NOT reliably run when Starlette
@@ -400,8 +659,6 @@ class ChatService:
         Yields:
             SSE frame strings.
         """
-        from app.db.session_utils import session_scope
-
         turn = ChatTurn()
         keepalive_q: asyncio.Queue = asyncio.Queue()
         cancel_event = threading.Event()
@@ -418,7 +675,15 @@ class ChatService:
 
         masked: list[MaskedChunk] = []
         messages: list[dict[str, str]] = []
+        # A counted answer is not "context" in the excerpt sense: it survives an
+        # empty retrieval, so it is initialised here and not inside the branch.
+        counted_block = ""
+        overview_block = ""
         reached_end = False
+        # Declared out here because the shielded `finally` flushes them: a turn
+        # torn down mid-sentence still has to persist the buffered tail.
+        answer_redactor: OutputRedactor | None = None
+        reasoning_redactor: OutputRedactor | None = None
         try:
             if use_context:
                 # Query rewriting is a separate LLM round trip, so it is worth
@@ -430,26 +695,32 @@ class ChatService:
                 will_rewrite = settings.query_rewrite_enabled and bool(history)
                 yield sse("status", {"stage": "rewriting" if will_rewrite else "retrieving"})
 
+                # No `session_scope` here on purpose: `_prepare_context` is
+                # phased and opens its own short sessions. Wrapping it would put
+                # the turn back to holding one transaction across the rewrite,
+                # the counted tier's aggregation and retrieval.
                 def _prep():
-                    with session_scope() as db:
-                        return _prepare_context(
-                            db,
-                            user_id=user_id,
-                            organization_id=organization_id,
-                            question=question,
-                            history=history,
-                            settings=settings,
-                            file_uuids=file_uuids,
-                            speakers=speakers,
-                            search_mode=search_mode,
-                            llm=llm,
-                            rewrite_enabled=settings.query_rewrite_enabled,
-                        )
+                    return _prepare_context(
+                        user_id=user_id,
+                        organization_id=organization_id,
+                        question=question,
+                        history=history,
+                        settings=settings,
+                        file_uuids=file_uuids,
+                        speakers=speakers,
+                        search_mode=search_mode,
+                        llm=llm,
+                        rewrite_enabled=settings.query_rewrite_enabled,
+                    )
 
-                masked, meta = await _with_keepalive(run_in_threadpool(_prep), keepalive_q)
+                masked, meta, counted, overview = await _with_keepalive(
+                    run_in_threadpool(_prep), keepalive_q
+                )
                 async for frame in _drain(keepalive_q):
                     yield frame
                 turn.metadata.update(meta)
+                counted_block = format_counted_block(counted)
+                overview_block = overview.block if overview is not None else ""
 
             # Resolve the answer budget BEFORE building the prompt: build_messages
             # reserves context for the reply, so raising max_tokens after the fact
@@ -466,6 +737,7 @@ class ChatService:
             # it earlier meant the UI could render clickable citations for
             # excerpts the model was never given — an answer that looks sourced
             # but is not grounded in the cited material (issue #384).
+            prompt_diagnostics: dict[str, int] = {}
             messages, excerpt_ids = build_messages(
                 system_prompt=system_prompt,
                 chunks=masked,
@@ -474,15 +746,46 @@ class ChatService:
                 context_window=llm.user_context_window,
                 response_tokens=answer_tokens,
                 max_history_turns=settings.history_max_turns,
+                diagnostics=prompt_diagnostics,
+                counted_block=counted_block,
+                overview_block=overview_block,
             )
             chunks_used = len(excerpt_ids)
             turn.metadata["chunks_used"] = chunks_used
+            turn.metadata.update(prompt_diagnostics)
 
             if use_context:
                 turn.offered_citations = citations_mod.build_offered_citations(masked, excerpt_ids)
                 yield sse("sources", {"citations": turn.offered_citations})
 
-                if masked and not excerpt_ids:
+                if not masked:
+                    # Nothing reached the prompt at all. The model will answer "I
+                    # don't have enough information", which is indistinguishable
+                    # from a grounded negative — and, worse, from a working search
+                    # that simply found nothing. Retrieval degrades to an empty
+                    # list on ANY failure (issue #438: an OpenSearch 503 during a
+                    # reindex produced a confident "I don't know" over a corpus
+                    # full of matching material), so the counters are the only
+                    # evidence the user can be shown. `retrieved` separates the
+                    # two remaining cases: 0 means the search returned nothing,
+                    # non-zero means masking failed closed on every chunk.
+                    turn.metadata["no_context"] = True
+                    logger.warning(
+                        "Chat turn %s answered with NO excerpts: retrieved=%s, "
+                        "files_searched=%s — the reply is ungrounded",
+                        assistant_message_uuid,
+                        turn.metadata.get("retrieved", 0),
+                        turn.metadata.get("files_searched", 0),
+                    )
+                    yield sse(
+                        "warning",
+                        {
+                            "code": "no_context",
+                            "retrieved": turn.metadata.get("retrieved", 0),
+                            "files_searched": turn.metadata.get("files_searched", 0),
+                        },
+                    )
+                elif not excerpt_ids:
                     # Retrieval found material and the budget left no room for any
                     # of it. Say so rather than answering ungrounded behind a
                     # normal-looking reply.
@@ -516,6 +819,16 @@ class ChatService:
                     )
                     yield sse("warning", language_warning)
 
+            # Redaction of the model's OWN words. Offset masking covers the text
+            # we gave it; nothing covered the text it writes about that material
+            # until this. Resolved here rather than inside `_prepare_context`
+            # because a `use_context=False` turn never runs that stage and its
+            # answer is just as visible — which is also why it sits OUTSIDE the
+            # use_context block above, unlike the language warning.
+            output_policy = await run_in_threadpool(_resolve_output_policy, user_id)
+            answer_redactor = OutputRedactor(output_policy)
+            reasoning_redactor = OutputRedactor(output_policy)
+
             yield sse("status", {"stage": "generating"})
 
             kwargs: dict[str, Any] = {"max_tokens": answer_tokens}
@@ -525,6 +838,9 @@ class ChatService:
             # sending a "default" would override a provider-side tuned value.
             if top_p is not None:
                 kwargs["top_p"] = top_p
+            # Only ever narrows: None leaves the provider payload untouched.
+            if enable_thinking is not None:
+                kwargs["enable_thinking"] = enable_thinking
 
             first_token_deadline = time.monotonic() + C.DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S
             got_first_token = False
@@ -542,13 +858,19 @@ class ChatService:
                     cancel_event.set()
 
                 if event.type == "delta":
+                    # The watchdog below measures the PROVIDER's first token, so
+                    # it is satisfied here — before the redactor may hold this
+                    # delta back. Keying it off emission instead would read a
+                    # buffered first sentence as a stalled model and kill it.
                     if not got_first_token:
                         got_first_token = True
                         turn.metadata.setdefault("timings_ms", {})["first_token"] = int(
                             (time.monotonic() - started) * 1000
                         )
-                    turn.answer_parts.append(event.text)
-                    yield sse("delta", {"text": event.text})
+                    safe = await _redact_delta(answer_redactor, event.text)
+                    if safe:
+                        turn.answer_parts.append(safe)
+                        yield sse("delta", {"text": safe})
                 elif event.type == "reasoning":
                     # The model IS actively responding once reasoning starts, so this
                     # satisfies the first-token watchdog exactly like an answer delta —
@@ -559,8 +881,12 @@ class ChatService:
                         turn.metadata.setdefault("timings_ms", {})["first_token"] = int(
                             (time.monotonic() - started) * 1000
                         )
-                    turn.reasoning_parts.append(event.text)
-                    yield sse("reasoning", {"text": event.text})
+                    # Reasoning is rendered too (a collapsed block, not a hidden
+                    # one), so it is a display surface and gets its own buffer.
+                    safe = await _redact_delta(reasoning_redactor, event.text)
+                    if safe:
+                        turn.reasoning_parts.append(safe)
+                        yield sse("reasoning", {"text": safe})
                 elif event.type == "usage":
                     turn.prompt_tokens = event.prompt_tokens
                     turn.completion_tokens = event.completion_tokens
@@ -579,6 +905,19 @@ class ChatService:
                     turn.error_code = "timeout"
                     yield sse("error", {"code": "timeout", "message": turn.error})
                     break
+
+            # The last sentence usually has no trailing whitespace to prove it
+            # ended, so it is still in the buffer. Flushing here (rather than
+            # only in the shielded teardown) is what puts it on the wire; the
+            # teardown flush is idempotent and only covers a torn-down turn.
+            tail = await _flush_redactor(answer_redactor)
+            if tail:
+                turn.answer_parts.append(tail)
+                yield sse("delta", {"text": tail})
+            reasoning_tail = await _flush_redactor(reasoning_redactor)
+            if reasoning_tail:
+                turn.reasoning_parts.append(reasoning_tail)
+                yield sse("reasoning", {"text": reasoning_tail})
 
         except Exception as exc:  # noqa: BLE001 — surface as a frame, never a 500
             logger.exception("Chat stream failed for conversation %s", conversation_uuid)
@@ -609,6 +948,22 @@ class ChatService:
                 turn.finish_reason = "cancelled"
 
             with anyio.CancelScope(shield=True):
+                # A turn torn down mid-sentence still holds a buffered tail. It
+                # cannot be yielded (there is no client left, and this scope
+                # contains no `yield` by design) but it IS part of the answer,
+                # so it is masked and persisted — the user sees it on reload.
+                # `drain()` is idempotent, so a normal exit does not duplicate it.
+                try:
+                    tail = await _flush_redactor(answer_redactor)
+                    if tail:
+                        turn.answer_parts.append(tail)
+                    reasoning_tail = await _flush_redactor(reasoning_redactor)
+                    if reasoning_tail:
+                        turn.reasoning_parts.append(reasoning_tail)
+                except Exception:  # noqa: BLE001 — never mask the real outcome
+                    logger.exception("Chat output redaction teardown flush failed")
+                _record_output_redaction(turn, answer_redactor, reasoning_redactor)
+
                 try:
                     await _finalize_turn(
                         turn=turn,

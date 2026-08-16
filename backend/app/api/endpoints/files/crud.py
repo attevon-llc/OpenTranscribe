@@ -28,6 +28,7 @@ from app.schemas.media import Tag as TagSchema
 from app.schemas.media import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.media import TranscriptSegmentUpdate
 from app.services.formatting_service import FormattingService
+from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
@@ -522,30 +523,51 @@ def _resolve_redaction_for_request(
     can_reveal = bool(db_file.user_id == current_user.id) or bool(is_admin)
     reveal = cfg.reveal_categories(requested=(redact is False), is_owner=can_reveal)
 
-    if reveal:
-        # Audit any unredacted view (compliance trail).
-        try:
-            from app.auth.audit import AuditOutcome
-            from app.auth.audit import audit_logger
-
-            audit_logger.log(
-                event_type="transcript.view_unredacted",  # type: ignore[arg-type]
-                outcome=AuditOutcome.SUCCESS,
-                user_id=current_user.id,
-                username=str(current_user.email),
-                # Org attribution (issue #262a): the reveal concerns this file's
-                # tenant, so its org admins see it in the org audit read.
-                organization_id=int(db_file.organization_id) if db_file.organization_id else None,
-                details={
-                    "file_id": db_file.id,
-                    "file_uuid": str(db_file.uuid),
-                    "revealed_categories": sorted(reveal),
-                },
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"Audit log for unredacted view failed: {e}")
+    audit_unredacted_reveal(db_file, current_user, reveal, surface="transcript")
 
     return cfg, reveal
+
+
+def audit_unredacted_reveal(
+    db_file: MediaFile, current_user: User, reveal: set[str], *, surface: str
+) -> None:
+    """Write the ``transcript.view_unredacted`` compliance event, if anything revealed.
+
+    The ONE implementation. It lived inline in ``_resolve_redaction_for_request`` while
+    ``files/subtitles.py`` — the path that writes the revealed transcript to a **file on
+    the user's disk** — wrote no audit event at all (issue #85). Two copies of a
+    compliance trail is how one of them silently stops matching the other.
+
+    Args:
+        db_file: The file whose transcript was revealed.
+        current_user: Who revealed it.
+        reveal: Categories actually revealed. Empty → nothing was revealed, no event.
+        surface: Which read surface (``transcript`` | ``subtitle_export``). Admin-forced
+            categories never appear here; they cannot be revealed on any surface.
+    """
+    if not reveal:
+        return
+    try:
+        from app.auth.audit import AuditOutcome
+        from app.auth.audit import audit_logger
+
+        audit_logger.log(
+            event_type="transcript.view_unredacted",  # type: ignore[arg-type]
+            outcome=AuditOutcome.SUCCESS,
+            user_id=current_user.id,
+            username=str(current_user.email),
+            # Org attribution (issue #262a): the reveal concerns this file's
+            # tenant, so its org admins see it in the org audit read.
+            organization_id=int(db_file.organization_id) if db_file.organization_id else None,
+            details={
+                "file_id": db_file.id,
+                "file_uuid": str(db_file.uuid),
+                "revealed_categories": sorted(reveal),
+                "surface": surface,
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"Audit log for unredacted view failed: {e}")
 
 
 def _lazy_dispatch_redaction(db: Session, db_file: MediaFile) -> None:
@@ -570,15 +592,18 @@ def _redaction_pending(db: Session, cfg: Any, db_file: MediaFile) -> bool:
     (failed = redaction couldn't run; don't trap the user). A file that never had
     detection (legacy, status None) is dispatched lazily and treated as pending.
     """
-    if cfg is None or not getattr(cfg, "enabled", False):
-        return False
+    from app.services.redaction.export_policy import export_masking_is_pending
+
     status = getattr(db_file, "redaction_status", None)
-    if status in (C.REDACTION_STATUS_DONE, C.REDACTION_STATUS_FAILED):
+    # The status rule itself lives in `services/redaction/export_policy.py`, because the
+    # bulk-export and burned-in-subtitle workers need the identical rule and cannot
+    # import an API endpoint module. Only the lazy re-dispatch is local: it is a DB
+    # write, which belongs on a read a user is waiting on and not in a download worker.
+    if not export_masking_is_pending(cfg, status):
         return False
     if status is None:
         _lazy_dispatch_redaction(db, db_file)
-        return True
-    return True  # pending | processing
+    return True  # None (just dispatched) | pending | processing
 
 
 def _build_media_file_response(
@@ -832,6 +857,20 @@ def update_media_file(
     update_data = media_file_update.model_dump(exclude_unset=True)
     title_updated = "title" in update_data and update_data["title"] != db_file.title
 
+    # ``recorded_date`` is POPPED before the generic loop below, not handled after it.
+    # A bare ``setattr(db_file, "recorded_date", value)`` writes a date with no source,
+    # which ``ck_media_file_recorded_date_provenance`` rejects — so the whole update
+    # would fail with an IntegrityError, and the user's title edit would be lost along
+    # with their date edit. Routing it through ``set_manual_date`` is what stamps
+    # ``source='manual'`` and sets the lock that makes the correction permanent.
+    #
+    # ``exclude_unset=True`` is load-bearing here: it distinguishes "the client did not
+    # mention the date" (leave it alone) from "the client sent null" (clear the manual
+    # value and let automatic resolution run again). Without that distinction every
+    # rename would silently wipe the user's date.
+    if "recorded_date" in update_data:
+        set_manual_date(db_file, update_data.pop("recorded_date"))
+
     # Update fields
     for field, value in update_data.items():
         setattr(db_file, field, value)
@@ -841,11 +880,26 @@ def update_media_file(
 
     # Update OpenSearch index if title was changed
     if title_updated:
+        new_title = str(db_file.title or db_file.filename)
         try:
-            new_title = str(db_file.title or db_file.filename)
             update_transcript_title(str(db_file.uuid), new_title)  # Use UUID not integer ID
         except Exception as e:
             logger.warning(f"Failed to update OpenSearch title for file {file_id}: {e}")
+
+        # ...and the CHUNK plane, which is a separate index write.
+        # `update_transcript_title` only touches the full-document transcript index.
+        # Chunk documents carry their own `title`, and they are what feeds search
+        # result cards and chat citations — so without this a renamed file keeps
+        # showing its OLD title in both, permanently. The task existed, was Celery-
+        # routed and was documented in two CLAUDE.md files, but nothing ever
+        # dispatched it; `test_title_change_queues_the_chunk_rewrite` was asserting
+        # a design that had never been wired.
+        try:
+            from app.tasks.rename_propagation_task import propagate_title_rename
+
+            propagate_title_rename.delay(file_uuid=str(db_file.uuid), new_title=new_title)
+        except Exception as exc:  # noqa: BLE001 — dispatch failure must not break the rename
+            logger.warning(f"Could not queue chunk title propagation for {db_file.uuid}: {exc}")
 
     # Invalidate caches so gallery reflects the update
     try:
@@ -978,23 +1032,17 @@ def update_single_transcript_segment(
         setattr(segment, field, value)
 
     # If the text changed, re-run redaction detection for THIS segment only so the
-    # edited text never bypasses masking (cheap inline detectors; ML best-effort).
+    # edited text never bypasses masking. The API process preloads no ML detectors,
+    # so this is also where a detector is most likely to be unavailable — and this
+    # path WRITES, so a swallowed failure would be cached as "clean" forever rather
+    # than costing one request. `redetect_edited_segment` owns that decision: it
+    # marks the file stale and queues a worker re-scan instead of persisting a
+    # result nobody could examine. It never raises for a detector fault, so a
+    # broken detector cannot turn a transcript edit into a 500.
     if text_changed:
-        try:
-            from app.services.redaction.config import detection_config_for_all
-            from app.services.redaction.service import RedactionService
+        from app.services.redaction.service import RedactionService
 
-            det_cfg = detection_config_for_all()
-            det_cfg["language"] = db_file.language
-            span_dicts, toxicity = RedactionService.detect_segment_spans(
-                str(segment.text),
-                segment.words,  # type: ignore[arg-type]
-                det_cfg,
-            )
-            segment.redactions = span_dicts or None  # type: ignore[assignment]
-            segment.toxicity = toxicity  # type: ignore[assignment]
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"Re-detection after segment edit failed: {e}")
+        RedactionService.redetect_edited_segment(db, db_file, segment)
 
     db.commit()
     db.refresh(segment)

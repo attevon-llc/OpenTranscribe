@@ -1,0 +1,62 @@
+{
+  "accuracy": 0.9992,
+  "accuracy_by_expected": {
+    "aggregate": 1.0,
+    "lookup": 0.999,
+    "summarize": 1.0
+  },
+  "cases": 2573,
+  "cases_by_corpus": {
+    "qmsum": {
+      "lookup": 1172,
+      "summarize": 404
+    },
+    "synthetic": {
+      "aggregate": 166,
+      "lookup": 751,
+      "summarize": 80
+    }
+  },
+  "caveats": [
+    "QMSum's summarize label is a surface rule over the query's opening word, which overlaps the router's own lexicon \u2014 agreement on that class is partly tautological and is NOT an independent result.",
+    "QMSum's lookup label is the complement of that rule over human-written questions, so leakage OUT of lookup is a real measurement.",
+    "The synthetic tier's labels are true by construction: the generator built each query from the rule the label names.",
+    "No corpus here exercises temporal; unit tests do."
+  ],
+  "classifier": "app.services.chat.router.route (rules only)",
+  "confusion": {
+    "aggregate": {
+      "aggregate": 166
+    },
+    "lookup": {
+      "lookup": 1921,
+      "summarize": 2
+    },
+    "summarize": {
+      "summarize": 484
+    }
+  },
+  "control_name": "stage4-router",
+  "label_provenance": {
+    "by-construction": 997,
+    "surface-rule": 1576
+  },
+  "llm_required": false,
+  "lookup_leakage": {
+    "misrouted": 2,
+    "n": 1923,
+    "rate": 0.0010400416016640667,
+    "to": {
+      "summarize": 2
+    },
+    "why_it_matters": "The chunk tier is never removed, so a misroute cannot make a query unanswerable. What it costs is the reduced chunk budget on the summarize/aggregate branches \u2014 and that cost lands only here. This is the quantity D5's 'lookup must never regress' turns on."
+  },
+  "temporal_slot": {
+    "cases": 11,
+    "rate": 1.0,
+    "recovered": 11
+  },
+  "ungrounded_labels": [
+    "temporal"
+  ]
+}

@@ -2,7 +2,6 @@
 
 import logging
 from typing import Any
-from typing import cast
 
 from fastapi import APIRouter
 from fastapi import Body
@@ -25,6 +24,7 @@ from app.core.redis import get_redis
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.search import SetEmbeddingModelSchema
+from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 
 logger = logging.getLogger(__name__)
 
@@ -397,7 +397,18 @@ def trigger_reindex(
                         index=index_name,
                         body={
                             "size": 0,
-                            "query": {"term": {"user_id": current_user.id}},
+                            "query": {
+                                "bool": {
+                                    "filter": [
+                                        {"term": {"user_id": current_user.id}},
+                                        # G4: "which files still need indexing?".
+                                        # A file left with only a digest (a rebuild
+                                        # that failed part-way) would otherwise read
+                                        # as indexed and never be repaired.
+                                        chunk_plane_clause(),
+                                    ]
+                                }
+                            },
                             "aggs": {
                                 "indexed_files": {
                                     "terms": {
@@ -562,7 +573,16 @@ def reindex_status(
                 index=settings.OPENSEARCH_CHUNKS_INDEX,
                 body={
                     "size": 0,
-                    "query": {"term": {"user_id": current_user.id}},
+                    "query": {
+                        "bool": {
+                            "filter": [
+                                {"term": {"user_id": current_user.id}},
+                                # G4, again: the number the admin UI shows as
+                                # "indexed files" must count files with chunks.
+                                chunk_plane_clause(),
+                            ]
+                        }
+                    },
                     "aggs": {
                         "unique_files": {"cardinality": {"field": "file_uuid"}},
                         "last_indexed": {"max": {"field": "indexed_at"}},
@@ -790,6 +810,48 @@ def repair_indices(
 # =============================================================================
 
 
+def _switch_model(model_name: str, triggered_by: int) -> dict[str, Any]:
+    """Run the model switch and turn its two refusals into HTTP status codes.
+
+    The switch itself is business logic and lives in
+    ``services/search/model_switch.py``; this is the response-shaping half.
+    ``409`` rather than ``400`` for an undeployed model because the request is
+    well-formed — the *deployment* is not in a state that can honour it, and the
+    remedy (register, then deploy) is named in the detail.
+
+    ``503`` for a dispatch failure is the one that reports a **half-applied**
+    switch: the settings, pipeline and index mapping have already changed, and
+    only the re-embed failed to queue. It is an error rather than a partial
+    success on purpose — the resulting index is exactly the mixed vector space
+    #437 exists to prevent, and the detail says so.
+
+    Args:
+        model_name: A key of ``OPENSEARCH_EMBEDDING_MODELS``.
+        triggered_by: User id performing the switch.
+
+    Returns:
+        The service's result dict.
+
+    Raises:
+        HTTPException: 400 unknown model, 409 model not registered *and*
+            deployed, 503 the re-embed could not be queued.
+    """
+    from app.services.search.model_switch import EmbeddingModelNotDeployedError
+    from app.services.search.model_switch import ReindexDispatchError
+    from app.services.search.model_switch import UnknownEmbeddingModelError
+    from app.services.search.model_switch import apply_embedding_model_switch
+
+    try:
+        return apply_embedding_model_switch(model_name, triggered_by)
+    except UnknownEmbeddingModelError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except EmbeddingModelNotDeployedError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except ReindexDispatchError as e:
+        logger.error(f"Model switch left half-applied: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+
 @router.get("/models")
 def get_embedding_models(
     current_user: User = Depends(get_current_active_user),
@@ -824,42 +886,23 @@ def set_embedding_model(
     request: SetEmbeddingModelSchema,
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
+    """Set the embedding model and reindex every user's transcripts.
+
+    The settings-UI entry point. It delegates to
+    ``services/search/model_switch`` — it used to write the settings row and
+    nothing else, which changed the recorded model and the index dimension while
+    leaving the ingest pipeline embedding with the previous model (issue #437).
     """
-    Set the embedding model and trigger reindex.
-
-    Changing the embedding model requires re-indexing all transcripts
-    since the vector dimensions will change.
-    """
-    model_id = request.model_id
-    if model_id not in OPENSEARCH_EMBEDDING_MODELS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown model: {model_id}",
-        )
-
-    from app.services.search.settings_service import save_search_embedding_model
-
-    model_info = OPENSEARCH_EMBEDDING_MODELS[model_id]
-    dimension = cast(int, model_info["dimension"])
-
-    # Update setting
-    save_search_embedding_model(model_id, dimension)
-
-    # Trigger reindex
-    from app.tasks.reindex_task import reindex_transcripts_task
-
-    task = reindex_transcripts_task.delay(
-        user_id=current_user.id,
-        file_uuids=None,
-    )
-
-    logger.info(f"Embedding model changed to {model_id} ({dimension}d), reindex task: {task.id}")
-
+    applied = _switch_model(request.model_id, current_user.id)
+    model_info = OPENSEARCH_EMBEDDING_MODELS[request.model_id]
     return {
+        **applied,
         "status": "model_changed",
-        "model_id": model_id,
-        "reindex_task_id": task.id,
-        "message": f"Switched to {model_info['name']}. Re-indexing all transcripts.",
+        "model_id": applied["model_name"],
+        "message": (
+            f"Switched to {model_info['name']}. Re-indexing the transcripts of "
+            f"{applied['reindex_users']} user(s)."
+        ),
     }
 
 
@@ -1091,90 +1134,38 @@ def set_active_neural_model(
     model_name: str = Query(..., description="Model name to set as active"),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
-    """
-    Set the active neural model for search and trigger reindex.
+    """Set the active neural model for search and reindex every user's transcripts.
 
-    The model must be deployed before it can be set as active.
-    This will:
-    1. Update the neural ingest pipeline with the new model
-    2. Trigger a full reindex of all transcripts
-    3. Reset search caches
+    The model must be registered and deployed first. This will:
+
+    1. Persist the model **and its dimension** to settings
+    2. Update the neural ingest pipeline with the new model
+    3. Recreate the index if the dimension changed
+    4. Dispatch a reindex for **every** user that owns transcripts
+    5. Reset search caches
+
+    Step 1 used to be missing (issue #437), so the reindex coordinator then read
+    the *previous* dimension and recreated the index a second time at the wrong
+    size; step 4 used to cover only the caller, leaving every other user's chunks
+    in the old model's vector space. Both live in
+    ``services/search/model_switch.apply_embedding_model_switch``, which
+    ``POST /search/models`` shares — the two endpoints were each doing a different
+    half of the same job.
 
     Args:
         model_name: Full model name from OPENSEARCH_EMBEDDING_MODELS.
 
     Returns:
-        Dict with status and reindex task info.
+        Dict with status, reindex task ids, and the post-switch provenance survey.
     """
-    if model_name not in OPENSEARCH_EMBEDDING_MODELS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown model: {model_name}",
-        )
-
-    from app.services.search.ml_model_service import get_ml_model_service
-
-    ml_service = get_ml_model_service()
-
-    # Find and verify the model is deployed
-    model_id = ml_service.find_model_by_name(model_name)
-    if not model_id:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Model {model_name} not registered. Register and deploy it first.",
-        )
-
-    status = ml_service.get_model_status(model_id)
-    if not status.get("deployed"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Model {model_name} is not deployed. Deploy it first.",
-        )
-
-    # Set as active model
-    ml_service.set_active_model_id(model_id)
-
-    # Update the neural ingest pipeline
-    from app.services.search.indexing_service import ensure_neural_ingest_pipeline
-    from app.services.search.indexing_service import reset_neural_pipeline_state
-
-    reset_neural_pipeline_state()
-    ensure_neural_ingest_pipeline(model_id)
-
-    # Reset search caches
-    from app.services.search.hybrid_search_service import clear_search_cache
-    from app.services.search.hybrid_search_service import reset_neural_search_state
-
-    clear_search_cache()
-    reset_neural_search_state()
-
-    # Update dimension in settings
+    applied = _switch_model(model_name, current_user.id)
     model_info = OPENSEARCH_EMBEDDING_MODELS[model_name]
-    new_dimension = cast(int, model_info["dimension"])
-
-    # Recreate index if dimension changed
-    from app.services.search.indexing_service import recreate_index_for_dimension
-
-    recreate_index_for_dimension(new_dimension)
-
-    # Trigger full reindex
-    from app.tasks.reindex_task import reindex_transcripts_task
-
-    task = reindex_transcripts_task.delay(
-        user_id=current_user.id,
-        file_uuids=None,  # All files
-    )
-
-    logger.info(f"Set active neural model to {model_name} ({model_id}), reindex task: {task.id}")
-
     return {
+        **applied,
         "status": "active_model_set",
-        "model_name": model_name,
-        "model_id": model_id,
-        "dimension": new_dimension,
-        "reindex_task_id": task.id,
         "message": (
-            f"Switched to {model_info['name']}. Re-indexing all transcripts with neural pipeline."
+            f"Switched to {model_info['name']}. Re-indexing the transcripts of "
+            f"{applied['reindex_users']} user(s) with the neural pipeline."
         ),
     }
 
@@ -1187,10 +1178,19 @@ def get_neural_search_status(
     Get the current neural search status.
 
     Returns:
-        Dict with neural search enabled flag, active model, and pipeline status.
+        Dict with neural search enabled flag, active model, pipeline status, and
+        the ``embedding_provenance`` survey — the one query that answers whether
+        the index is a single comparable vector space (issue #437). It lives here
+        rather than in ``POST /search/repair-indices`` because that endpoint's
+        machinery is close/reopen/force-merge, which cannot repair a mixed vector
+        space; reporting it there would imply the repair had addressed it. Only a
+        reindex does, and this is the endpoint an operator reads before deciding
+        to run one.
     """
+    from app.services.search.embedding_provenance import survey_embedding_models
     from app.services.search.indexing_service import is_neural_pipeline_available
     from app.services.search.ml_model_service import get_ml_model_service
+    from app.services.search.model_switch import provenance_payload
 
     ml_service = get_ml_model_service()
     active_model_id = ml_service.get_active_model_id()
@@ -1211,4 +1211,5 @@ def get_neural_search_status(
         "active_model_name": active_model_name,
         "active_model_dimension": active_model_info["dimension"] if active_model_info else None,
         "pipeline_name": settings.OPENSEARCH_NEURAL_PIPELINE,
+        "embedding_provenance": provenance_payload(survey_embedding_models()),
     }

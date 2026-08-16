@@ -183,16 +183,15 @@ export function handleFileNotification(
         const file = ctx.getFile();
         if (file) {
           // Update summary-related fields from notification data
-          // Note: The notification contains a brief preview, not the full summary_data
+          // Note: The notification contains a brief preview, not the full summary_data.
+          // It no longer carries `summary_opensearch_id` — the transcript_summaries
+          // index is retired (#67) — and the preview is always sent on completion,
+          // so it alone establishes that a summary now exists.
           const summaryPreview = latestNotification.data?.summary;
-          const summaryId = latestNotification.data?.summary_opensearch_id;
 
           // Set a flag to indicate summary exists (full data fetched via API)
-          if (summaryPreview || summaryId) {
+          if (summaryPreview) {
             file.has_summary = true; // Summary now available
-          }
-          if (summaryId) {
-            file.summary_opensearch_id = summaryId;
           }
 
           // Force reactivity update by creating new object reference

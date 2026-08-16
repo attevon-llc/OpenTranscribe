@@ -230,7 +230,7 @@ def _parse_frame_rate(value: Any) -> float | None:
     if value is None:
         return None
     try:
-        if isinstance(value, (int, float)):
+        if isinstance(value, int | float):
             return float(value)
         text = str(value).strip()
         if "/" in text:
@@ -474,29 +474,6 @@ def _try_parse_creation_date_from_fields(media_file, important_metadata: dict[st
             logger.warning(f"Could not parse {field_name}: {field_value} - {e}")
 
 
-def _apply_creation_date_fallbacks(media_file, file_path: str) -> None:
-    """Apply fallback chain for missing creation dates."""
-    if media_file.creation_date is not None:
-        return
-
-    # First fallback: file system modification time
-    try:
-        if os.path.exists(file_path):
-            file_mtime = os.path.getmtime(file_path)
-            media_file.creation_date = datetime.datetime.fromtimestamp(file_mtime, tz=datetime.UTC)
-            logger.info(
-                f"Using file system modification time as creation_date: {media_file.creation_date}"
-            )
-            return
-    except Exception as e:
-        logger.warning(f"Could not get file system modification time: {e}")
-
-    # Final fallback: use upload_time
-    if media_file.upload_time:
-        media_file.creation_date = media_file.upload_time
-        logger.info(f"Using upload_time as creation_date fallback: {media_file.creation_date}")
-
-
 def _set_modification_date(media_file, important_metadata: dict[str, Any]) -> None:
     """Parse and set modification date from metadata."""
     modify_date = important_metadata.get("ModifyDate")
@@ -559,9 +536,21 @@ def update_media_file_metadata(
     # Duration
     _set_duration(media_file, important_metadata)
 
-    # Creation date with fallback chain
+    # Creation date — the CONTAINER's claim, and nothing else.
+    #
+    # This used to end in a two-step fallback: filesystem mtime, then ``upload_time``.
+    # Both are gone, and their removal is the point rather than a tidy-up. They recorded
+    # no provenance, so a ``creation_date`` copied from ``upload_time`` was
+    # indistinguishable from one read out of the file — and every date-scoped answer in
+    # the product then treated the upload date as the recording date, confidently. mtime
+    # is worse than it looks too: on an uploaded file it is when the *copy* was made.
+    #
+    # The fallbacks are not lost, they are promoted: "no source knew" is now an explicit
+    # ``recorded_date_source`` (``none``), and the chat coverage block says so out loud
+    # instead of presenting a substitute as a fact. See
+    # ``services/ingest_artifacts/recorded_date.py``. NULL here now means exactly what it
+    # says — the container did not tell us.
     _try_parse_creation_date_from_fields(media_file, important_metadata)
-    _apply_creation_date_fallbacks(media_file, file_path)
 
     # Modification date
     _set_modification_date(media_file, important_metadata)

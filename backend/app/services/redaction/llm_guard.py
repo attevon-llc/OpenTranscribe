@@ -18,8 +18,15 @@ the edge case:
   returns the text unchanged. The call looks masked and isn't.
 * **Masking raised.** Returning the input on an exception hands the provider
   exactly the content the policy exists to withhold.
+* **Detection finished without running a detector.** ``redaction_status = done``
+  means the scan completed, not that every detector examined the text: an
+  unavailable one is a reported *skip* and still reaches ``done``. Masking then
+  applies a complete-looking span cache that simply has no PII in it, so the
+  provider receives the transcript verbatim while every log line says masked.
+  ``media_file.redaction_coverage`` (v392) is what tells the two apart; see
+  ``services/redaction/coverage.py``.
 
-``resolve_llm_masking`` collapses both into one decision a caller cannot get
+``resolve_llm_masking`` collapses all three into one decision a caller cannot get
 subtly wrong, and :class:`RedactionNotReadyError` gives batch callers the option
 interactive chat does not have: come back later. Chat cannot wait for a
 detection pass mid-request, so it masks inline instead
@@ -35,6 +42,8 @@ from sqlalchemy.orm import Session
 from app.core import constants as C  # noqa: N812
 from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.config import resolve_effective_config
+from app.services.redaction.coverage import describe_gap
+from app.services.redaction.coverage import uncovered_detectors
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +90,9 @@ def resolve_llm_masking(db: Session, media_file) -> EffectiveRedactionConfig | N
         owner's policy does not require pre-LLM masking (send text as-is).
 
     Raises:
-        RedactionNotReadyError: Masking is required but cached spans are missing or
-            untrustworthy. Never downgrade this to "send unmasked".
+        RedactionNotReadyError: Masking is required but cached spans are missing,
+            untrustworthy, or do not cover a category this policy masks. Never
+            downgrade this to "send unmasked".
         Exception: Whatever ``resolve_effective_config`` raises. An unresolvable
             policy must not be read as an absent policy — if we cannot tell
             whether masking is required, we must not send.
@@ -93,7 +103,27 @@ def resolve_llm_masking(db: Session, media_file) -> EffectiveRedactionConfig | N
 
     status = getattr(media_file, "redaction_status", None)
     if status == C.REDACTION_STATUS_DONE:
-        return cfg
+        # A finished scan is not necessarily a complete one. Masking a file whose PII
+        # detector never ran produces a transcript that is untouched, from a call the
+        # caller has every reason to believe masked it.
+        gap = uncovered_detectors(media_file, cfg)
+        if not gap:
+            return cfg
+        # NOT retryable, for the same reason ``detect_and_store`` records unavailability
+        # as a skip rather than a failure: re-running the scan does not install the
+        # missing dependency, so deferring would only burn ten attempts and arrive at
+        # this refusal anyway. The operator has to act, and the message says what to do.
+        logger.error(
+            "Refusing to send an incompletely scanned transcript to an LLM provider: %s",
+            describe_gap(media_file, gap),
+        )
+        raise RedactionNotReadyError(
+            f"Redaction detection for file {media_file.id} completed without detectors "
+            f"{sorted(gap)}, whose categories this policy masks; refusing to send a "
+            "transcript that was never examined for them",
+            retryable=False,
+            file_id=int(media_file.id),
+        )
 
     if status == C.REDACTION_STATUS_FAILED:
         raise RedactionNotReadyError(

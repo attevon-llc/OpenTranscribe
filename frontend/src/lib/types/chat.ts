@@ -47,14 +47,30 @@ export function isScopeUnfiltered(scope: ChatScope | null | undefined): boolean 
   return isScopeEmpty(scope) && !(scope?.speakers?.length ?? 0);
 }
 
-/** One transcript excerpt an answer may reference as `[n]`. */
+/**
+ * What a citation points at (#403 Stage 4).
+ *
+ * `chunk` is somebody's words at a timestamp. `digest` is DERIVED text — an
+ * extractive summary of a span of the same recording — and must never be
+ * rendered as a quote: presenting it as speech attributes to a person words
+ * nobody actually said. Older messages predate the field and carry nothing,
+ * which is why every read treats an absent value as `chunk`.
+ */
+export type ChatSourceKind = 'chunk' | 'digest';
+
+/** One retrieved excerpt an answer may reference as `[n]`. */
 export interface ChatSource {
   id: number;
+  /** Absent on messages persisted before Stage 4; treat as `chunk`. */
+  kind?: ChatSourceKind;
   file_uuid: string;
   title: string;
   chunk_index: number;
+  /** Section number when `kind === 'digest'`, else null. */
+  digest_section?: number | null;
   start_time: number;
   end_time: number | null;
+  /** Always null for a digest: a section spans several speakers. */
   speaker: string | null;
   snippet: string;
 }
@@ -75,6 +91,14 @@ export interface ChatMessageMetadata {
    * survives a reload rather than existing only for the streaming session.
    */
   context_dropped?: boolean;
+  /**
+   * NOTHING reached the prompt: retrieval matched nothing, the search backend
+   * was unavailable and degraded to a context-free answer, or masking failed
+   * closed on every chunk (issue #438). Distinct from `context_dropped`, where
+   * excerpts existed and the budget rejected them — read `retrieved` beside
+   * this to tell an empty search (`0`) from fail-closed masking (non-zero).
+   */
+  no_context?: boolean;
   /**
    * The turn's context included recordings in a language RAG is not tuned for.
    * Transcription is multilingual; retrieval, reranking and prompting are
@@ -140,6 +164,14 @@ export interface ConversationSettings {
   /** Nucleus sampling. null omits it from the request entirely. */
   top_p?: number | null;
   search_mode?: SearchMode | null;
+  /**
+   * Whether the model reasons before answering. null inherits the model's own
+   * behaviour; `false` is honoured ONLY where the server measured a working
+   * off-switch for the model in play (see `reasoning_off_switch` on the LLM
+   * configurations response). Never render a control for this without that
+   * measurement — a toggle over a model that reasons anyway is a false claim.
+   */
+  reasoning?: boolean | null;
 }
 
 export interface ConversationSummary {
@@ -234,6 +266,12 @@ type StreamStage = 'rewriting' | 'retrieving' | 'reranking' | 'generating';
  * an answer that reads as sourced when it is not is the failure this exists to
  * prevent.
  *
+ * `no_context`: nothing reached the prompt at all (issue #438). Retrieval
+ * degrades to an empty result on any failure, so this covers "nothing matched",
+ * "the search backend was down", and "masking dropped every chunk" alike — the
+ * `retrieved` count separates them. It and `context_dropped` are mutually
+ * exclusive branches of one server-side `if`.
+ *
  * `unsupported_language`: the context included recordings in a language the
  * English-only RAG stack cannot rank or read. Same principle: the answer looks
  * complete while a recording was invisible to it.
@@ -241,7 +279,7 @@ type StreamStage = 'rewriting' | 'retrieving' | 'reranking' | 'generating';
  * ⚠️ A code missing from this union is silently discarded by `stores/chat.ts`,
  * so the server can emit a warning nobody ever sees. Widen both together.
  */
-export type ChatWarningCode = 'context_dropped' | 'unsupported_language';
+export type ChatWarningCode = 'context_dropped' | 'no_context' | 'unsupported_language';
 
 export type ChatErrorCode =
   | 'llm_unconfigured'
@@ -263,8 +301,14 @@ export type ChatStreamEvent =
   | {
       type: 'warning';
       code: ChatWarningCode;
-      /** `context_dropped` only: how many excerpts were retrieved but dropped. */
+      /**
+       * `context_dropped`: how many excerpts were retrieved but dropped.
+       * `no_context`: how many were retrieved at all — `0` is an empty or
+       * failed search, non-zero is masking having failed closed on every one.
+       */
       retrieved?: number;
+      /** `no_context` only: `'all'` for an unscoped turn, else a count. */
+      files_searched?: number | 'all';
       /** `unsupported_language` only: the languages seen and how many files. */
       context_languages?: ChatMessageMetadata['context_languages'];
     }

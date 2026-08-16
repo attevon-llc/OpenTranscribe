@@ -294,6 +294,32 @@ describe('chat reducer — usage, sources and warnings', () => {
     expect(assistant().msg_metadata?.context_dropped).toBe(true);
   });
 
+  it('folds a no_context warning, with the counts that explain it (#438)', async () => {
+    // `retrieved` is what separates "the search came back empty" from "masking
+    // dropped every chunk", and it is not otherwise on screen mid-stream.
+    await stream([
+      START,
+      { type: 'warning', code: 'no_context', retrieved: 0, files_searched: 'all' },
+      { type: 'done', finish_reason: 'stop' },
+    ]);
+
+    expect(assistant().msg_metadata?.no_context).toBe(true);
+    expect(assistant().msg_metadata?.retrieved).toBe(0);
+    expect(assistant().msg_metadata?.files_searched).toBe('all');
+  });
+
+  it('does not set no_context on a context_dropped warning', async () => {
+    // The two codes name different defects; conflating them would tell the user
+    // nothing was searched when excerpts were found and then discarded.
+    await stream([
+      START,
+      { type: 'warning', code: 'context_dropped', retrieved: 6 },
+      { type: 'done', finish_reason: 'stop' },
+    ]);
+
+    expect(assistant().msg_metadata?.no_context).toBeUndefined();
+  });
+
   it('folds an unsupported_language warning, with its diagnostics, into msg_metadata', async () => {
     // Task #37: transcription is multilingual but retrieval, reranking and
     // prompting are English-only, so a non-English recording is effectively

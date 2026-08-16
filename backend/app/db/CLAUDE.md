@@ -52,13 +52,33 @@ widened for `'saml'` + `user.saml_subject`, mirroring `v380`'s identity-column s
 for a fourth provider), `v384_add_chat_reasoning_content` (nullable
 `chat_message.reasoning_content` — persists a provider's separately-streamed
 reasoning/"thinking" text for the collapsible reasoning display; single-marker
-revision, no CHECK involved), head currently `v389_add_erasure_ledger`
+revision, no CHECK involved), `v389_add_erasure_ledger`
 (the GDPR Art. 17 ledger — note its detection arm keys on
 `ck_erasure_ledger_counters_numeric` rather than on the table, because a table
 without that CHECK can store the personal data the ledger exists not to retain and
-therefore *should* re-run the revision).
+therefore *should* re-run the revision), `v390_add_file_facts`,
+`v391_add_recorded_date_provenance`, head currently
+`v392_add_redaction_coverage`. **Derive the head, never trust this sentence** —
+`scripts/release-tests/lib/alembic-head.py` walks the `down_revision` graph.
 
-**Renumbering note (2026-08).** This auth-identity chain originally used v375-v381,
+**Renumbering note 2 (2026-08-13) — and it happened EXACTLY the way note 1 warns.**
+The `#403` RAG chain added `v389_add_file_facts` while `chore/test-suite-perf-and-quality-overhaul`
+added `v389_add_erasure_ledger`, both chained off `v388_add_user_group_organization_id`.
+**Git merged both files CLEANLY** — different filenames, no textual overlap — so the
+20-file conflict list said nothing, and the fork existed only in the `down_revision`
+graph. Reconciled by renumbering the RAG chain (v389→v390, v390→v391, v391→v392) since
+the erasure ledger's number was already published on its own branch. Four places move
+per revision: the filename, `revision`/`down_revision`, the detection arm here, and
+`REVISION` in its consistency test.
+
+⚠️ **A rename sweep does not finish the job.** `test_v390_migration_consistency`
+asserted `down_revision == "v388_add_user_group_organization_id"` — a string that stayed
+**valid** while ceasing to be **correct**, so no search for the old identifiers found it.
+Only running the suite did. Likewise a live database stamped at a renumbered revision
+holds a `version_num` that no longer exists: re-stamp to the common ancestor and let the
+idempotent chain re-apply, which is what the ladder already computes.
+
+**Renumbering note 1 (2026-08).** This auth-identity chain originally used v375-v381,
 branched off `v374_add_tag_user_id` independently of the RAG-chat chain
 (`v375_add_chat_tables`/`v376_add_chat_projects`, issue #52/#360) — both sides revised
 v374, producing two heads on merge. Reconciled by renumbering the auth chain to
@@ -80,6 +100,15 @@ Two things keep it from coming back, and neither replaces the other:
 - **`scripts/audit-session-lifetime.py`** — 9 AST detectors, wired into `.pre-commit-config.yaml`
   (self-test first) and its own phase in `run-integration-tests.sh`. Allowlist entries need a
   written reason and a **stale entry fails the run**, so an exemption cannot outlive its subject.
+  ⚠️ **A session opened any way `_SESSION_OPENERS` does not name is INVISIBLE to all nine
+  detectors** — not under-reported, unreachable. When the chat turn was phased (`e486f948`)
+  `answer_aggregation` began taking a `session_factory` instead of a `Session`, and neither
+  `with session_factory() as db:` nor its `_short_session` wrapper was recognised, so that
+  subsystem scored 0 findings because nothing could fire in it. Both names are in the set now.
+  Adding a new way to open a session means adding its name here **and** a must-fire plus a
+  must-stay-clean self-test case — then verifying by MUTATION: delete the name and the
+  self-test must break. Reading the code is not verification; a name that matches nothing
+  looks exactly like a clean subsystem.
 - **`DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`** (default 5 min, 0 disables) — the server-side backstop.
   `base.py:build_libpq_options` puts `idle_in_transaction_session_timeout` in the shared engine's
   `connect_args`, so Postgres terminates a backend holding an open transaction and running no

@@ -45,12 +45,26 @@ list.** That forward-compatibility rule silently drops anything unrecognised, so
 a backend-only change ships a frame nobody ever sees. Frames today: `start`,
 `status`, `sources`, `warning`, `delta`, `usage`, `done`, `error`.
 
-`warning` (`{code, retrieved}`, issue #384) reports that retrieval found excerpts
-but none fit the model's context window — the answer is NOT grounded in the
-user's recordings. The store folds it into `msg_metadata.context_dropped` rather
-than holding separate stream state, so `ChatMessage` has **one** render path and
-the notice survives a reload; the server persists the same flag on the message
-row. `sources` now carries only the excerpts that actually reached the prompt.
+`warning` (`{code, retrieved}`) reports that the answer is NOT grounded in the
+user's recordings, and carries one of **two** codes:
+
+- `context_dropped` (#384) — retrieval found excerpts and none fit the model's
+  context window.
+- `no_context` (#438) — nothing reached the prompt at all. Retrieval degrades to
+  an empty result on any failure, so this covers "nothing matched", "search was
+  unavailable" and "masking dropped every chunk"; the `retrieved` count (also
+  folded in) is what separates them.
+
+The store folds both into `msg_metadata` (`context_dropped` / `no_context`)
+rather than holding separate stream state, so `ChatMessage` has **one** render
+path and the notice survives a reload; the server persists the same flags on the
+message row. The two notices are an `{#if}`/`{:else if}`, never stacked — they
+name different defects and only one can be true. `sources` carries only the
+excerpts that actually reached the prompt.
+
+**A new warning `code` is as invisible as a new frame** if the client does not
+know it: the store's fold checks the code explicitly, so an unhandled one is
+parsed, ignored, and never rendered.
 
 Raw fetch bypasses the axios interceptors, so CSRF (`getCsrfToken()`) and the
 one-shot 401 refresh are handled explicitly in that module.
@@ -68,6 +82,28 @@ and reusing the word here would be read as the same concept. The reasoning phase
 ends (freezing `reasoningDurationMs`) on the first `delta` frame, or on
 `done`/`error`/an aborted stream if no answer content ever arrived.
 
+### ⚠️ The reasoning TOGGLE renders only where the off-switch was MEASURED (#64)
+
+`ChatControlsPanel` offers a "Model reasoning" checkbox (`chat-reasoning-toggle`, in the
+`advanced` block) **only** when the server reports `reasoning_off_switch === 'works'` for the
+configuration in play — the conversation's pinned one, else the account default, read from
+`LLMSettingsApi.getUserConfigurations()`. Every other verdict, a uuid missing from the map, and
+a failed lookup all render **nothing**.
+
+Do not relax that to "the provider accepts the parameter". Measured against a real vLLM serving
+gemma-4-e4b, `enable_thinking: false` returned HTTP 200 and produced 931 characters of reasoning
+— byte-identical to not sending the parameter at all. A toggle there tells the user reasoning is
+off while the model reasons anyway, which is worse than no toggle: it is a false claim rather
+than a missing feature. The verdict comes from a probe, per model; the whole design and the
+numbers are in `backend/app/services/CLAUDE.md`.
+
+Unchecking it writes `ConversationSettings.reasoning = false`; re-checking writes `null`
+("inherit"). The server re-checks the capability at send time, so a preference stored against a
+model that could honour it is silently not applied after a model switch.
+
+Note this is a **different thing** from `ChatReasoning`'s local `expanded`, which only collapses
+reasoning text that has already arrived.
+
 ## State machine
 
 `$lib/utils/chatStateMachine.ts` is a pure module, separate from the store,
@@ -79,17 +115,18 @@ Exactly ONE stream is in flight at a time.
 
 ## Component map
 
-| Component             | Note                                                                                                                                                                                                                                    |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ChatThread`          | Auto-scroll follows the stream **only while already at the bottom**; scrolling up suppresses follow and shows a jump pill                                                                                                               |
-| `ChatMessage`         | Hover-revealed actions; permanently visible on touch (`@media (hover: none)`)                                                                                                                                                           |
-| `ChatMarkdown`        | Re-parses the full buffer per throttled tick (rAF + 100ms floor), one final unthrottled render on completion                                                                                                                            |
-| `ChatReasoning`       | Collapsed-by-default reasoning/"thinking" block above `ChatMarkdown`; wraps `ui/ExpandableSection` + reuses `ChatMarkdown` for its body — never a second markdown pipeline. Rendered only when `message.reasoning_content` is non-empty |
-| `ChatSources`         | Citation cards; hrefs from structured data only                                                                                                                                                                                         |
-| `ChatComposer`        | Enter sends, Shift+Enter newline; send button **morphs** to Stop rather than disabling                                                                                                                                                  |
-| `ChatContextBar`      | Empty scope shows "All transcripts" explicitly; context-off gets its own chip                                                                                                                                                           |
-| `FilePickerModal`     | Edits a **draft**, commits on Confirm — scope changes rewrite what every later answer is based on                                                                                                                                       |
-| `ChatStatusIndicator` | The ONLY `aria-live` region; announcing the token stream would read the answer character by character                                                                                                                                   |
+| Component             | Note                                                                                                                                                                                                                                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ChatThread`          | Auto-scroll follows the stream **only while already at the bottom**; scrolling up suppresses follow and shows a jump pill                                                                                                                                                                |
+| `ChatMessage`         | Hover-revealed actions; permanently visible on touch (`@media (hover: none)`)                                                                                                                                                                                                            |
+| `ChatMarkdown`        | Re-parses the full buffer per throttled tick (rAF + 100ms floor), one final unthrottled render on completion                                                                                                                                                                             |
+| `ChatReasoning`       | Collapsed-by-default reasoning/"thinking" block above `ChatMarkdown`; wraps `ui/ExpandableSection` + reuses `ChatMarkdown` for its body — never a second markdown pipeline. Rendered only when `message.reasoning_content` is non-empty                                                  |
+| `ChatSources`         | Citation cards; hrefs from structured data only                                                                                                                                                                                                                                          |
+| `ChatComposer`        | Enter sends, Shift+Enter newline; send button **morphs** to Stop rather than disabling                                                                                                                                                                                                   |
+| `ChatContextBar`      | Empty scope shows "All transcripts" explicitly; context-off gets its own chip                                                                                                                                                                                                            |
+| `FilePickerModal`     | Edits a **draft**, commits on Confirm — scope changes rewrite what every later answer is based on                                                                                                                                                                                        |
+| `ChatStatusIndicator` | The ONLY `aria-live` region; announcing the token stream would read the answer character by character                                                                                                                                                                                    |
+| `ChatEmptyState`      | Hosts `$components/RetrievalQualityNotice` (#461) — the ONE place in chat where that notice renders exactly once. `ChatSources` was the other candidate and was rejected: it renders per assistant message, so three expanded source lists would stack three copies of the same sentence |
 
 ## ⚠️ Events must be forwarded at EVERY hop
 

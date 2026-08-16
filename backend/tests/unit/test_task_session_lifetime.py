@@ -586,6 +586,7 @@ class _FakeRedis:
     def __init__(self):
         self.hashes: dict[tuple[str, str], int] = {}
         self.sets: dict[str, set] = {}
+        self.expiries: dict[str, int] = {}
 
     def hget(self, key, field):
         return self.hashes.get((key, field))
@@ -600,6 +601,10 @@ class _FakeRedis:
 
     def sadd(self, key, *values):
         self.sets.setdefault(key, set()).update(values)
+
+    def expire(self, key, seconds):
+        self.expiries[key] = seconds
+        return key in self.sets or any(k == key for k, _ in self.hashes)
 
 
 @pytest.fixture
@@ -907,7 +912,7 @@ def test_video_service_reads_use_their_own_short_sessions(db_session, normal_use
 
     class _FakeSubtitles:
         @staticmethod
-        def generate_srt_content(db, file_id, include_speakers):
+        def generate_srt_content(db, file_id, include_speakers, redaction_cfg=None):
             written["depth_during_render"] = tracker.depth
             return "1\n00:00:00,000 --> 00:00:04,000\nhello there\n"
 
@@ -921,7 +926,11 @@ def test_video_service_reads_use_their_own_short_sessions(db_session, normal_use
             written["content"] = content
 
     service = vps.VideoProcessingService.__new__(vps.VideoProcessingService)
-    service._generate_subtitle_file(int(media_file.id), _RecordingPath(), True)
+    from app.services.redaction.config import EffectiveRedactionConfig
+
+    service._generate_subtitle_file(
+        int(media_file.id), _RecordingPath(), True, EffectiveRedactionConfig(enabled=False)
+    )
 
     # The transcript read needs a session; the FILE WRITE that follows must not
     # still be inside it, and neither may the ffmpeg run after that.
@@ -982,28 +991,14 @@ class _FakeLLMService:
         self.closed = True
 
 
-class _FakeSummaryIndex:
-    def __init__(self, tracker, recorded):
-        self._tracker = tracker
-        self._recorded = recorded
-
-    def get_max_version(self, file_id, user_id):
-        self._tracker.observe("opensearch_max_version")
-        return 3
-
-    def index_summary(self, data):
-        self._tracker.observe("opensearch_index_summary")
-        self._recorded["indexed"] = data
-        return "summary-doc-1"
-
-    def delete_summary(self, document_id):
-        self._tracker.observe("opensearch_delete_summary")
-        self._recorded["deleted"] = document_id
-
-
 @pytest.fixture
 def summarization_env(db_session, monkeypatch):
-    """Patch summarization's LLM/OpenSearch/notification seams; keep the DB real."""
+    """Patch summarization's LLM and notification seams; keep the DB real.
+
+    There is no OpenSearch seam to patch any more: the task writes
+    ``media_file.summary_data`` and nothing else since ``transcript_summaries``
+    was retired (#67).
+    """
     from app.tasks import summarization as summ
 
     tracker = _ScopeTracker(db_session)
@@ -1016,10 +1011,6 @@ def summarization_env(db_session, monkeypatch):
         "send_summary_notification",
         lambda *a, **kw: recorded.setdefault("notifications", []).append(a),
     )
-    monkeypatch.setattr(
-        summ, "OpenSearchSummaryService", lambda: _FakeSummaryIndex(tracker, recorded)
-    )
-
     service = _FakeLLMService(tracker, recorded)
 
     class _Factory:
@@ -1054,9 +1045,6 @@ def test_summarization_calls_the_llm_outside_the_session(
 
     observed = tracker.seen
     assert observed["llm_generate_summary"] == 0, _leak(tracker, "llm_generate_summary")
-    # OpenSearch is a network hop too, and it no longer shares the write scope.
-    assert observed["opensearch_max_version"] == 0, _leak(tracker, "opensearch_max_version")
-    assert observed["opensearch_index_summary"] == 0, _leak(tracker, "opensearch_index_summary")
 
     assert tracker.opened >= 2, f"expected a read scope and a write scope, got {tracker.opened}"
     assert tracker.max_depth == 1, "session scopes must not nest"
@@ -1073,7 +1061,6 @@ def test_summarization_calls_the_llm_outside_the_session(
     db_session.expire_all()
     refreshed = db_session.query(MediaFile).filter(MediaFile.id == media_file.id).first()
     assert refreshed.summary_status == "completed"
-    assert refreshed.summary_opensearch_id == "summary-doc-1"
     assert refreshed.summary_data["bluf"] == "They agreed."
 
 

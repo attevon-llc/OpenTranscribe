@@ -35,6 +35,7 @@ Following the characterization-test convention of ``tests/unit/test_chunking_ser
 
 from __future__ import annotations
 
+import ast
 import uuid as uuid_module
 from typing import Any
 
@@ -475,24 +476,25 @@ def test_duration_is_the_latest_segment_end(db_session, media_file):
 def test_unique_speaker_names_are_returned_in_a_stable_order(run_in_clean_process):
     """Byte-identical input must give a byte-identical list, in any process (issue #455).
 
-    ``get_unique_speaker_names`` was ``list(set(...))``. Python randomises string hashing per
-    process (``PYTHONHASHSEED``), so the order changed between worker restarts for
-    byte-identical input.
+    This was a CHARACTERIZATION guard pinning the opposite: ``get_unique_speaker_names``
+    was ``list(set(...))``, and Python randomises string hashing per process
+    (``PYTHONHASHSEED``), so the order changed between worker restarts for byte-identical
+    input. That list is written straight into the full-document OpenSearch record
+    (``search_indexing_task`` → ``index_transcript``), so **re-indexing an unchanged file
+    produced a different document** — the same non-determinism class as issue #433, which
+    this repo has shipped once already — and it made any snapshot or diff over the index
+    noisy enough to hide a real change.
 
-    That list is written straight into the full-document OpenSearch record
-    (``search_indexing_task.py`` L191 → ``index_transcript(...)``), so **re-indexing an
-    unchanged file produces a different document** — the same non-determinism class as issue
-    #433, which this repo has already shipped once. It also makes any snapshot or diff over
-    the index noisy enough to hide a real change.
-
-    Two different seeds are compared, and the *sorted* forms are asserted equal as the
-    control: that proves the difference is ordering alone and not the child having produced
-    different data.
+    Both are now ``sorted``: ``storage.get_unique_speaker_names`` and the sibling
+    ``search_indexing_task``'s own ``speaker_names``. The guard fired when that landed,
+    exactly as its own instructions said it would, and this is the assertion it asked for.
 
     Two children with DIFFERENT ``PYTHONHASHSEED`` values are the only way to observe this —
     an in-process test cannot, because the seed is fixed for the life of the interpreter.
-    That is why it survived. The sibling in ``search_indexing_task.py`` builds
-    ``speaker_names`` the same way and was fixed in the same change.
+    **That is why the defect survived as long as it did.** A single-process comparison
+    cannot distinguish "sorted" from "happened to hash the same way this run", which is
+    also why the assertion below is equality across two seeds rather than a sortedness
+    check on one.
     """
     code = (
         "from app.tasks.transcription.storage import get_unique_speaker_names\n"
@@ -506,12 +508,20 @@ def test_unique_speaker_names_are_returned_in_a_stable_order(run_in_clean_proces
 
     assert first == second, (
         "the same speakers produced different list ORDER under a different hash seed, so "
-        "re-indexing an unchanged file writes a different OpenSearch document"
+        "re-indexing an unchanged file writes a different OpenSearch document "
+        "(issue #433's class of bug)"
     )
-    # Control: the children really did run with different seeds and really did
-    # produce the full set — otherwise equality above could hold trivially.
-    assert sorted(eval(first)) == sorted(eval(second))  # noqa: S307
-    assert len(eval(first)) == 8  # noqa: S307
+    # `ast.literal_eval`, not `eval` — same parse, no `# noqa: S307` needed. The
+    # suppression is avoidable here, so per this repo's rule it is not taken.
+    returned = ast.literal_eval(first.strip())
+
+    # Two controls, because the equality above can hold trivially:
+    #   - SORTED is the actual property. Two processes could agree on the same WRONG
+    #     order, which equality alone would pass.
+    #   - the full set really came back. A child that returned 3 of 8 names
+    #     deterministically would satisfy both equality and sortedness.
+    assert returned == sorted(returned), f"not in sorted order: {returned}"
+    assert len(returned) == 8, f"expected all 8 distinct speakers, got {len(returned)}"
 
 
 # --------------------------------------------------------------------------------------

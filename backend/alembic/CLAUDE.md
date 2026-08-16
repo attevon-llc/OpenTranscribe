@@ -7,9 +7,32 @@ used for schema**. The 5-step change procedure (revision → model → schema �
 test both paths) lives in `app/db/CLAUDE.md` — **do not duplicate it here**. This file is about
 authoring the revision file itself.
 
+## ⚠️ THREE LANES ARE OPEN — TAKE YOUR RESERVED NUMBER (2026-08-14)
+
+Three branches are being worked in parallel, each in its own worktree. **Two branches that add
+the same revision number MERGE CLEANLY** — different filenames means no textual conflict, so
+nothing in the conflict list warns you. The fork exists only in the `down_revision` graph and
+surfaces later as a failed `alembic upgrade head`, which in dev aborts backend startup and reads
+as a broken stack rather than a bad merge. This has already happened once (see "Renumbering
+note 2" in `app/db/CLAUDE.md`); the recovery is an hour of mechanical renumbering across four
+places per revision.
+
+| Lane | Branch | Holds | **Take** |
+|---|---|---|---|
+| RAG / chat | `feat/rag-corpus-scale-403` | v390–v392 | **v400+** |
+| Document ingestion | `feat/doc-ingestion` | — | **v393–v399** |
+| Test hardening | `chore/test-suite-perf-and-quality-overhaul` | v389 | **v410+** |
+
+The chain will be re-linearised at the final merge to `master`, so these blocks are a
+coordination convenience rather than a guarantee — but observe them, because the cost of not
+doing so lands on whoever merges last. **Derive the current head from the `down_revision` graph
+(`scripts/release-tests/lib/alembic-head.py`), never from a number written in prose** — including
+the one in the next section, which rots.
+
 ## Key files
 
-- `versions/` — 75 revisions, `v010_baseline` … head `v389_add_erasure_ledger`.
+- `versions/` — 78 revisions, `v010_baseline` … head `v392_add_redaction_coverage`
+  (on `feat/rag-corpus-scale-403`; `master` is still at v386).
 - `env.py` — builds the URL from `POSTGRES_*` env (`load_dotenv()`), `target_metadata =
   Base.metadata`. No `compare_type`, no naming convention.
 - `script.py.mako` — **stock alembic template**: it emits neither the `v###` id nor idempotent

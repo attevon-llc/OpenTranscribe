@@ -21,7 +21,9 @@ logger = logging.getLogger(__name__)
 
 # Transcript-specific filler words not in NLTK's standard English stopwords.
 # These are speech disfluencies and verbal fillers common in spoken transcripts.
-_TRANSCRIPT_FILLER = frozenset(
+# Public: services/ingest_artifacts/textrank.py needs the same filler set for the
+# extractive digest's TF-IDF, and a second copy would drift.
+TRANSCRIPT_FILLER = frozenset(
     {
         "um",
         "uh",
@@ -101,7 +103,7 @@ def _get_stopwords() -> frozenset[str]:
         words = set(stopwords.words("english"))
 
     # Merge with transcript-specific filler
-    return frozenset(words | _TRANSCRIPT_FILLER)
+    return frozenset(words | TRANSCRIPT_FILLER)
 
 
 def _tokenize(text: str) -> list[str]:

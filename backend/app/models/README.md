@@ -418,7 +418,9 @@ files_with_status = session.query(MediaFile)\
 segments = session.query(TranscriptSegment)\
     .join(Speaker)\
     .filter(TranscriptSegment.media_file_id == file_id)\
-    .order_by(TranscriptSegment.start_time)\
+    .order_by(TranscriptSegment.start_time,
+              TranscriptSegment.end_time,
+              TranscriptSegment.id)\
     .all()
 
 # Full-text search in transcripts

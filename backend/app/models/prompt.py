@@ -9,9 +9,12 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Boolean
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
+from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
+from sqlalchemy import UniqueConstraint
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
@@ -35,6 +38,20 @@ class SummaryPrompt(Base):
     """
 
     __tablename__ = "summary_prompt"
+
+    # PARTIAL unique index: at most one system default per content type, and no
+    # constraint at all on the many non-default rows. The predicate is part of the
+    # object's identity — a plain UniqueConstraint("content_type") would forbid a
+    # second custom prompt for the same content type, which is the feature.
+    # Same shape as ``uq_tag_user_name`` in ``app/models/media.py``.
+    __table_args__ = (
+        Index(
+            "unique_system_default_per_content_type",
+            "content_type",
+            unique=True,
+            postgresql_where=text("is_system_default = true"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
@@ -112,7 +129,10 @@ class UserSetting(Base):
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="settings")
 
+    # The comment "Ensure unique setting keys per user" used to sit here above
+    # nothing but the dict below — the declaration was intended and never written,
+    # while the database enforced it all along (v010 baseline).
     __table_args__ = (
-        # Ensure unique setting keys per user
-        {"extend_existing": True}
+        UniqueConstraint("user_id", "setting_key", name="user_setting_user_id_setting_key_key"),
+        {"extend_existing": True},
     )

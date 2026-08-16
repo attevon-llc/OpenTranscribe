@@ -190,9 +190,11 @@ RULES: tuple[Rule, ...] = (
         'session-search-engine',
         frozenset(
             {
-                'index_summary',
-                'delete_summary',
-                'get_max_version',
+                # (``index_summary`` / ``delete_summary`` / ``get_max_version`` were
+                # here for the retired ``transcript_summaries`` index, #67. Two of
+                # those names no longer exist anywhere; ``delete_summary`` now names
+                # a Postgres-only endpoint handler, so keeping it would make this
+                # detector fire on a call that touches no search engine.)
                 'reindex_transcript',
                 'store_profile_embedding_v4',
                 'bulk_add_speaker_embeddings_v4',
@@ -265,7 +267,27 @@ RULES: tuple[Rule, ...] = (
 )
 
 #: Callables that OPEN a database session as a context manager.
-_SESSION_OPENERS = frozenset({'session_scope', 'SessionLocal', 'get_db_session', 'transaction'})
+#: ``session_factory`` and ``_short_session`` were added after the chat turn was phased
+#: (e486f948): ``answer_aggregation`` takes a FACTORY rather than a ``Session``, precisely so
+#: each statement group gets its own short transaction. Without both names the detector saw
+#: those blocks as ordinary ``with`` statements and could not fire inside them at all —
+#: reporting 0 findings, which is indistinguishable from a clean subsystem.
+#:
+#: BOTH are needed, and ``_short_session`` is the load-bearing one. ``session_factory``
+#: only covers the direct ``with session_factory() as db:`` inside the helper, whose body is
+#: a bare ``yield`` — nothing slow can live there. The CALLER's work runs during that yield,
+#: in its own ``with _short_session(...)`` block, and that is the block a slow call would be
+#: added to.
+_SESSION_OPENERS = frozenset(
+    {
+        'session_scope',
+        'SessionLocal',
+        'get_db_session',
+        'transaction',
+        'session_factory',
+        '_short_session',
+    }
+)
 
 #: Parameter annotations that mean "this function was handed someone else's transaction".
 _SESSION_ANNOTATIONS = frozenset({'Session', 'AsyncSession', 'scoped_session'})
@@ -650,6 +672,27 @@ SELFTEST_CASES: tuple[tuple[str, str], ...] = (
         'session-http',
         'def task():\n    with session_scope() as db:\n        httpx.post(url, json={})\n',
     ),
+    # A session opened through an injected FACTORY is still a session. The phased chat
+    # turn (e486f948) passes `session_factory` instead of a `Session` so each statement
+    # group gets its own short transaction; before this case the detector could not fire
+    # inside such a block at all.
+    (
+        'session-search-engine',
+        'def counted(session_factory, uuids):\n'
+        '    with session_factory() as db:\n'
+        '        rows = db.query(M).all()\n'
+        '        svc.reindex_transcript(file_uuid=rows[0].uuid)\n',
+    ),
+    # ...and through the @contextmanager wrapper around it, which is where a caller's slow
+    # work would actually land: the wrapper's own body is a bare yield, so matching only
+    # `session_factory` would leave every real call site invisible.
+    (
+        'session-llm',
+        'def counted(session_factory, question):\n'
+        '    with _short_session(session_factory) as db:\n'
+        '        mf = db.query(M).first()\n'
+        '        svc.generate_summary(transcript=mf.text)\n',
+    ),
     (
         'session-llm',
         'def task(uuid):\n'
@@ -750,6 +793,15 @@ SELFTEST_CLEAN: tuple[str, ...] = (
     '    db.close()\n'
     '    opensearch_client.search(index="i", body={"q": name})\n'
     '    minio_service.download_file(object_name=name, file_path="/tmp/a")\n',
+    # The factory shape done RIGHT — the must-stay-clean twin of the two cases above.
+    # Read inside the short session, close it, then do the slow work. Without this, adding
+    # the factory names could only ever make the gate noisier, and nothing would prove the
+    # detector still distinguishes the fix from the defect.
+    'def counted(session_factory, uuids):\n'
+    '    with _short_session(session_factory) as db:\n'
+    '        rows = db.query(M).all()\n'
+    '        names = [str(r.filename) for r in rows]\n'
+    '    opensearch_client.search(index="i", body={"q": names})\n',
     # The canonical fix: read -> slow work with no session -> write.
     'def task(uuid):\n'
     '    with session_scope() as db:\n'

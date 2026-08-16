@@ -4,6 +4,20 @@ Default: ``unitary/toxic-bert`` (English, multi-label). For non-English segments
 multilingual toxic XLM-RoBERTa model is used. Produces a score dict per segment stored on
 ``transcript_segment.toxicity``; the read-time layer flags/blurs a segment when ``toxic``
 exceeds the user's threshold. Loaded on CPU and moved GPU↔CPU per scan by free VRAM.
+
+**A model that could not be loaded raises :class:`DetectorUnavailableError`; an
+inference that threw propagates.** Neither degrades to ``None`` any more. ``None`` is
+the legitimate answer for *blank text*, and it was also the answer for "the weights are
+not on this box" and for "the pipeline blew up" — three states, one value, and
+``detect_segment_spans`` logged the difference at ``logger.debug`` and dropped it. A
+toxicity-only fault was therefore completely invisible: nothing marked the file, nothing
+reported a skip, and the cached ``toxicity`` column read as "scored, not toxic".
+
+The two dispositions differ downstream exactly as they do for PII: unavailability is a
+reported skip (re-running installs no weights) and a thrown inference is a hard failure
+worth re-running. What they deliberately do NOT do is withhold text — see
+``config._DETECTOR_CATEGORIES``, where ``toxicity`` maps to no category, because this
+detector emits no spans and so can leave nothing unmasked.
 """
 
 from __future__ import annotations
@@ -11,6 +25,7 @@ from __future__ import annotations
 import logging
 
 from app.core import constants as C  # noqa: N812
+from app.services.redaction.detectors import DetectorUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -101,24 +116,39 @@ def _normalize_scores(raw, model_name: str) -> dict:
 
 
 def score_text(text: str, language: str | None = None) -> dict | None:
-    """Return a toxicity score dict for one segment (None if model unavailable)."""
+    """Return a toxicity score dict for one segment.
+
+    Args:
+        text: The segment text to score.
+        language: Transcript language, selecting the English or multilingual model.
+
+    Returns:
+        The score dict, or ``None`` for blank text — the one remaining meaning of
+        ``None``, and now unambiguous.
+
+    Raises:
+        DetectorUnavailableError: The model could not be loaded, so nothing was
+            scored. Previously ``None``, which is also what a clean blank segment
+            returns and what a crashed inference returned.
+        Exception: Whatever the pipeline raises. It ran and failed, which is worth
+            re-running; unavailability is not.
+    """
     if not text or not text.strip():
         return None
     model_name = _model_for_language(language)
     pipe = _get_pipe(model_name)
     if pipe is None:
-        return None
+        raise DetectorUnavailableError(
+            f"Toxicity model {model_name} could not be loaded (missing transformers "
+            "install or model weights); this text was never scored for toxicity"
+        )
     from app.services.redaction.device import inference_guard
     from app.services.redaction.device import resolve_device
 
-    try:
-        with inference_guard():
-            _place_on_device(pipe, resolve_device())
-            raw = pipe(text[:2000])
-        return _normalize_scores(raw, model_name)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Toxicity scoring failed: %s", exc)
-        return None
+    with inference_guard():
+        _place_on_device(pipe, resolve_device())
+        raw = pipe(text[:2000])
+    return _normalize_scores(raw, model_name)
 
 
 def score_texts(
@@ -126,12 +156,30 @@ def score_texts(
 ) -> list[dict | None]:
     """Batch-score many segments in one model pass (fast path for long transcripts).
 
-    Returns a list aligned 1:1 with ``texts`` (None for blanks / on failure).
+    Args:
+        texts: Segment texts, in order.
+        language: Transcript language, selecting the English or multilingual model.
+        batch_size: Pipeline batch size.
+
+    Returns:
+        A list aligned 1:1 with ``texts``, ``None`` for blanks.
+
+    Raises:
+        DetectorUnavailableError: The model could not be loaded. It used to return
+            ``[None] * len(texts)`` — the same value a transcript of blank segments
+            produces — so ``detect_and_store`` wrote a full column of NULL toxicity
+            scores and reported the detector as having run.
+        Exception: Whatever the pipeline raises. The batch used to be caught here and
+            reported as a list of ``None``, so a scan whose toxicity pass crashed
+            completed as ``done`` with nothing to show for it.
     """
     model_name = _model_for_language(language)
     pipe = _get_pipe(model_name)
     if pipe is None:
-        return [None] * len(texts)
+        raise DetectorUnavailableError(
+            f"Toxicity model {model_name} could not be loaded (missing transformers "
+            "install or model weights); these segments were never scored for toxicity"
+        )
 
     # Place on the live device. NOTE: callers (detect_and_store) already hold the GPU
     # inference guard, so we do NOT re-acquire it here (the lock is non-reentrant).
@@ -145,11 +193,8 @@ def score_texts(
     results: list[dict | None] = [None] * len(texts)
     if not inputs:
         return results
-    try:
-        raw_all = pipe(inputs, batch_size=batch_size)
-        for slot, raw in zip(idx_map, raw_all, strict=True):
-            # Per-input result is a list[{label,score}] when top_k=None.
-            results[slot] = _normalize_scores([raw] if isinstance(raw, list) else raw, model_name)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Batch toxicity scoring failed: %s", exc)
+    raw_all = pipe(inputs, batch_size=batch_size)
+    for slot, raw in zip(idx_map, raw_all, strict=True):
+        # Per-input result is a list[{label,score}] when top_k=None.
+        results[slot] = _normalize_scores([raw] if isinstance(raw, list) else raw, model_name)
     return results

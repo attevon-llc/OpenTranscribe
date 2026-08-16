@@ -21,9 +21,16 @@ if [ -f ".env" ]; then
   set +a
 fi
 
-# Default the optional .env-sourced variables this script reads so `set -u`
-# doesn't abort when they're absent from .env. These are all genuinely optional
-# (storage paths, nginx server name, GPU split device ids, ports).
+# Default the optional .env-sourced variables this script reads — directly or
+# through scripts/common.sh — so `set -u` doesn't abort when they're absent from
+# .env. These are all genuinely optional (storage paths, nginx server name, GPU
+# device id, ports).
+#
+# Keep this list in sync with what the two files actually expand:
+# backend/tests/unit/test_shell_env_var_guards.py fails the build on any
+# unguarded expansion that is missing here. GPU_DEVICE_ID was the one that got
+# away — common.sh tested it bare, so `./opentr.sh start dev` died with
+# "GPU_DEVICE_ID: unbound variable" on any checkout without a .env.
 : "${NGINX_SERVER_NAME:=}"
 : "${MINIO_NAS_PATH:=}"
 : "${POSTGRES_DATA_PATH:=}"
@@ -33,11 +40,20 @@ fi
 # which aborts under `set -u` in any checkout whose .env omits it — i.e. every fresh
 # worktree. Empty means "no specific device", which that helper already handles.
 : "${GPU_DEVICE_ID:=}"
+# Snapshot of the .env value, taken before any `--gpu-device` override replaces
+# it. The containers read GPU_DEVICE_ID from `env_file: .env` (not from this
+# shell), so the override has to be able to say which value they will still see.
+GPU_DEVICE_ID_FROM_ENV="${GPU_DEVICE_ID}"
 # ENVIRONMENT is assigned only inside opentr.sh's own subcommand functions
 # (`ENVIRONMENT=${1:-dev}`), so any path reaching a common.sh helper without going
 # through start/reset first aborted before it could print anything. `dev` matches the
 # default those functions use, so defaulting here cannot change a real invocation.
 : "${ENVIRONMENT:=dev}"
+# Same reason as GPU_DEVICE_ID above: it is read to warn that clustering cannot be
+# moved off its pinned device, and that warning path runs on checkouts whose .env
+# never set it. Line 406 guards its own read with `:-`; line 409 does not, and a
+# static guard cannot know the `-n` test above it already proved it non-empty.
+: "${GPU_CLUSTERING_DEVICE:=}"
 
 # Export APP_VERSION so docker compose can pass it through to containers
 # (used instead of ./VERSION file bind-mount to avoid OCI stub creation in dev mode)
@@ -74,6 +90,20 @@ show_help() {
   echo "  --pull               - Force pull prod images from Docker Hub"
   echo "  --gpu-scale          - Enable multi-GPU worker scaling (multiple workers on one GPU)"
   echo "  --with-gpu-split     - Enable GPU split: separate gpu-transcribe / gpu-diarize workers"
+  echo "  --gpu-device N       - Run this stack's AI work on host GPU N, overriding .env AFTER it"
+  echo "                         is sourced (a pre-exported GPU_DEVICE_ID cannot win — .env clobbers"
+  echo "                         it — and editing .env moves the LIVE stack too)."
+  echo "                         Moves ALL FIVE worker device ids together, because a flag that"
+  echo "                         repoints one worker and leaves four behind just makes two stacks"
+  echo "                         fight over one card: GPU_DEVICE_ID, REDACTION_GPU_DEVICE_ID,"
+  echo "                         GPU_SCALE_DEVICE_ID, GPU_TRANSCRIBE_DEVICE_ID, GPU_DIARIZE_DEVICE_ID."
+  echo "                         Does NOT move LLM_TEST_GPU_DEVICE_ID (--with-llm-test keeps its own"
+  echo "                         card on purpose — co-locating a multi-GB LLM with transcription is"
+  echo "                         what that separation prevents); use LLM_TEST_GPU_DEVICE_ID=N ./opentr.sh"
+  echo "                         Does NOT move GPU_CLUSTERING_DEVICE, nor the in-container copy of"
+  echo "                         GPU_DEVICE_ID: both come from 'env_file: .env', which no shell export"
+  echo "                         can reach. The in-container copy only labels the admin GPU-stats"
+  echo "                         panel; placement is the reservation this flag sets."
   echo "  --nas                - Use custom storage paths (NAS for media, NVMe for DB/search)"
   echo "  --no-nas             - Suppress the auto-loaded NAS overlay (use Docker named volumes)"
   echo "  --fresh [name]       - Isolated dev deployment: own project + named volumes, NAS"
@@ -95,6 +125,11 @@ show_help() {
   echo "                         testing against actual model output, not canned tokens."
   echo "                         Default model: Gemma 4 E4B (AWQ), GPU 2. See"
   echo "                         docker-compose.llm-test.yml for the Ollama alternative."
+  echo "  --with-documents     - Start the document parsing sidecars: docling-serve (OCR +"
+  echo "                         layout, CPU-only, localhost:5197) and Apache Tika (legacy"
+  echo "                         OLE2 .doc/.ppt/.xls + RTF, localhost:5198). Without this"
+  echo "                         flag the in-worker 'slim' tier still parses PDF/OOXML/text;"
+  echo "                         scans and legacy Office get a typed 'not available' error."
   echo "  --with-keycloak-test - Start Keycloak test container (dev or prod; localhost:8180)"
   echo "  --with-authentik-test - Start Authentik test container (dev or prod; localhost:9022)"
   echo "  --with-watch         - Mount the host watch folder (WATCH_HOST_PATH, default ./watch) for auto-import"
@@ -131,11 +166,17 @@ show_help() {
   echo "  help                - Show this help menu"
   echo ""
   echo "Benchmark Commands (isolated from NAS data):"
+  echo "  bench all [--smoke|--quick|--full] [--phases a,b]"
+  echo "                                           - Full end-to-end run (all phases, all metrics)"
+  echo "  bench phase <name> [--smoke|--quick|--full]"
+  echo "                                           - Run a single phase end-to-end"
+  echo "  bench collate                            - Aggregate metrics into master + whitepaper tables"
   echo "  bench start [master|branch|current|<name>]- Wipe bench volumes, switch branch, start bench stack (default: current)"
   echo "  bench stop                               - Stop bench stack (keep volumes)"
   echo "  bench clean                              - Stop bench stack and wipe all bench volumes"
   echo "  bench run [output.csv] [fixtures_dir]    - Run upload-speed benchmark on current branch"
   echo "  bench engine                             - Run engine split-stage benchmarks (Phase 2 gate)"
+  echo "  bench rag --fresh <name> [args]          - Retrieval quality (nDCG/recall/MRR) over an injected eval corpus"
   echo "  bench status                             - Show bench containers, GPU state, volumes"
   echo "  bench compare <master.csv> <branch.csv>  - Print side-by-side speedup table"
   # `bench all|phase|collate` existed for a while without appearing here, so the only way to
@@ -156,11 +197,13 @@ show_help() {
   echo "  ./opentr.sh start dev --gpu-scale            # Dev with multi-GPU scaling (parallel workers)"
   echo "  ./opentr.sh start dev --gpu-scale --nas      # Multi-GPU + NAS/NVMe storage"
   echo "  ./opentr.sh start dev --with-gpu-split       # Split transcribe/diarize across two GPUs"
+  echo "  ./opentr.sh start dev --fresh t1 --gpu-device 2   # Isolated stack on GPU 2, .env untouched"
   echo "  ./opentr.sh start dev --lite                 # Cloud-only ASR mode (no GPU)"
   echo "  ./opentr.sh start dev --cpu                  # Local CPU-only (skip GPU overlay)"
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
   echo "  ./opentr.sh start dev --with-mock-llm        # Dev with a fake LLM for chat/AI testing"
   echo "  ./opentr.sh start dev --with-llm-test        # Dev with a real GPU-backed LLM (vLLM) for chat testing"
+  echo "  ./opentr.sh start dev --with-documents       # Dev with the OCR + legacy-Office parser sidecars"
   echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
   echo "  ./opentr.sh start dev --with-authentik-test  # Dev with Authentik test container"
   echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
@@ -291,6 +334,104 @@ add_gpu_overlay() {
   fi
 }
 
+# GPU device-id variables that docker compose INTERPOLATES to pick the physical
+# card for one of OpenTranscribe's own AI workers. One list, so `--gpu-device`
+# and the test that guards it cannot disagree about the membership.
+GPU_DEVICE_VARS=(
+  GPU_DEVICE_ID             # default GPU worker          (docker-compose.gpu.yml / .blackwell.yml)
+  REDACTION_GPU_DEVICE_ID   # redaction worker            (docker-compose.gpu.yml)
+  GPU_SCALE_DEVICE_ID       # --gpu-scale workers         (docker-compose.gpu-scale.yml)
+  GPU_TRANSCRIBE_DEVICE_ID  # --with-gpu-split transcribe (docker-compose.gpu-split.yml)
+  GPU_DIARIZE_DEVICE_ID     # --with-gpu-split diarize    (docker-compose.gpu-split.yml)
+)
+
+# `--gpu-device N` — retarget every GPU this stack's workers reserve, applied
+# AFTER .env has been sourced.
+#
+# WHY IT EXISTS: opentr.sh does `set -a; source ./.env` near the top, so
+# `GPU_DEVICE_ID=2 ./opentr.sh start dev` is silently overwritten by whatever
+# .env says — a pre-export cannot win. The only remaining way to move a worker
+# onto another card was to EDIT .env, which is shared with the live stack (and in
+# a git worktree is often a copy of, or a symlink to, the same file). That has
+# already happened here: a worktree .env edit moved the LIVE stack's GPU.
+#
+# WHY IT MOVES ALL FIVE: a flag that repoints one worker and leaves four behind
+# is worse than no flag — it looks like it worked, and then two stacks fight over
+# one card. `--gpu-device N` therefore means "this whole stack runs its AI work on
+# host GPU N", and sets every variable in GPU_DEVICE_VARS.
+#
+# WHAT IT DELIBERATELY DOES NOT MOVE:
+#   * LLM_TEST_GPU_DEVICE_ID (--with-llm-test) hosts a multi-GB LLM and is pinned
+#     to a DIFFERENT card on purpose so it never contends with transcription.
+#     Folding it in would co-locate them — the exact OOM that separation avoids.
+#     Move it explicitly with `LLM_TEST_GPU_DEVICE_ID=N ./opentr.sh ...` (it is
+#     absent from .env.example, so a pre-export survives unless your .env sets it).
+#   * GPU_CLUSTERING_DEVICE, and the container-side copy of GPU_DEVICE_ID, are read
+#     INSIDE the container from `env_file: .env` rather than interpolated by
+#     compose, so no shell export can reach them. Both are warned about below.
+apply_gpu_device_override() {
+  local requested="$1"
+  local var
+
+  if ! [[ "$requested" =~ ^[0-9]+$ ]]; then
+    echo "❌ --gpu-device must be a non-negative integer GPU index (got '$requested')"
+    exit 1
+  fi
+
+  # Catch the typo now rather than as an opaque "could not select device driver"
+  # from the daemon several minutes into a build. Skipped when nvidia-smi is
+  # absent (macOS, CPU-only host, CI) — the flag is a no-op there anyway.
+  if command -v nvidia-smi &> /dev/null; then
+    local gpu_count
+    gpu_count=$(nvidia-smi -L 2>/dev/null | grep -c '^GPU ' || true)
+    if [ -n "$gpu_count" ] && [ "$gpu_count" -gt 0 ] && [ "$requested" -ge "$gpu_count" ]; then
+      echo "❌ --gpu-device $requested: this host has $gpu_count GPU(s) (valid indices 0-$((gpu_count - 1)))"
+      nvidia-smi -L 2>/dev/null | sed 's/^/   /'
+      exit 1
+    fi
+  fi
+
+  for var in "${GPU_DEVICE_VARS[@]}"; do
+    export "$var=$requested"
+  done
+
+  echo "🎯 --gpu-device $requested: pinning this stack's AI workers to host GPU $requested (overrides .env)"
+  echo "   Set: ${GPU_DEVICE_VARS[*]} = $requested"
+  echo "   NOT set: LLM_TEST_GPU_DEVICE_ID (--with-llm-test keeps its own card on purpose)"
+
+  # The container-side copy of GPU_DEVICE_ID comes from `env_file: .env`, which no
+  # shell export can override. It is only read for host GPU-stats display
+  # (nvidia-smi -i), never for placement — placement is the reservation above —
+  # but the admin GPU panel will keep naming the .env card until .env is edited.
+  if [ -n "${GPU_DEVICE_ID_FROM_ENV:-}" ] && [ "${GPU_DEVICE_ID_FROM_ENV}" != "$requested" ]; then
+    echo "   ℹ️  In-container GPU_DEVICE_ID stays ${GPU_DEVICE_ID_FROM_ENV} (from env_file: .env) — that value"
+    echo "      only labels the admin GPU-stats panel; the reserved card is $requested."
+  fi
+
+  if [ -n "${GPU_CLUSTERING_DEVICE:-}" ] && [ "${GPU_CLUSTERING_DEVICE}" != "$requested" ]; then
+    echo "   ⚠️  GPU_CLUSTERING_DEVICE=${GPU_CLUSTERING_DEVICE} in .env: speaker clustering runs on the"
+    echo "      cpu-worker (which sees ALL GPUs) and reads that value from env_file — --gpu-device"
+    echo "      cannot move it. Unset it in .env, or expect clustering on GPU ${GPU_CLUSTERING_DEVICE}."
+  fi
+}
+
+# Flag combinations that make --gpu-device mean less than it looks like it means.
+# Separate from apply_gpu_device_override so the override itself stays a pure
+# "set these vars" step that the other flags' parse order cannot affect.
+warn_gpu_device_override_conflicts() {
+  local requested="$1"
+
+  if [ -n "${CPU_FLAG:-}" ] || [ -n "${LITE_FLAG:-}" ]; then
+    echo "   ⚠️  --cpu/--lite loads no GPU overlay, so --gpu-device $requested reserves nothing."
+  fi
+
+  if [ -n "${GPU_SPLIT_FLAG:-}" ]; then
+    echo "   ⚠️  --with-gpu-split exists to put transcribe and diarize on DIFFERENT cards;"
+    echo "      --gpu-device $requested collapses both onto GPU $requested. Drop one of the two flags,"
+    echo "      or set GPU_TRANSCRIBE_DEVICE_ID / GPU_DIARIZE_DEVICE_ID in .env instead."
+  fi
+}
+
 # Append the NAS/NVMe storage overlay to $COMPOSE_FILES if requested explicitly
 # via --nas OR auto-detected from custom storage path env vars. This mirrors
 # the block inside start_app so rebuild-backend/rebuild-frontend can keep
@@ -373,6 +514,10 @@ FRESH_LDAP_SERVICES=(lldap)
 # Mock LLM provider (--with-mock-llm). Isolated like every other aux overlay so
 # a fresh stack cannot collide with the main one on port 5199.
 FRESH_MOCK_LLM_SERVICES=(mock-llm)
+# Document parsing sidecars (--with-documents). Both hard-code a container_name and
+# publish a loopback port, so both need the #347 isolation treatment or a fresh stack
+# collides with the main one on 5197/5198.
+FRESH_DOCUMENTS_SERVICES=(docling-serve tika)
 FRESH_SMB_SERVICES=(smb-test)
 FRESH_MONITORING_SERVICES=(prometheus grafana)
 
@@ -457,6 +602,10 @@ FRESH_LDAP_PORT_VARS=(
 )
 FRESH_MOCK_LLM_PORT_VARS=(
   "MOCK_LLM_PORT=5199"          # mock LLM provider → :5199
+)
+FRESH_DOCUMENTS_PORT_VARS=(
+  "DOCLING_SERVE_PORT=5197"     # docling-serve sidecar → :5001
+  "TIKA_PORT=5198"              # apache/tika           → :9998
 )
 FRESH_SMB_PORT_VARS=(
   "SMB_TEST_PORT=4450"          # samba → :445
@@ -779,11 +928,13 @@ start_app() {
   BUILD_FLAG=""
   GPU_SCALE_FLAG=""
   GPU_SPLIT_FLAG=""
+  GPU_DEVICE_OVERRIDE=""
   NAS_FLAG=""
   PULL_FLAG=""
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
   WITH_MOCK_LLM_FLAG=""
+  WITH_DOCUMENTS_FLAG=""
   WITH_LLM_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
   WITH_AUTHENTIK_TEST_FLAG=""
@@ -816,6 +967,16 @@ start_app() {
         ;;
       --with-gpu-split)
         GPU_SPLIT_FLAG="--with-gpu-split"
+        shift
+        ;;
+      --gpu-device)
+        shift
+        # A missing value would abort on `set -u`; fail with something readable.
+        if [ $# -eq 0 ] || [ "${1#-}" != "$1" ]; then
+          echo "❌ --gpu-device requires a GPU index (e.g. --gpu-device 1)"
+          exit 1
+        fi
+        GPU_DEVICE_OVERRIDE="$1"
         shift
         ;;
       --nas)
@@ -871,6 +1032,10 @@ start_app() {
         ;;
       --with-mock-llm)
         WITH_MOCK_LLM_FLAG="--with-mock-llm"
+        shift
+        ;;
+      --with-documents)
+        WITH_DOCUMENTS_FLAG="--with-documents"
         shift
         ;;
       --with-llm-test)
@@ -965,6 +1130,11 @@ start_app() {
       _aux_services+=("${FRESH_MOCK_LLM_SERVICES[@]}")
       _aux_files+=("docker-compose.mock-llm.yml")
     fi
+    if [ -n "$WITH_DOCUMENTS_FLAG" ]; then
+      _port_vars+=("${FRESH_DOCUMENTS_PORT_VARS[@]}")
+      _aux_services+=("${FRESH_DOCUMENTS_SERVICES[@]}")
+      _aux_files+=("docker-compose.documents.yml")
+    fi
     if [ -n "$WITH_SMB_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_SMB_PORT_VARS[@]}")
       _aux_services+=("${FRESH_SMB_SERVICES[@]}")
@@ -1058,6 +1228,11 @@ start_app() {
   fi
 
   echo "🚀 Starting OpenTranscribe in ${ENVIRONMENT} mode..."
+
+  if [ -n "$GPU_DEVICE_OVERRIDE" ]; then
+    apply_gpu_device_override "$GPU_DEVICE_OVERRIDE"
+    warn_gpu_device_override_conflicts "$GPU_DEVICE_OVERRIDE"
+  fi
 
   if [ -n "$GPU_SCALE_FLAG" ]; then
     echo "🎯 Multi-GPU scaling enabled"
@@ -1296,6 +1471,19 @@ start_app() {
     fi
   fi
 
+  # Add the document parsing sidecars if requested
+  if [ -n "$WITH_DOCUMENTS_FLAG" ]; then
+    if [ -f "docker-compose.documents.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.documents.yml"
+      echo "📄 Adding document parsing sidecars (docker-compose.documents.yml)"
+      echo "   docling-serve (OCR + layout, CPU only) — from containers: http://docling-serve:5001   from host: http://localhost:${DOCLING_SERVE_PORT:-5197}"
+      echo "   Apache Tika (legacy OLE2 .doc/.ppt/.xls + RTF)  — from containers: http://tika:9998   from host: http://localhost:${TIKA_PORT:-5198}"
+      echo "   Sets DOCUMENT_PARSER_URL + DOCUMENT_TIKA_URL on backend and the CPU workers."
+    else
+      echo "⚠️  --with-documents specified but docker-compose.documents.yml not found"
+    fi
+  fi
+
   # Add real GPU-backed LLM test provider if requested
   if [ -n "$WITH_LLM_TEST_FLAG" ]; then
     if [ -f "docker-compose.llm-test.yml" ]; then
@@ -1419,6 +1607,12 @@ start_app() {
       [ "$_f" = "-f" ] && continue
       echo "     - $_f"
     done
+    # The values compose will interpolate into `device_ids:`. Printed always (not
+    # only under --gpu-device) so a dry run answers "which card does this stack
+    # actually take?" without reading .env and five overlay files.
+    echo "   GPU device reservations (as compose will interpolate them):"
+    echo "     GPU_DEVICE_ID=${GPU_DEVICE_ID:-0} REDACTION_GPU_DEVICE_ID=${REDACTION_GPU_DEVICE_ID:-0} GPU_SCALE_DEVICE_ID=${GPU_SCALE_DEVICE_ID:-2}"
+    echo "     GPU_TRANSCRIBE_DEVICE_ID=${GPU_TRANSCRIBE_DEVICE_ID:-0} GPU_DIARIZE_DEVICE_ID=${GPU_DIARIZE_DEVICE_ID:-1} LLM_TEST_GPU_DEVICE_ID=${LLM_TEST_GPU_DEVICE_ID:-2}"
     echo "   Command that WOULD run:"
     echo "     docker compose $COMPOSE_FILES up -d $BUILD_CMD"
     [ -n "$FRESH_FLAG" ] && echo "   (fresh mode: NAS overlay omitted by design; real data untouched)"
@@ -1510,6 +1704,7 @@ reset_and_init() {
   BUILD_FLAG=""
   GPU_SCALE_FLAG=""
   GPU_SPLIT_FLAG=""
+  GPU_DEVICE_OVERRIDE=""
   NAS_FLAG=""
   PULL_FLAG=""
   WITH_PKI_FLAG=""
@@ -1540,6 +1735,16 @@ reset_and_init() {
         ;;
       --with-gpu-split)
         GPU_SPLIT_FLAG="--with-gpu-split"
+        shift
+        ;;
+      --gpu-device)
+        shift
+        # A missing value would abort on `set -u`; fail with something readable.
+        if [ $# -eq 0 ] || [ "${1#-}" != "$1" ]; then
+          echo "❌ --gpu-device requires a GPU index (e.g. --gpu-device 1)"
+          exit 1
+        fi
+        GPU_DEVICE_OVERRIDE="$1"
         shift
         ;;
       --nas)
@@ -1628,6 +1833,11 @@ reset_and_init() {
   fi
 
   echo "🔄 Running reset and initialize for OpenTranscribe in ${ENVIRONMENT} mode..."
+
+  if [ -n "$GPU_DEVICE_OVERRIDE" ]; then
+    apply_gpu_device_override "$GPU_DEVICE_OVERRIDE"
+    warn_gpu_device_override_conflicts "$GPU_DEVICE_OVERRIDE"
+  fi
 
   if [ -n "$GPU_SCALE_FLAG" ]; then
     echo "🎯 Multi-GPU scaling enabled"
@@ -1841,6 +2051,19 @@ reset_and_init() {
       echo "   Models: mock-gpt (normal) mock-echo mock-empty mock-error mock-slow"
     else
       echo "⚠️  --with-mock-llm specified but docker-compose.mock-llm.yml not found"
+    fi
+  fi
+
+  # Add the document parsing sidecars if requested
+  if [ -n "$WITH_DOCUMENTS_FLAG" ]; then
+    if [ -f "docker-compose.documents.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.documents.yml"
+      echo "📄 Adding document parsing sidecars (docker-compose.documents.yml)"
+      echo "   docling-serve (OCR + layout, CPU only) — from containers: http://docling-serve:5001   from host: http://localhost:${DOCLING_SERVE_PORT:-5197}"
+      echo "   Apache Tika (legacy OLE2 .doc/.ppt/.xls + RTF)  — from containers: http://tika:9998   from host: http://localhost:${TIKA_PORT:-5198}"
+      echo "   Sets DOCUMENT_PARSER_URL + DOCUMENT_TIKA_URL on backend and the CPU workers."
+    else
+      echo "⚠️  --with-documents specified but docker-compose.documents.yml not found"
     fi
   fi
 
@@ -2199,17 +2422,26 @@ purge_system() {
   echo "✅ Complete purge finished. Everything removed."
 }
 
+# Container-name prefix for the bench stack. docker-compose.bench.yml overrides
+# container_name to otbench-* on EVERY service precisely so a bench stack can
+# coexist with the dev stack, so any `docker ps`/`docker inspect`/`docker exec`
+# in the bench flow MUST address otbench-*, never opentranscribe-* (issue #399).
+# Matching on the dev names made the engine gate validate the one stack the
+# benchmark must not touch: it aborted when only the bench stack was up, and
+# passed when the dev stack was up even if the bench worker was missing.
+BENCH_CONTAINER_PREFIX="otbench"
+
 # Poll the bench backend container until it reports healthy (deterministic
-# replacement for blind `sleep`s in the bench flow). The bench stack runs under
-# the default project name with hard-coded container_name opentranscribe-backend.
+# replacement for blind `sleep`s in the bench flow).
 # Usage: wait_for_bench_backend_health [timeout_seconds]
 wait_for_bench_backend_health() {
   local timeout="${1:-180}"
   local interval=3
   local elapsed=0
   local status
+  local container="${BENCH_CONTAINER_PREFIX}-backend"
   while [ "$elapsed" -lt "$timeout" ]; do
-    status="$(docker inspect -f '{{.State.Health.Status}}' opentranscribe-backend 2>/dev/null || echo "")"
+    status="$(docker inspect -f '{{.State.Health.Status}}' "$container" 2>/dev/null || echo "")"
     if [ "$status" = "healthy" ]; then
       echo "✅ Bench backend is healthy! (${elapsed}s)"
       return 0
@@ -2219,7 +2451,7 @@ wait_for_bench_backend_health() {
     echo "⏳ Waiting for bench backend... (${elapsed}/${timeout}s, status: ${status:-starting})"
   done
   echo "⚠️ Bench backend health check timed out after ${timeout}s, continuing anyway..."
-  docker logs --tail 20 opentranscribe-backend 2>/dev/null || true
+  docker logs --tail 20 "$container" 2>/dev/null || true
   return 1
 }
 
@@ -2648,7 +2880,7 @@ case "$1" in
         echo ""
         echo "⏳ Waiting for bench backend to become healthy..."
         wait_for_bench_backend_health
-        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep otbench
+        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep "$BENCH_CONTAINER_PREFIX"
         echo ""
         echo "✅ Bench stack ready on $TARGET_BRANCH."
         if [[ "$TARGET_BRANCH" == "master" ]]; then
@@ -2717,7 +2949,7 @@ case "$1" in
 
       status)
         echo "=== Bench Containers ==="
-        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep otbench || echo "(none running)"
+        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep "$BENCH_CONTAINER_PREFIX" || echo "(none running)"
         echo ""
         echo "=== GPU State ==="
         nvidia-smi --query-gpu=index,name,memory.used,utilization.gpu --format=csv,noheader
@@ -2756,12 +2988,7 @@ case "$1" in
         SINGLE_CSV="engine_single_${TIMESTAMP}.csv"
         QUEUE_CSV="engine_queue_${TIMESTAMP}.csv"
         RESULTS_DIR="docs/engine-benchmark-results"
-        # otbench-*, not opentranscribe-*: docker-compose.bench.yml renames every
-        # service so a bench stack can coexist with dev. Checking the dev name inverted
-        # this gate — with only the bench stack up it aborted, and with the dev stack up
-        # it PASSED, green-lighting a benchmark whose bench worker may not exist. It
-        # validated the one stack the benchmark must never touch (issue #399).
-        WORKER="otbench-celery-worker"
+        WORKER="${BENCH_CONTAINER_PREFIX}-celery-worker"
 
         echo "🔬 Engine benchmark — branch: $(git branch --show-current)"
         echo "   Using bench stack (fresh volumes, never touches NAS/prod data)"
@@ -2808,7 +3035,7 @@ case "$1" in
         echo ""
         echo "⏳ Waiting for bench stack to be ready (DB migrations, model pre-load)..."
         wait_for_bench_backend_health 240
-        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep otbench
+        docker ps --format 'table {{.Names}}\t{{.Status}}' | grep "$BENCH_CONTAINER_PREFIX"
 
         # Verify the worker is up
         if ! docker ps --format '{{.Names}}' | grep -q "^${WORKER}$"; then
@@ -2884,6 +3111,97 @@ case "$1" in
         backend/venv/bin/python scripts/collate_benchmark.py "${@:3}"
         ;;
 
+      rag)
+        # Retrieval-quality benchmark (#403 Stage 1) — a PEER of the GPU arms
+        # above, not a mode of them. It measures nDCG/recall/MRR over an
+        # already-injected eval corpus and needs no GPU, no ASR and no LLM.
+        #
+        # It runs against a --fresh deployment rather than the otbench stack,
+        # because the corpus is injected there by scripts/inject-eval-corpus.sh
+        # and the measurement must be reproducible against a NAMED, isolated
+        # dataset. Same lesson as #399: address the target deployment's own
+        # container names and published ports, never the dev stack's — a bench
+        # arm that validates the wrong stack reports the wrong number.
+        RAG_FRESH_NAME=""
+        RAG_PORT_OFFSET=""
+        RAG_ARGS=()
+        shift 2  # drop "bench rag"
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            --fresh)       RAG_FRESH_NAME="$2"; shift 2 ;;
+            --port-offset) RAG_PORT_OFFSET="$2"; shift 2 ;;
+            *)             RAG_ARGS+=("$1"); shift ;;
+          esac
+        done
+
+        if [[ -n "$RAG_FRESH_NAME" && -z "$RAG_PORT_OFFSET" ]]; then
+          RAG_OFFSET_FILE=".fresh/${RAG_FRESH_NAME}.offset"
+          if [[ -f "$RAG_OFFSET_FILE" ]]; then
+            RAG_PORT_OFFSET="$(tr -d '[:space:]' < "$RAG_OFFSET_FILE")"
+          else
+            echo "❌ No offset recorded for fresh deployment '${RAG_FRESH_NAME}' (${RAG_OFFSET_FILE})."
+            echo "   Pass --port-offset N, or check './opentr.sh fresh-list'."
+            exit 1
+          fi
+        fi
+        RAG_PORT_OFFSET="${RAG_PORT_OFFSET:-0}"
+        if ! [[ "$RAG_PORT_OFFSET" =~ ^[0-9]+$ ]]; then
+          echo "❌ --port-offset must be a non-negative integer, got '${RAG_PORT_OFFSET}'."
+          exit 1
+        fi
+
+        # Verify the deployment we are about to measure is actually up, by ITS
+        # container names (otfresh-<name>-*), before exporting anything.
+        if [[ -n "$RAG_FRESH_NAME" ]]; then
+          RAG_OS_CONTAINER="otfresh-${RAG_FRESH_NAME}-opensearch"
+          if ! docker ps --format '{{.Names}}' | grep -q "^${RAG_OS_CONTAINER}$"; then
+            echo "❌ '${RAG_OS_CONTAINER}' is not running — the corpus is indexed there."
+            echo "   Start it:  ./opentr.sh start dev --fresh ${RAG_FRESH_NAME} --port-offset ${RAG_PORT_OFFSET}"
+            exit 1
+          fi
+        fi
+
+        # OT_EVAL_PYTHON exists because a git worktree does not carry the venv:
+        # it lives in the main checkout, and the harness runs on the host.
+        RAG_PYTHON="${OT_EVAL_PYTHON:-backend/venv/bin/python}"
+        if [[ ! -x "$RAG_PYTHON" ]]; then
+          echo "❌ No usable interpreter at '${RAG_PYTHON}'."
+          echo "   Create backend/venv (see 'Backend / venv' in CLAUDE.md), or set"
+          echo "   OT_EVAL_PYTHON=/path/to/venv/bin/python (needed in a worktree)."
+          exit 1
+        fi
+        if ! "$RAG_PYTHON" -c "import pytrec_eval" 2>/dev/null; then
+          echo "❌ The metric engine is missing. It is an EVAL-ONLY dependency, kept out of"
+          echo "   requirements.txt and the published images for licence reasons:"
+          echo "   ${RAG_PYTHON} -m pip install -r backend/requirements-eval.txt"
+          exit 1
+        fi
+
+        # Assigned, not defaulted: opentr.sh has already loaded .env, whose hosts
+        # are docker-network names (`postgres`, `opensearch`). The harness runs on
+        # the HOST, against published ports, so those names do not resolve.
+        RAG_HOST="${OT_EVAL_HOST:-localhost}"
+        export POSTGRES_HOST="$RAG_HOST"
+        export OPENSEARCH_HOST="$RAG_HOST"
+        export MINIO_HOST="$RAG_HOST"
+        export REDIS_HOST="$RAG_HOST"
+        export POSTGRES_PORT=$((5176 + RAG_PORT_OFFSET))
+        export REDIS_PORT=$((5177 + RAG_PORT_OFFSET))
+        export MINIO_PORT=$((5178 + RAG_PORT_OFFSET))
+        export OPENSEARCH_PORT=$((5180 + RAG_PORT_OFFSET))
+
+        echo "🔎 RAG retrieval benchmark (#403 Stage 1)"
+        [[ -n "$RAG_FRESH_NAME" ]] && echo "   Deployment: otfresh-${RAG_FRESH_NAME} (offset +${RAG_PORT_OFFSET})"
+        echo "   OpenSearch: ${OPENSEARCH_HOST}:${OPENSEARCH_PORT}   Postgres: ${POSTGRES_HOST}:${POSTGRES_PORT}"
+        echo "   No GPU, no ASR, no LLM — retrieval only (D6)."
+        echo ""
+        # Exit with the harness's own status. opentr.sh ends in `exit 0`, so a
+        # bench arm that just runs a command reports success however it failed —
+        # and this one is meant to be usable as a gate.
+        "$RAG_PYTHON" scripts/benchmark_rag.py "${RAG_ARGS[@]}"
+        exit $?
+        ;;
+
       help|*)
         echo "🧪 Benchmark subcommands (isolated from NAS data):"
         echo "  bench all [--smoke|--quick|--full] [--phases a,b]  - Full end-to-end run (all phases, all metrics)"
@@ -2894,6 +3212,7 @@ case "$1" in
         echo "  bench clean                              - Stop bench stack and wipe all bench volumes"
         echo "  bench run [output.csv] [fixtures_dir]    - Run upload-speed benchmark on current branch"
         echo "  bench engine                             - Run engine split-stage benchmarks (Phase 2 gate)"
+        echo "  bench rag --fresh <name> [args]          - Retrieval quality (nDCG/recall/MRR) over an injected eval corpus"
         echo "  bench status                             - Show bench containers, GPU state, volumes"
         echo "  bench compare <master.csv> <branch.csv>  - Print side-by-side speedup table"
         echo ""

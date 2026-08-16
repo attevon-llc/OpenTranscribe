@@ -34,11 +34,9 @@ services/
 ├── file_service.py                    # File management operations
 ├── file_cleanup_service.py            # File recovery and cleanup operations
 ├── file_retention_service.py          # Admin-configurable auto-deletion policies
-├── transcription_service.py           # Transcription workflow management
 ├── llm_service.py                     # Multi-provider LLM (vLLM, OpenAI, Ollama, Claude, OpenRouter)
 ├── opensearch_service.py              # Full-text + neural search, ML Commons, alias-based speaker indices
 ├── hybrid_search_service.py           # Hybrid BM25+vector search (OS 3.4 crash fix applied)
-├── opensearch_summary_service.py      # AI summary search and indexing
 ├── minio_service.py                   # Object storage operations
 ├── analytics_service.py               # Server-side analytics computation
 ├── error_categorization_service.py    # Error classification and user guidance

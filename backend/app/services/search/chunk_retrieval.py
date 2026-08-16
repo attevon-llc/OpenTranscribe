@@ -20,7 +20,9 @@ from typing import Any
 
 from app.core.config import settings
 from app.services.opensearch_service import get_opensearch_client
+from app.services.search.fusion import FusionConfig
 from app.services.search.hybrid_search_service import HybridSearchService
+from app.services.search.hybrid_search_service import ensure_fusion_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,14 @@ _RRF_WINDOW_MIN = 100
 
 @dataclass
 class ChunkHit:
-    """One retrieved transcript chunk, with everything a citation needs."""
+    """One retrieved document, with everything a citation needs.
+
+    Carries hits from **both** planes. ``digest_section`` is the discriminator
+    and it is an explicit field rather than a sign test on ``chunk_index``: the
+    negative sentinel is an index-sort implementation detail, and code that
+    infers "this is a digest" from it breaks silently the day the sentinel
+    scheme changes. ``is_digest`` is the only supported check.
+    """
 
     file_uuid: str
     file_id: int
@@ -42,6 +51,12 @@ class ChunkHit:
     start_time: float = 0.0
     end_time: float | None = None
     score: float = 0.0
+    #: Section number for a digest document; ``None`` for a transcript chunk.
+    digest_section: int | None = None
+
+    @property
+    def is_digest(self) -> bool:
+        return self.digest_section is not None
 
     def to_cache_dict(self) -> dict[str, Any]:
         return {
@@ -54,10 +69,12 @@ class ChunkHit:
             "start_time": self.start_time,
             "end_time": self.end_time,
             "score": self.score,
+            "digest_section": self.digest_section,
         }
 
     @classmethod
     def from_cache_dict(cls, raw: dict[str, Any]) -> ChunkHit:
+        section = raw.get("digest_section")
         return cls(
             file_uuid=str(raw.get("file_uuid", "")),
             file_id=int(raw.get("file_id", 0)),
@@ -68,6 +85,7 @@ class ChunkHit:
             start_time=float(raw.get("start_time", 0.0)),
             end_time=raw.get("end_time"),
             score=float(raw.get("score", 0.0)),
+            digest_section=None if section is None else int(section),
         )
 
 
@@ -184,6 +202,7 @@ def retrieve_chunks(
     speakers: list[str] | None = None,
     size: int = 48,
     search_mode: str = "hybrid",
+    fusion: FusionConfig | None = None,
 ) -> list[ChunkHit]:
     """Retrieve the best-matching transcript chunks for ``query``.
 
@@ -197,6 +216,10 @@ def retrieve_chunks(
             chunks are speaker turns — one chunk is one person talking.
         size: Candidate pool size to return before reranking.
         search_mode: ``hybrid`` (BM25 + vector), ``semantic``, or ``keyword``.
+        fusion: Hybrid fusion strategy for **this call** (#363). None uses the
+            configured default. Chat fuses over ``dynamic_rrf_window(size)``
+            while the search UI always fuses over 500, so an A/B here does not
+            characterise ``/api/search`` and vice versa — measure both.
 
     Returns:
         Chunk hits in provider-ranked order; empty on any retrieval failure —
@@ -230,10 +253,10 @@ def retrieve_chunks(
     body = _build_body(clean, filters, size, use_neural_query, model_id, service, search_mode)
 
     params = {}
-    # The RRF pipeline fuses the two legs of a hybrid query. A semantic-only or
+    # The fusion pipeline fuses the two legs of a hybrid query. A semantic-only or
     # BM25-only body has one leg, so applying it would be meaningless work.
     if use_neural_query and model_id and search_mode != "semantic":
-        params["search_pipeline"] = settings.OPENSEARCH_SEARCH_PIPELINE
+        params["search_pipeline"] = ensure_fusion_pipeline(fusion)
 
     try:
         response = client.search(
@@ -254,6 +277,135 @@ def retrieve_chunks(
         len(speakers) if speakers else "any",
     )
     return chunks
+
+
+def _digest_hit_to_chunk(hit: dict[str, Any]) -> ChunkHit | None:
+    """A digest document as a :class:`ChunkHit`, carrying its real timestamps.
+
+    Addendum **G7**: a digest indexed with ``start_time=0`` would deep-link a
+    citation to ``0:00``, which is a plausible-looking wrong answer. The
+    extractive digest already paid for real section timestamps, so they are read
+    here rather than re-derived per citation.
+
+    ``speaker`` is left unset on purpose. A digest is not attributable to one
+    person, and inventing an attribution is exactly the merge base rule 5
+    forbids.
+    """
+    source = hit.get("_source") or {}
+    file_uuid = source.get("file_uuid")
+    content = source.get("content")
+    section = source.get("digest_section")
+    if not file_uuid or not content or section is None:
+        return None
+    return ChunkHit(
+        file_uuid=str(file_uuid),
+        file_id=int(source.get("file_id") or 0),
+        chunk_index=int(source.get("chunk_index") or 0),
+        content=str(content),
+        title=str(source.get("title") or ""),
+        speaker=None,
+        start_time=float(source.get("start_time") or 0.0),
+        end_time=source.get("end_time"),
+        score=float(hit.get("_score") or 0.0),
+        digest_section=int(section),
+    )
+
+
+def retrieve_digests(
+    query: str,
+    *,
+    user_id: int,
+    organization_id: int | None = None,
+    file_uuids: list[str] | None = None,
+    size: int = 12,
+    search_mode: str = "hybrid",
+    fusion: FusionConfig | None = None,
+) -> list[ChunkHit]:
+    """Retrieve digest-plane documents for ``query`` (#403 Stage 4).
+
+    **A separate query, never fused with the chunk leg.** Route, don't fuse: a
+    55-word digest section and a 200-word speaker turn have different length
+    distributions, and RRF over a mixed pool ranks by an artefact of that
+    difference rather than by relevance. The caller combines the two result
+    lists; OpenSearch never sees them together.
+
+    There is deliberately **no speaker parameter**. A digest document carries no
+    single-valued ``speaker`` field at all, and its ``speakers`` array goes stale
+    after a rename until the next reindex (``rename_propagation_task`` rewrites
+    the chunk plane only), so a speaker-scoped digest query would silently drop
+    the renamed speaker's material. The router removes the digest tier when a
+    speaker filter is active; this signature makes that impossible to undo by
+    accident.
+
+    Args:
+        query: The (possibly rewritten) user question.
+        user_id: Caller — enforced via ``accessible_user_ids``.
+        organization_id: Active tenant, or None for personal scope.
+        file_uuids: Resolved scope. ``None`` = every accessible transcript; an
+            empty list matches nothing.
+        size: How many digest sections to return.
+        search_mode: ``hybrid`` | ``semantic`` | ``keyword``.
+        fusion: Hybrid fusion strategy for **this call** (#363); None uses the
+            configured default. Threaded separately from ``retrieve_chunks``
+            because the two legs are routed, never fused together — a sweep may
+            legitimately want a different strategy on each.
+
+    Returns:
+        Digest hits in provider-ranked order; empty on any failure, so a broken
+        digest leg degrades the answer rather than breaking the turn.
+    """
+    from app.services.ingest_artifacts.index_mapping import digest_plane_clause
+
+    clean = (query or "").strip()
+    if not clean:
+        return []
+    if file_uuids is not None and not file_uuids:
+        return []
+
+    client = get_opensearch_client()
+    if not client:
+        return []
+
+    service = HybridSearchService()
+    filters = service._build_filters(
+        user_id,
+        None,
+        None,
+        None,
+        None,
+        organization_id=organization_id,
+        file_uuids=file_uuids,
+    )
+    # `_build_filters` hard-codes the CHUNK plane (that is its job for every
+    # other reader). Swap that one clause rather than forking the function, so
+    # the access gate and the tenant gate stay in exactly one place.
+    from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
+
+    chunk_clause = chunk_plane_clause()
+    filters = [f for f in filters if f != chunk_clause]
+    filters.append(digest_plane_clause())
+
+    _, _use_neural, use_neural_query = service._generate_query_embedding(clean, search_mode)
+    model_id = service._get_neural_model_id() if use_neural_query else None
+    body = _build_body(clean, filters, size, use_neural_query, model_id, service, search_mode)
+    body["_source"] = [*body["_source"], "digest_section"]
+
+    params = {}
+    if use_neural_query and model_id and search_mode != "semantic":
+        params["search_pipeline"] = ensure_fusion_pipeline(fusion)
+
+    try:
+        response = client.search(
+            index=settings.OPENSEARCH_CHUNKS_INDEX, body=body, params=params or None
+        )
+    except Exception as exc:  # noqa: BLE001 — a failed digest leg must not break chat
+        logger.warning(f"Chat digest retrieval failed: {exc}")
+        return []
+
+    hits = response.get("hits", {}).get("hits", [])
+    digests = [d for d in (_digest_hit_to_chunk(h) for h in hits) if d is not None]
+    logger.info("Chat digest retrieval: %d sections (mode=%s)", len(digests), search_mode)
+    return digests
 
 
 def diversity_sample(hits: list[ChunkHit], *, max_per_file: int, cap: int) -> list[ChunkHit]:

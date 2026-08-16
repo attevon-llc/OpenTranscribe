@@ -489,3 +489,95 @@ def test_speaker_name_cannot_inject_via_the_excerpt_header():
     assert block.count("<excerpt ") == 1
     header = block.split("\n", 2)[2].splitlines()[0]
     assert header.count('="') == 4
+
+
+# ---------------------------------------------------------------------------
+# Phase 0 instrumentation (#383 addendum §1)
+# ---------------------------------------------------------------------------
+
+
+def test_diagnostics_report_the_budget_and_what_it_dropped():
+    """`retrieved: 12, chunks_used: 2` is ambiguous without the budget.
+
+    A long conversation shrinks the excerpt room directly (overhead is
+    subtracted, and the reply is capped at half the window), so a turn can
+    retrieve well and still have space for almost nothing. Reported as a
+    retrieval count alone that reads as a retrieval regression.
+    """
+    diagnostics: dict[str, int] = {}
+    chunks = [_chunk("a" * 400), _chunk("b" * 400), _chunk("c" * 400)]
+    messages, used = build_messages(
+        system_prompt="SYS",
+        chunks=chunks,
+        history=[],
+        question="What happened?",
+        context_window=300,
+        response_tokens=100,
+        diagnostics=diagnostics,
+    )
+
+    assert set(diagnostics) == {"budget_chars", "chunks_dropped_for_budget"}
+    assert diagnostics["budget_chars"] > 0
+    assert diagnostics["chunks_dropped_for_budget"] == len(chunks) - len(used)
+    assert diagnostics["chunks_dropped_for_budget"] > 0, "this budget must not fit all three"
+    assert messages[-1]["role"] == "user"
+
+
+def test_diagnostics_report_a_budget_that_fitted_nothing():
+    diagnostics: dict[str, int] = {}
+    _, used = build_messages(
+        system_prompt="SYS",
+        chunks=[_chunk("x" * 5000)],
+        history=[],
+        question="q",
+        context_window=64,
+        response_tokens=60,
+        diagnostics=diagnostics,
+    )
+
+    assert used == []
+    assert diagnostics["chunks_dropped_for_budget"] == 1
+    assert diagnostics["budget_chars"] >= 0
+
+
+def test_history_shrinks_the_excerpt_budget():
+    """The number exists to make this visible; assert it actually moves."""
+    short: dict[str, int] = {}
+    build_messages(
+        system_prompt="SYS",
+        chunks=[_chunk("ctx")],
+        history=[],
+        question="q",
+        context_window=4096,
+        response_tokens=1000,
+        diagnostics=short,
+    )
+    long: dict[str, int] = {}
+    build_messages(
+        system_prompt="SYS",
+        chunks=[_chunk("ctx")],
+        history=[
+            {"role": "user", "content": "u" * 2000},
+            {"role": "assistant", "content": "a" * 2000},
+        ],
+        question="q",
+        context_window=4096,
+        response_tokens=1000,
+        diagnostics=long,
+    )
+
+    assert long["budget_chars"] == short["budget_chars"] - 4000
+
+
+def test_diagnostics_are_opt_in():
+    """Existing callers keep the two-tuple contract and pay nothing."""
+    messages, used = build_messages(
+        system_prompt="SYS",
+        chunks=[_chunk("ctx")],
+        history=[],
+        question="q",
+        context_window=8192,
+        response_tokens=1000,
+    )
+    assert used == [1]
+    assert messages[0]["content"] == "SYS"

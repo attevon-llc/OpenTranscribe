@@ -210,7 +210,6 @@ HARDENED_HANDLERS = [
     (subtitles, "get_subtitles"),
     (subtitles, "bulk_export_stream"),
     (summarization, "get_file_summary"),
-    (summarization, "search_summaries"),
     (summarization, "delete_summary"),
     (system_endpoints, "get_system_stats"),
     (tags_crud, "add_tag_to_file"),

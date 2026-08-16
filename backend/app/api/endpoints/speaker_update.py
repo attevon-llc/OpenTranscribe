@@ -18,6 +18,7 @@ from typing import Any
 import numpy as np
 from sqlalchemy.orm import Session
 
+from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerMatch
 from app.models.media import SpeakerProfile
@@ -232,16 +233,42 @@ def _update_profile_embedding(db: Session, speaker_id: int, profile_id: int) -> 
         logger.warning(f"Failed to update profile embedding for speaker {speaker_id}: {e}")
 
 
+def _chunk_rename_for(db: Session, speaker: Speaker) -> tuple[str, str] | None:
+    """The ``(file_uuid, old_name)`` pair a rename of ``speaker`` invalidates.
+
+    Read **before** the display name is overwritten: the chunk plane was indexed
+    with ``display_name or name``, and after the write nothing in Postgres can
+    reconstruct which of the two it was (issue #405).
+
+    Returns **plain data**, never an ORM instance, so the caller can dispatch it
+    with the transaction already committed.
+    """
+    old_chunk_name = str(speaker.display_name or speaker.name or "")
+    if not old_chunk_name or not speaker.media_file_id:
+        return None
+    row = db.query(MediaFile.uuid).filter(MediaFile.id == speaker.media_file_id).first()
+    return (str(row[0]), old_chunk_name) if row else None
+
+
 def _apply_high_confidence_match(
     db: Session, speaker: Speaker, trigger: dict[str, Any]
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], tuple[str, str] | None]:
     """Apply automatic labeling for high confidence matches (75%+).
 
     **Postgres only.** The OpenSearch write this used to do inline is now returned
     as a plain document and pushed by ``_push_speaker_documents`` after the
     transaction commits — one index round trip per auto-applied speaker was
     happening inside the matching transaction, once per match, for the whole library.
+
+    Returns:
+        ``(document, chunk_rename)`` — the speaker's search document, and the
+        ``(file_uuid, old_name)`` pair whose chunk documents this label just made
+        stale (``None`` when there is nothing to rewrite). The rename is captured
+        **before** the assignment below, because after it Postgres can no longer
+        say what the chunks were indexed with (issue #405).
     """
+    chunk_rename = _chunk_rename_for(db, speaker)
+
     speaker.display_name = trigger["display_name"]  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
 
@@ -253,7 +280,7 @@ def _apply_high_confidence_match(
         f"Auto-applied {trigger['display_name']} to {speaker.name} "
         f"({speaker.confidence:.1%} confidence)"
     )
-    return _speaker_sync_document(db, speaker)
+    return _speaker_sync_document(db, speaker), chunk_rename
 
 
 def _score_candidates(
@@ -308,19 +335,22 @@ def _score_candidates(
 
 def _persist_match_results(
     db: Session, trigger: dict[str, Any], scored: list[dict[str, Any]]
-) -> tuple[int, int, list[dict[str, Any]]]:
+) -> tuple[int, int, list[dict[str, Any]], list[tuple[str, str]]]:
     """Write every scored match to Postgres.
 
-    Returns ``(auto_applied_count, suggested_count, documents)`` where ``documents``
-    are the search documents for the auto-applied speakers, to be pushed once the
+    Returns ``(auto_applied_count, suggested_count, documents, chunk_renames)``.
+    ``documents`` are the search documents for the auto-applied speakers and
+    ``chunk_renames`` the ``(file_uuid, old_name)`` pairs their new labels left
+    stale in the chunk plane (issue #405); both are dispatched once the
     transaction has committed.
     """
     documents: list[dict[str, Any]] = []
+    chunk_renames: list[tuple[str, str]] = []
     auto_applied_count = 0
     suggested_count = 0
 
     if not scored:
-        return auto_applied_count, suggested_count, documents
+        return auto_applied_count, suggested_count, documents, chunk_renames
 
     rows = {
         int(row.id): row
@@ -339,17 +369,45 @@ def _persist_match_results(
         store_speaker_match(trigger["id"], speaker.id, similarity, db)
 
         if similarity >= 0.75:
-            documents.append(_apply_high_confidence_match(db, speaker, trigger))
+            document, chunk_rename = _apply_high_confidence_match(db, speaker, trigger)
+            documents.append(document)
+            if chunk_rename:
+                chunk_renames.append(chunk_rename)
             auto_applied_count += 1
             continue
 
-        # Medium confidence (50-75%): just suggest
+        # Medium confidence (50-75%): just suggest. Only ``suggested_name`` is
+        # written, so ``display_name`` — the value the chunk plane carries — is
+        # unchanged and this tier contributes no rename.
         logger.info(
             f"Suggested {trigger['display_name']} for {speaker.name} ({similarity:.1%} confidence)"
         )
         suggested_count += 1
 
-    return auto_applied_count, suggested_count, documents
+    return auto_applied_count, suggested_count, documents, chunk_renames
+
+
+def _dispatch_chunk_renames(chunk_renames: list[tuple[str, str]], new_name: str | None) -> None:
+    """Queue chunk-plane propagation for every auto-applied label (issue #405).
+
+    **Takes no ``Session``.** ``new_name`` arrives as plain data off the trigger
+    snapshot, and the pairs were captured before their speakers were overwritten,
+    so this runs with the transaction already committed — which is also what makes
+    it correct: a rolled-back match must never reach the index.
+
+    Best-effort: retroactive matching has already committed, and a broker that is
+    down must not turn that into an exception the caller reports as a failed
+    labelling.
+    """
+    if not chunk_renames or not new_name:
+        return
+    try:
+        from app.tasks.rename_propagation_task import dispatch_speaker_rename
+
+        files = dispatch_speaker_rename(chunk_renames, new_name)
+        logger.info(f"Queued chunk speaker-rename propagation for {files} file(s)")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Could not queue chunk-plane rename propagation: {e}")
 
 
 def _load_suggestion_speaker_documents(
@@ -518,13 +576,20 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
 
         # Phase 2 — the writes, then commit so the suggestion snapshot below sees
         # them (autoflush is off) and the locks are released before the push.
-        auto_applied_count, suggested_count, documents = _persist_match_results(db, trigger, scored)
+        auto_applied_count, suggested_count, documents, chunk_renames = _persist_match_results(
+            db, trigger, scored
+        )
         db.commit()
         documents.extend(_load_suggestion_speaker_documents(db, trigger))
         db.commit()
 
-        # Phase 3 — index writes. NO transaction is open here.
+        # Phase 3 — index writes. NO transaction is open here. Auto-applied labels
+        # rewrite the chunk plane too, and one recording can contribute several
+        # matched speakers — dispatch_speaker_rename coalesces them into one
+        # update_by_query per file (issue #405). Both run after the commit so a
+        # rolled-back match never reaches the index.
         _push_speaker_documents(documents)
+        _dispatch_chunk_renames(chunk_renames, trigger["display_name"])
 
         logger.info(
             f"Retroactive matching complete: {auto_applied_count} auto-applied, {suggested_count} suggested"

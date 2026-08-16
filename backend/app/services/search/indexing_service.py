@@ -4,14 +4,24 @@ import contextlib
 import datetime
 import logging
 import time
+from collections.abc import Callable
 from collections.abc import Iterator
 from typing import Any
 
 from app.core.config import settings
+from app.services.ingest_artifacts import index_mapping as digest_mapping
 from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import opensearch_client
 
 from .chunking_service import chunk_transcript_by_speaker_turns
+from .embedding_provenance import active_embedding_model
+from .embedding_provenance import reset_active_embedding_model
+from .embedding_provenance import resolve_model_label
+from .embedding_provenance import set_active_embedding_model
+from .fusion import FusionConfig
+from .fusion import pipeline_matches
+from .fusion import resolve_fusion
+from .fusion import search_pipeline_id
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +32,11 @@ _neural_pipeline_available = False
 # Index version -- bump when mappings or analysis settings change.
 # Stored in index _meta so ensure_chunks_index_exists() can detect stale indices.
 # v5: added organization_id (tenant scope) for cloud-edition isolation.
-_INDEX_VERSION = 5
+# v6: doc_type discriminator + digest documents + embedding_text (#403 Stage 3).
+#     The mapping additions and the id/clause helpers live in
+#     services/ingest_artifacts/index_mapping.py, which Stage 2 pinned so this
+#     bump could carry all of them in ONE reindex.
+_INDEX_VERSION = digest_mapping.TARGET_INDEX_VERSION
 
 # Transient bulk error types that are safe to retry
 _RETRYABLE_ERROR_TYPES = frozenset(
@@ -32,6 +46,17 @@ _RETRYABLE_ERROR_TYPES = frozenset(
         "cluster_block_exception",
     }
 )
+
+#: How many consecutive document ids one realtime orphan probe covers (#435).
+#:
+#: A bulk load writes ``0..n-1``, so the tail a shorter re-chunk orphans is normally
+#: contiguous and a single id would answer the question. The probe is a *window*
+#: because that assumption is not guaranteed and is already violated on purpose in
+#: the suite: ``_extract_failed_docs`` drops documents whose bulk error is permanent,
+#: leaving a hole, and ``test_a_shorter_resection_leaves_no_orphan_digest`` plants its
+#: orphan at ``sections + 3``. The walk stops at the first window in which nothing is
+#: found, so a document set that ends terminates it. 64 ids cost one round trip.
+_ORPHAN_PROBE_WINDOW = 64
 
 # Permanent error types that should NOT be retried
 _PERMANENT_ERROR_TYPES = frozenset(
@@ -130,6 +155,11 @@ TRANSCRIPT_CHUNKS_INDEX_BODY = {
             # Tracking
             "embedding_model": {"type": "keyword"},
             "indexed_at": {"type": "date"},
+            # v6 (#403 Stage 3): the doc_type discriminator, the field the neural
+            # ingest pipeline embeds, and the digest section number. Defined in
+            # services/ingest_artifacts/index_mapping.py so Stage 2 could pin the
+            # shape and Stage 3 could apply it unchanged.
+            **digest_mapping.TARGET_MAPPING_ADDITIONS,
         },
     },
 }
@@ -152,26 +182,100 @@ def _invalidate_chat_retrieval_cache() -> None:
         logger.debug("Could not bump chat corpus version", exc_info=True)
 
 
-def _build_hybrid_search_pipeline() -> dict[str, Any]:
-    """Build the RRF search pipeline configuration with configurable rank_constant.
+def chunk_plane_query(
+    file_uuid: str,
+    *,
+    from_chunk_index: int | None = None,
+    extra_filters: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Build the query that selects the CHUNK-plane documents of one file.
 
-    Lower rank_constant values give more weight to top-ranked results.
-    Default 40 is tuned for transcript search (shorter queries, focused collections).
-    The standard value of 60 from the original RRF paper is optimized for web search.
+    **Every delete and every targeted rewrite against the chunks index is built
+    here, or in its two siblings below, and nowhere else.**
+    Since v6 the index also holds per-file **digest** documents
+    (``doc_type: digest``), so a predicate matching only on ``file_uuid`` takes
+    the digests with it — which is why the discriminator lives here rather than
+    at each call site.
+
+    The clause is :func:`~app.services.ingest_artifacts.index_mapping.chunk_plane_clause`,
+    not a bare ``{"term": {"doc_type": "chunk"}}``, and the difference is the
+    whole point: **every chunk written before v6 carries no ``doc_type`` at
+    all**, so a bare term matches none of them and the #400 stale-tail prune
+    silently stops working for an entire installed corpus. An explicit mapping
+    does nothing for documents written before it existed.
+
+    ``extra_filters`` exists so a caller that needs to narrow *within* the chunk
+    plane (the rename propagation of issue #405 only wants the docs still
+    carrying the old speaker name) still inherits whatever predicate this
+    function grows.
+
+    Args:
+        file_uuid: UUID of the media file whose chunks are being selected.
+        from_chunk_index: When set, restrict to chunks at or above this index —
+            the stale tail left behind by a longer previous chunking.
+        extra_filters: Additional ``filter`` clauses ANDed onto the predicate.
+            Express an OR as one nested ``bool``/``should`` clause.
+
+    Returns:
+        An OpenSearch query body fragment (the value of ``"query"``).
     """
-    return {
-        "description": "Hybrid BM25 + vector search with RRF",
-        "phase_results_processors": [
-            {
-                "score-ranker-processor": {
-                    "combination": {
-                        "technique": "rrf",
-                        "rank_constant": settings.SEARCH_RRF_RANK_CONSTANT,
-                    }
-                }
-            }
-        ],
-    }
+    filters: list[dict[str, Any]] = [
+        {"term": {"file_uuid": file_uuid}},
+        digest_mapping.chunk_plane_clause(),
+    ]
+    if from_chunk_index is not None:
+        filters.append({"range": {"chunk_index": {"gte": from_chunk_index}}})
+    if extra_filters:
+        filters.extend(extra_filters)
+    return {"bool": {"filter": filters}}
+
+
+def digest_plane_query(
+    file_uuid: str,
+    *,
+    from_section: int | None = None,
+) -> dict[str, Any]:
+    """The digest-plane sibling of :func:`chunk_plane_query`.
+
+    No compatibility arm: digest documents are all new, so ``doc_type`` is
+    always present on them.
+
+    Args:
+        file_uuid: UUID of the media file whose digest sections are selected.
+        from_section: When set, restrict to sections at or above this index —
+            the orphans left behind when a digest re-sections to fewer parts,
+            exactly the way a shorter re-chunk orphans a chunk tail (#400).
+
+    Returns:
+        An OpenSearch query body fragment.
+    """
+    filters: list[dict[str, Any]] = [
+        {"term": {"file_uuid": file_uuid}},
+        digest_mapping.digest_plane_clause(),
+    ]
+    if from_section is not None:
+        filters.append({"range": {"digest_section": {"gte": from_section}}})
+    return {"bool": {"filter": filters}}
+
+
+def file_plane_query(file_uuid: str) -> dict[str, Any]:
+    """**Every** document of one file, whatever plane it belongs to.
+
+    Deliberately has no ``doc_type`` predicate, and all three callers need that:
+    deleting a media file must leave nothing behind, a full rebuild wants a clean
+    slate before it regenerates both planes, and
+    :meth:`TranscriptIndexingService.count_file_documents` verifies the delete
+    against the same predicate the delete used. Using :func:`chunk_plane_query`
+    for any of them would strand the digests — readable, with whatever ACL they
+    were last stamped with.
+
+    Args:
+        file_uuid: UUID of the media file.
+
+    Returns:
+        An OpenSearch query body fragment.
+    """
+    return {"bool": {"filter": [{"term": {"file_uuid": file_uuid}}]}}
 
 
 def ensure_chunks_index_exists() -> bool:
@@ -279,11 +383,20 @@ def recreate_index_for_dimension(dimension: int) -> bool:
         return False
 
 
-def ensure_search_pipeline_exists() -> bool:
-    """Ensure the hybrid search pipeline exists with the correct rank_constant.
+def ensure_search_pipeline_exists(fusion: FusionConfig | None = None) -> bool:
+    """Ensure the search pipeline for ``fusion`` exists with the right processors.
 
-    If the pipeline exists but has a different rank_constant than configured,
-    it will be recreated with the correct value.
+    Self-heals on drift: a pipeline whose stored body differs from the wanted one
+    is deleted and recreated. Since #363 the comparison is **structural over the
+    whole processor block** rather than a single ``rank_constant`` field, so a
+    normalization pipeline whose technique changed heals the same way an RRF
+    pipeline whose rank constant changed always has. OpenSearch echoes a pipeline
+    body back verbatim, so an exact comparison is safe.
+
+    Args:
+        fusion: The strategy this pipeline implements; None for the configured
+            default (RRF at ``SEARCH_RRF_RANK_CONSTANT``, the historical
+            ``transcript-hybrid-search``).
 
     Returns:
         True if pipeline exists or was created, False on error.
@@ -292,34 +405,21 @@ def ensure_search_pipeline_exists() -> bool:
         logger.warning("OpenSearch client not initialized")
         return False
 
-    pipeline_id = settings.OPENSEARCH_SEARCH_PIPELINE
-    pipeline_body = _build_hybrid_search_pipeline()
+    cfg = resolve_fusion(fusion)
+    pipeline_id = search_pipeline_id(cfg)
+    pipeline_body = cfg.pipeline_body()
     try:
-        # Check if pipeline exists and has correct rank_constant
         try:
             response = opensearch_client.transport.perform_request(
                 "GET", f"/_search/pipeline/{pipeline_id}"
             )
-            # Verify rank_constant matches configured value
             existing = response.get(pipeline_id, response) if isinstance(response, dict) else {}
-            processors = existing.get("phase_results_processors", [])
-            for proc in processors:
-                ranker = proc.get("score-ranker-processor", {})
-                combo = ranker.get("combination", {})
-                existing_rc = combo.get("rank_constant")
-                if existing_rc is not None and existing_rc != settings.SEARCH_RRF_RANK_CONSTANT:
-                    logger.info(
-                        f"Search pipeline rank_constant mismatch: "
-                        f"{existing_rc} vs {settings.SEARCH_RRF_RANK_CONSTANT}, recreating"
-                    )
-                    # Delete and recreate
-                    opensearch_client.transport.perform_request(
-                        "DELETE", f"/_search/pipeline/{pipeline_id}"
-                    )
-                    break
-            else:
-                # Pipeline exists with correct config
+            if pipeline_matches(existing, cfg):
                 return True
+            logger.info(f"Search pipeline {pipeline_id} drifted from {cfg.slug()}, recreating")
+            opensearch_client.transport.perform_request(
+                "DELETE", f"/_search/pipeline/{pipeline_id}"
+            )
         except Exception:
             logger.debug(f"Search pipeline {pipeline_id} not found, will create it")
 
@@ -329,10 +429,7 @@ def ensure_search_pipeline_exists() -> bool:
             f"/_search/pipeline/{pipeline_id}",
             body=pipeline_body,
         )
-        logger.info(
-            f"Created search pipeline: {pipeline_id} "
-            f"(rank_constant={settings.SEARCH_RRF_RANK_CONSTANT})"
-        )
+        logger.info(f"Created search pipeline: {pipeline_id} ({cfg.slug()})")
         return True
     except Exception as e:
         logger.error(f"Error creating search pipeline: {e}")
@@ -355,37 +452,117 @@ def _get_model_id_from_service() -> str | None:
         return None
 
 
-def _check_existing_pipeline_model(pipeline_id: str, expected_model_id: str) -> bool | None:
-    """Check if existing pipeline has the expected model.
+def _build_neural_ingest_pipeline(model_id: str) -> dict[str, Any]:
+    """Build the neural ingest pipeline body for a model.
+
+    The single definition of what the ingest pipeline should look like — both the
+    creation path and the drift check below read it, so the two can never disagree
+    about what "correct" is.
+
+    Args:
+        model_id: OpenSearch ML model ID that generates the embeddings.
+
+    Returns:
+        The pipeline body to PUT.
+    """
+    return {
+        "description": f"Neural embedding pipeline for transcript search (model: {model_id})",
+        "processors": [
+            {
+                "text_embedding": {
+                    "model_id": model_id,
+                    # v6: embed `embedding_text`, not `content` (#403 Stage 3).
+                    # Every document carries it; for a chunk it is the file
+                    # header plus the chunk text, for a digest section the same
+                    # header plus the section. That header is the zero-LLM
+                    # contextualization — it is what makes "the logistics team's
+                    # retro" retrievable when the phrase is in the title and not
+                    # in anything anybody said. #401 is what makes this reach
+                    # upgraded deployments: the drift check compares field_map,
+                    # so an existing pipeline is recreated rather than silently
+                    # left embedding the old field.
+                    "field_map": {"embedding_text": "embedding"},
+                    "batch_size": settings.SEARCH_NEURAL_BATCH_SIZE,
+                    "ignore_failure": False,
+                }
+            }
+        ],
+    }
+
+
+def _check_existing_pipeline_config(pipeline_id: str, expected: dict[str, Any]) -> bool | None:
+    """Check whether the live ingest pipeline matches the config we would write.
+
+    Compares ``model_id``, ``field_map`` **and** ``batch_size`` — not just the model
+    (issue #401). Comparing only the model meant a release that repointed
+    ``field_map`` (say ``content`` → ``embedding_text``) took effect on fresh installs
+    only: an upgraded deployment kept the old pipeline and silently kept embedding the
+    old field, with no error, no log and no metric to show for it. This mirrors what
+    ``ensure_search_pipeline_exists`` already does for the *search* pipeline, and
+    recreating an ingest pipeline is cheap and non-destructive (existing documents keep
+    their embeddings; only future ingests change — a ``field_map`` change still needs a
+    reindex for old documents to pick up the new source field).
+
+    ``batch_size`` is compared **only when the live pipeline carries one**: the creation
+    path drops it and retries on OpenSearch versions that reject the parameter, and
+    treating that absence as drift would recreate the pipeline on every single boot.
+
+    ``ignore_failure`` is deliberately not compared — OpenSearch may or may not echo a
+    false-valued flag back, and a spurious mismatch there would be the same boot loop.
 
     Args:
         pipeline_id: Pipeline ID to check.
-        expected_model_id: Expected model ID.
+        expected: The ``text_embedding`` processor config we would write.
 
     Returns:
-        True if pipeline exists with correct model, False if model mismatch, None if not found.
+        True if the live pipeline matches, False if it has drifted, None if not found.
     """
     if not opensearch_client:
         return None
 
     try:
         response = opensearch_client.ingest.get_pipeline(id=pipeline_id)
-        current_pipeline = response.get(pipeline_id, {})
-        processors = current_pipeline.get("processors", [])
-
-        for processor in processors:
-            if "text_embedding" in processor:
-                current_model = processor["text_embedding"].get("model_id")
-                if current_model == expected_model_id:
-                    return True
-                logger.info(
-                    f"Neural pipeline model mismatch: {current_model} vs {expected_model_id}, updating"
-                )
-                return False
-        return None
     except Exception:
         logger.debug(f"Neural ingest pipeline {pipeline_id} not found, will create it")
         return None
+
+    current_pipeline = response.get(pipeline_id, {})
+    processors = current_pipeline.get("processors", [])
+
+    for processor in processors:
+        if "text_embedding" not in processor:
+            continue
+
+        live = processor["text_embedding"]
+        drift = [
+            f"{key}: {live.get(key)!r} != {expected.get(key)!r}"
+            for key in ("model_id", "field_map")
+            if live.get(key) != expected.get(key)
+        ]
+        if "batch_size" in live and live["batch_size"] != expected.get("batch_size"):
+            drift.append(f"batch_size: {live['batch_size']!r} != {expected.get('batch_size')!r}")
+
+        if drift:
+            # A ``model_id`` drift is categorically worse than the other two and is
+            # logged as such (issue #437): recreating the pipeline makes every FUTURE
+            # document use the new model while every existing document keeps vectors
+            # from the old one, and cosine between the two populations is meaningless.
+            # The other drifts change what is embedded, not what embeds it.
+            if live.get("model_id") != expected.get("model_id"):
+                logger.warning(
+                    f"Neural ingest pipeline {pipeline_id} is pointed at a DIFFERENT "
+                    f"embedding model ({live.get('model_id')!r} -> "
+                    f"{expected.get('model_id')!r}). Documents already indexed keep "
+                    f"their old vectors; a FULL reindex is required before the index "
+                    f"is a single comparable vector space again."
+                )
+            logger.info(
+                f"Neural ingest pipeline {pipeline_id} has drifted, recreating ({'; '.join(drift)})"
+            )
+            return False
+        return True
+
+    return None
 
 
 def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
@@ -421,30 +598,20 @@ def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
         return False
 
     try:
-        # Check if pipeline exists with correct model
-        pipeline_check = _check_existing_pipeline_model(pipeline_id, model_id)
+        pipeline_body = _build_neural_ingest_pipeline(model_id)
+        text_embedding_config: dict[str, Any] = pipeline_body["processors"][0]["text_embedding"]
+        batch_size = text_embedding_config["batch_size"]
+
+        # Check whether the live pipeline still matches the whole config, not just
+        # the model id (issue #401).
+        pipeline_check = _check_existing_pipeline_config(pipeline_id, text_embedding_config)
         if pipeline_check is True:
             _neural_pipeline_verified = True
             _neural_pipeline_available = True
+            set_active_embedding_model(resolve_model_label(model_id))
             return True
 
         # Create or update pipeline (try with batch_size first, fall back without)
-        batch_size = settings.SEARCH_NEURAL_BATCH_SIZE
-        text_embedding_config: dict[str, Any] = {
-            "model_id": model_id,
-            "field_map": {"content": "embedding"},
-            "batch_size": batch_size,
-            "ignore_failure": False,
-        }
-        pipeline_body: dict[str, Any] = {
-            "description": f"Neural embedding pipeline for transcript search (model: {model_id})",
-            "processors": [
-                {
-                    "text_embedding": text_embedding_config,
-                }
-            ],
-        }
-
         try:
             opensearch_client.ingest.put_pipeline(id=pipeline_id, body=pipeline_body)
             logger.info(
@@ -466,12 +633,20 @@ def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
 
         _neural_pipeline_verified = True
         _neural_pipeline_available = True
+        # Provenance is resolved HERE, from the model id we just wrote into the
+        # pipeline, and nowhere else (#437). Reading it from
+        # ``get_search_embedding_settings()`` instead would attach a label that is
+        # demonstrably able to name a model that never touched the vector: the two
+        # SystemSettings keys behind that function are written by different
+        # endpoints and nothing reconciles them.
+        set_active_embedding_model(resolve_model_label(model_id))
         return True
 
     except Exception as e:
         logger.error(f"Error creating neural ingest pipeline: {e}")
         _neural_pipeline_verified = False
         _neural_pipeline_available = False
+        reset_active_embedding_model()
         return False
 
 
@@ -501,6 +676,10 @@ def reset_neural_pipeline_state() -> None:
     global _neural_pipeline_verified, _neural_pipeline_available
     _neural_pipeline_verified = False
     _neural_pipeline_available = False
+    # The provenance label describes the pipeline, so it expires with it. Leaving
+    # the previous model's name behind would stamp it on documents the NEXT model
+    # embeds — a wrong label is worse than no label, because it is believed.
+    reset_active_embedding_model()
 
 
 def _get_index_body_with_dimension(dimension: int) -> dict[str, Any]:
@@ -694,21 +873,37 @@ class TranscriptIndexingService:
             logger.warning(f"No chunks generated for file {file_uuid}")
             return 0
 
-        # 2. Add indexed_at timestamp and accessible_user_ids
+        # 2. Add indexed_at timestamp, accessible_user_ids, and the v6 fields
         now = datetime.datetime.now(datetime.UTC).isoformat()
         effective_user_ids = accessible_user_ids if accessible_user_ids else [user_id]
+        header_roster = sorted(speakers or [])
         for chunk in chunks:
             chunk["indexed_at"] = now
             chunk["accessible_user_ids"] = effective_user_ids
+            chunk[digest_mapping.DOC_TYPE_FIELD] = digest_mapping.DOC_TYPE_CHUNK
+            # The pipeline embeds this field, not `content` — see
+            # `_build_neural_ingest_pipeline`. BM25 still scores `content`.
+            chunk["embedding_text"] = digest_mapping.build_embedding_text(
+                title=title,
+                recorded_at=upload_time,
+                roster=header_roster,
+                body=str(chunk.get("content") or ""),
+            )
 
         # 3. Choose embedding mode and index
         t_index_start = time.time()
         try:
             use_neural = is_neural_pipeline_available()
+            # The model that will actually produce these vectors, not the mode
+            # they were produced in (#437). ``is_neural_pipeline_available`` is
+            # what verifies the pipeline, so the label is resolved by the time we
+            # read it; when it could not be named this is the same ``"neural"``
+            # every pre-#437 document carries, so unknown stays one bucket.
+            provenance = active_embedding_model()
             if use_neural:
                 for chunk in chunks:
-                    chunk["embedding_model"] = "neural"
-                logger.debug(f"Using neural ingest pipeline for file {file_uuid}")
+                    chunk["embedding_model"] = provenance
+                logger.debug(f"Using neural ingest pipeline for file {file_uuid} ({provenance})")
             else:
                 for chunk in chunks:
                     chunk["embedding_model"] = None
@@ -724,6 +919,42 @@ class TranscriptIndexingService:
                 threshold=settings.SEARCH_LARGE_TRANSCRIPT_CHUNKS,
             ):
                 indexed = self._bulk_index_chunks(chunks, use_neural_pipeline=use_neural)
+
+            # Doc ids are deterministic (``{file_uuid}_{chunk_index}``), so the bulk
+            # load above OVERWRITES chunks 0..len(chunks)-1 but cannot touch a longer
+            # previous chunking's tail. Without this, a re-index after a segment merge,
+            # a speaker-turn change or a SEARCH_CHUNK_TARGET_WORDS bump leaves stale
+            # documents — old text, old speakers, old timestamps — that keep surfacing
+            # in search and in RAG chat retrieval (issue #400).
+            stale_removed = self._prune_stale_chunks(file_uuid, keep_count=len(chunks))
+
+            # The digest plane (#403 Stage 3, addendum G1). It rides the chunk
+            # index rather than the coordinator because `delete_transcript_chunks`
+            # is an unqualified per-file delete: every rebuild trigger — version
+            # bump, model switch, maintenance repair, manual reindex — comes
+            # through here, and any one of them that regenerated chunks and not
+            # digests would destroy the digest tier permanently.
+            digest_count = self._index_digest_plane(
+                file_id=file_id,
+                file_uuid=file_uuid,
+                base_metadata={
+                    "user_id": user_id,
+                    "title": title,
+                    "tags": tags or [],
+                    "upload_time": upload_time,
+                    "language": language,
+                    "content_type": content_type,
+                    "duration": duration,
+                    "file_size": file_size,
+                    "collection_ids": collection_ids or [],
+                    "accessible_user_ids": effective_user_ids,
+                    "indexed_at": now,
+                    "embedding_model": provenance if use_neural else None,
+                    **({} if organization_id is None else {"organization_id": organization_id}),
+                },
+                use_neural=use_neural,
+            )
+
             index_ms = round((time.time() - t_index_start) * 1000)
             total_ms = chunk_ms + index_ms
             mode_str = "neural" if use_neural else "text-only"
@@ -741,19 +972,29 @@ class TranscriptIndexingService:
                 "total_ms": total_ms,
                 "mode": mode_str,
                 "neural": use_neural,
+                "stale_removed": stale_removed,
+                "digest_sections": digest_count,
             }
         except Exception as e:
             logger.error(f"Bulk indexing failed for file {file_uuid}: {e}")
             return 0
 
     def delete_transcript_chunks(self, file_uuid: str) -> int:
-        """Delete all chunks for a file.
+        """Delete **every** indexed document for a file — both planes.
+
+        Its two callers are file deletion and the full rebuild in
+        :meth:`reindex_transcript`, and both mean "leave nothing behind":
+        a digest that outlives its file is a readable summary of a deleted
+        recording, and a digest that survives a rebuild whose transcript
+        re-sectioned to fewer parts is a stale orphan (#400's failure, one
+        plane over). Hence :func:`file_plane_query`, not
+        :func:`chunk_plane_query`.
 
         Args:
-            file_uuid: UUID of the file to delete chunks for.
+            file_uuid: UUID of the file to delete documents for.
 
         Returns:
-            Number of chunks deleted.
+            Number of documents deleted.
         """
         if not opensearch_client:
             return 0
@@ -765,7 +1006,7 @@ class TranscriptIndexingService:
 
             response = opensearch_client.delete_by_query(
                 index=index_name,
-                body={"query": {"term": {"file_uuid": file_uuid}}},
+                body={"query": file_plane_query(file_uuid)},
                 refresh=True,
             )
             deleted: int = response.get("deleted", 0)
@@ -776,6 +1017,373 @@ class TranscriptIndexingService:
         except Exception as e:
             logger.error(f"Error deleting chunks for file {file_uuid}: {e}")
             return 0
+
+    def count_file_documents(self, file_uuid: str) -> int:
+        """Count this file's still-indexed documents — **every plane**.
+
+        The verification half of :meth:`delete_transcript_chunks`, and it lives
+        here rather than at the caller so the two share one predicate: a survivor
+        count built from a *different* predicate than the delete it checks is not
+        a check. ``delete_transcript_chunks`` returns 0 for "no chunks", "index
+        absent" and "the delete failed" alike, so this count — never that return
+        value — is what proves an erasure complete.
+
+        **Both planes, deliberately** (index v6, #403 Stage 3). A
+        :func:`chunk_plane_query` count would report a clean sweep while the
+        file's ``doc_type: digest`` sections were still indexed, and those
+        sections are verbatim transcript text: the erasure would audit as
+        complete with the recording's own words still searchable and still
+        retrievable by chat. That is the failure the unqualified delete exists to
+        prevent, arriving one step later through its verifier.
+
+        Unlike everything else in this class it **raises** rather than returning
+        0 when it cannot ask. Its caller is a GDPR Art. 17 erasure that records
+        "could not verify" as a residual, and a 0 meaning "the cluster was
+        unreachable" is precisely the wrong answer there. An **absent index** is
+        still 0 — that is the cluster answering.
+
+        The explicit refresh is the #435 lesson applied to the delete path: a
+        ``count`` is a search and sees only what the last refresh made visible,
+        so without it a delete that raised part-way could leave documents that
+        the count cannot see and reports as gone. One refresh per erased file is
+        not on any hot path.
+
+        Args:
+            file_uuid: UUID of the media file.
+
+        Returns:
+            Number of documents of any plane still matching the file.
+
+        Raises:
+            Exception: The cluster could not be reached or could not answer.
+        """
+        from opensearchpy.exceptions import NotFoundError
+
+        if not opensearch_client:
+            raise RuntimeError("OpenSearch client unavailable")
+
+        index_name = settings.OPENSEARCH_CHUNKS_INDEX
+        try:
+            if not opensearch_client.indices.exists(index=index_name):
+                return 0
+            opensearch_client.indices.refresh(index=index_name)
+            response = opensearch_client.count(
+                index=index_name, body={"query": file_plane_query(file_uuid)}
+            )
+            return int(response["count"])
+        except NotFoundError:
+            return 0
+
+    def _orphaned_document_ids(
+        self, *, index_name: str, document_id: Callable[[int], str], first_orphan: int
+    ) -> list[str]:
+        """Ids of this file's documents from ``first_orphan`` upward, read REALTIME.
+
+        ``mget`` addresses documents **by id**, and an id lookup reads the translog:
+        it sees a document the instant the bulk load returns, with no refresh. A
+        ``count``/``search`` sees only what the last refresh made visible. That
+        difference is the whole of the #435 fix — see :meth:`_prune_stale_chunks`.
+
+        Measured on this stack: 5 documents bulk-loaded with ``refresh=False`` were
+        all returned by ``mget`` while a ``count`` over the same predicate returned 0.
+
+        Args:
+            index_name: Index to probe.
+            document_id: Builds the document id for an index — ``{uuid}_{n}`` for a
+                chunk, ``{uuid}_digest_{n}`` for a digest section.
+            first_orphan: First index that the new generation did not write.
+
+        Returns:
+            The ids that exist, in probe order. Empty means nothing to prune.
+        """
+        if not opensearch_client:
+            return []
+
+        found: list[str] = []
+        start = first_orphan
+        while True:
+            probe = [document_id(n) for n in range(start, start + _ORPHAN_PROBE_WINDOW)]
+            response = opensearch_client.mget(index=index_name, body={"ids": probe}, _source=False)
+            window = [doc["_id"] for doc in response.get("docs", []) if doc.get("found")]
+            if not window:
+                return found
+            found.extend(window)
+            start += _ORPHAN_PROBE_WINDOW
+
+    def _prune_stale_chunks(self, file_uuid: str, *, keep_count: int) -> int:
+        """Delete chunks left behind by a longer previous chunking of this file.
+
+        Called after every bulk load. Chunks ``0..keep_count-1`` were just
+        overwritten in place (the doc id is derived from ``chunk_index``); anything
+        at or above ``keep_count`` belongs to a chunking that no longer exists.
+
+        **The gate is an id probe, not a count, and that is issue #435.** A ``count``
+        is a search, and a search sees only what the last ``refresh`` made visible,
+        while the bulk load above uses ``refresh=False``. So a second index of the
+        same file inside the refresh window used to find an empty tail, skip the
+        delete, and leave the orphans **permanently** — nothing later re-examined
+        them and a subsequent refresh triggered no prune.
+
+        The previous version of this docstring called that unreachable ("no pipeline
+        path re-indexes the same file twice inside one second"). Both halves of that
+        were false, and both were measured rather than argued:
+
+        * **Reachable, and not narrowly.** A back-to-back pair of
+          ``index_transcript_chunks`` calls completes in 125–224 ms at this cluster's
+          production ``refresh_interval``, and the stale tail survived **11 of 12
+          pairs**.
+        * **Nothing serialises the callers.** Five dispatch sites reach the
+          single-file indexing task — ``tasks/transcription/postprocess.py``,
+          ``tasks/transcription/background.py``, ``services/task_recovery_service.py``,
+          ``api/endpoints/files/reprocess.py`` (user-triggered, at any moment, with no
+          in-flight or lock check) and ``scripts/corpus_injection/injector.py`` — plus
+          the batch loop in ``tasks/reindex_task.py``. The recovery sweep is the
+          sharpest: it branches on the index record being *missing*, not on the
+          original task having *stopped*, so a file whose indexing is in flight gets a
+          second dispatch by design.
+
+        **What the mechanism now guarantees**, and only this: any orphan that exists
+        when :meth:`_orphaned_document_ids` runs is found, whether or not a refresh
+        has made it searchable. The probe is realtime; the ``refresh`` below is then
+        required because ``delete_by_query`` executes as a **scroll search** and
+        therefore cannot see what the probe just found — measured directly, a
+        ``delete_by_query`` over 4 unrefreshed documents deletes 0. That is also why
+        a ``_seq_no`` or ``_version`` predicate cannot replace the gate: a predicate
+        changes which *visible* documents match, it cannot make invisible ones
+        visible.
+
+        **What it does NOT guarantee.** Two genuinely overlapping
+        ``index_transcript_chunks`` calls for one file are still not serialised by
+        anything. If a second call's probe runs before a first call's bulk load
+        returns, the tail it has not written yet cannot be found — by any mechanism
+        short of a lock. Interleaved writers on one file remain a coordination
+        problem, not a visibility one.
+
+        **Cost, measured rather than assumed** (real mapping, 384-d HNSW, 50
+        chunks/file, 25 samples, at 5k/15k/30k documents): the probe is
+        **4.0–4.8 ms** against the **3.7–4.1 ms** count it replaces. The alternative
+        — refreshing unconditionally before the gate — is **95 ms median /
+        116–184 ms mean per file**, near-flat in index size because it is dominated
+        by building the HNSW graph for the vectors just written, which is **+41 s to
+        +79 s on a 432-file reindex that takes 182 s**. Hence the refresh sits behind
+        the gate, on the path where a re-chunk actually shrank, and a full reindex
+        pays none of it.
+
+        A failure here is logged, not raised: the new chunks are already indexed and
+        correct, and the caller must not report a successful index as a failure.
+
+        Args:
+            file_uuid: UUID of the media file just indexed.
+            keep_count: Number of chunks the new chunking produced.
+
+        Returns:
+            Number of stale chunks deleted.
+        """
+        if not opensearch_client:
+            return 0
+
+        index_name = settings.OPENSEARCH_CHUNKS_INDEX
+        try:
+            stale_ids = self._orphaned_document_ids(
+                index_name=index_name,
+                document_id=lambda n: f"{file_uuid}_{n}",
+                first_orphan=keep_count,
+            )
+            if not stale_ids:
+                return 0
+
+            # The probe read the translog; delete_by_query reads a searcher. Without
+            # this the delete matches nothing it was just told about.
+            opensearch_client.indices.refresh(index=index_name)
+            response = opensearch_client.delete_by_query(
+                index=index_name,
+                body={"query": chunk_plane_query(file_uuid, from_chunk_index=keep_count)},
+                refresh=True,
+                conflicts="proceed",
+            )
+            deleted = int(response.get("deleted", 0))
+            logger.info(
+                f"Pruned {deleted} stale chunk(s) for file {file_uuid} "
+                f"(re-chunk shrank to {keep_count} chunks)"
+            )
+            if deleted != len(stale_ids):
+                # The predicate declined documents the id probe found. The known
+                # cause is the pre-v6 compat arm: chunks written before index v6
+                # carry no `doc_type`, so a predicate that lost the arm matches
+                # none of them while their ids exist.
+                logger.warning(
+                    f"Stale-chunk prune for file {file_uuid} found {len(stale_ids)} "
+                    f"orphan id(s) but the chunk-plane predicate deleted {deleted}"
+                )
+            return deleted
+        except Exception as e:
+            logger.error(
+                f"Could not prune stale chunks for file {file_uuid} "
+                f"(chunks >= {keep_count} may still be searchable): {e}"
+            )
+            return 0
+
+    def _index_digest_plane(
+        self,
+        *,
+        file_id: int,
+        file_uuid: str,
+        base_metadata: dict[str, Any],
+        use_neural: bool,
+    ) -> int:
+        """Regenerate and index this file's digest documents.
+
+        Regeneration happens **here**, on the per-file index path, for the
+        reason addendum G1 gives: `delete_transcript_chunks` is unqualified and
+        every rebuild trigger routes through this method's caller, so anything
+        that is not regenerated here is destroyed. Stage 2's
+        ``source_fingerprint`` short-circuit is what makes that affordable — an
+        unchanged transcript costs a SHA-256, not a TextRank — and because the
+        fingerprint covers the *resolved* speaker display name, a rename
+        invalidates the row by itself and needs no separate trigger (#405).
+
+        Its own session: the callers are a Celery task that has one open over a
+        batch of files and an API path that has none, and borrowing the former's
+        would make a digest failure roll back a whole batch's progress.
+
+        An empty digest is a valid outcome (a ten-second clip has no sentence
+        long enough), and a failure here is logged rather than raised: the
+        chunks are already indexed and correct, and a caller must not report a
+        good index as a failure.
+
+        Args:
+            file_id: Media file integer id.
+            file_uuid: Media file UUID.
+            base_metadata: Per-file fields shared with chunk documents. The ACL
+                rewrite keys on ``file_id`` and the tenant backfill on
+                ``file_uuid`` (addendum G5), so :func:`build_digest_documents`
+                puts **both** on every digest — do not strip either.
+            use_neural: Whether to run the documents through the ingest pipeline.
+
+        Returns:
+            Number of digest sections indexed.
+        """
+        try:
+            from app.db.session_utils import session_scope
+            from app.services.ingest_artifacts import generate_file_artifacts
+            from app.services.ingest_artifacts import resolve_recorded_date_for_file
+
+            with session_scope() as db:
+                # **This is the back-catalogue backfill**, and it is here rather than in a
+                # one-off script because it needs no re-ingest: the filename and the
+                # transcript are already in Postgres for every existing row, so the first
+                # reindex after this ships dates the whole library. Unlike the artifacts
+                # below it has no fingerprint short-circuit, so an unchanged file is still
+                # resolved — which is the entire point for rows that predate the column.
+                #
+                # Its own try: a date is an enrichment and the chunks are already indexed
+                # and correct. A regex failure here must not cost the digest plane, and
+                # the outer handler would report the whole digest index as failed.
+                try:
+                    resolve_recorded_date_for_file(db, file_id)
+                except Exception as date_exc:  # noqa: BLE001 — enrichment, never fatal
+                    logger.warning(
+                        "Could not resolve recorded_date for file %s: %s", file_id, date_exc
+                    )
+
+                row = generate_file_artifacts(db, file_id)
+                if row is None:
+                    return 0
+                digest = dict(row.digest or {})
+                facts = dict(row.facts or {})
+
+            documents = digest_mapping.build_digest_documents(
+                file_uuid=file_uuid,
+                file_id=file_id,
+                digest=digest,
+                facts=facts,
+                base_metadata=base_metadata,
+            )
+            ids = digest_mapping.digest_document_ids(file_uuid, digest)
+            if documents:
+                self._bulk_index_documents(list(zip(ids, documents, strict=True)), use_neural)
+            # Same orphan hazard as #400's chunk tail: the ids embed the section
+            # number, so a digest that re-sections shorter leaves the extras
+            # behind, still matching every query the file matches.
+            self._prune_stale_digests(file_uuid, keep_count=len(documents))
+            return len(documents)
+        except Exception as exc:  # noqa: BLE001 — chunks are indexed; do not fail the caller
+            logger.error(f"Could not index digest plane for file {file_uuid}: {exc}")
+            return 0
+
+    def _prune_stale_digests(self, file_uuid: str, *, keep_count: int) -> int:
+        """Delete digest sections left behind by a longer previous sectioning.
+
+        The same realtime gate as :meth:`_prune_stale_chunks`, for the same reason
+        (#435) and with the same guarantee: this plane is written by the same
+        unrefreshed bulk load, from the same five unserialised dispatch paths, so a
+        count gate here misses an orphan section exactly as often. Fixing one plane
+        and describing the race as closed would be a docstring asserting a guarantee
+        the code does not provide — which is the defect #435 is about.
+        """
+        if not opensearch_client:
+            return 0
+
+        index_name = settings.OPENSEARCH_CHUNKS_INDEX
+        try:
+            stale_ids = self._orphaned_document_ids(
+                index_name=index_name,
+                document_id=lambda n: digest_mapping.digest_document_id(file_uuid, n),
+                first_orphan=keep_count,
+            )
+            if not stale_ids:
+                return 0
+
+            opensearch_client.indices.refresh(index=index_name)
+            response = opensearch_client.delete_by_query(
+                index=index_name,
+                body={"query": digest_plane_query(file_uuid, from_section=keep_count)},
+                refresh=True,
+                conflicts="proceed",
+            )
+            deleted = int(response.get("deleted", 0))
+            logger.info(f"Pruned {deleted} stale digest section(s) for file {file_uuid}")
+            if deleted != len(stale_ids):
+                logger.warning(
+                    f"Stale-digest prune for file {file_uuid} found {len(stale_ids)} "
+                    f"orphan id(s) but the digest-plane predicate deleted {deleted}"
+                )
+            return deleted
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Could not prune stale digest sections for file {file_uuid}: {e}")
+            return 0
+
+    def _bulk_index_documents(
+        self, documents: list[tuple[str, dict[str, Any]]], use_neural_pipeline: bool
+    ) -> int:
+        """Bulk index ``(_id, document)`` pairs. Used by the digest plane.
+
+        Separate from :meth:`_bulk_index_chunks` because that one derives the id
+        from ``chunk_index``, and a digest's id is ``{uuid}_digest_{n}`` —
+        ``{uuid}_0`` is already chunk 0.
+        """
+        if not opensearch_client or not documents:
+            return 0
+
+        index_name = settings.OPENSEARCH_CHUNKS_INDEX
+        bulk_body: list[Any] = []
+        for doc_id, document in documents:
+            action: dict[str, Any] = {"index": {"_index": index_name, "_id": doc_id}}
+            if use_neural_pipeline:
+                action["index"]["pipeline"] = settings.OPENSEARCH_NEURAL_PIPELINE
+            bulk_body.append(action)
+            bulk_body.append(document)
+
+        response = opensearch_client.bulk(body=bulk_body, refresh=False)
+        if response.get("errors"):
+            failed = [
+                item["index"]
+                for item in response.get("items", [])
+                if item.get("index", {}).get("error")
+            ]
+            logger.error(f"Digest bulk index reported {len(failed)} failure(s): {failed[:3]}")
+            return len(documents) - len(failed)
+        return len(documents)
 
     def reindex_transcript(
         self,
@@ -803,7 +1411,12 @@ class TranscriptIndexingService:
         Returns:
             Number of chunks indexed.
         """
-        # Delete existing chunks first
+        # Delete every plane first. Not redundant with the tail prunes
+        # ``index_transcript_chunks`` now does (issue #400): a full rebuild wants a
+        # clean slate, and this is the only path that also clears the documents of a
+        # transcript that now yields NO chunks at all — in which case
+        # ``index_transcript_chunks`` returns early without pruning. The digest
+        # plane goes with them and is regenerated by the same call (addendum G1).
         self.delete_transcript_chunks(file_uuid)
 
         # Re-index

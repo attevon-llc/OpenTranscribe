@@ -208,6 +208,11 @@ def test_detection_stamps_lower_without_the_column(db_session):
     Asserted as a *band* — at or after v387, strictly before v388 — because an exact ``==``
     on a lower revision goes red or vacuous the next time the ladder above it changes, which
     had already happened to three suites in this family.
+
+    Verified still correct after **v389** (`file_facts`) landed: v389's arm is cumulative,
+    so it requires ``user_group.organization_id`` too and fails alongside v388's when the
+    column is dropped. The band is what makes that a no-op here instead of the usual
+    "each new migration breaks its predecessor's detection test" (backend/tests/CLAUDE.md).
     """
     from app.db.migrations import _detect_schema_version
     from tests.unit._migration_detection import _chain_order

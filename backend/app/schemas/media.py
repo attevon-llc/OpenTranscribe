@@ -455,6 +455,50 @@ class MediaFileCreate(MediaFileBase):
     thumbnail_path: str | None = None
 
 
+class DerivedCandidate(BaseModel):
+    """One source's observation, kept even when it lost.
+
+    Surfaced so a disagreement is something the user can see and settle, rather than a
+    decision taken silently by whichever branch of the resolver ran first.
+    """
+
+    source: str
+    date: datetime | None = None
+    confidence: float | None = None
+    #: What the source actually said, in its own terms — the matched filename substring,
+    #: the spoken phrase, the container field. This is what makes a wrong value
+    #: *diagnosable* rather than merely wrong.
+    evidence: str | None = None
+
+
+class DerivedFieldProvenance(BaseModel):
+    """Where a derived value came from, how sure we are, and whether a human fixed it.
+
+    **Deliberately not specific to dates.** Participants, topics and titles are the same
+    shape — a value the system inferred from one of several sources, which may disagree,
+    which the user must be able to see the origin of and override. The next one to ship
+    reuses this type and the `<ProvenanceField>` component that renders it rather than
+    inventing a second vocabulary; that was the explicit design instruction, and a second
+    bespoke edit surface is how the first one stops being maintained.
+    """
+
+    #: ``container`` | ``filename`` | ``transcript`` | ``llm`` | ``manual`` | ``none``.
+    #: ``none`` means every source was consulted and none answered — which is a different
+    #: statement from a null provenance, meaning the resolver has not run at all.
+    source: str
+    #: Ordinal, not a calibrated probability. Ranks forms within a source; it never
+    #: decides *between* sources — precedence does that.
+    confidence: float | None = None
+    #: A human entered this value. It outranks every derived source permanently and no
+    #: re-derivation overwrites it.
+    locked: bool = False
+    #: Two or more sources named different days. Not an error — a recording made on the
+    #: 14th about the 15th's meeting is ordinary — but the user is the right person to
+    #: settle it, so it is shown rather than resolved silently.
+    conflict: bool = False
+    candidates: list[DerivedCandidate] = []
+
+
 class MediaFileUpdate(BaseModel):
     filename: str | None = None
     title: str | None = None
@@ -465,6 +509,15 @@ class MediaFileUpdate(BaseModel):
     language: str | None = None
     file_hash: str | None = None
     thumbnail_path: str | None = None
+    #: The user's own correction. Sending a value sets ``source='manual'`` and **locks**
+    #: it; sending an explicit ``null`` clears the correction and returns the file to
+    #: automatic resolution — a user who set a date by mistake has to be able to take it
+    #: back, and a lock at NULL would disable the resolver for that file forever.
+    #:
+    #: ``crud.update_media_file`` intercepts this field rather than letting its generic
+    #: ``setattr`` loop assign it: a bare assignment would write a date with no source and
+    #: the database would reject the whole update with an IntegrityError.
+    recorded_date: datetime | None = None
 
 
 class MediaFile(MediaFileBase, UUIDBaseSchema):
@@ -506,6 +559,54 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     last_modified_date: datetime | None = None
     device_make: str | None = None
     device_model: str | None = None
+
+    # When the recording actually happened — distinct from `upload_time` (when the
+    # bytes arrived) and from `creation_date` (what the container claims).
+    recorded_date: datetime | None = None
+    #: **Always sent alongside `recorded_date`, and never omitted when it is set.** A
+    #: derived date whose origin the client cannot show, and which the user cannot
+    #: correct, is worse than no date: the UI would render an inference as a fact. The
+    #: database refuses a date with no source; this is the wire half of the same rule.
+    #:
+    #: Derived by the validator below rather than assigned at each response builder.
+    #: That is not tidiness — it is the fix for a bug this file shipped for one commit:
+    #: there are THREE paths that serialise a MediaFile (the detail builder, the gallery
+    #: formatter, and `PUT /files/{uuid}` returning the ORM row straight through
+    #: `response_model`), the first two were wired by hand, and the third silently
+    #: returned a date with no provenance. Deriving it here makes "wire one and forget
+    #: another" unrepresentable instead of merely discouraged.
+    recorded_date_provenance: Optional["DerivedFieldProvenance"] = None
+
+    # The four raw columns, carried so the validator below can see them and
+    # `exclude=True` so they never reach the wire — the client gets the assembled
+    # `recorded_date_provenance` object, not four loose fields it would have to
+    # reassemble (and could reassemble differently).
+    recorded_date_source: str | None = Field(default=None, exclude=True)
+    recorded_date_confidence: float | None = Field(default=None, exclude=True)
+    recorded_date_locked: bool | None = Field(default=None, exclude=True)
+    recorded_date_candidates: list[dict[str, Any]] | None = Field(default=None, exclude=True)
+
+    @model_validator(mode="after")
+    def _attach_recorded_date_provenance(self) -> "MediaFile":
+        """Assemble the provenance from the four columns, on every serialisation path.
+
+        Done here rather than in each response builder because there are **three**
+        paths that serialise a MediaFile and hand-wiring covered two of them; the third
+        (`PUT /files/{uuid}`, which returns the ORM row straight through
+        `response_model`) shipped a date with no provenance until a test caught it.
+        """
+        if self.recorded_date_provenance is None:
+            from app.services.ingest_artifacts.recorded_date_service import provenance_from_columns
+
+            payload = provenance_from_columns(
+                source=self.recorded_date_source,
+                confidence=self.recorded_date_confidence,
+                locked=self.recorded_date_locked,
+                candidates=self.recorded_date_candidates,
+            )
+            if payload is not None:
+                self.recorded_date_provenance = DerivedFieldProvenance.model_validate(payload)
+        return self
 
     # Content information
     title: str | None = None

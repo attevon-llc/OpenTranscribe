@@ -122,12 +122,52 @@ is canned — retrieval, redaction masking, citations, SSE and usage recording a
 take their real paths. Scenario models drive the app's real error handling:
 `mock-gpt` (normal), `mock-echo` (returns the prompt it was given — assert what the
 app actually *sent*), `mock-empty`, `mock-error`, `mock-slow`, `mock-reasoning`
-(streams a `delta.reasoning_content` "thinking" phase before the answer — exercises
-the collapsible reasoning display). Never start it as a
+(streams a "thinking" phase before the answer — exercises the collapsible reasoning display.
+⚠️ It separates reasoning **only when the request activated thinking** via
+`chat_template_kwargs={"enable_thinking": true}`; unasked, it reproduces the real server's
+#439 behaviour and leaks the thoughts into the answer, so the app's handling of that is
+testable). Never start it as a
 bare host process: it binds 5199 and then blocks the container. Fixtures and the
 full table: `backend/tests/CLAUDE.md`.
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.
 Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`.
+
+### Document parsing sidecars (`--with-documents`)
+
+```bash
+./opentr.sh start dev --with-documents       # docling-serve :5197 + Apache Tika :5198
+```
+
+The document plane is **three tiers and only two are containers** (#362 / #403 Stage 6):
+
+| Tier | Where | Formats | Started by |
+|---|---|---|---|
+| slim | **in-process**, in the existing Celery workers | PDF text layer (pypdfium2), OOXML, md/csv/html/txt | always |
+| docling-serve | sidecar, **CPU only** | OCR + layout + table structure, for sources with no text layer | `--with-documents` |
+| tika | sidecar (JVM) | legacy OLE2 `.doc`/`.ppt`/`.xls` + RTF — nothing else | `--with-documents` |
+
+- **The slim tier must stay torch-free.** It runs inside the CPU worker and
+  `celery-redaction`; one convenience `from docling.document_converter import ...` drags the
+  CUDA stack into both. `tests/unit/test_document_slim_tier_is_torch_free.py` enforces it in a
+  **subprocess** with a `sys.meta_path` ban (in-process is unenforceable — another test may
+  already have imported torch). It parses as well as imports, because Docling resolves its
+  backends lazily.
+- **Never wire docling-serve to a GPU.** OCR is latency-tolerant batch work and GPU 1 is the
+  ASR worker's only GPU.
+- **Both publish on 127.0.0.1 only** — each converts arbitrary user bytes with no auth. They
+  are published at all so host-side pytest can drive the real tiers; the corpus suites
+  auto-enable by TCP probe (`DOCLING_SERVE_PORT` 5197 / `TIKA_PORT` 5198), so the flag alone is
+  enough and no env plumbing is needed. Requiring `DOCUMENT_PARSER_URL` in the host env was a
+  silent-skip trap: the overlay sets it inside the *containers*.
+- **Images are pinned by digest.** Coverage numbers in `tests/unit/test_document_tika_tier.py`
+  are per-version claims; a floating tag lets them start describing a different program.
+- **Never send our internal mime as a request `Content-Type` to Tika.** Tika treats it as a
+  detection *override*, and `application/x-ole-storage` selects `EmptyParser` — HTTP 200, empty
+  body, no error. That shipped once and lost 100% of the text of every `.doc`/`.ppt`/`.xls`
+  while reporting success. Bytes go out untyped; the filename travels in `Content-Disposition`.
+- **Assert characters extracted, never "n/N did not raise."** The sketch above scored
+  `.doc 14/14 ok, 0 exceptions` at 2 characters per file. Measured floors and the full
+  1,916-file AMI distribution live in that test module's docstring.
 
 ### Multi-GPU worker scaling (optional)
 
@@ -245,6 +285,34 @@ an arbitrary unstaged edit elsewhere in the tree safe** — only those two speci
 
 Hook inventory is in `.pre-commit-config.yaml`. The frontend hook only fires when `frontend/src/**/*.{svelte,ts,js,css,html}` is staged. Note that `prettier` **rewrites files** and then reports failure — re-stage and re-run, don't "fix" anything by hand.
 
+### ⚠️ Fix the finding, never silence it
+
+**A hook failure is information, not an obstacle.** The lint gate has already caught real defects in
+this repo that review missed — an `Any` used but never imported, a `!=` status assertion that
+passes on a 500, a test whose every assertion sat inside a loop over an empty list. Silencing any
+of those would have shipped the bug with a clean gate.
+
+The test to apply: **would this change still be an improvement if the linter were deleted
+tomorrow?** A fix makes the code better; a suppression only makes the tool quieter.
+
+| Legitimate | Not legitimate |
+|---|---|
+| Re-staging after `prettier` / `ruff format` **rewrote** the file — they mutate, then report failure. That is the documented workflow, not a bypass. | Adding `# noqa`, `# type: ignore`, `# fmt: off`, or an eslint-disable to make a real finding go away |
+| A **type annotation** that tells the checker what an untyped third-party call returns (`response: dict[str, Any] = client.search(...)`). Every downstream use is still checked. | **Widening to `Any`** to stop mypy complaining about a genuine mismatch. That deletes the check. |
+| `# noqa: <RULE>` **with a written reason**, where the rule is genuinely inapplicable and no restructuring removes it | Moving an existing `noqa` so the tool finally honours it, without asking whether the suppression was ever right |
+| Fixing a test so the auditor's finding disappears | Adding an `audit-allowlist.txt` entry to clear a finding you could fix |
+| `--no-verify` | **Never.** Not once, not "just this commit". |
+
+**Worked example, because the wrong version looked reasonable.** `scripts/benchmark_rag.py` raised
+`E402` on an import that must follow a `sys.path.insert`. The first attempt relocated a stale
+`noqa` so ruff would honour it — quieter tool, unchanged code. The actual fix was to move the
+import **into the function that uses it**, which the same file already did eleven lines further
+down for the identical reason. Zero suppressions, ruff clean, and the file got *simpler*. Reaching
+for `noqa` also nearly buried the `F821` beside it: `Any` was used and never imported.
+
+**When a hook fails, read the finding before deciding it is spurious.** Roughly half the failures
+blamed on the stash window (above) were real.
+
 Manual frontend check: `./scripts/frontend-check.sh [--no-claude] [--check-only]`. Inside Claude Code: `/fix-frontend`.
 
 ## Testing
@@ -354,7 +422,11 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Config, constants, celery wiring | `backend/app/core/CLAUDE.md` |
 | Shared backend helpers | `backend/app/utils/CLAUDE.md` |
 | Services overview, LLM features, yt-dlp ingestion | `backend/app/services/CLAUDE.md` |
+| Deterministic ingest artifacts (facts / extractive digest / keyphrases, no LLM) | `backend/app/services/ingest_artifacts/CLAUDE.md` |
 | RAG chat pipeline (retrieval, masking, prompting) | `backend/app/services/chat/CLAUDE.md` |
+| **RAG design: the standard patterns and what runs them** | `docs-site/docs/developer-guide/rag-design-and-validation.md` |
+| **RAG evaluation: how quality is measured, and the traps** | `docs-site/docs/developer-guide/rag-evaluation.md` |
+| **RAG/chat: what is measured, what is NOT, and what to do next** | **issue [#461](https://github.com/attevon-llc/OpenTranscribe/issues/461)** — opens with a phased execution order. Start there before touching retrieval. |
 | Pluggable ASR providers | `backend/app/services/asr/CLAUDE.md` |
 | Pluggable diarization providers | `backend/app/services/diarization/CLAUDE.md` |
 | OpenSearch indexing + neural/hybrid search | `backend/app/services/search/CLAUDE.md` |
@@ -367,13 +439,34 @@ subsystem, and put new subsystem detail **there**, not in this file.
 
 > **Cosine score conversion (repo-wide trap):** OpenSearch `cosinesimil` returns `(1 + cosine) / 2`, NOT raw cosine. Every kNN score read must do `raw_cosine = 2.0 * hit["_score"] - 1.0`. All 11 read sites live in the speaker/voiceprint plane under `backend/app/services/` (none in `api/`, and transcript search ranks by RRF, never raw cosine) — all 11 currently correct. Full table: `backend/app/services/search/CLAUDE.md`.
 
-> **Chat retrieval trap (issue #52):** the `transcript_chunks` OpenSearch index stores
-> transcript text **UNREDACTED** — correct for search over your own words, but it means
-> any path sending chunk content to an LLM must first call
-> `services/chat/redactor.mask_chunks()`. Masking fails CLOSED (an unmaskable chunk
-> contributes nothing rather than going out raw). Equally: in chat scope resolution
-> `file_uuids=None` means "all accessible" while `file_uuids=[]` means "match nothing" —
-> inverting those leaks the whole library. Details: `backend/app/services/chat/CLAUDE.md`.
+> **Chat retrieval trap (issue #52), as amended by the redaction policy of 2026-08-13:** the
+> `transcript_chunks` index stores transcript text **UNREDACTED**. Whether it must be masked before
+> an LLM sees it depends on **where the model runs**: a **local** model receives it unmasked (the
+> text never leaves the machine, so masking costs recall and buys nothing), a **remote provider**
+> still gets masked text (sending unredacted PII to a third party is a data-egress event). Key that
+> off the **provider**, never a global setting.
+>
+> ⚠️ **The provider keying is DECIDED, NOT BUILT.** No code branches on the provider — only the
+> CLAUDE.md files were amended — so **input masking applies to every provider today** and a local
+> deployment is *not* currently less protected than before the decision. **Output redaction landed
+> first, deliberately**: `services/chat/output_redactor.py` masks what the model *writes*,
+> sentence-buffered, gated on `cfg.enabled and cfg.enabled_categories` (the **display** policy, not
+> the `redact_before_llm` **egress** policy). Land the provider keying before it and the gap is
+> real, between two commits, on a deployment that believes it is protected.
+>
+> ⚠️ **Two maskers, not interchangeable.** `redactor.mask_chunks()` addresses text by **time
+> range**; `redactor.mask_digests()` by **provenance** (`segment_ids`). A digest through the chunk
+> path is rebuilt from every segment in its span and comes back as the **whole recording
+> verbatim** — more text than the digest held, from a function whose name says it masked it. Both
+> fail closed, at different units: a chunk whole, a digest per sentence.
+>
+> ⚠️ **Ranking is not mapping.** `retrieve_digests` ranks; `mapreduce.scope_digest_hits` maps. Using
+> the ranked leg as the map step produced a summary headed "recordings: 8" over a 25-file scope.
+> Raising `size` does not fix it — ranking gives no coverage guarantee at any K.
+>
+> Equally: in chat scope resolution `file_uuids=None` means "all accessible" while `file_uuids=[]`
+> means "match nothing" — inverting those leaks the whole library. Details:
+> `backend/app/services/chat/CLAUDE.md`.
 
 ## Conventions
 
@@ -397,3 +490,61 @@ subsystem, and put new subsystem detail **there**, not in this file.
   merged"). Only once the branch is fully green does a PR go open from it into `master`; `master`
   changes **only** via that merged PR, never via a local `git merge <branch>` on `master` pushed
   directly — that bypasses review and produces a merge commit nobody chose the message for.
+- **More than one writer in a checkout? ONE of them commits.** Everyone else hands over exact
+  paths plus a commit message. This is not style — pre-commit **stashes the entire worktree** on
+  every run (issue #434), so N writers each running their own commit-retry loop means each one's
+  hook run is what makes the other N−1 fail with `files were modified by this hook` while the
+  hook itself reports no findings. Four agents in one checkout produced four destroyed work
+  sets, ~25-minute commit blocks, and a patch file in `~/.cache/pre-commit/` every two minutes
+  before this rule was adopted. Serialising cost nothing and every lane landed within the hour.
+- **Inside a stash window, your uncommitted work is simply GONE from disk — and the failure can
+  present as your own code having never been written.** Three symptoms of the same cause, all
+  observed here: the phantom `files were modified by this hook`; the E2E backend flapping; and
+  a module reverting to its last-committed version, so a test that passed sixty seconds ago
+  fails with `ImportError: cannot import name '<the thing you just wrote>'`. Someone nearly
+  spent an afternoon on a non-existent import cycle. **Before debugging a sudden impossible
+  failure, check whether another writer is running pre-commit.**
+  ⚠️ **And do NOT back up your files during that window — you will back up the stash.** Copying
+  to a safe directory mid-stash captures the *reverted* content, and "restoring" from it
+  destroys the work for real. Wait for the restore, verify the file actually contains your
+  change, and only then copy. This was caught once by diffing the backup against the live file
+  instead of trusting the copy.
+  ☠️ **The worst variant is a GREEN run: a test suite can pass having tested the OLD code.**
+  Observed — a suite reported `13 passed` while the tree was stashed, having imported the
+  committed versions of both the source and the test file. A minute later the same command
+  reported `2 failed, 11 passed`, because that run caught the app file restored and the test
+  file not. **Neither number meant anything**, and the only tell was that the *test names* in
+  the output did not match the names just written. A red run makes you look; a green one gets
+  recorded as evidence and you move on. So: **when a run is your evidence, check it ran YOUR
+  code** — new test names present, a marker string in the output, or a deliberate failure you
+  expect to see. A pass you cannot attribute is not a measurement.
+- **To watch a test fail against the OLD code, use a `git archive HEAD` tree — never swap files
+  in the shared checkout.** The repo's standard is that a test you have not seen red is not
+  evidence, so this is done often. Reverting a file in place and putting it back costs two
+  backend hot-reloads (each dispatching `search_index_maintenance`), leaves the fix off disk in
+  a window where a stash can capture the reverted state, and races every other writer:
+
+  ```bash
+  git archive HEAD | (mkdir -p /tmp/redcheck && tar -x -C /tmp/redcheck)
+  cp backend/tests/.../test_the_new_one.py /tmp/redcheck/backend/tests/.../   # new tests, old source
+  cd /tmp/redcheck/backend && <run them; expect red>
+  ```
+
+  Immune to stash windows, costs no reloads, disturbs nobody, and the tree you are testing is
+  provably HEAD rather than "what I think I reverted".
+- **`audit-tests` is a WHOLE-TREE gate, so an unfinished test file blocks everyone.** One
+  in-progress test anywhere under `backend/tests` with an open finding refuses **every** commit
+  in the worktree, including commits that do not touch it — twice in one day a lane's own
+  next-unit test file was refusing its own finished work. Before reporting a unit ready, run
+  `cd backend && python3 ../scripts/audit-tests.py tests` and get to 0 open findings. And do not
+  assume a hook failure is the stash bug: **read the finding first.** Roughly half of the ones
+  blamed on contention were real.
+- **Commit with an explicit pathspec, and remember staging is not protection.**
+  `git commit -- <paths>` takes **worktree** content for those paths and leaves everyone else's
+  staged work alone; a bare `git commit` in a shared index sweeps up whatever others have staged.
+  Pass files, not a directory — a directory pathspec silently swept in two untested modules that
+  happened to live beside the finished ones. Note `git commit -- <path>` fails on an **untracked**
+  file: `git add` it first, then commit with the pathspec.
+- **Every `.py` edit under `backend/app/` restarts the hot-reloading dev backend, and startup
+  dispatches `search_index_maintenance`.** That corrupted three reindexes in one day. Batch app-file
+  edits, and announce a measurement or reindex window before starting one.

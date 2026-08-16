@@ -32,9 +32,9 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.search.chunking_service import _split_into_sentences
 from app.services.search.chunking_service import chunk_transcript_by_speaker_turns
 from app.services.search.chunking_service import count_words
+from app.services.search.chunking_service import split_into_sentences
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -88,7 +88,7 @@ def test_three_sentences_split_into_three(language: str) -> None:
     — Devanagari is written WITH spaces, so it cleared the scriptio-continua
     check and was handed to punkt, which does not know the danda ``।``.
     """
-    sentences = _split_into_sentences(THREE_SENTENCES[language], language)
+    sentences = split_into_sentences(THREE_SENTENCES[language], language)
     assert len(sentences) == 3, f"{language}: got {len(sentences)} sentences: {sentences}"
 
 
@@ -108,7 +108,7 @@ def test_english_boundaries_are_unchanged(text: str, expected: int, why: str) ->
     relaxed. Dropping it wholesale would split on {why} and quietly shred every
     English transcript in the product.
     """
-    assert len(_split_into_sentences(text, "en")) == expected
+    assert len(split_into_sentences(text, "en")) == expected
 
 
 def test_word_count_sees_cjk_characters() -> None:

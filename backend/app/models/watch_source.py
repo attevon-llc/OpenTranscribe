@@ -23,7 +23,6 @@ from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
-from sqlalchemy import UniqueConstraint
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
@@ -240,8 +239,11 @@ class WatchSourceFile(Base):
     watch_source: Mapped["WatchSource"] = relationship("WatchSource", back_populates="files")
     media_file: Mapped["MediaFile | None"] = relationship("MediaFile", foreign_keys=[media_file_id])
 
+    # A unique INDEX, not a UniqueConstraint: ``v366`` created it with
+    # ``CREATE UNIQUE INDEX``, so ``pg_constraint`` holds nothing by this name.
+    # Same enforcement, different object class — see ``email_notification_config``.
     __table_args__ = (
-        UniqueConstraint("watch_source_id", "remote_path", name="_watch_source_file_path_unique"),
+        Index("_watch_source_file_path_unique", "watch_source_id", "remote_path", unique=True),
         Index("ix_watch_source_file_source_imohash", "watch_source_id", "imohash"),
         Index("ix_watch_source_file_part_group", "part_group", "watch_source_id"),
         Index("ix_watch_source_file_status", "status"),

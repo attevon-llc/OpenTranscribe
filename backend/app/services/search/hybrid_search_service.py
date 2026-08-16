@@ -21,16 +21,42 @@ from app.core.constants import SEARCH_CACHE_TTL_SECONDS
 from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_SNIPPETS_PER_FILE
+from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import opensearch_client
+from app.services.search.fusion import FusionConfig
+from app.services.search.fusion import resolve_fusion
+from app.services.search.fusion import search_pipeline_id
 from app.services.search.indexing_service import ensure_chunks_index_exists
 from app.services.search.indexing_service import ensure_search_pipeline_exists
+from app.services.search.snippet_redaction import MASKABLE_CATEGORIES
+from app.services.search.snippet_redaction import mask_snippets
 
 logger = logging.getLogger(__name__)
 
-# Module-level caches for index/pipeline existence checks
+#: What a snippet becomes when its policy cannot be applied. Withholding the
+#: preview is a fail-closed choice: an unmasked one is a policy bypass, and the
+#: result itself (title, timestamps, ranking) is unaffected.
+WITHHELD_SNIPPET = "[redacted — masking unavailable]"
+
+
+def _withhold_snippets(occurrences: list) -> None:
+    """Replace every snippet with the withheld placeholder."""
+    for occ in occurrences:
+        occ.snippet = WITHHELD_SNIPPET
+
+
+# Module-level caches for index/pipeline existence checks.
+#
+# ``_verified_pipelines`` is a SET of pipeline ids, not a bool. Since #363 a
+# request may name its own fusion strategy, and each strategy is a separate
+# OpenSearch search pipeline — a single "the pipeline is verified" flag would
+# have let the FIRST strategy a process saw certify every later one, so the
+# second arm of an A/B would attach a pipeline id that had never been created
+# and OpenSearch would run the query **unfused**. That is a plausible number,
+# not an error. ``reset_infrastructure_state`` clears the set.
 _index_verified = False
-_pipeline_verified = False
+_verified_pipelines: set[str] = set()
 _neural_search_available: bool | None = None
 _neural_search_check_time: float = 0.0
 _NEURAL_SEARCH_CACHE_TTL: float = 120.0  # Re-check every 2 minutes (success)
@@ -442,26 +468,66 @@ def _append_range_filter(
     filters.append({"range": {field: range_clause}})
 
 
-def _ensure_infrastructure() -> None:
-    """Ensure the OpenSearch index and search pipeline exist (checked once)."""
-    global _index_verified, _pipeline_verified
-    if _index_verified and _pipeline_verified:
-        return
+def ensure_fusion_pipeline(fusion: FusionConfig | None = None) -> str:
+    """Ensure ``fusion``'s search pipeline exists, and return the id to attach.
+
+    Verification is cached **per pipeline id** so a process that has served RRF
+    still creates the normalization pipeline the first time one is asked for.
+    Attaching a ``search_pipeline`` that does not exist is not an error in
+    OpenSearch's eyes at the point the id is chosen — it fails at query time, or
+    worse, an earlier arm's pipeline is already there and the run silently
+    measures it.
+
+    Args:
+        fusion: The requested strategy, or None for the configured default.
+
+    Returns:
+        The pipeline id to pass as the ``search_pipeline`` request parameter.
+    """
+    cfg = resolve_fusion(fusion)
+    pipeline_id = search_pipeline_id(cfg)
+    if pipeline_id in _verified_pipelines:
+        return pipeline_id
     with _state_lock:
-        if not _index_verified:
-            ensure_chunks_index_exists()
-            _index_verified = True
-        if not _pipeline_verified:
-            ensure_search_pipeline_exists()
-            _pipeline_verified = True
+        if pipeline_id not in _verified_pipelines:
+            ensure_search_pipeline_exists(cfg)
+            # Recorded even when creation failed, matching the pre-#363 flag: a
+            # cluster that cannot hold a pipeline is not fixed by asking it once
+            # per request, and search degrades to unfused rather than stalling.
+            _verified_pipelines.add(pipeline_id)
+    return pipeline_id
+
+
+def _ensure_infrastructure(fusion: FusionConfig | None = None) -> str:
+    """Ensure the OpenSearch index and this request's search pipeline exist.
+
+    Args:
+        fusion: The requested strategy, or None for the configured default.
+
+    Returns:
+        The pipeline id to attach to this request.
+    """
+    global _index_verified
+    if not _index_verified:
+        with _state_lock:
+            if not _index_verified:
+                ensure_chunks_index_exists()
+                _index_verified = True
+    return ensure_fusion_pipeline(fusion)
 
 
 def reset_infrastructure_state() -> None:
-    """Reset index/pipeline verification state. Call after index recreation."""
-    global _index_verified, _pipeline_verified
+    """Reset index/pipeline verification state. Call after index recreation.
+
+    Clears **every** verified pipeline id, not just the default one. A stale id
+    left behind here is exactly the "cached infrastructure state that survived a
+    config change" failure this repo keeps hitting: the next request would
+    attach a pipeline nobody re-checked.
+    """
+    global _index_verified
     with _state_lock:
         _index_verified = False
-        _pipeline_verified = False
+        _verified_pipelines.clear()
     logger.info("Infrastructure verification state reset")
 
 
@@ -515,12 +581,17 @@ class HybridSearchService:
         title_filter: str | None = None,
         organization_id: int | None = None,
         file_uuid: str | None = None,
+        fusion: FusionConfig | None = None,
     ) -> SearchResponse:
         """Execute hybrid search and return grouped results.
 
         Args:
             query: Search query text.
             user_id: Current user ID for filtering.
+            fusion: Hybrid fusion strategy for **this request** (#363). None uses
+                the configured default. The resolved pipeline id is part of the
+                response cache key, so two strategies cannot serve each other's
+                cached page.
             organization_id: Active org id (None = personal). Adds the tenant gate
                 so cross-org transcript content never surfaces.
             page: Page number (1-indexed).
@@ -567,12 +638,13 @@ class HybridSearchService:
             title_filter=title_filter,
             organization_id=organization_id,
             file_uuid=file_uuid,
+            fusion_pipeline=search_pipeline_id(fusion),
         )
         cached = _get_cached_response(cache_key)
         if cached:
             return cached
 
-        _ensure_infrastructure()
+        pipeline_id = _ensure_infrastructure(fusion)
 
         # Parse inline query operators (e.g., speaker:"Joe Rogan" china)
         clean_query, operators = _parse_query_operators(query)
@@ -633,14 +705,12 @@ class HybridSearchService:
             start_time=start_time,
             has_speaker_filter=has_speaker_filter,
             use_neural=use_neural,
+            search_pipeline=pipeline_id,
         )
 
-        # Read-time content redaction of snippets (profanity + custom words). This is
-        # the cheap, model-free path that runs safely in the API process; PII masking
-        # of short snippets is not applied here (it needs the redaction worker's models)
-        # — the full transcript view + exports remain the enforced PII boundary.
-        # Applied before caching so the per-user cache (cache_key includes user_id)
-        # holds the masked version.
+        # Read-time content redaction of snippets, for whichever of PII / profanity /
+        # custom words this user's policy masks. Applied before caching so the
+        # per-user cache (cache_key includes user_id) holds the masked version.
         self._redact_snippets(result, user_id)
 
         # Cache the response — but NOT if it fell back to BM25-only due to
@@ -653,12 +723,40 @@ class HybridSearchService:
         return result
 
     def _redact_snippets(self, result: SearchResponse, user_id: int) -> None:
-        """Mask profanity/custom words in search snippets per the user's redaction config.
+        """Mask this page's snippets under the requesting user's redaction policy.
 
-        HTML-safe: the wordlist regex only matches word-boundary alphanumeric runs, never
-        ``<``/``>``, so ``<mark>`` highlight tags are preserved. Label style is used for
-        previews regardless of the user's chosen style.
+        Snippets come out of the ``transcript_chunks`` index, which stores
+        transcript text **UNREDACTED**, so they carry whatever the recording
+        carried — including PII. This used to mask ``profanity`` and ``custom``
+        only, on the stated grounds that "this path never carries PII spans";
+        that was false in the way that matters, and a user whose policy masks
+        **only** ``pii`` therefore had every snippet rendered verbatim, on a
+        surface that spans collection and group shares (issue #86).
+
+        The masking itself lives in ``snippet_redaction`` — ``<mark>`` handling,
+        batching and the detector gate are all its problem. This method owns two
+        decisions:
+
+        - **Where the session ends.** The config read closes its session *before*
+          any detector runs. A ~1 s Presidio pass inside an open transaction
+          holds ``ACCESS SHARE`` for its duration and queues every ``ALTER
+          TABLE`` behind it — the defect ``scripts/audit-session-lifetime.py``
+          exists to catch.
+        - **Failing CLOSED, once.** Neither an unresolvable config nor an
+          unavailable detector may render an unmasked preview, so both withhold
+          the page's snippet text. Results, counts and ranking are unaffected.
+          Which detector failures count is
+          ``redaction.config.blocking_detector_failures``, not a second rule
+          written here: a broken Presidio must not cost their snippets to a user
+          who never asked for PII masking.
         """
+        occurrences = [
+            occ
+            for hit in getattr(result, "results", []) or []
+            for occ in getattr(hit, "occurrences", []) or []
+            if getattr(occ, "snippet", None)
+        ]
+
         try:
             from app.db.session_utils import session_scope
             from app.services.redaction.config import resolve_effective_config
@@ -666,44 +764,24 @@ class HybridSearchService:
             with session_scope() as db:
                 cfg = resolve_effective_config(db, user_id)
         except Exception:  # noqa: BLE001 — never break search on redaction failure
-            # FAIL CLOSED. Returning here rendered every snippet unmasked. The
-            # scope is narrow (profanity + custom wordlist only — this path
-            # never carries PII spans), but it is still a policy bypass, so drop
-            # the snippets rather than show unmasked ones. Results, counts and
-            # ranking are unaffected; only the preview text is withheld.
             logger.exception("Snippet redaction config unavailable; withholding snippet text")
-            for hit in getattr(result, "results", []) or []:
-                for occ in getattr(hit, "occurrences", []) or []:
-                    if getattr(occ, "snippet", None):
-                        occ.snippet = "[redacted — masking unavailable]"
+            _withhold_snippets(occurrences)
             return
 
-        if not cfg.enabled:
+        if not occurrences:
             return
-        cats = cfg.enabled_categories & {"profanity", "custom"}
-        if not cats:
+        if not cfg.enabled or not (set(cfg.enabled_categories) & MASKABLE_CATEGORIES):
             return
 
-        from app.services.redaction.detectors import wordlist
-        from app.services.redaction.spans import apply_redactions
+        try:
+            masked = mask_snippets([occ.snippet for occ in occurrences], cfg)
+        except Exception:  # noqa: BLE001 — never break search on redaction failure
+            logger.exception("Snippet masking failed; withholding snippet text")
+            _withhold_snippets(occurrences)
+            return
 
-        for hit in getattr(result, "results", []) or []:
-            for occ in getattr(hit, "occurrences", []) or []:
-                snippet = getattr(occ, "snippet", "") or ""
-                if not snippet:
-                    continue
-                spans = []
-                if "profanity" in cats:
-                    spans += wordlist.find_profanity_spans(snippet, None, cfg.allowlist)
-                if "custom" in cats and cfg.custom_words:
-                    spans += wordlist.find_custom_spans(
-                        snippet, cfg.custom_words, None, cfg.allowlist
-                    )
-                if spans:
-                    masked, _ = apply_redactions(
-                        snippet, spans, style="label", enabled_categories=cats
-                    )
-                    occ.snippet = masked
+        for occ, text in zip(occurrences, masked, strict=True):
+            occ.snippet = text
 
     def _check_neural_search_available(self) -> bool:
         """Check if neural search is available in OpenSearch.
@@ -919,6 +997,11 @@ class HybridSearchService:
         scope_filter = [
             {"terms": {"accessible_user_ids": [user_id]}},
             *org_filter_clauses(organization_id),
+            # Addendum G3: this reader builds its own filter list and so does not
+            # inherit `_build_filters`' chunk-plane gate. Without the clause a
+            # digest section pollutes title autocomplete and contributes a bogus
+            # speaker bucket — derived text offered as if somebody had said it.
+            chunk_plane_clause(),
         ]
 
         try:
@@ -1024,6 +1107,10 @@ class HybridSearchService:
                             "filter": [
                                 {"terms": {"accessible_user_ids": [user_id]}},
                                 *org_filter_clauses(organization_id),
+                                # Addendum G3: facet counts are per-document, so
+                                # digest sections would inflate every speaker and
+                                # tag bucket by a file-shaped amount.
+                                chunk_plane_clause(),
                             ]
                         }
                     },
@@ -1097,6 +1184,13 @@ class HybridSearchService:
 
         filters: list[dict[str, Any]] = [{"terms": {"accessible_user_ids": [user_id]}}]
         filters.extend(org_filter_clauses(organization_id))
+        # The chunk plane, compatibility-armed. Search results are somebody's own
+        # words; a digest is derived text and must not surface as if it were a
+        # quote (addendum G6 — it would also carry NEITHER of the two read-time
+        # masking treatments, since both are keyed to the shape they expect).
+        # Stage 4's router is what adds the digest leg, deliberately and
+        # separately, with its own citation shape.
+        filters.append(chunk_plane_clause())
 
         if file_uuid:
             filters.append({"term": {"file_uuid": file_uuid}})
@@ -2167,6 +2261,7 @@ class HybridSearchService:
         filters_applied: dict[str, Any],
         start_time: float,
         has_speaker_filter: bool,
+        search_pipeline: str,
     ) -> SearchResponse:
         """Two-phase search for non-relevance sorts with hybrid mode.
 
@@ -2191,6 +2286,9 @@ class HybridSearchService:
             filters_applied: Filter metadata for response.
             start_time: Timestamp for elapsed time.
             has_speaker_filter: Whether a speaker filter is active.
+            search_pipeline: The fusion pipeline id resolved for this request
+                (#363). Passed down rather than re-read from settings so an A/B
+                arm cannot lose its strategy on the way to the wire.
 
         Returns:
             SearchResponse with correctly sorted and paginated results.
@@ -2215,6 +2313,7 @@ class HybridSearchService:
                 start_time=start_time,
                 has_speaker_filter=has_speaker_filter,
                 use_neural=False,
+                search_pipeline=search_pipeline,
             )
 
         search_fields = self._get_search_fields(has_speaker_filter)
@@ -2276,7 +2375,7 @@ class HybridSearchService:
             phase1_resp = client.search(
                 index=settings.OPENSEARCH_CHUNKS_INDEX,
                 body=phase1_body,
-                params={"search_pipeline": settings.OPENSEARCH_SEARCH_PIPELINE},
+                params={"search_pipeline": search_pipeline},
             )
         except Exception as e:
             logger.warning(f"Two-phase Phase 1 failed, falling back to single-phase: {e}")
@@ -2293,6 +2392,7 @@ class HybridSearchService:
                 start_time=start_time,
                 has_speaker_filter=has_speaker_filter,
                 use_neural=False,
+                search_pipeline=search_pipeline,
             )
 
         p1_ms = round((time.time() - t_p1) * 1000)
@@ -2459,6 +2559,7 @@ class HybridSearchService:
         start_time: float,
         has_speaker_filter: bool,
         use_neural: bool,
+        search_pipeline: str,
     ) -> SearchResponse:
         """Execute search using native collapse + inner_hits.
 
@@ -2482,6 +2583,9 @@ class HybridSearchService:
             start_time: Timestamp for elapsed time calculation.
             has_speaker_filter: Whether a speaker filter is active.
             use_neural: Whether to use neural query.
+            search_pipeline: The fusion pipeline id resolved for this request
+                (#363), attached only when the body actually has two legs to
+                fuse.
 
         Returns:
             SearchResponse with grouped results.
@@ -2501,6 +2605,7 @@ class HybridSearchService:
                 filters_applied=filters_applied,
                 start_time=start_time,
                 has_speaker_filter=has_speaker_filter,
+                search_pipeline=search_pipeline,
             )
 
         client = get_opensearch_client()
@@ -2530,7 +2635,7 @@ class HybridSearchService:
                 return self._empty_response(query, page, page_size)
             search_params: dict[str, Any] = {}
             if use_neural:
-                search_params["search_pipeline"] = settings.OPENSEARCH_SEARCH_PIPELINE
+                search_params["search_pipeline"] = search_pipeline
             response = client.search(
                 index=settings.OPENSEARCH_CHUNKS_INDEX,
                 body=search_body,

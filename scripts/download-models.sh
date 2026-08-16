@@ -267,8 +267,10 @@ download_models_docker() {
     local gpu_args=""
     if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
         use_gpu="true"
-        # Use specific GPU if GPU_DEVICE_ID is set, otherwise use all GPUs
-        if [ -n "$GPU_DEVICE_ID" ]; then
+        # Use specific GPU if GPU_DEVICE_ID is set, otherwise use all GPUs.
+        # Guarded with :- because nothing in this file assigns GPU_DEVICE_ID and
+        # the script is run standalone (`bash scripts/download-models.sh models`).
+        if [ -n "${GPU_DEVICE_ID:-}" ]; then
             gpu_args="--gpus device=${GPU_DEVICE_ID}"
             print_info "GPU detected - using GPU ${GPU_DEVICE_ID} for model initialization"
         else

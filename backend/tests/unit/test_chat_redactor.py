@@ -8,12 +8,28 @@ text is safe, we send nothing rather than sending it raw.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from app.services.chat.redactor import mask_chunks
 from app.services.search.chunk_retrieval import ChunkHit
+
+
+@contextmanager
+def _one_session(db):
+    yield db
+
+
+def _factory(db):
+    """A ``session_scope``-shaped factory over one prepared session.
+
+    ``mask_chunks`` takes the FACTORY, never a ``Session`` (issue #83): it owns
+    the transaction boundary so it can CLOSE it before the detector runs. The
+    lifetime property that shape buys is asserted at the bottom of this module.
+    """
+    return lambda: _one_session(db)
 
 
 def _chunk(content: str = "my number is 555-1234") -> ChunkHit:
@@ -29,8 +45,35 @@ def _chunk(content: str = "my number is 555-1234") -> ChunkHit:
     )
 
 
-def _cfg(*, enabled: bool, redact_before_llm: bool):
-    return SimpleNamespace(enabled=enabled, redact_before_llm=redact_before_llm)
+def _cfg(*, enabled: bool, redact_before_llm: bool, categories=("pii", "profanity", "custom")):
+    """A stand-in for ``EffectiveRedactionConfig``.
+
+    ``enabled_categories`` is part of the real dataclass and the inline path
+    reads it, so omitting it here would let a masker that ignores the user's
+    categories pass — and the whole narrowness contract lives in that field.
+    """
+    return SimpleNamespace(
+        enabled=enabled,
+        redact_before_llm=redact_before_llm,
+        enabled_categories=set(categories),
+    )
+
+
+def _detector_that_swallows(name: str = "pii"):
+    """``detect_segment_spans`` behaving EXACTLY as it does on a detector error.
+
+    It catches the exception, returns the spans it did collect (here: none), and
+    records the detector name in the ``failures`` sink. Raising instead would
+    test a failure mode the real function does not have — which is why a
+    happy-path or an exception-based test could never see this defect.
+    """
+
+    def _detect(_text, _words, _det_cfg, *, failures=None, **_kwargs):
+        if failures is not None:
+            failures.append(name)
+        return [], None
+
+    return _detect
 
 
 def test_policy_off_passes_content_through_untouched():
@@ -39,7 +82,7 @@ def test_policy_off_passes_content_through_untouched():
         "app.services.redaction.config.resolve_effective_config",
         return_value=_cfg(enabled=True, redact_before_llm=False),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == "my number is 555-1234"
     assert masked[0].was_masked is False
@@ -51,19 +94,37 @@ def test_redaction_disabled_entirely_passes_content_through():
         "app.services.redaction.config.resolve_effective_config",
         return_value=_cfg(enabled=False, redact_before_llm=True),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].was_masked is False
 
 
-def _db_with(status, segments):
-    """A db mock that answers the status probe and the segment query distinctly."""
+def _db_with(status, segments, coverage=None, language="en"):
+    """A db mock that answers the scan probe and the segment query distinctly.
+
+    ``coverage`` is what ``media_file.redaction_coverage`` holds (v391): the
+    detectors the finished scan actually ran. ``None`` is a pre-v391 row, which
+    :func:`~app.services.redaction.coverage.uncovered_detectors` trusts on
+    purpose — so a test that wants the coverage gate to BITE must pass a list
+    that omits the detector, not leave this defaulted.
+    """
     db = MagicMock()
-    status_q = MagicMock()
-    status_q.filter.return_value.scalar.return_value = status
+    scan_q = MagicMock()
+    # Both accessors, deliberately: the pre-coverage code read `.scalar()` for the
+    # status alone and the current code reads `.first()` for the whole scan row.
+    # Answering only one couples the fixture to an implementation detail, and a
+    # red run against the older code then fails on the fixture rather than on the
+    # behaviour under test — which is indistinguishable from real evidence.
+    scan_q.filter.return_value.scalar.return_value = status
+    scan_q.filter.return_value.first.return_value = SimpleNamespace(
+        id=1,
+        redaction_status=status,
+        redaction_coverage=coverage,
+        language=language,
+    )
     seg_q = MagicMock()
     seg_q.filter.return_value.order_by.return_value.all.return_value = segments
-    db.query.side_effect = [status_q, seg_q]
+    db.query.side_effect = [scan_q, seg_q]
     return db
 
 
@@ -86,7 +147,7 @@ def test_policy_on_rebuilds_text_from_cached_segment_spans():
             return_value=("my number is [PHONE]", []),
         ) as mask_segment,
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == "my number is [PHONE]"
     assert masked[0].was_masked is True
@@ -120,7 +181,7 @@ def test_uncached_spans_do_not_pass_as_masked():
             return_value=("my number is [PHONE]", []),
         ),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     # Must have gone down the inline-detection path, not returned raw text.
     assert "555-1234" not in masked[0].content
@@ -146,7 +207,7 @@ def test_incomplete_detection_status_forces_the_inline_path():
                 return_value=("[MASKED]", []),
             ),
         ):
-            mask_chunks(db, [_chunk()], user_id=1)
+            mask_chunks(_factory(db), [_chunk()], user_id=1)
         assert detect.called, f"status={status!r} should force inline detection"
 
 
@@ -165,7 +226,7 @@ def test_masking_error_on_the_cached_path_fails_closed():
             side_effect=RuntimeError("masker exploded"),
         ),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == ""
     assert masked[0].was_masked is True
@@ -189,7 +250,7 @@ def test_falls_back_to_inline_masking_when_segments_are_missing():
             return_value=("my number is [PHONE]", []),
         ),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == "my number is [PHONE]"
     assert masked[0].was_masked is True
@@ -209,10 +270,292 @@ def test_inline_masking_failure_drops_content_rather_than_leaking_it():
             side_effect=RuntimeError("detector unavailable"),
         ),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == ""
     assert "555-1234" not in masked[0].content
+
+
+def test_a_swallowed_detector_failure_withholds_the_chunk():
+    """MEASURED FAIL-OPEN: the inline path claimed to fail closed and did not.
+
+    ``detect_segment_spans`` swallows a PII-detector exception and returns the
+    spans it collected, so ``_mask_inline``'s ``except`` clause never fired: with
+    Presidio broken or absent it masked nothing, returned the chunk **verbatim**,
+    and ``mask_chunks`` labelled it ``was_masked=True`` and sent it to the
+    provider. The ``failures`` sink is the only thing that separates "found
+    nothing" from "could not look".
+    """
+    db = _db_with("done", [])  # no segments → the inline fallback
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True, categories=("pii",)),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            side_effect=_detector_that_swallows("pii"),
+        ),
+        # No spans → the real masker returns the input unchanged. That IS the leak.
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            side_effect=lambda text, *_a, **_k: (text, []),
+        ),
+    ):
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
+
+    assert masked[0].content == ""
+    assert "555-1234" not in masked[0].content
+
+
+def test_the_withheld_chunk_reaches_no_prompt():
+    """The property that matters: the raw text is not in what the provider gets.
+
+    Asserting on ``MaskedChunk.content`` alone would still pass if the prompt
+    layer read some other attribute, so this drives the real excerpt renderer —
+    the last stage before the text leaves the deployment.
+    """
+    from app.services.chat.prompting import format_excerpts
+
+    db = _db_with("done", [])
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True, categories=("pii",)),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            side_effect=_detector_that_swallows("pii"),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            side_effect=lambda text, *_a, **_k: (text, []),
+        ),
+    ):
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
+
+    block, excerpt_ids = format_excerpts(masked, budget_chars=4000)
+
+    assert "555-1234" not in block
+    assert excerpt_ids == [], "a withheld chunk must not be offered as a citation either"
+
+
+def test_a_detector_failure_outside_the_users_categories_still_answers():
+    """The narrowness, which is a requirement and not a nicety.
+
+    A CPU-only deployment has no Presidio at all and has never enabled ``pii``
+    — it is not in ``DEFAULT_REDACTION_CATEGORIES``. Blanket fail-closed would
+    withhold every excerpt on those deployments over a category the user never
+    asked to mask, so only a detector feeding an ENABLED category may withhold.
+    """
+    db = _db_with("done", [])
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True, categories=("profanity",)),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            side_effect=_detector_that_swallows("pii"),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            return_value=("profanity-masked text", []),
+        ),
+    ):
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
+
+    assert masked[0].content == "profanity-masked text"
+    assert masked[0].was_masked is True
+
+
+def test_a_profanity_failure_withholds_when_custom_words_are_masked():
+    """`failures` names DETECTORS, `enabled_categories` names CATEGORIES.
+
+    They coincide for ``pii`` and diverge for ``profanity``, which also produces
+    the ``custom`` (user wordlist) category. A user masking only ``custom``
+    depends on the profanity detector, so its failure must withhold — a mapping
+    that compared the two name-for-name would miss exactly this case.
+    """
+    db = _db_with("done", [])
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True, categories=("custom",)),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            side_effect=_detector_that_swallows("profanity"),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            side_effect=lambda text, *_a, **_k: (text, []),
+        ),
+    ):
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
+
+    assert masked[0].content == ""
+
+
+def _real_cfg(categories, entities=None):
+    """The REAL ``EffectiveRedactionConfig``, not the SimpleNamespace stand-in.
+
+    The tests below run the real detector layer and the real masker, so the
+    config has to carry every field both of them read.
+    """
+    from app.core import constants as C  # noqa: N812
+    from app.services.redaction.config import EffectiveRedactionConfig
+
+    return EffectiveRedactionConfig(
+        enabled=True,
+        redact_before_llm=True,
+        enabled_categories=set(categories),
+        pii_entities=set(C.REDACTION_PII_ENTITIES if entities is None else entities),
+    )
+
+
+def _mask_chunks_with_analyzer(analyzer, cfg):
+    """Drive ``mask_chunks`` down the inline path with a given Presidio analyzer.
+
+    Only ``_get_analyzer`` is stubbed. ``detect_segment_spans``, ``detect_pii``,
+    the wordlist detector and ``mask_segment`` are all the real thing, because the
+    defect being guarded lives *between* those layers: a stub of any one of them
+    would model the code we wish existed.
+    """
+    db = _db_with("done", [])  # no segments → the inline fallback
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=cfg,
+        ),
+        patch(
+            "app.services.redaction.detectors.pii_presidio._get_analyzer",
+            return_value=analyzer,
+        ),
+    ):
+        return mask_chunks(_factory(db), [_chunk()], user_id=1)
+
+
+class _AnalyzerThatThrows:
+    """Presidio built fine, then threw — the second row of the measured table."""
+
+    def analyze(self, text, language):  # noqa: ARG002
+        raise RuntimeError("nlp engine exploded")
+
+
+def test_an_absent_presidio_withholds_the_chunk_when_pii_is_enabled():
+    """MEASURED FAIL-OPEN, one layer below the sink (issue #403 task #77).
+
+    ``_mask_inline`` can only fail closed on what ``detect_segment_spans``
+    records, and that function only recorded a detector that raised *out of*
+    ``detect_pii``. ``pii_presidio`` swallowed its own failure one level lower:
+    ``_get_analyzer`` caught an absent or unbuildable Presidio, logged "PII
+    detection disabled" and returned ``None``, and ``detect_pii`` then returned
+    ``[]`` — indistinguishable from a clean segment.
+
+    Measured on HEAD before the fix, real detector layer, only the analyzer
+    removed (which IS the deployment being modelled — a box with no working
+    Presidio, the common CPU-only case):
+
+        analyzer is None          -> spans=[] failures=[]      blocking={}      PASSES THROUGH
+        analyzer.analyze() raises -> spans=[] failures=[]      blocking={}      PASSES THROUGH
+        detect_pii() raises       -> spans=[] failures=['pii'] blocking={'pii'} withheld
+
+    Only the third reached the sink and it is the least likely of the three, so a
+    user who had explicitly ENABLED ``pii`` still got the chunk sent unmasked
+    while ``mask_chunks`` reported ``was_masked=True``.
+    """
+    masked = _mask_chunks_with_analyzer(None, _real_cfg({"pii"}))
+
+    assert masked[0].content == ""
+    assert "555-1234" not in masked[0].content
+
+
+def test_a_presidio_that_throws_withholds_the_chunk_when_pii_is_enabled():
+    """Row 2. A built analyzer that raises used to be skipped chunk-by-chunk.
+
+    Twin of the test above and not a duplicate of it: the two faults were swallowed
+    in different places (``_get_analyzer`` returning ``None`` vs an ``except:
+    continue`` inside the chunk loop) and are given different dispositions by
+    ``detect_and_store``. Both must withhold here.
+    """
+    masked = _mask_chunks_with_analyzer(_AnalyzerThatThrows(), _real_cfg({"pii"}))
+
+    assert masked[0].content == ""
+
+
+def test_an_absent_presidio_still_answers_when_pii_was_never_enabled():
+    """THE regression that would hurt most users — the CPU-only default deployment.
+
+    ``pii`` is deliberately NOT in ``DEFAULT_REDACTION_CATEGORIES``, so a box with
+    no working Presidio and a user who never asked for PII masking must lose
+    nothing: blanket fail-closed would empty every excerpt over a category nobody
+    enabled. That narrowness is what makes the gate above safe, and it is the
+    property most likely to be broken by "just fail closed on any failure".
+
+    Runs the real wordlist detector and the real masker over profanity-free text,
+    so the assertion is that the content SURVIVES, not merely that it is non-empty.
+    """
+    masked = _mask_chunks_with_analyzer(None, _real_cfg({"profanity", "toxicity", "custom"}))
+
+    assert masked[0].content == "my number is 555-1234"
+    assert masked[0].was_masked is True
+
+
+def test_the_cached_path_refuses_a_scan_that_never_ran_pii():
+    """The primary path discriminates on detector COVERAGE, not just status (#78).
+
+    ``_mask_inline`` is the FALLBACK. The path most requests take is
+    ``_gather_chunk_segments``, which trusts cached spans whenever
+    ``redaction_status == done`` — and an unavailable detector is recorded as a
+    *skip*, so a scan that never ran Presidio still reaches ``done``. The segments
+    then say "no PII spans", the masker masks nothing, and a ``pii``-enabled user
+    gets the raw text with ``was_masked=True``. Same leak as the one just closed,
+    through the primary path instead of the fallback.
+
+    Marking those scans FAILED instead is not the fix: ``llm_guard`` turns FAILED
+    into a non-retryable refusal, which would permanently break summarization,
+    speaker-ID and topic extraction on any deployment with no Presidio. And the
+    masker cannot probe for itself — the API process and the ``celery-redaction``
+    worker load different models, so "can I load Presidio here" answers a
+    different question from "did the detector that produced these spans have it".
+    Closing it needed durable per-file **detector coverage**, which arrived as
+    ``media_file.redaction_coverage`` (v391). ``uncovered_detectors`` now sits
+    beside the status check, and a gap returns None so the chunk falls through to
+    ``_mask_inline`` — which runs the detector here and now, and fails closed.
+
+    The subject is the **requesting user's** policy, not the file owner's: one
+    turn retrieves across a library of shared recordings with no single owner.
+    That is the opposite of ``llm_guard``, deliberately.
+    """
+    # A REAL phone number, not the old 555-1234. Presidio does not recognise a
+    # 7-digit fragment, so the previous version of this guard passed whether the
+    # cached path or the inline path ran — it asserted the hazard with a string
+    # that could not demonstrate it either way.
+    leaky = "my number is 555-867-5309"
+    segment = SimpleNamespace(
+        text=leaky,
+        redactions=None,  # the scan cached nothing for PII because it never looked
+        words=None,
+    )
+    # DONE, but the scan ran without `pii` — the exact state v391 records.
+    db = _db_with("done", [segment], coverage=["profanity", "toxicity"])
+
+    with patch(
+        "app.services.redaction.config.resolve_effective_config",
+        return_value=_real_cfg({"pii"}),
+    ):
+        masked = mask_chunks(_factory(db), [_chunk(leaky)], user_id=1)
+
+    assert "555-867-5309" not in masked[0].content, (
+        "the cached path trusted a scan whose PII detector never ran: the raw "
+        "number reached the prompt with was_masked=True"
+    )
+    assert masked[0].was_masked is True
 
 
 def test_unresolvable_policy_fails_closed():
@@ -222,7 +565,7 @@ def test_unresolvable_policy_fails_closed():
         "app.services.redaction.config.resolve_effective_config",
         side_effect=RuntimeError("db down"),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == ""
     assert masked[0].was_masked is True
@@ -235,9 +578,147 @@ def test_masked_chunk_keeps_citation_metadata():
         "app.services.redaction.config.resolve_effective_config",
         return_value=_cfg(enabled=True, redact_before_llm=False),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)[0]
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)[0]
 
     assert masked.file_uuid == "11111111-1111-1111-1111-111111111111"
     assert masked.speaker == "Dana"
     assert masked.start_time == 10.0
     assert masked.title == "Call"
+
+
+# ------------------------------------------------- the session lifetime (#83)
+
+
+class _SessionLedger:
+    """A ``session_scope``-shaped factory that counts LIVE sessions.
+
+    ``live`` is the number open at this instant, so a stage can ask "was a
+    transaction held while I ran" — the same instrumentation
+    ``tests/unit/test_chat_session_phases.py`` uses on the turn as a whole.
+    """
+
+    def __init__(self, db) -> None:
+        self.db = db
+        self.live = 0
+        self.opened = 0
+
+    @contextmanager
+    def scope(self):
+        self.live += 1
+        self.opened += 1
+        try:
+            yield self.db
+        finally:
+            self.live -= 1
+
+
+def test_the_inline_detector_runs_with_no_db_session_open():
+    """#83: masking gathers, CLOSES the session, and only then runs the detector.
+
+    The inline fallback builds a Presidio ``AnalyzerEngine``. Measured against
+    real Postgres in a fresh process, with the build inside the gather
+    transaction: **13,898 ms** ``idle in transaction`` for one chunk. A plain
+    SELECT holds ACCESS SHARE for the life of its transaction, so that queues
+    every ``ALTER TABLE`` behind a chat turn — it hangs an Alembic upgrade
+    mid-release, and dev runs migrations on backend startup.
+
+    ``redaction/warmup.py`` makes the cold build rare, not impossible: its gate
+    is evaluated once at API startup, so enabling redaction afterwards still
+    pays it, and a request arriving mid-warm-up waits for the remainder.
+    """
+    ledger = _SessionLedger(_db_with("done", []))  # no segments -> inline path
+    live_during_detection: list[int] = []
+
+    def _detect(_text, _words, _det_cfg, **_kwargs):
+        live_during_detection.append(ledger.live)
+        return [], None
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            side_effect=_detect,
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            return_value=("my number is [PHONE]", []),
+        ),
+    ):
+        masked = mask_chunks(ledger.scope, [_chunk()], user_id=1)
+
+    assert live_during_detection == [0], (
+        "a DB session was live while the inline detector ran — the hold this "
+        f"split exists to remove (observed: {live_during_detection})"
+    )
+    # The control against a masker that simply stopped masking.
+    assert masked[0].content == "my number is [PHONE]"
+
+
+def test_masking_still_opens_a_session_to_read_cached_spans():
+    """THE control: the fix is a phase split, not the deletion of the session.
+
+    "Zero sessions during detection" is also satisfied by never opening one and
+    failing closed on every chunk, which the assertion above would call a pass.
+    The primary path reads each file's scan row and its cached spans out of
+    Postgres, so it must still get a session — and use it.
+    """
+    segment = SimpleNamespace(
+        text="my number is 555-1234",
+        redactions=[{"char_start": 13, "char_end": 21, "category": "pii", "entity_type": "PHONE"}],
+        words=None,
+    )
+    ledger = _SessionLedger(_db_with("done", [segment]))
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            return_value=("my number is [PHONE]", []),
+        ) as mask_segment,
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            side_effect=AssertionError("the cached path must not reach the detector"),
+        ),
+    ):
+        masked = mask_chunks(ledger.scope, [_chunk()], user_id=1)
+
+    assert ledger.opened == 1, "masking read its cached spans from nowhere"
+    assert mask_segment.call_args[0][1] == segment.redactions
+    assert masked[0].content == "my number is [PHONE]"
+
+
+def test_every_chunk_is_gathered_in_one_session():
+    """A session per chunk would put the detector back inside a transaction.
+
+    Not literally — each would close first — but N sessions for N chunks is the
+    shape that invites the gather back into the masking loop, and it is a real
+    connection-pool cost on a turn that retrieves a dozen excerpts.
+    """
+    ledger = _SessionLedger(_db_with("done", []))
+    ledger.db.query.side_effect = None  # any number of scan probes, all "no file"
+    ledger.db.query.return_value.filter.return_value.first.return_value = None
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            return_value=([], None),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            return_value=("[MASKED]", []),
+        ),
+    ):
+        masked = mask_chunks(ledger.scope, [_chunk(), _chunk(), _chunk()], user_id=1)
+
+    assert len(masked) == 3
+    assert ledger.opened == 1, f"one session per turn, not per chunk (opened {ledger.opened})"

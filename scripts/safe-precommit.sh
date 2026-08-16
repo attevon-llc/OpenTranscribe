@@ -52,9 +52,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VENV_BIN="$REPO_ROOT/backend/venv/bin"
 
+# In a git WORKTREE `.git` is a FILE, not a directory, so `$REPO_ROOT/.git/...` made the
+# `mkdir -p` below fail with "File exists" and this wrapper was unusable in exactly the
+# checkout style CLAUDE.md tells you to work in. `--git-dir` resolves to the real
+# per-worktree git directory in both layouts.
+#
+# Deliberately `--git-dir`, NOT `--git-common-dir`: the hazard this lock serialises is
+# pre-commit stashing a WORKING TREE, and each worktree has its own. A lock in the shared
+# common dir would serialise lanes that cannot interfere with each other, throwing away
+# the isolation that is the whole reason for using worktrees here.
+GIT_DIR_PATH="$(git -C "$REPO_ROOT" rev-parse --absolute-git-dir 2>/dev/null || echo "$REPO_ROOT/.git")"
+
 # Overridable for --selftest so it never touches the real repo state.
 MUTATION_OUT_DIR="${OT_MUTATION_OUT_DIR:-$REPO_ROOT/.mutation}"
-PRECOMMIT_LOCK="${OT_PRECOMMIT_LOCK:-$REPO_ROOT/.git/safe-precommit.lock}"
+PRECOMMIT_LOCK="${OT_PRECOMMIT_LOCK:-$GIT_DIR_PATH/safe-precommit.lock}"
 
 RED='\033[0;31m'
 YELLOW='\033[1;33m'

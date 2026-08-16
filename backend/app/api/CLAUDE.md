@@ -49,7 +49,12 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 - Responses carry **pre-formatted display fields** built by `services/formatting_service.py`
   (`formatted_duration`, `display_status`, `resolved_speaker_name`, …). The SPA renders them.
 - Read surfaces mask transcript text at read time via `services/redaction/spans.py`; owner
-  reveal is `?redact=false` and is audited (`files/crud.py`, `files/subtitles.py`).
+  reveal is `?redact=false`, audited as `transcript.view_unredacted` by **one** implementation,
+  `files/crud.py::audit_unredacted_reveal`, called from the transcript read and from
+  `files/subtitles.py` (`surface` distinguishes them). The export half was missing entirely
+  until #85 — the more consequential of the two, since that reveal leaves the application as a
+  file on disk — and this file claimed both were audited until it was checked. Two copies of a
+  compliance trail is how one of them silently stops matching the other.
 - **Owner-scoped listings go through `PermissionService.get_accessible_file_ids_subquery`** —
   it already covers owned files plus collections shared directly and via groups, and applies the
   org tenant gate. Never write a second sharing rule beside it.
@@ -74,8 +79,7 @@ both before believing it:
   is a redundant second rendering of the same data. Same shape for `/files/{uuid}/retry` vs the
   `POST /my-files/{uuid}/retry` the SPA actually calls (`user_files.py`).
 
-**Method matters and several of these are not GET.** `POST /files/search`,
-`DELETE /tags/cleanup`, `DELETE /custom-vocabulary/all`, `PUT /search/models/neural/active`,
+**Method matters and several of these are not GET.** `DELETE /tags/cleanup`, `DELETE /custom-vocabulary/all`, `PUT /search/models/neural/active`,
 `DELETE /admin/users/{uuid}`, `DELETE /files/{uuid}/force`, and DELETE-only
 `/speakers/combined-migration/progress` + `/speaker-attributes/migration/progress`. Generating
 a client that assumes GET from the route table will collect 405s.
@@ -143,9 +147,8 @@ Shaped for a script or agent rather than a screen.
 |---|---|
 | `GET /files/{uuid}/info` | Lightweight identity/size/duration/language/status with no transcript — the integration read |
 | `GET /files/{uuid}/status-detail` | Status + stuck detection + retry counters + `active_task_id`. Mixed shape: also carries English `recommendations` |
-| `POST /files/search` | **POST.** Full-text search over generated summaries in OpenSearch (BLUF / decisions / action items) with `<mark>` highlighting |
 | `GET /files/supported-formats` | Static `{"subtitle_formats": [...]}`. **No auth dependency at all** — the only ungated route in that router |
-| `GET /files/{uuid}/subtitles` | Renders srt/webvtt/txt as an attachment with redaction applied; the player builds its own VTT client-side, hence no SPA caller |
+| `GET /files/{uuid}/subtitles` | Renders srt/webvtt/txt as an attachment with redaction applied; the player builds its own VTT client-side, hence no SPA caller. **409 while the file's redaction scan is incomplete** — see Gotchas |
 | `GET /usage/me` · `GET /usage/me/daily` | Per-user LLM token/cost reporting. **Core, not a cloud seam** — `usage.py`'s docstring is explicit that a self-hoster paying an OpenAI bill is the intended reader. Reporting only; quotas and billing are the part that was carved out. The only usage UI in this repo is the `isCloudEdition`-gated managed-edition stub, so the self-host panel these promise does not exist yet |
 | `GET /prompts/by-content-type/{type}` | System + user prompts for one of 5 content types |
 | `GET /search/filters` | Available filter facets from OpenSearch aggs; degrades to empty lists when the index is absent |
@@ -160,8 +163,17 @@ Shaped for a script or agent rather than a screen.
 
 OpenSearch neural-search lifecycle, admin-gated and idempotent (`already_registered` /
 `already_deployed`): `POST /search/models/neural/{model}/{register,deploy,undeploy}`.
-Read state via `GET /search/models/neural/status` or `GET /search/models/neural`.
+Read state via `GET /search/models/neural/status` (which also carries the `embedding_provenance`
+survey — the one query answering whether the index is a single comparable vector space) or
+`GET /search/models/neural`.
 **`/search/models/neural/active` is `PUT`-only and triggers a full reindex** — there is no GET.
+It and `POST /search/models` are now **the same implementation**
+(`services/search/model_switch.py`): they were two halves of one job, neither of which switched
+anything (#437). "Full reindex" means **one coordinator per owner of a COMPLETED file** — a
+per-caller dispatch left every other user's chunks in the previous model's vector space. Both
+answer **409** for a model that is not registered *and* deployed, because recording a selection
+whose pipeline cannot emit the new dimension makes the coordinator delete the chunks index and
+then fail every write. Detail: `backend/app/services/search/CLAUDE.md`.
 User administration: `GET /users` and `DELETE /admin/users/{uuid}` (creation is
 `POST /admin/users`; role/lock/reset live on their own sub-paths).
 
@@ -316,6 +328,40 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   Note the sibling `GET /system/stats` spells the same list `gpus` and is what the SPA reads —
   `/admin/stats`' `gpu` has no frontend consumer, so don't "align" the names without checking the
   runbooks.
+- **`GET /files/{uuid}/subtitles` is a transcript read surface and is gated like one.**
+  `SubtitleService` masks with the segment's **cached** spans (`seg.redactions or []`), so on a
+  file whose detection scan never ran, is queued, or is mid-flight there is nothing to apply and
+  the export writes the **raw transcript to disk** — with nothing in the file to say the scan was
+  incomplete. The endpoint therefore calls the same `_redaction_pending` (`files/crud.py`) the
+  detail and segments endpoints use, and answers **409** when it returns True. Not 503: that code
+  is already taken by `_resolve_subtitle_redaction`'s "the policy could not be resolved", and the
+  two are different problems (the server is fine; the *file* is not ready). Deliberately not an
+  on-demand inline scan either — a cold PII model load is ~10 s on a download request, and the
+  page the file would be exported from already answers "not yet".
+  Its **two sibling export paths are now covered too** (#85): `build_subtitle_archive` (the
+  `POST /files/bulk-export/prepare` ZIP, via `tasks/media_download.py`) and the burned-in-subtitle
+  render in `video_processing_service`. Both used to call the generators with **no redaction
+  config at all** and exported unmasked regardless of policy — including under the admin
+  `force_export_redacted` floor, i.e. a control that read as enforced and was not. `cfg=None`
+  meant "redaction disabled" to `_redact_segments_inplace`, which is indistinguishable from "the
+  caller forgot", so no gate could fire; the parameter is now **required and non-optional** on
+  both, and a disabled policy is spelled by a config whose `enabled` is False. Whose policy, when
+  it is resolved, and what the alternatives leak: `services/redaction/export_policy.py`. The
+  short version — the **requesting user** (matching the single-file endpoint beside it; the file
+  owner is `llm_guard`'s subject, and that governs third-party egress rather than a read), and at
+  **run time inside the task** from a `user_id`, never a config serialized into the Celery
+  signature. A file whose scan is unfinished is *skipped* by the batch (one file must not fail
+  the other 99) and *refused* by the burn-in, which cannot be un-burned.
+- **A burned-in-subtitle download is keyed by the caller's redaction policy, in three
+  places at once** (#85): the object-storage cache key, the Redis dedup guard
+  (`download_prep_guard_key`), and the `variant` field every `download_events` message
+  carries and `_download_event_frame` filters on. All three must move together. The cache key
+  alone is not enough — the dedup guard collapses concurrent requests for one `(file, mode)`
+  into a single build and the channel is per FILE, so two readers whose policies mask
+  differently would share one render and the second would receive the first one's video. The
+  variant is `export_policy_fingerprint(cfg)`, empty for every audio mode and for any policy
+  that masks nothing, so those keys/guards/events are byte-identical to before. It is
+  **routing only**: the worker re-resolves the real policy at run time and never trusts it.
 - **Both SSE streams go check → subscribe → re-check.** `download_stream` (`files/__init__.py`)
   and `bulk_export_stream` (`files/subtitles.py`) read their readiness signal, subscribe to the
   pub/sub channel, then read it **again**. A single check-then-subscribe loses a worker

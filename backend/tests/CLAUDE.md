@@ -10,10 +10,35 @@ CI**), `SKIP_S3`/`SKIP_OPENSEARCH` forced `True`. E2E is local-only: `./scripts/
 (3 xdist workers `--dist loadfile`, then `-m visual` serially) and `run-e2e-smoke.sh`.
 Per-suite prose lives in `README.md`, `AUTH_TEST_SETUP.md`, `e2e/README.md`.
 
+## ⚠️ A branch that adds a migration must be tested against a stack that has APPLIED it
+
+`conftest` defaults `POSTGRES_PORT` to **5176 — the dev stack**, which runs whatever is checked
+out in the *main* repo. A worktree on a feature branch that adds a migration is therefore, by
+default, **testing the branch's code against master's schema**.
+
+That is not hypothetical. It produced **13 failures** that read as real breakage and were
+reported as pre-existing: 10 in `test_v389_migration_consistency`, 2 ORM-cascade, 1 DDL
+divergence — every one of them `relation "file_facts" does not exist`, because the dev stack sat
+at `v388` while the branch added `v389`. Re-run against a stack holding the migration and all 13
+pass:
+
+```bash
+POSTGRES_PORT=5276 OPENSEARCH_PORT=5280 pytest tests/...     # an isolated --fresh stack
+```
+
+Check before believing a schema failure:
+```bash
+docker exec <pg-container> psql -U postgres -d opentranscribe -tAc "SELECT version_num FROM alembic_version;"
+```
+
+Same family as everything else in this file: a red number that describes something other than
+what it appears to. A green one from the wrong schema is worse.
+
 ## Key files
 
 - `conftest.py` — sets env **before** `app.*` imports (DB/MinIO creds via `dotenv_values(.env)`,
-  `POSTGRES_HOST=localhost:5176`). `db_session` = savepoint isolation surviving `commit()`;
+  `POSTGRES_HOST=localhost:5176` — see the migration warning above). `db_session` = savepoint
+  isolation surviving `commit()`;
   `client` overrides `get_db`; an autouse session fixture patches `Task.apply_async` so
   `.delay()` never reaches a real broker.
 - `e2e/conftest.py` (`login_page`, `authenticated_page`, `auth_helper`, `api_helper`,
@@ -344,6 +369,74 @@ Why each piece:
   *anything* answers. An unrelated service on that port produces `SignatureDoesNotMatch`
   failures that look like real bugs.
 
+## `tests/eval/` — the RAG evaluation harness (issue #403 Stage 1)
+
+Not a test suite that gates anything: it is the **instrument** every retrieval-affecting change
+reports against (D5), plus the tests that keep the instrument honest. `synthetic/` generates a
+corpus with ground truth known by construction; `harness/` measures.
+
+| Module | Owns |
+|---|---|
+| `harness/metrics.py` | `trec_eval` via `pytrec_eval_terrier`. Tie normalisation, `-c` semantics, linear gain — all three are NOT the library default |
+| `harness/qrels.py` | gold turn ranges -> chunk-level graded judgements. **One adapter for QMSum and the synthetic tier** — they share the inclusive turn-range convention deliberately |
+| `harness/corpora.py` | queries + gold, remapped onto the uuids the app indexed, with the licence tier attached |
+| `harness/index_reader.py` | **settle** (complete + stable + nothing predating the run) -> refresh -> force-merge -> refresh, then read chunks back |
+| `harness/runner.py` | drives `retrieve_chunks` (the chat path), never `/api/search`; owns the per-request fusion arm and the 48/12/4 budget |
+| `harness/report.py` | the deterministic results document and metric table |
+
+```bash
+./opentr.sh bench rag --fresh rag403              # the one command, <5 min
+pytest tests/eval -q                              # logic tests, nothing running
+OPENSEARCH_PORT=5280 pytest tests/integration/test_rag_eval_harness.py -m integration
+```
+
+Three things to know before touching it:
+
+- **The metric engine is an eval-only dependency** (`backend/requirements-eval.txt`) for a
+  **licence** reason, not a size one: trec_eval's C sources carry a "research, non-commercial
+  purposes" header and we publish images. Never move it into `requirements.txt`. Every module that
+  imports it does so lazily and every test `importorskip`s it with that reason.
+- **`normalise_run` is load-bearing, not tidiness.** trec_eval breaks ties by docid *descending*,
+  our ids are `{uuid}_{chunk_index}` and `{uuid}_digest_{n}`, and RRF produces ties structurally —
+  so an untied-broken run lets a stage pass its own gate on document naming. `test_eval_metrics.py`
+  swaps the id convention and asserts the metric is unchanged, with a guard test proving the
+  hazard is real; it reads the digest id from `index_mapping.digest_document_id` rather than
+  spelling it, because it was already guarding a scheme the app had moved past once.
+- **A measurement is refused unless the corpus has settled.** `await_settled` requires every
+  expected file to carry chunks, the (files, chunks) pair to repeat across two polls, **and** —
+  when a dispatch timestamp is passed — nothing in the corpus to predate the run. The first two
+  alone are satisfied by a reindex that has been dispatched and has not started, which certifies
+  the old index as the new one. Polling the chunk total alone produced phantom deltas of
+  223 / 357 / 591 chunks over an unchanged corpus.
+- **A sweep arm is one flag combination, and the results file names it.** `--fusion` /
+  `--rank-constant` / `--normalization-technique` / `--combination-technique` /
+  `--combination-weights` select the hybrid fusion strategy per run (#363); `--size` /
+  `--final-chunks` / `--max-per-file` / `--rerank-max-pairs` are the 48/12/4 budget, whose
+  defaults are pinned to the shipped `chat.rag.*` constants by `test_eval_fusion_arm.py` (they
+  used to be 20/3 — every `--stage rerank` number described a deployment nobody runs).
+  `metrics.json`'s `retrieval.fusion` records the *resolved* strategy and pipeline id, so no arm
+  can be unattributable; per-query latency lands in `runinfo.json`, outside the deterministic
+  claim. **Never quote a single latency run** — one put `rrf-60` at +50% p95 and it did not
+  reproduce.
+- ⚠️ **`--stage rerank` is scored in the order the PROMPT receives, not by score.**
+  `_to_run_docs(..., preserve_order=True)`. `normalise_run` re-sorts by `-score`, which is right
+  for `retrieve` and wrong after `diversity_sample`, whose job is to interleave files — the
+  re-sort undid that for **40 of 60** measured queries and made the scored top-5 depend on
+  `final_chunks`, which provably cannot move the prompt's top-5. It also let the *un-reranked*
+  tail outrank reranked hits whenever `candidate_pool > rerank_max_pairs`, because `rerank`
+  leaves the tail on RRF scores (small positives) while cross-encoder scores are routinely
+  negative. Production was never affected; it walks list order.
+- **`scripts/reindex_eval_corpus.py`** dispatches the real `reindex_transcripts` task and waits
+  for the settle. Two consecutive runs must report the same chunk count; that equality is the
+  precondition for any phase-over-phase delta, and it is measured, not assumed.
+- **Baselines under `tests/eval/baselines/` are committed controls.** `metrics.json` and
+  `metrics.md` are byte-identical across runs by construction; anything non-deterministic
+  (elapsed time, target) lives in `runinfo.json`, outside the claim. Regenerate one only when the
+  corpus composition genuinely changes, and say so in the PR.
+
+Methodology, the overlap->relevance rule, and the committed numbers:
+`docs-site/docs/developer-guide/rag-evaluation.md`.
+
 ## Chat suites (issue #52)
 
 | File | Needs |
@@ -411,7 +504,7 @@ by *configuring a provider* and the app runs its REAL error handling:
 | `mock-empty` | completes with no content |
 | `mock-error` | HTTP 500 before any token → `provider_error` frame |
 | `mock-slow` | stalls past the first-token watchdog |
-| `mock-reasoning` | streams `delta.reasoning_content` (a "thinking" phase) before the same `[1]`/`[2]` answer as `mock-gpt` — collapsible reasoning display |
+| `mock-reasoning` | a "thinking" phase before the same `[1]`/`[2]` answer as `mock-gpt`. ⚠️ **Separates it only when the request activated thinking** (`chat_template_kwargs={"enable_thinking": true}`); unasked it reproduces #439 — the thoughts arrive on `delta.content` with a bare `<channel|>` closer, exactly as vLLM does — so both branches are testable. The field is `delta.reasoning` on vLLM 0.19, not `reasoning_content`; our parser reads both |
 
 **CI needs no setup**: the subprocess fallback means `tests/unit/test_mock_llm_fixture.py`
 runs in the GitHub `backend-tests` job with no compose stack. Tests that need the

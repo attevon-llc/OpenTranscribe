@@ -86,11 +86,40 @@ export interface SupportedProvidersResponse {
   providers: ProviderDefaults[];
 }
 
+/**
+ * A model's MEASURED reasoning off-switch capability (issue #64).
+ *
+ * Only `'works'` may render a user-facing control. `'absent'` means the server
+ * probed the model and the "off" request was indistinguishable from not asking
+ * — showing a toggle there would tell the user reasoning is off while the model
+ * reasons anyway. `'unknown'` (also: a uuid missing from the map) means it was
+ * never probed.
+ */
+export type ReasoningOffSwitch = 'unknown' | 'unsupported' | 'no_reasoning' | 'absent' | 'works';
+
+export interface ReasoningCapability {
+  off_switch: ReasoningOffSwitch;
+  probeable: boolean;
+  probed_at?: string | null;
+  reasoning_chars_on: number;
+  reasoning_chars_off: number;
+  reasoning_chars_omitted: number;
+  detail: string;
+}
+
 export interface UserLLMConfigurationsList {
   configurations: UserLLMSettings[];
   shared_configurations: UserLLMSettings[];
   active_configuration_id?: string; // UUID
   total: number;
+  /**
+   * Verdict per configuration uuid. **An absent uuid has never been probed** —
+   * treat it as `'unknown'`, i.e. render no control. Keyed by config uuid for
+   * convenience only; the underlying measurement belongs to the
+   * (provider, endpoint, model) triple, so two configs naming the same model
+   * share one verdict.
+   */
+  reasoning_off_switch?: Record<string, ReasoningOffSwitch>;
 }
 
 export interface SetActiveConfigRequest {
@@ -207,6 +236,27 @@ export class LLMSettingsApi {
    */
   static async testConfiguration(configId: string): Promise<ConnectionTestResponse> {
     const response = await axiosInstance.post(`${this.BASE_PATH}/test-config/${configId}`);
+    return response.data;
+  }
+
+  /**
+   * Read the recorded reasoning off-switch verdict for a configuration.
+   * Never dials the provider.
+   */
+  static async getReasoningCapability(configId: string): Promise<ReasoningCapability> {
+    const response = await axiosInstance.get(`${this.BASE_PATH}/config/${configId}/reasoning`);
+    return response.data;
+  }
+
+  /**
+   * Measure and record whether this model honours a "do not reason" request.
+   * Costs three real generations against the configured endpoint, so this is
+   * an explicit user action and never automatic.
+   */
+  static async probeReasoningCapability(configId: string): Promise<ReasoningCapability> {
+    const response = await axiosInstance.post(
+      `${this.BASE_PATH}/config/${configId}/reasoning-probe`
+    );
     return response.data;
   }
 

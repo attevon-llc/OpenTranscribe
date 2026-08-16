@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Collection
+from collections.abc import Iterable
 from dataclasses import dataclass
 from dataclasses import field
 
@@ -19,11 +21,27 @@ from app.core import constants as C  # noqa: N812
 
 logger = logging.getLogger(__name__)
 
-# Detector → categories it produces (used to gate detection + masking by detector toggle).
-_DETECTOR_CATEGORIES = {
+# Detector → the categories whose MASKING depends on it. The ONE copy of this
+# mapping: every fail-closed masker needs it to decide whether a detector failure
+# is one the user's policy cares about, and a second copy drifts silently
+# (``blocking_detector_failures`` below is the shared reader).
+#
+# ⚠️ ``toxicity`` maps to NOTHING, and that is the entry with a decision in it. The
+# toxicity detector emits a per-segment SCORE, never a ``RedactionSpan`` — read
+# ``detectors/toxicity.py``, and note that ``is_segment_toxic`` is consumed only by
+# ``formatting_service`` to flag a segment in the UI. So its absence cannot leave one
+# character unmasked, and making it blocking would withhold text on the strength of a
+# detector that never masks any. The consequences are not hypothetical: ``toxicity``
+# IS a default category, so a box without the ~500 MB toxic-bert weights would mark
+# every default-configured user's file stale on every segment edit and refuse every
+# LLM feature — for a gap with no text in it. The ``toxicity`` *category* still has
+# maskable spans; they come from ``llm``, which is why that entry keeps all four.
+# A toxicity outage is reported instead — ``skipped_detectors`` and
+# ``media_file.redaction_coverage`` — which is what a missing toxicity FLAG deserves.
+_DETECTOR_CATEGORIES: dict[str, set[str]] = {
     "profanity": {"profanity", "custom"},
     "pii": {"pii"},
-    "toxicity": {"toxicity"},
+    "toxicity": set(),
     "llm": {"pii", "toxicity", "profanity", "custom"},
 }
 
@@ -212,6 +230,82 @@ def resolve_effective_config(db: Session, user_id: int) -> EffectiveRedactionCon
         or admin["force_export_redacted"],
         export_locked=admin["force_export_redacted"],
     )
+
+
+def redaction_is_in_use(db: Session) -> bool:
+    """Does ANY user have redaction on, or does the admin floor force a category?
+
+    The question a process asks before spending ~7 s and ~500 MB warming a
+    detector it may never call (issue #74). Redaction is **opt-out**
+    (``DEFAULT_REDACTION_ENABLED`` is False), so on most deployments the answer
+    is no and nothing should be loaded.
+
+    It is deliberately not "does anyone mask the ``pii`` category". Every inline
+    masker runs :func:`detection_config_for_all`, which runs **all** detectors
+    regardless of which categories a user masks — so a single user with
+    ``redaction_enabled`` is enough to make Presidio load, whatever their
+    categories are. Narrowing this to ``pii`` would skip the warm-up on exactly
+    the deployments that still pay the cold load.
+
+    Any admin-forced category is likewise sufficient on its own:
+    :func:`resolve_effective_config` resolves ``enabled = user_enabled or
+    bool(forced_categories)``, so a floor turns masking on for everyone.
+
+    Args:
+        db: Database session. Two short reads; holds nothing open.
+
+    Returns:
+        True if some user's or the admin's policy can activate masking.
+    """
+    from app import models
+
+    if _load_admin_policy(db)["forced_categories"]:
+        return True
+
+    # DISTINCT over the values, not a row per user: the answer is a property of
+    # the deployment, and the parse stays the one in this module rather than a
+    # second truthiness rule written in SQL.
+    values = (
+        db.query(models.UserSetting.setting_value)
+        .filter(models.UserSetting.setting_key == "redaction_enabled")
+        .distinct()
+        .all()
+    )
+    return any(_parse_bool(row[0], False) for row in values)
+
+
+def blocking_detector_failures(
+    failures: Iterable[str], enabled_categories: Collection[str]
+) -> set[str]:
+    """Which detector failures actually matter for a policy masking ``enabled_categories``.
+
+    ``detect_segment_spans`` **swallows** a detector exception and returns the
+    spans it did collect, so "found nothing" and "could not look" are the same
+    return value; its ``failures`` sink (issue #324) is the only thing that tells
+    them apart. Any masker that must fail closed asks this function whether a
+    recorded failure is one this user's policy cares about.
+
+    The narrowness is the point. ``pii`` is **not** in the default categories, so
+    treating every failure as blocking would withhold content wholesale on every
+    CPU-only deployment that has no Presidio and never asked for PII masking.
+    Only a failure of a detector feeding an *enabled* category may withhold.
+
+    ``failures`` names DETECTORS while ``enabled_categories`` names CATEGORIES;
+    they coincide for ``pii``, diverge for ``profanity`` (which also produces
+    ``custom``), and for ``toxicity`` do not correspond at all — it produces no
+    spans, so nothing it fails to find can be left unmasked. The mapping above is
+    written out rather than assumed for exactly those two cases.
+
+    Args:
+        failures: Detector names recorded by ``detect_segment_spans``.
+        enabled_categories: The categories this policy masks.
+
+    Returns:
+        The subset of ``failures`` that feeds an enabled category. Empty means
+        nothing the caller masks was left unchecked.
+    """
+    enabled = set(enabled_categories)
+    return {name for name in failures if _DETECTOR_CATEGORIES.get(name, {name}) & enabled}
 
 
 def normalize_language(language: str | None) -> str:

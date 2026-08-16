@@ -13,6 +13,7 @@ from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
 from sqlalchemy import Integer
 from sqlalchemy import String
+from sqlalchemy import UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
@@ -47,6 +48,11 @@ class TopicSuggestion(Base):
     """
 
     __tablename__ = "topic_suggestion"
+
+    # v010 baseline. At most one suggestion row per file — this is what makes the
+    # topic writer an upsert rather than an append, and it was enforced only by
+    # the database.
+    __table_args__ = (UniqueConstraint("media_file_id", name="topic_suggestion_media_file_id_key"),)
 
     # Primary keys and identifiers
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)

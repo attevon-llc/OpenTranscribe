@@ -383,6 +383,16 @@ def enrich_and_dispatch(
     except Exception as e:
         logger.warning(f"Search indexing failed for file {file_id}: {e}")
 
+    # Deterministic ingest artifacts (facts / extractive digest / keyphrases). NOT gated
+    # on an LLM provider — this is the tier that exists precisely so a deployment without
+    # one still has a summary and exact per-file statistics (#403 D6).
+    try:
+        from app.tasks.ingest_artifacts_task import dispatch_file_facts
+
+        dispatch_file_facts(file_id, pipeline_task_id=pipeline_task_id)
+    except Exception as e:
+        logger.warning(f"file_facts dispatch failed for file {file_id}: {e}")
+
     # Content redaction detection — gated on the owner's effective config (opt-out by
     # default); _dispatch_redaction returns early when it's off, and detection then
     # happens lazily on first open. Dedicated CPU service; masking applies at read

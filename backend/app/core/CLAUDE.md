@@ -26,7 +26,15 @@ should import `app.api` or `app.services` at module scope.
   `torch.load(weights_only=False)` *before* any ML import; the whole ML block is skipped when
   `SKIP_CELERY=true` (test startup).
 - `enums.py` — centralized enums (`FileStatus`), imported from here instead of model modules to
-  break import cycles.
+  break import cycles. `ReasoningOffSwitch` lives here rather than beside its probe because
+  three layers read it (the service that measures it, the Pydantic response that carries it,
+  and the chat path that gates on it).
+- **`LLM_REASONING_*` in `constants.py` are a probe's INSTRUMENT SETTINGS, not tunables** —
+  prompt, temperature 0, token ceiling, the 10% suppression tolerance and the 32-character
+  floor. Changing one re-defines what "the off-switch works" means, so change it with the
+  measurement that justifies the new value. The *result* is not here at all: it is a
+  `SystemSettings` row keyed by a (provider, base_url, model) fingerprint, written only by
+  the probe. Full rationale: `app/services/CLAUDE.md`.
 - `exceptions.py` — the `OpenTranscribeError` hierarchy, handled globally in `main.py`.
   **Service-layer only** — endpoints keep raising `HTTPException` (see its docstring).
 - `redis.py` — `get_redis()`, the process-wide **sync Redis (db 0) singleton**. Don't call

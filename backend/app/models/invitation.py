@@ -15,6 +15,7 @@ import uuid as uuid_pkg
 from datetime import UTC
 from datetime import datetime
 
+from sqlalchemy import CheckConstraint
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
 from sqlalchemy import Integer
@@ -39,6 +40,22 @@ class UserInvitation(Base):
     """
 
     __tablename__ = "user_invitation"
+
+    # Both CHECKs mirror the ones on ``user`` (v377/v383) and are enforced by the
+    # database today. As on ``user.auth_type``, the auth-type body is a **literal**
+    # and must not be rebuilt from ``app.auth.constants.VALID_AUTH_TYPES``: the DB
+    # CHECK is required to be a superset of that list, and deriving it here would
+    # encode equality instead. See ``app/models/user.py`` for the full argument.
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('user', 'admin', 'super_admin')",
+            name="ck_user_invitation_role_valid",
+        ),
+        CheckConstraint(
+            "auth_type IN ('local', 'ldap', 'oidc', 'pki', 'proxy', 'saml')",
+            name="ck_user_invitation_auth_type_valid",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     #: The only identifier exposed through the API (hybrid-ID rule).

@@ -21,6 +21,7 @@ from app import models
 from app import schemas
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
+from app.services import llm_reasoning
 from app.services.llm_service import LLMConfig
 from app.services.llm_service import LLMProvider as ServiceLLMProvider
 from app.services.llm_service import LLMService
@@ -302,10 +303,29 @@ def get_user_configurations(
         _enrich_with_owner(c, owners.get(c.user_id), is_own=False) for c in shared_configs
     ]
 
+    # Measured reasoning off-switch per config, so the chat UI can decide whether
+    # to offer the control without a request per configuration (issue #64).
+    # Only recorded verdicts appear; an absent uuid means "never probed", which
+    # the client must treat as "no control".
+    reasoning_verdicts: dict[str, llm_reasoning.ReasoningOffSwitch] = {
+        str(c.uuid): verdict
+        for c in [*configurations, *shared_configs]
+        if (
+            verdict := llm_reasoning.read(
+                db,
+                str(c.provider),
+                str(c.base_url) if c.base_url else None,
+                str(c.model_name),
+            )
+        )
+        is not llm_reasoning.ReasoningOffSwitch.UNKNOWN
+    }
+
     return schemas.UserLLMConfigurationsList(
         configurations=public_configs,
         shared_configurations=public_shared,  # type: ignore[arg-type]
         active_configuration_id=active_config_uuid,
+        reasoning_off_switch=reasoning_verdicts,
         total=len(public_configs),
     )
 
@@ -882,6 +902,105 @@ def test_specific_configuration(
         db.commit()
 
     return result
+
+
+def _config_to_llm_config(db: Session, user_config: models.UserLLMSettings) -> LLMConfig:
+    """Build the LLMConfig a stored row describes, decrypting its key."""
+    api_key = None
+    if user_config.api_key:
+        api_key = decrypt_api_key(str(user_config.api_key))
+        if not api_key:
+            raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
+    return LLMConfig(
+        provider=ServiceLLMProvider(user_config.provider),
+        model=str(user_config.model_name),
+        api_key=api_key,
+        base_url=str(user_config.base_url) if user_config.base_url else None,
+        max_tokens=int(user_config.max_tokens),
+        temperature=float(user_config.temperature),
+    )
+
+
+@router.get("/config/{config_uuid}/reasoning", response_model=schemas.ReasoningCapability)
+def get_reasoning_capability(
+    config_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """Read the recorded reasoning off-switch verdict for one configuration.
+
+    Pure read — it never dials the provider. A model that has never been probed
+    reports ``unknown``, which is the default everywhere and renders no control.
+    """
+    user_config = get_llm_config_by_uuid(db, config_uuid)
+    if not user_config.is_shared:
+        require_resource_owner(
+            user_config,
+            current_user,
+            forbidden_detail="Not authorized to access this configuration",
+        )
+
+    provider = str(user_config.provider)
+    base_url = str(user_config.base_url) if user_config.base_url else None
+    model = str(user_config.model_name)
+    return _reasoning_capability_payload(db, provider, base_url, model)
+
+
+@router.post("/config/{config_uuid}/reasoning-probe", response_model=schemas.ReasoningCapability)
+def probe_reasoning_capability(
+    config_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """Measure, and record, whether this model honours a "do not reason" request.
+
+    **Explicitly invoked, never automatic.** Three real generations against the
+    configured endpoint is far too much to put in front of a user's first chat
+    turn, and a background sweep would dial every configured third-party
+    provider unprompted — an egress event, and a bill, that nobody asked for.
+    So it sits beside "Test connection", where the cost is visible and the user
+    chose to pay it.
+
+    The verdict is keyed to (provider, endpoint, model), so it survives until
+    one of those changes and is then simply not found again — there is no stale
+    answer to invalidate.
+    """
+    user_config = get_llm_config_by_uuid(db, config_uuid)
+    if not user_config.is_shared:
+        require_resource_owner(
+            user_config,
+            current_user,
+            forbidden_detail="Not authorized to access this configuration",
+        )
+
+    llm_config = _config_to_llm_config(db, user_config)
+    result = llm_reasoning.probe(llm_config)
+    llm_reasoning.record(db, llm_config, result)
+    return _reasoning_capability_payload(
+        db, str(llm_config.provider), llm_config.base_url, llm_config.model
+    )
+
+
+def _reasoning_capability_payload(
+    db: Session, provider: str, base_url: str | None, model: str
+) -> schemas.ReasoningCapability:
+    """Shape a stored verdict (or its absence) into the wire schema."""
+    stored = llm_reasoning.read_record(db, provider, base_url, model)
+    chars = stored.get("reasoning_chars") or {}
+    probed_at = None
+    raw_probed_at = stored.get("probed_at")
+    if isinstance(raw_probed_at, str):
+        with contextlib.suppress(ValueError):
+            probed_at = datetime.fromisoformat(raw_probed_at)
+    return schemas.ReasoningCapability(
+        off_switch=llm_reasoning.verdict_of(stored),
+        probeable=ServiceLLMProvider(provider) in llm_reasoning.PROBEABLE_PROVIDERS,
+        probed_at=probed_at,
+        reasoning_chars_on=int(chars.get("on") or 0),
+        reasoning_chars_off=int(chars.get("off") or 0),
+        reasoning_chars_omitted=int(chars.get("omitted") or 0),
+        detail=str(stored.get("detail") or ""),
+    )
 
 
 @router.get("/config/{config_uuid}/api-key")

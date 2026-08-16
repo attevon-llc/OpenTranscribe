@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy import BigInteger
 from sqlalchemy import Boolean
+from sqlalchemy import CheckConstraint
 from sqlalchemy import DateTime
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import Float
@@ -15,6 +16,12 @@ from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy import UniqueConstraint
 from sqlalchemy import text
+
+# ``TranscriptSegment`` declares a column literally named ``text``, which shadows
+# ``sqlalchemy.text`` inside that class body. The alias is the only way to reach
+# the SQL construct from there.
+from sqlalchemy import text as sa_text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
@@ -27,6 +34,7 @@ from app.db.base import Base
 from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
+    from app.models.file_facts import FileFacts
     from app.models.prompt import SummaryPrompt
     from app.models.sharing import CollectionShare
     from app.models.topic import TopicSuggestion
@@ -87,9 +95,13 @@ class MediaFile(Base):
     summary_data: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True
     )  # Complete structured AI summary (flexible format)
-    summary_opensearch_id: Mapped[str | None] = mapped_column(
-        String, nullable=True
-    )  # OpenSearch document ID for summary
+    # Vestigial (#67): a document id in the retired ``transcript_summaries`` index.
+    # Nothing sets it any more — ``summary_data`` above is the only copy of a
+    # summary — but existing rows on an upgraded deployment still carry one, so
+    # readers tolerate it and the clear paths (regenerate / reprocess / delete)
+    # drain it. Kept rather than dropped because a migration that removes it is a
+    # destructive change to user rows for no functional gain.
+    summary_opensearch_id: Mapped[str | None] = mapped_column(String, nullable=True)
     summary_status: Mapped[str | None] = mapped_column(
         String, default="pending", nullable=True
     )  # pending, processing, completed, failed, not_configured, disabled
@@ -107,6 +119,13 @@ class MediaFile(Base):
     redaction_model_version: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # Detector model version that produced the cached spans (for upgrade re-index)
+    # Which detectors the cached spans actually REFLECT. `redaction_status = done` says
+    # the scan finished, not that every detector ran: an unavailable one is reported as
+    # skipped and still reaches `done` (see detectors/DetectorUnavailableError). Without
+    # this, a read path could mask nothing, report success, and send unexamined PII to a
+    # provider. NULL = scanned before v392, coverage unknown — see
+    # `services/redaction/coverage.py` for why that is trusted rather than refused.
+    redaction_coverage: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     # Client-declared content fingerprint of the source the user selected — the
     # file itself for a plain upload, the SOURCE VIDEO for client-extracted audio.
     # imohash (32 hex) since issue #342; SHA-256 (64 hex) on rows predating it.
@@ -166,12 +185,45 @@ class MediaFile(Base):
     audio_bit_depth: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Audio bit depth
 
     # Creation information
+    #
+    # ⚠️ ``creation_date`` is the CONTAINER's claim and nothing else. It used to be
+    # the end of a silent fallback chain (container metadata → filesystem mtime →
+    # ``upload_time``) that recorded no provenance, so a value copied from
+    # ``upload_time`` was indistinguishable from one read out of the file. That chain
+    # is gone: the fallbacks are now explicit ``recorded_date_source`` values below.
+    # Rows written before v391 may still hold a laundered value, which is exactly why
+    # v391 does not backfill ``recorded_date`` from this column.
     creation_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
-    )  # Original creation date
+    )  # Original creation date, as the container states it (NULL = the container did not)
     last_modified_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )  # Last modified date
+
+    # --- When the recording actually happened, and how we know (v391, #403 R7) ---
+    #
+    # Distinct from ``upload_time`` (when the bytes arrived) and from ``creation_date``
+    # (what the container claims). This is the resolved answer to "when did this
+    # meeting happen", and it never travels without its source — see
+    # ``app.core.enums.RecordedDateSource``.
+    # No ``index=True``: that would declare a FULL index under the same name the
+    # migration gives a PARTIAL one, which is precisely the ORM/DDL disagreement
+    # ``test_orm_ddl_divergence`` exists to catch. The partial index is declared in
+    # ``__table_args__`` instead, with its predicate.
+    recorded_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    recorded_date_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    recorded_date_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: Every source's observation, winner and losers alike, so a disagreement is
+    #: inspectable instead of buried in whichever branch of the resolver ran first.
+    recorded_date_candidates: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    #: The user set the date by hand. No re-derivation may overwrite a locked row —
+    #: this is what makes "you can correct it" permanent rather than true until the
+    #: next reindex.
+    recorded_date_locked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false"), default=False
+    )
 
     # Device information
     device_make: Mapped[str | None] = mapped_column(String, nullable=True)  # Device manufacturer
@@ -280,6 +332,42 @@ class MediaFile(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
 
+    # Declared here, not only in v391, because a constraint the database enforces and
+    # Python never states is invisible until it fires at runtime — see
+    # ``tests/unit/test_orm_ddl_divergence.py``, whose allowlist is empty by
+    # measurement. The two that carry design rather than hygiene:
+    #
+    #   * ``ck_media_file_recorded_date_provenance`` makes a date with no recorded
+    #     origin a state the database will not hold. The rule is not "remember to set
+    #     the source" — it is that forgetting is rejected.
+    #   * ``ck_media_file_recorded_date_locked_is_manual`` stops a re-derivation from
+    #     relabelling a hand-entered date as machine-derived while leaving it locked.
+    __table_args__ = (
+        CheckConstraint(
+            "recorded_date_source IS NULL OR recorded_date_source IN "
+            "('container', 'filename', 'transcript', 'llm', 'manual', 'none')",
+            name="ck_media_file_recorded_date_source",
+        ),
+        CheckConstraint(
+            "recorded_date IS NULL OR recorded_date_source IS NOT NULL",
+            name="ck_media_file_recorded_date_provenance",
+        ),
+        CheckConstraint(
+            "recorded_date_confidence IS NULL OR "
+            "(recorded_date_confidence >= 0 AND recorded_date_confidence <= 1)",
+            name="ck_media_file_recorded_date_confidence",
+        ),
+        CheckConstraint(
+            "NOT recorded_date_locked OR recorded_date_source = 'manual'",
+            name="ck_media_file_recorded_date_locked_is_manual",
+        ),
+        Index(
+            "ix_media_file_recorded_date",
+            "recorded_date",
+            postgresql_where=text("recorded_date IS NOT NULL"),
+        ),
+    )
+
     # Relationships
     user: Mapped["User"] = relationship(
         "User", back_populates="media_files", foreign_keys=[user_id]
@@ -314,6 +402,16 @@ class MediaFile(Base):
     # Topic extraction and suggestions
     topic_suggestions: Mapped["TopicSuggestion | None"] = relationship(
         "TopicSuggestion", back_populates="media_file", cascade="all, delete-orphan", uselist=False
+    )
+    # Deterministic ingest artifacts (#383 Phase 2): stats, extractive digest, keyphrases.
+    # `passive_deletes` because the FK is ON DELETE CASCADE — without it SQLAlchemy would
+    # SELECT the row (and its digest JSONB) just to DELETE it on every file deletion.
+    facts_row: Mapped["FileFacts | None"] = relationship(
+        "FileFacts",
+        back_populates="media_file",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
 
@@ -351,6 +449,29 @@ class TranscriptSegment(Base):
     redactions: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     # Segment-level toxicity scores (no char span): {"toxic": 0.91, "insult": 0.81, ...}
     toxicity: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+    # UNIQUE (media_file_id, start_time, end_time, md5(text)) — one utterance per
+    # (file, span, content). ``v071`` created it as a real UNIQUE constraint;
+    # ``v353`` replaced it with this functional unique index because btree's
+    # 2704-byte key limit broke on seven-minute monologues. That history is why it
+    # is declarable ONLY as an ``Index`` over a ``text()`` expression, never as a
+    # ``UniqueConstraint``, and why ``app/db/migrations.py``'s v071/v073 detection
+    # arms probe ``pg_constraint`` for it and correctly find nothing.
+    #
+    # ASR never collides on it — one segment per detected utterance, timings
+    # float-distinct. A turn-per-segment corpus collides immediately (two speakers
+    # both saying "Yeah ." over each other get the same span from the reference),
+    # and because it surfaces as ``IntegrityError`` the whole transaction aborts.
+    __table_args__ = (
+        Index(
+            "uq_transcript_segment_content",
+            "media_file_id",
+            "start_time",
+            "end_time",
+            sa_text("md5(text)"),  # sa_text: this class has a column named `text`
+            unique=True,
+        ),
+    )
 
     # Relationships
     media_file: Mapped["MediaFile"] = relationship(
@@ -504,6 +625,14 @@ class Speaker(Base):
         Integer, ForeignKey("speaker_cluster.id", ondelete="SET NULL"), nullable=True
     )
 
+    # v010 baseline. A diarization label is unique per file per owner — every
+    # writer in the diarization path relies on it and none of them could see it.
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "media_file_id", "name", name="speaker_user_id_media_file_id_name_key"
+        ),
+    )
+
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="speakers")
     media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="speakers")
@@ -601,8 +730,14 @@ class FileTag(Base):
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
-    media_file_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("media_file.id"))
-    tag_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("tag.id"))
+    # Both FKs are ``ON DELETE CASCADE`` in the DDL (v010:193-194) and were the
+    # only two of the schema's 103 foreign keys whose ``ondelete`` the ORM did not
+    # mirror: deleting a MediaFile or a Tag already removes these rows in the
+    # database while the ORM believed it had to do the work itself.
+    media_file_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("media_file.id", ondelete="CASCADE")
+    )
+    tag_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("tag.id", ondelete="CASCADE"))
     source: Mapped[str | None] = mapped_column(
         String(50), nullable=True
     )  # "manual" | "auto_ai" | "ai_accepted"
@@ -930,6 +1065,17 @@ class SpeakerMatch(Base):
     )
     updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # v010 baseline. Together these two say a match is stored exactly once, in
+    # canonical order. ``speaker_match_check`` is the auto-named CHECK Postgres
+    # gave the inline ``CHECK (speaker1_id < speaker2_id)`` — a rule every writer
+    # must obey and which was previously discoverable only by triggering it.
+    __table_args__ = (
+        UniqueConstraint(
+            "speaker1_id", "speaker2_id", name="speaker_match_speaker1_id_speaker2_id_key"
+        ),
+        CheckConstraint("speaker1_id < speaker2_id", name="speaker_match_check"),
     )
 
     # Relationships

@@ -12,6 +12,7 @@ from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import CPUPriority
 from app.core.redis import get_redis
+from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,11 @@ def _get_indexed_uuids() -> set[str] | None:
             index=index_name,
             body={
                 "size": 0,
+                # Addendum G4: "is this file indexed?" must mean "does it have
+                # CHUNKS?". Counting any document per file_uuid makes a
+                # digest-only file — what a partially failed rebuild leaves —
+                # look indexed, so auto-repair never fires for it.
+                "query": {"bool": {"filter": [chunk_plane_clause()]}},
                 "aggs": {
                     "file_uuids": {
                         "terms": {
@@ -56,6 +62,33 @@ def _get_indexed_uuids() -> set[str] | None:
     except Exception as e:
         logger.warning(f"Could not check indexed files: {e}")
         return None
+
+
+def _report_embedding_provenance(stats: dict[str, int | bool | str]) -> None:
+    """Log when the index holds vectors from more than one embedding model (#437).
+
+    This is the only **automatic** detector of a mixed vector space, and it is
+    here because this task is the only thing that periodically asks whether the
+    index is what it should be. It cannot be the ordinary write path:
+    ``ensure_chunks_index_exists`` runs on every single indexing call.
+
+    It deliberately does not act. Reindexing is the cure, but the cure is a full
+    re-embed of every user's corpus, and dispatching that from a beat tick on the
+    strength of one aggregation is how a health check becomes an outage. The
+    remedy is ``PUT /search/models/neural/active`` or ``POST /search/models``,
+    which an operator chooses to run.
+
+    Args:
+        stats: The maintenance stats dict, annotated in place.
+    """
+    from app.services.search.embedding_provenance import survey_embedding_models
+
+    survey = survey_embedding_models()
+    stats["embedding_provenance"] = survey.verdict
+    if survey.mixed:
+        logger.error(survey.describe())
+    elif survey.verdict == "partially_unattributed":
+        logger.info(survey.describe())
 
 
 def _find_unindexed_by_user(
@@ -185,6 +218,7 @@ def _run_search_maintenance() -> dict[str, Any]:
                 stats["error"] = "opensearch_query_failed"
                 return stats
             stats["indexed_files"] = len(indexed_uuids)
+            _report_embedding_provenance(stats)
 
             unindexed_by_user = _find_unindexed_by_user(completed_files, indexed_uuids)
             total_unindexed = sum(len(uuids) for uuids in unindexed_by_user.values())

@@ -742,7 +742,7 @@ class _AbbreviationAwareTokenizer:
 def test_sentence_splitter_availability_changes_the_chunk_boundaries(sentence_splitter_state):
     """The two splitters DO disagree — which is why the choice must be latched (#449).
 
-    ``_split_into_sentences`` uses NLTK punkt when it can and a bare regex otherwise, and
+    ``split_into_sentences`` uses NLTK punkt when it can and a bare regex otherwise, and
     the two disagree on abbreviations — punkt keeps ``Dr.`` and ``p.m.`` inside a
     sentence, the regex splits on them. Sentence boundaries drive chunk boundaries, so a
     worker with the punkt corpora and one without produce different documents from the

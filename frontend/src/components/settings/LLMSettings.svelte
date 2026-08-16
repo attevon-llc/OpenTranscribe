@@ -17,6 +17,8 @@
   let loading = false;
   let saving = false;
   let testing = false;
+  /** uuid of the config whose reasoning probe is in flight, else null. */
+  let probingReasoning: string | null = null;
 
   let currentSettings: UserLLMSettings | null = null;
   let supportedProviders: ProviderDefaults[] = [];
@@ -260,6 +262,39 @@
       toastStore.error(`${config.name}: ${errorMsg}`, 8000);
     } finally {
       testing = false;
+    }
+  }
+
+  /**
+   * Measure whether this model honours a "do not reason" request (issue #64).
+   *
+   * Explicitly user-invoked, never automatic: it costs THREE real generations
+   * against the configured endpoint. Putting it in front of a chat turn would
+   * make the first question minutes slow, and running it on a schedule would
+   * dial every configured third-party provider — and bill for it — unprompted.
+   *
+   * The verdict is what decides whether the chat panel offers a reasoning
+   * toggle at all, because a provider accepting the parameter is not evidence
+   * the model obeys it.
+   */
+  async function probeReasoning(config: UserLLMSettings): Promise<void> {
+    probingReasoning = config.uuid;
+    toastStore.info($t('settings.llmProvider.probeReasoningRunning', { name: config.name }), 6000);
+
+    try {
+      const result = await LLMSettingsApi.probeReasoningCapability(config.uuid);
+      const message = $t(`settings.llmProvider.reasoningOffSwitch.${result.off_switch}`);
+
+      if (result.off_switch === 'works') {
+        toastStore.success(`${config.name}: ${message}`, 8000);
+      } else {
+        toastStore.info(`${config.name}: ${message}`, 8000);
+      }
+    } catch (err: unknown) {
+      const errorMsg = getErrorMessage(err, $t('settings.llmProvider.testFailed'));
+      toastStore.error(`${config.name}: ${errorMsg}`, 8000);
+    } finally {
+      probingReasoning = null;
     }
   }
 
@@ -561,6 +596,20 @@
                     <polyline points="1 4 1 10 7 10"/>
                     <polyline points="23 20 23 14 17 14"/>
                     <path d="m20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                  </svg>
+                </button>
+
+                <button
+                  class="test-connection-button"
+                  on:click={() => probeReasoning(config)}
+                  disabled={probingReasoning !== null}
+                  title={$t('settings.llmProvider.probeReasoning')}
+                  data-testid="llm-probe-reasoning"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 18h6"/>
+                    <path d="M10 22h4"/>
+                    <path d="M12 2a7 7 0 0 0-4 12.7V18h8v-3.3A7 7 0 0 0 12 2z"/>
                   </svg>
                 </button>
 

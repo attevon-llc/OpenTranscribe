@@ -202,7 +202,6 @@ _NOT_YET_VERIFIED: dict[str, str] = {
     "/api/custom-vocabulary/all": _UNVERIFIED_REASON,
     "/api/custom-vocabulary/export": _UNVERIFIED_REASON,
     "/api/files/batch-extract": _UNVERIFIED_REASON,
-    "/api/files/search": _UNVERIFIED_REASON,
     "/api/files/supported-formats": _UNVERIFIED_REASON,
     "/api/files/youtube/quota": _UNVERIFIED_REASON,
     "/api/files/waveforms/generate": _UNVERIFIED_REASON,

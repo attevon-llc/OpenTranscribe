@@ -85,6 +85,11 @@ def test_reasoning_streams_before_the_answer(mock_llm_url):
 
     Pins the ordering the frontend's collapsible block depends on: reasoning
     must be distinguishable from — and precede — the final answer text.
+
+    ``chat_template_kwargs`` is what activates thinking, and the mock honours it
+    because a real vLLM does (issue #439): unasked, a Gemma-class model streams
+    its chain-of-thought inline on ``delta.content`` instead. That unasked shape
+    is covered by ``test_llm_reasoning_not_rendered_as_answer.py``.
     """
     response = requests.post(
         f"{mock_llm_url}/chat/completions",
@@ -92,6 +97,7 @@ def test_reasoning_streams_before_the_answer(mock_llm_url):
             "model": "mock-reasoning",
             "messages": [{"role": "user", "content": "explain your thinking"}],
             "stream": True,
+            "chat_template_kwargs": {"enable_thinking": True},
         },
         stream=True,
         timeout=60,

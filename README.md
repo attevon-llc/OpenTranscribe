@@ -105,6 +105,14 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 - **Redaction is honoured** — retrieved excerpts are re-masked before they reach a provider, and masking fails closed
 - **Usage visibility**: `GET /usage/me` shows tokens and estimated cost per model, so you can see what you are spending
 - **Test it without a model**: `./opentr.sh start dev --with-mock-llm` runs an OpenAI-compatible mock so chat works with no GPU, API key, or internet — including scenario models that exercise the real error paths
+- **Chat is the only feature that needs a provider** — search (including semantic search), transcription, diarization and redaction all run on local models. See [Working Without an AI Model](https://docs.opentranscribe.app/docs/user-guide/without-an-ai-model)
+- **How it works, and how we know it works**: the retrieval stack is standard components named explicitly — BM25 + kNN fused by Reciprocal Rank Fusion (all OpenSearch-native), a parent-document digest tier, query routing, and two-stage reranking. What we wrote ourselves is what respects **speaker boundaries**. See [RAG design](https://docs.opentranscribe.app/docs/developer-guide/rag-design-and-validation) and [RAG evaluation](https://docs.opentranscribe.app/docs/developer-guide/rag-evaluation), which records the measured numbers and the ways a retrieval benchmark can quietly mislead you
+
+### 🚫 **No AI Provider? Most of It Still Works**
+- **A first-class deployment, not a degraded one**: leave `LLM_PROVIDER` empty and transcription, diarization, cross-recording speaker matching, redaction, tags, collections, exports, watch sources and analytics all work normally
+- **Semantic search included**: the embedding model runs inside your own OpenSearch container — an embedding model is not a language model, so meaning-based and hybrid search need no provider and no internet
+- **What does need one**: summaries, topic/tag suggestions, LLM speaker-ID hints, and AI Chat
+- **Retroactive**: add a provider later and every existing recording becomes summarizable and chattable immediately — no re-processing
 
 ### 📊 **Analytics & Insights**
 - **Advanced Content Analysis**: Comprehensive speaker analytics including talk time, interruption detection, and turn-taking patterns
@@ -815,7 +823,7 @@ LLM_PROVIDER=ollama                  # Local Ollama server
 - **🔒 Privacy-First**: Local vLLM or Ollama (no data leaves your server)
 - **⚡ Performance**: OpenAI GPT-4o-mini (fastest cloud option)
 - **📱 Small Models**: Even 3B Ollama models can handle hours of content via intelligent sectioning
-- **🚫 No LLM**: Leave `LLM_PROVIDER` empty for transcription-only mode
+- **🚫 No LLM**: Leave `LLM_PROVIDER` empty. Transcription, diarization, redaction and full hybrid **search (keyword + semantic)** all still work — only summaries, topic suggestions, speaker-ID hints and AI Chat need a provider
 
 See [LLM_DEPLOYMENT_OPTIONS.md](LLM_DEPLOYMENT_OPTIONS.md) for detailed setup instructions.
 

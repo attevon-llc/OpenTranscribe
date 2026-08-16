@@ -187,8 +187,14 @@ def parse_group_operation(operation: SCIMPatchOperation) -> tuple[str, Any]:
         if op == "add":
             return "members_add", _member_ids(operation.value)
         if op == "remove":
-            # A bare `remove` on `members` with no value means "empty the group".
-            return "members_remove", _member_ids(operation.value) if operation.value else set()
+            if not operation.value:
+                # A bare `remove` on `members` with no value means "empty the
+                # group". `members_remove` with an empty id set is a no-op
+                # (`scim_group_service.remove_group_members` returns early on
+                # one) so this must go through the replace path instead, which
+                # actually clears every SCIM-owned membership row.
+                return "members_replace", set()
+            return "members_remove", _member_ids(operation.value)
         if op == "replace":
             return "members_replace", _member_ids(operation.value)
         raise bad_request(f"Unsupported PATCH op {operation.op!r} on members")

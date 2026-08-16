@@ -1,0 +1,41 @@
+name: Task / chore
+description: Operational, maintenance, or investigation work that isn't a bug or a new feature
+title: "[TASK] "
+labels: ["task"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Pick every area this task touches. A workflow uses this to apply the matching labels automatically.
+      multiple: true
+      options:
+        - backend
+        - frontend
+        - asr
+        - search
+        - rag-chat
+        - llm-provider
+        - gpu
+        - docker
+        - security
+        - performance
+        - testing
+        - documentation
+        - other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What needs to happen
+      description: Describe the work, and why it isn't a bug fix or a feature request.
+    validations:
+      required: true
+  - type: textarea
+    id: related
+    attributes:
+      label: Related issues
+      description: If this is part of a dependency chain, link the other issues here (e.g. "depends on #461, blocks #464").
+    validations:
+      required: false

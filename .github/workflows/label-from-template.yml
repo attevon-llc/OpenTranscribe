@@ -1,0 +1,79 @@
+name: Label from issue template
+
+# Issue forms only let a template set a single fixed label (bug/enhancement/task).
+# This reads the "Area" dropdown the reporter picked and applies the matching
+# labels from the repo's label bank, so every issue ends up sortable by area/topic
+# without relying on the reporter to know the label names. Issues that bypass the
+# form (e.g. opened via API with no Area section) fall back to `needs-triage`.
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+
+jobs:
+  apply-area-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Map Area dropdown answers to labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+
+            // Issue-form dropdown answers render as a "### Area" heading
+            // followed by a comma-separated list on the next non-empty line.
+            const match = body.match(/###\s*Area\s*\r?\n+([^\n#]+)/i);
+
+            // Every value here must be a real label in the repo's label bank.
+            const bank = [
+              'backend', 'frontend', 'asr', 'search', 'rag-chat',
+              'llm-provider', 'gpu', 'docker', 'security', 'performance',
+              'testing', 'documentation',
+            ];
+
+            const issue = context.payload.issue;
+            const existing = new Set(issue.labels.map(l => l.name));
+
+            if (!match) {
+              if (!bank.some(l => existing.has(l))) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  labels: ['needs-triage'],
+                });
+              }
+              return;
+            }
+
+            const picked = match[1].split(',').map(s => s.trim().toLowerCase());
+            const toAdd = bank.filter(l => picked.includes(l));
+
+            if (toAdd.length === 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['needs-triage'],
+              });
+              return;
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: toAdd,
+            });
+
+            if (existing.has('needs-triage')) {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                name: 'needs-triage',
+              }).catch(() => {});
+            }

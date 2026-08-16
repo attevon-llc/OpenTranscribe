@@ -465,7 +465,16 @@ class AudioExtractionService {
         outputFileName,
       ];
 
-      await this.ffmpeg.exec(ffmpegArgs);
+      // exec() resolves with FFmpeg's exit code rather than rejecting on failure — an
+      // unmappable codec (e.g. wmav2, which getAudioExtension falls back to 'm4a' for)
+      // fails to mux into the target container and would otherwise read back as a
+      // silently empty blob instead of a visible error.
+      const exitCode = await this.ffmpeg.exec(ffmpegArgs);
+      if (exitCode !== 0) {
+        throw new Error(
+          `ffmpeg exited with code ${exitCode} (codec '${audioCodec}' likely unsupported in '.${outputExtension}')`
+        );
+      }
 
       // Read output file
       this.emitProgress(

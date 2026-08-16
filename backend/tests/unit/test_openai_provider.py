@@ -7,47 +7,43 @@ built with ``types.SimpleNamespace`` to mimic the SDK's attribute-style access
 (``getattr(sd, "avg_logprob", None)`` etc.) without depending on the SDK's
 actual pydantic model classes.
 
-What is pinned here, in order:
+What is pinned/verified here, in order:
 
-1. **A real cross-file inconsistency between ``factory.py`` and this module.**
-   ``factory.py``'s ``ASR_PROVIDER_CATALOG["openai"]["models"]`` lists a model
-   entry ``{"id": "gpt-4o-transcribe-diarize", ..., "supports_diarization":
-   True}`` (factory.py L227 for the ``id``, L232 for the
-   ``supports_diarization`` flag). But this module's own module docstring
-   (L7-11) says that model id "was fictional and has been removed," and
-   ``supports_diarization()`` (L47-49) unconditionally returns ``False`` no
-   matter what ``model_name`` the provider was constructed with. The catalog
-   entry is therefore advertising a capability the provider can never deliver
-   for that exact model id — an admin UI reading the catalog would show a
-   "Diarization: yes" badge for a model this provider will silently ignore.
-   ``test_supports_diarization_is_false_even_for_the_catalog_advertised_diarize_model``
-   pins the provider side so a future factory.py edit that changes the catalog
-   without touching the provider is caught immediately, and so a future
-   provider edit that starts branching on ``model_name`` here is a deliberate,
-   visible change to this test rather than a silent capability flip.
+1. **Fixed: ``gpt-4o-transcribe-diarize`` genuinely diarizes now.** This
+   module's docstring used to (wrongly) claim the model id "was fictional and
+   has been removed"; it is real, and ``factory.py``'s catalog entry
+   advertising ``supports_diarization: True`` for it was correct all along —
+   the provider code just never implemented it. Fixed: ``transcribe()`` now
+   requests ``response_format="diarized_json"`` for this model specifically
+   (the only format that returns speaker labels for it — ``verbose_json`` is
+   explicitly rejected), parses each segment's ``speaker`` field
+   (``"Speaker 1"``, ``"Speaker 2"``, ...) through the shared
+   ``normalize_speaker_label``, and ``supports_diarization()`` now returns
+   ``True`` only for this exact model id. Schema verified against OpenAI's
+   public API reference and community bug reports, not a live call (no API
+   key configured here) — worth a real-response smoke test once one is
+   available.
 
-2. **The ``avg_logprob`` -> confidence conversion** (L149-156):
+2. **Fixed: the ``response_format="verbose_json"`` incompatibility.** Per
+   OpenAI's API reference, ``gpt-4o-transcribe``/``gpt-4o-mini-transcribe``
+   reject ``verbose_json`` outright (400 ``invalid_request_error``) — only
+   ``json`` is supported, which has no ``segments``/``avg_logprob``. Fixed:
+   the non-whisper-1, non-diarize branch now requests ``response_format="json"``.
+   This was the practical bug: any real call to ``gpt-4o-transcribe`` would
+   have failed at the SDK/HTTP layer before this module's segment-parsing
+   code ever ran.
+
+3. **The ``avg_logprob`` -> confidence conversion** (whisper-1 only):
    ``confidence = clamp(exp(avg_logprob), 0.0, 1.0)``. Verified against the
    documented ``whisper-1`` ``verbose_json`` segment shape, which exposes
-   ``avg_logprob`` per segment (a <= 0 log-probability).
+   ``avg_logprob`` per segment (a <= 0 log-probability). ``gpt-4o-transcribe``
+   (now correctly requesting the segment-less ``json`` format) never reaches
+   this branch at all in production; it is exercised here in isolation to
+   pin what happens if a segment-shaped response is ever received without an
+   ``avg_logprob`` attribute (``confidence=None``, not a crash or a
+   misleading default).
 
-3. **``gpt-4o-transcribe`` segments carry no ``avg_logprob``.** Per OpenAI's
-   own API reference, ``gpt-4o-transcribe``/``gpt-4o-transcribe-diarize``
-   reject ``response_format="verbose_json"`` entirely (only ``json``/``text``/
-   ``diarized_json`` are accepted) — so in production this module's
-   unconditional ``response_format="verbose_json"`` request (L129) for any
-   non-``whisper-1`` model would raise at the SDK/HTTP layer before any
-   segment is ever parsed, not silently degrade to ``confidence=None``. That
-   is a second, more consequential inconsistency than the one pinned above,
-   but it is out of this file's assigned scope (see the task's item 3, which
-   asks only to pin the segment-parsing behavior once a segment-shaped
-   response *is* received) and is reported separately rather than fixed here,
-   per the "characterization tests only, no production changes" instruction.
-   The test below therefore exercises the parsing logic in isolation, the way
-   L149-156 would behave against a segment object OpenAI's own
-   ``whisper-1``-only ``avg_logprob`` field is absent from.
-
-4. **Language fallback** (L166): ``getattr(resp, "language", None) or
+4. **Language fallback**: ``getattr(resp, "language", None) or
    config.language``. Pinned as today's (possibly misleading) behavior: when
    the SDK response omits ``language`` — which the ``translations`` endpoint's
    response does, since translation output is always English and OpenAI does
@@ -78,34 +74,69 @@ def _provider(model_name: str = "gpt-4o-transcribe") -> OpenAIASRProvider:
     return OpenAIASRProvider(api_key="test-key", model_name=model_name)  # gitleaks:allow
 
 
-# --- 1. factory.py catalog vs. provider capability -------------------------
+# --- 1/2. supports_diarization() + the request response_format per model ---
 
 
-def test_supports_diarization_is_false_even_for_the_catalog_advertised_diarize_model():
-    """factory.py L227/L232 advertises diarization for this exact model id.
-
-    ``ASR_PROVIDER_CATALOG["openai"]["models"]`` contains:
-
-        {"id": "gpt-4o-transcribe-diarize", ..., "supports_diarization": True}
-
-    (factory.py L227 for the id, L232 for the flag). This module's docstring
-    says that id "was fictional and has been removed," and
-    ``supports_diarization()`` never branches on ``model_name`` at all — it is
-    a hardcoded ``return False``. Constructing the provider with the exact
-    catalog model id and confirming ``supports_diarization()`` is still
-    ``False`` proves the catalog entry cannot be trusted for this provider:
-    something reading the catalog (e.g. the admin UI) would show a
-    diarization-capable badge for a model this class can never diarize.
-    """
-    provider = _provider(model_name="gpt-4o-transcribe-diarize")
-    assert provider.supports_diarization() is False
+def test_supports_diarization_is_true_only_for_the_diarize_model():
+    assert _provider("whisper-1").supports_diarization() is False
+    assert _provider("gpt-4o-transcribe").supports_diarization() is False
+    assert _provider("gpt-4o-transcribe-diarize").supports_diarization() is True
 
 
-def test_supports_diarization_is_false_for_every_known_model_name():
-    # Control: the flag is unconditionally False, not just for the fictional
-    # diarize id — whisper-1 and gpt-4o-transcribe never claimed diarization.
-    for model_name in ("whisper-1", "gpt-4o-transcribe", "gpt-4o-transcribe-diarize"):
-        assert _provider(model_name).supports_diarization() is False
+def test_gpt4o_transcribe_requests_json_not_verbose_json(tmp_path):
+    # verbose_json is rejected outright by gpt-4o-transcribe; json is the only
+    # supported format and carries no `segments`.
+    resp = SimpleNamespace(text="hello", language="en")
+    fake_client = _fake_client(transcriptions_return=resp)
+    provider = _provider("gpt-4o-transcribe")
+
+    with _patched_openai(fake_client), _patched_open():
+        provider.transcribe(str(tmp_path / "fake-audio.wav"), ASRConfig(language="en"))
+
+    fake_client.audio.transcriptions.create.assert_called_once()
+    _, kwargs = fake_client.audio.transcriptions.create.call_args
+    assert kwargs["response_format"] == "json"
+    assert kwargs["model"] == "gpt-4o-transcribe"
+
+
+def test_diarize_model_requests_diarized_json_and_parses_speaker_segments(tmp_path):
+    seg_a = SimpleNamespace(start=0.0, end=1.5, text="hi there", speaker="Speaker 1")
+    seg_b = SimpleNamespace(start=1.5, end=3.0, text="hello back", speaker="Speaker 2")
+    resp = SimpleNamespace(text="hi there hello back", language="en", segments=[seg_a, seg_b])
+
+    fake_client = _fake_client(transcriptions_return=resp)
+    provider = _provider("gpt-4o-transcribe-diarize")
+
+    with _patched_openai(fake_client), _patched_open():
+        result = provider.transcribe(str(tmp_path / "fake-audio.wav"), ASRConfig(language="en"))
+
+    fake_client.audio.transcriptions.create.assert_called_once()
+    _, kwargs = fake_client.audio.transcriptions.create.call_args
+    assert kwargs["response_format"] == "diarized_json"
+    assert kwargs["model"] == "gpt-4o-transcribe-diarize"
+
+    assert result.has_speakers is True
+    # "Speaker 1"/"Speaker 2" are 1-indexed per OpenAI's documented schema —
+    # normalize_speaker_label's "speaker N" (space-separated) branch handles it.
+    assert [s.speaker for s in result.segments] == ["SPEAKER_00", "SPEAKER_01"]
+    assert [s.text for s in result.segments] == ["hi there", "hello back"]
+
+
+def test_diarize_model_with_no_speaker_field_has_speakers_false(tmp_path):
+    # A segment-shaped response missing `speaker` entirely (e.g. a
+    # non-diarize model that happened to carry segments) must not crash and
+    # must not fabricate a speaker.
+    segment = SimpleNamespace(start=0.0, end=1.0, text="solo")
+    resp = SimpleNamespace(text="solo", language="en", segments=[segment])
+
+    fake_client = _fake_client(transcriptions_return=resp)
+    provider = _provider("gpt-4o-transcribe-diarize")
+
+    with _patched_openai(fake_client), _patched_open():
+        result = provider.transcribe(str(tmp_path / "fake-audio.wav"), ASRConfig(language="en"))
+
+    assert result.has_speakers is False
+    assert result.segments[0].speaker is None
 
 
 # --- 2. avg_logprob -> confidence clamp -------------------------------------
@@ -149,20 +180,22 @@ def test_confidence_is_clamped_to_one_when_exp_would_exceed_it(tmp_path):
     assert result.segments[0].confidence == 1.0
 
 
-# --- 3. gpt-4o-transcribe segments have no avg_logprob ----------------------
+# --- 3. a segment with no avg_logprob at all --------------------------------
 
 
 def test_confidence_is_none_when_segment_has_no_avg_logprob(tmp_path):
-    # gpt-4o-transcribe verbose_json-shaped segments (per this module's own
-    # docstring) carry no avg_logprob field at all — SimpleNamespace without
-    # the attribute reproduces "attribute genuinely absent", matching
-    # getattr(sd, "avg_logprob", None) returning None rather than a
-    # sentinel/exception.
-    segment = SimpleNamespace(start=0.0, end=2.0, text="no logprob here")
+    # In production gpt-4o-transcribe now requests "json" (fixed above), which
+    # has no `segments` at all — this combination can't happen for real
+    # anymore. Exercised anyway, via the diarize model (whose diarized_json
+    # segments genuinely have no avg_logprob field), to pin that a segment
+    # missing the attribute produces confidence=None rather than a crash or a
+    # misleading default. SimpleNamespace without the attribute reproduces
+    # "attribute genuinely absent", matching getattr(sd, "avg_logprob", None).
+    segment = SimpleNamespace(start=0.0, end=2.0, text="no logprob here", speaker="Speaker 1")
     resp = SimpleNamespace(text="no logprob here", language="en", segments=[segment])
 
     fake_client = _fake_client(transcriptions_return=resp)
-    provider = _provider("gpt-4o-transcribe")
+    provider = _provider("gpt-4o-transcribe-diarize")
 
     with _patched_openai(fake_client), _patched_open():
         result = provider.transcribe(str(tmp_path / "fake-audio.wav"), ASRConfig(language="en"))

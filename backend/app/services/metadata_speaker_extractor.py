@@ -438,8 +438,9 @@ def cross_reference_attributes(
 ) -> list[dict]:
     """Cross-reference metadata hints with voice-predicted attributes.
 
-    Compares name-inferred gender (via gender-guesser library) with
-    audio-predicted gender to produce alignment/conflict indicators.
+    Compares name-inferred gender (via the global-gender-predictor library,
+    built on the WGND 2.0 dataset) with audio-predicted gender to produce
+    alignment/conflict indicators.
 
     Args:
         hints: Speaker hints extracted from metadata.
@@ -462,11 +463,11 @@ def cross_reference_attributes(
         ]
     """
     try:
-        import gender_guesser.detector as gender_detector
+        from global_gender_predictor import GlobalGenderPredictor
 
-        detector = gender_detector.Detector()
+        predictor = GlobalGenderPredictor()
     except ImportError:
-        logger.warning("gender-guesser not installed, skipping cross-reference")
+        logger.warning("global-gender-predictor not installed, skipping cross-reference")
         return []
 
     results = []
@@ -477,12 +478,12 @@ def cross_reference_attributes(
         if not first_name:
             continue
 
-        # Use gender-guesser to infer gender from name
-        name_gender_raw = detector.get_gender(first_name)
+        # Use global-gender-predictor (WGND 2.0 data) to infer gender from name
+        name_gender_raw = predictor.predict_gender(first_name)
 
-        # Map gender-guesser results to our categories
-        # gender-guesser returns: "male", "female", "mostly_male", "mostly_female",
-        # "andy" (androgynous), "unknown"
+        # Map global-gender-predictor results to our categories
+        # global-gender-predictor returns: "Male", "Female", "Unknown"
+        # (below its 0.6 default confidence threshold collapses to "Unknown")
         name_gender = _map_gender_guess(name_gender_raw)
 
         if name_gender == "unknown":
@@ -523,10 +524,12 @@ def cross_reference_attributes(
 
 
 def _map_gender_guess(raw: str) -> str:
-    """Map gender-guesser result to our simplified categories."""
-    if raw in ("male", "mostly_male"):
+    """Map a global-gender-predictor result ("Male"/"Female"/"Unknown") to our
+    simplified categories."""
+    lowered = (raw or "").lower()
+    if lowered == "male":
         return "male"
-    elif raw in ("female", "mostly_female"):
+    elif lowered == "female":
         return "female"
     else:
         return "unknown"

@@ -424,22 +424,18 @@ class TestMapGenderGuess:
     """Test _map_gender_guess mapping."""
 
     def test_male_maps_to_male(self):
-        assert _map_gender_guess("male") == "male"
-
-    def test_mostly_male_maps_to_male(self):
-        assert _map_gender_guess("mostly_male") == "male"
+        assert _map_gender_guess("Male") == "male"
 
     def test_female_maps_to_female(self):
-        assert _map_gender_guess("female") == "female"
-
-    def test_mostly_female_maps_to_female(self):
-        assert _map_gender_guess("mostly_female") == "female"
-
-    def test_andy_maps_to_unknown(self):
-        assert _map_gender_guess("andy") == "unknown"
+        assert _map_gender_guess("Female") == "female"
 
     def test_unknown_maps_to_unknown(self):
-        assert _map_gender_guess("unknown") == "unknown"
+        assert _map_gender_guess("Unknown") == "unknown"
+
+    def test_lowercase_male_maps_to_male(self):
+        """global-gender-predictor always returns title-case, but the mapper
+        should not depend on that."""
+        assert _map_gender_guess("male") == "male"
 
     def test_empty_maps_to_unknown(self):
         assert _map_gender_guess("") == "unknown"
@@ -451,26 +447,26 @@ class TestMapGenderGuess:
 
 
 def _mock_gender_guesser_modules(gender_map: dict) -> dict:
-    """Build a fake sys.modules patch for gender_guesser.
+    """Build a fake sys.modules patch for global_gender_predictor.
 
     cross_reference_attributes does:
-        import gender_guesser.detector as gender_detector
-        detector = gender_detector.Detector()
-    so we need both 'gender_guesser' and 'gender_guesser.detector' in
-    sys.modules, with Detector() returning a mock that uses gender_map.
+        from global_gender_predictor import GlobalGenderPredictor
+        predictor = GlobalGenderPredictor()
+    so we need 'global_gender_predictor' in sys.modules, with
+    GlobalGenderPredictor() returning a mock whose predict_gender() uses
+    gender_map. gender_map values are the raw library return values
+    ("Male"/"Female"/"Unknown", case-sensitive as the real library returns).
     """
-    mock_detector_instance = MagicMock()
-    mock_detector_instance.get_gender.side_effect = lambda name: gender_map.get(name, "unknown")
+    mock_predictor_instance = MagicMock()
+    mock_predictor_instance.predict_gender.side_effect = lambda name: gender_map.get(
+        name, "Unknown"
+    )
 
-    mock_detector_module = MagicMock()
-    mock_detector_module.Detector.return_value = mock_detector_instance
-
-    mock_gender_guesser = MagicMock()
-    mock_gender_guesser.detector = mock_detector_module
+    mock_module = MagicMock()
+    mock_module.GlobalGenderPredictor.return_value = mock_predictor_instance
 
     return {
-        "gender_guesser": mock_gender_guesser,
-        "gender_guesser.detector": mock_detector_module,
+        "global_gender_predictor": mock_module,
     }
 
 
@@ -483,7 +479,7 @@ class TestCrossReferenceAttributes:
         hints = [_make_hint("Jane Doe", role="guest")]
         speaker_attrs = {"SPEAKER_01": {"predicted_gender": "female", "gender_confidence": 0.95}}
 
-        with patch.dict("sys.modules", _mock_gender_guesser_modules({"Jane": "female"})):
+        with patch.dict("sys.modules", _mock_gender_guesser_modules({"Jane": "Female"})):
             results = cross_reference_attributes(hints, speaker_attrs, speaker_segments=[])
 
         matches = [r for r in results if r["alignment"] == "match"]
@@ -496,7 +492,7 @@ class TestCrossReferenceAttributes:
         hints = [_make_hint("Bob Smith", role="guest")]
         speaker_attrs = {"SPEAKER_00": {"predicted_gender": "female", "gender_confidence": 0.80}}
 
-        with patch.dict("sys.modules", _mock_gender_guesser_modules({"Bob": "male"})):
+        with patch.dict("sys.modules", _mock_gender_guesser_modules({"Bob": "Male"})):
             results = cross_reference_attributes(hints, speaker_attrs, speaker_segments=[])
 
         mismatches = [r for r in results if r["alignment"] == "mismatch"]
@@ -504,14 +500,14 @@ class TestCrossReferenceAttributes:
         assert mismatches[0]["hint_name"] == "Bob Smith"
 
     def test_unknown_name_filtered_out(self):
-        """Androgynous/unknown name → entry removed from results (alignment='unknown' filtered)."""
+        """Ambiguous/unknown name → entry removed from results (alignment='unknown' filtered)."""
         hints = [_make_hint("Pat Kim", role="unknown")]
         speaker_attrs = {"SPEAKER_00": {"predicted_gender": "female", "gender_confidence": 0.75}}
 
-        with patch.dict("sys.modules", _mock_gender_guesser_modules({"Pat": "andy"})):
+        with patch.dict("sys.modules", _mock_gender_guesser_modules({"Pat": "Unknown"})):
             results = cross_reference_attributes(hints, speaker_attrs, speaker_segments=[])
 
-        # 'andy' maps to 'unknown', so no results should be returned for Pat Kim
+        # "Unknown" maps to 'unknown', so no results should be returned for Pat Kim
         pat_results = [r for r in results if r["hint_name"] == "Pat Kim"]
         assert len(pat_results) == 0
 
@@ -528,7 +524,7 @@ class TestCrossReferenceAttributes:
 
         with patch.dict(
             "sys.modules",
-            _mock_gender_guesser_modules({"Bob": "male", "Jane": "female"}),
+            _mock_gender_guesser_modules({"Bob": "Male", "Jane": "Female"}),
         ):
             results = cross_reference_attributes(hints, speaker_attrs, speaker_segments=[])
 
@@ -557,20 +553,20 @@ class TestCrossReferenceAttributes:
             for i in range(15)
         }
         # Every first name (Woman0, Woman1, ...) maps to "female"
-        gender_map = {f"Woman{i}": "female" for i in range(15)}
+        gender_map = {f"Woman{i}": "Female" for i in range(15)}
 
         with patch.dict("sys.modules", _mock_gender_guesser_modules(gender_map)):
             results = cross_reference_attributes(hints, speaker_attrs, speaker_segments=[])
 
         assert len(results) <= 10
 
-    def test_gender_guesser_import_error_returns_empty(self):
-        """If gender_guesser is not installed, returns empty list (graceful fallback)."""
+    def test_global_gender_predictor_import_error_returns_empty(self):
+        """If global-gender-predictor is not installed, returns empty list (graceful fallback)."""
         hints = [_make_hint("Jane Doe")]
         speaker_attrs = {"SPEAKER_00": {"predicted_gender": "female"}}
 
         # Setting the module to None in sys.modules causes ImportError on `import`
-        with patch.dict("sys.modules", {"gender_guesser": None, "gender_guesser.detector": None}):
+        with patch.dict("sys.modules", {"global_gender_predictor": None}):
             results = cross_reference_attributes(hints, speaker_attrs, speaker_segments=[])
 
         assert results == []
@@ -580,7 +576,7 @@ class TestCrossReferenceAttributes:
         hints = [_make_hint("Alice Walker", role="guest")]
         speaker_attrs = {"SPEAKER_00": {"predicted_gender": "female", "gender_confidence": 0.92}}
 
-        with patch.dict("sys.modules", _mock_gender_guesser_modules({"Alice": "female"})):
+        with patch.dict("sys.modules", _mock_gender_guesser_modules({"Alice": "Female"})):
             results = cross_reference_attributes(hints, speaker_attrs, speaker_segments=[])
 
         matches = [r for r in results if r["alignment"] == "match"]

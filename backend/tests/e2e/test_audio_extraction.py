@@ -1,19 +1,23 @@
-"""E2E comparison: self-compiled FFmpeg.wasm core vs. Mediabunny (issue #473).
+"""E2E validation: the self-compiled, LGPL-only FFmpeg.wasm core (issue #473).
 
-Drives a real browser against the Vite dev server and runs BOTH client-side extraction
-services (`audioExtractionService.ts`, the shipped path; `mediabunnyExtractionService.ts`, an
-evaluated alternative not wired into the app) against the same fixture matrix, to give the
-`.legal/` licensing decision empirical backing rather than an assertion from vendor docs.
+Drives a real browser against the Vite dev server and runs the client-side extraction
+service (`audioExtractionService.ts`) against a container/codec matrix, using the actual
+compiled `/ffmpeg/ffmpeg-core.{js,wasm}` the app serves — not a mocked/standalone harness.
+
+(Mediabunny was evaluated as an alternative during #473 but is not shipped: real testing
+found it has no AVI/FLV/WMV support and depends on the WebCodecs API, gaps the self-compiled
+FFmpeg core doesn't have. It was deliberately not kept in the tree or documented as an
+available option — see `.legal/02-licensing-ip/MASTER-LICENSE-INVENTORY.md` §8.)
 
 Requirements:
 - Dev environment running: ./opentr.sh start dev (frontend serving the real TS source so
-  dynamic `import()` of the two services resolves)
+  dynamic `import()` of the service resolves)
 - ffmpeg on the host (media fixtures are generated, never downloaded — same convention as
   test_upload.py)
 
 Run:
-    pytest backend/tests/e2e/test_audio_extraction_comparison.py -v
-    DISPLAY=:11 pytest backend/tests/e2e/test_audio_extraction_comparison.py -v --headed
+    pytest backend/tests/e2e/test_audio_extraction.py -v
+    DISPLAY=:11 pytest backend/tests/e2e/test_audio_extraction.py -v --headed
 """
 
 import base64
@@ -61,16 +65,11 @@ STANDALONE_AUDIO = [
     ("sample.flac", "audio/flac", ["-c:a", "flac"]),
 ]
 
-# Mediabunny ships no AVI/FLV/WMV demuxer/muxer (only ISOBMFF/mov, Matroska/WebM, Ogg, MP3, WAV,
-# ADTS, FLAC, MPEG-TS, HLS) — this is the documented gap from .legal/ that this test proves
-# empirically rather than asserting from vendor docs.
-MEDIABUNNY_UNSUPPORTED = {"sample_pcm.avi", "sample_aac.flv", "sample_wmv.wmv"}
-
 # wmav2 is not in getAudioExtension's codec map (falls back to 'm4a'), and no FFmpeg build —
 # minimal or full — can stream-copy a wmav2 stream into an mp4/ipod-muxer container: this is a
 # pre-existing app-level gap unrelated to issue #473's build, out of scope to fix here. What IS
-# in scope is that it fails loudly instead of silently producing an empty blob (the bug this
-# suite's first real run against a live browser caught: exec()'s exit code was never checked).
+# in scope is that it fails loudly instead of silently producing an empty blob (a real bug this
+# suite's first run against a live browser caught: exec()'s exit code was never checked).
 FFMPEG_KNOWN_UNMAPPED_CODEC = {"sample_wmv.wmv"}
 
 
@@ -101,30 +100,21 @@ def _generate(filename: str, video_args: list[str], audio_args: list[str]) -> Pa
     return out
 
 
-def _extract_via(
-    page: Page, module_path: str, export_name: str, filename: str, mime: str, data_b64: str
-) -> dict:
-    """Load a fixture into the page as a File, then run one extraction service against it."""
+def _extract(page: Page, filename: str, mime: str, data_b64: str) -> dict:
+    """Load a fixture into the page as a File, then run the extraction service against it."""
     result: dict = page.evaluate(
-        """async ({ modulePath, exportName, filename, mime, dataB64 }) => {
-            const mod = await import(/* @vite-ignore */ modulePath);
-            const service = mod[exportName];
+        """async ({ filename, mime, dataB64 }) => {
+            const mod = await import('/src/lib/services/audioExtractionService.ts');
             const bytes = Uint8Array.from(atob(dataB64), (c) => c.charCodeAt(0));
             const file = new File([bytes], filename, { type: mime });
             try {
-                const result = await service.extractAudio(file);
+                const result = await mod.audioExtractionService.extractAudio(file);
                 return { ok: true, size: result.blob.size, filename: result.filename };
             } catch (err) {
                 return { ok: false, error: err instanceof Error ? err.message : String(err) };
             }
         }""",
-        {
-            "modulePath": module_path,
-            "exportName": export_name,
-            "filename": filename,
-            "mime": mime,
-            "dataB64": data_b64,
-        },
+        {"filename": filename, "mime": mime, "dataB64": data_b64},
     )
     return result
 
@@ -136,18 +126,12 @@ def extraction_fixture(request) -> tuple[Path, str]:
 
 
 def test_ffmpeg_extraction_succeeds_on_every_fixture(authenticated_page: Page, extraction_fixture):
-    """The self-compiled FFmpeg.wasm core must handle every container/codec in the matrix."""
+    """The self-compiled FFmpeg.wasm core must handle every container/codec in the matrix,
+    loading the real /ffmpeg/ffmpeg-core.{js,wasm} the app serves — not a standalone harness."""
     path, mime = extraction_fixture
     data_b64 = base64.b64encode(path.read_bytes()).decode()
 
-    result = _extract_via(
-        authenticated_page,
-        "/src/lib/services/audioExtractionService.ts",
-        "audioExtractionService",
-        path.name,
-        mime,
-        data_b64,
-    )
+    result = _extract(authenticated_page, path.name, mime, data_b64)
 
     if path.name in FFMPEG_KNOWN_UNMAPPED_CODEC:
         assert not result["ok"], (
@@ -160,31 +144,3 @@ def test_ffmpeg_extraction_succeeds_on_every_fixture(authenticated_page: Page, e
     else:
         assert result["ok"], f"FFmpeg extraction failed for {path.name}: {result.get('error')}"
         assert result["size"] > 0, f"FFmpeg extraction produced an empty blob for {path.name}"
-
-
-def test_mediabunny_extraction_matches_documented_format_support(
-    authenticated_page: Page, extraction_fixture
-):
-    """Mediabunny must succeed on its documented formats and fail on AVI/FLV/WMV — the
-    empirical evidence for the coverage gap documented in .legal/ and
-    mediabunnyExtractionService.ts's module comment."""
-    path, mime = extraction_fixture
-    data_b64 = base64.b64encode(path.read_bytes()).decode()
-
-    result = _extract_via(
-        authenticated_page,
-        "/src/lib/services/mediabunnyExtractionService.ts",
-        "mediabunnyExtractionService",
-        path.name,
-        mime,
-        data_b64,
-    )
-
-    if path.name in MEDIABUNNY_UNSUPPORTED:
-        assert not result["ok"], (
-            f"Mediabunny unexpectedly succeeded on {path.name} — the documented AVI/FLV/WMV "
-            "gap may have closed; update .legal/ and mediabunnyExtractionService.ts's comment."
-        )
-    else:
-        assert result["ok"], f"Mediabunny extraction failed for {path.name}: {result.get('error')}"
-        assert result["size"] > 0, f"Mediabunny extraction produced an empty blob for {path.name}"

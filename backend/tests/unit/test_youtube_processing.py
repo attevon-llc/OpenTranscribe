@@ -14,18 +14,15 @@ because each one is easy to get backwards from the docstrings/comments alone:
    from the docstring's three-tier description, which doesn't say what happens on a
    *partial* override.
 
-2. **``self.retry()``'s raised exception is swallowed by the task's own outer
-   ``except Exception`` (L467), so Celery's retry machinery never runs it.**
-   ``raise self.retry(countdown=countdown, exc=e) from None`` at L439 sits inside the
-   inner ``except`` (L404), which sits inside the outer ``try`` (L193) whose matching
-   ``except Exception as e:`` is L467 — and ``celery.exceptions.Retry`` **is** an
-   ``Exception`` subclass. So the exception raised to signal "please reschedule me"
-   never reaches Celery's task-execution trampoline: it is caught right here, in the
-   same function, and turned into an ordinary ``{"status": "error", ...}`` return.
-   ``test_the_retriable_error_path_never_actually_retries`` is a characterization test
-   for that: it proves ``process_media_url_sync`` is called exactly once and the task
-   returns an error result instead of Celery scheduling a second attempt — despite the
-   manual backoff math being computed correctly.
+2. **``self.retry()``'s raised exception used to be swallowed by the task's own outer
+   ``except Exception`` — fixed.** ``celery.exceptions.Retry`` **is** an ``Exception``
+   subclass, and the outer handler around the whole function body used to catch it
+   along with everything else, turning "please reschedule me" into an ordinary
+   ``{"status": "error", ...}`` return with Celery's tracer never seeing the retry
+   request. Fixed by re-raising ``Retry`` explicitly before the generic handler.
+   ``test_the_retriable_error_path_actually_retries_up_to_the_cap`` is the regression
+   test: it proves the download service is called 4 times (1 initial + 3 retries) and
+   the task only reports a permanent failure once the retry cap is genuinely exhausted.
 
 3. **``_dispatch_video_task`` never validates ``media_file.source_url``.** It does
    ``video_url = str(media_file.source_url)`` unconditionally (L609), so a placeholder
@@ -255,20 +252,21 @@ def test_the_manual_countdown_formula_is_what_self_retry_actually_receives(
     )
 
 
-def test_the_retriable_error_path_never_actually_retries(
+def test_the_retriable_error_path_actually_retries_up_to_the_cap(
     monkeypatch, db_session, normal_user, yt_url_seams
 ):
-    """CHARACTERIZATION — pins current WRONG behaviour. DEFECT: youtube_processing.py L404-L439/L467.
+    """Regression test for a fixed defect: ``self.retry()``'s exception used to be
+    swallowed by this task's own outer ``except Exception`` (L466-472 before the fix),
+    so ``celery.exceptions.Retry`` — an ``Exception`` subclass — never escaped this
+    function and Celery's tracer never saw the retry request. The fix re-raises
+    ``Retry`` explicitly before the generic handler.
 
-    ``self.retry()`` raises ``celery.exceptions.Retry`` (confirmed: it subclasses
-    ``Exception``). That raise happens inside the inner ``except`` (L404-L439), which
-    is nested inside the outer ``try`` (L193) whose ``except Exception as e:`` is at
-    L467 — so the Retry exception never escapes this function. Celery's tracer
-    (``Task.apply``'s ``isinstance(retval, Retry)`` check) never sees it; it only sees
-    whatever this function returns, which is an ordinary error dict from the outer
-    handler. The result: a "retriable" error is attempted exactly once, then reported
-    as a permanent failure, even though ``YOUTUBE_AUTO_RETRY_ENABLED`` is on and
-    retries remain.
+    Under eager execution (this test's ``.apply()``), Celery's own retry loop now
+    genuinely re-invokes the task on each ``Retry`` it sees: 1 initial attempt + 3
+    retries (``max_retries=3``) = 4 total calls to the download service, ending on the
+    real terminal path with the ORIGINAL error message — not the
+    ``"Retry in Ns: ..."`` string that leaking through the outer handler used to
+    produce.
     """
     media_file = _make_media_file(db_session, normal_user)
     fake_service = _FakeMediaDownloadService(exc=RuntimeError("Connection timeout"))
@@ -278,15 +276,12 @@ def test_the_retriable_error_path_never_actually_retries(
         args=("https://youtu.be/abc123", normal_user.id, str(media_file.uuid)),
     ).get()
 
-    assert len(fake_service.calls) == 1, "no second attempt was ever made"
-    assert result["status"] == "error"
-    assert result["file_id"] == media_file.id
-    # The message is str(Retry(...)) ("Retry in 30s: RuntimeError('Connection timeout')"),
-    # not a clean re-run and not the terminal-path's bare original message (compare
-    # against test_a_terminal_attempt_at_the_retry_cap_writes_the_original_error_and_stops
-    # below) — direct evidence this result came from the outer handler catching the
-    # Retry exception, not from Celery ever rescheduling the task.
-    assert result["message"] == "Retry in 30s: RuntimeError('Connection timeout')"
+    assert len(fake_service.calls) == 4, "expected 1 initial attempt + 3 retries"
+    assert result == {
+        "status": "error",
+        "message": "Connection timeout",
+        "file_id": media_file.id,
+    }
 
 
 def test_a_terminal_attempt_at_the_retry_cap_writes_the_original_error_and_stops(

@@ -227,12 +227,18 @@ def _await_stable_backend(backend_url: str, *, required: int = 3, budget: float 
                 streak += 1
                 if streak >= required:
                     return ""
+                # Kept (issue #431): polling requests.get("/health") directly for the next
+                # consecutive-success sample — no Playwright page exists in this fixture, so no
+                # locator can be waited on.
                 time.sleep(1.0)
                 continue
             last = f"/health returned {status}"
         except requests.RequestException as exc:
             last = f"/health unreachable ({type(exc).__name__})"
         streak = 0
+        # Kept (issue #431): backoff before the next requests.get("/health") retry after a
+        # failed/unhealthy probe — no Playwright page exists in this fixture, so no locator can
+        # be waited on.
         time.sleep(2.0)
     return last
 
@@ -492,11 +498,10 @@ class AuthHelper:
 
         # Submit
         self.page.click("button:has-text('Create Account')")
-        self.page.wait_for_timeout(2000)
 
-        # Check for success - redirected away from register page
         try:
-            return "register" not in self.page.url.lower()
+            self.page.wait_for_url(lambda url: "register" not in url.lower(), timeout=10000)
+            return True
         except Exception:
             return False
 
@@ -547,6 +552,8 @@ class APIHelper:
             if response.status_code == 200:
                 self._token = cast(str, result["access_token"])
                 return result
+            # Kept (issue #431): raw requests.post retry against rate limiting — no Playwright
+            # page in this helper, no locator to wait on.
             time.sleep(5 * (attempt + 1))
         return result
 

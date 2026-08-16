@@ -555,6 +555,13 @@ class ASRProviderFactory:
                     # Credential decryption failures raise ValueError, caught below,
                     # which falls back to env/local exactly as before.
                     return ASRProviderFactory.create_from_db_config(cfg)
+                else:
+                    logger.warning(
+                        "ASR config id=%s for user %d not found or not accessible — "
+                        "falling back to env/local",
+                        setting.setting_value,
+                        user_id,
+                    )
             except Exception as exc:
                 logger.warning(
                     "Failed to load ASR config for user %d: %s — falling back to env/local",

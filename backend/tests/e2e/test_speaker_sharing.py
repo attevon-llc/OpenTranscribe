@@ -38,21 +38,26 @@ def logged_in_page(browser: Browser) -> Page:
     # Login via /login page explicitly
     page.goto(f"{FRONTEND_URL}/login", timeout=15000)
     page.wait_for_load_state("domcontentloaded")
-    page.wait_for_timeout(1000)
+    page.wait_for_load_state("networkidle")
 
     # Only login if on the login page (not already authenticated)
     if "/login" in page.url and page.locator("#email").is_visible():
         page.fill("#email", TEST_ADMIN_EMAIL)
         page.fill("#password", TEST_ADMIN_PASSWORD)
         page.click("button[type=submit]")
-        page.wait_for_timeout(4000)
+        # `networkidle` alone resolves as soon as the login POST settles, before the
+        # client-side redirect off /login lands — the assertions below then observe a
+        # 401'd, still-on-/login page. Wait for the actual navigation first, matching
+        # the `wait_for_url` idiom AuthHelper.login/register use in conftest.py.
+        page.wait_for_url(lambda url: "/login" not in url, timeout=15000)
+        page.wait_for_load_state("networkidle")
 
     page.screenshot(path=os.path.join(SCREENSHOT_DIR, "01-after-login.png"))
 
     # Go to speakers
     page.goto(f"{FRONTEND_URL}/speakers", timeout=30000)
     page.wait_for_load_state("domcontentloaded")
-    page.wait_for_timeout(3000)
+    page.wait_for_load_state("networkidle")
     page.screenshot(path=os.path.join(SCREENSHOT_DIR, "02-speakers-page.png"))
 
     yield page

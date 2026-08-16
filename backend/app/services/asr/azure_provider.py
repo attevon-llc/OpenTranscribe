@@ -15,7 +15,11 @@ Recognizer selection
 
 Both paths share the same threading-event termination pattern: the ``done``
 event is set by ``session_stopped`` / ``transcribing_stopped`` or by the
-``canceled`` callback so the recognizer always terminates.
+``canceled`` callback so the recognizer always terminates. ``done.wait(timeout=7200)``'s
+return value is checked: ``False`` means the wait genuinely timed out with no
+completion signal ever received, and is raised as a sanitized ``RuntimeError``
+(via the shared ``except Exception`` handler) instead of being treated as normal
+completion and silently returning a truncated transcript.
 
 Timestamp units
 ---------------
@@ -224,7 +228,11 @@ class AzureASRProvider(ASRProvider):
 
         try:
             recognizer.start_continuous_recognition()
-            done.wait(timeout=7200)
+            if not done.wait(timeout=7200):
+                raise TimeoutError(
+                    "Azure Speech recognition timed out after 7200s with no "
+                    "session_stopped/canceled signal"
+                )
             recognizer.stop_continuous_recognition()
         except Exception as exc:
             sanitized = self._sanitize_error(str(exc), self._api_key)
@@ -324,7 +332,11 @@ class AzureASRProvider(ASRProvider):
 
         try:
             transcriber.start_transcribing_async().get()
-            done.wait(timeout=7200)
+            if not done.wait(timeout=7200):
+                raise TimeoutError(
+                    "Azure ConversationTranscriber timed out after 7200s with no "
+                    "session_stopped/canceled signal"
+                )
             transcriber.stop_transcribing_async().get()
         except Exception as exc:
             sanitized = self._sanitize_error(str(exc), self._api_key)

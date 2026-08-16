@@ -750,6 +750,8 @@ def _wait_for_status(
             return status
         if status == "error" and target_status != "error":
             return status  # Don't keep waiting if it errored
+        # Kept (issue #431): pure API polling via requests — this helper takes no Playwright
+        # page, so no locator exists to wait on; the sleep is the poll interval itself.
         time.sleep(3)
     return _get_file_status(backend_url, token, file_uuid)
 
@@ -783,6 +785,8 @@ class TestEndToEndProcessing:
         assert results[0]["success"] is True, f"Reprocess failed: {results[0]}"
 
         # Status should change from completed
+        # Kept (issue #431): verifying backend status transition directly via the API on
+        # purpose — this test takes no page fixture, so there is no UI signal to observe.
         time.sleep(2)
         new_status = _get_file_status(backend_url, api_token, file_uuid)
         assert new_status in ("pending", "processing", "queued"), (

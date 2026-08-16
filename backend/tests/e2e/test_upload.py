@@ -198,6 +198,9 @@ class TestFullUploadFlow:
                         file_uuid = item["uuid"]
                         break
                 if file_uuid is None:
+                    # Kept (issue #431): verifying backend persistence directly via a polling
+                    # API request rather than the gallery UI — no page locator reflects this
+                    # state.
                     time.sleep(1)
 
             assert file_uuid, f"Uploaded file '{filename}' never appeared in /api/files"
@@ -234,6 +237,8 @@ class TestFullUploadFlow:
             status = api_helper.delete(f"/api/files/{file_uuid}")
             if status in (200, 204):
                 return
+            # Kept (issue #431): static helper polling the delete API on 409 (still
+            # processing) — takes no page, no locator to wait on.
             time.sleep(3)
         status = api_helper.delete(f"/api/files/{file_uuid}/force")
         assert status in (200, 204), f"Cleanup delete failed with {status}"

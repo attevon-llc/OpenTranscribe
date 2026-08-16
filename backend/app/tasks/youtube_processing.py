@@ -12,6 +12,8 @@ import logging
 import uuid as uuid_lib
 from typing import TypedDict
 
+from celery.exceptions import Retry
+
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import DEFAULT_AUDIO_QUALITY
@@ -464,6 +466,13 @@ def process_youtube_url_task(
                     "file_id": file_id if file_id is not None else 0,
                 }
 
+    except Retry:
+        # self.retry() above raises celery.exceptions.Retry to ask the worker
+        # to reschedule this task. It is an Exception subclass, so it must be
+        # re-raised here before the generic handler below — otherwise this
+        # outer except swallows it, converts it into an ordinary error
+        # response, and Celery's tracer never sees the retry request at all.
+        raise
     except Exception as e:
         logger.error(f"Unexpected error in YouTube processing task: {e}")
 

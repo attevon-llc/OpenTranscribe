@@ -238,8 +238,8 @@ class TestMyFeature:
         page.fill("#input", "value")
         page.click("button")
 
-        page.wait_for_timeout(2000)
-
+        # expect() polls until the assertion passes (or times out) — no fixed
+        # wait needed before it.
         expect(page.locator("#result")).to_be_visible()
 ```
 
@@ -265,8 +265,9 @@ def test_async_operation(self, page: Page, base_url: str):
     # Wait for specific element
     page.wait_for_selector("#async-content", timeout=30000)
 
-    # Or wait with explicit timeout
-    page.wait_for_timeout(2000)
+    # Or, preferred: let expect() poll for the state you actually care about
+    # instead of a fixed wait_for_timeout()
+    expect(page.locator("#async-content")).to_have_text("Ready")
 ```
 
 ## Test Credentials

@@ -39,7 +39,7 @@ def deduplicate_segments(
         segments: List of segment dicts with 'start', 'end', 'text' keys.
                   May also have 'speaker', 'speaker_id', 'confidence', etc.
         overlap_threshold: Fraction of a segment's duration that must overlap
-                          with another to be considered contained (default 0.8)
+                          with another to be considered contained (default 0.6)
 
     Returns:
         Deduplicated list of segments, sorted by start time.
@@ -66,13 +66,57 @@ def deduplicate_segments(
     # Mark segments to keep (start with all True)
     keep = np.ones(n, dtype=bool)
 
-    # Phase 1: Remove coarse segments that are fully covered by finer ones
-    # A "coarse" segment contains multiple "fine" segments within its time range
-    # Strategy: for each segment, check if there are shorter segments that
-    # collectively cover its time range. If so, mark the coarse one for removal.
+    _remove_contained_segments(starts, ends, durations, overlap_threshold, keep)
+    _remove_exact_duplicates(sorted_segments, durations, keep)
+    _remove_similar_overlapping_segments(sorted_segments, starts, ends, keep)
 
-    # Build coverage efficiently using a sweep-line approach
-    # For each segment, find all segments that start at the same time or within it
+    result = [sorted_segments[i] for i in range(n) if keep[i]]
+
+    # Re-sort by start time
+    result.sort(key=lambda s: s["start"])
+
+    elapsed = time.perf_counter() - start_time
+    removed = n - len(result)
+    logger.info(
+        f"TIMING: segment_dedup completed in {elapsed:.3f}s - "
+        f"removed {removed}/{n} segments ({removed / n * 100:.1f}%), "
+        f"kept {len(result)} segments"
+    )
+
+    return result
+
+
+def _remove_contained_segments(
+    starts: np.ndarray,
+    ends: np.ndarray,
+    durations: np.ndarray,
+    overlap_threshold: float,
+    keep: np.ndarray,
+) -> None:
+    """Phase 1: remove coarse segments that are fully covered by finer ones.
+
+    A "coarse" segment contains multiple "fine" segments within its time
+    range. For each segment, checks whether shorter segments collectively
+    cover its time range; if so, marks the coarse one for removal.
+
+    Coverage is computed against a fixed snapshot of the original segment
+    membership (all-True, since this is the first phase to remove anything),
+    not the live ``keep`` array. Without this, a candidate already marked for
+    removal earlier in the loop would be silently excluded from counting
+    toward a *later* segment's coverage, even though it still geometrically
+    overlaps that later segment — making the result depend on iteration
+    order.
+
+    Args:
+        starts: Segment start times, sorted by start then duration descending.
+        ends: Segment end times, in the same order as ``starts``.
+        durations: Segment durations (``ends - starts``), same order.
+        overlap_threshold: Minimum coverage fraction to remove a segment.
+        keep: Boolean keep/remove mask, modified in place.
+    """
+    n = len(starts)
+    original_keep = keep.copy()
+
     for i in range(n):
         if not keep[i]:
             continue
@@ -86,12 +130,11 @@ def deduplicate_segments(
             continue
 
         # Find segments that are contained within this segment's time range
-        # Using vectorized comparison
         contained_mask = (
             (starts >= seg_start - 0.05)
             & (ends <= seg_end + 0.05)
             & (durations < seg_dur * 0.95)  # Must be meaningfully shorter
-            & keep  # Only consider segments we're keeping
+            & original_keep  # Original membership, not the live-mutating array
             & (np.arange(n) != i)  # Not self
         )
 
@@ -115,72 +158,108 @@ def deduplicate_segments(
 
         if coverage >= overlap_threshold:
             # The fine-grained segments cover most of this coarse segment
-            # Remove the coarse segment
             keep[i] = False
 
-    # Phase 2: Handle remaining exact text duplicates
-    # After removing coarse segments, check for consecutive segments with
-    # identical text (from Whisper's non-deterministic output)
+
+def _remove_exact_duplicates(
+    sorted_segments: list[dict],
+    durations: np.ndarray,
+    keep: np.ndarray,
+) -> None:
+    """Phase 2: remove exact text duplicates among kept segments.
+
+    Checks each kept segment against every OTHER still-kept segment for
+    identical text (from Whisper's non-deterministic output) — not just the
+    segment immediately before it, or a duplicate separated by an unrelated
+    segment would never be caught. Segment counts here are in the hundreds
+    per file at most (bounded by ``DEFAULT_RECORDING_MAX_DURATION``), so a
+    full pairwise scan over the already-reduced kept set is cheap and
+    simpler than a windowed heuristic.
+
+    Args:
+        sorted_segments: Segment dicts, sorted by start then duration descending.
+        durations: Segment durations, same order as ``sorted_segments``.
+        keep: Boolean keep/remove mask, modified in place.
+    """
     kept_indices = np.where(keep)[0]
     for idx in range(1, len(kept_indices)):
         i = kept_indices[idx]
-        j = kept_indices[idx - 1]
-        if sorted_segments[i]["text"].strip() == sorted_segments[j]["text"].strip():
+        if not keep[i]:
+            continue
+        text_i = sorted_segments[i]["text"].strip()
+
+        for prev_idx in range(idx):
+            j = kept_indices[prev_idx]
+            if not keep[j]:
+                continue
+            if text_i != sorted_segments[j]["text"].strip():
+                continue
+
             # Keep the one with better timing (more precise start/end)
             dur_i = durations[i]
             dur_j = durations[j]
             # Keep shorter duration (more precise) or first occurrence
             if dur_i >= dur_j:
                 keep[i] = False
+                break  # i is gone; no need to compare it further
             else:
                 keep[j] = False
 
-    # Phase 3: Remove time-overlapping segments with similar text
-    # Handles cases like "He looks jacked" [20.7-22.1] vs
-    # "He looks jacked, right?" [21.5-22.5] where text substantially overlaps
+
+def _remove_similar_overlapping_segments(
+    sorted_segments: list[dict],
+    starts: np.ndarray,
+    ends: np.ndarray,
+    keep: np.ndarray,
+) -> None:
+    """Phase 3: remove time-overlapping segments with similar text.
+
+    Handles cases like "He looks jacked" [20.7-22.1] vs "He looks jacked,
+    right?" [21.5-22.5] where text substantially overlaps. As in Phase 2,
+    compares each kept segment against every OTHER still-kept segment (not
+    just its immediate predecessor), gated by a real time-overlap check.
+
+    Args:
+        sorted_segments: Segment dicts, sorted by start then duration descending.
+        starts: Segment start times, same order as ``sorted_segments``.
+        ends: Segment end times, same order as ``sorted_segments``.
+        keep: Boolean keep/remove mask, modified in place.
+    """
     kept_indices = np.where(keep)[0]
     for idx in range(1, len(kept_indices)):
         i = kept_indices[idx]
-        j = kept_indices[idx - 1]
-
-        if not keep[i] or not keep[j]:
+        if not keep[i]:
             continue
 
-        # Check for time overlap
-        time_overlap = min(ends[j], ends[i]) - max(starts[j], starts[i])
-        if time_overlap <= 0:
-            continue
+        words_i: set[str] | None = None
 
-        # Check text similarity (word overlap ratio)
-        words_j = set(sorted_segments[j]["text"].lower().split())
-        words_i = set(sorted_segments[i]["text"].lower().split())
-        if not words_j or not words_i:
-            continue
+        for prev_idx in range(idx):
+            j = kept_indices[prev_idx]
+            if not keep[j]:
+                continue
 
-        word_overlap = len(words_j & words_i) / max(len(words_j | words_i), 1)
+            # Check for time overlap
+            time_overlap = min(ends[j], ends[i]) - max(starts[j], starts[i])
+            if time_overlap <= 0:
+                continue
 
-        if word_overlap >= 0.5:
-            # Substantial text overlap + time overlap = duplicate
-            # Keep the segment with more text (more complete version)
-            if len(sorted_segments[i]["text"]) >= len(sorted_segments[j]["text"]):
-                keep[j] = False
-            else:
-                keep[i] = False
+            # Check text similarity (word overlap ratio)
+            words_j = set(sorted_segments[j]["text"].lower().split())
+            if words_i is None:
+                words_i = set(sorted_segments[i]["text"].lower().split())
+            if not words_j or not words_i:
+                continue
 
-    result = [sorted_segments[i] for i in range(n) if keep[i]]
+            word_overlap = len(words_j & words_i) / max(len(words_j | words_i), 1)
 
-    # Re-sort by start time
-    result.sort(key=lambda s: s["start"])
-
-    elapsed = time.perf_counter() - start_time
-    removed = n - len(result)
-    logger.info(
-        f"TIMING: segment_dedup completed in {elapsed:.3f}s - "
-        f"removed {removed}/{n} segments ({removed / n * 100:.1f}%), "
-        f"kept {len(result)} segments"
-    )
-
-    return result
+            if word_overlap >= 0.5:
+                # Substantial text overlap + time overlap = duplicate
+                # Keep the segment with more text (more complete version)
+                if len(sorted_segments[i]["text"]) >= len(sorted_segments[j]["text"]):
+                    keep[j] = False
+                else:
+                    keep[i] = False
+                    break  # i is gone; no need to compare it further
 
 
 def _compute_coverage(

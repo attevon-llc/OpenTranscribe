@@ -21,8 +21,8 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   code that still names that index purges legacy documents, in `file_cleanup_service.py`
   and `tasks/opensearch_integrity_task.py`.)
 - **Speakers** — `speaker_*_service.py`, `profile_embedding_service.py`,
-  `smart_speaker_suggestion_service.py`, `optimized_embedding_service.py`,
-  `embedding_mode_service.py`, `metadata_speaker_extractor.py`.
+  `smart_speaker_suggestion_service.py`, `embedding_mode_service.py`,
+  `metadata_speaker_extractor.py`.
 - **Providers** — `asr/` and `diarization/`: `base.py` + `types.py` + `factory.py` + one file
   per vendor. Add a provider by adding a module and registering it in the factory; never
   branch on provider name at a call site.

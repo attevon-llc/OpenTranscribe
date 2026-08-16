@@ -69,8 +69,9 @@ def _open_tags_from_organize(page: Page) -> None:
     a file. The toolbar button covers the no-selection case.
     """
     page.click(".organize-btn")
-    page.wait_for_timeout(300)
-    page.locator(".dropdown-item", has_text="Tags").first.click()
+    tags_item = page.locator(".dropdown-item", has_text="Tags").first
+    expect(tags_item).to_be_visible(timeout=5000)
+    tags_item.click()
 
 
 def _open_manager(page: Page) -> None:
@@ -157,7 +158,7 @@ class TestTagManagerRoute:
         page.goto(base_url)
         page.wait_for_selector(".gallery-action-buttons", timeout=30000)
         _open_manager(page)
-        page.wait_for_timeout(1000)
+        expect(page.locator(".list-skeleton")).to_have_count(0, timeout=10000)
 
         page.close()
         context.close()
@@ -179,7 +180,6 @@ class TestOwnershipScope:
         _reload_tags(tags_page)
 
         tags_page.get_by_label("Tag ownership").select_option("mine")
-        tags_page.wait_for_timeout(750)
 
         # A tag this account just created is its own, so narrowing to "mine"
         # must not drop it — the failure mode when the scope predicate is
@@ -192,14 +192,13 @@ class TestOwnershipScope:
         _reload_tags(tags_page)
 
         tags_page.get_by_label("Tag ownership").select_option("system")
-        tags_page.wait_for_timeout(750)
 
         expect(_row(tags_page, name)).to_have_count(0)
 
     def test_seeded_defaults_are_system_tags(self, tags_page: Page):
         """The bootstrap vocabulary is the system tier, and says so in the UI."""
         tags_page.get_by_label("Tag ownership").select_option("system")
-        tags_page.wait_for_timeout(750)
+        expect(tags_page.locator(".list-skeleton")).to_have_count(0, timeout=10000)
 
         rows = _tag_rows(tags_page)
         if rows.count() == 0:
@@ -216,12 +215,11 @@ class TestTagCreation:
 
         tags_page.get_by_label("New tag").fill(name)
         tags_page.get_by_role("button", name="Add", exact=True).click()
-        tags_page.wait_for_timeout(1500)
+        expect(_row(tags_page, name)).to_be_visible(timeout=10000)
 
         assert any(t["name"] == name for t in tag_api.get("/api/tags")), (
             f"{name} was not created through the manager"
         )
-        expect(_row(tags_page, name)).to_be_visible()
 
     def test_creating_an_existing_name_resolves_instead_of_duplicating(
         self, tags_page: Page, tag_api
@@ -234,7 +232,7 @@ class TestTagCreation:
         # Same name, different case — must land on the existing row.
         tags_page.get_by_label("New tag").fill(name.upper())
         tags_page.get_by_role("button", name="Add", exact=True).click()
-        tags_page.wait_for_timeout(1500)
+        expect(_row(tags_page, name)).to_have_count(1, timeout=10000)
 
         matches = [t for t in tag_api.get("/api/tags") if t["name"].lower() == name.lower()]
         assert len(matches) == 1, f"expected one row, got {len(matches)}"
@@ -260,7 +258,7 @@ class TestTagMutations:
         tags_page.get_by_role("button", name="Rename", exact=True).click()
         tags_page.get_by_label("Tag name").fill(renamed)
         tags_page.get_by_role("button", name="Rename", exact=True).click()
-        tags_page.wait_for_timeout(1500)
+        expect(_row(tags_page, renamed)).to_be_visible(timeout=10000)
 
         after = {t["uuid"]: t["name"] for t in tag_api.get("/api/tags")}
         assert after.get(created["uuid"]) == renamed
@@ -276,10 +274,10 @@ class TestTagMutations:
         # Delete goes through the app's shared ConfirmationModal, which carries
         # both counts — confirming without that appearing would mean the
         # confirm step had been skipped.
-        tags_page.wait_for_timeout(1000)
         confirm = tags_page.get_by_role("button", name="Delete", exact=True).last
+        expect(confirm).to_be_visible(timeout=5000)
         confirm.click()
-        tags_page.wait_for_timeout(1500)
+        expect(_row(tags_page, name)).to_have_count(0, timeout=10000)
 
         remaining = {t["uuid"] for t in tag_api.get("/api/tags")}
         assert created["uuid"] not in remaining
@@ -292,7 +290,12 @@ class TestTagMutations:
 
         self._select(tags_page, name)
         tags_page.get_by_role("button", name="Share with everyone").click()
-        tags_page.wait_for_timeout(1500)
+        # A successful promote clears the selection as part of its mutate()
+        # cycle (same as rename/delete/merge), so the detail pane reverts to
+        # the "select a tag" prompt rather than ever showing "Shared" here —
+        # that copy only appears when *re-selecting* an already-shared tag
+        # (see test_promote_control_absent_for_an_already_shared_tag).
+        expect(tags_page.locator(".select-prompt")).to_be_visible(timeout=10000)
 
         after = {t["uuid"]: t for t in tag_api.get("/api/tags")}
         assert after[created["uuid"]]["ownership"] == "system"
@@ -320,7 +323,6 @@ class TestTagManagerThemes:
         _reload_tags(tags_page)
 
         tags_page.evaluate("(t) => document.documentElement.setAttribute('data-theme', t)", theme)
-        tags_page.wait_for_timeout(400)
 
         expect(tags_page.locator(".tags-manager")).to_be_visible()
         expect(tags_page.locator(".list-pane")).to_be_visible()
@@ -355,7 +357,7 @@ class TestGalleryBulkTagEntry:
         selector = page.locator(".file-selector").first
         selector.wait_for(state="visible", timeout=10000)
         selector.click()
-        page.wait_for_timeout(400)
+        expect(page.locator(".organize-btn")).to_contain_text("(1)", timeout=5000)
         return True
 
     def test_tags_button_opens_the_manager_with_nothing_selected(self, gallery_page: Page):
@@ -389,7 +391,7 @@ class TestGalleryBulkTagEntry:
         _open_tags_from_organize(gallery_page)
         gallery_page.get_by_label("Tag name").fill(name)
         gallery_page.get_by_role("button", name="Add tag").click()
-        gallery_page.wait_for_timeout(2500)
+        expect(gallery_page.locator(".result")).to_be_visible(timeout=10000)
 
         applied = [t for t in tag_api.get("/api/tags") if t["name"] == name]
         assert applied, f"{name} never reached the backend"
@@ -405,7 +407,6 @@ class TestTagManagerTools:
         _reload_tags(tags_page)
 
         tags_page.get_by_label("Search tags").fill(name)
-        tags_page.wait_for_timeout(500)
 
         # Exactly the searched tag: a substring nobody else shares.
         expect(_tag_rows(tags_page)).to_have_count(1)
@@ -424,11 +425,9 @@ class TestTagManagerTools:
         assert before > 0, "the tag we just created must be listed before searching"
 
         tags_page.get_by_label("Search tags").fill("zzz-matches-nothing")
-        tags_page.wait_for_timeout(400)
         expect(_tag_rows(tags_page)).to_have_count(0)
 
         tags_page.get_by_title("Clear search").click()
-        tags_page.wait_for_timeout(400)
         expect(_tag_rows(tags_page)).to_have_count(before)
 
     def test_sorting_by_name_reorders_without_refetching(self, tags_page: Page, tag_api):
@@ -438,8 +437,9 @@ class TestTagManagerTools:
         first_by_usage = _tag_rows(tags_page).first.inner_text()
         # Scoped to the modal: the gallery behind it has its own "Sort by"
         # control, and an unscoped label match hits both.
-        tags_page.locator(".tags-manager").locator(".sort-select").select_option("name")
-        tags_page.wait_for_timeout(400)
+        sort_select = tags_page.locator(".tags-manager").locator(".sort-select")
+        sort_select.select_option("name")
+        expect(sort_select).to_have_value("name")
         first_by_name = _tag_rows(tags_page).first.inner_text()
 
         # Sorting is client-side over the loaded list, so the count cannot move.
@@ -456,9 +456,8 @@ class TestTagFileList:
 
         _row(tags_page, name).first.click()
         tags_page.wait_for_selector(".detail-pane", timeout=10000)
-        tags_page.wait_for_timeout(800)
 
-        expect(tags_page.locator(".detail-pane")).to_contain_text("No files")
+        expect(tags_page.locator(".detail-pane")).to_contain_text("No files", timeout=10000)
 
     def test_a_used_tag_lists_its_files(self, tags_page: Page, tag_api):
         """A seeded tag that real media carries must name that media."""
@@ -469,9 +468,8 @@ class TestTagFileList:
 
         _row(tags_page, used[0]["name"]).first.click()
         tags_page.wait_for_selector(".detail-pane", timeout=10000)
-        tags_page.wait_for_timeout(1200)
 
-        expect(tags_page.locator(".touches-list")).to_be_visible()
+        expect(tags_page.locator(".touches-list")).to_be_visible(timeout=10000)
 
 
 class TestTagSharing:
@@ -485,9 +483,8 @@ class TestTagSharing:
         _row(tags_page, name).first.click()
         tags_page.wait_for_selector(".detail-pane", timeout=10000)
         tags_page.get_by_role("button", name="Share…").click()
-        tags_page.wait_for_timeout(800)
 
-        expect(tags_page.locator(".tag-share")).to_be_visible()
+        expect(tags_page.locator(".tag-share")).to_be_visible(timeout=10000)
 
     def test_a_new_tag_is_shared_with_nobody(self, tags_page: Page, tag_api):
         name = _unique_tag_name()

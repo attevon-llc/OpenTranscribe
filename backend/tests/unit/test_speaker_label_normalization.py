@@ -138,3 +138,28 @@ def test_diarization_sanitize_matches_asr():
     assert DeepgramProvider(api_key="k")._sanitize_error(msg, "k") == (
         LocalDiarizationProvider()._sanitize_error(msg, "k")
     )
+
+
+# ── Unrecognized-label fallback must be stable across PYTHONHASHSEED ─────────────
+#
+# normalize_speaker_label's fallback branch used to be `abs(hash(label_str)) % 100`.
+# Python salts str hashing per process unless PYTHONHASHSEED is fixed, so the SAME
+# unrecognized label could map to a DIFFERENT SPEAKER_XX index in different Celery
+# worker processes -- silent speaker misattribution, not just a cosmetic wobble.
+# Fixed by hashing with hashlib.sha256 instead, which is deterministic regardless
+# of the interpreter's hash-randomization seed.
+
+
+def test_unrecognized_label_fallback_is_stable_across_process_hash_seeds(
+    run_in_clean_process,
+):
+    code = (
+        "from app.services.asr.base import normalize_speaker_label\n"
+        "print(normalize_speaker_label('some-vendor-specific-label'))\n"
+    )
+    out_seed_0 = run_in_clean_process(code, PYTHONHASHSEED="0")
+    out_seed_42 = run_in_clean_process(code, PYTHONHASHSEED="42")
+    out_seed_random = run_in_clean_process(code, PYTHONHASHSEED="random")
+
+    assert out_seed_0 == out_seed_42 == out_seed_random
+    assert out_seed_0.startswith("SPEAKER_")

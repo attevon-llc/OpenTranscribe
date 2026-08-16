@@ -66,6 +66,14 @@ class AssemblyAIProvider(ASRProvider):
                     ),
                     ms,
                 )
+            if not (200 <= resp.status_code < 300):
+                return (
+                    False,
+                    self._sanitize_error(
+                        f"AssemblyAI connection failed ({resp.status_code})", self._api_key
+                    ),
+                    ms,
+                )
             return True, "AssemblyAI connection successful", ms
         except Exception as e:
             ms = (time.time() - start) * 1000

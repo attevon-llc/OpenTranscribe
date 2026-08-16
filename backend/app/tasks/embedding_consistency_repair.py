@@ -13,12 +13,16 @@ Functions:
 - _check_repair_completion: Finalize when all batches are done
 """
 
+from __future__ import annotations
+
 import contextlib
 import json
 import logging
 import time
 from typing import Any
 from typing import Literal
+
+import redis
 
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_EMBEDDING_CONSISTENCY_COMPLETE
@@ -32,6 +36,12 @@ from app.tasks.speaker_embedding_consistency import _REDIS_PROGRESS_KEY
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
+
+#: Below this L2 norm, a mean/aggregated embedding is treated as degenerate
+#: (embeddings that cancel out) rather than normalized and written. A raw
+#: zero (or near-zero) vector written to OpenSearch produces meaningless
+#: cosine-similarity scores for every future search against that speaker.
+_ZERO_NORM_EPSILON = 1e-8
 
 
 # ---------------------------------------------------------------------------
@@ -74,15 +84,24 @@ def _v3_result_writer(
 
         if len(embs) == 1:
             aggregated = embs[0]
-            norm = np.linalg.norm(aggregated)
-            if norm > 0:
-                aggregated = aggregated / norm
         else:
             stacked = np.vstack(embs)
             aggregated = np.mean(stacked, axis=0)
-            norm = np.linalg.norm(aggregated)
-            if norm > 0:
-                aggregated = aggregated / norm
+        norm = np.linalg.norm(aggregated)
+        if norm <= _ZERO_NORM_EPSILON:
+            logger.warning(
+                "Skipping write for speaker %s (uuid=%s) in file %s: aggregated "
+                "embedding from %d segment(s) has zero/near-zero norm (%.2e) — "
+                "embeddings cancelled out. Not writing a degenerate vector to "
+                "OpenSearch; retry in a future repair run.",
+                speaker.id,
+                speaker.uuid,
+                prepared.file_uuid,
+                len(embs),
+                norm,
+            )
+            continue
+        aggregated = aggregated / norm
 
         # Write to concrete v3 index, not the alias
         result = add_speaker_embedding(
@@ -129,15 +148,24 @@ def _v4_result_writer(
 
         if len(embs) == 1:
             aggregated = embs[0]
-            norm = np.linalg.norm(aggregated)
-            if norm > 0:
-                aggregated = aggregated / norm
         else:
             stacked = np.vstack(embs)
             aggregated = np.mean(stacked, axis=0)
-            norm = np.linalg.norm(aggregated)
-            if norm > 0:
-                aggregated = aggregated / norm
+        norm = np.linalg.norm(aggregated)
+        if norm <= _ZERO_NORM_EPSILON:
+            logger.warning(
+                "Skipping write for speaker %s (uuid=%s) in file %s: aggregated "
+                "embedding from %d segment(s) has zero/near-zero norm (%.2e) — "
+                "embeddings cancelled out. Not writing a degenerate vector to "
+                "OpenSearch; retry in a future repair run.",
+                speaker.id,
+                speaker.uuid,
+                prepared.file_uuid,
+                len(embs),
+                norm,
+            )
+            continue
+        aggregated = aggregated / norm
 
         result = add_speaker_embedding_v4(
             speaker_id=speaker.id,
@@ -169,7 +197,12 @@ def _update_repair_progress(
     """Atomically update repair progress in Redis + emit via ProgressTracker.
 
     Uses Redis WATCH/MULTI for optimistic locking to prevent lost updates
-    when multiple GPU batch workers complete concurrently.
+    when multiple GPU batch workers complete concurrently. Only
+    ``redis.WatchError`` (raised when another writer touched
+    ``_REDIS_PROGRESS_KEY`` between ``watch()`` and ``execute()``) is retried;
+    any other exception (e.g. a ``json.JSONDecodeError`` from corrupted
+    stored state) propagates immediately instead of being silently retried
+    and then dropped by the fallback branch below.
     """
     from app.services.progress_tracker import ProgressTracker
     from app.services.progress_tracker import emit_progress_notification
@@ -205,7 +238,9 @@ def _update_repair_progress(
             pipe.set(_REDIS_PROGRESS_KEY, json.dumps(progress), ex=_LOCK_TTL)
             pipe.execute()
             break  # success
-        except Exception:  # noqa: S112  # nosec B112 — intentional retry on Redis WatchError
+        except redis.WatchError:
+            # Another writer touched _REDIS_PROGRESS_KEY between watch() and
+            # execute() -- retry the whole optimistic-lock round-trip.
             continue
     else:
         # All retries exhausted; read current state for notification

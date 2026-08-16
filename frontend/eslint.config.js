@@ -16,7 +16,21 @@ import svelteConfig from './svelte.config.js';
  */
 export default tseslint.config(
   {
-    ignores: ['build/', '.svelte-kit/', 'dist/', 'node_modules/', 'static/', 'scripts/'],
+    ignores: [
+      'build/',
+      '.svelte-kit/',
+      'dist/',
+      'node_modules/',
+      'static/',
+      'scripts/',
+      // Generated build output, vendored third-party sources, and binary test fixtures
+      // (issue #473) — not our code. test/fixtures/ specifically because ts_aac.ts is an
+      // MPEG transport stream, not TypeScript — eslint's parser chokes on the extension clash.
+      'ffmpeg-wasm-build/dist/',
+      'ffmpeg-wasm-build/test/node_modules/',
+      'ffmpeg-wasm-build/test/fixtures/',
+      'ffmpeg-wasm-build/src/',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

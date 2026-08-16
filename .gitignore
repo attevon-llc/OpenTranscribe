@@ -294,8 +294,11 @@ pipeline_debug/
 frontend/public/fonts/
 frontend/static/fonts/
 
-# FFmpeg WebAssembly files (downloaded during build)
+# FFmpeg WebAssembly files (compiled during build — see frontend/ffmpeg-wasm-build/)
 frontend/static/ffmpeg/
+frontend/ffmpeg-wasm-build/dist/
+frontend/ffmpeg-wasm-build/test/node_modules/
+frontend/ffmpeg-wasm-build/test/package-lock.json
 
 # Private project management files
 GITHUB_OPTIMIZATION_TASKS.md

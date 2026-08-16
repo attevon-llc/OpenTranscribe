@@ -4,9 +4,16 @@ dist/
 node_modules/
 package-lock.json
 static/fonts/
+static/ffmpeg/
 src/lib/i18n/locales/
 coverage/
 .bundle-stats/
 .madgerc
 *.min.js
 *.min.css
+
+# Generated build output, vendored third-party sources, and binary test fixtures (issue #473)
+ffmpeg-wasm-build/dist/
+ffmpeg-wasm-build/test/node_modules/
+ffmpeg-wasm-build/test/fixtures/
+ffmpeg-wasm-build/src/

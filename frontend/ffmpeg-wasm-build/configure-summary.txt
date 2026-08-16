@@ -1,0 +1,25 @@
+License: LGPL version 2.1 or later
+
+config.h license macros:
+#define CONFIG_GPL 0
+#define CONFIG_NONFREE 0
+#define CONFIG_VERSION3 0
+#define CONFIG_GPLV3 0
+
+gpl/nonfree flags passed to configure (must be 0):
+0
+
+Enabled demuxers:
+AAC ASF AVI FLAC FLV MATROSKA MOV MP3 MPEGTS OGG WAV
+Enabled muxers:
+FLAC IPOD MOV MP3 NULL OGG WAV
+Enabled parsers:
+AAC AC3 FLAC MPEGAUDIO OPUS VORBIS
+Enabled bsfs:
+AAC_ADTSTOASC EXTRACT_EXTRADATA VP9_SUPERFRAME
+Enabled protocols:
+FILE PIPE
+Encoders enabled (must be 0): 0
+Decoders enabled (must be 1: native AAC only, for probing — see comment above):
+AAC
+Filters enabled (must be 0): 0

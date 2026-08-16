@@ -82,8 +82,12 @@ already-downloaded data (TXT/SRT/VTT/CSV export).
 - **Anything in `static/` is unhashed** and nginx caches `*.js`/`*.css`/images for a year. `app.html`
   busts `/theme.js` with a `?v=` content digest (`%sveltekit.env.PUBLIC_THEME_VERSION%`, computed in
   `vite.config.ts`); a new unhashed asset needs the same treatment. `static/fonts/` and
-  `static/ffmpeg/` are gitignored and fetched by the `prebuild` scripts — a clean checkout must
-  still produce a complete image.
+  `static/ffmpeg/` are gitignored and populated by the `prebuild` scripts (`download-fonts.js`,
+  `build-ffmpeg.js`) — a clean checkout must still produce a complete image. `static/ffmpeg/` is
+  no longer fetched from a CDN: `build-ffmpeg.js` compiles a minimal, LGPL-2.1+-only FFmpeg.wasm
+  core via `ffmpeg-wasm-build/` (issue #473 — the published `@ffmpeg/core` is GPL 2+, not just
+  license-ambiguous). `Dockerfile.prod` compiles the same core as its own build stage, so prod
+  images ship fully self-contained with no CDN dependency at all.
 - **Build identity**: `__APP_VERSION__` / `__BUILD_TIME__` are `define`d in `vite.config.ts` (and
   mirrored in `vitest.config.ts`). The About dialog compares `__APP_VERSION__` against the
   backend's `/health` version so a stale cached tab is visible rather than silent.

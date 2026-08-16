@@ -254,8 +254,12 @@ class AudioExtractionService {
       await this.ffmpeg.writeFile(tempFileName, await fetchFile(file));
 
       // Run ffmpeg to read metadata (very fast, doesn't process the whole file)
-      // Use -c copy to avoid decoding, just read container metadata
-      await this.ffmpeg.exec(['-i', tempFileName, '-c', 'copy', '-f', 'null', '-']);
+      // Use -c copy to avoid decoding, just read container metadata. -vn drops the video
+      // stream from the copy: only audio-stream/container metadata is parsed below, video
+      // stream info is never read, and our minimal LGPL-only ffmpeg-core (issue #473) has
+      // no video codec parsers compiled in — the `null` muxer needs a parser to validate
+      // *any* stream it copies, video included, even though it discards the output.
+      await this.ffmpeg.exec(['-i', tempFileName, '-vn', '-c', 'copy', '-f', 'null', '-']);
 
       // Clean up
       await this.ffmpeg.deleteFile(tempFileName);
@@ -461,7 +465,16 @@ class AudioExtractionService {
         outputFileName,
       ];
 
-      await this.ffmpeg.exec(ffmpegArgs);
+      // exec() resolves with FFmpeg's exit code rather than rejecting on failure — an
+      // unmappable codec (e.g. wmav2, which getAudioExtension falls back to 'm4a' for)
+      // fails to mux into the target container and would otherwise read back as a
+      // silently empty blob instead of a visible error.
+      const exitCode = await this.ffmpeg.exec(ffmpegArgs);
+      if (exitCode !== 0) {
+        throw new Error(
+          `ffmpeg exited with code ${exitCode} (codec '${audioCodec}' likely unsupported in '.${outputExtension}')`
+        );
+      }
 
       // Read output file
       this.emitProgress(

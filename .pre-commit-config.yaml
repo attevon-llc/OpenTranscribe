@@ -76,6 +76,12 @@ repos:
     hooks:
       - id: prettier
         files: ^frontend/
+        # ffmpeg-wasm-build/ (issue #473): generated build output, vendored third-party
+        # sources, and binary test fixtures (test/fixtures/ts_aac.ts is an MPEG transport
+        # stream, not TypeScript — its .ts extension makes pre-commit misclassify it as a
+        # prettier `ts` file regardless of .prettierignore, which only applies when prettier
+        # resolves ignores itself, not to files pre-commit passes explicitly).
+        exclude: ^frontend/ffmpeg-wasm-build/(dist|src|test/(fixtures|node_modules))/
         types_or: [javascript, jsx, ts, tsx, json, yaml, html, css, scss, markdown]
         args: [--write, --ignore-unknown]
 

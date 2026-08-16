@@ -1,3 +1,52 @@
+# syntax=docker/dockerfile-upstream:master-labs
+#
+# --- Minimal, LGPL-2.1+-only FFmpeg.wasm core (issue #473) -----------------------------
+# Baked into the image at build time so prod never fetches a codec binary from a CDN.
+# Kept in sync by hand with ffmpeg-wasm-build/Dockerfile (that copy is the standalone
+# entry point for local iteration/testing — see ffmpeg-wasm-build/PROVENANCE.md and
+# ffmpeg-wasm-build/test/run-matrix.mjs — this copy is what actually ships). Any change to
+# the enabled demuxers/muxers/parsers/bsfs must be made in both places.
+FROM emscripten/emsdk:3.1.40 AS emsdk-base
+ENV INSTALL_DIR=/opt
+ENV FFMPEG_VERSION=n5.1.4
+ENV CFLAGS="-I$INSTALL_DIR/include $CFLAGS"
+ENV CXXFLAGS="$CFLAGS"
+ENV LDFLAGS="-L$INSTALL_DIR/lib $LDFLAGS $CFLAGS"
+ENV EM_PKG_CONFIG_PATH=$EM_PKG_CONFIG_PATH:$INSTALL_DIR/lib/pkgconfig:/emsdk/upstream/emscripten/system/lib/pkgconfig
+ENV EM_TOOLCHAIN_FILE=$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
+ENV PKG_CONFIG_PATH=$PKG_CONFIG_PATH:$EM_PKG_CONFIG_PATH
+ENV FFMPEG_ST=1
+RUN apt-get update && \
+      apt-get install -y pkg-config autoconf automake libtool ragel
+
+FROM emsdk-base AS ffmpeg-base
+ADD https://github.com/FFmpeg/FFmpeg.git#$FFMPEG_VERSION /src
+
+# audioExtractionService.ts only ever runs `-c copy` (stream copy — no decode/encode/
+# filter), so this needs zero external codec libraries and zero --enable-gpl/--enable-
+# nonfree, unlike the published @ffmpeg/core (built with --enable-gpl --enable-libx264
+# etc). `null` muxer and `aac` decoder are both required for real cases, not scope creep —
+# see the matching comment in ffmpeg-wasm-build/Dockerfile for why.
+FROM ffmpeg-base AS ffmpeg-builder
+COPY ffmpeg-wasm-build/build-scripts/ffmpeg.sh /src/build.sh
+RUN bash -x /src/build.sh \
+      --disable-everything \
+      --enable-protocol=file,pipe \
+      --enable-demuxer=mov,matroska,avi,flv,mpegts,asf,ogg,wav,mp3,aac,flac \
+      --enable-muxer=ipod,mp3,ogg,wav,flac,null \
+      --enable-parser=aac,mpegaudio,vorbis,opus,flac \
+      --enable-bsf=aac_adtstoasc,extract_extradata \
+      --enable-decoder=aac
+
+FROM ffmpeg-builder AS ffmpeg-wasm-builder
+COPY ffmpeg-wasm-build/src/bind /src/src/bind
+COPY ffmpeg-wasm-build/src/fftools /src/src/fftools
+COPY ffmpeg-wasm-build/build-scripts/ffmpeg-wasm.sh /src/build.sh
+RUN mkdir -p /src/dist/esm && bash -x /src/build.sh \
+      -sEXPORT_ES6 \
+      -o dist/esm/ffmpeg-core.js
+# --- end FFmpeg.wasm core -----------------------------------------------------------
+
 # Build stage
 FROM node:26-alpine AS build
 
@@ -16,14 +65,18 @@ COPY package.json package-lock.json ./
 # Install dependencies
 RUN npm ci
 
-# Create static directory for fonts
-RUN mkdir -p static/fonts
+# Create static directories for fonts and the self-compiled ffmpeg.wasm core
+RUN mkdir -p static/fonts static/ffmpeg
 
 # Copy application code
 COPY . .
 
 # Ensure the fonts directory has the correct permissions
 RUN chmod -R 755 static/fonts
+
+# Self-compiled core replaces download-ffmpeg.js's CDN fetch — no unpkg dependency in prod.
+COPY --from=ffmpeg-wasm-builder /src/dist/esm/ffmpeg-core.js /src/dist/esm/ffmpeg-core.wasm static/ffmpeg/
+RUN chmod -R 755 static/ffmpeg
 
 # Build the application
 RUN npm run build

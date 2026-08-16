@@ -1,0 +1,5 @@
+{
+  "name": "ffmpeg-wasm-minimal-test",
+  "private": true,
+  "type": "module"
+}

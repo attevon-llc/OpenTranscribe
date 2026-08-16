@@ -470,6 +470,16 @@ subsystem, and put new subsystem detail **there**, not in this file.
 
 ## Conventions
 
+- **`gh issue create` bypasses issue-form validation** — the required "Area" dropdown in
+  `.github/ISSUE_TEMPLATE/{bug_report,feature_request,task}.yml` only gets enforced by the GitHub
+  web UI, not the API/CLI. When creating an issue with `gh issue create`, always pass `--label`
+  with a type label (`bug` | `enhancement` | `task` | `documentation`) plus every applicable area
+  label from the bank: `backend`, `frontend`, `asr`, `search`, `rag-chat`, `llm-provider`, `gpu`,
+  `docker`, `security`, `performance`, `testing`. Check `gh label list` for the current bank
+  before inventing a new one — five topic labels (`asr`/`search`/`rag-chat`/`llm-provider`/`gpu`)
+  already exist for grouping the ASR/RAG/search issue clusters. An issue with none of these gets
+  auto-tagged `needs-triage` by `.github/workflows/label-from-template.yml` — don't rely on that
+  as the normal path, it's the fallback for issues that skip the form.
 - **Docker compose layering**: base `docker-compose.yml` + auto-loaded `docker-compose.override.yml` (dev) OR explicit `-f` flags for prod / nginx / pki / offline / gpu-scale / local. Mixing dev + prod requires explicit flags (override is NOT auto-loaded then).
 - Always `docker compose` (with space), never the legacy `docker-compose`.
 - Conventional commits: `<type>(<scope>): <summary>`.

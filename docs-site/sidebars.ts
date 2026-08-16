@@ -133,6 +133,7 @@ const sidebars: SidebarsConfig = {
         'developer-guide/contributing',
         'developer-guide/testing',
         'developer-guide/releasing',
+        'developer-guide/ffmpeg-wasm-build',
       ],
     },
     'faq',

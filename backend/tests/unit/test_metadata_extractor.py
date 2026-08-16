@@ -2,9 +2,10 @@
 
 This module turns raw ExifTool/ffprobe output into the fields the API and chat's
 recorded-date feature treat as ground truth (``MediaFile.creation_date``,
-``AudioFormat``, etc.). It has real defects, and the point of these tests is to pin
-what it does TODAY — including the wrong parts — so a future fix has to touch the test,
-not silently drift the behaviour underneath the fix.
+``AudioFormat``, etc.). Several real defects remain, and the point of most of these
+tests is to pin what it does TODAY — including the wrong parts — so a future fix has
+to touch the test, not silently drift the behaviour underneath the fix. Item 6 below
+is the exception: it pins a FIX (the ``AudioFormat`` call-order bug), not an open defect.
 
 What is pinned here, in order:
 
@@ -35,18 +36,20 @@ What is pinned here, in order:
    field on a ``ValueError``** rather than aborting the whole scan. A malformed
    ``CreateDate`` must not prevent a valid ``DateTimeOriginal`` later in the
    candidate list from being used.
-6. **Open defect in ``_map_ffprobe_format``/``_map_ffprobe_audio_stream``:
-   ``AudioFormat`` is set from the CONTAINER's ``format_long_name`` (e.g. "QuickTime
-   / MOV") before the audio stream's actual codec name is considered.** The audio
-   stream mapper's guard, ``if not out.get("AudioFormat")``, is checked only after
-   the format mapper already populated the key with the container string via
-   ``setdefault`` — so in the realistic order these two are always called in
-   (``extract_media_metadata_from_url``: format first, then streams), the guard is
-   always false and the real codec name (e.g. "aac") never overwrites the container
-   long-name. ``test_map_ffprobe_audio_format_is_shadowed_by_container_long_name``
-   asserts today's WRONG output on purpose. Once fixed, ``AudioFormat`` should be
-   the audio stream's ``codec_name`` when a stream is present, not the container's
-   ``format_long_name``.
+6. **Fixed defect in ``_map_ffprobe_format``/``_map_ffprobe_audio_stream``:
+   ``AudioFormat`` now ends up as the audio stream's actual codec name (e.g. "aac"),
+   not the container's ``format_long_name`` (e.g. "QuickTime / MOV").** The bug was
+   call order in ``extract_media_metadata_from_url``: the format mapper ran first
+   and populated ``AudioFormat`` via ``setdefault`` from the container string, so
+   the audio-stream mapper's own guard (``if not out.get("AudioFormat")``) was
+   always false by the time it ran and the real codec name could never win. The fix
+   reorders that call site — stream-level mapping now runs before format-level
+   mapping — so the codec name claims the key first and the format mapper's
+   ``setdefault`` then only fills the gap when no audio stream was present.
+   ``test_map_ffprobe_audio_format_uses_the_real_codec_name`` exercises the real
+   call order and asserts the fixed output; the second test in that block is a
+   control proving the container long-name fallback still works for audio-less
+   containers.
 
 These are pure-function/pure-dict tests — no subprocess, no DB session. A lightweight
 stand-in object with plain settable attributes stands in for the SQLAlchemy
@@ -233,21 +236,18 @@ def test_valid_create_date_wins_without_reaching_later_fields() -> None:
     )
 
 
-# --- 6. _map_ffprobe_format / _map_ffprobe_audio_stream: AudioFormat shadowing ----
+# --- 6. _map_ffprobe_format / _map_ffprobe_audio_stream: AudioFormat fix ----------
 
 
-def test_map_ffprobe_audio_format_is_shadowed_by_container_long_name() -> None:
-    """Open defect: asserts today's WRONG AudioFormat value on purpose.
+def test_map_ffprobe_audio_format_uses_the_real_codec_name() -> None:
+    """Fixed behaviour, exercised in the REAL call order.
 
-    Realistic ffprobe output for an MP4/M4A container with an AAC audio stream. In
-    the real call order (``extract_media_metadata_from_url``: format mapped first,
-    then streams), ``_map_ffprobe_format`` already writes
-    ``AudioFormat = "QuickTime / MOV"`` via ``setdefault`` before
-    ``_map_ffprobe_audio_stream`` runs. That mapper's own guard
-    (``if not out.get("AudioFormat")``) is then always False, so the real audio codec
-    name ("aac") never overwrites the container long-name — ``AudioFormat`` ends up
-    describing the CONTAINER, not the audio codec. Once fixed, this should assert
-    ``out["AudioFormat"] == "aac"``.
+    Realistic ffprobe output for an MP4/M4A container with an AAC audio stream.
+    ``extract_media_metadata_from_url`` now maps the audio stream BEFORE the
+    format, so ``_map_ffprobe_audio_stream`` claims ``AudioFormat`` from the
+    stream's ``codec_name`` first, and ``_map_ffprobe_format``'s ``setdefault``
+    call then leaves it alone. ``AudioFormat`` ends up describing the actual audio
+    codec ("aac"), not the container ("QuickTime / MOV").
     """
     fmt = {
         "duration": "120.5",
@@ -262,35 +262,28 @@ def test_map_ffprobe_audio_format_is_shadowed_by_container_long_name() -> None:
     }
 
     out: dict = {}
-    _map_ffprobe_format(fmt, out)
-    _map_ffprobe_audio_stream(audio_stream, out)
-
-    assert out["AudioFormat"] == "QuickTime / MOV"
-    assert out["AudioFormat"] != "aac"
-
-
-def test_map_ffprobe_audio_format_uses_codec_name_when_format_mapped_second() -> None:
-    """Control proving the guard itself works: reverse the call order.
-
-    If the audio-stream mapper runs BEFORE the format mapper, ``AudioFormat`` is
-    correctly set from ``codec_name`` and the format mapper's ``setdefault`` then
-    leaves it alone. This isolates the defect above to CALL ORDER, not to the guard
-    logic being broken outright.
-    """
-    fmt = {
-        "duration": "120.5",
-        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
-        "format_long_name": "QuickTime / MOV",
-    }
-    audio_stream = {
-        "codec_type": "audio",
-        "channels": 2,
-        "sample_rate": "44100",
-        "codec_name": "aac",
-    }
-
-    out: dict = {}
+    # Mirrors extract_media_metadata_from_url's real order: stream mapping first.
     _map_ffprobe_audio_stream(audio_stream, out)
     _map_ffprobe_format(fmt, out)
 
     assert out["AudioFormat"] == "aac"
+
+
+def test_map_ffprobe_audio_format_falls_back_to_container_name_without_audio_stream() -> None:
+    """Control: the container long-name fallback still works for audio-less containers.
+
+    When there is no audio stream (e.g. a silent video), ``_map_ffprobe_audio_stream``
+    never runs, so ``AudioFormat`` is unset by the time ``_map_ffprobe_format`` runs
+    and its ``setdefault`` correctly fills in the container's ``format_long_name``.
+    This proves the fix does not regress the no-audio-stream case.
+    """
+    fmt = {
+        "duration": "120.5",
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "format_long_name": "QuickTime / MOV",
+    }
+
+    out: dict = {}
+    _map_ffprobe_format(fmt, out)
+
+    assert out["AudioFormat"] == "QuickTime / MOV"

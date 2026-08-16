@@ -9,15 +9,22 @@ batch workers reconcile their counters. It had no tests.
 
 Pinned here, in order:
 
-1. **The zero-vector write (L75-99, L130-152).** A single embedding is L2-normalized
-   as-is; multiple embeddings are averaged with ``np.mean`` and THEN normalized. Both
-   branches guard the normalize step with ``if norm > 0`` — so when the averaged vector's
-   norm is exactly 0 (embeddings that cancel out), normalization is skipped and the raw
-   zero vector is written to OpenSearch unchanged. Nothing flags, logs, or skips this case;
-   a zero embedding lands in the speaker kNN index looking like a real (if degenerate)
-   voiceprint. ``test_v3_writer_writes_a_zero_vector_when_embeddings_cancel_out`` asserts
-   the ACTUAL vector passed to the write call is ``[0.0, 0.0, 0.0]``, not merely that a
-   write happened.
+1. **The zero-vector write (L52-183) — FIXED, not an open defect.** A single embedding is
+   L2-normalized as-is; multiple embeddings are averaged with ``np.mean`` and THEN
+   normalized. Both writers now compute the norm once, and when it is at or below
+   ``_ZERO_NORM_EPSILON`` (the averaged vector's embeddings cancelled out) they log a
+   ``logger.warning`` naming the speaker/file and SKIP the write entirely — no vector is
+   sent to OpenSearch — instead of writing a degenerate ``[0.0, ...]`` embedding that would
+   produce meaningless cosine-similarity scores for that speaker in every future search.
+   ``test_v3_writer_skips_write_and_warns_when_embeddings_cancel_out`` asserts NO write call
+   happened and that a warning naming the speaker uuid and file was logged; the write path
+   for a normal (non-degenerate) averaged vector is covered by test 2 below, so the
+   zero-norm skip does not silently blind the suite to the normalize-and-write branch. The
+   skip is also reflected correctly downstream: ``_v3_result_writer``/``_v4_result_writer``
+   only increment ``written`` for embeddings actually sent to OpenSearch, so
+   ``_run_repair_phase``'s ``last_write_count`` closure (see item 4) and the batch task's
+   per-file progress bookkeeping see a skipped speaker as zero embeddings written for that
+   file, same as any other writer returning 0 — no separate accounting path was needed.
 2. **``_v3_result_writer`` vs ``_v4_result_writer`` duplication (L42-101 / L104-154).**
    The normalize/average logic is copy-pasted between the two functions, differing only in
    which OpenSearch function they call and whether ``target_index`` is accepted. A fix to
@@ -27,16 +34,21 @@ Pinned here, in order:
    instead of shipping silently. This is a maintainability finding, not a behavior
    assertion about which one is "right" — flagged in the docstring, production code left
    untouched.
-3. **``_update_repair_progress``'s WATCH/MULTI retry loop (L162-243) — a characterization
-   test for an open defect.** ``except Exception: continue`` (L208) is scoped far wider
-   than the ``redis.WatchError`` the comment claims it exists for: ANY exception inside the
-   optimistic-locking block — a malformed stored value blowing up ``json.loads``, for
-   example — is silently retried, up to 5 times (L182), and then the ``for``/``else``
-   fallback (L210-216) re-reads whatever is currently stored and returns it WITHOUT ever
-   applying the caller's increment. ``test_progress_update_is_silently_dropped_after_five_watch_retries``
-   forces a non-``WatchError`` exception via a fake Redis client and asserts the returned
-   progress equals the ORIGINAL stored state — the ``repaired_count`` the caller passed in
-   never lands anywhere.
+3. **``_update_repair_progress``'s WATCH/MULTI retry loop (L190-276) — FIXED, not an open
+   defect.** ``except redis.WatchError: continue`` now retries ONLY the specific exception
+   ``redis-py`` raises when another writer touched ``_REDIS_PROGRESS_KEY`` between
+   ``watch()`` and ``execute()`` (confirmed against the pinned ``redis>=8.0.1`` — it is
+   ``redis.exceptions.WatchError``, aliased at the package top level as ``redis.WatchError``;
+   no other module in this repo used it before this fix). Any other exception — a malformed
+   stored value blowing up ``json.loads``, for example — now PROPAGATES immediately instead
+   of being retried up to 5 times and then silently dropped by the ``for``/``else`` fallback.
+   ``test_update_repair_progress_propagates_non_lock_conflict_exceptions_immediately`` forces
+   the exact same ``json.JSONDecodeError`` scenario the old characterization test pinned as a
+   silent drop, and now asserts it raises out of ``_update_repair_progress`` on the FIRST
+   attempt (no retries).
+   ``test_update_repair_progress_retries_on_genuine_watch_error`` is the case that must keep
+   working: a fake pipeline that raises real ``redis.WatchError`` on its first N calls and
+   then succeeds still applies the caller's increment once the lock stops contending.
 4. **``_run_repair_phase``'s closure-based ``last_write_count`` (L251-306) — a regression
    guard for currently-safe behavior, not a defect.** The docstring at L273-275 claims this
    is safe "because ``process_batch_pipelined`` processes files sequentially: writer runs,
@@ -66,6 +78,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+import redis
 
 from app.tasks.embedding_consistency_repair import _check_repair_completion
 from app.tasks.embedding_consistency_repair import _run_repair_phase
@@ -114,7 +127,7 @@ class _WriteRecorder:
 # ---------------------------------------------------------------------------
 
 
-def test_v3_writer_writes_a_zero_vector_when_embeddings_cancel_out():
+def test_v3_writer_skips_write_and_warns_when_embeddings_cancel_out(caplog):
     speaker = SpeakerSnapshot(id=1, uuid="spk-1", name="Speaker A")
     prepared = _prepared("f1", [speaker], media_file_id=42, user_id=7)
     emb1 = np.array([1.0, 2.0, 3.0])
@@ -122,28 +135,50 @@ def test_v3_writer_writes_a_zero_vector_when_embeddings_cancel_out():
     results_by_model = {"embedding": [_sr(1, emb1), _sr(1, emb2)]}
 
     recorder = _WriteRecorder()
-    with patch("app.services.opensearch_service.add_speaker_embedding", recorder):
+    with (
+        patch("app.services.opensearch_service.add_speaker_embedding", recorder),
+        caplog.at_level("WARNING", logger="app.tasks.embedding_consistency_repair"),
+    ):
         written = _v3_result_writer(prepared, results_by_model, {"spk-1"})
 
-    # The write still happens (nothing here detects/skips the degenerate case) --
-    # that IS the defect: written == 1, not 0.
-    assert written == 1
-    assert len(recorder.calls) == 1
-    assert recorder.calls[0]["embedding"] == [0.0, 0.0, 0.0]
-    assert recorder.calls[0]["segment_count"] == 2
+    # Fixed behavior: the degenerate (zero-norm) vector is never written.
+    assert written == 0
+    assert len(recorder.calls) == 0
+    assert any("spk-1" in r.message and "f1" in r.message for r in caplog.records)
 
 
-def test_v4_writer_also_writes_a_zero_vector_when_embeddings_cancel_out():
+def test_v4_writer_also_skips_write_and_warns_when_embeddings_cancel_out(caplog):
     speaker = SpeakerSnapshot(id=2, uuid="spk-2", name="Speaker C")
     prepared = _prepared("f3", [speaker])
     results_by_model = {"embedding": [_sr(2, np.array([5.0, -1.0])), _sr(2, np.array([-5.0, 1.0]))]}
 
     recorder = _WriteRecorder()
-    with patch("app.services.opensearch_service.add_speaker_embedding_v4", recorder):
+    with (
+        patch("app.services.opensearch_service.add_speaker_embedding_v4", recorder),
+        caplog.at_level("WARNING", logger="app.tasks.embedding_consistency_repair"),
+    ):
         written = _v4_result_writer(prepared, results_by_model, {"spk-2"})
 
+    assert written == 0
+    assert len(recorder.calls) == 0
+    assert any("spk-2" in r.message and "f3" in r.message for r in caplog.records)
+
+
+def test_v3_writer_still_writes_a_near_zero_but_nonzero_norm_vector():
+    """Norm just above the epsilon floor must still be normalized and written --
+    only a norm at/below ``_ZERO_NORM_EPSILON`` is treated as degenerate."""
+    speaker = SpeakerSnapshot(id=3, uuid="spk-3", name="Speaker D")
+    prepared = _prepared("f4", [speaker])
+    # A single embedding with a tiny but well-above-epsilon norm.
+    results_by_model = {"embedding": [_sr(3, np.array([1e-4, 0.0, 0.0]))]}
+
+    recorder = _WriteRecorder()
+    with patch("app.services.opensearch_service.add_speaker_embedding", recorder):
+        written = _v3_result_writer(prepared, results_by_model, {"spk-3"})
+
     assert written == 1
-    assert recorder.calls[0]["embedding"] == [0.0, 0.0]
+    assert len(recorder.calls) == 1
+    assert recorder.calls[0]["embedding"] == pytest.approx([1.0, 0.0, 0.0])
 
 
 # ---------------------------------------------------------------------------
@@ -180,13 +215,15 @@ def test_v3_and_v4_writers_produce_identical_aggregation_for_the_same_input(embe
 
 
 # ---------------------------------------------------------------------------
-# 3. _update_repair_progress -- WATCH/MULTI retry loop drops the update
+# 3. _update_repair_progress -- WATCH/MULTI retry loop
 # ---------------------------------------------------------------------------
 
 
 class _ExplodingPipe:
-    """A pipeline whose ``.get()`` always raises a non-WatchError exception -- e.g. what a
-    malformed stored value would do to ``json.loads`` inside the real retry loop."""
+    """A pipeline whose ``.get()`` always raises a non-``WatchError`` exception -- e.g.
+    what a malformed stored value would do to ``json.loads`` inside the real retry loop.
+    This must NOT be caught by the narrowed ``except redis.WatchError`` -- it should
+    propagate out of ``_update_repair_progress`` on the first attempt."""
 
     def watch(self, key: str) -> None:
         pass
@@ -204,10 +241,9 @@ class _ExplodingPipe:
         pass
 
 
-class _WatchLoopExplodingRedis:
+class _NonLockConflictExplodingRedis:
     """Fake Redis client: plain ``get``/``set`` work normally, but every ``pipeline()``
-    call hands back a pipe that explodes on ``.get()``, forcing the bare
-    ``except Exception: continue`` to retry on every attempt."""
+    call hands back a pipe that explodes with a non-``WatchError`` exception on ``.get()``."""
 
     def __init__(self, initial: dict[str, Any]) -> None:
         self.store: dict[str, str] = {_PROGRESS_KEY: json.dumps(initial)}
@@ -219,6 +255,55 @@ class _WatchLoopExplodingRedis:
     def pipeline(self, transaction: bool = True) -> _ExplodingPipe:
         self.pipeline_attempts += 1
         return _ExplodingPipe()
+
+
+class _WatchErrorThenSucceedsPipe:
+    """A pipeline that raises a REAL ``redis.WatchError`` on ``.get()`` for the first
+    ``fail_count`` construction attempts, then behaves like a normal successful
+    WATCH/MULTI/EXEC round-trip -- the genuine "another writer touched the key while
+    we held WATCH" scenario the retry loop exists to handle."""
+
+    def __init__(self, redis_client: _WatchErrorThenSucceedsRedis) -> None:
+        self._client = redis_client
+
+    def watch(self, key: str) -> None:
+        pass
+
+    def get(self, key: str) -> str | None:
+        self._client.pipeline_attempts += 1
+        if self._client.pipeline_attempts <= self._client.fail_count:
+            raise redis.WatchError("watched key modified")
+        return self._client.store.get(key)
+
+    def unwatch(self) -> None:
+        pass
+
+    def multi(self) -> None:
+        pass
+
+    def set(self, key: str, value: str, ex: int | None = None) -> None:
+        self._pending = (key, value)
+
+    def execute(self) -> None:
+        if getattr(self, "_pending", None) is not None:
+            key, value = self._pending
+            self._client.store[key] = value
+
+
+class _WatchErrorThenSucceedsRedis:
+    """Fake Redis client whose pipeline fails with genuine ``redis.WatchError`` a fixed
+    number of times before succeeding -- the case the retry loop must keep handling."""
+
+    def __init__(self, initial: dict[str, Any], fail_count: int) -> None:
+        self.store: dict[str, str] = {_PROGRESS_KEY: json.dumps(initial)}
+        self.fail_count = fail_count
+        self.pipeline_attempts = 0
+
+    def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+    def pipeline(self, transaction: bool = True) -> _WatchErrorThenSucceedsPipe:
+        return _WatchErrorThenSucceedsPipe(self)
 
 
 class _FakeProgressTracker:
@@ -242,7 +327,10 @@ class _FakeProgressTracker:
         pass
 
 
-def test_progress_update_is_silently_dropped_after_five_watch_retries():
+def test_update_repair_progress_propagates_non_lock_conflict_exceptions_immediately():
+    """Fixed behavior: a non-``WatchError`` exception (e.g. corrupted stored state
+    triggering ``json.JSONDecodeError``) is NOT retried and NOT silently swallowed -- it
+    raises straight out of ``_update_repair_progress`` on the first attempt."""
     initial = {
         "processed_files": 3,
         "repaired": 1,
@@ -251,7 +339,39 @@ def test_progress_update_is_silently_dropped_after_five_watch_retries():
         "total_files": 10,
         "user_id": 9,
     }
-    fake_redis = _WatchLoopExplodingRedis(initial)
+    fake_redis = _NonLockConflictExplodingRedis(initial)
+
+    with (
+        patch(
+            "app.tasks.embedding_consistency_repair.get_redis",
+            return_value=fake_redis,
+        ),
+        patch(
+            "app.services.progress_tracker.ProgressTracker",
+            _FakeProgressTracker,
+        ),
+        pytest.raises(json.JSONDecodeError),
+    ):
+        _update_repair_progress(total_files=10, success=True, repaired_count=5, user_id=9)
+
+    # Raised on the very first attempt -- no retrying of a non-lock-conflict exception.
+    assert fake_redis.pipeline_attempts == 1
+
+
+def test_update_repair_progress_retries_on_genuine_watch_error():
+    """The case that must keep working: a real ``redis.WatchError`` (another writer
+    touched the key while we held WATCH) is retried, and once the contention clears the
+    caller's increment is actually applied -- not dropped."""
+    initial = {
+        "processed_files": 3,
+        "repaired": 1,
+        "failed_files": [],
+        "running": True,
+        "total_files": 10,
+        "user_id": 9,
+    }
+    # Fails on the first 2 pipeline attempts with a genuine WatchError, succeeds on the 3rd.
+    fake_redis = _WatchErrorThenSucceedsRedis(initial, fail_count=2)
     emitted: list[dict[str, Any]] = []
 
     def _fake_emit(**kwargs: Any) -> None:
@@ -273,16 +393,17 @@ def test_progress_update_is_silently_dropped_after_five_watch_retries():
     ):
         result = _update_repair_progress(total_files=10, success=True, repaired_count=5, user_id=9)
 
-    # All 5 attempts actually ran -- proves the retry loop was exhausted, not skipped.
-    assert fake_redis.pipeline_attempts == 5
-    # The caller's increment (repaired_count=5, processed_files += 1) never landed:
-    # the returned state is byte-for-byte the ORIGINAL stored progress.
+    # Retried through the WatchError attempts before succeeding on the 3rd.
+    assert fake_redis.pipeline_attempts == 3
+    # The caller's increment actually landed this time.
     assert result is not None
-    assert result["processed_files"] == 3
-    assert result["repaired"] == 1
-    # What actually got emitted to the user also reflects the stale, unincremented state.
-    assert emitted[0]["processed"] == 3
-    assert emitted[0]["extra_data"]["repaired"] == 1
+    assert result["processed_files"] == 4
+    assert result["repaired"] == 6
+    stored = json.loads(fake_redis.store[_PROGRESS_KEY])
+    assert stored["processed_files"] == 4
+    assert stored["repaired"] == 6
+    assert emitted[0]["processed"] == 4
+    assert emitted[0]["extra_data"]["repaired"] == 6
 
 
 # ---------------------------------------------------------------------------

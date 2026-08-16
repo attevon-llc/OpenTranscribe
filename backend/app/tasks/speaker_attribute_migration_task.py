@@ -129,6 +129,15 @@ def _gender_result_writer(
 
     for sr in gender_results:
         gender, confidence = sr.value  # tuple[str, float]
+        if gender not in ("male", "female"):
+            logger.warning(
+                "Unexpected gender label %r from gender model for speaker_id=%s file=%s "
+                "— skipping this result, other valid results for the speaker still count",
+                gender,
+                sr.speaker_id,
+                prepared.file_uuid,
+            )
+            continue
         if sr.speaker_id not in speaker_probs:
             speaker_probs[sr.speaker_id] = {"male": 0.0, "female": 0.0}
             speaker_clip_counts[sr.speaker_id] = 0

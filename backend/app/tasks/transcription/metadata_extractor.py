@@ -355,14 +355,21 @@ def extract_media_metadata_from_url(url: str, timeout: int = 15) -> dict[str, An
     streams = data.get("streams", []) or []
 
     out: dict[str, Any] = {}
-    _map_ffprobe_format(fmt, out)
 
+    # Stream-level mapping runs BEFORE format-level mapping. The real per-stream
+    # audio codec name (e.g. "aac") is strictly more useful than the container's
+    # format_long_name (e.g. "QuickTime / MOV"), so it must claim "AudioFormat"
+    # first. _map_ffprobe_format only fills the key via setdefault(), so once the
+    # codec name is in place the container long-name placeholder is used only as
+    # a fallback for audio-less containers.
     video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
     audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), None)
     if video_stream:
         _map_ffprobe_video_stream(video_stream, out)
     if audio_stream:
         _map_ffprobe_audio_stream(audio_stream, out)
+
+    _map_ffprobe_format(fmt, out)
 
     return out if out else None
 

@@ -2,18 +2,20 @@
 
 Four things pinned here, none of which had a test before:
 
-1. **A real, unhandled ``KeyError`` in ``_gender_result_writer``.** ``speaker_probs[sid]`` is
-   seeded with only ``{"male": 0.0, "female": 0.0}`` (L133), and the per-segment update
-   (L135) indexes it with whatever label the gender model returned. Any third label raises.
-   Empirically, the raise happens **before** ``with session_scope()`` is even entered (the
-   probability-accumulation loop at L130-L136 sits above L142's ``with``), so nothing is
-   written for that file — no half-committed speakers. The exception is then caught one frame
-   up, in ``migration_pipeline.process_batch_pipelined``'s per-file ``try/except`` (L364-L381
-   there): only that one file is marked failed, the batch continues, and any file processed
-   earlier in the same batch keeps its already-committed write. Confirmed by
-   ``test_a_third_gender_label_raises_keyerror_before_any_db_session_is_opened`` (direct call)
-   and ``test_the_keyerror_is_caught_per_file_so_only_that_file_fails`` (through the real
-   pipeline).
+1. **FIX (was a real, unhandled ``KeyError``) in ``_gender_result_writer``.**
+   ``speaker_probs[sid]`` is seeded with only ``{"male": 0.0, "female": 0.0}``, and the
+   per-segment update used to index it with whatever label the gender model returned — any
+   third label raised. The code now only accumulates confidence for a label it understands
+   (``"male"``/``"female"``); an unexpected label is logged via ``logger.warning`` (naming the
+   label, speaker, and file) and skipped, while any other valid results already accumulated
+   for that same speaker — in the same file or a different one — still count normally. The
+   file no longer fails in ``migration_pipeline.process_batch_pipelined``'s per-file
+   ``try/except`` for this reason. Confirmed by
+   ``test_an_unexpected_gender_label_is_skipped_with_a_warning_not_raised`` (direct call) and
+   ``test_the_unexpected_label_no_longer_fails_the_file_in_the_pipeline`` (through the real
+   pipeline). ``test_a_speaker_with_some_valid_results_and_one_unexpected_label_still_gets_a_
+   correct_majority`` pins that a single bad-label result does not blank out an otherwise
+   good aggregation.
 2. **Every speaker is stamped, valid result or not.** The ``else`` branch (short/unusable
    audio — no segment survived extraction) still sets ``attributes_predicted_at = now`` with
    ``predicted_gender=None`` / ``attribute_confidence={"gender": 0.0}``. Because
@@ -36,13 +38,12 @@ Following the characterization-test convention of ``tests/unit/test_transcriptio
 from __future__ import annotations
 
 import contextlib
+import logging
 import uuid as uuid_module
 from datetime import UTC
 from datetime import datetime
 from typing import Any
 from typing import cast
-
-import pytest
 
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
@@ -196,47 +197,91 @@ def test_a_speaker_with_no_usable_audio_is_still_stamped_and_becomes_unretryable
     )
 
 
-def test_a_third_gender_label_raises_keyerror_before_any_db_session_is_opened(
-    monkeypatch, db_session, normal_user
+def test_an_unexpected_gender_label_is_skipped_with_a_warning_not_raised(
+    monkeypatch, db_session, normal_user, caplog
 ):
-    """DEFECT: speaker_attribute_migration_task.py L133/L135.
+    """FIX: speaker_attribute_migration_task.py's gender-accumulation loop.
 
-    ``speaker_probs[sid]`` is seeded with only 'male'/'female' keys; a third label from the
-    model raises KeyError. session_scope is replaced with something that explodes, proving
-    the raise happens in the probability-accumulation loop, above the ``with`` block — so no
-    session is ever opened and nothing partial is written for this file.
+    A label outside {"male", "female"} used to raise ``KeyError`` on
+    ``speaker_probs[sid][gender]``. It is now skipped with a ``logger.warning`` instead —
+    proven here by a speaker with ONLY an unexpected-label result: no exception, no
+    prediction written (the same as the "no usable audio" branch), but ``attributes_predicted_at``
+    is still stamped so the speaker doesn't perpetually show as pending.
     """
     mf = _media_file(db_session, normal_user)
     sp = _speaker(db_session, mf, normal_user, "SPEAKER_00")
 
-    def _explode():
-        raise AssertionError("must not open a DB session before the KeyError site")
-
-    monkeypatch.setattr(sat, "session_scope", _explode)
+    monkeypatch.setattr(sat, "session_scope", lambda: _scope_yielding(db_session))
 
     results = {
         "gender": [SegmentResult(model_name="gender", speaker_id=sp.id, value=("unknown", 0.5))]
     }
 
-    with pytest.raises(KeyError):
-        sat._gender_result_writer(_prepared(mf, normal_user), results)
+    with caplog.at_level(logging.WARNING, logger=sat.__name__):
+        count = sat._gender_result_writer(_prepared(mf, normal_user), results)
+
+    assert count == 0
+    assert any(
+        "unknown" in record.getMessage() and str(sp.id) in record.getMessage()
+        for record in caplog.records
+    ), "the unexpected label and speaker id must be named in the warning for debuggability"
+
+    db_session.expire_all()
+    refreshed = db_session.get(Speaker, sp.id)
+    assert refreshed.predicted_gender is None
+    assert refreshed.attribute_confidence == {"gender": 0.0}
+    assert refreshed.attributes_predicted_at is not None
 
 
-def test_the_keyerror_is_caught_per_file_so_only_that_file_fails(
+def test_a_speaker_with_some_valid_results_and_one_unexpected_label_still_gets_a_correct_majority(
+    monkeypatch, db_session, normal_user
+):
+    """The unexpected-label result must be skipped, not blank out the whole speaker.
+
+    Two real "male" results plus one bogus-label result for the same speaker: the majority
+    label and averaged confidence must be computed from the two valid results ONLY — the
+    unexpected one contributes nothing to either the numerator or the clip count used for
+    averaging.
+    """
+    mf = _media_file(db_session, normal_user)
+    sp = _speaker(db_session, mf, normal_user, "SPEAKER_00")
+
+    results = {
+        "gender": [
+            SegmentResult(model_name="gender", speaker_id=sp.id, value=("male", 0.9)),
+            SegmentResult(model_name="gender", speaker_id=sp.id, value=("nonbinary", 0.99)),
+            SegmentResult(model_name="gender", speaker_id=sp.id, value=("male", 0.7)),
+        ]
+    }
+
+    monkeypatch.setattr(sat, "session_scope", lambda: _scope_yielding(db_session))
+    count = sat._gender_result_writer(_prepared(mf, normal_user), results)
+
+    assert count == 1
+    db_session.expire_all()
+    refreshed = db_session.get(Speaker, sp.id)
+    assert refreshed.predicted_gender == "male"
+    # Averaged over the 2 VALID clips only — (0.9 + 0.7) / 2 — not divided by 3 and not
+    # including the 0.99 from the skipped "nonbinary" result.
+    assert refreshed.attribute_confidence == {"gender": 0.8}
+    assert refreshed.attributes_predicted_at is not None
+
+
+def test_the_unexpected_label_no_longer_fails_the_file_in_the_pipeline(
     monkeypatch, db_session, normal_user
 ):
     """Drives the REAL migration_pipeline.process_batch_pipelined + REAL _gender_result_writer.
 
-    One good file, one file whose gender result carries a bogus label. Proves: the batch does
-    not crash, the good file's write stands (already-committed work from earlier files in a
-    batch is not touched by a later file's failure), and the bad file is left completely
-    untouched — no half-written speaker — so it remains eligible for a future non-force run.
-    ffmpeg/MinIO/GPU are bypassed entirely by faking the two pipeline seams that touch them.
+    One file with a normal result, one file whose gender results mix a valid label with an
+    unexpected one for the SAME speaker. Proves: the batch does not crash, BOTH files succeed,
+    and the mixed-result file's speaker still gets a correct prediction from its valid result
+    alone. ffmpeg/MinIO/GPU are bypassed entirely by faking the two pipeline seams that touch
+    them.
     """
     mf_good = _media_file(db_session, normal_user)
     sp_good = _speaker(db_session, mf_good, normal_user, "SPEAKER_00")
-    mf_bad = _media_file(db_session, normal_user)
-    sp_bad = _speaker(db_session, mf_bad, normal_user, "SPEAKER_00")
+    mf_mixed = _media_file(db_session, normal_user)
+    sp_mixed = _speaker(db_session, mf_mixed, normal_user, "SPEAKER_00")
 
     canned = {
         str(mf_good.uuid): {
@@ -244,9 +289,10 @@ def test_the_keyerror_is_caught_per_file_so_only_that_file_fails(
                 SegmentResult(model_name="gender", speaker_id=sp_good.id, value=("female", 0.6))
             ]
         },
-        str(mf_bad.uuid): {
+        str(mf_mixed.uuid): {
             "gender": [
-                SegmentResult(model_name="gender", speaker_id=sp_bad.id, value=("unknown", 0.5))
+                SegmentResult(model_name="gender", speaker_id=sp_mixed.id, value=("unknown", 0.5)),
+                SegmentResult(model_name="gender", speaker_id=sp_mixed.id, value=("male", 0.8)),
             ]
         },
     }
@@ -273,7 +319,7 @@ def test_the_keyerror_is_caught_per_file_so_only_that_file_fails(
     success, failed = migration_pipeline.process_batch_pipelined(
         prepared_files=[
             (str(mf_good.uuid), _prepared(mf_good, normal_user)),
-            (str(mf_bad.uuid), _prepared(mf_bad, normal_user)),
+            (str(mf_mixed.uuid), _prepared(mf_mixed, normal_user)),
         ],
         # submit_segment_fetches/_process_file_segments are faked above and never
         # touch the runner for real GPU work — cast stands in for the real type.
@@ -285,29 +331,23 @@ def test_the_keyerror_is_caught_per_file_so_only_that_file_fails(
         min_duration=1.0,
     )
 
-    assert success == 1
-    assert failed == 1
-    assert successes == [str(mf_good.uuid)]
-    assert len(failures) == 1
-    assert failures[0][0] == str(mf_bad.uuid)
-    assert isinstance(failures[0][1], KeyError), (
-        "the batch caught the real KeyError, not something else"
-    )
+    assert success == 2
+    assert failed == 0
+    assert set(successes) == {str(mf_good.uuid), str(mf_mixed.uuid)}
+    assert failures == []
 
     db_session.expire_all()
     good_refreshed = db_session.get(Speaker, sp_good.id)
-    bad_refreshed = db_session.get(Speaker, sp_bad.id)
-    assert good_refreshed.attributes_predicted_at is not None, (
-        "the earlier file's commit must stand"
-    )
+    mixed_refreshed = db_session.get(Speaker, sp_mixed.id)
     assert good_refreshed.predicted_gender == "female"
-    assert bad_refreshed.attributes_predicted_at is None, (
-        "nothing partial written for the failed file"
+    assert mixed_refreshed.predicted_gender == "male", (
+        "the valid 'male' result must still be used despite the unexpected label alongside it"
     )
+    assert mixed_refreshed.attribute_confidence == {"gender": 0.8}
 
     still_pending = {f.id for f in sat._get_files_needing_attribute_detection(db_session)}
-    assert mf_bad.id in still_pending, "the failed file must remain eligible for retry"
     assert mf_good.id not in still_pending
+    assert mf_mixed.id not in still_pending
 
 
 # --------------------------------------------------------------------------------------

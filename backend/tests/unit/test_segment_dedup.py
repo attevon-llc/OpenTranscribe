@@ -1,57 +1,64 @@
-"""Characterization tests for ``app/utils/segment_dedup.py``.
+"""Tests for ``app/utils/segment_dedup.py``.
 
 This module is WhisperX's segment cleanup pass: it merges the coarse VAD-chunked
 segments a batched transcription run also emits alongside their fine-grained
 sentence subsegments, splits multi-sentence segments with NLTK, and clamps
 adjacent-segment overlaps. It runs on every completed transcription
-(``clean_segments`` is called from the storage pipeline) and had no tests at all.
+(``clean_segments`` is called from the storage pipeline).
 
-Five defects are pinned here, each verified against the real function (not
-inferred from reading the source) before being written down:
+Six defects were found and verified against the real function (not inferred
+from reading the source) before being fixed. Three are fixed in production
+code and asserted here as fixes (1-3 below); three remain open defects, still
+pinned as characterization tests describing today's (undesired) behavior
+(4-6 below):
 
-1. **The docstring lies about the default.** ``deduplicate_segments``'s docstring
-   (L41-42) says ``overlap_threshold`` defaults to ``0.8``; the signature (L23)
-   actually defaults to ``0.6``. A fixture whose coverage lands at exactly 0.7 —
-   strictly between the two candidate defaults — decides which one is real: with
-   no threshold argument, the segment is removed, which only happens at 0.6.
-   Passing ``overlap_threshold=0.8`` explicitly is the control that proves the
-   same fixture would NOT be removed under the documented default, so the two
-   control tests plus the default-argument test triangulate the answer rather
-   than asserting it from one data point.
+1. **FIXED — the docstring lied about the default.** ``deduplicate_segments``'s
+   docstring said ``overlap_threshold`` defaults to ``0.8``; the signature
+   actually defaults to ``0.6`` (and still does — the default itself was never
+   changed, only the documentation). The docstring now says ``0.6``.
 
-2. **Phase 1's containment mask is order-dependent because it mutates ``keep``
-   while iterating and re-reads it in the same pass** (L94: ``contained_mask``
-   ANDs against the *current*, partially-mutated ``keep`` array). A segment
-   already marked for removal earlier in the loop is silently excluded from
-   counting toward a *later* segment's coverage, even though it still
-   geometrically overlaps that later segment. Pinned with a 4-segment fixture,
-   plus the hand-computed counterfactual coverage (in the test's own comments)
-   showing the removed segments WOULD have pushed a later segment over the
-   0.6 threshold too, had they still counted.
+2. **FIXED — Phase 1's containment mask was order-dependent.** It used to
+   mutate ``keep`` while iterating and re-read it in the same pass
+   (``contained_mask`` ANDed against the *current*, partially-mutated ``keep``
+   array), so a segment already marked for removal earlier in the loop was
+   silently excluded from counting toward a *later* segment's coverage, even
+   though it still geometrically overlapped that later segment — making the
+   result depend on iteration/processing order. The fix computes
+   ``contained_mask`` against ``original_keep``, a fixed snapshot taken before
+   Phase 1 starts (all-True, since Phase 1 is the first phase to remove
+   anything), while still writing removals into the live ``keep`` array.
+   Pinned below with a test that runs the same containment scenario via two
+   different input orderings and asserts an identical result.
 
-3 & 4. **Phase 2 (exact-duplicate) and Phase 3 (similar-text) dedup only ever
-   compare ADJACENT pairs in ``kept_indices``** (L125-136, L142-168). A
-   duplicate two or more positions apart in the kept list is invisible to both
-   phases. Pinned with a non-adjacent exact duplicate (Phase 2) and a
-   non-adjacent time-overlapping near-duplicate (Phase 3), each surviving
-   deduplication when today's code runs.
+3. **FIXED — Phase 2 (exact-duplicate) and Phase 3 (similar-text) dedup only
+   ever compared ADJACENT pairs in ``kept_indices``.** A duplicate two or more
+   positions apart in the kept list was invisible to both phases. Both phases
+   now compare each candidate against every other still-kept segment (a full
+   pairwise scan over the already-reduced kept set — segment counts here are
+   in the hundreds per file at most, bounded by
+   ``DEFAULT_RECORDING_MAX_DURATION``, so this is cheap and simpler than a
+   windowed heuristic). Pinned below with a non-adjacent exact duplicate
+   (Phase 2) and a non-adjacent time-overlapping near-duplicate (Phase 3),
+   each now correctly removed/merged.
 
-5. **``_map_words_to_sentence`` gives up at the first non-matching word and
-   never resumes** (L266-269: ``sent_lower.find(...)`` returning ``-1`` breaks
-   the loop entirely, not just skips one word). A single normalization mismatch
+4. **``_map_words_to_sentence`` gives up at the first non-matching word and
+   never resumes** (``sent_lower.find(...)`` returning ``-1`` breaks the loop
+   entirely, not just skips one word). A single normalization mismatch
    between a transcription word and NLTK's sentence text truncates every word
    after it — including ones that WOULD have matched — clipping ``sent_end`` to
    an earlier word's timestamp and losing word-level timing on the sentence
    after it too (the frozen ``word_offset`` is handed to the next sentence).
+   NOT fixed — out of scope for this change.
 
-6. **``_clamp_overlapping_timestamps`` clamps only ``start``, never ``end``**
-   (L410-411: ``segments[i]["start"] = prev_end``), so a segment whose
-   ``end`` sits before the clamped ``start`` becomes an invalid negative-duration
-   segment with no guard rejecting it.
+5. **``_clamp_overlapping_timestamps`` clamps only ``start``, never ``end``**
+   (``segments[i]["start"] = prev_end``), so a segment whose ``end`` sits
+   before the clamped ``start`` becomes an invalid negative-duration segment
+   with no guard rejecting it. NOT fixed — out of scope for this change.
 
 Following the characterization-test convention of ``tests/unit/test_chunking_service.py``
-and ``tests/unit/test_transcription_storage.py``: each defect test's docstring says
-this is TODAY's behavior, not desired behavior, and what should replace it once fixed.
+and ``tests/unit/test_transcription_storage.py`` for the still-open defects (4-5):
+each defect test's docstring says this is TODAY's behavior, not desired behavior,
+and what should replace it once fixed.
 """
 
 from __future__ import annotations
@@ -71,7 +78,7 @@ def _segment(start: float, end: float, text: str, **extra: Any) -> dict[str, Any
 
 
 # ---------------------------------------------------------------------------
-# 1. Docstring/signature mismatch on overlap_threshold (0.8 documented, 0.6 real)
+# 1. FIXED: docstring now matches the actual overlap_threshold default (0.6)
 # ---------------------------------------------------------------------------
 
 
@@ -81,7 +88,7 @@ def _threshold_fixture() -> list[dict[str, Any]]:
     A [0, 10] outer segment fully covers the first 7 of its 10 seconds with a
     single inner segment [0, 7]. ``_compute_coverage`` therefore reports
     7 / 10 == 0.7 for the outer segment. 0.7 clears a 0.6 threshold and misses
-    a 0.8 one, so which candidate default is real is decided entirely by
+    a 0.8 one, so this fixture distinguishes the two candidate defaults by
     whether the outer segment gets removed.
     """
     outer = _segment(0.0, 10.0, "A coarse segment that spans the whole range.")
@@ -90,7 +97,7 @@ def _threshold_fixture() -> list[dict[str, Any]]:
 
 
 def test_explicit_0_8_threshold_keeps_the_070_coverage_segment():
-    """Control: the DOCUMENTED default (0.8) does not remove a 0.7-covered segment."""
+    """A higher, non-default threshold (0.8) does not remove a 0.7-covered segment."""
     result = deduplicate_segments(_threshold_fixture(), overlap_threshold=0.8)
 
     assert len(result) == 2
@@ -99,22 +106,19 @@ def test_explicit_0_8_threshold_keeps_the_070_coverage_segment():
 
 
 def test_explicit_0_6_threshold_removes_the_070_coverage_segment():
-    """Control: the ACTUAL signature default (0.6) does remove a 0.7-covered segment."""
+    """The actual signature default (0.6), passed explicitly, removes a 0.7-covered segment."""
     result = deduplicate_segments(_threshold_fixture(), overlap_threshold=0.6)
 
     assert len(result) == 1
     assert result[0]["end"] == 7.0
 
 
-def test_calling_with_no_threshold_argument_behaves_like_0_6_not_the_documented_0_8():
-    """The real defect: the docstring's ``(default 0.8)`` claim is false.
+def test_calling_with_no_threshold_argument_uses_0_6():
+    """Calling with no ``overlap_threshold`` argument reproduces the 0.6 control exactly.
 
-    Calling with no ``overlap_threshold`` argument at all reproduces the
-    ``overlap_threshold=0.6`` control exactly (the 10-second outer segment is
-    removed), not the ``overlap_threshold=0.8`` control (which keeps both).
-    If the docstring were correct this test would fail and
-    ``test_explicit_0_8_threshold_keeps_the_070_coverage_segment`` would be the
-    one matching default behavior instead.
+    This is the behavior the docstring must describe: the default removes the
+    0.7-covered outer segment, matching ``overlap_threshold=0.6`` explicitly,
+    not ``overlap_threshold=0.8``.
     """
     result = deduplicate_segments(_threshold_fixture())
 
@@ -123,65 +127,105 @@ def test_calling_with_no_threshold_argument_behaves_like_0_6_not_the_documented_
     assert result[0]["text"] == "A different, fine-grained segment."
 
 
+def test_docstring_documents_the_real_0_6_default():
+    """The docstring text itself must state the real default, not the old 0.8 claim."""
+    docstring = deduplicate_segments.__doc__
+    assert docstring is not None
+    assert "default 0.6" in docstring
+    assert "default 0.8" not in docstring
+
+
 # ---------------------------------------------------------------------------
-# 2. Phase 1: mutating `keep` mid-loop makes containment order-dependent
+# 2. FIXED: Phase 1's containment mask no longer depends on processing order
 # ---------------------------------------------------------------------------
 
 
-def test_phase1_containment_is_order_dependent_across_mutation():
-    """Regression pin for the CURRENT (fragile) Phase 1 outcome — not a correctness claim.
+def _order_dependence_fixture() -> tuple[dict, dict, dict, dict]:
+    """Four same/near-start segments that used to expose Phase 1's mutation bug.
 
-    Four same/near-start segments, forcing ``np.lexsort`` to tie-break by
-    duration on the ``[0.0, 15.0]``/``[0.0, 10.0]``/``[0.0, 8.0]`` group:
+    P [0, 15], Q [0, 10], R [0, 8] all start at 0.0 (``np.lexsort`` tie-breaks
+    that group by duration, longest first, so P is processed before Q before
+    R regardless of input list order). S [0.02, 16.0] starts just after and
+    is always processed last.
 
-    * P [0, 15] is evaluated first (longest at start=0). Q [0, 10] and R [0, 8]
-      are both still ``keep=True``, and their union covers [0, 10] of P's 15s
-      span: coverage = 10/15 = 0.667 >= 0.6, so P is removed.
-    * Q [0, 10] is evaluated next. Only R [0, 8] is still a candidate;
+    * P [0, 15] is evaluated first. Q [0, 10] and R [0, 8] are both
+      candidates, and their union covers [0, 10] of P's 15s span:
+      coverage = 10/15 = 0.667 >= 0.6, so P is removed.
+    * Q [0, 10] is evaluated next. Only R [0, 8] is a candidate;
       coverage = 8/10 = 0.8 >= 0.6, so Q is removed too.
     * R [0, 8] has no smaller candidates and survives.
-    * S [0.02, 16.0] is evaluated last. Its only ``keep=True`` candidate is R
-      (P and Q were already marked False and are excluded from S's
-      ``contained_mask`` by the ``& keep`` term at L94, even though P and Q
-      both still geometrically overlap S's range). Coverage from R alone is
-      (8 - 0.02) / (16.0 - 0.02) = 7.98 / 15.98 ~= 0.4994 < 0.6, so S survives.
+    * S [0.02, 16.0] is evaluated last. P and Q were already marked removed
+      earlier in the loop, but the fix computes ``contained_mask`` against a
+      fixed snapshot of the ORIGINAL segment set, so P and Q still count
+      toward S's coverage even though they're gone from the live ``keep``
+      array. The union of P/Q/R clipped to S's range is dominated by P alone:
+      [0.02, 15], giving coverage (15 - 0.02) / (16.0 - 0.02) ~= 0.9374 >= 0.6
+      — so S is ALSO removed. (Before the fix, S's ``contained_mask`` only
+      saw R, giving coverage (8 - 0.02) / 15.98 ~= 0.4994 < 0.6, and S
+      survived — a result that depended on P and Q having already been
+      processed and marked removed.)
 
-    Had P and Q still counted (the counterfactual, if ``contained_mask`` were
-    computed against the ORIGINAL membership instead of the live, mutated
-    ``keep`` array), the union of P/Q/R clipped to S's range is dominated by P
-    alone: [0.02, 15], giving coverage (15 - 0.02) / 15.98 ~= 0.9374 >= 0.6 —
-    S would ALSO have been removed. That flip (0.4994 vs 0.9374, either side
-    of the 0.6 threshold) is the concrete effect of reading a mutated ``keep``
-    mid-loop. Today's code keeps S; a version that recomputed contained_mask
-    from the full original set would not.
+    Only R survives: it is the one segment nothing else fully contains.
     """
     p = _segment(0.0, 15.0, "ppp text alpha one two three four five.")
     q = _segment(0.0, 10.0, "qqq text bravo six seven eight nine ten.")
     r = _segment(0.0, 8.0, "rrr text charlie eleven twelve thirteen.")
     s = _segment(0.02, 16.0, "sss text delta fourteen fifteen sixteen seventeen.")
+    return p, q, r, s
+
+
+def test_phase1_containment_counts_already_removed_candidates():
+    """The fix: candidates removed earlier in the loop still count toward later coverage.
+
+    S used to survive because P and Q had already been marked removed by the
+    time S was evaluated. With the fix, S is correctly removed too, because
+    coverage is computed against the fixed original snapshot, not the live,
+    mutating ``keep`` array. Only R — the segment nothing else fully
+    contains — survives.
+    """
+    p, q, r, s = _order_dependence_fixture()
 
     result = deduplicate_segments([p, q, r, s])
 
-    assert len(result) == 2
+    assert len(result) == 1
     assert (result[0]["start"], result[0]["end"]) == (0.0, 8.0)
     assert result[0]["text"] == "rrr text charlie eleven twelve thirteen."
-    assert (result[1]["start"], result[1]["end"]) == (0.02, 16.0)
-    assert result[1]["text"] == "sss text delta fourteen fifteen sixteen seventeen."
+
+
+def test_phase1_containment_result_independent_of_input_list_order():
+    """The result must not depend on the order segments are handed in.
+
+    Runs the same containment scenario through ``deduplicate_segments`` with
+    the four segments in two different input orders (as originally
+    constructed, and reversed) and asserts the outputs are identical. Proves
+    the fix's coverage computation is a pure function of the segment set,
+    not of processing/iteration order.
+    """
+    p, q, r, s = _order_dependence_fixture()
+
+    forward_order = deduplicate_segments([p, q, r, s])
+    reverse_order = deduplicate_segments([s, r, q, p])
+    shuffled_order = deduplicate_segments([r, s, p, q])
+
+    assert forward_order == reverse_order == shuffled_order
+    assert len(forward_order) == 1
+    assert forward_order[0]["text"] == "rrr text charlie eleven twelve thirteen."
 
 
 # ---------------------------------------------------------------------------
-# 3. Phase 2: exact-duplicate dedup only checks ADJACENT kept_indices pairs
+# 3a. FIXED: Phase 2 (exact-duplicate) now compares beyond adjacent pairs
 # ---------------------------------------------------------------------------
 
 
-def test_phase2_misses_an_exact_duplicate_two_positions_apart():
-    """TODAY's gap: an exact text duplicate survives if a different segment sits between.
+def test_phase2_catches_an_exact_duplicate_two_positions_apart():
+    """The fix: an exact text duplicate is caught even with a segment between them.
 
     Segments at positions 0 and 2 have byte-identical text; position 1 is
     unrelated and does not time-overlap either, so Phase 1 leaves all three
-    kept and Phase 2 only ever compares (1, 0) and (2, 1) — never (2, 0). The
-    duplicate at position 2 is never caught. Once Phase 2 compares beyond
-    adjacent pairs, this test's expectation of 3 survivors must become 2.
+    kept. Phase 2 now compares each kept segment against every other kept
+    segment (not just its immediate predecessor), so the (2, 0) pair is
+    checked and the duplicate at position 2 is removed. Equal-duration ties
+    keep the first occurrence (``dur_i >= dur_j`` removes ``i``).
     """
     seg0 = _segment(0.0, 2.0, "Thank you very much everyone.")
     seg1 = _segment(5.0, 7.0, "Completely different filler content here.")
@@ -189,45 +233,50 @@ def test_phase2_misses_an_exact_duplicate_two_positions_apart():
 
     result = deduplicate_segments([seg0, seg1, seg2])
 
-    assert len(result) == 3
-    assert result[0]["text"] == "Thank you very much everyone."
-    assert result[2]["text"] == "Thank you very much everyone."
-    assert result[0]["text"] == result[2]["text"], "the un-caught duplicate pair"
+    assert len(result) == 2
+    texts = [seg["text"] for seg in result]
+    assert texts.count("Thank you very much everyone.") == 1
+    assert "Completely different filler content here." in texts
 
 
 # ---------------------------------------------------------------------------
-# 4. Phase 3: similar-text dedup only checks ADJACENT kept_indices pairs
+# 3b. FIXED: Phase 3 (similar-text) now compares beyond adjacent pairs
 # ---------------------------------------------------------------------------
 
 
-def test_phase3_misses_a_time_overlapping_near_duplicate_two_positions_apart():
-    """TODAY's gap: a time-overlapping, word-similar near-duplicate is missed the same way.
+def test_phase3_catches_a_time_overlapping_near_duplicate_two_positions_apart():
+    """The fix: a time-overlapping, word-similar near-duplicate is caught the same way.
 
     Segment 0 ``[0, 10]`` and segment 2 ``[5, 15]`` genuinely overlap in time
     and share 4 of 5 words (Jaccard 0.8, well above the 0.5 gate), which is
     exactly the "He looks jacked" / "He looks jacked, right?" shape Phase 3
     exists to catch. Segment 1 sits between them in ``kept_indices`` (its own
     span ``[2, 50]`` overlaps both neighbours in time but shares no words with
-    either, so it triggers no merge on its own) and blocks the (2, 0)
-    comparison Phase 3 never makes. All three survive.
+    either, so it triggers no merge on its own). Phase 3 now compares each
+    kept segment against every other kept segment, so the (2, 0) pair is
+    checked: segment 2 has more text, so segment 0 (the shorter version) is
+    removed and segment 2 (the more complete version) survives.
     """
     seg0 = _segment(0.0, 10.0, "he looks jacked right")
     seg_middle = _segment(2.0, 50.0, "zzz filler qqq www content xyz vvv uuu ttt sss")
     seg2 = _segment(5.0, 15.0, "he looks jacked right now")
 
+    words0 = set(seg0["text"].lower().split())
+    words2 = set(seg2["text"].lower().split())
+    overlap = len(words0 & words2) / len(words0 | words2)
+    assert overlap == 0.8, "precondition: the pair really is a near-duplicate"
+
     result = deduplicate_segments([seg0, seg_middle, seg2])
 
-    assert len(result) == 3
-    assert result[0]["text"] == "he looks jacked right"
-    assert result[2]["text"] == "he looks jacked right now"
-    words0 = set(result[0]["text"].lower().split())
-    words2 = set(result[2]["text"].lower().split())
-    overlap = len(words0 & words2) / len(words0 | words2)
-    assert overlap == 0.8, "precondition: the missed pair really is a near-duplicate"
+    assert len(result) == 2
+    texts = [seg["text"] for seg in result]
+    assert "he looks jacked right" not in texts, "the shorter near-duplicate was removed"
+    assert "he looks jacked right now" in texts, "the more complete version survived"
+    assert seg_middle["text"] in texts
 
 
 # ---------------------------------------------------------------------------
-# 5. _map_words_to_sentence: one mismatched word truncates everything after it
+# 4. OPEN DEFECT: _map_words_to_sentence: one mismatched word truncates everything after it
 # ---------------------------------------------------------------------------
 
 
@@ -296,7 +345,7 @@ def test_split_sentences_nltk_truncates_sent_end_and_drops_the_next_sentence_tim
 
 
 # ---------------------------------------------------------------------------
-# 6. _clamp_overlapping_timestamps clamps start but never end
+# 5. OPEN DEFECT: _clamp_overlapping_timestamps clamps start but never end
 # ---------------------------------------------------------------------------
 
 

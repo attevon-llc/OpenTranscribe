@@ -1,0 +1,251 @@
+"""Unit tests for ``app/services/asr/gladia_provider.py`` — network-free.
+
+All HTTP is mocked (``requests.post`` / ``requests.get``); ``time.sleep`` is patched so the
+poll-loop tests run in milliseconds instead of minutes. What is pinned here, in order:
+
+1. **Silent vocabulary truncation (real defect, characterized on purpose).**
+   ``config.vocabulary[:100]`` (L133) drops any term past index 100 with no log line at all.
+   Contrast ``aws_provider.py`` (~L193-203): when it cannot fully honor a submitted vocabulary
+   (no pre-created ``AWS_TRANSCRIBE_VOCABULARY_NAME``) it logs a warning explaining why. Gladia's
+   equivalent "the vocabulary you sent will not all be used" case has no comparable log line —
+   an operator who submits 150 terms gets no signal that 50 were dropped.
+2. **``_err_detail`` (L47-58) truncates the raw response body to 500 chars, THEN sanitizes.**
+   Pinned by constructing the exact two-step string and asserting the helper's output matches it
+   byte-for-byte — proving the order is truncate-then-redact, not redact-then-truncate.
+3. **Speaker labels.** Gladia's ``"speaker_0"``-style label is 0-indexed via
+   ``normalize_speaker_label``'s underscore branch, and the code only normalizes when
+   ``speaker`` is present (``u.get("speaker") is not None``) — a missing key must not raise.
+4. **Poll loop timeout.** Caps at exactly 720 iterations (x the loop's 10s sleep = 7200s) and
+   raises with a message stating that figure.
+5. **File handle safety.** The upload audio file is opened via ``with open(...)`` and is closed
+   even when the upload request raises.
+
+Following the characterization-test convention of ``tests/unit/test_chunking_service.py`` /
+``tests/unit/test_transcription_storage.py``, and the network-free provider-test pattern of
+``tests/unit/test_pyannote_provider.py``.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import cast
+from unittest.mock import patch
+
+import pytest
+import requests
+
+from app.services.asr.base import normalize_speaker_label
+from app.services.asr.gladia_provider import GladiaProvider
+from app.services.asr.types import ASRConfig
+
+_BASE = GladiaProvider._BASE
+
+
+class _FakeResponse:
+    """Minimal stand-in for ``requests.Response``."""
+
+    def __init__(self, json_data: dict | None = None, text: str = "", status_code: int = 200):
+        self._json = json_data if json_data is not None else {}
+        self.text = text
+        self.status_code = status_code
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            # _FakeResponse duck-types requests.Response for gladia_provider.py's
+            # purposes (only .text/.status_code are ever read back off it).
+            raise requests.exceptions.HTTPError(
+                f"{self.status_code} error", response=cast(requests.Response, self)
+            )
+
+    def json(self) -> dict:
+        return self._json
+
+
+def _make_provider(api_key: str = "test-key") -> GladiaProvider:
+    return GladiaProvider(api_key=api_key)
+
+
+def _make_audio_file(tmp_path) -> str:
+    p = tmp_path / "sample.wav"
+    p.write_bytes(b"RIFF....fakeaudiobytes")
+    return str(p)
+
+
+def _dispatch_post(upload_resp: _FakeResponse, job_resp: _FakeResponse, job_capture: dict):
+    """Build a ``requests.post`` side_effect that routes by URL and records the job body."""
+
+    def _post(url, **kwargs):
+        if url.endswith("/v2/upload"):
+            return upload_resp
+        if url.endswith("/v2/transcription"):
+            job_capture["body"] = kwargs.get("json")
+            return job_resp
+        raise AssertionError(f"unexpected POST to {url}")
+
+    return _post
+
+
+# ── 1. Silent vocabulary truncation ─────────────────────────────────────────────────────
+
+
+def test_vocabulary_is_silently_truncated_to_100_terms(tmp_path, caplog):
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider()
+    vocabulary = [f"term-{i}" for i in range(150)]
+    config = ASRConfig(enable_diarization=False, language="en", vocabulary=vocabulary)
+
+    job_capture: dict = {}
+    upload_resp = _FakeResponse(json_data={"audio_url": "https://cdn.gladia.io/audio123"})
+    job_resp = _FakeResponse(json_data={"result_url": f"{_BASE}/v2/transcription/job1"})
+    done_resp = _FakeResponse(
+        json_data={
+            "status": "done",
+            "result": {"transcription": {"utterances": [], "languages": ["en"]}},
+        }
+    )
+
+    with (
+        patch("requests.post", side_effect=_dispatch_post(upload_resp, job_resp, job_capture)),
+        patch("requests.get", return_value=done_resp),
+        patch("time.sleep"),
+        caplog.at_level(logging.WARNING),
+    ):
+        result = provider.transcribe(audio_path, config)
+
+    sent_vocab = job_capture["body"]["custom_vocabulary"]
+    assert len(sent_vocab) == 100
+    assert sent_vocab == vocabulary[:100]
+    assert result.provider_name == "gladia"
+
+    # Pin the gap: nothing logs that 50 of the 150 submitted terms were dropped.
+    vocab_related = [r for r in caplog.records if "vocab" in r.getMessage().lower()]
+    assert vocab_related == []
+
+
+# ── 2. _err_detail: truncate-then-sanitize order ────────────────────────────────────────
+
+
+def test_err_detail_truncates_body_before_sanitizing():
+    provider = _make_provider(api_key="test-secret-value-for-sanitization-check")
+    secret = provider._api_key
+
+    # The secret sits well inside the first 500 chars of a much longer raw body, followed
+    # by 700 filler characters that must NOT survive the 500-char cap.
+    raw_body = f"upstream said: leaked_key={secret} details=" + ("x" * 700)
+    exc = requests.exceptions.HTTPError("500 Server Error")
+    exc.response = _FakeResponse(text=raw_body)
+
+    detail = provider._err_detail(exc)
+
+    # Directly pin the algorithm: concatenate-and-truncate to 500 chars, THEN sanitize.
+    expected = provider._sanitize_error(f"{exc!s} — {raw_body[:500]}", secret)
+    assert detail == expected
+
+    # And the practical guarantee that order gives us: the secret, which lives inside the
+    # truncated window, is still redacted in the final message.
+    assert secret not in detail
+    assert "***" in detail
+    # Truncation genuinely happened: the tail filler beyond byte 500 of the raw body is gone.
+    assert "x" * 700 not in detail
+
+
+# ── 3. Speaker label normalization ──────────────────────────────────────────────────────
+
+
+def test_normalize_speaker_label_handles_gladias_speaker_n_format():
+    assert normalize_speaker_label("speaker_0") == "SPEAKER_00"
+    assert normalize_speaker_label("speaker_5") == "SPEAKER_05"
+    assert normalize_speaker_label(None) is None
+
+
+def test_transcribe_normalizes_speakers_and_tolerates_a_missing_speaker_field(tmp_path):
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider()
+    config = ASRConfig(enable_diarization=True, language="en")
+
+    upload_resp = _FakeResponse(json_data={"audio_url": "https://cdn.gladia.io/audio123"})
+    job_resp = _FakeResponse(json_data={"result_url": f"{_BASE}/v2/transcription/job1"})
+    utterances = [
+        {"text": "hello", "start": 0.0, "end": 1.0, "speaker": "speaker_0", "words": []},
+        {"text": "world", "start": 1.0, "end": 2.0, "speaker": "speaker_5", "words": []},
+        # No "speaker" key at all — u.get("speaker") is None; must not raise.
+        {"text": "no speaker here", "start": 2.0, "end": 3.0, "words": []},
+    ]
+    done_resp = _FakeResponse(
+        json_data={
+            "status": "done",
+            "result": {"transcription": {"utterances": utterances, "languages": ["en"]}},
+        }
+    )
+    job_capture: dict = {}
+
+    with (
+        patch("requests.post", side_effect=_dispatch_post(upload_resp, job_resp, job_capture)),
+        patch("requests.get", return_value=done_resp),
+        patch("time.sleep"),
+    ):
+        result = provider.transcribe(audio_path, config)
+
+    assert len(result.segments) == 3
+    assert result.segments[0].speaker == "SPEAKER_00"
+    assert result.segments[1].speaker == "SPEAKER_05"
+    assert result.segments[2].speaker is None
+    assert result.language == "en"
+    assert result.has_speakers is True
+
+
+# ── 4. Poll loop timeout ────────────────────────────────────────────────────────────────
+
+
+def test_poll_loop_times_out_after_720_attempts(tmp_path):
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider()
+    config = ASRConfig(enable_diarization=False, language="en")
+
+    upload_resp = _FakeResponse(json_data={"audio_url": "https://cdn.gladia.io/audio123"})
+    job_resp = _FakeResponse(json_data={"result_url": f"{_BASE}/v2/transcription/job1"})
+    # Never reaches "done" or "error" — the loop must exhaust its cap.
+    stuck_resp = _FakeResponse(json_data={"status": "processing"})
+    job_capture: dict = {}
+
+    with (
+        patch("requests.post", side_effect=_dispatch_post(upload_resp, job_resp, job_capture)),
+        patch("requests.get", return_value=stuck_resp) as mock_get,
+        patch("time.sleep") as mock_sleep,
+        pytest.raises(RuntimeError, match=r"Gladia transcription timed out after 7200 seconds"),
+    ):
+        provider.transcribe(audio_path, config)
+
+    assert mock_get.call_count == 720
+    assert mock_sleep.call_count == 720
+
+
+# ── 5. File handle safety ───────────────────────────────────────────────────────────────
+
+
+def test_audio_file_handle_is_closed_when_upload_raises(tmp_path):
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider()
+    config = ASRConfig(enable_diarization=False, language="en")
+
+    opened: list = []
+    real_open = open
+
+    def _tracking_open(path, mode="r", *args, **kwargs):
+        fh = real_open(path, mode, *args, **kwargs)
+        if str(path) == audio_path:
+            opened.append(fh)
+        return fh
+
+    def _raise_post(*_args, **_kwargs):
+        raise requests.exceptions.ConnectionError("network is down")
+
+    with (
+        patch("builtins.open", side_effect=_tracking_open),
+        patch("requests.post", side_effect=_raise_post),
+        pytest.raises(RuntimeError, match="Gladia upload failed"),
+    ):
+        provider.transcribe(audio_path, config)
+
+    assert opened, "audio file was never opened via open()"
+    assert opened[-1].closed, "audio file handle leaked on the upload exception path"

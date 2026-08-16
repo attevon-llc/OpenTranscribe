@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel
 from pydantic import field_validator
 
+from app.core.enums import ReasoningOffSwitch
 from app.schemas.base import UUIDBaseSchema
 
 
@@ -139,6 +140,27 @@ class UserLLMSettingsPublic(UUIDBaseSchema):
     updated_at: datetime
 
 
+class ReasoningCapability(BaseModel):
+    """A model's MEASURED reasoning off-switch capability (issue #64).
+
+    ``off_switch`` is the only field a client should branch on, and only
+    ``"works"`` may render a control. The character counts are the evidence and
+    exist so an operator can see *why* a toggle is absent; they are diagnostics,
+    not a contract.
+
+    ``probed_at`` is None when this model has never been probed — which is the
+    default for every deployment, and renders no control.
+    """
+
+    off_switch: ReasoningOffSwitch = ReasoningOffSwitch.UNKNOWN
+    probeable: bool = False
+    probed_at: datetime | None = None
+    reasoning_chars_on: int = 0
+    reasoning_chars_off: int = 0
+    reasoning_chars_omitted: int = 0
+    detail: str = ""
+
+
 class ConnectionTestRequest(BaseModel):
     """Schema for connection test requests"""
 
@@ -184,6 +206,14 @@ class UserLLMConfigurationsList(BaseModel):
     shared_configurations: list[UserLLMSettingsPublic] = []
     active_configuration_id: UUID | None = None
     total: int
+    #: Measured reasoning off-switch verdict per configuration uuid (issue #64).
+    #: A side map rather than a field on the configuration, because the fact
+    #: belongs to the (provider, endpoint, model) triple and not to the row —
+    #: two configurations naming the same vLLM model share one measurement, and
+    #: editing a row's model silently changes which measurement applies.
+    #: **A uuid absent from this map has never been probed**; treat it as
+    #: "unknown", which renders no control.
+    reasoning_off_switch: dict[str, ReasoningOffSwitch] = {}
 
 
 class SetActiveConfigRequest(BaseModel):

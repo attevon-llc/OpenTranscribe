@@ -93,7 +93,7 @@ against the live model, with a negative control that fails if the window ever gr
 - **Speaker rename (#405)** needs no separate trigger: the fingerprint covers the *resolved*
   display name, so a rename invalidates the row by itself.
 - **Redaction**: digest sentences are verbatim segment text with segment ids attached, so
-  `redactor._mask_from_segments` can re-mask them from the cached spans. Any path that sends
+  `redactor._gather_chunk_segments` can re-mask them from the cached spans. Any path that sends
   digest text to an LLM still has to mask it — the artifacts are stored **unredacted**, the
   same as `transcript_segment.text` and the chunk index.
 
@@ -111,6 +111,19 @@ against the live model, with a negative control that fails if the window ever gr
   plan itself rejects reading chunk vectors back out — and make the artifact a function of
   *when* it was generated, so two identical files ingested a month apart would differ. A
   corpus-relative **re-ranking** pass is still open to Stage 3.
+- ⚠️ **One stopword set feeds two consumers with OPPOSITE tolerances for it being empty.**
+  `stopwords_for` returns a fallback rather than raising when NLTK's corpus is missing,
+  which is right for TextRank — a digest with stopwords left in its TF-IDF is *worse, not
+  broken*, and the Stage 2 gate is 100%. It is **fatal** for `keyphrases.py`, which is
+  RAKE-shaped and splits *on* stopwords to find candidate boundaries: with none, the whole
+  text is one candidate, it exceeds `MAX_PHRASE_WORDS`, and it is dropped — **zero
+  keyphrases, no error, no log line**, on every deployment that never fetched the corpus.
+  Hence `_FALLBACK_ENGLISH_STOPWORDS`, a coded list unioned in unconditionally. It must
+  stay a **strict subset** of NLTK's own English list, asserted by
+  `tests/unit/test_ingest_artifacts_facts.py`: a word NLTK does not stop would change the
+  digest on every existing install with no `generator_version` bump to mark it. The bug was
+  invisible locally (the corpus is present) and only ever appeared in CI, so the
+  regression test simulates the missing corpus and therefore runs in **both** environments.
 - **An empty digest is a valid outcome**, not a failure: a ten-second clip, or a transcript
   that is entirely backchannels, has no sentence of `MIN_SENTENCE_WORDS`. Callers must not
   treat `sections == []` or a `None` return (no segments at all) as an error.

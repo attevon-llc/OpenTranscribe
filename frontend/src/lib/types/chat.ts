@@ -164,6 +164,14 @@ export interface ConversationSettings {
   /** Nucleus sampling. null omits it from the request entirely. */
   top_p?: number | null;
   search_mode?: SearchMode | null;
+  /**
+   * Whether the model reasons before answering. null inherits the model's own
+   * behaviour; `false` is honoured ONLY where the server measured a working
+   * off-switch for the model in play (see `reasoning_off_switch` on the LLM
+   * configurations response). Never render a control for this without that
+   * measurement — a toggle over a model that reasons anyway is a false claim.
+   */
+  reasoning?: boolean | null;
 }
 
 export interface ConversationSummary {

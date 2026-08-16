@@ -880,11 +880,26 @@ def update_media_file(
 
     # Update OpenSearch index if title was changed
     if title_updated:
+        new_title = str(db_file.title or db_file.filename)
         try:
-            new_title = str(db_file.title or db_file.filename)
             update_transcript_title(str(db_file.uuid), new_title)  # Use UUID not integer ID
         except Exception as e:
             logger.warning(f"Failed to update OpenSearch title for file {file_id}: {e}")
+
+        # ...and the CHUNK plane, which is a separate index write.
+        # `update_transcript_title` only touches the full-document transcript index.
+        # Chunk documents carry their own `title`, and they are what feeds search
+        # result cards and chat citations — so without this a renamed file keeps
+        # showing its OLD title in both, permanently. The task existed, was Celery-
+        # routed and was documented in two CLAUDE.md files, but nothing ever
+        # dispatched it; `test_title_change_queues_the_chunk_rewrite` was asserting
+        # a design that had never been wired.
+        try:
+            from app.tasks.rename_propagation_task import propagate_title_rename
+
+            propagate_title_rename.delay(file_uuid=str(db_file.uuid), new_title=new_title)
+        except Exception as exc:  # noqa: BLE001 — dispatch failure must not break the rename
+            logger.warning(f"Could not queue chunk title propagation for {db_file.uuid}: {exc}")
 
     # Invalidate caches so gallery reflects the update
     try:

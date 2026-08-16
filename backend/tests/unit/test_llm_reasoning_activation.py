@@ -53,8 +53,28 @@ def test_vllm_payload_activates_thinking_so_the_server_separates_reasoning():
 
 
 def test_vllm_caller_can_turn_thinking_off():
-    """Same escape hatch the sibling vLLM sampling params already have."""
+    """`False` SENDS the key; it does not drop it (issue #64).
+
+    This assertion used to be ``"chat_template_kwargs" not in payload`` — i.e.
+    "off" was implemented as the *control* arm. On gemma-4-e4b the two happen to
+    be byte-identical (measured: 931 reasoning characters either way), but on a
+    template where the switch actually works they are not, and shipping the
+    control arm as the off switch would mean the request a user's toggle sends
+    is not the request the capability probe measured.
+    """
     payload = _service(LLMProvider.VLLM)._prepare_payload(MESSAGES, enable_thinking=False)
+
+    assert payload["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_none_is_the_probe_control_arm_and_omits_the_key():
+    """The third arm, and the only way to send no instruction at all.
+
+    ``services/llm_reasoning`` needs it to ask "what does this model do when
+    nobody says anything?", which is the comparison that decides whether an
+    off-switch exists. Nothing on the chat path passes it.
+    """
+    payload = _service(LLMProvider.VLLM)._prepare_payload(MESSAGES, enable_thinking=None)
 
     assert "chat_template_kwargs" not in payload
 

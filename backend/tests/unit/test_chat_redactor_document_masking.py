@@ -16,6 +16,7 @@ cached-span path cannot be trusted, mask inline rather than send raw text.
 from __future__ import annotations
 
 import uuid as uuid_pkg
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -110,7 +111,7 @@ def test_a_document_chunk_never_queries_or_serves_an_unrelated_media_files_trans
         chunk = _document_chunk(shared_id)
         cfg = _cfg(enabled=True, redact_before_llm=True)
         with patch("app.services.redaction.config.resolve_effective_config", return_value=cfg):
-            masked = mask_chunks(conn_to_session(db_session), [chunk], user_id=user_id)
+            masked = mask_chunks(_factory(db_session), [chunk], user_id=user_id)
 
         assert secret_text not in masked[0].content, (
             "a document chunk's masked output contained an UNRELATED media file's "
@@ -121,9 +122,18 @@ def test_a_document_chunk_never_queries_or_serves_an_unrelated_media_files_trans
         db_session.rollback()
 
 
-def conn_to_session(db_session):
-    """``mask_chunks`` takes a ``Session`` (it runs ORM queries); the fixture already is one."""
-    return db_session
+@contextmanager
+def _one_session(db):
+    yield db
+
+
+def _factory(db):
+    """A ``session_scope``-shaped factory over one prepared session.
+
+    Both public maskers take the FACTORY, never a ``Session`` (issue #83): they own
+    the transaction boundary so they can CLOSE it before the detector runs.
+    """
+    return lambda: _one_session(db)
 
 
 def test_policy_off_passes_document_content_through_untouched():
@@ -132,7 +142,7 @@ def test_policy_off_passes_document_content_through_untouched():
         "app.services.redaction.config.resolve_effective_config",
         return_value=_cfg(enabled=True, redact_before_llm=False),
     ):
-        masked = mask_document_chunks(db, [_document_chunk(5)], user_id=1)
+        masked = mask_document_chunks(_factory(db), [_document_chunk(5)], user_id=1)
 
     assert masked[0].content == "the document text"
     assert masked[0].was_masked is False
@@ -144,7 +154,7 @@ def test_unresolvable_policy_fails_closed_for_documents():
         "app.services.redaction.config.resolve_effective_config",
         side_effect=RuntimeError("boom"),
     ):
-        masked = mask_document_chunks(db, [_document_chunk(5)], user_id=1)
+        masked = mask_document_chunks(_factory(db), [_document_chunk(5)], user_id=1)
 
     assert masked[0].content == ""
     assert masked[0].was_masked is True
@@ -183,7 +193,7 @@ def test_an_unscanned_document_falls_through_to_inline_masking(db_session):
                 return_value={"language": "en"},
             ),
         ):
-            masked = mask_document_chunks(db_session, [chunk], user_id=user_id)
+            masked = mask_document_chunks(_factory(db_session), [chunk], user_id=user_id)
 
         # Inline detection ran (real Presidio/wordlist) rather than trusting absent
         # cached spans as "nothing to mask" — was_masked is still True either way, so

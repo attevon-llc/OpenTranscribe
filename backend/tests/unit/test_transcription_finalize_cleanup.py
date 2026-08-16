@@ -172,7 +172,7 @@ def test_the_caller_s_segment_dicts_are_not_rewritten_in_place():
 # --------------------------------------------------------------------------------------
 
 
-def test_word_timestamps_still_hold_the_garbage_the_text_no_longer_does():
+def test_word_timestamps_are_cleaned_alongside_the_text():
     """CHARACTERIZATION — pins current WRONG behaviour. DEFECT: finalize.py L45-L65.
 
     ``clean_garbage_words`` rewrites ``segment["text"]`` but never touches
@@ -185,10 +185,10 @@ def test_word_timestamps_still_hold_the_garbage_the_text_no_longer_does():
     disagree, and the word count no longer matches the text. The whole point of the feature
     (not showing the user a 200-character noise token) is defeated in the word view.
 
-    WHEN FIXED (the ``words`` list should be filtered/rewritten alongside the text) this
-    test will fail. Replace the final assertion with one that the surviving word entries
-    contain no token longer than ``max_word_length``, and rename to
-    ``test_word_timestamps_are_cleaned_alongside_the_text``.
+    The word array is persisted ALONGSIDE the text and is what the UI renders for
+    click-to-seek, so cleaning only the text left the raw artefact visible in the view
+    users interact with most (issue #456). Timings and scores must survive — only the
+    token is replaced.
     """
     garbage = _noise(120)
     segments: list[dict[str, Any]] = [
@@ -206,11 +206,17 @@ def test_word_timestamps_still_hold_the_garbage_the_text_no_longer_does():
     assert count == 1
     assert cleaned[0]["text"] == "hello [background noise]"
     stored_words = cleaned[0]["words"]
-    assert len(stored_words) == 2, "the word array was not touched at all"
-    assert stored_words[1]["word"] == garbage  # WRONG — should have been cleaned too
+    assert len(stored_words) == 2, "entries must be rewritten, never dropped"
+    assert stored_words[1]["word"] == "[background noise]"
+    assert not any(len(w["word"]) > 50 for w in stored_words), "garbage survived in words"
+    # Timings are the whole point of the word array — replacing the token must not
+    # cost the seek position.
+    assert stored_words[1]["start"] == 0.4
+    assert stored_words[1]["end"] == 3.0
+    assert stored_words[1]["score"] == 0.1
 
 
-def test_the_cleaned_copy_shares_its_words_list_with_the_caller():
+def test_the_cleaned_copy_does_not_share_its_words_list():
     """CHARACTERIZATION — pins current WRONG behaviour. DEFECT: finalize.py L61.
 
     ``segment.copy()`` is a **shallow** copy, so the "cleaned" segment and the caller's
@@ -221,8 +227,9 @@ def test_the_cleaned_copy_shares_its_words_list_with_the_caller():
     path goes on to use for embeddings and indexing.
 
     WHEN FIXED (``copy.deepcopy``, or an explicit new list for ``words``) this test will
-    fail. Replace ``is`` with ``is not`` and rename to
-    ``test_the_cleaned_copy_owns_its_own_words_list``.
+    The cleaned segment must own its own list (issue #456). `segment.copy()` is shallow,
+    so a shared list means cleaning `words` in place would also rewrite the caller's
+    `result["segments"]` — which is then used for embeddings and indexing.
     """
     words = [{"word": "hello", "start": 0.0, "end": 0.4}]
     original = {"text": f"hello {_noise(80)}", "words": words}
@@ -230,10 +237,11 @@ def test_the_cleaned_copy_shares_its_words_list_with_the_caller():
     cleaned, count = clean_garbage_words([original], 50)
 
     assert count == 1
-    assert cleaned[0]["words"] is words  # WRONG — a copy should own its own list
+    assert cleaned[0]["words"] is not words, "the copy must not share the caller's list"
+    assert words[0]["word"] == "hello", "the caller's own entries must be untouched"
 
 
-def test_whitespace_is_normalised_even_in_segments_with_nothing_to_clean():
+def test_an_unchanged_segment_keeps_its_text_byte_for_byte():
     """CHARACTERIZATION — pins current WRONG behaviour. DEFECT: finalize.py L62.
 
     ``" ".join(text.split())`` is applied to **every** segment, not just the ones that had
@@ -246,18 +254,19 @@ def test_whitespace_is_normalised_even_in_segments_with_nothing_to_clean():
     That also means enabling or disabling the setting changes stored text for files that
     contained no garbage at all, so two otherwise identical runs are not byte-comparable.
 
-    WHEN FIXED (rejoin only when ``garbage_count`` changed for that segment, or splice the
-    replacement into the original string) this test will fail. Replace the assertions with
-    ``cleaned[0]["text"] == segments[0]["text"]`` and rename to
-    ``test_segments_with_nothing_to_clean_are_returned_verbatim``.
+    Fixed in issue #456: the rejoin now happens only for a segment that actually had an
+    artefact replaced, so a segment with nothing to clean comes back byte-for-byte. That
+    also makes the setting's on/off states byte-comparable for files containing no
+    garbage, which they were not before.
     """
     segments = [{"text": " Hello  there.\nSecond line. "}]
 
     cleaned, count = clean_garbage_words(segments, 50)
 
     assert count == 0, "nothing in this segment is an artefact"
-    assert cleaned[0]["text"] == "Hello there. Second line."  # WRONG — should be verbatim
-    assert cleaned[0]["text"] != segments[0]["text"]
+    assert cleaned[0]["text"] == " Hello  there.\nSecond line. ", (
+        "an untouched segment was whitespace-normalised on its way to the database"
+    )
 
 
 def test_the_no_space_guard_can_never_fire_so_a_long_run_of_words_is_wiped_wholesale():

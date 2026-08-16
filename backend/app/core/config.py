@@ -498,6 +498,16 @@ class Settings(BaseSettings):
     SEARCH_CHUNK_OVERLAP_WORDS: int = _int_env("SEARCH_CHUNK_OVERLAP_WORDS", 40)
     SEARCH_RRF_RANK_CONSTANT: int = _int_env("SEARCH_RRF_RANK_CONSTANT", 30)
     SEARCH_RRF_WINDOW_SIZE: int = _int_env("SEARCH_RRF_WINDOW_SIZE", 500)
+    # Hybrid fusion strategy (issue #363). "rrf" is the shipped default;
+    # "normalization" selects OpenSearch's normalization-processor instead.
+    # Env-only and deliberately NOT DB-backed, like SEARCH_RRF_RANK_CONSTANT above:
+    # these are measurement knobs for the #363 A/B, not admin settings. A request
+    # may override all four per call — see services/search/fusion.py.
+    SEARCH_FUSION_STRATEGY: str = os.getenv("SEARCH_FUSION_STRATEGY", "rrf")
+    SEARCH_NORMALIZATION_TECHNIQUE: str = os.getenv("SEARCH_NORMALIZATION_TECHNIQUE", "min_max")
+    SEARCH_COMBINATION_TECHNIQUE: str = os.getenv("SEARCH_COMBINATION_TECHNIQUE", "arithmetic_mean")
+    # Comma-separated per-leg weights, e.g. "0.7,0.3" (BM25, neural). Empty = equal.
+    SEARCH_COMBINATION_WEIGHTS: str = os.getenv("SEARCH_COMBINATION_WEIGHTS", "")
     SEARCH_BULK_BATCH_SIZE: int = max(_int_env("SEARCH_BULK_BATCH_SIZE", 100), 1)
     SEARCH_NEURAL_BATCH_SIZE: int = _int_env("SEARCH_NEURAL_BATCH_SIZE", 5)
     SEARCH_REINDEX_REFRESH_INTERVAL: int = _int_env("SEARCH_REINDEX_REFRESH_INTERVAL", 100)

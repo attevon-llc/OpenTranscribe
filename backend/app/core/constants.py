@@ -729,6 +729,65 @@ LLM_OUTPUT_LANGUAGES = {
 }
 
 # =============================================================================
+# Reasoning ("thinking") as a per-MODEL capability (issue #64)
+# =============================================================================
+# A provider accepting an "off" parameter is NOT evidence the model honours it.
+# Measured against a real vLLM serving gemma-4-e4b, `enable_thinking: false` was
+# byte-identical to omitting the key: HTTP 200, and 931 characters of reasoning
+# either way. So the off-switch is *probed*, per model, and the UI control only
+# exists where the probe proved it works. Everything below is the probe's
+# instrument settings; there are deliberately no `.env` vars, and the recorded
+# verdict is a measurement rather than an admin-editable setting (see
+# `services/llm_reasoning.py`).
+
+#: `SystemSettings` key prefix. The suffix is a fingerprint of
+#: (provider, base_url, model) — see `llm_reasoning.capability_key`.
+LLM_REASONING_CAPABILITY_KEY_PREFIX = "llm.reasoning.off_switch."
+
+#: What an unprobed model reports. "unknown" must render no control at all:
+#: a toggle the user believes turns reasoning off, over a model that reasons
+#: anyway, is worse than having no toggle.
+DEFAULT_LLM_REASONING_OFF_SWITCH = "unknown"
+
+#: Temperature for every probe arm. Not a "make it deterministic" claim —
+#: greedy decoding merely removes sampling as an explanation for a difference
+#: between the arms, which is the whole measurement.
+LLM_REASONING_PROBE_TEMPERATURE = 0.0
+
+#: Ceiling per arm. Large enough that a truncated thought is not read as a
+#: suppressed one (the measured "on" arm spent 1,123 tokens).
+LLM_REASONING_PROBE_MAX_TOKENS = 1200
+
+#: Per-arm HTTP timeout. Three arms, so the whole probe is bounded well inside
+#: a request's patience; a slow endpoint yields UNKNOWN rather than hanging.
+LLM_REASONING_PROBE_TIMEOUT_S = 120
+
+#: The "off" arm must remove at least 90% of the reasoning the control arms
+#: produced before the switch is called real. Justification: the control is
+#: labelled *off*. A switch that halves the thinking still leaves the user
+#: reading a claim that is false, which is the failure this whole capability
+#: exists to prevent — so 90% suppression is the weakest threshold under which
+#: "off" is an honest word. The measured negative sits at 1.00 of the omitted
+#: control and 0.56 of the activated arm, i.e. 5.6x clear of the boundary on
+#: the tighter of the two conditions.
+LLM_REASONING_PROBE_SUPPRESSION_RATIO = 0.1
+
+#: Below this many characters the "reasoning" is a stray boundary token rather
+#: than a chain of thought, and a ratio computed over it is noise. Observed
+#: arms were 931-1,656 characters, ~30x above it.
+LLM_REASONING_PROBE_MIN_CHARS = 32
+
+#: Elicits multi-step arithmetic in a couple of hundred tokens. Deliberately
+#: not a transcript question: the probe must not depend on retrieval, on the
+#: user's library, or on anything that could send recorded content to a
+#: provider as a side effect of pressing a button.
+LLM_REASONING_PROBE_PROMPT = (
+    "A meeting had three speakers. Two of them each spoke for 12 minutes and "
+    "the third spoke for half as long as one of them. How many minutes were "
+    "spoken in total? Show your working."
+)
+
+# =============================================================================
 # Organization Context Settings
 # =============================================================================
 

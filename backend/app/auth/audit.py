@@ -86,6 +86,16 @@ class AuditEventType(StrEnum):
     # Banner acknowledgment
     AUTH_BANNER_ACKNOWLEDGED = "auth.banner.acknowledged"
 
+    # Resource sharing (collections, tags) — see details.resource_type. Distinct from
+    # PROMPT_SHARE/UNSHARE above, which predate this and are prompt-specific.
+    RESOURCE_SHARE = "resource.share"
+    RESOURCE_UNSHARE = "resource.unshare"
+
+    # Group membership (issue #443)
+    GROUP_MEMBER_ADD = "group.member.add"
+    GROUP_MEMBER_REMOVE = "group.member.remove"
+    GROUP_MEMBER_ROLE_CHANGE = "group.member.role_change"
+
 
 class AuditOutcome(StrEnum):
     """Audit event outcomes."""

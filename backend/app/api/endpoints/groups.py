@@ -7,6 +7,7 @@ from datetime import datetime
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -14,9 +15,13 @@ from sqlalchemy.orm import joinedload
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
+from app.auth.audit import AuditEventType
+from app.auth.audit import AuditOutcome
+from app.auth.audit import audit_logger
 from app.core.constants import NOTIFICATION_TYPE_GROUP_MEMBER_ADDED
 from app.core.constants import NOTIFICATION_TYPE_GROUP_MEMBER_REMOVED
 from app.db.base import get_db
+from app.middleware.audit import get_request_context
 from app.models.group import UserGroup
 from app.models.group import UserGroupMember
 from app.models.media import CollectionMember
@@ -434,6 +439,7 @@ def delete_group(
 def add_member(
     group_uuid: str,
     member_add: GroupMemberAdd,
+    request: Request,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ):
@@ -485,6 +491,24 @@ def add_member(
         },
     )
 
+    req_ctx = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.GROUP_MEMBER_ADD,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=req_ctx["source_ip"],
+        user_agent=req_ctx["user_agent"],
+        organization_id=ctx.org_id,
+        target_user_id=target_user.id,
+        target_username=str(target_user.email),
+        details={
+            "group_uuid": str(group.uuid),
+            "group_name": group.name,
+            "role": member.role,
+        },
+    )
+
     return GroupMember(
         uuid=member.uuid,
         user_uuid=target_user.uuid,
@@ -500,6 +524,7 @@ def update_member_role(
     group_uuid: str,
     user_uuid: str,
     member_update: GroupMemberUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ):
@@ -533,12 +558,32 @@ def update_member_role(
             detail="Only the group owner can change admin roles",
         )
 
+    previous_role = target_membership.role
     target_membership.role = member_update.role
     db.commit()
     db.refresh(target_membership)
 
     # Reindex files in collections shared with this group
     _reindex_group_shared_files(db, group.id)
+
+    req_ctx = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.GROUP_MEMBER_ROLE_CHANGE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=req_ctx["source_ip"],
+        user_agent=req_ctx["user_agent"],
+        organization_id=ctx.org_id,
+        target_user_id=target_user.id,
+        target_username=str(target_user.email),
+        details={
+            "group_uuid": str(group.uuid),
+            "group_name": group.name,
+            "previous_role": previous_role,
+            "role": target_membership.role,
+        },
+    )
 
     return GroupMember(
         uuid=target_membership.uuid,
@@ -557,6 +602,7 @@ def update_member_role(
 def remove_member(
     group_uuid: str,
     user_uuid: str,
+    request: Request,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ):
@@ -608,5 +654,23 @@ def remove_member(
                 "message": f"You have been removed from group '{group.name}'",
             },
         )
+
+    req_ctx = get_request_context(request)
+    audit_logger.log(
+        event_type=AuditEventType.GROUP_MEMBER_REMOVE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=req_ctx["source_ip"],
+        user_agent=req_ctx["user_agent"],
+        organization_id=ctx.org_id,
+        target_user_id=target_user.id,
+        target_username=str(target_user.email),
+        details={
+            "group_uuid": str(group.uuid),
+            "group_name": group.name,
+            "self_remove": is_self_remove,
+        },
+    )
 
     return None

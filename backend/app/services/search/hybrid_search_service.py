@@ -24,6 +24,9 @@ from app.core.constants import SEARCH_MAX_SNIPPETS_PER_FILE
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.services.opensearch_service import get_opensearch_client
 from app.services.opensearch_service import opensearch_client
+from app.services.search.fusion import FusionConfig
+from app.services.search.fusion import resolve_fusion
+from app.services.search.fusion import search_pipeline_id
 from app.services.search.indexing_service import ensure_chunks_index_exists
 from app.services.search.indexing_service import ensure_search_pipeline_exists
 from app.services.search.snippet_redaction import MASKABLE_CATEGORIES
@@ -43,9 +46,17 @@ def _withhold_snippets(occurrences: list) -> None:
         occ.snippet = WITHHELD_SNIPPET
 
 
-# Module-level caches for index/pipeline existence checks
+# Module-level caches for index/pipeline existence checks.
+#
+# ``_verified_pipelines`` is a SET of pipeline ids, not a bool. Since #363 a
+# request may name its own fusion strategy, and each strategy is a separate
+# OpenSearch search pipeline — a single "the pipeline is verified" flag would
+# have let the FIRST strategy a process saw certify every later one, so the
+# second arm of an A/B would attach a pipeline id that had never been created
+# and OpenSearch would run the query **unfused**. That is a plausible number,
+# not an error. ``reset_infrastructure_state`` clears the set.
 _index_verified = False
-_pipeline_verified = False
+_verified_pipelines: set[str] = set()
 _neural_search_available: bool | None = None
 _neural_search_check_time: float = 0.0
 _NEURAL_SEARCH_CACHE_TTL: float = 120.0  # Re-check every 2 minutes (success)
@@ -457,26 +468,66 @@ def _append_range_filter(
     filters.append({"range": {field: range_clause}})
 
 
-def _ensure_infrastructure() -> None:
-    """Ensure the OpenSearch index and search pipeline exist (checked once)."""
-    global _index_verified, _pipeline_verified
-    if _index_verified and _pipeline_verified:
-        return
+def ensure_fusion_pipeline(fusion: FusionConfig | None = None) -> str:
+    """Ensure ``fusion``'s search pipeline exists, and return the id to attach.
+
+    Verification is cached **per pipeline id** so a process that has served RRF
+    still creates the normalization pipeline the first time one is asked for.
+    Attaching a ``search_pipeline`` that does not exist is not an error in
+    OpenSearch's eyes at the point the id is chosen — it fails at query time, or
+    worse, an earlier arm's pipeline is already there and the run silently
+    measures it.
+
+    Args:
+        fusion: The requested strategy, or None for the configured default.
+
+    Returns:
+        The pipeline id to pass as the ``search_pipeline`` request parameter.
+    """
+    cfg = resolve_fusion(fusion)
+    pipeline_id = search_pipeline_id(cfg)
+    if pipeline_id in _verified_pipelines:
+        return pipeline_id
     with _state_lock:
-        if not _index_verified:
-            ensure_chunks_index_exists()
-            _index_verified = True
-        if not _pipeline_verified:
-            ensure_search_pipeline_exists()
-            _pipeline_verified = True
+        if pipeline_id not in _verified_pipelines:
+            ensure_search_pipeline_exists(cfg)
+            # Recorded even when creation failed, matching the pre-#363 flag: a
+            # cluster that cannot hold a pipeline is not fixed by asking it once
+            # per request, and search degrades to unfused rather than stalling.
+            _verified_pipelines.add(pipeline_id)
+    return pipeline_id
+
+
+def _ensure_infrastructure(fusion: FusionConfig | None = None) -> str:
+    """Ensure the OpenSearch index and this request's search pipeline exist.
+
+    Args:
+        fusion: The requested strategy, or None for the configured default.
+
+    Returns:
+        The pipeline id to attach to this request.
+    """
+    global _index_verified
+    if not _index_verified:
+        with _state_lock:
+            if not _index_verified:
+                ensure_chunks_index_exists()
+                _index_verified = True
+    return ensure_fusion_pipeline(fusion)
 
 
 def reset_infrastructure_state() -> None:
-    """Reset index/pipeline verification state. Call after index recreation."""
-    global _index_verified, _pipeline_verified
+    """Reset index/pipeline verification state. Call after index recreation.
+
+    Clears **every** verified pipeline id, not just the default one. A stale id
+    left behind here is exactly the "cached infrastructure state that survived a
+    config change" failure this repo keeps hitting: the next request would
+    attach a pipeline nobody re-checked.
+    """
+    global _index_verified
     with _state_lock:
         _index_verified = False
-        _pipeline_verified = False
+        _verified_pipelines.clear()
     logger.info("Infrastructure verification state reset")
 
 
@@ -530,12 +581,17 @@ class HybridSearchService:
         title_filter: str | None = None,
         organization_id: int | None = None,
         file_uuid: str | None = None,
+        fusion: FusionConfig | None = None,
     ) -> SearchResponse:
         """Execute hybrid search and return grouped results.
 
         Args:
             query: Search query text.
             user_id: Current user ID for filtering.
+            fusion: Hybrid fusion strategy for **this request** (#363). None uses
+                the configured default. The resolved pipeline id is part of the
+                response cache key, so two strategies cannot serve each other's
+                cached page.
             organization_id: Active org id (None = personal). Adds the tenant gate
                 so cross-org transcript content never surfaces.
             page: Page number (1-indexed).
@@ -582,12 +638,13 @@ class HybridSearchService:
             title_filter=title_filter,
             organization_id=organization_id,
             file_uuid=file_uuid,
+            fusion_pipeline=search_pipeline_id(fusion),
         )
         cached = _get_cached_response(cache_key)
         if cached:
             return cached
 
-        _ensure_infrastructure()
+        pipeline_id = _ensure_infrastructure(fusion)
 
         # Parse inline query operators (e.g., speaker:"Joe Rogan" china)
         clean_query, operators = _parse_query_operators(query)
@@ -648,6 +705,7 @@ class HybridSearchService:
             start_time=start_time,
             has_speaker_filter=has_speaker_filter,
             use_neural=use_neural,
+            search_pipeline=pipeline_id,
         )
 
         # Read-time content redaction of snippets, for whichever of PII / profanity /
@@ -2203,6 +2261,7 @@ class HybridSearchService:
         filters_applied: dict[str, Any],
         start_time: float,
         has_speaker_filter: bool,
+        search_pipeline: str,
     ) -> SearchResponse:
         """Two-phase search for non-relevance sorts with hybrid mode.
 
@@ -2227,6 +2286,9 @@ class HybridSearchService:
             filters_applied: Filter metadata for response.
             start_time: Timestamp for elapsed time.
             has_speaker_filter: Whether a speaker filter is active.
+            search_pipeline: The fusion pipeline id resolved for this request
+                (#363). Passed down rather than re-read from settings so an A/B
+                arm cannot lose its strategy on the way to the wire.
 
         Returns:
             SearchResponse with correctly sorted and paginated results.
@@ -2251,6 +2313,7 @@ class HybridSearchService:
                 start_time=start_time,
                 has_speaker_filter=has_speaker_filter,
                 use_neural=False,
+                search_pipeline=search_pipeline,
             )
 
         search_fields = self._get_search_fields(has_speaker_filter)
@@ -2312,7 +2375,7 @@ class HybridSearchService:
             phase1_resp = client.search(
                 index=settings.OPENSEARCH_CHUNKS_INDEX,
                 body=phase1_body,
-                params={"search_pipeline": settings.OPENSEARCH_SEARCH_PIPELINE},
+                params={"search_pipeline": search_pipeline},
             )
         except Exception as e:
             logger.warning(f"Two-phase Phase 1 failed, falling back to single-phase: {e}")
@@ -2329,6 +2392,7 @@ class HybridSearchService:
                 start_time=start_time,
                 has_speaker_filter=has_speaker_filter,
                 use_neural=False,
+                search_pipeline=search_pipeline,
             )
 
         p1_ms = round((time.time() - t_p1) * 1000)
@@ -2495,6 +2559,7 @@ class HybridSearchService:
         start_time: float,
         has_speaker_filter: bool,
         use_neural: bool,
+        search_pipeline: str,
     ) -> SearchResponse:
         """Execute search using native collapse + inner_hits.
 
@@ -2518,6 +2583,9 @@ class HybridSearchService:
             start_time: Timestamp for elapsed time calculation.
             has_speaker_filter: Whether a speaker filter is active.
             use_neural: Whether to use neural query.
+            search_pipeline: The fusion pipeline id resolved for this request
+                (#363), attached only when the body actually has two legs to
+                fuse.
 
         Returns:
             SearchResponse with grouped results.
@@ -2537,6 +2605,7 @@ class HybridSearchService:
                 filters_applied=filters_applied,
                 start_time=start_time,
                 has_speaker_filter=has_speaker_filter,
+                search_pipeline=search_pipeline,
             )
 
         client = get_opensearch_client()
@@ -2566,7 +2635,7 @@ class HybridSearchService:
                 return self._empty_response(query, page, page_size)
             search_params: dict[str, Any] = {}
             if use_neural:
-                search_params["search_pipeline"] = settings.OPENSEARCH_SEARCH_PIPELINE
+                search_params["search_pipeline"] = search_pipeline
             response = client.search(
                 index=settings.OPENSEARCH_CHUNKS_INDEX,
                 body=search_body,

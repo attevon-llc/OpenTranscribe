@@ -47,6 +47,8 @@ import pytest
 
 from app.core.config import settings
 from app.services.search import indexing_service as svc
+from app.services.search.fusion import FusionConfig
+from app.services.search.fusion import search_pipeline_id
 
 FILE_UUID = "11111111-2222-3333-4444-555555555555"
 OTHER_UUID = "99999999-8888-7777-6666-555555555555"
@@ -89,20 +91,12 @@ class _FakeTransport:
     """Answers the search-pipeline probe so ``ensure_search_pipeline_exists`` is a no-op."""
 
     def perform_request(self, method: str, path: str, body: Any = None) -> Any:  # noqa: ARG002
-        pipeline_id = settings.OPENSEARCH_SEARCH_PIPELINE
-        return {
-            pipeline_id: {
-                "phase_results_processors": [
-                    {
-                        "score-ranker-processor": {
-                            "combination": {
-                                "rank_constant": settings.SEARCH_RRF_RANK_CONSTANT,
-                            }
-                        }
-                    }
-                ]
-            }
-        }
+        # Built FROM the config rather than spelled out: since #363 the self-heal
+        # compares the whole processor block, so a hand-written stand-in that
+        # omitted a field would silently make this a delete-and-recreate probe
+        # instead of the no-op the docstring claims.
+        cfg = FusionConfig.default()
+        return {search_pipeline_id(cfg): cfg.pipeline_body()}
 
 
 class _FakeIndex:

@@ -444,3 +444,124 @@ def test_remove_member_not_a_member_404(
     )
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json()["detail"] == "User is not a member of this group"
+
+
+# ---------------------------------------------------------------------------
+# Group membership audit events (issue #443's smaller half — these three event
+# types + collection/tag RESOURCE_SHARE/UNSHARE previously emitted nothing).
+# ---------------------------------------------------------------------------
+
+
+def test_add_member_emits_group_member_add_audit_event(
+    client, user_token_headers, normal_user, other_user, db_session, monkeypatch
+):
+    from app.api.endpoints import groups as groups_module
+
+    events = []
+    monkeypatch.setattr(groups_module.audit_logger, "log", lambda **kw: events.append(kw))
+
+    group = _make_group(db_session, normal_user)
+    response = client.post(
+        f"/api/groups/{group.uuid}/members",
+        headers=user_token_headers,
+        json={"user_uuid": str(other_user.uuid), "role": "member"},
+    )
+    assert response.status_code == status.HTTP_201_CREATED
+    assert len(events) == 1
+    event = events[0]
+    assert event["event_type"] == groups_module.AuditEventType.GROUP_MEMBER_ADD
+    assert event["user_id"] == normal_user.id
+    assert event["target_user_id"] == other_user.id
+    assert event["details"]["group_uuid"] == str(group.uuid)
+    assert event["details"]["role"] == "member"
+
+
+def test_add_member_400_does_not_emit_audit_event(
+    client, user_token_headers, normal_user, other_user, db_session, monkeypatch
+):
+    """Control: a rejected add (already a member) must not fire the event --
+    otherwise the assertion above would pass equally for a handler that audits
+    every request regardless of outcome."""
+    from app.api.endpoints import groups as groups_module
+
+    events = []
+    monkeypatch.setattr(groups_module.audit_logger, "log", lambda **kw: events.append(kw))
+
+    group = _make_group(db_session, normal_user)
+    _add_member(db_session, group, other_user, role="member")
+    response = client.post(
+        f"/api/groups/{group.uuid}/members",
+        headers=user_token_headers,
+        json={"user_uuid": str(other_user.uuid), "role": "member"},
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert events == []
+
+
+def test_update_member_role_emits_group_member_role_change_audit_event(
+    client, user_token_headers, normal_user, other_user, db_session, monkeypatch
+):
+    from app.api.endpoints import groups as groups_module
+
+    events = []
+    monkeypatch.setattr(groups_module.audit_logger, "log", lambda **kw: events.append(kw))
+
+    group = _make_group(db_session, normal_user)
+    _add_member(db_session, group, other_user, role="member")
+    response = client.put(
+        f"/api/groups/{group.uuid}/members/{other_user.uuid}",
+        headers=user_token_headers,
+        json={"role": "admin"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert len(events) == 1
+    event = events[0]
+    assert event["event_type"] == groups_module.AuditEventType.GROUP_MEMBER_ROLE_CHANGE
+    assert event["user_id"] == normal_user.id
+    assert event["target_user_id"] == other_user.id
+    assert event["details"]["previous_role"] == "member"
+    assert event["details"]["role"] == "admin"
+
+
+def test_remove_member_emits_group_member_remove_audit_event(
+    client, user_token_headers, normal_user, other_user, db_session, monkeypatch
+):
+    from app.api.endpoints import groups as groups_module
+
+    events = []
+    monkeypatch.setattr(groups_module.audit_logger, "log", lambda **kw: events.append(kw))
+
+    group = _make_group(db_session, normal_user)
+    _add_member(db_session, group, other_user, role="member")
+    response = client.delete(
+        f"/api/groups/{group.uuid}/members/{other_user.uuid}",
+        headers=user_token_headers,
+    )
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    assert len(events) == 1
+    event = events[0]
+    assert event["event_type"] == groups_module.AuditEventType.GROUP_MEMBER_REMOVE
+    assert event["user_id"] == normal_user.id
+    assert event["target_user_id"] == other_user.id
+    assert event["details"]["self_remove"] is False
+
+
+def test_remove_member_self_leave_marks_self_remove_true(
+    client, other_user_auth_headers, normal_user, other_user, db_session, monkeypatch
+):
+    from app.api.endpoints import groups as groups_module
+
+    events = []
+    monkeypatch.setattr(groups_module.audit_logger, "log", lambda **kw: events.append(kw))
+
+    group = _make_group(db_session, normal_user)
+    _add_member(db_session, group, other_user, role="member")
+    response = client.delete(
+        f"/api/groups/{group.uuid}/members/{other_user.uuid}",
+        headers=other_user_auth_headers,
+    )
+    assert response.status_code == status.HTTP_204_NO_CONTENT
+    assert len(events) == 1
+    assert events[0]["details"]["self_remove"] is True
+    assert events[0]["user_id"] == other_user.id
+    assert events[0]["target_user_id"] == other_user.id

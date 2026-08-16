@@ -18,6 +18,10 @@ from .embedding_provenance import active_embedding_model
 from .embedding_provenance import reset_active_embedding_model
 from .embedding_provenance import resolve_model_label
 from .embedding_provenance import set_active_embedding_model
+from .fusion import FusionConfig
+from .fusion import pipeline_matches
+from .fusion import resolve_fusion
+from .fusion import search_pipeline_id
 
 logger = logging.getLogger(__name__)
 
@@ -435,11 +439,20 @@ def recreate_index_for_dimension(dimension: int) -> bool:
         return False
 
 
-def ensure_search_pipeline_exists() -> bool:
-    """Ensure the hybrid search pipeline exists with the correct rank_constant.
+def ensure_search_pipeline_exists(fusion: FusionConfig | None = None) -> bool:
+    """Ensure the search pipeline for ``fusion`` exists with the right processors.
 
-    If the pipeline exists but has a different rank_constant than configured,
-    it will be recreated with the correct value.
+    Self-heals on drift: a pipeline whose stored body differs from the wanted one
+    is deleted and recreated. Since #363 the comparison is **structural over the
+    whole processor block** rather than a single ``rank_constant`` field, so a
+    normalization pipeline whose technique changed heals the same way an RRF
+    pipeline whose rank constant changed always has. OpenSearch echoes a pipeline
+    body back verbatim, so an exact comparison is safe.
+
+    Args:
+        fusion: The strategy this pipeline implements; None for the configured
+            default (RRF at ``SEARCH_RRF_RANK_CONSTANT``, the historical
+            ``transcript-hybrid-search``).
 
     Returns:
         True if pipeline exists or was created, False on error.
@@ -448,34 +461,21 @@ def ensure_search_pipeline_exists() -> bool:
         logger.warning("OpenSearch client not initialized")
         return False
 
-    pipeline_id = settings.OPENSEARCH_SEARCH_PIPELINE
-    pipeline_body = _build_hybrid_search_pipeline()
+    cfg = resolve_fusion(fusion)
+    pipeline_id = search_pipeline_id(cfg)
+    pipeline_body = cfg.pipeline_body()
     try:
-        # Check if pipeline exists and has correct rank_constant
         try:
             response = opensearch_client.transport.perform_request(
                 "GET", f"/_search/pipeline/{pipeline_id}"
             )
-            # Verify rank_constant matches configured value
             existing = response.get(pipeline_id, response) if isinstance(response, dict) else {}
-            processors = existing.get("phase_results_processors", [])
-            for proc in processors:
-                ranker = proc.get("score-ranker-processor", {})
-                combo = ranker.get("combination", {})
-                existing_rc = combo.get("rank_constant")
-                if existing_rc is not None and existing_rc != settings.SEARCH_RRF_RANK_CONSTANT:
-                    logger.info(
-                        f"Search pipeline rank_constant mismatch: "
-                        f"{existing_rc} vs {settings.SEARCH_RRF_RANK_CONSTANT}, recreating"
-                    )
-                    # Delete and recreate
-                    opensearch_client.transport.perform_request(
-                        "DELETE", f"/_search/pipeline/{pipeline_id}"
-                    )
-                    break
-            else:
-                # Pipeline exists with correct config
+            if pipeline_matches(existing, cfg):
                 return True
+            logger.info(f"Search pipeline {pipeline_id} drifted from {cfg.slug()}, recreating")
+            opensearch_client.transport.perform_request(
+                "DELETE", f"/_search/pipeline/{pipeline_id}"
+            )
         except Exception:
             logger.debug(f"Search pipeline {pipeline_id} not found, will create it")
 
@@ -485,10 +485,7 @@ def ensure_search_pipeline_exists() -> bool:
             f"/_search/pipeline/{pipeline_id}",
             body=pipeline_body,
         )
-        logger.info(
-            f"Created search pipeline: {pipeline_id} "
-            f"(rank_constant={settings.SEARCH_RRF_RANK_CONSTANT})"
-        )
+        logger.info(f"Created search pipeline: {pipeline_id} ({cfg.slug()})")
         return True
     except Exception as e:
         logger.error(f"Error creating search pipeline: {e}")

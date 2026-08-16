@@ -195,6 +195,22 @@ def propagate_title_rename(file_uuid: str, new_title: str) -> dict[str, Any]:
     the chunk plane feeds search result cards and chat citations, both of which
     would keep showing the old title.
 
+    ⚠️ **This rewrites the display/keyword field ONLY — the vector keeps the old
+    title.** ``indexing_service`` bakes the title into ``embedding_text``
+    (``build_embedding_text(title=..., recorded_at=..., roster=..., body=...)``),
+    so the title is not decoration: it participates in semantic matching, and a
+    chunk from "Q3 Pricing Review" embeds differently from the same words under
+    "Untitled recording". The script below sets ``ctx._source.title`` and nothing
+    else, so after a rename **semantic** search still matches on the old title
+    until the file is reindexed.
+
+    That is a deliberate trade, not an oversight: re-embedding every chunk of a
+    long recording for a cosmetic rename costs hundreds of model calls, and the
+    two things a user notices immediately — the card and the citation — are the
+    ones this fixes. If a rename ever needs to move the vector too, dispatch a
+    reindex rather than widening this script; ``embedding_text`` is derived at
+    index time and cannot be patched correctly in place.
+
     Args:
         file_uuid: UUID of the media file that was renamed.
         new_title: The current title.

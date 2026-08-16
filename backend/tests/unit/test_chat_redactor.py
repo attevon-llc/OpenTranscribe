@@ -8,12 +8,28 @@ text is safe, we send nothing rather than sending it raw.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from app.services.chat.redactor import mask_chunks
 from app.services.search.chunk_retrieval import ChunkHit
+
+
+@contextmanager
+def _one_session(db):
+    yield db
+
+
+def _factory(db):
+    """A ``session_scope``-shaped factory over one prepared session.
+
+    ``mask_chunks`` takes the FACTORY, never a ``Session`` (issue #83): it owns
+    the transaction boundary so it can CLOSE it before the detector runs. The
+    lifetime property that shape buys is asserted at the bottom of this module.
+    """
+    return lambda: _one_session(db)
 
 
 def _chunk(content: str = "my number is 555-1234") -> ChunkHit:
@@ -66,7 +82,7 @@ def test_policy_off_passes_content_through_untouched():
         "app.services.redaction.config.resolve_effective_config",
         return_value=_cfg(enabled=True, redact_before_llm=False),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == "my number is 555-1234"
     assert masked[0].was_masked is False
@@ -78,7 +94,7 @@ def test_redaction_disabled_entirely_passes_content_through():
         "app.services.redaction.config.resolve_effective_config",
         return_value=_cfg(enabled=False, redact_before_llm=True),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].was_masked is False
 
@@ -131,7 +147,7 @@ def test_policy_on_rebuilds_text_from_cached_segment_spans():
             return_value=("my number is [PHONE]", []),
         ) as mask_segment,
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == "my number is [PHONE]"
     assert masked[0].was_masked is True
@@ -165,7 +181,7 @@ def test_uncached_spans_do_not_pass_as_masked():
             return_value=("my number is [PHONE]", []),
         ),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     # Must have gone down the inline-detection path, not returned raw text.
     assert "555-1234" not in masked[0].content
@@ -191,7 +207,7 @@ def test_incomplete_detection_status_forces_the_inline_path():
                 return_value=("[MASKED]", []),
             ),
         ):
-            mask_chunks(db, [_chunk()], user_id=1)
+            mask_chunks(_factory(db), [_chunk()], user_id=1)
         assert detect.called, f"status={status!r} should force inline detection"
 
 
@@ -210,7 +226,7 @@ def test_masking_error_on_the_cached_path_fails_closed():
             side_effect=RuntimeError("masker exploded"),
         ),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == ""
     assert masked[0].was_masked is True
@@ -234,7 +250,7 @@ def test_falls_back_to_inline_masking_when_segments_are_missing():
             return_value=("my number is [PHONE]", []),
         ),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == "my number is [PHONE]"
     assert masked[0].was_masked is True
@@ -254,7 +270,7 @@ def test_inline_masking_failure_drops_content_rather_than_leaking_it():
             side_effect=RuntimeError("detector unavailable"),
         ),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == ""
     assert "555-1234" not in masked[0].content
@@ -287,7 +303,7 @@ def test_a_swallowed_detector_failure_withholds_the_chunk():
             side_effect=lambda text, *_a, **_k: (text, []),
         ),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == ""
     assert "555-1234" not in masked[0].content
@@ -318,7 +334,7 @@ def test_the_withheld_chunk_reaches_no_prompt():
             side_effect=lambda text, *_a, **_k: (text, []),
         ),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     block, excerpt_ids = format_excerpts(masked, budget_chars=4000)
 
@@ -350,7 +366,7 @@ def test_a_detector_failure_outside_the_users_categories_still_answers():
             return_value=("profanity-masked text", []),
         ),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == "profanity-masked text"
     assert masked[0].was_masked is True
@@ -380,7 +396,7 @@ def test_a_profanity_failure_withholds_when_custom_words_are_masked():
             side_effect=lambda text, *_a, **_k: (text, []),
         ),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == ""
 
@@ -421,7 +437,7 @@ def _mask_chunks_with_analyzer(analyzer, cfg):
             return_value=analyzer,
         ),
     ):
-        return mask_chunks(db, [_chunk()], user_id=1)
+        return mask_chunks(_factory(db), [_chunk()], user_id=1)
 
 
 class _AnalyzerThatThrows:
@@ -494,7 +510,7 @@ def test_the_cached_path_refuses_a_scan_that_never_ran_pii():
     """The primary path discriminates on detector COVERAGE, not just status (#78).
 
     ``_mask_inline`` is the FALLBACK. The path most requests take is
-    ``_mask_from_segments``, which trusts cached spans whenever
+    ``_gather_chunk_segments``, which trusts cached spans whenever
     ``redaction_status == done`` — and an unavailable detector is recorded as a
     *skip*, so a scan that never ran Presidio still reaches ``done``. The segments
     then say "no PII spans", the masker masks nothing, and a ``pii``-enabled user
@@ -533,7 +549,7 @@ def test_the_cached_path_refuses_a_scan_that_never_ran_pii():
         "app.services.redaction.config.resolve_effective_config",
         return_value=_real_cfg({"pii"}),
     ):
-        masked = mask_chunks(db, [_chunk(leaky)], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk(leaky)], user_id=1)
 
     assert "555-867-5309" not in masked[0].content, (
         "the cached path trusted a scan whose PII detector never ran: the raw "
@@ -549,7 +565,7 @@ def test_unresolvable_policy_fails_closed():
         "app.services.redaction.config.resolve_effective_config",
         side_effect=RuntimeError("db down"),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)
 
     assert masked[0].content == ""
     assert masked[0].was_masked is True
@@ -562,9 +578,147 @@ def test_masked_chunk_keeps_citation_metadata():
         "app.services.redaction.config.resolve_effective_config",
         return_value=_cfg(enabled=True, redact_before_llm=False),
     ):
-        masked = mask_chunks(db, [_chunk()], user_id=1)[0]
+        masked = mask_chunks(_factory(db), [_chunk()], user_id=1)[0]
 
     assert masked.file_uuid == "11111111-1111-1111-1111-111111111111"
     assert masked.speaker == "Dana"
     assert masked.start_time == 10.0
     assert masked.title == "Call"
+
+
+# ------------------------------------------------- the session lifetime (#83)
+
+
+class _SessionLedger:
+    """A ``session_scope``-shaped factory that counts LIVE sessions.
+
+    ``live`` is the number open at this instant, so a stage can ask "was a
+    transaction held while I ran" — the same instrumentation
+    ``tests/unit/test_chat_session_phases.py`` uses on the turn as a whole.
+    """
+
+    def __init__(self, db) -> None:
+        self.db = db
+        self.live = 0
+        self.opened = 0
+
+    @contextmanager
+    def scope(self):
+        self.live += 1
+        self.opened += 1
+        try:
+            yield self.db
+        finally:
+            self.live -= 1
+
+
+def test_the_inline_detector_runs_with_no_db_session_open():
+    """#83: masking gathers, CLOSES the session, and only then runs the detector.
+
+    The inline fallback builds a Presidio ``AnalyzerEngine``. Measured against
+    real Postgres in a fresh process, with the build inside the gather
+    transaction: **13,898 ms** ``idle in transaction`` for one chunk. A plain
+    SELECT holds ACCESS SHARE for the life of its transaction, so that queues
+    every ``ALTER TABLE`` behind a chat turn — it hangs an Alembic upgrade
+    mid-release, and dev runs migrations on backend startup.
+
+    ``redaction/warmup.py`` makes the cold build rare, not impossible: its gate
+    is evaluated once at API startup, so enabling redaction afterwards still
+    pays it, and a request arriving mid-warm-up waits for the remainder.
+    """
+    ledger = _SessionLedger(_db_with("done", []))  # no segments -> inline path
+    live_during_detection: list[int] = []
+
+    def _detect(_text, _words, _det_cfg, **_kwargs):
+        live_during_detection.append(ledger.live)
+        return [], None
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            side_effect=_detect,
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            return_value=("my number is [PHONE]", []),
+        ),
+    ):
+        masked = mask_chunks(ledger.scope, [_chunk()], user_id=1)
+
+    assert live_during_detection == [0], (
+        "a DB session was live while the inline detector ran — the hold this "
+        f"split exists to remove (observed: {live_during_detection})"
+    )
+    # The control against a masker that simply stopped masking.
+    assert masked[0].content == "my number is [PHONE]"
+
+
+def test_masking_still_opens_a_session_to_read_cached_spans():
+    """THE control: the fix is a phase split, not the deletion of the session.
+
+    "Zero sessions during detection" is also satisfied by never opening one and
+    failing closed on every chunk, which the assertion above would call a pass.
+    The primary path reads each file's scan row and its cached spans out of
+    Postgres, so it must still get a session — and use it.
+    """
+    segment = SimpleNamespace(
+        text="my number is 555-1234",
+        redactions=[{"char_start": 13, "char_end": 21, "category": "pii", "entity_type": "PHONE"}],
+        words=None,
+    )
+    ledger = _SessionLedger(_db_with("done", [segment]))
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            return_value=("my number is [PHONE]", []),
+        ) as mask_segment,
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            side_effect=AssertionError("the cached path must not reach the detector"),
+        ),
+    ):
+        masked = mask_chunks(ledger.scope, [_chunk()], user_id=1)
+
+    assert ledger.opened == 1, "masking read its cached spans from nowhere"
+    assert mask_segment.call_args[0][1] == segment.redactions
+    assert masked[0].content == "my number is [PHONE]"
+
+
+def test_every_chunk_is_gathered_in_one_session():
+    """A session per chunk would put the detector back inside a transaction.
+
+    Not literally — each would close first — but N sessions for N chunks is the
+    shape that invites the gather back into the masking loop, and it is a real
+    connection-pool cost on a turn that retrieves a dozen excerpts.
+    """
+    ledger = _SessionLedger(_db_with("done", []))
+    ledger.db.query.side_effect = None  # any number of scan probes, all "no file"
+    ledger.db.query.return_value.filter.return_value.first.return_value = None
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            return_value=([], None),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            return_value=("[MASKED]", []),
+        ),
+    ):
+        masked = mask_chunks(ledger.scope, [_chunk(), _chunk(), _chunk()], user_id=1)
+
+    assert len(masked) == 3
+    assert ledger.opened == 1, f"one session per turn, not per chunk (opened {ledger.opened})"

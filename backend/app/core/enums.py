@@ -94,3 +94,33 @@ PRECEDENCE: tuple[RecordedDateSource, ...] = (
     RecordedDateSource.TRANSCRIPT,
     RecordedDateSource.LLM,
 )
+
+
+class ReasoningOffSwitch(enum.StrEnum):
+    """What a probe concluded about a model's "do not reason" parameter (issue #64).
+
+    Lives here rather than beside the probe because three layers read it — the
+    service that measures it, the Pydantic response that carries it, and the
+    capability read on the chat path — and a second copy in the schema module
+    is how the wire contract and the measurement drift apart.
+
+    **Only ``WORKS`` may render a user-facing control.** Every other value means
+    the request is built exactly as it is today. The distinctions between them
+    are diagnostic, not behavioural: an operator debugging a missing toggle
+    needs "I never probed this" to look different from "I probed it and the
+    model ignored the parameter".
+    """
+
+    #: Never probed, or the probe could not complete.
+    UNKNOWN = "unknown"
+    #: This provider has no off-switch parameter this build knows how to send,
+    #: so there is nothing to probe. Distinct from UNKNOWN on purpose.
+    UNSUPPORTED = "unsupported"
+    #: Probed: the model reported no separated reasoning even when asked for it,
+    #: so a switch would have nothing to turn off.
+    NO_REASONING = "no_reasoning"
+    #: Probed: "off" was indistinguishable from not asking. The measured
+    #: gemma-4-e4b case.
+    ABSENT = "absent"
+    #: Probed: "off" removed the reasoning. The only value that renders a control.
+    WORKS = "works"

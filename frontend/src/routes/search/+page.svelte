@@ -13,6 +13,7 @@
   import SearchAutocomplete from '$components/search/SearchAutocomplete.svelte';
   import SearchSortDropdown from '$components/search/SearchSortDropdown.svelte';
   import FloatingPreviewPlayer from '$components/FloatingPreviewPlayer.svelte';
+  import RetrievalQualityNotice from '$components/RetrievalQualityNotice.svelte';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
   import { prefetchNextSearchPage } from '$lib/prefetch';
   import CardGridSkeleton from '../../components/ui/CardGridSkeleton.svelte';
@@ -638,6 +639,15 @@
             <p class="state-hint search-tip">{$t('search.speakerSearchTip')}</p>
           </div>
         {:else}
+          <!-- Smart mode only: Exact mode is literal BM25 keyword matching and is
+               untouched by the fusion ranking #461 measured. Kept OUTSIDE
+               .results-list because test_search.py counts `.results-list > *`. -->
+          {#if $searchStore.searchMode === 'hybrid'}
+            <div class="quality-notice-slot">
+              <RetrievalQualityNotice surface="search" />
+            </div>
+          {/if}
+
           <div class="results-list">
               {#if allSemanticOnly}
                 <div class="no-keyword-notice">
@@ -943,6 +953,10 @@
   .results-list {
     display: flex;
     flex-direction: column;
+  }
+
+  .quality-notice-slot {
+    margin-bottom: 12px;
   }
 
   /* Empty / Loading States */

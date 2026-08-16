@@ -82,13 +82,21 @@ def youtube_metadata_fetch(self, user_id: int, limit: int | None = None) -> dict
             logger.info("youtube_metadata_fetch: hit limit %d, stopping", limit)
             break
 
+        # The budget advances on every ATTEMPT, not every success (issue #457).
+        #
+        # It used to increment only in the success branch below, so `limit` stopped
+        # bounding requests exactly when fetches were FAILING — the state most
+        # likely to mean this host is already soft-blocked, which is the reason
+        # this module rate-limits itself at all. `limit=2` against 3,000 ids ran
+        # the full sweep. `summary["fetched"]` is what reports successes.
+        new_this_run += 1
+
         record = recovery.fetch_youtube_metadata(video_id)
         if record is None:
             summary["failed"] += 1
         else:
             cache[video_id] = record
             summary["fetched"] += 1
-            new_this_run += 1
             # Persist after every successful fetch so the run is resumable.
             recovery.save_metadata_sidecar(svc, cache)
 

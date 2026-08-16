@@ -405,7 +405,7 @@ Results land in `backend/tests/eval/baselines/<control-name>/`:
 
 | file | contents | deterministic? |
 |---|---|---|
-| `metrics.json` | the full result: rows, corpus composition, licence tier, metric-engine provenance, relevance policy, retrieval config | **yes — byte-identical across runs** |
+| `metrics.json` | the full result: rows, corpus composition, licence tier, metric-engine provenance, **embedding provenance**, relevance policy, retrieval config | **yes — byte-identical across runs** |
 | `metrics.md` | the retrieval metric table | **yes** |
 | `answers.md` | the answer table (EM / partial / answered), per query class and per rule | **yes** |
 | `runinfo.json` | elapsed seconds and the resolved target | no, and deliberately outside the claim |
@@ -422,6 +422,80 @@ Reproduction requires four things to be pinned, and all four are recorded with e
    and word counts, and whether its timings are real or synthetic.
 3. **Seeds** — synthetic corpora regenerate byte-identically from their recorded seed.
 4. **Metric implementation and version** — per the divergence above.
+5. **Embedding model** — per the section immediately below. It is pinned in `metrics.json`'s
+   `index` block, not in `runinfo.json`, because it is part of the claim rather than part of the
+   run.
+
+## A retrieval number that does not name its embedding model is not comparable
+
+Swap the embedding model and the same code over the same corpus produces a different number. So the
+model belongs in the **claim**, beside the corpus and the metric engine — and the first nine
+committed baselines did not carry it.
+
+`metrics.json`'s `index` block now records five fields:
+
+| field | meaning |
+|---|---|
+| `embedding_models` | the models the indexed **documents themselves** report |
+| `embedding_verdict` | `empty` / `unattributed` / `uniform` / `partially_unattributed` / `mixed` |
+| `embedding_unattributed` | documents in the `"neural"` UNKNOWN bucket |
+| `embedding_dimension` | the index's `knn_vector` dimension |
+| `configured_embedding_model` | what the **settings** say |
+
+:::danger The settings are not authoritative about the vectors
+The label is surveyed from the documents, never from `get_search_embedding_settings()`. Issue #437
+established that two `SystemSettings` keys — `search.embedding_model`, which drives the index
+dimension, and `search.opensearch_model_id`, which drives the ingest pipeline — are written by
+**different endpoints with nothing reconciling them**. A settings-derived label can therefore name
+a model that never touched a single vector in the corpus being measured, which is worse than no
+label at all.
+
+`configured_embedding_model` is kept as a separate, differently-named field precisely so that drift
+between what is configured and what is indexed shows up in the committed baseline instead of being
+collapsed into one number that looks authoritative.
+
+The harness **refuses to write a baseline (exit 3) over a proven-mixed vector space** — two
+*named* models. Cosine similarity between two models is not a similarity, so a ranking scored over
+such an index fused two incomparable populations, and no later reading of that number could be
+correct.
+:::
+
+### The model behind the existing numbers is unknowable, and saying so is the result
+
+Every document in the epic's index — all 210,908 — carries `embedding_model: "neural"`. That is
+#437's single UNKNOWN bucket, kept deliberately as *one* unknown rather than backfilled with the
+current model, which would assert something nobody can know. So the verdict on every baseline here,
+re-derived ones included, is **`unattributed`**, and the only evidence for the model is
+circumstantial: a 384-dimension index and a configured
+`huggingface/sentence-transformers/all-MiniLM-L6-v2`.
+
+That is a weaker claim than "measured on all-MiniLM-L6-v2", and it is the honest one. What the
+re-derived baselines now record is not *which* model, but the auditable fact that **nobody can
+tell** — which a later comparison can check, where silence could not.
+
+### Which baselines were re-derived, and which are historical
+
+Full table and reasoning: `backend/tests/eval/baselines/README.md`.
+
+| baseline | index when measured | status |
+|---|---|---|
+| `stage3-index-v6`, `stage4-control`, `stage4-routed`, `stage4-aggregation` | 210,908 | **re-derived** with provenance |
+| `stage1-baseline`, `stage1-baseline-goldscope` | 119,950 | **historical** — pre-v6, pre-determinism-fix |
+| `stage1-synthetic-answers` | 208,333 | **historical** — pre-v6, pre-determinism-fix |
+| `stage3-control-pre-v6` | 208,332 | **historical by definition** — the *before* arm of the v6 A/B |
+| `stage4-router` | — | **not applicable** — a classifier over query strings, touches no index |
+
+The historical four measured an index that **no longer exists**. Re-running their commands today
+would not re-derive them; it would replace a measurement of one index with a measurement of a
+different one, under the old name. Nothing was deleted — `stage1-baseline` remains
+`--control-name`'s default and the documented `--compare` target, and
+`stage1-synthetic-answers/answers-null-control.md` holds the 0.0000-EM floor that exists nowhere
+else.
+
+**Re-deriving the four moved nothing.** Every metric row, every answer row and the whole
+`digest_leg` block came back identical to what was committed; `metrics.md` and `answers.md` were
+byte-identical files. The entire diff was the `index` block. That is the outcome a re-baseline
+wants: the numbers were already right, and they now say what they were measured with.
 
 ## Reproducibility: the index has to be stable, not just the measurement
 
@@ -429,7 +503,12 @@ A benchmark can be deterministic in the wrong place. This one was, and the gap t
 to expose.
 
 **The measurement is deterministic.** Two consecutive runs against an unchanged index produce
-byte-identical `metrics.json` and `metrics.md`. That was verified and is still true.
+byte-identical `metrics.json` and `metrics.md`. That was verified and is still true — re-checked at
+the provenance re-baseline, where `stage4-control` (1,651 queries) and `stage4-aggregation` were
+each run twice and matched on `metrics.json`, `metrics.md` **and** `answers.md` by sha256. Across
+that whole measurement window the index's `indexing.total` held at **825,795** — not one document
+was written — which is the cheap, non-invasive way to prove a control run measured the index it
+claimed to.
 
 **The index was not.** Re-indexing one *unchanged* corpus three times produced three different
 chunk counts and three different scores:
@@ -540,6 +619,16 @@ measurement changes what is being measured. Stop `celery-beat` for the duration 
 
 Committed at `backend/tests/eval/baselines/`. Every later stage reports its delta against these,
 per query class, per D5.
+
+:::warning These two tables are HISTORICAL — do not use them as a control for current work
+Both were measured on a **119,950-chunk, 232-file, qmsum-only** index, before the v6 reindex and
+before the three determinism fixes below. That index no longer exists, so neither table is
+re-derivable and neither carries embedding provenance. They are kept because they are the evidence
+for the file-selection result quoted throughout this page — and because re-running their commands
+today would quietly replace them with a measurement of a *different* index under the same name. The
+control for current work is `stage3-index-v6` / `stage4-control`. See
+[which baselines were re-derived](#which-baselines-were-re-derived-and-which-are-historical).
+:::
 
 **Composition:** all 232 QMSum meetings (Tier A, MIT), injected through the production indexer,
 **119,950 chunks**, 1,576 human queries, 0 dropped as unjudgeable, 0 unanswered. Chunk documents
@@ -740,7 +829,7 @@ cost a reduced excerpt budget and nothing else.
 `tiers` on the record is what distinguishes "the tier was not asked for" from "the tier was asked
 and returned nothing" — without it, `routed_to_digest_tier` would be unreadable.
 
-### The product's aggregation path: 0.800 -> 1.000, once it knew when meetings happened
+### The product's aggregation path: 0.800 -> 1.000, once it knew when meetings happened {#the-products-aggregation-path}
 
 | answerer | EM | R3 count | R4 list | R5 events | R6 speaker | R7 temporal |
 |---|---|---|---|---|---|---|
@@ -793,7 +882,7 @@ evidence is three-fold rather than assumed:
   (every nDCG/R/MRR to within 1e-9), and two consecutive `stage4-aggregation` runs produced
   byte-identical `metrics.json`.
 
-### ⚠️ A metric we replaced, and why — do not quietly drop metrics
+### ⚠️ A metric we replaced, and why — do not quietly drop metrics {#a-metric-we-replaced}
 
 The #383 plan specified, for map-reduce: *"on the summarize class with N files in scope, distinct
 `file_uuid`s represented in the answer goes from ~N/4 (today's `max_chunks_per_file` ceiling) to
@@ -834,6 +923,847 @@ No unit test would have caught it: every unit test hands the composer the summar
 to have.
 :::
 
+## Stage 5 — the retrieval tuning bake-off
+
+Twenty-four arms — ten fusion, nine budget, five candidate-pool — plus a reranker licence gate,
+all against one unchanged index (`indexing.total` **825,795** start to finish). **Nothing was
+adopted.** That is the result, not a failure to produce one, and the numbers that justify it are
+below in full, losers included and with their margins.
+
+Two things came out of it that matter more than the table: **a defect in the instrument** that
+made every `--stage rerank` number describe a pipeline that does not exist, and the measurement
+that **the shipped cross-encoder costs 20.6% / 32.7% nDCG@10** on this corpus.
+
+### "Both tiers" is the gate, and it had to be read before it could be applied
+
+#403's Stage 5 gate is *"adopted config wins in both tiers"*, and D5 spells the rule out: *"per
+query class, per model tier. A win in one tier and a loss in the other is not a win."* The word
+**tier** carries three unrelated meanings on this page — licence tier (A/B/C), evaluation-corpus
+tier (fixtures / public / synthetic), and model tier — so the gate is ambiguous until you trace
+it. The plan does define it: *"per query class **and per model tier** (local vs. API)"*
+(#383 body), i.e. **the LLM tier**, and Phase 7 attaches it specifically to the reranker A/B —
+*"Run per model tier (reranking matters more for small models)."*
+
+That has a consequence which has to be stated rather than quietly worked around:
+
+:::danger The model-tier axis is unmeasurable by this harness, by design
+Every number here is produced with **no LLM anywhere** (D6). A fusion strategy changes the order
+OpenSearch returns documents in; that order is identical whichever model later reads them. So
+for the fusion and budget arms the model-tier axis is not merely unmeasured — it is **invariant
+by construction**, and reporting "it won in both model tiers" would be reporting the same number
+twice.
+
+Where the axis is *not* vacuous is the **reranker**, exactly as the plan says. Judging a reranker
+per model tier requires an answer-quality measurement, and [this harness has
+none](#what-we-cannot-currently-claim). That is why no reranker is adopted below, and it is a
+structural gap, not an oversight.
+
+**The rule actually applied to the fusion and budget arms is therefore: a win must hold on BOTH
+CORPORA — QMSum and the synthetic tier — with the lookup class never regressing on either.**
+That is the discipline every Stage 3 and Stage 4 table already used ("it rose in both corpora"),
+it is what D5's *"a win in one tier and a loss in the other is not a win"* was enforcing in
+practice, and — as [the weighted arms below](#the-two-corpora-want-opposite-leg-weights) show —
+it is not a formality: two arms won on one corpus and lost heavily on the other.
+
+That rule has since been **measured rather than asserted**: over these 24 arms the two corpora
+rank changes at Kendall tau-b **+0.301** overall and **−0.005 on the lookup class**, and on the
+fusion arms that are genuine candidates they are significantly **anti**-correlated. See [Do the
+two corpora agree?](#corpus-agreement) — the analysis tightens this gate rather than relaxing it.
+:::
+
+### Method — how to re-run this, or add an eleventh arm
+
+An arm is one `benchmark_rag.py` invocation. Everything that distinguishes it is on the command
+line, and the resolved arm is written into that run's `metrics.json` under `retrieval.fusion`,
+so no results file can fail to name the pipeline it measured.
+
+```bash
+export OT_EVAL_PYTHON=/path/to/backend/venv/bin/python   # a worktree has no venv of its own
+
+# the control — no fusion flag at all, i.e. whatever the deployment is configured for
+./opentr.sh bench rag --fresh rag403 --corpus qmsum --corpus synthetic \
+    --control-name rrf-30-default --out /tmp/sweep403/rrf-30-default
+
+# an explicit arm
+./opentr.sh bench rag --fresh rag403 --corpus qmsum --corpus synthetic \
+    --fusion normalization --normalization-technique z_score \
+    --combination-technique arithmetic_mean \
+    --control-name norm-zscore-arith --out /tmp/sweep403/norm-zscore-arith
+```
+
+`bench rag` forwards every unrecognised flag to the harness and derives the stack's ports from
+`.fresh/rag403.offset`; running the script directly needs
+`POSTGRES_PORT`/`OPENSEARCH_PORT`/`REDIS_PORT`/`MINIO_PORT` exported for the deployment plus
+`DATA_DIR`/`TEMP_DIR` pointed somewhere writable (`Settings.__init__` otherwise tries to mkdir
+`/app`). The measurements below used the `otfresh-rag403` deployment: **Postgres 5276,
+OpenSearch 5280** (offset +100).
+
+**Adding an eleventh arm is one flag combination and nothing else.** There is no pipeline to
+pre-create, no cache to clear, and no restart: `ensure_fusion_pipeline` creates the arm's
+pipeline on first use, `_verified_pipelines` is a **set** so one arm's verification cannot
+certify another's, and the response cache keys on the resolved pipeline id so arm B cannot
+replay arm A's page. The one real gotcha: **weights are encoded into the pipeline id as integer
+percent, and anything needing more precision is refused rather than rounded** — `0.705,0.295`
+exits with `Unusable --fusion configuration`, because two arms aliased onto one id means one of
+them silently measured the other's pipeline.
+
+#### The arms as data, not names
+
+Pipeline ids are **derived from the parameters, never chosen**, which is what makes the set
+regenerable from this table rather than decodable from the names. `transcript-hybrid-search` is
+reserved for RRF at the configured `SEARCH_RRF_RANK_CONSTANT`, so the arm that is the shipped
+default keeps the cluster's existing pipeline.
+
+| arm | `--fusion` | `--rank-constant` | `--normalization-technique` | `--combination-technique` | `--combination-weights` | resolved pipeline id |
+|---|---|---|---|---|---|---|
+| `rrf-30-default` | *(no flag)* | — | — | — | — | `transcript-hybrid-search` |
+| `rrf-30-explicit` | `rrf` | `30` | — | — | — | `transcript-hybrid-search` |
+| `rrf-60` | `rrf` | `60` | — | — | — | `transcript-hybrid-search-rrf-60` |
+| `norm-minmax-arith` | `normalization` | — | `min_max` | `arithmetic_mean` | — | `…-norm-min_max-arithmetic_mean` |
+| `norm-minmax-geom` | `normalization` | — | `min_max` | `geometric_mean` | — | `…-norm-min_max-geometric_mean` |
+| `norm-minmax-harm` | `normalization` | — | `min_max` | `harmonic_mean` | — | `…-norm-min_max-harmonic_mean` |
+| `norm-l2-arith` | `normalization` | — | `l2` | `arithmetic_mean` | — | `…-norm-l2-arithmetic_mean` |
+| `norm-zscore-arith` | `normalization` | — | `z_score` | `arithmetic_mean` | — | `…-norm-z_score-arithmetic_mean` |
+| `norm-minmax-arith-w70-30` | `normalization` | — | `min_max` | `arithmetic_mean` | `0.7,0.3` | `…-norm-min_max-arithmetic_mean-w70_30` |
+| `norm-minmax-arith-w30-70` | `normalization` | — | `min_max` | `arithmetic_mean` | `0.3,0.7` | `…-norm-min_max-arithmetic_mean-w30_70` |
+
+Weights are **BM25 leg first, vector leg second** — the order the two subqueries appear in the
+`hybrid` body (`chunk_retrieval._build_body`). `rrf-30-explicit` exists only as a control on the
+flag itself: it must resolve to the same pipeline as the default and produce identical numbers,
+which it does to every decimal place recorded.
+
+#### The corpus state these numbers are true of
+
+A retrieval number is a statement about a corpus **and** the model that vectorised it. All
+twenty-one runs below were taken against one index, with no reindex and no write of any kind
+between them:
+
+| | value |
+|---|---|
+| index | `transcript_chunks`, `_meta.version` **6** |
+| `indexing.total` | **825,795** — unchanged before, during and after the whole sweep |
+| `docs.count` / `docs.deleted` | **210,908** / **0** |
+| corpus | 432 files: 232 QMSum (Tier A, MIT) + 200 synthetic (`otsynth-core-v1`, seed 20260812) |
+| chunks | 122,371 QMSum + 88,537 synthetic |
+| queries | 1,651 scored, 0 dropped unjudgeable, 0 unanswered; mean 47.66 judged chunks/query |
+| `embedding_dimension` | 384 |
+| `embedding_verdict` | **`unattributed`** — all 210,908 documents carry the legacy `"neural"` bucket |
+| `configured_embedding_model` | `huggingface/sentence-transformers/all-MiniLM-L6-v2` |
+| metric engine | `pytrec_eval_terrier` 0.5.10, `ndcg_cut`, linear gain, `trec_eval -c` semantics |
+| relevance policy | graded by gold word-share; high 0.5, low 0.0, not binary |
+
+The embedding verdict is `unattributed` and must stay stated that way: the circumstantial
+evidence is a 384-dimension index and a configured MiniLM, and **that is not the same claim as
+"measured on all-MiniLM-L6-v2"**.
+
+#### What was held constant
+
+The value of an A/B is entirely in what did *not* vary, so it is enumerated rather than assumed:
+
+- **The index.** No reindex, no mapping change, no document write. `indexing.total` was 825,795
+  at the start and 825,795 at the end; a search pipeline is query-time metadata and touches no
+  document.
+- **The query set.** The same 1,651 queries, sorted by query id, from the same two injection
+  manifests. Zero dropped as unjudgeable in every arm, so no arm scored a different denominator.
+- **The qrels.** Same relevance policy (0.5 / 0.0, graded), same turn→chunk overlap rule, same
+  78,694 judged documents.
+- **The retrieval shape.** `--stage retrieve`, `--scope corpus`, `--search-mode hybrid`,
+  `--size 48`, `--workers 4` — identical across every fusion arm. Only the search pipeline moved.
+- **Tie-breaking.** The harness re-sorts every run by `(-score, doc_type, file_uuid,
+  chunk_index)` before scoring, so `trec_eval`'s id-descending tie-break cannot reach a result.
+  This was checked *for the new arms specifically*: normalization scores are dense floats in
+  [0,1] and RRF scores are sums of `1/(k+rank)`, so the two families have very different tie
+  structures — but the normalisation is applied to the run, not to the strategy, and the
+  identical-arms control (`rrf-30-explicit` vs `rrf-30-default`, byte-identical rows) confirms
+  the scoring path did not change underneath the sweep.
+- **The metric engine and its version.**
+
+### The fusion bake-off (#363), in full
+
+`--stage retrieve --scope corpus`, corpus-wide — what chat actually does. Control is
+`rrf-30-default`, the shipped `score-ranker-processor` at `rank_constant` 30.
+
+| arm | qmsum `all` nDCG@10 | Δ | Δ% | synthetic `all` nDCG@10 | Δ | Δ% | verdict |
+|---|---|---|---|---|---|---|---|
+| `rrf-30-default` | 0.0983 | — | — | 0.2952 | — | — | **control** |
+| `rrf-30-explicit` | 0.0983 | +0.0000 | +0.0% | 0.2952 | +0.0000 | +0.0% | identical to control |
+| `rrf-60` | 0.0979 | −0.0003 | −0.4% | **0.3016** | **+0.0063** | **+2.1%** | split |
+| `norm-minmax-arith` | **0.0990** | **+0.0008** | +0.8% | 0.2397 | −0.0555 | −18.8% | split |
+| `norm-l2-arith` | **0.0993** | **+0.0010** | +1.0% | 0.2319 | −0.0633 | −21.4% | split |
+| `norm-zscore-arith` | **0.0997** | **+0.0015** | +1.5% | 0.2265 | −0.0687 | −23.3% | split |
+| `norm-minmax-arith-w70-30` | **0.0996** | **+0.0014** | +1.4% | 0.1503 | −0.1450 | −49.1% | split |
+| `norm-minmax-arith-w30-70` | 0.0890 | −0.0093 | −9.5% | 0.2870 | −0.0082 | −2.8% | loss on both |
+| `norm-minmax-geom` | 0.0831 | −0.0152 | −15.5% | 0.0968 | −0.1984 | −67.2% | loss on both |
+| `norm-minmax-harm` | 0.0821 | −0.0161 | −16.4% | 0.0894 | −0.2059 | −69.7% | loss on both |
+
+Per class, because D5 requires it and because the class breakdown is where the mechanism shows:
+
+| arm | qmsum lookup | Δ | synthetic lookup | Δ | qmsum summarize | Δ | synthetic multi_file | Δ |
+|---|---|---|---|---|---|---|---|---|
+| `rrf-30-default` | 0.1038 | — | 0.3363 | — | 0.0821 | — | 0.2132 | — |
+| `rrf-30-explicit` | 0.1038 | +0.0000 | 0.3363 | +0.0000 | 0.0821 | +0.0000 | 0.2132 | +0.0000 |
+| `rrf-60` | 0.1037 | −0.0002 | 0.3439 | +0.0076 | 0.0812 | −0.0009 | 0.2169 | +0.0037 |
+| `norm-minmax-arith` | 0.1041 | +0.0003 | 0.2889 | −0.0474 | 0.0843 | +0.0022 | 0.1414 | −0.0718 |
+| `norm-l2-arith` | 0.1045 | +0.0006 | 0.2580 | −0.0782 | 0.0842 | +0.0022 | 0.1797 | −0.0335 |
+| `norm-zscore-arith` | 0.1040 | +0.0002 | 0.2807 | −0.0555 | 0.0872 | +0.0051 | 0.1181 | −0.0951 |
+| `norm-minmax-arith-w70-30` | 0.1052 | +0.0013 | 0.1692 | −0.1671 | 0.0836 | +0.0016 | 0.1125 | −0.1007 |
+| `norm-minmax-arith-w30-70` | 0.0926 | −0.0112 | 0.3509 | +0.0146 | 0.0784 | −0.0037 | 0.1593 | −0.0540 |
+| `norm-minmax-geom` | 0.0873 | −0.0165 | 0.1180 | −0.2182 | 0.0707 | −0.0114 | 0.0545 | −0.1587 |
+| `norm-minmax-harm` | 0.0864 | −0.0174 | 0.1070 | −0.2292 | 0.0697 | −0.0124 | 0.0540 | −0.1592 |
+
+**Zero arms of ten win on both corpora.** Three lose on both. The remaining five are splits, and
+their splits are not close: the largest QMSum gain any arm achieves is **+0.0015 nDCG@10
+(+1.5%)** while the same arm gives up **−0.0687 (−23.3%)** on synthetic — a loss **46× the size
+of the win**. No significance test is needed to read that.
+
+#### The OpenSearch BEIR result does not transfer to transcript retrieval
+
+This is the finding #363 was opened to obtain. OpenSearch's own benchmark measured the
+`normalization-processor` **3.86% higher nDCG@10 than RRF** across six BEIR datasets, and #363's
+whole premise was that a public BEIR average is not evidence about *our* corpus. Measured:
+
+- On QMSum the best normalization arm is **+1.5% relative**, under half the published figure.
+- On the synthetic tier every normalization arm is **negative**, from −2.8% to −69.7%.
+- The pooled effect is decisively negative.
+
+The BEIR result is not wrong; it is about a different corpus shape. Recorded so nobody re-derives
+the same expectation from the same blog post in a year.
+
+#### Why geometric and harmonic mean collapse
+
+`norm-minmax-geom` and `norm-minmax-harm` lose 15–70%, and the mechanism is structural rather
+than a tuning miss. Both means are **zero if either input is zero**, and after per-leg
+normalisation a document found by only *one* leg scores 0 on the other — so single-leg hits are
+annihilated instead of ranked. RRF has the opposite property by construction: a single-leg hit
+still scores `1/(k+rank)`. Hybrid retrieval over speaker-turn chunks is full of single-leg hits
+(a 17-word turn matches BM25 or the vector, rarely both), which is why the collapse is this
+large here and would be milder on long, keyword-rich documents. **Do not re-test these two on
+this index expecting a different answer**; test them only if the chunking granularity changes.
+
+#### The two corpora want opposite leg weights {#the-two-corpora-want-opposite-leg-weights}
+
+The weighted arms are the clearest demonstration of why the both-corpus rule exists:
+
+- **BM25-heavy** (`w70_30`) is the *best* arm on QMSum lookup (0.1052, +0.0013) and the
+  second-worst on synthetic lookup (0.1692, **−0.1671**).
+- **Vector-heavy** (`w30_70`) is the *best* arm on synthetic lookup (0.3509, **+0.0146**) and
+  clearly negative on QMSum lookup (0.0926, −0.0112).
+
+Each would have been adopted by a single-corpus gate, and each would have been a significant
+regression for the other half of the evaluation. The likely reason the corpora disagree — stated
+as a hypothesis, not a measurement — is Stage 3's `embedding_text` result: synthetic queries
+discriminate on the title and roster carried in the embedded header, so their answer lives in the
+vector leg, while QMSum's conversational queries are literal-word matches that BM25 finds.
+
+#### Latency: no arm is measurably cheaper or more expensive — and one run said otherwise
+
+Phase 7 gates each A/B on **p95 added latency**, so `runinfo.json` now carries the per-query
+retrieval cost (`retrieval_latency_ms`: samples, concurrency, p50/p95/p99/max/mean). It lives in
+`runinfo.json` and not `metrics.json` on purpose: a duration cannot be byte-identical across
+runs, and the results document's determinism is what makes an arm-to-arm difference attributable.
+
+| run | arm | p50 (ms) | p95 (ms) | mean (ms) |
+|---|---|---|---|---|
+| 1 | `rrf-30-default` | 179.0 | 262.5 | 182.5 |
+| 1 | `rrf-60` | 212.8 | **393.4** | 227.8 |
+| 1 | `norm-minmax-arith` | 177.1 | 273.5 | 184.0 |
+| 2 | `rrf-30-default` | 177.6 | 264.2 | 182.6 |
+| 2 | `rrf-60` | 178.2 | **260.1** | 181.8 |
+| 3 | `rrf-30-default` | 177.9 | 260.2 | 181.6 |
+| 3 | `rrf-60` | 179.6 | **267.9** | 184.1 |
+
+1,651 samples per run at concurrency 4, on a shared machine.
+
+:::warning A single latency run manufactured a 50% regression that does not exist
+Run 1 measured `rrf-60` at **+130.9 ms p95, +50%** against the control. A rank constant changes
+no work — it is a divisor in a scoring formula — so the number was mechanistically implausible
+and was re-measured *interleaved* with the control rather than believed. It did not reproduce:
+across three passes `rrf-60` reads 393.4 / 260.1 / 267.9 ms p95 while the control reads 262.5 /
+264.2 / 260.2. The honest conclusion is **no measurable latency difference between fusion
+strategies at this corpus size**, with a run-to-run band of ±3% and at least one outlier run far
+outside it.
+
+These are a **comparable cost signal between arms measured under the harness's own worker pool,
+not a user-facing latency figure** — which is why `concurrency` is recorded beside them.
+:::
+
+### Reproducibility of the sweep itself
+
+Three separate checks, because an arm-to-arm difference is only attributable if the instrument
+holds still:
+
+1. **The control arm reproduces the committed baseline bit-for-bit.** `rrf-30-default`, run
+   fresh in this window, matches `backend/tests/eval/baselines/stage4-control/metrics.json` with
+   **max |Δ| = 0.0 across every row and every measure**. The only differences in the whole
+   document are `control_name` and the new `retrieval.fusion` block.
+2. **Three arms re-run under changed harness code reproduce their own first run exactly.**
+   `rrf-30-default`, `rrf-60` and `norm-minmax-arith` were re-run after the latency
+   instrumentation landed; all three came back with identical rows. Timing instrumentation
+   cannot move a ranking, and now that is measured rather than assumed.
+3. **The flag itself is inert.** `rrf-30-explicit` resolves to the same pipeline as the default
+   and produces identical numbers, so every difference in the table is the pipeline and not the
+   plumbing.
+
+:::note Adding `retrieval.fusion` changes the bytes of any re-derived baseline
+`metrics.json`'s `retrieval` block now always carries a `fusion` sub-block naming the resolved
+strategy and pipeline id — including on runs that named no arm, where it records
+`selected_explicitly: false`. Re-deriving one of the four re-derivable baselines will therefore
+produce that one extra block and no other change; check (1) above is exactly that comparison,
+performed deliberately. The alternative — omitting the block when the default is used — was
+rejected for the reason `redaction/export_policy.py` argues in general: an absent value and a
+default value must not look the same.
+:::
+
+### Reranker candidates — the licence gate came first
+
+Every candidate was licence- and shippability-checked **before** any measurement, because a
+candidate we cannot ship is not a candidate. Metadata was not treated as the licence: this page
+already records four cases where dataset-hub metadata misrepresented the real terms.
+
+| candidate | params | licence (metadata) | evidence checked | drop-in for `CrossEncoder`? | verdict |
+|---|---|---|---|---|---|
+| `cross-encoder/ms-marco-MiniLM-L6-v2` **(incumbent)** | 22.7 M | apache-2.0 | card front matter; no `LICENSE` file in repo | yes | **shippable — in use** |
+| `BAAI/bge-reranker-base` | 278 M | mit | card front matter | yes — `XLMRobertaForSequenceClassification`, no `auto_map` | shippable |
+| `BAAI/bge-reranker-v2-m3` | 568 M | apache-2.0 | card front matter | yes — same architecture | shippable |
+| `mixedbread-ai/mxbai-rerank-base-v2` | 494 M | apache-2.0 | **`LICENSE` file present, full Apache-2.0 text** | **no** — `Qwen2ForCausalLM`; a generative/listwise reranker needing its own `mxbai-rerank` package | licence clean, not a cross-encoder |
+| `jinaai/jina-reranker-v1-turbo-en` | 37.8 M | apache-2.0 | card front matter | **no** — `config.json` carries `auto_map`, i.e. `trust_remote_code=True` | **REJECTED — remote code execution** |
+| `jinaai/jina-reranker-v2-base-multilingual` | — | **cc-by-nc-4.0** | card front matter | — | **REJECTED — non-commercial** |
+| `Alibaba-NLP/gte-multilingual-reranker-base` | 306 M | apache-2.0 | card front matter | **no** — `auto_map`, `model_type: "new"`, i.e. `trust_remote_code=True` | **REJECTED — remote code execution** |
+| Cohere Rerank / Voyage rerank | — | commercial API terms | — | — | **REJECTED — D6**: retrieval quality must not depend on an external service |
+
+Three findings worth keeping:
+
+- **The plan's own warning was too narrow.** #383 says *"Avoid `jina-reranker-v3` — CC BY-NC-4.0"*.
+  `jina-reranker-v2-base-multilingual` is **also** CC BY-NC-4.0, and it is the one with a million
+  monthly downloads. The rejection is the family, not one version.
+- **`trust_remote_code` is a rejection on its own, independent of licence.** Two Apache-2.0
+  candidates require executing arbitrary Python fetched from the Hub inside the backend
+  container. `jina-reranker-v1-turbo-en` is otherwise the only candidate anywhere near the
+  incumbent's cost (37.8 M vs 22.7 M parameters), which is precisely why the reason has to be
+  written down — it will look attractive again.
+- **The incumbent's *weights* are Apache-2.0; its *training data* is MS MARCO**
+  (`datasets: ['sentence-transformers/msmarco']`), whose underlying terms this page already
+  records as *non-commercial research only*. The restriction binds the dataset, not a model
+  trained on it, and no change follows — but it is noted because this repo has been caught by MS
+  MARCO's terms once already.
+
+**No reranker was swapped, and none can be adopted on retrieval metrics alone.** The plan
+requires a reranker A/B *per model tier* because reranking matters more for small models, and
+that is an answer-quality question this harness cannot answer. The cheapest shippable
+alternative, `bge-reranker-base`, is **12× the incumbent's parameter count** on a CPU-only,
+in-request code path — so the burden of proof is on the candidate, and the measurement that
+could discharge it does not exist yet. Recorded as deferred, with the reason, rather than
+attempted and reported inconclusively.
+
+### A fourth way this harness measured the wrong thing — found by the budget sweep
+
+The `rerank` stage claims to measure *"what actually reaches the prompt"*. It did not, and the
+48/12/4 sweep is what exposed it. Recorded at length beside the [three earlier
+cases](#three-ways-this-harness-measured-the-wrong-index) because, like all of them, it produced
+no error — only a plausible number.
+
+**The symptom.** `nDCG@5` moved when `--final-chunks` changed. That is impossible if the metric
+sees the prompt's order: `diversity_sample` builds its list by round-robin and returns early on
+`cap`, so its output is **prefix-invariant in `cap`** — the first five documents are the same for
+8, 12 and 20. (Asserted directly over 200 random inputs, because this reasoning had already been
+wrong once in this investigation.)
+
+**The three candidate explanations, and how each was eliminated.**
+
+1. *Nondeterminism in the cross-encoder* (plausible: eight worker threads, CPU float reduction
+   order). **Eliminated by measurement** — three consecutive runs of `budget-48-12-4` produced
+   **bit-identical** rows.
+2. *`diversity_sample` is not prefix-invariant.* **Eliminated** by the 200-input property check
+   above.
+3. *The harness re-sorts the list before scoring.* **Confirmed.**
+
+**The cause.** `normalise_run` re-sorts every run by `-score`. That is correct for `retrieve` —
+OpenSearch already returns score order, so the re-sort only makes the tie-break blind to document
+*names* (#32) — and **wrong** after `diversity_sample`, whose entire purpose is to interleave
+files so one long recording cannot crowd out the rest. Re-sorting by score undoes the
+interleaving, so the metric ranked a list the model is never given. Measured over 60 synthetic
+queries:
+
+| | count |
+|---|---|
+| queries examined | 60 |
+| queries whose **prompt order was changed** by the re-sort | **40** |
+| queries whose **scored top-5 depended on `final_chunks`** | **23** |
+
+**A second defect travelled with it.** `rerank` writes the cross-encoder score back onto its
+first `rerank_max_pairs` hits and leaves the tail carrying RRF scores. Cross-encoder scores are
+routinely **negative** (measured on this corpus: −4.35 to −11.31 for a typical query) while RRF
+scores are small positives bounded by `2/(k+1)` = 0.0645. So with
+`candidate_pool > rerank_max_pairs` a score sort floats the **un-reranked tail above every
+reranked document**. That is precisely the `96/12/4` arm.
+
+:::note Production never had this bug
+`diversity_sample` walks **list order**, and `retrieval.py` passes it `rerank`'s output directly,
+so what reaches a real prompt was always correct. This was the instrument reading a ranking out
+of two incomparable score scales — which is why it could sit there producing numbers.
+:::
+
+**The fix.** `_to_run_docs(hits, preserve_order=True)` derives the score from the hit's
+**position**, so for the rerank stage the metric ranks exactly what the prompt receives and no
+tie can occur. The `retrieve` stage is untouched and keeps the score-based tie-break, so **every
+fusion number above is unaffected** — that is not an assumption, it is a different branch, and
+the control arm was re-run after the change to confirm it. `test_eval_runner.py` carries the
+guard, red without the fix.
+
+**Everything measured on the pre-fix instrument was discarded**, not adjusted. The budget numbers
+below are from a complete re-run.
+
+### The speaker-turn chunking decision, recorded
+
+#363's second half is not a measurement at all — it is a decision that exists to stop a future
+reader "fixing" something deliberate. It is recorded here because an issue gets closed and a
+methodology page does not.
+
+**SeCom (Pan et al., ICLR 2025, [arXiv:2502.05589](https://arxiv.org/abs/2502.05589)) measured
+that turn-level memory units are suboptimal for retrieval**, with topic-coherent segment-level
+units winning. `chunk_transcript_by_speaker_turns`
+(`backend/app/services/search/chunking_service.py`) is turn-level, so on a generic retrieval
+benchmark it is the weaker choice — and this page's own numbers are consistent with that: QMSum
+chunks average **17 words**, which is a large part of why corpus-wide nDCG@10 sits at 0.098.
+
+**It stays, deliberately.** Speaker-scoped retrieval — *"what did Dana say about pricing"* — is
+structurally dependent on the invariant **one chunk = one speaker turn**, because that is what
+makes the `speaker` keyword filter in `_build_filters` an exact `terms` match rather than an
+approximation. Topic-coherent segments spanning multiple speakers would make that filter fuzzy,
+trading a capability no general-purpose RAG tool has for a small generic-benchmark gain.
+
+**Accepted trade-off: slightly lower generic retrieval scores in exchange for exact speaker
+attribution.** The measured consequence is visible above and is not hidden. If this is ever
+revisited, the alternative worth evaluating is a **second** chunking granularity indexed
+alongside the existing one — topic segments for broad questions, speaker turns for attribution —
+never a replacement. Note that `doc_type` (D1) already makes a second plane in one index a
+solved shape, and the digest plane is a working precedent for it.
+
+### The 48/12/4 budget sweep
+
+`candidate_pool` / `final_chunks` / `max_chunks_per_file` are **48 / 12 / 4**
+(`core/constants.DEFAULT_CHAT_RAG_*`), chosen by judgement and never measured. `--stage rerank`
+now measures them at the shipped values — it used to default to **20/3**, so every rerank number
+ever taken described a deployment nobody runs.
+
+```bash
+# the shipped centre point, full corpus
+./opentr.sh bench rag --fresh rag403 --corpus qmsum --corpus synthetic \
+    --stage rerank --workers 8 --control-name full-48-12-4 --out /tmp/sweep403/full/full-48-12-4
+# an arm: only the flag changes
+./opentr.sh bench rag --fresh rag403 --corpus qmsum --corpus synthetic \
+    --stage rerank --workers 8 --size 12 --control-name full-12-12-4 --out /tmp/sweep403/full/full-12-12-4
+```
+
+`--stage rerank` needs the cross-encoder weights (`cross-encoder/ms-marco-MiniLM-L-6-v2`) and
+**raises rather than silently skipping** if they are missing. Running it from the host venv needs
+`SENTENCE_TRANSFORMERS_HOME` pointed at `models/sentence-transformers` and `HF_HUB_OFFLINE=1`;
+that venv's `torchcodec` is built against a different torch ABI, so `sentence_transformers` will
+not import without a stub package on `PYTHONPATH` (the container has a working ffmpeg and needs
+none). Verified equivalent before use: the host and the `otfresh-rag403-backend` container return
+**identical** cross-encoder scores (6.845277 / −11.305734) for the same pair.
+
+#### Two of the three knobs cannot be chosen by a ranking metric, and the numbers show it
+
+| arm | qmsum nDCG@5 | Δ | qmsum nDCG@10 | Δ | synth nDCG@5 | Δ | synth nDCG@10 | Δ |
+|---|---|---|---|---|---|---|---|---|
+| `48/12/4` **(shipped)** | 0.0509 | — | 0.0366 | — | 0.1416 | — | 0.1605 | — |
+| `48/12/4` repeat | 0.0509 | +0.0000 | 0.0366 | +0.0000 | 0.1416 | +0.0000 | 0.1605 | +0.0000 |
+| `48/**20**/4` | 0.0509 | +0.0000 | 0.0366 | +0.0000 | 0.1416 | +0.0000 | 0.1605 | +0.0000 |
+| `48/**8**/4` | 0.0509 | +0.0000 | 0.0353 | −0.0013 | 0.1416 | +0.0000 | 0.1577 | −0.0028 |
+| `48/12/**2**` | 0.0509 | +0.0000 | 0.0366 | +0.0000 | 0.1416 | +0.0000 | 0.1605 | +0.0000 |
+| `48/12/**8**` | 0.0509 | +0.0000 | 0.0366 | +0.0000 | 0.1416 | +0.0000 | 0.1605 | +0.0000 |
+
+(475-query subset — 400 QMSum + all 75 synthetic — since these arms differ only after retrieval.)
+
+**`final_chunks` and `max_chunks_per_file` are inert on the metric, and that is correct rather
+than suspicious.** `diversity_sample` is prefix-invariant in `cap`, so raising `final_chunks` can
+only *append*; `48/8/4`'s −0.0013 / −0.0028 at nDCG@10 is purely mechanical — a list of eight
+cannot fill ranks nine and ten. `max_chunks_per_file` 2 vs 4 vs 8 moves nothing because the
+per-file ceiling almost never binds within twelve chunks drawn from a 432-file corpus.
+
+So **a ranking metric cannot choose these two knobs.** What they actually trade — prompt budget,
+per-file coverage, and how much irrelevant material a model is asked to read — is the
+answer-quality axis this harness does not have. Recording that is more useful than a table of
+zeros: it says which question to stop asking of nDCG. (This page's [replaced
+metric](#a-metric-we-replaced) makes the same point from
+the other direction — coverage needed a claim-verification measure, not a rank.)
+
+#### `candidate_pool` IS measurable, and smaller is better all the way down
+
+Full corpus, 1,651 queries, `final_chunks` 12 / `max_chunks_per_file` 4 / `rerank_max_pairs` 50
+held constant. nDCG@10, Δ against the shipped pool of 48:
+
+| pool | qmsum lookup | qmsum summarize | qmsum all | synth lookup | synth multi_file | synth all | retrieval p50 | wall clock |
+|---|---|---|---|---|---|---|---|---|
+| **12** | 0.0934 (+0.0125) | 0.0712 (+0.0137) | **0.0877 (+0.0128)** | 0.2436 (+0.0180) | 0.0969 (+0.0667) | **0.1947 (+0.0342)** | 204.4 ms | 215 s |
+| 24 | 0.0844 (+0.0036) | 0.0613 (+0.0038) | 0.0785 (+0.0036) | 0.2212 (**−0.0044**) | 0.0673 (+0.0371) | 0.1699 (+0.0095) | 233.9 ms | 464 s |
+| 32 | 0.0820 (+0.0012) | 0.0593 (+0.0018) | 0.0762 (+0.0013) | 0.2347 (+0.0090) | 0.0632 (+0.0330) | 0.1775 (+0.0170) | 250.1 ms | 621 s |
+| **48 (shipped)** | 0.0808 | 0.0575 | 0.0748 | 0.2256 | 0.0302 | 0.1605 | 261.6 ms | 707 s |
+| 96 | 0.0803 (**−0.0006**) | 0.0556 (**−0.0019**) | 0.0740 (**−0.0009**) | 0.2366 (+0.0110) | 0.0354 (+0.0052) | 0.1695 (+0.0091) | 295.5 ms | 719 s |
+
+Two further arms, both losers, recorded rather than dropped: `96/12/4` with
+`--rerank-max-pairs 96` — i.e. reranking the *whole* enlarged pool — scores **below** `96/12/4`
+at max_pairs 50 (synthetic nDCG@5 0.1476 vs 0.1542) while costing 31% more wall clock. Reranking
+more candidates makes it worse.
+
+:::danger A quarter of the query set flipped the sign
+On the 475-query subset, pool 96 read **+0.0004** nDCG@10 on QMSum. On all 1,651 queries it reads
+**−0.0009**. Same instrument, same index, same arm — 400 of 1,576 QMSum queries were enough to
+invert the conclusion, and the subset's version would have been reported as a both-corpus win.
+Every conclusion above is from the full query set for exactly this reason.
+:::
+
+:::warning `--size` is not a truncation knob — it changes the ranking
+Retrieval at `--size 12` and `--size 48` do **not** share a top ten: nDCG@10 is 0.0942 vs 0.0983
+on QMSum. `dynamic_rrf_window(size) = max(100, min(size*4, 500))`, so the request size sets the
+depth the two legs are *fused* over — 100 at size 12, 192 at size 48 — and a different fusion
+window is a different ranking. This was assumed to be a pure truncation and checked; the check is
+why the sentence above is right. Never compare two `--size` values as though one were a prefix of
+the other.
+:::
+
+#### The finding under the pool sweep: the cross-encoder is net-harmful on this corpus
+
+The monotone trend has an obvious candidate explanation — a larger pool is precisely more
+material the cross-encoder is allowed to *promote* into the final twelve — so it was measured
+against a same-length control: `--stage retrieve --size 12`, retrieval's own top twelve with no
+reranking and no diversity sampling.
+
+| pipeline | qmsum nDCG@10 | Δ vs no-rerank | synth nDCG@10 | Δ vs no-rerank |
+|---|---|---|---|---|
+| **no rerank** (retrieval top-12) | **0.0942** | — | **0.2385** | — |
+| rerank, pool 12 | 0.0877 | −0.0065 (−6.9%) | 0.1947 | −0.0438 (−18.4%) |
+| rerank, pool 24 | 0.0785 | −0.0157 (−16.7%) | 0.1699 | −0.0685 (−28.7%) |
+| **rerank, pool 48 (SHIPPED)** | 0.0748 | **−0.0194 (−20.6%)** | 0.1605 | **−0.0780 (−32.7%)** |
+| rerank, pool 96 | 0.0740 | −0.0203 (−21.5%) | 0.1695 | −0.0689 (−28.9%) |
+
+#383 predicted the shape and understated the size: *"off-the-shelf cross-encoders have been
+observed degrading nDCG 0.3–3.1% ... on corpora unlike their training distribution."* Measured
+here it is **20.6% and 32.7%**, an order of magnitude larger.
+
+**What this does and does not establish**, because the difference decides what to do next:
+
+- **The cross-encoder's *selection* is harmful, and that part is isolated.** Across the pool
+  arms `final_chunks`, `max_chunks_per_file` and `diversity_sample` are all constant; the only
+  thing that varies is how much material the cross-encoder may promote from. More promotion
+  power, monotonically worse.
+- **The −20.6% / −32.7% against the no-rerank control is NOT purely the reranker.** That control
+  has no `diversity_sample` either, and diversity sampling deliberately trades rank quality for
+  per-file coverage — nDCG scores it as a loss by construction. Separating the two needs a
+  "diversity, no rerank" arm the harness does not have.
+- **Therefore: do not read this as "turn off diversity sampling."** Coverage is the thing nDCG
+  provably cannot see; that is the lesson of [the metric we
+  replaced](#a-metric-we-replaced).
+
+This is the largest single number Stage 5 produced and it deserves its own issue with a proper
+decomposition, not a constant edited at the end of a sweep.
+
+### Nothing was adopted, and here is the rule that rejected each candidate
+
+Twenty-four arms. **Zero pass the gate**: a win on both corpora *and* no regression in the lookup
+class, on the reported measures.
+
+| candidate | why it looked adoptable | why it was rejected |
+|---|---|---|
+| `rrf-60` | +2.1% nDCG@10 on synthetic | QMSum `all` −0.4% and QMSum lookup −0.0002: a split, not a win |
+| `norm-z_score-arithmetic_mean` | best QMSum arm, +1.5% | synthetic −23.3%, a loss **16× the win** |
+| `norm-min_max-arithmetic_mean` w70/30 | best QMSum lookup of any arm | synthetic lookup −0.1671 |
+| `norm-min_max-arithmetic_mean` w30/70 | best synthetic lookup of any arm | QMSum lookup −0.0112 |
+| `candidate_pool` 96 | won on both corpora on the 475-query subset | full corpus flipped QMSum to −0.0009, and QMSum lookup to −0.0006 |
+| `candidate_pool` 24 | +0.0036 QMSum / +0.0095 synthetic nDCG@10 | **synthetic lookup −0.0044** — the class D5 says must never regress |
+| **`candidate_pool` 12** | **the strongest arm measured**: +0.0128 QMSum / +0.0342 synthetic nDCG@10, every class up, and 22% lower p50 latency | **synthetic lookup nDCG@5 −0.0155 and MRR −0.0178** — it wins at depth 10–20 and loses at the very top of the ranking, on the class that must not regress |
+| `final_chunks`, `max_chunks_per_file` | — | provably inert on a ranking metric; the axis they trade is unmeasured |
+| every reranker candidate | two are licence- and architecture-clean | adoption needs the per-model-tier answer-quality axis this harness does not have |
+
+**`candidate_pool = 12` is the one to look at next**, and it is a single constant
+(`DEFAULT_CHAT_RAG_CANDIDATE_POOL`). It was deliberately **not** changed here for three reasons:
+its nDCG@5/MRR regression on synthetic lookup fails the stated gate; its mechanism indicts the
+*reranker* rather than the pool, so shrinking the pool treats the symptom; and a smaller
+candidate pool reduces the material available to map-reduce and multi-file answers, which is
+coverage — the thing this harness cannot score.
+
+### #363's checkboxes, with the numbers that close them
+
+| checkbox | status | evidence |
+|---|---|---|
+| Build a retrieval-evaluation set from real OpenTranscribe content, with graded judgements including speaker-scoped queries | **closed** | 1,651 scored queries over 432 files — 1,576 QMSum human queries (Tier A, MIT) + 75 synthetic; 78,694 graded judgements, mean 47.66 per query, 0 dropped unjudgeable |
+| Measure RRF (`rank_constant` 30 **and 60**) against `normalization-processor` variants | **closed** | ten arms, both rank constants, all three normalization techniques × all three combination techniques on `min_max`, plus two weightings. Full table above |
+| Only then decide whether to change the default, and record the numbers | **closed — the default does NOT change** | zero of ten arms win on both corpora. Best case +1.5% on QMSum against −23.3% on synthetic |
+| Reuse the same harness to validate #362's Phase 11 options | **open — belongs to #362** | the reuse seam is `--fusion` plus the `retrieval.fusion` provenance block; Phase 11's granite tiers and the neural-sparse leg are additive options that plug into the same arms |
+| Record the speaker-turn chunking decision | **closed** | [above](#the-speaker-turn-chunking-decision-recorded) |
+
+### Synonyms — not measurable without a reindex, and that is a fact about the feature
+
+A `synonym_graph` filter is an **analyzer** change. Analyzers live in index settings, so adopting
+one means a mapping change and a full reindex — which this sweep is forbidden from doing and,
+more importantly, which takes it out of the class of change Stage 5 exists for. #383 says so
+itself: *"A synonym filter change is an analyzer change, so it needs the reindex path; fold it
+into Phase 3's single bump if it wins early, otherwise it is its own bump."* Phase 3's bump has
+already shipped (index v6).
+
+So the honest status is: **unmeasured, with a named blocker**, not "tried and rejected". The
+prerequisite is a domain vocabulary to put in the filter, and this corpus does not have one —
+QMSum is a remote-control design scenario and the synthetic tier's jargon is generated. Testing
+synonym expansion against a corpus with no real domain vocabulary would measure the generator.
+
+## Do the two corpora agree? {#corpus-agreement}
+
+Every run on this page scores QMSum and the synthetic tier in the same pass, so both numbers
+have always been present. What was never produced is the **statement about whether they
+agree** — and the whole both-corpora gate rests on the answer. If the two corpora rank changes
+the same way, the gate is a redundancy check and a single-corpus result is nearly as good. If
+they do not, then **a tuning decision taken on one corpus is not evidence**, and several
+decisions on this page would rest on nothing.
+
+They do not agree. On the class the gate protects, they agree **less than a coin flip would**.
+
+### The two rules that make the comparison legitimate
+
+**Absolute nDCG is never compared.** QMSum's control is 0.0983 and the synthetic tier's is
+0.2952. That 3× gap is a property of the corpora — 17-word QMSum speaker turns against
+generated meetings carrying a title-and-roster header in the embedded text — and it says
+nothing about any arm. Every arm is therefore reduced to a **delta against its own family's
+control**, and only that delta's **sign** and **rank** are used.
+
+**An arm is only compared to arms sharing its control, stage and query set.** The fusion arms
+are `--stage retrieve` over 1,651 queries; the budget arms are `--stage rerank` over the
+475-query subset; the pool arms are `--stage rerank` over the full set. Per-family coefficients
+are the result; the pooled one is a summary and is reported with that caveat rather than
+instead of them.
+
+### Method — how to reproduce it, or redo it with a 25th arm
+
+```bash
+# the 24 arms already measured, no re-run — reads /tmp/sweep403/*/metrics.json
+scripts/rag_corpus_agreement.py
+scripts/rag_corpus_agreement.py --class lookup              # the class D5 protects
+scripts/rag_corpus_agreement.py --drop norm-minmax-geom --drop norm-minmax-harm
+scripts/rag_corpus_agreement.py --exclude-inert             # tie-artefact sensitivity
+scripts/rag_corpus_agreement.py --json                      # machine-readable
+```
+
+**No benchmark was re-run for this analysis and no index was touched.** It reads the
+`metrics.json` files the Stage 5 sweep already wrote; `indexing.total` was **825,795** before
+and after, `docs.count` 210,908, `docs.deleted` 0, `_meta.version` 6 — the same numbers the
+sweep reports, because reading a results file cannot move them.
+
+Adding a 25th arm needs **no code edit**: `--emit-manifest` prints the built-in arm table as
+JSON, add the new arm's `{name, run, axis}` under the family whose control it was measured
+against, and pass it back with `--manifest`. The only requirement on the new run is the one
+`benchmark_rag.py` already meets — a `metrics.json` with `rows[].corpus` /
+`rows[].query_class` / `rows[].metrics`.
+
+**Kendall's tau-b is the headline coefficient**, and the choice is forced rather than
+stylistic:
+
+- The arm set contains **exact ties**. Four budget arms move nothing on either corpus, because
+  `diversity_sample` is prefix-invariant in `cap`. tau-b has a defined tie correction; Spearman's
+  midrank merely does not crash. Spearman is printed beside it and agrees throughout.
+- **Pearson is printed to be distrusted, not used.** Pooled it reads **+0.697 (p = 0.0004)**,
+  which looks like strong agreement. Drop the two arms that collapse for a structural reason
+  (`geometric_mean` / `harmonic_mean` annihilate single-leg hits) and it falls to **+0.115
+  (p = 0.64)**, while tau-b moves from +0.301 to +0.131. A correlation carried by two outliers
+  is not a finding about the other nineteen arms.
+- Rank measures are invariant to any monotone per-corpus transform, so Δ and Δ% give identical
+  coefficients. That is asserted in `backend/tests/eval/test_corpus_agreement.py`, not assumed.
+
+Arithmetic and edge cases are pinned by that test module (20 tests; tau-b reads ±1 on the
+extremes, a constant corpus returns *undefined* rather than 0.0, inert arms are counted
+separately from agreement). `scipy` — **BSD-3-Clause**, verified from the installed
+distribution's own metadata — is the only dependency, and it is not a new one: it is a hard
+requirement of `sentence-transformers`, so it is already present in `requirements.txt`,
+`requirements-ci.txt` and the eval venv. It is **not** the licence-restricted case
+`requirements-eval.txt` documents for `pytrec_eval_terrier`.
+
+### The per-arm result — 21 arms, `all` class, nDCG@10
+
+Δ is against each arm's own family control. `inert` means the arm moved **nothing** on either
+corpus and is counted separately: two zeros are a metric that cannot see the knob, not two
+corpora concurring.
+
+| family | arm | axis | Δ qmsum | Δ synthetic | |
+|---|---|---|---|---|---|
+| fusion | `rrf-30-explicit` | flag-inertness control | +0.0000 | +0.0000 | inert |
+| fusion | `rrf-60` | rank_constant | −0.0003 | +0.0063 | **disagree** |
+| fusion | `norm-minmax-arith` | normalization | +0.0008 | −0.0555 | **disagree** |
+| fusion | `norm-l2-arith` | normalization | +0.0010 | −0.0633 | **disagree** |
+| fusion | `norm-zscore-arith` | normalization | +0.0015 | −0.0687 | **disagree** |
+| fusion | `norm-minmax-geom` | combination | −0.0152 | −0.1984 | agree |
+| fusion | `norm-minmax-harm` | combination | −0.0161 | −0.2059 | agree |
+| fusion | `norm-minmax-arith-w70-30` | weighting | +0.0014 | −0.1450 | **disagree** |
+| fusion | `norm-minmax-arith-w30-70` | weighting | −0.0093 | −0.0082 | agree |
+| budget | `budget-48-12-4-repeat` | repeatability control | +0.0000 | +0.0000 | inert |
+| budget | `budget-48-20-4` | final_chunks | +0.0000 | +0.0000 | inert |
+| budget | `budget-48-08-4` | final_chunks | −0.0013 | −0.0028 | agree |
+| budget | `budget-48-12-2` | max_chunks_per_file | +0.0000 | +0.0000 | inert |
+| budget | `budget-48-12-8` | max_chunks_per_file | +0.0000 | +0.0000 | inert |
+| budget | `budget-24-12-4` | candidate_pool | +0.0009 | +0.0095 | agree |
+| budget | `budget-96-12-4` | candidate_pool | +0.0004 | +0.0091 | agree |
+| budget | `budget-96-12-4-pairs96` | rerank_max_pairs | +0.0007 | +0.0057 | agree |
+| pool | `pool-12` | candidate_pool | +0.0128 | +0.0342 | agree |
+| pool | `pool-24` | candidate_pool | +0.0036 | +0.0095 | agree |
+| pool | `pool-32` | candidate_pool | +0.0013 | +0.0170 | agree |
+| pool | `pool-96` | candidate_pool | −0.0009 | +0.0091 | **disagree** |
+
+(21 rows, not 24: the three family controls are Δ = 0 against themselves by construction.)
+
+**Sign agreement, `all` class: 10 agree, 6 disagree, 5 inert — 10 of the 16 arms that moved
+on both corpora, 62.5%.** A fair coin gives 50%.
+
+**Sign agreement, `lookup` class: 6 agree, 9 disagree, 5 inert, 1 one-sided — 6 of 15, 40.0%.**
+On the class D5 says must never regress, the corpora are **more often opposed than aligned**.
+
+### The coefficients
+
+`all` class, nDCG@10, Δ vs family control:
+
+| set | n | Kendall tau-b | p | Spearman rho | p |
+|---|---|---|---|---|---|
+| fusion | 9 | **+0.000** | 1.000 | +0.133 | 0.732 |
+| budget | 8 | +0.909 | 0.004 | +0.973 | 0.00005 |
+| pool | 4 | +0.667 | 0.333 | +0.800 | 0.200 |
+| **pooled** | **21** | **+0.301** | **0.066** | +0.378 | 0.091 |
+
+`lookup` class — the same arms, the class the gate protects:
+
+| set | n | Kendall tau-b | p | Spearman rho | p |
+|---|---|---|---|---|---|
+| fusion | 9 | −0.111 | 0.761 | +0.083 | 0.831 |
+| budget | 8 | +0.201 | 0.540 | +0.116 | 0.784 |
+| pool | 4 | +0.000 | 1.000 | +0.200 | 0.800 |
+| **pooled** | **21** | **−0.005** | **0.975** | +0.056 | 0.809 |
+
+**tau-b = −0.005 on `lookup` is not weak agreement; it is the absence of any relationship.**
+Knowing what an arm did to QMSum lookup tells you nothing whatever about what it did to
+synthetic lookup.
+
+Two artefacts have to be read off before either table is quoted:
+
+- **The budget family's +0.909 is substantially a tie artefact.** Half its arms are exact zeros
+  on both corpora, and a zero pairs concordantly with almost everything. `--exclude-inert`
+  drops it to **+0.667 at p = 0.333** (n = 4) — the difference between "significant agreement"
+  and "four arms and no evidence". On `lookup`, excluding inert arms takes *every* family to
+  tau-b = 0.000.
+- **Excluding `geometric_mean` / `harmonic_mean` flips the fusion result from null to
+  significantly negative** (next section). Those two are not a tuning choice that lost; they
+  collapse structurally, and both corpora notice, which is why they are the only reason the
+  fusion coefficient reaches zero rather than going negative.
+
+### Where they disagree: the fusion axis, and it is ANTI-correlated
+
+`geometric_mean` and `harmonic_mean` are zero if either leg is zero, so a single-leg hit is
+annihilated rather than ranked — a structural collapse both corpora agree about, and the only
+concordant pair in the family. Removing those two leaves the seven arms that are genuine
+tuning candidates:
+
+| set (fusion, geom/harm removed) | n | Kendall tau-b | p | Spearman rho | p |
+|---|---|---|---|---|---|
+| `all` class | 7 | **−0.714** | **0.030** | −0.857 | 0.014 |
+| `lookup` class | 7 | **−0.905** | **0.003** | −0.964 | 0.001 |
+
+**Among the fusion arms anyone would actually consider adopting, improving QMSum predicts
+harming the synthetic tier, almost monotonically, and the relationship is statistically
+significant at n = 7.** This is much stronger than "the corpora sometimes disagree": on this
+axis one corpus's ranking is close to the *reverse* of the other's.
+
+Per axis, `all` / `lookup`:
+
+| axis | arms | agree | disagree | reading |
+|---|---|---|---|---|
+| `normalization` (min_max / l2 / z_score) | 3 | 0 / 0 | **3 / 3** | **total disagreement, both classes.** Every normalization arm gains on QMSum and loses on synthetic |
+| `weighting` (BM25/vector split) | 2 | 1 / 0 | 1 / **2** | **the worst axis on `lookup`**: `w70_30` is QMSum lookup's best arm and synthetic lookup's second-worst; `w30_70` is the exact mirror |
+| `rank_constant` (RRF 30 vs 60) | 1 | 0 / 0 | 1 / 1 | the one arm disagrees on both classes |
+| `candidate_pool` | 6 | 5 / 3 | 1 / **3** | agrees on `all`, **splits evenly on `lookup`** |
+| `combination` (geom / harm) | 2 | 2 / 2 | 0 / 0 | agrees — and both arms are structural collapses, not tuning |
+| `final_chunks`, `max_chunks_per_file`, `rerank_max_pairs` | 5 | 2 / 1 | 0 / 0 | three of the five are inert; a ranking metric cannot see these knobs at all |
+
+The Stage 5 write-up already named the weighting axis as the worst offender. **Confirmed on
+`lookup`, and extended: `normalization` is just as bad and has three arms rather than two.**
+The `all` class understates weighting because `w30_70` loses on both corpora at corpus level
+while *winning* synthetic lookup.
+
+### Would the two corpora pick the same winner?
+
+| family | QMSum picks | synthetic picks | |
+|---|---|---|---|
+| fusion, `all` | `norm-zscore-arith` (+0.0015) | `rrf-60` (+0.0063) | **different** |
+| fusion, `lookup` | `norm-minmax-arith-w70-30` (+0.0013) | `norm-minmax-arith-w30-70` (+0.0146) | **different — and opposite** |
+| budget, `all` | `budget-24-12-4` (+0.0009) | `budget-24-12-4` (+0.0095) | same |
+| budget, `lookup` | `budget-24-12-4` (+0.0012) | `budget-96-12-4` (+0.0110) | **different** |
+| pool, `all` | `pool-12` (+0.0128) | `pool-12` (+0.0342) | same |
+| pool, `lookup` | `pool-12` (+0.0125) | `pool-12` (+0.0180) | same |
+
+**The fusion axis picks a different winner on both classes, and on `lookup` the two winners
+are the two halves of the same knob turned opposite ways.** The pool axis picks the same winner
+every time — which is the one place a single-corpus result would have been safe, and it is
+also the axis where Stage 5's strongest candidate (`candidate_pool` 12) sits.
+
+### One more asymmetry: QMSum barely moves on the fusion axis
+
+| family | QMSum Δ range | synthetic Δ range | synthetic / QMSum |
+|---|---|---|---|
+| fusion | 0.0176 | 0.2122 | **12.1×** |
+| budget | 0.0022 | 0.0123 | 5.6× |
+| pool | 0.0137 | 0.0251 | 1.8× |
+
+The entire QMSum fusion spread is 0.0176 nDCG@10, and the "wins" inside it are 0.0008–0.0015 —
+around 1% relative on a control of 0.0983. So the anti-correlation above is a near-reversal of
+a ranking whose QMSum side has almost **no dynamic range**. That cuts in an uncomfortable
+direction rather than a convenient one: it does not rescue the synthetic tier, it says the
+QMSum side of a fusion A/B is a weak signal being read as a strong one. Both readings end at
+the same rule.
+
+### The consequence: the both-corpora gate is TIGHTENED, not relaxed
+
+The Stage 5 gate — *a win must hold on **both corpora**, with the lookup class never regressing
+on either* — is now measured rather than asserted, and this analysis **supports and tightens
+it**:
+
+1. **A single-corpus tuning result is not evidence, and that is now a number.** Kendall tau-b
+   = +0.301 (p = 0.066, n = 21) pooled, and **−0.005 (p = 0.975) on the lookup class**. Where
+   the corpora were most likely to be used as a shortcut — the fusion axis — the coefficient is
+   **−0.714 / −0.905** among genuine candidates. "It won on QMSum" and "it won on synthetic" are
+   not weak evidence of each other; on that axis they are mild evidence *against* each other.
+2. **Report the lookup class separately, always.** Corpus-level agreement (62.5% signs, tau-b
+   +0.301) is meaningfully better than lookup-class agreement (40.0%, tau-b −0.005). Quoting
+   only the `all` row would overstate agreement on the exact class the gate protects.
+3. **Do not treat "both corpora agreed" as strong on its own when the arms are inert.** Four
+   budget arms agree at exactly zero. `--exclude-inert` before quoting a family coefficient.
+4. **Neither corpus is the arbiter.** Nothing here says synthetic is right and QMSum is wrong,
+   or the reverse. The likely mechanism is Stage 3's `embedding_text` result — synthetic queries
+   discriminate on the embedded title/roster header, so their answer lives in the vector leg,
+   while QMSum's conversational queries are literal-word matches BM25 finds. Both are real
+   retrieval regimes; a deployment has both kinds of user. **An arm that helps one and hurts the
+   other is a trade-off to be decided deliberately, not a win.**
+5. **A third corpus would be worth more than a 25th arm.** Two corpora that disagree can only
+   veto; they cannot adjudicate. This is the concrete argument for the additional Tier A
+   English meeting-retrieval judgements [this page lists as
+   missing](#what-we-cannot-currently-claim).
+
+### What this analysis cannot claim
+
+- **No per-query significance test, and it is blocked by an artifact, not by the maths.** These
+  are 21 paired *aggregate* deltas. `MetricResult.per_query` exists in the harness but
+  `report.py` writes per-query rows only for the answer measures, so `metrics.json` carries no
+  per-query nDCG and a paired bootstrap or t-test over queries cannot be computed from the
+  files on disk. **Dumping per-query retrieval measures is the single highest-value improvement
+  to this instrument** — it would turn every Δ on this page from a point estimate into an
+  interval, and it needs no re-run of anything already measured, only of the arms you want
+  intervals for.
+- **n is small and the p-values are fragile.** 21 arms pooled, 4–9 per family. The pooled
+  `all`-class coefficient (p = 0.066) is not significant at α = 0.05, and the pool family's
+  +0.667 at n = 4 is not evidence of anything on its own. Only the fusion anti-correlation
+  (p = 0.030 / 0.003) and the tie-inflated budget figure clear α = 0.05.
+- **The pooled coefficient mixes incomparable families.** Different stages, different query
+  sets, and `budget-24-12-4` / `budget-96-12-4` share their synthetic measurement with
+  `pool-24` / `pool-96` (all 75 synthetic queries are in both sets, so those two synthetic
+  deltas are literally the same number twice). Dropping the two duplicates moves pooled tau-b
+  from +0.301 to +0.242 — the caveat is real but it is not what produces the result.
+- **This is agreement about *retrieval ranking*, nothing else.** No LLM was involved (D6), so
+  it says nothing about whether the two corpora would agree about answer quality — the axis on
+  which the reranker and `final_chunks` decisions actually turn.
+
 ## What we cannot currently claim
 
 Stated plainly, because a benchmark's limits are part of its result:
@@ -849,7 +1779,7 @@ Stated plainly, because a benchmark's limits are part of its result:
 - **`aggregation` is now scored on its answer** (exact match, see [Scoring an answer, not a
   rank](#scoring-an-answer-not-a-rank)). The reference answerer's 1.000 characterises the corpus and
   the mechanism, not the shipped system; **the shipped system scores 0.800** through
-  `--answerer product` (see [Stage 4](#the-products-aggregation-path-0800---1000-once-it-knew-when-meetings-happened)),
+  `--answerer product` (see [Stage 4](#the-products-aggregation-path)),
   and the gap is one rule with a named structural cause.
 - **Injecting synthetic data moves the QMSum numbers.** Retrieval runs corpus-wide, so the
   candidate pool roughly doubles and document frequencies shift. Run the QMSum-only control before

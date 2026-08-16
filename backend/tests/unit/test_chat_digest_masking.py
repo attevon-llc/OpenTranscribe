@@ -20,6 +20,7 @@ mask. One function cannot hold both, which is the other reason these are two.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -44,6 +45,21 @@ FULL_SPAN = [
     "There was a long argument about the vendor.",
     "We shipped on Friday.",
 ]
+
+
+@contextmanager
+def _one_session(db):
+    yield db
+
+
+def _factory(db):
+    """A ``session_scope``-shaped factory over one prepared session.
+
+    Both maskers take the FACTORY, never a ``Session`` (issue #83): they gather
+    their cached spans, close the transaction, and only then mask — the inline
+    fallback below runs Presidio, whose cold build is ~10 s.
+    """
+    return lambda: _one_session(db)
 
 
 def _digest_hit(content: str = DIGEST_TEXT) -> ChunkHit:
@@ -180,7 +196,7 @@ def test_the_chunk_path_over_discloses_a_digest():
             side_effect=lambda text, *_a, **_k: (text, []),
         ),
     ):
-        wrong = mask_chunks(db, [_digest_hit()], user_id=1)
+        wrong = mask_chunks(_factory(db), [_digest_hit()], user_id=1)
 
     assert len(wrong[0].content) > len(DIGEST_TEXT), (
         "the hazard is gone — a digest through the chunk path no longer "
@@ -206,7 +222,7 @@ def test_the_digest_path_returns_only_the_digest_sentences():
             side_effect=lambda text, *_a, **_k: (text, []),
         ),
     ):
-        masked = mask_digests(db, [_digest_hit()], user_id=1)
+        masked = mask_digests(_factory(db), [_digest_hit()], user_id=1)
 
     assert "card number" not in masked[0].content
     assert len(masked[0].content) <= len(DIGEST_TEXT) + 1
@@ -221,7 +237,7 @@ def test_an_unresolvable_config_withholds_every_digest():
         "app.services.redaction.config.resolve_effective_config",
         side_effect=RuntimeError("no policy"),
     ):
-        masked = mask_digests(db, [_digest_hit()], user_id=1)
+        masked = mask_digests(_factory(db), [_digest_hit()], user_id=1)
 
     assert masked[0].content == ""
     assert masked[0].was_masked is True
@@ -232,7 +248,7 @@ def test_an_unknown_provenance_kind_contributes_nothing():
     db = _facts_db([_sentence("We agreed the budget.", [1], kind="char_range")])
 
     with patch("app.services.redaction.config.resolve_effective_config", return_value=_cfg()):
-        masked = mask_digests(db, [_digest_hit()], user_id=1)
+        masked = mask_digests(_factory(db), [_digest_hit()], user_id=1)
 
     assert masked[0].content == ""
 
@@ -254,7 +270,7 @@ def test_one_unmaskable_sentence_does_not_discard_the_others():
             side_effect=lambda text, *_a, **_k: (text, []),
         ),
     ):
-        masked = mask_digests(db, [_digest_hit()], user_id=1)
+        masked = mask_digests(_factory(db), [_digest_hit()], user_id=1)
 
     assert masked[0].content == "We agreed the budget."
 
@@ -266,7 +282,7 @@ def test_detection_not_finished_falls_back_to_inline_and_never_to_raw():
         patch("app.services.redaction.config.resolve_effective_config", return_value=_cfg()),
         patch("app.services.chat.redactor._mask_inline", return_value="[MASKED]") as inline,
     ):
-        masked = mask_digests(db, [_digest_hit()], user_id=1)
+        masked = mask_digests(_factory(db), [_digest_hit()], user_id=1)
 
     assert inline.called
     assert masked[0].content == "[MASKED]"
@@ -303,7 +319,7 @@ def test_the_inline_fallback_withholds_a_section_on_a_swallowed_detector_failure
             side_effect=lambda text, *_a, **_k: (text, []),
         ),
     ):
-        masked = mask_digests(db, [_digest_hit()], user_id=1)
+        masked = mask_digests(_factory(db), [_digest_hit()], user_id=1)
 
     assert masked[0].content == ""
     assert "We agreed the budget" not in masked[0].content
@@ -342,7 +358,7 @@ def test_the_per_sentence_path_needs_no_detector_at_all():
             side_effect=lambda text, *_a, **_k: (text, []),
         ),
     ):
-        masked = mask_digests(db, [_digest_hit()], user_id=1)
+        masked = mask_digests(_factory(db), [_digest_hit()], user_id=1)
 
     assert masked[0].content == "We agreed the budget."
     assert detect_calls == []
@@ -354,7 +370,7 @@ def test_policy_off_passes_the_digest_through_untouched():
         "app.services.redaction.config.resolve_effective_config",
         return_value=_cfg(redact_before_llm=False),
     ):
-        masked = mask_digests(db, [_digest_hit()], user_id=1)
+        masked = mask_digests(_factory(db), [_digest_hit()], user_id=1)
 
     assert masked[0].content == DIGEST_TEXT
     assert masked[0].was_masked is False
@@ -362,8 +378,63 @@ def test_policy_off_passes_the_digest_through_untouched():
 
 def test_no_digests_is_not_a_database_round_trip():
     db = MagicMock()
-    assert mask_digests(db, [], user_id=1) == []
+    opened = []
+
+    def _factory_that_counts():
+        opened.append(1)
+        return _one_session(db)
+
+    assert mask_digests(_factory_that_counts, [], user_id=1) == []
     assert db.query.called is False
+    assert opened == [], "an empty digest list must not even open a session"
+
+
+def test_the_digest_inline_fallback_runs_with_no_db_session_open():
+    """#83: the same gather-then-close contract as ``mask_chunks``.
+
+    A section whose provenance cannot be resolved is masked inline, which builds
+    a Presidio ``AnalyzerEngine`` — ~10 s cold, measured at 13.9 s ``idle in
+    transaction`` when it ran inside the gather session. A plain SELECT holds
+    ACCESS SHARE for the life of its transaction, so that queues every
+    ``ALTER TABLE`` behind a chat turn.
+    """
+    live = 0
+    live_during_detection: list[int] = []
+
+    db = _facts_db([_sentence("x", [1])], status="processing")  # -> inline fallback
+
+    @contextmanager
+    def _counting_scope():
+        nonlocal live
+        live += 1
+        try:
+            yield db
+        finally:
+            live -= 1
+
+    def _detect(_text, _words, _det_cfg, **_kwargs):
+        live_during_detection.append(live)
+        return [], None
+
+    with (
+        patch("app.services.redaction.config.resolve_effective_config", return_value=_cfg()),
+        patch(
+            "app.services.redaction.service.RedactionService.detect_segment_spans",
+            side_effect=_detect,
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            return_value=("[MASKED]", []),
+        ),
+    ):
+        masked = mask_digests(_counting_scope, [_digest_hit()], user_id=1)
+
+    assert live_during_detection == [0], (
+        "a DB session was live while the digest inline detector ran "
+        f"(observed: {live_during_detection})"
+    )
+    # The control: it still masked, rather than being emptied by a missing session.
+    assert masked[0].content == "[MASKED]"
 
 
 # ------------------------------------------------------------ G7 citations

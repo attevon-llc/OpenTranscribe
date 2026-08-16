@@ -283,7 +283,9 @@ def _run_prepare_context(monkeypatch, db, *, file_uuids, chunk_file_uuids):
     monkeypatch.setattr(
         chat_service,
         "mask_chunks",
-        lambda _db, hits, _user_id: [MaskedChunk(source=h, content=h.content) for h in hits],
+        # First arg is the session FACTORY, not a session (#83) — the masker owns
+        # its own short transaction so the detector never runs inside one.
+        lambda _factory, hits, _user_id: [MaskedChunk(source=h, content=h.content) for h in hits],
     )
 
     # `_prepare_context` takes no `db` and opens its OWN session per phase, so a

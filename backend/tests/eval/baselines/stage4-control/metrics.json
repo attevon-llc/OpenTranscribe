@@ -521,10 +521,15 @@
     }
   ],
   "index": {
+    "configured_embedding_model": "huggingface/sentence-transformers/all-MiniLM-L6-v2",
     "corpus_chunks": 210908,
     "corpus_files": 432,
     "docs_count": 210908,
     "docs_deleted": 0,
+    "embedding_dimension": 384,
+    "embedding_models": [],
+    "embedding_unattributed": 210908,
+    "embedding_verdict": "unattributed",
     "expected_files": 432
   },
   "metric_engine": {

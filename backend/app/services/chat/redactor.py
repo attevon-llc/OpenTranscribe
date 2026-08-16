@@ -13,12 +13,31 @@ read-time only; stored transcripts are never modified.
 Primary path: rebuild the chunk from its ``TranscriptSegment`` rows, whose
 detection spans are cached in JSONB — sub-millisecond, no detector runs. Fallback
 for files whose detection has not completed: mask inline (slower, logged).
+
+⚠️ **Both public maskers are TWO-PHASE: gather from Postgres, close the session,
+then mask (issue #83).** They take a *session factory*, not a ``Session``, for the
+same reason ``aggregation_service`` does. The fallback above runs Presidio, and a
+cold ``AnalyzerEngine`` build is **~10 s**; running it inside the caller's
+transaction put a chat turn ``idle in transaction`` for that long — measured
+**13,898 ms** against real Postgres — which queues every ``ALTER TABLE`` behind it
+and hangs an Alembic upgrade mid-release. ``redaction/warmup.py`` makes the cold
+build rare, not impossible: the warm-up gate is evaluated **once** at API startup,
+so a deployment that enables redaction afterwards still pays it, and a request
+landing mid-warm-up waits for the remainder.
+
+Phase A returns PLAIN DATA (:class:`_SegmentSpans`), never an ORM instance —
+attribute access on a detached row re-opens a session and silently undoes the
+split. See this package's CLAUDE.md.
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
+from dataclasses import field
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -26,6 +45,13 @@ from app.core import constants as C  # noqa: N812
 from app.services.search.chunk_retrieval import ChunkHit
 
 logger = logging.getLogger(__name__)
+
+#: A callable returning a session context manager — ``db.session_utils.session_scope``
+#: in production, the test's own session in the suites. Same contract as
+#: ``aggregation_service.SessionFactory``, except that ``None`` is not accepted:
+#: "no Postgres" is not a decline here, it is a policy that cannot be resolved,
+#: and this module fails closed on that rather than passing text through.
+SessionFactory = Callable[[], contextlib.AbstractContextManager[Session]]
 
 
 @dataclass
@@ -68,18 +94,87 @@ class MaskedChunk:
         return self.source.chunk_index
 
 
-def _mask_from_segments(db: Session, chunk: ChunkHit, cfg) -> str | None:
-    """Rebuild a chunk's text from its segments, masked via cached spans.
+@dataclass(frozen=True)
+class _SegmentSpans:
+    """One transcript segment's text and its cached detection spans, as plain data.
 
-    Returns None whenever the cached-span path cannot be trusted, so the caller
-    falls back to inline detection rather than sending unmasked text.
+    Read inside the gather session and carried out of it. Deliberately **not** a
+    ``TranscriptSegment``: the first attribute read on a detached ORM row would
+    open a fresh transaction in the masking phase, which is the whole thing this
+    split exists to prevent.
+    """
+
+    text: str
+    redactions: list[Any]
+    words: Any
+
+
+@dataclass
+class _ChunkPlan:
+    """What the gather learned about one chunk.
+
+    ``segments is None`` means the cached-span path declined (no scan, an
+    unfinished scan, a coverage gap, or no overlapping segments) and the chunk
+    must be masked inline. ``failed`` means the gather itself raised, and the
+    chunk fails closed **without** an inline retry — exactly as before the split,
+    where an exception out of the cached path appended ``""`` and moved on.
+    """
+
+    segments: list[_SegmentSpans] | None = None
+    failed: bool = False
+
+
+@dataclass
+class _DigestPlan:
+    """What the gather learned about one digest section.
+
+    ``sentences is None`` means the provenance could not be resolved and the
+    rendered section is masked inline. Otherwise it is one entry per stored
+    sentence, in order; an **empty** entry is a sentence that must be withheld
+    (unknown provenance kind, no segment ids, rows gone, or a failed read).
+    """
+
+    sentences: list[list[_SegmentSpans]] | None = None
+    unresolvable: bool = False
+
+
+@dataclass
+class _MaskingInputs:
+    """Everything the masking phase needs, with no session held.
+
+    ``cfg`` is ``None`` only when the policy could not be resolved at all, which
+    fails closed for every item — the one condition that is not per-item.
+    """
+
+    cfg: Any = None
+    applies: bool = False
+    chunks: list[_ChunkPlan] = field(default_factory=list)
+    digests: list[_DigestPlan] = field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- #
+# Phase A — Postgres. Everything below runs with a session and returns plain data.
+# --------------------------------------------------------------------------- #
+
+
+def _segment_spans(row) -> _SegmentSpans:
+    """Copy one segment row's masking inputs out of the ORM."""
+    return _SegmentSpans(
+        text=str(row.text or ""),
+        redactions=list(row.redactions or []),
+        words=row.words,
+    )
+
+
+def _gather_chunk_segments(db: Session, chunk: ChunkHit, cfg) -> list[_SegmentSpans] | None:
+    """Read the segments backing one chunk, or None to mean "mask inline".
 
     **The redaction_status gate is the important part.** Cached spans only exist
-    once detection has finished for the file. Without this check the function
+    once detection has finished for the file. Without this check the caller
     would happily "mask" a file whose ``redactions`` are still NULL — masking
-    nothing and returning the raw text, which the caller would then treat as
-    safe. Chat is exactly the surface where you ask about recordings you never
-    opened, so unscanned files are the common case, not the edge case.
+    nothing and returning the raw text, which it would then treat as safe. Chat
+    is exactly the surface where you ask about recordings you never opened, so
+    unscanned files are the common case, not the edge case.
 
     Deliberately does NOT use ``transcript_builders.mask_segment_text``: that helper
     swallows masking errors and returns the ORIGINAL text, which is the opposite
@@ -89,7 +184,6 @@ def _mask_from_segments(db: Session, chunk: ChunkHit, cfg) -> str | None:
     from app.models.media import MediaFile
     from app.models.media import TranscriptSegment
     from app.services.redaction.coverage import uncovered_detectors
-    from app.services.redaction.service import RedactionService
 
     # Four columns rather than the ORM row: `uncovered_detectors` reads
     # `redaction_coverage` and `language` by getattr, and a Row exposes both by
@@ -145,22 +239,165 @@ def _mask_from_segments(db: Session, chunk: ChunkHit, cfg) -> str | None:
     )
     if not segments:
         return None
+    return [_segment_spans(segment) for segment in segments]
 
-    masked_parts = []
-    for segment in segments:
-        text = str(segment.text or "")
-        if not text:
+
+def _gather_chunk_plans(db: Session, chunks: list[ChunkHit], cfg) -> list[_ChunkPlan]:
+    """Phase A for :func:`mask_chunks`. One failed read withholds one chunk."""
+    plans: list[_ChunkPlan] = []
+    for chunk in chunks:
+        try:
+            # ⚠️ Document-origin chunks NEVER take the MediaFile lookup below.
+            # ``Document.id`` and ``MediaFile.id`` are independent SERIAL sequences that
+            # collide in any real deployment — a document chunk querying `MediaFile.id ==
+            # chunk.file_id` can silently match an UNRELATED media file and, if their time
+            # ranges happen to overlap, serve that file's transcript content as if it were
+            # this document's masked text. Route by ``source_kind`` before any query runs;
+            # never infer the source from "the lookup returned None".
+            #
+            # Both branches return ``_SegmentSpans`` (plain data), so the masking phase in
+            # :func:`_apply_chunk_plan` is shared and holds no session either way.
+            if chunk.is_document:
+                plans.append(_ChunkPlan(segments=_gather_document_chunk_spans(db, chunk, cfg)))
+                continue
+            plans.append(_ChunkPlan(segments=_gather_chunk_segments(db, chunk, cfg)))
+        except Exception:  # noqa: BLE001
+            logger.exception("Cached-span lookup failed for chunk; withholding content")
+            # Fail CLOSED — an unmaskable chunk contributes nothing.
+            plans.append(_ChunkPlan(failed=True))
+    return plans
+
+
+def _digest_sentences(db: Session, chunk: ChunkHit) -> list[dict] | None:
+    """The stored sentences of one digest section, with their provenance.
+
+    The INDEXED digest document carries only its rendered text — no segment ids
+    — so re-masking has to come back to ``file_facts`` for the provenance the
+    extractive builder recorded. ``None`` means the row or the section is not
+    resolvable, and the caller must then fail closed rather than fall back.
+    """
+    from app.models.file_facts import FileFacts
+
+    row = db.query(FileFacts.digest).filter(FileFacts.media_file_id == chunk.file_id).first()
+    if row is None or not row[0]:
+        return None
+    # `is None`, never `or`: section 0 is a real section and it is the FIRST one
+    # of every digest, so `chunk.digest_section or -1` matched nothing for it and
+    # sent every leading section down the inline-masking fallback. Found by the
+    # per-sentence test, not by reading.
+    wanted = -1 if chunk.digest_section is None else int(chunk.digest_section)
+    sections = (row[0] or {}).get("sections") or []
+    for section in sections:
+        if int(section.get("index", -1)) == wanted:
+            sentences = section.get("sentences") or []
+            return list(sentences) if sentences else None
+    return None
+
+
+def _gather_sentence_segments(db: Session, sentence: dict) -> list[_SegmentSpans]:
+    """The segments one digest sentence was drawn from.
+
+    Returns ``[]`` when the provenance is a kind this reader does not understand
+    — a ``char_range`` document sentence (#362) reaching a transcript masker is
+    a bug, and guessing at it would send unmasked text. An empty list withholds
+    the sentence.
+    """
+    from app.models.media import TranscriptSegment
+    from app.services.ingest_artifacts.provenance import KIND_SEGMENT_IDS
+
+    provenance = sentence.get("provenance") or {}
+    if provenance.get("kind") != KIND_SEGMENT_IDS:
+        return []
+    segment_ids = [int(i) for i in provenance.get("segment_ids") or []]
+    if not segment_ids:
+        return []
+
+    rows = (
+        db.query(TranscriptSegment)
+        .filter(TranscriptSegment.id.in_(segment_ids))
+        .order_by(TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id)
+        .all()
+    )
+    return [_segment_spans(row) for row in rows]
+
+
+def _gather_digest_plans(db: Session, digests: list[ChunkHit], cfg) -> list[_DigestPlan]:
+    """Phase A for :func:`mask_digests`. Fails closed per SENTENCE, not per section."""
+    from app.models.media import MediaFile
+    from app.services.redaction.coverage import uncovered_detectors
+
+    plans: list[_DigestPlan] = []
+    for digest in digests:
+        sentences = None
+        try:
+            scan = (
+                db.query(
+                    MediaFile.id,
+                    MediaFile.redaction_status,
+                    MediaFile.redaction_coverage,
+                    MediaFile.language,
+                )
+                .filter(MediaFile.id == digest.file_id)
+                .first()
+            )
+            # Same v392 coverage gate as the chunk path: `done` means the scan
+            # finished, not that every relied-on detector ran. A gap falls
+            # through to the inline masker rather than applying cached spans
+            # that cover less than this policy masks.
+            if (
+                scan is not None
+                and scan.redaction_status == C.REDACTION_STATUS_DONE
+                and not uncovered_detectors(scan, cfg)
+            ):
+                sentences = _digest_sentences(db, digest)
+        except Exception:  # noqa: BLE001
+            logger.exception("Digest provenance lookup failed; withholding the section")
+            sentences = None
+
+        if sentences is None:
+            plans.append(_DigestPlan(sentences=None, unresolvable=True))
             continue
-        masked, _applied = RedactionService.mask_segment(
-            text, segment.redactions or [], segment.words, cfg, set()
-        )
-        masked_parts.append(masked)
 
-    return " ".join(masked_parts).strip() or None
+        gathered: list[list[_SegmentSpans]] = []
+        for sentence in sentences:
+            try:
+                gathered.append(_gather_sentence_segments(db, sentence))
+            except Exception:  # noqa: BLE001
+                logger.exception("Digest sentence lookup failed; dropping that sentence")
+                gathered.append([])
+        plans.append(_DigestPlan(sentences=gathered))
+    return plans
 
 
-def _mask_from_document_chunk(db: Session, chunk: ChunkHit, cfg) -> str | None:
-    """The document analog of :func:`_mask_from_segments`.
+def _gather(
+    session_factory: SessionFactory,
+    user_id: int,
+    *,
+    chunks: list[ChunkHit] | None = None,
+    digests: list[ChunkHit] | None = None,
+) -> _MaskingInputs:
+    """Open ONE short session, read everything, close it.
+
+    Raises whatever the factory or the config read raises; the callers turn that
+    into a fail-closed result for every item, because a policy that cannot be
+    resolved is not a policy that permits sending text.
+    """
+    from app.services.redaction.config import resolve_effective_config
+
+    with session_factory() as db:
+        cfg = resolve_effective_config(db, user_id)
+        inputs = _MaskingInputs(cfg=cfg, applies=bool(cfg.enabled and cfg.redact_before_llm))
+        if not inputs.applies:
+            return inputs
+        if chunks is not None:
+            inputs.chunks = _gather_chunk_plans(db, chunks, cfg)
+        if digests is not None:
+            inputs.digests = _gather_digest_plans(db, digests, cfg)
+        return inputs
+
+
+def _gather_document_chunk_spans(db: Session, chunk: ChunkHit, cfg) -> list[_SegmentSpans] | None:
+    """The document analog of :func:`_gather_chunk_segments`. Phase A — reads only.
 
     Simpler than the transcript case by construction: a ``document_chunk`` row
     already **is** the retrieval unit indexed into OpenSearch (1:1) — there is no
@@ -168,8 +405,11 @@ def _mask_from_document_chunk(db: Session, chunk: ChunkHit, cfg) -> str | None:
     ``(document_id, chunk_index)`` and a read of that row's own cached spans.
 
     Returns ``None`` whenever the cached-span path cannot be trusted (mirrors
-    ``_mask_from_segments`` exactly: unscanned, or scanned with a coverage gap
-    against this policy), so the caller falls back to inline detection.
+    :func:`_gather_chunk_segments` exactly: unscanned, or scanned with a coverage
+    gap against this policy), so the masking phase falls back to inline detection.
+    Returns plain ``_SegmentSpans``, never an ORM row — the first attribute read on
+    a detached row would re-open a transaction in the masking phase, which is the
+    whole point of the split.
     """
     from app.models.document import Document
     from app.models.document import DocumentChunk
@@ -197,8 +437,6 @@ def _mask_from_document_chunk(db: Session, chunk: ChunkHit, cfg) -> str | None:
         )
         return None
 
-    from app.services.redaction.service import RedactionService
-
     row = (
         db.query(DocumentChunk.text, DocumentChunk.redactions)
         .filter(
@@ -210,26 +448,19 @@ def _mask_from_document_chunk(db: Session, chunk: ChunkHit, cfg) -> str | None:
     if row is None or not row.text:
         return None
 
-    masked, _applied = RedactionService.mask_segment(
-        row.text, row.redactions or [], None, cfg, set()
-    )
-    return masked or None
+    # One row, not a rebuild: a ``document_chunk`` IS the indexed retrieval unit (1:1).
+    # ``words=None`` — a document has no word timings; ``mask_segment`` takes that.
+    return [_SegmentSpans(text=row.text, redactions=list(row.redactions or []), words=None)]
 
 
-def _mask_one_document_chunk(db: Session, chunk: ChunkHit, cfg) -> MaskedChunk:
-    """Fail-closed wrapper mirroring ``mask_chunks``'s per-chunk loop body."""
-    try:
-        text = _mask_from_document_chunk(db, chunk, cfg)
-    except Exception:  # noqa: BLE001
-        logger.exception("Cached-span masking failed for document chunk; withholding content")
-        return MaskedChunk(source=chunk, content="", was_masked=True)
-
-    if text is None:
-        text = _mask_inline(chunk.content, cfg)
-    return MaskedChunk(source=chunk, content=text, was_masked=True)
+# --------------------------------------------------------------------------- #
+# Phase B — CPU. Nothing below may touch the database.
+# --------------------------------------------------------------------------- #
 
 
-def mask_document_chunks(db: Session, chunks: list[ChunkHit], user_id: int) -> list[MaskedChunk]:
+def mask_document_chunks(
+    session_factory: SessionFactory, chunks: list[ChunkHit], user_id: int
+) -> list[MaskedChunk]:
     """Apply the requesting user's redact-before-LLM policy to document chunks.
 
     The document counterpart of :func:`mask_chunks`, addressed by
@@ -245,19 +476,12 @@ def mask_document_chunks(db: Session, chunks: list[ChunkHit], user_id: int) -> l
     directly; ``mask_chunks`` also routes to the same logic internally for a mixed
     list, so calling the wrong one on a document chunk is not a safety hole — it is
     redundant, not incorrect.
+
+    Two-phase like :func:`mask_chunks` (issue #83): one short session gathers, the
+    session closes, and the masking — which may pay a cold Presidio build on the
+    inline fallback — runs with nothing held.
     """
-    try:
-        from app.services.redaction.config import resolve_effective_config
-
-        cfg = resolve_effective_config(db, user_id)
-    except Exception:  # noqa: BLE001
-        logger.exception("Could not resolve redaction config; masking all document chunk content")
-        return [MaskedChunk(source=c, content="", was_masked=True) for c in chunks]
-
-    if not (cfg.enabled and cfg.redact_before_llm):
-        return [MaskedChunk(source=c, content=c.content) for c in chunks]
-
-    return [_mask_one_document_chunk(db, chunk, cfg) for chunk in chunks]
+    return mask_chunks(session_factory, chunks, user_id)
 
 
 def _mask_inline(text: str, cfg) -> str:
@@ -266,6 +490,10 @@ def _mask_inline(text: str, cfg) -> str:
     Toxicity classification is skipped: it is the expensive detector and loading
     it on an interactive request would blow the latency budget. PII/profanity
     still run, which is what ``redact_before_llm`` primarily protects.
+
+    **Runs with no database session open** (#83) — a cold Presidio build is ~10 s,
+    and paying it inside a transaction is the defect
+    ``scripts/audit-session-lifetime.py`` exists to catch.
 
     **The ``failures`` sink is what makes the fail-closed promise true.**
     ``detect_segment_spans`` *swallows* a PII-detector exception and returns
@@ -301,11 +529,56 @@ def _mask_inline(text: str, cfg) -> str:
         return ""
 
 
-def mask_chunks(db: Session, chunks: list[ChunkHit], user_id: int) -> list[MaskedChunk]:
+def _mask_from_spans(segments: list[_SegmentSpans], cfg) -> str:
+    """Apply cached spans to gathered segment text. Pure — no I/O, no detectors."""
+    from app.services.redaction.service import RedactionService
+
+    parts = []
+    for segment in segments:
+        if not segment.text:
+            continue
+        masked, _applied = RedactionService.mask_segment(
+            segment.text, segment.redactions, segment.words, cfg, set()
+        )
+        parts.append(masked)
+    return " ".join(parts).strip()
+
+
+def _apply_chunk_plan(plan: _ChunkPlan, chunk: ChunkHit, cfg) -> tuple[str, bool]:
+    """Mask one chunk from its plan. Returns ``(content, used_inline)``."""
+    if plan.failed:
+        return "", False
+    if plan.segments is None:
+        return _mask_inline(chunk.content, cfg), True
+    try:
+        text = _mask_from_spans(plan.segments, cfg)
+    except Exception:  # noqa: BLE001
+        logger.exception("Cached-span masking failed for chunk; withholding content")
+        # Fail CLOSED — an unmaskable chunk contributes nothing.
+        return "", False
+    if not text:
+        return _mask_inline(chunk.content, cfg), True
+    return text, False
+
+
+# --------------------------------------------------------------------------- #
+# The two public maskers. NOT interchangeable — see this package's CLAUDE.md.
+# --------------------------------------------------------------------------- #
+
+
+def mask_chunks(
+    session_factory: SessionFactory, chunks: list[ChunkHit], user_id: int
+) -> list[MaskedChunk]:
     """Apply the owner's redact-before-LLM policy to retrieved chunks.
 
+    Two phases: **one** short session gathers the policy and every chunk's cached
+    spans, then the session closes and the masking (including a possible Presidio
+    load) runs with nothing held (#83).
+
     Args:
-        db: Database session.
+        session_factory: Callable returning a session context manager
+            (``session_scope``). NOT a ``Session`` — this function owns the
+            transaction boundary precisely so it can close it before masking.
         chunks: Chunks straight out of retrieval (unredacted index content).
         user_id: Owner whose effective policy governs (admin force floor included).
 
@@ -314,42 +587,20 @@ def mask_chunks(db: Session, chunks: list[ChunkHit], user_id: int) -> list[Maske
         passed through untouched.
     """
     try:
-        from app.services.redaction.config import resolve_effective_config
-
-        cfg = resolve_effective_config(db, user_id)
+        inputs = _gather(session_factory, user_id, chunks=chunks)
     except Exception:  # noqa: BLE001
         logger.exception("Could not resolve redaction config; masking all chunk content")
         # Fail CLOSED: if we cannot tell whether masking is required, don't send text.
         return [MaskedChunk(source=c, content="", was_masked=True) for c in chunks]
 
-    if not (cfg.enabled and cfg.redact_before_llm):
+    if not inputs.applies:
         return [MaskedChunk(source=c, content=c.content) for c in chunks]
 
     masked: list[MaskedChunk] = []
     inline_fallbacks = 0
-    for chunk in chunks:
-        # ⚠️ Document-origin chunks NEVER take the MediaFile lookup below.
-        # ``Document.id`` and ``MediaFile.id`` are independent SERIAL sequences that
-        # collide in any real deployment — a document chunk querying `MediaFile.id ==
-        # chunk.file_id` can silently match an UNRELATED media file and, if their time
-        # ranges happen to overlap, serve that file's transcript content as if it were
-        # this document's masked text. Route by ``source_kind`` before any query runs;
-        # never infer the source from "the lookup returned None".
-        if chunk.is_document:
-            masked.append(_mask_one_document_chunk(db, chunk, cfg))
-            continue
-
-        try:
-            text = _mask_from_segments(db, chunk, cfg)
-        except Exception:  # noqa: BLE001
-            logger.exception("Cached-span masking failed for chunk; withholding content")
-            # Fail CLOSED — an unmaskable chunk contributes nothing.
-            masked.append(MaskedChunk(source=chunk, content="", was_masked=True))
-            continue
-
-        if text is None:
-            inline_fallbacks += 1
-            text = _mask_inline(chunk.content, cfg)
+    for chunk, plan in zip(chunks, inputs.chunks, strict=True):
+        text, used_inline = _apply_chunk_plan(plan, chunk, inputs.cfg)
+        inline_fallbacks += int(used_inline)
         masked.append(MaskedChunk(source=chunk, content=text, was_masked=True))
 
     if inline_fallbacks:
@@ -362,33 +613,9 @@ def mask_chunks(db: Session, chunks: list[ChunkHit], user_id: int) -> list[Maske
     return masked
 
 
-def _digest_sentences(db: Session, chunk: ChunkHit) -> list[dict] | None:
-    """The stored sentences of one digest section, with their provenance.
-
-    The INDEXED digest document carries only its rendered text — no segment ids
-    — so re-masking has to come back to ``file_facts`` for the provenance the
-    extractive builder recorded. ``None`` means the row or the section is not
-    resolvable, and the caller must then fail closed rather than fall back.
-    """
-    from app.models.file_facts import FileFacts
-
-    row = db.query(FileFacts.digest).filter(FileFacts.media_file_id == chunk.file_id).first()
-    if row is None or not row[0]:
-        return None
-    # `is None`, never `or`: section 0 is a real section and it is the FIRST one
-    # of every digest, so `chunk.digest_section or -1` matched nothing for it and
-    # sent every leading section down the inline-masking fallback. Found by the
-    # per-sentence test, not by reading.
-    wanted = -1 if chunk.digest_section is None else int(chunk.digest_section)
-    sections = (row[0] or {}).get("sections") or []
-    for section in sections:
-        if int(section.get("index", -1)) == wanted:
-            sentences = section.get("sentences") or []
-            return list(sentences) if sentences else None
-    return None
-
-
-def mask_digests(db: Session, digests: list[ChunkHit], user_id: int) -> list[MaskedChunk]:
+def mask_digests(
+    session_factory: SessionFactory, digests: list[ChunkHit], user_id: int
+) -> list[MaskedChunk]:
     """Re-mask digest sections **through their provenance**, failing closed per sentence.
 
     ⚠️ **Never route a digest through :func:`mask_chunks`.** That path rebuilds a
@@ -407,8 +634,12 @@ def mask_digests(db: Session, digests: list[ChunkHit], user_id: int) -> list[Mas
     genuinely different contracts, which is the second reason this is not an
     overload of ``mask_chunks``.
 
+    Two-phase like :func:`mask_chunks`: the provenance read and every sentence's
+    segments are gathered in one short session, which closes before any masking
+    (#83).
+
     Args:
-        db: Database session.
+        session_factory: Callable returning a session context manager.
         digests: Digest hits from ``retrieve_digests``.
         user_id: Subject of the effective redaction policy (the requester, as in
             chat generally — not the file owner).
@@ -420,65 +651,37 @@ def mask_digests(db: Session, digests: list[ChunkHit], user_id: int) -> list[Mas
     if not digests:
         return []
     try:
-        from app.services.redaction.config import resolve_effective_config
-
-        cfg = resolve_effective_config(db, user_id)
+        inputs = _gather(session_factory, user_id, digests=digests)
     except Exception:  # noqa: BLE001
         logger.exception("Could not resolve redaction config; withholding all digest content")
         return [MaskedChunk(source=d, content="", was_masked=True) for d in digests]
 
-    if not (cfg.enabled and cfg.redact_before_llm):
+    if not inputs.applies:
         return [MaskedChunk(source=d, content=d.content) for d in digests]
-
-    from app.models.media import MediaFile
-    from app.services.redaction.coverage import uncovered_detectors
-    from app.services.redaction.service import RedactionService
 
     masked: list[MaskedChunk] = []
     unresolvable = 0
-    for digest in digests:
-        sentences = None
-        try:
-            scan = (
-                db.query(
-                    MediaFile.id,
-                    MediaFile.redaction_status,
-                    MediaFile.redaction_coverage,
-                    MediaFile.language,
-                )
-                .filter(MediaFile.id == digest.file_id)
-                .first()
-            )
-            # Same v392 coverage gate as the chunk path: `done` means the scan
-            # finished, not that every relied-on detector ran. A gap falls
-            # through to the inline masker below rather than applying cached
-            # spans that cover less than this policy masks.
-            if (
-                scan is not None
-                and scan.redaction_status == C.REDACTION_STATUS_DONE
-                and not uncovered_detectors(scan, cfg)
-            ):
-                sentences = _digest_sentences(db, digest)
-        except Exception:  # noqa: BLE001
-            logger.exception("Digest provenance lookup failed; withholding the section")
-            sentences = None
-
-        if sentences is None:
+    for digest, plan in zip(digests, inputs.digests, strict=True):
+        if plan.sentences is None:
             # No cached spans to apply. Masking the rendered section inline is
             # the only remaining option that cannot over-disclose — and if even
             # that fails, `_mask_inline` already returns "".
             unresolvable += 1
             masked.append(
                 MaskedChunk(
-                    source=digest, content=_mask_inline(digest.content, cfg), was_masked=True
+                    source=digest,
+                    content=_mask_inline(digest.content, inputs.cfg),
+                    was_masked=True,
                 )
             )
             continue
 
         kept: list[str] = []
-        for sentence in sentences:
+        for segments in plan.sentences:
+            if not segments:
+                continue
             try:
-                text = _mask_sentence(db, sentence, cfg, RedactionService)
+                text = _mask_from_spans(segments, inputs.cfg)
             except Exception:  # noqa: BLE001
                 logger.exception("Digest sentence masking failed; dropping that sentence")
                 text = ""
@@ -494,40 +697,3 @@ def mask_digests(db: Session, digests: list[ChunkHit], user_id: int) -> list[Mas
             len(digests),
         )
     return masked
-
-
-def _mask_sentence(db: Session, sentence: dict, cfg, redaction_service) -> str:
-    """Mask one digest sentence from the cached spans of its own segments.
-
-    Returns ``""`` when the provenance is a kind this reader does not understand
-    — a ``char_range`` document sentence (#362) reaching a transcript masker is
-    a bug, and guessing at it would send unmasked text.
-    """
-    from app.models.media import TranscriptSegment
-    from app.services.ingest_artifacts.provenance import KIND_SEGMENT_IDS
-
-    provenance = sentence.get("provenance") or {}
-    if provenance.get("kind") != KIND_SEGMENT_IDS:
-        return ""
-    segment_ids = [int(i) for i in provenance.get("segment_ids") or []]
-    if not segment_ids:
-        return ""
-
-    rows = (
-        db.query(TranscriptSegment)
-        .filter(TranscriptSegment.id.in_(segment_ids))
-        .order_by(TranscriptSegment.start_time, TranscriptSegment.end_time, TranscriptSegment.id)
-        .all()
-    )
-    if not rows:
-        return ""
-    parts = []
-    for row in rows:
-        text = str(row.text or "")
-        if not text:
-            continue
-        piece, _applied = redaction_service.mask_segment(
-            text, row.redactions or [], row.words, cfg, set()
-        )
-        parts.append(piece)
-    return " ".join(parts).strip()

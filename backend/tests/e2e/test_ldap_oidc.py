@@ -221,6 +221,8 @@ def ensure_lldap_running():
         for _ in range(20):
             if _is_port_open("localhost", LLDAP_LDAP_PORT):
                 break
+            # Kept (issue #431): polling a container's TCP port from a session fixture with no
+            # Playwright page — no locator exists to wait on.
             time.sleep(1)
         else:
             pytest.fail("LLDAP failed to start within 20 seconds")
@@ -311,8 +313,13 @@ def ensure_keycloak_running(base_url: str, backend_url: str):
         )
         for _ in range(60):
             if _is_port_open("localhost", 8180):
+                # Kept (issue #431): Keycloak's port opens before its realm import/DB migration
+                # finishes, with no observable signal until then — this fixed grace period is
+                # what's under test, not a UI wait.
                 time.sleep(5)  # Extra wait for Keycloak startup
                 break
+            # Kept (issue #431): container-startup TCP poll interval, no Playwright page in
+            # this fixture.
             time.sleep(2)
         else:
             pytest.fail("Keycloak failed to start within 2 minutes")

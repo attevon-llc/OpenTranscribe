@@ -46,10 +46,10 @@ class TestLoginFormValidation:
         # Try to submit with only email
         page.fill("#email", "admin@example.com")
         page.click("button[type=submit]")
-        page.wait_for_timeout(1000)
+        page.wait_for_load_state("networkidle")
 
         # Should stay on login page
-        assert page.locator("#password").is_visible()
+        expect(page.locator("#password")).to_be_visible()
 
     def test_both_fields_required(self, page: Page, base_url: str):
         """Test form doesn't submit when both fields empty."""
@@ -118,8 +118,6 @@ class TestLoginSuccess:
         page.fill("#email", "admin@example.com")
         page.fill("#password", "password")
         page.click("button[type=submit]")
-
-        page.wait_for_timeout(5000)
 
         # Should show user menu or username
         user_indicator = page.locator(".user-button, .user-menu, [data-testid=user-menu]")
@@ -204,7 +202,7 @@ class TestLoginFailure:
         page.fill("#password", "wrongpassword")
         page.click("button[type=submit]")
 
-        page.wait_for_timeout(3000)
+        page.wait_for_load_state("networkidle")
 
         # Should show some error indication
         error_visible = (
@@ -262,7 +260,7 @@ class TestLoginSecurity:
             page.fill("#email", "nosuchuser-e2e@example.com")
             page.fill("#password", f"wrongpassword{i}")
             page.click("button[type=submit]")
-            page.wait_for_timeout(1000)
+            page.wait_for_load_state("networkidle")
 
         # Should show rate limit message or block further attempts
         page.wait_for_load_state("networkidle")
@@ -309,7 +307,7 @@ class TestLoginSession:
         page.fill("#password", "password")
         page.click("button[type=submit]")
 
-        page.wait_for_timeout(5000)
+        expect(page).not_to_have_url(re.compile(r"/login"), timeout=15000)
 
         # Navigate to another page
         page.goto(f"{base_url}/")

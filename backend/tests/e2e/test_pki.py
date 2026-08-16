@@ -159,7 +159,7 @@ class TestPKILoginFlow:
         """Without a certificate, user should see the login page."""
         page = no_cert_context.new_page()
         page.goto(pki_origin)
-        page.wait_for_timeout(3000)
+        page.wait_for_load_state("networkidle")
 
         login_visible = (
             page.locator("#email").is_visible()

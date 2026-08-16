@@ -166,10 +166,10 @@ class TestNavbarFits:
             probed = 0
             for width in NAVBAR_SWEEP_WIDTHS:
                 page.set_viewport_size({"width": width, "height": 800})
-                # A fixed wait, not a poll: the assertion is the ABSENCE of
-                # clipping, so there is no state to poll for. Re-layout after a
-                # viewport change is synchronous in Chromium; this is slack for
-                # the transition on .navbar-container's gap.
+                # Kept deliberately (issue #431): the assertion is the ABSENCE of clipping, so
+                # there is no state to poll for; re-layout after set_viewport_size is
+                # synchronous in Chromium, this is slack for the transition on
+                # .navbar-container's gap.
                 page.wait_for_timeout(250)
 
                 box = page.locator(".user-button").first.bounding_box()

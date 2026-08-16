@@ -10,6 +10,7 @@ import datetime
 
 import pytest
 
+from app.services.ingest_artifacts import textrank
 from app.services.ingest_artifacts.facts import build_facts
 from app.services.ingest_artifacts.keyphrases import extract_keyphrases
 from app.utils.transcript_builders import compute_speaker_stats
@@ -233,6 +234,117 @@ def test_stopwords_never_appear_inside_a_keyphrase():
     for phrase in phrases:
         assert " the " not in f" {phrase['phrase']} "
         assert not phrase["phrase"].startswith("the ")
+
+
+def _real_nltk_english_stopwords() -> set[str] | None:
+    """NLTK's English stopwords, or ``None`` when the corpus is not installed.
+
+    ``LookupError`` is the *only* exception caught, and it is caught around the
+    lookup rather than the read: it is NLTK's specific "resource not downloaded"
+    signal, so nothing else can be mistaken for it. A broad ``except`` here would
+    turn a genuine defect in our own code into a silent skip — the exact shape
+    that let the keyphrase bug below reach CI unnoticed.
+    """
+    import nltk.data
+
+    try:
+        nltk.data.find("corpora/stopwords")
+    except LookupError:
+        return None
+
+    from nltk.corpus import stopwords
+
+    return set(stopwords.words("english"))
+
+
+@pytest.fixture
+def nltk_stopwords_unavailable(monkeypatch):
+    """The CI image exactly: ``nltk`` installed, its **corpora** never downloaded.
+
+    This is not a hypothetical environment. It is what
+    ``backend/requirements-ci.txt`` produces, and it is the only place the defect
+    below was visible — locally the corpus is present, so every keyphrase test
+    passed while the feature was returning nothing on a whole class of deployment.
+    A test that can only fail on one machine is barely a test, hence this fixture.
+
+    ``_stopword_cache`` is process-global and shared with every other test in the
+    session, so it is cleared on the way in and restored on the way out.
+    """
+    import nltk.corpus
+
+    class _CorpusNotDownloaded:
+        def words(self, *_args, **_kwargs):
+            raise LookupError("Resource stopwords not found. Please use the NLTK Downloader")
+
+    monkeypatch.setattr(nltk.corpus, "stopwords", _CorpusNotDownloaded())
+    saved = dict(textrank._stopword_cache)
+    textrank._stopword_cache.clear()
+    yield
+    textrank._stopword_cache.clear()
+    textrank._stopword_cache.update(saved)
+
+
+def test_the_missing_corpus_simulation_actually_removes_the_corpus(nltk_stopwords_unavailable):
+    """Guard the guard: a no-op fixture would make the test below pass vacuously.
+
+    Asserted as an exact set rather than "some NLTK word is absent", because the
+    check has to hold in **both** environments — in CI the corpus is genuinely
+    gone, so any assertion phrased as "this word disappeared" compares two
+    identical states and proves nothing there.
+    """
+    from app.utils.text_preprocessing import TRANSCRIPT_FILLER
+
+    assert textrank.stopwords_for("en") == frozenset(
+        set(TRANSCRIPT_FILLER) | textrank._FALLBACK_ENGLISH_STOPWORDS
+    ), "the NLTK leg still contributed words — the corpus was not actually removed"
+
+
+def test_keyphrases_are_still_extracted_without_the_nltk_corpus(nltk_stopwords_unavailable):
+    """Extraction is RAKE-shaped, so an empty stopword set is FATAL, not degrading.
+
+    ``stopwords_for`` returns a fallback instead of raising, which is right for
+    TextRank — a digest with stopwords left in its TF-IDF is worse, not broken.
+    Here the stopwords *are* the candidate boundaries: with none, the whole text is
+    one candidate, it exceeds ``MAX_PHRASE_WORDS``, and it is dropped. Measured
+    before the coded fallback existed: **0 phrases**, no error and no log line, on
+    every deployment that never fetched the corpus.
+    """
+    phrases = extract_keyphrases(_corpus())["phrases"]
+
+    assert len(phrases) >= 3, "no phrases at all — the stopword split found no boundaries"
+    surfaces = [p["phrase"] for p in phrases]
+    assert any(" " in p for p in surfaces), f"only unigrams survived: {surfaces}"
+    assert not any(p.startswith("the ") for p in surfaces)
+
+
+def test_the_fallback_is_a_strict_subset_of_the_real_nltk_list():
+    """So adding it changed **nothing** on any install that has the corpus.
+
+    The fallback exists for the air-gapped case, but it is unioned in
+    unconditionally — the simplest thing that cannot get out of step with itself.
+    That is only safe while every word in it is one NLTK already stops: a word
+    NLTK does *not* stop would silently alter the digest's TF-IDF on every
+    existing deployment, with no ``generator_version`` bump to mark it, leaving a
+    mixed-vintage corpus being measured as one thing. Two words ("also",
+    "would") were in the first draft and this test is what found them.
+
+    ⚠️ This is the one check here that genuinely **cannot** run without the
+    corpus — there is no way to ask what NLTK stops when NLTK's data is absent —
+    so it skips in CI, loudly and by name. The complementary direction
+    (extraction survives the corpus being gone) is exercised in *both*
+    environments by the fixture above, so there is no environment in which
+    neither property is checked.
+    """
+    real = _real_nltk_english_stopwords()
+    if real is None:
+        pytest.skip("NLTK's english stopword corpus is not installed on this machine")
+
+    assert real, "the corpus loaded but is empty — this test would pass vacuously"
+    extra = sorted(textrank._FALLBACK_ENGLISH_STOPWORDS - real)
+    assert not extra, (
+        f"these fallback words are NOT NLTK stopwords, so adding them changes the "
+        f"digest on every install that has the corpus: {extra}"
+    )
 
 
 def test_a_phrase_seen_once_is_dropped_as_noise():

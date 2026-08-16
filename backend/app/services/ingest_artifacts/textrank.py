@@ -58,6 +58,143 @@ _STOPWORD_LANG_MAP: dict[str, str] = dict(_SNOWBALL_LANG_MAP, el="greek", tr="tu
 #: Word characters plus intra-word apostrophes; digits kept ("Q3", "2026").
 _TOKEN_RE = re.compile(r"[^\W\d_]+(?:'[^\W\d_]+)?|\d+(?:[.,]\d+)*", re.UNICODE)
 
+#: A minimal English stopword list, used when NLTK's corpus is unavailable.
+#:
+#: ⚠️ Not belt-and-braces — without it, keyphrase extraction produces NOTHING on any
+#: deployment that never fetched the NLTK corpus. `keyphrases.py` is RAKE-shaped: it
+#: splits on stopwords to find candidate boundaries, so an EMPTY stopword set gives it
+#: no boundaries at all, the whole text becomes one candidate, and that candidate then
+#: exceeds `_MAX_PHRASE_WORDS` and is dropped. Zero phrases, no error, no log line.
+#:
+#: The empty-set fallback below is right for TextRank — a digest with stopwords left in
+#: its TF-IDF is *worse, not broken* — and silently fatal for RAKE. One fallback served
+#: two consumers with opposite tolerances. Caught by CI, where the corpus is absent.
+#:
+#: Every word here is a **strict subset** of NLTK's own English list, so the union is a
+#: no-op wherever the corpus IS present and only the air-gapped path changes. That is a
+#: requirement, not a coincidence, and it is asserted by
+#: ``test_ingest_artifacts_facts.py``: a word NLTK does not stop would alter the digest's
+#: TF-IDF on every existing deployment without a ``generator_version`` bump, i.e. produce
+#: a mixed-vintage corpus measured as if it were one thing. ("also" and "would" were in a
+#: first draft and were removed for exactly that reason.)
+_FALLBACK_ENGLISH_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "a",
+        "about",
+        "after",
+        "all",
+        "am",
+        "an",
+        "and",
+        "any",
+        "are",
+        "as",
+        "at",
+        "be",
+        "because",
+        "been",
+        "before",
+        "being",
+        "between",
+        "both",
+        "but",
+        "by",
+        "can",
+        "did",
+        "do",
+        "does",
+        "doing",
+        "down",
+        "during",
+        "each",
+        "few",
+        "for",
+        "from",
+        "further",
+        "had",
+        "has",
+        "have",
+        "having",
+        "he",
+        "her",
+        "here",
+        "hers",
+        "him",
+        "his",
+        "how",
+        "i",
+        "if",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "itself",
+        "just",
+        "me",
+        "more",
+        "most",
+        "my",
+        "no",
+        "nor",
+        "not",
+        "now",
+        "of",
+        "off",
+        "on",
+        "once",
+        "only",
+        "or",
+        "other",
+        "our",
+        "ours",
+        "out",
+        "over",
+        "own",
+        "same",
+        "she",
+        "should",
+        "so",
+        "some",
+        "such",
+        "than",
+        "that",
+        "the",
+        "their",
+        "theirs",
+        "them",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "through",
+        "to",
+        "too",
+        "under",
+        "until",
+        "up",
+        "very",
+        "was",
+        "we",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "who",
+        "whom",
+        "why",
+        "will",
+        "with",
+        "you",
+        "your",
+        "yours",
+    }
+)
+
 _stemmer_cache: dict[str, object] = {}
 _stopword_cache: dict[str, frozenset[str]] = {}
 
@@ -65,9 +202,15 @@ _stopword_cache: dict[str, frozenset[str]] = {}
 def stopwords_for(language: str) -> frozenset[str]:
     """NLTK stopwords for *language* plus transcript filler, English as the fallback.
 
-    Returns an empty set rather than raising when NLTK's corpus is unavailable: a digest
-    with stopwords in its TF-IDF is worse, not broken, and an air-gapped install that
-    never fetched the corpus must still get a digest (the Stage 2 gate is 100%).
+    Never raises when NLTK's corpus is unavailable: an air-gapped install that never
+    fetched it must still get a digest (the Stage 2 gate is 100%), and a digest with
+    stopwords left in its TF-IDF is worse, not broken.
+
+    **For English that degradation is backed by a coded list**
+    (``_FALLBACK_ENGLISH_STOPWORDS``); for every other language the result really is
+    just the filler set. That asymmetry is deliberate and is explained at the constant:
+    ``keyphrases.py`` splits *on* these words to find candidate boundaries, so for it an
+    empty set is fatal rather than degrading, and it only ever runs over English text.
     """
     if language in _stopword_cache:
         return _stopword_cache[language]
@@ -80,11 +223,20 @@ def stopwords_for(language: str) -> frozenset[str]:
         from nltk.corpus import stopwords as nltk_stopwords
 
         words = set(nltk_stopwords.words(corpus_name))
-    except Exception as exc:  # noqa: BLE001 - corpus missing / not downloadable
+    # The three ways "the corpus is not here" actually presents, and nothing wider: a
+    # blanket `except Exception` would swallow a defect in our own code as a quietly
+    # reduced stopword set, which is precisely how the RAKE breakage above stayed
+    # invisible. LookupError is NLTK's "resource not downloaded"; OSError covers a
+    # corrupt or unreadable corpus zip; ImportError covers nltk being absent entirely.
+    except (LookupError, OSError, ImportError) as exc:
         logger.debug("NLTK stopwords unavailable for %r (%s); continuing without", language, exc)
 
     if corpus_name == "english":
-        words |= set(TRANSCRIPT_FILLER)
+        # `_FALLBACK_ENGLISH_STOPWORDS` is a no-op when the corpus loaded (every word in
+        # it is in NLTK's own list) and is what keeps RAKE working when it did not.
+        # TRANSCRIPT_FILLER is disfluencies only — "um", "uh" — so it supplies no
+        # sentence-structure boundaries and cannot substitute for real stopwords.
+        words |= set(TRANSCRIPT_FILLER) | _FALLBACK_ENGLISH_STOPWORDS
 
     resolved = frozenset(words)
     _stopword_cache[language] = resolved

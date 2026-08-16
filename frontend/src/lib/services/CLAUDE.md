@@ -29,9 +29,18 @@ a second one in a component. (`AudioExtractionService` is also exported as a cla
   `stallWatchdog`. See gotchas.
 - `stallWatchdog.ts` — `createStallWatchdog()`: the timeout control for file bodies. See gotchas.
 - `audioExtractionService.ts` — in-browser video→audio via FFmpeg.wasm (`-c:a copy`, no re-encode),
-  core loaded from `frontend/static/ffmpeg/` (gitignored, ~31 MB — fetched by the
-  `download-ffmpeg.js` prebuild step, so a clean checkout still ships it); extractions run
-  **one at a time** through an internal queue.
+  core loaded from `frontend/static/ffmpeg/` (gitignored, ~2.3 MB — compiled by the
+  `build-ffmpeg.js` prebuild step via `frontend/ffmpeg-wasm-build/`, so a clean checkout still
+  ships it). That core is a minimal, self-compiled, **LGPL-2.1+-only** build (issue #473) — zero
+  external codec libraries, zero `--enable-gpl`/`--enable-nonfree`, only the demuxers/muxers this
+  service's two commands need — replacing a prior CDN fetch of the generic `@ffmpeg/core`, which
+  turned out to be GPL 2+ (built with `--enable-gpl --enable-libx264` etc), not just
+  license-ambiguous. The metadata-read command carries `-vn` for this reason: the minimal core
+  has no video codec parsers compiled in, and the `null` muxer needs a parser for every stream it
+  copies (video included) even though it discards the output — video stream info was never
+  parsed by this service anyway. `Dockerfile.prod` compiles the same core as its own build stage
+  (kept in sync by hand — see the comment in each Dockerfile), so prod images ship fully
+  self-contained. Extractions run **one at a time** through an internal queue.
   **Import it with a dynamic `import()`** (see `FileUploader.svelte`) — a static import drags the
   `@ffmpeg/*` wrapper into whichever route chunk references it, and extraction is an opt-in path.
 - `fileFingerprint.ts` — `fingerprintFile()`: the client-side **imohash**, byte-identical to the

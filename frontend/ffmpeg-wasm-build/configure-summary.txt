@@ -1,0 +1,23 @@
+License: LGPL version 2.1 or later
+
+config.h license macros:
+595:#define CONFIG_GPL 0
+596:#define CONFIG_NONFREE 0
+597:#define CONFIG_VERSION3 0
+674:#define CONFIG_GPLV3 0
+
+gpl/nonfree flags passed to configure (must be 0):
+0
+
+Enabled demuxers:
+
+Enabled muxers:
+
+Enabled parsers:
+
+Enabled bsfs:
+
+Enabled protocols:
+
+Encoders/decoders enabled (must be empty):
+0

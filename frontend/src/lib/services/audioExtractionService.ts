@@ -254,8 +254,12 @@ class AudioExtractionService {
       await this.ffmpeg.writeFile(tempFileName, await fetchFile(file));
 
       // Run ffmpeg to read metadata (very fast, doesn't process the whole file)
-      // Use -c copy to avoid decoding, just read container metadata
-      await this.ffmpeg.exec(['-i', tempFileName, '-c', 'copy', '-f', 'null', '-']);
+      // Use -c copy to avoid decoding, just read container metadata. -vn drops the video
+      // stream from the copy: only audio-stream/container metadata is parsed below, video
+      // stream info is never read, and our minimal LGPL-only ffmpeg-core (issue #473) has
+      // no video codec parsers compiled in — the `null` muxer needs a parser to validate
+      // *any* stream it copies, video included, even though it discards the output.
+      await this.ffmpeg.exec(['-i', tempFileName, '-vn', '-c', 'copy', '-f', 'null', '-']);
 
       // Clean up
       await this.ffmpeg.deleteFile(tempFileName);

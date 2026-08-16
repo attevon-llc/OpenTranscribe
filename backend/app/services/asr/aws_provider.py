@@ -231,7 +231,9 @@ class AWSTranscribeProvider(ASRProvider):
                     failure_reason = r.get(
                         "TranscriptionJob", r.get("MedicalTranscriptionJob", {})
                     ).get("FailureReason", "unknown reason")
-                    raise RuntimeError(f"AWS Transcribe job failed: {failure_reason}")
+                    raise RuntimeError(
+                        f"AWS Transcribe job failed: {self._sanitize_error(str(failure_reason))}"
+                    )
                 if progress_callback:
                     progress_callback(0.25 + min(elapsed / 7200, 0.5), "AWS Transcribe processing…")
 

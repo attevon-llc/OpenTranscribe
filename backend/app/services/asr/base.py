@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from abc import ABC
 from abc import abstractmethod
@@ -92,8 +93,11 @@ def normalize_speaker_label(label: str | int | None) -> str | None:  # noqa: C90
     if m:
         return f"SPEAKER_{max(int(m.group(1)) - 1, 0):02d}"
 
-    # Fallback: stable hash into 00-99.
-    return f"SPEAKER_{abs(hash(label_str)) % 100:02d}"
+    # Fallback: stable hash into 00-99. hashlib, not the builtin hash(), because
+    # str hashing is salted per process (PYTHONHASHSEED) — the builtin mapped the
+    # same unrecognized label to a different SPEAKER_XX index in every worker.
+    digest = hashlib.sha256(label_str.encode("utf-8")).hexdigest()
+    return f"SPEAKER_{int(digest, 16) % 100:02d}"
 
 
 def sanitize_provider_error(message: str, api_key: str | None = None) -> str:

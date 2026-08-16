@@ -135,7 +135,9 @@ class GoogleASRProvider(ASRProvider):
             response = op.result(timeout=3600)
         except Exception as exc:
             logger.error("Google Cloud Speech transcription failed for file=%s: %s", filename, exc)
-            raise RuntimeError(f"Google Cloud Speech transcription failed: {exc}") from exc
+            raise RuntimeError(
+                f"Google Cloud Speech transcription failed: {self._sanitize_error(str(exc))}"
+            ) from exc
 
         elapsed_ms = (time.time() - t_start) * 1000
         logger.info("Google transcribe complete: file=%s duration_ms=%.0f", filename, elapsed_ms)

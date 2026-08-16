@@ -11,26 +11,28 @@ azure.cognitiveservices.speech as sdk`` internally (``validate_connection`` and 
 
 What is pinned here, in order:
 
-1. **Open defect** (L227, L327): ``done.wait(timeout=7200)`` returns a bool — True if the
-   ``done`` event was set before the timeout, False if it timed out — and that return value
-   is discarded on both the diarization and non-diarization paths. Execution proceeds to
-   ``stop_continuous_recognition()``/``stop_transcribing_async()`` regardless, then returns
-   whatever partial segments were collected, with NO timeout error ever raised. A genuine
-   2-hour Azure stall today returns a silently truncated transcript that looks complete.
-2. ``validate_connection()`` (L66-83) only constructs ``sdk.SpeechConfig(...)`` — the Azure
+1. **Fixed defect** (L227-231, L332-336): ``done.wait(timeout=7200)`` returns a bool — True if
+   the ``done`` event was set before the timeout, False if it timed out with no
+   ``canceled``/``session_stopped`` signal ever received. That return value is now checked on
+   both the diarization and non-diarization paths: a genuine timeout raises ``TimeoutError``,
+   which the shared ``except Exception`` handler wraps into a sanitized ``RuntimeError`` (the
+   same shape as every other transcription failure in this file), instead of proceeding to
+   ``stop_continuous_recognition()``/``stop_transcribing_async()`` and silently returning
+   whatever partial segments were collected before the stall.
+2. ``validate_connection()`` (L69-86) only constructs ``sdk.SpeechConfig(...)`` — the Azure
    SDK docs describe that constructor as pure local configuration state with no auth
    round-trip; the actual auth check happens only when a recognizer starts. So an
    obviously-fake key still reports success — the false positive this package's own
    CLAUDE.md documents ("azure and google validate_connection() make no network call — a
    bad credential still validates").
-3. ``_on_recognized``'s JSON-parse-failure fallback (L195-205) has no ``except ... as`` log
+3. ``_on_recognized``'s JSON-parse-failure fallback (L199-208) has no ``except ... as`` log
    call at all — a malformed ``result.json`` degrades to a text-only segment (no words, no
    confidence) with zero log output, silently.
 4. Speaker labels flow ``speaker_id`` (e.g. ``"Guest-1"``) straight into
    ``self._normalize_speaker_label(...)`` with no manual offset applied first — unlike
    ``google_provider.py``, which must subtract 1 before calling the same shared function.
    Confirmed both directly and through ``_transcribe_with_diarization``.
-5. **Recognizer selection** (L125-133, verified by reading this file, not just its module
+5. **Recognizer selection** (L133-141, verified by reading this file, not just its module
    docstring): ``config.enable_diarization=True`` builds ``sdk.transcription.
    ConversationTranscriber``; ``False`` builds ``sdk.SpeechRecognizer``. Per Microsoft's
    Speech SDK docs, ``ConversationTranscriber`` is the only class in the SDK whose result
@@ -227,20 +229,61 @@ def _provider(api_key="fake-key-not-real"):
 
 
 # ---------------------------------------------------------------------------
-# 1. Discarded done.wait() timeout bool — open defect
+# 1. done.wait() timeout bool is checked — fixed defect
 # ---------------------------------------------------------------------------
 
 
-def test_timed_out_wait_is_discarded_and_partial_transcript_returned_no_diarization(monkeypatch):
-    """L227: ``done.wait(timeout=7200)`` returning False (a real timeout, no
-    ``canceled``/``session_stopped`` ever fired) is never inspected. Pins today's WRONG
-    behaviour: the function proceeds to ``stop_continuous_recognition()`` and returns the
-    one partial segment collected before the timeout, with NO exception raised. Once fixed,
-    this should assert a raised timeout error instead.
+def test_a_genuine_timeout_raises_instead_of_returning_partial_output_no_diarization(
+    monkeypatch,
+):
+    """L227-231: ``done.wait(timeout=7200)`` returning False (a real timeout, no
+    ``canceled``/``session_stopped`` ever fired) is now inspected. The function must raise
+    instead of proceeding to ``stop_continuous_recognition()`` and returning the one partial
+    segment collected before the timeout — a truncated transcript must never look complete.
     """
     monkeypatch.setattr(threading.Event, "wait", lambda self, timeout=None: False)
     evt = _recognized_event(text="partial before the timeout")
     recognizer_cls = _recognizer_factory(queued_events=[evt], fire_session_stopped=False)
+    fake_sdk = _make_fake_sdk(recognizer_cls=recognizer_cls)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        _provider()._transcribe_without_diarization(
+            fake_sdk, _FakeSpeechConfig(), _FakeAudioConfig(), "file.wav", None
+        )
+
+    assert "timed out" in str(exc_info.value).lower()
+    # The recognizer is never told to stop — the timeout error is raised before that call.
+    assert recognizer_cls.instances[0].stopped_called is False
+
+
+def test_a_genuine_timeout_raises_instead_of_returning_partial_output_diarization(monkeypatch):
+    """Same fix at L332-336, ``_transcribe_with_diarization``."""
+    monkeypatch.setattr(threading.Event, "wait", lambda self, timeout=None: False)
+    evt = _transcribed_event(text="partial diarized text", speaker_id="Guest-1")
+    transcriber_cls = _transcriber_factory(queued_events=[evt], fire_session_stopped=False)
+    fake_sdk = _make_fake_sdk(transcriber_cls=transcriber_cls)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        _provider()._transcribe_with_diarization(
+            fake_sdk,
+            _FakeSpeechConfig(),
+            _FakeAudioConfig(),
+            "file.wav",
+            ASRConfig(enable_diarization=True),
+            None,
+        )
+
+    assert "timed out" in str(exc_info.value).lower()
+    assert transcriber_cls.instances[0].stopped_called is False
+
+
+def test_a_normal_completion_before_timeout_still_returns_segments_no_diarization():
+    """Regression guard: ``wait()`` returning True (the ordinary path) must still return the
+    collected segments and still call ``stop_continuous_recognition()`` — the fix must not
+    break normal completion.
+    """
+    evt = _recognized_event(text="normal completion")
+    recognizer_cls = _recognizer_factory(queued_events=[evt])
     fake_sdk = _make_fake_sdk(recognizer_cls=recognizer_cls)
 
     segments = _provider()._transcribe_without_diarization(
@@ -248,16 +291,14 @@ def test_timed_out_wait_is_discarded_and_partial_transcript_returned_no_diarizat
     )
 
     assert len(segments) == 1
-    assert segments[0].text == "partial before the timeout"
-    # stop_continuous_recognition() still runs despite the timeout never being noticed.
+    assert segments[0].text == "normal completion"
     assert recognizer_cls.instances[0].stopped_called is True
 
 
-def test_timed_out_wait_is_discarded_and_partial_transcript_returned_diarization(monkeypatch):
-    """Same defect at L327, ``_transcribe_with_diarization``."""
-    monkeypatch.setattr(threading.Event, "wait", lambda self, timeout=None: False)
-    evt = _transcribed_event(text="partial diarized text", speaker_id="Guest-1")
-    transcriber_cls = _transcriber_factory(queued_events=[evt], fire_session_stopped=False)
+def test_a_normal_completion_before_timeout_still_returns_segments_diarization():
+    """Same regression guard for ``_transcribe_with_diarization``."""
+    evt = _transcribed_event(text="normal diarized completion", speaker_id="Guest-1")
+    transcriber_cls = _transcriber_factory(queued_events=[evt])
     fake_sdk = _make_fake_sdk(transcriber_cls=transcriber_cls)
 
     segments, has_speakers = _provider()._transcribe_with_diarization(
@@ -270,7 +311,7 @@ def test_timed_out_wait_is_discarded_and_partial_transcript_returned_diarization
     )
 
     assert len(segments) == 1
-    assert segments[0].text == "partial diarized text"
+    assert segments[0].text == "normal diarized completion"
     assert has_speakers is True
     assert transcriber_cls.instances[0].stopped_called is True
 

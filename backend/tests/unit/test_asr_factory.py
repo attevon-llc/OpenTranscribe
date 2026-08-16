@@ -9,11 +9,12 @@ that file does not touch:
    ``create_from_db_config`` raises on a decrypt failure. An unrelated bug in that path
    (e.g. an ``AttributeError``) is swallowed the same way, logged as a warning, and the
    caller silently gets the env/local fallback instead of a crash.
-2. **A separate, quieter gap**: when the ``active_asr_config_id`` setting points at a
-   config row that does not exist (or exists but is neither owned nor shared), the ORM
-   query simply returns ``None``, the ``if cfg:`` guard is never entered, and execution
-   falls out of the ``try`` block with **no log line at all** — not even the warning the
-   exception path produces. Same fallback outcome, silently reached.
+2. **A fixed gap**: when the ``active_asr_config_id`` setting points at a config row that
+   does not exist (or exists but is neither owned nor shared), the ORM query simply returns
+   ``None``. This used to fall out of the ``if cfg:`` guard with **no log line at all** —
+   not even the warning the exception path produces. ``create_for_user`` now logs a
+   ``logger.warning`` in that ``else`` branch before falling back to env/local, matching the
+   severity of the sibling exception path.
 3. ``get_model_capabilities``'s substring-match tie-break: for two same-length catalog
    model ids that are both substrings of an ambiguous ``model_id``, the earlier entry in
    ``ASR_PROVIDER_CATALOG["local"]["models"]`` wins, because ``sorted(..., reverse=True)``
@@ -102,16 +103,17 @@ def test_create_for_user_falls_back_on_unexpected_exception_type(caplog):
 
 
 # --------------------------------------------------------------------------
-# 2. A missing/unmatched config id falls back SILENTLY — no log at all
+# 2. A missing/unmatched config id now logs a warning before falling back
 # --------------------------------------------------------------------------
 
 
-def test_create_for_user_silently_falls_back_when_config_id_matches_nothing(
+def test_create_for_user_logs_a_warning_when_config_id_matches_nothing(
     db_session, normal_user, caplog, monkeypatch
 ):
     """``active_asr_config_id`` pointing at a row that doesn't exist (or isn't owned/shared)
-    makes the DB query return ``None``. Unlike the exception path above, this reaches the
-    fallback with NO warning logged at all — a distinct, quieter gap."""
+    makes the DB query return ``None``. That must now log exactly one warning — mentioning
+    the offending config id — before falling back to env/local, matching the observability
+    of the sibling exception path above."""
     monkeypatch.delenv("ASR_PROVIDER", raising=False)
 
     nonexistent_id = 999_999_999
@@ -130,7 +132,9 @@ def test_create_for_user_silently_falls_back_when_config_id_matches_nothing(
     warnings = [
         r for r in caplog.records if r.name == FACTORY_LOGGER and r.levelno >= logging.WARNING
     ]
-    assert warnings == []
+    assert len(warnings) == 1
+    assert str(nonexistent_id) in warnings[0].message
+    assert "not found" in warnings[0].message or "not accessible" in warnings[0].message
 
 
 # --------------------------------------------------------------------------

@@ -3,12 +3,14 @@
 All HTTP is mocked (``requests.post`` / ``requests.get``); ``time.sleep`` is patched so the
 poll-loop tests run in milliseconds instead of minutes. What is pinned here, in order:
 
-1. **Silent vocabulary truncation (real defect, characterized on purpose).**
-   ``config.vocabulary[:100]`` (L133) drops any term past index 100 with no log line at all.
-   Contrast ``aws_provider.py`` (~L193-203): when it cannot fully honor a submitted vocabulary
-   (no pre-created ``AWS_TRANSCRIBE_VOCABULARY_NAME``) it logs a warning explaining why. Gladia's
-   equivalent "the vocabulary you sent will not all be used" case has no comparable log line —
-   an operator who submits 150 terms gets no signal that 50 were dropped.
+1. **Vocabulary truncation now logs a warning (real defect, fixed).**
+   ``config.vocabulary[:100]`` still drops any term past index 100 — Gladia's API caps
+   ``custom_vocabulary`` at 100 terms — but the truncation is no longer silent: when more than
+   100 terms are submitted, a ``logger.warning`` now states how many terms were submitted and
+   how many were dropped, matching the style of ``aws_provider.py`` (~L193-203), which logs a
+   warning when it cannot fully honor a submitted vocabulary. Pinned by asserting exactly one
+   warning-level record naming both counts, while the actually-sent vocabulary (still the first
+   100 terms) is unchanged.
 2. **``_err_detail`` (L47-58) truncates the raw response body to 500 chars, THEN sanitizes.**
    Pinned by constructing the exact two-step string and asserting the helper's output matches it
    byte-for-byte — proving the order is truncate-then-redact, not redact-then-truncate.
@@ -85,10 +87,10 @@ def _dispatch_post(upload_resp: _FakeResponse, job_resp: _FakeResponse, job_capt
     return _post
 
 
-# ── 1. Silent vocabulary truncation ─────────────────────────────────────────────────────
+# ── 1. Vocabulary truncation now logs a warning ─────────────────────────────────────────
 
 
-def test_vocabulary_is_silently_truncated_to_100_terms(tmp_path, caplog):
+def test_vocabulary_truncation_logs_a_warning(tmp_path, caplog):
     audio_path = _make_audio_file(tmp_path)
     provider = _make_provider()
     vocabulary = [f"term-{i}" for i in range(150)]
@@ -117,9 +119,15 @@ def test_vocabulary_is_silently_truncated_to_100_terms(tmp_path, caplog):
     assert sent_vocab == vocabulary[:100]
     assert result.provider_name == "gladia"
 
-    # Pin the gap: nothing logs that 50 of the 150 submitted terms were dropped.
+    # The fix: exactly one warning-level record identifies the truncation, naming both
+    # the submitted count and the dropped count.
     vocab_related = [r for r in caplog.records if "vocab" in r.getMessage().lower()]
-    assert vocab_related == []
+    assert len(vocab_related) == 1
+    record = vocab_related[0]
+    assert record.levelno == logging.WARNING
+    message = record.getMessage()
+    assert "150" in message
+    assert "50" in message
 
 
 # ── 2. _err_detail: truncate-then-sanitize order ────────────────────────────────────────

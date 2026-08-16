@@ -18,12 +18,18 @@ What is pinned, in order:
    module's own docstring/inline comment (google_provider.py L72) warns that "Google ADC
    errors can expose service-account tokens in some SDK versions" — before this fix, a
    raw ADC failure would have propagated a bearer token straight into logs/UI.
-2. **Speaker-label parity, not just plausibility.** This provider hand-builds
-   ``SPEAKER_XX`` labels (``f"SPEAKER_{(cur_tag - 1):02d}"``) instead of calling the shared
-   ``normalize_speaker_label``/``_normalize_speaker_label`` helper every other provider uses.
-   The parity test proves today's hand-rolled output is byte-identical to what the shared
-   helper would produce for the same 0-indexed value, so a future change to the canonical
-   format cannot silently diverge for Google alone without failing here first.
+2. **Now-fixed consistency bug: hand-built ``SPEAKER_XX`` strings instead of the shared
+   normalizer.** This provider used to hand-build labels
+   (``f"SPEAKER_{(cur_tag - 1):02d}"``) instead of calling the shared
+   ``normalize_speaker_label``/``_normalize_speaker_label`` helper every other provider uses
+   (``deepgram_provider.py``, ``aws_provider.py``). The two were numerically equivalent, but
+   the single-source-of-truth guarantee ``asr/CLAUDE.md`` documents for the helper did not
+   actually hold for this file — a future change to the canonical format (padding width, a
+   different fallback rule) would have silently failed to apply here. The provider now calls
+   ``self._normalize_speaker_label(cur_tag - 1)`` directly. The test below asserts BOTH that
+   the shared helper is genuinely invoked (via a spy) and that the output is unchanged (a
+   behavior regression guard) — Google's tag is still 1-indexed and still converted to
+   0-indexed *before* being handed to the helper, per that same doc.
 3. ``validate_connection()`` only constructs ``speech.SpeechClient()`` — pinning the
    documented false-positive (a bad/fake credential still "validates") from
    ``app/services/asr/CLAUDE.md``: "azure and google `validate_connection()` make no network
@@ -120,18 +126,22 @@ def test_transcribe_sanitizes_credential_leak_in_exception_message(tmp_path):
     assert "Google Cloud Speech transcription failed" in raised_message
 
 
-# ── 2. Speaker-label parity with the shared normalizer ───────────────────────────────
+# ── 2. Speaker labels are built by the shared normalizer, not hand-rolled ────────────
 
 
 @pytest.mark.parametrize("speaker_tag", [1, 2, 5])
-def test_speaker_label_matches_shared_normalizer_for_same_0_indexed_value(tmp_path, speaker_tag):
-    """Google hand-builds SPEAKER_XX instead of calling normalize_speaker_label().
+def test_speaker_label_is_produced_by_the_shared_normalizer(tmp_path, speaker_tag):
+    """The provider must genuinely CALL normalize_speaker_label(), not reimplement it.
 
-    This is a real deviation from every other provider in this package (see
-    app/services/asr/CLAUDE.md). It is not necessarily a bug — Google's tag is 1-indexed
-    and the provider converts before formatting — but a parity regression here would
-    silently diverge Google's speaker labels from the canonical format. Pin that today's
-    output equals normalize_speaker_label(str(tag - 1)), the effective 0-indexed value.
+    Regression test for the fix: google_provider.py used to hand-build
+    ``f"SPEAKER_{(cur_tag - 1):02d}"`` instead of routing through
+    ``self._normalize_speaker_label()`` like every other provider in this package (see
+    app/services/asr/CLAUDE.md). That made the single-source-of-truth guarantee the shared
+    helper is supposed to provide false for Google alone. This spies on
+    ``app.services.asr.base.normalize_speaker_label`` — the module-level function
+    ``_normalize_speaker_label`` delegates to — to prove the call really reaches it, with
+    the correct already-0-indexed argument, in addition to checking the output value as a
+    behavior regression guard.
     """
     response = speech.LongRunningRecognizeResponse(
         results=[
@@ -152,8 +162,17 @@ def test_speaker_label_matches_shared_normalizer_for_same_0_indexed_value(tmp_pa
     provider = _provider()
     audio_path = _write_audio(tmp_path)
 
-    with patch.object(speech, "SpeechClient", return_value=_mock_client(response)):
+    with (
+        patch.object(speech, "SpeechClient", return_value=_mock_client(response)),
+        patch(
+            "app.services.asr.base.normalize_speaker_label",
+            wraps=normalize_speaker_label,
+        ) as spy,
+    ):
         result = provider.transcribe(audio_path, _config(enable_diarization=True))
+
+    # The shared helper was actually reached, with the already-0-indexed value.
+    spy.assert_called_once_with(speaker_tag - 1)
 
     assert len(result.segments) == 1
     expected_label = normalize_speaker_label(str(speaker_tag - 1))

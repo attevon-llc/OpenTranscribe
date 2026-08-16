@@ -130,6 +130,15 @@ class GladiaProvider(ASRProvider):
         if config.language != "auto":
             body["language"] = config.language
         if config.vocabulary:
+            if len(config.vocabulary) > 100:
+                logger.warning(
+                    "Gladia custom vocabulary truncated for file=%s: %d terms submitted, "
+                    "only the first 100 will be sent (%d dropped). Gladia's custom_vocabulary "
+                    "field accepts at most 100 terms.",
+                    filename,
+                    len(config.vocabulary),
+                    len(config.vocabulary) - 100,
+                )
             body["custom_vocabulary"] = config.vocabulary[:100]
 
         try:

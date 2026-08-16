@@ -9,12 +9,12 @@ single-letter ``speaker`` values ("A", "B", ...), and word/utterance timestamps 
 
 What is pinned here, in order:
 
-1. **A real bug in ``validate_connection()``** — it only treats HTTP 401 as failure. Any other
-   non-200 status (500, a proxy error, ...) falls through to an unconditional
-   ``return True, "AssemblyAI connection successful"``. ``test_validate_connection_500_is_a_false_
-   positive`` asserts today's WRONG behaviour on purpose, so the defect cannot silently drift
-   while it is open — replace it with a real fix (any non-2xx should fail) and flip the
-   assertion.
+1. **A fix in ``validate_connection()``**: it used to only treat HTTP 401 as failure, so any
+   other non-200 status (500, a proxy error, ...) fell through to an unconditional
+   ``return True, "AssemblyAI connection successful"`` — a false positive. It now treats any
+   non-2xx status as a failure. ``test_validate_connection_treats_any_non_2xx_status_as_failure``
+   is parametrized over 401 (the original, still-correct special case), 500, and 403 (an
+   arbitrary other non-2xx code) and asserts all three report failure.
 2. **``_model_map`` still maps ``"slam-1"`` and ``"nano"``** even though the module's own comment
    says both were rejected live by the API. ``test_model_map_still_contains_entries_flagged_
    stale_in_the_docstring`` is a regression guard proving those entries have not been silently
@@ -98,27 +98,29 @@ def _run_transcribe(tmp_path, config: ASRConfig, transcript, model_name: str = "
     return result, call_kwargs
 
 
-# ── 1. validate_connection() false positive on non-401 failures ────────────────────────
+# ── 1. validate_connection() treats any non-2xx status as failure (fixed bug) ──────────
 
 
-def test_validate_connection_401_is_reported_as_failure():
-    resp = MagicMock(status_code=401)
+@pytest.mark.parametrize("status_code", [401, 500, 403])
+def test_validate_connection_treats_any_non_2xx_status_as_failure(status_code):
+    """FIXED BUG: any non-2xx status (not just 401) is now reported as failure.
+
+    ``validate_connection`` used to branch only on ``status_code == 401``; every other bad
+    status code — including a bare 500 with no auth problem at all — fell through to an
+    unconditional success return. It now checks the full status range, so 401 (the original
+    special-cased auth failure), 500 (a server error), and 403 (an arbitrary other non-2xx
+    code) all correctly report failure.
+    """
+    resp = MagicMock(status_code=status_code)
     with patch("requests.get", return_value=resp):
         success, message, _ms = _provider().validate_connection()
     assert success is False
-    assert "401" in message
+    assert str(status_code) in message
 
 
-def test_validate_connection_500_is_a_false_positive_bug():
-    """PINNED BUG: a 500 (or any non-401 non-200 status) is reported as SUCCESS.
-
-    ``validate_connection`` only branches on ``status_code == 401``; every other status code —
-    including a bare 500 with no auth problem at all — falls through to the unconditional
-    success return. This asserts that WRONG behaviour on purpose. Fix: check
-    ``resp.status_code == 200`` (or ``not resp.ok``) rather than singling out 401, then flip
-    this assertion to ``success is False``.
-    """
-    resp = MagicMock(status_code=500)
+def test_validate_connection_200_is_reported_as_success():
+    """Control for the fix above: a genuine 200 still reports success."""
+    resp = MagicMock(status_code=200)
     with patch("requests.get", return_value=resp):
         success, message, _ms = _provider().validate_connection()
     assert success is True
@@ -126,7 +128,7 @@ def test_validate_connection_500_is_a_false_positive_bug():
 
 
 def test_validate_connection_network_error_is_still_caught():
-    """Control for the bug above: a real network failure (no status code at all) IS handled."""
+    """Control for the fix above: a real network failure (no status code at all) IS handled."""
     with patch("requests.get", side_effect=ConnectionError("connection refused")):
         success, message, _ms = _provider().validate_connection()
     assert success is False

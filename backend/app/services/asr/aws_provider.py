@@ -152,7 +152,23 @@ class AWSTranscribeProvider(ASRProvider):
 
         try:
             s3.head_bucket(Bucket=bucket)
-        except Exception:
+        except Exception as head_exc:
+            from botocore.exceptions import ClientError
+
+            # HeadBucket is a HEAD request — S3 returns no body on failure, so
+            # botocore cannot parse a named error code like "NoSuchBucket" and
+            # fabricates the Code from the HTTP status instead. Per AWS's
+            # documented HeadBucket behavior a missing bucket is an unambiguous
+            # 404; anything else (403 AccessDenied, throttling, etc.) is a real
+            # error and must propagate rather than be masked by a create_bucket
+            # attempt.
+            not_found_codes = {"404", "NoSuchBucket", "NotFound"}
+            is_not_found = (
+                isinstance(head_exc, ClientError)
+                and str(head_exc.response.get("Error", {}).get("Code", "")) in not_found_codes
+            )
+            if not is_not_found:
+                raise
             if self._region == "us-east-1":
                 s3.create_bucket(Bucket=bucket)
             else:
@@ -268,10 +284,16 @@ class AWSTranscribeProvider(ASRProvider):
             # Build start_time → speaker_label map from the speaker_labels block.
             # Each entry in speaker_labels.segments[].items[] carries the item's
             # start_time and inherits the speaker_label from the parent segment.
+            # Key on the parsed float, not the raw JSON string — AWS's two
+            # blocks (items[] and speaker_labels[]) aren't guaranteed to
+            # serialize the same start_time with identical trailing-zero
+            # precision (e.g. "2.0" vs "2.000"), and a raw-string lookup treats
+            # that formatting drift as a genuine mismatch, silently falling
+            # back to the previous word's speaker instead of the true one.
             spk_map: dict = {}
             for seg in tr["speaker_labels"].get("segments", []):
                 for sl_item in seg.get("items", []):
-                    spk_map[sl_item["start_time"]] = seg["speaker_label"]
+                    spk_map[float(sl_item["start_time"])] = seg["speaker_label"]
 
             cur_spk = None
             cur_words: list[ASRWord] = []
@@ -293,7 +315,7 @@ class AWSTranscribeProvider(ASRProvider):
                 word = item["alternatives"][0]["content"]
                 conf_raw = item["alternatives"][0].get("confidence", "1.0")
                 conf = float(conf_raw) if conf_raw not in (None, "") else 1.0
-                spk = spk_map.get(st, cur_spk)
+                spk = spk_map.get(float(st), cur_spk)
                 end_s = float(item.get("end_time", st))
 
                 if spk != cur_spk:

@@ -76,6 +76,15 @@ class SpeechmaticsProvider(ASRProvider):
                     ),
                     ms,
                 )
+            if not 200 <= resp.status_code < 300:
+                return (
+                    False,
+                    self._sanitize_error(
+                        f"Speechmatics connection failed (HTTP {resp.status_code})",
+                        self._api_key,
+                    ),
+                    ms,
+                )
             return True, "Speechmatics connection successful", ms
         except Exception as e:
             ms = (time.time() - start) * 1000
@@ -184,9 +193,22 @@ class SpeechmaticsProvider(ASRProvider):
             )
 
         for r in getattr(transcript, "results", None) or []:
-            if getattr(r, "type", None) != "word" or not r.alternatives:
+            r_type = getattr(r, "type", None)
+            if r_type not in ("word", "punctuation") or not r.alternatives:
                 continue
             alt = r.alternatives[0]
+            content = getattr(alt, "content", "")
+
+            if r_type == "punctuation":
+                # Speechmatics returns punctuation as its own result rather than
+                # attached to the word it follows. Fold it directly onto the
+                # preceding word's text (no separating space) instead of dropping
+                # it or letting it become its own token — there is no preceding
+                # word to attach to at the very start of a transcript.
+                if cur_words:
+                    cur_words[-1].word += content
+                continue
+
             raw_spk = getattr(alt, "speaker", None)  # "S1" | "S2" | "UU" | None
             spk = None if (raw_spk is None or raw_spk == "UU") else raw_spk
             start = float(getattr(r, "start_time", 0.0) or 0.0)
@@ -197,7 +219,7 @@ class SpeechmaticsProvider(ASRProvider):
                 flush()
                 cur_spk, cur_words, cur_start = spk, [], start
 
-            cur_words.append(ASRWord(getattr(alt, "content", ""), start, end, conf))
+            cur_words.append(ASRWord(content, start, end, conf))
 
         flush()
         return segments

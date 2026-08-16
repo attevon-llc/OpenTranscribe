@@ -173,7 +173,9 @@ class GoogleASRProvider(ASRProvider):
                                 for x in cur_ws
                             ]
                             spk_label = (
-                                f"SPEAKER_{(cur_tag - 1):02d}" if cur_tag is not None else None
+                                self._normalize_speaker_label(cur_tag - 1)
+                                if cur_tag is not None
+                                else None
                             )
                             segments.append(
                                 ASRSegment(
@@ -193,7 +195,9 @@ class GoogleASRProvider(ASRProvider):
                         ASRWord(x.word, x.start_time.total_seconds(), x.end_time.total_seconds())
                         for x in cur_ws
                     ]
-                    spk_label = f"SPEAKER_{(cur_tag - 1):02d}" if cur_tag is not None else None
+                    spk_label = (
+                        self._normalize_speaker_label(cur_tag - 1) if cur_tag is not None else None
+                    )
                     segments.append(
                         ASRSegment(
                             text=text,

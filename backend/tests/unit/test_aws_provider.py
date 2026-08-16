@@ -1,4 +1,4 @@
-"""Characterization tests for `app/services/asr/aws_provider.py`.
+"""Characterization + regression tests for `app/services/asr/aws_provider.py`.
 
 Network-free: `AWSTranscribeProvider._boto_client` is monkeypatched to return
 `MagicMock` S3/Transcribe clients, so no boto3 call ever leaves the process. The
@@ -13,15 +13,19 @@ What is pinned here, in order:
    `FailureReason` in `self._sanitize_error(...)` before raising — a credential
    embedded in the AWS-reported failure reason no longer reaches the exception
    message verbatim.
-2. **Open defect** in the diarization word-to-speaker join (~L296): the
-   `spk_map` built from `speaker_labels.segments[].items[].start_time` is keyed
-   on the raw JSON string, and a pronunciation item's `start_time` string that
-   doesn't match *exactly* (e.g. differing trailing-zero formatting) silently
-   falls back to the previous word's speaker (`cur_spk`) instead of erroring or
-   using the item's true speaker segment.
-3. **Open defect** in `head_bucket` handling (~L153-161): ANY exception from
-   `head_bucket` — not just "bucket not found" — falls through to attempting
-   `create_bucket`, masking a genuine permissions error as a missing bucket.
+2. **Fixed bug** in the diarization word-to-speaker join (~L293-318): `spk_map`
+   is now keyed on `float(start_time)` instead of the raw JSON string, and each
+   lookup parses the pronunciation item's `start_time` the same way, so
+   formatting drift between the `items[]` and `speaker_labels[]` blocks (e.g.
+   `"2.0"` vs `"2.000"`) no longer causes a silent fall-back to the previous
+   word's speaker — the word is attributed to its true speaker segment.
+3. **Fixed bug** in `head_bucket` handling (~L153-177): only a `ClientError`
+   whose `response["Error"]["Code"]` is a documented "not found" code (`"404"`
+   — HeadBucket returns no body, so botocore reports the bare HTTP status as
+   the code; also `"NoSuchBucket"`/`"NotFound"` for safety) falls through to
+   `create_bucket`. Any other exception — a permissions error, throttling, or
+   anything that isn't even a `ClientError` — now propagates instead of being
+   silently swallowed and masked as "bucket doesn't exist yet".
 4. AWS's `spk_N` speaker labels (e.g. `"spk_0"`) hit `normalize_speaker_label`'s
    0-indexed `spk_(\\d+)` branch.
 5. `validate_connection()` makes a REAL network call
@@ -113,10 +117,12 @@ def test_failed_job_sanitizes_failure_reason_in_raised_error(monkeypatch, audio_
     assert s3.delete_object.call_count == 2
 
 
-# ── 2. spk_map lookup silently falls back on a start_time mismatch ──────────
+# ── 2. spk_map lookup is numeric, so start_time formatting drift is ignored ──
 
 
-def test_speaker_segment_lookup_falls_back_silently_on_start_time_mismatch(monkeypatch, audio_file):
+def test_speaker_segment_lookup_matches_on_numeric_value_despite_formatting_drift(
+    monkeypatch, audio_file
+):
     provider = _provider()
     data = {
         "results": {
@@ -138,6 +144,8 @@ def test_speaker_segment_lookup_falls_back_silently_on_start_time_mismatch(monke
                     # speaker_labels entry above ("2.000") — the real-world
                     # trap when float serialization differs between the
                     # items[] and speaker_labels[] blocks of one response.
+                    # Fixed behavior: both sides are parsed to float before
+                    # comparison, so this still resolves to spk_1.
                     "type": "pronunciation",
                     "start_time": "2.0",
                     "end_time": "3.000",
@@ -153,20 +161,28 @@ def test_speaker_segment_lookup_falls_back_silently_on_start_time_mismatch(monke
     config = ASRConfig(language="en", enable_diarization=True, max_speakers=2)
     result = provider.transcribe(audio_file, config)
 
-    # Today's behavior: "world"'s start_time ("2.0") doesn't match the
-    # speaker_labels key ("2.000"), so spk_map.get() falls back to cur_spk
-    # (the PREVIOUS word's speaker) instead of the word's true speaker
-    # ("spk_1"). No speaker-change boundary is created, and both words land
-    # in one segment under the first speaker.
-    assert len(result.segments) == 1
+    # Fixed behavior: "world"'s start_time ("2.0") is parsed to the same float
+    # as the speaker_labels key ("2.000"), so it correctly resolves to its
+    # true speaker ("spk_1" -> SPEAKER_01), producing a speaker-change
+    # boundary and two segments instead of one silently-misattributed blob.
+    assert len(result.segments) == 2
     assert result.segments[0].speaker == "SPEAKER_00"
-    assert [w.word for w in result.segments[0].words] == ["hello", "world"]
+    assert [w.word for w in result.segments[0].words] == ["hello"]
+    assert result.segments[1].speaker == "SPEAKER_01"
+    assert [w.word for w in result.segments[1].words] == ["world"]
 
 
-# ── 3. head_bucket exception falls through to create_bucket unconditionally ──
+# ── 3. head_bucket: only a real "not found" falls through to create_bucket ───
 
 
-def test_head_bucket_exception_falls_through_to_create_bucket(monkeypatch, audio_file):
+def test_head_bucket_access_denied_propagates_instead_of_creating_bucket(monkeypatch, audio_file):
+    """A permissions-style failure from head_bucket must not be masked.
+
+    Fixed behavior: an exception that is not a botocore ClientError carrying a
+    documented "not found" error code (here a generic ``Exception`` worded
+    like an AccessDenied failure) now propagates out of ``transcribe()``
+    instead of being swallowed and treated as "the bucket doesn't exist yet".
+    """
     provider = _provider()
     job_response = {"TranscriptionJob": {"TranscriptionJobStatus": "COMPLETED"}}
     data: dict[str, Any] = {"results": {"items": []}}
@@ -180,11 +196,38 @@ def test_head_bucket_exception_falls_through_to_create_bucket(monkeypatch, audio
     _wire_provider(provider, monkeypatch, s3, tc)
 
     config = ASRConfig(language="en", enable_diarization=False)
+    with pytest.raises(Exception, match="AccessDenied"):
+        provider.transcribe(audio_file, config)
+
+    assert not s3.create_bucket.called
+
+
+def test_head_bucket_not_found_still_falls_through_to_create_bucket(monkeypatch, audio_file):
+    """The case that must keep working: a genuinely missing bucket.
+
+    ``HeadBucket`` is a HEAD request with no response body, so botocore can't
+    parse a named error code and reports the bare HTTP status ("404") as
+    ``response["Error"]["Code"]`` instead — this is documented, verified
+    botocore/boto3 behavior for a missing bucket (see boto/boto3#2499,
+    boto/boto3#4092). That specific code must still trigger create_bucket.
+    """
+    from botocore.exceptions import ClientError
+
+    provider = _provider()
+    job_response = {"TranscriptionJob": {"TranscriptionJobStatus": "COMPLETED"}}
+    data: dict[str, Any] = {"results": {"items": []}}
+    not_found_exc = ClientError(
+        error_response={"Error": {"Code": "404", "Message": "Not Found"}},
+        operation_name="HeadBucket",
+    )
+    s3, tc = _stub_clients(
+        job_response=job_response, result_data=data, s3_head_bucket_side_effect=not_found_exc
+    )
+    _wire_provider(provider, monkeypatch, s3, tc)
+
+    config = ASRConfig(language="en", enable_diarization=False)
     result = provider.transcribe(audio_file, config)  # must not raise
 
-    # Today's behavior: ANY head_bucket exception — including a permissions
-    # error unrelated to the bucket existing — is swallowed and create_bucket
-    # is attempted anyway, masking the real error.
     assert s3.create_bucket.called
     assert result.provider_name == "aws"
 

@@ -54,9 +54,16 @@ def check_directory_sync_schedule() -> dict:
             return {"status": "disabled"}
         if not backup_service.is_due(cfg["schedule"], cfg["last_run_at"]):
             return {"status": "not_due", "schedule": cfg["schedule"]}
+        prior_last_run = cfg["last_run_at"]
         directory_sync_service.update_settings_last_run(db, datetime.now(UTC).isoformat())
 
-    run_directory_sync.apply_async(queue=CeleryQueues.CPU, priority=CPUPriority.MAINTENANCE)
+    try:
+        run_directory_sync.apply_async(queue=CeleryQueues.CPU, priority=CPUPriority.MAINTENANCE)
+    except Exception as e:
+        logger.error("Failed to dispatch directory.sync_run, reverting claimed window: %s", e)
+        with session_scope() as db:
+            directory_sync_service.update_settings_last_run(db, prior_last_run)
+        raise
     logger.info("Directory reconciliation is due — dispatched directory.sync_run")
     return {"status": "dispatched", "schedule": cfg["schedule"]}
 

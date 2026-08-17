@@ -755,7 +755,8 @@
           ? $t('userManagement.unlockSuccess', { name })
           : $t('userManagement.unlockNotLocked', { name }),
         $t('userManagement.unlockFailed')
-      )
+      ),
+      $t('userManagement.unlockAccount')
     );
   }
 

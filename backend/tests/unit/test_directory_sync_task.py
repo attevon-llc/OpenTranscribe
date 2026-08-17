@@ -33,11 +33,13 @@ task rather than called directly.
 
 ``check_directory_sync_schedule`` tests use the ``session_scope`` monkeypatch
 pattern from ``test_speaker_attribute_migration_task.py`` to run the real
-DB-driven due-check against the savepoint-backed test session. No
-``xdist_group`` is needed: no other test file writes ``directory_sync.*``
-``SystemSettings`` keys (unlike the ``backup.*`` namespace), so the only
-possible collision is between this file's OWN tests sharing a worker, which
-xdist already serializes.
+DB-driven due-check against the savepoint-backed test session.
+
+``xdist_group("directory_sync_task_system_settings")``: ``tests/api/endpoints/
+test_directory_sync_settings.py`` (issue #484) also writes ``directory_sync.*``
+``SystemSettings`` keys now, so both files share this group to avoid the
+``system_settings_key_key`` deadlock two xdist workers writing overlapping
+keys in different orders would otherwise hit (issue #389).
 """
 
 from __future__ import annotations

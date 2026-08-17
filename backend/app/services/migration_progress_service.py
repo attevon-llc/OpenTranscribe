@@ -97,7 +97,18 @@ class MigrationProgressService:
             status_json = self.redis_client.get(status_key)
 
             if status_json:
-                return cast(MigrationStatus, json.loads(status_json))
+                parsed = json.loads(status_json)
+                # lua-cjson cannot tell an empty JSON array from an empty object, so
+                # _INCREMENT_LUA's round-trip re-encode of the whole status blob
+                # silently turns "failed_files": [] into {} the moment
+                # increment_processed() is called with zero failures recorded so
+                # far (self-heals the instant a real failure is appended — see
+                # test_migration_progress_service.py). Left uncorrected this
+                # breaks the MigrationStatus.failed_files: list[str] contract for
+                # every migration during the window before its first failure.
+                if isinstance(parsed.get("failed_files"), dict):
+                    parsed["failed_files"] = []
+                return cast(MigrationStatus, parsed)
             return default_status
 
         except Exception as e:

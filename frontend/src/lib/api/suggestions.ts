@@ -54,14 +54,14 @@ export async function getAISuggestions(fileId: string): Promise<AISuggestions | 
     // Extract tags and collections from the response
     const tags: TagSuggestion[] = (data.suggested_tags || []).map((tag: RawTagSuggestion) => ({
       name: tag.name,
-      confidence: tag.confidence || 0.5,
+      confidence: tag.confidence ?? 0.5,
       rationale: tag.rationale,
     }));
 
     const collections: CollectionSuggestion[] = (data.suggested_collections || []).map(
       (col: RawCollectionSuggestion) => ({
         name: col.name,
-        confidence: col.confidence || 0.5,
+        confidence: col.confidence ?? 0.5,
         rationale: col.rationale,
         description: col.description,
       })

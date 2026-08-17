@@ -209,8 +209,16 @@ class YouTubeRateLimiter:
             daily_count = client.zcount(day_key, day_ago, now)
 
             return {
-                "hourly_remaining": settings.YOUTUBE_USER_RATE_LIMIT_PER_HOUR - hourly_count,
-                "daily_remaining": settings.YOUTUBE_USER_RATE_LIMIT_PER_DAY - daily_count,
+                # Clamped to 0: an unclamped `limit - count` goes negative once the
+                # count reaches/exceeds the limit (reachable via the check_rate_limit
+                # / record_download race, since the two are independent Redis round
+                # trips), and a value of exactly -1 is byte-identical to the sentinel
+                # this function uses elsewhere in this file to mean "unlimited" —
+                # which GET /files/youtube/quota documents as the -1 contract.
+                "hourly_remaining": max(
+                    0, settings.YOUTUBE_USER_RATE_LIMIT_PER_HOUR - hourly_count
+                ),
+                "daily_remaining": max(0, settings.YOUTUBE_USER_RATE_LIMIT_PER_DAY - daily_count),
                 "hourly_limit": settings.YOUTUBE_USER_RATE_LIMIT_PER_HOUR,
                 "daily_limit": settings.YOUTUBE_USER_RATE_LIMIT_PER_DAY,
             }

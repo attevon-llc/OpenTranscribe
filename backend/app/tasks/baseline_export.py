@@ -55,10 +55,14 @@ def compare_baseline_task(file_uuid: str, baseline_label: str, current_label: st
             logger.error(f"{name} file not found: {path}")
             return {"status": "error", "message": f"{name} not found at {path}"}
 
-    with open(baseline_path) as f:
-        baseline = json.load(f)
-    with open(current_path) as f:
-        current = json.load(f)
+    try:
+        with open(baseline_path) as f:
+            baseline = json.load(f)
+        with open(current_path) as f:
+            current = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.error(f"Snapshot file is corrupted: {e}")
+        return {"status": "error", "message": f"Corrupted snapshot file: {e}"}
 
     comparison = compare_transcripts(baseline, current)
 

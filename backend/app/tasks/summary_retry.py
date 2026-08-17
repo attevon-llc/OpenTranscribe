@@ -9,7 +9,6 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.llm_service import is_llm_available
 from app.tasks.summarization import summarize_transcript_task
@@ -148,22 +147,3 @@ async def retry_summary_if_available(db: Session, file_uuid: str) -> bool:
             )
             db.rollback()
         return False
-
-
-def get_failed_summary_count() -> int:
-    """
-    Get count of files with failed summary status
-
-    Returns:
-        Number of files with failed summaries
-    """
-    with session_scope() as db:
-        try:
-            return (  # type: ignore[no-any-return]
-                db.query(MediaFile)
-                .filter(MediaFile.summary_status == "failed", MediaFile.status == "completed")
-                .count()
-            )
-        except Exception as e:
-            logger.error(f"Error getting failed summary count: {e}")
-            return 0

@@ -45,7 +45,6 @@ below is wrapped in ``asyncio.run(...)`` accordingly.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import uuid
 
 import pytest
@@ -321,42 +320,3 @@ class TestRetrySummaryIfAvailable:
         refetched = db_session.query(MediaFile).filter(MediaFile.id == mf.id).one()
         assert refetched.summary_status == "failed"
         assert refetched.summary_data == {"bluf": "should survive a failed retry"}
-
-
-class TestGetFailedSummaryCount:
-    @pytest.fixture(autouse=True)
-    def _route_session_scope_at_the_test_transaction(self, db_session, monkeypatch):
-        """``get_failed_summary_count`` opens its own ``session_scope()``, which by
-        default binds a fresh connection that cannot see this test's uncommitted
-        savepoint data (same reason ``test_retention_cleanup_task.py`` does this)."""
-        monkeypatch.setattr(
-            summary_retry,
-            "session_scope",
-            lambda: contextlib.nullcontext(db_session),
-            raising=True,
-        )
-
-    def test_counts_only_completed_files_whose_summary_failed(self, db_session, make_media_file):
-        baseline = summary_retry.get_failed_summary_count()
-
-        make_media_file(status=FileStatus.COMPLETED, summary_status="failed")
-        make_media_file(status=FileStatus.COMPLETED, summary_status="failed")
-        # Must NOT be counted: summary succeeded / is pending.
-        make_media_file(status=FileStatus.COMPLETED, summary_status="completed")
-        make_media_file(status=FileStatus.COMPLETED, summary_status="pending")
-        # Must NOT be counted: transcription itself never finished.
-        make_media_file(status=FileStatus.PROCESSING, summary_status="failed")
-        make_media_file(status=FileStatus.ERROR, summary_status="failed")
-
-        after = summary_retry.get_failed_summary_count()
-
-        assert after - baseline == 2
-
-    def test_returns_zero_rather_than_raising_on_a_query_failure(self, db_session, monkeypatch):
-        class _ExplodingQuery:
-            def filter(self, *_args, **_kwargs):
-                raise RuntimeError("db unreachable")
-
-        monkeypatch.setattr(db_session, "query", lambda *_a, **_kw: _ExplodingQuery())
-
-        assert summary_retry.get_failed_summary_count() == 0

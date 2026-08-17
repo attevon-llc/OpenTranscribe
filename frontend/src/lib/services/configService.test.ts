@@ -100,4 +100,28 @@ describe('resetProtectedMediaAuthConfig', () => {
     expect(mockAxiosInstance.get).toHaveBeenCalledTimes(2);
     expect(getAuthConfigForHost('media.example.com')).toBeNull();
   });
+
+  it('discards a User-A fetch that resolves AFTER logout, instead of leaking it into User B (BC-4)', async () => {
+    // The actual race: User A's fetch is still in flight when logout fires.
+    let resolveUserAFetch!: (v: { data: typeof CONFIG }) => void;
+    mockAxiosInstance.get.mockReturnValueOnce(new Promise((r) => (resolveUserAFetch = r)));
+
+    const userAFetch = loadProtectedMediaAuthConfig();
+
+    // Logout happens BEFORE the in-flight fetch resolves.
+    resetProtectedMediaAuthConfig();
+    expect(getAuthConfigForHost('media.example.com')).toBeNull();
+
+    // The stale response now arrives — it must be discarded, not applied.
+    resolveUserAFetch({ data: CONFIG });
+    await userAFetch;
+
+    expect(getAuthConfigForHost('media.example.com')).toBeNull();
+    expect(getAuthConfigForHost('nas.internal')).toBeNull();
+
+    // A fresh load for User B (post-reset) must still work normally.
+    mockAxiosInstance.get.mockResolvedValueOnce({ data: [] });
+    await loadProtectedMediaAuthConfig();
+    expect(getAuthConfigForHost('media.example.com')).toBeNull();
+  });
 });

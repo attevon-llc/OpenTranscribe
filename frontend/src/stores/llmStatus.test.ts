@@ -67,6 +67,28 @@ describe('initialize', () => {
     expect(get(llmStatusStore).checking).toBe(false);
   });
 
+  it('suppresses ALL later calls after a success, not just genuinely-concurrent ones', async () => {
+    // `initPromise` (the dedup flag) is only cleared on the failure path and in
+    // `reset()` — never after a success. So a second call made well after the first
+    // has already resolved still short-circuits to the cached promise instead of
+    // issuing a fresh request. This pins that actual behavior explicitly (other tests
+    // in this file all call `reset()` in `beforeEach`, which would mask it). Callers
+    // (`+layout.svelte`'s reactive auth block, its `onMount` guard, and
+    // `SelectiveReprocessModal.svelte`) rely on exactly this: `initialize()` as a
+    // cheap idempotent "ensure ready" call, with `startMonitoring()`'s 2-minute
+    // interval responsible for keeping state fresh afterward.
+    mockGetStatus.mockResolvedValue(AVAILABLE_STATUS);
+
+    await llmStatusStore.initialize();
+    expect(mockGetStatus).toHaveBeenCalledTimes(1);
+    expect(get(llmStatusStore).available).toBe(true);
+
+    await llmStatusStore.initialize();
+    expect(mockGetStatus).toHaveBeenCalledTimes(1);
+    expect(get(llmStatusStore).available).toBe(true);
+    expect(get(llmStatusStore).checking).toBe(false);
+  });
+
   it('allows a retry after a failed initialize instead of wedging permanently', async () => {
     mockGetStatus.mockRejectedValueOnce(new Error('network down'));
     await llmStatusStore.initialize();

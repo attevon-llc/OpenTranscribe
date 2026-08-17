@@ -32,7 +32,16 @@ function createLLMStatusStore() {
     subscribe,
 
     // Initialize the store and start monitoring.
-    // Safe to call multiple times — deduplicates concurrent calls.
+    // Safe to call multiple times: `initPromise` is cleared on failure (so a retry can
+    // re-attempt) and in `reset()`, but NOT on success — so after the first successful
+    // call, every subsequent call is a no-op that returns the already-resolved promise
+    // rather than performing a fresh check. This is deliberate: callers (see
+    // `+layout.svelte`'s reactive `$isAuthenticated` block and its `onMount` guard, and
+    // `SelectiveReprocessModal.svelte`) use `initialize()` as an idempotent "ensure ready"
+    // call fired from multiple places, not as a way to force a refresh. Freshness after
+    // the first success is instead kept up by `startMonitoring()`'s 2-minute polling
+    // interval (and by `refreshStatus()`/`handleNotification()` for push updates) — call
+    // `refreshStatus()` directly if you need an immediate re-check.
     initialize() {
       if (!initPromise) {
         initPromise = (async () => {

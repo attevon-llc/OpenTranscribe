@@ -225,6 +225,58 @@ describe('uploadInParts — retry and terminal errors', () => {
   });
 });
 
+describe('uploadInParts — concurrent re-signing dedup', () => {
+  it('shares one signing POST across parts that need a fresh URL at the same time', async () => {
+    // Part 1's URL is still fresh from the initial plan; parts 2 and 3 have none cached at
+    // all (as if only the first batch came back from /prepare). PART_CONCURRENCY is 3, so
+    // all three parts are picked up by workers in the same synchronous tick — parts 2 and 3
+    // both need signing before any signing request has resolved, so the second one must
+    // reuse the first one's in-flight `signing` promise instead of firing its own POST.
+    mockInstance.post.mockResolvedValueOnce({
+      data: {
+        urls: { 2: 'https://bucket/part2-signed', 3: 'https://bucket/part3-signed' },
+        expires_in: 3600,
+      },
+    });
+    const putPart = vi.fn().mockResolvedValue('etag-x');
+
+    const result = await uploadInParts({
+      fileId: 'file-1',
+      body: fakeBody(30), // 3 parts of 10
+      plan: planFor({
+        part_count: 3,
+        batch_size: 2,
+        urls: { 1: 'https://bucket/part1' }, // only part 1 pre-signed
+      }),
+      putPart,
+      onProgress: vi.fn(),
+    });
+
+    // Exactly one signing call — batched for both parts that needed it concurrently,
+    // not one call per part.
+    expect(mockInstance.post).toHaveBeenCalledTimes(1);
+    expect(mockInstance.post).toHaveBeenCalledWith('/files/multipart/parts', {
+      file_id: 'file-1',
+      upload_id: 'upload-1',
+      part_numbers: [2, 3],
+      include_uploaded: false,
+    });
+
+    const urlsUsed = putPart.mock.calls.map((c) => c[0]).sort();
+    expect(urlsUsed).toEqual([
+      'https://bucket/part1',
+      'https://bucket/part2-signed',
+      'https://bucket/part3-signed',
+    ]);
+
+    expect(result.parts).toEqual([
+      { part_number: 1, etag: 'etag-x' },
+      { part_number: 2, etag: 'etag-x' },
+      { part_number: 3, etag: 'etag-x' },
+    ]);
+  });
+});
+
 describe('uploadInParts — unreadable ETag safety net', () => {
   it('returns parts: null instead of shipping a partial/unverifiable list', async () => {
     // One part's ETag header wasn't exposed cross-origin (bucket CORS config) — the

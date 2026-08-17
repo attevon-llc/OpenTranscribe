@@ -149,6 +149,50 @@ describe('extractMetadata', () => {
     expect(metadata.FileSize).toBe(2048);
     expect(metadata.Title).toBeUndefined();
   });
+
+  it('falls back to basic metadata when the metadata-read exec RESOLVES with a non-zero exit code (BC-6)', async () => {
+    // The regression this covers is specifically a *resolved* non-zero code, not a
+    // thrown exception — exec() resolves with FFmpeg's exit code rather than
+    // rejecting on failure, same contract as the main extraction command.
+    fake.execImpl = () => 1;
+    const service = new AudioExtractionService();
+
+    const metadata = await service.extractMetadata(videoFile('clip.mp4', 4096));
+
+    expect(metadata.FileName).toBe('clip.mp4');
+    expect(metadata.FileSize).toBe(4096);
+    expect(metadata.Title).toBeUndefined();
+    // The fallback object literal never includes RawMetadata at all — unlike the
+    // success path, which always sets it (even to {} when the log stream was empty).
+    // Only the fallback proves control actually reached the catch block instead of
+    // silently returning whatever partial data the failed read produced.
+    expect(metadata.RawMetadata).toBeUndefined();
+  });
+
+  it('unregisters the temporary log handler even when the metadata-read exec rejects (BC-7)', async () => {
+    fake.execImpl = () => {
+      throw new Error('ffmpeg crashed mid-read');
+    };
+    const service = new AudioExtractionService();
+
+    await service.extractMetadata(videoFile());
+
+    // load() registers exactly one permanent 'log' handler in _doLoad(). If the
+    // temporary handler added inside extractMetadata is not unregistered when exec()
+    // throws, it stays on the shared emitter forever and this count grows past 1.
+    expect(fake.handlers['log']?.length ?? 0).toBe(1);
+  });
+
+  it('unregisters the temporary log handler even when writeFile rejects before exec runs (BC-7)', async () => {
+    const service = new AudioExtractionService();
+    fake.writeFile = async () => {
+      throw new Error('MEMFS write failed');
+    };
+
+    await service.extractMetadata(videoFile());
+
+    expect(fake.handlers['log']?.length ?? 0).toBe(1);
+  });
 });
 
 describe('extractAudio — guards', () => {
@@ -200,16 +244,28 @@ describe('extractAudio — success path', () => {
     expect(result.metadata.extractedFileName).toMatch(/\.mp3$/);
   });
 
-  it('throws EXTRACTION_FAILED on a non-zero FFmpeg exit code instead of returning an empty blob', async () => {
+  it('throws EXTRACTION_FAILED on a non-zero FFmpeg exit code instead of returning an empty blob, and cleans up its temp files (BC-5)', async () => {
     fake.execImpl = (args) => {
       if (args.includes('-f')) return 0; // metadata probe still succeeds
       return 1; // the actual extraction command fails
     };
     const service = new AudioExtractionService();
+    const deleteSpy = vi.spyOn(fake, 'deleteFile');
 
     await expect(service.extractAudio(videoFile())).rejects.toMatchObject({
       code: 'EXTRACTION_FAILED',
     });
+
+    // BC-5: a failed extraction must not leak its input/output temp files in the
+    // FFmpeg MEMFS — the catch handler must clean up what the success path would
+    // have. The input file was actually written before the exec() failure, so its
+    // absence from fake.files is the real signal; the catch must still attempt to
+    // delete the output name too, even though it was never produced.
+    const deletedNames = deleteSpy.mock.calls.map((call) => call[0]);
+    expect(deletedNames.some((name) => name.startsWith('input_'))).toBe(true);
+    expect(deletedNames.some((name) => name.startsWith('output_'))).toBe(true);
+    expect(Object.keys(fake.files).some((name) => name.startsWith('input_'))).toBe(false);
+    expect(Object.keys(fake.files).some((name) => name.startsWith('output_'))).toBe(false);
   });
 
   it('sends a completed, dismissible notification only once progress reaches 100%', async () => {

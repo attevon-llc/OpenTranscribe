@@ -112,18 +112,35 @@ def create_or_get_speaker(
             logger.error(
                 f"Error creating speaker {speaker_label} for file {media_file_id}: {str(e)}"
             )
-            # Create a fallback speaker with guaranteed UUID
-            speaker_uuid = str(uuid_module.uuid4())
-            speaker = Speaker(
-                name=speaker_label,
-                display_name=None,
-                uuid=speaker_uuid,
-                user_id=user_id,
-                media_file_id=media_file_id,
-                verified=False,
+            # The failed flush leaves the session's transaction marked for rollback,
+            # and the likely cause is a concurrent insert of this exact
+            # (user_id, media_file_id, name) row (this repo's documented duplicate-
+            # task-delivery risk — acks_late with no visibility_timeout override). A
+            # blind re-insert with a new UUID would hit the same unique constraint
+            # again and raise PendingRollbackError uncaught. Roll back and reuse
+            # whatever now exists instead.
+            db.rollback()
+            speaker = (
+                db.query(Speaker)
+                .filter(
+                    Speaker.user_id == user_id,
+                    Speaker.media_file_id == media_file_id,
+                    Speaker.name == speaker_label,
+                )
+                .first()
             )
-            db.add(speaker)
-            db.flush()
+            if not speaker:
+                speaker_uuid = str(uuid_module.uuid4())
+                speaker = Speaker(
+                    name=speaker_label,
+                    display_name=None,
+                    uuid=speaker_uuid,
+                    user_id=user_id,
+                    media_file_id=media_file_id,
+                    verified=False,
+                )
+                db.add(speaker)
+                db.flush()
 
     return speaker  # type: ignore[no-any-return]
 

@@ -258,9 +258,13 @@ class TestTranscribeCpuTask:
         assert task.status == "failed"
         cpu_task_seams["send_error"].assert_called_once()
 
-    def test_download_failure_marks_file_error_and_reraises(
+    def test_download_failure_on_a_retryable_attempt_reraises_without_marking_error(
         self, db_session, cpu_task_seams, make_media_file, make_task, normal_user
     ):
+        """A ConnectionError with retries still available must NOT run the failure
+        side effects (ERROR status, user notification) — those would fire BEFORE
+        Celery's autoretry_for wrapper ever sees the exception, producing a false
+        failure notification for a transient blip the task is about to retry."""
         media_file = make_media_file()
         task_id = str(uuid_pkg.uuid4())
         make_task(media_file, task_id)
@@ -269,6 +273,32 @@ class TestTranscribeCpuTask:
 
         with pytest.raises(ConnectionError):
             transcribe_cpu_task.run(preprocess_context)
+
+        db_session.refresh(media_file)
+        # The download failure happens before anything in this task writes a new
+        # status, so an untouched file must still read exactly its starting state.
+        assert media_file.status == FileStatus.PROCESSING
+        task = db_session.query(Task).filter(Task.id == task_id).one()
+        assert task.status == "in_progress"
+        cpu_task_seams["send_error"].assert_not_called()
+
+    def test_download_failure_after_retries_exhausted_marks_file_error(
+        self, db_session, cpu_task_seams, make_media_file, make_task, normal_user
+    ):
+        """Once retries are exhausted this IS the final failure — Celery will not
+        attempt again — so it must still be reported like any other terminal error."""
+        media_file = make_media_file()
+        task_id = str(uuid_pkg.uuid4())
+        make_task(media_file, task_id)
+        preprocess_context = self._preprocess_context(media_file, task_id, normal_user.id)
+        cpu_task_seams["download_temp_audio"].side_effect = ConnectionError("MinIO unreachable")
+
+        transcribe_cpu_task.push_request(id=task_id, retries=transcribe_cpu_task.max_retries)
+        try:
+            with pytest.raises(ConnectionError):
+                transcribe_cpu_task.run(preprocess_context)
+        finally:
+            transcribe_cpu_task.pop_request()
 
         db_session.refresh(media_file)
         assert media_file.status == FileStatus.ERROR

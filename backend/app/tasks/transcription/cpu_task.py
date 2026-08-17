@@ -171,6 +171,20 @@ def transcribe_cpu_task(self, preprocess_context: dict) -> dict:
             benchmark_timing.mark(task_id, "gpu_end")
             return cpu_result
 
+    except (ConnectionError, TimeoutError):
+        # Let autoretry_for handle these silently ON A RETRYABLE ATTEMPT — running
+        # the failure side effects here (ERROR status, user notification,
+        # quota-release) would fire BEFORE Celery's retry wrapper ever sees the
+        # exception, producing a false failure notification for a transient blip
+        # the task is about to retry. But once retries are exhausted this IS the
+        # final failure — Celery will not attempt again — so it must still be
+        # reported like any other terminal error.
+        if self.request.retries < self.max_retries:
+            raise
+        logger.error(f"CPU transcription failed for file {file_uuid} after all retries")
+        error_message = _get_user_friendly_error_message("Connection or timeout error")
+        _handle_transcription_failure(ctx, task_id, error_message, "cpu_processing_error")
+        raise
     except Exception as e:
         logger.error(f"CPU transcription failed for file {file_uuid}: {e}")
         error_message = _get_user_friendly_error_message(str(e))

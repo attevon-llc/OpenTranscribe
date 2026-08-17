@@ -36,14 +36,24 @@ router = APIRouter()
 
 # --- Schemas -----------------------------------------------------------------
 class DirectorySyncResultModel(BaseModel):
-    status: str | None = None
+    """Mirrors ``directory_sync_service.sweep_ldap``'s return dict.
+
+    ``extra: allow`` because the service also returns ``actions``/``reconciliations``
+    (per-account detail lists) that this summary panel doesn't render.
+    """
+
+    status: str | None = None  # ok | directory_unavailable
     error: str | None = None
     dry_run: bool | None = None
     candidates: int | None = None
+    checked: int | None = None
     disabled: int | None = None
+    would_disable: int | None = None
+    capped: bool | None = None
     reconciled: int | None = None
-    skipped_cap: int | None = None
-    duration_s: float | None = None
+    max_disables_per_run: int | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
 
     model_config = {"extra": "allow"}
 

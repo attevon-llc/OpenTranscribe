@@ -145,8 +145,11 @@ async def retry_summary(
             detail="LLM service is not available. Please try again later.",
         )
 
-    # Attempt to retry
-    success = retry_summary_if_available(db, str(file_id))
+    # Attempt to retry. retry_summary_if_available takes the file UUID, not the
+    # internal integer PK (`file_id` above) — get_by_uuid_optional inside it
+    # would never match on a stringified PK, so this always returned False and
+    # the endpoint always 500'd "Failed to queue summary retry" (issue #474).
+    success = await retry_summary_if_available(db, str(media_file.uuid))
     if not success:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

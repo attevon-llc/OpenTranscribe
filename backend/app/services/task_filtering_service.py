@@ -186,8 +186,21 @@ class TaskFilteringService:
         # Add formatted processing time
         from app.services.formatting_service import FormattingService
 
+        # FormattingService.format_processing_time requires real datetime objects (it reads
+        # .tzinfo directly) — normalize the same way _matches_age_filter/_matches_date_range/
+        # _format_task_duration already do, so a caller passing ISO-string timestamps (a
+        # supported shape everywhere else in this class) doesn't crash here instead.
+        computed_created_at = task.get("created_at")
+        if isinstance(computed_created_at, str):
+            computed_created_at = datetime.fromisoformat(computed_created_at.replace("Z", "+00:00"))
+        computed_completed_at = task.get("completed_at")
+        if isinstance(computed_completed_at, str):
+            computed_completed_at = datetime.fromisoformat(
+                computed_completed_at.replace("Z", "+00:00")
+            )
+
         enriched_task["formatted_processing_time"] = FormattingService.format_processing_time(
-            task.get("created_at"), task.get("completed_at")
+            computed_created_at, computed_completed_at
         )
 
         return enriched_task

@@ -153,6 +153,7 @@ def safe_get_by_id[T](
         return query.first()  # type: ignore[no-any-return]
     except SQLAlchemyError as e:
         logger.error(f"Error getting {model.__name__} by ID {obj_id}: {e}")
+        db.rollback()
         return None
 
 
@@ -254,6 +255,7 @@ def get_file_tags(db: Session, file_id: int) -> list[str]:
         return [tag[0] for tag in tags]
     except SQLAlchemyError as e:
         logger.error(f"Error getting tags for file {file_id}: {e}")
+        db.rollback()
         return []
 
 
@@ -326,4 +328,5 @@ def get_user_file_stats(db: Session, user_id: int) -> dict:
         }
     except SQLAlchemyError as e:
         logger.error(f"Error getting file stats for user {user_id}: {e}")
+        db.rollback()
         return {}

@@ -133,7 +133,13 @@ def create_user(
         db.rollback()
         raise SCIMConflictError(f"A user with userName {email!r} already exists") from exc
     db.refresh(user)
-    _audit(AuditEventType.ADMIN_USER_CREATE, actor=actor, target=email, user_uuid=str(user.uuid))
+    _audit(
+        AuditEventType.ADMIN_USER_CREATE,
+        actor=actor,
+        target=email,
+        target_user_id=int(user.id),
+        user_uuid=str(user.uuid),
+    )
     logger.info("SCIM created user %s", email)
     return user
 
@@ -205,6 +211,7 @@ def update_user(
         event,
         actor=actor,
         target=str(user.email),
+        target_user_id=int(user.id),
         user_uuid=str(user.uuid),
         changed=sorted(changed),
         sessions_revoked=revoked,

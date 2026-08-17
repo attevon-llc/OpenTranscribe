@@ -13,7 +13,6 @@ from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.opensearch_service.client import _is_alias
 from app.services.opensearch_service.client import _safe_index_exists
-from app.services.opensearch_service.indices import ensure_indices_exist
 
 logger = logging.getLogger(__name__)
 
@@ -64,48 +63,6 @@ def merge_speaker_embeddings(
 
     except Exception as e:
         logger.error(f"Error merging speaker embeddings: {e}")
-
-
-def cleanup_orphaned_embeddings(user_id: int) -> dict:
-    """Count potentially orphaned speaker embeddings.
-
-    NOTE: This is a diagnostic stub. Actual cleanup requires database
-    validation and is not yet implemented. Use
-    ``cleanup_orphaned_speaker_embeddings()`` for real orphan removal.
-
-    Args:
-        user_id: User ID to inspect.
-
-    Returns:
-        Dict with embedding_count and diagnostic status.
-    """
-    if not _client.opensearch_client:
-        logger.warning("OpenSearch client not initialized")
-        return {"embedding_count": 0, "status": "diagnostic_only"}
-
-    try:
-        # Ensure indices exist before searching
-        ensure_indices_exist()
-
-        # Find all embeddings for user
-        query = {
-            "query": {"term": {"user_id": user_id}},
-            "size": 1000,
-            "_source": ["speaker_id", "profile_id"],
-        }
-
-        response = _client.opensearch_client.search(index=get_speaker_index(), body=query)
-
-        count = len(response["hits"]["hits"])
-        logger.info(
-            f"Found {count} embeddings for user {user_id} (diagnostic only, no cleanup performed)"
-        )
-
-        return {"embedding_count": count, "status": "diagnostic_only"}
-
-    except Exception as e:
-        logger.error(f"Error counting orphaned embeddings: {e}")
-        return {"embedding_count": 0, "status": "diagnostic_only"}
 
 
 def remove_speaker_embedding(speaker_uuid: str) -> bool:

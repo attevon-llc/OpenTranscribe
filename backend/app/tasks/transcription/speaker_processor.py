@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.media import Speaker
+from app.services.asr.base import normalize_speaker_label as _canonical_normalize_speaker_label
 
 logger = logging.getLogger(__name__)
 
@@ -12,23 +13,30 @@ logger = logging.getLogger(__name__)
 _FALLBACK_SPEAKER = "SPEAKER_00"
 
 
-def normalize_speaker_label(speaker_id: str) -> str:
+def normalize_speaker_label(speaker_id: str | None) -> str:
     """
     Normalize speaker labels to ensure consistent format (SPEAKER_XX).
 
+    Delegates to the canonical ``app.services.asr.base.normalize_speaker_label``
+    — the implementation every ASR/diarization provider already normalizes
+    through. This used to be a separate, less capable copy (issue #483): no
+    zero-padding for single-digit labels ("1" stayed "SPEAKER_1" instead of
+    "SPEAKER_01"), no recognition of provider-specific formats ("S1", "spk_0",
+    "Guest-1", …), and unrecognized text was blindly string-prefixed rather
+    than hashed into a valid, stable ``SPEAKER_XX`` form.
+
     Args:
-        speaker_id: Original speaker ID
+        speaker_id: Original speaker ID, or None when a segment has no
+            speaker attribution at all.
 
     Returns:
-        Normalized speaker ID
+        Normalized speaker ID. Never None — falls back to SPEAKER_00 to match
+        this module's ``_FALLBACK_SPEAKER`` convention, since callers here
+        (unlike the ASR/diarization provider hierarchy) always need a
+        concrete label to satisfy the ``Speaker.name`` NOT NULL column.
     """
-    if speaker_id is None:
-        return "SPEAKER_00"
-
-    if not speaker_id.startswith("SPEAKER_"):
-        return f"SPEAKER_{speaker_id}"
-
-    return speaker_id
+    normalized = _canonical_normalize_speaker_label(speaker_id)
+    return normalized if normalized is not None else _FALLBACK_SPEAKER
 
 
 def extract_unique_speakers(segments: list[dict[str, Any]]) -> set[str]:
@@ -112,18 +120,35 @@ def create_or_get_speaker(
             logger.error(
                 f"Error creating speaker {speaker_label} for file {media_file_id}: {str(e)}"
             )
-            # Create a fallback speaker with guaranteed UUID
-            speaker_uuid = str(uuid_module.uuid4())
-            speaker = Speaker(
-                name=speaker_label,
-                display_name=None,
-                uuid=speaker_uuid,
-                user_id=user_id,
-                media_file_id=media_file_id,
-                verified=False,
+            # The failed flush leaves the session's transaction marked for rollback,
+            # and the likely cause is a concurrent insert of this exact
+            # (user_id, media_file_id, name) row (this repo's documented duplicate-
+            # task-delivery risk — acks_late with no visibility_timeout override). A
+            # blind re-insert with a new UUID would hit the same unique constraint
+            # again and raise PendingRollbackError uncaught. Roll back and reuse
+            # whatever now exists instead.
+            db.rollback()
+            speaker = (
+                db.query(Speaker)
+                .filter(
+                    Speaker.user_id == user_id,
+                    Speaker.media_file_id == media_file_id,
+                    Speaker.name == speaker_label,
+                )
+                .first()
             )
-            db.add(speaker)
-            db.flush()
+            if not speaker:
+                speaker_uuid = str(uuid_module.uuid4())
+                speaker = Speaker(
+                    name=speaker_label,
+                    display_name=None,
+                    uuid=speaker_uuid,
+                    user_id=user_id,
+                    media_file_id=media_file_id,
+                    verified=False,
+                )
+                db.add(speaker)
+                db.flush()
 
     return speaker  # type: ignore[no-any-return]
 
@@ -324,13 +349,28 @@ def mark_overlapping_segments(
             assign_seg_durations > 0, overlap_durations / assign_seg_durations, 0.0
         )
 
-    # Single pass to update all segment dicts
-    overlap_count = 0
+    # A segment can appear in more than one assignment when it genuinely overlaps
+    # two distinct regions. overlap_group_id is a single scalar column (DB, API
+    # schema, and frontend grouping all key off exactly one id per segment), so
+    # there is no lossless way to record more than one group here without a
+    # cross-stack schema change. Rather than silently overwriting with whichever
+    # assignment happens to be processed last (order-dependent and arbitrary),
+    # deterministically keep the assignment the segment overlaps MOST — i.e. the
+    # region confidences[i] (this segment's overlap fraction with THAT region) is
+    # highest for.
+    best_by_segment: dict[int, tuple[str, float]] = {}
     for i, (seg_idx, group_id, _) in enumerate(assignments):
+        confidence = float(confidences[i])
+        current_best = best_by_segment.get(seg_idx)
+        if current_best is None or confidence > current_best[1]:
+            best_by_segment[seg_idx] = (group_id, confidence)
+
+    for seg_idx, (group_id, confidence) in best_by_segment.items():
         segments[seg_idx]["is_overlap"] = True
         segments[seg_idx]["overlap_group_id"] = group_id
-        segments[seg_idx]["overlap_confidence"] = float(confidences[i])
-        overlap_count += 1
+        segments[seg_idx]["overlap_confidence"] = confidence
+
+    overlap_count = len(best_by_segment)
 
     elapsed = time.perf_counter() - start_time
     logger.info(

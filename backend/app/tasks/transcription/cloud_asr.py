@@ -151,7 +151,8 @@ def _run_parallel_cloud_asr_and_diarization(
         return asr_result
 
     # Both succeeded — merge diarization results onto ASR transcript
-    assert asr_result is not None  # guaranteed by asr_error check above
+    if asr_result is None:
+        raise RuntimeError("Cloud ASR transcription returned no result")
     merged = merge_cloud_diarization(asr_result, diarize_result)
     logger.info(
         "Parallel cloud pipeline complete: ASR=%s, diarization=%s, file=%d",

@@ -69,7 +69,6 @@
       "Write(/mnt/nvm/repos/pyannote-audio-fork/**)"
     ],
     "ask": [
-      "Bash(git push:*)",
       "Bash(gh release create:*)",
       "Bash(gh pr merge:*)",
       "Bash(./scripts/docker-build-push.sh:*)",
@@ -88,6 +87,7 @@
       "Bash(./scripts/release/90-finish.sh:*)"
     ],
     "allow": [
+      "Bash(git push:*)",
       "Bash(./opentr.sh:*)",
       "Bash(./opentranscribe.sh:*)",
       "Bash(./scripts/*.sh:*)",

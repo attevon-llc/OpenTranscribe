@@ -49,9 +49,6 @@ def merge_cloud_diarization(
         idx = bisect.bisect_right(d_starts, midpoint) - 1
         if idx >= 0 and d_segs[idx].start <= midpoint <= d_segs[idx].end:
             return d_segs[idx].speaker
-        # Check adjacent segment (midpoint might fall in a gap)
-        if idx + 1 < len(d_segs) and d_segs[idx + 1].start <= midpoint <= d_segs[idx + 1].end:
-            return d_segs[idx + 1].speaker
         return None
 
     new_segments: list[ASRSegment] = []

@@ -157,6 +157,15 @@ def _process_file_in_temp_dir(
         provider = None  # type: ignore[assignment]
 
     if provider is not None and provider.provider_name != "local":
+        # Resolve diarization_source from the user's setting, same as the modern
+        # preprocess.py path — without this it silently defaulted to "provider"
+        # regardless of what the user configured (e.g. "off" or "pyannote").
+        from .core import _get_user_transcription_settings
+
+        with session_scope() as db:
+            user_ts = _get_user_transcription_settings(db, ctx.user_id)
+            diarization_source = user_ts.get("diarization_source", "provider")
+
         # Cloud pipeline — errors propagate so the task is marked FAILED, not silently
         # re-attempted on local GPU.
         result = _run_cloud_asr_pipeline(
@@ -166,6 +175,7 @@ def _process_file_in_temp_dir(
             max_speakers,
             num_speakers,
             provider=provider,
+            diarization_source=diarization_source,
         )
         # Validate transcription result
         validation_error = _validate_transcription_result(result, ctx, ctx.task_id)

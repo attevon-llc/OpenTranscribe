@@ -161,6 +161,49 @@ def get_settings(db: Session | None = None) -> dict[str, Any]:
         }
 
 
+def update_settings(
+    db: Session,
+    *,
+    enabled: bool | None = None,
+    schedule: str | None = None,
+    dry_run: bool | None = None,
+    max_disables_per_run: int | None = None,
+) -> dict[str, Any]:
+    """Persist any provided directory-sync settings; return the full current set.
+
+    Mirrors ``backup_service.update_settings``'s only-provided-fields contract.
+    """
+    if enabled is not None:
+        sss.set_setting(
+            db, KEY_ENABLED, enabled, "Periodic LDAP reconciliation/deprovisioning master toggle"
+        )
+    if schedule is not None:
+        from app.services.backup_service import is_valid_cron
+
+        if not is_valid_cron(schedule):
+            raise ValueError(f"Invalid cron schedule: {schedule!r}")
+        sss.set_setting(
+            db, KEY_SCHEDULE, schedule, "Directory reconciliation cron schedule (5-field, UTC)"
+        )
+    if dry_run is not None:
+        sss.set_setting(
+            db,
+            KEY_DRY_RUN,
+            dry_run,
+            "Report what the sweep would disable without changing anything",
+        )
+    if max_disables_per_run is not None:
+        if max_disables_per_run < 1:
+            raise ValueError("max_disables_per_run must be at least 1")
+        sss.set_setting(
+            db,
+            KEY_MAX_DISABLES,
+            int(max_disables_per_run),
+            "Per-run cap on accounts the sweep may disable",
+        )
+    return get_settings(db)
+
+
 def update_settings_last_run(db: Session, when_iso: str) -> None:
     """Stamp the dispatch time so the next beat tick can't re-fire the same window."""
     sss.set_setting(db, KEY_LAST_RUN_AT, when_iso, "Last directory reconciliation run (UTC)")

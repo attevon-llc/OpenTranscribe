@@ -48,10 +48,17 @@ def check_backup_schedule() -> dict:
         if not backup_service.is_due(cfg["schedule"], cfg["last_run_at"]):
             return {"status": "not_due", "schedule": cfg["schedule"]}
         # Claim this window before dispatching so overlapping ticks don't double-fire.
+        prior_last_run = cfg["last_run_at"]
         now_iso = datetime.now(UTC).isoformat()
         backup_service.update_settings_last_run(db, now_iso)
 
-    run_backup.apply_async(queue="utility", priority=UtilityPriority.ROUTINE)
+    try:
+        run_backup.apply_async(queue="utility", priority=UtilityPriority.ROUTINE)
+    except Exception as e:
+        logger.error("Failed to dispatch backup.run, reverting claimed window: %s", e)
+        with session_scope() as db:
+            backup_service.update_settings_last_run(db, prior_last_run)
+        raise
     logger.info("Scheduled backup is due — dispatched backup.run")
     return {"status": "dispatched", "schedule": cfg["schedule"]}
 
@@ -95,10 +102,19 @@ def check_mirror_schedule() -> dict:
             return {"status": "disabled"}
         if not backup_service.is_due(cfg["schedule"], cfg["last_run_at"]):
             return {"status": "not_due", "schedule": cfg["schedule"]}
+        prior_last_run = cfg["last_run_at"]
         now_iso = datetime.now(UTC).isoformat()
         media_mirror_service.update_settings_last_run(db, now_iso)
 
-    run_media_mirror.apply_async(queue=CeleryQueues.DOWNLOAD, priority=DownloadPriority.PLAYLIST)
+    try:
+        run_media_mirror.apply_async(
+            queue=CeleryQueues.DOWNLOAD, priority=DownloadPriority.PLAYLIST
+        )
+    except Exception as e:
+        logger.error("Failed to dispatch backup.mirror_run, reverting claimed window: %s", e)
+        with session_scope() as db:
+            media_mirror_service.update_settings_last_run(db, prior_last_run)
+        raise
     logger.info("Scheduled media mirror is due — dispatched backup.mirror_run")
     return {"status": "dispatched", "schedule": cfg["schedule"]}
 

@@ -164,3 +164,36 @@ def test_retry_summary_nonexistent_404(client, user_token_headers):
     response = client.post(f"/api/files/{uuid.uuid4()}/retry-summary", headers=user_token_headers)
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json()["detail"] == "File not found"
+
+
+def test_retry_summary_with_llm_available_actually_queues(
+    client, user_token_headers, normal_user, db_session, monkeypatch
+):
+    """The success path this suite's own docstring says it never exercises.
+
+    Regression test for issue #474: ``retry_summary`` passed the file's
+    internal integer PK (``str(file_id)``) into ``retry_summary_if_available``,
+    which looks the file up by UUID — so a valid, retryable request with LLM
+    available always failed the lookup and this endpoint always returned 500,
+    in production, unconditionally. No test ever exercised past the 503
+    "LLM not available" branch above (that's what ``test_retry_summary_no_llm_503``
+    and this module's docstring describe as the deterministic default), so
+    nothing caught it.
+    """
+    import app.api.endpoints.files.summary_status as summary_status_module
+    import app.tasks.summary_retry as summary_retry_module
+
+    async def _available(*args, **kwargs):
+        return True
+
+    monkeypatch.setattr(summary_status_module, "is_llm_available", _available)
+    monkeypatch.setattr(summary_retry_module, "is_llm_available", _available)
+
+    media_file = _make_file(db_session, normal_user, summary_status="pending")
+    response = client.post(
+        f"/api/files/{media_file.uuid}/retry-summary", headers=user_token_headers
+    )
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    assert response.json()["status"] == "success"
+    assert response.json()["file_id"] == str(media_file.uuid)

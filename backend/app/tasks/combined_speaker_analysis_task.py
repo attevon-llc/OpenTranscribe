@@ -268,7 +268,8 @@ def migrate_speakers_combined_task(self, user_id: int):
 
         batches = [file_uuids[i : i + _BATCH_SIZE] for i in range(0, len(file_uuids), _BATCH_SIZE)]
 
-        batch_task_ids = []
+        batch_task_ids: list[str] = []
+        batch_task_ids_key = f"{combined_migration_progress.key_prefix}:batch_task_ids"
         for batch_idx, batch in enumerate(batches):
             result = analyze_speakers_combined_batch_task.apply_async(
                 kwargs={
@@ -281,16 +282,13 @@ def migrate_speakers_combined_task(self, user_id: int):
                 priority=GPUPriority.ADMIN_MIGRATION,
             )
             batch_task_ids.append(result.id)
-
-        # Store batch task IDs for revocation on stop
-        try:
-            r.set(
-                f"{combined_migration_progress.key_prefix}:batch_task_ids",
-                json.dumps(batch_task_ids),
-                ex=7200,
-            )
-        except Exception as e:
-            logger.warning("Failed to store batch task IDs: %s", e)
+            # Persist after EVERY dispatch, not just once at the end — if a later
+            # apply_async raises, the ids already dispatched must still be
+            # revocable by the stop endpoint instead of orphaned.
+            try:
+                r.set(batch_task_ids_key, json.dumps(batch_task_ids), ex=7200)
+            except Exception as e:
+                logger.warning("Failed to store batch task IDs: %s", e)
 
         logger.info(
             "Dispatched %d combined migration batches for %d files",

@@ -17,6 +17,7 @@ from .endpoints import chat
 from .endpoints import combined_speaker_migration
 from .endpoints import comments
 from .endpoints import custom_vocabulary
+from .endpoints import directory_sync_settings
 from .endpoints import embedding_migration
 from .endpoints import engine_settings
 from .endpoints import first_run_wizard
@@ -150,6 +151,15 @@ include_router_with_consistency(
     admin_group_mappings.router,
     prefix="/admin/group-mappings",
     tags=["group-mappings"],
+    capability="auth.config_ui",
+)
+# Periodic LDAP reconciliation/deprovisioning sweep settings (issue #484). Same
+# capability + super_admin tier as group-mappings above: it reconciles group
+# membership (privilege) as well as disabling absent accounts.
+include_router_with_consistency(
+    directory_sync_settings.router,
+    prefix="/admin/directory-sync",
+    tags=["directory-sync"],
     capability="auth.config_ui",
 )
 # Completion state for the guided first-run flow (HANDOFF #28) — not itself a

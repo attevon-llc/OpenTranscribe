@@ -2187,9 +2187,27 @@ def _clear_speaker_video_cache(affected_media_files: set[int]) -> None:
 def _update_opensearch_speaker_merge(source_speaker_uuid: str, target_speaker_uuid: str) -> None:
     """Update OpenSearch index after speaker merge."""
     try:
+        from app.core.constants import get_speaker_index
+        from app.services.opensearch_service import client as _os_client
         from app.services.opensearch_service import merge_speaker_embeddings
 
-        merge_speaker_embeddings(source_speaker_uuid, target_speaker_uuid, [])
+        # Preserve the target's current collection membership — merge_speaker_embeddings
+        # overwrites collection_ids with whatever it's given, and the target's own
+        # membership (not the source's, which is being deleted) is what must survive.
+        target_collection_ids: list[int] = []
+        try:
+            if _os_client.opensearch_client is not None:
+                existing = _os_client.opensearch_client.get(
+                    index=get_speaker_index(), id=str(target_speaker_uuid)
+                )
+                target_collection_ids = existing.get("_source", {}).get("collection_ids") or []
+        except Exception as lookup_exc:
+            logger.debug(
+                f"Could not read existing collection_ids for target speaker "
+                f"{target_speaker_uuid}, defaulting to empty: {lookup_exc}"
+            )
+
+        merge_speaker_embeddings(source_speaker_uuid, target_speaker_uuid, target_collection_ids)
         logger.info(
             f"Merged speaker embeddings in OpenSearch: {source_speaker_uuid} -> {target_speaker_uuid}"
         )

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`directory_sync` (the periodic LDAP reconciliation/deprovisioning sweep) now has an admin
+  settings API and UI panel.** Every sibling scheduled-config subsystem (backup, media mirror, ASR, LLM,
+  engine, redaction) already had one; this sweep did not, so `directory_sync.enabled` stayed at
+  its coded `False` default in every real deployment unless an operator wrote directly to the
+  `system_settings` table. `GET/PUT /api/admin/directory-sync`, `GET .../status`, and
+  `POST .../run` (super_admin only) mirror `backup_settings.py`'s pattern, with a new
+  "Directory sync" tab under Settings → Authentication (alongside "Group mappings", for the
+  same reason: this sweep also reconciles group membership and privilege, not just account
+  status).
+
 ### Changed
 
 - **`DELETE /api/tags/cleanup` now defaults to the caller's own tags.** It previously always
@@ -49,6 +61,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never incremented, so it reported `0` in every deployment. The field is gone and the endpoint
   now describes what it actually does (bulk stuck-file recovery). Real orphan cleanup is
   `POST /api/admin/data-integrity`.
+- **`POST /api/files/{uuid}/retry-summary` was broken end-to-end — every valid retry request
+  returned 500.** Two stacked bugs: the endpoint passed the file's internal integer primary key
+  instead of its UUID into the retry helper, which looks the file up by UUID and always failed
+  the lookup; and separately, the retry helper called `asyncio.run()` internally while already
+  running inside this endpoint's own async event loop, which always raises
+  `RuntimeError: asyncio.run() cannot be called from a running event loop`. No test exercised
+  past the "LLM not available" branch, which is why both went unnoticed. Also fixed in the same
+  code path: a failed dispatch (e.g. a broker outage) used to destroy the file's previous summary
+  before finding out whether a new one could actually be queued — a retry that failed left users
+  with no summary at all instead of the one they started with. It now restores the prior summary
+  if dispatch fails.
+- A SCIM `PATCH` with a bare `{"op": "remove", "path": "members"}` (no value) — the shape Okta
+  and Entra send to empty a group — silently did nothing instead of clearing membership.
+- Every SCIM-driven audit event (account creation, updates, and deactivation via Entra/Okta
+  provisioning) recorded the affected user only by username, never by their stable numeric ID —
+  unlike every other administrative audit emitter in the app. This broke "everything done to
+  this account" audit-log queries keyed by user ID for any SCIM-managed account.
+- The Tasks page could crash rendering a task whose timestamps arrived as ISO strings rather
+  than native datetimes.
+- A background drift-repair job that keeps speaker profile assignments in sync with OpenSearch
+  could report full success ("N updated, 0 errors") while every write silently failed against a
+  missing document — a dead exception handler could never observe the real outcome.
+- The YouTube download quota could report `-1` remaining (the app's own sentinel for
+  "unlimited") for a user who was actually over their hourly or daily limit, once the count
+  reached or exceeded it.
+- An admin-facing migration progress tracker could silently corrupt its list of failed files
+  into an empty object on any progress update recorded before the first failure, breaking the
+  admin UI's error list for that migration run until a failure was recorded.
+- **security:** A search-result snippet's redaction masking had no path for the `custom` word
+  category at all — custom words were matched only per highlight fragment, so a configured
+  custom redaction word split across a `<mark>` tag boundary (e.g. a highlighted partial match)
+  never appeared intact in either fragment and leaked verbatim into the search preview.
+- **security:** A watch source's local-upload path-traversal guard fell back to comparing the
+  watch root against itself whenever the destination's parent directory didn't exist yet —
+  trivially true regardless of where the destination actually pointed — allowing a crafted
+  remote path with a not-yet-existing nested parent to write an arbitrary file outside the
+  configured watch root.
+- OpenSearch speaker-embedding writes silently dropped on any real connection blip: the
+  transient-error retry checked the write exception against Python's builtin `ConnectionError`,
+  which the OpenSearch client's own `ConnectionError` does not subclass, so the retry never
+  actually fired.
+- Merging two speakers unconditionally reset the surviving speaker's OpenSearch
+  `collection_ids` to empty, silently removing it from every collection-scoped voiceprint
+  search it belonged to on every merge (Postgres collection membership was unaffected — the
+  break was OpenSearch-only and invisible outside collection search).
+- Three scheduled Celery beat tasks (database backup, media mirror, and LDAP directory sync)
+  committed their "this window is claimed" timestamp *before* dispatching the actual job. A
+  broker hiccup at that exact moment silently skipped the whole scheduled run — up to 24 hours
+  for a daily backup, or a full day's LDAP deprovisioning sweep — with nothing surfaced to the
+  admin UI.
+- A batch speaker-migration orchestrator only persisted its list of dispatched Celery batch IDs
+  once, after every batch had been queued. A failure partway through the dispatch loop left the
+  already-queued batches unrecorded, so the migration could never be marked stopped and its
+  "Stop" control could no longer revoke the batches still running in the background.
+- The CPU-only (lightweight) transcription path could mark a file as permanently failed and
+  notify the user of an error *before* Celery's own automatic retry had a chance to run, on a
+  transient MinIO or network error that the task was specifically configured to retry.
+- Two concurrently-processing files whose diarization produced the same speaker label for the
+  same file (a documented risk under Celery's at-least-once delivery) could crash the whole
+  transcription/rediarization task instead of gracefully reusing the already-created speaker
+  row, because the fallback path re-attempted an insert without first rolling back the failed
+  transaction.
+- The legacy (pre-3-stage) transcription task ignored a user's configured diarization source
+  (e.g. "off" or "pyannote") when routed through a cloud ASR provider, always defaulting to the
+  provider's own diarization regardless of what was configured.
+- Three `db_helpers` query functions (`safe_get_by_id`, `get_file_tags`, `get_user_file_stats`)
+  caught a database error and returned a fallback value without rolling back the failed
+  transaction, leaving every later query on that same session failing with "current transaction
+  is aborted" until something further up the call stack happened to roll back.
+- A pipeline-timing duration calculation treated an epoch-millisecond value of exactly `0` as
+  "marker absent" instead of "a real timestamp of zero," silently dropping the computed
+  duration (not reachable with today's always-nonzero timestamps, but a latent correctness gap).
+- A benchmark comparison task crashed on a truncated or corrupted snapshot file instead of
+  reporting the same graceful error every other failure path in that module uses.
+- Two dead OpenSearch helper functions (`bulk_add_speaker_embeddings`, `cleanup_orphaned_
+  embeddings`) and one dead Celery-task helper (`get_failed_summary_count`) — all fully tested
+  but with zero production callers, one an explicitly-documented unimplemented stub — were
+  removed.
+- A segment spanning two detected overlap regions was assigned to whichever region happened to
+  be processed last, discarding whichever assignment had higher confidence — an
+  order-dependent, non-deterministic result for the same input. Overlap-group assignment now
+  deterministically keeps the highest-confidence match per segment.
+- `speaker_processor.py` carried its own `normalize_speaker_label`, a duplicate of the canonical
+  implementation every ASR/diarization provider already normalizes through and strictly less
+  correct: no zero-padding for single-digit labels (`"1"` stayed `"SPEAKER_1"`), no recognition
+  of provider-specific formats (`"S1"`, `"spk_0"`, `"Guest-1"`, …), and unrecognized text was
+  blindly string-prefixed (`"host"` → `"SPEAKER_host"`) instead of hashed into a valid
+  `SPEAKER_XX` form. It now delegates to the canonical implementation.
 
 ## [0.5.0] - 2026-08-10
 

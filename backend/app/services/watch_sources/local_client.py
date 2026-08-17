@@ -116,7 +116,12 @@ class LocalWatchClient(BaseWatchSourceClient):
 
     def upload_file(self, local_path: str, remote_path: str) -> bool:
         dest = Path(remote_path)
-        if not self._is_within_root(dest.parent if dest.parent.exists() else self.root, self.root):
+        # _is_within_root resolves via os.path.realpath, which handles a
+        # not-yet-existing destination correctly (resolves the existing prefix,
+        # keeps the rest literal) — no need to fall back to checking root against
+        # itself when dest.parent doesn't exist yet. That fallback was a guard
+        # bypass: it made the check trivially pass regardless of where dest pointed.
+        if not self._is_within_root(dest, self.root):
             raise ValueError(f"Refusing to write outside watch root: {remote_path}")
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(local_path, dest)

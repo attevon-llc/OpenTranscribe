@@ -34,7 +34,17 @@ from app.auth.ldap_auth import LdapConfig
 from app.auth.ldap_auth import LdapDirectoryUnavailableError
 from app.auth.ldap_auth import LdapProbe
 from app.auth.ldap_auth import probe_ldap_user
+from app.core import constants as C  # noqa: N812
+from app.models.system_settings import SystemSettings
 from app.services import directory_sync_service as svc
+
+# TestUpdateSettings below uses the real `db_session` fixture (a savepoint-backed
+# Postgres session), unlike the rest of this file's FakeSession-based tests, and
+# writes directory_sync.* SystemSettings keys — same namespace
+# tests/unit/test_directory_sync_task.py and tests/api/endpoints/
+# test_directory_sync_settings.py write, so this file joins their xdist_group
+# to avoid the system_settings_key_key deadlock (issue #389).
+pytestmark = pytest.mark.xdist_group("directory_sync_task_system_settings")
 
 # =============================================================================
 # Fakes
@@ -410,3 +420,65 @@ class TestProbeLdapUser:
         monkeypatch.setattr("app.auth.ldap_auth._search_ldap_user", _boom)
         with pytest.raises(LdapDirectoryUnavailableError):
             probe_ldap_user(CFG, object(), "u")
+
+
+# =============================================================================
+# Settings round-trip (issue #484) — real DB, not FakeSession
+# =============================================================================
+# get_settings() already existed; update_settings() is new — this module had a
+# read half with no way to write, which is exactly the gap issue #484 describes
+# (a sweep that could only ever be enabled by an operator editing Postgres by hand).
+
+
+@pytest.fixture
+def clean_directory_sync_settings(db_session):
+    db_session.query(SystemSettings).filter(SystemSettings.key.like("directory_sync.%")).delete(
+        synchronize_session=False
+    )
+    db_session.commit()
+    return db_session
+
+
+class TestUpdateSettings:
+    def test_roundtrip(self, clean_directory_sync_settings):
+        db = clean_directory_sync_settings
+        svc.update_settings(
+            db, enabled=True, schedule="30 2 * * *", dry_run=False, max_disables_per_run=25
+        )
+        cfg = svc.get_settings(db)
+        assert cfg["enabled"] is True
+        assert cfg["schedule"] == "30 2 * * *"
+        assert cfg["dry_run"] is False
+        assert cfg["max_disables_per_run"] == 25
+
+    def test_partial_update_leaves_other_fields_untouched(self, clean_directory_sync_settings):
+        db = clean_directory_sync_settings
+        svc.update_settings(db, enabled=True, max_disables_per_run=7)
+        svc.update_settings(db, max_disables_per_run=3)
+        cfg = svc.get_settings(db)
+        # enabled must survive the second, narrower call untouched.
+        assert cfg["enabled"] is True
+        assert cfg["max_disables_per_run"] == 3
+
+    def test_rejects_an_invalid_cron_schedule(self, clean_directory_sync_settings):
+        with pytest.raises(ValueError, match="Invalid cron schedule"):
+            svc.update_settings(clean_directory_sync_settings, schedule="not a cron")
+
+    def test_rejects_a_non_positive_max_disables_per_run(self, clean_directory_sync_settings):
+        """Defense for callers other than the admin router (which floors this at 1 via Pydantic).
+
+        A cap of 0 or a negative number is not "extra safe" — ``sweep_ldap`` treats the
+        cap as a simple counter comparison and a non-positive value has no meaning as a
+        per-run limit, so this must fail loudly rather than silently store a nonsense value.
+        """
+        with pytest.raises(ValueError, match="at least 1"):
+            svc.update_settings(clean_directory_sync_settings, max_disables_per_run=0)
+
+    def test_get_settings_reflects_coded_defaults_when_nothing_is_stored(
+        self, clean_directory_sync_settings
+    ):
+        cfg = svc.get_settings(clean_directory_sync_settings)
+        assert cfg["enabled"] == C.DEFAULT_DIRECTORY_SYNC_ENABLED
+        assert cfg["dry_run"] == C.DEFAULT_DIRECTORY_SYNC_DRY_RUN
+        assert cfg["schedule"] == C.DEFAULT_DIRECTORY_SYNC_SCHEDULE
+        assert cfg["max_disables_per_run"] == C.DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN

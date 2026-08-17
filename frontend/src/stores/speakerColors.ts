@@ -80,7 +80,14 @@ type SpeakerColorSource =
 export function getSpeakerColorSmart(speakerData: SpeakerColorSource) {
   const obj = typeof speakerData === 'object' && speakerData !== null ? speakerData : undefined;
   const asString = typeof speakerData === 'string' ? speakerData : undefined;
-  // Try different ways to get the original speaker ID
+  // Try different ways to get the original speaker ID. Deliberately `||`, not `??`:
+  // an empty-string candidate is treated the same as a missing one and falls through
+  // to the next source (or ultimately 'Unknown'), matching the equivalent inline
+  // `segment.speaker_label || segment.speaker?.name || ...` chains used throughout
+  // the transcript components (VideoPlayer.svelte, TranscriptSegmentList.svelte,
+  // SegmentSpeakerDropdown.svelte). Backend `speaker_label`/`name` are `str | None`
+  // with no evidence of an empty-string value in practice, so this stays a
+  // documented, pinned behavior rather than a speculative `??` change.
   const speakerId =
     obj?.speaker_label || // For transcript segments (now contains original ID)
     obj?.name || // For speaker objects

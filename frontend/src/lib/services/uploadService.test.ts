@@ -377,6 +377,111 @@ describe('retry and give-up', () => {
   });
 });
 
+function extractedAudioMetadata(overrides: Record<string, unknown> = {}) {
+  return {
+    originalFileName: 'source.mp4',
+    originalFileSize: 999,
+    originalFileType: 'video/mp4',
+    originalLastModified: 0,
+    originalFingerprint: 'video-fingerprint',
+    extractedAudioSize: 10,
+    extractedFileName: 'source.opus',
+    extractedFileType: 'audio/opus',
+    compressionRatio: 90,
+    extractionDate: '2026-01-01T00:00:00.000Z',
+    extractionDuration: 100,
+    videoMetadata: {},
+    ...overrides,
+  };
+}
+
+describe('uploadExtractedAudio', () => {
+  it('uploads via presigned PUT then finalizes, carrying the source-video fingerprint', async () => {
+    mockAxiosInstance.post.mockResolvedValueOnce(prepared());
+    mockAxiosDefault.put.mockResolvedValueOnce({ headers: { etag: '"x"' } });
+
+    const id = uploadService.addExtractedAudio(
+      new Blob(['a'.repeat(10)]),
+      'extracted.opus',
+      extractedAudioMetadata(),
+      90
+    );
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('completed'));
+
+    const completeCall = mockAxiosInstance.post.mock.calls.find((c) => c[0] === '/files/complete');
+    expect(completeCall?.[1]).toMatchObject({ file_hash: 'video-fingerprint' });
+  });
+
+  // BC-2 regression: uploadExtractedAudio previously had NO multipart branch at
+  // all, unlike uploadFile(). A backend response of upload_method: 'MULTIPART'
+  // for a large extracted-audio blob silently fell through to the legacy
+  // FormData POST /files path — exactly what multipart exists to avoid.
+  it('routes through the multipart flow when the backend prepares one, same as uploadFile()', async () => {
+    const plan = {
+      upload_id: 'u1',
+      part_size: 5,
+      part_count: 2,
+      batch_size: 2,
+      expires_in: 3600,
+      urls: {},
+    };
+    mockAxiosInstance.post.mockResolvedValueOnce(
+      prepared({ upload_method: 'MULTIPART', multipart: plan, upload_url: undefined })
+    );
+    mockUploadInParts.mockResolvedValueOnce({
+      parts: [
+        { part_number: 1, etag: 'e1' },
+        { part_number: 2, etag: 'e2' },
+      ],
+    });
+
+    const id = uploadService.addExtractedAudio(
+      new Blob(['a'.repeat(10)]),
+      'big-extracted.opus',
+      extractedAudioMetadata(),
+      90
+    );
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('completed'));
+
+    expect(mockUploadInParts).toHaveBeenCalledWith(
+      expect.objectContaining({ fileId: 'file-uuid-1', resume: false })
+    );
+    // The legacy FormData path must NEVER be used when the backend prepared multipart.
+    const legacyCall = mockAxiosInstance.post.mock.calls.find((c) => c[0] === '/files');
+    expect(legacyCall).toBeUndefined();
+    const completeCall = mockAxiosInstance.post.mock.calls.find((c) => c[0] === '/files/complete');
+    expect(completeCall?.[1]).toMatchObject({
+      parts: [
+        { part_number: 1, etag: 'e1' },
+        { part_number: 2, etag: 'e2' },
+      ],
+    });
+    expect(uploadService.getUpload(id)?.multipart).toBeUndefined();
+  });
+
+  it('does NOT fall back to legacy on a stall, same as uploadFile()', async () => {
+    mockCreateStallWatchdog.mockReturnValue({
+      signal: undefined,
+      stalled: true,
+      notifyProgress: vi.fn(),
+      dispose: vi.fn(),
+    });
+    mockAxiosInstance.post.mockResolvedValueOnce(prepared());
+    mockAxiosDefault.put.mockRejectedValueOnce(new Error('timed out'));
+
+    const id = uploadService.addExtractedAudio(
+      new Blob(['a']),
+      'extracted.opus',
+      extractedAudioMetadata(),
+      90
+    );
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('failed'));
+
+    const legacyCall = mockAxiosInstance.post.mock.calls.find((c) => c[0] === '/files');
+    expect(legacyCall).toBeUndefined();
+  });
+});
+
 describe('cancelUpload', () => {
   it('cancels the in-flight request and releases an in-progress multipart session', async () => {
     mockAxiosInstance.post.mockResolvedValueOnce(prepared());
@@ -390,6 +495,32 @@ describe('cancelUpload', () => {
 
     expect(uploadService.getUpload(id)?.status).toBe('cancelled');
     expect(uploadService.getActiveUploads()).toHaveLength(0);
+  });
+
+  // BC-1 regression: retryUpload() had no status guard, so a pending automatic
+  // retry timer could fire AFTER cancelUpload() and silently resurrect a
+  // 'cancelled' item back to 'queued' — after its multipart session, if any,
+  // was already released server-side via DELETE /files/{id}.
+  it('a pending retry timer must not resurrect an upload that was cancelled in the meantime', async () => {
+    mockAxiosInstance.post.mockRejectedValueOnce(new Error('server hiccup'));
+
+    vi.useFakeTimers();
+    try {
+      const id = uploadService.addUpload('file', new File(['a'], 'a.mp3'));
+      await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('failed'), {
+        timeout: 5000,
+      });
+
+      // Cancel while the auto-retry setTimeout is still pending.
+      uploadService.cancelUpload(id);
+      expect(uploadService.getUpload(id)?.status).toBe('cancelled');
+
+      // The retry timer now fires — it must be a no-op, not a resurrection.
+      await vi.advanceTimersByTimeAsync(RETRY_DELAY_FOR_FIRST_ATTEMPT);
+      expect(uploadService.getUpload(id)?.status).toBe('cancelled');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

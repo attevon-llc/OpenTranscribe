@@ -775,6 +775,19 @@ class UploadService {
     const cancelToken = axios.CancelToken.source();
     this.updateUpload(uploadId, { cancelToken });
 
+    // A parked session means a previous attempt died mid-transfer — same as
+    // uploadFile(), pick up the parts already in the bucket instead of
+    // re-sending them.
+    if (upload.multipart) {
+      const resumed = await this.resumeMultipart(
+        uploadId,
+        audioBlob,
+        upload.multipart,
+        cancelToken
+      );
+      if (resumed) return resumed;
+    }
+
     // Dedupe on the SOURCE VIDEO's fingerprint, carried over from extraction:
     // ffmpeg does not produce the same audio bytes twice, so fingerprinting the
     // blob we are about to upload would never match a previous extraction.
@@ -801,6 +814,7 @@ class UploadService {
       task_id: taskId,
       upload_url: uploadUrl,
       upload_method: uploadMethod,
+      multipart: multipartPlan,
     } = prepareResponse.data;
 
     if (is_duplicate) {
@@ -813,6 +827,21 @@ class UploadService {
       progress: 0,
       statusText: get(t)('upload.statusUploadingExtracted'),
     });
+
+    // --- Presigned multipart flow -----------------------------------------
+    // Same rationale as uploadFile(): the backend picks this for objects too
+    // large/needing resume. No fallback to the legacy POST for the same
+    // reason — extracted audio from a long source video can exceed the
+    // multipart threshold even with stream-copy (-c:a copy, no re-encode).
+    if (uploadMethod === 'MULTIPART' && multipartPlan && taskId) {
+      return await this.runMultipart(
+        uploadId,
+        audioBlob,
+        { fileId, taskId, fingerprint: sourceFingerprint, plan: multipartPlan as MultipartPlan },
+        cancelToken,
+        false
+      );
+    }
 
     const progressHandler = this.makeProgressHandler(uploadId, upload);
 
@@ -914,6 +943,12 @@ class UploadService {
   retryUpload(uploadId: string) {
     const upload = this.uploads.get(uploadId);
     if (!upload) return;
+    // A retry is scheduled via setTimeout from processUpload's catch block with
+    // no way to cancel that timer. If the upload was cancelled (or otherwise
+    // moved on) while the timer was still pending, this guard stops it from
+    // silently resurrecting a 'cancelled' upload back to 'queued' — after its
+    // multipart session, if any, was already released server-side.
+    if (upload.status !== 'failed') return;
 
     this.updateUpload(uploadId, {
       status: 'queued',

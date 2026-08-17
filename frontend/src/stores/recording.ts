@@ -3,13 +3,13 @@ import { writable, derived, get } from 'svelte/store';
 // Import toast store for error notifications
 // We'll use dynamic import to avoid circular dependencies
 let toastStore: typeof import('./toast').toastStore | null = null;
-try {
-  import('./toast').then((module) => {
+import('./toast')
+  .then((module) => {
     toastStore = module.toastStore;
+  })
+  .catch(() => {
+    // Toast store not available - errors will only be in console
   });
-} catch (e) {
-  // Toast store not available - errors will only be in console
-}
 
 // Recording state interface
 export interface RecordingState {

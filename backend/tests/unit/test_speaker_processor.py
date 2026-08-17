@@ -285,6 +285,38 @@ class TestMarkOverlappingSegments:
         # seg1: overlap [1.5, 2.5] = 1.0s of 1.5s duration -> 0.6667
         assert result[1]["overlap_confidence"] == pytest.approx(2.0 / 3.0)
 
+    def test_a_segment_spanning_two_regions_deterministically_keeps_the_higher_confidence_one(
+        self,
+    ):
+        """Issue #482: when one long segment genuinely overlaps two distinct
+        regions, the assignment loop used to silently overwrite with whichever
+        region was processed last — order-dependent and arbitrary. The winner
+        must now be deterministic: the region this segment overlaps MOST.
+        """
+        # Region processing order matters for this to be a real regression proof:
+        # region 0 (the high-confidence one, processed FIRST) must be the one a
+        # naive "last assignment wins" would lose. If a fix regresses back to
+        # last-write-wins, this pins the WRONG (lower-confidence) group and fails.
+        segments = [
+            {"start": 0.0, "end": 10.0},  # A: spans both regions, duration 10.0
+            {"start": 3.0, "end": 10.0},  # B: only in region 0 (the high one)
+            {"start": 0.0, "end": 1.0},  # C: only in region 1 (the low one)
+        ]
+        overlap_regions = [
+            {"start": 3.0, "end": 10.0},  # region 0: A overlaps 7.0/10.0 = 0.7 (high)
+            {"start": 0.0, "end": 1.0},  # region 1: A overlaps 1.0/10.0 = 0.1 (low)
+        ]
+
+        result = mark_overlapping_segments(segments, overlap_regions)
+
+        seg_a, seg_b, seg_c = result
+        assert seg_a["is_overlap"] is True
+        # A must win the higher-confidence region (region 0, shared with B) —
+        # never region 1 (shared with C), regardless of loop iteration order.
+        assert seg_a["overlap_group_id"] == seg_b["overlap_group_id"]
+        assert seg_a["overlap_group_id"] != seg_c["overlap_group_id"]
+        assert seg_a["overlap_confidence"] == pytest.approx(0.7)
+
     def test_distinct_regions_get_distinct_group_ids(self):
         segments = [
             {"start": 0.0, "end": 1.0},

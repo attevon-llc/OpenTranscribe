@@ -341,13 +341,28 @@ def mark_overlapping_segments(
             assign_seg_durations > 0, overlap_durations / assign_seg_durations, 0.0
         )
 
-    # Single pass to update all segment dicts
-    overlap_count = 0
+    # A segment can appear in more than one assignment when it genuinely overlaps
+    # two distinct regions. overlap_group_id is a single scalar column (DB, API
+    # schema, and frontend grouping all key off exactly one id per segment), so
+    # there is no lossless way to record more than one group here without a
+    # cross-stack schema change. Rather than silently overwriting with whichever
+    # assignment happens to be processed last (order-dependent and arbitrary),
+    # deterministically keep the assignment the segment overlaps MOST — i.e. the
+    # region confidences[i] (this segment's overlap fraction with THAT region) is
+    # highest for.
+    best_by_segment: dict[int, tuple[str, float]] = {}
     for i, (seg_idx, group_id, _) in enumerate(assignments):
+        confidence = float(confidences[i])
+        current_best = best_by_segment.get(seg_idx)
+        if current_best is None or confidence > current_best[1]:
+            best_by_segment[seg_idx] = (group_id, confidence)
+
+    for seg_idx, (group_id, confidence) in best_by_segment.items():
         segments[seg_idx]["is_overlap"] = True
         segments[seg_idx]["overlap_group_id"] = group_id
-        segments[seg_idx]["overlap_confidence"] = float(confidences[i])
-        overlap_count += 1
+        segments[seg_idx]["overlap_confidence"] = confidence
+
+    overlap_count = len(best_by_segment)
 
     elapsed = time.perf_counter() - start_time
     logger.info(

@@ -1,6 +1,5 @@
 import { get } from 'svelte/store';
 import axiosInstance from '$lib/axios';
-import { authStore } from '$stores/auth';
 import { toastStore } from '$stores/toast';
 import { t } from '$stores/locale';
 import axios, { type AxiosProgressEvent, type CancelTokenSource } from 'axios';

@@ -10,11 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`directory_sync` (the periodic LDAP reconciliation/deprovisioning sweep) now has an admin
-  settings API.** Every sibling scheduled-config subsystem (backup, media mirror, ASR, LLM,
+  settings API and UI panel.** Every sibling scheduled-config subsystem (backup, media mirror, ASR, LLM,
   engine, redaction) already had one; this sweep did not, so `directory_sync.enabled` stayed at
   its coded `False` default in every real deployment unless an operator wrote directly to the
   `system_settings` table. `GET/PUT /api/admin/directory-sync`, `GET .../status`, and
-  `POST .../run` (super_admin only) mirror `backup_settings.py`'s pattern.
+  `POST .../run` (super_admin only) mirror `backup_settings.py`'s pattern, with a new
+  "Directory sync" tab under Settings → Authentication (alongside "Group mappings", for the
+  same reason: this sweep also reconciles group membership and privilege, not just account
+  status).
 
 ### Changed
 

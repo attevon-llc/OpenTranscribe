@@ -77,6 +77,30 @@ describe('updateStatus', () => {
     expect(get(downloadStore)['file-1']).toMatchObject({ status: 'downloading', progress: 42 });
   });
 
+  it('emits identical notification title/message for "processing" and "downloading"', () => {
+    // NOTE: 'processing' and 'downloading' currently emit identical copy - see issue #475
+    // plan for context, this may be intentional (same phase reported at two granularities)
+    // or a copy gap; pinning current behavior, not asserting it's correct.
+    downloadStore.startDownload('file-1', 'meeting.mp4');
+    mockAddNotification.mockClear();
+
+    downloadStore.updateStatus('file-1', 'processing');
+    downloadStore.updateStatus('file-1', 'downloading');
+
+    expect(mockAddNotification).toHaveBeenCalledTimes(2);
+    const [processingCall, downloadingCall] = mockAddNotification.mock.calls.map(
+      ([arg]) => arg as { title: string; message: string; data: { download_type: string } }
+    );
+
+    expect(processingCall.title).toBe(downloadingCall.title);
+    expect(processingCall.message).toBe(downloadingCall.message);
+
+    // The only thing that currently distinguishes the two statuses is the
+    // notification's `data.download_type`, not anything user-visible.
+    expect(processingCall.data.download_type).toBe('processing');
+    expect(downloadingCall.data.download_type).toBe('ready');
+  });
+
   describe('completed', () => {
     beforeEach(() => vi.useFakeTimers());
     afterEach(() => vi.useRealTimers());

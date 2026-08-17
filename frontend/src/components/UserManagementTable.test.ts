@@ -144,6 +144,24 @@ describe('role change', () => {
       })
     );
   });
+
+  it('still refreshes the list when the role-change request is rejected, unlike its sibling handlers', async () => {
+    mockAxios.put.mockRejectedValue(new Error('network error'));
+    const users = [makeUser({ uuid: 'u-1', role: 'user' })];
+    const onRefresh = vi.fn();
+    const { container } = render(UserManagementTable, { props: { users, onRefresh } });
+
+    const select = container.querySelector('td select') as HTMLSelectElement;
+    await fireEvent.change(select, { target: { value: 'admin' } });
+
+    await waitFor(() =>
+      expect(toastStore.error).toHaveBeenCalledWith('userManagement.updateRoleFailed')
+    );
+    // The select is one-way bound (value={currentUser.role}), so the failed
+    // change leaves the DOM value out of sync with server state unless the
+    // list refetch re-renders it back.
+    expect(onRefresh).toHaveBeenCalled();
+  });
 });
 
 describe('creating a user directly', () => {

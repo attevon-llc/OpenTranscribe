@@ -148,8 +148,9 @@ def mask_snippets(snippets: list[str], cfg: EffectiveRedactionConfig) -> list[st
     # pay one millisecond of it.
     run_profanity = "profanity" in cats
     run_pii = "pii" in cats
-    if run_profanity or run_pii:
-        _detect(docs, cfg, run_profanity=run_profanity, run_pii=run_pii)
+    run_custom = "custom" in cats and bool(cfg.custom_words)
+    if run_profanity or run_pii or run_custom:
+        _detect(docs, cfg, run_profanity=run_profanity, run_pii=run_pii, run_custom=run_custom)
 
     # Previews are always label-styled. `blur` emits a `<span class="redacted">`
     # that the snippet renderer's sanitizer does not allow, and `first_letter` /
@@ -166,6 +167,7 @@ def _detect(
     *,
     run_profanity: bool,
     run_pii: bool,
+    run_custom: bool = False,
 ) -> None:
     """Run the detectors over each snippet's plain text, ONE SNIPPET AT A TIME.
 
@@ -188,6 +190,7 @@ def _detect(
     """
     from app.services.redaction.config import blocking_detector_failures
     from app.services.redaction.config import detection_config_for_all
+    from app.services.redaction.detectors import wordlist
     from app.services.redaction.service import RedactionService
 
     det_cfg = detection_config_for_all()
@@ -205,6 +208,19 @@ def _detect(
             failures=failures,
         )
         doc.spans.extend(found)
+        # Custom words must be matched over the WHOLE snippet, same as profanity/pii
+        # above — matching per-run instead (as mask_segment's own inline rescan does)
+        # misses a custom word split across a <mark> boundary, since it never appears
+        # intact within either run. render() clips these spans per run just like the
+        # others; mask_segment's inline rescan then only re-finds words that stayed
+        # inside one run, a harmless duplicate that _merge_spans de-overlaps.
+        if run_custom:
+            doc.spans.extend(
+                s.model_dump()
+                for s in wordlist.find_custom_spans(
+                    doc.plain, cfg.custom_words, None, cfg.allowlist
+                )
+            )
 
     # `detect_segment_spans` SWALLOWS a detector exception and returns the spans
     # it did collect, so "found nothing" and "could not look" are the same return

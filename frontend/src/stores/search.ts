@@ -113,7 +113,7 @@ function createSearchStore() {
 
   return {
     subscribe,
-    setQuery: (query: string) => update((s) => ({ ...s, query })),
+    setQuery: (query: string) => update((s) => ({ ...s, query, page: 1 })),
     setPage: (page: number) => update((s) => ({ ...s, page: Math.max(1, page) })),
     setSortBy: (sortBy: string) => update((s) => ({ ...s, sortBy, page: 1 })),
     setSortOrder: (sortOrder: 'asc' | 'desc') => update((s) => ({ ...s, sortOrder, page: 1 })),

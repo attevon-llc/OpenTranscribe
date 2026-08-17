@@ -35,6 +35,10 @@ class LLMService {
   private lastCheck: number = 0;
   private readonly CACHE_DURATION = 60000; // 1 minute for better UX
   private readonly FAST_CACHE_DURATION = 10000; // 10 seconds for recent failures
+  // Shared in-flight request for concurrent cache-miss callers (see `getStatus`).
+  private fetchPromise: Promise<LLMStatus> | null = null;
+  // Bumped by `clearCache()`; see its docstring and the guard in `getStatus`.
+  private generation = 0;
 
   private constructor() {}
 
@@ -74,27 +78,76 @@ class LLMService {
       return this.statusCache;
     }
 
-    try {
-      const response = await axiosInstance.get('/llm/status');
-      this.statusCache = response.data;
-      this.lastCheck = now;
-      return this.statusCache as LLMStatus;
-    } catch (error: unknown) {
-      console.error('[LLM Service] Error getting LLM status:', error);
-
-      // Return default unavailable status on error
-      const errorStatus: LLMStatus = {
-        available: false,
-        user_id: '0',
-        provider: null,
-        model: null,
-        message: getErrorMessage(error, get(t)('llm.unableToCheckStatus')),
-      };
-
-      this.statusCache = errorStatus;
-      this.lastCheck = now;
-      return errorStatus;
+    // Concurrent callers hitting a cold/expired cache must share ONE in-flight
+    // request rather than each firing their own `axiosInstance.get`: promise
+    // resolution order is not guaranteed to match request-issue order, so an
+    // earlier request that happens to resolve LAST would overwrite a newer
+    // cached value with stale data (BC-32). `forceRefresh` deliberately does
+    // NOT join this shared promise — a forced caller (e.g. `refreshStatus()`
+    // right after `clearCache()`, used when settings change) wants a request
+    // issued *after* its own call, not a possibly-older one already in flight.
+    if (!forceRefresh && this.fetchPromise) {
+      return this.fetchPromise;
     }
+
+    // Captured so a fetch still in flight when `clearCache()` bumps the
+    // generation (e.g. settings changed mid-request) can detect it and skip
+    // writing its now-stale result over whatever a subsequent forced refetch
+    // already wrote. `clearCache()` has no production callers today besides
+    // `refreshStatus()` below, but it is a public method on a shared
+    // singleton — the same shape of bug bit `configService`'s reset path
+    // (BC-4) once a second caller was added, so this guards it up front
+    // rather than leaving it as a "future dedup bug" like the one this file
+    // is otherwise fixing.
+    const startedAtGeneration = this.generation;
+
+    // Set (below, synchronously, before this IIFE's first `await` yields) only
+    // when this fetch is the one occupying `this.fetchPromise`. Concurrent
+    // non-forced callers join that same slot instead of starting a new fetch
+    // (the check above), so at most one in-flight fetch ever owns it — a
+    // plain flag is enough; there is no other fetch that could have replaced
+    // it out from under us by the time `finally` runs.
+    let ownsSharedSlot = false;
+
+    const fetchPromise = (async (): Promise<LLMStatus> => {
+      try {
+        const response = await axiosInstance.get('/llm/status');
+        const status = response.data as LLMStatus;
+        if (this.generation === startedAtGeneration) {
+          this.statusCache = status;
+          this.lastCheck = Date.now();
+        }
+        return status;
+      } catch (error: unknown) {
+        console.error('[LLM Service] Error getting LLM status:', error);
+
+        // Return default unavailable status on error
+        const errorStatus: LLMStatus = {
+          available: false,
+          user_id: '0',
+          provider: null,
+          model: null,
+          message: getErrorMessage(error, get(t)('llm.unableToCheckStatus')),
+        };
+
+        if (this.generation === startedAtGeneration) {
+          this.statusCache = errorStatus;
+          this.lastCheck = Date.now();
+        }
+        return errorStatus;
+      } finally {
+        if (ownsSharedSlot) {
+          this.fetchPromise = null;
+        }
+      }
+    })();
+
+    if (!forceRefresh) {
+      this.fetchPromise = fetchPromise;
+      ownsSharedSlot = true;
+    }
+
+    return fetchPromise;
   }
 
   /**
@@ -128,11 +181,18 @@ class LLMService {
   }
 
   /**
-   * Clear cached status to force refresh on next check
+   * Clear cached status to force refresh on next check.
+   *
+   * Bumps `generation` so a fetch already in flight at the moment of the clear
+   * discards its own result instead of writing it into the cache after a
+   * subsequent forced refetch (see `getStatus`) — otherwise `refreshStatus()`
+   * could observe its own fresh fetch immediately clobbered by a stale one
+   * that started before the clear.
    */
   clearCache(): void {
     this.statusCache = null;
     this.lastCheck = 0;
+    this.generation++;
   }
 
   /**

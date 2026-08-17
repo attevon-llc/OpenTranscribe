@@ -172,10 +172,14 @@ def _extract_context(raw: dict[str, str]) -> dict[str, Any]:
 def _compute_derived_durations(row: dict[str, Any]) -> dict[str, int]:
     """Derive user-perceived and fully-indexed durations from parsed markers."""
     out: dict[str, int] = {}
-    http_start_ms = row.get("http_request_received_ms") or row.get("dispatch_timestamp_ms")
-    completion_ms = row.get("completion_notified_ms") or row.get("postprocess_end_ms")
+    http_start_ms = row.get("http_request_received_ms")
+    if http_start_ms is None:
+        http_start_ms = row.get("dispatch_timestamp_ms")
+    completion_ms = row.get("completion_notified_ms")
+    if completion_ms is None:
+        completion_ms = row.get("postprocess_end_ms")
 
-    if http_start_ms and completion_ms and completion_ms >= http_start_ms:
+    if http_start_ms is not None and completion_ms is not None and completion_ms >= http_start_ms:
         out["user_perceived_duration_ms"] = completion_ms - http_start_ms
 
     async_end_candidates: list[int] = []

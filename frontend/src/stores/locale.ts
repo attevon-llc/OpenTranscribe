@@ -43,6 +43,7 @@ const applyLanguage = async (newLocale: string): Promise<void> => {
 
 const createLocaleStore = () => {
   const { subscribe, set, update } = writable<string>(getInitialLocale());
+  let initialized = false;
 
   return {
     subscribe,
@@ -70,6 +71,10 @@ const createLocaleStore = () => {
 
     // Initialize store with i18next
     initialize: async () => {
+      if (initialized) {
+        return;
+      }
+
       const currentLocale = get({ subscribe });
 
       // Import and initialize i18n
@@ -80,6 +85,8 @@ const createLocaleStore = () => {
       i18next.on('languageChanged', (lng) => {
         update(() => lng);
       });
+
+      initialized = true;
     },
   };
 };

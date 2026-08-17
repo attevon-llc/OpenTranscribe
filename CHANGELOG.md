@@ -149,6 +149,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of provider-specific formats (`"S1"`, `"spk_0"`, `"Guest-1"`, …), and unrecognized text was
   blindly string-prefixed (`"host"` → `"SPEAKER_host"`) instead of hashed into a valid
   `SPEAKER_XX` form. It now delegates to the canonical implementation.
+- **Confirming "Unlock Account" in User Management showed a button labeled "Delete."**
+  `unlockAccount()`'s confirmation call omitted the confirm-button label, so it fell through to
+  `UserManagementTable`'s own default (`common.delete`) — the label every other row action
+  (lock, force logout, MFA reset) supplies explicitly. Unlocking clears only a failed-login
+  counter and deletes nothing.
 
 ## [0.5.0] - 2026-08-10
 

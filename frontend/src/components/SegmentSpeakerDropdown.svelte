@@ -6,6 +6,7 @@
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
   import axiosInstance from '$lib/axios';
+  import { toastStore } from '$stores/toast';
 
   export let segment: Segment;
   export let speakers: Speaker[] = [];
@@ -56,6 +57,7 @@
       closeDropdown();
     } catch (error) {
       console.error('Failed to create new speaker:', error);
+      toastStore.error($t('common.somethingWentWrong'));
     } finally {
       isCreatingSpeaker = false;
     }

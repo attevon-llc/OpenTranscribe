@@ -27,6 +27,9 @@ vi.mock('$stores/locale', () => ({
 const mockAxios = vi.hoisted(() => ({ post: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios }));
 
+const mockToast = vi.hoisted(() => ({ error: vi.fn() }));
+vi.mock('$stores/toast', () => ({ toastStore: mockToast }));
+
 import SegmentSpeakerDropdown from './SegmentSpeakerDropdown.svelte';
 
 function speaker(overrides: Partial<Speaker> = {}): Speaker {
@@ -258,7 +261,7 @@ describe('create new speaker', () => {
     expect(portalMenu()!.querySelector('[data-action="create-speaker"]')).toBeNull();
   });
 
-  it('logs rather than throws when the create request fails', async () => {
+  it('logs and shows a toast rather than throwing when the create request fails', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockAxios.post.mockRejectedValue(new Error('server error'));
     const { container } = render(SegmentSpeakerDropdown, {
@@ -271,6 +274,7 @@ describe('create new speaker', () => {
     await tick();
 
     expect(consoleError).toHaveBeenCalledWith('Failed to create new speaker:', expect.any(Error));
+    expect(mockToast.error).toHaveBeenCalledWith('common.somethingWentWrong');
     consoleError.mockRestore();
   });
 });

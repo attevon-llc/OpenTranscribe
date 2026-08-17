@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 import { generateId } from '$lib/utils/ids';
 
 // Create a store for the notifications panel visibility
@@ -48,13 +48,12 @@ export function addNotification(notification: Omit<Notification, 'id' | 'timesta
 
 // Get notifications (async function for API compatibility)
 export async function getNotifications(): Promise<Notification[]> {
-  // Return the current value of the notifications store
-  return new Promise((resolve) => {
-    const unsubscribe = notifications.subscribe((value) => {
-      unsubscribe();
-      resolve(value);
-    });
-  });
+  // Return the current value of the notifications store. `get()` reads a
+  // store's value via a subscribe-then-immediately-unsubscribe internally,
+  // without the self-referencing-callback TDZ hazard of hand-rolling that
+  // pattern (svelte's subscribe() invokes its callback SYNCHRONOUSLY, before
+  // a `const`/`let` assignment capturing its own unsubscribe fn completes).
+  return get(notifications);
 }
 
 // Remove a notification

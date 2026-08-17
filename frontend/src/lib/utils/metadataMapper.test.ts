@@ -205,4 +205,22 @@ describe('formatFileSize', () => {
     expect(formatFileSize(1024)).toBe('1.0 KB');
     expect(formatFileSize(1024 * 1024 * 1024)).toBe('1.0 GB');
   });
+
+  it.each([
+    // BC-16: the unit index derived from log(bytes) must be clamped to the
+    // `units` array bounds, or `units[i]` is `undefined` at either extreme.
+    {
+      bytes: Math.pow(1024, 5),
+      expected: '1024.0 TB',
+      label: 'at/above the largest unit (1024^5)',
+    },
+    {
+      bytes: Math.pow(1024, 6),
+      expected: '1048576.0 TB',
+      label: 'far above the largest unit (1024^6)',
+    },
+    { bytes: 0.5, expected: '1 B', label: 'below one byte (0 < bytes < 1)' },
+  ])('clamps the unit index for $label', ({ bytes, expected }) => {
+    expect(formatFileSize(bytes)).toBe(expected);
+  });
 });

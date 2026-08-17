@@ -254,7 +254,8 @@ export function formatFileSize(bytes: number): string {
 
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   const k = 1024;
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const rawIndex = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.min(Math.max(rawIndex, 0), units.length - 1);
   const size = bytes / Math.pow(k, i);
 
   return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;

@@ -128,8 +128,9 @@ export async function updateRedactionPolicy(
 
 export async function triggerRedactionReindex(onlyStale = true): Promise<{ status: string }> {
   const response = await axiosInstance.post(
-    `/admin/redaction-policy/reindex?only_stale=${onlyStale}`,
-    {}
+    '/admin/redaction-policy/reindex',
+    {},
+    { params: { only_stale: onlyStale } }
   );
   return response.data;
 }

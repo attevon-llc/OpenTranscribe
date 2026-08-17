@@ -414,17 +414,17 @@ def test_orchestrator_releases_the_lock_even_when_an_exception_hits_mid_run(monk
     # Force the exception well inside the guarded try, after the lock is acquired.
     monkeypatch.setattr(cst.combined_migration_progress, "start_migration", _boom)
 
-    import app.tasks.combined_speaker_analysis_task as _mod
-    from app.db import session_utils
-
-    @contextlib.contextmanager
-    def _real_scope():
-        # Use a genuine (auto-rolled-back-by-savepoint) session so the query against
-        # MediaFile does not require any DB fixture setup beyond what conftest provides.
-        with session_utils.session_scope() as db:
-            yield db
-
-    monkeypatch.setattr(_mod, "session_scope", _real_scope)
+    # _FakeCompletedFilesSession (see its docstring above), not a genuine DB session: a
+    # real query against MediaFile.status == COMPLETED with no user_id scoping depends on
+    # whatever the target database happens to contain. Locally, against the dev stack, real
+    # completed files make total_files > 0 and the mocked start_migration() fires as
+    # intended. Against CI's fresh, empty Postgres, total_files == 0 short-circuits BEFORE
+    # start_migration() is ever called, so the task returns {"status": "skipped", "message":
+    # "No files to process"} instead of hitting the exception path at all -- silently testing
+    # nothing on a clean database, which CI is.
+    monkeypatch.setattr(
+        cst, "session_scope", lambda: _scope_yielding(_FakeCompletedFilesSession(["file-1"]))
+    )
 
     cst.migrate_speakers_combined_task.push_request(id="task-boom")
     try:

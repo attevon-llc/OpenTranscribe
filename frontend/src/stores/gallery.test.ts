@@ -41,6 +41,23 @@ describe('toggleFileSelection', () => {
     galleryStore.toggleFileSelection('a');
     expect(get(galleryStore).selectedFiles.has('a')).toBe(false);
   });
+
+  it('derives isSelecting from whether anything ended up selected, same as handleMultiSelect', () => {
+    galleryStore.toggleFileSelection('a');
+    galleryStore.toggleFileSelection('b');
+    expect(get(galleryStore).isSelecting).toBe(true);
+
+    // Deselecting one of two selected files must not exit selection mode.
+    galleryStore.toggleFileSelection('a');
+    expect(get(galleryStore).selectedFiles.size).toBe(1);
+    expect(get(galleryStore).isSelecting).toBe(true);
+
+    // Deselecting the last remaining file must exit selection mode, so the
+    // bulk-action toolbar doesn't stay stuck open with 0 items selected.
+    galleryStore.toggleFileSelection('b');
+    expect(get(galleryStore).selectedFiles.size).toBe(0);
+    expect(get(galleryStore).isSelecting).toBe(false);
+  });
 });
 
 describe('handleMultiSelect', () => {
@@ -69,10 +86,11 @@ describe('handleMultiSelect', () => {
     galleryStore.handleMultiSelect('c', false, true);
 
     // The anchor can't be resolved to an index in the (now-different) file list, so the
-    // range-select math is skipped in favor of toggling only the clicked file — it does
-    // NOT clear the stale 'a' selection, which is a real, separate gap: a uuid selected
-    // before its file left the loaded list stays counted (e.g. in selectedCount) forever.
-    expect([...get(galleryStore).selectedFiles].sort()).toEqual(['a', 'c']);
+    // range-select math is skipped in favor of toggling only the clicked file. 'a' is
+    // no longer present because setFiles() now prunes selectedFiles against the new file
+    // list (see the setFiles describe block below) — a stale uuid selected before its
+    // file left the loaded list no longer stays counted forever.
+    expect([...get(galleryStore).selectedFiles].sort()).toEqual(['c']);
   });
 
   it('derives isSelecting from whether anything ended up selected', () => {
@@ -81,6 +99,32 @@ describe('handleMultiSelect', () => {
 
     galleryStore.handleMultiSelect('a', true, false); // toggle back off
     expect(get(galleryStore).isSelecting).toBe(false);
+  });
+});
+
+describe('setFiles', () => {
+  it('prunes selectedFiles of uuids no longer present in the new file list', () => {
+    galleryStore.setFiles([file('a'), file('b')]);
+    galleryStore.toggleFileSelection('a');
+    galleryStore.toggleFileSelection('b');
+    expect(get(galleryStore).selectedFiles.size).toBe(2);
+
+    // 'a' left the loaded list (e.g. deleted, or reshuffled off the current page).
+    galleryStore.setFiles([file('b'), file('c')]);
+
+    const state = get(galleryStore);
+    expect([...state.selectedFiles].sort()).toEqual(['b']);
+    expect(state.selectedFiles.has('a')).toBe(false);
+  });
+
+  it('prunes down to an empty selection when every previously-selected file is gone', () => {
+    galleryStore.setFiles([file('a')]);
+    galleryStore.toggleFileSelection('a');
+    expect(get(galleryStore).selectedFiles.size).toBe(1);
+
+    galleryStore.setFiles([file('b')]); // 'a' is gone; nothing selected survives
+
+    expect(get(galleryStore).selectedFiles.size).toBe(0);
   });
 });
 

@@ -233,22 +233,34 @@ def sync_speaker_profiles_to_opensearch(db) -> dict:
     errors = 0
 
     for speaker in speakers:
+        speaker_uuid = str(speaker.uuid)
         try:
+            # update_speaker_profile() catches its OWN exceptions and never
+            # raises (it is a fire-and-forget helper for its other callers),
+            # so a try/except around it can never observe a failed write —
+            # every call used to count as "updated" even when the OpenSearch
+            # document did not exist and nothing was written. Checking
+            # existence first, and reading the (dict-or-None) return value,
+            # is what actually distinguishes the three outcomes.
+            if not _client.opensearch_client.exists(index=get_speaker_index(), id=speaker_uuid):
+                skipped += 1
+                continue
+
             profile_uuid = str(speaker.profile.uuid) if speaker.profile else None
-            update_speaker_profile(
-                speaker_uuid=str(speaker.uuid),
+            response = update_speaker_profile(
+                speaker_uuid=speaker_uuid,
                 profile_id=int(speaker.profile_id) if speaker.profile_id else None,
                 profile_uuid=profile_uuid,
                 verified=bool(speaker.verified) if hasattr(speaker, "verified") else False,
                 display_name=str(speaker.display_name) if speaker.display_name else None,
             )
-            updated += 1
-        except Exception as e:
-            if "document_missing_exception" in str(e):
-                skipped += 1
-            else:
-                logger.warning(f"Error syncing speaker {speaker.uuid}: {e}")
+            if response is None:
                 errors += 1
+            else:
+                updated += 1
+        except Exception as e:
+            logger.warning(f"Error syncing speaker {speaker_uuid}: {e}")
+            errors += 1
 
     logger.info(
         f"Speaker profile sync complete: {updated} updated, {skipped} skipped "

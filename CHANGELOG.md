@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`directory_sync` (the periodic LDAP reconciliation/deprovisioning sweep) now has an admin
+  settings API.** Every sibling scheduled-config subsystem (backup, media mirror, ASR, LLM,
+  engine, redaction) already had one; this sweep did not, so `directory_sync.enabled` stayed at
+  its coded `False` default in every real deployment unless an operator wrote directly to the
+  `system_settings` table. `GET/PUT /api/admin/directory-sync`, `GET .../status`, and
+  `POST .../run` (super_admin only) mirror `backup_settings.py`'s pattern.
+
 ### Changed
 
 - **`DELETE /api/tags/cleanup` now defaults to the caller's own tags.** It previously always
@@ -127,6 +136,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   embeddings`) and one dead Celery-task helper (`get_failed_summary_count`) — all fully tested
   but with zero production callers, one an explicitly-documented unimplemented stub — were
   removed.
+- A segment spanning two detected overlap regions was assigned to whichever region happened to
+  be processed last, discarding whichever assignment had higher confidence — an
+  order-dependent, non-deterministic result for the same input. Overlap-group assignment now
+  deterministically keeps the highest-confidence match per segment.
+- `speaker_processor.py` carried its own `normalize_speaker_label`, a duplicate of the canonical
+  implementation every ASR/diarization provider already normalizes through and strictly less
+  correct: no zero-padding for single-digit labels (`"1"` stayed `"SPEAKER_1"`), no recognition
+  of provider-specific formats (`"S1"`, `"spk_0"`, `"Guest-1"`, …), and unrecognized text was
+  blindly string-prefixed (`"host"` → `"SPEAKER_host"`) instead of hashed into a valid
+  `SPEAKER_XX` form. It now delegates to the canonical implementation.
 
 ## [0.5.0] - 2026-08-10
 

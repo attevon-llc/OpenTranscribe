@@ -77,6 +77,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An admin-facing migration progress tracker could silently corrupt its list of failed files
   into an empty object on any progress update recorded before the first failure, breaking the
   admin UI's error list for that migration run until a failure was recorded.
+- **security:** A search-result snippet's redaction masking had no path for the `custom` word
+  category at all — custom words were matched only per highlight fragment, so a configured
+  custom redaction word split across a `<mark>` tag boundary (e.g. a highlighted partial match)
+  never appeared intact in either fragment and leaked verbatim into the search preview.
+- **security:** A watch source's local-upload path-traversal guard fell back to comparing the
+  watch root against itself whenever the destination's parent directory didn't exist yet —
+  trivially true regardless of where the destination actually pointed — allowing a crafted
+  remote path with a not-yet-existing nested parent to write an arbitrary file outside the
+  configured watch root.
+- OpenSearch speaker-embedding writes silently dropped on any real connection blip: the
+  transient-error retry checked the write exception against Python's builtin `ConnectionError`,
+  which the OpenSearch client's own `ConnectionError` does not subclass, so the retry never
+  actually fired.
+- Merging two speakers unconditionally reset the surviving speaker's OpenSearch
+  `collection_ids` to empty, silently removing it from every collection-scoped voiceprint
+  search it belonged to on every merge (Postgres collection membership was unaffected — the
+  break was OpenSearch-only and invisible outside collection search).
+- Three scheduled Celery beat tasks (database backup, media mirror, and LDAP directory sync)
+  committed their "this window is claimed" timestamp *before* dispatching the actual job. A
+  broker hiccup at that exact moment silently skipped the whole scheduled run — up to 24 hours
+  for a daily backup, or a full day's LDAP deprovisioning sweep — with nothing surfaced to the
+  admin UI.
+- A batch speaker-migration orchestrator only persisted its list of dispatched Celery batch IDs
+  once, after every batch had been queued. A failure partway through the dispatch loop left the
+  already-queued batches unrecorded, so the migration could never be marked stopped and its
+  "Stop" control could no longer revoke the batches still running in the background.
+- The CPU-only (lightweight) transcription path could mark a file as permanently failed and
+  notify the user of an error *before* Celery's own automatic retry had a chance to run, on a
+  transient MinIO or network error that the task was specifically configured to retry.
+- Two concurrently-processing files whose diarization produced the same speaker label for the
+  same file (a documented risk under Celery's at-least-once delivery) could crash the whole
+  transcription/rediarization task instead of gracefully reusing the already-created speaker
+  row, because the fallback path re-attempted an insert without first rolling back the failed
+  transaction.
+- The legacy (pre-3-stage) transcription task ignored a user's configured diarization source
+  (e.g. "off" or "pyannote") when routed through a cloud ASR provider, always defaulting to the
+  provider's own diarization regardless of what was configured.
+- Three `db_helpers` query functions (`safe_get_by_id`, `get_file_tags`, `get_user_file_stats`)
+  caught a database error and returned a fallback value without rolling back the failed
+  transaction, leaving every later query on that same session failing with "current transaction
+  is aborted" until something further up the call stack happened to roll back.
+- A pipeline-timing duration calculation treated an epoch-millisecond value of exactly `0` as
+  "marker absent" instead of "a real timestamp of zero," silently dropping the computed
+  duration (not reachable with today's always-nonzero timestamps, but a latent correctness gap).
+- A benchmark comparison task crashed on a truncated or corrupted snapshot file instead of
+  reporting the same graceful error every other failure path in that module uses.
+- Two dead OpenSearch helper functions (`bulk_add_speaker_embeddings`, `cleanup_orphaned_
+  embeddings`) and one dead Celery-task helper (`get_failed_summary_count`) — all fully tested
+  but with zero production callers, one an explicitly-documented unimplemented stub — were
+  removed.
 
 ## [0.5.0] - 2026-08-10
 

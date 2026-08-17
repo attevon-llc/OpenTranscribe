@@ -63,8 +63,16 @@ class TestNormalizeSpeakerLabel:
     def test_bare_numeric_label_gets_prefixed(self):
         assert normalize_speaker_label("01") == "SPEAKER_01"
 
-    def test_arbitrary_label_gets_prefixed(self):
-        assert normalize_speaker_label("host") == "SPEAKER_host"
+    def test_arbitrary_label_gets_a_stable_hashed_index(self):
+        # Issue #483: this module used to blindly prefix an unrecognized label
+        # ("host" -> "SPEAKER_host"), a format no downstream code recognizes as
+        # a normalized speaker id. It now delegates to the canonical
+        # app.services.asr.base implementation, which falls back to a stable
+        # SHA-256 hash into SPEAKER_00..SPEAKER_99 -- deterministic across
+        # processes, unlike the builtin (PYTHONHASHSEED-salted) hash().
+        assert normalize_speaker_label("host") == "SPEAKER_25"
+        # Same input must always produce the same output.
+        assert normalize_speaker_label("host") == "SPEAKER_25"
 
 
 # ---------------------------------------------------------------------------

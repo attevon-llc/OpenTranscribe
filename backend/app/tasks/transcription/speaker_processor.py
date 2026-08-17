@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.media import Speaker
+from app.services.asr.base import normalize_speaker_label as _canonical_normalize_speaker_label
 
 logger = logging.getLogger(__name__)
 
@@ -12,23 +13,30 @@ logger = logging.getLogger(__name__)
 _FALLBACK_SPEAKER = "SPEAKER_00"
 
 
-def normalize_speaker_label(speaker_id: str) -> str:
+def normalize_speaker_label(speaker_id: str | None) -> str:
     """
     Normalize speaker labels to ensure consistent format (SPEAKER_XX).
 
+    Delegates to the canonical ``app.services.asr.base.normalize_speaker_label``
+    — the implementation every ASR/diarization provider already normalizes
+    through. This used to be a separate, less capable copy (issue #483): no
+    zero-padding for single-digit labels ("1" stayed "SPEAKER_1" instead of
+    "SPEAKER_01"), no recognition of provider-specific formats ("S1", "spk_0",
+    "Guest-1", …), and unrecognized text was blindly string-prefixed rather
+    than hashed into a valid, stable ``SPEAKER_XX`` form.
+
     Args:
-        speaker_id: Original speaker ID
+        speaker_id: Original speaker ID, or None when a segment has no
+            speaker attribution at all.
 
     Returns:
-        Normalized speaker ID
+        Normalized speaker ID. Never None — falls back to SPEAKER_00 to match
+        this module's ``_FALLBACK_SPEAKER`` convention, since callers here
+        (unlike the ASR/diarization provider hierarchy) always need a
+        concrete label to satisfy the ``Speaker.name`` NOT NULL column.
     """
-    if speaker_id is None:
-        return "SPEAKER_00"
-
-    if not speaker_id.startswith("SPEAKER_"):
-        return f"SPEAKER_{speaker_id}"
-
-    return speaker_id
+    normalized = _canonical_normalize_speaker_label(speaker_id)
+    return normalized if normalized is not None else _FALLBACK_SPEAKER
 
 
 def extract_unique_speakers(segments: list[dict[str, Any]]) -> set[str]:

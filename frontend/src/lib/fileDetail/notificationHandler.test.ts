@@ -289,4 +289,26 @@ describe('cache_invalidate', () => {
     expect(ctx.fetchFileDetails).toHaveBeenCalledTimes(1);
     expect(ctx.loadAISuggestions).toHaveBeenCalledTimes(1);
   });
+
+  // BC-13 regression: this call site previously invoked ctx.loadAISuggestions()
+  // bare, with no .catch — an unhandled rejection risk, inconsistent with the
+  // topic_extraction_status branch's already-caught call to the same callback.
+  it('logs rather than throws when reloading suggestions rejects', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { ctx } = makeContext({ loadAISuggestions: vi.fn().mockRejectedValue(new Error('x')) });
+
+    expect(() =>
+      handleFileNotification(
+        notification({ type: 'cache_invalidate', data: { scope: 'files', file_id: 'file-1' } }),
+        ctx
+      )
+    ).not.toThrow();
+    await Promise.resolve(); // let the rejected promise's .catch() run
+
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining('Error reloading AI suggestions'),
+      expect.any(Error)
+    );
+    consoleError.mockRestore();
+  });
 });

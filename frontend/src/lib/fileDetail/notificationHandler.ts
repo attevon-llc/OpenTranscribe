@@ -283,6 +283,8 @@ export function handleFileNotification(
     latestNotification.data?.file_id === fileId
   ) {
     ctx.fetchFileDetails();
-    ctx.loadAISuggestions();
+    Promise.resolve(ctx.loadAISuggestions()).catch((err) => {
+      console.error('Error reloading AI suggestions after cache invalidate:', err);
+    });
   }
 }

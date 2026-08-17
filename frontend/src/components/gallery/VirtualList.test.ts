@@ -120,6 +120,33 @@ describe('windowing', () => {
   });
 });
 
+describe('items changes', () => {
+  it('re-expands the visible window when items grow past the previous (smaller) item count', async () => {
+    // visibleStart/visibleEnd are plain state, not derived from `items` — they're only
+    // updated by recalculate(). This exercises the items-changed reactive block (see the
+    // comment on it in VirtualList.svelte): it calls recalculate() directly, with no
+    // tick()+measureOffset() re-run, because recalculate() here never reads post-patch DOM
+    // geometry — unlike VirtualGrid's equivalent block, which does and so must defer.
+    // If VirtualList's block silently stopped firing recalculate() on an items change, this
+    // would still render only 3 rows (the window computed for the old, smaller item count)
+    // instead of catching up to the viewport's real capacity.
+    const scrollContainer = scrollContainerWithHeight(400);
+    const { container, rerender } = render(VirtualList, {
+      props: { items: manyFiles(3), scrollContainer },
+    });
+    await tick();
+
+    // Sanity check: with only 3 items, the window can't exceed the item count.
+    expect(container.querySelectorAll('.file-list-row')).toHaveLength(3);
+
+    // Items grow well beyond the small window computed while there were only 3 of them.
+    await rerender({ items: manyFiles(500), scrollContainer });
+
+    // viewport rows ceil(400/44)=10, + OVERSCAN(5) = 15, clamped by the new item count (500)
+    expect(container.querySelectorAll('.file-list-row')).toHaveLength(15);
+  });
+});
+
 describe('interaction', () => {
   it('navigates to the file detail page on a plain click', async () => {
     const scrollContainer = scrollContainerWithHeight(400);

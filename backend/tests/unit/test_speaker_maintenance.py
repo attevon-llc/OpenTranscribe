@@ -204,6 +204,62 @@ def test_merge_deletes_source_and_updates_target_collections(speaker_indices):
     assert target_doc["updated_at"] != "2020-01-01T00:00:00+00:00"
 
 
+# --------------------------------------------------------------------------- #
+# app.api.endpoints.speakers._update_opensearch_speaker_merge (issue #474)
+# --------------------------------------------------------------------------- #
+
+
+def test_update_opensearch_speaker_merge_preserves_target_collection_membership(
+    speaker_indices,
+):
+    """Regression test: ``_update_opensearch_speaker_merge`` used to call
+    ``merge_speaker_embeddings(..., [])`` unconditionally, which
+    ``merge_speaker_embeddings`` writes verbatim into the target's
+    ``collection_ids`` — silently stripping the surviving speaker out of every
+    OpenSearch collection it belonged to on every merge. The caller must now
+    read the target's CURRENT collection_ids and pass those through instead.
+    """
+    from app.api.endpoints.speakers import _update_opensearch_speaker_merge
+
+    source_uuid = str(uuid_pkg.uuid4())
+    target_uuid = str(uuid_pkg.uuid4())
+    client = speaker_indices.client
+    client.index(index=speaker_indices.alias, id=source_uuid, body=_doc(source_uuid, 42))
+    client.index(
+        index=speaker_indices.alias,
+        id=target_uuid,
+        body=_doc(target_uuid, 42, collection_ids=[7, 8]),
+    )
+    client.indices.refresh(index=speaker_indices.alias)
+
+    _update_opensearch_speaker_merge(source_uuid, target_uuid)
+
+    target_doc = client.get(index=speaker_indices.v4, id=target_uuid)["_source"]
+    assert target_doc["collection_ids"] == [7, 8]
+    with pytest.raises(NotFoundError):
+        client.get(index=speaker_indices.v4, id=source_uuid)
+
+
+def test_update_opensearch_speaker_merge_defaults_to_empty_when_target_has_none(
+    speaker_indices,
+):
+    from app.api.endpoints.speakers import _update_opensearch_speaker_merge
+
+    source_uuid = str(uuid_pkg.uuid4())
+    target_uuid = str(uuid_pkg.uuid4())
+    client = speaker_indices.client
+    client.index(index=speaker_indices.alias, id=source_uuid, body=_doc(source_uuid, 42))
+    client.index(
+        index=speaker_indices.alias, id=target_uuid, body=_doc(target_uuid, 42, collection_ids=[])
+    )
+    client.indices.refresh(index=speaker_indices.alias)
+
+    _update_opensearch_speaker_merge(source_uuid, target_uuid)
+
+    target_doc = client.get(index=speaker_indices.v4, id=target_uuid)["_source"]
+    assert target_doc["collection_ids"] == []
+
+
 def test_merge_also_removes_the_source_from_v4_staging(speaker_indices_alias_v3):
     """Migration-in-progress shape: the alias resolves to v3, but a leftover
     copy of the source speaker sits in the v4 staging index too."""
@@ -231,33 +287,6 @@ def test_merge_also_removes_the_source_from_v4_staging(speaker_indices_alias_v3)
         client.get(index=fixture.v3, id=source_uuid)
     with pytest.raises(NotFoundError):
         client.get(index=fixture.v4, id=source_uuid)
-
-
-# --------------------------------------------------------------------------- #
-# cleanup_orphaned_embeddings (diagnostic count only)
-# --------------------------------------------------------------------------- #
-
-
-def test_cleanup_orphaned_embeddings_counts_docs_for_the_user(speaker_indices):
-    client = speaker_indices.client
-    user_id = 4242
-    for _ in range(3):
-        uid = str(uuid_pkg.uuid4())
-        client.index(index=speaker_indices.alias, id=uid, body=_doc(uid, user_id))
-    # A doc for a different user must not be counted.
-    other_uid = str(uuid_pkg.uuid4())
-    client.index(index=speaker_indices.alias, id=other_uid, body=_doc(other_uid, 9999))
-    client.indices.refresh(index=speaker_indices.alias)
-
-    result = speaker_maintenance.cleanup_orphaned_embeddings(user_id)
-
-    assert result == {"embedding_count": 3, "status": "diagnostic_only"}
-
-
-def test_cleanup_orphaned_embeddings_zero_docs(speaker_indices):
-    result = speaker_maintenance.cleanup_orphaned_embeddings(31337)
-
-    assert result == {"embedding_count": 0, "status": "diagnostic_only"}
 
 
 # --------------------------------------------------------------------------- #

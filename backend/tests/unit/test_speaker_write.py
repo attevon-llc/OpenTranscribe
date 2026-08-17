@@ -305,7 +305,16 @@ def test_add_speaker_embedding_rejects_unexpected_dimension(speaker_indices):
 def test_add_speaker_embedding_retries_once_on_a_transient_connection_error(
     speaker_indices, monkeypatch
 ):
-    """The retry path must actually deliver the document, not just swallow the error."""
+    """The retry path must actually deliver the document, not just swallow the error.
+
+    Raises ``opensearchpy.exceptions.ConnectionError`` — the REAL exception type
+    the client raises on a connectivity blip — not the Python builtin
+    ``ConnectionError``, which opensearchpy's does NOT subclass (issue #474: the
+    retry catch used to check ``isinstance(e, (ConnectionError, OSError))`` with
+    the builtin, so it never actually fired against a real client error).
+    """
+    from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
+
     speaker_uuid = str(uuid_pkg.uuid4())
     real_index = speaker_indices.client.index
     calls = {"n": 0}
@@ -313,7 +322,7 @@ def test_add_speaker_embedding_retries_once_on_a_transient_connection_error(
     def flaky_index(*args, **kwargs):
         calls["n"] += 1
         if calls["n"] == 1:
-            raise ConnectionError("simulated transient network failure")
+            raise OpenSearchConnectionError("N/A", "simulated transient network failure", {})
         return real_index(*args, **kwargs)
 
     monkeypatch.setattr(speaker_indices.client, "index", flaky_index)
@@ -331,44 +340,3 @@ def test_add_speaker_embedding_retries_once_on_a_transient_connection_error(
     assert response is not None
     doc = speaker_indices.client.get(index=speaker_indices.v3, id=speaker_uuid)["_source"]
     assert doc["name"] == "SPEAKER_RETRY"
-
-
-# --------------------------------------------------------------------------- #
-# bulk_add_speaker_embeddings (v3/v4 alias target, no dimension guard)
-# --------------------------------------------------------------------------- #
-
-
-def test_bulk_add_speaker_embeddings_writes_org_id_only_when_present(speaker_indices):
-    with_org = str(uuid_pkg.uuid4())
-    without_org = str(uuid_pkg.uuid4())
-
-    response = speaker_write.bulk_add_speaker_embeddings(
-        [
-            {
-                "speaker_uuid": with_org,
-                "speaker_id": 501,
-                "user_id": 42,
-                "name": "SPEAKER_ORG",
-                "embedding": _embedding(PYANNOTE_EMBEDDING_DIMENSION_V4, offset=0.3),
-                "organization_id": 9,
-            },
-            {
-                "speaker_uuid": without_org,
-                "speaker_id": 502,
-                "user_id": 42,
-                "name": "SPEAKER_PERSONAL",
-                "embedding": _embedding(PYANNOTE_EMBEDDING_DIMENSION_V4, offset=0.4),
-            },
-        ]
-    )
-
-    assert response is not None
-    assert response["errors"] is False
-
-    doc_with_org = speaker_indices.client.get(index=speaker_indices.alias, id=with_org)["_source"]
-    assert doc_with_org["organization_id"] == 9
-
-    doc_without_org = speaker_indices.client.get(index=speaker_indices.alias, id=without_org)[
-        "_source"
-    ]
-    assert "organization_id" not in doc_without_org

@@ -9,6 +9,7 @@ from app.core.constants import PYANNOTE_EMBEDDING_DIMENSION_V4
 from app.core.constants import get_speaker_index
 from app.core.constants import get_speaker_index_v4
 from app.services.opensearch_service import client as _client
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.opensearch_service.client import _is_index_corruption_error
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.opensearch_service.repair import _repair_index
@@ -310,8 +311,9 @@ def add_speaker_embedding(
 
     except Exception as e:
         # Retry once for transient connection errors before falling through
-        # to the index corruption check below
-        if isinstance(e, (ConnectionError, OSError)):
+        # to the index corruption check below. opensearchpy's ConnectionError does
+        # NOT subclass the builtin ConnectionError, so both must be listed explicitly.
+        if isinstance(e, (*CLUSTER_UNAVAILABLE_ERRORS, ConnectionError)):
             logger.warning(f"Transient error indexing speaker {speaker_uuid}, retrying once: {e}")
             import time as _time
 
@@ -368,63 +370,3 @@ def add_speaker_embedding(
             logger.error(
                 f"Error indexing speaker embedding for speaker {speaker_uuid} (ID: {speaker_id}): {e}"
             )
-
-
-def bulk_add_speaker_embeddings(embeddings_data: list[dict[str, Any]]):
-    """
-    Bulk add multiple speaker embeddings for efficient indexing
-
-    Args:
-        embeddings_data: List of embedding data dictionaries with speaker_uuid
-    """
-    if not _client.opensearch_client:
-        logger.warning("OpenSearch client not initialized")
-        return
-
-    try:
-        ensure_indices_exist()
-
-        # Prepare bulk operations
-        bulk_body = []
-        for data in embeddings_data:
-            # Index action using UUID as document ID
-            bulk_body.append(
-                {
-                    "index": {
-                        "_index": get_speaker_index(),
-                        "_id": str(data["speaker_uuid"]),
-                    }
-                }
-            )
-
-            # Document (organization_id only written for org files)
-            doc_data: dict[str, Any] = {
-                "speaker_id": data["speaker_id"],
-                "speaker_uuid": str(data["speaker_uuid"]),
-                "profile_id": data.get("profile_id"),
-                "profile_uuid": str(data.get("profile_uuid")) if data.get("profile_uuid") else None,
-                "user_id": data["user_id"],
-                "name": data["name"],
-                "collection_ids": data.get("collection_ids", []),
-                "media_file_id": data.get("media_file_id"),
-                "segment_count": data.get("segment_count", 1),
-                "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
-                "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
-                "embedding": data["embedding"],
-            }
-            if data.get("organization_id") is not None:
-                doc_data["organization_id"] = data["organization_id"]
-            bulk_body.append(doc_data)
-
-        # Execute bulk operation
-        response = _client.opensearch_client.bulk(body=bulk_body)
-
-        if response["errors"]:
-            logger.error(f"Bulk indexing had errors: {response}")
-        else:
-            logger.info(f"Successfully bulk indexed {len(embeddings_data)} speaker embeddings")
-
-        return response
-
-    except Exception as e:
-        logger.error(f"Error bulk indexing speaker embeddings: {e}")

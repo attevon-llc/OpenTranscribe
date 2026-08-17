@@ -64,7 +64,6 @@ from app.services.opensearch_service.speaker_collections import bulk_update_coll
 from app.services.opensearch_service.speaker_collections import get_speakers_in_collection
 from app.services.opensearch_service.speaker_collections import move_speaker_to_profile_collection
 from app.services.opensearch_service.speaker_collections import update_speaker_collections
-from app.services.opensearch_service.speaker_maintenance import cleanup_orphaned_embeddings
 from app.services.opensearch_service.speaker_maintenance import cleanup_orphaned_speaker_embeddings
 from app.services.opensearch_service.speaker_maintenance import merge_speaker_embeddings
 from app.services.opensearch_service.speaker_maintenance import remove_speaker_embedding
@@ -80,7 +79,6 @@ from app.services.opensearch_service.speaker_read import get_speaker_embeddings_
 from app.services.opensearch_service.speaker_read import iter_speaker_embeddings
 from app.services.opensearch_service.speaker_write import add_speaker_embedding
 from app.services.opensearch_service.speaker_write import add_speaker_embedding_v4
-from app.services.opensearch_service.speaker_write import bulk_add_speaker_embeddings
 from app.services.opensearch_service.speaker_write import bulk_add_speaker_embeddings_v4
 from app.services.opensearch_service.transcripts import index_transcript
 from app.services.opensearch_service.transcripts import search_transcripts
@@ -117,11 +115,9 @@ __all__ = [
     "add_speaker_embedding",
     "add_speaker_embedding_v4",
     "batch_find_matching_speakers",
-    "bulk_add_speaker_embeddings",
     "bulk_add_speaker_embeddings_v4",
     "bulk_update_collection_assignments",
     "check_and_repair_indices",
-    "cleanup_orphaned_embeddings",
     "cleanup_orphaned_speaker_embeddings",
     "create_speaker_index_v4",
     "delete_cluster_embedding",

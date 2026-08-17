@@ -524,6 +524,30 @@ describe('cancelUpload', () => {
   });
 });
 
+describe('removeUpload', () => {
+  // BC-3 regression: removeUpload()'s "still active" check only covered
+  // 'uploading'/'processing', unlike every other "is this active" check in
+  // the file (e.g. getActiveUploads()), which also treats 'preparing' as
+  // active. Removing a 'preparing' item (e.g. still hashing) deleted the map
+  // entry without cancelling its cancelToken, leaving the in-flight request
+  // running uncancelled.
+  it('cancels the cancelToken when removing an upload that is still preparing', async () => {
+    // Never resolves, so the item stays in 'preparing' (set just before this
+    // await) instead of advancing to 'uploading'. `Once` so it doesn't leak
+    // into later tests' fingerprinting calls.
+    mockFingerprintFile.mockReturnValueOnce(new Promise(() => {}));
+
+    const id = uploadService.addUpload('file', new File(['a'], 'a.mp3'));
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('preparing'));
+
+    uploadService.removeUpload(id);
+
+    const cancelSource = mockAxiosDefault.CancelToken.source.mock.results[0]?.value;
+    expect(cancelSource?.cancel).toHaveBeenCalled();
+    expect(uploadService.getUpload(id)).toBeUndefined();
+  });
+});
+
 describe('reset()', () => {
   it('aborts every in-flight multipart session before clearing state', async () => {
     const plan = {

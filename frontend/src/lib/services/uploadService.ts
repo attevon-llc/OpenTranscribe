@@ -1002,7 +1002,11 @@ class UploadService {
     if (!upload) return;
 
     // Cancel if still active
-    if (upload.status === 'uploading' || upload.status === 'processing') {
+    if (
+      upload.status === 'uploading' ||
+      upload.status === 'processing' ||
+      upload.status === 'preparing'
+    ) {
       this.cancelUpload(uploadId);
     }
 

@@ -50,6 +50,27 @@ describe('mapFFmpegMetadata', () => {
     expect(metadata.AspectRatio).toBe('16:9');
   });
 
+  it('leaves FrameRate unset rather than Infinity for a zero-denominator frame rate', () => {
+    const metadata = mapFFmpegMetadata(
+      {
+        streams: [
+          {
+            codec_type: 'video',
+            codec_name: 'h264',
+            width: 1920,
+            height: 1080,
+            r_frame_rate: '30/0',
+          },
+        ],
+        format: {},
+      },
+      videoFile()
+    );
+
+    expect(metadata.FrameRate).toBeUndefined();
+    expect(metadata.VideoFrameRate).toBeUndefined();
+  });
+
   it('maps audio stream specs', () => {
     const metadata = mapFFmpegMetadata(
       {
@@ -103,6 +124,16 @@ describe('mapFFmpegMetadata', () => {
 
     expect(metadata.GPSLatitude).toBe('40.7128');
     expect(metadata.GPSLongitude).toBe('-74.0060');
+  });
+
+  it('parses a real ISO 6709 location tag (signed lat/lon with no delimiter) correctly', () => {
+    const metadata = mapFFmpegMetadata(
+      { format: { tags: { location: '+40.6894-074.0447+002.000/' } } },
+      videoFile()
+    );
+
+    expect(metadata.GPSLatitude).toBe('+40.6894');
+    expect(metadata.GPSLongitude).toBe('-074.0447');
   });
 
   it('falls back Author to Artist when no explicit author tag exists', () => {

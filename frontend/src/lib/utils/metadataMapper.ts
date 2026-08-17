@@ -50,6 +50,7 @@ function parseFrameRate(frameRateStr: string | undefined): number | undefined {
   try {
     if (frameRateStr.includes('/')) {
       const [num, den] = frameRateStr.split('/').map(Number);
+      if (den === 0) return undefined;
       return num / den;
     }
     return parseFloat(frameRateStr);
@@ -178,8 +179,13 @@ export function mapFFmpegMetadata(probeData: FFmpegProbeData, file: File): Video
   metadata.DeviceModel = formatTags.model || videoTags.model;
 
   // GPS information (if present)
-  metadata.GPSLatitude = formatTags.location?.split(/[,+\s]/)?.[0];
-  metadata.GPSLongitude = formatTags.location?.split(/[,+\s]/)?.[1];
+  // ISO 6709 (e.g. "+40.6894-074.0447+002.000/") concatenates signed lat/lon with no
+  // delimiter between them, so a delimiter split can't separate the two coordinates.
+  // The trailing coordinate's sign is required (it's what marks where longitude starts);
+  // the leading one is optional to still accept a plain "40.7128,-74.0060" tag.
+  const gpsMatch = formatTags.location?.match(/^([+-]?\d+\.?\d*)[,\s]*([+-]\d+\.?\d*)/);
+  metadata.GPSLatitude = gpsMatch?.[1];
+  metadata.GPSLongitude = gpsMatch?.[2];
 
   // Software used
   metadata.Software = formatTags.encoder || formatTags.software;

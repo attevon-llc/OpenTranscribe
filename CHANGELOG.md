@@ -49,6 +49,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never incremented, so it reported `0` in every deployment. The field is gone and the endpoint
   now describes what it actually does (bulk stuck-file recovery). Real orphan cleanup is
   `POST /api/admin/data-integrity`.
+- **`POST /api/files/{uuid}/retry-summary` was broken end-to-end — every valid retry request
+  returned 500.** Two stacked bugs: the endpoint passed the file's internal integer primary key
+  instead of its UUID into the retry helper, which looks the file up by UUID and always failed
+  the lookup; and separately, the retry helper called `asyncio.run()` internally while already
+  running inside this endpoint's own async event loop, which always raises
+  `RuntimeError: asyncio.run() cannot be called from a running event loop`. No test exercised
+  past the "LLM not available" branch, which is why both went unnoticed. Also fixed in the same
+  code path: a failed dispatch (e.g. a broker outage) used to destroy the file's previous summary
+  before finding out whether a new one could actually be queued — a retry that failed left users
+  with no summary at all instead of the one they started with. It now restores the prior summary
+  if dispatch fails.
+- A SCIM `PATCH` with a bare `{"op": "remove", "path": "members"}` (no value) — the shape Okta
+  and Entra send to empty a group — silently did nothing instead of clearing membership.
+- Every SCIM-driven audit event (account creation, updates, and deactivation via Entra/Okta
+  provisioning) recorded the affected user only by username, never by their stable numeric ID —
+  unlike every other administrative audit emitter in the app. This broke "everything done to
+  this account" audit-log queries keyed by user ID for any SCIM-managed account.
+- The Tasks page could crash rendering a task whose timestamps arrived as ISO strings rather
+  than native datetimes.
+- A background drift-repair job that keeps speaker profile assignments in sync with OpenSearch
+  could report full success ("N updated, 0 errors") while every write silently failed against a
+  missing document — a dead exception handler could never observe the real outcome.
+- The YouTube download quota could report `-1` remaining (the app's own sentinel for
+  "unlimited") for a user who was actually over their hourly or daily limit, once the count
+  reached or exceeded it.
+- An admin-facing migration progress tracker could silently corrupt its list of failed files
+  into an empty object on any progress update recorded before the first failure, breaking the
+  admin UI's error list for that migration run until a failure was recorded.
 
 ## [0.5.0] - 2026-08-10
 

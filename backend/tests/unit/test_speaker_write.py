@@ -31,13 +31,22 @@ from app.services.opensearch_service import speaker_write
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
-pytestmark = pytest.mark.skipif(
-    _OPENSEARCH_ABSENT,
-    reason=(
-        "No OpenSearch reachable (SKIP_OPENSEARCH). These tests verify real "
-        "document writes and cannot be meaningfully mocked."
+
+# Serialised against the other live-cluster speaker suites (issue #486). All three create and
+# delete throwaway OpenSearch indices; under the default `-n auto` (24 workers here) that
+# index churn overloads the single dev cluster and reads start timing out at 10 s, which
+# surfaces as an unrelated-looking assertion failure in whichever test lost the race.
+# Measured: 1 failure in 4 concurrent runs, on a different test each time.
+pytestmark = [
+    pytest.mark.xdist_group("opensearch_speaker_indices"),
+    pytest.mark.skipif(
+        _OPENSEARCH_ABSENT,
+        reason=(
+            "No OpenSearch reachable (SKIP_OPENSEARCH). These tests verify real "
+            "document writes and cannot be meaningfully mocked."
+        ),
     ),
-)
+]
 
 
 def _embedding(dimension: int, offset: float = 0.0) -> list[float]:

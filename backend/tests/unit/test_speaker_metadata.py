@@ -28,13 +28,22 @@ from app.services.opensearch_service import speaker_metadata
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
-pytestmark = pytest.mark.skipif(
-    _OPENSEARCH_ABSENT,
-    reason=(
-        "No OpenSearch reachable (SKIP_OPENSEARCH). These tests verify real "
-        "document reads/writes and cannot be meaningfully mocked."
+
+# Serialised against the other live-cluster speaker suites (issue #486). All three create and
+# delete throwaway OpenSearch indices; under the default `-n auto` (24 workers here) that
+# index churn overloads the single dev cluster and reads start timing out at 10 s, which
+# surfaces as an unrelated-looking assertion failure in whichever test lost the race.
+# Measured: 1 failure in 4 concurrent runs, on a different test each time.
+pytestmark = [
+    pytest.mark.xdist_group("opensearch_speaker_indices"),
+    pytest.mark.skipif(
+        _OPENSEARCH_ABSENT,
+        reason=(
+            "No OpenSearch reachable (SKIP_OPENSEARCH). These tests verify real "
+            "document reads/writes and cannot be meaningfully mocked."
+        ),
     ),
-)
+]
 
 
 def _embedding(dimension: int = PYANNOTE_EMBEDDING_DIMENSION_V4) -> list[float]:
@@ -82,6 +91,15 @@ def indices(monkeypatch):
     v4 = get_speaker_index_v4()
     _ensure_versioned_speaker_index(v3, PYANNOTE_EMBEDDING_DIMENSION_V3)
     _ensure_versioned_speaker_index(v4, PYANNOTE_EMBEDDING_DIMENSION_V4)
+    # `_ensure_versioned_speaker_index` swallows CLUSTER_UNAVAILABLE_ERRORS (which include 4xx
+    # TransportErrors such as a shard-limit validation_exception) and returns without raising,
+    # so under cluster pressure this fixture can "succeed" having created nothing. Fail here,
+    # naming the cause, rather than three lines later as a mystery stale-document assertion.
+    for name in (v3, v4):
+        assert client.indices.exists(index=name), (
+            f"index {name} was not created — _ensure_versioned_speaker_index swallowed the "
+            "cluster error (issue #486)"
+        )
     alias = get_speaker_index()
     client.indices.put_alias(index=v4, name=alias)
 

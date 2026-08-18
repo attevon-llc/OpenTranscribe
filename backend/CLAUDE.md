@@ -15,10 +15,31 @@ engine) · `app/utils` (shared helpers) · `app/middleware`.
 
 Prefer running inside the container (`./opentr.sh shell backend`). The host venv at
 `backend/venv/` exists for pre-commit, mypy, ruff, bandit, and pytest outside Docker. It needs a
-two-step install: `pip install -r requirements.txt` then `pip install --no-deps -r
-requirements-nodeps.txt` — see that file's header. This is the same two-step sequence
-`Dockerfile.prod` runs; there is no Dockerfile-only install step for this project. If a package
-is only ever installed inside the image, it belongs in one of these two files instead.
+two-step install:
+
+```bash
+pip install -r requirements.lock.txt              # the exact tree the image runs
+pip install --no-deps -r requirements-nodeps.txt  # see that file's header for why
+```
+
+**Install from `requirements.lock.txt`, NOT `requirements.txt` (issue #492).** The latter is 61
+floors against 4 exact pins, and a floor is a version number but not a pin — two installs done at
+different times legitimately resolve differently, and did: **120 packages apart, 18 at a MAJOR
+version**. The gate ran one set while production ran the other, which is how the NLTK `pathsec`
+breakage shipped while the host suite stayed green. `requirements.txt` remains the human-edited
+list of DIRECT dependencies and is what you edit; the lock is what gets installed, by
+`Dockerfile.prod` **and** by this venv, so the gate tests what ships.
+
+Regenerate with `./scripts/lock-backend-deps.sh` after changing `requirements.txt` and
+rebuilding — it reads the resolved tree out of the running image, so the lock records what was
+actually built rather than what the host would resolve today. `--check` verifies without changing
+anything. ⚠️ **Versions move forward only**: never downgrade a pin to reproduce a result, because
+that reintroduces exactly the divergence this closes.
+
+This is the same two-step sequence `Dockerfile.prod` runs; there is no Dockerfile-only install
+step for this project. If a package is only ever installed inside the image, it belongs in one of
+these two files instead. `Dockerfile.lite` and `Dockerfile.blackwell` keep their own requirement
+files — different bases, different torch builds — so prod's lock does not describe them.
 
 `alembic upgrade head` is **production-only** — dev applies migrations automatically on
 backend startup via `app/db/migrations.py`.

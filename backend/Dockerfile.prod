@@ -25,18 +25,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements first for better layer caching
-COPY requirements.txt requirements-nodeps.txt ./
+COPY requirements.lock.txt requirements-nodeps.txt ./
 
 # Upgrade pip to latest version first (security fix for CVE-2025-8869)
 RUN pip install --user --no-cache-dir --upgrade pip
 
-# Install Python dependencies
-# All packages now use cuDNN 9 for CUDA 12.8 compatibility
-# PyTorch 2.8.0+cu128 - includes CVE-2025-32434 security fix
-# CTranslate2 4.6.0+ - cuDNN 9 support
-# NumPy 2.x - fully compatible with all packages, no security issues
+# Install Python dependencies FROM THE LOCK, not from requirements.txt (issue #492).
+#
+# `requirements.txt` is 61 floors against 4 exact pins, so two builds at different
+# times legitimately resolved differently — and did, by 120 packages, 18 at a MAJOR
+# version. The host venv (where the pre-merge gate runs) and this image drifted
+# apart, which is how the NLTK `pathsec` breakage reached production while the
+# gate stayed green. `requirements.txt` remains the human-edited list of DIRECT
+# dependencies; `requirements.lock.txt` is what gets installed, here AND in the
+# venv, so the gate tests what ships.
+#
+# The lock carries the cu128 `--extra-index-url` itself, so torch resolves to the
+# same CUDA build it always did.
+#
+# All packages use cuDNN 9 for CUDA 12.8 compatibility.
 # Use --user to install to /root/.local which we'll copy to final stage
-RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.txt
+RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.lock.txt
 
 # WhisperX, faster-whisper, and gliner all need --no-deps — see requirements-nodeps.txt
 # for why. This exact command is also what a local venv setup runs (see
@@ -48,7 +57,13 @@ RUN pip install --user --no-cache-dir --no-warn-script-location --no-deps -r req
 # English model (~12 MB) — PII NER is handled by GLiNER + Presidio's regex recognizers,
 # so the large spaCy model is unnecessary. GLiNER + toxicity weights are pre-fetched at
 # startup via scripts/download-models.py (DOWNLOAD_REDACTION_MODELS=true).
-RUN python -m spacy download en_core_web_sm
+#
+# `python -m spacy download` is GONE: it resolves whichever model version is
+# compatible with the installed spaCy AT BUILD TIME, which is the same unpinned
+# drift #492 is about. The model is now pinned by release URL in the lock, so it
+# is installed by the step above. `pip freeze` renders it as
+# `en_core_web_sm==3.8.0`, which is NOT on PyPI — the lock generator reads pip's
+# `direct_url.json` instead, which is why the pin is a URL.
 
 # triton removed: openai/triton is unrelated to NVIDIA TensorRT and is only used
 # by torch.compile(backend="inductor") JIT. torch.compile is opt-in and not on

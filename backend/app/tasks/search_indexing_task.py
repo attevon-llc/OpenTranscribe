@@ -255,11 +255,17 @@ def index_transcript_search_task(  # noqa: C901
 
         total_ms = round((time.time() - total_start) * 1000)
 
-        # Build timing result
-        if isinstance(result, dict):
-            timing = result
-        else:
-            timing = {"chunk_count": result, "total_ms": total_ms}
+        # `index_transcript_chunks` returns a dict or RAISES (issue #495). It used to
+        # be able to return a bare int, and that arm is what turned every indexing
+        # failure into a reported success: the method swallowed its exception and
+        # returned 0, this branch wrapped it as `{"chunk_count": 0}`, and the task went
+        # on to mark the row completed and return `"status": "success"`.
+        #
+        # The int was ALSO the legitimate "nothing to index" answer (no client, no
+        # segments, no chunks generated), which is exactly why the failure was
+        # invisible — the two were the same value. Those cases now return a dict
+        # carrying a `reason`, and a genuine failure reaches the `except` below.
+        timing = result
 
         # Mark task as completed
         with session_scope() as db:

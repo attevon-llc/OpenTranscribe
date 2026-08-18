@@ -426,6 +426,37 @@ one deployed model is not a choice and is adopted with a warning (the recovery t
 exists for); more than one returns `None` and leaves search on BM25 — loud, obvious and
 reversible, where a wrong guess is silent and costs a full re-embed.
 
+## A failed index must not report success (#495)
+
+`index_transcript_chunks` used to `except Exception: return 0`, and its caller
+`tasks/search_indexing_task` had an arm that wrapped a bare int as `{"chunk_count": result}`,
+marked the DB task **completed** and returned `{"status": "success"}`. So a dead OpenSearch, a
+mapping rejection or a partial bulk load were all reported to the user, the task table and the
+notification as a **successful index of zero chunks**. The task's own `except` could never fire.
+
+What made it invisible is worth keeping in mind generally: `0` was *also* the legitimate answer
+for "no client", "no segments" and "no chunks generated". A sentinel that collides with a real
+value cannot be checked. So:
+
+- Failures **raise**. `_bulk_index_chunks` returns how many documents landed;
+  `indexed < len(chunks)` — the state `_retry_failed_docs` leaves after it gives up at 2
+  attempts — raises rather than returning short. Safe to retry: ids are deterministic
+  (`{file_uuid}_{chunk_index}`), so a re-run overwrites rather than duplicates.
+- The three "nothing to index" outcomes return a dict carrying an explicit `reason`.
+- **The digest plane reports the true count but does NOT raise**, and the asymmetry is
+  deliberate: `_index_digest_plane`'s `except` already declines to fail an index over derived
+  enrichment, whereas the chunks are the transcript itself. It previously discarded
+  `_bulk_index_documents`'s return value and reported `len(documents)` — the number of sections
+  *generated*, identical whether all or none were written.
+
+⚠️ **Tests must query a PLANE, not a bare `file_uuid` term.** #495 was filed as "the synthetic
+corpus indexes no chunks" and marked `xfail(strict=True)`; the chunks were there the whole time.
+A bare `{"term": {"file_uuid": ...}}` returned **8 chunks and 1 digest**, and the digest has no
+`speaker` field, so the test raised `KeyError: 'speaker'`. Under `-q --tb=line` that showed as a
+bare `FAILED` and the passing `assert hits` above it was read as the failure. Use
+`chunk_plane_query` — the same rule the product follows — and assert `hits` non-empty on its own
+line so "nothing indexed" can never again be confused with "wrong plane".
+
 ## Index v6: two planes in one index (#403 Stage 3)
 
 `_INDEX_VERSION` is **6**, and it is assigned *from*

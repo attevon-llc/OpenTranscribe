@@ -720,7 +720,16 @@ def test_a_transcript_that_now_chunks_to_nothing_loses_its_old_chunks(chunk_inde
         tags=[],
     )
 
-    assert result == 0, "control: this input really does chunk to nothing"
+    # The control, and it now asserts the REASON as well as the count (issue #495).
+    # `index_transcript_chunks` used to answer a bare `0` here — and also on a dead
+    # OpenSearch, and on any swallowed exception, since it caught everything and
+    # returned the same `0`. `result == 0` therefore passed whether this input really
+    # chunked to nothing or the indexer had simply broken. Naming the reason is what
+    # makes it a control rather than a coincidence.
+    assert result["chunk_count"] == 0, "control: this input really does chunk to nothing"
+    assert result["reason"] == "no_chunks_generated", (
+        f"zero chunks for the wrong reason — the indexer may have failed: {result}"
+    )
     assert _chunk_indexes(chunk_index, file_uuid) == [], (
         "the old chunks are still searchable for a transcript that no longer has any"
     )

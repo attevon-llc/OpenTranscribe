@@ -228,38 +228,54 @@ class TestGoldSpansBecomeJudgementsOverRealChunks:
 
         assert builder.judgements([GoldSpan(absent, 0, 3)]) == {}
 
-    @pytest.mark.xfail(
-        reason=(
-            "issue #495: a `term` query on file_uuid returns no chunks for this meeting, while "
-            "the sibling test_every_injected_meeting_produces_chunks asserts (and passes) that "
-            "EVERY injected meeting has chunks. Pre-existing — reproduces from a clean "
-            "`git archive master` tree on the same venv — and NOT a product defect: the live "
-            "index holds 13,023 chunks across 18 real files, so real search and retrieval are "
-            "unaffected. Ruled out: file_uuid is mapped `keyword` (so `term` is valid), no "
-            "leftover synthetic media_file rows, and it fails in isolation so it is not test "
-            "ordering. Prime suspect is that dispatch_indexing short-circuits chunk indexing on "
-            "re-injection because the teardown deletes the chunks and the DB rows but NOT the "
-            "`transcripts` document, which survives as 'result': 'updated'. "
-            "STRICT: the failure is deterministic, so if #495 is fixed this XPASSes and FAILS "
-            "the suite, forcing the marker to be removed rather than outliving its bug."
-        ),
-        strict=True,
-    )
     def test_the_indexed_chunk_text_is_the_generators_own_turn_content(self, injected, opensearch):
+        """Chunk-plane content is the generator's own turns, read back from the engine.
+
+        ⚠️ **Query the CHUNK PLANE, never a bare ``file_uuid`` term** — that was issue
+        #495, and the diagnosis in that issue was wrong. It reported "a `term` query on
+        file_uuid returns no chunks", suspected `dispatch_indexing` of short-circuiting
+        on re-injection, and marked this `xfail(strict=True)`.
+
+        The chunks were there the whole time. Measured on the dev stack, a bare
+        ``{"term": {"file_uuid": ...}}`` for this meeting returns **9 documents: 8
+        chunks and 1 digest** — because since index v6 the chunks index holds both
+        planes, which is exactly what :func:`chunk_plane_query` exists to discriminate
+        and why its docstring says every targeted query is built there. A digest carries
+        no ``speaker`` field, so the set comprehension below raised ``KeyError:
+        'speaker'``. Under `-q --tb=line` that surfaced as a bare `FAILED`, and the
+        `assert hits` on the line above — which does pass — got read as the failure.
+
+        So the assertion order matters here: `hits` is checked FIRST and separately, so
+        a genuine "nothing indexed" failure can never again be confused with a
+        wrong-plane failure.
+        """
         from app.core.config import settings
+        from app.services.search.indexing_service import chunk_plane_query
+        from app.services.search.indexing_service import digest_plane_query
 
         records, _ = injected
         file_uuid = records["T001-S0-0002"].file_uuid
         opensearch.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
         hits = opensearch.search(
             index=settings.OPENSEARCH_CHUNKS_INDEX,
-            body={"query": {"term": {"file_uuid": file_uuid}}, "size": 100},
+            body={"query": chunk_plane_query(file_uuid), "size": 100},
         )["hits"]["hits"]
-        text = " ".join(hit["_source"]["content"] for hit in hits)
 
-        assert hits
+        assert hits, "the chunk plane holds no documents for this meeting"
+        text = " ".join(hit["_source"]["content"] for hit in hits)
         assert "T001-S0-0002 turn 3" in text
         assert {hit["_source"]["speaker"] for hit in hits} >= {"Ada Vance", "Bo Ruiz"}
+
+        # The digest exists and was EXCLUDED. Without this the test would still pass if
+        # `chunk_plane_query` quietly stopped discriminating and the digest happened to
+        # grow a `speaker` field — i.e. it pins the plane split, not just the crash.
+        digests = opensearch.search(
+            index=settings.OPENSEARCH_CHUNKS_INDEX,
+            body={"query": digest_plane_query(file_uuid), "size": 100},
+        )["hits"]["hits"]
+        assert digests, "no digest document — the exclusion below would prove nothing"
+        assert {hit["_id"] for hit in digests}.isdisjoint({hit["_id"] for hit in hits})
+        assert all("speaker" not in hit["_source"] for hit in digests)
 
 
 class TestIdempotency:

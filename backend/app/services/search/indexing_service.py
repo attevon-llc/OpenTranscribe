@@ -839,7 +839,7 @@ class TranscriptIndexingService:
         collection_ids: list[int] | None = None,
         accessible_user_ids: list[int] | None = None,
         organization_id: int | None = None,
-    ) -> dict[str, Any] | int:
+    ) -> dict[str, Any]:
         """Chunk and index a transcript.
 
         Embedding modes (in priority order):
@@ -865,16 +865,23 @@ class TranscriptIndexingService:
                 If None, defaults to [user_id] (owner only).
 
         Returns:
-            Dict with indexing stats or int (chunk count).
+            Dict of indexing stats. ``chunk_count`` 0 with a ``reason`` means there
+            was legitimately nothing to index; a FAILURE raises (issue #495).
         """
+        # These two return a dict with an explicit `reason`, not a bare 0 (issue #495).
+        # Both are legitimate "nothing to index" outcomes — and while this method also
+        # swallowed its exceptions into `return 0`, a real failure was *indistinguishable
+        # from them*. That is what made a dead OpenSearch report a successful index.
+        # Naming the reason is what lets zero-because-nothing-to-do and
+        # zero-because-it-broke be told apart at all; the latter now raises.
         client = get_opensearch_client()
         if not client:
             logger.warning("OpenSearch client not initialized, skipping chunk indexing")
-            return 0
+            return {"chunk_count": 0, "reason": "no_opensearch_client"}
 
         if not segments:
             logger.warning(f"No segments to index for file {file_uuid}")
-            return 0
+            return {"chunk_count": 0, "reason": "no_segments"}
 
         ensure_chunks_index_exists()
         ensure_search_pipeline_exists()
@@ -914,7 +921,7 @@ class TranscriptIndexingService:
             logger.warning(
                 f"No chunks generated for file {file_uuid}; pruned {pruned} stale chunk(s)"
             )
-            return 0
+            return {"chunk_count": 0, "reason": "no_chunks_generated", "stale_removed": pruned}
 
         # 2. Add indexed_at timestamp, accessible_user_ids, and the v6 fields
         now = datetime.datetime.now(datetime.UTC).isoformat()
@@ -962,6 +969,27 @@ class TranscriptIndexingService:
                 threshold=settings.SEARCH_LARGE_TRANSCRIPT_CHUNKS,
             ):
                 indexed = self._bulk_index_chunks(chunks, use_neural_pipeline=use_neural)
+
+            # A PARTIAL index must fail the task (issue #495). `_bulk_index_chunks`
+            # returns how many documents actually landed, and until this check existed
+            # nothing compared it to how many were built: `_retry_failed_docs` gives up
+            # after 2 attempts, logs "N documents failed after 2 retries", and returns —
+            # and this method then reported `status: success` with `chunk_count` quietly
+            # short. The file is left permanently half-searchable, with the missing
+            # chunks unreachable by search and by RAG chat, and the only trace is one
+            # ERROR line in a worker log nobody is reading.
+            #
+            # Raising is the honest outcome and is safe to retry: document ids are
+            # deterministic (`{file_uuid}_{chunk_index}`), so a re-run overwrites rather
+            # than duplicates. It is also strictly better than the alternative of
+            # continuing — a task that reports success is never retried by anything.
+            if indexed < len(chunks):
+                raise RuntimeError(
+                    f"Partial chunk index for file {file_uuid}: {indexed} of "
+                    f"{len(chunks)} documents landed after retries. The file would "
+                    "otherwise be reported as indexed while part of the transcript is "
+                    "unreachable by search and RAG chat."
+                )
 
             # Doc ids are deterministic (``{file_uuid}_{chunk_index}``), so the bulk
             # load above OVERWRITES chunks 0..len(chunks)-1 but cannot touch a longer
@@ -1018,9 +1046,22 @@ class TranscriptIndexingService:
                 "stale_removed": stale_removed,
                 "digest_sections": digest_count,
             }
-        except Exception as e:
-            logger.error(f"Bulk indexing failed for file {file_uuid}: {e}")
-            return 0
+        except Exception:
+            # DO NOT swallow this into `return 0` (issue #495). It used to, and the
+            # consequence was not a degraded result — it was a FALSE one. The caller,
+            # `tasks/search_indexing_task`, has an int arm that wraps a bare count as
+            # `{"chunk_count": result}`, marks the DB task **completed**, and returns
+            # `{"status": "success", ...}`. So every failure in this method — a dead
+            # OpenSearch, a mapping rejection, a partial bulk load — was reported to the
+            # user, the task table and the notification as a successful index of zero
+            # chunks. The task's own `except` (search_indexing_task.py, "Search indexing
+            # failed for file …") could never fire, because nothing ever reached it.
+            #
+            # `logger.error` + a sentinel return is a reasonable pattern where the caller
+            # inspects the sentinel. Here nothing did, and the sentinel was
+            # indistinguishable from the legitimate zero-chunk case.
+            logger.exception(f"Bulk indexing failed for file {file_uuid}")
+            raise
 
     def delete_transcript_chunks(self, file_uuid: str) -> int:
         """Delete **every** indexed document for a file — both planes.
@@ -1427,13 +1468,36 @@ class TranscriptIndexingService:
                 base_metadata=base_metadata,
             )
             ids = digest_mapping.digest_document_ids(file_uuid, digest)
+            written = 0
             if documents:
-                self._bulk_index_documents(list(zip(ids, documents, strict=True)), use_neural)
+                written = self._bulk_index_documents(
+                    list(zip(ids, documents, strict=True)), use_neural
+                )
             # Same orphan hazard as #400's chunk tail: the ids embed the section
             # number, so a digest that re-sections shorter leaves the extras
             # behind, still matching every query the file matches.
             self._prune_stale_digests(file_uuid, keep_count=len(documents))
-            return len(documents)
+
+            # Report what LANDED, not what was built (issue #495). This used to
+            # discard `_bulk_index_documents`'s return value entirely and return
+            # `len(documents)`, so `digest_sections` in the task result was the number
+            # of sections *generated* — reported identically whether all of them were
+            # written or none were. `_bulk_index_documents` logs the failures and
+            # returns a short count; nothing read it.
+            #
+            # Unlike the chunk plane above this does NOT raise, and the asymmetry is
+            # deliberate: the `except` below already declines to fail the caller for a
+            # digest problem, because the digest tier is derived enrichment while the
+            # chunks are the transcript itself. A missing digest degrades summarization;
+            # missing chunks make part of a recording unfindable. Reporting the true
+            # count is what that decision needs to stay honest — "we chose not to fail"
+            # is defensible, "we reported a number we did not verify" is not.
+            if written < len(documents):
+                logger.error(
+                    f"Digest plane for file {file_uuid} is incomplete: {written} of "
+                    f"{len(documents)} sections landed"
+                )
+            return written
         except Exception as exc:  # noqa: BLE001 — chunks are indexed; do not fail the caller
             logger.error(f"Could not index digest plane for file {file_uuid}: {exc}")
             return 0
@@ -1574,11 +1638,8 @@ class TranscriptIndexingService:
             accessible_user_ids=accessible_user_ids,
             organization_id=organization_id,
         )
-        # Extract chunk count from result (dict or int)
-        if isinstance(result, dict):
-            chunk_count: int = result.get("chunk_count", 0)
-            return chunk_count
-        return result
+        chunk_count: int = result.get("chunk_count", 0)
+        return chunk_count
 
     def _bulk_index_chunks(
         self, chunks: list[dict[str, Any]], use_neural_pipeline: bool = False

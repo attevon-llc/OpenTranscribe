@@ -28,13 +28,22 @@ from app.services.opensearch_service import speaker_metadata
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
-pytestmark = pytest.mark.skipif(
-    _OPENSEARCH_ABSENT,
-    reason=(
-        "No OpenSearch reachable (SKIP_OPENSEARCH). These tests verify real "
-        "document reads/writes and cannot be meaningfully mocked."
+
+# Serialised against the other live-cluster speaker suites (issue #486). All three create and
+# delete throwaway OpenSearch indices; under the default `-n auto` (24 workers here) that
+# index churn overloads the single dev cluster and reads start timing out at 10 s, which
+# surfaces as an unrelated-looking assertion failure in whichever test lost the race.
+# Measured: 1 failure in 4 concurrent runs, on a different test each time.
+pytestmark = [
+    pytest.mark.xdist_group("opensearch_speaker_indices"),
+    pytest.mark.skipif(
+        _OPENSEARCH_ABSENT,
+        reason=(
+            "No OpenSearch reachable (SKIP_OPENSEARCH). These tests verify real "
+            "document reads/writes and cannot be meaningfully mocked."
+        ),
     ),
-)
+]
 
 
 def _embedding(dimension: int = PYANNOTE_EMBEDDING_DIMENSION_V4) -> list[float]:
@@ -82,6 +91,15 @@ def indices(monkeypatch):
     v4 = get_speaker_index_v4()
     _ensure_versioned_speaker_index(v3, PYANNOTE_EMBEDDING_DIMENSION_V3)
     _ensure_versioned_speaker_index(v4, PYANNOTE_EMBEDDING_DIMENSION_V4)
+    # `_ensure_versioned_speaker_index` swallows CLUSTER_UNAVAILABLE_ERRORS (which include 4xx
+    # TransportErrors such as a shard-limit validation_exception) and returns without raising,
+    # so under cluster pressure this fixture can "succeed" having created nothing. Fail here,
+    # naming the cause, rather than three lines later as a mystery stale-document assertion.
+    for name in (v3, v4):
+        assert client.indices.exists(index=name), (
+            f"index {name} was not created — _ensure_versioned_speaker_index swallowed the "
+            "cluster error (issue #486)"
+        )
     alias = get_speaker_index()
     client.indices.put_alias(index=v4, name=alias)
 
@@ -374,6 +392,13 @@ def test_sync_speaker_profiles_counts_a_missing_opensearch_document_as_skipped(
     live cluster's actual error string can confirm that match is real).
     """
     media_file = _media_file(db_session, normal_user)
+
+    # The sweep is deliberately GLOBAL — it walks every Speaker row in the shared dev DB,
+    # including rows other workers commit through their own SessionLocal(). So measure this
+    # speaker's CONTRIBUTION as a delta rather than asserting on the aggregate: one
+    # unrelated row erroring would otherwise fail a test that is not about it (issue #486).
+    before = speaker_metadata.sync_speaker_profiles_to_opensearch(db_session)
+
     speaker = Speaker(
         uuid=uuid_pkg.uuid4(),
         user_id=normal_user.id,
@@ -385,10 +410,12 @@ def test_sync_speaker_profiles_counts_a_missing_opensearch_document_as_skipped(
     db_session.flush()
     # Deliberately no matching OpenSearch document for this speaker's uuid.
 
-    baseline = speaker_metadata.sync_speaker_profiles_to_opensearch(db_session)
+    after = speaker_metadata.sync_speaker_profiles_to_opensearch(db_session)
 
-    assert baseline["skipped"] >= 1
-    assert baseline["errors"] == 0, (
+    assert after["skipped"] - before["skipped"] >= 1, (
+        "the un-indexed speaker added by this test must be counted as skipped"
+    )
+    assert after["errors"] == before["errors"], (
         "a genuinely missing document must classify as 'skipped', never 'errors' — "
         "if this fails, the 'document_missing_exception' substring match in the "
         "source no longer matches the live cluster's real error text"

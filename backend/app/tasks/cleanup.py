@@ -10,8 +10,6 @@ from datetime import timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from celery import shared_task
-
 from app.core.celery import celery_app
 from app.core.constants import UtilityPriority
 from app.db.session_utils import session_scope
@@ -34,7 +32,7 @@ _MAX_UPLOAD_GRACE_MINUTES = 48 * 60
 _DEFAULT_RETENTION_HOUR = 2
 
 
-@shared_task(bind=True, name="cleanup.run_periodic_cleanup", priority=UtilityPriority.ROUTINE)
+@celery_app.task(bind=True, name="cleanup.run_periodic_cleanup", priority=UtilityPriority.ROUTINE)
 def run_periodic_cleanup(self):
     """
     Periodic task to clean up stuck files and maintain system health.
@@ -74,7 +72,7 @@ def run_periodic_cleanup(self):
         raise self.retry(countdown=3600, max_retries=3) from e  # Retry in 1 hour
 
 
-@shared_task(bind=True, name="cleanup.deep_cleanup", priority=UtilityPriority.BACKGROUND)
+@celery_app.task(bind=True, name="cleanup.deep_cleanup", priority=UtilityPriority.BACKGROUND)
 def run_deep_cleanup(self, dry_run: bool = False):
     """
     Deep cleanup task for removing orphaned files (admin-triggered).
@@ -106,7 +104,7 @@ def run_deep_cleanup(self, dry_run: bool = False):
         raise
 
 
-@shared_task(bind=True, name="cleanup.health_check", priority=UtilityPriority.OPERATIONAL)
+@celery_app.task(bind=True, name="cleanup.health_check", priority=UtilityPriority.OPERATIONAL)
 def system_health_check(self):
     """
     Generate a system health report.
@@ -138,7 +136,7 @@ def system_health_check(self):
         raise
 
 
-@shared_task(bind=True, name="cleanup.emergency_recovery", priority=UtilityPriority.EMERGENCY)
+@celery_app.task(bind=True, name="cleanup.emergency_recovery", priority=UtilityPriority.EMERGENCY)
 def emergency_file_recovery(self, file_uuids: list):
     """
     Emergency recovery task for specific files (admin-triggered).
@@ -228,7 +226,7 @@ def _upload_grace_minutes(file_size: int | None, base_minutes: int) -> int:
     return min(max(base_minutes, needed), _MAX_UPLOAD_GRACE_MINUTES)
 
 
-@shared_task(bind=True, name="cleanup.orphan_upload_sweeper", priority=UtilityPriority.ROUTINE)
+@celery_app.task(bind=True, name="cleanup.orphan_upload_sweeper", priority=UtilityPriority.ROUTINE)
 def orphan_upload_sweeper(self, max_age_minutes: int = 30) -> dict[str, int]:
     """Delete PENDING MediaFile rows abandoned before MinIO finished storing.
 
@@ -354,7 +352,7 @@ def orphan_upload_sweeper(self, max_age_minutes: int = 30) -> dict[str, int]:
     }
 
 
-@shared_task(bind=True, name="cleanup.scratch_janitor", priority=UtilityPriority.ROUTINE)
+@celery_app.task(bind=True, name="cleanup.scratch_janitor", priority=UtilityPriority.ROUTINE)
 def scratch_janitor(self, ttl_seconds: int | None = None) -> dict[str, int]:
     """Purge stale per-file directories from the shared scratch volume.
 

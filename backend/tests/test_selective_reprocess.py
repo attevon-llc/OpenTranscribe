@@ -13,7 +13,10 @@ Requires:
 """
 
 import logging
+import os
 import time
+import uuid
+from pathlib import Path
 
 import pytest
 import requests
@@ -57,40 +60,102 @@ def headers(auth_token):
     return {"Authorization": f"Bearer {auth_token}"}
 
 
+#: The committed 10 s / mono / 16 kHz fixture — see `tests/fixtures/media/README.md`.
+#: Small, deterministic and GPU-light, so this module runs the same way everywhere.
+_SAMPLE_AUDIO = Path(__file__).resolve().parent / "fixtures" / "media" / "sample_short.wav"
+
+#: Local-only override for real-corpus verification (`test_videos/`, the AMI corpus, a long
+#: meeting recording). CI runners have no GPU and no such assets, so the committed fixture
+#: stays the default and this is opt-in:
+#:
+#:     REPROCESS_TEST_MEDIA=test_videos/test_ai_video.mp4 pytest tests/test_selective_reprocess.py
+#:
+#: Mind the VRAM: diarizing a multi-hour file needs far more than the 12 GB on this box —
+#: that is what made these tests fail before they used a short clip.
+_MEDIA_OVERRIDE_ENV = "REPROCESS_TEST_MEDIA"
+
+
+def _source_media() -> Path:
+    """The clip to upload: the local override when set, else the committed fixture."""
+    override = os.environ.get(_MEDIA_OVERRIDE_ENV, "").strip()
+    if not override:
+        return _SAMPLE_AUDIO
+    path = Path(override)
+    if not path.is_absolute():
+        # Relative paths resolve from the repo root, which is where these are run from.
+        path = Path(__file__).resolve().parents[2] / path
+    if not path.exists():
+        pytest.fail(f"{_MEDIA_OVERRIDE_ENV}={override!r} does not exist (resolved to {path})")
+    return path
+
+
 @pytest.fixture(scope="module")
 def completed_file(headers):
-    """Find the shortest completed file in the database."""
-    resp = requests.get(
-        f"{BASE_URL}/files",
-        headers=headers,
-        params={"limit": "1", "sort_by": "duration", "sort_order": "asc"},
-    )
-    assert resp.status_code == 200, f"Failed to fetch files: {resp.text}"
+    """Upload the committed short fixture and process it, then clean it up.
 
-    data = resp.json()
-    files = data.get("items", [])
-    completed = [f for f in files if f.get("status") == "completed"]
-    if not completed:
-        # Try fetching more files
-        resp2 = requests.get(
+    This used to reprocess whichever completed file the dev database happened to hold,
+    which was wrong three ways:
+
+    * **It mutated real data.** Reprocessing rewrites an existing user's transcript in
+      place, which ``backend/tests/CLAUDE.md`` forbids ("E2E must never persist changes
+      to dev data").
+    * **It could not pass on this hardware.** The shortest *completed* file here is
+      8168 s (2 h 16 m); diarizing it exhausts a 12 GB GPU even at ``batch_size=1``, so
+      the rediarize/transcription stages OOM'd. The first failure left the file in
+      ``error``, and because this fixture is module-scoped every later test in the module
+      then failed on the same poisoned file.
+    * **It was ambient.** Whether the suite passed depended on what someone had uploaded.
+
+    A 10 s clip removes all three: it is deterministic, it fits in any GPU, and it is
+    deleted afterwards so the dev library is unchanged.
+    """
+    source = _source_media()
+    if not source.exists():  # pragma: no cover - the committed fixture is tracked
+        pytest.skip(f"missing media fixture {source}")
+
+    mime = "video/mp4" if source.suffix.lower() in {".mp4", ".m4v", ".mov"} else "audio/wav"
+    with source.open("rb") as fh:
+        resp = requests.post(
             f"{BASE_URL}/files",
             headers=headers,
-            params={"limit": "20", "sort_by": "duration", "sort_order": "asc"},
+            files={
+                "file": (f"reprocess-{uuid.uuid4().hex[:8]}{source.suffix}", fh, mime),
+            },
+            timeout=300,
         )
-        data2 = resp2.json()
-        completed = [f for f in data2.get("items", []) if f.get("status") == "completed"]
+    assert resp.status_code == 200, f"Upload failed: {resp.status_code} {resp.text}"
+    uploaded = resp.json()
+    file_uuid = uploaded["uuid"]
 
-    if not completed:
-        pytest.skip("No completed files in database — upload and process one first")
+    try:
+        # Transcribing 10 s is quick, but the queue may be busy; this is the initial
+        # ingest, not a reprocess, so give it its own generous window.
+        assert _wait_for_completed(headers, file_uuid, max_wait=300), (
+            f"uploaded fixture {file_uuid} never reached a stable completed state"
+        )
 
-    f = completed[0]
-    logger.info(
-        f"\nUsing file: {f.get('filename', '?')[:50]}"
-        f"\n  UUID: {f['uuid']}"
-        f"\n  Duration: {f.get('duration', 0):.1f}s"
-        f"\n  Status: {f.get('status')}"
-    )
-    return f
+        resp = requests.get(f"{BASE_URL}/files/{file_uuid}", headers=headers, timeout=30)
+        assert resp.status_code == 200, f"Failed to re-read uploaded file: {resp.text}"
+        f = resp.json()
+        logger.info(
+            f"\nUsing uploaded fixture: {f.get('filename', '?')[:50]}"
+            f"\n  UUID: {f['uuid']}"
+            f"\n  Duration: {f.get('duration', 0):.1f}s"
+            f"\n  Status: {f.get('status')}"
+        )
+        yield f
+    finally:
+        # Delete on the way out no matter how the module ended — a cleanup that only runs
+        # on the happy path is exactly the one that does not run when a test fails.
+        try:
+            requests.delete(f"{BASE_URL}/files/{file_uuid}", headers=headers, timeout=30)
+        except requests.RequestException:
+            logger.warning("could not delete uploaded fixture %s", file_uuid)
+
+
+#: Statuses a file can never leave on its own. Reaching one means the answer is already
+#: decided, so continuing to poll for "completed" only burns the rest of the window.
+_TERMINAL_FAILURE_STATUSES = frozenset({"error", "cancelled"})
 
 
 def _wait_for_completed(headers, file_uuid, max_wait=180):
@@ -100,12 +165,30 @@ def _wait_for_completed(headers, file_uuid, max_wait=180):
     search indexing) can flip the file back to PROCESSING moments after a
     prior stage reports completed, which races the next reprocess request
     into an INVALID_STATUS rejection. Require two consecutive completed polls.
+
+    Fails FAST on a terminal failure status. Without that, a stage that errors in
+    ~50 s still costs the caller its whole window — ``max_wait=600`` at 1-2 s a poll
+    is 10-20 minutes — waiting for a "completed" that can never arrive, and then
+    reports a bare "File not completed" that says nothing about what went wrong.
+    Observed: a rediarize OOM'd on a 61-minute file, and the suite spent the next
+    several minutes polling a row that already said ``error``.
     """
     consecutive = 0
     for i in range(max_wait):
         resp = requests.get(f"{BASE_URL}/files/{file_uuid}", headers=headers)
         if resp.status_code == 200:
-            status = resp.json().get("status")
+            body = resp.json()
+            status = body.get("status")
+            if status in _TERMINAL_FAILURE_STATUSES:
+                # `GET /files/{uuid}` carries error_category, not last_error_message; the
+                # full message lives on /status-detail, so name the category and point at it
+                # rather than reporting an empty string.
+                detail = body.get("last_error_message") or body.get("error_category") or "unknown"
+                pytest.fail(
+                    f"file {file_uuid} reached terminal status {status!r} after {i}s and "
+                    f"cannot become completed (error_category={detail}). "
+                    f"Full message: GET {BASE_URL}/files/{file_uuid}/status-detail"
+                )
             if status == "completed":
                 consecutive += 1
                 if consecutive >= 2:

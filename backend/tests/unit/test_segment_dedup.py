@@ -65,6 +65,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.utils.segment_dedup import _EXACT_DUPLICATE_MAX_GAP_S
 from app.utils.segment_dedup import _clamp_overlapping_timestamps
 from app.utils.segment_dedup import _map_words_to_sentence
 from app.utils.segment_dedup import deduplicate_segments
@@ -226,10 +227,14 @@ def test_phase2_catches_an_exact_duplicate_two_positions_apart():
     segment (not just its immediate predecessor), so the (2, 0) pair is
     checked and the duplicate at position 2 is removed. Equal-duration ties
     keep the first occurrence (``dur_i >= dur_j`` removes ``i``).
+
+    The pair sits 1.0 s apart, inside ``_EXACT_DUPLICATE_MAX_GAP_S``. This test
+    originally placed them 8 s apart, which made it assert the issue #487
+    data-loss behaviour — see the sibling test below for that boundary.
     """
     seg0 = _segment(0.0, 2.0, "Thank you very much everyone.")
-    seg1 = _segment(5.0, 7.0, "Completely different filler content here.")
-    seg2 = _segment(10.0, 12.0, "Thank you very much everyone.")
+    seg1 = _segment(2.0, 2.5, "Completely different filler content here.")
+    seg2 = _segment(3.0, 5.0, "Thank you very much everyone.")
 
     result = deduplicate_segments([seg0, seg1, seg2])
 
@@ -237,6 +242,46 @@ def test_phase2_catches_an_exact_duplicate_two_positions_apart():
     texts = [seg["text"] for seg in result]
     assert texts.count("Thank you very much everyone.") == 1
     assert "Completely different filler content here." in texts
+
+
+def test_phase2_keeps_a_repeated_short_utterance_far_apart_in_time():
+    """Issue #487: a genuine repetition minutes later is NOT a Whisper duplicate.
+
+    The regression this pins: Phase 2's full pairwise scan had no time bound, so
+    identical text anywhere in a recording collapsed to one segment. On the
+    10-minute boundary fixture that silently deleted 31 words of real speech,
+    including three separate "Yeah."s up to 149 s apart.
+
+    Both must survive: same speaker, same word, two distinct utterances.
+    """
+    first = _segment(10.0, 10.4, "Yeah.")
+    middle = _segment(60.0, 63.0, "So the interesting part is how the model behaves.")
+    later = _segment(159.0, 159.4, "Yeah.")
+
+    result = deduplicate_segments([first, middle, later])
+
+    assert len(result) == 3, f"a repeated utterance was deleted: {[s['text'] for s in result]}"
+    assert [seg["text"] for seg in result].count("Yeah.") == 2
+
+
+def test_phase2_gap_boundary_is_the_documented_threshold():
+    """Just inside the gate collapses; just outside it survives.
+
+    Pins ``_EXACT_DUPLICATE_MAX_GAP_S`` as a real behavioural boundary rather
+    than an unread constant, so widening it back toward "match anywhere" fails
+    here rather than only on the GPU-marked fixture.
+    """
+    gap = _EXACT_DUPLICATE_MAX_GAP_S
+
+    inside = deduplicate_segments(
+        [_segment(0.0, 1.0, "Right."), _segment(1.0 + gap - 0.1, 2.0 + gap - 0.1, "Right.")]
+    )
+    outside = deduplicate_segments(
+        [_segment(0.0, 1.0, "Right."), _segment(1.0 + gap + 0.1, 2.0 + gap + 0.1, "Right.")]
+    )
+
+    assert len(inside) == 1
+    assert len(outside) == 2
 
 
 # ---------------------------------------------------------------------------

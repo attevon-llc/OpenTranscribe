@@ -23,8 +23,7 @@ import logging
 from datetime import UTC
 from datetime import datetime
 
-from celery import shared_task
-
+from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
 from app.db.session_utils import session_scope
@@ -39,7 +38,7 @@ DIRECTORY_SYNC_LOCK_KEY = "directory_sync_run"
 DIRECTORY_SYNC_LOCK_TIMEOUT = 1800
 
 
-@shared_task(name="directory.sync_check_schedule", priority=CPUPriority.MAINTENANCE)
+@celery_app.task(name="directory.sync_check_schedule", priority=CPUPriority.MAINTENANCE)
 def check_directory_sync_schedule() -> dict:
     """Beat-driven due-check. Dispatch ``directory.sync_run`` when the cron is due.
 
@@ -68,7 +67,7 @@ def check_directory_sync_schedule() -> dict:
     return {"status": "dispatched", "schedule": cfg["schedule"]}
 
 
-@shared_task(name="directory.sync_run", priority=CPUPriority.MAINTENANCE)
+@celery_app.task(name="directory.sync_run", priority=CPUPriority.MAINTENANCE)
 def run_directory_sync(dry_run: bool | None = None) -> dict:
     """Execute one reconciliation pass and return its report.
 

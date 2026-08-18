@@ -443,6 +443,7 @@ def coded_default(config_key: str, fallback: Any = None) -> Any:
 #: rejected state by saving one field at a time.
 CROSS_FIELD_KEYS: dict[str, tuple[str, ...]] = {
     "local": ("local_enabled", "allow_registration"),
+    "pki": ("pki_enabled", "pki_verify_revocation", "pki_ca_cert_path"),
 }
 
 
@@ -460,6 +461,10 @@ def _check_cross_field_rules(
     Raises:
         ValueError: The resulting state is rejected.
     """
+    if category == "pki":
+        _check_pki_cross_field_rules(merged, incoming_keys)
+        return
+
     if category != "local":
         return
 
@@ -482,6 +487,44 @@ def _check_cross_field_rules(
         "allow_registration cannot be enabled while local password login (local_enabled) is "
         "disabled: self-registration creates local-password accounts that could never sign in. "
         "Enable local_enabled first, or leave self-registration off."
+    )
+
+
+def _check_pki_cross_field_rules(merged: dict[str, Any], incoming_keys: frozenset[str]) -> None:
+    """Refuse revocation checking with no CA bundle to build the issuer chain from.
+
+    ``core/config.py:_validate_pki_settings`` has always raised this at startup for
+    the ``.env`` spelling. It could not see the DB copy, which did not matter while
+    ``pki_auth.py`` read ``settings.PKI_*`` directly and the DB keys were inert.
+    Now that they are live (issue #498), the admin UI can assemble a state the
+    environment refuses to boot with — so the same rule has to hold here.
+
+    Without the CA bundle ``_load_issuer_certificate`` returns None, OCSP is
+    skipped, the CRL cross-check has nothing to verify a signature against, and
+    every certificate lands on the ``pki_revocation_soft_fail`` branch: silently
+    admitted, or universally rejected. Both are worse than a 400 at save time.
+
+    Raises:
+        ValueError: Revocation checking is on with no CA certificate path.
+    """
+    if not merged.get("pki_enabled", coded_default("pki_enabled")):
+        return
+    if not merged.get("pki_verify_revocation", coded_default("pki_verify_revocation")):
+        return
+    if merged.get("pki_ca_cert_path", coded_default("pki_ca_cert_path")):
+        return
+
+    if "pki_verify_revocation" in incoming_keys:
+        raise ValueError(
+            "Cannot enable pki_verify_revocation without pki_ca_cert_path: revocation "
+            "checking needs a CA certificate to build the issuer chain, and without one "
+            "every certificate falls through to the pki_revocation_soft_fail decision. "
+            "Set pki_ca_cert_path first."
+        )
+    raise ValueError(
+        "pki_ca_cert_path cannot be cleared while pki_verify_revocation is enabled: "
+        "revocation checking would have no CA certificate to verify against. Turn off "
+        "pki_verify_revocation first, or supply a different CA path."
     )
 
 

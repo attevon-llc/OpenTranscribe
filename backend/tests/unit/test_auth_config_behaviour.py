@@ -13,6 +13,8 @@ consumer, never back through the config API.
 
 from __future__ import annotations
 
+import functools
+
 import pytest
 
 from app.auth import lockout
@@ -327,3 +329,182 @@ def test_pki_enabled_opens_and_closes_the_authenticate_route(client, db_session,
     assert "not enabled" not in detail(enabled), (
         "PKI authenticate still reports 'not enabled' after pki_enabled was saved True"
     )
+
+
+# ── pki: the revocation plane (issue #498) ──────────────────────────────────────
+#
+# These five keys were writable from the Settings UI and read by nothing:
+# ``auth/pki_auth.py`` took them from ``settings.PKI_*`` (i.e. ``.env``), so an
+# operator disabling revocation checking, hardening soft-fail, or widening the
+# OCSP timeout changed nothing at all. A reader-exists test cannot catch that —
+# ``test_auth_config_has_readers.py`` is the scan, and these are the behaviour.
+#
+# Every case below asserts BOTH directions from the same saved key, so a
+# consumer hardcoded to either value fails rather than matching one arm.
+
+
+def test_pki_verify_revocation_decides_whether_the_check_runs(db_session, super_admin_user):
+    """Off must short-circuit; on must reach the no-certificate branch."""
+    from app.auth.pki_auth import _handle_revocation_check
+
+    save(
+        db_session,
+        super_admin_user,
+        "pki",
+        {"pki_enabled": True, "pki_ca_cert_path": "/etc/ssl/certs/ca.pem"},
+    )
+
+    save(db_session, super_admin_user, "pki", {"pki_verify_revocation": False})
+    assert _handle_revocation_check(None) is False, "a disabled check still denied"
+
+    save(
+        db_session,
+        super_admin_user,
+        "pki",
+        {"pki_verify_revocation": True, "pki_revocation_soft_fail": False},
+    )
+    assert _handle_revocation_check(None) is True, (
+        "revocation checking was enabled but the missing certificate was admitted"
+    )
+
+
+def test_pki_revocation_soft_fail_decides_the_inconclusive_verdict(db_session, super_admin_user):
+    """The same input must be admitted under soft-fail and denied without it."""
+    from app.auth.pki_auth import _handle_revocation_check
+
+    save(
+        db_session,
+        super_admin_user,
+        "pki",
+        {
+            "pki_enabled": True,
+            "pki_verify_revocation": True,
+            "pki_ca_cert_path": "/etc/ssl/certs/ca.pem",
+        },
+    )
+
+    save(db_session, super_admin_user, "pki", {"pki_revocation_soft_fail": True})
+    assert _handle_revocation_check(None) is False, "soft-fail on should admit"
+
+    save(db_session, super_admin_user, "pki", {"pki_revocation_soft_fail": False})
+    assert _handle_revocation_check(None) is True, (
+        "soft-fail off still admitted a certificate whose revocation could not be checked"
+    )
+
+
+def test_pki_ca_cert_path_is_the_file_the_issuer_is_loaded_from(
+    db_session, super_admin_user, tmp_path
+):
+    """An unset path yields no issuer; a saved path is the file actually opened."""
+    from app.auth.pki_auth import _load_issuer_certificate
+
+    save(db_session, super_admin_user, "pki", {"pki_enabled": True, "pki_ca_cert_path": ""})
+    assert _load_issuer_certificate() is None, "an unset CA path still produced an issuer"
+
+    # A path that exists but is not a certificate: _load_issuer_certificate
+    # returns None either way, so assert on WHICH path was opened instead —
+    # that is the part the config key controls.
+    ca_file = tmp_path / "ca.pem"
+    ca_file.write_text("not a certificate")
+    opened: list[str] = []
+    real_open = open
+
+    def recording_open(path, *args, **kwargs):
+        opened.append(str(path))
+        return real_open(path, *args, **kwargs)
+
+    save(db_session, super_admin_user, "pki", {"pki_ca_cert_path": str(ca_file)})
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("builtins.open", recording_open)
+        _load_issuer_certificate()
+
+    assert str(ca_file) in opened, f"the saved CA path was never opened; opened={opened}"
+
+
+def test_pki_ocsp_timeout_seconds_reaches_the_http_client(db_session, super_admin_user):
+    """The saved timeout must be the one the OCSP request is made with."""
+    import app.auth.pki_auth as pki_auth
+
+    save(db_session, super_admin_user, "pki", {"pki_enabled": True})
+
+    timeouts: list[float] = []
+
+    class _RecordingClient:
+        def __init__(self, *, timeout, **kwargs):
+            timeouts.append(timeout)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def post(self, *args, **kwargs):
+            raise pki_auth.httpx.RequestError("no responder in a unit test")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(pki_auth.httpx, "Client", _RecordingClient)
+
+        save(db_session, super_admin_user, "pki", {"pki_ocsp_timeout_seconds": 7})
+        pki_auth._send_ocsp_request("http://ocsp.example.test", b"req")
+
+        save(db_session, super_admin_user, "pki", {"pki_ocsp_timeout_seconds": 23})
+        pki_auth._send_ocsp_request("http://ocsp.example.test", b"req")
+
+    assert timeouts == [7, 23], f"the saved OCSP timeout never reached httpx; saw {timeouts}"
+
+
+@functools.lru_cache(maxsize=1)
+def _empty_crl():
+    """Build a real, empty CRL once per session for the cache-TTL test."""
+    from datetime import UTC
+    from datetime import datetime
+    from datetime import timedelta
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "OpenTranscribe Test CA")])
+    now = datetime.now(UTC)
+    return (
+        x509.CertificateRevocationListBuilder()
+        .issuer_name(issuer)
+        .last_update(now)
+        .next_update(now + timedelta(days=1))
+        .sign(key, hashes.SHA256())
+    )
+
+
+def test_pki_crl_cache_seconds_sets_the_cached_entry_ttl(db_session, super_admin_user):
+    """The saved TTL must be the expiry actually written into the CRL cache."""
+    import time as _time
+
+    import app.auth.pki_auth as pki_auth
+
+    save(db_session, super_admin_user, "pki", {"pki_enabled": True})
+
+    # A real (empty) CRL rather than a sentinel: ``_set_crl_cache`` is typed for
+    # one, and mypy is right that an ``object()`` is not. Building it costs a
+    # keygen and removes any question of the stand-in diverging from the type.
+    sentinel_crl = _empty_crl()
+    url = "http://crl.example.test/ca.crl"
+
+    def cached_ttl(seconds: int) -> float:
+        save(db_session, super_admin_user, "pki", {"pki_crl_cache_seconds": seconds})
+        pki_auth._crl_cache.pop(url, None)
+        before = _time.time()
+        pki_auth._set_crl_cache(url, sentinel_crl)
+        _, expiry = pki_auth._crl_cache[url]
+        return expiry - before
+
+    try:
+        short = cached_ttl(60)
+        long = cached_ttl(3600)
+    finally:
+        pki_auth._crl_cache.pop(url, None)
+
+    assert 59 <= short <= 62, f"a 60s TTL produced {short}s"
+    assert 3599 <= long <= 3602, f"a 3600s TTL produced {long}s"

@@ -136,24 +136,20 @@ _ALL_KEYS = sorted({key for keys in AuthConfigService.CONFIG_CATEGORIES.values()
 #: excluded: the moment one is bridged this test XPASSes and fails, forcing the
 #: entry to be deleted, and until then the failure is visible in the report.
 #:
-#: All of these live in ``auth/pki_auth.py``, which reads ``settings.PKI_*``
-#: directly for everything except ``pki_enabled`` / ``pki_admin_dns`` /
-#: ``pki_mode`` / ``pki_allow_password_fallback`` / ``pki_cert_header`` /
-#: ``pki_cert_dn_header`` / ``pki_trusted_proxies`` (the latter three bridged: the
-#: Settings UI's "Trusted Proxies" field on the PKI panel saved to the DB but was
-#: silently never read back — ``pki_authenticate`` only consulted a module-level
-#: list parsed once from ``.env`` at import time). Bridging the rest is the same
-#: change made here for the password-policy and lockout planes: resolve through
-#: ``DynamicAuthSettings`` at the call site (``api/endpoints/auth/pki.py`` holds a
-#: session; ``pki_auth`` helpers do not and would use
-#: ``get_process_auth_settings()``).
-_NOT_YET_BRIDGED = {
-    "pki_ca_cert_path": "auth/pki_auth.py reads settings.PKI_CA_CERT_PATH",
-    "pki_verify_revocation": "auth/pki_auth.py reads settings.PKI_VERIFY_REVOCATION",
-    "pki_ocsp_timeout_seconds": "auth/pki_auth.py reads settings.PKI_OCSP_TIMEOUT_SECONDS",
-    "pki_crl_cache_seconds": "auth/pki_auth.py reads settings.PKI_CRL_CACHE_SECONDS",
-    "pki_revocation_soft_fail": "auth/pki_auth.py reads settings.PKI_REVOCATION_SOFT_FAIL",
-}
+#: **Empty, and that is the point** — keep it that way. The last five entries were
+#: the revocation plane (``pki_ca_cert_path``, ``pki_verify_revocation``,
+#: ``pki_ocsp_timeout_seconds``, ``pki_crl_cache_seconds``,
+#: ``pki_revocation_soft_fail``), which the Settings UI wrote while
+#: ``auth/pki_auth.py`` read ``settings.PKI_*`` from ``.env`` — so an operator
+#: turning revocation checking off, or widening the OCSP timeout, changed nothing
+#: at all. They are bridged in issue #498 the same way the password-policy and
+#: lockout planes were: resolve through ``get_process_auth_settings()`` at the
+#: call site, because the ``pki_auth`` helpers run deep inside certificate
+#: verification and hold no session.
+#:
+#: A new entry here is a claim that a key the admin UI offers does nothing. Prefer
+#: bridging it in the same PR that adds it.
+_NOT_YET_BRIDGED: dict[str, str] = {}
 
 
 def _case(key: str) -> Any:

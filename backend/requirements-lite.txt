@@ -1,12 +1,12 @@
 # fastapi capped <0.137: 0.137+ stops flattening include_router prefixes into
 # scope["route"].path — breaks route-templated metrics labels (see requirements.txt)
-fastapi>=0.136.3,<0.137
-uvicorn[standard]>=0.49.0
+fastapi>=0.141.1,<0.142
+uvicorn[standard]>=0.52.3
 websockets>=17.0.1
-sqlalchemy>=2.0.51
-alembic>=1.18.5
+sqlalchemy>=2.0.52
+alembic>=1.19.1
 pydantic>=2.13.4
-pydantic-settings>=2.14.2
+pydantic-settings>=2.15.0
 # joserfc — see requirements.txt for why (#33, #34: replaces python-jose everywhere)
 joserfc>=1.7.4
 # SAML 2.0 SP support (#35) — see requirements.txt for why python3-saml.
@@ -18,7 +18,7 @@ bcrypt>=4.3.0,<5
 email-validator
 # Asynchronous Tasks
 celery>=5.6.3
-redis>=8.0.1
+redis>=8.1.0
 flower>=2.0.1
 psycopg2-binary>=2.9.12
 minio>=7.2.20
@@ -41,7 +41,7 @@ qrcode[pil]>=8.2
 
 # AI/ML Stack - CPU-only (no CUDA, no GPU required)
 # NumPy 2.x compatible
-numpy>=1.25.2
+numpy>=2.5.2
 
 # PyTorch CPU-only (for speaker embeddings — no CUDA build)
 # Use --extra-index-url so PyPI remains available for all other packages.
@@ -59,29 +59,29 @@ pyannote.audio>=4.0.7
 # Supporting libraries
 omegaconf>=2.3.1
 ffmpeg-python>=0.2.0
-sentencepiece>=0.2.1
+sentencepiece>=0.2.2
 psutil>=7.2.2
 pyexiftool>=0.5.6
-yt-dlp>=2026.6.9
+yt-dlp>=2026.7.4
 
 # Semantic search and NLP
-sentence-transformers>=5.6.0  # For semantic search embeddings (all-MiniLM-L6-v2)
+sentence-transformers>=5.7.0  # For semantic search embeddings (all-MiniLM-L6-v2)
 # Note: nltk is installed as transitive dependency from transformers
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage
 
 # Cloud ASR provider SDKs (lazily imported — only needed for configured provider)
 # deepgram-sdk<7.6.0 breaks under websockets>=15 — see backend/requirements.txt for the
 # full explanation. Caught by tests/unit/test_provider_sdk_compat.py.
-deepgram-sdk>=7.6.0
-assemblyai>=0.64.25
+deepgram-sdk>=7.7.0
+assemblyai>=1.0.0
 google-cloud-speech>=2.40.0
-azure-cognitiveservices-speech>=1.50.0
+azure-cognitiveservices-speech>=1.51.1
 # speechmatics-python is deprecated and drops speaker labels — the app uses
 # the async speechmatics-batch client (matches requirements.txt)
-speechmatics-batch>=0.4.8
+speechmatics-batch>=0.4.10
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
-boto3>=1.43.40
+boto3>=1.43.72
 # openai must be listed explicitly — no package in this requirements pulls it in
-openai>=2.44.0
+openai>=3.1.0
 # requests is pulled in transitively by many packages above, but list explicitly for clarity
 requests>=2.34.2

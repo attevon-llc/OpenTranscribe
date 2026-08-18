@@ -6,8 +6,8 @@
 
 # Code Quality & Formatting
 black>=26.5.1
-ruff>=0.15.20
-mypy>=2.1.0
+ruff>=0.16.3
+mypy>=2.3.1
 mypy-extensions>=1.1.0
 import-linter>=2.13  # Enforces the app ↛ cloud seam (forbidden contract in pyproject.toml)
 
@@ -20,7 +20,7 @@ pytest-xdist>=3.8.0  # Parallel execution — pyproject addopts uses "-n auto"
 # collection error, not a silently skipped feature. The suite serialises DDL tests behind a
 # Postgres advisory lock; without a timeout a genuine lock cycle hangs the run forever
 # instead of failing (issue #431).
-pytest-timeout>=2.3.0
+pytest-timeout>=2.4.0
 
 # Mutation testing — opt-in, local only, NEVER in CI.
 #
@@ -28,19 +28,19 @@ pytest-timeout>=2.3.0
 # installs requirements-ci.txt (CPU-only, kept fast), and a mutation run is minutes
 # to tens of minutes per module. Config is [tool.mutmut] in pyproject.toml; the
 # entry point is scripts/run-mutation-tests.sh, which is not part of any gate.
-mutmut>=3.2.0
+mutmut>=3.7.0
 
 # E2E (Playwright) test infrastructure
-pytest-playwright>=0.8.0  # Playwright pytest plugin (browser fixtures)
-axe-playwright-python>=0.1.7  # Bundled axe-core a11y scans (no CDN fetch at runtime)
+pytest-playwright>=0.9.0  # Playwright pytest plugin (browser fixtures)
+axe-playwright-python>=0.1.8  # Bundled axe-core a11y scans (no CDN fetch at runtime)
 
 # Git Hooks & Pre-commit
-pre-commit>=4.6.0
+pre-commit>=4.6.2
 
 # Type Stubs for Better Type Checking
 types-redis>=4.6.0.20241004
 types-passlib>=1.7.7.20260211
 
 # Development Utilities
-ipython>=9.15.0  # Enhanced Python shell
+ipython>=9.16.1  # Enhanced Python shell
 ipdb>=0.13.13  # IPython debugger

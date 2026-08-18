@@ -245,6 +245,28 @@ class OpenSearchMLModelService:
           (Allow ML tasks on any node, not just dedicated ML nodes)
         - plugins.ml_commons.native_memory_threshold: 99
           (Allow models to use up to 99% of native memory)
+        - plugins.ml_commons.jvm_heap_memory_threshold: 95
+          (Raised from the 85 default — see below. This is the sibling of the
+          native-memory setting above, and leaving it at its default while raising
+          that one is what produced the failure this comment exists to explain.)
+
+        ⚠️ **Why the JVM heap threshold is raised (#495 follow-on).** ML Commons
+        refuses inference when *instantaneous* JVM heap-used exceeds this percentage,
+        and the neural ingest pipeline runs inference for every document — so one
+        moment over the line fails an entire bulk load with
+        ``circuit_breaking_exception: Memory Circuit Breaker is open``. Measured on
+        the dev cluster while it happened: **heap 89%** against the 85 default.
+
+        That was a FALSE trip, not memory exhaustion. Heap-used includes
+        uncollected young-generation garbage, and the same node measured
+        ``old gen 382 MB`` of a 4 GB heap moments later — a live working set under
+        10%, with a 36 MB chunk index. Bulk indexing fills young gen with garbage
+        faster than G1 collects it, so a healthy cluster reads as an exhausted one
+        for as long as it takes a collection to run.
+
+        95 rather than 99: it matches OpenSearch's own parent-breaker convention and
+        keeps a real backstop for genuine exhaustion, which is what this setting is
+        for. Disabling it outright would trade a false positive for no protection.
 
         Returns:
             True if settings were configured successfully.
@@ -261,6 +283,7 @@ class OpenSearchMLModelService:
                 "persistent": {
                     "plugins.ml_commons.only_run_on_ml_node": False,
                     "plugins.ml_commons.native_memory_threshold": 99,
+                    "plugins.ml_commons.jvm_heap_memory_threshold": 95,
                     "plugins.ml_commons.model_access_control_enabled": False,
                     "plugins.ml_commons.allow_registering_model_via_url": True,
                 }

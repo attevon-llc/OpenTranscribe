@@ -3,6 +3,7 @@
 import contextlib
 import datetime
 import logging
+import secrets
 import time
 from collections.abc import Callable
 from collections.abc import Iterator
@@ -46,6 +47,28 @@ _RETRYABLE_ERROR_TYPES = frozenset(
         "cluster_block_exception",
     }
 )
+
+#: Retry budget for the transient bulk errors above (#495 follow-on).
+#:
+#: This was 2 attempts at 1 s and 2 s, and it was too short for every condition the
+#: set above names. MEASURED: the ML Commons breaker
+#: (``circuit_breaking_exception: Memory Circuit Breaker is open``) failed **8 of 8
+#: documents twice through the full 1 s + 2 s budget** — because it trips on
+#: *instantaneous* JVM heap-used, which under bulk load is dominated by uncollected
+#: young-generation garbage and stays high until G1 runs. The same node measured
+#: ``old gen 382 MB`` of a 4 GB heap: a false trip, not exhaustion.
+#:
+#: `ml_model_service.configure_ml_settings` raises the threshold that caused it, so
+#: this is the second line of defence rather than the fix. It still matters: a
+#: rejected-execution or a closed index (both in the set above) also outlast three
+#: seconds, and the alternative is failing the task.
+#:
+#: Jitter is not decoration. Every worker indexing when a shared cluster resource
+#: goes over its limit retries on the same schedule, so a fixed backoff has them all
+#: return together and re-trip it — the retry becomes the load.
+_BULK_RETRY_ATTEMPTS = 4
+_BULK_RETRY_BASE_SECONDS = 1.0
+_BULK_RETRY_MAX_SECONDS = 8.0
 
 #: How many consecutive document ids one realtime orphan probe covers (#435).
 #:
@@ -1761,7 +1784,7 @@ class TranscriptIndexingService:
         failed_docs: list[dict[str, Any]],
         index_name: str,
         use_neural: bool,
-        max_retries: int = 2,
+        max_retries: int = _BULK_RETRY_ATTEMPTS,
     ) -> int:
         """Retry failed documents with exponential backoff.
 
@@ -1784,10 +1807,17 @@ class TranscriptIndexingService:
             if not remaining:
                 break
 
-            backoff = attempt  # 1s, 2s
+            # Exponential with jitter, capped: ~1s, 2s, 4s, 8s (+/- 25%).
+            # `secrets` rather than `random` because ruff's S311 is right that the
+            # stdlib PRNG is the wrong default, and the jitter only needs to
+            # decorrelate concurrent workers — which a CSPRNG does equally well, at a
+            # cost measured in microseconds, at most 4 times per failed batch. That is
+            # cheaper than justifying a suppression.
+            backoff = min(_BULK_RETRY_BASE_SECONDS * (2 ** (attempt - 1)), _BULK_RETRY_MAX_SECONDS)
+            backoff *= 0.75 + (secrets.randbelow(1000) / 2000.0)
             logger.info(
                 f"Retrying {len(remaining)} failed docs (attempt {attempt}/{max_retries}, "
-                f"backoff {backoff}s)"
+                f"backoff {backoff:.1f}s)"
             )
             time.sleep(backoff)
 

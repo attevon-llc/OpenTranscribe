@@ -17,6 +17,22 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+#: Maximum silent gap (seconds) between two identically-worded segments for them to be
+#: considered the *same* utterance emitted twice, rather than the speaker genuinely saying
+#: the same short phrase again later ("Yeah.", "Right.", "Okay.").
+#:
+#: Phase 2 compares every kept segment against every other one, so without a time bound it
+#: collapses repeated utterances anywhere in the recording — real speech, silently deleted
+#: (issue #487: 31 words lost from the 10-minute boundary fixture, including three "Yeah."s
+#: up to 149 s apart). Phase 3's "must actually overlap" rule is too strict to reuse here:
+#: genuine Whisper re-emissions in that fixture are adjacent, not overlapping, so requiring
+#: overlap disables Phase 2 entirely.
+#:
+#: Measured against ``tests/fixtures/boundary/karpathy_10m``: the correct 110 segments /
+#: 2282 words is recovered for any value in [0.5, 2.0]; 0.0 removes nothing and >=5.0 starts
+#: over-removing again. 2.0 is the widest value in that plateau.
+_EXACT_DUPLICATE_MAX_GAP_S = 2.0
+
 
 def deduplicate_segments(
     segments: list[dict],
@@ -67,7 +83,7 @@ def deduplicate_segments(
     keep = np.ones(n, dtype=bool)
 
     _remove_contained_segments(starts, ends, durations, overlap_threshold, keep)
-    _remove_exact_duplicates(sorted_segments, durations, keep)
+    _remove_exact_duplicates(sorted_segments, starts, ends, durations, keep)
     _remove_similar_overlapping_segments(sorted_segments, starts, ends, keep)
 
     result = [sorted_segments[i] for i in range(n) if keep[i]]
@@ -163,6 +179,8 @@ def _remove_contained_segments(
 
 def _remove_exact_duplicates(
     sorted_segments: list[dict],
+    starts: np.ndarray,
+    ends: np.ndarray,
     durations: np.ndarray,
     keep: np.ndarray,
 ) -> None:
@@ -176,8 +194,16 @@ def _remove_exact_duplicates(
     full pairwise scan over the already-reduced kept set is cheap and
     simpler than a windowed heuristic.
 
+    Pairs separated by more than ``_EXACT_DUPLICATE_MAX_GAP_S`` of silence are
+    left alone. Comparing against only the immediate predecessor used to bound
+    this implicitly; the full pairwise scan needs the bound stated explicitly,
+    or repeated short utterances get collapsed across the whole recording and
+    real speech disappears (issue #487).
+
     Args:
         sorted_segments: Segment dicts, sorted by start then duration descending.
+        starts: Segment start times, same order as ``sorted_segments``.
+        ends: Segment end times, same order as ``sorted_segments``.
         durations: Segment durations, same order as ``sorted_segments``.
         keep: Boolean keep/remove mask, modified in place.
     """
@@ -193,6 +219,12 @@ def _remove_exact_duplicates(
             if not keep[j]:
                 continue
             if text_i != sorted_segments[j]["text"].strip():
+                continue
+
+            # Negative when the two segments overlap in time; positive is the silent
+            # gap between them. Same utterance twice, or a genuine repetition later?
+            gap = max(starts[i], starts[j]) - min(ends[i], ends[j])
+            if gap > _EXACT_DUPLICATE_MAX_GAP_S:
                 continue
 
             # Keep the one with better timing (more precise start/end)

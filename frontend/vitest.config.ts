@@ -72,19 +72,17 @@ export default defineConfig({
         // inflates the percentage without covering a line of production code.
         'src/test-mocks/**',
       ],
-      // RATCHETED 2026-08-12: measured lines 14.23 / statements 13.47 /
-      // functions 13.81 / branches 12.76, against a denominator that GREW by
-      // 2,071 lines when the `$app/stores` + `$app/environment` aliases and the
-      // `.js` glob made 13 previously-unreachable files visible (lines
-      // 28,488 → 30,559). A denominator change is the one time these floors must
-      // be re-derived rather than nudged: the old 10.5 floor was set against a
-      // smaller universe and would have gone on passing while the newly-visible
-      // files sat at 0%.
+      // RATCHETED 2026-08-17 (issue #475): measured lines 25.81 / statements
+      // 23.67 / functions 23.57 / branches 23.99, up from 14.23/13.47/13.81/12.76
+      // after adding first-ever coverage for uploads.ts, recording.ts,
+      // llmService.ts, and every previously-untested store/API client, plus
+      // fixing 17 real bugs found while reading that code (BC-1 through BC-32,
+      // see the #475 closing report). Floors sit ~1.5 points under measured.
       thresholds: {
-        lines: 12.7,
-        statements: 12,
-        functions: 12.3,
-        branches: 11.2,
+        lines: 24.3,
+        statements: 22.2,
+        functions: 22.1,
+        branches: 22.5,
       },
     },
   },

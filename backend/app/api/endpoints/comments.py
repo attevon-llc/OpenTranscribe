@@ -186,6 +186,38 @@ def create_comment_standalone(
     return CommentSchema.model_validate(db_comment_reloaded)
 
 
+def _assert_comment_file_in_scope(
+    db: Session,
+    comment: Comment,
+    current_user: User,
+    ctx: RequestContext,
+    *,
+    forbidden_detail: str,
+) -> None:
+    """Refuse a comment whose file is outside the caller's tenant scope.
+
+    Authorship is NOT a tenant. Every mutation below also applies its own
+    ownership rule, but ownership alone let a caller edit and delete a comment on
+    a file the read path refuses to show them: they authored it while acting in
+    another organization, and ``comment.user_id == current_user.id`` stays true
+    forever. This gate runs first so the read and write paths agree on what is
+    reachable, and the ownership rules only ever narrow that further.
+
+    Admins bypass, matching ``get_comment`` and ``_check_file_access`` — one rule
+    for the whole module rather than a second, divergent one.
+    """
+    if current_user.is_admin:
+        return
+    permission = PermissionService.get_file_permission(
+        db, int(comment.media_file_id), current_user.id, organization_id=ctx.org_id
+    )
+    if permission is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=forbidden_detail,
+        )
+
+
 @router.get("/{comment_uuid}", response_model=CommentSchema)
 def get_comment(
     comment_uuid: str,
@@ -201,15 +233,13 @@ def get_comment(
 
     # Verify the user has access to the comment's file via PermissionService
     # (tenant-gated via ctx.org_id).
-    if not current_user.is_admin:
-        permission = PermissionService.get_file_permission(
-            db, int(comment.media_file_id), current_user.id, organization_id=ctx.org_id
-        )
-        if permission is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to view this comment",
-            )
+    _assert_comment_file_in_scope(
+        db,
+        comment,
+        current_user,
+        ctx,
+        forbidden_detail="You do not have permission to view this comment",
+    )
 
     return comment
 
@@ -220,9 +250,18 @@ def update_comment(
     comment_update: CommentUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Update a comment. Only the comment author can edit."""
+    """Update a comment. Only the comment author can edit, within their tenant."""
     comment = get_comment_by_uuid(db, comment_uuid)
+
+    _assert_comment_file_in_scope(
+        db,
+        comment,
+        current_user,
+        ctx,
+        forbidden_detail="You do not have permission to edit this comment",
+    )
 
     require_resource_owner(
         comment,
@@ -255,9 +294,23 @@ def delete_comment(
     comment_uuid: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
 ):
-    """Delete a comment. Admin, comment author, or file owner can delete."""
+    """Delete a comment. Admin, comment author, or file owner — within their tenant.
+
+    The scope gate runs before all three branches on purpose: author and file
+    owner are both properties that survive the caller moving organizations, so
+    either one alone would re-open the asymmetry this gate closes.
+    """
     comment = get_comment_by_uuid(db, comment_uuid)
+
+    _assert_comment_file_in_scope(
+        db,
+        comment,
+        current_user,
+        ctx,
+        forbidden_detail="You do not have permission to delete this comment",
+    )
 
     # Allow deletion by admin
     if current_user.is_admin:

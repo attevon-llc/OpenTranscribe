@@ -59,26 +59,29 @@ def headers(auth_token):
 
 @pytest.fixture(scope="module")
 def completed_file(headers):
-    """Find the shortest completed file in the database."""
+    """Find the shortest completed file in the database.
+
+    Filters by status SERVER-side and paginates with ``page_size``. The endpoint takes
+    ``page_size`` (`files/__init__.py`), not ``limit`` — FastAPI silently ignores an
+    unknown query param, so the old `limit=1` fell back to the default page of 20 and the
+    "shortest completed" was whatever happened to land in the 20 shortest files OVERALL.
+    On a database whose short files are mostly `error`, that is not the shortest completed
+    file, and picking a needlessly long one is what makes every stage in this module slow.
+    """
     resp = requests.get(
         f"{BASE_URL}/files",
         headers=headers,
-        params={"limit": "1", "sort_by": "duration", "sort_order": "asc"},
+        params={
+            "page_size": "5",
+            "status": "completed",
+            "sort_by": "duration",
+            "sort_order": "asc",
+        },
     )
     assert resp.status_code == 200, f"Failed to fetch files: {resp.text}"
 
     data = resp.json()
-    files = data.get("items", [])
-    completed = [f for f in files if f.get("status") == "completed"]
-    if not completed:
-        # Try fetching more files
-        resp2 = requests.get(
-            f"{BASE_URL}/files",
-            headers=headers,
-            params={"limit": "20", "sort_by": "duration", "sort_order": "asc"},
-        )
-        data2 = resp2.json()
-        completed = [f for f in data2.get("items", []) if f.get("status") == "completed"]
+    completed = [f for f in data.get("items", []) if f.get("status") == "completed"]
 
     if not completed:
         pytest.skip("No completed files in database — upload and process one first")
@@ -93,6 +96,11 @@ def completed_file(headers):
     return f
 
 
+#: Statuses a file can never leave on its own. Reaching one means the answer is already
+#: decided, so continuing to poll for "completed" only burns the rest of the window.
+_TERMINAL_FAILURE_STATUSES = frozenset({"error", "cancelled"})
+
+
 def _wait_for_completed(headers, file_uuid, max_wait=180):
     """Wait for the file to be STABLY completed.
 
@@ -100,12 +108,30 @@ def _wait_for_completed(headers, file_uuid, max_wait=180):
     search indexing) can flip the file back to PROCESSING moments after a
     prior stage reports completed, which races the next reprocess request
     into an INVALID_STATUS rejection. Require two consecutive completed polls.
+
+    Fails FAST on a terminal failure status. Without that, a stage that errors in
+    ~50 s still costs the caller its whole window — ``max_wait=600`` at 1-2 s a poll
+    is 10-20 minutes — waiting for a "completed" that can never arrive, and then
+    reports a bare "File not completed" that says nothing about what went wrong.
+    Observed: a rediarize OOM'd on a 61-minute file, and the suite spent the next
+    several minutes polling a row that already said ``error``.
     """
     consecutive = 0
     for i in range(max_wait):
         resp = requests.get(f"{BASE_URL}/files/{file_uuid}", headers=headers)
         if resp.status_code == 200:
-            status = resp.json().get("status")
+            body = resp.json()
+            status = body.get("status")
+            if status in _TERMINAL_FAILURE_STATUSES:
+                # `GET /files/{uuid}` carries error_category, not last_error_message; the
+                # full message lives on /status-detail, so name the category and point at it
+                # rather than reporting an empty string.
+                detail = body.get("last_error_message") or body.get("error_category") or "unknown"
+                pytest.fail(
+                    f"file {file_uuid} reached terminal status {status!r} after {i}s and "
+                    f"cannot become completed (error_category={detail}). "
+                    f"Full message: GET {BASE_URL}/files/{file_uuid}/status-detail"
+                )
             if status == "completed":
                 consecutive += 1
                 if consecutive >= 2:

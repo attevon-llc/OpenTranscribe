@@ -120,6 +120,71 @@ class TestSearchExecution:
         expect(results).to_be_visible()
         assert search_page.locator(".results-list > *").count() > 0
 
+    def test_pagination_never_shows_ellipsis_beside_an_adjacent_page(self, search_page: Page):
+        """Regression test for SearchPagination's windowStart-clamping bug.
+
+        `getVisiblePages()` used to insert a leading '...' whenever `current`
+        exceeded a threshold, without checking whether the *clamped* window
+        start actually left a gap — so paging to page 7 or 8 of a 20-page
+        result set rendered a nonsensical "5 ... 6" (page 6 sits directly
+        beside page 5, zero-page gap). `SearchPagination.test.ts` already
+        proves this for the pure function in isolation; this walks the real
+        rendered pager to confirm the fix reaches the live page. Skips if the
+        dev corpus doesn't have enough matches for the known query to page
+        that deep (paging is server-driven, not something this test can seed).
+        """
+        _run_search(search_page, KNOWN_QUERY)
+        search_page.wait_for_timeout(2000)
+        pagination = search_page.locator(".pagination")
+        if pagination.count() == 0:
+            pytest.skip(f"No pagination rendered for '{KNOWN_QUERY}' in this environment")
+
+        next_btn = pagination.locator(".page-btn.next")
+        reached_page_7 = False
+        for _ in range(6):
+            active = pagination.locator(".page-btn.active")
+            if active.count() and active.inner_text().strip() == "7":
+                reached_page_7 = True
+                break
+            if next_btn.count() == 0 or next_btn.is_disabled():
+                break
+            next_btn.click()
+            search_page.wait_for_load_state("networkidle")
+            search_page.wait_for_timeout(500)
+
+        if not reached_page_7:
+            pytest.skip(f"Fewer than 7 result pages for '{KNOWN_QUERY}' in this environment")
+
+        # Walk the rendered pager in DOM order; an ellipsis directly between
+        # two page numbers that differ by exactly 1 is the bug (no real gap).
+        # The selector already excludes .prev/.next, so every non-ellipsis
+        # match is a numbered page button — int() should never fail here,
+        # and if it does that's a real assertion failure worth seeing, not
+        # something to swallow.
+        items = pagination.locator(".page-btn:not(.prev):not(.next), .ellipsis").all()
+        # None marks an ellipsis; an int is a rendered page number.
+        parsed: list[int | None] = []
+        for el in items:
+            cls = el.get_attribute("class") or ""
+            if "ellipsis" in cls:
+                parsed.append(None)
+            else:
+                parsed.append(int(el.inner_text().strip()))
+
+        ellipsis_indices = [i for i, v in enumerate(parsed) if v is None]
+        # At page 7 of a 20-page result a windowed pager (1 ... 5 6 7 8 9 ... 20)
+        # always renders at least one real ellipsis — asserted so this can't
+        # pass vacuously if the pager ever stops rendering any gap markers.
+        assert ellipsis_indices, f"Expected at least one '...' in a page-7-of-20+ pager: {parsed}"
+
+        for i in ellipsis_indices:
+            prev_page = parsed[i - 1] if i > 0 else None
+            next_page = parsed[i + 1] if i + 1 < len(parsed) else None
+            if prev_page is not None and next_page is not None:
+                assert next_page - prev_page != 1, (
+                    f"Spurious ellipsis rendered between adjacent pages {prev_page} and {next_page}"
+                )
+
 
 class TestSearchControls:
     """Result-area controls (only rendered once a search ran)."""

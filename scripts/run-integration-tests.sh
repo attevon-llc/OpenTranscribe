@@ -225,18 +225,18 @@ else
         -o addopts="" -m integration -q --tb=short --timeout="${INTEGRATION_TEST_TIMEOUT:-900}"
 fi
 
-# 3b. The dependency lock must still describe the running image (#492).
+# 3b. The venv this gate runs in must install what the image ships (#492).
 #
-# The venv this gate runs in and the image it tests are two different installs of
-# the same requirements, and `requirements.txt` is 61 floors — so they drifted 120
-# packages apart, 18 at a MAJOR version, and the gate spent that time validating a
-# program that was not the one shipping. That is how the NLTK `pathsec` breakage
-# reached production green.
+# Every requirements file is exactly pinned, so the venv and the container are two
+# installs of the same text and should agree. When they did not — 120 packages apart,
+# 18 at a MAJOR version — this gate spent its whole runtime validating a program that
+# was not the one shipping, which is how the NLTK `pathsec` breakage reached production
+# green.
 #
 # Checked HERE rather than in CI because it needs the running container to compare
-# against, which is exactly what this gate already requires.
-run_phase "Dependency lock matches the image" \
-    "$PROJECT_ROOT/scripts/lock-backend-deps.sh" --check
+# against, which this gate already requires. Read-only; it never modifies either side.
+run_phase "Dependency parity: venv vs container" \
+    "$PROJECT_ROOT/scripts/check-dependency-parity.sh"
 
 # 4. GPU-marked tests. Deselected from the fast suite and from CI (both CPU-only), so
 # this gate is the ONLY place they run — they were silently ungated before #297.

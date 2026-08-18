@@ -101,12 +101,30 @@ RUN pip install --no-cache-dir --force-reinstall \
     "$(cat /tmp/nvidia_torch_versions.txt | tr '\n' ' ')"
 
 # ---------------------------------------------------------------------------
-# Pin huggingface_hub for NVIDIA base image compatibility
+# huggingface_hub is NOT downgraded here — see below before re-adding it
 # ---------------------------------------------------------------------------
-# The NVIDIA PyTorch 25.01 base bundles libraries that still use the
-# deprecated `use_auth_token` parameter removed in huggingface_hub>=0.24.
-# This pin is Blackwell-specific and intentionally NOT in requirements.txt.
-RUN pip install --no-cache-dir "huggingface_hub==0.23.5"
+# This step used to be `pip install "huggingface_hub==0.23.5"`, justified by the
+# NVIDIA PyTorch 25.01 base bundling libraries that still passed the deprecated
+# `use_auth_token` parameter removed in huggingface_hub>=0.24.
+#
+# That pin now BREAKS THE IMAGE OUTRIGHT. `transformers==4.57.6` (requirements.txt)
+# declares `huggingface-hub<1.0,>=0.34.0` and enforces it at import time, so the
+# downgrade turns `import transformers` into a hard ImportError:
+#
+#   ImportError: huggingface-hub>=0.34.0,<1.0 is required for a normal functioning
+#   of this module, but found huggingface-hub==0.23.5.
+#
+# That takes out whisperx, sentence-transformers and detoxify with it — i.e. ASR,
+# embeddings and toxicity — before the GPU is ever reached. Reproduced 2026-08-18
+# by applying the downgrade to a prod image built from this same requirements.txt.
+#
+# The pin's own premise has also expired: nothing left in the install passes
+# `use_auth_token`, and production has run huggingface_hub 0.36.x for some time.
+# So the correct version is simply the one requirements.txt pins.
+#
+# ⚠️ If a `use_auth_token` TypeError ever reappears from a base-image library, fix
+# THAT library — do not reinstate a global downgrade that a first-class dependency
+# forbids. `tests/unit/test_requirements_pinned.py` fails if this comes back.
 
 # ---------------------------------------------------------------------------
 # Install WhisperX (with --no-deps to preserve NVIDIA torch stack)
@@ -119,7 +137,7 @@ RUN pip install --no-cache-dir --no-deps "whisperx==3.8.1"
 # Custom fork with vectorized chunking, adaptive batch size, TF32, CUDA
 # streams, and memory-safe batch indexing.
 RUN pip install --no-cache-dir --no-deps \
-    "pyannote.audio @ git+https://github.com/davidamacey/pyannote-audio.git@gpu-optimizations"
+    "pyannote.audio @ git+https://github.com/davidamacey/pyannote-audio.git@a3f38afb80d289b812e4c863e2215c595ae279d8"
 
 # ---------------------------------------------------------------------------
 # Apply Blackwell SM_121 -> SM_90 compatibility patches

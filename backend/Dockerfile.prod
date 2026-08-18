@@ -25,27 +25,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements first for better layer caching
-COPY requirements.lock.txt requirements-nodeps.txt ./
+COPY requirements.txt requirements-nodeps.txt ./
 
 # Upgrade pip to latest version first (security fix for CVE-2025-8869)
 RUN pip install --user --no-cache-dir --upgrade pip
 
-# Install Python dependencies FROM THE LOCK, not from requirements.txt (issue #492).
+# Install Python dependencies. `requirements.txt` is fully PINNED (issue #492):
+# every spec is `==` or a direct URL, so this image and a local venv built from the
+# same file resolve to the same versions.
 #
-# `requirements.txt` is 61 floors against 4 exact pins, so two builds at different
-# times legitimately resolved differently — and did, by 120 packages, 18 at a MAJOR
-# version. The host venv (where the pre-merge gate runs) and this image drifted
-# apart, which is how the NLTK `pathsec` breakage reached production while the
-# gate stayed green. `requirements.txt` remains the human-edited list of DIRECT
-# dependencies; `requirements.lock.txt` is what gets installed, here AND in the
-# venv, so the gate tests what ships.
-#
-# The lock carries the cu128 `--extra-index-url` itself, so torch resolves to the
-# same CUDA build it always did.
+# It was 62 floors against 5 pins, and a floor is a version number but not a pin —
+# `nltk>=3.9.4` permits 3.9.4 or 3.10.3. The host venv (where the pre-merge gate
+# runs) and this image drifted 120 packages apart, 18 at a MAJOR version, which is
+# how the NLTK `pathsec` breakage reached production while the gate stayed green.
 #
 # All packages use cuDNN 9 for CUDA 12.8 compatibility.
-# Use --user to install to /root/.local which we'll copy to final stage
-RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.lock.txt
+# --user installs to /root/.local, which the final stage copies.
+RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.txt
 
 # WhisperX, faster-whisper, and gliner all need --no-deps — see requirements-nodeps.txt
 # for why. This exact command is also what a local venv setup runs (see
@@ -60,10 +56,11 @@ RUN pip install --user --no-cache-dir --no-warn-script-location --no-deps -r req
 #
 # `python -m spacy download` is GONE: it resolves whichever model version is
 # compatible with the installed spaCy AT BUILD TIME, which is the same unpinned
-# drift #492 is about. The model is now pinned by release URL in the lock, so it
-# is installed by the step above. `pip freeze` renders it as
-# `en_core_web_sm==3.8.0`, which is NOT on PyPI — the lock generator reads pip's
-# `direct_url.json` instead, which is why the pin is a URL.
+# drift #492 is about — and it lived in THIS file only, so Dockerfile.blackwell
+# shipped PII redaction with no pipeline to tokenize with, and a developer's venv
+# never had the model at all. It is now a pinned release URL in requirements.txt,
+# installed by the `-r requirements.txt` step above. The pin has to be a URL
+# because spaCy models are not published to PyPI.
 
 # triton removed: openai/triton is unrelated to NVIDIA TensorRT and is only used
 # by torch.compile(backend="inductor") JIT. torch.compile is opt-in and not on

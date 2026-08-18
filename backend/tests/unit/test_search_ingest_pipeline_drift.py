@@ -173,3 +173,113 @@ def test_pipeline_written_without_batch_size_is_not_recreated_every_boot(client)
     assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
 
     assert fake.ingest.puts == []
+
+
+# ---------------------------------------------------------------------------
+# The SHAPE of the processor list (#401 follow-up)
+# ---------------------------------------------------------------------------
+
+
+def _with_processors(processors: list[dict[str, Any]]) -> dict[str, Any]:
+    """A live pipeline body whose processor LIST is set outright."""
+    body = _live_pipeline()
+    body["processors"] = processors
+    return body
+
+
+def test_an_extra_processor_recreates_the_pipeline(client):
+    """``_build_neural_ingest_pipeline`` writes exactly one processor.
+
+    So a second one — a stray ``set``/``remove``, a second ``text_embedding`` for
+    another field, anything left behind by a manual PUT or an older release — is
+    drift by definition. The check used to iterate to the first ``text_embedding``
+    and return on it, so an extra processor was invisible and survived every boot
+    forever, silently changing what the pipeline does to every ingested document.
+    """
+    correct = _live_pipeline()["processors"][0]
+    fake = client(_with_processors([correct, {"set": {"field": "injected", "value": 1}}]))
+
+    assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+
+    assert fake.ingest.puts, "an extra processor did not trigger recreation"
+    assert len(fake.ingest.puts[-1]["processors"]) == 1, (
+        "the recreated pipeline must carry exactly the one processor we write"
+    )
+
+
+def test_a_processor_ahead_of_the_embedding_recreates_the_pipeline(client):
+    """Order is part of the program, and the old check could not see it.
+
+    A processor running BEFORE the embedding can rewrite the very field being
+    embedded. Iterating past it to the ``text_embedding`` and comparing only that
+    reported a perfect match.
+    """
+    correct = _live_pipeline()["processors"][0]
+    fake = client(
+        _with_processors([{"set": {"field": "embedding_text", "value": "clobbered"}}, correct])
+    )
+
+    assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+
+    assert fake.ingest.puts, "a processor ahead of the embedding did not trigger recreation"
+    assert "text_embedding" in fake.ingest.puts[-1]["processors"][0]
+
+
+def test_a_pipeline_with_no_embedding_processor_is_recreated(client):
+    """The complement: a pipeline that lost its embedding processor entirely."""
+    fake = client(_with_processors([{"set": {"field": "injected", "value": 1}}]))
+
+    assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+
+    assert fake.ingest.puts, "a pipeline with no text_embedding was left in place"
+
+
+def test_the_exact_shipped_shape_is_still_left_alone(client):
+    """The control for all three above.
+
+    Without it, "recreate on any shape difference" would also be satisfied by a
+    check that recreates unconditionally — which is the boot loop the batch_size
+    and ignore_failure carve-outs exist to avoid.
+    """
+    fake = client(_live_pipeline())
+
+    assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+
+    assert not fake.ingest.puts, "the correct pipeline was recreated anyway"
+
+
+def test_a_model_change_is_logged_as_the_worse_drift(client, caplog):
+    """The WARNING branch had no test, and it is the one an operator must see.
+
+    Recreating on a `model_id` change makes every FUTURE document use the new
+    model while existing documents keep the old vectors — and cosine between two
+    models' vectors is meaningless. `field_map`/`batch_size` drift changes what is
+    embedded, not what embeds it, so only this one warns.
+    """
+    import logging
+
+    fake = client(_live_pipeline(model_id="a-different-model"))
+
+    with caplog.at_level(logging.WARNING, logger=svc.logger.name):
+        assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+
+    warnings = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+    assert any("DIFFERENT" in message and "FULL reindex" in message for message in warnings), (
+        f"a model switch was not surfaced as the worse drift: {warnings}"
+    )
+    assert _written_processor(fake)["model_id"] == MODEL_ID
+
+
+def test_a_field_map_change_does_not_warn_about_the_model(client, caplog):
+    """The complement: the cheaper drift must not cry reindex."""
+    import logging
+
+    client(_live_pipeline(field_map=dict(PRE_V6_FIELD_MAP)))
+
+    with caplog.at_level(logging.WARNING, logger=svc.logger.name):
+        assert svc.ensure_neural_ingest_pipeline(model_id=MODEL_ID) is True
+
+    warnings = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+    assert not any("FULL reindex" in message for message in warnings), (
+        f"a field_map change told the operator to reindex the whole corpus: {warnings}"
+    )

@@ -185,6 +185,12 @@ speaker plane exists to let people *set*.
   **ingest** pipeline self-heals the same way: `_check_existing_pipeline_config` compares
   `model_id`, `field_map` and `batch_size` against `_build_neural_ingest_pipeline`, so
   repointing what gets embedded reaches upgraded deployments and not only fresh installs.
+  It also compares the processor list's **shape** — exactly one processor, and it a
+  `text_embedding`. It used to iterate to the first `text_embedding` and return on it, so
+  an **extra** processor (a stray `set`, a second embedding, anything left by a manual PUT
+  or an older release) and a **reordering** were both invisible and survived every boot.
+  A processor ahead of the embedding can rewrite the very field being embedded, and the
+  check reported a perfect match.
   `batch_size` is compared only when the live pipeline has one (the creation path drops it on
   OpenSearch versions that reject it, and treating that as drift is a boot loop), and a
   `field_map` change still needs a **reindex** before existing documents embed the new field.

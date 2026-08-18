@@ -515,6 +515,10 @@ def _check_existing_pipeline_config(pipeline_id: str, expected: dict[str, Any]) 
     ``ignore_failure`` is deliberately not compared — OpenSearch may or may not echo a
     false-valued flag back, and a spurious mismatch there would be the same boot loop.
 
+    The processor list's **shape** is compared too: exactly one processor, and it a
+    ``text_embedding``. Iterating to the first ``text_embedding`` and returning made an
+    extra or reordered processor permanently invisible — see the comment at the check.
+
     Args:
         pipeline_id: Pipeline ID to check.
         expected: The ``text_embedding`` processor config we would write.
@@ -533,6 +537,30 @@ def _check_existing_pipeline_config(pipeline_id: str, expected: dict[str, Any]) 
 
     current_pipeline = response.get(pipeline_id, {})
     processors = current_pipeline.get("processors", [])
+
+    # The SHAPE of the processor list is compared before its contents (#401
+    # follow-up). This loop used to `continue` past every non-`text_embedding`
+    # processor and `return` on the first one it found, so two kinds of drift were
+    # invisible and permanent:
+    #
+    #   * an EXTRA processor — a stray `set`/`remove`, a second `text_embedding`
+    #     for another field, anything left behind by a manual PUT or an older
+    #     release. `_build_neural_ingest_pipeline` writes exactly ONE processor, so
+    #     any second one is by definition drift, and it survived every boot;
+    #   * a REORDERING — two processors swapped is a different program with an
+    #     identical verdict.
+    #
+    # This is the rule `services/search/CLAUDE.md` already states for the sibling
+    # SEARCH pipeline ("compares the whole processor block ... OpenSearch echoes a
+    # pipeline body back verbatim, so the comparison is exact"). The ingest
+    # pipeline simply never adopted it.
+    if len(processors) != 1 or "text_embedding" not in processors[0]:
+        kinds = [next(iter(processor), "?") for processor in processors]
+        logger.info(
+            f"Neural ingest pipeline {pipeline_id} has drifted, recreating "
+            f"(expected exactly one text_embedding processor, found {kinds})"
+        )
+        return False
 
     for processor in processors:
         if "text_embedding" not in processor:

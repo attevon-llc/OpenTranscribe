@@ -13,7 +13,10 @@ Requires:
 """
 
 import logging
+import os
 import time
+import uuid
+from pathlib import Path
 
 import pytest
 import requests
@@ -57,43 +60,97 @@ def headers(auth_token):
     return {"Authorization": f"Bearer {auth_token}"}
 
 
+#: The committed 10 s / mono / 16 kHz fixture — see `tests/fixtures/media/README.md`.
+#: Small, deterministic and GPU-light, so this module runs the same way everywhere.
+_SAMPLE_AUDIO = Path(__file__).resolve().parent / "fixtures" / "media" / "sample_short.wav"
+
+#: Local-only override for real-corpus verification (`test_videos/`, the AMI corpus, a long
+#: meeting recording). CI runners have no GPU and no such assets, so the committed fixture
+#: stays the default and this is opt-in:
+#:
+#:     REPROCESS_TEST_MEDIA=test_videos/test_ai_video.mp4 pytest tests/test_selective_reprocess.py
+#:
+#: Mind the VRAM: diarizing a multi-hour file needs far more than the 12 GB on this box —
+#: that is what made these tests fail before they used a short clip.
+_MEDIA_OVERRIDE_ENV = "REPROCESS_TEST_MEDIA"
+
+
+def _source_media() -> Path:
+    """The clip to upload: the local override when set, else the committed fixture."""
+    override = os.environ.get(_MEDIA_OVERRIDE_ENV, "").strip()
+    if not override:
+        return _SAMPLE_AUDIO
+    path = Path(override)
+    if not path.is_absolute():
+        # Relative paths resolve from the repo root, which is where these are run from.
+        path = Path(__file__).resolve().parents[2] / path
+    if not path.exists():
+        pytest.fail(f"{_MEDIA_OVERRIDE_ENV}={override!r} does not exist (resolved to {path})")
+    return path
+
+
 @pytest.fixture(scope="module")
 def completed_file(headers):
-    """Find the shortest completed file in the database.
+    """Upload the committed short fixture and process it, then clean it up.
 
-    Filters by status SERVER-side and paginates with ``page_size``. The endpoint takes
-    ``page_size`` (`files/__init__.py`), not ``limit`` — FastAPI silently ignores an
-    unknown query param, so the old `limit=1` fell back to the default page of 20 and the
-    "shortest completed" was whatever happened to land in the 20 shortest files OVERALL.
-    On a database whose short files are mostly `error`, that is not the shortest completed
-    file, and picking a needlessly long one is what makes every stage in this module slow.
+    This used to reprocess whichever completed file the dev database happened to hold,
+    which was wrong three ways:
+
+    * **It mutated real data.** Reprocessing rewrites an existing user's transcript in
+      place, which ``backend/tests/CLAUDE.md`` forbids ("E2E must never persist changes
+      to dev data").
+    * **It could not pass on this hardware.** The shortest *completed* file here is
+      8168 s (2 h 16 m); diarizing it exhausts a 12 GB GPU even at ``batch_size=1``, so
+      the rediarize/transcription stages OOM'd. The first failure left the file in
+      ``error``, and because this fixture is module-scoped every later test in the module
+      then failed on the same poisoned file.
+    * **It was ambient.** Whether the suite passed depended on what someone had uploaded.
+
+    A 10 s clip removes all three: it is deterministic, it fits in any GPU, and it is
+    deleted afterwards so the dev library is unchanged.
     """
-    resp = requests.get(
-        f"{BASE_URL}/files",
-        headers=headers,
-        params={
-            "page_size": "5",
-            "status": "completed",
-            "sort_by": "duration",
-            "sort_order": "asc",
-        },
-    )
-    assert resp.status_code == 200, f"Failed to fetch files: {resp.text}"
+    source = _source_media()
+    if not source.exists():  # pragma: no cover - the committed fixture is tracked
+        pytest.skip(f"missing media fixture {source}")
 
-    data = resp.json()
-    completed = [f for f in data.get("items", []) if f.get("status") == "completed"]
+    mime = "video/mp4" if source.suffix.lower() in {".mp4", ".m4v", ".mov"} else "audio/wav"
+    with source.open("rb") as fh:
+        resp = requests.post(
+            f"{BASE_URL}/files",
+            headers=headers,
+            files={
+                "file": (f"reprocess-{uuid.uuid4().hex[:8]}{source.suffix}", fh, mime),
+            },
+            timeout=300,
+        )
+    assert resp.status_code == 200, f"Upload failed: {resp.status_code} {resp.text}"
+    uploaded = resp.json()
+    file_uuid = uploaded["uuid"]
 
-    if not completed:
-        pytest.skip("No completed files in database — upload and process one first")
+    try:
+        # Transcribing 10 s is quick, but the queue may be busy; this is the initial
+        # ingest, not a reprocess, so give it its own generous window.
+        assert _wait_for_completed(headers, file_uuid, max_wait=300), (
+            f"uploaded fixture {file_uuid} never reached a stable completed state"
+        )
 
-    f = completed[0]
-    logger.info(
-        f"\nUsing file: {f.get('filename', '?')[:50]}"
-        f"\n  UUID: {f['uuid']}"
-        f"\n  Duration: {f.get('duration', 0):.1f}s"
-        f"\n  Status: {f.get('status')}"
-    )
-    return f
+        resp = requests.get(f"{BASE_URL}/files/{file_uuid}", headers=headers, timeout=30)
+        assert resp.status_code == 200, f"Failed to re-read uploaded file: {resp.text}"
+        f = resp.json()
+        logger.info(
+            f"\nUsing uploaded fixture: {f.get('filename', '?')[:50]}"
+            f"\n  UUID: {f['uuid']}"
+            f"\n  Duration: {f.get('duration', 0):.1f}s"
+            f"\n  Status: {f.get('status')}"
+        )
+        yield f
+    finally:
+        # Delete on the way out no matter how the module ended — a cleanup that only runs
+        # on the happy path is exactly the one that does not run when a test fails.
+        try:
+            requests.delete(f"{BASE_URL}/files/{file_uuid}", headers=headers, timeout=30)
+        except requests.RequestException:
+            logger.warning("could not delete uploaded fixture %s", file_uuid)
 
 
 #: Statuses a file can never leave on its own. Reaching one means the answer is already

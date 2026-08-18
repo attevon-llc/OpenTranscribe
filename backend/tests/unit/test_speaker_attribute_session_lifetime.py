@@ -133,9 +133,18 @@ def test_no_db_scope_open_during_model_load_and_inference(
     """The leak regression: the slow phase must run with zero scopes open."""
     media_file, speakers = _make_file_with_speech(db_session, normal_user)
 
+    # The task builds `work_items` from an UNORDERED `db.query(Speaker.id)`, so which
+    # speaker lands at index 0 is whatever Postgres returns first — not necessarily
+    # `speakers[0]`. Record the id actually scored and assert against THAT row, rather
+    # than assuming the two coincide. They usually do, which is why this test passed
+    # for a long time and then failed once in a full parallel run with
+    # `predicted_gender == None`: the fixture's other speaker had been scored instead.
+    scored: dict[str, int] = {}
+
     def fake_inference(audio_source, work_items, service):
         tracked.observe("gender_inference")
         assert work_items, "fixture produced no work items — the test would prove nothing"
+        scored["speaker_id"] = work_items[0][0]
         return (
             {work_items[0][0]: {"male": 0.9, "female": 0.1}},
             {work_items[0][0]: 1},
@@ -159,11 +168,19 @@ def test_no_db_scope_open_during_model_load_and_inference(
     assert tracked.opened >= 2, f"expected a read scope and a write scope, got {tracked.opened}"
     assert tracked.max_depth == 1, "session scopes must not nest"
 
-    # And the results still land in the DB.
-    db_session.refresh(speakers[0])
-    assert speakers[0].predicted_gender == "male"
-    assert speakers[0].attribute_confidence == {"gender": 0.9}
+    # And the results still land in the DB — on the speaker that was actually scored.
+    assert scored, "inference never ran, so nothing below would be testing a write"
+    written = next(s for s in speakers if s.id == scored["speaker_id"])
+    db_session.refresh(written)
+    assert written.predicted_gender == "male"
+    assert written.attribute_confidence == {"gender": 0.9}
     assert result["speakers_updated"] == 1
+
+    # The speaker that was NOT scored must be left alone — otherwise the assertions
+    # above would also pass if the task wrote the same verdict to every speaker.
+    other = next(s for s in speakers if s.id != scored["speaker_id"])
+    db_session.refresh(other)
+    assert other.predicted_gender is None
 
 
 def test_scope_is_released_when_inference_fails(db_session, normal_user, tracked, monkeypatch):

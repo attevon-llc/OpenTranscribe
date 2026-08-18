@@ -56,7 +56,17 @@ Policy) that can *force* PII/toxicity/profanity and mandate censored exports for
   `redaction` queue → the `celery-redaction` container (the only `PRELOAD_REDACTION_MODELS=true`).
 - Read surfaces: `formatting_service::_apply_redaction`, `subtitle_service` (SRT/VTT/TXT),
   `utils/transcript_builders` (redact-before-LLM), `search/snippet_redaction` (search snippets
-  — see the gotcha below).
+  — see the gotcha below), and `redaction/summary_redaction` (AI summaries, #465).
+- **`summary_redaction` detects live and cannot use cached spans.** `redactions` is a column on
+  `TranscriptSegment` holding offsets into *segment* text; a summary is different, LLM-authored
+  text those offsets address nothing in. It is also **abstractive**, so it restates the
+  transcript's PII in the model's own words — masking the transcript does not mask it. Subject is
+  the **requesting user** (the read-surface rule from #85/`693a16c1`), not the owner. Structure-
+  agnostic by design: `summary_data` is `extra="allow"` free-form JSON, so it walks the tree and
+  masks every string leaf rather than naming `bluf`/`key_points`, which a custom prompt need not
+  use. Top-level `metadata` is skipped — masking a `DATE_TIME` in `created_at` is a correctness
+  loss and no privacy gain. ⚠️ **Per leaf, never batched** — same spaCy once-per-document
+  property as snippets.
 - **Redact-before-LLM is centralized in `llm_guard.py`.** Every path that ships transcript text
   to a provider resolves its config through `resolve_llm_masking(db, media_file)` — summarization,
   speaker identification and topic extraction (chat has its own, see below). Do not call

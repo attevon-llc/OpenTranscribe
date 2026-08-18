@@ -392,6 +392,13 @@ def test_sync_speaker_profiles_counts_a_missing_opensearch_document_as_skipped(
     live cluster's actual error string can confirm that match is real).
     """
     media_file = _media_file(db_session, normal_user)
+
+    # The sweep is deliberately GLOBAL — it walks every Speaker row in the shared dev DB,
+    # including rows other workers commit through their own SessionLocal(). So measure this
+    # speaker's CONTRIBUTION as a delta rather than asserting on the aggregate: one
+    # unrelated row erroring would otherwise fail a test that is not about it (issue #486).
+    before = speaker_metadata.sync_speaker_profiles_to_opensearch(db_session)
+
     speaker = Speaker(
         uuid=uuid_pkg.uuid4(),
         user_id=normal_user.id,
@@ -403,10 +410,12 @@ def test_sync_speaker_profiles_counts_a_missing_opensearch_document_as_skipped(
     db_session.flush()
     # Deliberately no matching OpenSearch document for this speaker's uuid.
 
-    baseline = speaker_metadata.sync_speaker_profiles_to_opensearch(db_session)
+    after = speaker_metadata.sync_speaker_profiles_to_opensearch(db_session)
 
-    assert baseline["skipped"] >= 1
-    assert baseline["errors"] == 0, (
+    assert after["skipped"] - before["skipped"] >= 1, (
+        "the un-indexed speaker added by this test must be counted as skipped"
+    )
+    assert after["errors"] == before["errors"], (
         "a genuinely missing document must classify as 'skipped', never 'errors' — "
         "if this fails, the 'document_missing_exception' substring match in the "
         "source no longer matches the live cluster's real error text"

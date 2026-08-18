@@ -418,6 +418,26 @@ celery_app.conf.update(
     },
 )
 
+# Make this app the process-wide default, not just this thread's (issue #485).
+#
+# `Celery.__init__` sets only the CREATING thread's `celery._state._tls.current_app`;
+# it never sets the module-global `default_app`. Anything that resolves a task through
+# `get_current_app()` — every `@shared_task` proxy — therefore reads
+# `_tls.current_app or default_app`, and on a thread that did not construct the app both
+# are None. Celery then mints a fallback `Celery('default')` with NO broker configured and
+# caches it globally, so the dispatch goes to the amqp:// class default and is refused.
+#
+# The API hits this on every request: FastAPI/Starlette runs each sync `def` endpoint on a
+# `run_in_threadpool` worker thread, which is never the import thread. That made every admin
+# "Run now" action 500 intermittently, while workers (which import this module on their own
+# main thread) were unaffected.
+#
+# `set_default()` is what populates `default_app`, so the fallback resolves to the real,
+# configured app from any thread and any process. Keep this even though the `@shared_task`
+# decorators below were converted to `@celery_app.task` — it is the cheap general guard, and
+# without it a single reintroduced `shared_task` silently brings the bug back.
+celery_app.set_default()
+
 
 # Apply our logging config (text/JSON per settings.LOG_FORMAT) to Celery.
 # Connecting setup_logging ALSO disables Celery's root-logger hijack

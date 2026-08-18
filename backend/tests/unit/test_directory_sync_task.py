@@ -98,6 +98,11 @@ def test_check_schedule_not_due_dispatches_nothing_and_does_not_stamp(use_test_s
 
     from app.services import backup_service as bs
 
+    # "Does not stamp" means UNCHANGED, not None: this is a SystemSettings row in the shared
+    # dev DB that the running celery-beat commits whenever a sync window is claimed. The
+    # backup sibling of this assertion went red exactly that way (see test_backup_tasks.py).
+    before = svc.get_settings(use_test_session)["last_run_at"]
+
     with (
         mock.patch.object(bs, "is_due", return_value=False),
         mock.patch.object(task_mod.run_directory_sync, "apply_async") as dispatch,
@@ -106,7 +111,7 @@ def test_check_schedule_not_due_dispatches_nothing_and_does_not_stamp(use_test_s
 
     assert result == {"status": "not_due", "schedule": "0 3 * * *"}
     dispatch.assert_not_called()
-    assert svc.get_settings(use_test_session)["last_run_at"] is None
+    assert svc.get_settings(use_test_session)["last_run_at"] == before
 
 
 def test_check_schedule_due_stamps_last_run_and_dispatches_on_cpu_queue(use_test_session):

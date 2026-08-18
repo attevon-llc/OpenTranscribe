@@ -313,7 +313,7 @@ else:
 Automated background tasks for system maintenance, file recovery, and health monitoring:
 
 ```python
-@shared_task(bind=True, name="cleanup.run_periodic_cleanup")
+@celery_app.task(bind=True, name="cleanup.run_periodic_cleanup")
 def run_periodic_cleanup(self):
     """
     Periodic task to clean up stuck files and maintain system health.
@@ -324,7 +324,7 @@ def run_periodic_cleanup(self):
     - Generate system health reports
     """
 
-@shared_task(bind=True, name="cleanup.deep_cleanup")
+@celery_app.task(bind=True, name="cleanup.deep_cleanup")
 def run_deep_cleanup(self, dry_run: bool = False):
     """
     Deep cleanup task for removing orphaned files (admin-triggered).
@@ -333,13 +333,13 @@ def run_deep_cleanup(self, dry_run: bool = False):
         dry_run: If True, only preview what would be cleaned up
     """
 
-@shared_task(bind=True, name="cleanup.health_check")
+@celery_app.task(bind=True, name="cleanup.health_check")
 def system_health_check(self):
     """
     Generate a system health report with file processing metrics.
     """
 
-@shared_task(bind=True, name="cleanup.emergency_recovery")
+@celery_app.task(bind=True, name="cleanup.emergency_recovery")
 def emergency_file_recovery(self, file_ids: list):
     """
     Emergency recovery task for specific files (admin-triggered).

@@ -15,8 +15,7 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 
-from celery import shared_task
-
+from app.core.celery import celery_app
 from app.core.constants import UtilityPriority
 
 logger = logging.getLogger(__name__)
@@ -27,7 +26,7 @@ logger = logging.getLogger(__name__)
 MAX_DELETIONS_PER_RUN = 500
 
 
-@shared_task(
+@celery_app.task(
     bind=True,
     name="chat.retention_sweep",
     priority=UtilityPriority.BACKGROUND,

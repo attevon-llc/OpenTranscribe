@@ -28,6 +28,8 @@ from app import models
 # Deployment configuration is the super_admin tier: this router
 # holds the backup destination and its stored S3 secret.
 from app.api.endpoints.auth import get_current_active_superuser
+from app.core.constants import CeleryQueues
+from app.core.constants import UtilityPriority
 from app.db.base import get_db
 from app.services import backup_service
 
@@ -335,7 +337,7 @@ def run_backup_now(
     """Dispatch a backup immediately (bypasses the schedule)."""
     from app.tasks.backup_tasks import run_backup
 
-    task = run_backup.apply_async(queue="utility")
+    task = run_backup.apply_async(queue=CeleryQueues.UTILITY, priority=UtilityPriority.ROUTINE)
     logger.info("Manual backup triggered by admin %s (task %s)", current_user.email, task.id)
     return BackupRunResponse(
         task_id=str(task.id), status="queued", message="Backup task queued successfully."

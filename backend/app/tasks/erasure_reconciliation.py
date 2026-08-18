@@ -51,8 +51,7 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
-from celery import shared_task
-
+from app.core.celery import celery_app
 from app.core.constants import UtilityPriority
 
 if TYPE_CHECKING:  # heavy model import kept out of the worker's import path
@@ -138,7 +137,7 @@ def _rerun(db, entry) -> dict[str, Any]:
     )
 
 
-@shared_task(
+@celery_app.task(
     bind=True,
     name="gdpr.erasure_reconcile",
     priority=UtilityPriority.BACKGROUND,

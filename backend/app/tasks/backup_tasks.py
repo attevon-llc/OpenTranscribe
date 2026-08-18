@@ -19,8 +19,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC
 
-from celery import shared_task
-
+from app.core.celery import celery_app
 from app.core.constants import CeleryQueues
 from app.core.constants import DownloadPriority
 from app.core.constants import UtilityPriority
@@ -32,7 +31,7 @@ from app.utils.task_lock import task_lock_manager
 logger = logging.getLogger(__name__)
 
 
-@shared_task(name="backup.check_schedule", priority=UtilityPriority.ROUTINE)
+@celery_app.task(name="backup.check_schedule", priority=UtilityPriority.ROUTINE)
 def check_backup_schedule() -> dict:
     """Beat-driven due-check. Dispatch ``backup.run`` when the cron schedule is due.
 
@@ -69,7 +68,7 @@ BACKUP_LOCK_KEY = "backup_run"
 BACKUP_LOCK_TIMEOUT = 3 * 3600
 
 
-@shared_task(name="backup.run", priority=UtilityPriority.ROUTINE)
+@celery_app.task(name="backup.run", priority=UtilityPriority.ROUTINE)
 def run_backup() -> dict:
     """Execute one database backup end-to-end and return the result dict.
 
@@ -86,7 +85,7 @@ def run_backup() -> dict:
         return backup_service.perform_backup()
 
 
-@shared_task(name="backup.mirror_check_schedule", priority=UtilityPriority.ROUTINE)
+@celery_app.task(name="backup.mirror_check_schedule", priority=UtilityPriority.ROUTINE)
 def check_mirror_schedule() -> dict:
     """Beat-driven due-check. Dispatch ``backup.mirror_run`` when the cron is due.
 
@@ -119,7 +118,7 @@ def check_mirror_schedule() -> dict:
     return {"status": "dispatched", "schedule": cfg["schedule"]}
 
 
-@shared_task(name="backup.mirror_run", priority=DownloadPriority.PLAYLIST)
+@celery_app.task(name="backup.mirror_run", priority=DownloadPriority.PLAYLIST)
 def run_media_mirror(max_objects: int | None = None) -> dict:
     """Execute one incremental media mirror run under the overlap-preventing lock.
 

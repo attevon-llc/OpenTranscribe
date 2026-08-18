@@ -101,6 +101,11 @@ def test_check_backup_schedule_disabled_dispatches_nothing(use_test_session):
 
 def test_check_backup_schedule_not_due_dispatches_nothing_and_does_not_stamp(use_test_session):
     bs.update_settings(use_test_session, enabled=True, schedule="0 3 * * *")
+    # "Does not stamp" means the value is UNCHANGED, not that it is None. `backup.last_run_at`
+    # is a SystemSettings row in the shared dev DB that the running celery-beat commits
+    # whenever a scheduled backup fires, so asserting `is None` only held on a database where
+    # beat had never run — it went red the first time the dev stack claimed a backup window.
+    before = bs.get_settings(use_test_session)["last_run_at"]
 
     with (
         mock.patch.object(bs, "is_due", return_value=False),
@@ -110,7 +115,7 @@ def test_check_backup_schedule_not_due_dispatches_nothing_and_does_not_stamp(use
 
     assert result == {"status": "not_due", "schedule": "0 3 * * *"}
     dispatch.assert_not_called()
-    assert bs.get_settings(use_test_session)["last_run_at"] is None
+    assert bs.get_settings(use_test_session)["last_run_at"] == before
 
 
 def test_check_backup_schedule_due_stamps_last_run_and_dispatches(use_test_session):

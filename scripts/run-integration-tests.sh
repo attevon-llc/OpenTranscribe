@@ -70,8 +70,19 @@ if [ ${#MISSING[@]} -gt 0 ]; then
 fi
 
 echo -e "Postgres:   ${GREEN}up (5176)${NC}"
-if port_open 5178; then echo -e "MinIO:      ${GREEN}up (5178) — S3 tests enabled${NC}"; else echo -e "MinIO:      ${YELLOW}down — S3 tests will skip${NC}"; fi
-if port_open 5180; then echo -e "OpenSearch: ${GREEN}up (5180) — search tests enabled${NC}"; else echo -e "OpenSearch: ${YELLOW}down — search tests will skip${NC}"; fi
+STACK_INCOMPLETE=()
+if port_open 5178; then
+    echo -e "MinIO:      ${GREEN}up (5178) — S3 tests enabled${NC}"
+else
+    echo -e "MinIO:      ${YELLOW}down — S3-backed tests cannot run${NC}"
+    STACK_INCOMPLETE+=("MinIO (5178)")
+fi
+if port_open 5180; then
+    echo -e "OpenSearch: ${GREEN}up (5180) — search tests enabled${NC}"
+else
+    echo -e "OpenSearch: ${YELLOW}down — search-backed tests cannot run${NC}"
+    STACK_INCOMPLETE+=("OpenSearch (5180)")
+fi
 echo ""
 
 cd "$PROJECT_ROOT/backend"
@@ -116,6 +127,51 @@ run_phase() {
     fi
 }
 
+#: Skips this phase may legitimately report. Measured against the live dev stack on
+#: 2026-08-18: `101 passed, 3 skipped`. The three are runtime guards inside tests whose
+#: services ARE up (e.g. a model that is not deployed), not absent infrastructure.
+#: Raising this number is how the trap above comes back — re-measure before you do,
+#: and say what the new skips are.
+INTEGRATION_SKIP_CEILING="${INTEGRATION_SKIP_CEILING:-5}"
+
+# Like run_phase, but a phase that SKIPPED more than the ceiling is NOT MEASURED.
+#
+# Output is teed rather than captured, so the run still streams; PIPESTATUS carries
+# pytest's real exit code past the pipe.
+run_phase_watching_skips() {
+    local title=$1; shift
+    local rc=0
+    local out
+    out=$(mktemp)
+    echo -e "${BLUE}--- $title ---${NC}"
+    # `|| true` here would CLOBBER PIPESTATUS — it becomes the status of `true`,
+    # so a genuinely failing phase was recorded as neither failed nor skipped.
+    # Caught by this function's own self-test; disable errexit around the pipe
+    # instead, which leaves PIPESTATUS intact.
+    set +e
+    "$@" 2>&1 | tee "$out"
+    rc=${PIPESTATUS[0]}
+    set -e
+
+    local skipped
+    skipped=$(grep -oE '[0-9]+ skipped' "$out" | tail -1 | grep -oE '^[0-9]+' || echo 0)
+    rm -f "$out"
+
+    if (( rc == 0 )) && (( skipped > INTEGRATION_SKIP_CEILING )); then
+        echo -e "${YELLOW}⊘ $title NOT MEASURED — $skipped test(s) skipped, ceiling is ${INTEGRATION_SKIP_CEILING}${NC}"
+        echo -e "  Exit 0 with mass skips is indistinguishable from a real pass. Something the"
+        echo -e "  suite needs is unreachable, or a gate has started skipping silently.\n"
+        SKIPPED_PHASES+=("$title")
+        return
+    fi
+    if (( rc == 0 )); then
+        echo -e "${GREEN}✓ $title passed${NC} (${skipped} skipped)\n"
+    else
+        echo -e "${RED}✗ $title FAILED${NC}\n"
+        FAILED_PHASES+=("$title")
+    fi
+}
+
 # 1. Ungated suite (default config: -n auto, -m 'not integration')
 run_phase "Unit/API suite" "$VENV_PY" -m pytest tests/ "${COV_ARGS[@]}"
 
@@ -142,9 +198,32 @@ run_phase "Gated security suites (FIPS_MODE=true)" \
 # stage that never settles hangs the phase indefinitely rather than failing it (issue #493).
 # The value is deliberately generous — a real reprocess of a long recording is legitimately
 # minutes — the point is that a ceiling exists at all.
-run_phase "Integration-marked tests" \
-    "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py \
-    -o addopts="" -m integration -q --tb=short --timeout="${INTEGRATION_TEST_TIMEOUT:-900}"
+# ⚠️ A mass-SKIPPED phase must not read as a passed phase (issue #491 follow-up).
+#
+# `SKIP_S3` / `SKIP_OPENSEARCH` are set by the root conftest from a TCP probe, so with
+# either service down the tests that need it SKIP rather than fail — and pytest exits
+# **0**. Measured on this gate:
+#
+#     stack up    101 passed,  3 skipped   exit 0   ✓ "passed"
+#     stack down   34 passed, 71 skipped   exit 0   ✓ "passed"
+#
+# Identical verdict, 67 fewer tests actually executed. That is the documented
+# silent-skip trap, and it sat directly under the evidence for #400/#435 and
+# #405/#432 — the only tests that exercise real OpenSearch semantics for either.
+#
+# Two guards, because either alone is insufficient: the ports can be open while a
+# suite has quietly started skipping for some other reason.
+if [ ${#STACK_INCOMPLETE[@]} -gt 0 ]; then
+    echo -e "${BLUE}--- Integration-marked tests ---${NC}"
+    echo -e "${YELLOW}⊘ Integration-marked tests NOT MEASURED — proves nothing, not counted as a pass${NC}"
+    echo -e "  ${STACK_INCOMPLETE[*]} unreachable, so every test needing them would SKIP and"
+    echo -e "  the phase would still exit 0. Start the full stack: ${YELLOW}./opentr.sh start dev${NC}\n"
+    SKIPPED_PHASES+=("Integration-marked tests")
+else
+    run_phase_watching_skips "Integration-marked tests" \
+        "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py \
+        -o addopts="" -m integration -q --tb=short --timeout="${INTEGRATION_TEST_TIMEOUT:-900}"
+fi
 
 # 4. GPU-marked tests. Deselected from the fast suite and from CI (both CPU-only), so
 # this gate is the ONLY place they run — they were silently ungated before #297.

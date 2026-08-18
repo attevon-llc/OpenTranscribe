@@ -156,7 +156,14 @@ yt-dlp[default]>=2026.6.9
 
 # Semantic search and NLP
 sentence-transformers>=5.6.0  # For semantic search embeddings (all-MiniLM-L6-v2)
-nltk>=3.9.4  # Required by whisperx>=3.7.6, also for SnowballStemmer
+# Required by whisperx>=3.7.6, also for SnowballStemmer.
+# Floor is >=3.10.3 deliberately, to REQUIRE the `nltk/pathsec.py` hardening rather than
+# avoid it: 3.10 refuses to open multiply-linked data files (CWE-59). A hardlinked model
+# cache therefore breaks sentence splitting, and the fix is `ensure_nltk_data_unlinked`
+# in scripts/common.sh, which runs at every startup — not an older NLTK. The old
+# floor-only `>=3.9.4` also let host (3.9.4) and container (3.10.3) diverge silently,
+# which is how this reached production undetected (issue #491).
+nltk>=3.10.3,<4
 # NLTK data files (punkt_tab) must be pre-downloaded for offline usage
 
 # Cloud ASR provider SDKs (lazily imported — only needed for configured provider)

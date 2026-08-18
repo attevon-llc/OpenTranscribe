@@ -1285,6 +1285,9 @@ start_app() {
     # Fix model cache permissions for non-root container
     fix_model_cache_permissions
 
+    # NLTK >= 3.10 refuses multiply-linked files (issue #491)
+    ensure_nltk_data_unlinked
+
     # Ensure OpenSearch neural models are downloaded for offline capability
     ensure_opensearch_models
   fi
@@ -2182,6 +2185,9 @@ reset_and_init() {
 
   # Fix model cache permissions for non-root container
   fix_model_cache_permissions
+
+  # NLTK >= 3.10 refuses multiply-linked files (issue #491)
+  ensure_nltk_data_unlinked
 
   # Ensure OpenSearch neural models are downloaded for offline capability
   ensure_opensearch_models

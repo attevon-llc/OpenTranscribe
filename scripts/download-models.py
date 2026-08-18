@@ -411,6 +411,10 @@ def download_nltk_data():
             'averaged_perceptron_tagger_eng',  # POS tagger for NER
             'maxent_ne_chunker_tab',  # Named entity chunker for speaker name extraction
             'words',  # English word corpus (required by NE chunker)
+            # Topic/keyword extraction: app/utils/text_preprocessing.py and
+            # services/ingest_artifacts/textrank.py. Absent here, it was fetched at RUNTIME on
+            # first topic extraction — which fails on an airgapped deployment (issue #491).
+            'stopwords',
         ]
 
         downloaded = []

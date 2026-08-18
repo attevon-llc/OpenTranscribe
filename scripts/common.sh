@@ -132,6 +132,67 @@ fix_model_cache_permissions() {
   return 0
 }
 
+# Give every file in the NLTK cache its own inode (issue #491).
+#
+# NLTK >= 3.10 hardens file access with `nltk/pathsec.py`, which REFUSES to open any
+# multiply-linked file:
+#
+#   PermissionError: Security Violation [pathsec.open]: refusing multiply-linked file
+#   '.../nltk_data/tokenizers/punkt_tab/english/collocations.tab' (st_nlink=3);
+#   a hardlink can point at an outside-root inode (CWE-59)
+#
+# That is a legitimate control (a hardlink in a mounted cache can alias an inode outside
+# the data root), so the fix is to make the DATA comply — never to disable the check or
+# pin back to an unhardened NLTK. A cache restored from a backup, or copied with
+# `cp -al` / `rsync --link-dest`, arrives fully hardlinked; every punkt read then raises
+# and `split_sentences_nltk` fails for every transcription on the box.
+#
+# ⚠️ Scoped to nltk_data ON PURPOSE. The huggingface/torch/sentence-transformers caches
+# are also commonly hardlinked, but nothing reads them through pathsec, and those caches
+# dedupe deliberately — breaking their links can double tens of GB on disk. nltk_data is
+# ~45 MB, so rewriting it is free.
+#
+# Content is preserved exactly (`cp -p` then atomic `mv`); only the inode changes.
+# Safe and idempotent: a cache with no multiply-linked files is a no-op.
+ensure_nltk_data_unlinked() {
+  local MODEL_CACHE_DIR=""
+  if [ -f .env ]; then
+    MODEL_CACHE_DIR=$(grep 'MODEL_CACHE_DIR' .env | grep -v '^#' | cut -d'#' -f1 | cut -d'=' -f2 | tr -d ' "' | head -1)
+  fi
+  MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-./models}"
+
+  local nltk_dir="$MODEL_CACHE_DIR/nltk_data"
+  [ -d "$nltk_dir" ] || return 0
+
+  local linked
+  linked=$(find "$nltk_dir" -type f -links +1 2>/dev/null | wc -l)
+  [ "$linked" -gt 0 ] || return 0
+
+  echo "🔗 De-hardlinking $linked NLTK data file(s) — NLTK >= 3.10 refuses multiply-linked files"
+
+  local rewritten=0 failed=0 f
+  while IFS= read -r f; do
+    if cp -p "$f" "$f.dehl" 2>/dev/null && mv -f "$f.dehl" "$f" 2>/dev/null; then
+      rewritten=$((rewritten + 1))
+    else
+      rm -f "$f.dehl" 2>/dev/null
+      failed=$((failed + 1))
+    fi
+  done < <(find "$nltk_dir" -type f -links +1 2>/dev/null)
+
+  if [ "$failed" -gt 0 ]; then
+    echo "⚠️  Warning: could not de-hardlink $failed NLTK file(s); sentence splitting will fail"
+    echo "   with 'Security Violation [pathsec.open]: refusing multiply-linked file'."
+    echo "   Manual fix (content is preserved, only the inode changes):"
+    echo "     find $nltk_dir -type f -links +1 \\"
+    echo "       -exec sh -c 'cp -p \"\$1\" \"\$1.dehl\" && mv -f \"\$1.dehl\" \"\$1\"' _ {} \\;"
+    return 1
+  fi
+
+  echo "✅ NLTK cache de-hardlinked ($rewritten file(s))"
+  return 0
+}
+
 # Fix ownership of the shared pipeline_scratch Docker named volume.
 #
 # The volume is created root-owned by default, which blocks the non-root

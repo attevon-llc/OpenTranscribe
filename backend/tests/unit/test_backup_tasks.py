@@ -282,6 +282,9 @@ def test_check_mirror_schedule_disabled_dispatches_nothing(use_test_session):
 
 def test_check_mirror_schedule_not_due_dispatches_nothing(use_test_session):
     mm.update_settings(use_test_session, enabled=True, schedule="0 4 * * *")
+    # UNCHANGED, not None — same shared-DB hazard as the backup sibling above. This one went
+    # red the first time anyone exercised POST /admin/backup/mirror/run against the dev stack.
+    before = mm.get_settings(use_test_session)["last_run_at"]
 
     with (
         mock.patch.object(bs, "is_due", return_value=False),
@@ -291,7 +294,7 @@ def test_check_mirror_schedule_not_due_dispatches_nothing(use_test_session):
 
     assert result == {"status": "not_due", "schedule": "0 4 * * *"}
     dispatch.assert_not_called()
-    assert mm.get_settings(use_test_session)["last_run_at"] is None
+    assert mm.get_settings(use_test_session)["last_run_at"] == before
 
 
 def test_check_mirror_schedule_due_stamps_and_dispatches_on_download_queue(use_test_session):

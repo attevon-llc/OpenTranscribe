@@ -136,9 +136,15 @@ run_phase "Gated security suites (FIPS_MODE=true)" \
 # The narrowing is guarded: tests/unit/test_gate_phase_coverage.py fails if an
 # `integration`-marked test appears outside these paths, so one added elsewhere cannot go
 # silently unrun the way `gpu` did before #297 (issue #431).
+#
+# `--timeout` is restated explicitly because `-o addopts=""` drops pyproject's `--timeout=300`
+# along with `-n auto`. Without it NOTHING bounds a stuck test: these poll the live stack, so a
+# stage that never settles hangs the phase indefinitely rather than failing it (issue #493).
+# The value is deliberately generous — a real reprocess of a long recording is legitimately
+# minutes — the point is that a ceiling exists at all.
 run_phase "Integration-marked tests" \
     "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py \
-    -o addopts="" -m integration -q --tb=short
+    -o addopts="" -m integration -q --tb=short --timeout="${INTEGRATION_TEST_TIMEOUT:-900}"
 
 # 4. GPU-marked tests. Deselected from the fast suite and from CI (both CPU-only), so
 # this gate is the ONLY place they run — they were silently ungated before #297.
@@ -146,7 +152,8 @@ run_phase "Integration-marked tests" \
 # machine without CUDA; pass --skip-gpu to drop the phase entirely.
 if $RUN_GPU; then
     run_phase "GPU-marked tests" \
-        "$VENV_PY" -m pytest tests/ -o addopts="" -m gpu -q --tb=short
+        "$VENV_PY" -m pytest tests/ -o addopts="" -m gpu -q --tb=short \
+        --timeout="${GPU_TEST_TIMEOUT:-1800}"
 else
     echo -e "${YELLOW}Skipping GPU-marked tests (--skip-gpu).${NC}"
 fi

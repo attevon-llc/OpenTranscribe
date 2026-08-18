@@ -104,6 +104,10 @@ jobs:
     # A docs- or frontend-only PR cannot change its outcome, so don't pay for it.
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
+    # ~17 min in the normal case. The cap exists because a hosted-runner apt mirror
+    # outage once hung `apt-get update` until the 360-minute ACCOUNT default, burning
+    # six hours of runner time without executing a single test (issue #493).
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16
@@ -142,6 +146,9 @@ jobs:
           cache-dependency-path: backend/requirements-ci.txt
 
       - name: Install system dependencies
+        # Bounded separately from the job: a mirror that stops answering should fail this
+        # step in minutes, not consume the whole job budget retrying (issue #493).
+        timeout-minutes: 10
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
       - name: Install Python dependencies (CPU wheels)

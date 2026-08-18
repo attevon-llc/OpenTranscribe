@@ -1,11 +1,15 @@
 /**
- * `SummaryActions.svelte` picks ONE of four mutually-exclusive action states
- * off `{summary, summaryStatus, llmAvailable, canRetry, canGenerate,
+ * `SummaryActions.svelte` picks ONE of several mutually-exclusive action
+ * states off `{summary, summaryStatus, llmAvailable, canRetry, canGenerate,
  * summaryEnabledSystem}` (see the `{#if}/{:else if}` chain around lines
- * 49-106): a disabled-badge state, a "generate" state, a "retry" state, or
- * nothing at all. This is the same shape as `SettingsModal.svelte`'s
- * `sectionLocked()` — a small pure selector wired through several props —
- * so it's tested the same way: table-driven, one row per combination.
+ * 49-109): a disabled-badge state, a "generate" state, a "retry" state, an
+ * explanatory hint for the two states that used to fall through with no
+ * message (pending-but-LLM-unavailable, failed-but-cannot-retry), or nothing
+ * (only when a summary already exists and the LLM is unavailable — no action
+ * is possible or expected there). This is the same shape as
+ * `SettingsModal.svelte`'s `sectionLocked()` — a small pure selector wired
+ * through several props — so it's tested the same way: table-driven, one row
+ * per combination.
  *
  * `$t` is left unmocked deliberately (as in `RetrievalQualityNotice.test.ts`):
  * i18next is uninitialised in this test environment, so `$t('key')` returns
@@ -93,6 +97,24 @@ describe('SummaryActions action selection', () => {
       expectHidden: ['summary.generateSummary'],
     },
     {
+      name: 'no summary, pending, llm unavailable: shows the LLM-unavailable hint, no button',
+      props: baseProps({ summaryStatus: 'pending', llmAvailable: false }),
+      expectShown: ['llm.featuresUnavailable'],
+      expectHidden: ['summary.generateSummary', 'summary.retrySummaryGeneration'],
+    },
+    {
+      name: 'no summary, failed, cannot retry: shows the retry-unavailable hint, no button',
+      props: baseProps({ summaryStatus: 'failed', canRetry: false }),
+      expectShown: ['summary.retryUnavailableHint'],
+      expectHidden: ['summary.generateSummary', 'summary.retrySummaryGeneration'],
+    },
+    {
+      name: 'no summary, error status, cannot retry: also shows the retry-unavailable hint',
+      props: baseProps({ summaryStatus: 'error', canRetry: false }),
+      expectShown: ['summary.retryUnavailableHint'],
+      expectHidden: ['summary.generateSummary', 'summary.retrySummaryGeneration'],
+    },
+    {
       name: 'summary present, llm available: shows the prompt picker + regenerate button, no generate/retry',
       props: baseProps({ summary: { text: 'done' }, llmAvailable: true }),
       expectShown: ['summary.regenerateWithPrompt', 'summary.useActivePrompt'],
@@ -121,24 +143,34 @@ describe('SummaryActions action selection', () => {
   });
 
   /**
-   * Possible gap flagged by a prior code-reading review, not yet confirmed as
-   * a bug: `!summary && summaryStatus === 'pending' && !llmAvailable` falls
-   * through all four branches of the `{#if}/{:else if}` chain (the
-   * 'disabled' branch needs `summaryStatus === 'disabled'`; the 'generate'
-   * branch needs `llmAvailable`; the 'retry' branch needs `canRetry` +
-   * failed/error status), so the component renders an empty
-   * `.summary-actions` div with no button and no explanatory text. This test
-   * pins that behavior rather than asserting it is correct — if UX intends a
-   * message here (e.g. "summary not available"), this is the case to fix.
+   * A prior code-reading review flagged two states that fell through every
+   * branch of the `{#if}/{:else if}` chain and rendered an empty
+   * `.summary-actions` div with no button and no explanatory text:
+   * pending-with-no-LLM, and failed/error-with-no-retry. Both are real,
+   * reachable backend states (`llm_available` and `can_retry` are computed
+   * server-side in `summary_status.py`, not client invariants), so a blank
+   * area gave the user zero information. Fixed with a dedicated hint branch
+   * for each; these assert the fix rather than pinning the old gap.
    */
-  it('renders nothing (no button, no message) when pending with no LLM configured', () => {
+  it('shows an explanatory hint, not a blank area, when pending with no LLM configured', () => {
     const { container } = render(SummaryActions, {
       props: baseProps({ summary: null, summaryStatus: 'pending', llmAvailable: false }) as never,
     });
 
     const actionsDiv = container.querySelector('.summary-actions');
-    expect(actionsDiv).not.toBeNull();
-    expect(actionsDiv?.textContent?.trim()).toBe('');
+    expect(actionsDiv?.textContent?.trim()).not.toBe('');
     expect(container.querySelector('button')).toBeNull();
+    expect(container.textContent).toContain('llm.featuresUnavailable');
+  });
+
+  it('shows an explanatory hint, not a blank area, when failed with no retry available', () => {
+    const { container } = render(SummaryActions, {
+      props: baseProps({ summary: null, summaryStatus: 'failed', canRetry: false }) as never,
+    });
+
+    const actionsDiv = container.querySelector('.summary-actions');
+    expect(actionsDiv?.textContent?.trim()).not.toBe('');
+    expect(container.querySelector('button')).toBeNull();
+    expect(container.textContent).toContain('summary.retryUnavailableHint');
   });
 });

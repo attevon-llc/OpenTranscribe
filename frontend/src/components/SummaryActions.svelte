@@ -86,6 +86,8 @@
         {$t('summary.generateSummary')}
       {/if}
     </button>
+  {:else if !summary && !llmAvailable && summaryStatus === 'pending'}
+    <span class="admin-hint">{$t('llm.featuresUnavailable')}</span>
   {:else if !summary && canRetry && (summaryStatus === 'failed' || summaryStatus === 'error')}
     <button
       class="action-button warning"
@@ -103,6 +105,8 @@
         {$t('summary.retrySummaryGeneration')}
       {/if}
     </button>
+  {:else if !summary && !canRetry && (summaryStatus === 'failed' || summaryStatus === 'error')}
+    <span class="admin-hint">{$t('summary.retryUnavailableHint')}</span>
   {/if}
 
   {#if summary && llmAvailable}

@@ -4013,6 +4013,7 @@
   "summary.generateAnyway": "Trotzdem Zusammenfassung erstellen",
   "summary.systemDisabled": "KI-Zusammenfassungen wurden vom Administrator deaktiviert",
   "summary.adminEnableHint": "Kontaktieren Sie Ihren Administrator, um die KI-Zusammenfassungserstellung zu aktivieren",
+  "summary.retryUnavailableHint": "Die Zusammenfassungserstellung kann derzeit nicht wiederholt werden.",
   "common.enabled": "Aktiviert",
   "common.disabled": "Deaktiviert",
   "uploader.whisperModel": "Transkriptionsmodell",

@@ -12,6 +12,7 @@ This script downloads:
 Models are cached to standard locations and a manifest is created.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -394,8 +395,15 @@ def download_nltk_data():
     try:
         import nltk
 
-        # Set NLTK data path to user's cache directory
-        nltk_data_path = Path.home() / '.cache' / 'nltk_data'
+        # Honour $NLTK_DATA, which is what the images actually set (issue #491).
+        #
+        # This was hardcoded to `Path.home()/.cache/nltk_data`, and it matched the
+        # image only by luck of $HOME: Dockerfile.prod and Dockerfile.lite run as
+        # `appuser`, but Dockerfile.blackwell runs as `user` and sets
+        # NLTK_DATA=/home/user/.cache/nltk_data. So on the Blackwell image this
+        # fetched the corpora into a directory nothing reads, reported success,
+        # and left the deployment to discover the gap at runtime.
+        nltk_data_path = Path(os.environ.get('NLTK_DATA') or (Path.home() / '.cache' / 'nltk_data'))
         nltk_data_path.mkdir(parents=True, exist_ok=True)
 
         # Add to NLTK's data path
@@ -875,7 +883,7 @@ def get_cache_info():
     # Use default paths (same as backend)
     hf_home = str(Path.home() / '.cache' / 'huggingface')
     torch_home = str(Path.home() / '.cache' / 'torch')
-    nltk_home = str(Path.home() / '.cache' / 'nltk_data')
+    nltk_home = os.environ.get('NLTK_DATA') or str(Path.home() / '.cache' / 'nltk_data')
     sent_home = str(Path.home() / '.cache' / 'sentence-transformers')
     opensearch_ml_home = str(Path.home() / '.cache' / 'opensearch-ml')
 
@@ -939,30 +947,60 @@ def create_manifest(download_results):
     return manifest
 
 
+#: `--only <group>` -> the downloader that fetches it.
+#:
+#: A selector exists because the one-shot containers in `scripts/common.sh` mount
+#: ONE cache directory each (issue #491): whatever a run fetches outside the
+#: mounted directory is written into the container's own filesystem and discarded
+#: with it. Running the whole downloader to obtain one group therefore burns the
+#: bandwidth and keeps none of it.
+DOWNLOAD_GROUPS = {
+    'whisperx': download_whisperx_models,
+    'pyannote': download_pyannote_models,
+    'nltk': download_nltk_data,
+    'sentence-transformers': download_sentence_transformers,
+    'reranker': download_chat_reranker,
+    'speaker-attributes': download_speaker_attribute_models,
+    'opensearch': download_opensearch_neural_models,
+    'redaction': download_redaction_models,
+}
+
+#: Groups that need no Hugging Face credential. NLTK corpora come from NLTK's own
+#: CDN, so requiring the token would make the airgap prefetch this selector exists
+#: for fail on a deployment that has not configured one yet.
+GROUPS_WITHOUT_HF_TOKEN = frozenset({'nltk'})
+
+
 def main():
     """Main execution"""
-    print_header('OpenTranscribe Model Downloader')
+    parser = argparse.ArgumentParser(description='Download OpenTranscribe model assets')
+    parser.add_argument(
+        '--only',
+        action='append',
+        choices=sorted(DOWNLOAD_GROUPS),
+        help='Fetch only this group; repeatable. Default: every group.',
+    )
+    args = parser.parse_args()
 
-    print_info('This script will download all required AI models')
+    selected = args.only or list(DOWNLOAD_GROUPS)
+
+    print_header('OpenTranscribe Model Downloader')
+    if args.only:
+        print_info(f'Selected group(s): {", ".join(selected)}')
+    else:
+        print_info('This script will download all required AI models')
     print_info('Models will be cached for offline packaging\n')
 
     # Check for required environment variables
-    if not os.environ.get('HUGGINGFACE_TOKEN'):
+    if not set(selected) <= GROUPS_WITHOUT_HF_TOKEN and not os.environ.get('HUGGINGFACE_TOKEN'):
         print_error('HUGGINGFACE_TOKEN environment variable not set!')
         print_info('Get your token at: https://huggingface.co/settings/tokens')
         sys.exit(1)
 
     results = {}
 
-    # Download all models
-    results.update(download_whisperx_models())
-    results.update(download_pyannote_models())
-    results.update(download_nltk_data())
-    results.update(download_sentence_transformers())
-    results.update(download_chat_reranker())
-    results.update(download_speaker_attribute_models())
-    results.update(download_opensearch_neural_models())
-    results.update(download_redaction_models())
+    for group in selected:
+        results.update(DOWNLOAD_GROUPS[group]())
 
     # Create manifest
     manifest = create_manifest(results)

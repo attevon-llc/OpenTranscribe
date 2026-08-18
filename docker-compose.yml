@@ -357,15 +357,16 @@ services:
       # without the mount, punkt is absent and every chunk it writes is cut by the
       # regex fallback, which splits on abbreviations punkt keeps intact. The two
       # splitters disagree, so a missing mount here silently produces different
-      # boundaries from any worker that has it.
+      # boundaries from any worker that has it. Two tasks depend on it:
+      # `reindex_transcripts` (cpu queue) re-chunks transcripts, and topic
+      # extraction needs the stopwords corpus from the same tree.
+      # This line was present TWICE, with two different justifying comments —
+      # harmless to compose, but a reader deleting "the duplicate" had a 50%
+      # chance of deleting the comment that explained the other reason.
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       # Shared scratch — writes the preprocessed WAV for GPU/embedding workers
       - pipeline_scratch:/scratch/opentranscribe
       - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
-      # punkt: `reindex_transcripts` runs on the cpu queue and re-chunks transcripts.
-      # Without this mount the sentence splitter silently falls back to a regex and
-      # cuts different chunk boundaries than every other process (issue #436).
-      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
     environment:
       - PRELOAD_CPU_WHISPER=true
       # ffmpeg preprocess threading (opt-in CPU-contention control; default off).

@@ -37,44 +37,60 @@ services:
     pull_policy: never
     volumes:
       # Offline: Use absolute paths for airgapped systems
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/nltk_data:/home/appuser/.cache/nltk_data
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       # No temp volume needed - temp files live in container only
     environment:
       # Offline mode for HuggingFace (prevents network calls)
       - HF_HUB_OFFLINE=1
+      # Same assertion for NLTK: fail fast naming the skipped setup step
+      # rather than hanging on a socket timeout (issue #491).
+      - NLTK_OFFLINE=1
 
   celery-download-worker:
     image: davidamacey/opentranscribe-backend:latest
     pull_policy: never
     volumes:
       # Offline: Use absolute paths for airgapped systems
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
     environment:
       # Offline mode for HuggingFace (prevents network calls)
       - HF_HUB_OFFLINE=1
+      # Same assertion for NLTK: fail fast naming the skipped setup step
+      # rather than hanging on a socket timeout (issue #491).
+      - NLTK_OFFLINE=1
 
   celery-cpu-worker:
     image: davidamacey/opentranscribe-backend:latest
     pull_policy: never
-    # No volumes needed for CPU worker
+    volumes:
+      # Offline: `reindex_transcripts` runs here and splits sentences with punkt.
+      # Derived, not guessed — tests/unit/test_compose_sentence_splitter_mounts.py
+      # walks the call graph from `split_into_sentences` to the queue that serves it.
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
     environment:
       # Offline mode for HuggingFace (prevents network calls)
       - HF_HUB_OFFLINE=1
+      # Same assertion for NLTK: fail fast naming the skipped setup step
+      # rather than hanging on a socket timeout (issue #491).
+      - NLTK_OFFLINE=1
 
   celery-redaction:
     image: davidamacey/opentranscribe-backend:latest
     pull_policy: never
     volumes:
       # Offline: Redaction worker needs the GLiNER PII + toxicity model weights
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
     environment:
       # Offline mode for HuggingFace (prevents network calls)
       - HF_HUB_OFFLINE=1
+      # Same assertion for NLTK: fail fast naming the skipped setup step
+      # rather than hanging on a socket timeout (issue #491).
+      - NLTK_OFFLINE=1
 
   celery-cloud-asr-worker:
     image: davidamacey/opentranscribe-backend:latest
@@ -83,24 +99,38 @@ services:
     environment:
       # Offline mode for HuggingFace (prevents network calls)
       - HF_HUB_OFFLINE=1
+      # Same assertion for NLTK: fail fast naming the skipped setup step
+      # rather than hanging on a socket timeout (issue #491).
+      - NLTK_OFFLINE=1
 
   celery-nlp-worker:
     image: davidamacey/opentranscribe-backend:latest
     pull_policy: never
-    # No volumes needed for NLP worker
+    volumes:
+      # Offline: `artifacts.generate_file_facts` splits sentences for the digest,
+      # and topic extraction needs the stopwords corpus.
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
     environment:
       # Offline mode for HuggingFace (prevents network calls)
       - HF_HUB_OFFLINE=1
+      # Same assertion for NLTK: fail fast naming the skipped setup step
+      # rather than hanging on a socket timeout (issue #491).
+      - NLTK_OFFLINE=1
 
   celery-embedding-worker:
     image: davidamacey/opentranscribe-backend:latest
     pull_policy: never
     volumes:
       # Offline: sentence-transformers model must be pre-cached
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      # Offline: `index_transcript_search` runs here and splits sentences with punkt.
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
     environment:
       # Offline mode for HuggingFace (prevents network calls)
       - HF_HUB_OFFLINE=1
+      # Same assertion for NLTK: fail fast naming the skipped setup step
+      # rather than hanging on a socket timeout (issue #491).
+      - NLTK_OFFLINE=1
 
   celery-beat:
     image: davidamacey/opentranscribe-backend:latest
@@ -141,11 +171,14 @@ services:
     pull_policy: never  # Use pre-loaded images (no network access)
     volumes:
       # Offline: Use absolute paths for airgapped systems
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/huggingface:/home/appuser/.cache/huggingface
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/torch:/home/appuser/.cache/torch
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/nltk_data:/home/appuser/.cache/nltk_data
-      - ${MODEL_CACHE_DIR:-/opt/opentranscribe/models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
+      - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      - ${MODEL_CACHE_DIR:-./models}/torch:/home/appuser/.cache/torch
+      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
+      - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/appuser/.cache/sentence-transformers
       - pipeline_scratch:/scratch/opentranscribe
     environment:
       # Offline mode for HuggingFace (prevents network calls)
       - HF_HUB_OFFLINE=1
+      # Same assertion for NLTK: fail fast naming the skipped setup step
+      # rather than hanging on a socket timeout (issue #491).
+      - NLTK_OFFLINE=1

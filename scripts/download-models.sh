@@ -101,6 +101,20 @@ get_dir_size() {
     du -sh "$1" 2>/dev/null | cut -f1 || echo "0"
 }
 
+# Whether the NLTK corpora are actually present, not merely that the directory is.
+#
+# `download-models.sh` creates `$MODEL_CACHE_DIR/nltk_data` unconditionally and the
+# compose files bind-mount it, so `-d` is true on every deployment that has ever
+# started — including one that has never fetched a corpus. The tokenizers
+# directory is what the app actually loads (`tokenizers/punkt*`), so its emptiness
+# is the honest signal.
+nltk_data_present() {
+    local nltk_dir="$MODEL_CACHE_DIR/nltk_data"
+    [ -d "$nltk_dir/tokenizers" ] || return 1
+    # `find -quit` stops at the first hit rather than walking the whole tree.
+    [ -n "$(find "$nltk_dir/tokenizers" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]
+}
+
 check_models_exist() {
     print_info "Checking for existing models in $MODEL_CACHE_DIR..."
 
@@ -118,6 +132,19 @@ check_models_exist() {
         # 1 GB is still conservative (WhisperX alone exceeds it) but no longer
         # contradicts the script's own definition of complete.
         if [ "$((hf_size + torch_size))" -gt 1000000000 ]; then
+            # NLTK is checked SEPARATELY, and it has to be (issue #491). The size
+            # gate above sums huggingface + torch only, so a cache holding tens of
+            # gigabytes of model weights and an EMPTY nltk_data reported "models
+            # exist" and skipped the download entirely — the corpora were then
+            # fetched at runtime, from inside the transcription and topic
+            # pipelines, which is exactly what an airgapped install cannot do.
+            # nltk_data is ~50 MB against multi-GB weights, so it can never move
+            # the combined threshold; only its own emptiness is observable.
+            if ! nltk_data_present; then
+                print_info "Model weights are present but nltk_data is empty — fetching corpora"
+                return 1
+            fi
+
             local total_size
             total_size=$(get_dir_size "$MODEL_CACHE_DIR")
             print_success "Found existing models ($total_size)"

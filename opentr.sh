@@ -1285,6 +1285,11 @@ start_app() {
     # Fix model cache permissions for non-root container
     fix_model_cache_permissions
 
+    # Fetch the NLTK corpora BEFORE de-hardlinking them: nothing else prefetches
+    # them, so they were fetched at runtime from inside the transcription and
+    # topic pipelines, which an airgapped deployment cannot do (issue #491).
+    ensure_nltk_corpora
+
     # NLTK >= 3.10 refuses multiply-linked files (issue #491)
     ensure_nltk_data_unlinked
 
@@ -2185,6 +2190,9 @@ reset_and_init() {
 
   # Fix model cache permissions for non-root container
   fix_model_cache_permissions
+
+  # Fetch the NLTK corpora BEFORE de-hardlinking them (issue #491).
+  ensure_nltk_corpora
 
   # NLTK >= 3.10 refuses multiply-linked files (issue #491)
   ensure_nltk_data_unlinked

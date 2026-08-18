@@ -17,6 +17,8 @@ import logging
 import re
 from functools import lru_cache
 
+from app.utils.nltk_offline import nltk_downloads_permitted
+
 logger = logging.getLogger(__name__)
 
 # Transcript-specific filler words not in NLTK's standard English stopwords.
@@ -85,9 +87,28 @@ _MIN_OUTPUT_RATIO = 0.10
 
 @lru_cache(maxsize=1)
 def _get_stopwords() -> frozenset[str]:
-    """Load NLTK English stopwords with on-demand download.
+    """Load NLTK English stopwords, degrading rather than raising (issue #491).
 
     Uses lru_cache so the NLTK lookup happens only once per process.
+
+    ⚠️ **The retry has to be guarded, and it was not.** The old shape caught
+    ``LookupError``, called ``nltk.download("stopwords")``, and re-called
+    ``stopwords.words("english")`` with **no second ``except``**. ``nltk.download``
+    swallows its own network errors and returns falsy, so on an airgapped or
+    firewalled deployment the retry raised ``LookupError`` straight out of
+    :func:`preprocess_for_topics` and into ``topic_extraction_service`` — topic
+    extraction failed outright on a deployment that had provisioned every model it
+    was told to.
+
+    Its neighbour :func:`_tokenize` has had the correct nested shape all along;
+    this one simply never grew it. The fallback here is the empty set plus the
+    transcript filler: stopwords only *improve* keyword extraction by removing
+    noise words, so their absence degrades quality rather than producing a wrong
+    answer, and a loud warning is the honest signal.
+
+    Returns:
+        The stopword set, or just :data:`TRANSCRIPT_FILLER` when the corpus is
+        unavailable.
     """
     import nltk
 
@@ -96,11 +117,20 @@ def _get_stopwords() -> frozenset[str]:
 
         words = set(stopwords.words("english"))
     except LookupError:
-        logger.info("Downloading NLTK stopwords corpus (one-time)")
-        nltk.download("stopwords", quiet=True)
-        from nltk.corpus import stopwords
+        try:
+            if nltk_downloads_permitted(corpus="the stopwords corpus"):
+                logger.info("Downloading NLTK stopwords corpus (one-time)")
+                nltk.download("stopwords", quiet=True)
+            from nltk.corpus import stopwords
 
-        words = set(stopwords.words("english"))
+            words = set(stopwords.words("english"))
+        except Exception:
+            logger.warning(
+                "NLTK stopwords unavailable; keyword extraction will keep common words. "
+                "Run scripts/download-models.sh (or ./opentr.sh start) to provision the "
+                "NLTK corpora — see docs-site/docs/installation/offline-installation.md."
+            )
+            words = set()
 
     # Merge with transcript-specific filler
     return frozenset(words | TRANSCRIPT_FILLER)
@@ -118,8 +148,9 @@ def _tokenize(text: str) -> list[str]:
         return list(nltk.word_tokenize(text))
     except LookupError:
         try:
-            logger.info("Downloading NLTK punkt_tab tokenizer (one-time)")
-            nltk.download("punkt_tab", quiet=True)
+            if nltk_downloads_permitted(corpus="the punkt_tab tokenizer"):
+                logger.info("Downloading NLTK punkt_tab tokenizer (one-time)")
+                nltk.download("punkt_tab", quiet=True)
             return list(nltk.word_tokenize(text))
         except Exception:
             # Fallback: simple regex tokenizer if NLTK data unavailable

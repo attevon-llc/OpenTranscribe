@@ -64,7 +64,12 @@ services:
       context: ./backend
       dockerfile: Dockerfile.prod  # Production build
     pull_policy: always
-    # No volumes needed - CPU worker doesn't need model cache
+    # Volumes come from the base file and ARE needed: this worker chunks
+    # transcripts (`reindex_transcripts`, cpu queue) and extracts topics, both of
+    # which read the NLTK corpora. The comment here used to say "no volumes needed
+    # - CPU worker doesn't need model cache", which the base file has contradicted
+    # since #436; nothing in this overlay ever removed them, so the claim was
+    # merely wrong rather than harmful.
 
   celery-redaction:
     image: davidamacey/opentranscribe-backend:${OT_IMAGE_TAG:-latest}

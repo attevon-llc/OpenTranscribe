@@ -23,6 +23,9 @@ The OpenTranscribe offline package provides a complete, self-contained deploymen
   - WhisperX transcription models (large-v3-turbo default + large-v3)
   - PyAnnote speaker diarization models
   - OpenSearch neural search models (semantic search embeddings)
+  - NLTK corpora (sentence splitting + topic-extraction stopwords). Fetched at
+    runtime if absent, which an airgapped host cannot do — `download-models.sh`
+    is what puts them in the package (issue #491)
   - Word-level timestamps natively supported for all 100+ languages
 - Configuration files and templates
 - Installation and management scripts

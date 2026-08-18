@@ -54,8 +54,13 @@ _RETRYABLE_ERROR_TYPES = frozenset(
 #: because that assumption is not guaranteed and is already violated on purpose in
 #: the suite: ``_extract_failed_docs`` drops documents whose bulk error is permanent,
 #: leaving a hole, and ``test_a_shorter_resection_leaves_no_orphan_digest`` plants its
-#: orphan at ``sections + 3``. The walk stops at the first window in which nothing is
-#: found, so a document set that ends terminates it. 64 ids cost one round trip.
+#: orphan at ``sections + 3``. 64 ids cost one round trip.
+#:
+#: ⚠️ **An empty window does not end the walk.** It used to, and a hole of 64 or more
+#: therefore stranded every document above it — permanently, which is the exact
+#: failure #435 exists to prevent, reintroduced by the stop condition itself. The
+#: walk now consults ``_probe_ceiling`` before giving up; see
+#: :meth:`TranscriptIndexingService._orphaned_document_ids`.
 _ORPHAN_PROBE_WINDOW = 64
 
 # Permanent error types that should NOT be retried
@@ -870,7 +875,17 @@ class TranscriptIndexingService:
         chunk_ms = round((time.time() - t_chunk_start) * 1000)
 
         if not chunks:
-            logger.warning(f"No chunks generated for file {file_uuid}")
+            # A transcript that now yields NO chunks still has to lose the ones it
+            # used to have. `reindex_transcript` deletes first and is safe, but it
+            # is not the primary path — `tasks/search_indexing_task` calls this
+            # method directly, and the segments-exist-but-chunk-to-nothing case
+            # (every segment empty after cleanup) reaches here rather than the
+            # `not segments` guard above. Without this, those chunks stayed
+            # searchable forever with no way to notice.
+            pruned = self._prune_stale_chunks(file_uuid, keep_count=0)
+            logger.warning(
+                f"No chunks generated for file {file_uuid}; pruned {pruned} stale chunk(s)"
+            )
             return 0
 
         # 2. Add indexed_at timestamp, accessible_user_ids, and the v6 fields
@@ -1075,7 +1090,13 @@ class TranscriptIndexingService:
             return 0
 
     def _orphaned_document_ids(
-        self, *, index_name: str, document_id: Callable[[int], str], first_orphan: int
+        self,
+        *,
+        index_name: str,
+        document_id: Callable[[int], str],
+        first_orphan: int,
+        plane_query: dict[str, Any],
+        counter_field: str,
     ) -> list[str]:
         """Ids of this file's documents from ``first_orphan`` upward, read REALTIME.
 
@@ -1100,15 +1121,78 @@ class TranscriptIndexingService:
             return []
 
         found: list[str] = []
+        ceiling: int | None = None
         start = first_orphan
         while True:
             probe = [document_id(n) for n in range(start, start + _ORPHAN_PROBE_WINDOW)]
             response = opensearch_client.mget(index=index_name, body={"ids": probe}, _source=False)
             window = [doc["_id"] for doc in response.get("docs", []) if doc.get("found")]
-            if not window:
+            if window:
+                found.extend(window)
+                start += _ORPHAN_PROBE_WINDOW
+                continue
+
+            # An empty window does NOT mean the tail ended (#400 follow-up). A
+            # partially failed bulk load leaves a HOLE — `_extract_failed_docs`
+            # drops permanently-failed documents — and returning here stranded
+            # everything above a hole of `_ORPHAN_PROBE_WINDOW` or more,
+            # permanently. That is exactly the failure #435 exists to prevent,
+            # reintroduced by the walk's own stop condition.
+            #
+            # The searcher answers "is there anything higher?" for documents old
+            # enough to be refreshed, which is precisely the case a hole implies
+            # (the survivors above it are from the previous generation). The
+            # unrefreshed case #435 cares about is contiguous from `first_orphan`,
+            # so the FIRST window already found it and we never reach here.
+            if ceiling is None:
+                ceiling = self._probe_ceiling(
+                    index_name, plane_query=plane_query, counter_field=counter_field
+                )
+            if ceiling is None or start > ceiling:
                 return found
-            found.extend(window)
             start += _ORPHAN_PROBE_WINDOW
+
+    def _probe_ceiling(
+        self, index_name: str, *, plane_query: dict[str, Any], counter_field: str
+    ) -> int | None:
+        """Highest value of *counter_field* the SEARCHER can see for this plane.
+
+        Deliberately a search, and deliberately only consulted after an empty
+        probe window: a searcher cannot see the unrefreshed writes the id probe
+        exists for, but it is the only thing that can say how far above a hole to
+        keep looking. Paying for it lazily keeps it off the common path — a
+        shrinking re-chunk finds its tail in the first window and never gets here,
+        and a growing or unchanged one pays one small aggregation.
+
+        *plane_query* is the caller's own plane predicate — ``chunk_plane_query``
+        or ``digest_plane_query`` for the whole file — so the ceiling is measured
+        over exactly the documents the delete will target, compat arm included.
+        *counter_field* is the field the document id counts up with:
+        ``chunk_index`` for the chunk plane, ``digest_section`` for the digest
+        plane (whose ``chunk_index`` is a NEGATIVE sentinel and counts the wrong
+        way).
+
+        Returns:
+            The maximum value, or ``None`` when the searcher knows nothing (a
+            fresh or wholly-unrefreshed generation) or the query failed. ``None``
+            means "stop walking" — the behaviour the walk already had, so this can
+            only ever find more, never less.
+        """
+        try:
+            response = opensearch_client.search(
+                index=index_name,
+                body={
+                    "size": 0,
+                    "query": plane_query,
+                    "aggs": {"ceiling": {"max": {"field": counter_field}}},
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 — the walk degrades, it must not fail
+            logger.debug(f"Could not read the orphan ceiling: {exc}")
+            return None
+
+        value = (response.get("aggregations") or {}).get("ceiling", {}).get("value")
+        return None if value is None else int(value)
 
     def _prune_stale_chunks(self, file_uuid: str, *, keep_count: int) -> int:
         """Delete chunks left behind by a longer previous chunking of this file.
@@ -1188,6 +1272,8 @@ class TranscriptIndexingService:
                 index_name=index_name,
                 document_id=lambda n: f"{file_uuid}_{n}",
                 first_orphan=keep_count,
+                plane_query=chunk_plane_query(file_uuid),
+                counter_field="chunk_index",
             )
             if not stale_ids:
                 return 0
@@ -1202,18 +1288,31 @@ class TranscriptIndexingService:
                 conflicts="proceed",
             )
             deleted = int(response.get("deleted", 0))
+            conflicts = int(response.get("version_conflicts", 0) or 0)
             logger.info(
                 f"Pruned {deleted} stale chunk(s) for file {file_uuid} "
                 f"(re-chunk shrank to {keep_count} chunks)"
             )
-            if deleted != len(stale_ids):
-                # The predicate declined documents the id probe found. The known
-                # cause is the pre-v6 compat arm: chunks written before index v6
-                # carry no `doc_type`, so a predicate that lost the arm matches
-                # none of them while their ids exist.
+            # `deleted != len(stale_ids)` has THREE causes and this used to
+            # attribute all of them to the first, so a real conflict read as a
+            # predicate bug:
+            #   fewer  — the predicate declined documents the probe found. The known
+            #            cause is a lost pre-v6 compat arm (chunks written before
+            #            index v6 carry no `doc_type`), or documents skipped by
+            #            `conflicts="proceed"` — which `conflicts` distinguishes.
+            #   more   — the range delete removed documents the probe did not
+            #            enumerate. Normal and healthy: the probe is a boolean gate
+            #            over a windowed id walk, the delete is a range.
+            if conflicts:
+                logger.warning(
+                    f"Stale-chunk prune for file {file_uuid} skipped {conflicts} document(s) "
+                    "on version conflict; they keep their stale content until the next prune"
+                )
+            elif deleted < len(stale_ids):
                 logger.warning(
                     f"Stale-chunk prune for file {file_uuid} found {len(stale_ids)} "
-                    f"orphan id(s) but the chunk-plane predicate deleted {deleted}"
+                    f"orphan id(s) but the chunk-plane predicate deleted only {deleted} — "
+                    "the predicate is narrower than the id probe"
                 )
             return deleted
         except Exception as e:
@@ -1330,6 +1429,10 @@ class TranscriptIndexingService:
                 index_name=index_name,
                 document_id=lambda n: digest_mapping.digest_document_id(file_uuid, n),
                 first_orphan=keep_count,
+                plane_query=digest_plane_query(file_uuid),
+                # NOT `chunk_index`: a digest's is a negative sentinel that counts
+                # the wrong way. `digest_section` is what its document id counts up.
+                counter_field="digest_section",
             )
             if not stale_ids:
                 return 0
@@ -1412,11 +1515,17 @@ class TranscriptIndexingService:
             Number of chunks indexed.
         """
         # Delete every plane first. Not redundant with the tail prunes
-        # ``index_transcript_chunks`` now does (issue #400): a full rebuild wants a
-        # clean slate, and this is the only path that also clears the documents of a
-        # transcript that now yields NO chunks at all — in which case
-        # ``index_transcript_chunks`` returns early without pruning. The digest
-        # plane goes with them and is regenerated by the same call (addendum G1).
+        # ``index_transcript_chunks`` does (issue #400): a full rebuild wants a
+        # clean slate, and this clears **every** plane rather than the chunk tail —
+        # notably the digest plane, which is regenerated by the same call
+        # (addendum G1).
+        #
+        # This used to claim it was "the only path that also clears the documents
+        # of a transcript that now yields NO chunks", which was true and mattered,
+        # because `reindex_transcript` is NOT the primary path —
+        # `tasks/search_indexing_task` calls `index_transcript_chunks` directly.
+        # That method now prunes on its own zero-chunk branch, so the claim is
+        # obsolete rather than merely narrow.
         self.delete_transcript_chunks(file_uuid)
 
         # Re-index

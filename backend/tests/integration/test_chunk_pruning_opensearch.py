@@ -11,8 +11,10 @@ What is proven here and nowhere else:
 
 * a shrinking re-chunk really does leave no ``{file_uuid}_{n}`` tail behind;
 * the gate really finds nothing on a first index, so the hot path issues **no**
-  ``delete_by_query`` and **no search at all** — asserted from the engine's own index
-  stats, not from a spy;
+  ``delete_by_query`` — asserted from the engine's own index stats, not from a spy. It
+  issues exactly one search, and that search is the ceiling lookup rather than the gate:
+  it runs only after an empty probe window and can only widen the walk, never skip a
+  prune (see ``test_first_index_probes_by_id_and_issues_no_delete``);
 * the prune's ``term`` on ``file_uuid`` really is scoped to one file;
 * the index-v6 plane split behaves on OpenSearch exactly as it does against the stand-in —
   the chunk-plane prune spares a digest, the per-file delete takes it, and a bare
@@ -179,6 +181,38 @@ def _chunk_indexes(client, file_uuid: str) -> list[int]:
     return [int(doc["chunk_index"]) for doc in _docs(client, file_uuid)]
 
 
+def _plant(client, file_uuid: str, indexes: list[int], *, marker: str) -> None:
+    """Write documents at exactly *indexes*, so a HOLE can be constructed on purpose.
+
+    ``_index`` can only produce a contiguous ``0..n-1``; a partially failed bulk
+    load cannot be provoked through the service, so the state it leaves is built
+    directly here. ``_extract_failed_docs`` drops permanently-failed documents, so
+    a real hole looks exactly like this.
+    """
+    from app.core.config import settings
+
+    for n in indexes:
+        client.index(
+            index=settings.OPENSEARCH_CHUNKS_INDEX,
+            id=f"{file_uuid}_{n}",
+            body={
+                "file_id": FILE_ID,
+                "file_uuid": file_uuid,
+                "user_id": USER_ID,
+                "chunk_index": n,
+                "content": f"{marker} chunk {n}",
+                "title": "Quarterly planning",
+                "speaker": "Speaker 0",
+                "speakers": ["Speaker 0"],
+                "doc_type": "chunk",
+                "accessible_user_ids": [USER_ID],
+                "start_time": float(n * 10),
+                "end_time": float(n * 10 + 10),
+            },
+        )
+    client.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
+
+
 def _counters(client) -> dict[str, int]:
     """Engine-side counters that reveal what the service actually issued.
 
@@ -260,20 +294,31 @@ def test_prune_touches_only_the_file_being_reindexed(chunk_index):
 # ---------------------------------------------------------------------------
 
 
-def test_first_index_probes_by_id_and_issues_no_search_and_no_delete(chunk_index):
-    """Nothing to prune: exactly one realtime id probe, no search at all, no delete.
+def test_first_index_probes_by_id_and_issues_no_delete(chunk_index):
+    """Nothing to prune: one realtime id probe, one ceiling lookup, and no delete.
 
     Read from the engine's own counters rather than a spy on the client, because the
     claim under test is about what OpenSearch was asked to do — and since #435 the
-    *kind* of request is the point, not only the count of them. The gate used to be a
+    *kind* of request is the point, not only the count of them. The GATE used to be a
     ``count``; a count is a search, and a search sees only what the last refresh made
     visible, which is the whole bug. It is now an ``mget``, which reads the translog.
-    The counters tell those two apart: ``get.total`` rises by exactly one probe
-    window, ``search.query_total`` does not move.
+
+    ⚠️ This asserted **zero** searches until the #400 follow-up, and the one search it
+    now allows is deliberately NOT a gate. ``_probe_ceiling`` runs only *after* the id
+    probe came back empty, and its answer can only make the walk look **further** —
+    it can never cause a prune to be skipped, which is the failure mode #435 is about.
+    It exists because an empty window did not mean the tail had ended: a partially
+    failed bulk load leaves a hole, and stopping at the first empty window stranded
+    everything above a hole of 64 or more, permanently.
+
+    Cost, measured rather than assumed: the ceiling aggregation is **2.74 ms median /
+    2.97 ms p95** against the live 11,430-document index, on the branch where the
+    first window is empty. That is ~1.2 s added to a 432-file reindex that takes
+    182 s. The alternative the gate still avoids — refreshing before the gate — was
+    measured at **95 ms median per file**, i.e. +41 to +79 s on the same run.
 
     ``delete_by_query`` remains the expensive thing the gate exists to avoid on the
-    path every completed transcription takes — it forces a whole-index refresh, and a
-    refresh on this mapping was measured at ~95 ms median per file.
+    path every completed transcription takes — it forces a whole-index refresh.
     """
     from app.services.search.indexing_service import _ORPHAN_PROBE_WINDOW
     from app.services.search.indexing_service import chunk_plane_query
@@ -285,14 +330,14 @@ def test_first_index_probes_by_id_and_issues_no_search_and_no_delete(chunk_index
     after = _index_counters_delta(chunk_index, before)
 
     assert first["stale_removed"] == 0
-    assert after["searches"] == 0, (
-        "the hot path must issue NO searcher-dependent request. The chunk plane's gate "
-        "is an id probe now, and the digest plane's gate is silent here only because "
-        "FILE_ID resolves to no media file — see the FILE_ID comment"
+    assert after["searches"] == 1, (
+        "the GATE must stay an id probe; the one permitted search is the ceiling "
+        "lookup, which runs only after an empty window and can only widen the walk. "
+        "More than one means something searcher-dependent crept back into the gate"
     )
     assert after["gets"] == _ORPHAN_PROBE_WINDOW, (
         "...and the gate DID run: one probe window of realtime id lookups. Without "
-        "this, 'no search' would also be satisfied by a gate that was deleted"
+        "this, the search count alone would also be satisfied by a deleted gate"
     )
     assert after["deleted"] == 0
 
@@ -314,7 +359,7 @@ def test_first_index_probes_by_id_and_issues_no_search_and_no_delete(chunk_index
     delta = _index_counters_delta(chunk_index, before)
 
     assert grown["stale_removed"] == 0
-    assert delta["searches"] == 0
+    assert delta["searches"] == 1, "one ceiling lookup, not a searcher-dependent gate"
     assert delta["gets"] == _ORPHAN_PROBE_WINDOW
     assert delta["deleted"] == 0
     assert _chunk_indexes(chunk_index, file_uuid) == list(range(9))
@@ -589,3 +634,93 @@ def test_reindex_inside_the_refresh_window_still_prunes_the_tail(chunk_index):
 
     assert controlled["stale_removed"] == 5
     assert _chunk_indexes(chunk_index, clean_uuid) == [0, 1, 2]
+
+
+# ---------------------------------------------------------------------------
+# The probe walk must not stop at the first empty window (#400 follow-up)
+# ---------------------------------------------------------------------------
+
+
+def test_a_hole_larger_than_the_probe_window_does_not_strand_the_tail(chunk_index):
+    """A partially failed bulk load leaves a HOLE, and the walk used to stop in it.
+
+    ``_orphaned_document_ids`` walked in windows of ``_ORPHAN_PROBE_WINDOW`` and
+    returned at the first window that found nothing. So a previous generation of
+    200 chunks whose bulk load permanently failed for 10..100 — which
+    ``_extract_failed_docs`` drops, by design — left documents at 0..9 and
+    101..199. A re-chunk to 10 chunks then probed 10..73, found nothing, skipped
+    the delete entirely, and stranded 101..199 **permanently**: nothing later
+    re-examines them. That is precisely the #435 failure class, reintroduced by
+    the walk's own stop condition rather than by visibility.
+
+    The probe is only a boolean gate — the delete itself is a range over
+    ``chunk_index >= keep_count`` — so finding *any* orphan above the hole is
+    enough to remove all of them.
+    """
+    from app.services.search.indexing_service import _ORPHAN_PROBE_WINDOW
+
+    file_uuid = str(uuid.uuid4())
+    survivors = list(range(_ORPHAN_PROBE_WINDOW + 37, _ORPHAN_PROBE_WINDOW + 60))
+    _plant(chunk_index, file_uuid, [*range(10), *survivors], marker="PREVIOUS")
+
+    assert survivors[0] - 10 > _ORPHAN_PROBE_WINDOW, (
+        "control: the hole must exceed one probe window, or the walk never stops in it"
+    )
+    assert set(_chunk_indexes(chunk_index, file_uuid)) == {*range(10), *survivors}
+
+    result = _index(_segments(10, marker="CURRENT"), file_uuid=file_uuid)
+
+    assert result["stale_removed"] == len(survivors), (
+        "the walk stopped inside the hole, so everything above it was never pruned"
+    )
+    assert _chunk_indexes(chunk_index, file_uuid) == list(range(10))
+
+
+def test_a_tail_longer_than_one_probe_window_is_pruned_whole(chunk_index):
+    """The walk must cover a tail bigger than a single window.
+
+    Every existing case in this module has a tail of 5 or 6 — well inside one
+    window — so a walk that only ever probed once would have passed all of them.
+    """
+    from app.services.search.indexing_service import _ORPHAN_PROBE_WINDOW
+
+    file_uuid = str(uuid.uuid4())
+    previous = _ORPHAN_PROBE_WINDOW * 2 + 5
+    _plant(chunk_index, file_uuid, list(range(previous)), marker="PREVIOUS")
+
+    result = _index(_segments(3, marker="CURRENT"), file_uuid=file_uuid)
+
+    assert result["stale_removed"] == previous - 3
+    assert _chunk_indexes(chunk_index, file_uuid) == [0, 1, 2]
+
+
+def test_a_transcript_that_now_chunks_to_nothing_loses_its_old_chunks(chunk_index):
+    """Segments that all chunk away must not leave the previous generation behind.
+
+    ``index_transcript_chunks`` returned early on ``not chunks`` without pruning,
+    and ``reindex_transcript`` — which deletes first — is NOT the primary path:
+    ``tasks/search_indexing_task`` calls this method directly. The ``not segments``
+    guard above it does not catch this, because the segments exist; they just
+    produce no chunk.
+    """
+    from app.services.search.indexing_service import TranscriptIndexingService
+
+    file_uuid = str(uuid.uuid4())
+    _plant(chunk_index, file_uuid, list(range(6)), marker="PREVIOUS")
+
+    # Called directly rather than through `_index`: this branch returns the int 0
+    # rather than the success dict, which is exactly the early return under test.
+    result = TranscriptIndexingService().index_transcript_chunks(
+        file_id=FILE_ID,
+        file_uuid=file_uuid,
+        user_id=USER_ID,
+        segments=[{"start": 0.0, "end": 1.0, "text": "   ", "speaker": "Speaker 0"}],
+        title="Quarterly planning",
+        speakers=["Speaker 0"],
+        tags=[],
+    )
+
+    assert result == 0, "control: this input really does chunk to nothing"
+    assert _chunk_indexes(chunk_index, file_uuid) == [], (
+        "the old chunks are still searchable for a transcript that no longer has any"
+    )

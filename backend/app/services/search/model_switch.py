@@ -164,6 +164,7 @@ def apply_embedding_model_switch(model_name: str, triggered_by: int) -> dict[str
     if model_name not in OPENSEARCH_EMBEDDING_MODELS:
         raise UnknownEmbeddingModelError(f"Unknown model: {model_name}")
 
+    from app.services.search.embedding_provenance import reset_search_provenance_advisory
     from app.services.search.embedding_provenance import survey_embedding_models
     from app.services.search.hybrid_search_service import clear_search_cache
     from app.services.search.hybrid_search_service import reset_neural_search_state
@@ -200,6 +201,10 @@ def apply_embedding_model_switch(model_name: str, triggered_by: int) -> dict[str
     # 3. Caches, then the index mapping.
     clear_search_cache()
     reset_neural_search_state()
+    # The search response's provenance advisory is TTL-cached (#437); a model
+    # switch is exactly the event that invalidates it, so drop it here rather than
+    # letting a stale "all comparable" survive the switch for another minute.
+    reset_search_provenance_advisory()
     recreate_index_for_dimension(dimension)
 
     # 4. Everyone's documents, not just the caller's.

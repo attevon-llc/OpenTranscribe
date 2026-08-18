@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
@@ -281,3 +282,66 @@ def survey_embedding_models(index_name: str | None = None) -> EmbeddingProvenanc
         no_embedding=no_embedding,
         mixed=verdict == "mixed",
     )
+
+
+# --------------------------------------------------------------------------- #
+# The advisory a SEARCH response carries (#437 follow-up)                      #
+# --------------------------------------------------------------------------- #
+#
+# `survey_embedding_models` had three readers — the status endpoint, `model_switch`,
+# and a beat-task log — and NONE of them is the person reading the results. So a
+# PROVEN mixed index went on ranking two incomparable vector populations against
+# each other with no signal to anyone looking at the answers. "Do not dispatch a
+# re-embed from a beat tick" is a sound argument; "do not tell the reader" is a
+# different decision that was never argued.
+#
+# It is a deployment-level fact, not per-query data, and it changes only after a
+# model switch or a reindex — so it is cached rather than surveyed per request.
+# The survey is 2.5-6.7 ms against a 210k-document index; paying that on every
+# search would be a real regression on the hottest path in the app.
+_ADVISORY_TTL_SECONDS = 60.0
+_advisory_cache: tuple[float, dict[str, Any] | None] | None = None
+_advisory_lock = threading.Lock()
+
+
+def search_provenance_advisory() -> dict[str, Any] | None:
+    """A compact warning for the search response, or ``None`` when all is well.
+
+    Returns:
+        ``None`` when the index is *comparable* (``empty`` or ``uniform``) — the
+        overwhelmingly common case, so an ordinary search response is unchanged.
+        Otherwise a small dict naming the verdict and the models involved.
+
+        ``unattributed`` and ``partially_unattributed`` deliberately return
+        ``None`` too: every deployment enters those states the moment it indexes
+        anything after #437 landed, and an advisory that fires for everybody is
+        one people learn to ignore before it fires for a real mixed index.
+    """
+    global _advisory_cache
+
+    now = time.monotonic()
+    with _advisory_lock:
+        if _advisory_cache is not None and now < _advisory_cache[0]:
+            return _advisory_cache[1]
+
+    survey = survey_embedding_models()
+    advisory: dict[str, Any] | None = None
+    if survey.verdict == "mixed":
+        advisory = {
+            "code": "mixed_embedding_models",
+            "verdict": survey.verdict,
+            "models": list(survey.known_models),
+            "message": survey.describe(),
+        }
+
+    with _advisory_lock:
+        _advisory_cache = (now + _ADVISORY_TTL_SECONDS, advisory)
+    return advisory
+
+
+def reset_search_provenance_advisory() -> None:
+    """Drop the cached advisory. For tests and for the model-switch path."""
+    global _advisory_cache
+
+    with _advisory_lock:
+        _advisory_cache = None

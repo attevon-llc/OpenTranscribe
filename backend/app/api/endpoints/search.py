@@ -32,8 +32,22 @@ router = APIRouter()
 
 
 def _search_response_to_schema(response) -> dict[str, Any]:
-    """Convert HybridSearchService response to serializable dict."""
+    """Convert HybridSearchService response to serializable dict.
+
+    Carries an ``embedding_warning`` when the index is a PROVEN mix of two
+    embedding models (#437). Until this, the mixed verdict had three readers —
+    the status endpoint, the model-switch response and a beat-task log — and none
+    of them is the person reading the results, so a mixed index went on ranking
+    two incomparable vector populations against each other in silence. The
+    advisory is deployment-level and TTL-cached (see
+    ``embedding_provenance.search_provenance_advisory``), so an ordinary search
+    pays nothing and the key is absent in the healthy case.
+    """
+    from app.services.search.embedding_provenance import search_provenance_advisory
+
+    advisory = search_provenance_advisory()
     return {
+        **({"embedding_warning": advisory} if advisory else {}),
         "query": response.query,
         "results": [
             {

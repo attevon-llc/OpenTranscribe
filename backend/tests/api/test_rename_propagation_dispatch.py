@@ -87,10 +87,13 @@ class TestSpeakerRenameEndpoint:
 
         assert resp.status_code == 200, resp.text
         delay_mock.assert_called_once()
+        # `speaker_id` is carried so the task can re-resolve the current name at
+        # run time and converge when two renames race (see the task module).
         assert delay_mock.call_args.kwargs == {
             "file_uuid": str(media_file.uuid),
             "old_names": ["SPEAKER_00"],
             "new_name": "Dana",
+            "speaker_id": speaker.id,
         }
 
     def test_relabel_queues_the_previous_display_name_not_the_raw_label(
@@ -112,6 +115,85 @@ class TestSpeakerRenameEndpoint:
         assert resp.status_code == 200, resp.text
         assert delay_mock.call_args.kwargs["old_names"] == ["Dana"]
         assert delay_mock.call_args.kwargs["new_name"] == "Dana Whitfield"
+
+    def test_clearing_a_display_name_queues_the_revert_to_the_raw_label(
+        self, client, db_session, normal_user, user_token_headers, quiet_opensearch
+    ):
+        """``{"display_name": ""}`` is how a user undoes a label, and it must propagate.
+
+        ``display_name`` is ``str | None`` and is in ``SPEAKER_UPDATABLE_FIELDS``,
+        so an empty string is a legal request. Postgres reverts to the diarizer
+        label and a reindex would write ``SPEAKER_00`` — but dispatch keyed off
+        the truthiness of ``display_name``, so the chunk plane kept "Dana"
+        forever and the search facet went on offering a name that existed
+        nowhere else.
+        """
+        media_file = _make_media_file(db_session, normal_user, "cleared-label")
+        speaker = _make_speaker(
+            db_session, normal_user, media_file, "SPEAKER_00", display_name="Dana"
+        )
+
+        with patch(_DELAY) as delay_mock:
+            resp = client.put(
+                f"/api/speakers/{speaker.uuid}",
+                json={"display_name": ""},
+                headers=user_token_headers,
+            )
+
+        assert resp.status_code == 200, resp.text
+        delay_mock.assert_called_once()
+        assert delay_mock.call_args.kwargs["old_names"] == ["Dana"]
+        assert delay_mock.call_args.kwargs["new_name"] == "SPEAKER_00", (
+            "clearing the label must propagate the value a reindex would write "
+            "(display_name or name), not skip the rewrite"
+        )
+
+    def test_editing_name_alone_queues_propagation_for_an_unlabelled_speaker(
+        self, client, db_session, normal_user, user_token_headers, quiet_opensearch
+    ):
+        """``name`` is updatable, and for an unlabelled speaker it IS the indexed value.
+
+        The indexer writes ``display_name or name``, so editing ``name`` on a
+        speaker with no display name changes what the chunks should carry — but
+        dispatch keyed solely off ``display_name`` and propagated nothing.
+        """
+        media_file = _make_media_file(db_session, normal_user, "name-only")
+        speaker = _make_speaker(db_session, normal_user, media_file, "SPEAKER_00")
+
+        with patch(_DELAY) as delay_mock:
+            resp = client.put(
+                f"/api/speakers/{speaker.uuid}",
+                json={"name": "SPEAKER_07"},
+                headers=user_token_headers,
+            )
+
+        assert resp.status_code == 200, resp.text
+        delay_mock.assert_called_once()
+        assert delay_mock.call_args.kwargs["old_names"] == ["SPEAKER_00"]
+        assert delay_mock.call_args.kwargs["new_name"] == "SPEAKER_07"
+
+    def test_editing_name_under_a_display_name_queues_nothing(
+        self, client, db_session, normal_user, user_token_headers, quiet_opensearch
+    ):
+        """The control: with a display name set, ``name`` is not what was indexed.
+
+        Without this, the two tests above would also pass if dispatch fired on
+        every update regardless of whether the indexed value moved.
+        """
+        media_file = _make_media_file(db_session, normal_user, "name-under-label")
+        speaker = _make_speaker(
+            db_session, normal_user, media_file, "SPEAKER_00", display_name="Dana"
+        )
+
+        with patch(_DELAY) as delay_mock:
+            resp = client.put(
+                f"/api/speakers/{speaker.uuid}",
+                json={"name": "SPEAKER_07"},
+                headers=user_token_headers,
+            )
+
+        assert resp.status_code == 200, resp.text
+        delay_mock.assert_not_called()
 
     def test_renaming_to_the_same_name_queues_nothing(
         self, client, db_session, normal_user, user_token_headers, quiet_opensearch

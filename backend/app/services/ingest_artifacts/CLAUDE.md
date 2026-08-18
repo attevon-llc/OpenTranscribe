@@ -136,13 +136,23 @@ against the live model, with a negative control that fails if the window ever gr
   contains every pinned field. The invariant it guards was never "Stage 2 has not shipped" but
   "the mapping and the version never disagree": a field without a bump reaches fresh installs
   only, a bump without the field costs every deployment a reindex.
-- **A rename does not yet reach the INDEXED digest.** The fingerprint invalidates the
-  `file_facts` row, so the next reindex regenerates it — but `rename_propagation_task` rewrites
-  the chunk plane only, so until then a digest document's `speakers` array and its
-  `embedding_text` participant header still name the old speaker. Its `content` is unaffected
-  (digest sentences are verbatim transcript text, which does not contain the display name), it
-  carries no single-valued `speaker` field, and it is excluded from facets and from retrieval,
-  so nothing user-visible is wrong today. Stage 4 turns the digest leg on and must close this.
+- **A SPEAKER rename does not yet reach the indexed digest; a TITLE rename does.** The
+  fingerprint invalidates the `file_facts` row, so the next reindex regenerates it — but
+  `rename_propagation_task.propagate_speaker_rename` rewrites the **chunk plane only**, so until
+  then a digest document's `speakers` array and its `embedding_text` participant header still
+  name the old speaker. That is deliberate: a digest carries no single-valued `speaker` field
+  (`build_digest_documents` pops it, keeping digests out of the speaker facet and out of chat's
+  speaker-scoped `terms` filter), and rewriting the roster while the prose header still names the
+  old speaker would half-correct the document and disguise that **regeneration** is the real fix
+  (#383 addendum G1, hooked at `_finish`). Its `content` is unaffected — digest sentences are
+  verbatim transcript text, which does not contain the display name.
+  ⚠️ **"Excluded from retrieval" is no longer true** — `chat/retrieval.py` calls
+  `retrieve_digests` whenever the router wants the summary tier, and
+  `chunk_retrieval._digest_hit` reads `title` into a `ChunkHit` that `chat/citations` renders.
+  That is why `propagate_title_rename` covers the **whole file plane**: a chunk-plane-only title
+  rewrite let one answer cite the same recording under two different names. A title is metadata
+  rather than derived prose, so rewriting it leaves the digest internally consistent — which is
+  exactly what is not true of the speaker roster.
 
 ## The recorded date (#403 R7) — and why it is five columns, not one
 

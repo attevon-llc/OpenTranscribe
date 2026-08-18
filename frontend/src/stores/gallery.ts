@@ -179,7 +179,12 @@ function createGalleryStore() {
         } else {
           newSelected.add(fileId);
         }
-        return { ...state, selectedFiles: newSelected, lastSelectedId: fileId };
+        return {
+          ...state,
+          selectedFiles: newSelected,
+          lastSelectedId: fileId,
+          isSelecting: newSelected.size > 0,
+        };
       });
     },
 
@@ -246,7 +251,12 @@ function createGalleryStore() {
     },
 
     setFiles: (files: MediaFile[]) => {
-      update((state) => ({ ...state, files: files || [] }));
+      update((state) => {
+        const safeFiles = files || [];
+        const fileUuids = new Set(safeFiles.map((f) => f.uuid));
+        const selectedFiles = new Set([...state.selectedFiles].filter((id) => fileUuids.has(id)));
+        return { ...state, files: safeFiles, selectedFiles };
+      });
     },
 
     toggleFilters: () => {

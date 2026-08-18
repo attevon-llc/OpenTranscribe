@@ -4013,6 +4013,7 @@
   "summary.generateAnyway": "Generar resumen de todos modos",
   "summary.systemDisabled": "Los resúmenes IA han sido desactivados por el administrador",
   "summary.adminEnableHint": "Contacte a su administrador para activar la generación de resúmenes IA",
+  "summary.retryUnavailableHint": "La generación del resumen no se puede reintentar en este momento.",
   "common.enabled": "Activado",
   "common.disabled": "Desactivado",
   "uploader.whisperModel": "Modelo de transcripcion",

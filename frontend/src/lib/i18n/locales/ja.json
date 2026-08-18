@@ -4013,6 +4013,7 @@
   "summary.generateAnyway": "それでも要約を生成",
   "summary.systemDisabled": "AI要約は管理者によって無効化されています",
   "summary.adminEnableHint": "AI要約生成を有効にするには管理者にお問い合わせください",
+  "summary.retryUnavailableHint": "現在、要約生成を再試行できません。",
   "common.enabled": "有効",
   "common.disabled": "無効",
   "uploader.whisperModel": "文字起こしモデル",

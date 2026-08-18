@@ -486,6 +486,12 @@
     } catch (err) {
       console.error('Error updating user role:', err);
       toastStore.error(extractErrorMessage(err, $t('userManagement.updateRoleFailed')));
+
+      // Unlike the sibling handlers below, this one refreshes on error too:
+      // the role <select> is one-way bound (`value={currentUser.role}`, not
+      // `bind:value`), so a rejected change leaves the DOM select showing the
+      // rejected role with nothing re-deriving it from server state until the
+      // list is refetched and re-rendered.
       onRefresh();
     }
   }
@@ -755,7 +761,8 @@
           ? $t('userManagement.unlockSuccess', { name })
           : $t('userManagement.unlockNotLocked', { name }),
         $t('userManagement.unlockFailed')
-      )
+      ),
+      $t('userManagement.unlockAccount')
     );
   }
 

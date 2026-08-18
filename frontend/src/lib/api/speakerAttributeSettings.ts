@@ -21,7 +21,7 @@ export interface SpeakerAttributeSettings {
 /**
  * System-level defaults for speaker attribute detection
  */
-interface SpeakerAttributeSystemDefaults {
+export interface SpeakerAttributeSystemDefaults {
   detection_enabled: boolean;
   gender_detection_enabled: boolean;
   show_attributes_on_cards: boolean;

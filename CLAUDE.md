@@ -260,6 +260,15 @@ an arbitrary unstaged edit elsewhere in the tree safe** — only those two speci
 > catches the two overlaps that have actually bitten this repo — a second pre-commit run, and a
 > mutation `--verify` mutation left live — it is not a general fix for the hazard in this box.
 >
+> **"Anything else" includes background subagents you yourself just dispatched in this same
+> turn.** An agent fanned out 8 parallel background subagents to edit disjoint files on one
+> branch, then ran `git commit -- <2 files it had already verified itself>` while the other 7
+> were still mid-edit — reasoning that an explicit pathspec made it safe. It does not: `git
+> commit` stashes the whole tree regardless of pathspec, which would have stashed all 7
+> in-flight agents' work the moment it ran. There is no "but these are my own subagents and I'm
+> scoping the commit" exception. Wait for every dispatched writer to report done, review, THEN
+> run one clean commit/precommit pass.
+>
 > Three failure modes, all observed here:
 >
 > 1. **Another writer's work is stashed mid-edit.** An agent's `Edit` failed with "file has been

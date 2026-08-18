@@ -251,19 +251,45 @@ class AudioExtractionService {
 
       // Write file to FFmpeg filesystem temporarily to trigger metadata reading
       const tempFileName = `metadata_${Date.now()}${this.getFileExtension(file.name)}`;
-      await this.ffmpeg.writeFile(tempFileName, await fetchFile(file));
 
-      // Run ffmpeg to read metadata (very fast, doesn't process the whole file)
-      // Use -c copy to avoid decoding, just read container metadata. -vn drops the video
-      // stream from the copy: only audio-stream/container metadata is parsed below, video
-      // stream info is never read, and our minimal LGPL-only ffmpeg-core (issue #473) has
-      // no video codec parsers compiled in — the `null` muxer needs a parser to validate
-      // *any* stream it copies, video included, even though it discards the output.
-      await this.ffmpeg.exec(['-i', tempFileName, '-vn', '-c', 'copy', '-f', 'null', '-']);
+      try {
+        await this.ffmpeg.writeFile(tempFileName, await fetchFile(file));
 
-      // Clean up
-      await this.ffmpeg.deleteFile(tempFileName);
-      this.ffmpeg.off('log', logHandler);
+        // Run ffmpeg to read metadata (very fast, doesn't process the whole file)
+        // Use -c copy to avoid decoding, just read container metadata. -vn drops the video
+        // stream from the copy: only audio-stream/container metadata is parsed below, video
+        // stream info is never read, and our minimal LGPL-only ffmpeg-core (issue #473) has
+        // no video codec parsers compiled in — the `null` muxer needs a parser to validate
+        // *any* stream it copies, video included, even though it discards the output.
+        //
+        // exec() resolves with FFmpeg's exit code rather than rejecting on failure (same
+        // contract as the main extraction exec() below) — without this check a failed
+        // metadata read falls through silently and returns partial/corrupted metadata
+        // instead of the documented fallback below.
+        const exitCode = await this.ffmpeg.exec([
+          '-i',
+          tempFileName,
+          '-vn',
+          '-c',
+          'copy',
+          '-f',
+          'null',
+          '-',
+        ]);
+        if (exitCode !== 0) {
+          throw new Error(`ffmpeg metadata read exited with code ${exitCode}`);
+        }
+      } finally {
+        // Clean up — must run even if writeFile/exec above threw, otherwise logHandler
+        // stays registered on the shared FFmpeg log emitter (leaking memory and mutating
+        // metadataFromFFmpeg for whatever runs next) and tempFileName leaks in MEMFS.
+        this.ffmpeg.off('log', logHandler);
+        try {
+          await this.ffmpeg.deleteFile(tempFileName);
+        } catch {
+          // Best effort — file may never have been written.
+        }
+      }
 
       // Build metadata object
       const metadata: VideoMetadata = {
@@ -386,6 +412,12 @@ class AudioExtractionService {
     const extractionId = generateId('extraction');
     const fileName = file.name;
 
+    // Declared outside the try block so the catch handler below can attempt
+    // best-effort cleanup of these FFmpeg MEMFS entries on failure too — a failed
+    // extraction must not leak them for the rest of the session.
+    let inputFileName: string | undefined;
+    let outputFileName: string | undefined;
+
     try {
       // Load FFmpeg if not already loaded
       this.emitProgress(
@@ -439,8 +471,8 @@ class AudioExtractionService {
 
       // Use unique filenames based on extractionId to support concurrent extractions
       const uniqueId = extractionId.split('-')[1]; // Use timestamp portion for shorter name
-      const inputFileName = `input_${uniqueId}${this.getFileExtension(file.name)}`;
-      const outputFileName = `output_${uniqueId}.${outputExtension}`;
+      inputFileName = `input_${uniqueId}${this.getFileExtension(file.name)}`;
+      outputFileName = `output_${uniqueId}.${outputExtension}`;
 
       await this.ffmpeg.writeFile(inputFileName, await fetchFile(file));
 
@@ -536,6 +568,28 @@ class AudioExtractionService {
       };
     } catch (error) {
       console.error('[AudioExtractionService] Extraction failed:', error);
+
+      // Best-effort cleanup of the FFmpeg MEMFS entries written above — the success
+      // path deletes these, but a failure (e.g. a non-zero exit code, or an error
+      // thrown before either file was even written) must not leak them. Each delete
+      // is wrapped independently since a file that was never written will itself
+      // throw on delete, and one failure should not block the other.
+      if (this.ffmpeg) {
+        if (inputFileName) {
+          try {
+            await this.ffmpeg.deleteFile(inputFileName);
+          } catch {
+            // Best effort — file may never have been written.
+          }
+        }
+        if (outputFileName) {
+          try {
+            await this.ffmpeg.deleteFile(outputFileName);
+          } catch {
+            // Best effort — file may never have been produced.
+          }
+        }
+      }
 
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw this.createError(

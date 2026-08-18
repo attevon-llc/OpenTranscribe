@@ -180,22 +180,16 @@ function createDownloadStore() {
     },
 
     isDownloading(fileId: string): boolean {
-      let result = false;
-      update((downloads) => {
-        const download = downloads[fileId];
-        result = download && ['preparing', 'processing', 'downloading'].includes(download.status);
-        return downloads;
-      });
-      return result;
+      // A pure read: must not go through `update()`, which calls `set()` on every
+      // invocation and fires every subscriber regardless of whether anything
+      // changed — reading this from a reactive context would create a feedback
+      // loop. `get()` reads the current value without notifying anyone.
+      const download = get({ subscribe })[fileId];
+      return !!download && ['preparing', 'processing', 'downloading'].includes(download.status);
     },
 
     getDownloadStatus(fileId: string): DownloadState | null {
-      let result: DownloadState | null = null;
-      update((downloads) => {
-        result = downloads[fileId] || null;
-        return downloads;
-      });
-      return result;
+      return get({ subscribe })[fileId] || null;
     },
 
     /**

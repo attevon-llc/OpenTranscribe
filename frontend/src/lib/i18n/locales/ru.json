@@ -4003,6 +4003,7 @@
   "summary.generateAnyway": "Сгенерировать резюме в любом случае",
   "summary.systemDisabled": "Резюме ИИ отключены администратором",
   "summary.adminEnableHint": "Свяжитесь с администратором для включения генерации резюме ИИ",
+  "summary.retryUnavailableHint": "Повторная попытка создания резюме сейчас невозможна.",
   "common.enabled": "Включено",
   "common.disabled": "Отключено",
   "uploader.whisperModel": "Модель транскрипции",

@@ -33,14 +33,16 @@
 
     // If current is beyond initial pages, add window around current
     if (current > INITIAL_PAGES) {
-      // Add ellipsis if there's a gap
-      if (current > INITIAL_PAGES + 1) {
-        result.push('...');
-      }
-
       // Add current ± 2 pages
       const windowStart = Math.max(INITIAL_PAGES + 1, current - AROUND_CURRENT);
       const windowEnd = Math.min(total - 1, current + AROUND_CURRENT);
+
+      // Add ellipsis only if the clamped window actually leaves a gap after
+      // the initial run (current alone isn't enough: clamping can pull
+      // windowStart back to be adjacent to the initial pages).
+      if (windowStart > INITIAL_PAGES + 1) {
+        result.push('...');
+      }
 
       for (let i = windowStart; i <= windowEnd; i++) {
         result.push(i);

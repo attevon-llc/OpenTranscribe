@@ -149,6 +149,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of provider-specific formats (`"S1"`, `"spk_0"`, `"Guest-1"`, …), and unrecognized text was
   blindly string-prefixed (`"host"` → `"SPEAKER_host"`) instead of hashed into a valid
   `SPEAKER_XX` form. It now delegates to the canonical implementation.
+- **Confirming "Unlock Account" in User Management showed a button labeled "Delete."**
+  `unlockAccount()`'s confirmation call omitted the confirm-button label, so it fell through to
+  `UserManagementTable`'s own default (`common.delete`) — the label every other row action
+  (lock, force logout, MFA reset) supplies explicitly. Unlocking clears only a failed-login
+  counter and deletes nothing.
+- **Logging out mid-request could leak the previous user's protected-media credentials into
+  the next session.** `configService`'s protected-media-auth fetch had no way to discard a
+  response that resolved after `resetProtectedMediaAuthConfig()` ran on logout — a stale
+  response landed in the fresh cache regardless. A generation counter now discards any fetch
+  started before the most recent reset.
+- **Extracting audio from a large video silently skipped the resumable-upload path.**
+  `uploadExtractedAudio()` had no multipart branch, unlike `uploadFile()` — large extracted
+  audio always went through the legacy single-request path multipart uploads exist to avoid.
+- **GPS coordinates from real camera/phone metadata were garbled.** The ISO 6709 location
+  parser split on a regex that didn't treat `-` as a valid non-delimiter character, so a
+  real-world string like `+40.6894-074.0447+002.000/` mis-parsed into the wrong latitude and
+  longitude.
+- **Search result pages 7 and 8 (of 20+) rendered a nonsensical `5 … 6` in the pager.** The
+  ellipsis-insertion check compared the raw current page against a threshold instead of the
+  actual clamped window start, so it inserted a "gap" marker between two adjacent page numbers.
+- **Deselecting the last file in the gallery left the UI stuck in selection mode**, and a
+  file removed from the list stayed counted in the selection forever. `toggleFileSelection`
+  now derives `isSelecting` from the selection size, and `setFiles()` prunes selections against
+  the incoming file list.
+- **Cancelling an upload didn't stop its pending auto-retry timer**, which could later
+  resurrect an upload the user had explicitly cancelled. `retryUpload()` now checks the
+  upload's status before proceeding.
+- Two identical-looking calls to reload AI suggestions after a cache-invalidation event
+  handled a rejected promise differently — one caught, one not. Both now handle it the same way.
+- A zero-denominator video frame rate (`0/0`) produced `Infinity`, which downstream code
+  treated as a valid, truthy value. It's now treated as unset.
+- Failing to create a new speaker while editing a segment only logged to the console, with no
+  on-screen feedback — inconsistent with every other error path in the app.
+- `removeUpload()`'s "is this upload still active" check omitted the `preparing` status,
+  unlike every other such check in the same file.
+- A failed audio extraction leaked its FFmpeg in-memory filesystem handles instead of cleaning
+  them up, and a failed metadata read wasn't checked for a non-zero exit code before its output
+  was used.
+- Extremely large or sub-byte file sizes could render as `"1.2 undefined"` instead of a valid
+  unit.
+- An AI-suggested tag or collection with a genuine `0` confidence score was silently
+  overwritten with the "unknown confidence" default of `0.5`, misrepresenting a real
+  low-confidence signal as moderate.
+- A failed dynamic import of the toast-notification module in the recording store was an
+  unhandled promise rejection, not the "logged to console only" behavior the code's own comment
+  claimed.
+- `search.ts`'s `setQuery` was the only filter-mutating action that didn't reset the result
+  page back to 1, unlike every sibling setter.
+- The locale store's `initialize()` had no guard against being called twice, unlike its
+  sibling `network.ts` store — a second call leaked a duplicate `languageChanged` listener.
+- Concurrent callers of `llmService.getStatus()` with no cached value each fired their own
+  request; whichever response arrived last could overwrite a newer cached value with stale
+  data. Concurrent calls now share one in-flight request.
+- `notifications.ts`'s `getNotifications()` threw a `TypeError` on every call due to a
+  temporal-dead-zone bug in how it read the store's current value.
+- The AI-summary panel rendered a blank area with no explanation in two reachable states:
+  pending with no LLM configured, and failed with no retry available. Both now show an
+  explanatory message instead of nothing.
 
 ## [0.5.0] - 2026-08-10
 

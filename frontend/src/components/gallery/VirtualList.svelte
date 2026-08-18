@@ -27,7 +27,20 @@
 
   $: totalHeight = items.length * ROW_HEIGHT;
   $: {
-    // Recalculate when items change
+    // Recalculate when items change. Unlike VirtualGrid's equivalent block, this runs
+    // recalculate() synchronously rather than deferring via tick().then(measureOffset, ...).
+    // That deferral exists in VirtualGrid because updateColumns()/measureOffset() read
+    // post-patch DOM geometry (gridContainerEl.clientWidth, getBoundingClientRect()) that
+    // is only accurate once Svelte has patched the DOM for the new item count — items.length
+    // feeds totalHeight, which can toggle the scroll container's scrollbar and change the
+    // width columnsPerRow is computed from.
+    // recalculate() here has no such dependency: ROW_HEIGHT is fixed (no width-driven
+    // column math, so no scrollbar-width feedback loop), and it only reads
+    // scrollContainer.scrollTop/clientHeight — live properties of the external scroll
+    // container, not of this component's own (possibly stale) DOM. containerOffset is
+    // reused as last measured; an items change here doesn't invalidate it because nothing
+    // above the virtual container (the sticky header) resizes with item count or selection
+    // mode. So there's no stale geometry to wait out, and calling it synchronously is safe.
     if (items && scrollContainer) {
       recalculate();
     }

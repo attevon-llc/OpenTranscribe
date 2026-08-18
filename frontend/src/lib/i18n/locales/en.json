@@ -4024,6 +4024,7 @@
   "summary.generateAnyway": "Generate Summary Anyway",
   "summary.systemDisabled": "AI summaries have been disabled by the administrator",
   "summary.adminEnableHint": "Contact your administrator to enable AI summary generation",
+  "summary.retryUnavailableHint": "Summary generation cannot be retried right now.",
   "common.enabled": "Enabled",
   "common.disabled": "Disabled",
   "uploader.whisperModel": "Transcription Model",

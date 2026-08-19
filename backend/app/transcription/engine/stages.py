@@ -37,6 +37,111 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _overlap_diarization_enabled() -> bool:
+    """True when diarization should run alongside transcription instead of after it.
+
+    Requires the sidecar engine: only then is diarization another process's work, so the two
+    genuinely run at once rather than contending for this worker's VRAM and GIL. Set
+    ``DIAR_OVERLAP=0`` to force the sequential order back (an escape hatch for debugging, and
+    the control used to prove the two orders produce identical output).
+    """
+    import os
+
+    if os.environ.get("DIARIZER_ENGINE", "python").lower() != "native":
+        return False
+    return os.environ.get("DIAR_OVERLAP", "1").lower() not in ("0", "false", "no")
+
+
+def _make_room_for_local_diarizer(manager, hw, profiler, tc, total_vram_mb: int) -> None:
+    """Free VRAM for a diarizer that shares this process, and wait until there is enough.
+
+    Only meaningful for the in-process engine: the sidecar holds its own memory, so a caller
+    that overlapped diarization skips this entirely.
+    """
+    if tc.concurrent_requests > 1:
+        logger.info(
+            "Concurrent mode (concurrent_requests=%d): keeping transcriber loaded",
+            tc.concurrent_requests,
+        )
+    elif total_vram_mb >= 16_000:
+        logger.info("Keeping transcriber loaded (%dMB VRAM total, both models fit)", total_vram_mb)
+    else:
+        manager.release_transcriber()
+        hw.log_vram_usage("after transcriber release")
+        profiler.snapshot("diarizer_only_warm")
+
+    if tc.concurrent_requests > 1:
+        _wait_for_vram(2000, "diarization")
+
+
+def _collect_diarization(audio, tc, manager, hw, profiler, callback, async_diarization):
+    """Diarize, taking the overlapped result when one is in flight.
+
+    Returns the diarizer's ``(diarize_df, overlap_info, native_embeddings)``. An overlapped
+    attempt that failed falls back to a plain inline run, so the outcome is the same either way.
+    """
+    from app.transcription.engine.progress import emit
+
+    hw.log_vram_usage("after transcription, before diarizer load")
+    total_vram_mb = _get_total_vram_mb()
+    profiler.snapshot("models_warm_no_inference")
+
+    # Making room for a diarizer only matters when it lives in this process.
+    if async_diarization is None:
+        _make_room_for_local_diarizer(manager, hw, profiler, tc, total_vram_mb)
+
+    emit(callback, 0.55, "Analyzing speaker patterns", "diarize")
+    step_start = time.perf_counter()
+    overlapped = None
+    with profiler.step("diarization"):
+        if async_diarization is not None:
+            overlapped = async_diarization.result()
+        result = overlapped if overlapped is not None else manager.get_diarizer(tc).diarize(audio)
+    logger.info(
+        "TIMING: diarization step completed in %.3fs%s",
+        time.perf_counter() - step_start,
+        " (overlapped with transcription)" if overlapped is not None else "",
+    )
+    profiler.snapshot("after_diarization")
+    return result
+
+
+class _AsyncDiarization:
+    """Diarization running alongside transcription over the same in-memory audio.
+
+    ``result()`` joins and returns the diarizer's tuple, or ``None`` if the attempt failed —
+    the caller then runs the ordinary sequential path, so overlapping can never turn a
+    working job into a failed one.
+    """
+
+    def __init__(self, audio, tc, manager, task_id: str | None):
+        from app.utils.benchmark_timing import mark
+
+        self._value: tuple | None = None
+        self._error: BaseException | None = None
+        self._task_id = task_id
+        mark(task_id, "diarize_request_sent")
+
+        def _run() -> None:
+            try:
+                self._value = manager.get_diarizer(tc).diarize(audio)
+            except BaseException as exc:  # noqa: BLE001 — handed to the caller, not swallowed
+                self._error = exc
+
+        self._thread = threading.Thread(target=_run, name="diarize-async", daemon=True)
+        self._thread.start()
+
+    def result(self) -> tuple | None:
+        from app.utils.benchmark_timing import mark
+
+        self._thread.join()
+        mark(self._task_id, "diarize_joined")
+        if self._error is not None:
+            logger.warning("Overlapped diarization failed (%s); retrying inline", self._error)
+            return None
+        return self._value
+
+
 class _GpuStage:
     """Combined GPU + CPU stage (Phase 1a).
 
@@ -94,9 +199,16 @@ class _GpuStage:
 
         profiler.snapshot("after_transcriber_loaded")
 
-        # Overlap diarizer load with transcription when single-request mode
+        # With the sidecar engine, diarization is another process's work — run it against the
+        # same audio while this worker transcribes, instead of queueing it behind whisper.
+        async_diarization: _AsyncDiarization | None = None
+        if tc.enable_diarization and _overlap_diarization_enabled():
+            async_diarization = _AsyncDiarization(audio, tc, manager, job.task_id)
+
+        # Overlap diarizer load with transcription when single-request mode. Pointless once
+        # diarization is already running — there are no local weights to warm.
         diarizer_preload_thread: threading.Thread | None = None
-        if tc.enable_diarization and tc.concurrent_requests <= 1:
+        if tc.enable_diarization and tc.concurrent_requests <= 1 and async_diarization is None:
 
             def _preload_diarizer() -> None:
                 try:
@@ -131,7 +243,15 @@ class _GpuStage:
 
         if tc.enable_diarization:
             result_dict, diarize_df = self._run_diarization(
-                audio, transcript, profiler, hw, tc, manager, progress_callback, config
+                audio,
+                transcript,
+                profiler,
+                hw,
+                tc,
+                manager,
+                progress_callback,
+                config,
+                async_diarization=async_diarization,
             )
         else:
             result_dict, diarize_df = self._skip_diarization(transcript, tc)
@@ -177,42 +297,23 @@ class _GpuStage:
         )
 
     def _run_diarization(
-        self, audio, transcript, profiler, hw, tc, manager, progress_callback, config=None
+        self,
+        audio,
+        transcript,
+        profiler,
+        hw,
+        tc,
+        manager,
+        progress_callback,
+        config=None,
+        async_diarization: _AsyncDiarization | None = None,
     ) -> tuple[dict, Any]:
         from app.transcription.engine.progress import emit
 
         emit(progress_callback, 0.52, "Preparing speaker analysis", "diarize")
-        hw.log_vram_usage("after transcription, before diarizer load")
-        total_vram_mb = _get_total_vram_mb()
-
-        profiler.snapshot("models_warm_no_inference")
-
-        if tc.concurrent_requests > 1:
-            logger.info(
-                "Concurrent mode (concurrent_requests=%d): keeping transcriber loaded",
-                tc.concurrent_requests,
-            )
-        elif total_vram_mb >= 16_000:
-            logger.info(
-                "Keeping transcriber loaded (%dMB VRAM total, both models fit)", total_vram_mb
-            )
-        else:
-            manager.release_transcriber()
-            hw.log_vram_usage("after transcriber release")
-            profiler.snapshot("diarizer_only_warm")
-
-        if tc.concurrent_requests > 1:
-            _wait_for_vram(2000, "diarization")
-
-        emit(progress_callback, 0.55, "Analyzing speaker patterns", "diarize")
-        step_start = time.perf_counter()
-        with profiler.step("diarization"):
-            diarizer = manager.get_diarizer(tc)
-            diarize_df, overlap_info, native_embeddings = diarizer.diarize(audio)
-        logger.info(
-            f"TIMING: diarization step completed in {time.perf_counter() - step_start:.3f}s"
+        diarize_df, overlap_info, native_embeddings = _collect_diarization(
+            audio, tc, manager, hw, profiler, progress_callback, async_diarization
         )
-        profiler.snapshot("after_diarization")
 
         # Step 5: Segment dedup BEFORE speaker assignment
         if tc.enable_dedup:
@@ -258,11 +359,12 @@ class _GpuStage:
                 for w in s.get("words", []) or []
                 if "speaker" in w and "start" in w
             ]
+            recheck_diarizer = manager.get_diarizer(tc)
             try:
                 acoustic_recheck(
                     words,
                     native_embeddings,
-                    lambda s, e: diarizer.embed_window(audio, s, e),
+                    lambda s, e: recheck_diarizer.embed_window(audio, s, e),
                     overlap_regions=overlap_info.get("regions"),
                     cosine_margin=config.boundary_acoustic_cosine_margin,
                     max_word_dur=config.boundary_acoustic_max_word_dur,
@@ -374,8 +476,14 @@ class _GpuRawStage:
 
         profiler.snapshot("after_transcriber_loaded")
 
+        # Sidecar diarization is another process's work — start it now and collect it after
+        # transcription, so the GPU stage costs max(transcribe, diarize) rather than the sum.
+        async_diarization: _AsyncDiarization | None = None
+        if tc.enable_diarization and _overlap_diarization_enabled():
+            async_diarization = _AsyncDiarization(audio, tc, manager, pre.task_id)
+
         diarizer_preload_thread: threading.Thread | None = None
-        if tc.enable_diarization and tc.concurrent_requests <= 1:
+        if tc.enable_diarization and tc.concurrent_requests <= 1 and async_diarization is None:
 
             def _preload_diarizer() -> None:
                 try:
@@ -419,39 +527,9 @@ class _GpuRawStage:
         native_embs_serialized: dict[str, list[float]] | None = None
 
         if tc.enable_diarization:
-            hw.log_vram_usage("after transcription, before diarizer load")
-            total_vram_mb = _get_total_vram_mb()
-
-            profiler.snapshot("models_warm_no_inference")
-
-            if tc.concurrent_requests > 1:
-                logger.info(
-                    "Concurrent mode (concurrent_requests=%d): keeping transcriber loaded",
-                    tc.concurrent_requests,
-                )
-            elif total_vram_mb >= 16_000:
-                logger.info(
-                    "Keeping transcriber loaded (%dMB VRAM total, both models fit)",
-                    total_vram_mb,
-                )
-            else:
-                manager.release_transcriber()
-                hw.log_vram_usage("after transcriber release")
-                profiler.snapshot("diarizer_only_warm")
-
-            if tc.concurrent_requests > 1:
-                _wait_for_vram(2000, "diarization")
-
-            emit(callback, 0.55, "Analyzing speaker patterns", "diarize")
-            step_start = time.perf_counter()
-            with profiler.step("diarization"):
-                diarizer = manager.get_diarizer(tc)
-                diarize_df, overlap_info, native_embeddings = diarizer.diarize(audio)
-            logger.info(
-                f"TIMING: diarization step completed in {time.perf_counter() - step_start:.3f}s"
+            diarize_df, overlap_info, native_embeddings = _collect_diarization(
+                audio, tc, manager, hw, profiler, callback, async_diarization
             )
-            profiler.snapshot("after_diarization")
-
             diarize_records = diarize_df.to_records()
             if native_embeddings:
                 native_embs_serialized = {

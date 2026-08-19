@@ -70,6 +70,23 @@ KEEP_EMAILS = {
 }
 KEEP_PREFIXES = ('ldap-', 'kc-', 'superdave')
 
+# LLM configurations leaked by interrupted test runs. Keyed on the BASE URL, not the
+# display name: the URL is what makes a row test infrastructure — these hostnames only
+# resolve under test overlays — while names drift ('Mock LLM' vs 'Mock LLM (test)',
+# both observed leaked). The damage a leaked row does is worse than a stray user: the
+# app sees an ACTIVE provider, auto-dispatches summarization/topic extraction after
+# every upload, the connection fails, and the user gets 'AI summary generation failed:
+# Network connection failed' toasts on a deployment that (as far as they know) has no
+# LLM configured at all. Observed live 2026-08-19: three rows, two pointing at
+# mock-llm:5199 (the register_mock_llm_provider fixture — its teardown deletes, but a
+# killed run never reaches teardown) and one at llm-test-vllm:8000.
+LLM_TEST_URL_PATTERNS = [
+    'http://mock-llm:%',  # the mock LLM compose service / test subprocess
+    'http://llm-test-vllm:%',  # the vLLM test container overlay
+    'http://localhost:5199%',  # the mock bound on the host (subprocess fallback)
+    'http://127.0.0.1:5199%',
+]
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -117,6 +134,7 @@ def main() -> int:
 
         if not candidates:
             print('Nothing to delete.')
+            _sweep_leaked_llm_configs(conn, execute=args.execute)
             return 0
 
         if args.execute:
@@ -131,7 +149,43 @@ def main() -> int:
                 f'\nDry run — {len(candidates)} users would be deleted. '
                 'Re-run with --execute to apply.'
             )
+
+        _sweep_leaked_llm_configs(conn, execute=args.execute)
     return 0
+
+
+def _sweep_leaked_llm_configs(conn, *, execute: bool) -> None:
+    """Report (and with --execute, delete) LLM configs pointing at test infrastructure.
+
+    Same contract as the user sweep: dry-run by default, and the match is printed row
+    by row so nothing is deleted that was never shown.
+    """
+    where = ' OR '.join(f"base_url LIKE '{p}'" for p in LLM_TEST_URL_PATTERNS)
+    rows = conn.execute(
+        text(
+            f'SELECT id, name, base_url, is_active FROM user_llm_settings WHERE {where} ORDER BY id'
+        )
+    ).fetchall()
+
+    if not rows:
+        print('No leaked LLM test configurations.')
+        return
+
+    print(f'\nMatched {len(rows)} LLM configuration(s) pointing at test infrastructure:')
+    for row in rows:
+        verb = 'DELETE' if execute else 'WOULD DELETE'
+        active = ' [ACTIVE — this is what makes uploads toast AI failures]' if row.is_active else ''
+        print(f'  {verb}  #{row.id} {row.name!r} -> {row.base_url}{active}')
+
+    if execute:
+        ids = [row.id for row in rows]
+        result = conn.execute(
+            text('DELETE FROM user_llm_settings WHERE id = ANY(:ids)'), {'ids': ids}
+        )
+        conn.commit()
+        print(f'Deleted {result.rowcount} leaked LLM test configuration(s).')
+    else:
+        print('Re-run with --execute to apply.')
 
 
 if __name__ == '__main__':

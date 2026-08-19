@@ -4977,5 +4977,6 @@
   "provenance.cancel": "Cancel",
   "provenance.saving": "Saving…",
   "provenance.saveFailed": "Could not save. Please try again.",
-  "prompts.contentTypeQaPanel": "Q&A Panel"
+  "prompts.contentTypeQaPanel": "Q&A Panel",
+  "settings.contentRedaction.piiEntitiesWarning": "Name detection is not exhaustive. ORGANIZATION is masked by default because a person's name is sometimes tagged as an organization — the cost is that company names and acronyms are masked too. Some names may still be missed; enable the GLiNER PII model for higher recall, and review exports before sharing."
 }

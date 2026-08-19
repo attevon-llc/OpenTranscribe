@@ -4977,5 +4977,6 @@
   "provenance.cancel": "Cancelar",
   "provenance.saving": "A guardar…",
   "provenance.saveFailed": "Não foi possível guardar. Tente novamente.",
-  "prompts.contentTypeQaPanel": "Painel de perguntas"
+  "prompts.contentTypeQaPanel": "Painel de perguntas",
+  "settings.contentRedaction.piiEntitiesWarning": "A deteção de nomes não é exaustiva. ORGANIZATION é mascarado por predefinição porque o nome de uma pessoa é por vezes identificado como organização — o custo é que nomes de empresas e siglas também são mascarados. Alguns nomes podem escapar; ative o modelo GLiNER de PII para maior cobertura e reveja as exportações antes de partilhar."
 }

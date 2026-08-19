@@ -983,9 +983,38 @@ DEFAULT_REDACTION_DETECTORS = ["profanity", "pii", "toxicity"]  # llm opt-in
 # is profanity/toxicity masking. PII spans are still DETECTED and cached (detectors
 # above), so enabling the category later applies instantly at read time.
 DEFAULT_REDACTION_CATEGORIES = ["profanity", "toxicity", "custom"]
-# ORGANIZATION is excluded from defaults: spaCy NER over-tags acronyms/common nouns as
-# ORG (e.g. "SSN" → ORGANIZATION), and org names are rarely sensitive PII. Still selectable.
-DEFAULT_REDACTION_PII_ENTITIES = [e for e in REDACTION_PII_ENTITIES if e != "ORGANIZATION"]
+# ORGANIZATION is INCLUDED, and the reason is measured (issue #499).
+#
+# It used to be excluded, on the grounds that spaCy over-tags acronyms as ORG and that
+# "org names are rarely sensitive PII". The first half is true; the second missed that a
+# PERSON'S NAME is sometimes what gets tagged ORG, and excluding the entity meant that
+# name shipped in clear to a user who had explicitly asked for PII masking.
+#
+# MEASURED against the shipped detector (`en_core_web_sm`, the model this app configures
+# — NOT the `en_core_web_lg` a bare AnalyzerEngine downloads):
+#
+#     "Blackwell will follow up"      -> ORGANIZATION @ 0.85   <- a surname. The leak.
+#     "Acme Corporation", "Microsoft" -> ORGANIZATION @ 0.85   <- correct, now masked too
+#     "SSN", "API", "CPU"             -> ORGANIZATION @ 0.85   <- noise, now masked too
+#
+# ⚠️ **A confidence threshold cannot separate those.** Presidio's own FAQ recommends
+# tuning the acceptance threshold for exactly this problem, and it does not work here:
+# `en_core_web_sm` returns a flat **0.85 for every NER hit**, real or noise. That is why
+# `DEFAULT_REDACTION_PII_CONFIDENCE` is not the lever, and raising it only loses recall.
+#
+# The trade is therefore deliberate and one-directional: company names and acronyms get
+# masked so that a misfiled person's name does not leak. That is the recall-over-precision
+# choice the PII literature recommends (a missed name is a privacy incident; a masked
+# company name is noise), and it only ever applies to users who opted into PII masking —
+# `pii` is not in DEFAULT_REDACTION_CATEGORIES, so this is opt-in twice over.
+#
+# ⚠️ **This does NOT make name detection exhaustive, and the UI says so.** The same
+# measurement found `en_core_web_sm` missing person names ENTIRELY — "Dax Okonkwo",
+# "Rivera" and "Sterling" produced no span at all, not even a mislabelled one. Adding
+# ORGANIZATION cannot recover those. The higher-recall path is the GLiNER detector
+# (`REDACTION_PII_USE_GLINER`, default off), which is a PII-specific model rather than a
+# general-purpose NER.
+DEFAULT_REDACTION_PII_ENTITIES = list(REDACTION_PII_ENTITIES)
 DEFAULT_REDACTION_STYLE = "label"
 DEFAULT_REDACTION_TOXICITY_THRESHOLD = 0.5
 DEFAULT_REDACTION_REDACT_BEFORE_LLM = True

@@ -4984,7 +4984,7 @@
   "settings.search.multilingualBadge": "Многоязычная",
   "settings.search.englishOnlyBadge": "Только английский",
   "settings.search.notDownloadedBadge": "Не загружена",
-  "settings.search.modelNotDownloaded": "Эта модель ещё не загружена в OpenSearch, поэтому её нельзя применить. Сначала загрузите и разверните её — при этом скачиваются веса модели, что может занять несколько минут.",
+  "settings.search.modelNotDownloaded": "Эта модель ещё не загружена в OpenSearch, поэтому её нельзя применить. Сначала загрузите и разверните её — при этом скачиваются веса модели, что может занять несколько минут. Загрузка не меняет активную модель — применение является отдельным шагом.",
   "settings.search.downloadAndDeploy": "Загрузить и развернуть",
   "settings.search.preparingModel": "Загрузка и развёртывание…",
   "settings.search.modelReady": "Модель загружена и развёрнута. Теперь её можно применить.",

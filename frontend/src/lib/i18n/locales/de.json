@@ -4984,7 +4984,7 @@
   "settings.search.multilingualBadge": "Mehrsprachig",
   "settings.search.englishOnlyBadge": "Nur Englisch",
   "settings.search.notDownloadedBadge": "Nicht heruntergeladen",
-  "settings.search.modelNotDownloaded": "Dieses Modell wurde noch nicht nach OpenSearch heruntergeladen und kann daher nicht angewendet werden. Laden Sie es zuerst herunter und stellen Sie es bereit – dabei werden die Modellgewichte abgerufen, was mehrere Minuten dauern kann.",
+  "settings.search.modelNotDownloaded": "Dieses Modell wurde noch nicht nach OpenSearch heruntergeladen und kann daher nicht angewendet werden. Laden Sie es zuerst herunter und stellen Sie es bereit – dabei werden die Modellgewichte abgerufen, was mehrere Minuten dauern kann. Das Herunterladen ändert Ihr aktives Modell nicht – das Anwenden ist ein eigener Schritt.",
   "settings.search.downloadAndDeploy": "Herunterladen & bereitstellen",
   "settings.search.preparingModel": "Wird heruntergeladen & bereitgestellt…",
   "settings.search.modelReady": "Modell heruntergeladen und bereitgestellt. Sie können es jetzt anwenden.",

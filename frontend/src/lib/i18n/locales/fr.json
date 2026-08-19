@@ -4984,7 +4984,7 @@
   "settings.search.multilingualBadge": "Multilingue",
   "settings.search.englishOnlyBadge": "Anglais uniquement",
   "settings.search.notDownloadedBadge": "Non téléchargé",
-  "settings.search.modelNotDownloaded": "Ce modèle n'a pas encore été téléchargé dans OpenSearch et ne peut donc pas être appliqué. Téléchargez-le et déployez-le d'abord : cela récupère les poids du modèle et peut prendre plusieurs minutes.",
+  "settings.search.modelNotDownloaded": "Ce modèle n'a pas encore été téléchargé dans OpenSearch et ne peut donc pas être appliqué. Téléchargez-le et déployez-le d'abord : cela récupère les poids du modèle et peut prendre plusieurs minutes. Le téléchargement ne change pas votre modèle actif — l'appliquer est une étape distincte.",
   "settings.search.downloadAndDeploy": "Télécharger et déployer",
   "settings.search.preparingModel": "Téléchargement et déploiement…",
   "settings.search.modelReady": "Modèle téléchargé et déployé. Vous pouvez l'appliquer maintenant.",

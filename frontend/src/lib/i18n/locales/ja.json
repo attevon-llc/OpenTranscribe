@@ -4984,7 +4984,7 @@
   "settings.search.multilingualBadge": "多言語",
   "settings.search.englishOnlyBadge": "英語のみ",
   "settings.search.notDownloadedBadge": "未ダウンロード",
-  "settings.search.modelNotDownloaded": "このモデルはまだ OpenSearch にダウンロードされていないため適用できません。先にダウンロードしてデプロイしてください。モデルの重みを取得するため数分かかることがあります。",
+  "settings.search.modelNotDownloaded": "このモデルはまだ OpenSearch にダウンロードされていないため適用できません。先にダウンロードしてデプロイしてください。モデルの重みを取得するため数分かかることがあります。 ダウンロードしてもアクティブなモデルは変わりません。適用は別の操作です。",
   "settings.search.downloadAndDeploy": "ダウンロードしてデプロイ",
   "settings.search.preparingModel": "ダウンロードしてデプロイ中…",
   "settings.search.modelReady": "モデルをダウンロードしてデプロイしました。適用できます。",

@@ -19,7 +19,7 @@
 #     - paraphrase-multilingual-MiniLM-L12-v2 (Multilingual 50+, 420MB)
 #   Balanced tier (768 dimensions):
 #     - all-mpnet-base-v2                     (English, 420MB)
-#     - paraphrase-multilingual-mpnet-base-v2 (Multilingual 50+, 1.1GB)
+#     - multi-qa-MiniLM-L6-cos-v1 (Retrieval-tuned English, 80MB)
 #   Best quality tier:
 #     - all-distilroberta-v1                  (English, 768d, 290MB)
 #     - distiluse-base-multilingual-cased-v1  (Multilingual 15, 512d, 480MB)

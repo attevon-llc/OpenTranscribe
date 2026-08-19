@@ -169,7 +169,7 @@ select_opensearch_models_for_offline() {
     echo "  all-MiniLM-L6-v2 (default)                    Fast       English        80MB"
     echo "  paraphrase-multilingual-MiniLM-L12-v2         Fast       50+ languages  420MB"
     echo "  all-mpnet-base-v2                             Balanced   English        420MB"
-    echo "  paraphrase-multilingual-mpnet-base-v2         Balanced   50+ languages  1.1GB"
+    echo "  multi-qa-MiniLM-L6-cos-v1                     Fast       English        80MB"
     echo "  all-distilroberta-v1                          Best       English        290MB"
     echo "  distiluse-base-multilingual-cased-v1          Best       15 languages   480MB"
     echo ""
@@ -234,7 +234,7 @@ select_opensearch_models_for_offline() {
                 echo ""
                 echo "Available model short names:"
                 echo "  all-MiniLM-L6-v2, paraphrase-multilingual-MiniLM-L12-v2,"
-                echo "  all-mpnet-base-v2, paraphrase-multilingual-mpnet-base-v2,"
+                echo "  all-mpnet-base-v2, multi-qa-MiniLM-L6-cos-v1,"
                 echo "  all-distilroberta-v1, distiluse-base-multilingual-cased-v1"
                 echo ""
                 read -r -p "Enter model names (comma-separated): " custom_models

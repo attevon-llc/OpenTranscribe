@@ -42,12 +42,12 @@ _OPENSEARCH_MODEL_REGISTRY = {
         "size_mb": 420,
         "url_base": "https://artifacts.opensearch.org/models/ml-models",
     },
-    "huggingface/sentence-transformers/paraphrase-multilingual-mpnet-base-v2": {
-        "short_name": "paraphrase-multilingual-mpnet-base-v2",
-        "filename": "sentence-transformers_paraphrase-multilingual-mpnet-base-v2-1.0.1-torch_script.zip",
+    "huggingface/sentence-transformers/multi-qa-MiniLM-L6-cos-v1": {
+        "short_name": "multi-qa-MiniLM-L6-cos-v1",
+        "filename": "sentence-transformers_multi-qa-MiniLM-L6-cos-v1-1.0.1-torch_script.zip",
         "version": "1.0.1",
-        "dimension": 768,
-        "size_mb": 1100,
+        "dimension": 384,
+        "size_mb": 80,
         "url_base": "https://artifacts.opensearch.org/models/ml-models",
     },
     "huggingface/sentence-transformers/all-distilroberta-v1": {

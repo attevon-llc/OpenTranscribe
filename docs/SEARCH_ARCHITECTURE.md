@@ -160,7 +160,6 @@ These settings can be tuned via environment variables:
 | Fast (default) | all-MiniLM-L6-v2 | 384 | 80MB | English |
 | Fast | paraphrase-multilingual-MiniLM-L12-v2 | 384 | 420MB | 50+ languages |
 | Balanced | all-mpnet-base-v2 | 768 | 420MB | English |
-| Balanced | paraphrase-multilingual-mpnet-base-v2 | 768 | 1.1GB | 50+ languages |
 | Best quality | all-distilroberta-v1 | 768 | 290MB | English |
 | Best multilingual | distiluse-base-multilingual-cased-v1 | 512 | 480MB | 15 languages |
 

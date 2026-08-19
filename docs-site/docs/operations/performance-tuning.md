@@ -219,6 +219,65 @@ docker exec opentranscribe-postgres psql -U postgres -d opentranscribe -c \
    FROM pg_stat_database WHERE datname = 'opentranscribe';"
 ```
 
+## OpenSearch Heap: What It Is Actually For
+
+**Heap is sized for the embedding model, not for your data.** This surprises people, and
+the numbers below are measured on a real cluster (2026-08-18, `opensearch:3.4.0`) rather
+than reasoned from documentation — an earlier version of this guidance was wrong on every
+figure.
+
+Measured on a working install: **25 indices, 52,053 documents, 188 MB on disk**, and
+Lucene segment memory **0.0 MB** (modern Lucene keeps it off-heap). Your transcripts are
+not what consumes heap.
+
+### The default is a locked cost
+
+```yaml
+OPENSEARCH_JAVA_OPTS=-Xms4g -Xmx4g   # docker-compose.yml default
+bootstrap.memory_lock=true
+```
+
+`Xms == Xmx` means the full 4 GB is claimed **at startup**, and `memory_lock` **pins it in
+RAM** where it cannot be swapped or reclaimed. On a 16 GB laptop that is 4 GB gone before
+Postgres, MinIO, Redis, the backend and the ASR models get anything.
+
+### Verified smaller profiles
+
+Each row was tested end to end — register the model, deploy it, and run a **real
+prediction**:
+
+| Heap | What it runs | Verified |
+|---|---|---|
+| **1 GB** | the default model (`all-MiniLM-L6-v2`, 87.5 MB) | ✅ returns 384-dim vectors |
+| **2 GB** | every English model, incl. `all-mpnet-base-v2` (418.7 MB) | ✅ returns 768-dim vectors |
+| **4 GB** | default; headroom for indexing bursts and multilingual models | ✅ |
+
+```bash
+# in .env — for a laptop or a small VM
+OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
+```
+
+Keep `Xms` equal to `Xmx`. A differing pair makes the JVM resize the heap at runtime
+(pause spikes), and `bootstrap.memory_lock` expects a fixed heap.
+
+### ⚠️ "Deployed" does not mean "working"
+
+`all-mpnet-base-v2` on a 1 GB heap reports `DEPLOY: COMPLETED` and then **fails to produce
+an embedding**. Any health check that reads model *state* calls that cluster healthy. If
+you shrink the heap, verify with a real prediction:
+
+```bash
+python3 scripts/verify-embedding-models.py --url http://localhost:9200
+```
+
+### ⚠️ A high heap percentage is usually NOT a problem
+
+Java frees memory when it feels pressure, not when it finishes with it. A cluster sitting
+at 83–89% heap with **0 full GCs in 25 hours** and young-generation GCs averaging 12.6 ms
+is healthy — that number is mostly uncollected garbage, not live data. See
+[Monitoring](./monitoring.md) for how to tell a real breaker trip from a false one before
+adding heap that will not help.
+
 ## OpenSearch Tuning
 
 ### JVM Heap Sizing

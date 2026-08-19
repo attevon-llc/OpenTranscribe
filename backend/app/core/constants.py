@@ -242,6 +242,24 @@ SEARCH_CACHE_MAX_SIZE = 256
 # OpenSearch Native Neural Search Model Registry
 # These models are registered and deployed directly in OpenSearch via ML Commons plugin
 # Organized by quality tier (Fast → Balanced → Best) and language support (English / Multilingual)
+# Every model listed here is VERIFIED by scripts/verify-embedding-models.py: it must
+# register, deploy, return its declared dimension from a real prediction, and — for the
+# multilingual tiers — place a translation nearer than an unrelated sentence.
+#
+# ⚠️ Candidates MEASURED AND REJECTED (2026-08-18, opensearch 3.4.0). Do not add these
+# back without re-measuring; each failed for a specific reason:
+#   paraphrase-multilingual-mpnet-base-v2  not an OpenSearch-provided model at all —
+#                                          REGISTER FAILED at 1.0.0/1.0.1/1.0.2 (#504)
+#   msmarco-distilbert-base-tas-b          dot-product model: two UNRELATED sentences
+#                                          score 0.703 under cosine
+#   multi-qa-mpnet-base-dot-v1             dot-product model, control 0.385
+#   paraphrase-MiniLM-L3-v2                DEPLOY FAILED
+# The two dot-product rejections matter because the chunks index maps
+# `"space_type": "cosinesimil"` — such a model is ranked by a metric it was never
+# trained for, and the scores look perfectly plausible while being wrong.
+#
+# Verified working but not offered (no distinct use case over what is here):
+#   all-MiniLM-L12-v2 (384d), paraphrase-mpnet-base-v2 (768d).
 OPENSEARCH_EMBEDDING_MODELS = {
     # === FAST TIER (384 dimensions) ===
     # Low latency, lower memory. Good for keyword-focused searches.
@@ -256,6 +274,22 @@ OPENSEARCH_EMBEDDING_MODELS = {
         "tier": "fast",
         "language_type": "english",
         "description": "Fast, lightweight English model. Good baseline for keyword-heavy searches.",
+    },
+    "huggingface/sentence-transformers/multi-qa-MiniLM-L6-cos-v1": {
+        "name": "MiniLM - Retrieval-tuned (English Only)",
+        "dimension": 384,
+        "size_mb": 80,
+        "languages": ["en"],
+        "model_format": "TORCH_SCRIPT",
+        "default": False,
+        "requires_prefix": False,
+        "tier": "fast",
+        "language_type": "english",
+        "description": (
+            "Trained for semantic SEARCH rather than general sentence similarity. Same "
+            "384 dimensions as the default, so switching is a re-embed and not an index "
+            "recreation. Retrieval quality on this corpus is NOT yet benchmarked."
+        ),
     },
     "huggingface/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2": {
         "name": "MiniLM - Fast (Multilingual, 50+ Languages)",
@@ -283,18 +317,20 @@ OPENSEARCH_EMBEDDING_MODELS = {
         "language_type": "english",
         "description": "Better semantic understanding. Good balance of speed and quality.",
     },
-    "huggingface/sentence-transformers/paraphrase-multilingual-mpnet-base-v2": {
-        "name": "MPNet - Balanced (Multilingual, 50+ Languages)",
-        "dimension": 768,
-        "size_mb": 1100,
-        "languages": ["multilingual"],
-        "model_format": "TORCH_SCRIPT",
-        "default": False,
-        "requires_prefix": False,
-        "tier": "balanced",
-        "language_type": "multilingual",
-        "description": "Higher quality multilingual embeddings. Good semantic search.",
-    },
+    # REMOVED: paraphrase-multilingual-mpnet-base-v2 (issue #504).
+    #
+    # It is NOT an OpenSearch-provided pretrained model and never was, so offering it
+    # here gave admins a choice that could only fail. Measured against
+    # opensearchproject/opensearch:3.4.0 at versions 1.0.0, 1.0.1 and 1.0.2, all three:
+    #     REGISTER -> FAILED: "This model is not in the pre-trained model list,
+    #                          please check your parameters."
+    # and its artifact config.json 403s. OpenSearch's provided list contains
+    # `paraphrase-multilingual-MiniLM-L12-v2` (multilingual) and
+    # `paraphrase-mpnet-base-v2` (English-only); this name conflates the two.
+    #
+    # Do not re-add it without tracing and uploading it as a CUSTOM model — it is a
+    # legitimate 768d/50-language model, it simply is not one OpenSearch ships.
+    # Every model listed here must pass scripts/verify-embedding-models.py.
     # === BEST QUALITY TIER ===
     # Highest retrieval quality, recommended for semantic-heavy searches.
     "huggingface/sentence-transformers/all-distilroberta-v1": {

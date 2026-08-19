@@ -615,7 +615,7 @@ def download_opensearch_neural_models():
         - all-mpnet-base-v2 (balanced English, 420MB)
         - all-distilroberta-v1 (best quality English, 290MB)
         - paraphrase-multilingual-MiniLM-L12-v2 (fast multilingual, 420MB)
-        - paraphrase-multilingual-mpnet-base-v2 (balanced multilingual, 1.1GB)
+        - multi-qa-MiniLM-L6-cos-v1 (retrieval-tuned English, 80MB)
         - distiluse-base-multilingual-cased-v1 (best multilingual, 480MB)
     """
     print_header('Downloading OpenSearch Neural Search Models')
@@ -654,15 +654,15 @@ def download_opensearch_neural_models():
             'languages': 'English',
             'description': 'Better semantic understanding. Good balance of speed and quality.',
         },
-        'paraphrase-multilingual-mpnet-base-v2': {
-            'name': 'huggingface/sentence-transformers/paraphrase-multilingual-mpnet-base-v2',
+        'multi-qa-MiniLM-L6-cos-v1': {
+            'name': 'huggingface/sentence-transformers/multi-qa-MiniLM-L6-cos-v1',
             'version': '1.0.1',
             'format': 'torch_script',
-            'dimension': 768,
-            'size_mb': 1100,
-            'tier': 'balanced',
-            'languages': 'Multilingual (50+)',
-            'description': 'Higher quality multilingual embeddings.',
+            'dimension': 384,
+            'size_mb': 80,
+            'tier': 'fast',
+            'languages': 'English',
+            'description': 'Tuned for semantic search. Same 384 dims as the default.',
         },
         # Best quality tier
         'all-distilroberta-v1': {

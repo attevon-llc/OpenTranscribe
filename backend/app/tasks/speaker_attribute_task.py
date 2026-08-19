@@ -122,7 +122,11 @@ def _run_gender_inference_parallel(
     speaker_probs: dict[int, dict[str, float]] = {}
     speaker_clip_counts: dict[int, int] = {}
 
-    with ThreadPoolExecutor(max_workers=8, thread_name_prefix="attr-ffmpeg") as pool:
+    # Not a `with` block: its __exit__ calls shutdown(wait=True), so one fetch thread that
+    # never returns would hang the task forever — the per-future timeout below bounds the
+    # wait, not the work. Shut down without waiting instead, and let the threads die daemon.
+    pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="attr-ffmpeg")
+    try:
         futures = []
         for speaker_id, seg in work_items:
             duration = seg["end"] - seg["start"]
@@ -146,12 +150,18 @@ def _run_gender_inference_parallel(
                 speaker_clip_counts[speaker_id] = 0
             speaker_probs[speaker_id][gender] += confidence
             speaker_clip_counts[speaker_id] += 1
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
     return speaker_probs, speaker_clip_counts
 
 
 @celery_app.task(
-    bind=True, name="detect_speaker_attributes", priority=CPUPriority.PIPELINE_CRITICAL
+    bind=True,
+    name="detect_speaker_attributes",
+    priority=CPUPriority.USER_TRIGGERED,
+    soft_time_limit=600,
+    time_limit=660,
 )
 def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
     """Predict gender/age for all speakers in a media file.
@@ -159,6 +169,12 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
     Uses presigned URL + ffmpeg segment seeking to avoid downloading the
     entire file. Segments for all speakers are fetched in parallel via
     a thread pool. Runs on CPU queue in parallel with GPU transcription.
+
+    Enrichment, not part of the import the user is watching, so it runs below
+    PIPELINE_CRITICAL: at that priority it competed with preprocess and postprocess for the
+    same eight CPU slots. It also carries its own time limits rather than inheriting the
+    global three-hour one — a stalled run used to hold a slot for hours, and eight of them
+    wedged the whole pool so no import could proceed at all.
     """
     # Idempotency guard: gender inference is minutes of CPU-bound wav2vec2 per
     # file, and rediarize/recovery flows can dispatch the same detection again

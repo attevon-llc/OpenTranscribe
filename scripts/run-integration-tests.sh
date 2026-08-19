@@ -221,7 +221,7 @@ if [ ${#STACK_INCOMPLETE[@]} -gt 0 ]; then
     SKIPPED_PHASES+=("Integration-marked tests")
 else
     run_phase_watching_skips "Integration-marked tests" \
-        "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py \
+        "$VENV_PY" -m pytest tests/integration/ tests/test_selective_reprocess.py tests/eval/ \
         -o addopts="" -m integration -q --tb=short --timeout="${INTEGRATION_TEST_TIMEOUT:-900}"
 fi
 

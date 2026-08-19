@@ -262,3 +262,60 @@ def _answer_query(record: dict, corpus: InjectedCorpus, alias: dict[str, str]):
         rule=str(record.get("rule") or ""),
         gold_answer=gold,
     )
+
+
+def load_miracl_queries(
+    corpus: InjectedCorpus, language: str, split: str = "dev"
+) -> list[EvalQuery]:
+    """MIRACL queries for one language, remapped onto the uuids the app indexed (#453).
+
+    **The gold shape is different from every other corpus here, and the injection is
+    what reconciles it.** QMSum and the synthetic tier judge an inclusive *turn range*
+    inside a meeting; MIRACL judges a whole *passage* — "docid 8156619#0 is relevant to
+    query 10036600#0". Rather than teach :class:`GoldSpan` a second convention, the
+    injector writes **one passage per file, as a single turn**, so a document-level
+    judgement is exactly ``GoldSpan(uuid, 0, 0)``. ``qrels.py`` and ``metrics.py`` need
+    no changes at all, and there is still only one overlap rule in the harness.
+
+    ``meeting_key`` in the injection manifest is the MIRACL ``docid``.
+
+    ⚠️ **Negatives are scored, not filtered.** MIRACL's explicit ``relevance: 0``
+    judgements are the reason it is the anchor corpus — a run over only the positives
+    makes every retriever look perfect because there is nothing else to rank. They are
+    carried through into the qrels the metric engine consumes.
+
+    ⚠️ **Every query is ``LOOKUP``.** MIRACL asks a factual question against a passage
+    collection; none of its queries are summarisation or aggregation. Labelling them
+    otherwise would put them in tables whose other rows mean something different.
+    """
+    from tests.eval.harness import miracl
+
+    topics = miracl.load_topics(corpus.root, language, split)
+    qrels = miracl.load_qrels(corpus.root, language, split)
+
+    queries: list[EvalQuery] = []
+    for qid in sorted(topics):
+        judged = qrels.get(qid, {})
+        spans = tuple(
+            GoldSpan(file_uuid=corpus.file_uuid_by_meeting[docid], start_turn=0, end_turn=0)
+            for docid, relevance in sorted(judged.items())
+            # Only POSITIVES become gold spans; the negatives still sit in the index as
+            # distractors, which is their whole job. A negative in the gold set would
+            # invert the metric.
+            if relevance > 0 and docid in corpus.file_uuid_by_meeting
+        )
+        if not spans:
+            # A query whose positives were not injected cannot be scored, and including
+            # it would depress every metric for a reason that is not retrieval quality.
+            continue
+        queries.append(
+            EvalQuery(
+                query_id=f"{language}:{qid}",
+                text=topics[qid],
+                query_class=LOOKUP,
+                corpus=corpus.key,
+                license_tier=corpus.license_tier,
+                spans=spans,
+            )
+        )
+    return queries

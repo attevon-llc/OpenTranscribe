@@ -62,6 +62,11 @@ _TIMESTAMP_MARKERS: tuple[str, ...] = (
     "gpu_audio_load_start",
     "gpu_audio_load_end",
     "gpu_end",
+    # Overlap + progressive-presentation markers (T2/T3): when diarization was handed to
+    # the sidecar, when it was collected, and when the transcript became readable.
+    "diarize_request_sent",
+    "diarize_joined",
+    "transcript_ready",
     "postprocess_received",
     "postprocess_task_prerun",
     "postprocess_end",

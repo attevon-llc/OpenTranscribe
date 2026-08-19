@@ -110,6 +110,36 @@ def mark_many(task_id: str | None, markers: dict[str, float | str]) -> None:
         logger.debug(f"benchmark mark_many for {task_id} failed: {e}")
 
 
+def pipeline_task_id(file_id: int) -> str | None:
+    """The task_id of the pipeline run this file belongs to, for enrichment tasks.
+
+    Enrichment (indexing, clustering, summary, redaction) runs in its own Celery tasks with
+    their own ids, but their timings belong to the pipeline's hash — otherwise the work that
+    happens after the user sees the transcript is invisible, which is exactly what left the
+    tail columns dead. MediaFile.active_task_id is the single source of truth for the run
+    currently driving a file.
+    """
+    if not benchmark_enabled():
+        return None
+    try:
+        from app.db.session_utils import session_scope
+        from app.models.media import MediaFile
+
+        with session_scope() as db:
+            mf = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+            return str(mf.active_task_id) if mf and mf.active_task_id else None
+    except Exception as e:  # noqa: BLE001 — telemetry must never break the task it measures
+        logger.debug(f"pipeline_task_id lookup failed for file {file_id}: {e}")
+        return None
+
+
+@contextmanager
+def stage_for_file(file_id: int, name: str) -> Iterator[None]:
+    """`stage`, for an enrichment task that knows its file but not the pipeline task."""
+    with stage(pipeline_task_id(file_id), name):
+        yield
+
+
 @contextmanager
 def stage(task_id: str | None, name: str) -> Iterator[None]:
     """Context manager that emits ``<name>_start`` and ``<name>_end`` markers.

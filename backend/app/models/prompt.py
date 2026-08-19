@@ -71,7 +71,7 @@ class SummaryPrompt(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     content_type: Mapped[str | None] = mapped_column(
         String(50), nullable=True, index=True
-    )  # 'meeting', 'interview', 'podcast', 'documentary', 'general'
+    )  # 'meeting', 'interview', 'podcast', 'documentary', 'general', 'qa_panel'
 
     # Sharing
     is_shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

@@ -4976,5 +4976,6 @@
   "provenance.save": "Save",
   "provenance.cancel": "Cancel",
   "provenance.saving": "Saving…",
-  "provenance.saveFailed": "Could not save. Please try again."
+  "provenance.saveFailed": "Could not save. Please try again.",
+  "prompts.contentTypeQaPanel": "Q&A Panel"
 }

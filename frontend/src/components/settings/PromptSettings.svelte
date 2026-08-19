@@ -65,6 +65,7 @@
     { value: 'interview', label: $t('prompts.contentTypeInterview') },
     { value: 'podcast', label: $t('prompts.contentTypePodcast') },
     { value: 'documentary', label: $t('prompts.contentTypeDocumentary') },
+    { value: 'qa_panel', label: $t('prompts.contentTypeQaPanel') },
     { value: 'speaker_identification', label: $t('prompts.contentTypeSpeakerIdentification') }
   ];
 

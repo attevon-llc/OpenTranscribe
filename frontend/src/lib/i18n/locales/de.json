@@ -4976,5 +4976,6 @@
   "provenance.save": "Speichern",
   "provenance.cancel": "Abbrechen",
   "provenance.saving": "Wird gespeichert…",
-  "provenance.saveFailed": "Speichern fehlgeschlagen. Bitte erneut versuchen."
+  "provenance.saveFailed": "Speichern fehlgeschlagen. Bitte erneut versuchen.",
+  "prompts.contentTypeQaPanel": "Q&A-Panel"
 }

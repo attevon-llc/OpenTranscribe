@@ -4976,5 +4976,6 @@
   "provenance.save": "Guardar",
   "provenance.cancel": "Cancelar",
   "provenance.saving": "Guardando…",
-  "provenance.saveFailed": "No se pudo guardar. Inténtalo de nuevo."
+  "provenance.saveFailed": "No se pudo guardar. Inténtalo de nuevo.",
+  "prompts.contentTypeQaPanel": "Panel de preguntas"
 }

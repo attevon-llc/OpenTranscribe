@@ -4976,5 +4976,6 @@
   "provenance.save": "保存",
   "provenance.cancel": "取消",
   "provenance.saving": "保存中…",
-  "provenance.saveFailed": "保存失败，请重试。"
+  "provenance.saveFailed": "保存失败，请重试。",
+  "prompts.contentTypeQaPanel": "问答小组"
 }

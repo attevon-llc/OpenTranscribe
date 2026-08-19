@@ -4976,5 +4976,6 @@
   "provenance.save": "Сохранить",
   "provenance.cancel": "Отмена",
   "provenance.saving": "Сохранение…",
-  "provenance.saveFailed": "Не удалось сохранить. Попробуйте ещё раз."
+  "provenance.saveFailed": "Не удалось сохранить. Попробуйте ещё раз.",
+  "prompts.contentTypeQaPanel": "Панель вопросов"
 }

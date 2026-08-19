@@ -22,7 +22,7 @@ class SummaryPromptBase(BaseModel):
     prompt_text: str = Field(..., description="The actual prompt content")
     content_type: str | None = Field(
         None,
-        description="Content type: meeting, interview, podcast, documentary, general",
+        description="Content type: meeting, interview, podcast, documentary, general, qa_panel",
     )
     is_active: bool = Field(True, description="Whether the prompt is available for use")
     is_shared: bool = Field(False, description="Whether this prompt is shared with all users")
@@ -39,6 +39,8 @@ class SummaryPromptBase(BaseModel):
                 "documentary",
                 "general",
                 "speaker_identification",
+                # The community Q&A-panel extractor seeded in initial_data (#136).
+                "qa_panel",
             }
             if v not in valid_types:
                 raise ValueError(f"content_type must be one of: {valid_types}")
@@ -85,6 +87,8 @@ class SummaryPromptUpdate(BaseModel):
                 "documentary",
                 "general",
                 "speaker_identification",
+                # The community Q&A-panel extractor seeded in initial_data (#136).
+                "qa_panel",
             }
             if v not in valid_types:
                 raise ValueError(f"content_type must be one of: {valid_types}")

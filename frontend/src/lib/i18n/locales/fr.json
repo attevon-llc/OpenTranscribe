@@ -4976,5 +4976,6 @@
   "provenance.save": "Enregistrer",
   "provenance.cancel": "Annuler",
   "provenance.saving": "Enregistrement…",
-  "provenance.saveFailed": "Échec de l'enregistrement. Veuillez réessayer."
+  "provenance.saveFailed": "Échec de l'enregistrement. Veuillez réessayer.",
+  "prompts.contentTypeQaPanel": "Panel de questions"
 }

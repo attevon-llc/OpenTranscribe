@@ -240,6 +240,9 @@ def _ensure_default_tags(db: Session) -> None:
 
 def _ensure_system_prompts(db: Session) -> None:
     """Create system default prompts if they don't exist."""
+    from app.core.default_prompts import QA_PANEL_DESCRIPTION
+    from app.core.default_prompts import QA_PANEL_NAME
+    from app.core.default_prompts import QA_PANEL_PROMPT
     from app.core.default_prompts import SPEAKER_IDENTIFICATION_DESCRIPTION
     from app.core.default_prompts import SPEAKER_IDENTIFICATION_NAME
     from app.core.default_prompts import SPEAKER_IDENTIFICATION_PROMPT
@@ -259,6 +262,12 @@ def _ensure_system_prompts(db: Session) -> None:
             "description": SPEAKER_IDENTIFICATION_DESCRIPTION,
             "prompt_text": SPEAKER_IDENTIFICATION_PROMPT,
             "content_type": "speaker_identification",
+        },
+        {
+            "name": QA_PANEL_NAME,
+            "description": QA_PANEL_DESCRIPTION,
+            "prompt_text": QA_PANEL_PROMPT,
+            "content_type": "qa_panel",
         },
     ]
 

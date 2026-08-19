@@ -4976,5 +4976,6 @@
   "provenance.save": "保存",
   "provenance.cancel": "キャンセル",
   "provenance.saving": "保存中…",
-  "provenance.saveFailed": "保存できませんでした。もう一度お試しください。"
+  "provenance.saveFailed": "保存できませんでした。もう一度お試しください。",
+  "prompts.contentTypeQaPanel": "Q&Aパネル"
 }

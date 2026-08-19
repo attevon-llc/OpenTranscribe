@@ -1,0 +1,50 @@
+# diar-native sidecar (T1 diarization engine) — ADDITIVE overlay, off by default.
+#
+# Usage (when ready to test; see diar-native docs/INSTALL_NATIVE.md):
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
+#                  -f docker-compose.diar-native.yml up -d diar-native
+# then set DIARIZER_ENGINE=native on the gpu worker (plus the shared volume below)
+# and apply the ModelManager hook from diar-native/docs/INSTALL_NATIVE.md.
+#
+# Rollback = unset DIARIZER_ENGINE (fork path is the default), stop this service.
+
+services:
+  diar-native:
+    image: diar-server:latest
+    environment:
+      - DIAR_MODE=${DIAR_NATIVE_MODE:-cuda}
+      - DIAR_MODELS_DIR=/models
+      - DIAR_MAX_INFLIGHT=${DIAR_NATIVE_MAX_INFLIGHT:-2}
+      - DIAR_BIND=0.0.0.0:8701
+      - SPEAKRS_LAZY_SESSIONS=${DIAR_NATIVE_LAZY_SESSIONS:-1}
+    volumes:
+      # self-exported community-1 models (gated weights — local only, never distributed)
+      - ${DIAR_NATIVE_MODELS_DIR:-/mnt/nvm/repos/diar-native/models_folded}:/models:ro
+      - diar-native-tmp:/tmp/diar-native
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              device_ids: ['${DIAR_NATIVE_GPU:-0}']
+    restart: unless-stopped   # supervisor: auto-restart (known upstream teardown crash)
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8701/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # The gpu diarize worker needs the shared audio-handoff volume + engine flag.
+  # NOTE: service name must match your compose profile's diarization worker
+  # (celery-worker in default gpu profile; celery-worker-diarize under gpu-split).
+  celery-worker:
+    environment:
+      - DIARIZER_ENGINE=${DIARIZER_ENGINE:-python}
+      - DIAR_NATIVE_URL=http://diar-native:8701
+      - DIAR_NATIVE_SHARED_DIR=/tmp/diar-native
+    volumes:
+      - diar-native-tmp:/tmp/diar-native
+
+volumes:
+  diar-native-tmp:

@@ -63,6 +63,23 @@ def _post_json(url: str, payload: dict, timeout: float) -> dict:
         return cast(dict, json.loads(resp.read()))
 
 
+def sidecar_healthy(base_url: str | None = None) -> bool:
+    """True when the diar-native sidecar answers /healthz.
+
+    Used by ModelManager to decide, per task, whether the native engine can serve — in
+    both directions: a live sidecar that went away, and a recovered one that a worker
+    running on the PyAnnote fallback should return to.
+    """
+    url = (base_url or _DEFAULT_URL).rstrip("/")
+    try:
+        with urllib.request.urlopen(  # noqa: S310  # nosec B310 — internal service
+            f"{url}/healthz", timeout=5
+        ) as resp:
+            return bool(resp.status == 200)
+    except Exception:  # noqa: BLE001 — unreachable for any reason means "not healthy"
+        return False
+
+
 def _overlap_regions(full_segments: list[dict], min_duration: float) -> list[dict]:
     """Sweep-line: regions where >=2 speakers are simultaneously active (start/end dicts)."""
     events: list[tuple[float, int]] = []

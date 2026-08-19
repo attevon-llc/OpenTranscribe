@@ -74,11 +74,13 @@ class ModelManager:
 
         with self._lock:
             if self._diarizer is not None and self._diarizer_hash == config_hash:
-                if self._diarizer_reachable(self._diarizer):
+                if self._diarizer_current(self._diarizer):
                     logger.info(f"Reusing cached diarizer (hash={config_hash})")
                     return self._diarizer
-                # Native sidecar went away — drop the client so the rebuild below can
-                # fall back to the in-process engine.
+                # The sidecar went away, or came back — release and rebuild on the
+                # engine that can serve now.
+                self._diarizer.unload_model()
+                self._cleanup_gpu()
                 self._diarizer = None
                 self._diarizer_hash = None
 
@@ -115,21 +117,26 @@ class ModelManager:
         return diarizer
 
     @staticmethod
-    def _diarizer_reachable(diarizer: SpeakerDiarizer) -> bool:
-        """False only when a cached native client can no longer reach its sidecar.
+    def _diarizer_current(diarizer: SpeakerDiarizer) -> bool:
+        """Whether the cached diarizer is still the engine that should serve this task.
 
-        The in-process engine holds its own weights and is always reachable; the native
-        client's ``load_model`` is a sub-millisecond health probe, so re-running it per
-        task is what makes a mid-queue sidecar loss fall back instead of failing jobs.
+        With DIARIZER_ENGINE=native the sidecar is probed per task, which keeps the
+        engine choice tracking reality in both directions: losing the sidecar mid-queue
+        falls back to PyAnnote, and a recovered sidecar is picked up again instead of
+        the worker staying degraded until it restarts.
         """
-        if type(diarizer).__name__ != "NativeSpeakerDiarizer":
-            return True
-        try:
-            diarizer.load_model()
-            return True
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("diar-native sidecar health probe failed: %s", exc)
-            return False
+        native_cached = type(diarizer).__name__ == "NativeSpeakerDiarizer"
+        if os.environ.get("DIARIZER_ENGINE", "python").lower() != "native":
+            return not native_cached
+
+        from app.transcription.diarizer_native import sidecar_healthy
+
+        healthy = sidecar_healthy()
+        if native_cached and not healthy:
+            logger.warning("diar-native sidecar is unreachable; falling back to PyAnnote")
+        elif healthy and not native_cached:
+            logger.info("diar-native sidecar is healthy again; leaving the PyAnnote fallback")
+        return native_cached == healthy
 
     def ensure_models_loaded(self, config: TranscriptionConfig) -> None:
         """Preload both models for concurrent mode.

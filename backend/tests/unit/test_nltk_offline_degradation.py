@@ -91,8 +91,19 @@ def _break_corpus(monkeypatch, target: str) -> list[str]:
 
     Returns the list that records download attempts, so a test can assert the
     offline guard actually suppressed the network call.
+
+    ⚠️ The corpus is broken by REPLACING the loader on the ``nltk.corpus`` module,
+    never by ``setattr`` on the loader object itself. ``nltk.corpus.<name>`` is a
+    ``LazyCorpusLoader``, and monkeypatching an attribute ON it must first read the
+    old value — which triggers the lazy load, which needs the real corpus on disk.
+    The first version of this file did exactly that, so these four tests PASSED on
+    any machine with the corpus installed and CRASHED in the setup line on the one
+    environment they exist to simulate: CI, which ships no nltk_data at all. A
+    degradation test that requires the resource whose absence it degrades over is
+    testing nothing.
     """
     import nltk
+    import nltk.corpus
 
     attempts: list[str] = []
 
@@ -100,7 +111,21 @@ def _break_corpus(monkeypatch, target: str) -> list[str]:
         attempts.append(name)
         return False  # what nltk.download really returns when it cannot fetch
 
+    class _MissingCorpus:
+        """What ``from nltk.corpus import X`` yields when X is not on disk."""
+
+        def words(self, *args, **kwargs):
+            raise LookupError(f"Resource '{target}' not found (test stand-in)")
+
+        def __getattr__(self, name):
+            raise LookupError(f"Resource '{target}' not found (test stand-in)")
+
     monkeypatch.setattr(nltk, "download", _failing_download)
+    # raising=False: punkt lives under nltk.data/tokenizers, not nltk.corpus, so
+    # there is no attribute to replace for it — the stub only matters for corpora
+    # the app imports via `from nltk.corpus import X` (stopwords). For punkt the
+    # breakage is the download no-op plus whatever the caller patches itself.
+    monkeypatch.setattr(nltk.corpus, target, _MissingCorpus(), raising=False)
     return attempts
 
 
@@ -111,12 +136,7 @@ def test_missing_stopwords_degrades_instead_of_raising(monkeypatch):
     that — neither catches, so topic extraction failed outright on a deployment
     that had provisioned every model it was told to.
     """
-    import nltk.corpus
-
     _break_corpus(monkeypatch, "stopwords")
-    monkeypatch.setattr(
-        nltk.corpus.stopwords, "words", lambda *a, **k: (_ for _ in ()).throw(LookupError("gone"))
-    )
 
     words = text_preprocessing._get_stopwords()
 
@@ -126,12 +146,7 @@ def test_missing_stopwords_degrades_instead_of_raising(monkeypatch):
 
 def test_topic_preprocessing_still_produces_output_without_stopwords(monkeypatch):
     """End to end: the caller that used to blow up now returns usable text."""
-    import nltk.corpus
-
     _break_corpus(monkeypatch, "stopwords")
-    monkeypatch.setattr(
-        nltk.corpus.stopwords, "words", lambda *a, **k: (_ for _ in ()).throw(LookupError("gone"))
-    )
 
     result = text_preprocessing.preprocess_for_topics(
         "SPEAKER_01: We should raise pricing by ten percent next quarter."
@@ -143,12 +158,8 @@ def test_topic_preprocessing_still_produces_output_without_stopwords(monkeypatch
 
 def test_offline_suppresses_the_stopwords_download_attempt(monkeypatch):
     """With the assertion set, the network is not reached at all."""
-    import nltk.corpus
 
     attempts = _break_corpus(monkeypatch, "stopwords")
-    monkeypatch.setattr(
-        nltk.corpus.stopwords, "words", lambda *a, **k: (_ for _ in ()).throw(LookupError("gone"))
-    )
     monkeypatch.setenv("NLTK_OFFLINE", "1")
 
     text_preprocessing._get_stopwords()
@@ -158,12 +169,8 @@ def test_offline_suppresses_the_stopwords_download_attempt(monkeypatch):
 
 def test_without_the_assertion_the_download_is_still_attempted(monkeypatch):
     """The control for the test above — otherwise it would pass with the retry deleted."""
-    import nltk.corpus
 
     attempts = _break_corpus(monkeypatch, "stopwords")
-    monkeypatch.setattr(
-        nltk.corpus.stopwords, "words", lambda *a, **k: (_ for _ in ()).throw(LookupError("gone"))
-    )
     monkeypatch.delenv("NLTK_OFFLINE", raising=False)
 
     text_preprocessing._get_stopwords()

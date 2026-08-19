@@ -520,3 +520,82 @@ def test_a_completion_whose_state_expired_does_not_sweep(redis, swept) -> None:
     _complete(redis, "run-a", "reindex_state:1:run-a", "reindex_uuids:1:run-a")
 
     assert swept == [], "swept on 22 uuids with no total to compare them against"
+
+
+def test_a_zero_file_run_releases_the_user_lock(monkeypatch, redis, dispatched) -> None:  # noqa: ARG001
+    """The leak that silently cancelled a model switch's re-embed, MEASURED live.
+
+    A switch dispatched its reindex before any files existed; the coordinator found 0
+    files, returned in 0.09 s — and kept the user lock for its full 3600 s TTL. The
+    corpus was then ingested, a second switch dispatched its re-embed 59 minutes
+    later, and the coordinator answered "Reindex already running, skipping" **67
+    seconds before the dead run's lock would have expired**. The switch reported
+    success, the ingest pipeline pointed at the new model, and every stored vector
+    stayed in the OLD model's space: the exact mixed-vector-space failure #437 exists
+    to prevent, reached through the documented happy path.
+    """
+    result = _run_coordinator(monkeypatch, [], "zero-files-run")
+
+    assert result == {"total_files": 0}
+    lock_key = reindex_task_module()._REINDEX_LOCK_KEY.format(user_id=USER_ID)
+    assert redis.get(lock_key) is None, (
+        "the zero-file return kept the user lock, so every reindex for this user in "
+        "the next hour is silently skipped while its dispatcher reports success"
+    )
+
+
+def test_a_second_run_after_a_zero_file_run_proceeds(monkeypatch, redis, dispatched) -> None:
+    """The consequence the leak actually produced, as its own assertion.
+
+    Without the release, this second coordinator returns
+    ``{"status": "skipped"}`` — which is exactly what the live stack answered.
+    """
+    _run_coordinator(monkeypatch, [], "first-zero-run")
+
+    result = _run_coordinator(monkeypatch, [101, 102], "second-real-run")
+
+    assert result.get("status") != "skipped", (
+        f"the second reindex was refused by a dead run's lock: {result}"
+    )
+    assert dispatched, "the second run dispatched no batches, so nothing re-embeds"
+
+
+def test_a_failed_model_switch_releases_the_user_lock(monkeypatch, redis, dispatched) -> None:  # noqa: ARG001
+    """Same leak, other early exit: every return between lock and dispatch releases."""
+    from app.tasks import reindex_task
+
+    monkeypatch.setattr(
+        reindex_task, "_handle_model_switch", lambda model_id: {"error": "unknown model"}
+    )
+
+    result = _run_coordinator_with_model(monkeypatch, "some/model")
+
+    assert result == {"error": "unknown model"}
+    lock_key = reindex_task_module()._REINDEX_LOCK_KEY.format(user_id=USER_ID)
+    assert redis.get(lock_key) is None, "the model-switch error return kept the user lock"
+
+
+def reindex_task_module():
+    from app.tasks import reindex_task
+
+    return reindex_task
+
+
+def _run_coordinator_with_model(monkeypatch, model_id: str) -> dict[str, Any]:
+    """Drive the real coordinator with a model_id, as a switch's dispatch does."""
+    from app.tasks import reindex_task
+    from app.tasks.reindex_task import reindex_transcripts_task
+
+    @contextlib.contextmanager
+    def _scope():
+        yield _FakeSession([1])
+
+    monkeypatch.setattr(reindex_task, "session_scope", _scope)
+    monkeypatch.setattr("app.db.session_utils.session_scope", _scope)
+
+    reindex_transcripts_task.push_request(id="switch-error-run")
+    try:
+        result: dict[str, Any] = reindex_transcripts_task.run(user_id=USER_ID, model_id=model_id)
+        return result
+    finally:
+        reindex_transcripts_task.pop_request()

@@ -113,16 +113,47 @@ services:
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
-      # Neural search requires substantially more heap than the 1 GB
-      # OpenSearch default. The ML plugin sizes its `neural_search` JVM
-      # circuit breaker at ~10% of total heap, so:
-      #   1 GB heap → 102 MB breaker → all models fail to load
-      #   2 GB heap → 204 MB breaker → all-MiniLM-L6-v2 (240 MB) marginal
-      #   4 GB heap → 410 MB breaker → comfortable for all default models
-      # 4 GB is the recommended minimum once neural search is enabled.
-      # Override with OPENSEARCH_JAVA_OPTS env var (e.g. for systems with
-      # limited RAM, set -Xms2g -Xmx2g and use a smaller embedding model
-      # like all-MiniLM-L6-v2 explicitly).
+      # Heap is sized for the EMBEDDING MODEL, not for the data. Measured on this
+      # stack: 25 indices / 52,053 docs / 188 MB store, and Lucene segment memory
+      # 0.0 MB (it is off-heap in modern Lucene). The index is not what needs heap.
+      #
+      # ⚠️ The previous version of this comment was wrong on every number, and the
+      # numbers below are measured, not reasoned. It said the `neural_search`
+      # breaker is ~10% of heap and that models must fit under it, therefore
+      # "1 GB → all models fail to load" and "4 GB is the recommended minimum".
+      # The 10% is real (measured 1g→102.3 MB, 2g→204.7 MB, 3g→307.1 MB,
+      # 4g→409.5 MB) but it does NOT gate model loading: all-mpnet-base-v2 is
+      # 418.7 MB and deploys and serves inference at 4 GB, under a 409.5 MB
+      # breaker. It also claimed all-MiniLM-L6-v2 is 240 MB; OpenSearch's own
+      # published config.json says 91,790,008 bytes — 87.5 MB.
+      #
+      # MEASURED FLOORS — throwaway opensearch:3.4.0, register → deploy → a real
+      # inference (2026-08-18). "Deployed" alone is not a pass: mpnet at 1 GB
+      # reports DEPLOYED and then FAILS to embed, which is why the check runs an
+      # actual prediction.
+      #
+      #   model                                  size      1 GB              2 GB      4 GB
+      #   all-MiniLM-L6-v2 (dflt)                87.5 MB   OK (dim 384)      OK        OK
+      #   all-mpnet-base-v2                     418.7 MB   deploys, NO infer OK (768)  OK
+      #   paraphrase-multilingual-MiniLM-L12    465.5 MB   OK (dim 384)      OK        OK
+      #
+      # So the default model needs ~1 GB and the largest English model ~2 GB —
+      # and (measured 2026-08-19, same method) the MULTILINGUAL MiniLM registers,
+      # deploys and serves a real cross-lingual prediction at 1 GB despite being
+      # 5x the default's size, so enabling multilingual needs NO heap change.
+      # Size does not predict the floor (mpnet is SMALLER and fails inference at
+      # 1 GB); only the prediction check answers it. 4 GB is kept as the default
+      # for indexing-burst headroom — NOT because smaller fails.
+      #
+      # ⚠️ This is a HARD, LOCKED cost: -Xms == -Xmx claims it all at startup, and
+      # bootstrap.memory_lock=true pins it in RAM where it cannot be swapped or
+      # reclaimed. On a 16 GB laptop that is 4 GB gone before Postgres, MinIO,
+      # Redis, the backend and the ASR models get any.
+      #
+      # LOW-RAM MACHINES: `OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g` is verified to run
+      # every English model, and `-Xms1g -Xmx1g` is verified for the default model
+      # only. Keep Xms == Xmx (a differing pair makes the JVM resize at runtime,
+      # and memory_lock expects a fixed heap).
       - "OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms4g -Xmx4g}"
       - DISABLE_SECURITY_PLUGIN=true
       # Disk watermarks as ABSOLUTE free-space bytes, not percentages. The
@@ -357,15 +388,16 @@ services:
       # without the mount, punkt is absent and every chunk it writes is cut by the
       # regex fallback, which splits on abbreviations punkt keeps intact. The two
       # splitters disagree, so a missing mount here silently produces different
-      # boundaries from any worker that has it.
+      # boundaries from any worker that has it. Two tasks depend on it:
+      # `reindex_transcripts` (cpu queue) re-chunks transcripts, and topic
+      # extraction needs the stopwords corpus from the same tree.
+      # This line was present TWICE, with two different justifying comments —
+      # harmless to compose, but a reader deleting "the duplicate" had a 50%
+      # chance of deleting the comment that explained the other reason.
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       # Shared scratch — writes the preprocessed WAV for GPU/embedding workers
       - pipeline_scratch:/scratch/opentranscribe
       - transcription-temp:/tmp/transcription  # noqa: S108  # nosec B108  — engine shared-volume WAV handoff
-      # punkt: `reindex_transcripts` runs on the cpu queue and re-chunks transcripts.
-      # Without this mount the sentence splitter silently falls back to a regex and
-      # cuts different chunk boundaries than every other process (issue #436).
-      - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
     environment:
       - PRELOAD_CPU_WHISPER=true
       # ffmpeg preprocess threading (opt-in CPU-contention control; default off).

@@ -38,6 +38,43 @@ _retry_after = 0.0
 # ready recovers on its own within a few chats.
 RETRY_COOLDOWN_S = 300.0
 
+#: The cross-encoder is ``ms-marco-MiniLM-L-6-v2`` — English MS MARCO. Reranking a
+#: predominantly non-English pool with it does not merely fail to help: it REPLACES
+#: the retrieval scores (``hit.score = float(score)``) with the output of a model
+#: that cannot read the text, so a correct retrieval order is actively destroyed.
+#: Retrieval order is the better answer there, so the pass is skipped.
+#:
+#: ⚠️ This is not the #363 question, which is whether the reranker helps on ENGLISH
+#: (measured −20.6% QMSum / −32.7% synthetic nDCG@10 against retrieval's own top-12,
+#: and deliberately NOT acted on pending the answer-quality axis in #463). This skip
+#: is narrower and needs no such measurement: an English model scoring Spanish is
+#: unfit by construction, not by margin.
+_MAX_NON_ENGLISH_SHARE = 0.5
+
+
+def _is_mostly_non_english(hits: list) -> bool:
+    """Whether the pool is predominantly in a language the cross-encoder cannot read.
+
+    Only hits with a KNOWN language vote. A chunk whose file predates language
+    detection is neither evidence for English nor against it — the same
+    three-bucket rule ``chat/language.py`` applies — so counting unknowns either way
+    would make the decision turn on library age rather than on language.
+
+    Args:
+        hits: The candidate pool, in retrieval order.
+
+    Returns:
+        True when more than half the voting hits are non-English.
+    """
+    from app.services.chat.language import normalize_language
+
+    codes = [normalize_language(getattr(hit, "language", "")) for hit in hits]
+    voting = [code for code in codes if code is not None]
+    if not voting:
+        return False
+    non_english = sum(1 for code in voting if code != "en")
+    return non_english > len(voting) * _MAX_NON_ENGLISH_SHARE
+
 
 def get_reranker() -> Any:
     """Return the lazily-loaded CrossEncoder, or None when unavailable.
@@ -110,12 +147,22 @@ def rerank(query: str, hits: list, *, max_pairs: int = 50) -> list:
     if not hits or len(hits) == 1:
         return hits
 
+    head = hits[:max_pairs]
+    tail = hits[max_pairs:]
+
+    # Checked against the HEAD, not the whole pool: the head is what would actually
+    # be rescored, and the tail keeps its retrieval scores either way.
+    if _is_mostly_non_english(head):
+        logger.info(
+            "Skipping chat reranking: the candidate pool is predominantly non-English "
+            "and %s is an English MS MARCO model. Keeping retrieval order.",
+            C.CHAT_RERANKER_MODEL,
+        )
+        return hits
+
     model = get_reranker()
     if model is None:
         return hits
-
-    head = hits[:max_pairs]
-    tail = hits[max_pairs:]
 
     try:
         pairs = [(query, hit.content) for hit in head]

@@ -385,6 +385,38 @@ class DynamicAuthSettings:
         """Header carrying the certificate's Distinguished Name."""
         return self.get_str("pki_cert_dn_header", settings.PKI_CERT_DN_HEADER)
 
+    # Revocation-checking properties (issue #498).
+    #
+    # These five keys were already declared in ``AuthConfigService.CONFIG_CATEGORIES``
+    # and writable from the Settings UI, but ``auth/pki_auth.py`` read
+    # ``settings.PKI_*`` straight from ``.env`` — so saving them changed nothing.
+    # Turning revocation checking off in the UI, or widening the OCSP timeout,
+    # was silently inert. Each falls back to its ``.env`` value, preserving the
+    # DB > .env > coded-default order every other bridged key uses.
+    @property
+    def pki_ca_cert_path(self) -> str:
+        """Filesystem path to the CA bundle used to build the issuer chain."""
+        return self.get_str("pki_ca_cert_path", settings.PKI_CA_CERT_PATH)
+
+    @property
+    def pki_ocsp_timeout_seconds(self) -> int:
+        """Per-request OCSP timeout. The CRL fallback is given twice this."""
+        return self.get_int("pki_ocsp_timeout_seconds", settings.PKI_OCSP_TIMEOUT_SECONDS)
+
+    @property
+    def pki_crl_cache_seconds(self) -> int:
+        """Ceiling on how long a revocation verdict may be cached."""
+        return self.get_int("pki_crl_cache_seconds", settings.PKI_CRL_CACHE_SECONDS)
+
+    @property
+    def pki_revocation_soft_fail(self) -> bool:
+        """Whether an INCONCLUSIVE revocation check admits the certificate.
+
+        Fail-open when True. This is the key whose inertness mattered most: an
+        operator hardening a deployment by turning it off got no change at all.
+        """
+        return self.get_bool("pki_revocation_soft_fail", settings.PKI_REVOCATION_SOFT_FAIL)
+
     # Trusted-header (reverse-proxy) Settings Properties
     #
     # Read by ``auth/proxy/config.py:ProxyConfig.from_db`` (per login) and by the

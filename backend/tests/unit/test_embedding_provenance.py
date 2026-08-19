@@ -28,6 +28,7 @@ to produce a mixed index:
 
 from __future__ import annotations
 
+import contextlib
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
@@ -111,6 +112,26 @@ def _survey_with(buckets, **kwargs):
         return survey_embedding_models(), client
 
 
+@contextlib.contextmanager
+def _survey_patch(buckets):
+    """Patch the survey itself and RECORD each call.
+
+    The advisory tests are about caching and about which verdicts reach the
+    reader, so what matters is how often the survey ran — patching the client
+    would leave that ambiguous.
+    """
+    calls: list[None] = []
+    client = _StandInSearchClient(buckets)
+
+    def _counted(*args, **kwargs):
+        calls.append(None)
+        with patch("app.services.opensearch_service.opensearch_client", client):
+            return survey_embedding_models(*args, **kwargs)
+
+    with patch.object(prov, "survey_embedding_models", _counted):
+        yield calls
+
+
 # ---------------------------------------------------------------------------
 # The label: what gets stamped on a document
 # ---------------------------------------------------------------------------
@@ -158,8 +179,26 @@ def test_resolving_a_model_yields_its_name_which_is_what_identifies_the_vectors(
 
 
 def test_resolving_without_a_model_id_asks_opensearch_nothing():
-    assert resolve_model_label(None) is None
-    assert resolve_model_label("") is None
+    """The name is the claim: assert nothing was ASKED, not just what came back.
+
+    This used to assert only the return value, which a version that dutifully
+    round-tripped to ML Commons and then discarded the answer would also satisfy —
+    exactly the behaviour the test name says must not happen. Its sibling at
+    ``test_resolving_an_unknown_model_id_keeps_the_id`` gets this right; this one
+    did not.
+    """
+    asked: list[str | None] = []
+
+    def _record(model_id):
+        asked.append(model_id)
+        return {"name": MODEL_A}
+
+    service = SimpleNamespace(get_model_status=_record)
+    with patch("app.services.search.ml_model_service.get_ml_model_service", return_value=service):
+        assert resolve_model_label(None) is None
+        assert resolve_model_label("") is None
+
+    assert asked == [], f"ML Commons was consulted for an absent model id: {asked}"
 
 
 # ---------------------------------------------------------------------------
@@ -490,3 +529,134 @@ def test_the_digest_plane_is_labelled_with_the_same_model_as_the_chunks(indexing
     assert indexing_seams.digest_metadata, "the digest plane was never invoked"
     assert indexing_seams.digest_metadata[0]["embedding_model"] == MODEL_B
     assert {c["embedding_model"] for c in indexing_seams.chunks} == {MODEL_B}
+
+
+# ---------------------------------------------------------------------------
+# The search response must carry a PROVEN mixed verdict (#437 follow-up)
+# ---------------------------------------------------------------------------
+
+
+class TestSearchResponseAdvisory:
+    """Grouped so the cache fixture cannot reach unrelated tests in this module."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_advisory_cache(self):
+        """The advisory is TTL-cached in a module global."""
+        from app.services.search.embedding_provenance import reset_search_provenance_advisory
+
+        reset_search_provenance_advisory()
+        yield
+        reset_search_provenance_advisory()
+
+    def test_a_uniform_index_produces_no_advisory(self):
+        """The control, and the common case: an ordinary response is unchanged."""
+        from app.services.search.embedding_provenance import search_provenance_advisory
+
+        with _survey_patch({MODEL_A: 12}):
+            assert search_provenance_advisory() is None
+
+    def test_a_proven_mixed_index_produces_an_advisory(self):
+        """Two NAMED models is the one verdict a reader has to be told about.
+
+        Before this, ``survey_embedding_models`` had three readers — the status
+        endpoint, the model-switch response and a beat-task log — and none of them
+        is the person looking at the results, so a mixed index went on ranking two
+        incomparable vector populations against each other in silence.
+        """
+        from app.services.search.embedding_provenance import search_provenance_advisory
+
+        with _survey_patch({MODEL_A: 5, MODEL_B: 7}):
+            advisory = search_provenance_advisory()
+
+        assert advisory is not None, "a proven mixed index told the reader nothing"
+        assert advisory["code"] == "mixed_embedding_models"
+        assert sorted(advisory["models"]) == sorted([MODEL_A, MODEL_B])
+
+    def test_an_unattributed_index_produces_no_advisory(self):
+        """Every deployment enters this state after #437 landed.
+
+        An advisory that fires for everybody is one people learn to ignore before
+        it fires for a real mixed index — the same reasoning that keeps
+        ``partially_unattributed`` out of ``mixed``.
+        """
+        from app.services.search.embedding_provenance import search_provenance_advisory
+
+        with _survey_patch({EMBEDDING_MODEL_UNKNOWN: 40}):
+            assert search_provenance_advisory() is None
+
+    def test_the_advisory_is_cached_rather_than_surveyed_per_search(self):
+        """It is a deployment fact, not per-query data.
+
+        The survey is 2.5-6.7 ms against a 210k-document index; paying that on
+        every search would be a real regression on the hottest path in the app.
+        """
+        from app.services.search.embedding_provenance import search_provenance_advisory
+
+        with _survey_patch({MODEL_A: 5, MODEL_B: 7}) as calls:
+            for _ in range(5):
+                search_provenance_advisory()
+
+        assert len(calls) == 1, f"the survey ran once per search: {len(calls)} calls"
+
+    def test_resetting_the_cache_re_surveys(self):
+        """A model switch invalidates it, so the reset must actually re-ask."""
+        from app.services.search.embedding_provenance import reset_search_provenance_advisory
+        from app.services.search.embedding_provenance import search_provenance_advisory
+
+        with _survey_patch({MODEL_A: 5}) as calls:
+            search_provenance_advisory()
+            reset_search_provenance_advisory()
+            search_provenance_advisory()
+
+        assert len(calls) == 2
+
+
+# ---------------------------------------------------------------------------
+# The latch must be reset in the process that STAMPS the label (#437 follow-up)
+# ---------------------------------------------------------------------------
+
+
+def test_the_indexing_task_resets_the_pipeline_latch_before_stamping():
+    """``index_transcript_search`` runs where nothing else resets the latch.
+
+    ``_neural_pipeline_verified`` is a permanent process latch with no TTL, and it
+    caches the model LABEL beside it. The two existing reset points do not reach
+    this worker: ``model_switch`` resets the API process, and ``reindex_task``
+    resets whichever process runs ``reindex_transcripts`` — routed to the CPU
+    queue. THIS task is routed to ``CeleryQueues.EMBEDDING``, i.e. the separate
+    search-indexer container.
+
+    So after a model switch a newly transcribed file was stamped with the OLD
+    model name while the cluster embedded it with the NEW one, and
+    ``survey_embedding_models`` then reported MIXED VECTOR SPACE over a corpus that
+    was in fact uniform — the cry-wolf failure this module's own docstring warns
+    about. It self-healed only at ``--max-tasks-per-child=500``.
+
+    Asserted structurally rather than by running the task: the task needs
+    Postgres, MinIO and a live cluster, and the claim is about one call happening
+    before any document is built.
+    """
+    import ast
+    import inspect
+
+    from app.tasks import search_indexing_task
+
+    source = inspect.getsource(search_indexing_task.index_transcript_search_task)
+    tree = ast.parse(inspect.cleandoc(source))
+
+    called = [
+        node.func.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    ]
+    assert "reset_neural_pipeline_state" in called, (
+        "the task never resets the pipeline latch, so this worker keeps stamping "
+        "documents with whatever model it first saw"
+    )
+
+    indexes_at = source.index("index_transcript_chunks")
+    resets_at = source.index("reset_neural_pipeline_state()")
+    assert resets_at < indexes_at, (
+        "the reset must run BEFORE any document is built, or the first file after a "
+        "model switch is still stamped with the old label"
+    )

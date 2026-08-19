@@ -226,7 +226,10 @@ def get_prompts_by_content_type(
         HTTPException: If content_type is invalid or database query fails
     """
     # Validate content type
-    valid_types = {"meeting", "interview", "podcast", "documentary", "general"}
+    # "qa_panel" is the community Q&A-panel extractor seeded in initial_data (#136).
+    # "speaker_identification" is deliberately ABSENT: it is a system prompt for an
+    # internal pipeline step, not a summarization style a user picks per file.
+    valid_types = {"meeting", "interview", "podcast", "documentary", "general", "qa_panel"}
     if content_type not in valid_types:
         raise HTTPException(
             status_code=400,

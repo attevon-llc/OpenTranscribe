@@ -427,7 +427,48 @@ docker logs --tail 100 opentranscribe-celery-worker
 | Backend | `Model registered` | OpenSearch neural model initialization |
 | Download Worker | `yt-dlp` errors | Media download failures (auth, geo-restriction) |
 | NLP Worker | `LLM provider` errors | LLM API failures (timeout, rate limit, auth) |
-| OpenSearch | `circuit_breaking_exception` | JVM heap exhausted -- increase `OPENSEARCH_JAVA_OPTS` |
+| OpenSearch | `circuit_breaking_exception` | **Check which breaker before adding heap** — see below |
+
+### `circuit_breaking_exception` is usually NOT heap exhaustion
+
+The obvious remedy — raise `OPENSEARCH_JAVA_OPTS` — is frequently the wrong one, and
+this table used to recommend it unconditionally. Measured on a cluster that was
+failing whole bulk loads with
+`circuit_breaking_exception: Memory Circuit Breaker is open`:
+
+| | |
+|---|---|
+| heap when failing | 89% |
+| heap moments later | 2.43 GB / 4.00 GB |
+| **old gen (live working set)** | **382 MB** |
+| young gen | 2,094 MB |
+| `transcript_chunks` index | 11,502 docs, 36 MB |
+
+That is a **false trip**. The message comes from **ML Commons**, which refuses
+inference when *instantaneous* JVM heap-used exceeds
+`plugins.ml_commons.jvm_heap_memory_threshold`. Heap-used includes uncollected
+young-generation garbage, and bulk indexing allocates faster than G1 collects — so a
+cluster with a 382 MB working set reads as exhausted until a collection runs. Adding
+heap does not move a percentage.
+
+**Identify the breaker first.** They are different subsystems with different fixes:
+
+```bash
+curl -s localhost:5180/_nodes/stats/breaker | jq '.nodes[].breakers'   # OpenSearch's own
+curl -s localhost:5180/_plugins/_knn/stats   | jq '{cb: .circuit_breaker_triggered}'
+curl -s localhost:5180/_cat/nodes?v'&'h=name,heap.percent,ram.percent
+curl -s localhost:5180/_cat/allocation?v      # rule out a disk watermark
+```
+
+- All OpenSearch breakers `tripped: 0` **and** k-NN `circuit_breaker_triggered: false`
+  → it is ML Commons. `configure_ml_settings` sets that threshold to 95; if you see
+  this anyway, the heap really may be short.
+- k-NN `circuit_breaker_triggered: true` → the HNSW graph cache is full. That one is a
+  genuine capacity signal.
+- Disk near a watermark → `cluster_block_exception`, not a memory problem at all.
+
+More heap is the answer only when the **old generation** is genuinely large relative
+to the heap. Young-gen pressure is not exhaustion.
 
 ## Key Metrics to Watch
 

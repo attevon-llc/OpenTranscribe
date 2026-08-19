@@ -342,13 +342,42 @@ Status chips display at-a-glance metrics:
 
 Choose from several pre-configured sentence-transformer models:
 
-| Tier | Models | Dimensions | Size |
-|------|--------|------------|------|
-| **Fast** | `all-MiniLM-L6-v2` (default), `paraphrase-multilingual-MiniLM-L12-v2` | 384 | ~80 MB |
-| **Balanced** | `all-mpnet-base-v2`, `paraphrase-multilingual-mpnet-base-v2` | 768 | ~420 MB |
-| **Best** | `all-distilroberta-v1`, `distiluse-base-multilingual-cased-v1` | 768 / 512 | ~300 MB |
+Every model below is **verified**: it registers, deploys, and returns its declared
+dimension from a real prediction. Multilingual models are additionally checked for
+cross-lingual behaviour — the same sentence in two languages must land close together.
+Measured 2026-08-18 on `opensearch:3.4.0`.
+
+| Model | Tier | Dim | Size | Languages | Cross-lingual (cosine vs English) |
+|---|---|---|---|---|---|
+| `all-MiniLM-L6-v2` *(default)* | Fast | 384 | 87.5 MB | English | — |
+| `all-MiniLM-L12-v2` | Fast | 384 | 128.3 MB | English | — |
+| `multi-qa-MiniLM-L6-cos-v1` | Fast | 384 | 80 MB | English | — |
+| `paraphrase-multilingual-MiniLM-L12-v2` | Fast | 384 | 465.5 MB | 50+ | es **0.98**, zh 0.95, ar 0.94, ru 0.94, de 0.90 |
+| `all-mpnet-base-v2` | Balanced | 768 | 418.7 MB | English | — |
+| `all-distilroberta-v1` | Best | 768 | 315.5 MB | English | — |
+| `distiluse-base-multilingual-cased-v1` | Best | 512 | 480 MB | 15 | ru 0.93, es 0.90, de 0.87, zh 0.87, ar 0.85 |
+
+For reference, the English-only models score **0.006–0.313** on those same translations —
+so the multilingual pair genuinely aligns languages rather than merely returning numbers.
+
+**Dimension matters when switching.** Moving between models of the *same* dimension is a
+re-embed; changing dimension **recreates the index**. `all-MiniLM-L12-v2`,
+`multi-qa-MiniLM-L6-cos-v1` and `paraphrase-multilingual-MiniLM-L12-v2` are all 384,
+matching the default — `all-MiniLM-L12-v2` in particular is the default with all twelve
+layers instead of six, so it is the lowest-risk quality upgrade available: a re-embed,
+no index recreation, and a trivial rollback. The cost is roughly half the encode
+throughput.
 
 Changing the model triggers a full re-index of all documents. A confirmation modal warns about this before applying.
+
+:::warning Adding a model
+Do not add a model to the list without running
+`python3 scripts/verify-embedding-models.py --url <throwaway-cluster>` against it. Two
+classes of failure are invisible otherwise: a model OpenSearch does not actually provide
+(registration fails at every version), and a model trained for **dot-product** scoring —
+the chunks index is `cosinesimil`, so such a model is ranked by a metric it was never
+trained for and the scores look entirely plausible while being wrong.
+:::
 
 ### Re-indexing Operations
 

@@ -2834,7 +2834,7 @@
   "search.embeddingModel": "埋め込みモデル",
   "search.embeddingModelDesc": "セマンティック検索に使用するAIモデルを選択します。モデルを変更するには、すべての文字起こしの再インデックスが必要です。",
   "search.indexStatus": "インデックス状態",
-  "search.modelChangeWarning": "埋め込みモデルを変更すると、すべての文字起こしが再インデックスされます。再インデックス中は検索がキーワードのみモードになります。続行しますか？",
+  "search.modelChangeWarning": "埋め込みモデルを変更すると、すべての文字起こしが再インデックスされます。再インデックス中は検索がキーワードのみモードになります。変更されるのはセマンティック埋め込みだけで、キーワード検索・チャンク分割・AI チャットのプロンプトには影響しません。そのため多言語モデルにしただけで全体が多言語になるわけではありません。続行しますか？",
   "search.reindexingInProgress": "再インデックス中...",
   "search.reindexComplete": "再インデックス完了！",
   "search.stopReindex": "停止",
@@ -4976,5 +4976,18 @@
   "provenance.save": "保存",
   "provenance.cancel": "キャンセル",
   "provenance.saving": "保存中…",
-  "provenance.saveFailed": "保存できませんでした。もう一度お試しください。"
+  "provenance.saveFailed": "保存できませんでした。もう一度お試しください。",
+  "prompts.contentTypeQaPanel": "Q&Aパネル",
+  "settings.contentRedaction.piiEntitiesWarning": "名前の検出は完全ではありません。人名が組織として分類される場合があるため、ORGANIZATION は既定でマスクされます。その代償として企業名や略語もマスクされます。一部の名前は検出されない可能性があります。再現率を高めるには GLiNER PII モデルを有効にし、共有前にエクスポートを確認してください。",
+  "filter.language": "言語",
+  "filter.languageTooltip": "{language} として検出された文字起こしのみを表示",
+  "settings.search.multilingualBadge": "多言語",
+  "settings.search.englishOnlyBadge": "英語のみ",
+  "settings.search.notDownloadedBadge": "未ダウンロード",
+  "settings.search.modelNotDownloaded": "このモデルはまだ OpenSearch にダウンロードされていないため適用できません。先にダウンロードしてデプロイしてください。モデルの重みを取得するため数分かかることがあります。 ダウンロードしてもアクティブなモデルは変わりません。適用は別の操作です。",
+  "settings.search.downloadAndDeploy": "ダウンロードしてデプロイ",
+  "settings.search.preparingModel": "ダウンロードしてデプロイ中…",
+  "settings.search.modelReady": "モデルをダウンロードしてデプロイしました。適用できます。",
+  "settings.search.modelNotReady": "デプロイは成功を報告しましたが、モデルはまだ埋め込みを生成できません。OpenSearch のログを確認してください。通常はこのモデルに対して JVM ヒープが不足しています。",
+  "settings.search.modelPrepareFailed": "モデルをダウンロードしてデプロイできませんでした。"
 }

@@ -27,7 +27,20 @@ indexing → WebSocket notification.
   speaker scope (an exact `terms` match on the CURRENT name) silently lost every pre-rename
   chunk. Dispatch through `dispatch_speaker_rename` — it coalesces `(file_uuid, old_name)` pairs
   per file — and **capture the old name before the overwrite**: after the commit, Postgres
-  cannot say what the chunks were indexed with.
+  cannot say what the chunks were indexed with. Three rules the follow-up round added:
+  - **Key on the EFFECTIVE indexed name, `display_name or name`** — the indexer's own rule.
+    Keying on `display_name` missed a *cleared* label (a legal `{"display_name": ""}`, which
+    reverts to the diarizer label) and an edit to `name` alone.
+  - **Both tasks re-resolve their target from Postgres at run time**, so two renames dispatched
+    close together converge instead of inverting. `A→B` and `B→C` are unordered on an 8-way
+    queue; if `B→C` ran first it matched nothing and `A→B` then wrote **B**, recreating #405's
+    own bug. Pass `speaker_id` so the task can re-read.
+  - **`version_conflicts` is read and retried.** `conflicts="proceed"` only means "do not abort
+    the whole update_by_query"; nothing re-examines the skipped documents, so a concurrent
+    title+speaker rename left a subset of chunks stale while reporting success.
+  - Scope differs on purpose: **title covers the whole file plane** (a digest inherits `title`
+    and renders it as a citation), **speaker covers the chunk plane only** (a digest has no
+    `speaker` field and its prose bakes the name — regeneration, not rewriting, is the fix).
 - `ingest_artifacts_task.py` — `artifacts.generate_file_facts` (**nlp** queue, #383 Phase 2).
   Builds the deterministic ingest artifacts (statistics, extractive digest with per-sentence
   provenance, keyphrases) and upserts `file_facts`. It rides the nlp pool because that is the

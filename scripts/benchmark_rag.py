@@ -360,6 +360,21 @@ def _load_corpus(key: str, manifest_root: Path, data_dir: Path):
                 f'The synthetic corpus must be readable to resolve its gold sets.'
             )
         queries = corpora_mod.load_synthetic_queries(corpus, source)
+    elif key == 'miracl':
+        # The language is recorded per meeting at injection time; every passage in
+        # one manifest shares it. Read it from the manifest rather than taking a
+        # flag, so scoring cannot silently be pointed at a different language from
+        # the one that was injected.
+        languages = {
+            str(extra.get('miracl_language') or '') for extra in corpus.extra_by_meeting.values()
+        } - {''}
+        if len(languages) != 1:
+            raise SystemExit(
+                f'Expected exactly one MIRACL language in {manifest_dir}, found '
+                f'{sorted(languages) or "none"}. Inject one language per manifest — '
+                'mixing them would average nDCG across languages that are not comparable.'
+            )
+        queries = corpora_mod.load_miracl_queries(corpus, languages.pop())
     else:
         raise SystemExit(f'No query loader for corpus {key!r} (it ships no relevance judgements).')
     return corpus, turns, queries
@@ -642,6 +657,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
         raise SystemExit('No scoreable queries — nothing to measure.')
 
     rows: list[dict] = []
+    # Initialised beside `rows` for the same reason: both are only assigned
+    # inside the branch below, and build_results consumes both unconditionally.
+    retrieval_per_query: list[dict] = []
     result = None
     route_records: dict[str, runner_mod.RouteRecord] = {}
     digest_leg = None
@@ -656,6 +674,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
         )
         result = metrics_mod.evaluate(qrels, run)
         rows = report_mod.build_rows(all_queries, result)
+        # #461 phase 0: the per-query scores were already computed and thrown away
+        # for retrieval queries, so every published number was a point estimate
+        # nobody could put an interval around.
+        retrieval_per_query = report_mod.build_retrieval_per_query(all_queries, result)
         if config.stage == 'route':
             from tests.eval.harness.routing import build_digest_leg_report
 
@@ -686,6 +708,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
             'answer_scored_queries_in_their_own_table': len(answer_queries),
         },
         rows=rows,
+        retrieval_per_query=retrieval_per_query,
         answers=answers_block,
     )
     if digest_leg is not None:

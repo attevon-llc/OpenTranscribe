@@ -2834,7 +2834,7 @@
   "search.embeddingModel": "Modelo de Embedding",
   "search.embeddingModelDesc": "Selecione o modelo de IA usado para busca semântica. Alterar modelos requer reindexar todas as transcrições.",
   "search.indexStatus": "Status do Índice",
-  "search.modelChangeWarning": "Alterar o modelo de embedding reindexará todas as transcrições. A busca usará apenas palavras-chave durante a reindexação. Continuar?",
+  "search.modelChangeWarning": "Alterar o modelo de embedding reindexará todas as transcrições. A busca usará apenas palavras-chave durante a reindexação. Isto altera somente os embeddings semânticos — a busca por palavras-chave, a segmentação e os prompts do chat com IA não são afetados, portanto um modelo multilíngue não torna tudo multilíngue por si só. Continuar?",
   "search.reindexingInProgress": "Reindexação em andamento...",
   "search.reindexComplete": "Reindexação concluída!",
   "search.stopReindex": "Parar",
@@ -4976,5 +4976,18 @@
   "provenance.save": "Guardar",
   "provenance.cancel": "Cancelar",
   "provenance.saving": "A guardar…",
-  "provenance.saveFailed": "Não foi possível guardar. Tente novamente."
+  "provenance.saveFailed": "Não foi possível guardar. Tente novamente.",
+  "prompts.contentTypeQaPanel": "Painel de perguntas",
+  "settings.contentRedaction.piiEntitiesWarning": "A deteção de nomes não é exaustiva. ORGANIZATION é mascarado por predefinição porque o nome de uma pessoa é por vezes identificado como organização — o custo é que nomes de empresas e siglas também são mascarados. Alguns nomes podem escapar; ative o modelo GLiNER de PII para maior cobertura e reveja as exportações antes de partilhar.",
+  "filter.language": "Idioma",
+  "filter.languageTooltip": "Mostrar apenas transcrições detetadas como {language}",
+  "settings.search.multilingualBadge": "Multilíngue",
+  "settings.search.englishOnlyBadge": "Apenas inglês",
+  "settings.search.notDownloadedBadge": "Não baixado",
+  "settings.search.modelNotDownloaded": "Este modelo ainda não foi baixado para o OpenSearch, portanto não pode ser aplicado. Baixe-o e implante-o primeiro — isto obtém os pesos do modelo e pode levar vários minutos. Baixar não altera o seu modelo ativo — aplicá-lo é uma etapa separada.",
+  "settings.search.downloadAndDeploy": "Baixar e implantar",
+  "settings.search.preparingModel": "Baixando e implantando…",
+  "settings.search.modelReady": "Modelo baixado e implantado. Já pode aplicá-lo.",
+  "settings.search.modelNotReady": "A implantação relatou sucesso, mas o modelo ainda não consegue gerar embeddings. Verifique os logs do OpenSearch — normalmente significa heap da JVM insuficiente para este modelo.",
+  "settings.search.modelPrepareFailed": "Não foi possível baixar e implantar o modelo."
 }

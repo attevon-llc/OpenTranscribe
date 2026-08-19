@@ -15,6 +15,8 @@ import time
 
 import numpy as np
 
+from app.utils.nltk_offline import nltk_downloads_permitted
+
 logger = logging.getLogger(__name__)
 
 #: Maximum silent gap (seconds) between two identically-worded segments for them to be
@@ -409,8 +411,28 @@ def split_sentences_nltk(segments: list[dict]) -> list[dict]:
     try:
         sentence_splitter = nltk_load("tokenizers/punkt/english.pickle")
     except LookupError:
-        nltk.download("punkt_tab", quiet=True)
-        sentence_splitter = nltk_load("tokenizers/punkt/english.pickle")
+        # ⚠️ The retry needs its own guard, and had none (issue #491). `nltk.download`
+        # swallows its own network errors and returns falsy, so on an airgapped or
+        # firewalled deployment the reload raised `LookupError` straight out of here
+        # — and NOTHING up the stack catches it: `clean_segments` calls this
+        # unguarded, so a missing corpus failed the whole TRANSCRIPTION rather than
+        # producing coarser segments.
+        #
+        # Sentence splitting is an enhancement: without it a segment simply stays
+        # multi-sentence, which is what every pre-splitting transcript looked like.
+        # Degrading is therefore strictly better than raising.
+        try:
+            if nltk_downloads_permitted(corpus="the punkt sentence tokenizer"):
+                nltk.download("punkt_tab", quiet=True)
+            sentence_splitter = nltk_load("tokenizers/punkt/english.pickle")
+        except Exception:
+            logger.warning(
+                "NLTK punkt unavailable; leaving segments unsplit. Multi-sentence "
+                "segments will not be divided. Run scripts/download-models.sh (or "
+                "./opentr.sh start) to provision the NLTK corpora — see "
+                "docs-site/docs/installation/offline-installation.md."
+            )
+            return segments
 
     result = []
     split_count = 0

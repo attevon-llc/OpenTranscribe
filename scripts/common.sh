@@ -341,6 +341,80 @@ ensure_opensearch_models() {
   fi
 }
 
+# Ensure the NLTK corpora are on disk BEFORE anything needs them (issue #491).
+#
+# The sibling `ensure_opensearch_models` above mounts only `opensearch-ml`, so
+# anything the downloader fetched outside that directory — including every NLTK
+# corpus — was written into the one-shot container and discarded with it. Nothing
+# else prefetched them either, so they were fetched at RUNTIME, on first use, from
+# inside the transcription and topic pipelines. On an airgapped or firewalled
+# deployment those calls do not fail fast: `nltk.download` swallows its own
+# network errors, so the caller hangs on a socket timeout or quietly finds the
+# corpus still missing one line later.
+#
+# Same shape as its sibling deliberately: probe, one-shot container, verify. It
+# needs no GPU and no Hugging Face token (the corpora come from NLTK's own CDN),
+# which is why the `--only nltk` selector exists on the downloader.
+ensure_nltk_corpora() {
+  # Read MODEL_CACHE_DIR from .env if it exists
+  local MODEL_CACHE_DIR=""
+  if [ -f .env ]; then
+    MODEL_CACHE_DIR=$(grep 'MODEL_CACHE_DIR' .env | grep -v '^#' | cut -d'#' -f1 | cut -d'=' -f2 | tr -d ' "' | head -1)
+  fi
+  MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-./models}"
+
+  local nltk_dir="$MODEL_CACHE_DIR/nltk_data"
+
+  # `-d` is NOT the check: the directory is created unconditionally by the
+  # downloader and bind-mounted by every compose file, so it exists on a
+  # deployment that has never fetched a corpus. `tokenizers/` is what the app
+  # actually loads.
+  if [ -d "$nltk_dir/tokenizers" ] && [ -n "$(ls -A "$nltk_dir/tokenizers" 2>/dev/null)" ]; then
+    return 0
+  fi
+
+  echo "📥 NLTK corpora not found - fetching (needed offline; ~50MB)..."
+
+  if [ ! -f "./scripts/download-models.py" ]; then
+    echo "⚠️  Warning: download-models.py not found - NLTK will be fetched at runtime"
+    return 1
+  fi
+
+  if ! command -v docker &> /dev/null; then
+    echo "⚠️  Warning: Docker not found - NLTK will be fetched at runtime"
+    return 1
+  fi
+
+  if ! docker image inspect davidamacey/opentranscribe-backend:latest > /dev/null 2>&1; then
+    echo "   Backend Docker image not found locally - pulling from Docker Hub..."
+    if ! docker pull davidamacey/opentranscribe-backend:latest > /dev/null 2>&1; then
+      echo "⚠️  Warning: Could not pull backend image - NLTK will be fetched at runtime"
+      return 1
+    fi
+  fi
+
+  mkdir -p "$nltk_dir"
+
+  # NLTK_DATA is passed explicitly and the downloader honours it, so the corpora
+  # land in the mounted directory whatever the image's $HOME happens to be —
+  # Dockerfile.blackwell runs as `user`, not `appuser`.
+  docker run --rm \
+      -e NLTK_DATA=/nltk_data \
+      -v "$(realpath "$nltk_dir"):/nltk_data" \
+      -v "./scripts/download-models.py:/app/download-models.py:ro" \
+      davidamacey/opentranscribe-backend:latest \
+      python /app/download-models.py --only nltk 2>&1 | grep -E "(Downloading|Downloaded|ERROR|WARNING|Success)" || true
+
+  if [ -d "$nltk_dir/tokenizers" ] && [ -n "$(ls -A "$nltk_dir/tokenizers" 2>/dev/null)" ]; then
+    echo "✅ NLTK corpora cached"
+    return 0
+  fi
+
+  echo "⚠️  NLTK corpora were not cached - they will be fetched at runtime instead."
+  echo "   An airgapped deployment will degrade to the regex sentence splitter."
+  return 1
+}
+
 #######################
 # INFO FUNCTIONS
 #######################

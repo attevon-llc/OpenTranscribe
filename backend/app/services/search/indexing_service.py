@@ -3,6 +3,7 @@
 import contextlib
 import datetime
 import logging
+import secrets
 import time
 from collections.abc import Callable
 from collections.abc import Iterator
@@ -47,6 +48,28 @@ _RETRYABLE_ERROR_TYPES = frozenset(
     }
 )
 
+#: Retry budget for the transient bulk errors above (#495 follow-on).
+#:
+#: This was 2 attempts at 1 s and 2 s, and it was too short for every condition the
+#: set above names. MEASURED: the ML Commons breaker
+#: (``circuit_breaking_exception: Memory Circuit Breaker is open``) failed **8 of 8
+#: documents twice through the full 1 s + 2 s budget** — because it trips on
+#: *instantaneous* JVM heap-used, which under bulk load is dominated by uncollected
+#: young-generation garbage and stays high until G1 runs. The same node measured
+#: ``old gen 382 MB`` of a 4 GB heap: a false trip, not exhaustion.
+#:
+#: `ml_model_service.configure_ml_settings` raises the threshold that caused it, so
+#: this is the second line of defence rather than the fix. It still matters: a
+#: rejected-execution or a closed index (both in the set above) also outlast three
+#: seconds, and the alternative is failing the task.
+#:
+#: Jitter is not decoration. Every worker indexing when a shared cluster resource
+#: goes over its limit retries on the same schedule, so a fixed backoff has them all
+#: return together and re-trip it — the retry becomes the load.
+_BULK_RETRY_ATTEMPTS = 4
+_BULK_RETRY_BASE_SECONDS = 1.0
+_BULK_RETRY_MAX_SECONDS = 8.0
+
 #: How many consecutive document ids one realtime orphan probe covers (#435).
 #:
 #: A bulk load writes ``0..n-1``, so the tail a shorter re-chunk orphans is normally
@@ -54,8 +77,13 @@ _RETRYABLE_ERROR_TYPES = frozenset(
 #: because that assumption is not guaranteed and is already violated on purpose in
 #: the suite: ``_extract_failed_docs`` drops documents whose bulk error is permanent,
 #: leaving a hole, and ``test_a_shorter_resection_leaves_no_orphan_digest`` plants its
-#: orphan at ``sections + 3``. The walk stops at the first window in which nothing is
-#: found, so a document set that ends terminates it. 64 ids cost one round trip.
+#: orphan at ``sections + 3``. 64 ids cost one round trip.
+#:
+#: ⚠️ **An empty window does not end the walk.** It used to, and a hole of 64 or more
+#: therefore stranded every document above it — permanently, which is the exact
+#: failure #435 exists to prevent, reintroduced by the stop condition itself. The
+#: walk now consults ``_probe_ceiling`` before giving up; see
+#: :meth:`TranscriptIndexingService._orphaned_document_ids`.
 _ORPHAN_PROBE_WINDOW = 64
 
 # Permanent error types that should NOT be retried
@@ -510,6 +538,10 @@ def _check_existing_pipeline_config(pipeline_id: str, expected: dict[str, Any]) 
     ``ignore_failure`` is deliberately not compared — OpenSearch may or may not echo a
     false-valued flag back, and a spurious mismatch there would be the same boot loop.
 
+    The processor list's **shape** is compared too: exactly one processor, and it a
+    ``text_embedding``. Iterating to the first ``text_embedding`` and returning made an
+    extra or reordered processor permanently invisible — see the comment at the check.
+
     Args:
         pipeline_id: Pipeline ID to check.
         expected: The ``text_embedding`` processor config we would write.
@@ -528,6 +560,30 @@ def _check_existing_pipeline_config(pipeline_id: str, expected: dict[str, Any]) 
 
     current_pipeline = response.get(pipeline_id, {})
     processors = current_pipeline.get("processors", [])
+
+    # The SHAPE of the processor list is compared before its contents (#401
+    # follow-up). This loop used to `continue` past every non-`text_embedding`
+    # processor and `return` on the first one it found, so two kinds of drift were
+    # invisible and permanent:
+    #
+    #   * an EXTRA processor — a stray `set`/`remove`, a second `text_embedding`
+    #     for another field, anything left behind by a manual PUT or an older
+    #     release. `_build_neural_ingest_pipeline` writes exactly ONE processor, so
+    #     any second one is by definition drift, and it survived every boot;
+    #   * a REORDERING — two processors swapped is a different program with an
+    #     identical verdict.
+    #
+    # This is the rule `services/search/CLAUDE.md` already states for the sibling
+    # SEARCH pipeline ("compares the whole processor block ... OpenSearch echoes a
+    # pipeline body back verbatim, so the comparison is exact"). The ingest
+    # pipeline simply never adopted it.
+    if len(processors) != 1 or "text_embedding" not in processors[0]:
+        kinds = [next(iter(processor), "?") for processor in processors]
+        logger.info(
+            f"Neural ingest pipeline {pipeline_id} has drifted, recreating "
+            f"(expected exactly one text_embedding processor, found {kinds})"
+        )
+        return False
 
     for processor in processors:
         if "text_embedding" not in processor:
@@ -806,7 +862,7 @@ class TranscriptIndexingService:
         collection_ids: list[int] | None = None,
         accessible_user_ids: list[int] | None = None,
         organization_id: int | None = None,
-    ) -> dict[str, Any] | int:
+    ) -> dict[str, Any]:
         """Chunk and index a transcript.
 
         Embedding modes (in priority order):
@@ -832,16 +888,23 @@ class TranscriptIndexingService:
                 If None, defaults to [user_id] (owner only).
 
         Returns:
-            Dict with indexing stats or int (chunk count).
+            Dict of indexing stats. ``chunk_count`` 0 with a ``reason`` means there
+            was legitimately nothing to index; a FAILURE raises (issue #495).
         """
+        # These two return a dict with an explicit `reason`, not a bare 0 (issue #495).
+        # Both are legitimate "nothing to index" outcomes — and while this method also
+        # swallowed its exceptions into `return 0`, a real failure was *indistinguishable
+        # from them*. That is what made a dead OpenSearch report a successful index.
+        # Naming the reason is what lets zero-because-nothing-to-do and
+        # zero-because-it-broke be told apart at all; the latter now raises.
         client = get_opensearch_client()
         if not client:
             logger.warning("OpenSearch client not initialized, skipping chunk indexing")
-            return 0
+            return {"chunk_count": 0, "reason": "no_opensearch_client"}
 
         if not segments:
             logger.warning(f"No segments to index for file {file_uuid}")
-            return 0
+            return {"chunk_count": 0, "reason": "no_segments"}
 
         ensure_chunks_index_exists()
         ensure_search_pipeline_exists()
@@ -870,8 +933,18 @@ class TranscriptIndexingService:
         chunk_ms = round((time.time() - t_chunk_start) * 1000)
 
         if not chunks:
-            logger.warning(f"No chunks generated for file {file_uuid}")
-            return 0
+            # A transcript that now yields NO chunks still has to lose the ones it
+            # used to have. `reindex_transcript` deletes first and is safe, but it
+            # is not the primary path — `tasks/search_indexing_task` calls this
+            # method directly, and the segments-exist-but-chunk-to-nothing case
+            # (every segment empty after cleanup) reaches here rather than the
+            # `not segments` guard above. Without this, those chunks stayed
+            # searchable forever with no way to notice.
+            pruned = self._prune_stale_chunks(file_uuid, keep_count=0)
+            logger.warning(
+                f"No chunks generated for file {file_uuid}; pruned {pruned} stale chunk(s)"
+            )
+            return {"chunk_count": 0, "reason": "no_chunks_generated", "stale_removed": pruned}
 
         # 2. Add indexed_at timestamp, accessible_user_ids, and the v6 fields
         now = datetime.datetime.now(datetime.UTC).isoformat()
@@ -919,6 +992,27 @@ class TranscriptIndexingService:
                 threshold=settings.SEARCH_LARGE_TRANSCRIPT_CHUNKS,
             ):
                 indexed = self._bulk_index_chunks(chunks, use_neural_pipeline=use_neural)
+
+            # A PARTIAL index must fail the task (issue #495). `_bulk_index_chunks`
+            # returns how many documents actually landed, and until this check existed
+            # nothing compared it to how many were built: `_retry_failed_docs` gives up
+            # after 2 attempts, logs "N documents failed after 2 retries", and returns —
+            # and this method then reported `status: success` with `chunk_count` quietly
+            # short. The file is left permanently half-searchable, with the missing
+            # chunks unreachable by search and by RAG chat, and the only trace is one
+            # ERROR line in a worker log nobody is reading.
+            #
+            # Raising is the honest outcome and is safe to retry: document ids are
+            # deterministic (`{file_uuid}_{chunk_index}`), so a re-run overwrites rather
+            # than duplicates. It is also strictly better than the alternative of
+            # continuing — a task that reports success is never retried by anything.
+            if indexed < len(chunks):
+                raise RuntimeError(
+                    f"Partial chunk index for file {file_uuid}: {indexed} of "
+                    f"{len(chunks)} documents landed after retries. The file would "
+                    "otherwise be reported as indexed while part of the transcript is "
+                    "unreachable by search and RAG chat."
+                )
 
             # Doc ids are deterministic (``{file_uuid}_{chunk_index}``), so the bulk
             # load above OVERWRITES chunks 0..len(chunks)-1 but cannot touch a longer
@@ -975,9 +1069,22 @@ class TranscriptIndexingService:
                 "stale_removed": stale_removed,
                 "digest_sections": digest_count,
             }
-        except Exception as e:
-            logger.error(f"Bulk indexing failed for file {file_uuid}: {e}")
-            return 0
+        except Exception:
+            # DO NOT swallow this into `return 0` (issue #495). It used to, and the
+            # consequence was not a degraded result — it was a FALSE one. The caller,
+            # `tasks/search_indexing_task`, has an int arm that wraps a bare count as
+            # `{"chunk_count": result}`, marks the DB task **completed**, and returns
+            # `{"status": "success", ...}`. So every failure in this method — a dead
+            # OpenSearch, a mapping rejection, a partial bulk load — was reported to the
+            # user, the task table and the notification as a successful index of zero
+            # chunks. The task's own `except` (search_indexing_task.py, "Search indexing
+            # failed for file …") could never fire, because nothing ever reached it.
+            #
+            # `logger.error` + a sentinel return is a reasonable pattern where the caller
+            # inspects the sentinel. Here nothing did, and the sentinel was
+            # indistinguishable from the legitimate zero-chunk case.
+            logger.exception(f"Bulk indexing failed for file {file_uuid}")
+            raise
 
     def delete_transcript_chunks(self, file_uuid: str) -> int:
         """Delete **every** indexed document for a file — both planes.
@@ -1075,7 +1182,13 @@ class TranscriptIndexingService:
             return 0
 
     def _orphaned_document_ids(
-        self, *, index_name: str, document_id: Callable[[int], str], first_orphan: int
+        self,
+        *,
+        index_name: str,
+        document_id: Callable[[int], str],
+        first_orphan: int,
+        plane_query: dict[str, Any],
+        counter_field: str,
     ) -> list[str]:
         """Ids of this file's documents from ``first_orphan`` upward, read REALTIME.
 
@@ -1100,15 +1213,78 @@ class TranscriptIndexingService:
             return []
 
         found: list[str] = []
+        ceiling: int | None = None
         start = first_orphan
         while True:
             probe = [document_id(n) for n in range(start, start + _ORPHAN_PROBE_WINDOW)]
             response = opensearch_client.mget(index=index_name, body={"ids": probe}, _source=False)
             window = [doc["_id"] for doc in response.get("docs", []) if doc.get("found")]
-            if not window:
+            if window:
+                found.extend(window)
+                start += _ORPHAN_PROBE_WINDOW
+                continue
+
+            # An empty window does NOT mean the tail ended (#400 follow-up). A
+            # partially failed bulk load leaves a HOLE — `_extract_failed_docs`
+            # drops permanently-failed documents — and returning here stranded
+            # everything above a hole of `_ORPHAN_PROBE_WINDOW` or more,
+            # permanently. That is exactly the failure #435 exists to prevent,
+            # reintroduced by the walk's own stop condition.
+            #
+            # The searcher answers "is there anything higher?" for documents old
+            # enough to be refreshed, which is precisely the case a hole implies
+            # (the survivors above it are from the previous generation). The
+            # unrefreshed case #435 cares about is contiguous from `first_orphan`,
+            # so the FIRST window already found it and we never reach here.
+            if ceiling is None:
+                ceiling = self._probe_ceiling(
+                    index_name, plane_query=plane_query, counter_field=counter_field
+                )
+            if ceiling is None or start > ceiling:
                 return found
-            found.extend(window)
             start += _ORPHAN_PROBE_WINDOW
+
+    def _probe_ceiling(
+        self, index_name: str, *, plane_query: dict[str, Any], counter_field: str
+    ) -> int | None:
+        """Highest value of *counter_field* the SEARCHER can see for this plane.
+
+        Deliberately a search, and deliberately only consulted after an empty
+        probe window: a searcher cannot see the unrefreshed writes the id probe
+        exists for, but it is the only thing that can say how far above a hole to
+        keep looking. Paying for it lazily keeps it off the common path — a
+        shrinking re-chunk finds its tail in the first window and never gets here,
+        and a growing or unchanged one pays one small aggregation.
+
+        *plane_query* is the caller's own plane predicate — ``chunk_plane_query``
+        or ``digest_plane_query`` for the whole file — so the ceiling is measured
+        over exactly the documents the delete will target, compat arm included.
+        *counter_field* is the field the document id counts up with:
+        ``chunk_index`` for the chunk plane, ``digest_section`` for the digest
+        plane (whose ``chunk_index`` is a NEGATIVE sentinel and counts the wrong
+        way).
+
+        Returns:
+            The maximum value, or ``None`` when the searcher knows nothing (a
+            fresh or wholly-unrefreshed generation) or the query failed. ``None``
+            means "stop walking" — the behaviour the walk already had, so this can
+            only ever find more, never less.
+        """
+        try:
+            response = opensearch_client.search(
+                index=index_name,
+                body={
+                    "size": 0,
+                    "query": plane_query,
+                    "aggs": {"ceiling": {"max": {"field": counter_field}}},
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 — the walk degrades, it must not fail
+            logger.debug(f"Could not read the orphan ceiling: {exc}")
+            return None
+
+        value = (response.get("aggregations") or {}).get("ceiling", {}).get("value")
+        return None if value is None else int(value)
 
     def _prune_stale_chunks(self, file_uuid: str, *, keep_count: int) -> int:
         """Delete chunks left behind by a longer previous chunking of this file.
@@ -1188,6 +1364,8 @@ class TranscriptIndexingService:
                 index_name=index_name,
                 document_id=lambda n: f"{file_uuid}_{n}",
                 first_orphan=keep_count,
+                plane_query=chunk_plane_query(file_uuid),
+                counter_field="chunk_index",
             )
             if not stale_ids:
                 return 0
@@ -1202,18 +1380,31 @@ class TranscriptIndexingService:
                 conflicts="proceed",
             )
             deleted = int(response.get("deleted", 0))
+            conflicts = int(response.get("version_conflicts", 0) or 0)
             logger.info(
                 f"Pruned {deleted} stale chunk(s) for file {file_uuid} "
                 f"(re-chunk shrank to {keep_count} chunks)"
             )
-            if deleted != len(stale_ids):
-                # The predicate declined documents the id probe found. The known
-                # cause is the pre-v6 compat arm: chunks written before index v6
-                # carry no `doc_type`, so a predicate that lost the arm matches
-                # none of them while their ids exist.
+            # `deleted != len(stale_ids)` has THREE causes and this used to
+            # attribute all of them to the first, so a real conflict read as a
+            # predicate bug:
+            #   fewer  — the predicate declined documents the probe found. The known
+            #            cause is a lost pre-v6 compat arm (chunks written before
+            #            index v6 carry no `doc_type`), or documents skipped by
+            #            `conflicts="proceed"` — which `conflicts` distinguishes.
+            #   more   — the range delete removed documents the probe did not
+            #            enumerate. Normal and healthy: the probe is a boolean gate
+            #            over a windowed id walk, the delete is a range.
+            if conflicts:
+                logger.warning(
+                    f"Stale-chunk prune for file {file_uuid} skipped {conflicts} document(s) "
+                    "on version conflict; they keep their stale content until the next prune"
+                )
+            elif deleted < len(stale_ids):
                 logger.warning(
                     f"Stale-chunk prune for file {file_uuid} found {len(stale_ids)} "
-                    f"orphan id(s) but the chunk-plane predicate deleted {deleted}"
+                    f"orphan id(s) but the chunk-plane predicate deleted only {deleted} — "
+                    "the predicate is narrower than the id probe"
                 )
             return deleted
         except Exception as e:
@@ -1300,13 +1491,36 @@ class TranscriptIndexingService:
                 base_metadata=base_metadata,
             )
             ids = digest_mapping.digest_document_ids(file_uuid, digest)
+            written = 0
             if documents:
-                self._bulk_index_documents(list(zip(ids, documents, strict=True)), use_neural)
+                written = self._bulk_index_documents(
+                    list(zip(ids, documents, strict=True)), use_neural
+                )
             # Same orphan hazard as #400's chunk tail: the ids embed the section
             # number, so a digest that re-sections shorter leaves the extras
             # behind, still matching every query the file matches.
             self._prune_stale_digests(file_uuid, keep_count=len(documents))
-            return len(documents)
+
+            # Report what LANDED, not what was built (issue #495). This used to
+            # discard `_bulk_index_documents`'s return value entirely and return
+            # `len(documents)`, so `digest_sections` in the task result was the number
+            # of sections *generated* — reported identically whether all of them were
+            # written or none were. `_bulk_index_documents` logs the failures and
+            # returns a short count; nothing read it.
+            #
+            # Unlike the chunk plane above this does NOT raise, and the asymmetry is
+            # deliberate: the `except` below already declines to fail the caller for a
+            # digest problem, because the digest tier is derived enrichment while the
+            # chunks are the transcript itself. A missing digest degrades summarization;
+            # missing chunks make part of a recording unfindable. Reporting the true
+            # count is what that decision needs to stay honest — "we chose not to fail"
+            # is defensible, "we reported a number we did not verify" is not.
+            if written < len(documents):
+                logger.error(
+                    f"Digest plane for file {file_uuid} is incomplete: {written} of "
+                    f"{len(documents)} sections landed"
+                )
+            return written
         except Exception as exc:  # noqa: BLE001 — chunks are indexed; do not fail the caller
             logger.error(f"Could not index digest plane for file {file_uuid}: {exc}")
             return 0
@@ -1330,6 +1544,10 @@ class TranscriptIndexingService:
                 index_name=index_name,
                 document_id=lambda n: digest_mapping.digest_document_id(file_uuid, n),
                 first_orphan=keep_count,
+                plane_query=digest_plane_query(file_uuid),
+                # NOT `chunk_index`: a digest's is a negative sentinel that counts
+                # the wrong way. `digest_section` is what its document id counts up.
+                counter_field="digest_section",
             )
             if not stale_ids:
                 return 0
@@ -1412,11 +1630,17 @@ class TranscriptIndexingService:
             Number of chunks indexed.
         """
         # Delete every plane first. Not redundant with the tail prunes
-        # ``index_transcript_chunks`` now does (issue #400): a full rebuild wants a
-        # clean slate, and this is the only path that also clears the documents of a
-        # transcript that now yields NO chunks at all — in which case
-        # ``index_transcript_chunks`` returns early without pruning. The digest
-        # plane goes with them and is regenerated by the same call (addendum G1).
+        # ``index_transcript_chunks`` does (issue #400): a full rebuild wants a
+        # clean slate, and this clears **every** plane rather than the chunk tail —
+        # notably the digest plane, which is regenerated by the same call
+        # (addendum G1).
+        #
+        # This used to claim it was "the only path that also clears the documents
+        # of a transcript that now yields NO chunks", which was true and mattered,
+        # because `reindex_transcript` is NOT the primary path —
+        # `tasks/search_indexing_task` calls `index_transcript_chunks` directly.
+        # That method now prunes on its own zero-chunk branch, so the claim is
+        # obsolete rather than merely narrow.
         self.delete_transcript_chunks(file_uuid)
 
         # Re-index
@@ -1437,11 +1661,8 @@ class TranscriptIndexingService:
             accessible_user_ids=accessible_user_ids,
             organization_id=organization_id,
         )
-        # Extract chunk count from result (dict or int)
-        if isinstance(result, dict):
-            chunk_count: int = result.get("chunk_count", 0)
-            return chunk_count
-        return result
+        chunk_count: int = result.get("chunk_count", 0)
+        return chunk_count
 
     def _bulk_index_chunks(
         self, chunks: list[dict[str, Any]], use_neural_pipeline: bool = False
@@ -1563,7 +1784,7 @@ class TranscriptIndexingService:
         failed_docs: list[dict[str, Any]],
         index_name: str,
         use_neural: bool,
-        max_retries: int = 2,
+        max_retries: int = _BULK_RETRY_ATTEMPTS,
     ) -> int:
         """Retry failed documents with exponential backoff.
 
@@ -1586,10 +1807,17 @@ class TranscriptIndexingService:
             if not remaining:
                 break
 
-            backoff = attempt  # 1s, 2s
+            # Exponential with jitter, capped: ~1s, 2s, 4s, 8s (+/- 25%).
+            # `secrets` rather than `random` because ruff's S311 is right that the
+            # stdlib PRNG is the wrong default, and the jitter only needs to
+            # decorrelate concurrent workers — which a CSPRNG does equally well, at a
+            # cost measured in microseconds, at most 4 times per failed batch. That is
+            # cheaper than justifying a suppression.
+            backoff = min(_BULK_RETRY_BASE_SECONDS * (2 ** (attempt - 1)), _BULK_RETRY_MAX_SECONDS)
+            backoff *= 0.75 + (secrets.randbelow(1000) / 2000.0)
             logger.info(
                 f"Retrying {len(remaining)} failed docs (attempt {attempt}/{max_retries}, "
-                f"backoff {backoff}s)"
+                f"backoff {backoff:.1f}s)"
             )
             time.sleep(backoff)
 

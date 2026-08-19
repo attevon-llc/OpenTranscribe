@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multilingual search and chat is a one-click switch, and it is measured** (#453). The
+  Settings → Search picker now badges each embedding model *Multilingual* / *English only*,
+  shows whether it is downloaded, and offers **Download & deploy** for one that is not — a
+  non-default model previously required two hand-built API calls that 404ed for every model
+  anyway. Chat derives its language support from the configured model instead of a hardcoded
+  English-only constant, the English cross-encoder reranker is skipped on predominantly
+  non-English content rather than reordering text it cannot read, answers follow the
+  question's language (quotes stay in their original language), the rewritten retrieval
+  query is never translated, search highlighting stems in each document's own language, and
+  the library's languages are offered as a search filter. Measured on 206 human-judged
+  Spanish MIRACL queries: nDCG@10 **0.7618** with the multilingual model vs 0.6570 with the
+  English default (+16 % relative), with committed baselines under
+  `backend/tests/eval/baselines/miracl-es-*`. The default model **stays English** — the
+  multilingual model costs ~6.5× the ingest embedding throughput and its effect on English
+  corpora is unmeasured — but it runs on the same 1 GB heap floor as the default, so
+  enabling it needs no resource change.
+
+### Fixed
+
+- **A model switch's re-embed could be silently skipped, leaving search ranking two
+  incomparable vector spaces against each other** (#453, the #437 failure class). The reindex
+  coordinator leaked its per-user lock on two early-return paths, so a reindex dispatched
+  within the following hour answered "already running" while the switch reported success —
+  measured live: the mismatched state costs 42 % of nDCG@10 versus the clean configuration.
+  Also fixed on the same path: the model register/deploy/undeploy endpoints 404ed for every
+  model in the registry (the path parameter never matched the `/` every model name contains),
+  and the name→id lookup could return an ML Commons model *chunk* id, which made deploy fail
+  with HTTP 500 and the switch refuse with 409 forever. The RAG evaluation harness's settle
+  check also hung indefinitely on corpora past ~2,000 files (approximate distinct-count
+  undercounting by one, forever); it now counts exactly.
+
 - **`directory_sync` (the periodic LDAP reconciliation/deprovisioning sweep) now has an admin
   settings API and UI panel.** Every sibling scheduled-config subsystem (backup, media mirror, ASR, LLM,
   engine, redaction) already had one; this sweep did not, so `directory_sync.enabled` stayed at
@@ -31,8 +62,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Breaking for any script or runbook that relied on the wide default** — add
   `?scope=all_users&confirm=true` to preserve the old behaviour. There is no frontend caller.
 
+- **Docs site upgraded to Docusaurus 3.10.2 (#423).** All six `@docusaurus/*` packages are now
+  pinned to the same exact version — `@docusaurus/theme-mermaid` was the only one declared with
+  a caret, and Docusaurus refuses to build when an official package drifts away from
+  `@docusaurus/core`. `@docusaurus/faster` is a separate package as of 3.10 and is required by
+  `future.v4: true`, so it is now a declared dependency. The content migration that had blocked
+  this: twelve blog posts used `<!-- truncate -->` and seven headings used the CommonMark
+  `{#explicit-id}` anchor, both of which MDX rejects; they are now `{/* truncate */}` and
+  `{/* #explicit-id */}`, which Docusaurus 3.10's heading plugin reads as the same explicit IDs,
+  so every inbound anchor link still resolves (`onBrokenAnchors: 'throw'` proves it at build
+  time). `docs-site/README.md` documents the three MDX-only spellings so they are not
+  reintroduced.
+
 ### Fixed
 
+- **Search documentation named environment variables and embedding models that do not exist.**
+  `configuration/environment-variables.md` told operators to set `NEURAL_SEARCH_ENABLED`,
+  `OPENSEARCH_ML_COMMONS_ENABLED`, `OPENSEARCH_URL`, `OPENSEARCH_USERNAME`,
+  `NEURAL_SEARCH_MODEL_ID` and `NEURAL_SEARCH_BATCH_SIZE` — none of which the backend reads;
+  the real names are `OPENSEARCH_NEURAL_SEARCH_ENABLED`, `OPENSEARCH_HOST`/`OPENSEARCH_PORT`,
+  `OPENSEARCH_USER` and `OPENSEARCH_NEURAL_MODEL`. `configuration/neural-search-setup.md`
+  offered `bge-large-en-v1.5` as one of three selectable models; it is not in any registry and
+  the real list is the seven verified models. Both files also sized the embedding model in
+  **VRAM** — it runs on CPU inside the OpenSearch JVM and never touches the GPU, so the budget
+  is heap. The JVM heap default was documented as 1 GB in three places (`operations/performance-tuning.md`
+  contradicted itself in two sections) when `docker-compose.yml` has set 4 GB with
+  `bootstrap.memory_lock` since the measured heap work. `user-guide/admin-panel.md` gained the
+  `all-MiniLM-L12-v2` row that shipped in the registry without a docs update, and
+  `docs-site/README.md` no longer points at the pre-transfer `davidamacey.github.io` URL.
+- **`backend/README.md`'s production environment block named five variables the backend does
+  not read**: `SECRET_KEY` (it is `JWT_SECRET_KEY`), `MINIO_ENDPOINT`/`MINIO_ACCESS_KEY`/
+  `MINIO_SECRET_KEY` (they are `MINIO_HOST`/`MINIO_PORT`/`MINIO_ROOT_USER`/
+  `MINIO_ROOT_PASSWORD`) and `OPENSEARCH_URL` (it is `OPENSEARCH_HOST`/`OPENSEARCH_PORT`).
+  Following it produced a deployment that silently kept every default, including the default
+  JWT secret and `minioadmin`/`minioadmin`. The block now defers to `.env.example`.
+- **The v0.3.3 blog post was dated a year early** (`2025-01-13`), placing it below the
+  v0.1.0 announcement on the blog index as though 0.3.3 had shipped first; the `v0.3.3` tag
+  is dated 2026-01-14. The post's explicit `slug:` means its URL is unchanged.
 - **An unreachable Redis made every cached request pay retry sleeps.** The cache service never
   remembered a failed connection — it re-dialled on every call, and each attempt paid redis-py's
   default exponential backoff. So with Redis down, a degraded cache presented as a dead API:

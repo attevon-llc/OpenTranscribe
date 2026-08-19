@@ -26,11 +26,35 @@ Both tasks bump the chat corpus version when they change anything. Skipping that
 makes the fix *look* broken: chat would keep serving cached retrievals carrying
 the old name for the length of the cache TTL.
 
-**Seam for #383 Phase 3 (addendum G1):** once per-file digests bake speaker
-names into prose, a rename must also retrigger digest generation. Both tasks
-return ``updated`` counts and already know the ``file_uuid``, so the trigger
-belongs in ``_finish`` below — one place, not scattered across the dispatch
-sites.
+**The two tasks scope differently, and the asymmetry is deliberate.**
+
+``propagate_title_rename`` covers the **whole file plane**: a digest inherits
+``title`` from ``base_metadata``, ``chunk_retrieval`` reads it when building a
+digest ``ChunkHit``, and ``chat/citations`` renders it — so a chunk-plane-only
+rewrite let one answer cite the same recording under two different names. The
+title is metadata, not derived prose, so rewriting it leaves the document
+internally consistent.
+
+``propagate_speaker_rename`` covers the **chunk plane only**. A digest has no
+``speaker`` field (``build_digest_documents`` pops it, keeping digests out of the
+speaker facet and out of chat's speaker-scoped ``terms`` filter), and its prose
+bakes the name in a way ``update_by_query`` cannot reach. Rewriting the roster
+alone would produce a half-corrected document and disguise the fact that
+regeneration is the real fix.
+
+Both tasks **re-resolve the target from Postgres at run time** rather than
+trusting the value captured at dispatch. Two renames of one speaker (``A -> B``
+then ``B -> C``) are independent tasks on an 8-way queue with no ordering: if
+``B -> C`` runs first it matches nothing and succeeds, then ``A -> B`` writes
+**B**, and chat's exact ``terms`` filter on C returns zero chunks — #405's own
+bug, recreated by #405's dispatch model. Re-reading makes both orderings
+converge.
+
+⚠️ **The digest PROSE still bakes the old speaker name and none of this fixes
+that.** Rewriting the roster keeps the filterable fields honest; regenerating the
+prose is the #383 addendum-G1 trigger, whose designated hook is ``_finish``
+below — one place, not scattered across the dispatch sites. Until it lands, a
+renamed speaker's digest text is stale until the file is reindexed.
 """
 
 from __future__ import annotations
@@ -62,6 +86,13 @@ if (ctx._source.speakers instanceof List) {
     def mapped = params.old_names.contains(name) ? params.new_name : name;
     if (!rebuilt.contains(mapped)) { rebuilt.add(mapped); }
   }
+  // SORTED, because the indexer sorts (search_indexing_task: `speaker_names =
+  // sorted({...})`, issue #455 — an unsorted roster changed the EMBEDDINGS). The
+  // rebuild above preserves positional order, so ["Bob","Zed"] with Bob->Zoe
+  // became ["Zoe","Zed"] and the document stopped being what a reindex would
+  // produce. Java's String.compareTo and Python's sorted() agree on ordinary
+  // text; they can differ only above the BMP, which no display name here reaches.
+  Collections.sort(rebuilt);
   if (!rebuilt.equals(ctx._source.speakers)) {
     ctx._source.speakers = rebuilt;
     changed = true;
@@ -77,6 +108,109 @@ if (ctx._source.title == params.title) {
   ctx._source.title = params.title;
 }
 """
+
+
+def _current_speaker_name(speaker_id: int) -> str | None:
+    """The name the chunk plane SHOULD carry for *speaker_id*, read at run time.
+
+    Trusting the ``new_name`` captured at dispatch is what makes two renames
+    invert. ``A -> B`` and ``B -> C`` are independent tasks on an 8-way queue with
+    no ordering: if ``B -> C`` runs first it matches nothing and succeeds, then
+    ``A -> B`` writes **B**. Postgres then says C, the index says B, and chat's
+    exact ``terms`` filter on C returns zero chunks — #405's own bug, recreated by
+    #405's dispatch model.
+
+    Re-reading here makes execution order irrelevant: whichever task runs, it
+    writes the name Postgres holds now, so both orderings converge on C.
+
+    Mirrors the indexer's own rule — ``display_name or name``
+    (``search_indexing_task``) — so the value written is the value a reindex
+    would write.
+
+    Returns:
+        The current name, or ``None`` when the speaker is gone (deleted between
+        dispatch and execution) or the lookup failed. Callers fall back to the
+        dispatched name rather than skipping the rewrite: a stale rewrite is
+        better than a stale index.
+    """
+    try:
+        from app.db.session_utils import session_scope
+        from app.models.media import Speaker
+
+        with session_scope() as db:
+            row = (
+                db.query(Speaker.display_name, Speaker.name)
+                .filter(Speaker.id == speaker_id)
+                .first()
+            )
+    except Exception as exc:  # noqa: BLE001 — fall back to the dispatched name
+        logger.warning(f"Could not re-resolve speaker {speaker_id} at run time: {exc}")
+        return None
+
+    if not row:
+        return None
+    display_name, name = row
+    return str(display_name or name or "") or None
+
+
+def _current_file_title(file_uuid: str) -> str | None:
+    """The title the chunk plane SHOULD carry for *file_uuid*, read at run time.
+
+    Same reasoning as :func:`_current_speaker_name`: two quick renames dispatch
+    two tasks with no ordering guarantee, and the loser would otherwise write the
+    superseded title. Mirrors the indexer's rule,
+    ``media_file.title or media_file.filename``.
+    """
+    try:
+        from app.db.session_utils import session_scope
+        from app.models.media import MediaFile
+
+        with session_scope() as db:
+            row = (
+                db.query(MediaFile.title, MediaFile.filename)
+                .filter(MediaFile.uuid == file_uuid)
+                .first()
+            )
+    except Exception as exc:  # noqa: BLE001 — fall back to the dispatched title
+        logger.warning(f"Could not re-resolve title for file {file_uuid} at run time: {exc}")
+        return None
+
+    if not row:
+        return None
+    title, filename = row
+    return str(title or filename or "") or None
+
+
+def _retry_on_conflicts(task: Any, response: dict[str, Any], what: str, file_uuid: str) -> bool:
+    """Retry when ``conflicts="proceed"`` skipped documents. Returns True if retrying.
+
+    ``proceed`` means "do not abort the whole update_by_query on a version
+    conflict" — it does NOT mean the skipped documents were handled. Nothing
+    re-examines them, so a concurrent title+speaker rename over the same file left
+    a **subset** of its chunks carrying the old value while the task reported
+    ``status: success``.
+
+    Reading the count and retrying is what makes the declared ``max_retries`` real
+    rather than decorative. Combined with the run-time re-resolution above, a
+    retry converges instead of racing the same writer again.
+    """
+    conflicts = int(response.get("version_conflicts", 0) or 0)
+    if not conflicts:
+        return False
+
+    logger.warning(
+        f"{what} for file {file_uuid} hit {conflicts} version conflict(s); "
+        f"retrying (attempt {task.request.retries + 1}/{task.max_retries})"
+    )
+    try:
+        task.retry(countdown=task.default_retry_delay)
+    except task.MaxRetriesExceededError:
+        logger.error(
+            f"{what} for file {file_uuid} still had {conflicts} version conflict(s) after "
+            f"{task.max_retries} retries; those documents keep the old value until a reindex"
+        )
+        return False
+    return True
 
 
 def _finish(index_name: str, file_uuid: str, updated: int) -> None:
@@ -106,20 +240,45 @@ def _finish(index_name: str, file_uuid: str, updated: int) -> None:
 
 
 @celery_app.task(
+    bind=True,
     name="propagate_speaker_rename",
     priority=CPUPriority.USER_TRIGGERED,
     max_retries=3,
     default_retry_delay=10,
 )
-def propagate_speaker_rename(file_uuid: str, old_names: list[str], new_name: str) -> dict[str, Any]:
-    """Rewrite ``speaker`` / ``speakers`` on one file's chunks after a rename.
+def propagate_speaker_rename(
+    self: Any,
+    file_uuid: str,
+    old_names: list[str],
+    new_name: str,
+    speaker_id: int | None = None,
+) -> dict[str, Any]:
+    """Rewrite ``speaker`` / ``speakers`` on one file's documents after a rename.
+
+    ⚠️ **This rewrites the display/keyword fields ONLY — the vector keeps the old
+    roster**, exactly as :func:`propagate_title_rename` does for the title, and
+    for the same reason: ``indexing_service`` bakes the roster into
+    ``embedding_text`` (``build_embedding_text(..., roster=...)``), so a renamed
+    speaker still participates in semantic matching under the old name until the
+    file is reindexed. The trade is deliberate — re-embedding every chunk of a
+    long recording for a rename costs hundreds of model calls, and the things a
+    user notices immediately (the facet, the citation, chat's speaker scope) are
+    what this fixes. The pipeline is applied per bulk action rather than as an
+    index ``default_pipeline``, so ``update_by_query`` does **not** silently
+    re-embed: the vector goes stale rather than being recomputed from stale text,
+    which is the safe half. If a rename ever needs to move the vector, dispatch a
+    reindex rather than widening this script.
 
     Args:
-        file_uuid: UUID of the media file whose chunks carry the stale name.
-        old_names: The names the chunks were indexed with. A list because one
-            file can hold several diarized speakers that a batch accept
-            collapses onto a single person.
-        new_name: The current display name.
+        file_uuid: UUID of the media file whose documents carry the stale name.
+        old_names: The names the documents were indexed with. A list because one
+            file can hold several diarized speakers that a batch accept collapses
+            onto a single person.
+        new_name: The display name as of dispatch. Used only as a fallback —
+            *speaker_id* is re-resolved at run time when supplied, because the
+            dispatched value is what makes two quick renames invert.
+        speaker_id: Postgres id of the renamed speaker, when the dispatcher knows
+            it. Optional so a task queued by an older build still runs.
 
     Returns:
         Dict with update stats.
@@ -127,6 +286,21 @@ def propagate_speaker_rename(file_uuid: str, old_names: list[str], new_name: str
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
     from app.services.search.indexing_service import chunk_plane_query
+
+    # Re-resolve before computing `stale`: the current name may be one of the
+    # names we were told to replace (A->B then B->C, executed out of order).
+    if speaker_id is not None:
+        current = _current_speaker_name(int(speaker_id))
+        if current and current != new_name:
+            logger.info(
+                f"Speaker {speaker_id} is now '{current}', not the dispatched "
+                f"'{new_name}'; writing the current name"
+            )
+            # The dispatched name is itself stale now, so it joins the names to
+            # replace — otherwise the chunks an earlier task already rewrote to
+            # it would keep it forever.
+            old_names = [*(old_names or []), new_name]
+            new_name = current
 
     stale = [name for name in dict.fromkeys(old_names or []) if name and name != new_name]
     if not file_uuid or not new_name or not stale:
@@ -141,6 +315,15 @@ def propagate_speaker_rename(file_uuid: str, old_names: list[str], new_name: str
     # Narrow to the docs that actually mention a stale name. ``speakers`` is
     # file-level, so a chunk spoken by somebody else still has to be rewritten —
     # hence the OR rather than a plain ``speaker`` term.
+    #
+    # ⚠️ CHUNK plane only, deliberately — unlike `propagate_title_rename`, which
+    # covers the whole file plane. A digest carries a `speakers` roster but no
+    # `speaker` field at all (`build_digest_documents` pops it, so a digest stays
+    # out of the speaker facet and out of chat's speaker-scoped `terms` filter),
+    # and its PROSE bakes the old name in a way no `update_by_query` can rewrite.
+    # Updating the roster while the prose still says "SPEAKER_01" would produce a
+    # half-corrected document and hide the fact that regeneration is what this
+    # actually needs — the #383 addendum-G1 trigger, hooked at `_finish`.
     query = chunk_plane_query(
         file_uuid,
         extra_filters=[
@@ -175,21 +358,29 @@ def propagate_speaker_rename(file_uuid: str, old_names: list[str], new_name: str
 
     updated = int(response.get("updated", 0))
     _finish(index_name, file_uuid, updated)
+    if _retry_on_conflicts(self, response, "Speaker rename propagation", file_uuid):
+        return {"status": "retrying", "file_uuid": file_uuid, "updated": updated}
     logger.info(
         f"Speaker rename propagated for file {file_uuid}: "
-        f"{updated} chunk(s) {stale} -> '{new_name}'"
+        f"{updated} document(s) {stale} -> '{new_name}'"
     )
-    return {"status": "success", "file_uuid": file_uuid, "updated": updated}
+    return {
+        "status": "success",
+        "file_uuid": file_uuid,
+        "updated": updated,
+        "version_conflicts": int(response.get("version_conflicts", 0) or 0),
+    }
 
 
 @celery_app.task(
+    bind=True,
     name="propagate_title_rename",
     priority=CPUPriority.USER_TRIGGERED,
     max_retries=3,
     default_retry_delay=10,
 )
-def propagate_title_rename(file_uuid: str, new_title: str) -> dict[str, Any]:
-    """Rewrite ``title`` on one file's chunks after the file was renamed.
+def propagate_title_rename(self: Any, file_uuid: str, new_title: str) -> dict[str, Any]:
+    """Rewrite ``title`` on every document of one file after it was renamed.
 
     ``update_transcript_title`` only touches the full-document transcript index;
     the chunk plane feeds search result cards and chat citations, both of which
@@ -220,10 +411,20 @@ def propagate_title_rename(file_uuid: str, new_title: str) -> dict[str, Any]:
     """
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
-    from app.services.search.indexing_service import chunk_plane_query
+    from app.services.search.indexing_service import file_plane_query
 
     if not file_uuid or not new_title:
         return {"status": "skipped", "reason": "nothing_to_rename", "updated": 0}
+
+    # Same run-time re-resolution as the speaker path: two quick renames dispatch
+    # two unordered tasks, and the loser would otherwise write the superseded title.
+    current = _current_file_title(file_uuid)
+    if current and current != new_title:
+        logger.info(
+            f"File {file_uuid} is now titled '{current}', not the dispatched "
+            f"'{new_title}'; writing the current title"
+        )
+        new_title = current
 
     client = get_opensearch_client()
     if not client:
@@ -234,8 +435,13 @@ def propagate_title_rename(file_uuid: str, new_title: str) -> dict[str, Any]:
     try:
         response = client.update_by_query(
             index=index_name,
+            # `file_plane_query`, not `chunk_plane_query`: digest documents inherit
+            # `title` from `base_metadata` and `chat/chunk_retrieval` reads it when
+            # building a digest ChunkHit. Scoping to the chunk plane meant one
+            # answer could cite the same recording under two different names —
+            # the new title from a chunk, the old one from a digest.
             body={
-                "query": chunk_plane_query(file_uuid),
+                "query": file_plane_query(file_uuid),
                 "script": {
                     "source": _TITLE_RENAME_SCRIPT,
                     "lang": "painless",
@@ -250,11 +456,22 @@ def propagate_title_rename(file_uuid: str, new_title: str) -> dict[str, Any]:
 
     updated = int(response.get("updated", 0))
     _finish(index_name, file_uuid, updated)
-    logger.info(f"Title rename propagated for file {file_uuid}: {updated} chunk(s)")
-    return {"status": "success", "file_uuid": file_uuid, "updated": updated}
+    if _retry_on_conflicts(self, response, "Title rename propagation", file_uuid):
+        return {"status": "retrying", "file_uuid": file_uuid, "updated": updated}
+    logger.info(f"Title rename propagated for file {file_uuid}: {updated} document(s)")
+    return {
+        "status": "success",
+        "file_uuid": file_uuid,
+        "updated": updated,
+        "version_conflicts": int(response.get("version_conflicts", 0) or 0),
+    }
 
 
-def dispatch_speaker_rename(renames: Iterable[tuple[str | None, str | None]], new_name: str) -> int:
+def dispatch_speaker_rename(
+    renames: Iterable[tuple[str | None, str | None]],
+    new_name: str,
+    speaker_id: int | None = None,
+) -> int:
     """Queue chunk-plane propagation for a batch of ``(file_uuid, old_name)`` pairs.
 
     Coalesces per file so a batch accept that collapses four diarized speakers in
@@ -270,6 +487,11 @@ def dispatch_speaker_rename(renames: Iterable[tuple[str | None, str | None]], ne
         renames: ``(file_uuid, old_name)`` pairs. Entries that are incomplete or
             already carry ``new_name`` are dropped.
         new_name: The display name every listed speaker now has.
+        speaker_id: Postgres id of the renamed speaker, when there is a single
+            one. Passed to the task so it can re-resolve the current name at run
+            time and converge regardless of execution order. Omitted for a
+            profile-wide rename, which sweeps many speakers at once and therefore
+            has no single id to re-read.
 
     Returns:
         Number of files a task was queued for.
@@ -288,7 +510,10 @@ def dispatch_speaker_rename(renames: Iterable[tuple[str | None, str | None]], ne
     for file_uuid, old_names in by_file.items():
         try:
             propagate_speaker_rename.delay(
-                file_uuid=file_uuid, old_names=old_names, new_name=new_name
+                file_uuid=file_uuid,
+                old_names=old_names,
+                new_name=new_name,
+                speaker_id=speaker_id,
             )
         except Exception as exc:  # noqa: BLE001 — dispatch failure must not break the rename
             logger.warning(f"Could not queue speaker rename propagation for {file_uuid}: {exc}")

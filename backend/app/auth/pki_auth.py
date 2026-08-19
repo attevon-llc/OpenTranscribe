@@ -42,9 +42,17 @@ from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
+from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Revocation settings are resolved through the process-level auth-settings layer,
+# not read off ``settings`` directly (issue #498). The helpers below hold no
+# session — they run deep inside certificate verification, on the login path —
+# so ``get_process_auth_settings()`` is the right tier: it serves a cached
+# DB-resolved value and falls back to the ``.env`` value, which is what these
+# call sites used to read unconditionally.
 
 # ===== Trusted Proxy Validation =====
 #
@@ -305,7 +313,7 @@ def _set_crl_cache(url: str, crl: x509.CertificateRevocationList) -> None:
         url: CRL distribution point URL
         crl: The CRL to cache
     """
-    ttl = settings.PKI_CRL_CACHE_SECONDS
+    ttl = get_process_auth_settings().pki_crl_cache_seconds
     with _cache_lock:
         # If key already exists, move to end
         if url in _crl_cache:
@@ -322,16 +330,17 @@ def _load_issuer_certificate() -> x509.Certificate | None:
     Returns:
         Issuer certificate or None if not configured or failed to load
     """
-    if not settings.PKI_CA_CERT_PATH:
-        logger.debug("PKI_CA_CERT_PATH not configured")
+    ca_cert_path = get_process_auth_settings().pki_ca_cert_path
+    if not ca_cert_path:
+        logger.debug("pki_ca_cert_path not configured")
         return None
 
     try:
-        with open(settings.PKI_CA_CERT_PATH, "rb") as f:
+        with open(ca_cert_path, "rb") as f:
             ca_pem = f.read()
         return x509.load_pem_x509_certificate(ca_pem, default_backend())
     except FileNotFoundError:
-        logger.error(f"CA certificate file not found: {settings.PKI_CA_CERT_PATH}")
+        logger.error(f"CA certificate file not found: {ca_cert_path}")
         return None
     except Exception as e:
         logger.error(f"Failed to load CA certificate: {e}")
@@ -581,8 +590,9 @@ def _send_ocsp_request(ocsp_url: str, ocsp_request_data: bytes) -> bytes | None:
     Returns:
         Response content bytes or None on failure
     """
+    timeout_seconds = get_process_auth_settings().pki_ocsp_timeout_seconds
     try:
-        with httpx.Client(timeout=settings.PKI_OCSP_TIMEOUT_SECONDS) as client:
+        with httpx.Client(timeout=timeout_seconds) as client:
             response = client.post(
                 ocsp_url,
                 content=ocsp_request_data,
@@ -593,7 +603,7 @@ def _send_ocsp_request(ocsp_url: str, ocsp_request_data: bytes) -> bytes | None:
                 return None
             return response.content  # type: ignore[no-any-return]
     except httpx.TimeoutException:
-        logger.warning(f"OCSP request timed out after {settings.PKI_OCSP_TIMEOUT_SECONDS}s")
+        logger.warning(f"OCSP request timed out after {timeout_seconds}s")
         return None
     except httpx.RequestError as e:
         logger.warning(f"OCSP request failed: {e}")
@@ -634,7 +644,7 @@ def _parse_ocsp_response(
                 f"Certificate {serial_str} is REVOKED "
                 f"(revocation time: {ocsp_response.revocation_time})"
             )
-            _set_ocsp_cache(serial_str, True, settings.PKI_CRL_CACHE_SECONDS)
+            _set_ocsp_cache(serial_str, True, get_process_auth_settings().pki_crl_cache_seconds)
             return True
 
         if cert_status == ocsp.OCSPCertStatus.GOOD:
@@ -644,7 +654,7 @@ def _parse_ocsp_response(
                 ttl_from_response = (
                     ocsp_response.next_update - ocsp_response.this_update
                 ).total_seconds()
-                ttl = min(int(ttl_from_response), settings.PKI_CRL_CACHE_SECONDS)
+                ttl = min(int(ttl_from_response), get_process_auth_settings().pki_crl_cache_seconds)
             _set_ocsp_cache(serial_str, False, ttl)
             logger.debug(f"Certificate {serial_str} is valid (OCSP GOOD)")
             return False
@@ -767,7 +777,9 @@ def _download_crl(crl_url: str) -> bytes | None:
     """
     try:
         # Use a longer timeout for CRL downloads as they can be large
-        with httpx.Client(timeout=settings.PKI_OCSP_TIMEOUT_SECONDS * 2) as client:
+        with httpx.Client(
+            timeout=get_process_auth_settings().pki_ocsp_timeout_seconds * 2
+        ) as client:
             response = client.get(crl_url)
             if response.status_code != 200:
                 logger.warning(f"CRL download failed for {crl_url}: status {response.status_code}")
@@ -947,7 +959,7 @@ def _check_revocation(cert: x509.Certificate) -> tuple[bool, str]:
         return (False, "Certificate valid (CRL)")
 
     # Both checks failed
-    if settings.PKI_REVOCATION_SOFT_FAIL:
+    if get_process_auth_settings().pki_revocation_soft_fail:
         logger.warning(
             f"Revocation check failed for serial {serial_str}, "
             "allowing authentication (soft-fail enabled)"
@@ -1230,7 +1242,7 @@ def _handle_revocation_check(cert: x509.Certificate | None) -> bool | None:
         True if authentication should be denied, False if OK to proceed, None if revocation
         checking is disabled
     """
-    if not settings.PKI_VERIFY_REVOCATION:
+    if not get_process_auth_settings().pki_verify_revocation:
         return False  # Revocation checking disabled, proceed
 
     if not cert:
@@ -1238,7 +1250,7 @@ def _handle_revocation_check(cert: x509.Certificate | None) -> bool | None:
             "Revocation checking enabled but no certificate provided. "
             "Configure Nginx to pass full certificate via PKI_CERT_HEADER."
         )
-        if not settings.PKI_REVOCATION_SOFT_FAIL:
+        if not get_process_auth_settings().pki_revocation_soft_fail:
             logger.error("Denying authentication: revocation check required but no certificate")
             return True  # Deny
         logger.warning("Allowing authentication without revocation check (soft-fail)")

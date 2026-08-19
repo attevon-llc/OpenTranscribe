@@ -12,6 +12,7 @@ This script downloads:
 Models are cached to standard locations and a manifest is created.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -394,8 +395,15 @@ def download_nltk_data():
     try:
         import nltk
 
-        # Set NLTK data path to user's cache directory
-        nltk_data_path = Path.home() / '.cache' / 'nltk_data'
+        # Honour $NLTK_DATA, which is what the images actually set (issue #491).
+        #
+        # This was hardcoded to `Path.home()/.cache/nltk_data`, and it matched the
+        # image only by luck of $HOME: Dockerfile.prod and Dockerfile.lite run as
+        # `appuser`, but Dockerfile.blackwell runs as `user` and sets
+        # NLTK_DATA=/home/user/.cache/nltk_data. So on the Blackwell image this
+        # fetched the corpora into a directory nothing reads, reported success,
+        # and left the deployment to discover the gap at runtime.
+        nltk_data_path = Path(os.environ.get('NLTK_DATA') or (Path.home() / '.cache' / 'nltk_data'))
         nltk_data_path.mkdir(parents=True, exist_ok=True)
 
         # Add to NLTK's data path
@@ -564,6 +572,32 @@ def download_speaker_attribute_models():
         return {'speaker_attributes': {'status': 'failed', 'error': str(e)}}
 
 
+def _fetch_model_config(config_url, config_path):
+    """Fetch the config.json OpenSearch publishes beside a model artifact.
+
+    Registering a model from a ``file://`` URL REQUIRES its ``model_config``; without
+    it OpenSearch 3.4 answers ``400 illegal_argument_exception: model config is null``,
+    which is how offline registration was broken. The file also carries
+    ``model_content_hash_value``, so fetching it buys an integrity check for free.
+
+    Takes its paths as ARGUMENTS rather than closing over the download loop's
+    variables. A closure would late-bind them (ruff B023) and could write one model's
+    config into another model's directory.
+
+    Returns True when a non-empty config.json is present afterwards.
+    """
+    import urllib.request
+
+    if config_path.exists() and config_path.stat().st_size > 0:
+        return True
+    try:
+        urllib.request.urlretrieve(config_url, config_path)
+        return config_path.exists() and config_path.stat().st_size > 0
+    except Exception as exc:  # noqa: BLE001 - any failure means "no config", reported here
+        print_error(f'  config.json unavailable ({exc}); cannot register this model offline')
+        return False
+
+
 def download_opensearch_neural_models():
     """Download OpenSearch neural search models for offline use.
 
@@ -581,7 +615,7 @@ def download_opensearch_neural_models():
         - all-mpnet-base-v2 (balanced English, 420MB)
         - all-distilroberta-v1 (best quality English, 290MB)
         - paraphrase-multilingual-MiniLM-L12-v2 (fast multilingual, 420MB)
-        - paraphrase-multilingual-mpnet-base-v2 (balanced multilingual, 1.1GB)
+        - multi-qa-MiniLM-L6-cos-v1 (retrieval-tuned English, 80MB)
         - distiluse-base-multilingual-cased-v1 (best multilingual, 480MB)
     """
     print_header('Downloading OpenSearch Neural Search Models')
@@ -620,15 +654,25 @@ def download_opensearch_neural_models():
             'languages': 'English',
             'description': 'Better semantic understanding. Good balance of speed and quality.',
         },
-        'paraphrase-multilingual-mpnet-base-v2': {
-            'name': 'huggingface/sentence-transformers/paraphrase-multilingual-mpnet-base-v2',
+        'all-MiniLM-L12-v2': {
+            'name': 'huggingface/sentence-transformers/all-MiniLM-L12-v2',
             'version': '1.0.1',
             'format': 'torch_script',
-            'dimension': 768,
-            'size_mb': 1100,
-            'tier': 'balanced',
-            'languages': 'Multilingual (50+)',
-            'description': 'Higher quality multilingual embeddings.',
+            'dimension': 384,
+            'size_mb': 120,
+            'tier': 'fast',
+            'languages': 'English',
+            'description': 'The default MiniLM with 12 layers. Same 384 dims, better quality.',
+        },
+        'multi-qa-MiniLM-L6-cos-v1': {
+            'name': 'huggingface/sentence-transformers/multi-qa-MiniLM-L6-cos-v1',
+            'version': '1.0.1',
+            'format': 'torch_script',
+            'dimension': 384,
+            'size_mb': 80,
+            'tier': 'fast',
+            'languages': 'English',
+            'description': 'Tuned for semantic search. Same 384 dims as the default.',
         },
         # Best quality tier
         'all-distilroberta-v1': {
@@ -717,7 +761,21 @@ def download_opensearch_neural_models():
             model_short_name = model_name.replace('/', '_')
 
         filename = f'{model_short_name}-{version}-{model_format}.zip'
-        url = f'https://artifacts.opensearch.org/models/ml-models/{model_name}/{version}/{model_format}/{filename}'
+        base_url = (
+            f'https://artifacts.opensearch.org/models/ml-models/'
+            f'{model_name}/{version}/{model_format}'
+        )
+        url = f'{base_url}/{filename}'
+        # OpenSearch publishes a config.json beside every artifact. It carries the
+        # exact `model_config` (model_type / framework_type / embedding_dimension /
+        # all_config), the `model_content_hash_value`, and the true content size.
+        #
+        # Registering a model from a `file://` URL REQUIRES model_config — without it
+        # OpenSearch 3.4 answers `400 illegal_argument_exception: model config is null`,
+        # which is exactly how offline registration was broken. Fetching this file is
+        # what makes the offline path work without hardcoding a per-model table of
+        # model types that would drift from upstream (and be a guess).
+        config_url = f'{base_url}/config.json'
 
         # Output path - use model short name as directory
         model_dir = (
@@ -735,12 +793,19 @@ def download_opensearch_neural_models():
             import urllib.request
 
             # Check if already downloaded
+            config_path = model_dir / 'config.json'
+
             if output_path.exists():
                 print_success('  Already exists, skipping download')
+                # An older cache holds the zip but no config.json, and the zip alone
+                # cannot be registered offline. Fetch the missing half rather than
+                # reporting a complete cache.
+                has_config = _fetch_model_config(config_url, config_path)
                 downloaded_models.append(
                     {
                         'name': model_name,
                         'path': str(output_path),
+                        'config_path': str(config_path) if has_config else None,
                         'dimension': model_info['dimension'],
                         'version': version,
                         'format': model_format,
@@ -756,10 +821,12 @@ def download_opensearch_neural_models():
             if output_path.exists() and output_path.stat().st_size > 0:
                 size_mb = round(output_path.stat().st_size / (1024 * 1024), 1)
                 print_success(f'  Downloaded successfully ({size_mb} MB)')
+                has_config = _fetch_model_config(config_url, config_path)
                 downloaded_models.append(
                     {
                         'name': model_name,
                         'path': str(output_path),
+                        'config_path': str(config_path) if has_config else None,
                         'dimension': model_info['dimension'],
                         'version': version,
                         'format': model_format,
@@ -875,7 +942,7 @@ def get_cache_info():
     # Use default paths (same as backend)
     hf_home = str(Path.home() / '.cache' / 'huggingface')
     torch_home = str(Path.home() / '.cache' / 'torch')
-    nltk_home = str(Path.home() / '.cache' / 'nltk_data')
+    nltk_home = os.environ.get('NLTK_DATA') or str(Path.home() / '.cache' / 'nltk_data')
     sent_home = str(Path.home() / '.cache' / 'sentence-transformers')
     opensearch_ml_home = str(Path.home() / '.cache' / 'opensearch-ml')
 
@@ -939,30 +1006,60 @@ def create_manifest(download_results):
     return manifest
 
 
+#: `--only <group>` -> the downloader that fetches it.
+#:
+#: A selector exists because the one-shot containers in `scripts/common.sh` mount
+#: ONE cache directory each (issue #491): whatever a run fetches outside the
+#: mounted directory is written into the container's own filesystem and discarded
+#: with it. Running the whole downloader to obtain one group therefore burns the
+#: bandwidth and keeps none of it.
+DOWNLOAD_GROUPS = {
+    'whisperx': download_whisperx_models,
+    'pyannote': download_pyannote_models,
+    'nltk': download_nltk_data,
+    'sentence-transformers': download_sentence_transformers,
+    'reranker': download_chat_reranker,
+    'speaker-attributes': download_speaker_attribute_models,
+    'opensearch': download_opensearch_neural_models,
+    'redaction': download_redaction_models,
+}
+
+#: Groups that need no Hugging Face credential. NLTK corpora come from NLTK's own
+#: CDN, so requiring the token would make the airgap prefetch this selector exists
+#: for fail on a deployment that has not configured one yet.
+GROUPS_WITHOUT_HF_TOKEN = frozenset({'nltk'})
+
+
 def main():
     """Main execution"""
-    print_header('OpenTranscribe Model Downloader')
+    parser = argparse.ArgumentParser(description='Download OpenTranscribe model assets')
+    parser.add_argument(
+        '--only',
+        action='append',
+        choices=sorted(DOWNLOAD_GROUPS),
+        help='Fetch only this group; repeatable. Default: every group.',
+    )
+    args = parser.parse_args()
 
-    print_info('This script will download all required AI models')
+    selected = args.only or list(DOWNLOAD_GROUPS)
+
+    print_header('OpenTranscribe Model Downloader')
+    if args.only:
+        print_info(f'Selected group(s): {", ".join(selected)}')
+    else:
+        print_info('This script will download all required AI models')
     print_info('Models will be cached for offline packaging\n')
 
     # Check for required environment variables
-    if not os.environ.get('HUGGINGFACE_TOKEN'):
+    if not set(selected) <= GROUPS_WITHOUT_HF_TOKEN and not os.environ.get('HUGGINGFACE_TOKEN'):
         print_error('HUGGINGFACE_TOKEN environment variable not set!')
         print_info('Get your token at: https://huggingface.co/settings/tokens')
         sys.exit(1)
 
     results = {}
 
-    # Download all models
-    results.update(download_whisperx_models())
-    results.update(download_pyannote_models())
-    results.update(download_nltk_data())
-    results.update(download_sentence_transformers())
-    results.update(download_chat_reranker())
-    results.update(download_speaker_attribute_models())
-    results.update(download_opensearch_neural_models())
-    results.update(download_redaction_models())
+    for group in selected:
+        results.update(DOWNLOAD_GROUPS[group]())
 
     # Create manifest
     manifest = create_manifest(results)

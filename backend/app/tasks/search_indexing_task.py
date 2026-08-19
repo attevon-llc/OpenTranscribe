@@ -101,6 +101,30 @@ def index_transcript_search_task(  # noqa: C901
     task_id = self.request.id
     logger.info(f"Search indexing task {task_id} started for file {file_uuid}")
 
+    # Re-verify the neural pipeline before stamping provenance on anything (#437).
+    #
+    # `_neural_pipeline_verified` is a permanent process latch with NO TTL — unlike
+    # its `hybrid_search_service` neighbours, which expire in 30 s/120 s — and it
+    # caches the embedding-model LABEL alongside it. The two existing reset points
+    # do not reach this process: `model_switch` resets the API process and
+    # `reindex_task` resets whichever worker runs `reindex_transcripts`, which is
+    # routed to the CPU queue. THIS task is routed to `CeleryQueues.EMBEDDING`
+    # (`core/celery.py`), i.e. the separate search-indexer container, and nothing
+    # reset it there.
+    #
+    # So after an embedding-model switch, a newly transcribed file was stamped with
+    # the OLD model name while the cluster's ingest pipeline embedded it with the
+    # NEW one. `survey_embedding_models()` then reported `MIXED VECTOR SPACE` and
+    # told the operator to reindex a corpus that was in fact uniform — the exact
+    # cry-wolf failure `embedding_provenance`'s own docstring warns about. It
+    # self-healed only when the worker recycled at `--max-tasks-per-child=500`.
+    #
+    # Cost is one `ingest.get_pipeline` per file. A TTL would bound the staleness
+    # instead of removing it; this is the pattern `reindex_task` already uses.
+    from app.services.search.indexing_service import reset_neural_pipeline_state
+
+    reset_neural_pipeline_state()
+
     # Create a tracked Task record
     with session_scope() as db:
         create_task_record(db, task_id, user_id, file_id, "search_indexing")
@@ -231,11 +255,17 @@ def index_transcript_search_task(  # noqa: C901
 
         total_ms = round((time.time() - total_start) * 1000)
 
-        # Build timing result
-        if isinstance(result, dict):
-            timing = result
-        else:
-            timing = {"chunk_count": result, "total_ms": total_ms}
+        # `index_transcript_chunks` returns a dict or RAISES (issue #495). It used to
+        # be able to return a bare int, and that arm is what turned every indexing
+        # failure into a reported success: the method swallowed its exception and
+        # returned 0, this branch wrapped it as `{"chunk_count": 0}`, and the task went
+        # on to mark the row completed and return `"status": "success"`.
+        #
+        # The int was ALSO the legitimate "nothing to index" answer (no client, no
+        # segments, no chunks generated), which is exactly why the failure was
+        # invisible — the two were the same value. Those cases now return a dict
+        # carrying a `reason`, and a genuine failure reaches the `except` below.
+        timing = result
 
         # Mark task as completed
         with session_scope() as db:

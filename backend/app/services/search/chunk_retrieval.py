@@ -51,6 +51,10 @@ class ChunkHit:
     start_time: float = 0.0
     end_time: float | None = None
     score: float = 0.0
+    #: ISO 639-1 code of the recording this chunk came from, straight off the chunk
+    #: document's ``language`` keyword. Empty when the file predates detection.
+    #: Read by the chat reranker, which must not reorder text it cannot read.
+    language: str = ""
     #: Section number for a digest document; ``None`` for a transcript chunk.
     digest_section: int | None = None
 
@@ -115,6 +119,7 @@ def _hit_to_chunk(hit: dict[str, Any]) -> ChunkHit | None:
         start_time=float(source.get("start_time") or 0.0),
         end_time=source.get("end_time"),
         score=float(hit.get("_score") or 0.0),
+        language=str(source.get("language") or ""),
     )
 
 
@@ -149,6 +154,7 @@ def _build_body(
         "speaker",
         "start_time",
         "end_time",
+        "language",
     ]
 
     if use_neural and model_id:
@@ -307,6 +313,7 @@ def _digest_hit_to_chunk(hit: dict[str, Any]) -> ChunkHit | None:
         start_time=float(source.get("start_time") or 0.0),
         end_time=source.get("end_time"),
         score=float(hit.get("_score") or 0.0),
+        language=str(source.get("language") or ""),
         digest_section=int(section),
     )
 

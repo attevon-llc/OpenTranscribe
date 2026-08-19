@@ -257,13 +257,23 @@ OpenTranscribe supports 6 state-of-the-art embedding models, organized by qualit
 - **Quality**: Excellent English semantic understanding
 - **Config**: `huggingface/sentence-transformers/all-mpnet-base-v2`
 
-**paraphrase-multilingual-mpnet-base-v2**
-- **Languages**: 50+ languages
-- **Size**: 1100 MB
-- **Speed**: Moderate
-- **Use**: High-quality multilingual semantic search
-- **Quality**: Best multilingual semantic understanding
-- **Config**: `huggingface/sentence-transformers/paraphrase-multilingual-mpnet-base-v2`
+**multi-qa-MiniLM-L6-cos-v1**
+- **Languages**: English only
+- **Size**: 80 MB
+- **Speed**: Fast
+- **Use**: Semantic SEARCH specifically, rather than general sentence similarity
+- **Quality**: Retrieval-tuned; not yet benchmarked on this corpus
+- **Config**: `huggingface/sentence-transformers/multi-qa-MiniLM-L6-cos-v1`
+- **Note**: 384 dimensions, the same as the default, so switching is a re-embed
+  rather than an index recreation.
+
+> ⚠️ **`paraphrase-multilingual-mpnet-base-v2` was removed** (issue #504). It is not an
+> OpenSearch-provided pretrained model — registration FAILS at every version with
+> *"This model is not in the pre-trained model list"*, measured on opensearch 3.4.0.
+> The provided list contains `paraphrase-multilingual-MiniLM-L12-v2` (multilingual)
+> and `paraphrase-mpnet-base-v2` (English-only); the removed name conflated the two.
+> For multilingual use, `paraphrase-multilingual-MiniLM-L12-v2` is verified and scores
+> 0.90-0.98 cosine on translations across Spanish, German, Chinese, Arabic and Russian.
 
 #### Best Quality Tier - Maximum Accuracy
 
@@ -1316,7 +1326,6 @@ def monitor_opensearch_memory():
 | all-MiniLM-L6-v2 | 384 | 80 MB | 400-500 MB |
 | paraphrase-multilingual-MiniLM-L12-v2 | 384 | 420 MB | 500-600 MB |
 | all-mpnet-base-v2 | 768 | 420 MB | 800-1000 MB |
-| paraphrase-multilingual-mpnet-base-v2 | 768 | 1100 MB | 1200-1500 MB |
 | all-distilroberta-v1 | 768 | 290 MB | 700-900 MB |
 | distiluse-base-multilingual-cased-v1 | 512 | 480 MB | 600-800 MB |
 

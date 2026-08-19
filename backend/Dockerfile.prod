@@ -30,12 +30,17 @@ COPY requirements.txt requirements-nodeps.txt ./
 # Upgrade pip to latest version first (security fix for CVE-2025-8869)
 RUN pip install --user --no-cache-dir --upgrade pip
 
-# Install Python dependencies
-# All packages now use cuDNN 9 for CUDA 12.8 compatibility
-# PyTorch 2.8.0+cu128 - includes CVE-2025-32434 security fix
-# CTranslate2 4.6.0+ - cuDNN 9 support
-# NumPy 2.x - fully compatible with all packages, no security issues
-# Use --user to install to /root/.local which we'll copy to final stage
+# Install Python dependencies. `requirements.txt` is fully PINNED (issue #492):
+# every spec is `==` or a direct URL, so this image and a local venv built from the
+# same file resolve to the same versions.
+#
+# It was 62 floors against 5 pins, and a floor is a version number but not a pin —
+# `nltk>=3.9.4` permits 3.9.4 or 3.10.3. The host venv (where the pre-merge gate
+# runs) and this image drifted 120 packages apart, 18 at a MAJOR version, which is
+# how the NLTK `pathsec` breakage reached production while the gate stayed green.
+#
+# All packages use cuDNN 9 for CUDA 12.8 compatibility.
+# --user installs to /root/.local, which the final stage copies.
 RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.txt
 
 # WhisperX, faster-whisper, and gliner all need --no-deps — see requirements-nodeps.txt
@@ -48,7 +53,14 @@ RUN pip install --user --no-cache-dir --no-warn-script-location --no-deps -r req
 # English model (~12 MB) — PII NER is handled by GLiNER + Presidio's regex recognizers,
 # so the large spaCy model is unnecessary. GLiNER + toxicity weights are pre-fetched at
 # startup via scripts/download-models.py (DOWNLOAD_REDACTION_MODELS=true).
-RUN python -m spacy download en_core_web_sm
+#
+# `python -m spacy download` is GONE: it resolves whichever model version is
+# compatible with the installed spaCy AT BUILD TIME, which is the same unpinned
+# drift #492 is about — and it lived in THIS file only, so Dockerfile.blackwell
+# shipped PII redaction with no pipeline to tokenize with, and a developer's venv
+# never had the model at all. It is now a pinned release URL in requirements.txt,
+# installed by the `-r requirements.txt` step above. The pin has to be a URL
+# because spaCy models are not published to PyPI.
 
 # triton removed: openai/triton is unrelated to NVIDIA TensorRT and is only used
 # by torch.compile(backend="inductor") JIT. torch.compile is opt-in and not on

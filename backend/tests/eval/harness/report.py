@@ -192,6 +192,49 @@ def build_answer_details(queries: list[EvalQuery], result: AnswerResult) -> list
     return details
 
 
+def build_retrieval_per_query(queries: list[EvalQuery], result: EvalResult) -> list[dict[str, Any]]:
+    """Every retrieval-scored query's own scores (#461 phase 0).
+
+    **Every retrieval number this harness has ever published is a point estimate
+    with no confidence interval** — including the reranker's measured 20-33% nDCG@10
+    deficit, which is the one finding with direct product impact and is currently
+    unactioned *because* nobody can say whether it is an effect or noise. A mean over
+    N queries cannot answer that; the spread over those N queries can.
+
+    Emitting the per-query scores is the cheapest possible fix: they are already
+    computed by :func:`metrics.evaluate` and were simply discarded for retrieval
+    queries, while the answer table has published them all along.
+
+    Deterministic by construction — sorted by query id, rounded like every other
+    number here — so it stays inside the byte-identical ``metrics.json`` promise.
+
+    ⚠️ **This is the instrument, not the analysis.** It does not compute an interval;
+    it makes one computable by anyone reading the file. Deciding *which* interval is
+    a separate judgement, and hard-coding one here would smuggle that judgement into
+    the raw data.
+    """
+    by_id = {query.query_id: query for query in queries if query.scored_on == "retrieval"}
+    details: list[dict[str, Any]] = []
+    for query_id in sorted(result.per_query):
+        query = by_id.get(query_id)
+        if query is None:
+            continue
+        details.append(
+            {
+                "query_id": query_id,
+                "corpus": query.corpus,
+                "query_class": query.query_class,
+                "license_tier": query.license_tier,
+                # How many documents the qrels judge relevant for this query. A
+                # per-query score is unreadable without it: nDCG@10 over 1 gold
+                # document and over 40 are different measurements.
+                "gold_count": len(query.spans),
+                "scores": _round(result.per_query[query_id]),
+            }
+        )
+    return details
+
+
 def build_results(
     *,
     control_name: str,
@@ -201,6 +244,7 @@ def build_results(
     index_state: dict[str, Any],
     qrels_stats: dict[str, Any],
     rows: list[dict[str, Any]],
+    retrieval_per_query: list[dict[str, Any]],
     answers: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The committed results document. Deterministic by construction.
@@ -221,6 +265,9 @@ def build_results(
         "qrels": qrels_stats,
         "corpora": corpora,
         "rows": rows,
+        # Per-query retrieval scores (#461 phase 0). Without these every number in
+        # `rows` is a point estimate nobody can put an interval around.
+        "retrieval_per_query": retrieval_per_query,
         "answers": answers or {"scored": 0, "note": "no answer-scored queries in this run"},
     }
 

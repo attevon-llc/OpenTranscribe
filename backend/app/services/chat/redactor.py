@@ -473,7 +473,18 @@ def _apply_chunk_plan(plan: _ChunkPlan, chunk: ChunkHit, cfg) -> tuple[str, bool
 def mask_chunks(
     session_factory: SessionFactory, chunks: list[ChunkHit], user_id: int
 ) -> list[MaskedChunk]:
-    """Apply the owner's redact-before-LLM policy to retrieved chunks.
+    """Apply the **requesting user's** redact-before-LLM policy to retrieved chunks.
+
+    ⚠️ **The requester, not the file owner** (issue #402). This docstring said
+    "the owner's" while its sole caller — ``chat/service.py`` — passes the message
+    author, and that asymmetry is load-bearing rather than accidental: one chat
+    turn can span recordings owned by several people, so there is no single owner
+    to resolve. Summarization goes the other way and resolves the FILE OWNER
+    (``tasks/summarization.py``), because that is an egress decision about whose
+    content leaves for a third party. The two subjects differ deliberately;
+    ``redaction/export_policy.py`` argues the general rule. Inheriting whichever
+    the surrounding code used is a documented trap here, and a docstring naming
+    the wrong one is how it gets inherited.
 
     Two phases: **one** short session gathers the policy and every chunk's cached
     spans, then the session closes and the masking (including a possible Presidio
@@ -484,7 +495,8 @@ def mask_chunks(
             (``session_scope``). NOT a ``Session`` — this function owns the
             transaction boundary precisely so it can close it before masking.
         chunks: Chunks straight out of retrieval (unredacted index content).
-        user_id: Owner whose effective policy governs (admin force floor included).
+        user_id: The REQUESTING user, whose effective policy governs (admin force
+            floor included) — matching :func:`mask_digests` beside it.
 
     Returns:
         Chunks with prompt-safe text. When the policy does not apply, content is

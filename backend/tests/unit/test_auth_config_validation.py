@@ -625,3 +625,76 @@ class TestSchemasDriveTheValidation:
     def test_unknown_category_is_rejected_by_the_validator(self):
         with pytest.raises(ValueError):
             validate_category_config("bogus", {})
+
+
+# --------------------------------------------------------------------------- #
+# pki_verify_revocation vs pki_ca_cert_path (issue #498)
+# --------------------------------------------------------------------------- #
+class TestRevocationCheckingRequiresACaCertificate:
+    """``core/config.py:_validate_pki_settings`` raises this at startup for the
+    ``.env`` spelling and cannot see the DB copy.
+
+    While the DB keys were inert that gap did not matter. Now that ``pki_auth``
+    resolves them through ``get_process_auth_settings()``, the admin UI could
+    otherwise assemble a state the environment refuses to boot with: no CA bundle
+    means ``_load_issuer_certificate`` returns None, OCSP is skipped, the CRL
+    cross-check has nothing to verify against, and every certificate lands on the
+    ``pki_revocation_soft_fail`` branch — silently admitted, or all rejected.
+    """
+
+    def test_enabling_revocation_without_a_ca_path_is_rejected(self):
+        with pytest.raises(ValueError) as exc:
+            validate_category_config(
+                "pki",
+                {"pki_verify_revocation": True},
+                current={"pki_enabled": True, "pki_ca_cert_path": ""},
+            )
+
+        assert "pki_ca_cert_path" in str(exc.value)
+        assert "Set pki_ca_cert_path first" in str(exc.value)
+
+    def test_clearing_the_ca_path_while_revocation_is_on_is_rejected(self):
+        with pytest.raises(ValueError) as exc:
+            validate_category_config(
+                "pki",
+                {"pki_ca_cert_path": ""},
+                current={"pki_enabled": True, "pki_verify_revocation": True},
+            )
+
+        assert "Turn off pki_verify_revocation first" in str(exc.value)
+
+    def test_partial_payload_cannot_walk_around_the_rule(self):
+        """One field at a time must not assemble the rejected pair."""
+        with pytest.raises(ValueError):
+            validate_category_config(
+                "pki",
+                {"pki_enabled": True},
+                current={"pki_verify_revocation": True, "pki_ca_cert_path": ""},
+            )
+
+    def test_both_set_in_one_save_is_fine(self):
+        cleaned = validate_category_config(
+            "pki",
+            {"pki_verify_revocation": True, "pki_ca_cert_path": "/etc/ssl/certs/ca.pem"},
+            current={"pki_enabled": True},
+        )
+
+        assert cleaned == {
+            "pki_verify_revocation": True,
+            "pki_ca_cert_path": "/etc/ssl/certs/ca.pem",
+        }
+
+    def test_the_rule_does_not_fire_while_pki_is_disabled(self):
+        """A deployment not using PKI must be able to leave the tab half-filled."""
+        assert validate_category_config(
+            "pki",
+            {"pki_verify_revocation": True},
+            current={"pki_enabled": False, "pki_ca_cert_path": ""},
+        ) == {"pki_verify_revocation": True}
+
+    def test_revocation_off_with_no_ca_path_is_fine(self):
+        assert validate_category_config(
+            "pki",
+            {"pki_verify_revocation": False},
+            current={"pki_enabled": True, "pki_ca_cert_path": ""},
+        ) == {"pki_verify_revocation": False}

@@ -2834,7 +2834,7 @@
   "search.embeddingModel": "嵌入模型",
   "search.embeddingModelDesc": "选择用于语义搜索的AI模型。更改模型需要重新索引所有转录内容。",
   "search.indexStatus": "索引状态",
-  "search.modelChangeWarning": "更改嵌入模型将重新索引所有转录内容。重新索引期间搜索将仅使用关键词模式。是否继续？",
+  "search.modelChangeWarning": "更改嵌入模型将重新索引所有转录内容。重新索引期间搜索将仅使用关键词模式。此操作仅更改语义嵌入——关键词搜索、分块和 AI 聊天提示词均不受影响，因此多语言模型本身并不会让整个系统变成多语言。是否继续？",
   "search.reindexingInProgress": "重新索引进行中...",
   "search.reindexComplete": "重新索引完成！",
   "search.stopReindex": "停止",
@@ -4976,5 +4976,18 @@
   "provenance.save": "保存",
   "provenance.cancel": "取消",
   "provenance.saving": "保存中…",
-  "provenance.saveFailed": "保存失败，请重试。"
+  "provenance.saveFailed": "保存失败，请重试。",
+  "prompts.contentTypeQaPanel": "问答小组",
+  "settings.contentRedaction.piiEntitiesWarning": "姓名检测并不详尽。默认会屏蔽 ORGANIZATION，因为人名有时会被标记为组织——代价是公司名称和缩写也会被屏蔽。仍可能遗漏部分姓名；如需更高召回率请启用 GLiNER PII 模型，并在共享前检查导出内容。",
+  "filter.language": "语言",
+  "filter.languageTooltip": "仅显示识别为 {language} 的转录",
+  "settings.search.multilingualBadge": "多语言",
+  "settings.search.englishOnlyBadge": "仅英语",
+  "settings.search.notDownloadedBadge": "未下载",
+  "settings.search.modelNotDownloaded": "该模型尚未下载到 OpenSearch，因此无法应用。请先下载并部署——此操作会获取模型权重，可能需要几分钟。 下载不会更改当前使用的模型——应用它是单独的一步。",
+  "settings.search.downloadAndDeploy": "下载并部署",
+  "settings.search.preparingModel": "正在下载并部署…",
+  "settings.search.modelReady": "模型已下载并部署，现在可以应用。",
+  "settings.search.modelNotReady": "部署报告成功，但模型仍无法生成嵌入。请检查 OpenSearch 日志——这通常意味着该模型的 JVM 堆内存不足。",
+  "settings.search.modelPrepareFailed": "无法下载并部署该模型。"
 }

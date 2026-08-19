@@ -110,7 +110,7 @@ OpenTranscribe is a powerful, containerized web application for transcribing and
 
 ### 🚫 **No AI Provider? Most of It Still Works**
 - **A first-class deployment, not a degraded one**: leave `LLM_PROVIDER` empty and transcription, diarization, cross-recording speaker matching, redaction, tags, collections, exports, watch sources and analytics all work normally
-- **Semantic search included**: the embedding model runs inside your own OpenSearch container — an embedding model is not a language model, so meaning-based and hybrid search need no provider and no internet
+- **Semantic search included**: the embedding model runs inside your own OpenSearch container — an embedding model is not a language model, so meaning-based and hybrid search need no provider and no internet. Six models are offered and each is verified end to end (register → deploy → a real prediction); the two multilingual ones are additionally checked for **cross-lingual** behaviour and score 0.85–0.98 cosine on translations across Spanish, German, Chinese, Arabic and Russian. OpenSearch defaults to a 4 GB heap, which is **claimed at startup and pinned in RAM**; a 2 GB heap is verified to run every English model and 1 GB the default one — see [Performance Tuning](docs-site/docs/operations/performance-tuning.md)
 - **What does need one**: summaries, topic/tag suggestions, LLM speaker-ID hints, and AI Chat
 - **Retroactive**: add a provider later and every existing recording becomes summarizable and chattable immediately — no re-processing
 

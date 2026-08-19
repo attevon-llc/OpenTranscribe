@@ -1731,6 +1731,7 @@ def _propagate_speaker_rename_to_chunks(
     previous_chunk_name: str,
     new_display_name: str,
     profile_renames: list[tuple[str, str]],
+    speaker_id: int | None = None,
 ) -> None:
     """Queue the chunk-plane rewrite for everything this request renamed.
 
@@ -1742,6 +1743,19 @@ def _propagate_speaker_rename_to_chunks(
     Best-effort by design: a rename that reached Postgres must not 500 because the
     broker was unreachable. The chunk plane stays stale until the next reindex,
     which is exactly the pre-#405 behaviour.
+
+    ``new_display_name`` is the **effective indexed name** (``display_name or
+    name``), not the display name. Those differ in two reachable cases and both
+    used to propagate nothing:
+
+    * **A cleared display name.** ``{"display_name": ""}`` is a legal
+      ``SpeakerUpdate`` — it is how a user undoes a label. Postgres reverts to
+      ``SPEAKER_01`` and a reindex would write ``SPEAKER_01``, but the falsy
+      guard here returned early, so the chunk plane kept "Dana" forever and the
+      search facet went on offering a name that existed nowhere else.
+    * **An edit to ``name`` alone.** ``name`` is updatable too, and for a speaker
+      with no ``display_name`` it is what the indexer writes — but dispatch used
+      to key solely off ``display_name``.
     """
     if not new_display_name:
         return
@@ -1751,7 +1765,7 @@ def _propagate_speaker_rename_to_chunks(
         renames: list[tuple[str | None, str | None]] = list(profile_renames)
         if file_uuid and previous_chunk_name:
             renames.append((file_uuid, previous_chunk_name))
-        dispatch_speaker_rename(renames, new_display_name)
+        dispatch_speaker_rename(renames, new_display_name, speaker_id=speaker_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"Could not queue chunk-plane speaker rename propagation: {exc}")
 
@@ -1843,11 +1857,18 @@ def update_speaker(
     # this, chat's speaker scope (an exact `terms` match on the CURRENT name) and
     # the search facet dropdown keep working off the pre-rename snapshot — see
     # app/tasks/rename_propagation_task.py (issue #405).
+    #
+    # Keyed on the EFFECTIVE indexed name (`display_name or name`, the indexer's
+    # own rule in search_indexing_task), not on `display_name`. Keying on the
+    # latter missed both a cleared display name and an edit to `name` alone —
+    # see `_propagate_speaker_rename_to_chunks`.
+    new_chunk_name = str(speaker.display_name or speaker.name or "")
     _propagate_speaker_rename_to_chunks(
         file_uuid=speaker_file_uuid,
         previous_chunk_name=previous_chunk_name,
-        new_display_name=display_name,
+        new_display_name=new_chunk_name,
         profile_renames=profile_chunk_renames,
+        speaker_id=speaker_id,
     )
 
     # Invalidate caches so speaker lists and file data refresh

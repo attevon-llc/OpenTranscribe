@@ -209,7 +209,15 @@ def _load_detection_inputs(file_uuid: str) -> dict | None:
 
         speaker_ids = [
             int(row[0])
-            for row in db.query(Speaker.id).filter(Speaker.media_file_id == file_id).all()
+            # ORDER BY is not cosmetic: this list drives `work_items`, and therefore the
+            # order segments are batched into the wav2vec2 forward pass. Without it
+            # Postgres may return the rows in any order, so two runs over identical data
+            # can batch differently. Assignment is keyed by speaker_id and stays correct
+            # either way, but reproducibility is worth an index scan.
+            for row in db.query(Speaker.id)
+            .filter(Speaker.media_file_id == file_id)
+            .order_by(Speaker.id)
+            .all()
         ]
         segment_rows = (
             db.query(

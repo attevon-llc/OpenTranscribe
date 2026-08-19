@@ -1390,7 +1390,7 @@ select_opensearch_models() {
     echo "  2) balanced     - all-mpnet-base-v2 (420MB, English, better quality)"
     echo "  3) best         - all-distilroberta-v1 (290MB, English, highest quality)"
     echo "  4) multilingual-fast      - paraphrase-multilingual-MiniLM-L12-v2 (420MB, 50+ langs)"
-    echo "  5) multilingual-balanced  - paraphrase-multilingual-mpnet-base-v2 (1.1GB, 50+ langs)"
+    echo "  5) retrieval    - multi-qa-MiniLM-L6-cos-v1 (80MB, English, search-tuned)"
     echo "  6) multilingual-best      - distiluse-base-multilingual-cased-v1 (480MB, 15 langs)"
     echo "  7) all-models   - Download all 6 models (~2.6GB total, complete offline support)"
     echo "  8) skip         - Don't download now (download on first use)"
@@ -1439,8 +1439,8 @@ select_opensearch_models() {
                 break
                 ;;
             5)
-                OPENSEARCH_MODELS="paraphrase-multilingual-mpnet-base-v2"
-                OPENSEARCH_NEURAL_MODEL="huggingface/sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+                OPENSEARCH_MODELS="multi-qa-MiniLM-L6-cos-v1"
+                OPENSEARCH_NEURAL_MODEL="huggingface/sentence-transformers/multi-qa-MiniLM-L6-cos-v1"
                 break
                 ;;
             6)

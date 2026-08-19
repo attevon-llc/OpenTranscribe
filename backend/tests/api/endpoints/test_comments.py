@@ -335,16 +335,8 @@ class TestTenantGateAsymmetry:
         )
         assert response.status_code == 403, response.text
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "update_comment takes no RequestContext, so no tenant gate runs: the "
-            "caller edits a comment on a file the read path refuses to show them. "
-            "Fix is to thread ctx into require_resource_owner's call site in "
-            "comments.py; drop this marker in the same commit."
-        ),
-    )
-    def test_editing_it_should_also_be_403(self, client, out_of_scope_comment, user_token_headers):
+    def test_editing_it_is_403(self, client, out_of_scope_comment, user_token_headers):
+        """Authorship does not survive the caller moving organizations."""
         response = client.put(
             f"{COMMENTS_PATH}/{out_of_scope_comment.uuid}",
             headers=user_token_headers,
@@ -352,19 +344,38 @@ class TestTenantGateAsymmetry:
         )
         assert response.status_code == 403, response.text
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "delete_comment authorizes with three inline branches and no "
-            "RequestContext, so the tenant gate never runs; drop this marker when "
-            "comments.py threads ctx."
-        ),
-    )
-    def test_deleting_it_should_also_be_403(self, client, out_of_scope_comment, user_token_headers):
+    def test_the_refused_edit_did_not_land(
+        self, client, db_session, out_of_scope_comment, user_token_headers
+    ):
+        """A 403 that still wrote the row would satisfy the status assertion above.
+
+        The gate runs before the field loop in ``update_comment``, so this pins
+        that ordering rather than trusting it.
+        """
+        client.put(
+            f"{COMMENTS_PATH}/{out_of_scope_comment.uuid}",
+            headers=user_token_headers,
+            json={"text": "edited out of scope"},
+        )
+        db_session.refresh(out_of_scope_comment)
+        assert out_of_scope_comment.text == "written earlier"
+
+    def test_deleting_it_is_403(self, client, out_of_scope_comment, user_token_headers):
+        """The author and file-owner branches are both behind the scope gate."""
         response = client.delete(
             f"{COMMENTS_PATH}/{out_of_scope_comment.uuid}", headers=user_token_headers
         )
         assert response.status_code == 403, response.text
+
+    def test_the_refused_delete_did_not_land(
+        self, client, db_session, out_of_scope_comment, user_token_headers
+    ):
+        """``delete_comment`` commits inside each branch, so prove nothing committed."""
+        comment_id = out_of_scope_comment.id
+        client.delete(f"{COMMENTS_PATH}/{out_of_scope_comment.uuid}", headers=user_token_headers)
+        surviving = db_session.query(Comment).filter(Comment.id == comment_id).one_or_none()
+        assert surviving is not None, "the refused delete removed the row anyway"
+        assert surviving.text == "written earlier"
 
 
 # --------------------------------------------------------------------------- #

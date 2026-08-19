@@ -2838,7 +2838,7 @@
   "search.embeddingModel": "Embedding Model",
   "search.embeddingModelDesc": "Select the AI model used for semantic search. Changing models requires re-indexing all transcripts.",
   "search.indexStatus": "Search Index Status",
-  "search.modelChangeWarning": "Changing the embedding model will re-index all transcripts. Search will use keyword-only mode during re-indexing. Continue?",
+  "search.modelChangeWarning": "Changing the embedding model will re-index all transcripts. Search will use keyword-only mode during re-indexing. This changes the semantic embeddings only — keyword search, chunking and the AI chat prompts are unaffected, so a multilingual model does not by itself make everything multilingual. Continue?",
   "search.reindexingInProgress": "Re-indexing in progress...",
   "search.reindexComplete": "Re-indexing complete!",
   "search.stopReindex": "Stop",
@@ -4976,5 +4976,18 @@
   "provenance.save": "Save",
   "provenance.cancel": "Cancel",
   "provenance.saving": "Saving…",
-  "provenance.saveFailed": "Could not save. Please try again."
+  "provenance.saveFailed": "Could not save. Please try again.",
+  "prompts.contentTypeQaPanel": "Q&A Panel",
+  "settings.contentRedaction.piiEntitiesWarning": "Name detection is not exhaustive. ORGANIZATION is masked by default because a person's name is sometimes tagged as an organization — the cost is that company names and acronyms are masked too. Some names may still be missed; enable the GLiNER PII model for higher recall, and review exports before sharing.",
+  "filter.language": "Language",
+  "filter.languageTooltip": "Show only transcripts detected as {language}",
+  "settings.search.multilingualBadge": "Multilingual",
+  "settings.search.englishOnlyBadge": "English only",
+  "settings.search.notDownloadedBadge": "Not downloaded",
+  "settings.search.modelNotDownloaded": "This model has not been downloaded to OpenSearch yet, so it cannot be applied. Download and deploy it first — this fetches the model weights and may take several minutes. Downloading does not change your active model — applying it is a separate step.",
+  "settings.search.downloadAndDeploy": "Download & deploy",
+  "settings.search.preparingModel": "Downloading & deploying…",
+  "settings.search.modelReady": "Model downloaded and deployed. You can apply it now.",
+  "settings.search.modelNotReady": "Deployment reported success but the model still cannot embed. Check the OpenSearch logs — this usually means too little JVM heap for this model.",
+  "settings.search.modelPrepareFailed": "Could not download and deploy the model."
 }

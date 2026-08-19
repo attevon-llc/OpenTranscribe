@@ -221,8 +221,67 @@ def get_file_summary(
     return SummaryResponse(
         file_id=UUID(str(media_file.uuid)),
         filename=media_file.title or media_file.filename,
-        summary_data=dict(media_file.summary_data),
+        summary_data=_redacted_summary(db, current_user, dict(media_file.summary_data)),
     )
+
+
+def _redacted_summary(
+    db: Session, current_user: User, summary_data: dict[str, Any]
+) -> dict[str, Any]:
+    """Apply the requesting user's redaction policy to a summary (#465).
+
+    A summary is abstractive, so it restates in the model's own words whatever the
+    transcript contained — a phone number the transcript view masks can appear
+    verbatim in the BLUF. This surface had no masking at all, which also meant the
+    admin ``redaction.force_*`` floor did not reach it.
+
+    **Subject: the requesting user, not the file owner.** This is a *read* surface,
+    and the precedent for read surfaces is bulk export (``693a16c1``, issue #85),
+    which resolves ``current_user``. The owner is the right subject for *egress*
+    decisions — ``redaction/llm_guard.py`` resolves the owner because sending
+    their content to a third party is their data leaving — and this is not one.
+    The two differ deliberately; inheriting whichever the surrounding code used is
+    a documented trap here.
+
+    ``get_file_by_uuid_with_permission`` admits share recipients, so the reader is
+    routinely not the owner: a recipient whose own policy masks PII must not get an
+    unmasked summary of a recording whose transcript they would see masked.
+
+    Args:
+        db: Request-scoped session.
+        current_user: The reader whose policy governs.
+        summary_data: A COPY of the stored column. Masking is never written back.
+
+    Returns:
+        The summary with every string leaf masked, or unchanged when the policy
+        does not apply.
+
+    Raises:
+        HTTPException: 503 when the policy cannot be resolved or a detector feeding
+            an enabled category could not run. Fail closed — the same disposition
+            ``files/crud.py`` takes for a transcript it cannot mask.
+    """
+    from app.services.redaction.config import resolve_effective_config
+    from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
+    from app.services.redaction.summary_redaction import mask_summary
+
+    try:
+        cfg = resolve_effective_config(db, current_user.id)
+    except Exception as e:
+        logger.exception("Failed to resolve redaction config; refusing the summary read")
+        raise HTTPException(
+            status_code=503,
+            detail="Redaction policy is temporarily unavailable; summary withheld.",
+        ) from e
+
+    try:
+        return mask_summary(summary_data, cfg)
+    except SummaryMaskingUnavailableError as e:
+        logger.warning("Summary masking unavailable; withholding the summary: %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail="Redaction is temporarily unavailable; summary withheld.",
+        ) from e
 
 
 # NOTE: ``POST /search`` (``POST /api/files/search``, full-text search over

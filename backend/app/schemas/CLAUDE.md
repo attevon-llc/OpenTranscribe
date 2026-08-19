@@ -67,9 +67,14 @@ value falls back to. They were dead code while the write path accepted a bare `d
   so a key claimed by two tabs lands in whichever wrote it first and then goes missing from the
   other tab's GET. `tests/unit/test_auth_config_validation.py` pins both invariants.
 - `CROSS_FIELD_KEYS` + `_check_cross_field_rules` reject combinations that are individually
-  valid but jointly incoherent (`allow_registration` while `local_enabled` is off). The caller
-  merges the payload over the *current effective* values first, so the rejected state cannot be
-  assembled one save at a time.
+  valid but jointly incoherent (`allow_registration` while `local_enabled` is off;
+  `pki_verify_revocation` with no `pki_ca_cert_path`). The caller merges the payload over the
+  *current effective* values first, so the rejected state cannot be assembled one save at a time.
+  The PKI rule exists because `core/config.py:_validate_pki_settings` enforces the same
+  invariant at startup for the **`.env`** spelling only; once those keys became live (issue
+  #498) the admin UI could otherwise assemble a state the environment refuses to boot with.
+  **A cross-field rule mirroring a startup validator needs a copy here** — the two config
+  sources are validated by different code.
 - `CATEGORY_SCHEMAS` iteration order is the admin UI's tab order. Add a category in exactly one
   place.
 - `AuthConfigResponse.is_set` is how a sensitive key is reported: `config_value` is always

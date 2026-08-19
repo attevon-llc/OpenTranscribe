@@ -34,11 +34,24 @@ class ScriptedClient:
         self.refreshes += 1
 
     def search(self, *, index: str, body: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+        # The distinct-file count is a SECOND request, a paged `composite` walk, so
+        # it must not advance the observation cursor — otherwise every poll would
+        # consume two scripted observations. It replays the CURRENT observation's
+        # file count as that many buckets, which is what makes the count exact
+        # (`cardinality` estimated it, and undercounted a real 1,984-file corpus
+        # by one, forever — see index_reader._observe).
+        if "u" in body.get("aggs", {}):
+            observation = self._observations[
+                min(max(len(self.bodies) - 1, 0), len(self._observations) - 1)
+            ]
+            buckets = [{"key": {"f": f"uuid-{n}"}} for n in range(observation["files"])]
+            return {"aggregations": {"u": {"buckets": buckets}}}
+
         self.bodies.append(body)
         # The last observation repeats forever, so a test asserting a timeout
         # does not depend on how many polls fit inside it.
         observation = self._observations[min(len(self.bodies) - 1, len(self._observations) - 1)]
-        aggregations: dict[str, Any] = {"files": {"value": observation["files"]}}
+        aggregations: dict[str, Any] = {}
         if "stale" in body.get("aggs", {}):
             aggregations["stale"] = {"doc_count": observation.get("stale", 0)}
         return {
@@ -116,7 +129,10 @@ def test_the_since_arm_is_only_armed_when_asked() -> None:
     client = ScriptedClient([{"files": 3, "chunks": 900, "stale": 900}] * 2)
     settled = _settle(client)
     assert settled["chunks"] == 900
-    assert all("stale" not in body["aggs"] for body in client.bodies)
+    # The observation body now carries NO aggs at all unless `since` asks for the
+    # stale arm — the distinct-file count moved to its own composite request — so
+    # absence of the key is the stronger form of "the arm is not armed".
+    assert all("stale" not in body.get("aggs", {}) for body in client.bodies)
 
 
 def test_the_observation_is_scoped_to_the_corpus_and_is_never_a_hybrid_body() -> None:

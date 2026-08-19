@@ -43,11 +43,11 @@ Before enabling neural search, ensure:
 
 - **OpenSearch 3.4.0+** - Required for ML Commons plugin
 - **ML Commons Plugin Enabled** - For model management and embeddings
-- **Sufficient VRAM**: Depends on model selection
-  - Small models (all-MiniLM-L6-v2): 2-4GB
-  - Medium models (all-mpnet-base-v2): 4-8GB
-  - Large models (bge-large-en-v1.5): 8GB+
-- **Available Disk Space**: ~500MB-2GB for model storage
+- **Sufficient OpenSearch heap** -- the embedding model runs on CPU inside the OpenSearch
+  JVM and never touches the GPU, so the cost is heap, not VRAM. 1 GB runs the default
+  model; 2 GB runs every English model, including the 768-dimension ones. See
+  [Performance Tuning](../operations/performance-tuning.md#opensearch-heap-what-it-is-actually-for).
+- **Available Disk Space**: ~80-480 MB per model, depending on which you select
 
 :::note Model Download
 Models are downloaded automatically on first use. Ensure your OpenSearch container has internet access during initial setup.
@@ -55,55 +55,28 @@ Models are downloaded automatically on first use. Ensure your OpenSearch contain
 
 ## Available Models
 
-OpenTranscribe supports three embedding models in different performance tiers:
+OpenTranscribe offers seven embedding models, every one of them verified to register,
+deploy, and return its declared dimension from a real prediction against
+`opensearch:3.4.0`. Only models OpenSearch itself provides can be listed here -- a name
+that merely exists on Hugging Face fails registration at every version.
 
-### Tier 1: Small & Fast (Recommended for Most Users)
+| Model | Tier | Dim | Languages |
+|---|---|---|---|
+| `all-MiniLM-L6-v2` *(default)* | Fast | 384 | English |
+| `all-MiniLM-L12-v2` | Fast | 384 | English |
+| `multi-qa-MiniLM-L6-cos-v1` | Fast | 384 | English |
+| `paraphrase-multilingual-MiniLM-L12-v2` | Fast | 384 | 50+ |
+| `all-mpnet-base-v2` | Balanced | 768 | English |
+| `all-distilroberta-v1` | Best | 768 | English |
+| `distiluse-base-multilingual-cased-v1` | Best | 512 | 15 |
 
-**Model**: `sentence-transformers/all-MiniLM-L6-v2`
-- **Speed**: Fastest (2-5ms per embedding)
-- **VRAM**: 2-4GB
-- **Dimensions**: 384
-- **Quality**: Good for most use cases
-- **File Size**: ~80MB
+Sizes, measured cross-lingual scores, and the warning about adding a model live in the
+[Admin Panel guide](../user-guide/admin-panel.md#embedding-model-selection).
 
-**Best For:**
-- Production deployments
-- Budget-conscious setups
-- Real-time search on large indexes
-- Most transcription search tasks
-
-### Tier 2: Medium & Balanced
-
-**Model**: `sentence-transformers/all-mpnet-base-v2`
-- **Speed**: Medium (10-20ms per embedding)
-- **VRAM**: 4-8GB
-- **Dimensions**: 768
-- **Quality**: Better semantic understanding
-- **File Size**: ~420MB
-
-**Best For:**
-- Systems with moderate VRAM
-- Higher semantic accuracy requirements
-- Mixed workloads
-- Specialized terminology
-
-### Tier 3: Large & High-Quality
-
-**Model**: `sentence-transformers/bge-large-en-v1.5`
-- **Speed**: Slower (20-50ms per embedding)
-- **VRAM**: 8GB+
-- **Dimensions**: 1024
-- **Quality**: Highest accuracy, domain-optimized
-- **File Size**: ~1.3GB
-
-**Best For:**
-- High-accuracy requirements
-- Advanced systems with ample VRAM
-- Production systems with performance optimization
-- Enterprise deployments
-
-:::info Model Comparison
-All three models provide semantic search capabilities. Tier 1 (all-MiniLM) offers excellent value for most users. Choose Tier 2 or 3 only if you need higher accuracy and have the VRAM budget.
+:::info Dimension is what makes a switch expensive
+Moving between models of the *same* dimension is a re-embed. Changing dimension
+**recreates the index**. Four of the seven are 384-dimension, matching the default, so
+switching between them is the cheap and reversible path.
 :::
 
 ### Model Selection Rationale
@@ -136,14 +109,12 @@ If ML Commons is disabled, you'll see a warning. Contact your infrastructure tea
 
 ### Step 3: Select Embedding Model
 
-1. Click **Select Model** dropdown
-2. Choose from available models:
-   - `all-MiniLM-L6-v2` (Recommended - fastest)
-   - `all-mpnet-base-v2` (Balanced)
-   - `bge-large-en-v1.5` (Highest quality)
-
-3. System shows VRAM requirements for selected model
-4. Click **Validate** to verify your system can support the model
+1. Open the model dropdown. Each entry shows its dimension and download size, and the one
+   in use is marked `(Current)`; the model's description appears underneath the dropdown.
+2. Pick one of the seven models listed above.
+3. Click **Apply and Reindex** -- or **Cancel** to keep the current model. Applying
+   re-embeds every document, so the button does not appear until you actually change the
+   selection.
 
 ### Step 4: Configure ML Service
 

@@ -242,6 +242,24 @@ SEARCH_CACHE_MAX_SIZE = 256
 # OpenSearch Native Neural Search Model Registry
 # These models are registered and deployed directly in OpenSearch via ML Commons plugin
 # Organized by quality tier (Fast → Balanced → Best) and language support (English / Multilingual)
+# Every model listed here is VERIFIED by scripts/verify-embedding-models.py: it must
+# register, deploy, return its declared dimension from a real prediction, and — for the
+# multilingual tiers — place a translation nearer than an unrelated sentence.
+#
+# ⚠️ Candidates MEASURED AND REJECTED (2026-08-18, opensearch 3.4.0). Do not add these
+# back without re-measuring; each failed for a specific reason:
+#   paraphrase-multilingual-mpnet-base-v2  not an OpenSearch-provided model at all —
+#                                          REGISTER FAILED at 1.0.0/1.0.1/1.0.2 (#504)
+#   msmarco-distilbert-base-tas-b          dot-product model: two UNRELATED sentences
+#                                          score 0.703 under cosine
+#   multi-qa-mpnet-base-dot-v1             dot-product model, control 0.385
+#   paraphrase-MiniLM-L3-v2                DEPLOY FAILED
+# The two dot-product rejections matter because the chunks index maps
+# `"space_type": "cosinesimil"` — such a model is ranked by a metric it was never
+# trained for, and the scores look perfectly plausible while being wrong.
+#
+# Verified working but not offered (no distinct use case over what is here):
+#   all-MiniLM-L12-v2 (384d), paraphrase-mpnet-base-v2 (768d).
 OPENSEARCH_EMBEDDING_MODELS = {
     # === FAST TIER (384 dimensions) ===
     # Low latency, lower memory. Good for keyword-focused searches.
@@ -256,6 +274,39 @@ OPENSEARCH_EMBEDDING_MODELS = {
         "tier": "fast",
         "language_type": "english",
         "description": "Fast, lightweight English model. Good baseline for keyword-heavy searches.",
+    },
+    "huggingface/sentence-transformers/all-MiniLM-L12-v2": {
+        "name": "MiniLM L12 - Higher quality (English Only)",
+        "dimension": 384,
+        "size_mb": 120,
+        "languages": ["en"],
+        "model_format": "TORCH_SCRIPT",
+        "default": False,
+        "requires_prefix": False,
+        "tier": "fast",
+        "language_type": "english",
+        "description": (
+            "The default MiniLM with all 12 layers instead of 6 — the L6 default is "
+            "literally this model with every other layer removed. Published sbert average "
+            "59.8 vs 58.8, for roughly half the encode throughput. Same 384 dimensions, so "
+            "switching is a re-embed with no index recreation and a trivial rollback."
+        ),
+    },
+    "huggingface/sentence-transformers/multi-qa-MiniLM-L6-cos-v1": {
+        "name": "MiniLM - Retrieval-tuned (English Only)",
+        "dimension": 384,
+        "size_mb": 80,
+        "languages": ["en"],
+        "model_format": "TORCH_SCRIPT",
+        "default": False,
+        "requires_prefix": False,
+        "tier": "fast",
+        "language_type": "english",
+        "description": (
+            "Trained for semantic SEARCH rather than general sentence similarity. Same "
+            "384 dimensions as the default, so switching is a re-embed and not an index "
+            "recreation. Retrieval quality on this corpus is NOT yet benchmarked."
+        ),
     },
     "huggingface/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2": {
         "name": "MiniLM - Fast (Multilingual, 50+ Languages)",
@@ -283,18 +334,20 @@ OPENSEARCH_EMBEDDING_MODELS = {
         "language_type": "english",
         "description": "Better semantic understanding. Good balance of speed and quality.",
     },
-    "huggingface/sentence-transformers/paraphrase-multilingual-mpnet-base-v2": {
-        "name": "MPNet - Balanced (Multilingual, 50+ Languages)",
-        "dimension": 768,
-        "size_mb": 1100,
-        "languages": ["multilingual"],
-        "model_format": "TORCH_SCRIPT",
-        "default": False,
-        "requires_prefix": False,
-        "tier": "balanced",
-        "language_type": "multilingual",
-        "description": "Higher quality multilingual embeddings. Good semantic search.",
-    },
+    # REMOVED: paraphrase-multilingual-mpnet-base-v2 (issue #504).
+    #
+    # It is NOT an OpenSearch-provided pretrained model and never was, so offering it
+    # here gave admins a choice that could only fail. Measured against
+    # opensearchproject/opensearch:3.4.0 at versions 1.0.0, 1.0.1 and 1.0.2, all three:
+    #     REGISTER -> FAILED: "This model is not in the pre-trained model list,
+    #                          please check your parameters."
+    # and its artifact config.json 403s. OpenSearch's provided list contains
+    # `paraphrase-multilingual-MiniLM-L12-v2` (multilingual) and
+    # `paraphrase-mpnet-base-v2` (English-only); this name conflates the two.
+    #
+    # Do not re-add it without tracing and uploading it as a CUSTOM model — it is a
+    # legitimate 768d/50-language model, it simply is not one OpenSearch ships.
+    # Every model listed here must pass scripts/verify-embedding-models.py.
     # === BEST QUALITY TIER ===
     # Highest retrieval quality, recommended for semantic-heavy searches.
     "huggingface/sentence-transformers/all-distilroberta-v1": {
@@ -930,9 +983,38 @@ DEFAULT_REDACTION_DETECTORS = ["profanity", "pii", "toxicity"]  # llm opt-in
 # is profanity/toxicity masking. PII spans are still DETECTED and cached (detectors
 # above), so enabling the category later applies instantly at read time.
 DEFAULT_REDACTION_CATEGORIES = ["profanity", "toxicity", "custom"]
-# ORGANIZATION is excluded from defaults: spaCy NER over-tags acronyms/common nouns as
-# ORG (e.g. "SSN" → ORGANIZATION), and org names are rarely sensitive PII. Still selectable.
-DEFAULT_REDACTION_PII_ENTITIES = [e for e in REDACTION_PII_ENTITIES if e != "ORGANIZATION"]
+# ORGANIZATION is INCLUDED, and the reason is measured (issue #499).
+#
+# It used to be excluded, on the grounds that spaCy over-tags acronyms as ORG and that
+# "org names are rarely sensitive PII". The first half is true; the second missed that a
+# PERSON'S NAME is sometimes what gets tagged ORG, and excluding the entity meant that
+# name shipped in clear to a user who had explicitly asked for PII masking.
+#
+# MEASURED against the shipped detector (`en_core_web_sm`, the model this app configures
+# — NOT the `en_core_web_lg` a bare AnalyzerEngine downloads):
+#
+#     "Blackwell will follow up"      -> ORGANIZATION @ 0.85   <- a surname. The leak.
+#     "Acme Corporation", "Microsoft" -> ORGANIZATION @ 0.85   <- correct, now masked too
+#     "SSN", "API", "CPU"             -> ORGANIZATION @ 0.85   <- noise, now masked too
+#
+# ⚠️ **A confidence threshold cannot separate those.** Presidio's own FAQ recommends
+# tuning the acceptance threshold for exactly this problem, and it does not work here:
+# `en_core_web_sm` returns a flat **0.85 for every NER hit**, real or noise. That is why
+# `DEFAULT_REDACTION_PII_CONFIDENCE` is not the lever, and raising it only loses recall.
+#
+# The trade is therefore deliberate and one-directional: company names and acronyms get
+# masked so that a misfiled person's name does not leak. That is the recall-over-precision
+# choice the PII literature recommends (a missed name is a privacy incident; a masked
+# company name is noise), and it only ever applies to users who opted into PII masking —
+# `pii` is not in DEFAULT_REDACTION_CATEGORIES, so this is opt-in twice over.
+#
+# ⚠️ **This does NOT make name detection exhaustive, and the UI says so.** The same
+# measurement found `en_core_web_sm` missing person names ENTIRELY — "Dax Okonkwo",
+# "Rivera" and "Sterling" produced no span at all, not even a mislabelled one. Adding
+# ORGANIZATION cannot recover those. The higher-recall path is the GLiNER detector
+# (`REDACTION_PII_USE_GLINER`, default off), which is a PII-specific model rather than a
+# general-purpose NER.
+DEFAULT_REDACTION_PII_ENTITIES = list(REDACTION_PII_ENTITIES)
 DEFAULT_REDACTION_STYLE = "label"
 DEFAULT_REDACTION_TOXICITY_THRESHOLD = 0.5
 DEFAULT_REDACTION_REDACT_BEFORE_LLM = True

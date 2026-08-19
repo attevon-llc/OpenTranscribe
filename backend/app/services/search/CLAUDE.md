@@ -185,6 +185,12 @@ speaker plane exists to let people *set*.
   **ingest** pipeline self-heals the same way: `_check_existing_pipeline_config` compares
   `model_id`, `field_map` and `batch_size` against `_build_neural_ingest_pipeline`, so
   repointing what gets embedded reaches upgraded deployments and not only fresh installs.
+  It also compares the processor list's **shape** — exactly one processor, and it a
+  `text_embedding`. It used to iterate to the first `text_embedding` and return on it, so
+  an **extra** processor (a stray `set`, a second embedding, anything left by a manual PUT
+  or an older release) and a **reordering** were both invisible and survived every boot.
+  A processor ahead of the embedding can rewrite the very field being embedded, and the
+  check reported a perfect match.
   `batch_size` is compared only when the live pipeline has one (the creation path drops it on
   OpenSearch versions that reject it, and treating that as drift is a boot loop), and a
   `field_map` change still needs a **reindex** before existing documents embed the new field.
@@ -330,6 +336,72 @@ Full method, every arm's command line, the negative results with their margins, 
 reranker licence gate: `docs-site/docs/developer-guide/rag-evaluation.md` → "Stage 5 — the
 retrieval tuning bake-off".
 
+## Which models are offered, and why those (#504)
+
+**Every model in `OPENSEARCH_EMBEDDING_MODELS` is VERIFIED** — it registers, deploys, and
+returns its declared dimension from a *real prediction*, and the multilingual ones place a
+translation nearer than an unrelated sentence. `scripts/verify-embedding-models.py` is the
+check; run it against a **throwaway** cluster before adding anything.
+
+This exists because the list previously offered `paraphrase-multilingual-mpnet-base-v2`,
+which **is not an OpenSearch-provided model at all** — registration FAILS at 1.0.0, 1.0.1
+and 1.0.2 with *"This model is not in the pre-trained model list"*. It had reached **nine
+files**. OpenSearch's provided list has `paraphrase-multilingual-MiniLM-L12-v2`
+(multilingual) and `paraphrase-mpnet-base-v2` (English); the name conflated the two.
+
+Measured 2026-08-18, `opensearch:3.4.0`, cosine of a translation against the English
+original (control = an unrelated English sentence):
+
+| model | dim | es | zh | ar | ru | control |
+|---|---|---|---|---|---|---|
+| all-MiniLM-L6-v2 *(default)* | 384 | 0.10 | 0.01 | 0.07 | −0.03 | −0.04 |
+| all-mpnet-base-v2 | 768 | 0.09 | 0.09 | 0.10 | 0.06 | 0.02 |
+| all-distilroberta-v1 | 768 | 0.16 | −0.00 | 0.07 | −0.02 | −0.03 |
+| **paraphrase-multilingual-MiniLM-L12-v2** | 384 | **0.98** | **0.95** | **0.94** | **0.94** | −0.06 |
+| **distiluse-base-multilingual-cased-v1** | 512 | **0.90** | **0.87** | **0.85** | **0.93** | −0.01 |
+
+⚠️ **A high CONTROL score means the model is not cosine-trained, and this index is.**
+`indexing_service.py` maps `"space_type": "cosinesimil"`. Two rejected candidates scored
+**0.385** (`multi-qa-mpnet-base-dot-v1`) and **0.703** (`msmarco-distilbert-base-tas-b`) on
+two *unrelated* sentences — they are dot-product models, whose magnitude carries the signal
+cosine discards. Ranking them here is silent and wrong, the same family as the repo-wide
+`cosinesimil` conversion trap. Supporting them means a per-model `space_type`, an index
+recreation, and updating all 11 kNN score-conversion sites — not a flag.
+
+⚠️ **"Deployed" is not "working."** `all-mpnet-base-v2` on a 1 GB heap reports
+`DEPLOY: COMPLETED` and then fails to embed. Verify with a prediction, never a state field.
+
+**Heap is sized for the model, not the data** (188 MB store, 0 MB segment memory on the
+measured cluster). Verified floors: 1 GB runs the default model **and**
+`paraphrase-multilingual-MiniLM-L12-v2` (measured 2026-08-19: register → deploy → real
+cross-lingual prediction at 1 GB, despite the model being 5× the default's size — size
+does not predict the floor; mpnet is *smaller* and fails inference at 1 GB). 2 GB runs
+every English model. 4 GB is the shipped default for headroom, and it is a HARD cost —
+`Xms == Xmx` plus `bootstrap.memory_lock` claims and pins it. Full table:
+`docker-compose.yml`.
+
+### MEASURED: what the multilingual model buys, end to end (#453)
+
+1,984 real MIRACL Spanish passages injected on an isolated stack, embedded through the
+real ingest pipeline, 206 human-judged Spanish queries scored per arm (committed
+baselines: `tests/eval/baselines/miracl-es-{multilingual,english}/`):
+
+| arm | nDCG@10 | R@10 | MRR |
+|---|---|---|---|
+| `paraphrase-multilingual-MiniLM-L12-v2` | **0.7618** | 0.9049 | 0.7772 |
+| `all-MiniLM-L6-v2` (the shipped default) | 0.6570 | 0.7916 | 0.6962 |
+| mismatched spaces (multilingual vectors, English queries) | 0.4386 | 0.5711 | 0.5093 |
+
+- **The default stays English — a deliberate product decision**, not an oversight: most
+  deployments are English-only, the multilingual model costs ~6.5× the ingest embedding
+  throughput (measured 3.24 docs/s on the OpenSearch CPU node), and its cost *on English
+  corpora* is unmeasured. A multilingual deployment enables it in the Settings UI:
+  pick → **Download & deploy** → Apply.
+- **The mismatched row is #437's thesis, measured**: the silent mixed state costs more
+  than either clean configuration. It was produced live by the reindex lock leak (fixed
+  in the same change) — a switch whose re-embed was silently skipped left every vector
+  in the old model's space while the pipeline embedded queries with the new one.
+
 ## Switching the embedding model (#437) — one implementation, and it fans out
 
 **Clearing a cache re-embeds nothing.** Two vectors from two different models occupy the same
@@ -363,8 +435,13 @@ in the ordinary run — which is why the provenance below exists.
 - **An undeployed model is refused (409), not recorded.** Saving a selection for a model that
   cannot embed anything is what made the legacy path *destructive*: the coordinator honours the
   new dimension, deletes the whole chunks index, and then fails every write because the
-  untouched pipeline still emits the old width. ⚠️ The settings UI has **no** register/deploy
-  control, so a non-default model currently has to be registered and deployed by API first.
+  untouched pipeline still emits the old width. The settings UI can now satisfy the guard
+  itself (#453): the picker carries per-model `ready`, badges unready models, and offers
+  **Download & deploy** (idempotent register+deploy). Before that, the guard's 409 told the
+  admin to POST two endpoints by hand — and those endpoints 404ed for every model anyway
+  (`{model_name}` never matched the `/` every registry key contains), on top of
+  `find_model_by_name` returning ML Commons *chunk* ids that made deploy 500. All three are
+  fixed and pinned by `tests/unit/test_embedding_model_admin_reachable.py`.
 
 ### `embedding_model` is the model, and `"neural"` means UNKNOWN
 
@@ -419,6 +496,37 @@ straight into the pipeline. That silently repointed embedding **with no user act
 one deployed model is not a choice and is adopted with a warning (the recovery the fallback
 exists for); more than one returns `None` and leaves search on BM25 — loud, obvious and
 reversible, where a wrong guess is silent and costs a full re-embed.
+
+## A failed index must not report success (#495)
+
+`index_transcript_chunks` used to `except Exception: return 0`, and its caller
+`tasks/search_indexing_task` had an arm that wrapped a bare int as `{"chunk_count": result}`,
+marked the DB task **completed** and returned `{"status": "success"}`. So a dead OpenSearch, a
+mapping rejection or a partial bulk load were all reported to the user, the task table and the
+notification as a **successful index of zero chunks**. The task's own `except` could never fire.
+
+What made it invisible is worth keeping in mind generally: `0` was *also* the legitimate answer
+for "no client", "no segments" and "no chunks generated". A sentinel that collides with a real
+value cannot be checked. So:
+
+- Failures **raise**. `_bulk_index_chunks` returns how many documents landed;
+  `indexed < len(chunks)` — the state `_retry_failed_docs` leaves after it gives up at 2
+  attempts — raises rather than returning short. Safe to retry: ids are deterministic
+  (`{file_uuid}_{chunk_index}`), so a re-run overwrites rather than duplicates.
+- The three "nothing to index" outcomes return a dict carrying an explicit `reason`.
+- **The digest plane reports the true count but does NOT raise**, and the asymmetry is
+  deliberate: `_index_digest_plane`'s `except` already declines to fail an index over derived
+  enrichment, whereas the chunks are the transcript itself. It previously discarded
+  `_bulk_index_documents`'s return value and reported `len(documents)` — the number of sections
+  *generated*, identical whether all or none were written.
+
+⚠️ **Tests must query a PLANE, not a bare `file_uuid` term.** #495 was filed as "the synthetic
+corpus indexes no chunks" and marked `xfail(strict=True)`; the chunks were there the whole time.
+A bare `{"term": {"file_uuid": ...}}` returned **8 chunks and 1 digest**, and the digest has no
+`speaker` field, so the test raised `KeyError: 'speaker'`. Under `-q --tb=line` that showed as a
+bare `FAILED` and the passing `assert hits` above it was read as the failure. Use
+`chunk_plane_query` — the same rule the product follows — and assert `hits` non-empty on its own
+line so "nothing indexed" can never again be confused with "wrong plane".
 
 ## Index v6: two planes in one index (#403 Stage 3)
 

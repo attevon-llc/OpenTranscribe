@@ -303,16 +303,33 @@ everything is impossible — and there the header reports what it covered (`8 of
 rather than presenting the covered count as the total.
 ## ⚠️ RAG and chat are ENGLISH-ONLY. Transcription is not.
 
-**Do not "fix" this by widening a constant.** WhisperX transcribes 100+ languages
-and that must keep working; what is English-only is the *question-answering* path
-on top of it. Four independent stages, none of which is a setting:
+**Multilingual is the GOAL. This section tracks the distance to it — it is not a
+policy of English-only**, and the heading above is kept only because the shape of
+the warning still carries that name. WhisperX transcribes 100+ languages and that
+must keep working; what varies is how much the *question-answering* path on top can
+do with the result, and that depends on **what the deployment has configured**.
 
-| Stage | Why it is English |
+⚠️ **`SUPPORTED_RAG_LANGUAGES` used to be a hardcoded `frozenset({"en"})` and that
+was a bug.** A deployment that had selected a multilingual embedding model — and was
+therefore genuinely serving Spanish — still displayed "Spanish is unsupported" on
+every turn. Support is now DERIVED, by `supported_rag_languages(db)`, from the model
+that actually produces the vectors. The constant survives only as the fallback, and
+`ALL_LANGUAGES` (`None`) is the open set. **Do not widen the constant by hand** —
+that would assert support on a deployment still running English-only embeddings.
+
+| Stage | State |
 |---|---|
-| BM25 | the `transcript_chunks` analyzer is `english_stop` + `english_snowball` (`services/search/indexing_service.py:55-70`) — a Spanish query stems as if it were English |
-| Embeddings | default `all-MiniLM-L6-v2`, declared `"languages": ["en"]` in `core/constants.py:OPENSEARCH_EMBEDDING_MODELS` |
-| Reranking | `CHAT_RERANKER_MODEL = cross-encoder/ms-marco-MiniLM-L-6-v2`, an English MS MARCO model |
-| Prompting | `BASE_SYSTEM_RULES` and the query-rewriter prompt are written in English |
+| Embeddings | **The one that matters, and it is configurable.** Default `all-MiniLM-L6-v2` is `"languages": ["en"]`. Measured by `scripts/verify-embedding-models.py`, cosine of a translation against its English original: **0.10 (es) / 0.01 (zh)** for the default vs **0.98 / 0.95** for `paraphrase-multilingual-MiniLM-L12-v2` — also 384d, so adopting it is a re-embed and **not** an index recreation. Selecting it is what makes a deployment multilingual |
+| BM25 | Still `english_stop` + `english_snowball` (`services/search/indexing_service.py:55-70`). **Partly mitigated already**: `content.exact` (standard analyzer) is queried alongside the stemmed leg, so non-English keyword matching degrades rather than vanishing. Dropping the stemmed leg query-side for non-English is #453 step 6 and is measurement-gated |
+| Reranking | `ms-marco-MiniLM-L-6-v2` is English MS MARCO and is now **skipped when the candidate head is predominantly non-English** (`reranker._is_mostly_non_english`). Not an optimisation: `rerank` **overwrites** `hit.score`, so letting it run destroys a correct retrieval order using a model that cannot read the text. Distinct from the #363 question of whether it helps on *English* — that stays open, blocked on #463 |
+| ~~Prompting~~ | **FIXED (#453).** Both prompts are authored in English but now instruct in it: answer in the question's language, quote in the original and never translate a quotation (a translated quote is a paraphrase wearing quote marks), and never translate the rewritten query. `tests/unit/test_chat_answer_language.py` |
+
+⚠️ **A multilingual embedding model does not make BM25 multilingual.** The warning is
+therefore not simply switched off — the point is to stop asserting things that are
+not true in *either* direction. `tests/unit/test_chat_multilingual_stack.py` pins
+both halves, each with its opposite-outcome control, and both fail **closed to
+English**: a warning that wrongly appears is a nuisance; one that wrongly vanishes
+hides the silent failure it exists to surface.
 
 Chunking used to be listed here as "the exception — chunk boundaries are fine."
 **That was wrong, and only true for Latin and Cyrillic scripts.**
@@ -358,9 +375,13 @@ The lookup fails **open**: a diagnostic must never break a chat turn, and a warn
 invented from a failed read would be worse than none.
 
 **Not admin-tunable, on purpose.** An operator can select a multilingual embedding
-model, but that repairs one of the four stages; a `SystemSettings` row letting them
-declare "Spanish is supported" would be dishonest about the other three.
-`SUPPORTED_RAG_LANGUAGES` widens in code, alongside the pipeline that earns it.
+model, but that repairs one of the three remaining stages; a `SystemSettings` row
+letting them declare "Spanish is supported" would be dishonest about the other two.
+`SUPPORTED_RAG_LANGUAGES` widens in code, alongside the pipeline that earns it —
+and per language, only as each clears the MIRACL benchmark (#453 step 9). Since
+#453 the settings UI badges each model `Multilingual` / `English only` and says the
+switch changes the semantic embeddings **only**, so choosing one is at least no
+longer a blind decision.
 
 Known gap: the *question's* language is not detected — asking in Spanish about an
 English transcript is not flagged. That needs a language detector and is part of

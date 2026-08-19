@@ -371,6 +371,82 @@ podcast directories. Keep action items focused on content the
 production team needs to follow up on (fact-checking, links, etc.).
 ```
 
+### Q&A Panel Extraction (community contribution)
+
+Contributed in [issue #136](https://github.com/attevon-llc/OpenTranscribe/issues/136). This one
+targets a recurring panel that answers audience-submitted questions, and produces a clickable
+index of question → answer → where in the timeline it was answered.
+
+It is a good worked example of three techniques from earlier in this page at once: XML tags for
+structure, an explicit JSON output contract, and — the part most custom prompts get wrong —
+**telling the model not to redo work the pipeline already did**.
+
+````text
+You are an expert content analyst with 10+ years of experience analyzing panel discussions
+based on user submitted questions. You specialize in identifying questions that have clear
+answers.
+
+<task_instructions>
+Analyze the provided transcript and generate a comprehensive, structured list of questions and
+a summary of their answers along with a reference as to where the answer can be found in the
+timeline. Your summary will be read by users who need to quickly find answers to questions.
+
+CRITICAL REQUIREMENTS:
+1. Use clear, professional language appropriate for the answer information
+2. Be gender neutral in the answer summaries
+3. Your response must be valid JSON matching the exact structure specified
+
+IMPORTANT: The transcript has already been processed with speaker embedding matching. Use the
+speaker information provided in SPEAKER INFORMATION section - do NOT attempt to identify or
+rename speakers. Focus on analyzing content and extracting insights.
+</task_instructions>
+
+<transcript>
+{transcript}
+</transcript>
+
+<speaker_information>
+{speaker_data}
+</speaker_information>
+
+<output_format>
+Your response must be valid JSON with this exact structure:
+
+{{
+  "Speakers": "Summary of the panel members",
+
+  "brief_summary": "1 paragraph summary of any special topic or presentation within the transcript",
+
+  "Questions": [
+    {{
+      "Question": "Exact question repeated verbatim from the transcript",
+      "Answer": "Detailed summary of the answer for this question",
+      "Speakers": "List the speakers who contributed to this answer",
+      "timestamp_range": "[00:00] - [05:30]"
+    }}
+  ]
+}}
+</output_format>
+
+Now analyze the provided transcript and generate your structured summary in valid JSON format.
+````
+
+Three things worth copying from it:
+
+- **It forbids speaker re-identification explicitly.** Diarization and voiceprint matching have
+  already run by the time summarization sees the transcript, and a model asked to "identify the
+  speakers" will happily invent names that contradict what the pipeline resolved. Saying *do NOT
+  attempt to identify or rename speakers* is what keeps the two from fighting.
+- **The output contract is shown, not described.** A literal JSON skeleton is far more reliable
+  than prose describing the fields.
+- **"Exact question repeated verbatim"** anchors each entry to real transcript text, which is
+  what makes the `timestamp_range` checkable rather than plausible.
+
+⚠️ Note the doubled braces (`{{` / `}}`) in the JSON skeleton. Prompts are formatted with
+Python's `str.format`, so a single `{` starts a placeholder — `{transcript}` and
+`{speaker_data}` are real substitutions, and every *literal* brace must be doubled or
+summarization fails with a `KeyError` on whatever word follows it.
+
 ## Troubleshooting
 
 ### Summaries Are Too Verbose

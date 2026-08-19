@@ -400,7 +400,13 @@ def get_metadata_filters(
     width_text = cast(MediaFile.metadata_important["width"], String)
     height_text = cast(MediaFile.metadata_important["height"], String)
 
-    # --- Query 1: Distinct values (formats, codecs) via array_agg ---
+    # --- Query 1: Distinct values (formats, codecs, languages) via array_agg ---
+    #
+    # `languages` rides this existing query rather than taking its own round trip
+    # (#453). Transcription has always been multilingual — WhisperX detects 100+
+    # languages and `MediaFile.language` records the code — but nothing ever offered
+    # it as a filter, so a user with a mixed-language library had no way to narrow to
+    # one. The chunk index has carried `language` as a filterable keyword all along.
     distinct_row = (
         db.query(
             func.array_agg(func.distinct(format_text)).filter(
@@ -409,6 +415,9 @@ def get_metadata_filters(
             func.array_agg(func.distinct(codec_text)).filter(
                 codec_text.isnot(None), codec_text != "null"
             ),
+            func.array_agg(func.distinct(MediaFile.language)).filter(
+                MediaFile.language.isnot(None), MediaFile.language != ""
+            ),
         )
         .filter(file_filter)
         .first()
@@ -416,6 +425,8 @@ def get_metadata_filters(
 
     formats = [v for v in (distinct_row[0] or []) if v] if distinct_row else []
     codecs = [v for v in (distinct_row[1] or []) if v] if distinct_row else []
+    # Sorted so the filter list is stable between requests; array_agg order is not.
+    languages = sorted(v for v in (distinct_row[2] or []) if v) if distinct_row else []
 
     # --- Query 2: All min/max ranges in a single table scan ---
     ranges = (
@@ -450,6 +461,7 @@ def get_metadata_filters(
     return {
         "formats": formats,
         "codecs": codecs,
+        "languages": languages,
         "duration": {"min": min_duration, "max": max_duration},
         "file_size": {"min": min_file_size, "max": max_file_size},
         "resolution": {

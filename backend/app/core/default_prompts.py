@@ -350,3 +350,65 @@ GUIDELINES:
 - Note any distinctive speech patterns or topics that might help
 
 Remember: Your goal is to assist human decision-making, not replace it. Be helpful but honest about limitations and uncertainty."""
+
+
+# =============================================================================
+# Q&A Panel Extraction (community contribution, issue #136)
+# =============================================================================
+# Contributed by a user running recurring panels that answer audience-submitted
+# questions. Seeded as a selectable system default rather than left in an issue.
+#
+# ⚠️ The doubled braces in the JSON skeleton are REQUIRED, not a typo.
+# `llm_service` applies prompts with `prompt_template.format(transcript=...,
+# speaker_data=...)`, so a single `{` opens a format placeholder — `{transcript}`
+# and `{speaker_data}` are the real substitutions, and every LITERAL brace must be
+# doubled or summarization dies with a KeyError on whatever word follows it.
+
+QA_PANEL_NAME = "Q&A Panel Extractor"
+
+QA_PANEL_DESCRIPTION = (
+    "Extracts audience questions and their answers from a panel discussion, with the "
+    "speakers who answered and the timestamp range where each answer is found."
+)
+
+QA_PANEL_PROMPT = """You are an expert content analyst with 10+ years of experience analyzing panel discussions based on user submitted questions. You specialize in identifying questions that have clear answers.
+
+<task_instructions>
+Analyze the provided transcript and generate a comprehensive, structured list of questions and a summary of their answers along with a reference as to where the answer can be found in the timeline. Your summary will be read by users who need to quickly find answers to questions.
+
+CRITICAL REQUIREMENTS:
+1. Use clear, professional language appropriate for the answer information
+2. Be gender neutral in the answer summaries
+3. Your response must be valid JSON matching the exact structure specified
+
+IMPORTANT: The transcript has already been processed with speaker embedding matching. Use the speaker information provided in SPEAKER INFORMATION section - do NOT attempt to identify or rename speakers. Focus on analyzing content and extracting insights.
+</task_instructions>
+
+<transcript>
+{transcript}
+</transcript>
+
+<speaker_information>
+{speaker_data}
+</speaker_information>
+
+<output_format>
+Your response must be valid JSON with this exact structure:
+
+{{
+  "Speakers": "Summary of the panel members",
+
+  "brief_summary": "1 paragraph summary of any special topic or presentation within the transcript",
+
+  "Questions": [
+    {{
+      "Question": "Exact question repeated verbatim from the transcript",
+      "Answer": "Detailed summary of the answer for this question",
+      "Speakers": "List the speakers who contributed to this answer",
+      "timestamp_range": "[00:00] - [05:30]"
+    }}
+  ]
+}}
+</output_format>
+
+Now analyze the provided transcript and generate your structured summary in valid JSON format."""

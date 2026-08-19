@@ -2867,7 +2867,7 @@
   "search.sortBy": "Sortieren nach",
   "search.noKeywordMatches": "Keine exakten Treffer gefunden. Ähnliche Inhalte werden angezeigt.",
   "search.metadataSpeakerMatch": "Sprecher in Datei",
-  "search.modelChangeWarning": "Das Ändern des Embedding-Modells indiziert alle Transkripte neu. Die Suche verwendet während der Neuindizierung nur den Stichwort-Modus. Fortfahren?",
+  "search.modelChangeWarning": "Das Ändern des Embedding-Modells indiziert alle Transkripte neu. Die Suche verwendet während der Neuindizierung nur den Stichwort-Modus. Dies ändert ausschließlich die semantischen Embeddings – Stichwortsuche, Chunking und die KI-Chat-Prompts bleiben unverändert, ein mehrsprachiges Modell macht also nicht von sich aus alles mehrsprachig. Fortfahren?",
   "search.reindexingInProgress": "Neuindizierung läuft...",
   "search.reindexComplete": "Neuindizierung abgeschlossen!",
   "search.stopReindex": "Stoppen",
@@ -4976,5 +4976,18 @@
   "provenance.save": "Speichern",
   "provenance.cancel": "Abbrechen",
   "provenance.saving": "Wird gespeichert…",
-  "provenance.saveFailed": "Speichern fehlgeschlagen. Bitte erneut versuchen."
+  "provenance.saveFailed": "Speichern fehlgeschlagen. Bitte erneut versuchen.",
+  "prompts.contentTypeQaPanel": "Q&A-Panel",
+  "settings.contentRedaction.piiEntitiesWarning": "Die Namenserkennung ist nicht vollständig. ORGANIZATION wird standardmäßig maskiert, weil Personennamen manchmal als Organisation erkannt werden — dafür werden auch Firmennamen und Abkürzungen maskiert. Einige Namen können dennoch übersehen werden; aktivieren Sie das GLiNER-PII-Modell für höhere Trefferquote und prüfen Sie Exporte vor der Weitergabe.",
+  "filter.language": "Sprache",
+  "filter.languageTooltip": "Nur als {language} erkannte Transkripte anzeigen",
+  "settings.search.multilingualBadge": "Mehrsprachig",
+  "settings.search.englishOnlyBadge": "Nur Englisch",
+  "settings.search.notDownloadedBadge": "Nicht heruntergeladen",
+  "settings.search.modelNotDownloaded": "Dieses Modell wurde noch nicht nach OpenSearch heruntergeladen und kann daher nicht angewendet werden. Laden Sie es zuerst herunter und stellen Sie es bereit – dabei werden die Modellgewichte abgerufen, was mehrere Minuten dauern kann. Das Herunterladen ändert Ihr aktives Modell nicht – das Anwenden ist ein eigener Schritt.",
+  "settings.search.downloadAndDeploy": "Herunterladen & bereitstellen",
+  "settings.search.preparingModel": "Wird heruntergeladen & bereitgestellt…",
+  "settings.search.modelReady": "Modell heruntergeladen und bereitgestellt. Sie können es jetzt anwenden.",
+  "settings.search.modelNotReady": "Die Bereitstellung meldete Erfolg, aber das Modell kann weiterhin keine Embeddings erzeugen. Prüfen Sie die OpenSearch-Logs – meist ist der JVM-Heap für dieses Modell zu klein.",
+  "settings.search.modelPrepareFailed": "Das Modell konnte nicht heruntergeladen und bereitgestellt werden."
 }

@@ -1,30 +1,39 @@
 """Language scope for RAG chat: what the retrieval stack can actually answer over.
 
-**Transcription is multilingual; RAG and chat are not.** WhisperX transcribes 100+
-languages and nothing here changes that — this module only describes what the
-*question-answering* path can do with the result.
+**Multilingual is the goal, and this module measures the distance to it** — it does
+not enforce English. WhisperX already transcribes 100+ languages; what this
+describes is whether the *question-answering* path on top can do anything useful
+with the result, on **this deployment's current configuration**.
 
-Every stage between a transcript and an answer is tuned for English:
+⚠️ **This used to be a hardcoded ``frozenset({"en"})`` and that was wrong.** It made
+a deployment that had deliberately selected a multilingual embedding model — and
+was therefore genuinely serving Spanish — display "Spanish is unsupported" on every
+turn. A constant cannot know what the operator configured, so support is now
+**derived** from the model that actually produces the vectors.
 
-* the ``transcript_chunks`` BM25 analyzer is ``english_stop`` + ``english_snowball``
-  (``services/search/indexing_service.py:55``), so a Spanish query stems as if it
-  were English and matches almost nothing;
-* the default embedding model is ``all-MiniLM-L6-v2``, declared
-  ``"languages": ["en"]`` in ``core/constants.py:OPENSEARCH_EMBEDDING_MODELS``;
-* the cross-encoder reranker is ``ms-marco-MiniLM-L-6-v2``, an English MS MARCO
-  model (``core/constants.py:CHAT_RERANKER_MODEL``);
-* the base system rules and the query rewriter prompt are written in English.
+Which stage is English-only, and what changes it:
 
-The failure that produces is **silent**: a non-English transcript is not retrieved
-for an English query, so the model answers confidently from whatever English
-material remains, and nothing on screen says a recording was effectively invisible.
-This module turns that into a visible, non-fatal warning.
+* **Embeddings — the one that matters, and it is configurable.** The default
+  ``all-MiniLM-L6-v2`` is declared ``"languages": ["en"]``. Measured on this repo's
+  own harness (``scripts/verify-embedding-models.py``), cosine of a translation
+  against its English original: **0.10 (es) / 0.01 (zh)** for the default versus
+  **0.98 / 0.95** for ``paraphrase-multilingual-MiniLM-L12-v2`` — which is also
+  384d, so adopting it is a re-embed and NOT an index recreation. Selecting it is
+  what makes a deployment multilingual, and :func:`supported_rag_languages` reads
+  that selection.
+* **BM25** — the ``transcript_chunks`` analyzer is ``english_stop`` +
+  ``english_snowball`` (``services/search/indexing_service.py:55``). Partially
+  mitigated already: ``content.exact`` (standard analyzer) is queried alongside the
+  stemmed leg, so non-English keyword matching degrades rather than vanishing.
+* **Reranking** — ``ms-marco-MiniLM-L-6-v2`` is English MS MARCO. It is **skipped
+  for non-English content** rather than left to reorder text it cannot read.
+* **Prompting — FIXED (#453).** Both prompts are authored in English but now
+  instruct in it: answer in the question's language, quote in the original and
+  never translate a quotation, and never translate the rewritten query.
 
-**Not admin-tunable, on purpose.** An operator *can* select a multilingual
-embedding model, but that fixes one of the four stages above; a knob that let them
-declare "Spanish is supported" would be dishonest about the other three. When
-multilingual RAG lands, :data:`SUPPORTED_RAG_LANGUAGES` widens in code alongside
-the pipeline that earns it.
+⚠️ **A multilingual embedding model does not make BM25 multilingual**, so the
+warning is not simply switched off — it reports what is *actually* degraded rather
+than claiming either total support or none.
 """
 
 from __future__ import annotations
@@ -38,9 +47,53 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
-#: Languages the retrieval + prompting stack is actually tuned for. See the module
-#: docstring for why this is code and not a ``SystemSettings`` row.
+#: Fallback support set, used when the active embedding model is English-only or
+#: cannot be resolved. **Never widen this by hand** — widening it here would assert
+#: support for a language on a deployment still running English-only embeddings.
+#: Multilingual support comes from selecting a multilingual model; see
+#: :func:`supported_rag_languages`.
 SUPPORTED_RAG_LANGUAGES: frozenset[str] = frozenset({"en"})
+
+#: Sentinel returned by :func:`supported_rag_languages` when the active embedding
+#: model is multilingual: the set is open, so no language is reported unsupported.
+#: A concrete list is deliberately NOT hardcoded — the published cards disagree with
+#: themselves (HF tags ``distiluse-base-multilingual-cased-v1`` "14 languages" while
+#: sbert's docs say "15" and enumerate 13), and a table transcribed from a source
+#: that cannot count is exactly the kind of unverifiable claim that rots.
+ALL_LANGUAGES: None = None
+
+
+def supported_rag_languages(db: Session | None = None) -> frozenset[str] | None:
+    """Languages this deployment's retrieval stack can serve.
+
+    Derived from the **active embedding model**, because that is the stage the
+    operator can actually change and the one whose failure is silent.
+
+    Args:
+        db: Session for reading the model selection. ``None`` skips the lookup and
+            returns the English fallback.
+
+    Returns:
+        :data:`ALL_LANGUAGES` (``None``) when the active model is multilingual —
+        meaning "do not report any language as unsupported" — otherwise
+        :data:`SUPPORTED_RAG_LANGUAGES`.
+
+        Fails **closed to English** on any error: an unreadable setting must not
+        silence a warning that exists to make a silent failure visible.
+    """
+    if db is None:
+        return SUPPORTED_RAG_LANGUAGES
+    try:
+        from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
+        from app.services.search.settings_service import get_search_embedding_model
+
+        info = OPENSEARCH_EMBEDDING_MODELS.get(get_search_embedding_model()) or {}
+        if info.get("language_type") == "multilingual":
+            return ALL_LANGUAGES
+    except Exception:  # noqa: BLE001 — a diagnostic must never fail a chat turn
+        logger.exception("Could not resolve the active embedding model; assuming English-only")
+    return SUPPORTED_RAG_LANGUAGES
+
 
 #: SSE ``warning`` frame code and the ``msg_metadata`` flag, mirroring
 #: ``context_dropped``: one code, set live on the frame and persisted on the row,
@@ -117,8 +170,16 @@ class ContextLanguages:
         }
 
 
-def _classify(rows: Iterable[str | None]) -> ContextLanguages:
-    """Bucket raw language values into supported / unsupported / unknown."""
+def _classify(
+    rows: Iterable[str | None], allowed: frozenset[str] | None = SUPPORTED_RAG_LANGUAGES
+) -> ContextLanguages:
+    """Bucket raw language values into supported / unsupported / unknown.
+
+    Args:
+        rows: Raw ``MediaFile.language`` values.
+        allowed: The supported set, or :data:`ALL_LANGUAGES` (``None``) when the
+            active embedding model is multilingual — then nothing is unsupported.
+    """
     supported: set[str] = set()
     unsupported: set[str] = set()
     supported_files = unsupported_files = unknown_files = 0
@@ -127,7 +188,7 @@ def _classify(rows: Iterable[str | None]) -> ContextLanguages:
         code = normalize_language(raw)
         if code is None:
             unknown_files += 1
-        elif code in SUPPORTED_RAG_LANGUAGES:
+        elif allowed is None or code in allowed:
             supported.add(code)
             supported_files += 1
         else:
@@ -209,7 +270,7 @@ def describe_context_languages(
         logger.exception("Chat language scope lookup failed; skipping the language notice")
         return ContextLanguages()
 
-    return _classify(row[0] for row in rows)
+    return _classify((row[0] for row in rows), supported_rag_languages(db))
 
 
 def warning_payload(metadata: dict | None) -> dict | None:
@@ -233,5 +294,8 @@ def warning_payload(metadata: dict | None) -> dict | None:
         "languages": unsupported[:_MAX_REPORTED_LANGUAGES],
         "files": int(languages.get("unsupported_files") or 0),
         "unknown_files": int(languages.get("unknown_files") or 0),
+        # Reachable only when `unsupported` is non-empty, which `_classify` can only
+        # produce from a concrete allowed set — and the only concrete set is this
+        # one. A multilingual model yields ALL_LANGUAGES and no payload at all.
         "supported": sorted(SUPPORTED_RAG_LANGUAGES),
     }

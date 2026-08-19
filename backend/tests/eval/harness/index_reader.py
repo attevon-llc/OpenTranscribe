@@ -128,14 +128,23 @@ def _observe(
     """One (distinct files, chunks, chunks predating *since*) reading.
 
     A plain ``terms`` query, never a hybrid body — the OpenSearch 3.4 crash in
-    ``score-ranker-processor`` applies to measurement code too. ``cardinality``
-    is exact well below its 40,000 threshold, and this corpus is in the hundreds.
+    ``score-ranker-processor`` applies to measurement code too.
+
+    ⚠️ **The distinct-file count is EXACT, via a paged ``composite`` aggregation.**
+    It used to be ``cardinality`` with a 40,000 ``precision_threshold``, and this
+    docstring asserted that made it exact "well below its threshold" for a corpus
+    "in the hundreds". Both halves were wrong. ``cardinality`` is HyperLogLog++ —
+    the threshold buys *near* accuracy, never a guarantee — and MIRACL is 1,984
+    files, which is the corpus scale #453 exists to measure. Measured on that
+    corpus it reported **1983 against a true 1984**, one short, forever. Since
+    :func:`await_settled` requires ``files == expected_files``, the settle loop
+    could never return: every measurement at this scale hung rather than failing,
+    which is the worst shape a broken instrument can take.
+
     A document with no ``indexed_at`` at all counts as stale: it certainly was
     not written by a run that stamps one.
     """
-    aggs: dict[str, Any] = {
-        "files": {"cardinality": {"field": "file_uuid", "precision_threshold": 40000}}
-    }
+    aggs: dict[str, Any] = {}
     if since is not None:
         aggs["stale"] = {
             "filter": {
@@ -148,19 +157,52 @@ def _observe(
                 }
             }
         }
-    body = {
-        "size": 0,
-        "query": {"bool": {"filter": [{"terms": {"file_uuid": file_uuids}}]}},
-        "track_total_hits": True,
-        "aggs": aggs,
-    }
+    query = {"bool": {"filter": [{"terms": {"file_uuid": file_uuids}}]}}
+    body: dict[str, Any] = {"size": 0, "query": query, "track_total_hits": True}
+    if aggs:
+        body["aggs"] = aggs
     response = client.search(index=index, body=body)
-    aggregations = response["aggregations"]
+    aggregations = response.get("aggregations") or {}
     return {
-        "files": int(aggregations["files"]["value"]),
+        "files": _count_distinct_files(client, index, query),
         "chunks": int(response["hits"]["total"]["value"]),
         "stale": int(aggregations["stale"]["doc_count"]) if since is not None else 0,
     }
+
+
+#: Page size for the composite walk. Large enough that a few-thousand-file corpus
+#: costs two or three requests, small enough to stay well inside any body limit.
+_COMPOSITE_PAGE = 1000
+
+
+def _count_distinct_files(client: Any, index: str, query: dict[str, Any]) -> int:
+    """Exactly how many distinct ``file_uuid`` values match *query*.
+
+    A paged ``composite`` aggregation enumerates buckets rather than estimating
+    them, so the answer is exact at any cardinality. See :func:`_observe` for the
+    off-by-one that made the approximate version hang the settle loop forever.
+    """
+    seen: set[str] = set()
+    after: dict[str, Any] | None = None
+    while True:
+        composite: dict[str, Any] = {
+            "size": _COMPOSITE_PAGE,
+            "sources": [{"f": {"terms": {"field": "file_uuid"}}}],
+        }
+        if after is not None:
+            composite["after"] = after
+        page = client.search(
+            index=index,
+            body={"size": 0, "query": query, "aggs": {"u": {"composite": composite}}},
+        )
+        bucket_agg = page["aggregations"]["u"]
+        buckets = bucket_agg.get("buckets") or []
+        if not buckets:
+            return len(seen)
+        seen.update(bucket["key"]["f"] for bucket in buckets)
+        after = bucket_agg.get("after_key")
+        if after is None:
+            return len(seen)
 
 
 def prepare_index(client: Any, index: str) -> dict[str, Any]:

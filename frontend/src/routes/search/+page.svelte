@@ -36,6 +36,7 @@
   let filterSelectedSpeakers: string[] = [];
   let filterDateRange: { from: Date | null; to: Date | null } = { from: null, to: null };
   let filterSelectedCollectionId: string | null = null;
+  let filterSelectedLanguage: string | null = null;
   let filterDurationRange: { min: number | null; max: number | null } = { min: null, max: null };
   let filterFileSizeRange: { min: number | null; max: number | null } = { min: null, max: null };
   let filterSelectedFileTypes: string[] = [];
@@ -48,6 +49,7 @@
     filterSelectedFileTypes.length > 0 ||
     filterSelectedStatuses.length > 0 ||
     filterSelectedCollectionId !== null ||
+    filterSelectedLanguage !== null ||
     filterDateRange.from !== null ||
     filterDurationRange.min !== null || filterDurationRange.max !== null ||
     filterFileSizeRange.min !== null || filterFileSizeRange.max !== null ||
@@ -106,6 +108,7 @@
     filterSelectedFileTypes = [...$searchStore.selectedFileTypes];
     filterSelectedStatuses = [...$searchStore.selectedStatuses];
     filterSelectedCollectionId = $searchStore.selectedCollectionId;
+    filterSelectedLanguage = $searchStore.selectedLanguage;
     filterDurationRange = { ...$searchStore.durationRange };
     filterFileSizeRange = { ...$searchStore.fileSizeRange };
     filterSearchQuery = $searchStore.titleFilter;
@@ -212,6 +215,10 @@
       if ($searchStore.selectedFileTypes.length) {
         apiParams.file_type = $searchStore.selectedFileTypes;
       }
+      if ($searchStore.selectedLanguage) {
+        apiParams.language = $searchStore.selectedLanguage;
+      }
+
       if ($searchStore.selectedCollectionId) {
         apiParams.collection_id = $searchStore.selectedCollectionId;
       }
@@ -322,6 +329,9 @@
     if (detail.collectionId !== undefined) {
       searchStore.setCollectionId(detail.collectionId);
     }
+    if (detail.language !== undefined) {
+      searchStore.setLanguage(detail.language);
+    }
     if (detail.dates !== undefined) {
       const dateFrom = detail.dates?.from ? detail.dates.from.toISOString().split('T')[0] : '';
       const dateTo = detail.dates?.to ? detail.dates.to.toISOString().split('T')[0] : '';
@@ -355,6 +365,7 @@
     searchStore.setDateRange('', '');
     searchStore.setFileTypes([]);
     searchStore.setCollectionId(null);
+    searchStore.setLanguage(null);
     searchStore.setDurationRange({ min: null, max: null });
     searchStore.setFileSizeRange({ min: null, max: null });
     searchStore.setStatuses([]);
@@ -364,6 +375,7 @@
     filterSelectedSpeakers = [];
     filterDateRange = { from: null, to: null };
     filterSelectedCollectionId = null;
+    filterSelectedLanguage = null;
     filterDurationRange = { min: null, max: null };
     filterFileSizeRange = { min: null, max: null };
     filterSelectedFileTypes = [];
@@ -510,6 +522,7 @@
           bind:selectedSpeakers={filterSelectedSpeakers}
           bind:dateRange={filterDateRange}
           bind:selectedCollectionId={filterSelectedCollectionId}
+          bind:selectedLanguage={filterSelectedLanguage}
           bind:durationRange={filterDurationRange}
           bind:fileSizeRange={filterFileSizeRange}
           bind:selectedFileTypes={filterSelectedFileTypes}

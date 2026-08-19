@@ -32,8 +32,22 @@ router = APIRouter()
 
 
 def _search_response_to_schema(response) -> dict[str, Any]:
-    """Convert HybridSearchService response to serializable dict."""
+    """Convert HybridSearchService response to serializable dict.
+
+    Carries an ``embedding_warning`` when the index is a PROVEN mix of two
+    embedding models (#437). Until this, the mixed verdict had three readers —
+    the status endpoint, the model-switch response and a beat-task log — and none
+    of them is the person reading the results, so a mixed index went on ranking
+    two incomparable vector populations against each other in silence. The
+    advisory is deployment-level and TTL-cached (see
+    ``embedding_provenance.search_provenance_advisory``), so an ordinary search
+    pays nothing and the key is absent in the healthy case.
+    """
+    from app.services.search.embedding_provenance import search_provenance_advisory
+
+    advisory = search_provenance_advisory()
     return {
+        **({"embedding_warning": advisory} if advisory else {}),
         "query": response.query,
         "results": [
             {
@@ -852,6 +866,34 @@ def _switch_model(model_name: str, triggered_by: int) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
 
+def _deployed_model_names() -> set[str]:
+    """Names of every model OpenSearch can currently embed with.
+
+    Feeds the ``ready`` flag on the picker. Without it the settings UI offered every
+    model identically, and choosing one that had never been downloaded answered **409
+    with instructions to POST two API endpoints by hand** — which is not a UI. The
+    409 itself is correct and stays (#437): recording a selection whose pipeline
+    cannot emit the new dimension makes the reindex coordinator delete the chunks
+    index and then fail every write. What was missing was any way to see the
+    condition coming, or to satisfy it.
+
+    ONE cluster call for all models, not one per model: this runs on every settings
+    page load. Failure returns the empty set, so an unreachable cluster renders every
+    model as not-ready — the switch would refuse anyway, and claiming readiness we
+    cannot confirm is the direction that ends in a deleted index.
+    """
+    try:
+        from app.services.search.ml_model_service import get_ml_model_service
+
+        return {
+            str(model.get("name", ""))
+            for model in get_ml_model_service().list_models(deployed_only=True)
+        }
+    except Exception:
+        logger.warning("Could not resolve deployed models; reporting none as ready", exc_info=True)
+        return set()
+
+
 @router.get("/models")
 def get_embedding_models(
     current_user: User = Depends(get_current_active_user),
@@ -861,9 +903,17 @@ def get_embedding_models(
 
     Returns the list of sentence transformer models that can be used
     for semantic search embedding.
+
+    ``languages`` and ``language_type`` are part of the payload because the settings UI
+    is where a model is actually chosen, and without them a multilingual model was
+    identifiable only by reading its display name. The ops endpoint has returned both
+    all along; the two views disagreed for no reason.
     """
     from app.services.search.settings_service import get_search_embedding_model
 
+    # Resolved ONCE, outside the comprehension: inside it this would be one cluster
+    # round trip per model on every settings page load.
+    deployed = _deployed_model_names()
     models = [
         {
             "model_id": model_name,
@@ -871,6 +921,9 @@ def get_embedding_models(
             "dimension": info["dimension"],
             "description": info["description"],
             "size_mb": info["size_mb"],
+            "languages": info["languages"],
+            "language_type": info["language_type"],
+            "ready": model_name in deployed,
         }
         for model_name, info in OPENSEARCH_EMBEDDING_MODELS.items()
     ]
@@ -968,7 +1021,7 @@ def get_neural_models(
     }
 
 
-@router.post("/models/neural/{model_name}/register")
+@router.post("/models/neural/{model_name:path}/register")
 def register_neural_model(
     model_name: str,
     current_user: User = Depends(get_current_admin_user),
@@ -1027,7 +1080,7 @@ def register_neural_model(
     }
 
 
-@router.post("/models/neural/{model_name}/deploy")
+@router.post("/models/neural/{model_name:path}/deploy")
 def deploy_neural_model(
     model_name: str,
     current_user: User = Depends(get_current_admin_user),
@@ -1081,7 +1134,7 @@ def deploy_neural_model(
     }
 
 
-@router.post("/models/neural/{model_name}/undeploy")
+@router.post("/models/neural/{model_name:path}/undeploy")
 def undeploy_neural_model(
     model_name: str,
     current_user: User = Depends(get_current_admin_user),

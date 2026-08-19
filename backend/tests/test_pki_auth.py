@@ -36,6 +36,36 @@ import pytest
 # (issue #431).
 _skip_pki_unit = pytest.mark.pki
 
+
+# The revocation plane is DB-backed (issue #498): ``auth/pki_auth.py`` resolves
+# ``pki_verify_revocation`` / ``pki_revocation_soft_fail`` / ``pki_ca_cert_path`` /
+# ``pki_ocsp_timeout_seconds`` / ``pki_crl_cache_seconds`` through
+# ``get_process_auth_settings()`` so a Settings UI save takes effect.
+#
+# ``patch("app.auth.pki_auth.settings")`` therefore no longer controls them —
+# ``auth_settings`` imports ``settings`` from ``app.core.config`` directly, so a
+# patched module attribute is simply not read. Tests that kept using it were not
+# failing loudly; they were silently asserting against the deployment's own
+# ``.env`` values, which is worse. ``set_pki`` publishes into the same
+# process-level cache a real save primes.
+def set_pki(**values):
+    """Publish DB-backed PKI settings for the current test."""
+    from app.core.auth_settings import publish_process_auth_setting
+
+    for key, value in values.items():
+        publish_process_auth_setting(key, value)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_process_auth_settings():
+    """Keep one test's published PKI settings out of the next one's."""
+    from app.core.auth_settings import clear_process_auth_settings_cache
+
+    clear_process_auth_settings_cache()
+    yield
+    clear_process_auth_settings_cache()
+
+
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
@@ -484,7 +514,7 @@ class TestCertificateExpiration:
             mock_settings.PKI_ENABLED = True
             mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
             mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
-            mock_settings.PKI_VERIFY_REVOCATION = False
+            set_pki(pki_verify_revocation=False)
             mock_settings.PKI_ADMIN_DNS = ""
             mock_settings.PKI_TRUSTED_PROXIES = "10.0.0.0/8"
 
@@ -512,7 +542,7 @@ class TestCertificateExpiration:
             mock_settings.PKI_ENABLED = True
             mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
             mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
-            mock_settings.PKI_VERIFY_REVOCATION = False
+            set_pki(pki_verify_revocation=False)
             mock_settings.PKI_ADMIN_DNS = ""
             mock_settings.PKI_TRUSTED_PROXIES = "10.0.0.0/8"
 
@@ -541,7 +571,7 @@ class TestCertificateExpiration:
             mock_settings.PKI_ENABLED = True
             mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
             mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
-            mock_settings.PKI_VERIFY_REVOCATION = False
+            set_pki(pki_verify_revocation=False)
             mock_settings.PKI_ADMIN_DNS = ""
             mock_settings.PKI_TRUSTED_PROXIES = "10.0.0.0/8"
 
@@ -659,7 +689,7 @@ class TestTrustedProxyValidation:
             mock_settings.PKI_ENABLED = True
             mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
             mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
-            mock_settings.PKI_VERIFY_REVOCATION = False
+            set_pki(pki_verify_revocation=False)
             mock_settings.PKI_TRUSTED_PROXIES = "10.0.0.0/8"
 
             with patch("app.auth.pki_auth._pki_trusted_proxy_networks") as mock_networks:
@@ -836,33 +866,28 @@ class TestRevocationChecking:
 
         cert = x509.load_pem_x509_certificate(valid_certificate_pem.encode(), default_backend())
 
-        with patch("app.auth.pki_auth.settings") as mock_settings:
-            mock_settings.PKI_VERIFY_REVOCATION = False
+        set_pki(pki_verify_revocation=False)
 
-            result = _handle_revocation_check(cert)
-            assert result is False  # False means proceed (don't deny)
+        result = _handle_revocation_check(cert)
+        assert result is False  # False means proceed (don't deny)
 
     def test_revocation_no_cert_soft_fail(self):
         """Test revocation check with no certificate and soft-fail enabled."""
         from app.auth.pki_auth import _handle_revocation_check
 
-        with patch("app.auth.pki_auth.settings") as mock_settings:
-            mock_settings.PKI_VERIFY_REVOCATION = True
-            mock_settings.PKI_REVOCATION_SOFT_FAIL = True
+        set_pki(pki_verify_revocation=True, pki_revocation_soft_fail=True)
 
-            result = _handle_revocation_check(None)
-            assert result is False  # Soft-fail allows
+        result = _handle_revocation_check(None)
+        assert result is False  # Soft-fail allows
 
     def test_revocation_no_cert_hard_fail(self):
         """Test revocation check with no certificate and hard-fail."""
         from app.auth.pki_auth import _handle_revocation_check
 
-        with patch("app.auth.pki_auth.settings") as mock_settings:
-            mock_settings.PKI_VERIFY_REVOCATION = True
-            mock_settings.PKI_REVOCATION_SOFT_FAIL = False
+        set_pki(pki_verify_revocation=True, pki_revocation_soft_fail=False)
 
-            result = _handle_revocation_check(None)
-            assert result is True  # Hard-fail denies
+        result = _handle_revocation_check(None)
+        assert result is True  # Hard-fail denies
 
     def test_check_revocation_soft_fail(self, valid_certificate_pem):
         """Test revocation check soft-fail when OCSP/CRL unavailable."""
@@ -870,17 +895,15 @@ class TestRevocationChecking:
 
         cert = x509.load_pem_x509_certificate(valid_certificate_pem.encode(), default_backend())
 
-        with patch("app.auth.pki_auth.settings") as mock_settings:
-            mock_settings.PKI_CA_CERT_PATH = ""
-            mock_settings.PKI_REVOCATION_SOFT_FAIL = True
+        set_pki(pki_ca_cert_path="", pki_revocation_soft_fail=True)
 
-            # Mock OCSP and CRL to return None (unavailable)
-            with patch("app.auth.pki_auth._check_ocsp", return_value=None):
-                with patch("app.auth.pki_auth._check_crl", return_value=None):
-                    is_revoked, reason = _check_revocation(cert)
+        # Mock OCSP and CRL to return None (unavailable)
+        with patch("app.auth.pki_auth._check_ocsp", return_value=None):
+            with patch("app.auth.pki_auth._check_crl", return_value=None):
+                is_revoked, reason = _check_revocation(cert)
 
-                    assert not is_revoked
-                    assert "soft-fail" in reason
+                assert not is_revoked
+                assert "soft-fail" in reason
 
     def test_check_revocation_hard_fail(self, valid_certificate_pem):
         """Test revocation check hard-fail when OCSP/CRL unavailable."""
@@ -888,17 +911,15 @@ class TestRevocationChecking:
 
         cert = x509.load_pem_x509_certificate(valid_certificate_pem.encode(), default_backend())
 
-        with patch("app.auth.pki_auth.settings") as mock_settings:
-            mock_settings.PKI_CA_CERT_PATH = ""
-            mock_settings.PKI_REVOCATION_SOFT_FAIL = False
+        set_pki(pki_ca_cert_path="", pki_revocation_soft_fail=False)
 
-            # Mock OCSP and CRL to return None (unavailable)
-            with patch("app.auth.pki_auth._check_ocsp", return_value=None):
-                with patch("app.auth.pki_auth._check_crl", return_value=None):
-                    is_revoked, reason = _check_revocation(cert)
+        # Mock OCSP and CRL to return None (unavailable)
+        with patch("app.auth.pki_auth._check_ocsp", return_value=None):
+            with patch("app.auth.pki_auth._check_crl", return_value=None):
+                is_revoked, reason = _check_revocation(cert)
 
-                    assert is_revoked
-                    assert "hard-fail" in reason
+                assert is_revoked
+                assert "hard-fail" in reason
 
 
 # ===== Header Extraction Tests =====
@@ -996,7 +1017,7 @@ class TestPKIAuthentication:
         with patch("app.auth.pki_auth.settings") as mock_settings:
             mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
             mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
-            mock_settings.PKI_VERIFY_REVOCATION = False
+            set_pki(pki_verify_revocation=False)
             mock_settings.PKI_TRUSTED_PROXIES = ""
 
             with patch("app.auth.pki_auth._pki_trusted_proxy_networks", []):
@@ -1013,7 +1034,7 @@ class TestPKIAuthentication:
             mock_settings.PKI_ENABLED = True
             mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
             mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
-            mock_settings.PKI_VERIFY_REVOCATION = False
+            set_pki(pki_verify_revocation=False)
             mock_settings.PKI_TRUSTED_PROXIES = ""
 
             with patch("app.auth.pki_auth._pki_trusted_proxy_networks", []):
@@ -1031,7 +1052,7 @@ class TestPKIAuthentication:
             mock_settings.PKI_ENABLED = True
             mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
             mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
-            mock_settings.PKI_VERIFY_REVOCATION = False
+            set_pki(pki_verify_revocation=False)
             mock_settings.PKI_ADMIN_DNS = ""
             mock_settings.PKI_TRUSTED_PROXIES = "10.0.0.0/8"
 
@@ -1059,7 +1080,7 @@ class TestPKIAuthentication:
             mock_settings.PKI_ENABLED = True
             mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
             mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
-            mock_settings.PKI_VERIFY_REVOCATION = False
+            set_pki(pki_verify_revocation=False)
             mock_settings.PKI_ADMIN_DNS = ""
             mock_settings.PKI_TRUSTED_PROXIES = "10.0.0.0/8"
 
@@ -1733,7 +1754,7 @@ class TestPKIHeaderSourceFailClosed:
         mock_settings.PKI_ENABLED = True
         mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
         mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
-        mock_settings.PKI_VERIFY_REVOCATION = False
+        set_pki(pki_verify_revocation=False)
         mock_settings.PKI_ADMIN_DNS = self.ADMIN_DN
         mock_settings.PKI_TRUSTED_PROXIES = trusted_proxies
 
@@ -1835,7 +1856,7 @@ class TestDNOnlyRequiresTrustedProxy:
             mock_settings.PKI_ENABLED = True
             mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
             mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
-            mock_settings.PKI_VERIFY_REVOCATION = False
+            set_pki(pki_verify_revocation=False)
             mock_settings.PKI_ADMIN_DNS = ""
             mock_settings.PKI_TRUSTED_PROXIES = "10.0.0.0/8"
 
@@ -1895,7 +1916,7 @@ class TestCertificateValidityPrecedesDN:
         mock_settings.PKI_ENABLED = True
         mock_settings.PKI_CERT_HEADER = "X-Client-Cert"
         mock_settings.PKI_CERT_DN_HEADER = "X-Client-Cert-DN"
-        mock_settings.PKI_VERIFY_REVOCATION = False
+        set_pki(pki_verify_revocation=False)
         mock_settings.PKI_ADMIN_DNS = ""
         mock_settings.PKI_TRUSTED_PROXIES = "10.0.0.0/8"
 

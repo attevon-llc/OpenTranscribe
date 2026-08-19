@@ -46,9 +46,16 @@ def _marked_modules() -> set[str]:
 
 
 def _gate_integration_paths() -> list[str]:
-    """The paths the gate's integration phase actually passes to pytest."""
+    """The paths the gate's integration phase actually passes to pytest.
+
+    Matches ``run_phase`` **or** ``run_phase_watching_skips``: the integration
+    phase moved to the latter so a mass-skipped run cannot report as a pass (see
+    ``test_integration_gate_skip_ceiling.py``), and a pattern naming only the
+    original dispatcher went red for a rename rather than for a real gap. The
+    phase TITLE is the stable identity here, not the function that runs it.
+    """
     source = _GATE_SCRIPT.read_text()
-    match = re.search(r'run_phase "Integration-marked tests".*?\n\n', source, re.S)
+    match = re.search(r'run_phase\w* "Integration-marked tests".*?\n\n', source, re.S)
     assert match, "could not find the integration phase in run-integration-tests.sh"
     return re.findall(r"tests/[\w./-]+", match.group(0))
 

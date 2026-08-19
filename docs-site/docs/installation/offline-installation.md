@@ -11,8 +11,11 @@ OpenTranscribe supports complete offline deployment for airgapped environments, 
 In offline mode, OpenTranscribe operates without any internet connectivity:
 - ✅ Transcription works fully offline
 - ✅ Speaker diarization works offline
-- ✅ All AI models cached locally
+- ✅ All AI models cached locally — **when fetched with `scripts/download-models.sh`**.
+  The hand-rolled recipe below omits the NLTK corpora; see the warning there.
 - ✅ No external API calls
+- 💡 Set `NLTK_OFFLINE=1` alongside `HF_HUB_OFFLINE=1` so a missing corpus fails
+  fast naming the setup step, instead of hanging on a socket timeout.
 - Not supported: YouTube downloads (requires internet)
 - Not supported: Cloud LLM providers (use local LLM instead)
 
@@ -70,8 +73,28 @@ Model.from_pretrained("pyannote/speaker-diarization-3.1")
 EOF
 
 # Package model cache
-tar -czf ai-models.tar.gz ~/.cache/huggingface ~/.cache/torch
+tar -czf ai-models.tar.gz ~/.cache/huggingface ~/.cache/torch ~/.cache/nltk_data
 ```
+
+:::warning The hand-rolled recipe above is incomplete — prefer the script
+
+The Python snippet fetches the transcription and diarization weights and nothing
+else. It **omits the NLTK corpora**, which the sentence splitter and topic
+extraction load at runtime — and on an airgapped host those fetches do not fail
+fast, because `nltk.download` swallows its own network errors. The symptoms are
+quiet: transcripts chunked by the regex fallback instead of punkt (different
+chunk boundaries, therefore different search results), and keyword extraction
+keeping common words.
+
+Use `scripts/download-models.sh` instead, which fetches every group the app
+loads, or `./opentr.sh start`, which calls it. To fetch just the corpora:
+
+```bash
+python3 scripts/download-models.py --only nltk
+```
+
+Issue #491 tracked this gap.
+:::
 
 ### Download Installation Files
 

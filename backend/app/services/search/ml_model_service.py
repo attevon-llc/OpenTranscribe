@@ -45,6 +45,11 @@ _MODEL_FILE_PATTERNS = {
         "filename": "sentence-transformers_paraphrase-multilingual-MiniLM-L12-v2-1.0.1-torch_script.zip",
         "version": "1.0.1",
     },
+    "huggingface/sentence-transformers/all-MiniLM-L12-v2": {
+        "short_name": "all-MiniLM-L12-v2",
+        "filename": "sentence-transformers_all-MiniLM-L12-v2-1.0.1-torch_script.zip",
+        "version": "1.0.1",
+    },
     "huggingface/sentence-transformers/multi-qa-MiniLM-L6-cos-v1": {
         "short_name": "multi-qa-MiniLM-L6-cos-v1",
         "filename": "sentence-transformers_multi-qa-MiniLM-L6-cos-v1-1.0.1-torch_script.zip",

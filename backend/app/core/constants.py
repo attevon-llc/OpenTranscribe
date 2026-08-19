@@ -275,6 +275,23 @@ OPENSEARCH_EMBEDDING_MODELS = {
         "language_type": "english",
         "description": "Fast, lightweight English model. Good baseline for keyword-heavy searches.",
     },
+    "huggingface/sentence-transformers/all-MiniLM-L12-v2": {
+        "name": "MiniLM L12 - Higher quality (English Only)",
+        "dimension": 384,
+        "size_mb": 120,
+        "languages": ["en"],
+        "model_format": "TORCH_SCRIPT",
+        "default": False,
+        "requires_prefix": False,
+        "tier": "fast",
+        "language_type": "english",
+        "description": (
+            "The default MiniLM with all 12 layers instead of 6 — the L6 default is "
+            "literally this model with every other layer removed. Published sbert average "
+            "59.8 vs 58.8, for roughly half the encode throughput. Same 384 dimensions, so "
+            "switching is a re-embed with no index recreation and a trivial rollback."
+        ),
+    },
     "huggingface/sentence-transformers/multi-qa-MiniLM-L6-cos-v1": {
         "name": "MiniLM - Retrieval-tuned (English Only)",
         "dimension": 384,

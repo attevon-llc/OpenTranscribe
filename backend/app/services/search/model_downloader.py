@@ -42,6 +42,14 @@ _OPENSEARCH_MODEL_REGISTRY = {
         "size_mb": 420,
         "url_base": "https://artifacts.opensearch.org/models/ml-models",
     },
+    "huggingface/sentence-transformers/all-MiniLM-L12-v2": {
+        "short_name": "all-MiniLM-L12-v2",
+        "filename": "sentence-transformers_all-MiniLM-L12-v2-1.0.1-torch_script.zip",
+        "version": "1.0.1",
+        "dimension": 384,
+        "size_mb": 120,
+        "url_base": "https://artifacts.opensearch.org/models/ml-models",
+    },
     "huggingface/sentence-transformers/multi-qa-MiniLM-L6-cos-v1": {
         "short_name": "multi-qa-MiniLM-L6-cos-v1",
         "filename": "sentence-transformers_multi-qa-MiniLM-L6-cos-v1-1.0.1-torch_script.zip",

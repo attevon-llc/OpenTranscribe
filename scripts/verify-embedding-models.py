@@ -69,6 +69,7 @@ UNRELATED_TEXT = 'Rain fell steadily on the tin roof throughout the night.'
 EXPECTED_DIMENSIONS = {
     'all-MiniLM-L6-v2': 384,
     'multi-qa-MiniLM-L6-cos-v1': 384,
+    'all-MiniLM-L12-v2': 384,
     'paraphrase-multilingual-MiniLM-L12-v2': 384,
     'all-mpnet-base-v2': 768,
     'all-distilroberta-v1': 768,

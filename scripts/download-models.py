@@ -654,6 +654,16 @@ def download_opensearch_neural_models():
             'languages': 'English',
             'description': 'Better semantic understanding. Good balance of speed and quality.',
         },
+        'all-MiniLM-L12-v2': {
+            'name': 'huggingface/sentence-transformers/all-MiniLM-L12-v2',
+            'version': '1.0.1',
+            'format': 'torch_script',
+            'dimension': 384,
+            'size_mb': 120,
+            'tier': 'fast',
+            'languages': 'English',
+            'description': 'The default MiniLM with 12 layers. Same 384 dims, better quality.',
+        },
         'multi-qa-MiniLM-L6-cos-v1': {
             'name': 'huggingface/sentence-transformers/multi-qa-MiniLM-L6-cos-v1',
             'version': '1.0.1',

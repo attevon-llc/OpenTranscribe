@@ -51,6 +51,7 @@ VERIFIED_WORKING = {
     "paraphrase-multilingual-MiniLM-L12-v2",
     "distiluse-base-multilingual-cased-v1",
     "multi-qa-MiniLM-L6-cos-v1",
+    "all-MiniLM-L12-v2",
 }
 
 #: Measured and rejected. Re-adding any of these needs a fresh measurement, not an

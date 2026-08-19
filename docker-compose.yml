@@ -132,14 +132,18 @@ services:
       # reports DEPLOYED and then FAILS to embed, which is why the check runs an
       # actual prediction.
       #
-      #   model                    size      1 GB              2 GB      4 GB
-      #   all-MiniLM-L6-v2 (dflt)  87.5 MB   OK (dim 384)      OK        OK
-      #   all-mpnet-base-v2       418.7 MB   deploys, NO infer OK (768)  OK
+      #   model                                  size      1 GB              2 GB      4 GB
+      #   all-MiniLM-L6-v2 (dflt)                87.5 MB   OK (dim 384)      OK        OK
+      #   all-mpnet-base-v2                     418.7 MB   deploys, NO infer OK (768)  OK
+      #   paraphrase-multilingual-MiniLM-L12    465.5 MB   OK (dim 384)      OK        OK
       #
-      # So the default model needs ~1 GB and the largest English model ~2 GB.
-      # 4 GB is kept as the default because it leaves headroom for indexing bursts
-      # and for the larger multilingual models (paraphrase-multilingual-MiniLM is
-      # 465.5 MB, mpnet-multilingual larger still) — NOT because smaller fails.
+      # So the default model needs ~1 GB and the largest English model ~2 GB —
+      # and (measured 2026-08-19, same method) the MULTILINGUAL MiniLM registers,
+      # deploys and serves a real cross-lingual prediction at 1 GB despite being
+      # 5x the default's size, so enabling multilingual needs NO heap change.
+      # Size does not predict the floor (mpnet is SMALLER and fails inference at
+      # 1 GB); only the prediction check answers it. 4 GB is kept as the default
+      # for indexing-burst headroom — NOT because smaller fails.
       #
       # ⚠️ This is a HARD, LOCKED cost: -Xms == -Xmx claims it all at startup, and
       # bootstrap.memory_lock=true pins it in RAM where it cannot be swapped or

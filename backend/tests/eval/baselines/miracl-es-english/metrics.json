@@ -1,0 +1,3457 @@
+{
+  "answers": {
+    "note": "no answer-scored queries resolved onto this stack",
+    "scored": 0,
+    "scoring": {
+      "engine": "tests.eval.harness.answers",
+      "llm_required": false,
+      "measure_semantics": {
+        "EM": "exact match under the policy below — the Stage 4 gate",
+        "answered": "share of the gold query set the answerer attempted",
+        "partial": "diagnostic partial credit; NEVER a substitute for EM"
+      },
+      "measures": [
+        "EM",
+        "partial",
+        "answered"
+      ],
+      "policy": {
+        "count_rule": "|submitted - gold| <= 0; no interpolated partial credit",
+        "count_tolerance": 0,
+        "gate": "EM (exact match) — the Stage 4 gate. 'partial' is diagnostic only.",
+        "kind_mismatch_policy": "scored 0; counts as answered, not as unanswered",
+        "name_normalisation": "casefold + whitespace collapse",
+        "set_credit": "f1",
+        "set_rule": "EM = set equality (a subset is WRONG); partial = F1 over the file sets",
+        "speaker_credit": "fields",
+        "speaker_rule": "EM = name AND sessions; partial = fraction of the two fields correct",
+        "unanswered_policy": "scored 0 on every measure and counted (trec_eval -c semantics)"
+      },
+      "set_ordering": "every set is emitted sorted (PYTHONHASHSEED is unpinned here)"
+    }
+  },
+  "control_name": "stage1-baseline",
+  "corpora": [
+    {
+      "answer_queries_scored": 0,
+      "chunks_indexed": 4109,
+      "files_in_manifest": 1984,
+      "files_indexed": 1984,
+      "key": "miracl",
+      "license_tier": "A",
+      "name": "MIRACL v1.0 (es)",
+      "queries_dropped_unjudgeable": 0,
+      "queries_scored": 206,
+      "version": "1.0"
+    }
+  ],
+  "index": {
+    "configured_embedding_model": "huggingface/sentence-transformers/all-MiniLM-L6-v2",
+    "corpus_chunks": 4109,
+    "corpus_files": 1984,
+    "docs_count": 4109,
+    "docs_deleted": 0,
+    "embedding_dimension": 384,
+    "embedding_models": [
+      "huggingface/sentence-transformers/all-MiniLM-L6-v2"
+    ],
+    "embedding_unattributed": 0,
+    "embedding_verdict": "uniform",
+    "expected_files": 1984
+  },
+  "metric_engine": {
+    "canonical_names": {
+      "MRR": "RR",
+      "R@10": "R@10",
+      "R@20": "R@20",
+      "R@5": "R@5",
+      "nDCG@10": "nDCG@10",
+      "nDCG@20": "nDCG@20",
+      "nDCG@5": "nDCG@5"
+    },
+    "engine": "pytrec_eval_terrier",
+    "engine_version": "0.5.10",
+    "gain": "linear (gain = rel)",
+    "measure_strings": {
+      "MRR": "recip_rank",
+      "R@10": "recall.10",
+      "R@20": "recall.20",
+      "R@5": "recall.5",
+      "nDCG@10": "ndcg_cut.10",
+      "nDCG@20": "ndcg_cut.20",
+      "nDCG@5": "ndcg_cut.5"
+    },
+    "ndcg_variant": "ndcg_cut (ideal DCG truncated at k)",
+    "tie_break": "harness re-sort by (-score, doc_type, file_uuid, chunk_index)",
+    "unanswered_query_policy": "scored 0 and included in the mean (trec_eval -c)"
+  },
+  "qrels": {
+    "answer_scored_queries_in_their_own_table": 0,
+    "judged_documents": 1040,
+    "mean_judged_per_query": 5.0485,
+    "queries": 206,
+    "queries_dropped_unjudgeable": 0,
+    "unanswered_queries": 0
+  },
+  "relevance_policy": {
+    "binary": false,
+    "high_threshold": 0.5,
+    "low_threshold": 0.0,
+    "rule": "graded by gold word-share of the chunk"
+  },
+  "retrieval": {
+    "candidate_pool": 48,
+    "fusion": {
+      "pipeline_id": "transcript-hybrid-search",
+      "rank_constant": 30,
+      "selected_explicitly": false,
+      "strategy": "rrf"
+    },
+    "llm_required": false,
+    "path": "chat retrieval (app.services.search.chunk_retrieval.retrieve_chunks)",
+    "scope": "corpus",
+    "scope_note": "corpus-wide, file_uuids=None",
+    "search_mode": "hybrid",
+    "stage": "retrieve",
+    "workers": 4
+  },
+  "retrieval_per_query": [
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10036600#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.833333,
+        "R@20": 1.0,
+        "R@5": 0.333333,
+        "nDCG@10": 0.753653,
+        "nDCG@20": 0.835427,
+        "nDCG@5": 0.50874
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10046635#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.555556,
+        "R@20": 0.777778,
+        "R@5": 0.444444,
+        "nDCG@10": 0.670038,
+        "nDCG@20": 0.787703,
+        "nDCG@5": 0.868795
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10049214#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.666667,
+        "nDCG@10": 0.970544,
+        "nDCG@20": 0.970544,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10051043#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.666667,
+        "nDCG@10": 0.697882,
+        "nDCG@20": 0.697882,
+        "nDCG@5": 0.530721
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10053866#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.847777,
+        "nDCG@20": 0.847777,
+        "nDCG@5": 0.58557
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10063278#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.333333,
+        "R@20": 0.833333,
+        "R@5": 0.333333,
+        "nDCG@10": 0.432926,
+        "nDCG@20": 0.669381,
+        "nDCG@5": 0.485229
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10069515#0",
+      "scores": {
+        "MRR": 0.25,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.430677,
+        "nDCG@20": 0.430677,
+        "nDCG@5": 0.430677
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10076150#0",
+      "scores": {
+        "MRR": 0.066667,
+        "R@10": 0.0,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.0,
+        "nDCG@20": 0.25,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10082633#0",
+      "scores": {
+        "MRR": 0.125,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.315465,
+        "nDCG@20": 0.315465,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 9,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10085565#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.555556,
+        "nDCG@10": 0.984218,
+        "nDCG@20": 0.984218,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10093175#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.833333,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.798925,
+        "nDCG@20": 0.872957,
+        "nDCG@5": 0.684352
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10103630#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.571429,
+        "nDCG@10": 0.956163,
+        "nDCG@20": 0.956163,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10119415#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.6,
+        "nDCG@10": 0.680718,
+        "nDCG@20": 0.680718,
+        "nDCG@5": 0.446854
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10123358#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.666667,
+        "R@20": 1.0,
+        "R@5": 0.666667,
+        "nDCG@10": 0.498189,
+        "nDCG@20": 0.629091,
+        "nDCG@5": 0.498189
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10127140#0",
+      "scores": {
+        "MRR": 0.166667,
+        "R@10": 0.5,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.218407,
+        "nDCG@20": 0.389441,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10144994#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.5,
+        "nDCG@20": 0.5,
+        "nDCG@5": 0.5
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10149913#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.571429,
+        "R@20": 1.0,
+        "R@5": 0.428571,
+        "nDCG@10": 0.503916,
+        "nDCG@20": 0.716867,
+        "nDCG@5": 0.514771
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10150822#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 0.5,
+        "R@20": 0.5,
+        "R@5": 0.5,
+        "nDCG@10": 0.306574,
+        "nDCG@20": 0.306574,
+        "nDCG@5": 0.306574
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:10165619#0",
+      "scores": {
+        "MRR": 0.2,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.386853,
+        "nDCG@20": 0.386853,
+        "nDCG@5": 0.386853
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1021142#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 0.8,
+        "R@20": 1.0,
+        "R@5": 0.4,
+        "nDCG@10": 0.543453,
+        "nDCG@20": 0.623294,
+        "nDCG@5": 0.315648
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1036931#0",
+      "scores": {
+        "MRR": 0.090909,
+        "R@10": 0.0,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.0,
+        "nDCG@20": 0.278943,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 10,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:104051#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.7,
+        "R@20": 0.9,
+        "R@5": 0.5,
+        "nDCG@10": 0.800694,
+        "nDCG@20": 0.914835,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1040690#0",
+      "scores": {
+        "MRR": 0.25,
+        "R@10": 0.333333,
+        "R@20": 1.0,
+        "R@5": 0.333333,
+        "nDCG@10": 0.202107,
+        "nDCG@20": 0.456265,
+        "nDCG@5": 0.202107
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 9,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1042601#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.777778,
+        "R@20": 1.0,
+        "R@5": 0.555556,
+        "nDCG@10": 0.855096,
+        "nDCG@20": 0.979421,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 10,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1050473#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.7,
+        "R@20": 0.8,
+        "R@5": 0.5,
+        "nDCG@10": 0.800694,
+        "nDCG@20": 0.853475,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1054362#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.6,
+        "nDCG@10": 0.950531,
+        "nDCG@20": 0.950531,
+        "nDCG@5": 0.722727
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:106035#0",
+      "scores": {
+        "MRR": 0.25,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.501266,
+        "nDCG@20": 0.501266,
+        "nDCG@5": 0.501266
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 9,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1063455#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.777778,
+        "R@20": 0.888889,
+        "R@5": 0.444444,
+        "nDCG@10": 0.801316,
+        "nDCG@20": 0.864835,
+        "nDCG@5": 0.83042
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1073266#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1080917#0",
+      "scores": {
+        "MRR": 0.2,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.386853,
+        "nDCG@20": 0.386853,
+        "nDCG@5": 0.386853
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1085644#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.63093,
+        "nDCG@20": 0.63093,
+        "nDCG@5": 0.63093
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1087098#0",
+      "scores": {
+        "MRR": 0.142857,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.397809,
+        "nDCG@20": 0.397809,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 10,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1087167#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.636364,
+        "R@20": 0.909091,
+        "R@5": 0.454545,
+        "nDCG@10": 0.800694,
+        "nDCG@20": 0.913695,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1088930#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.857143,
+        "R@20": 1.0,
+        "R@5": 0.428571,
+        "nDCG@10": 0.79807,
+        "nDCG@20": 0.872352,
+        "nDCG@5": 0.654809
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1102080#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1133288#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.666667,
+        "R@20": 1.0,
+        "R@5": 0.666667,
+        "nDCG@10": 0.703918,
+        "nDCG@20": 0.830735,
+        "nDCG@5": 0.703918
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:113426#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.888889,
+        "R@20": 1.0,
+        "R@5": 0.444444,
+        "nDCG@10": 0.762142,
+        "nDCG@20": 0.827706,
+        "nDCG@5": 0.66084
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:115#0",
+      "scores": {
+        "MRR": 0.25,
+        "R@10": 0.375,
+        "R@20": 0.5,
+        "R@5": 0.25,
+        "nDCG@10": 0.296888,
+        "nDCG@20": 0.360124,
+        "nDCG@5": 0.277273
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1177652#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.732829,
+        "nDCG@20": 0.732829,
+        "nDCG@5": 0.732829
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1184998#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.650921,
+        "nDCG@20": 0.650921,
+        "nDCG@5": 0.650921
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1185928#0",
+      "scores": {
+        "MRR": 0.166667,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.505179,
+        "nDCG@20": 0.505179,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 10,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1232390#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.8,
+        "R@20": 1.0,
+        "R@5": 0.4,
+        "nDCG@10": 0.826813,
+        "nDCG@20": 0.944541,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:12329#0",
+      "scores": {
+        "MRR": 0.2,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.430624,
+        "nDCG@20": 0.430624,
+        "nDCG@5": 0.237198
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1251479#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.857143,
+        "R@20": 1.0,
+        "R@5": 0.571429,
+        "nDCG@10": 0.720212,
+        "nDCG@20": 0.794494,
+        "nDCG@5": 0.66084
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1259483#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.75,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.654245,
+        "nDCG@20": 0.743123,
+        "nDCG@5": 0.5414
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1292096#0",
+      "scores": {
+        "MRR": 0.1,
+        "R@10": 0.5,
+        "R@20": 0.5,
+        "R@5": 0.0,
+        "nDCG@10": 0.177239,
+        "nDCG@20": 0.177239,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:129637#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1301477#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.8,
+        "nDCG@10": 0.956029,
+        "nDCG@20": 0.956029,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1304810#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.8,
+        "R@20": 1.0,
+        "R@5": 0.6,
+        "nDCG@10": 0.627825,
+        "nDCG@20": 0.719479,
+        "nDCG@5": 0.514771
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1314964#0",
+      "scores": {
+        "MRR": 0.25,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.572425,
+        "nDCG@20": 0.572425,
+        "nDCG@5": 0.319147
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1318309#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.875,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.865358,
+        "nDCG@20": 0.933713,
+        "nDCG@5": 0.83042
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1319222#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.666667,
+        "R@20": 0.666667,
+        "R@5": 0.333333,
+        "nDCG@10": 0.636439,
+        "nDCG@20": 0.636439,
+        "nDCG@5": 0.469279
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1323007#0",
+      "scores": {
+        "MRR": 0.071429,
+        "R@10": 0.0,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.0,
+        "nDCG@20": 0.255958,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1329077#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.375,
+        "nDCG@10": 0.924937,
+        "nDCG@20": 0.924937,
+        "nDCG@5": 0.699215
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1329889#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.666667,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.546756,
+        "nDCG@20": 0.705985,
+        "nDCG@5": 0.514771
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1338698#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.857143,
+        "R@20": 1.0,
+        "R@5": 0.571429,
+        "nDCG@10": 0.811405,
+        "nDCG@20": 0.88808,
+        "nDCG@5": 0.786014
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1341563#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.8,
+        "R@20": 1.0,
+        "R@5": 0.6,
+        "nDCG@10": 0.805163,
+        "nDCG@20": 0.899769,
+        "nDCG@5": 0.684352
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1344113#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.625,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.716649,
+        "nDCG@20": 0.905276,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 10,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1351731#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.909091,
+        "R@20": 1.0,
+        "R@5": 0.454545,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:135633#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.8,
+        "R@20": 1.0,
+        "R@5": 0.4,
+        "nDCG@10": 0.768297,
+        "nDCG@20": 0.851273,
+        "nDCG@5": 0.553146
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1360576#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.6,
+        "nDCG@10": 0.956591,
+        "nDCG@20": 0.956591,
+        "nDCG@5": 0.722727
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1375485#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.852928,
+        "nDCG@20": 0.852928,
+        "nDCG@5": 0.852928
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1381689#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.828542,
+        "nDCG@20": 0.828542,
+        "nDCG@5": 0.58557
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1382752#0",
+      "scores": {
+        "MRR": 0.0,
+        "R@10": 0.0,
+        "R@20": 0.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.0,
+        "nDCG@20": 0.0,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:139446#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.8,
+        "R@20": 1.0,
+        "R@5": 0.8,
+        "nDCG@10": 0.853932,
+        "nDCG@20": 0.936907,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1414410#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.510956,
+        "nDCG@20": 0.510956,
+        "nDCG@5": 0.306574
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1431197#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.666667,
+        "nDCG@10": 0.807247,
+        "nDCG@20": 0.807247,
+        "nDCG@5": 0.650821
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1433944#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.967207,
+        "nDCG@20": 0.967207,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:144942#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.667708,
+        "nDCG@20": 0.667708,
+        "nDCG@5": 0.41443
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 9,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:146444#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.9,
+        "R@20": 1.0,
+        "R@5": 0.4,
+        "nDCG@10": 0.889954,
+        "nDCG@20": 0.944977,
+        "nDCG@5": 0.83042
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1471636#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 0.428571,
+        "R@20": 1.0,
+        "R@5": 0.142857,
+        "nDCG@10": 0.306898,
+        "nDCG@20": 0.600408,
+        "nDCG@5": 0.16958
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1475283#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:14977#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.6,
+        "R@20": 0.8,
+        "R@5": 0.6,
+        "nDCG@10": 0.722727,
+        "nDCG@20": 0.809537,
+        "nDCG@5": 0.722727
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1509489#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.6,
+        "R@20": 1.0,
+        "R@5": 0.4,
+        "nDCG@10": 0.587326,
+        "nDCG@20": 0.771013,
+        "nDCG@5": 0.485229
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 10,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1523476#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.9,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.936379,
+        "nDCG@20": 0.997772,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1535068#0",
+      "scores": {
+        "MRR": 0.2,
+        "R@10": 0.5,
+        "R@20": 0.5,
+        "R@5": 0.25,
+        "nDCG@10": 0.290076,
+        "nDCG@20": 0.290076,
+        "nDCG@5": 0.15102
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1541044#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.63093,
+        "nDCG@20": 0.63093,
+        "nDCG@5": 0.63093
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:154627#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.746705,
+        "nDCG@20": 0.746705,
+        "nDCG@5": 0.514771
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 9,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1561662#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.777778,
+        "R@20": 0.888889,
+        "R@5": 0.555556,
+        "nDCG@10": 0.855096,
+        "nDCG@20": 0.915257,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 9,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:156210#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.888889,
+        "R@20": 1.0,
+        "R@5": 0.555556,
+        "nDCG@10": 0.925851,
+        "nDCG@20": 0.991416,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1577662#0",
+      "scores": {
+        "MRR": 0.25,
+        "R@10": 0.2,
+        "R@20": 0.8,
+        "R@5": 0.2,
+        "nDCG@10": 0.146068,
+        "nDCG@20": 0.41914,
+        "nDCG@5": 0.146068
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1593357#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 0.571429,
+        "R@20": 1.0,
+        "R@5": 0.285714,
+        "nDCG@10": 0.425281,
+        "nDCG@20": 0.631434,
+        "nDCG@5": 0.315648
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1614364#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.857143,
+        "R@20": 1.0,
+        "R@5": 0.571429,
+        "nDCG@10": 0.851363,
+        "nDCG@20": 0.913944,
+        "nDCG@5": 0.83042
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1622150#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.8,
+        "R@20": 1.0,
+        "R@5": 0.2,
+        "nDCG@10": 0.675122,
+        "nDCG@20": 0.766776,
+        "nDCG@5": 0.33916
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 9,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1625328#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.7,
+        "R@20": 0.8,
+        "R@5": 0.3,
+        "nDCG@10": 0.731545,
+        "nDCG@20": 0.785391,
+        "nDCG@5": 0.684352
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1635701#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 0.6,
+        "R@20": 0.8,
+        "R@5": 0.2,
+        "nDCG@10": 0.392489,
+        "nDCG@20": 0.47233,
+        "nDCG@5": 0.16958
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:165207#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:16628#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.833333,
+        "R@20": 1.0,
+        "R@5": 0.333333,
+        "nDCG@10": 0.632943,
+        "nDCG@20": 0.717352,
+        "nDCG@5": 0.383566
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 10,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1710929#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.9,
+        "R@20": 0.9,
+        "R@5": 0.5,
+        "nDCG@10": 0.936379,
+        "nDCG@20": 0.936379,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1711561#0",
+      "scores": {
+        "MRR": 0.125,
+        "R@10": 0.2,
+        "R@20": 0.6,
+        "R@5": 0.0,
+        "nDCG@10": 0.106993,
+        "nDCG@20": 0.282934,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:171472#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.75,
+        "nDCG@10": 0.695576,
+        "nDCG@20": 0.695576,
+        "nDCG@5": 0.56545
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1721919#0",
+      "scores": {
+        "MRR": 0.166667,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.356207,
+        "nDCG@20": 0.356207,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1747359#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.333333,
+        "R@20": 0.833333,
+        "R@5": 0.166667,
+        "nDCG@10": 0.390074,
+        "nDCG@20": 0.611014,
+        "nDCG@5": 0.33916
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1747742#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.8,
+        "R@20": 1.0,
+        "R@5": 0.4,
+        "nDCG@10": 0.83578,
+        "nDCG@20": 0.956651,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1753946#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.333333,
+        "R@20": 0.333333,
+        "R@5": 0.333333,
+        "nDCG@10": 0.469279,
+        "nDCG@20": 0.469279,
+        "nDCG@5": 0.469279
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1756297#0",
+      "scores": {
+        "MRR": 0.125,
+        "R@10": 0.5,
+        "R@20": 0.5,
+        "R@5": 0.0,
+        "nDCG@10": 0.193426,
+        "nDCG@20": 0.193426,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1759429#0",
+      "scores": {
+        "MRR": 0.2,
+        "R@10": 0.8,
+        "R@20": 1.0,
+        "R@5": 0.2,
+        "nDCG@10": 0.472063,
+        "nDCG@20": 0.561143,
+        "nDCG@5": 0.131205
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1782437#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.6,
+        "nDCG@10": 0.956591,
+        "nDCG@20": 0.956591,
+        "nDCG@5": 0.722727
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1783212#0",
+      "scores": {
+        "MRR": 0.2,
+        "R@10": 0.5,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.237198,
+        "nDCG@20": 0.390485,
+        "nDCG@5": 0.237198
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 10,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1785354#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.714286,
+        "R@20": 0.928571,
+        "R@5": 0.357143,
+        "nDCG@10": 1.0,
+        "nDCG@20": 0.954386,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 10,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1793663#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.9,
+        "R@20": 1.0,
+        "R@5": 0.4,
+        "nDCG@10": 0.905212,
+        "nDCG@20": 0.956136,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1801072#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.75,
+        "R@20": 1.0,
+        "R@5": 0.375,
+        "nDCG@10": 0.760941,
+        "nDCG@20": 0.89624,
+        "nDCG@5": 0.684352
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1812180#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.6,
+        "R@20": 1.0,
+        "R@5": 0.6,
+        "nDCG@10": 0.699215,
+        "nDCG@20": 0.870816,
+        "nDCG@5": 0.699215
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1814516#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.5,
+        "nDCG@20": 0.5,
+        "nDCG@5": 0.5
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1822646#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.333333,
+        "R@20": 0.333333,
+        "R@5": 0.333333,
+        "nDCG@10": 0.321245,
+        "nDCG@20": 0.321245,
+        "nDCG@5": 0.360055
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:183790#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.666667,
+        "R@20": 0.666667,
+        "R@5": 0.666667,
+        "nDCG@10": 0.765361,
+        "nDCG@20": 0.765361,
+        "nDCG@5": 0.765361
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1841823#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.833333,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1849528#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.884325,
+        "nDCG@20": 0.884325,
+        "nDCG@5": 0.636682
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1851923#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.666667,
+        "nDCG@10": 0.777948,
+        "nDCG@20": 0.777948,
+        "nDCG@5": 0.66084
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1854074#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.625,
+        "R@20": 0.875,
+        "R@5": 0.375,
+        "nDCG@10": 0.662765,
+        "nDCG@20": 0.799757,
+        "nDCG@5": 0.654809
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:188191#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 0.833333,
+        "R@20": 1.0,
+        "R@5": 0.333333,
+        "nDCG@10": 0.585742,
+        "nDCG@20": 0.663196,
+        "nDCG@5": 0.315648
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1883968#0",
+      "scores": {
+        "MRR": 0.111111,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.30103,
+        "nDCG@20": 0.30103,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1895662#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.714286,
+        "R@20": 0.714286,
+        "R@5": 0.285714,
+        "nDCG@10": 0.684599,
+        "nDCG@20": 0.684599,
+        "nDCG@5": 0.50874
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1920894#0",
+      "scores": {
+        "MRR": 0.111111,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.30103,
+        "nDCG@20": 0.30103,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 9,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:1974896#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.777778,
+        "R@20": 1.0,
+        "R@5": 0.555556,
+        "nDCG@10": 0.850896,
+        "nDCG@20": 0.979978,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:199663#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.6,
+        "nDCG@10": 0.914366,
+        "nDCG@20": 0.914366,
+        "nDCG@5": 0.699215
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:203077#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.6,
+        "R@20": 1.0,
+        "R@5": 0.6,
+        "nDCG@10": 0.514771,
+        "nDCG@20": 0.688642,
+        "nDCG@5": 0.514771
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2037774#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.666667,
+        "R@20": 1.0,
+        "R@5": 0.333333,
+        "nDCG@10": 0.444123,
+        "nDCG@20": 0.575025,
+        "nDCG@5": 0.296082
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:204094#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.712263,
+        "nDCG@20": 0.712263,
+        "nDCG@5": 0.712263
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2042859#0",
+      "scores": {
+        "MRR": 0.166667,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.356207,
+        "nDCG@20": 0.356207,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2067457#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.75,
+        "R@20": 1.0,
+        "R@5": 0.25,
+        "nDCG@10": 0.50851,
+        "nDCG@20": 0.614005,
+        "nDCG@5": 0.246302
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:212148#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.5,
+        "R@20": 0.5,
+        "R@5": 0.5,
+        "nDCG@10": 0.613147,
+        "nDCG@20": 0.613147,
+        "nDCG@5": 0.613147
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:212181#0",
+      "scores": {
+        "MRR": 0.25,
+        "R@10": 0.666667,
+        "R@20": 1.0,
+        "R@5": 0.666667,
+        "nDCG@10": 0.383649,
+        "nDCG@20": 0.498458,
+        "nDCG@5": 0.383649
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2133142#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.63093,
+        "nDCG@20": 0.63093,
+        "nDCG@5": 0.63093
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2134446#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.967207,
+        "nDCG@20": 0.967207,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2196147#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.888889,
+        "R@20": 1.0,
+        "R@5": 0.444444,
+        "nDCG@10": 0.84889,
+        "nDCG@20": 0.914455,
+        "nDCG@5": 0.786014
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2196412#0",
+      "scores": {
+        "MRR": 0.166667,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.356207,
+        "nDCG@20": 0.356207,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2206726#0",
+      "scores": {
+        "MRR": 0.090909,
+        "R@10": 0.0,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.0,
+        "nDCG@20": 0.278943,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:222420#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 0.5,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.306574,
+        "nDCG@20": 0.45658,
+        "nDCG@5": 0.306574
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2235609#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.571429,
+        "R@20": 0.857143,
+        "R@5": 0.428571,
+        "nDCG@10": 0.622323,
+        "nDCG@20": 0.761768,
+        "nDCG@5": 0.654809
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2274332#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.75,
+        "nDCG@10": 0.927961,
+        "nDCG@20": 0.927961,
+        "nDCG@5": 0.80481
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2286234#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.666667,
+        "nDCG@10": 0.845185,
+        "nDCG@20": 0.845185,
+        "nDCG@5": 0.703918
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:232222#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.5,
+        "nDCG@20": 0.5,
+        "nDCG@5": 0.5
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:232715#0",
+      "scores": {
+        "MRR": 0.0,
+        "R@10": 0.0,
+        "R@20": 0.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.0,
+        "nDCG@20": 0.0,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2383338#0",
+      "scores": {
+        "MRR": 0.2,
+        "R@10": 0.333333,
+        "R@20": 0.666667,
+        "R@5": 0.333333,
+        "nDCG@10": 0.181542,
+        "nDCG@20": 0.290123,
+        "nDCG@5": 0.181542
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2416873#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.919975,
+        "nDCG@20": 0.919975,
+        "nDCG@5": 0.699215
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2417980#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.7,
+        "R@20": 0.8,
+        "R@5": 0.5,
+        "nDCG@10": 0.796761,
+        "nDCG@20": 0.858154,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2445813#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.823201,
+        "nDCG@20": 0.823201,
+        "nDCG@5": 0.66084
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 9,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2451912#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.555556,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2473930#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.375,
+        "nDCG@10": 0.913852,
+        "nDCG@20": 0.913852,
+        "nDCG@5": 0.684352
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2485497#0",
+      "scores": {
+        "MRR": 0.111111,
+        "R@10": 0.5,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.184576,
+        "nDCG@20": 0.328916,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2496708#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.428571,
+        "nDCG@10": 0.717867,
+        "nDCG@20": 0.717867,
+        "nDCG@5": 0.446854
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2516231#0",
+      "scores": {
+        "MRR": 0.25,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.482476,
+        "nDCG@20": 0.482476,
+        "nDCG@5": 0.264068
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2541431#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.570642,
+        "nDCG@20": 0.570642,
+        "nDCG@5": 0.570642
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2568898#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.636364,
+        "R@20": 1.0,
+        "R@5": 0.272727,
+        "nDCG@10": 0.591464,
+        "nDCG@20": 0.777435,
+        "nDCG@5": 0.49126
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:256983#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.666667,
+        "nDCG@10": 0.678762,
+        "nDCG@20": 0.678762,
+        "nDCG@5": 0.530721
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2581354#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.833333,
+        "R@20": 1.0,
+        "R@5": 0.666667,
+        "nDCG@10": 0.869676,
+        "nDCG@20": 0.94713,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:260471#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.75,
+        "nDCG@10": 0.854106,
+        "nDCG@20": 0.854106,
+        "nDCG@5": 0.73659
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2641252#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 0.5,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.306574,
+        "nDCG@20": 0.463514,
+        "nDCG@5": 0.306574
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2648563#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.727273,
+        "R@20": 1.0,
+        "R@5": 0.363636,
+        "nDCG@10": 0.826813,
+        "nDCG@20": 0.947331,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2700255#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.5,
+        "R@20": 0.5,
+        "R@5": 0.5,
+        "nDCG@10": 0.5414,
+        "nDCG@20": 0.5414,
+        "nDCG@5": 0.5414
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:270362#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.8,
+        "nDCG@10": 0.974743,
+        "nDCG@20": 0.974743,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:271844#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.4,
+        "nDCG@10": 0.691959,
+        "nDCG@20": 0.691959,
+        "nDCG@5": 0.360055
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 9,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2774009#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.555556,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2780376#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2793268#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.666667,
+        "R@20": 0.666667,
+        "R@5": 0.5,
+        "nDCG@10": 0.724715,
+        "nDCG@20": 0.724715,
+        "nDCG@5": 0.699215
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2806421#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.967207,
+        "nDCG@20": 0.967207,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 9,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2806901#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.444444,
+        "R@20": 1.0,
+        "R@5": 0.222222,
+        "nDCG@10": 0.522042,
+        "nDCG@20": 0.819119,
+        "nDCG@5": 0.553146
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:28198#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.875,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.879866,
+        "nDCG@20": 0.948221,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 9,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2831756#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.777778,
+        "R@20": 0.777778,
+        "R@5": 0.555556,
+        "nDCG@10": 0.839314,
+        "nDCG@20": 0.839314,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2843098#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.6,
+        "R@20": 0.8,
+        "R@5": 0.2,
+        "nDCG@10": 0.562069,
+        "nDCG@20": 0.64191,
+        "nDCG@5": 0.33916
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2907908#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.8,
+        "R@20": 0.8,
+        "R@5": 0.4,
+        "nDCG@10": 0.771997,
+        "nDCG@20": 0.771997,
+        "nDCG@5": 0.553146
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2909589#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.714286,
+        "R@20": 0.857143,
+        "R@5": 0.571429,
+        "nDCG@10": 0.728659,
+        "nDCG@20": 0.797379,
+        "nDCG@5": 0.786014
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 9,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:294650#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.555556,
+        "nDCG@10": 0.993795,
+        "nDCG@20": 0.993795,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2973930#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.5,
+        "nDCG@20": 0.5,
+        "nDCG@5": 0.5
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2975640#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.625,
+        "R@20": 0.875,
+        "R@5": 0.375,
+        "nDCG@10": 0.530486,
+        "nDCG@20": 0.654509,
+        "nDCG@5": 0.49126
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2984423#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.5,
+        "R@20": 0.5,
+        "R@5": 0.5,
+        "nDCG@10": 0.58557,
+        "nDCG@20": 0.58557,
+        "nDCG@5": 0.58557
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:2999#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.63093,
+        "nDCG@20": 0.63093,
+        "nDCG@5": 0.63093
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:301199#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.4,
+        "nDCG@10": 0.630687,
+        "nDCG@20": 0.630687,
+        "nDCG@5": 0.300785
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 10,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3024717#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.454545,
+        "R@20": 0.818182,
+        "R@5": 0.181818,
+        "nDCG@10": 0.570404,
+        "nDCG@20": 0.751109,
+        "nDCG@5": 0.553146
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3033084#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.25,
+        "R@20": 0.875,
+        "R@5": 0.25,
+        "nDCG@10": 0.361879,
+        "nDCG@20": 0.671053,
+        "nDCG@5": 0.485229
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3036371#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.75,
+        "R@20": 0.75,
+        "R@5": 0.5,
+        "nDCG@10": 0.775739,
+        "nDCG@20": 0.775739,
+        "nDCG@5": 0.636682
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3037610#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.689409,
+        "nDCG@20": 0.689409,
+        "nDCG@5": 0.446854
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3039093#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.850345,
+        "nDCG@20": 0.850345,
+        "nDCG@5": 0.850345
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3039321#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.8,
+        "R@20": 0.8,
+        "R@5": 0.6,
+        "nDCG@10": 0.718531,
+        "nDCG@20": 0.718531,
+        "nDCG@5": 0.616434
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3052243#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.75,
+        "R@20": 1.0,
+        "R@5": 0.375,
+        "nDCG@10": 0.793212,
+        "nDCG@20": 0.932123,
+        "nDCG@5": 0.722727
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 9,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3073071#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.444444,
+        "nDCG@10": 0.950421,
+        "nDCG@20": 0.950421,
+        "nDCG@5": 0.83042
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3092385#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3093009#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 0.5,
+        "R@20": 0.666667,
+        "R@5": 0.333333,
+        "nDCG@10": 0.377085,
+        "nDCG@20": 0.448321,
+        "nDCG@5": 0.315648
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:309745#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.5,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.386853,
+        "nDCG@20": 0.552549,
+        "nDCG@5": 0.386853
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3110934#0",
+      "scores": {
+        "MRR": 0.166667,
+        "R@10": 0.4,
+        "R@20": 0.4,
+        "R@5": 0.0,
+        "nDCG@10": 0.227804,
+        "nDCG@20": 0.227804,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 6,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3111694#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.833333,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3118004#0",
+      "scores": {
+        "MRR": 0.142857,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.333333,
+        "nDCG@20": 0.333333,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3129041#0",
+      "scores": {
+        "MRR": 0.25,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.441307,
+        "nDCG@20": 0.441307,
+        "nDCG@5": 0.264068
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:313181#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.285714,
+        "R@20": 0.714286,
+        "R@5": 0.285714,
+        "nDCG@10": 0.412314,
+        "nDCG@20": 0.613011,
+        "nDCG@5": 0.50874
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3134708#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.75,
+        "R@20": 1.0,
+        "R@5": 0.375,
+        "nDCG@10": 0.789561,
+        "nDCG@20": 0.928472,
+        "nDCG@5": 0.722727
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3141691#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 0.888889,
+        "R@20": 1.0,
+        "R@5": 0.333333,
+        "nDCG@10": 0.731669,
+        "nDCG@20": 0.791831,
+        "nDCG@5": 0.514771
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3156641#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.6,
+        "nDCG@10": 0.937877,
+        "nDCG@20": 0.937877,
+        "nDCG@5": 0.722727
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 3,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3166412#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.5,
+        "nDCG@10": 0.810409,
+        "nDCG@20": 0.810409,
+        "nDCG@5": 0.558508
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3181349#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.5,
+        "nDCG@20": 0.5,
+        "nDCG@5": 0.5
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3194553#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.75,
+        "R@20": 1.0,
+        "R@5": 0.333333,
+        "nDCG@10": 0.861138,
+        "nDCG@20": 0.917823,
+        "nDCG@5": 0.786014
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3208986#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.625,
+        "nDCG@10": 0.988803,
+        "nDCG@20": 0.988803,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 8,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:321857#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.75,
+        "R@20": 1.0,
+        "R@5": 0.333333,
+        "nDCG@10": 0.905212,
+        "nDCG@20": 0.962493,
+        "nDCG@5": 0.853932
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:322210#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.857143,
+        "R@20": 1.0,
+        "R@5": 0.571429,
+        "nDCG@10": 0.862562,
+        "nDCG@20": 0.934758,
+        "nDCG@5": 0.83042
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:323560#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.4,
+        "nDCG@10": 0.667335,
+        "nDCG@20": 0.667335,
+        "nDCG@5": 0.345191
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 5,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:32493#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.8,
+        "R@20": 1.0,
+        "R@5": 0.6,
+        "nDCG@10": 0.761802,
+        "nDCG@20": 0.850882,
+        "nDCG@5": 0.654809
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 7,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3255830#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.857143,
+        "R@20": 1.0,
+        "R@5": 0.428571,
+        "nDCG@10": 0.83406,
+        "nDCG@20": 0.902779,
+        "nDCG@5": 0.699215
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3261005#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 0.8,
+        "R@20": 0.8,
+        "R@5": 0.6,
+        "nDCG@10": 0.820766,
+        "nDCG@20": 0.820766,
+        "nDCG@5": 0.722727
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 4,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3265429#0",
+      "scores": {
+        "MRR": 0.333333,
+        "R@10": 0.6,
+        "R@20": 1.0,
+        "R@5": 0.4,
+        "nDCG@10": 0.43646,
+        "nDCG@20": 0.593518,
+        "nDCG@5": 0.315648
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:3317579#0",
+      "scores": {
+        "MRR": 0.1,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 0.0,
+        "nDCG@10": 0.289065,
+        "nDCG@20": 0.289065,
+        "nDCG@5": 0.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:426634#0",
+      "scores": {
+        "MRR": 0.5,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.63093,
+        "nDCG@20": 0.63093,
+        "nDCG@5": 0.63093
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:5114836#0",
+      "scores": {
+        "MRR": 0.25,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 0.430677,
+        "nDCG@20": 0.430677,
+        "nDCG@5": 0.430677
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:6083367#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:7781103#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 1,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:8787537#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    },
+    {
+      "corpus": "miracl",
+      "gold_count": 2,
+      "license_tier": "A",
+      "query_class": "lookup",
+      "query_id": "es:9732578#0",
+      "scores": {
+        "MRR": 1.0,
+        "R@10": 1.0,
+        "R@20": 1.0,
+        "R@5": 1.0,
+        "nDCG@10": 1.0,
+        "nDCG@20": 1.0,
+        "nDCG@5": 1.0
+      }
+    }
+  ],
+  "rows": [
+    {
+      "corpus": "miracl",
+      "license_tier": "A",
+      "metrics": {
+        "MRR": 0.696184,
+        "R@10": 0.791613,
+        "R@20": 0.927057,
+        "R@5": 0.506474,
+        "nDCG@10": 0.657036,
+        "nDCG@20": 0.713151,
+        "nDCG@5": 0.575077
+      },
+      "queries": 206,
+      "query_class": "lookup",
+      "scored_on": [
+        "retrieval"
+      ],
+      "unanswered": 0
+    },
+    {
+      "corpus": "miracl",
+      "license_tier": "A",
+      "metrics": {
+        "MRR": 0.696184,
+        "R@10": 0.791613,
+        "R@20": 0.927057,
+        "R@5": 0.506474,
+        "nDCG@10": 0.657036,
+        "nDCG@20": 0.713151,
+        "nDCG@5": 0.575077
+      },
+      "queries": 206,
+      "query_class": "all",
+      "scored_on": [
+        "retrieval"
+      ],
+      "unanswered": 0
+    }
+  ],
+  "schema_version": 2
+}

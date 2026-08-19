@@ -144,9 +144,13 @@ never touches the GPU, so what it costs is heap, not VRAM.
 
 | Heap | What it runs |
 |---|---|
-| 1 GB | the default `all-MiniLM-L6-v2` (384-dim) |
+| 1 GB | the default `all-MiniLM-L6-v2` (384-dim) **and** `paraphrase-multilingual-MiniLM-L12-v2` (measured: real cross-lingual inference, despite being 5× the default's size — size does not predict the floor) |
 | 2 GB | every English model, including the 768-dim ones |
-| 4 GB *(default)* | headroom for indexing bursts and multilingual models |
+| 4 GB *(default)* | headroom for indexing bursts and the larger multilingual models |
+
+Enabling multilingual search therefore needs **no heap change**: Settings → Search →
+pick the multilingual model → **Download & deploy** → Apply (re-embeds every
+transcript; measured ~3.2 documents/sec on the OpenSearch CPU node).
 
 Measured floors and the "deployed but not working" failure mode:
 [Performance Tuning](../operations/performance-tuning.md#opensearch-heap-what-it-is-actually-for).

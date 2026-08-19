@@ -113,16 +113,43 @@ services:
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
-      # Neural search requires substantially more heap than the 1 GB
-      # OpenSearch default. The ML plugin sizes its `neural_search` JVM
-      # circuit breaker at ~10% of total heap, so:
-      #   1 GB heap → 102 MB breaker → all models fail to load
-      #   2 GB heap → 204 MB breaker → all-MiniLM-L6-v2 (240 MB) marginal
-      #   4 GB heap → 410 MB breaker → comfortable for all default models
-      # 4 GB is the recommended minimum once neural search is enabled.
-      # Override with OPENSEARCH_JAVA_OPTS env var (e.g. for systems with
-      # limited RAM, set -Xms2g -Xmx2g and use a smaller embedding model
-      # like all-MiniLM-L6-v2 explicitly).
+      # Heap is sized for the EMBEDDING MODEL, not for the data. Measured on this
+      # stack: 25 indices / 52,053 docs / 188 MB store, and Lucene segment memory
+      # 0.0 MB (it is off-heap in modern Lucene). The index is not what needs heap.
+      #
+      # ⚠️ The previous version of this comment was wrong on every number, and the
+      # numbers below are measured, not reasoned. It said the `neural_search`
+      # breaker is ~10% of heap and that models must fit under it, therefore
+      # "1 GB → all models fail to load" and "4 GB is the recommended minimum".
+      # The 10% is real (measured 1g→102.3 MB, 2g→204.7 MB, 3g→307.1 MB,
+      # 4g→409.5 MB) but it does NOT gate model loading: all-mpnet-base-v2 is
+      # 418.7 MB and deploys and serves inference at 4 GB, under a 409.5 MB
+      # breaker. It also claimed all-MiniLM-L6-v2 is 240 MB; OpenSearch's own
+      # published config.json says 91,790,008 bytes — 87.5 MB.
+      #
+      # MEASURED FLOORS — throwaway opensearch:3.4.0, register → deploy → a real
+      # inference (2026-08-18). "Deployed" alone is not a pass: mpnet at 1 GB
+      # reports DEPLOYED and then FAILS to embed, which is why the check runs an
+      # actual prediction.
+      #
+      #   model                    size      1 GB              2 GB      4 GB
+      #   all-MiniLM-L6-v2 (dflt)  87.5 MB   OK (dim 384)      OK        OK
+      #   all-mpnet-base-v2       418.7 MB   deploys, NO infer OK (768)  OK
+      #
+      # So the default model needs ~1 GB and the largest English model ~2 GB.
+      # 4 GB is kept as the default because it leaves headroom for indexing bursts
+      # and for the larger multilingual models (paraphrase-multilingual-MiniLM is
+      # 465.5 MB, mpnet-multilingual larger still) — NOT because smaller fails.
+      #
+      # ⚠️ This is a HARD, LOCKED cost: -Xms == -Xmx claims it all at startup, and
+      # bootstrap.memory_lock=true pins it in RAM where it cannot be swapped or
+      # reclaimed. On a 16 GB laptop that is 4 GB gone before Postgres, MinIO,
+      # Redis, the backend and the ASR models get any.
+      #
+      # LOW-RAM MACHINES: `OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g` is verified to run
+      # every English model, and `-Xms1g -Xmx1g` is verified for the default model
+      # only. Keep Xms == Xmx (a differing pair makes the JVM resize at runtime,
+      # and memory_lock expects a fixed heap).
       - "OPENSEARCH_JAVA_OPTS=${OPENSEARCH_JAVA_OPTS:--Xms4g -Xmx4g}"
       - DISABLE_SECURITY_PLUGIN=true
       # Disk watermarks as ABSOLUTE free-space bytes, not percentages. The

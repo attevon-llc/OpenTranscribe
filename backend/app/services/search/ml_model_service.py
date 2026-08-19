@@ -7,6 +7,7 @@ Supports both online (HuggingFace) and offline (local file) model registration
 for air-gapped deployments.
 """
 
+import json
 import logging
 import time
 from pathlib import Path
@@ -147,10 +148,35 @@ class OpenSearchMLModelService:
         model_version: str = "1.0.1",
         model_format: str = "TORCH_SCRIPT",
         description: str = "",
+        model_config: dict[str, Any] | None = None,
+        model_content_hash_value: str | None = None,
     ) -> str | None:
         """Register a model from a URL (file:// or https://).
 
-        This allows registering models from local files for offline deployments.
+        This is the OFFLINE path: it registers from the artifact under ``/ml-models``
+        instead of letting OpenSearch fetch from the internet.
+
+        ⚠️ **``model_config`` is REQUIRED and its absence is a silent-looking 400.**
+        Registering by *name* (the online path, :meth:`register_model`) lets
+        OpenSearch look the configuration up from its own registry, so that call
+        needs only a name and version. Registering from a URL gives it a zip and
+        nothing else, so the caller must supply what the registry would have:
+
+            POST /_plugins/_ml/models/_register {"name", "version", "model_format", "url"}
+            -> 400 illegal_argument_exception: "model config is null"
+
+        Measured against ``opensearchproject/opensearch:3.4.0``, the version this
+        repo ships. Every offline/airgapped deployment therefore failed to register
+        its embedding model and fell back to the remote HuggingFace download — the
+        one thing an airgapped install cannot do.
+
+        The values are **not** hardcoded here. OpenSearch publishes a ``config.json``
+        beside every artifact carrying the exact ``model_config``, the content hash
+        and the true size; ``scripts/download-models.py`` saves it next to the zip and
+        :meth:`register_local_model` reads it. A per-model table of model types in
+        our source would be a guess that drifts from upstream — and the measured
+        types are not guessable (``all-mpnet-base-v2`` is ``mpnet``,
+        ``all-distilroberta-v1`` is ``roberta``, the MiniLMs are ``bert``).
 
         Args:
             model_name: Name to register the model under.
@@ -158,11 +184,24 @@ class OpenSearchMLModelService:
             model_version: Model version string.
             model_format: Model format - TORCH_SCRIPT or ONNX.
             description: Optional description.
+            model_config: The ``model_config`` block from the artifact's config.json.
+                Required by OpenSearch for URL registration.
+            model_content_hash_value: SHA-256 of the artifact, from the same file.
+                OpenSearch verifies it, so it is integrity checking for free.
 
         Returns:
             Model ID if registration succeeded, None on error.
         """
         if not self._ensure_client():
+            return None
+
+        if not model_config:
+            logger.error(
+                f"Cannot register {model_name} from {url}: no model_config. OpenSearch "
+                "rejects URL registration without it (400 'model config is null'). It "
+                "comes from the config.json that scripts/download-models.py saves beside "
+                "the artifact — re-run the model download to fetch it."
+            )
             return None
 
         # Ensure ML settings are configured
@@ -174,7 +213,11 @@ class OpenSearchMLModelService:
                 "version": model_version,
                 "model_format": model_format,
                 "url": url,
+                "model_config": model_config,
             }
+
+            if model_content_hash_value:
+                register_body["model_content_hash_value"] = model_content_hash_value
 
             if description:
                 register_body["description"] = description
@@ -226,6 +269,19 @@ class OpenSearchMLModelService:
         if model_name in _MODEL_FILE_PATTERNS:
             version = _MODEL_FILE_PATTERNS[model_name]["version"]
 
+        # The artifact's published config.json, saved beside the zip by
+        # scripts/download-models.py. OpenSearch REQUIRES its `model_config` for URL
+        # registration and 400s without it, so a cache holding only the zip cannot be
+        # registered — see register_model_from_url for the measurement.
+        model_config, content_hash = self._read_local_model_config(local_path)
+        if not model_config:
+            logger.error(
+                f"Model {model_name} is cached at {local_path} but its config.json is "
+                "missing, so it cannot be registered offline. Re-run "
+                "scripts/download-models.sh to fetch it."
+            )
+            return None
+
         # Build file:// URL
         file_url = f"file://{local_path}"
 
@@ -235,7 +291,35 @@ class OpenSearchMLModelService:
             model_version=version,
             model_format="TORCH_SCRIPT",
             description=f"Registered from local file: {local_path}",
+            model_config=model_config,
+            model_content_hash_value=content_hash,
         )
+
+    @staticmethod
+    def _read_local_model_config(local_path: Path) -> tuple[dict[str, Any] | None, str | None]:
+        """Read ``model_config`` and the content hash from the artifact's config.json.
+
+        OpenSearch publishes the file at the same prefix as the zip; the downloader
+        saves it in the same directory. Returns ``(None, None)`` when it is absent,
+        which the caller reports rather than attempting a registration that OpenSearch
+        will reject.
+        """
+        config_path = Path(local_path).parent / "config.json"
+        if not config_path.is_file():
+            return None, None
+        try:
+            payload = json.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.error(f"Could not read model config at {config_path}: {exc}")
+            return None, None
+
+        model_config = payload.get("model_config")
+        if not isinstance(model_config, dict) or not model_config.get("model_type"):
+            # `model_type` specifically: OpenSearch rejects its absence with
+            # "model type is null", a different 400 from the missing-config one.
+            logger.error(f"{config_path} carries no usable model_config: {model_config!r}")
+            return None, None
+        return model_config, payload.get("model_content_hash_value")
 
     def configure_ml_settings(self) -> bool:
         """Configure cluster settings for ML workloads.

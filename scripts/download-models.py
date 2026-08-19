@@ -572,6 +572,32 @@ def download_speaker_attribute_models():
         return {'speaker_attributes': {'status': 'failed', 'error': str(e)}}
 
 
+def _fetch_model_config(config_url, config_path):
+    """Fetch the config.json OpenSearch publishes beside a model artifact.
+
+    Registering a model from a ``file://`` URL REQUIRES its ``model_config``; without
+    it OpenSearch 3.4 answers ``400 illegal_argument_exception: model config is null``,
+    which is how offline registration was broken. The file also carries
+    ``model_content_hash_value``, so fetching it buys an integrity check for free.
+
+    Takes its paths as ARGUMENTS rather than closing over the download loop's
+    variables. A closure would late-bind them (ruff B023) and could write one model's
+    config into another model's directory.
+
+    Returns True when a non-empty config.json is present afterwards.
+    """
+    import urllib.request
+
+    if config_path.exists() and config_path.stat().st_size > 0:
+        return True
+    try:
+        urllib.request.urlretrieve(config_url, config_path)
+        return config_path.exists() and config_path.stat().st_size > 0
+    except Exception as exc:  # noqa: BLE001 - any failure means "no config", reported here
+        print_error(f'  config.json unavailable ({exc}); cannot register this model offline')
+        return False
+
+
 def download_opensearch_neural_models():
     """Download OpenSearch neural search models for offline use.
 
@@ -725,7 +751,21 @@ def download_opensearch_neural_models():
             model_short_name = model_name.replace('/', '_')
 
         filename = f'{model_short_name}-{version}-{model_format}.zip'
-        url = f'https://artifacts.opensearch.org/models/ml-models/{model_name}/{version}/{model_format}/{filename}'
+        base_url = (
+            f'https://artifacts.opensearch.org/models/ml-models/'
+            f'{model_name}/{version}/{model_format}'
+        )
+        url = f'{base_url}/{filename}'
+        # OpenSearch publishes a config.json beside every artifact. It carries the
+        # exact `model_config` (model_type / framework_type / embedding_dimension /
+        # all_config), the `model_content_hash_value`, and the true content size.
+        #
+        # Registering a model from a `file://` URL REQUIRES model_config — without it
+        # OpenSearch 3.4 answers `400 illegal_argument_exception: model config is null`,
+        # which is exactly how offline registration was broken. Fetching this file is
+        # what makes the offline path work without hardcoding a per-model table of
+        # model types that would drift from upstream (and be a guess).
+        config_url = f'{base_url}/config.json'
 
         # Output path - use model short name as directory
         model_dir = (
@@ -743,12 +783,19 @@ def download_opensearch_neural_models():
             import urllib.request
 
             # Check if already downloaded
+            config_path = model_dir / 'config.json'
+
             if output_path.exists():
                 print_success('  Already exists, skipping download')
+                # An older cache holds the zip but no config.json, and the zip alone
+                # cannot be registered offline. Fetch the missing half rather than
+                # reporting a complete cache.
+                has_config = _fetch_model_config(config_url, config_path)
                 downloaded_models.append(
                     {
                         'name': model_name,
                         'path': str(output_path),
+                        'config_path': str(config_path) if has_config else None,
                         'dimension': model_info['dimension'],
                         'version': version,
                         'format': model_format,
@@ -764,10 +811,12 @@ def download_opensearch_neural_models():
             if output_path.exists() and output_path.stat().st_size > 0:
                 size_mb = round(output_path.stat().st_size / (1024 * 1024), 1)
                 print_success(f'  Downloaded successfully ({size_mb} MB)')
+                has_config = _fetch_model_config(config_url, config_path)
                 downloaded_models.append(
                     {
                         'name': model_name,
                         'path': str(output_path),
+                        'config_path': str(config_path) if has_config else None,
                         'dimension': model_info['dimension'],
                         'version': version,
                         'format': model_format,

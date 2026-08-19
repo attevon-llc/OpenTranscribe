@@ -41,6 +41,8 @@ class JobResult:
     language: str
     overlap_info: dict = field(default_factory=dict)
     native_speaker_embeddings: dict[str, Any] | None = None
+    # Per-speaker gender when the diarization engine produced it (sidecar path).
+    speaker_gender: dict | None = None
     stage_timings: dict[str, float] = field(default_factory=dict)
 
     def to_pipeline_dict(self) -> dict:
@@ -53,6 +55,8 @@ class JobResult:
             result["overlap_info"] = self.overlap_info
         if self.native_speaker_embeddings:
             result["native_speaker_embeddings"] = self.native_speaker_embeddings
+        if self.speaker_gender:
+            result["speaker_gender"] = self.speaker_gender
         return result
 
 
@@ -131,6 +135,9 @@ class RawInferenceResult:
     native_speaker_embeddings: dict[str, list[float]] | None  # numpy → list at boundary
     config_snapshot: dict
     stage_timings: dict[str, float] = field(default_factory=dict)
+    # Per-speaker gender from the sidecar, classified off the same audio as diarization.
+    # None when the engine did not produce it (fork path, or feature disabled).
+    speaker_gender: dict | None = None
 
     def serialize(self) -> dict:
         emb = None
@@ -148,6 +155,7 @@ class RawInferenceResult:
             "diarize_records": self.diarize_records,
             "overlap_info": self.overlap_info,
             "native_speaker_embeddings": emb,
+            "speaker_gender": self.speaker_gender,
             "config_snapshot": self.config_snapshot,
             "stage_timings": self.stage_timings,
         }
@@ -163,6 +171,7 @@ class RawInferenceResult:
             diarize_records=payload.get("diarize_records", []),
             overlap_info=payload.get("overlap_info", {}),
             native_speaker_embeddings=payload.get("native_speaker_embeddings"),
+            speaker_gender=payload.get("speaker_gender"),
             config_snapshot=payload.get("config_snapshot", {}),
             stage_timings=payload.get("stage_timings", {}),
         )

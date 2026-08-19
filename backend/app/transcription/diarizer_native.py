@@ -48,6 +48,8 @@ _DEFAULT_URL = os.environ.get("DIAR_NATIVE_URL", "http://diar-native:8701")
 # Directory shared (bind/volume) between this worker and the sidecar container.
 _SHARED_DIR = os.environ.get("DIAR_NATIVE_SHARED_DIR", "/tmp/diar-native")  # noqa: S108  # nosec B108 — container volume mount point, not a host temp file
 _TIMEOUT_S = float(os.environ.get("DIAR_NATIVE_TIMEOUT_S", "3600"))
+# Ask the sidecar for gender alongside diarization. Off leaves the app's own CPU task in charge.
+_GENDER_ENABLED = os.environ.get("DIAR_NATIVE_GENDER", "1").lower() not in ("0", "false", "no")
 
 
 def _post_json(url: str, payload: dict, timeout: float) -> dict:
@@ -173,7 +175,9 @@ class NativeSpeakerDiarizer:
             try:
                 out = _post_json(
                     f"{self.base_url}/diarize",
-                    {"wav_path": wav_path, "file_id": "job"},
+                    # Gender rides this call: the sidecar has the decoded audio and the
+                    # speaker turns in hand, so classifying costs no second fetch or decode.
+                    {"wav_path": wav_path, "file_id": "job", "gender": _GENDER_ENABLED},
                     timeout=_TIMEOUT_S,
                 )
             except Exception as exc:  # noqa: BLE001 — a sidecar loss must not fail the job
@@ -217,6 +221,10 @@ class NativeSpeakerDiarizer:
                 norm = float(np.linalg.norm(vec))
                 if norm > 0:
                     native_embeddings[label] = vec / norm
+
+        # Rides on the result object rather than the return tuple, so the fork's contract is
+        # untouched and the verdicts stay tied to the call that produced them.
+        diarize_df.speaker_gender = out.get("speaker_gender") or None
 
         logger.info(
             "native diarization done in %.1fs: %d segments, %d speakers",

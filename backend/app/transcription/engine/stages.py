@@ -293,6 +293,7 @@ class _GpuStage:
             language=result_dict.get("language", ""),
             overlap_info=result_dict.get("overlap_info", {}),
             native_speaker_embeddings=result_dict.get("native_speaker_embeddings"),
+            speaker_gender=result_dict.get("speaker_gender"),
             stage_timings={"total": elapsed},
         )
 
@@ -343,6 +344,9 @@ class _GpuStage:
             result["overlap_info"] = overlap_info
         if native_embeddings:
             result["native_speaker_embeddings"] = native_embeddings
+        # Carried on the DiarizeResult so the engine contract stayed unchanged.
+        if getattr(diarize_df, "speaker_gender", None):
+            result["speaker_gender"] = diarize_df.speaker_gender
 
         # Phase 3 (issue #193): acoustic re-check of short disputed/overlap words while
         # audio + speaker centroids are still in memory. Off by default; DB-controlled via
@@ -524,6 +528,7 @@ class _GpuRawStage:
 
         diarize_records: list[dict] = []
         overlap_info: dict = {}
+        speaker_gender: dict | None = None
         native_embs_serialized: dict[str, list[float]] | None = None
 
         if tc.enable_diarization:
@@ -531,6 +536,7 @@ class _GpuRawStage:
                 audio, tc, manager, hw, profiler, callback, async_diarization
             )
             diarize_records = diarize_df.to_records()
+            speaker_gender = getattr(diarize_df, "speaker_gender", None)
             if native_embeddings:
                 native_embs_serialized = {
                     k: v.tolist() if hasattr(v, "tolist") else list(v)
@@ -566,6 +572,7 @@ class _GpuRawStage:
             diarize_records=diarize_records,
             overlap_info=overlap_info,
             native_speaker_embeddings=native_embs_serialized,
+            speaker_gender=speaker_gender,
             config_snapshot=pre.config_snapshot,
             stage_timings={"gpu_total": elapsed},
         )
@@ -615,6 +622,8 @@ class _FinalizeStage:
                 result["overlap_info"] = raw.overlap_info
             if raw.native_speaker_embeddings:
                 result["native_speaker_embeddings"] = raw.native_speaker_embeddings
+            if raw.speaker_gender:
+                result["speaker_gender"] = raw.speaker_gender
         else:
             from app.utils.segment_dedup import clean_segments
 
@@ -630,6 +639,7 @@ class _FinalizeStage:
             language=result.get("language", ""),
             overlap_info=result.get("overlap_info", {}),
             native_speaker_embeddings=result.get("native_speaker_embeddings"),
+            speaker_gender=result.get("speaker_gender"),
             stage_timings={"finalize": time.perf_counter() - t0},
         )
 

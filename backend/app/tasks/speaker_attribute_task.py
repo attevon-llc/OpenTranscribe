@@ -183,6 +183,14 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
     # Fail-open if Redis is unavailable (e.g. unit tests with SKIP_REDIS).
     _guard = None
     _guard_key = f"speaker_attr_detect:{file_uuid}"
+    # The diarization engine may already have classified these speakers from the audio it
+    # had decoded, in which case re-running wav2vec2 here costs 87-90 s of CPU to reach the
+    # same answer. attributes_predicted_at is the marker either path sets.
+    if _attributes_already_predicted(file_uuid):
+        logger.info("Speaker attributes already present for %s; skipping detection", file_uuid)
+        _dispatch_llm_speaker_identification(file_uuid)
+        return {"status": "skipped", "reason": "already_predicted"}
+
     try:
         from app.core.redis import get_redis
 
@@ -202,6 +210,27 @@ def detect_speaker_attributes_task(self, file_uuid: str, user_id: int):
         if _guard is not None:
             with contextlib.suppress(Exception):  # lock expires via TTL anyway
                 _guard.delete(_guard_key)
+
+
+def _attributes_already_predicted(file_uuid: str) -> bool:
+    """True when every speaker on this file already carries a prediction.
+
+    Partial coverage returns False so a file whose speakers were only half-classified still
+    gets a full pass rather than being left inconsistent.
+    """
+    from app.models.media import MediaFile
+    from app.models.media import Speaker
+
+    try:
+        with session_scope() as db:
+            media_file = db.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
+            if media_file is None:
+                return False
+            speakers = db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
+            return bool(speakers) and all(s.attributes_predicted_at is not None for s in speakers)
+    except Exception as exc:  # noqa: BLE001 — never block detection on a bookkeeping read
+        logger.debug("attributes-already-predicted check failed for %s: %s", file_uuid, exc)
+        return False
 
 
 def _load_detection_inputs(file_uuid: str) -> dict | None:

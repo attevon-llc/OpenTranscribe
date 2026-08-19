@@ -8,8 +8,10 @@ Pattern matches speaker_embedding_service.py::get_cached_embedding_service().
 """
 
 import logging
+import os
 import threading
 from typing import ClassVar
+from typing import cast
 
 from app.transcription.config import TranscriptionConfig
 from app.transcription.diarizer import SpeakerDiarizer
@@ -72,19 +74,62 @@ class ModelManager:
 
         with self._lock:
             if self._diarizer is not None and self._diarizer_hash == config_hash:
-                logger.info(f"Reusing cached diarizer (hash={config_hash})")
-                return self._diarizer
+                if self._diarizer_reachable(self._diarizer):
+                    logger.info(f"Reusing cached diarizer (hash={config_hash})")
+                    return self._diarizer
+                # Native sidecar went away — drop the client so the rebuild below can
+                # fall back to the in-process engine.
+                self._diarizer = None
+                self._diarizer_hash = None
 
             if self._diarizer is not None:
                 logger.info("Diarizer config changed, releasing old model")
                 self._diarizer.unload_model()
                 self._cleanup_gpu()
 
-            diarizer = SpeakerDiarizer(config)
-            diarizer.load_model()
+            diarizer = self._build_diarizer(config)
             self._diarizer = diarizer
             self._diarizer_hash = config_hash
             return diarizer
+
+    def _build_diarizer(self, config: TranscriptionConfig) -> SpeakerDiarizer:
+        """Construct and load the configured diarization engine.
+
+        ``DIARIZER_ENGINE=native`` selects the diar-native sidecar client; anything that
+        keeps it from answering falls back to the in-process PyAnnote engine, which stays
+        the default.
+        """
+        if os.environ.get("DIARIZER_ENGINE", "python").lower() == "native":
+            try:
+                from app.transcription.diarizer_native import NativeSpeakerDiarizer
+
+                native = NativeSpeakerDiarizer(config)
+                native.load_model()
+                # Duck-typed drop-in: identical diarize/embed_window/unload_model surface.
+                return cast(SpeakerDiarizer, native)
+            except Exception as exc:  # noqa: BLE001 — any failure means "use the fork"
+                logger.warning("Native diarizer unavailable (%s); falling back to PyAnnote", exc)
+
+        diarizer = SpeakerDiarizer(config)
+        diarizer.load_model()
+        return diarizer
+
+    @staticmethod
+    def _diarizer_reachable(diarizer: SpeakerDiarizer) -> bool:
+        """False only when a cached native client can no longer reach its sidecar.
+
+        The in-process engine holds its own weights and is always reachable; the native
+        client's ``load_model`` is a sub-millisecond health probe, so re-running it per
+        task is what makes a mid-queue sidecar loss fall back instead of failing jobs.
+        """
+        if type(diarizer).__name__ != "NativeSpeakerDiarizer":
+            return True
+        try:
+            diarizer.load_model()
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("diar-native sidecar health probe failed: %s", exc)
+            return False
 
     def ensure_models_loaded(self, config: TranscriptionConfig) -> None:
         """Preload both models for concurrent mode.

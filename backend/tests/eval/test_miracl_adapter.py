@@ -205,3 +205,62 @@ def test_the_real_corpus_still_parses() -> None:
         f"expected graded relevance including explicit negatives, saw {sorted(grades)} — "
         "MIRACL's negatives are why it is the anchor corpus"
     )
+
+
+def test_retrieval_per_query_scores_are_emitted() -> None:
+    """#461 phase 0: every published retrieval number was a point estimate.
+
+    The per-query scores were already computed by ``metrics.evaluate`` and thrown
+    away for retrieval queries, while the *answer* table published them all along.
+    That is why the reranker's measured 20-33% nDCG@10 deficit — the one finding
+    with direct product impact — sits unactioned: nobody can say whether it is an
+    effect or noise, and a mean over N queries cannot answer that.
+
+    This asserts the instrument exists. It deliberately does NOT compute an
+    interval: choosing one is a judgement, and hard-coding it here would smuggle
+    that judgement into the raw data.
+    """
+    from tests.eval.harness.corpora import LOOKUP
+    from tests.eval.harness.corpora import EvalQuery
+    from tests.eval.harness.metrics import EvalResult
+    from tests.eval.harness.qrels import GoldSpan
+    from tests.eval.harness.report import build_retrieval_per_query
+
+    queries = [
+        EvalQuery(
+            query_id="es:q1#0",
+            text="how tall is the tower",
+            query_class=LOOKUP,
+            corpus="miracl",
+            license_tier="A",
+            spans=(GoldSpan("uuid-a", 0, 0), GoldSpan("uuid-b", 0, 0)),
+        ),
+        # An answer-scored query must NOT appear: it has its own table with its own
+        # measures, and mixing them is how "aggregation" once sat in the metric
+        # table with an nDCG beside it scoring nothing it asked for.
+        EvalQuery(
+            query_id="es:q2#0",
+            text="count the files",
+            query_class=LOOKUP,
+            corpus="miracl",
+            license_tier="A",
+            spans=(),
+            scored_on="answer",
+        ),
+    ]
+    result = EvalResult(per_query={"es:q1#0": {"nDCG@10": 0.5123456}, "es:q2#0": {"EM": 1.0}})
+
+    details = build_retrieval_per_query(queries, result)
+
+    assert [d["query_id"] for d in details] == ["es:q1#0"], (
+        f"expected only the retrieval-scored query, got {[d['query_id'] for d in details]}"
+    )
+    row = details[0]
+    assert row["scores"]["nDCG@10"] == pytest.approx(0.5123, abs=1e-4), (
+        "scores must be rounded like every other number in the report, or metrics.json "
+        "stops being byte-identical across runs"
+    )
+    # gold_count is what makes a per-query score readable: nDCG@10 over 1 gold
+    # document and over 40 are different measurements.
+    assert row["gold_count"] == 2
+    assert row["corpus"] == "miracl" and row["license_tier"] == "A"

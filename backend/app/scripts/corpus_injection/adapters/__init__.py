@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from app.scripts.corpus_injection.adapters.base import CorpusAdapter
+from app.scripts.corpus_injection.adapters.miracl import DEFAULT_QUERY_COUNT
+from app.scripts.corpus_injection.adapters.miracl import MiraclAdapter
 from app.scripts.corpus_injection.adapters.qmsum import QMSumAdapter
 from app.scripts.corpus_injection.adapters.synthetic import DEFAULT_MEETING_BUDGET
 from app.scripts.corpus_injection.adapters.synthetic import DEFAULT_SELECT_FOR
@@ -31,6 +33,18 @@ _BUILDERS: dict[str, tuple[str, Builder]] = {
         "qmsum",
         lambda root, data_dir, _options: QMSumAdapter(
             root, ami_root=data_dir / "ami", icsi_root=data_dir / "icsi"
+        ),
+    ),
+    # MIRACL lives one level down from $RAG_EVAL_DATA_DIR: the topics/qrels and the
+    # passage shards are sibling directories under `multilingual/`, so the adapter
+    # root is that parent rather than either of them.
+    "miracl": (
+        "multilingual",
+        lambda root, _data_dir, options: MiraclAdapter(
+            root,
+            language=str(options.get("language", "es")),
+            query_count=int(options.get("query_count", DEFAULT_QUERY_COUNT)),
+            split=str(options.get("split", "dev")),
         ),
     ),
     "synthetic": (

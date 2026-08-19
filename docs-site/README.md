@@ -142,6 +142,24 @@ import TabItem from '@theme/TabItem';
 </Tabs>
 ```
 
+**Comments, blog truncation and explicit heading IDs — MDX form only.** Every `.md` file
+here is compiled as MDX, which parses `{ ... }` as a JavaScript expression and rejects
+HTML comments outright. Use the MDX comment form for all three:
+
+```markdown
+{/* an ordinary comment */}
+
+{/* truncate */}
+
+## A heading with a stable anchor {/* #explicit-id */}
+```
+
+The CommonMark spellings (`<!-- comment -->`, `<!-- truncate -->`, `## Heading {#id}`)
+fail the build with `Unexpected character !` or `Could not parse expression with acorn`.
+Explicit heading IDs matter because the auto-generated slug changes whenever the heading
+text is reworded, silently breaking every inbound link — `onBrokenAnchors: 'throw'` catches
+those at build time, but only for links inside this site.
+
 ## Deployment
 
 ### GitHub Pages (Automatic)
@@ -154,7 +172,7 @@ The documentation site automatically deploys to GitHub Pages when changes are pu
 3. Push changes to `master` branch
 4. GitHub Actions will build and deploy automatically
 
-**URL:** `https://davidamacey.github.io/OpenTranscribe/` (or custom domain)
+**URL:** `https://docs.opentranscribe.app` (the custom domain in `static/CNAME`)
 
 ### Manual Deployment
 

@@ -7,7 +7,7 @@ tags: [announcement, open-source, milestone, community]
 
 OpenTranscribe has a new home on GitHub: [github.com/attevon-llc/OpenTranscribe](https://github.com/attevon-llc/OpenTranscribe). The project has transferred from my personal account to [Attevon LLC](https://attevon.com), the company I founded to build practical AI tools that actually work in production. Here's what that means and why I made the move.
 
-<!-- truncate -->
+{/* truncate */}
 
 ## What Is Attevon?
 

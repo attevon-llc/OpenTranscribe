@@ -350,6 +350,7 @@ Measured 2026-08-18 on `opensearch:3.4.0`.
 | Model | Tier | Dim | Size | Languages | Cross-lingual (cosine vs English) |
 |---|---|---|---|---|---|
 | `all-MiniLM-L6-v2` *(default)* | Fast | 384 | 87.5 MB | English | — |
+| `all-MiniLM-L12-v2` | Fast | 384 | 128.3 MB | English | — |
 | `multi-qa-MiniLM-L6-cos-v1` | Fast | 384 | 80 MB | English | — |
 | `paraphrase-multilingual-MiniLM-L12-v2` | Fast | 384 | 465.5 MB | 50+ | es **0.98**, zh 0.95, ar 0.94, ru 0.94, de 0.90 |
 | `all-mpnet-base-v2` | Balanced | 768 | 418.7 MB | English | — |
@@ -360,8 +361,12 @@ For reference, the English-only models score **0.006–0.313** on those same tra
 so the multilingual pair genuinely aligns languages rather than merely returning numbers.
 
 **Dimension matters when switching.** Moving between models of the *same* dimension is a
-re-embed; changing dimension **recreates the index**. `multi-qa-MiniLM-L6-cos-v1` and
-`paraphrase-multilingual-MiniLM-L12-v2` are both 384, matching the default.
+re-embed; changing dimension **recreates the index**. `all-MiniLM-L12-v2`,
+`multi-qa-MiniLM-L6-cos-v1` and `paraphrase-multilingual-MiniLM-L12-v2` are all 384,
+matching the default — `all-MiniLM-L12-v2` in particular is the default with all twelve
+layers instead of six, so it is the lowest-risk quality upgrade available: a re-embed,
+no index recreation, and a trivial rollback. The cost is roughly half the encode
+throughput.
 
 Changing the model triggers a full re-index of all documents. A confirmation modal warns about this before applying.
 

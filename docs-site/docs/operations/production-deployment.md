@@ -447,24 +447,20 @@ When using a managed Redis (ElastiCache or equivalent), enable **encryption in t
 
 ### JVM Heap Sizing
 
-The base configuration sets the OpenSearch JVM heap to 1 GB:
+The base configuration sets the OpenSearch JVM heap to 4 GB, and `bootstrap.memory_lock=true` pins it in RAM at startup:
 
 ```yaml
-OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+OPENSEARCH_JAVA_OPTS=-Xms4g -Xmx4g
 ```
 
-**Adjust based on your dataset size and available RAM.** A good rule of thumb is to allocate 50% of remaining RAM (after PostgreSQL and OS needs), but never exceed 32 GB (JVM compressed oops threshold).
+**Heap is sized for the embedding model, not for your transcript count** — the measured floors are 1 GB for the default model and 2 GB for every English model, including the 768-dimension ones. See [Performance Tuning](./performance-tuning.md#opensearch-heap-what-it-is-actually-for) for the measurements.
 
-| Dataset Size | Recommended Heap |
-|-------------|-----------------|
-| < 1,000 files | 1 GB (default) |
-| 1,000 - 10,000 files | 2-4 GB |
-| 10,000+ files | 4-8 GB |
+Keep `Xms` equal to `Xmx`; a differing pair makes the JVM resize the heap at runtime and `bootstrap.memory_lock` expects a fixed heap. Never exceed 50% of available RAM, or ~30 GB (JVM compressed oops threshold).
 
 Update in `.env` or directly in your compose override:
 
 ```bash
-OPENSEARCH_JAVA_OPTS=-Xms4g -Xmx4g
+OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
 ```
 
 ### Security Plugin

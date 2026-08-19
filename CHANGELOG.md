@@ -31,8 +31,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Breaking for any script or runbook that relied on the wide default** — add
   `?scope=all_users&confirm=true` to preserve the old behaviour. There is no frontend caller.
 
+- **Docs site upgraded to Docusaurus 3.10.2 (#423).** All six `@docusaurus/*` packages are now
+  pinned to the same exact version — `@docusaurus/theme-mermaid` was the only one declared with
+  a caret, and Docusaurus refuses to build when an official package drifts away from
+  `@docusaurus/core`. `@docusaurus/faster` is a separate package as of 3.10 and is required by
+  `future.v4: true`, so it is now a declared dependency. The content migration that had blocked
+  this: twelve blog posts used `<!-- truncate -->` and seven headings used the CommonMark
+  `{#explicit-id}` anchor, both of which MDX rejects; they are now `{/* truncate */}` and
+  `{/* #explicit-id */}`, which Docusaurus 3.10's heading plugin reads as the same explicit IDs,
+  so every inbound anchor link still resolves (`onBrokenAnchors: 'throw'` proves it at build
+  time). `docs-site/README.md` documents the three MDX-only spellings so they are not
+  reintroduced.
+
 ### Fixed
 
+- **Search documentation named environment variables and embedding models that do not exist.**
+  `configuration/environment-variables.md` told operators to set `NEURAL_SEARCH_ENABLED`,
+  `OPENSEARCH_ML_COMMONS_ENABLED`, `OPENSEARCH_URL`, `OPENSEARCH_USERNAME`,
+  `NEURAL_SEARCH_MODEL_ID` and `NEURAL_SEARCH_BATCH_SIZE` — none of which the backend reads;
+  the real names are `OPENSEARCH_NEURAL_SEARCH_ENABLED`, `OPENSEARCH_HOST`/`OPENSEARCH_PORT`,
+  `OPENSEARCH_USER` and `OPENSEARCH_NEURAL_MODEL`. `configuration/neural-search-setup.md`
+  offered `bge-large-en-v1.5` as one of three selectable models; it is not in any registry and
+  the real list is the seven verified models. Both files also sized the embedding model in
+  **VRAM** — it runs on CPU inside the OpenSearch JVM and never touches the GPU, so the budget
+  is heap. The JVM heap default was documented as 1 GB in three places (`operations/performance-tuning.md`
+  contradicted itself in two sections) when `docker-compose.yml` has set 4 GB with
+  `bootstrap.memory_lock` since the measured heap work. `user-guide/admin-panel.md` gained the
+  `all-MiniLM-L12-v2` row that shipped in the registry without a docs update, and
+  `docs-site/README.md` no longer points at the pre-transfer `davidamacey.github.io` URL.
+- **`backend/README.md`'s production environment block named five variables the backend does
+  not read**: `SECRET_KEY` (it is `JWT_SECRET_KEY`), `MINIO_ENDPOINT`/`MINIO_ACCESS_KEY`/
+  `MINIO_SECRET_KEY` (they are `MINIO_HOST`/`MINIO_PORT`/`MINIO_ROOT_USER`/
+  `MINIO_ROOT_PASSWORD`) and `OPENSEARCH_URL` (it is `OPENSEARCH_HOST`/`OPENSEARCH_PORT`).
+  Following it produced a deployment that silently kept every default, including the default
+  JWT secret and `minioadmin`/`minioadmin`. The block now defers to `.env.example`.
+- **The v0.3.3 blog post was dated a year early** (`2025-01-13`), placing it below the
+  v0.1.0 announcement on the blog index as though 0.3.3 had shipped first; the `v0.3.3` tag
+  is dated 2026-01-14. The post's explicit `slug:` means its URL is unchanged.
 - **An unreachable Redis made every cached request pay retry sleeps.** The cache service never
   remembered a failed connection — it re-dialled on every call, and each attempt paid redis-py's
   default exponential backoff. So with Redis down, a degraded cache presented as a dead API:

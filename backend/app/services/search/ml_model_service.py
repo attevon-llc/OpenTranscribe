@@ -23,6 +23,10 @@ _REGISTRATION_MAX_WAIT = 300  # 5 minutes max wait for model registration
 _DEPLOYMENT_POLL_INTERVAL = 2.0  # seconds
 _DEPLOYMENT_MAX_WAIT = 120  # 2 minutes max wait for deployment
 
+#: Probe text for the post-deploy inference check (#503). Ordinary prose, because
+#: the point is to exercise the normal path rather than an edge case.
+_VERIFICATION_TEXT = "the quarterly planning meeting covered budget and hiring"
+
 # Local model storage path (inside OpenSearch container, mounted from host)
 _LOCAL_MODEL_PATH = Path("/ml-models")
 
@@ -567,6 +571,99 @@ class OpenSearchMLModelService:
         logger.error(f"Model deployment timed out after {_DEPLOYMENT_MAX_WAIT}s")
         return False
 
+    def _verified_or_none(self, model_name: str, model_id: str) -> str | None:
+        """Return the id only if the model can ACTUALLY embed (#503).
+
+        Every return path of :meth:`ensure_model_deployed` goes through here, because a
+        model that reports deployed and cannot embed is worse than one that failed to
+        deploy: the caller stores it as the active model, the ingest pipeline points at
+        it, and every document indexed afterwards silently carries no vector.
+
+        Refusing the id is the loud outcome — the caller already logs
+        "Could not deploy default model" and neural search stays off, which is a state
+        an operator can see and act on.
+        """
+        from app.services.search.settings_service import get_search_embedding_dimension
+
+        try:
+            expected = get_search_embedding_dimension()
+        except Exception:  # noqa: BLE001 - a settings read must not break deployment
+            expected = None
+
+        ok, detail = self.verify_model_can_embed(model_id, expected_dimension=expected)
+        if ok:
+            logger.info(f"Verified {model_name} can embed: {detail}")
+            return model_id
+
+        logger.error(
+            f"Model {model_name} ({model_id}) reports deployed but CANNOT EMBED: {detail}. "
+            "Refusing to activate it. A model that deploys and cannot embed leaves every "
+            "later document without a vector and no error anywhere. If the cluster is "
+            "small, note the measured floors: 1 GB heap runs all-MiniLM-L6-v2, 2 GB runs "
+            "every English model (see docker-compose.yml)."
+        )
+        return None
+
+    def verify_model_can_embed(
+        self, model_id: str, expected_dimension: int | None = None
+    ) -> tuple[bool, str]:
+        """Run a REAL prediction and check the vector that comes back (#503).
+
+        ⚠️ **"Deployed" is not "working", and the difference is measured.**
+        ``all-mpnet-base-v2`` on a 1 GB heap reports ``DEPLOY: COMPLETED`` and then
+        fails to produce an embedding — so :meth:`_wait_for_deployment`, which returns
+        True on that state, reported a cluster that could not embed as healthy. Every
+        document indexed afterwards silently gets no vector, and neural search quietly
+        degrades to BM25 with nothing in the logs saying so.
+
+        This is also the cheapest possible check for "does this model exist and work
+        here at all", which is the #504 failure (a model offered in nine files that
+        OpenSearch does not provide) caught one layer earlier.
+
+        Args:
+            model_id: The deployed ML Commons model id.
+            expected_dimension: Vector width the index is configured for. When given, a
+                mismatch is a failure — writing 768-d vectors into a 384-d ``knn_vector``
+                is rejected per document, which surfaces as an empty index rather than
+                an error anyone reads.
+
+        Returns:
+            ``(ok, detail)``. ``detail`` names the cause on failure, for the log line.
+        """
+        if not self._ensure_client():
+            return False, "OpenSearch client unavailable"
+
+        try:
+            assert self._client is not None
+            response = self._client.transport.perform_request(
+                "POST",
+                f"/_plugins/_ml/_predict/text_embedding/{model_id}",
+                body={
+                    "text_docs": [_VERIFICATION_TEXT],
+                    "return_number": True,
+                    "target_response": ["sentence_embedding"],
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - any failure means "cannot embed"
+            return False, f"prediction request failed: {exc}"
+
+        try:
+            vector = response["inference_results"][0]["output"][0]["data"]
+        except (KeyError, IndexError, TypeError):
+            return False, f"prediction returned no embedding: {str(response)[:200]}"
+
+        if not vector:
+            return False, "prediction returned an empty vector"
+
+        if expected_dimension is not None and len(vector) != expected_dimension:
+            return False, (
+                f"model returns {len(vector)}-dimension vectors but the index is "
+                f"configured for {expected_dimension}. Writing these would be rejected "
+                "per document and the index would simply stay empty."
+            )
+
+        return True, f"{len(vector)}-dimension embedding"
+
     def undeploy_model(self, model_id: str) -> bool:
         """Undeploy a model from memory.
 
@@ -712,11 +809,11 @@ class OpenSearchMLModelService:
             status = self.get_model_status(model_id)
             if status.get("deployed"):
                 logger.info(f"Model {model_name} already deployed: {model_id}")
-                return model_id
+                return self._verified_or_none(model_name, model_id)
 
             # Deploy if registered but not deployed
             if self.deploy_model(model_id):
-                return model_id
+                return self._verified_or_none(model_name, model_id)
             return None
 
         # Not registered - try local first (for offline deployments)
@@ -725,7 +822,7 @@ class OpenSearchMLModelService:
             logger.info(f"Registering model from local file: {model_name}")
             model_id = self.register_model_from_local(model_name)
             if model_id and self.deploy_model(model_id):
-                return model_id
+                return self._verified_or_none(model_name, model_id)
             # Local registration failed, continue to try remote
             logger.warning(f"Local model registration failed for {model_name}, trying remote")
 
@@ -736,7 +833,7 @@ class OpenSearchMLModelService:
             return None
 
         if self.deploy_model(model_id):
-            return model_id
+            return self._verified_or_none(model_name, model_id)
 
         return None
 

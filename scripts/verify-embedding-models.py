@@ -283,6 +283,35 @@ def main() -> int:
     parser.add_argument('--models', nargs='*', default=sorted(EXPECTED_DIMENSIONS))
     args = parser.parse_args()
 
+    # SHORT names only ('all-MiniLM-L6-v2') — the hf/st prefix is prepended here.
+    # Passing a full registry key used to build a doubled path, and OpenSearch's
+    # answer for that is "This model is not in the pre-trained model list" — the
+    # SAME message a genuinely phantom model produces (#504), so a caller's typo
+    # manufactured the one diagnosis this script exists to make reliably. Refuse
+    # loudly instead of letting the cluster answer ambiguously.
+    #
+    # ⚠️ Known, measured: artifact availability (HTTP 200 on the zip) is NOT
+    # evidence of registrability. paraphrase-multilingual-MiniLM-L12-v2 publishes
+    # 1.0.0/1.0.1/1.0.2, and registering 1.0.0 FAILS with the phantom-model
+    # message while 1.0.1 and 1.0.2 COMPLETE. This script pins 1.0.1 everywhere;
+    # never trust --check-availability alone for a version it did not register.
+    bad = [m for m in args.models if '/' in m]
+    if bad:
+        parser.error(
+            f'--models takes SHORT names (e.g. all-MiniLM-L6-v2); got {bad}. '
+            'The huggingface/sentence-transformers/ prefix is added automatically, '
+            'and a full name would be rejected by OpenSearch with the same message '
+            'as a phantom model.'
+        )
+    unknown = [m for m in args.models if m not in EXPECTED_DIMENSIONS]
+    if unknown:
+        parser.error(
+            f'unknown model(s) {unknown}; known: {sorted(EXPECTED_DIMENSIONS)}. '
+            'Add the expected dimension to EXPECTED_DIMENSIONS before verifying a '
+            'new model — a dimension this script cannot check is a verification '
+            'it cannot perform.'
+        )
+
     if args.check_availability:
         results = [check_availability(name) for name in args.models]
         for outcome in results:

@@ -65,3 +65,81 @@ def test_at_least_one_model_of_each_kind_is_offered(client, auth_headers) -> Non
     assert "multilingual" in kinds and "english" in kinds, (
         f"expected both kinds of model to be offered, saw {sorted(kinds)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Readiness: the picker has to be able to see that a model cannot be applied
+# ---------------------------------------------------------------------------
+def test_every_model_reports_whether_it_can_actually_embed(client, auth_headers) -> None:
+    """Without this the settings UI offered every model as if it were usable.
+
+    Choosing one that had never been downloaded answered **409 with instructions to
+    POST two API endpoints by hand**, which is not a user interface. The 409 itself is
+    correct and stays (#437) — recording a selection whose pipeline cannot emit the
+    new dimension makes the coordinator delete the chunks index and then fail every
+    write. What was missing was any way to see the condition coming.
+    """
+    response = client.get("/api/search/models", headers=auth_headers)
+
+    assert response.status_code == 200, response.text
+    models = response.json()["models"]
+    assert models, "no models returned; the assertion below would pass vacuously"
+    for model in models:
+        assert isinstance(model.get("ready"), bool), (
+            f"{model['model_id']} has no boolean `ready`, so the picker cannot tell a "
+            "usable model from one that has never been downloaded"
+        )
+
+
+def test_readiness_costs_one_cluster_call_for_the_whole_list(
+    client, auth_headers, monkeypatch
+) -> None:
+    """This runs on every settings page load; per-model lookups would be N round trips.
+
+    The first draft of the endpoint called the resolver *inside* the list
+    comprehension, which is exactly that mistake.
+    """
+    calls: list[bool] = []
+
+    # NOTE the `self`: patching a CLASS attribute means the instance arrives as the
+    # first positional argument. Without it the call raises TypeError, the
+    # endpoint's except swallows it, and BOTH tests below pass for the wrong
+    # reason — 0 calls and every model reported not-ready.
+    def _one_call(self, deployed_only: bool = False) -> list[dict]:  # noqa: ANN001
+        calls.append(deployed_only)
+        return []
+
+    monkeypatch.setattr(
+        "app.services.search.ml_model_service.OpenSearchMLModelService.list_models",
+        _one_call,
+    )
+
+    response = client.get("/api/search/models", headers=auth_headers)
+
+    assert response.status_code == 200, response.text
+    assert len(calls) == 1, (
+        f"the deployed-model lookup ran {len(calls)} times for "
+        f"{len(response.json()['models'])} models; it must be resolved once"
+    )
+    assert calls == [True], "readiness must ask only for DEPLOYED models"
+
+
+def test_an_unreachable_cluster_reports_nothing_as_ready(client, auth_headers, monkeypatch) -> None:
+    """Fail closed: claiming readiness we cannot confirm ends in a deleted index.
+
+    The switch would refuse the model anyway, so an optimistic `ready` would only
+    produce a button that 409s — and the failure it hides is the destructive one.
+    """
+
+    def _boom(self, deployed_only: bool = False) -> list[dict]:  # noqa: ANN001
+        raise RuntimeError("cluster unreachable")
+
+    monkeypatch.setattr(
+        "app.services.search.ml_model_service.OpenSearchMLModelService.list_models",
+        _boom,
+    )
+
+    response = client.get("/api/search/models", headers=auth_headers)
+
+    assert response.status_code == 200, "a readiness probe must not break the picker"
+    assert all(m["ready"] is False for m in response.json()["models"])

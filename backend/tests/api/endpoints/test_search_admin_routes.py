@@ -293,6 +293,7 @@ def test_models_lists_the_registry_and_names_the_current_selection(client, user_
             "size_mb",
             "languages",
             "language_type",
+            "ready",
         }
 
 

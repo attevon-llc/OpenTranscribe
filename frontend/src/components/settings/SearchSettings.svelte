@@ -22,6 +22,10 @@
     // reading its display name.
     languages: string[];
     language_type: string;
+    // Whether OpenSearch can currently embed with this model. Without it the picker
+    // offered every model identically and choosing an undownloaded one answered 409
+    // with instructions to call two API endpoints by hand.
+    ready: boolean;
   }
 
   interface IndexStatus {
@@ -55,6 +59,7 @@
   let isLoading = true;
   let isReindexing = false;
   let isSwitchingModel = false;
+  let isPreparingModel = false;
   let isStopping = false;
   let indexHealth: Record<string, IndexHealthEntry> | null = null;
 
@@ -139,6 +144,34 @@
   function handleModelChange() {
     if (selectedModelId === currentModelId) return;
     showModelChangeModal = true;
+  }
+
+  // Downloading weights takes minutes, so this reports progress rather than blocking
+  // on one long request. The backend calls are idempotent (already_registered /
+  // already_deployed), so a retry after a timeout is safe.
+  async function prepareModel() {
+    if (!selectedModel || selectedModel.ready) return;
+    isPreparingModel = true;
+    const target = selectedModel.model_id;
+    try {
+      await axiosInstance.post(`/search/models/neural/${target}/register`);
+      await axiosInstance.post(`/search/models/neural/${target}/deploy`);
+      await loadModels();
+      selectedModelId = target;
+      if (models.find(m => m.model_id === target)?.ready) {
+        toastStore.success($t('settings.search.modelReady'));
+      } else {
+        // Deploy returned without error but the model still cannot embed. Reporting
+        // success here is what "DEPLOY: COMPLETED then fails to embed" looks like to
+        // a user, so say what is actually true.
+        toastStore.error($t('settings.search.modelNotReady'));
+      }
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toastStore.error(detail || $t('settings.search.modelPrepareFailed'));
+    } finally {
+      isPreparingModel = false;
+    }
   }
 
   async function confirmModelChange() {
@@ -232,6 +265,9 @@
     : 0;
 
   $: modelChanged = selectedModelId !== currentModelId;
+  // The switch endpoint refuses an undeployed model (#437), so offering
+  // Apply for one produces a 409 the admin can do nothing about.
+  $: selectedModelReady = selectedModel?.ready !== false;
 
   $: selectedModel = models.find(m => m.model_id === selectedModelId);
 
@@ -420,8 +456,27 @@
             ? $t('settings.search.multilingualBadge')
             : $t('settings.search.englishOnlyBadge')}
         </span>
+        {#if !selectedModel.ready}
+          <span class="lang-badge not-ready">{$t('settings.search.notDownloadedBadge')}</span>
+        {/if}
       </div>
       <small class="form-text">{selectedModel.description}</small>
+      {#if !selectedModel.ready}
+        <!-- Without this the only route to a non-default model was two API calls by
+             hand: the switch endpoint refuses a model OpenSearch cannot embed with. -->
+        <div class="model-prepare">
+          <small class="form-text">{$t('settings.search.modelNotDownloaded')}</small>
+          <button
+            class="btn btn-secondary"
+            on:click={prepareModel}
+            disabled={isPreparingModel || isSwitchingModel || isReindexing}
+          >
+            {isPreparingModel
+              ? $t('settings.search.preparingModel')
+              : $t('settings.search.downloadAndDeploy')}
+          </button>
+        </div>
+      {/if}
     {/if}
   </div>
 
@@ -436,7 +491,8 @@
       <button
         class="btn btn-primary"
         on:click={handleModelChange}
-        disabled={isSwitchingModel}
+        disabled={isSwitchingModel || !selectedModelReady}
+        title={selectedModelReady ? '' : $t('settings.search.modelNotDownloaded')}
       >
         {isSwitchingModel ? $t('settings.search.applying') : $t('settings.search.applyAndReindex')}
       </button>
@@ -619,6 +675,23 @@
   .lang-badge.multilingual {
     border-color: var(--primary-color);
     color: var(--primary-color);
+  }
+
+  .lang-badge.not-ready {
+    border-color: var(--warning-color, #b45309);
+    color: var(--warning-color, #b45309);
+  }
+
+  .model-prepare {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .model-prepare .form-text {
+    flex: 1 1 20rem;
   }
 
   .form-actions {

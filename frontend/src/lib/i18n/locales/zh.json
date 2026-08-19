@@ -4982,5 +4982,12 @@
   "filter.language": "语言",
   "filter.languageTooltip": "仅显示识别为 {language} 的转录",
   "settings.search.multilingualBadge": "多语言",
-  "settings.search.englishOnlyBadge": "仅英语"
+  "settings.search.englishOnlyBadge": "仅英语",
+  "settings.search.notDownloadedBadge": "未下载",
+  "settings.search.modelNotDownloaded": "该模型尚未下载到 OpenSearch，因此无法应用。请先下载并部署——此操作会获取模型权重，可能需要几分钟。",
+  "settings.search.downloadAndDeploy": "下载并部署",
+  "settings.search.preparingModel": "正在下载并部署…",
+  "settings.search.modelReady": "模型已下载并部署，现在可以应用。",
+  "settings.search.modelNotReady": "部署报告成功，但模型仍无法生成嵌入。请检查 OpenSearch 日志——这通常意味着该模型的 JVM 堆内存不足。",
+  "settings.search.modelPrepareFailed": "无法下载并部署该模型。"
 }

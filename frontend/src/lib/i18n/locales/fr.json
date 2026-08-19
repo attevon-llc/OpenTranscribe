@@ -4982,5 +4982,12 @@
   "filter.language": "Langue",
   "filter.languageTooltip": "Afficher uniquement les transcriptions détectées comme {language}",
   "settings.search.multilingualBadge": "Multilingue",
-  "settings.search.englishOnlyBadge": "Anglais uniquement"
+  "settings.search.englishOnlyBadge": "Anglais uniquement",
+  "settings.search.notDownloadedBadge": "Non téléchargé",
+  "settings.search.modelNotDownloaded": "Ce modèle n'a pas encore été téléchargé dans OpenSearch et ne peut donc pas être appliqué. Téléchargez-le et déployez-le d'abord : cela récupère les poids du modèle et peut prendre plusieurs minutes.",
+  "settings.search.downloadAndDeploy": "Télécharger et déployer",
+  "settings.search.preparingModel": "Téléchargement et déploiement…",
+  "settings.search.modelReady": "Modèle téléchargé et déployé. Vous pouvez l'appliquer maintenant.",
+  "settings.search.modelNotReady": "Le déploiement a signalé un succès mais le modèle ne peut toujours pas produire d'embeddings. Consultez les journaux OpenSearch : cela signifie généralement que le tas JVM est trop petit pour ce modèle.",
+  "settings.search.modelPrepareFailed": "Impossible de télécharger et de déployer le modèle."
 }

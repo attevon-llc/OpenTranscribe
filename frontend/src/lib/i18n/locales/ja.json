@@ -4982,5 +4982,12 @@
   "filter.language": "言語",
   "filter.languageTooltip": "{language} として検出された文字起こしのみを表示",
   "settings.search.multilingualBadge": "多言語",
-  "settings.search.englishOnlyBadge": "英語のみ"
+  "settings.search.englishOnlyBadge": "英語のみ",
+  "settings.search.notDownloadedBadge": "未ダウンロード",
+  "settings.search.modelNotDownloaded": "このモデルはまだ OpenSearch にダウンロードされていないため適用できません。先にダウンロードしてデプロイしてください。モデルの重みを取得するため数分かかることがあります。",
+  "settings.search.downloadAndDeploy": "ダウンロードしてデプロイ",
+  "settings.search.preparingModel": "ダウンロードしてデプロイ中…",
+  "settings.search.modelReady": "モデルをダウンロードしてデプロイしました。適用できます。",
+  "settings.search.modelNotReady": "デプロイは成功を報告しましたが、モデルはまだ埋め込みを生成できません。OpenSearch のログを確認してください。通常はこのモデルに対して JVM ヒープが不足しています。",
+  "settings.search.modelPrepareFailed": "モデルをダウンロードしてデプロイできませんでした。"
 }

@@ -4982,5 +4982,12 @@
   "filter.language": "Язык",
   "filter.languageTooltip": "Показывать только расшифровки, определённые как {language}",
   "settings.search.multilingualBadge": "Многоязычная",
-  "settings.search.englishOnlyBadge": "Только английский"
+  "settings.search.englishOnlyBadge": "Только английский",
+  "settings.search.notDownloadedBadge": "Не загружена",
+  "settings.search.modelNotDownloaded": "Эта модель ещё не загружена в OpenSearch, поэтому её нельзя применить. Сначала загрузите и разверните её — при этом скачиваются веса модели, что может занять несколько минут.",
+  "settings.search.downloadAndDeploy": "Загрузить и развернуть",
+  "settings.search.preparingModel": "Загрузка и развёртывание…",
+  "settings.search.modelReady": "Модель загружена и развёрнута. Теперь её можно применить.",
+  "settings.search.modelNotReady": "Развёртывание сообщило об успехе, но модель по-прежнему не может создавать эмбеддинги. Проверьте журналы OpenSearch — обычно это означает нехватку heap JVM для этой модели.",
+  "settings.search.modelPrepareFailed": "Не удалось загрузить и развернуть модель."
 }

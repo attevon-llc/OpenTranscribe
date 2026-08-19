@@ -4982,5 +4982,12 @@
   "filter.language": "Idioma",
   "filter.languageTooltip": "Mostrar solo transcripciones detectadas como {language}",
   "settings.search.multilingualBadge": "Multilingüe",
-  "settings.search.englishOnlyBadge": "Solo inglés"
+  "settings.search.englishOnlyBadge": "Solo inglés",
+  "settings.search.notDownloadedBadge": "No descargado",
+  "settings.search.modelNotDownloaded": "Este modelo aún no se ha descargado en OpenSearch, por lo que no se puede aplicar. Descárgalo e impleméntalo primero: esto obtiene los pesos del modelo y puede tardar varios minutos.",
+  "settings.search.downloadAndDeploy": "Descargar e implementar",
+  "settings.search.preparingModel": "Descargando e implementando…",
+  "settings.search.modelReady": "Modelo descargado e implementado. Ya puedes aplicarlo.",
+  "settings.search.modelNotReady": "La implementación informó éxito, pero el modelo todavía no puede generar embeddings. Revisa los registros de OpenSearch: normalmente significa que hay muy poca memoria heap de la JVM para este modelo.",
+  "settings.search.modelPrepareFailed": "No se pudo descargar e implementar el modelo."
 }

@@ -866,6 +866,34 @@ def _switch_model(model_name: str, triggered_by: int) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
 
+def _deployed_model_names() -> set[str]:
+    """Names of every model OpenSearch can currently embed with.
+
+    Feeds the ``ready`` flag on the picker. Without it the settings UI offered every
+    model identically, and choosing one that had never been downloaded answered **409
+    with instructions to POST two API endpoints by hand** — which is not a UI. The
+    409 itself is correct and stays (#437): recording a selection whose pipeline
+    cannot emit the new dimension makes the reindex coordinator delete the chunks
+    index and then fail every write. What was missing was any way to see the
+    condition coming, or to satisfy it.
+
+    ONE cluster call for all models, not one per model: this runs on every settings
+    page load. Failure returns the empty set, so an unreachable cluster renders every
+    model as not-ready — the switch would refuse anyway, and claiming readiness we
+    cannot confirm is the direction that ends in a deleted index.
+    """
+    try:
+        from app.services.search.ml_model_service import get_ml_model_service
+
+        return {
+            str(model.get("name", ""))
+            for model in get_ml_model_service().list_models(deployed_only=True)
+        }
+    except Exception:
+        logger.warning("Could not resolve deployed models; reporting none as ready", exc_info=True)
+        return set()
+
+
 @router.get("/models")
 def get_embedding_models(
     current_user: User = Depends(get_current_active_user),
@@ -883,6 +911,9 @@ def get_embedding_models(
     """
     from app.services.search.settings_service import get_search_embedding_model
 
+    # Resolved ONCE, outside the comprehension: inside it this would be one cluster
+    # round trip per model on every settings page load.
+    deployed = _deployed_model_names()
     models = [
         {
             "model_id": model_name,
@@ -892,6 +923,7 @@ def get_embedding_models(
             "size_mb": info["size_mb"],
             "languages": info["languages"],
             "language_type": info["language_type"],
+            "ready": model_name in deployed,
         }
         for model_name, info in OPENSEARCH_EMBEDDING_MODELS.items()
     ]

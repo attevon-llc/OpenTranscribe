@@ -4982,5 +4982,12 @@
   "filter.language": "Language",
   "filter.languageTooltip": "Show only transcripts detected as {language}",
   "settings.search.multilingualBadge": "Multilingual",
-  "settings.search.englishOnlyBadge": "English only"
+  "settings.search.englishOnlyBadge": "English only",
+  "settings.search.notDownloadedBadge": "Not downloaded",
+  "settings.search.modelNotDownloaded": "This model has not been downloaded to OpenSearch yet, so it cannot be applied. Download and deploy it first — this fetches the model weights and may take several minutes.",
+  "settings.search.downloadAndDeploy": "Download & deploy",
+  "settings.search.preparingModel": "Downloading & deploying…",
+  "settings.search.modelReady": "Model downloaded and deployed. You can apply it now.",
+  "settings.search.modelNotReady": "Deployment reported success but the model still cannot embed. Check the OpenSearch logs — this usually means too little JVM heap for this model.",
+  "settings.search.modelPrepareFailed": "Could not download and deploy the model."
 }

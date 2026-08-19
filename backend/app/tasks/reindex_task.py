@@ -624,6 +624,10 @@ def reindex_transcripts_task(
     if model_id:
         error = _handle_model_switch(model_id)
         if error:
+            # Same leak as the zero-files return below: every exit between
+            # acquiring the user lock and dispatching the workers must release it,
+            # or the next reindex within the hour is silently skipped.
+            _release_reindex_lock(redis_lock, user_id, task_id)
             return error
 
     # Recreate stale index if schema version has changed
@@ -662,6 +666,17 @@ def reindex_transcripts_task(
         total_files = len(all_file_ids)
         if total_files == 0:
             logger.info(f"No files to re-index for user {user_id}")
+            # ⚠️ Release the user lock. This return used to leak it for its full
+            # 3600 s TTL, and the failure it produced was measured, not imagined:
+            # a model switch dispatched a reindex before any files existed (0
+            # files, done in 0.09 s, lock kept), the corpus was ingested, a SECOND
+            # switch dispatched its re-embed 59 minutes later — and the coordinator
+            # answered "Reindex already running, skipping" 67 seconds before the
+            # dead run's lock would have expired. The switch reported success, the
+            # pipeline pointed at the new model, and every stored vector silently
+            # stayed in the OLD model's space: the exact mixed-vector-space failure
+            # #437 exists to prevent, triggered by the documented happy path.
+            _release_reindex_lock(get_redis(), user_id, task_id)
             return {"total_files": 0}
 
         # Initialize progress tracker

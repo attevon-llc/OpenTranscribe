@@ -4982,5 +4982,12 @@
   "filter.language": "Idioma",
   "filter.languageTooltip": "Mostrar apenas transcrições detetadas como {language}",
   "settings.search.multilingualBadge": "Multilíngue",
-  "settings.search.englishOnlyBadge": "Apenas inglês"
+  "settings.search.englishOnlyBadge": "Apenas inglês",
+  "settings.search.notDownloadedBadge": "Não baixado",
+  "settings.search.modelNotDownloaded": "Este modelo ainda não foi baixado para o OpenSearch, portanto não pode ser aplicado. Baixe-o e implante-o primeiro — isto obtém os pesos do modelo e pode levar vários minutos.",
+  "settings.search.downloadAndDeploy": "Baixar e implantar",
+  "settings.search.preparingModel": "Baixando e implantando…",
+  "settings.search.modelReady": "Modelo baixado e implantado. Já pode aplicá-lo.",
+  "settings.search.modelNotReady": "A implantação relatou sucesso, mas o modelo ainda não consegue gerar embeddings. Verifique os logs do OpenSearch — normalmente significa heap da JVM insuficiente para este modelo.",
+  "settings.search.modelPrepareFailed": "Não foi possível baixar e implantar o modelo."
 }

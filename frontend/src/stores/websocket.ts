@@ -10,6 +10,7 @@ import { isCloudEdition } from '$lib/edition';
 // Define notification types
 export type NotificationType =
   | 'transcription_status'
+  | 'transcript_ready'
   | 'summarization_status'
   | 'redaction_status'
   | 'topic_extraction_status'
@@ -587,7 +588,10 @@ function createWebSocketStore() {
               data.type === 'file_created' ||
               data.type === 'file_updated' ||
               data.type === 'search_indexing_complete' ||
-              data.type === 'clustering_file_complete';
+              data.type === 'clustering_file_complete' ||
+              // Tells the open file view its transcript is readable; the reader sees the
+              // transcript appear, which is the point — a toast about it would be noise.
+              data.type === 'transcript_ready';
 
             const isEnrichmentType =
               data.type === 'enrichment_started' || data.type === 'enrichment_task_complete';

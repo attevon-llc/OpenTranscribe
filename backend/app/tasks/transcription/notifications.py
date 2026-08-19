@@ -139,6 +139,43 @@ def send_progress_notification(user_id: int, file_id: int, progress: float, mess
     )
 
 
+def send_transcript_ready_notification(user_id: int, file_id: int) -> None:
+    """Tell the client the transcript is durable and readable, ahead of completion.
+
+    Segments are committed and the read endpoints ungated well before the job finishes —
+    speaker matching, indexing and enrichment all still follow. Announcing it here lets the
+    reader open the transcript at that moment rather than waiting out the rest, with speaker
+    labels attaching in place afterwards through the existing ``speaker_updated`` events.
+
+    Deliberately its own event type: ``transcription_status`` carries the job lifecycle, and a
+    client treating this as "finished" would stop the progress UI early. Best effort — a
+    transcript that fails to announce itself is still shown at completion.
+    """
+    try:
+        from app.utils import benchmark_timing
+
+        if benchmark_timing.benchmark_enabled():
+            with session_scope() as db:
+                mf = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+                active_task_id = str(mf.active_task_id) if mf and mf.active_task_id else None
+            benchmark_timing.mark(active_task_id, "transcript_ready")
+    except Exception as e:
+        logger.debug(f"transcript_ready mark failed for file {file_id}: {e}")
+
+    try:
+        file_metadata = get_file_metadata(file_id)
+        send_ws_event(
+            user_id,
+            "transcript_ready",
+            {
+                "file_id": file_metadata.get("file_uuid"),
+                "filename": file_metadata["filename"],
+            },
+        )
+    except Exception as e:
+        logger.debug(f"transcript_ready notification failed for file {file_id}: {e}")
+
+
 def send_completion_notification(user_id: int, file_id: int) -> None:
     """Send transcription completed notification.
 

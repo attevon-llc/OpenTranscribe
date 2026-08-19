@@ -15,6 +15,7 @@ from .background import _run_post_gpu_background
 from .context import TranscriptionContext
 from .embeddings import _should_use_native_embeddings
 from .notifications import send_progress_notification
+from .notifications import send_transcript_ready_notification
 from .speaker_processor import create_speaker_mapping
 from .speaker_processor import extract_unique_speakers
 from .speaker_processor import mark_overlapping_segments
@@ -230,6 +231,10 @@ def _process_transcription_result(
         )
         update_task_status(db, ctx.task_id, "in_progress", progress=0.78)
 
+    # Segments are committed and readable now; everything after this is speaker matching,
+    # indexing and enrichment. Let the reader open the transcript rather than wait it out.
+    send_transcript_ready_notification(ctx.user_id, ctx.file_id)
+
     # Release GPU memory so next task can start loading models
     hardware_config = detect_hardware()
     hardware_config.optimize_memory_usage()
@@ -342,6 +347,10 @@ def _process_and_save_critical(
             diarization_disabled=diarization_disabled,
         )
         update_task_status(db, ctx.task_id, "in_progress", progress=0.78)
+
+    # Segments are committed and readable now; everything after this is speaker matching,
+    # indexing and enrichment. Let the reader open the transcript rather than wait it out.
+    send_transcript_ready_notification(ctx.user_id, ctx.file_id)
 
     # Release GPU memory
     hardware_config = detect_hardware()

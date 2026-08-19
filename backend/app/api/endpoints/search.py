@@ -875,6 +875,11 @@ def get_embedding_models(
 
     Returns the list of sentence transformer models that can be used
     for semantic search embedding.
+
+    ``languages`` and ``language_type`` are part of the payload because the settings UI
+    is where a model is actually chosen, and without them a multilingual model was
+    identifiable only by reading its display name. The ops endpoint has returned both
+    all along; the two views disagreed for no reason.
     """
     from app.services.search.settings_service import get_search_embedding_model
 
@@ -885,6 +890,8 @@ def get_embedding_models(
             "dimension": info["dimension"],
             "description": info["description"],
             "size_mb": info["size_mb"],
+            "languages": info["languages"],
+            "language_type": info["language_type"],
         }
         for model_name, info in OPENSEARCH_EMBEDDING_MODELS.items()
     ]

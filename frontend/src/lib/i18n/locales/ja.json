@@ -2834,7 +2834,7 @@
   "search.embeddingModel": "埋め込みモデル",
   "search.embeddingModelDesc": "セマンティック検索に使用するAIモデルを選択します。モデルを変更するには、すべての文字起こしの再インデックスが必要です。",
   "search.indexStatus": "インデックス状態",
-  "search.modelChangeWarning": "埋め込みモデルを変更すると、すべての文字起こしが再インデックスされます。再インデックス中は検索がキーワードのみモードになります。続行しますか？",
+  "search.modelChangeWarning": "埋め込みモデルを変更すると、すべての文字起こしが再インデックスされます。再インデックス中は検索がキーワードのみモードになります。変更されるのはセマンティック埋め込みだけで、キーワード検索・チャンク分割・AI チャットのプロンプトには影響しません。そのため多言語モデルにしただけで全体が多言語になるわけではありません。続行しますか？",
   "search.reindexingInProgress": "再インデックス中...",
   "search.reindexComplete": "再インデックス完了！",
   "search.stopReindex": "停止",
@@ -4980,5 +4980,7 @@
   "prompts.contentTypeQaPanel": "Q&Aパネル",
   "settings.contentRedaction.piiEntitiesWarning": "名前の検出は完全ではありません。人名が組織として分類される場合があるため、ORGANIZATION は既定でマスクされます。その代償として企業名や略語もマスクされます。一部の名前は検出されない可能性があります。再現率を高めるには GLiNER PII モデルを有効にし、共有前にエクスポートを確認してください。",
   "filter.language": "言語",
-  "filter.languageTooltip": "{language} として検出された文字起こしのみを表示"
+  "filter.languageTooltip": "{language} として検出された文字起こしのみを表示",
+  "settings.search.multilingualBadge": "多言語",
+  "settings.search.englishOnlyBadge": "英語のみ"
 }

@@ -17,6 +17,11 @@
     dimension: number;
     description: string;
     size_mb: number;
+    // The ops endpoint has always returned these; the settings UI — where the model is
+    // actually chosen — did not, so a multilingual model was identifiable only by
+    // reading its display name.
+    languages: string[];
+    language_type: string;
   }
 
   interface IndexStatus {
@@ -406,6 +411,16 @@
       {/if}
     </select>
     {#if selectedModel}
+      <div class="model-language">
+        <span
+          class="lang-badge"
+          class:multilingual={selectedModel.language_type === 'multilingual'}
+        >
+          {selectedModel.language_type === 'multilingual'
+            ? $t('settings.search.multilingualBadge')
+            : $t('settings.search.englishOnlyBadge')}
+        </span>
+      </div>
       <small class="form-text">{selectedModel.description}</small>
     {/if}
   </div>
@@ -583,6 +598,27 @@
     font-size: 0.75rem;
     color: var(--text-secondary);
     margin-top: 0.125rem;
+  }
+
+  .model-language {
+    margin-top: 0.375rem;
+  }
+
+  /* Colours come from theme vars so light/dark parity is automatic. */
+  .lang-badge {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    background-color: var(--background-color);
+  }
+
+  .lang-badge.multilingual {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
   }
 
   .form-actions {

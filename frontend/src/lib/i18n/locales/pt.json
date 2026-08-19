@@ -2834,7 +2834,7 @@
   "search.embeddingModel": "Modelo de Embedding",
   "search.embeddingModelDesc": "Selecione o modelo de IA usado para busca semântica. Alterar modelos requer reindexar todas as transcrições.",
   "search.indexStatus": "Status do Índice",
-  "search.modelChangeWarning": "Alterar o modelo de embedding reindexará todas as transcrições. A busca usará apenas palavras-chave durante a reindexação. Continuar?",
+  "search.modelChangeWarning": "Alterar o modelo de embedding reindexará todas as transcrições. A busca usará apenas palavras-chave durante a reindexação. Isto altera somente os embeddings semânticos — a busca por palavras-chave, a segmentação e os prompts do chat com IA não são afetados, portanto um modelo multilíngue não torna tudo multilíngue por si só. Continuar?",
   "search.reindexingInProgress": "Reindexação em andamento...",
   "search.reindexComplete": "Reindexação concluída!",
   "search.stopReindex": "Parar",
@@ -4980,5 +4980,7 @@
   "prompts.contentTypeQaPanel": "Painel de perguntas",
   "settings.contentRedaction.piiEntitiesWarning": "A deteção de nomes não é exaustiva. ORGANIZATION é mascarado por predefinição porque o nome de uma pessoa é por vezes identificado como organização — o custo é que nomes de empresas e siglas também são mascarados. Alguns nomes podem escapar; ative o modelo GLiNER de PII para maior cobertura e reveja as exportações antes de partilhar.",
   "filter.language": "Idioma",
-  "filter.languageTooltip": "Mostrar apenas transcrições detetadas como {language}"
+  "filter.languageTooltip": "Mostrar apenas transcrições detetadas como {language}",
+  "settings.search.multilingualBadge": "Multilíngue",
+  "settings.search.englishOnlyBadge": "Apenas inglês"
 }

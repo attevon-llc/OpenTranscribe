@@ -279,7 +279,21 @@ def test_models_lists_the_registry_and_names_the_current_selection(client, user_
     assert offered == set(OPENSEARCH_EMBEDDING_MODELS)
     assert body["current_model_id"] in offered
     for entry in body["models"]:
-        assert set(entry) == {"model_id", "name", "dimension", "description", "size_mb"}
+        # Exact, not a superset: the registry entries carry internal fields (model_format,
+        # requires_prefix, the `default` flag) that must not leak onto a user-readable
+        # response, and only an exact comparison catches one arriving. `languages` /
+        # `language_type` were added deliberately for #453 — the settings UI is where a
+        # model is chosen, and without them a multilingual model was identifiable only by
+        # reading the word out of its display name.
+        assert set(entry) == {
+            "model_id",
+            "name",
+            "dimension",
+            "description",
+            "size_mb",
+            "languages",
+            "language_type",
+        }
 
 
 def test_models_requires_authentication(client):

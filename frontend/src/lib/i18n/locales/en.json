@@ -2838,7 +2838,7 @@
   "search.embeddingModel": "Embedding Model",
   "search.embeddingModelDesc": "Select the AI model used for semantic search. Changing models requires re-indexing all transcripts.",
   "search.indexStatus": "Search Index Status",
-  "search.modelChangeWarning": "Changing the embedding model will re-index all transcripts. Search will use keyword-only mode during re-indexing. Continue?",
+  "search.modelChangeWarning": "Changing the embedding model will re-index all transcripts. Search will use keyword-only mode during re-indexing. This changes the semantic embeddings only — keyword search, chunking and the AI chat prompts are unaffected, so a multilingual model does not by itself make everything multilingual. Continue?",
   "search.reindexingInProgress": "Re-indexing in progress...",
   "search.reindexComplete": "Re-indexing complete!",
   "search.stopReindex": "Stop",
@@ -4980,5 +4980,7 @@
   "prompts.contentTypeQaPanel": "Q&A Panel",
   "settings.contentRedaction.piiEntitiesWarning": "Name detection is not exhaustive. ORGANIZATION is masked by default because a person's name is sometimes tagged as an organization — the cost is that company names and acronyms are masked too. Some names may still be missed; enable the GLiNER PII model for higher recall, and review exports before sharing.",
   "filter.language": "Language",
-  "filter.languageTooltip": "Show only transcripts detected as {language}"
+  "filter.languageTooltip": "Show only transcripts detected as {language}",
+  "settings.search.multilingualBadge": "Multilingual",
+  "settings.search.englishOnlyBadge": "English only"
 }

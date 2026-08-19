@@ -2867,7 +2867,7 @@
   "search.sortBy": "Sortieren nach",
   "search.noKeywordMatches": "Keine exakten Treffer gefunden. Ähnliche Inhalte werden angezeigt.",
   "search.metadataSpeakerMatch": "Sprecher in Datei",
-  "search.modelChangeWarning": "Das Ändern des Embedding-Modells indiziert alle Transkripte neu. Die Suche verwendet während der Neuindizierung nur den Stichwort-Modus. Fortfahren?",
+  "search.modelChangeWarning": "Das Ändern des Embedding-Modells indiziert alle Transkripte neu. Die Suche verwendet während der Neuindizierung nur den Stichwort-Modus. Dies ändert ausschließlich die semantischen Embeddings – Stichwortsuche, Chunking und die KI-Chat-Prompts bleiben unverändert, ein mehrsprachiges Modell macht also nicht von sich aus alles mehrsprachig. Fortfahren?",
   "search.reindexingInProgress": "Neuindizierung läuft...",
   "search.reindexComplete": "Neuindizierung abgeschlossen!",
   "search.stopReindex": "Stoppen",
@@ -4980,5 +4980,7 @@
   "prompts.contentTypeQaPanel": "Q&A-Panel",
   "settings.contentRedaction.piiEntitiesWarning": "Die Namenserkennung ist nicht vollständig. ORGANIZATION wird standardmäßig maskiert, weil Personennamen manchmal als Organisation erkannt werden — dafür werden auch Firmennamen und Abkürzungen maskiert. Einige Namen können dennoch übersehen werden; aktivieren Sie das GLiNER-PII-Modell für höhere Trefferquote und prüfen Sie Exporte vor der Weitergabe.",
   "filter.language": "Sprache",
-  "filter.languageTooltip": "Nur als {language} erkannte Transkripte anzeigen"
+  "filter.languageTooltip": "Nur als {language} erkannte Transkripte anzeigen",
+  "settings.search.multilingualBadge": "Mehrsprachig",
+  "settings.search.englishOnlyBadge": "Nur Englisch"
 }

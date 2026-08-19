@@ -103,6 +103,51 @@ def _sanitize_html(text: str) -> str:
 _stemmers: dict[str, SnowballStemmer] = {}
 _stemmer_lock = threading.Lock()
 
+#: ISO 639-1 code -> Snowball language name, for the codes Snowball actually supports.
+#: ``media_file.language`` (and therefore ``SearchHit.language``) holds an ISO code, while
+#: ``SnowballStemmer.languages`` is keyed by English name, so the two never met and every
+#: language stemmed as English. Codes absent here have no Snowball stemmer at all — Chinese,
+#: Japanese and Korean are not stemmed languages — and resolve to the ``None`` branch below,
+#: which skips stemming rather than applying a wrong one.
+_SNOWBALL_BY_ISO = {
+    "ar": "arabic",
+    "da": "danish",
+    "de": "german",
+    "en": "english",
+    "es": "spanish",
+    "fi": "finnish",
+    "fr": "french",
+    "hu": "hungarian",
+    "it": "italian",
+    "nb": "norwegian",
+    "nl": "dutch",
+    "nn": "norwegian",
+    "no": "norwegian",
+    "pt": "portuguese",
+    "ro": "romanian",
+    "ru": "russian",
+    "sv": "swedish",
+}
+
+
+def snowball_language_for(code: str | None) -> str | None:
+    """Resolve an ISO 639-1 language code to a Snowball stemmer name.
+
+    Args:
+        code: ISO 639-1 code from a chunk document, e.g. ``"es"``. May carry a region
+            suffix (``"pt-BR"``) or be empty/None on a file that never got detection.
+
+    Returns:
+        The Snowball language name, or ``None`` when the language has no Snowball
+        stemmer. ``None`` means **do not stem** — falling back to English produces
+        confident nonsense (``"hablando"`` -> ``"habland"`` under the English rules),
+        which is worse than the unstemmed word because it then matches nothing.
+    """
+    if not code:
+        return None
+    base = code.strip().lower().replace("_", "-").split("-", 1)[0]
+    return _SNOWBALL_BY_ISO.get(base)
+
 
 @functools.lru_cache(maxsize=4096)
 def _get_word_stem(word: str, language: str = "english") -> str:
@@ -110,7 +155,9 @@ def _get_word_stem(word: str, language: str = "english") -> str:
 
     Args:
         word: Word to stem.
-        language: Language for stemming (default: english).
+        language: Snowball language NAME (not an ISO code) — resolve one with
+            :func:`snowball_language_for` first. Unknown names fall back to English,
+            which is only correct because every caller resolves beforehand.
 
     Returns:
         Stemmed word.
@@ -141,6 +188,7 @@ def _should_highlight_word(
     query_words: list[str],
     query_stems: list[str],
     query_prefixes: list[str],
+    stem_language: str | None = "english",
 ) -> bool:
     """Check if a word should be highlighted based on semantic or stem matching.
 
@@ -150,6 +198,8 @@ def _should_highlight_word(
         query_words: Lowercase query words (length >= 3).
         query_stems: Stemmed versions of query words.
         query_prefixes: Prefixes derived from query words.
+        stem_language: Snowball language name for the document being highlighted, or
+            ``None`` for a language with no stemmer (the word is then its own stem).
 
     Returns:
         True if the word should be highlighted.
@@ -165,7 +215,7 @@ def _should_highlight_word(
         return True
 
     # Fallback: stem matching
-    word_stem = _get_word_stem(word_lower)
+    word_stem = _get_word_stem(word_lower, stem_language) if stem_language else word_lower
     if word_stem in query_stems:
         return True
 
@@ -179,19 +229,38 @@ def _should_highlight_word(
 
 @dataclass
 class QueryHighlightContext:
-    """Pre-computed query analysis for efficient semantic highlighting."""
+    """Pre-computed query analysis for efficient semantic highlighting.
+
+    The context is per **language**, not per query: stems only match when the query and
+    the document are stemmed by the same rules, and a result page can mix languages.
+    """
 
     query_words: list[str]
     query_stems: list[str]
     query_prefixes: list[str]
+    stem_language: str | None = "english"
 
     @classmethod
-    def from_query(cls, query: str) -> "QueryHighlightContext":
-        """Build context from a query string, computing stems/prefixes once."""
+    def from_query(cls, query: str, language: str | None = "en") -> "QueryHighlightContext":
+        """Build context from a query string, computing stems/prefixes once.
+
+        Args:
+            query: The raw query string.
+            language: ISO 639-1 code of the documents this context will highlight.
+                ``None`` or an unstemmed language means the words are their own stems.
+        """
+        stem_language = snowball_language_for(language)
         query_words = [w.lower() for w in query.split() if len(w) >= 2]
-        query_stems = [_get_word_stem(w) for w in query_words]
+        query_stems = [
+            _get_word_stem(w, stem_language) if stem_language else w for w in query_words
+        ]
         query_prefixes = [w[: max(4, len(w) - 2)] for w in query_words if len(w) >= 4]
-        return cls(query_words=query_words, query_stems=query_stems, query_prefixes=query_prefixes)
+        return cls(
+            query_words=query_words,
+            query_stems=query_stems,
+            query_prefixes=query_prefixes,
+            stem_language=stem_language,
+        )
 
 
 def _add_semantic_highlights(
@@ -221,14 +290,12 @@ def _add_semantic_highlights(
         similar_words_set = set()
 
     # Use pre-computed context if available, otherwise compute
-    if highlight_ctx is not None:
-        query_words = highlight_ctx.query_words
-        query_stems = highlight_ctx.query_stems
-        query_prefixes = highlight_ctx.query_prefixes
-    else:
-        query_words = [w.lower() for w in query.split() if len(w) >= 2]
-        query_stems = [_get_word_stem(w) for w in query_words]
-        query_prefixes = [w[: max(4, len(w) - 2)] for w in query_words if len(w) >= 4]
+    if highlight_ctx is None:
+        highlight_ctx = QueryHighlightContext.from_query(query)
+    query_words = highlight_ctx.query_words
+    query_stems = highlight_ctx.query_stems
+    query_prefixes = highlight_ctx.query_prefixes
+    stem_language = highlight_ctx.stem_language
 
     # Process snippet word by word, preserving non-word characters
     result = []
@@ -239,7 +306,7 @@ def _add_semantic_highlights(
         result.append(snippet[current_pos : match.start()])
         word = match.group(1)
         if _should_highlight_word(
-            word, similar_words_set, query_words, query_stems, query_prefixes
+            word, similar_words_set, query_words, query_stems, query_prefixes, stem_language
         ):
             result.append(f'<mark class="semantic">{word}</mark>')
         else:
@@ -1731,12 +1798,21 @@ class HybridSearchService:
         inner_hit_list: list[dict[str, Any]],
         outer_score: float,
         query: str = "",
+        language: str | None = None,
     ) -> tuple[list[SearchOccurrence], str, list[str], int, int, float]:
         """Convert inner hits into SearchOccurrence objects.
 
         Handles the case where OpenSearch hybrid queries with RRF normalization
         + collapse produce inner hits with score=0.0 and no highlights. In this
         case, query terms are checked against content text manually.
+
+        Args:
+            inner_hit_list: The inner hits of one collapsed file.
+            outer_score: The collapsed hit's score, used when inner scores are lost.
+            query: The raw query string.
+            language: ISO 639-1 code of THIS file, so the keyword fallback stems the
+                query the way the document was analyzed. Defaulting to English made
+                the fallback match nothing on a non-English file.
 
         Returns:
             Tuple of (occurrences, title_highlighted, match_sources,
@@ -1755,8 +1831,9 @@ class HybridSearchService:
         query_words = [w.lower() for w in query.split() if len(w) >= 2] if query else []
         word_patterns: list[tuple[str, re.Pattern[str], re.Pattern[str]]] = []
         if query_words:
+            stem_language = snowball_language_for(language)
             for qw in query_words:
-                qw_stem = _get_word_stem(qw)
+                qw_stem = _get_word_stem(qw, stem_language) if stem_language else qw
                 word_patterns.append(
                     (
                         qw,
@@ -1991,7 +2068,12 @@ class HybridSearchService:
                 keyword_count,
                 semantic_count,
                 best_score,
-            ) = self._process_inner_hits(inner_hits_data.get("hits", []), outer_score, query)
+            ) = self._process_inner_hits(
+                inner_hits_data.get("hits", []),
+                outer_score,
+                query,
+                source.get("language"),
+            )
 
             if not occurrences:
                 continue
@@ -2106,7 +2188,7 @@ class HybridSearchService:
                 continue
             inner_data = outer_hit.get("inner_hits", {}).get("segments", {}).get("hits", {})
             occs, title_hl, msrcs, kw_cnt, sem_cnt, score = self._process_inner_hits(
-                inner_data.get("hits", []), 1.0, query
+                inner_data.get("hits", []), 1.0, query, src.get("language")
             )
             lookup[fid] = {
                 "occurrences": occs,
@@ -2239,14 +2321,18 @@ class HybridSearchService:
         """
         if not query:
             return
-        highlight_ctx = QueryHighlightContext.from_query(query)
+        # One context per LANGUAGE on the page, not one per page: a stem only matches
+        # when query and document were stemmed by the same rules, and a mixed-language
+        # library returns a mixed-language page.
+        contexts: dict[str, QueryHighlightContext] = {}
         sem_words: set[str] = set()
         for hit in results:
+            ctx = contexts.get(hit.language)
+            if ctx is None:
+                ctx = contexts[hit.language] = QueryHighlightContext.from_query(query, hit.language)
             for occ in hit.occurrences:
                 if not occ.has_keyword_match:
-                    occ.snippet = _add_semantic_highlights(
-                        occ.snippet, query, sem_words, highlight_ctx
-                    )
+                    occ.snippet = _add_semantic_highlights(occ.snippet, query, sem_words, ctx)
 
     def _search_with_two_phase(
         self,
@@ -2737,15 +2823,7 @@ class HybridSearchService:
 
         # Deferred semantic highlighting for current page
         t_highlight = time.time()
-        if query:
-            highlight_ctx = QueryHighlightContext.from_query(query)
-            sem_words: set[str] = set()
-            for page_hit in result.results:
-                for occ in page_hit.occurrences:
-                    if not occ.has_keyword_match:
-                        occ.snippet = _add_semantic_highlights(
-                            occ.snippet, query, sem_words, highlight_ctx
-                        )
+        self._apply_semantic_highlights(result.results, query)
         highlight_ms = round((time.time() - t_highlight) * 1000)
 
         total_ms = round((time.time() - start_time) * 1000)

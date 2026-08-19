@@ -2867,7 +2867,7 @@
   "search.sortBy": "Ordenar por",
   "search.noKeywordMatches": "No se encontraron coincidencias exactas. Mostrando contenido relacionado.",
   "search.metadataSpeakerMatch": "Orador en archivo",
-  "search.modelChangeWarning": "Cambiar el modelo de embedding reindexará todas las transcripciones. La búsqueda usará solo el modo de palabras clave durante la reindexación. ¿Continuar?",
+  "search.modelChangeWarning": "Cambiar el modelo de embedding reindexará todas las transcripciones. La búsqueda usará solo el modo de palabras clave durante la reindexación. Esto cambia únicamente los embeddings semánticos: la búsqueda por palabras clave, la segmentación y los prompts del chat con IA no se ven afectados, por lo que un modelo multilingüe no hace multilingüe todo por sí solo. ¿Continuar?",
   "search.reindexingInProgress": "Reindexación en progreso...",
   "search.reindexComplete": "¡Reindexación completada!",
   "search.stopReindex": "Detener",
@@ -4980,5 +4980,7 @@
   "prompts.contentTypeQaPanel": "Panel de preguntas",
   "settings.contentRedaction.piiEntitiesWarning": "La detección de nombres no es exhaustiva. ORGANIZATION se enmascara por defecto porque a veces el nombre de una persona se etiqueta como organización — el coste es que también se enmascaran nombres de empresas y siglas. Algunos nombres pueden pasar desapercibidos; active el modelo GLiNER de PII para mayor cobertura y revise las exportaciones antes de compartirlas.",
   "filter.language": "Idioma",
-  "filter.languageTooltip": "Mostrar solo transcripciones detectadas como {language}"
+  "filter.languageTooltip": "Mostrar solo transcripciones detectadas como {language}",
+  "settings.search.multilingualBadge": "Multilingüe",
+  "settings.search.englishOnlyBadge": "Solo inglés"
 }

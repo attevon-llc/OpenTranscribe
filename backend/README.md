@@ -441,19 +441,24 @@ pytest --cov=app backend/tests/ --ignore=backend/tests/e2e
 ```bash
 # Core
 DATABASE_URL=postgresql://user:pass@host:5432/db
-SECRET_KEY=your-secret-key
+JWT_SECRET_KEY=your-secret-key
 
 # Storage
-MINIO_ENDPOINT=your-minio-endpoint
-MINIO_ACCESS_KEY=your-access-key
-MINIO_SECRET_KEY=your-secret-key
+MINIO_HOST=minio
+MINIO_PORT=9000
+MINIO_ROOT_USER=your-access-key
+MINIO_ROOT_PASSWORD=your-secret-key
 
 # AI/ML
 HUGGINGFACE_TOKEN=your-hf-token
 
 # Search
-OPENSEARCH_URL=your-opensearch-url
+OPENSEARCH_HOST=opensearch
+OPENSEARCH_PORT=9200
 ```
+
+`.env.example` is the authoritative list — these are the names
+`backend/app/core/config.py` actually reads.
 
 ### Health Checks
 - **Application**: `/health` endpoint

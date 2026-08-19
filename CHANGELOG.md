@@ -59,6 +59,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `bootstrap.memory_lock` since the measured heap work. `user-guide/admin-panel.md` gained the
   `all-MiniLM-L12-v2` row that shipped in the registry without a docs update, and
   `docs-site/README.md` no longer points at the pre-transfer `davidamacey.github.io` URL.
+- **`backend/README.md`'s production environment block named five variables the backend does
+  not read**: `SECRET_KEY` (it is `JWT_SECRET_KEY`), `MINIO_ENDPOINT`/`MINIO_ACCESS_KEY`/
+  `MINIO_SECRET_KEY` (they are `MINIO_HOST`/`MINIO_PORT`/`MINIO_ROOT_USER`/
+  `MINIO_ROOT_PASSWORD`) and `OPENSEARCH_URL` (it is `OPENSEARCH_HOST`/`OPENSEARCH_PORT`).
+  Following it produced a deployment that silently kept every default, including the default
+  JWT secret and `minioadmin`/`minioadmin`. The block now defers to `.env.example`.
+- **The v0.3.3 blog post was dated a year early** (`2025-01-13`), placing it below the
+  v0.1.0 announcement on the blog index as though 0.3.3 had shipped first; the `v0.3.3` tag
+  is dated 2026-01-14. The post's explicit `slug:` means its URL is unchanged.
 - **An unreachable Redis made every cached request pay retry sleeps.** The cache service never
   remembered a failed connection — it re-dialled on every call, and each attempt paid redis-py's
   default exponential backoff. So with Redis down, a degraded cache presented as a dead API:

@@ -452,11 +452,27 @@ def test_switching_to_an_undeployed_model_is_refused_and_dispatches_nothing(
     Recording it anyway is what made the legacy path destructive: the coordinator
     would honour the new dimension, delete the whole chunks index, and then fail
     every write because the untouched pipeline still emits the old model's width.
+
+    ⚠️ **This test used to pass for the wrong reason.** It asserted a 409 while
+    naming the DEFAULT model, which is genuinely registered and deployed on the dev
+    cluster the suite probes — so "undeployed" was never the condition under test.
+    The 409 actually came from a bug in ``find_model_by_name``, which returned an ML
+    Commons *chunk* id and so could never confirm any model as deployed. Fixing that
+    bug turned this green test red, which is the only reason it was noticed. The
+    not-deployed condition is now **stated** rather than borrowed from whatever the
+    ambient cluster happens to hold, so the test means the same thing with the dev
+    stack up, down, or holding a different set of models.
     """
     model_id = next(iter(OPENSEARCH_EMBEDDING_MODELS))
     setter = _RecordingSetter()
 
-    with patch("app.services.search.settings_service.save_search_embedding_model", setter):
+    with (
+        patch("app.services.search.settings_service.save_search_embedding_model", setter),
+        patch(
+            "app.services.search.ml_model_service.OpenSearchMLModelService.find_model_by_name",
+            return_value=None,
+        ),
+    ):
         response = client.post(MODELS, headers=admin_token_headers, json={"model_id": model_id})
 
     assert response.status_code == status.HTTP_409_CONFLICT

@@ -989,7 +989,7 @@ def get_neural_models(
     }
 
 
-@router.post("/models/neural/{model_name}/register")
+@router.post("/models/neural/{model_name:path}/register")
 def register_neural_model(
     model_name: str,
     current_user: User = Depends(get_current_admin_user),
@@ -1048,7 +1048,7 @@ def register_neural_model(
     }
 
 
-@router.post("/models/neural/{model_name}/deploy")
+@router.post("/models/neural/{model_name:path}/deploy")
 def deploy_neural_model(
     model_name: str,
     current_user: User = Depends(get_current_admin_user),
@@ -1102,7 +1102,7 @@ def deploy_neural_model(
     }
 
 
-@router.post("/models/neural/{model_name}/undeploy")
+@router.post("/models/neural/{model_name:path}/undeploy")
 def undeploy_neural_model(
     model_name: str,
     current_user: User = Depends(get_current_admin_user),

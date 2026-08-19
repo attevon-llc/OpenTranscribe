@@ -734,9 +734,17 @@ class OpenSearchMLModelService:
             return []
 
         try:
-            # Search for all models
+            # ⚠️ ML Commons stores model CHUNK documents in this same index, and they
+            # carry the same `name` as their parent. A `match_all` therefore returns
+            # mostly chunks: on a cluster with two models registered, 172 documents
+            # were chunks and the real model docs did not make the `size` window at
+            # all. Chunk ids are `<model_id>_<n>`, so `find_model_by_name` handed a
+            # CHUNK id to deploy — which 500s, which left the model-switch guard
+            # answering 409 forever and made a non-default embedding model impossible
+            # to adopt through the app. Chunks are exactly the documents carrying
+            # `chunk_number`; model documents never do.
             search_body: dict[str, Any] = {
-                "query": {"match_all": {}},
+                "query": {"bool": {"must_not": [{"exists": {"field": "chunk_number"}}]}},
                 "size": 100,
             }
 

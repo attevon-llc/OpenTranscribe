@@ -71,6 +71,10 @@ export interface SearchState {
   dateTo: string;
   selectedFileTypes: string[];
   selectedCollectionId: string | null;
+  // Transcript language (#453). `language` has been a keyword on every chunk
+  // document, filterable and aggregated, since before this field existed —
+  // nothing in the UI sent or rendered it.
+  selectedLanguage: string | null;
   durationRange: { min: number | null; max: number | null };
   fileSizeRange: { min: number | null; max: number | null };
   selectedStatuses: string[];
@@ -100,6 +104,7 @@ const initialState: SearchState = {
   dateTo: '',
   selectedFileTypes: [],
   selectedCollectionId: null,
+  selectedLanguage: null,
   durationRange: { min: null, max: null },
   fileSizeRange: { min: null, max: null },
   selectedStatuses: [],
@@ -131,6 +136,8 @@ function createSearchStore() {
       update((s) => ({ ...s, selectedFileTypes, page: 1 })),
     setCollectionId: (selectedCollectionId: string | null) =>
       update((s) => ({ ...s, selectedCollectionId, page: 1 })),
+    setLanguage: (selectedLanguage: string | null) =>
+      update((s) => ({ ...s, selectedLanguage, page: 1 })),
     setDurationRange: (durationRange: { min: number | null; max: number | null }) =>
       update((s) => ({ ...s, durationRange, page: 1 })),
     setFileSizeRange: (fileSizeRange: { min: number | null; max: number | null }) =>

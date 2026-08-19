@@ -4978,5 +4978,7 @@
   "provenance.saving": "保存中…",
   "provenance.saveFailed": "保存失败，请重试。",
   "prompts.contentTypeQaPanel": "问答小组",
-  "settings.contentRedaction.piiEntitiesWarning": "姓名检测并不详尽。默认会屏蔽 ORGANIZATION，因为人名有时会被标记为组织——代价是公司名称和缩写也会被屏蔽。仍可能遗漏部分姓名；如需更高召回率请启用 GLiNER PII 模型，并在共享前检查导出内容。"
+  "settings.contentRedaction.piiEntitiesWarning": "姓名检测并不详尽。默认会屏蔽 ORGANIZATION，因为人名有时会被标记为组织——代价是公司名称和缩写也会被屏蔽。仍可能遗漏部分姓名；如需更高召回率请启用 GLiNER PII 模型，并在共享前检查导出内容。",
+  "filter.language": "语言",
+  "filter.languageTooltip": "仅显示识别为 {language} 的转录"
 }

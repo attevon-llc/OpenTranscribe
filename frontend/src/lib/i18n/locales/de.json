@@ -4978,5 +4978,7 @@
   "provenance.saving": "Wird gespeichert…",
   "provenance.saveFailed": "Speichern fehlgeschlagen. Bitte erneut versuchen.",
   "prompts.contentTypeQaPanel": "Q&A-Panel",
-  "settings.contentRedaction.piiEntitiesWarning": "Die Namenserkennung ist nicht vollständig. ORGANIZATION wird standardmäßig maskiert, weil Personennamen manchmal als Organisation erkannt werden — dafür werden auch Firmennamen und Abkürzungen maskiert. Einige Namen können dennoch übersehen werden; aktivieren Sie das GLiNER-PII-Modell für höhere Trefferquote und prüfen Sie Exporte vor der Weitergabe."
+  "settings.contentRedaction.piiEntitiesWarning": "Die Namenserkennung ist nicht vollständig. ORGANIZATION wird standardmäßig maskiert, weil Personennamen manchmal als Organisation erkannt werden — dafür werden auch Firmennamen und Abkürzungen maskiert. Einige Namen können dennoch übersehen werden; aktivieren Sie das GLiNER-PII-Modell für höhere Trefferquote und prüfen Sie Exporte vor der Weitergabe.",
+  "filter.language": "Sprache",
+  "filter.languageTooltip": "Nur als {language} erkannte Transkripte anzeigen"
 }

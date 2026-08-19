@@ -4978,5 +4978,7 @@
   "provenance.saving": "Enregistrement…",
   "provenance.saveFailed": "Échec de l'enregistrement. Veuillez réessayer.",
   "prompts.contentTypeQaPanel": "Panel de questions",
-  "settings.contentRedaction.piiEntitiesWarning": "La détection des noms n'est pas exhaustive. ORGANIZATION est masqué par défaut car le nom d'une personne est parfois étiqueté comme organisation — en contrepartie, les noms d'entreprises et les acronymes sont également masqués. Certains noms peuvent échapper à la détection ; activez le modèle GLiNER PII pour un meilleur rappel et vérifiez les exports avant de les partager."
+  "settings.contentRedaction.piiEntitiesWarning": "La détection des noms n'est pas exhaustive. ORGANIZATION est masqué par défaut car le nom d'une personne est parfois étiqueté comme organisation — en contrepartie, les noms d'entreprises et les acronymes sont également masqués. Certains noms peuvent échapper à la détection ; activez le modèle GLiNER PII pour un meilleur rappel et vérifiez les exports avant de les partager.",
+  "filter.language": "Langue",
+  "filter.languageTooltip": "Afficher uniquement les transcriptions détectées comme {language}"
 }

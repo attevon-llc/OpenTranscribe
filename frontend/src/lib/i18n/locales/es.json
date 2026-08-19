@@ -4978,5 +4978,7 @@
   "provenance.saving": "Guardando…",
   "provenance.saveFailed": "No se pudo guardar. Inténtalo de nuevo.",
   "prompts.contentTypeQaPanel": "Panel de preguntas",
-  "settings.contentRedaction.piiEntitiesWarning": "La detección de nombres no es exhaustiva. ORGANIZATION se enmascara por defecto porque a veces el nombre de una persona se etiqueta como organización — el coste es que también se enmascaran nombres de empresas y siglas. Algunos nombres pueden pasar desapercibidos; active el modelo GLiNER de PII para mayor cobertura y revise las exportaciones antes de compartirlas."
+  "settings.contentRedaction.piiEntitiesWarning": "La detección de nombres no es exhaustiva. ORGANIZATION se enmascara por defecto porque a veces el nombre de una persona se etiqueta como organización — el coste es que también se enmascaran nombres de empresas y siglas. Algunos nombres pueden pasar desapercibidos; active el modelo GLiNER de PII para mayor cobertura y revise las exportaciones antes de compartirlas.",
+  "filter.language": "Idioma",
+  "filter.languageTooltip": "Mostrar solo transcripciones detectadas como {language}"
 }

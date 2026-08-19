@@ -63,6 +63,10 @@
 
   /** @type {string|null} */
   export let selectedCollectionId: string | null = null;
+  // Transcript language (#453). Options come from /files/metadata-filters, which
+  // now returns the distinct languages of the user's own library — a static list
+  // of 100+ WhisperX languages would offer filters that match nothing.
+  export let selectedLanguage: string | null = null;
 
   // Duration range for filtering
   /** @type {{ min: number|null, max: number|null }} */
@@ -164,6 +168,7 @@
   // Previous values for reactive change detection
   let prevSearchQuery = searchQuery;
   let prevCollectionId = selectedCollectionId;
+  let prevLanguage = selectedLanguage;
 
   function triggerFiltersImmediate() {
     debouncedApply.cleanup();
@@ -185,6 +190,13 @@
   }
 
   // Reactive watcher for collection selection (immediate)
+  $: if (isInitialized && selectedLanguage !== prevLanguage) {
+    prevLanguage = selectedLanguage;
+    // Immediate, not debounced: a select is a discrete choice, like the collection
+    // filter beside it. Debouncing is for the free-text box.
+    triggerFiltersImmediate();
+  }
+
   $: if (isInitialized && selectedCollectionId !== prevCollectionId) {
     prevCollectionId = selectedCollectionId;
     triggerFiltersImmediate();
@@ -357,6 +369,8 @@
     triggerFiltersImmediate();
   }
 
+  let availableLanguages: string[] = [];
+
   async function fetchMediaMetadata() {
     try {
       const data = await apiCache.getOrFetch(
@@ -386,6 +400,8 @@
           fileSizeSliderValues = [fileSizeBounds.min, fileSizeBounds.max];
         }
       }
+
+      availableLanguages = Array.isArray(data.languages) ? data.languages : [];
 
       metadataLoaded = true;
     } catch (error) {
@@ -466,6 +482,7 @@
       tags: selectedTags,
       speaker: selectedSpeakers,
       collectionId: selectedCollectionId,
+      language: selectedLanguage,
       dates: dateRange,
       durationRange,
       fileSizeRange,
@@ -484,6 +501,7 @@
     selectedTags = [];
     selectedSpeakers = [];
     selectedCollectionId = null;
+    selectedLanguage = null;
     dateRange = { from: null, to: null };
     dpStartDate = null;
     dpEndDate = null;
@@ -745,6 +763,25 @@
       {/each}
     </div>
   </div>
+
+  <!-- Transcript language (#453). Rendered only when the library actually holds more
+       than one, so a single-language user never sees a filter that can do nothing. -->
+  {#if availableLanguages.length > 1}
+    <div class="filter-section">
+      <h3>{$t('filter.language')}</h3>
+      <div class="file-type-list">
+        {#each availableLanguages as lang}
+          <button
+            class="file-type-button {selectedLanguage === lang ? 'selected' : ''}"
+            on:click={() => (selectedLanguage = selectedLanguage === lang ? null : lang)}
+            title={$t('filter.languageTooltip', { language: lang })}
+          >
+            {lang.toUpperCase()}
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 
   <!-- Duration Range -->
   <div class="filter-section">

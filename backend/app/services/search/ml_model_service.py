@@ -9,6 +9,7 @@ for air-gapped deployments.
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,25 @@ from typing import Any
 from app.services.opensearch_service import get_opensearch_client
 
 logger = logging.getLogger(__name__)
+
+#: Characters OpenSearch ML Commons accepts in a model description. Anything else
+#: fails the WHOLE registration with `action_request_validation_exception`, so the
+#: description — pure metadata nobody's code reads back — must never be able to
+#: sink the operation. Found live: the registry description "50+ languages" made
+#: the Settings UI's Download & deploy 500 on its first real use, because `+` is
+#: not in the allowed set.
+_DESCRIPTION_ALLOWED = re.compile(r"[^A-Za-z0-9 .,!?():@\-_'/\"]")
+
+
+def _safe_description(description: str) -> str:
+    """Reduce a description to the charset ML Commons accepts.
+
+    Disallowed characters become spaces (then collapsed) rather than being
+    deleted, so "50+ languages" degrades to "50 languages" instead of fusing
+    words together.
+    """
+    return re.sub(r"  +", " ", _DESCRIPTION_ALLOWED.sub(" ", description)).strip()
+
 
 # Model registration task polling
 _REGISTRATION_POLL_INTERVAL = 2.0  # seconds
@@ -229,7 +249,7 @@ class OpenSearchMLModelService:
                 register_body["model_content_hash_value"] = model_content_hash_value
 
             if description:
-                register_body["description"] = description
+                register_body["description"] = _safe_description(description)
 
             logger.info(f"Registering model from URL: {model_name} -> {url}")
 
@@ -425,7 +445,7 @@ class OpenSearchMLModelService:
             }
 
             if description:
-                register_body["description"] = description
+                register_body["description"] = _safe_description(description)
 
             # Register the model
             assert self._client is not None

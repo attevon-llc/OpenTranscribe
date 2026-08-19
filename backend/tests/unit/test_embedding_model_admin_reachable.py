@@ -205,3 +205,41 @@ def test_an_absent_model_is_still_reported_missing() -> None:
     service, _ = _service_with([_model("REALID", "some/other/model")])
 
     assert service.find_model_by_name("huggingface/sentence-transformers/not-there") is None
+
+
+# ---------------------------------------------------------------------------
+# The description charset — found by the FIRST real user pressing the button
+# ---------------------------------------------------------------------------
+def test_registry_descriptions_cannot_sink_a_registration() -> None:
+    """ML Commons rejects the WHOLE registration over one character in the description.
+
+    "Model description can only contain letters, numbers, spaces, and basic
+    punctuation" — and two of seven registry descriptions violated it (`+` in
+    "50+ languages", an em-dash in the L12 blurb), so the Settings UI's Download &
+    deploy 500ed on its first real use. The description is pure metadata nobody's
+    code reads back; it must never be able to fail the operation.
+    """
+    from app.services.search.ml_model_service import _DESCRIPTION_ALLOWED
+    from app.services.search.ml_model_service import _safe_description
+
+    assert OPENSEARCH_EMBEDDING_MODELS, "empty registry — the loop below would pass vacuously"
+    for model_id, info in OPENSEARCH_EMBEDDING_MODELS.items():
+        sanitized = _safe_description(str(info.get("description", "")))
+        offending = sorted(set(_DESCRIPTION_ALLOWED.findall(sanitized)))
+        assert not offending, (
+            f"{model_id}: sanitized description still carries {offending}, which fails "
+            "the whole ML Commons registration with action_request_validation_exception"
+        )
+
+
+def test_sanitizing_degrades_words_rather_than_fusing_them() -> None:
+    """'50+ languages' must become '50 languages', never '50languages'."""
+    from app.services.search.ml_model_service import _safe_description
+
+    assert _safe_description("Fast. 50+ languages — good quality.") == (
+        "Fast. 50 languages good quality."
+    )
+    # The control: an already-legal description passes through byte-identical.
+    assert _safe_description("Fast, lightweight English model.") == (
+        "Fast, lightweight English model."
+    )

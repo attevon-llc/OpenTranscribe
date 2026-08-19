@@ -467,10 +467,14 @@
         <div class="model-prepare">
           <small class="form-text">{$t('settings.search.modelNotDownloaded')}</small>
           <button
-            class="btn btn-secondary"
+            class="btn btn-secondary prepare-btn"
             on:click={prepareModel}
             disabled={isPreparingModel || isSwitchingModel || isReindexing}
           >
+            <!-- Indeterminate on purpose: ML Commons reports task STATE, not a
+                 download percentage, and a fake percent would be a lie. The spinner
+                 says "working"; the toast says how it ended. -->
+            {#if isPreparingModel}<Spinner size="small" />{/if}
             {isPreparingModel
               ? $t('settings.search.preparingModel')
               : $t('settings.search.downloadAndDeploy')}
@@ -692,6 +696,12 @@
 
   .model-prepare .form-text {
     flex: 1 1 20rem;
+  }
+
+  .prepare-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .form-actions {

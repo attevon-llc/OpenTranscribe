@@ -121,11 +121,15 @@ def _break_corpus(monkeypatch, target: str) -> list[str]:
             raise LookupError(f"Resource '{target}' not found (test stand-in)")
 
     monkeypatch.setattr(nltk, "download", _failing_download)
-    # raising=False: punkt lives under nltk.data/tokenizers, not nltk.corpus, so
-    # there is no attribute to replace for it — the stub only matters for corpora
-    # the app imports via `from nltk.corpus import X` (stopwords). For punkt the
-    # breakage is the download no-op plus whatever the caller patches itself.
-    monkeypatch.setattr(nltk.corpus, target, _MissingCorpus(), raising=False)
+    # Only replace an attribute that EXISTS. punkt lives under nltk.data/tokenizers,
+    # not nltk.corpus, so for it there is nothing to replace — the breakage is the
+    # download no-op plus whatever the caller patches itself. A raising=False set of
+    # a nonexistent attribute was tried and is worse: monkeypatch undoes it with
+    # delattr, and nltk.corpus is a LazyModule that refuses delattr — an
+    # order-dependent teardown ERROR under xdist (whichever worker materializes the
+    # module first passes; the rest error).
+    if hasattr(nltk.corpus, target):
+        monkeypatch.setattr(nltk.corpus, target, _MissingCorpus())
     return attempts
 
 

@@ -106,7 +106,7 @@ OpenSearch is not a data-safety concern. The in-app scheduler can *optionally* t
 snapshot beside each dump (`backup.include_opensearch`) purely to **skip reindex time** on
 restore. Leave it off and nothing is lost. **Confirmed adequate. Severity: Low.**
 
-## 4. Configuration & Secrets — the sneaky-critical gap {#secrets-gap}
+## 4. Configuration & Secrets — the sneaky-critical gap {/* #secrets-gap */}
 
 This is the audit's most important finding.
 

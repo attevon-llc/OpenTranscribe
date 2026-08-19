@@ -829,7 +829,7 @@ cost a reduced excerpt budget and nothing else.
 `tiers` on the record is what distinguishes "the tier was not asked for" from "the tier was asked
 and returned nothing" — without it, `routed_to_digest_tier` would be unreadable.
 
-### The product's aggregation path: 0.800 -> 1.000, once it knew when meetings happened {#the-products-aggregation-path}
+### The product's aggregation path: 0.800 -> 1.000, once it knew when meetings happened {/* #the-products-aggregation-path */}
 
 | answerer | EM | R3 count | R4 list | R5 events | R6 speaker | R7 temporal |
 |---|---|---|---|---|---|---|
@@ -882,7 +882,7 @@ evidence is three-fold rather than assumed:
   (every nDCG/R/MRR to within 1e-9), and two consecutive `stage4-aggregation` runs produced
   byte-identical `metrics.json`.
 
-### ⚠️ A metric we replaced, and why — do not quietly drop metrics {#a-metric-we-replaced}
+### ⚠️ A metric we replaced, and why — do not quietly drop metrics {/* #a-metric-we-replaced */}
 
 The #383 plan specified, for map-reduce: *"on the summarize class with N files in scope, distinct
 `file_uuid`s represented in the answer goes from ~N/4 (today's `max_chunks_per_file` ceiling) to
@@ -1140,7 +1140,7 @@ still scores `1/(k+rank)`. Hybrid retrieval over speaker-turn chunks is full of 
 large here and would be milder on long, keyword-rich documents. **Do not re-test these two on
 this index expecting a different answer**; test them only if the chunking granularity changes.
 
-#### The two corpora want opposite leg weights {#the-two-corpora-want-opposite-leg-weights}
+#### The two corpora want opposite leg weights {/* #the-two-corpora-want-opposite-leg-weights */}
 
 The weighted arms are the clearest demonstration of why the both-corpus rule exists:
 
@@ -1507,7 +1507,7 @@ prerequisite is a domain vocabulary to put in the filter, and this corpus does n
 QMSum is a remote-control design scenario and the synthetic tier's jargon is generated. Testing
 synonym expansion against a corpus with no real domain vocabulary would measure the generator.
 
-## Do the two corpora agree? {#corpus-agreement}
+## Do the two corpora agree? {/* #corpus-agreement */}
 
 Every run on this page scores QMSum and the synthetic tier in the same pass, so both numbers
 have always been present. What was never produced is the **statement about whether they

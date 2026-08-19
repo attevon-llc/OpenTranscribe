@@ -83,7 +83,7 @@ Use `large-v3-turbo` unless you need translation to English or maximum non-Engli
 WHISPER_MODEL=large-v3-turbo
 ```
 
-### Hybrid Mode {#hybrid-mode}
+### Hybrid Mode {/* #hybrid-mode */}
 
 For systems where the GPU cannot fit the full transcription model, OpenTranscribe auto-activates **hybrid mode**: transcription runs on CPU while diarization stays on GPU/MPS. This requires only ~1.3 GB VRAM.
 
@@ -282,20 +282,10 @@ adding heap that will not help.
 
 ### JVM Heap Sizing
 
-OpenSearch runs with 1 GB heap by default. This is sufficient for small deployments but should be increased for larger datasets.
-
-```bash
-# In docker-compose.yml or docker-compose.override.yml
-environment:
-  - "OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g"
-```
-
-| Dataset Size | Recommended Heap | Notes |
-|-------------|-----------------|-------|
-| Under 1,000 transcripts | 1 GB (default) | Sufficient |
-| 1,000-5,000 transcripts | 2 GB | Recommended |
-| 5,000-20,000 transcripts | 4 GB | Required for neural search |
-| 20,000+ transcripts | 8 GB | Maximum 50% of system RAM |
+The default is **4 GB** (`docker-compose.yml`), and heap is sized for the embedding model
+rather than for the number of transcripts — see
+[OpenSearch Heap: What It Is Actually For](#opensearch-heap-what-it-is-actually-for) above
+for the measured floors.
 
 **Rule of thumb:** Never set heap above 50% of available RAM, and never above ~30 GB (JVM compressed OOPs threshold).
 

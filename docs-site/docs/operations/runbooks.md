@@ -604,8 +604,12 @@ alembic downgrade <revision_id>
 OpenSearch defaults can be aggressive. Reduce the JVM heap:
 ```bash
 # In docker-compose.yml or .env:
-OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m  # Default is often 1g
+OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g  # Default is 4g
 ```
+
+1 GB is the measured floor for the default embedding model — below it a model reports
+`DEPLOY: COMPLETED` and then fails to produce an embedding. See
+[Performance Tuning](./performance-tuning.md#opensearch-heap-what-it-is-actually-for).
 Restart OpenSearch after changing.
 
 *If the Celery worker is consuming too much:*

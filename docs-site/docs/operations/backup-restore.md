@@ -197,7 +197,7 @@ The uploaded **media files** (MinIO objects) are covered by the in-app
 incremental, never-deleting copy of the media bucket with its own destination.
 :::
 
-#### Media Mirror (in-app, incremental) {#media-mirror-in-app-incremental}
+#### Media Mirror (in-app, incremental) {/* #media-mirror-in-app-incremental */}
 
 The database dump protects your *metadata*; the **Media Mirror** protects the
 **irreplaceable media originals** — the audio/video files in MinIO that cannot be

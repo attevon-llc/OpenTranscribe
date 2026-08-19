@@ -121,31 +121,37 @@ Enabling `WARM_CACHE_ENABLED=true` pre-loads PyAnnote models on startup:
 Configure neural search capabilities for semantic search across transcriptions.
 
 ```bash
-# Enable/Disable Neural Search
-NEURAL_SEARCH_ENABLED=true
-
-# ML Commons Plugin (Powers Neural Search)
-OPENSEARCH_ML_COMMONS_ENABLED=true
+# Enable/Disable Neural Search (falls back to keyword-only when false)
+OPENSEARCH_NEURAL_SEARCH_ENABLED=true
 
 # OpenSearch Connection
-OPENSEARCH_URL=http://opensearch:9200
-OPENSEARCH_USERNAME=admin
+OPENSEARCH_HOST=opensearch
+OPENSEARCH_PORT=5180          # host-published port; containers talk to opensearch:9200
+OPENSEARCH_USER=admin
 OPENSEARCH_PASSWORD=your_secure_password
 
-# Vector Search Configuration
-NEURAL_SEARCH_MODEL_ID=your_model_id  # ML Commons model ID for embeddings
-NEURAL_SEARCH_BATCH_SIZE=32
+# Embedding model — must be one of the verified models the admin UI offers
+OPENSEARCH_NEURAL_MODEL=huggingface/sentence-transformers/all-MiniLM-L6-v2
+
+# JVM heap. Xms must equal Xmx; bootstrap.memory_lock pins it in RAM at startup.
+OPENSEARCH_JAVA_OPTS=-Xms4g -Xmx4g
 ```
 
-### Neural Search VRAM Requirements
+### Neural Search Memory Requirements
 
-| Embedding Model | VRAM (GPU) | VRAM (CPU) | Batch Size |
-|-----------------|-----------|-----------|-----------|
-| sentence-transformers/all-MiniLM-L6-v2 | ~200MB | ~500MB | 32-64 |
-| sentence-transformers/all-mpnet-base-v2 | ~400MB | ~1GB | 16-32 |
-| bge-base-en-v1.5 | ~400MB | ~1GB | 16-32 |
-| bge-large-en-v1.5 | ~1GB | ~2GB | 8-16 |
-| BAAI/bge-large-zh-v1.5 | ~1GB | ~2GB | 8-16 |
+The embedding model is loaded **by OpenSearch itself and runs on CPU inside the JVM** — it
+never touches the GPU, so what it costs is heap, not VRAM.
+
+| Heap | What it runs |
+|---|---|
+| 1 GB | the default `all-MiniLM-L6-v2` (384-dim) |
+| 2 GB | every English model, including the 768-dim ones |
+| 4 GB *(default)* | headroom for indexing bursts and multilingual models |
+
+Measured floors and the "deployed but not working" failure mode:
+[Performance Tuning](../operations/performance-tuning.md#opensearch-heap-what-it-is-actually-for).
+The full list of selectable models is in the
+[Admin Panel guide](../user-guide/admin-panel.md#embedding-model-selection).
 
 ### Search Performance Tuning
 

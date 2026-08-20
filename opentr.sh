@@ -60,6 +60,22 @@ GPU_DEVICE_ID_FROM_ENV="${GPU_DEVICE_ID}"
 export APP_VERSION
 APP_VERSION=$(cat VERSION 2>/dev/null || echo "unknown")
 
+# Export GIT_SHA so docker compose can pass it through to containers, same as
+# APP_VERSION above. This is measurement attribution (#55): once a stack is built
+# from baked-in source rather than a bind mount, "which commit is this?" can only
+# be answered from inside the image, so the build has to be told. A dirty working
+# tree is not attributable to a commit either, so it gets a "-dirty" suffix rather
+# than silently reporting the last commit as if it were what's actually running.
+export GIT_SHA
+if git rev-parse --short HEAD >/dev/null 2>&1; then
+  GIT_SHA=$(git rev-parse --short HEAD)
+  if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+    GIT_SHA="${GIT_SHA}-dirty"
+  fi
+else
+  GIT_SHA="unknown"
+fi
+
 #######################
 # HELPER FUNCTIONS
 #######################

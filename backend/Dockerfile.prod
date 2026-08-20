@@ -73,20 +73,6 @@ RUN pip uninstall -y --root-user-action=ignore triton || true
 # -----------------------------------------------------------------------------
 FROM python:3.13-slim-trixie
 
-# Bake the build identity into the image so /api/version, /health and
-# /system/stats report it without a repo checkout (version.py: env -> file ->
-# unknown). This is NOT optional plumbing: the build context is ./backend, so the
-# repo-root VERSION file is not in the image and these ARGs are the only source a
-# prod container has. An image built without them reports "unknown", which also
-# silences AboutModal's version-mismatch warning.
-# check-version-consistency.py asserts ARG APP_VERSION still exists here.
-ARG APP_VERSION=unknown
-ENV APP_VERSION=${APP_VERSION}
-ARG GIT_SHA=unknown
-ENV GIT_SHA=${GIT_SHA}
-ARG BUILD_TIME=unknown
-ENV BUILD_TIME=${BUILD_TIME}
-
 # OCI annotations for container metadata and compliance
 LABEL org.opencontainers.image.title="OpenTranscribe Backend" \
       org.opencontainers.image.description="AI-powered transcription backend with WhisperX and PyAnnote" \
@@ -164,6 +150,29 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
 
 # Copy application code
 COPY --chown=appuser:appuser . .
+
+# Bake the build identity into the image so /api/version, /health and
+# /system/stats report it without a repo checkout (version.py: env -> file ->
+# unknown). This is NOT optional plumbing: the build context is ./backend, so the
+# repo-root VERSION file is not in the image and these ARGs are the only source a
+# prod container has. An image built without them reports "unknown", which also
+# silences AboutModal's version-mismatch warning.
+# check-version-consistency.py asserts ARG APP_VERSION still exists here.
+#
+# ⚠️ POSITION IS LOAD-BEARING — keep this block BELOW every apt/pip/COPY-from-builder
+# layer. GIT_SHA and BUILD_TIME change on EVERY build, and an ENV layer invalidates the
+# whole remainder of its stage. Sitting at the top of the runtime stage (where this used
+# to live) that re-ran `apt-get update && apt-get upgrade`, the useradd, and the ~GB
+# `COPY --from=builder /root/.local` on every single build, so a one-line code change
+# cost a full runtime-stage rebuild. Nothing between the builder COPY and here reads
+# these vars — they are consumed at RUNTIME by version.py, so the only thing their
+# position affects is cache reuse.
+ARG APP_VERSION=unknown
+ENV APP_VERSION=${APP_VERSION}
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
+ARG BUILD_TIME=unknown
+ENV BUILD_TIME=${BUILD_TIME}
 
 # Reserve the pipeline's shared-volume mount points. A named volume inherits the image
 # directory's ownership at creation, so without this it lands root-owned and the non-root

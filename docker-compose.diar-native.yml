@@ -27,7 +27,14 @@ services:
           devices:
             - driver: nvidia
               capabilities: [gpu]
-              device_ids: ['${DIAR_NATIVE_GPU:-0}']
+              # ⚠️ Defaults to GPU_DEVICE_ID — the SAME GPU the rest of the stack uses —
+              # never to a bare 0. This used to read `${DIAR_NATIVE_GPU:-0}`, so simply
+              # enabling this overlay without also setting DIAR_NATIVE_GPU would reserve
+              # device 0. On this workstation device 0 is an A6000 reserved for unrelated
+              # work, and the sidecar holds ~4.1 GB of warm ORT arena — it would have sat
+              # on someone else's card indefinitely. Overlays must inherit the project's
+              # configured GPU, not re-pick one.
+              device_ids: ['${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}}']
     restart: unless-stopped   # supervisor: auto-restart (known upstream teardown crash)
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8701/healthz || exit 1"]

@@ -5,15 +5,17 @@ export interface Language {
   direction: 'ltr' | 'rtl';
 }
 
-// Kept in sync with the backend's `LLM_OUTPUT_LANGUAGES` (core/constants.py) — that list
-// currently also has `it` (Italian), which is NOT added here: #453/ML4 scoped this addition
-// to closing the nl/ko/ar gap specifically (see backend/app/services/CLAUDE.md's LLM features
-// section for the full 12-language list). Adding `it` is a follow-on, not done here.
+// Kept in sync with the backend's `LLM_OUTPUT_LANGUAGES` (core/constants.py) — `it` (Italian)
+// was the one language present there but missing here; closed as a follow-on to #453/ML4
+// (which scoped its addition to the nl/ko/ar gap specifically). All 12 backend
+// LLM_OUTPUT_LANGUAGES are now represented (see backend/app/services/CLAUDE.md's LLM
+// features section for the full list).
 export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'en', name: 'English', nativeName: 'English', direction: 'ltr' },
   { code: 'es', name: 'Spanish', nativeName: 'Español', direction: 'ltr' },
   { code: 'fr', name: 'French', nativeName: 'Français', direction: 'ltr' },
   { code: 'de', name: 'German', nativeName: 'Deutsch', direction: 'ltr' },
+  { code: 'it', name: 'Italian', nativeName: 'Italiano', direction: 'ltr' },
   { code: 'pt', name: 'Portuguese', nativeName: 'Português', direction: 'ltr' },
   { code: 'nl', name: 'Dutch', nativeName: 'Nederlands', direction: 'ltr' },
   { code: 'zh', name: 'Chinese', nativeName: '中文', direction: 'ltr' },

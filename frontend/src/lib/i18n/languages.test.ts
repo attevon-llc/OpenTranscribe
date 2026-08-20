@@ -14,6 +14,14 @@ describe('languages', () => {
     expect(codes).toContain('ar');
   });
 
+  it('includes it (Italian) — closes the LLM_OUTPUT_LANGUAGES gap', () => {
+    const codes = SUPPORTED_LANGUAGES.map((l) => l.code);
+    expect(codes).toContain('it');
+    const italian = SUPPORTED_LANGUAGES.find((l) => l.code === 'it');
+    expect(italian?.nativeName).toBe('Italiano');
+    expect(italian?.direction).toBe('ltr');
+  });
+
   it('every entry has a non-empty name, nativeName and a valid direction', () => {
     for (const lang of SUPPORTED_LANGUAGES) {
       expect(lang.name.length).toBeGreaterThan(0);

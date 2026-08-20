@@ -95,6 +95,11 @@ class ChatSettings:
     #: W2.6. One bounded non-streaming call reconciling merged fan-out
     #: evidence into a `<synthesis>` block. Independent of `planner_enabled`.
     enrichment_enabled: bool = C.DEFAULT_CHAT_ENRICHMENT_ENABLED
+    #: Issue #523. Widen a short retrieved chunk to its surrounding exchange,
+    #: by timestamp, before masking — see `chat/context_expansion.py`. Off by
+    #: default: a new, unmeasured retrieval shape, same posture as every
+    #: other W2.x flag above.
+    context_expansion_enabled: bool = C.DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED
     #: Ceiling on the answer, sent to the provider as max_tokens. ``None`` means
     #: "use whatever the LLM config derived", which is the community behaviour.
     max_output_tokens: int | None = None

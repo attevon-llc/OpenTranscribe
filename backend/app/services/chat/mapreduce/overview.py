@@ -90,10 +90,21 @@ class Overview:
     diagnostics: dict[str, Any] = field(default_factory=dict)
 
     def as_metadata(self) -> dict[str, Any]:
-        """Counts only, never content — the same rule the rest of chat follows."""
+        """Counts only, never content — the same rule the rest of chat follows.
+
+        ``files_in_scope`` was computed on this dataclass from the start (see the
+        field's own docstring — it is what lets the block say "8 of 25" instead of
+        just "8") but was never included here, so nothing downstream of a chat
+        turn's ``meta`` dict — the frontend, or an eval-harness reader like
+        ``tests/eval/harness/chat_instrumentation.py`` — could recover the scope
+        size to compute a coverage ratio against ``files_total``, only the
+        pre-rendered English sentence inside ``block``. Exposing the field that
+        already existed, not adding one.
+        """
         return {
             "reducer": self.reducer,
             "files_total": self.files_total,
+            "files_in_scope": self.files_in_scope,
             "files_listed": self.files_listed,
             "llm_calls": self.llm_calls,
             "truncated": self.truncated,

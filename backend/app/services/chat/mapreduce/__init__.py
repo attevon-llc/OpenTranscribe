@@ -88,6 +88,7 @@ guideline) into four seams, none of which changed behaviour:
 | `document_scope.py` | The document arm of the #403 Stage-6 mixed-collection gate |
 | `speaker_map.py` | The per-speaker MAP (W2.3): `scope_speaker_digest_hits` |
 | `reducers.py` | The REDUCE half: `CodeComposer`, `BatchReducer`, `build_overview` |
+| `coverage.py` | Issue #63: `check_scope_coverage`/`assert_full_coverage` — does the map's output equal the resolved scope, or name every gap? Added, not part of the original split |
 
 Every name this package exported before the split is re-exported below,
 **including the underscore-prefixed helpers** — several are imported directly
@@ -98,6 +99,11 @@ work unchanged for every `X` that worked before.
 
 from __future__ import annotations
 
+from app.services.chat.mapreduce.coverage import ACCOUNTED_KEYS
+from app.services.chat.mapreduce.coverage import ScopeCoverage
+from app.services.chat.mapreduce.coverage import ScopeCoverageError
+from app.services.chat.mapreduce.coverage import assert_full_coverage
+from app.services.chat.mapreduce.coverage import check_scope_coverage
 from app.services.chat.mapreduce.document_scope import _document_scope_hits
 from app.services.chat.mapreduce.document_scope import document_scope_hits
 from app.services.chat.mapreduce.file_summaries import MAP_TIER_SPEAKER_SUMMARIES_SETTING_KEY
@@ -135,6 +141,7 @@ from app.services.chat.mapreduce.speaker_map import scope_speaker_digest_hits
 __all__ = [
     "MAP_TIER_SPEAKER_SUMMARIES_SETTING_KEY",
     "MAP_TIER_SUMMARIES_SETTING_KEY",
+    "ACCOUNTED_KEYS",
     "DEFAULT_BATCH_FILES",
     "DEFAULT_MAP_BUDGET_CHARS",
     "MAX_LISTED_FILES",
@@ -144,6 +151,10 @@ __all__ = [
     "DigestScopeHits",
     "FileSummary",
     "Overview",
+    "ScopeCoverage",
+    "ScopeCoverageError",
+    "assert_full_coverage",
+    "check_scope_coverage",
     "build_file_summaries",
     "build_overview",
     "document_scope_hits",

@@ -38,6 +38,17 @@ Verified against the current codebase while this module was written (all three,
   per-stage-block convention (``meta["route"]``, ``meta["aggregation"]``,
   ``meta["overview"]``) but not confirmed against any other lane's plan. Treat this
   key name as a proposal, not a contract, until the owning lane confirms or changes it.
+* ``scope_coverage`` (issue #63) **is emitted today, conditionally**, same shape as
+  ``llm_calls``. ``mapreduce.Overview.as_metadata()`` publishes ``files_total`` and
+  (since #63) ``files_in_scope``; ``chat/service.py`` sets the sibling top-level keys
+  ``meta["map_files_without_artifacts"]`` / ``meta["map_files_no_content"]`` beside
+  ``meta["overview"]``, both only when nonzero — the same "counted, not defaulted"
+  convention the rest of this module follows. :func:`extract_scope_coverage` combines
+  all four into one ratio; it is the harness-side half of
+  ``app.services.chat.mapreduce.coverage.check_scope_coverage``, which is the
+  production/test-side half that has the ACTUAL file uuids to work with. This module
+  only ever sees the aggregated counts a turn's persisted ``meta`` carries — the same
+  reason ``llm_calls`` above cannot see content, only what got counted.
 """
 
 from __future__ import annotations
@@ -91,6 +102,47 @@ def extract_llm_calls(meta: dict[str, Any]) -> int | None:
     return int(overview["llm_calls"])
 
 
+def extract_scope_coverage(meta: dict[str, Any]) -> float | None:
+    """This turn's scope-coverage ratio (issue #63), or ``None`` if unmeasured.
+
+    ``1.0`` means the digest map-reduce accounted for every file in the resolved
+    scope — either represented in the ``<overview>`` block or named by a reason
+    (``files_without_artifacts``/``files_no_content``). Below ``1.0`` is the
+    "recordings: 8 of 25, and nothing said so" shape this measure exists to catch:
+    some file the scope named produced neither a hit nor a counted reason.
+
+    Reads ``meta["overview"]["files_total"]`` / ``["files_in_scope"]`` — both
+    published by ``mapreduce.Overview.as_metadata()`` whenever the overview stage
+    ran at all — plus the top-level ``meta["map_files_without_artifacts"]`` /
+    ``meta["map_files_no_content"]`` gap counters ``chat/service.py`` sets beside
+    it, defaulting an ABSENT counter to 0 (this module's convention differs from
+    ``chat/service.py``'s own "only set when nonzero": here, "the overview ran and
+    the key is missing" already means the gap was zero, which is what
+    ``chat/service.py``'s emission rule guarantees, not an unmeasured value).
+
+    Returns ``None`` when ``meta["overview"]`` never ran at all (a ``lookup``-routed
+    turn, or an unbounded scope with no bounded map to measure — the same case
+    ``mapreduce.coverage.check_scope_coverage`` reports as ``applicable=False``) or
+    when the published scope size is zero/absent, which is indistinguishable
+    between "unbounded" and "a genuinely empty scope" from ``meta`` alone.
+
+    This is the RATIO of accounted files to scope size, not the same thing as
+    ``mapreduce.coverage.ScopeCoverage.complete`` — that field is exact-equality
+    over real uuids the production/test side has; this is a coarser measure over
+    the counts a persisted turn happens to carry, for corpus-wide reporting.
+    """
+    overview = meta.get("overview")
+    if not isinstance(overview, dict):
+        return None
+    files_in_scope = overview.get("files_in_scope")
+    if not files_in_scope:
+        return None
+    accounted = int(overview.get("files_total") or 0)
+    accounted += int(meta.get("map_files_without_artifacts") or 0)
+    accounted += int(meta.get("map_files_no_content") or 0)
+    return min(1.0, accounted / float(files_in_scope))
+
+
 @dataclass(frozen=True)
 class TurnInstrumentation:
     """One turn's extracted instrumentation, each field independently absent/None."""
@@ -98,6 +150,7 @@ class TurnInstrumentation:
     router_language_unmatched: bool | None
     planner_fired: bool | None
     llm_calls: int | None
+    scope_coverage: float | None
 
     def as_json(self) -> dict[str, Any]:
         """JSON-safe form. Keys are always present; values are ``null`` when
@@ -106,6 +159,7 @@ class TurnInstrumentation:
             "router_language_unmatched": self.router_language_unmatched,
             "planner_fired": self.planner_fired,
             "llm_calls": self.llm_calls,
+            "scope_coverage": self.scope_coverage,
         }
 
 
@@ -115,6 +169,7 @@ def extract_turn_instrumentation(meta: dict[str, Any]) -> TurnInstrumentation:
         router_language_unmatched=extract_router_language_unmatched(meta),
         planner_fired=extract_planner_fired(meta),
         llm_calls=extract_llm_calls(meta),
+        scope_coverage=extract_scope_coverage(meta),
     )
 
 
@@ -150,5 +205,15 @@ def summarize_instrumentation(rows: list[TurnInstrumentation]) -> dict[str, Any]
     if llm_calls:
         entry["mean"] = sum(llm_calls) / len(llm_calls)
     out["llm_calls"] = entry
+
+    scope_coverage = [row.scope_coverage for row in rows if row.scope_coverage is not None]
+    entry = {"coverage": len(scope_coverage), "total": total}
+    if scope_coverage:
+        entry["mean"] = sum(scope_coverage) / len(scope_coverage)
+        # The gate this measure exists for: not "coverage is usually high" but
+        # "coverage is NEVER silently incomplete" — a mean of 0.98 could still
+        # be one turn at 0.0, and averaging would hide exactly that turn.
+        entry["min"] = min(scope_coverage)
+    out["scope_coverage"] = entry
 
     return out

@@ -14,7 +14,9 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def document_scope_hits(db, file_uuids: list[str], sections_per_file: int) -> tuple[list[Any], int]:
+def document_scope_hits(
+    db, file_uuids: list[str], sections_per_file: int
+) -> tuple[list[Any], int, int]:
     """The document arm of the #403 Stage-6 mixed-collection gate.
 
     Delegates the join to :func:`ingest_artifacts.scope.scope_facts_for_uuids`
@@ -34,9 +36,14 @@ def document_scope_hits(db, file_uuids: list[str], sections_per_file: int) -> tu
     this arm always falls through to the digest sections.
 
     Returns:
-        ``(hits, files_without_artifacts)`` — never raises; a read failure
-        degrades to ``([], len(file_uuids))`` so one broken arm cannot take
-        down a map that the media half already answered.
+        ``(hits, files_without_artifacts, files_no_content)`` — never raises; a
+        read failure degrades to ``([], len(file_uuids), 0)`` so one broken arm
+        cannot take down a map that the media half already answered. Same
+        distinction ``file_summaries.scope_digest_hits`` draws for the media
+        half: ``files_no_content`` counts a document that DOES have a digest
+        row but whose ``sections`` list is empty — looked at, nothing to
+        contribute — separately from ``files_without_artifacts`` (no row at
+        all, or the read failed).
     """
     from app.services.ingest_artifacts.scope import scope_facts_for_uuids
     from app.services.search.chunk_retrieval import ChunkHit
@@ -45,9 +52,10 @@ def document_scope_hits(db, file_uuids: list[str], sections_per_file: int) -> tu
         coverage = scope_facts_for_uuids(db, file_uuids)
     except Exception:  # noqa: BLE001 — the document half degrades, never breaks the turn
         logger.exception("Could not read file_facts for the document half of the scope map")
-        return [], len(file_uuids)
+        return [], len(file_uuids), 0
 
     hits: list[Any] = []
+    files_no_content = 0
     for hit in coverage.hits:
         if hit.kind != "document":
             # This arm is only ever called with uuids the media query above
@@ -56,6 +64,7 @@ def document_scope_hits(db, file_uuids: list[str], sections_per_file: int) -> tu
             # constructed correctly.
             continue
         sections = (hit.digest or {}).get("sections", [])
+        contributed = False
         for section in sections[:sections_per_file]:
             hits.append(
                 ChunkHit(
@@ -70,7 +79,10 @@ def document_scope_hits(db, file_uuids: list[str], sections_per_file: int) -> tu
                     source_kind="document",
                 )
             )
-    return hits, coverage.files_without_artifacts
+            contributed = True
+        if not contributed:
+            files_no_content += 1
+    return hits, coverage.files_without_artifacts, files_no_content
 
 
 # Backward-compatible private alias — the pre-split module exposed this

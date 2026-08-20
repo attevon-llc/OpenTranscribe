@@ -86,6 +86,10 @@ _OLD_HAND_WRITTEN_DESCRIPTIONS = {
     "enrichment_enabled": (
         "Reconcile merged multi-leg evidence into a <synthesis> block before answering"
     ),
+    # Issue #523 — added in the same commit as its registry entry, same rule.
+    "context_expansion_enabled": (
+        "Widen a short retrieved chunk to its surrounding exchange before masking"
+    ),
 }
 
 

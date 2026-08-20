@@ -1187,6 +1187,17 @@ DEFAULT_CHAT_PLANNER_MAX_PARALLEL_LEGS = 4  # chat.planner.max_parallel_legs
 # without ever paying for the extra reconciliation call.
 DEFAULT_CHAT_ENRICHMENT_ENABLED = False  # chat.enrichment_enabled
 
+# Issue #523: read-time "small-to-big" context expansion. A short retrieved
+# chunk (`services/chat/context_expansion.py`'s `SHORT_CHUNK_WORD_THRESHOLD`)
+# is widened to its surrounding exchange BY TIMESTAMP before it reaches
+# `redactor.mask_chunks` — masking still applies to every widened word (the
+# widened time range is what the cached-span rebuild reads), and the growth
+# is bounded so it comes out of the SAME excerpt budget without silently
+# evicting other files' evidence (`MAX_EXPANSION_SEGMENTS`/
+# `MAX_EXPANDED_WORDS`). Default OFF: a new, unmeasured retrieval shape, same
+# posture as every other W2.x flag above.
+DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED = False  # chat.rag.context_expansion_enabled
+
 
 # =============================================================================
 # Document ingestion (issue #362 / #403 Stage 6)

@@ -136,10 +136,12 @@ def test_flag_off_is_byte_identical_to_pre_464_behaviour():
         assert hits[0].digest_section == 0
         assert hits[0].content == "Section 0."
         assert hits[0].chunk_index == -1
-        assert hits.coverage == {"files_without_artifacts": 0}, (
-            "flag-off coverage must carry no summary_hits key at all — "
-            "the shape, not just the count, must be unchanged"
+        assert hits.coverage == {"files_without_artifacts": 0, "files_no_content": 0}, (
+            "flag-off coverage must carry no summary_hits key at all — the #464 "
+            "tiering shape must be unchanged. files_no_content (issue #63) is not "
+            "part of that #464 flag and is always present regardless of it."
         )
+        assert "summary_hits" not in hits.coverage
 
 
 def test_an_empty_scope_still_short_circuits_with_the_flag_on():

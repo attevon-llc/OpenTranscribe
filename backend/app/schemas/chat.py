@@ -409,6 +409,7 @@ class ChatAdminSettings(BaseModel):
     planner_enabled: bool = False
     planner_max_parallel_legs: int = Field(4, ge=1, le=8)
     enrichment_enabled: bool = False
+    context_expansion_enabled: bool = False
 
 
 class ChatAdminSettingsUpdate(BaseModel):
@@ -434,3 +435,4 @@ class ChatAdminSettingsUpdate(BaseModel):
     planner_enabled: bool | None = None
     planner_max_parallel_legs: int | None = Field(default=None, ge=1, le=8)
     enrichment_enabled: bool | None = None
+    context_expansion_enabled: bool | None = None

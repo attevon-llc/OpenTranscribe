@@ -284,12 +284,19 @@ def scope_digest_hits(
         A :class:`DigestScopeHits` — behaves as the list of ``ChunkHit``s (carrying
         ``digest_section``, in scope order) it always was, with a ``.coverage`` dict
         attached: ``coverage["files_without_artifacts"]`` counts files in scope with no
-        ``file_facts`` row — counted, never silently dropped. ``coverage["summary_hits"]``
-        (present only when ``use_summaries`` is True) counts files represented by a fresh
-        summary instead of their digest.
+        ``file_facts`` row — counted, never silently dropped. ``coverage["files_no_content"]``
+        counts files that DO have a ``file_facts`` row and a digest, but whose digest
+        carries zero sections — a file that was genuinely looked at and had nothing to
+        contribute, which is a different fact than "never consulted" and would otherwise
+        be indistinguishable from it: neither an empty-sections file nor a missing-row
+        file appends a hit, so without this counter both read as a silent gap to a
+        caller reconciling ``len(hits)`` against ``len(file_uuids)``
+        (``mapreduce.coverage.check_scope_coverage`` is that reconciliation).
+        ``coverage["summary_hits"]`` (present only when ``use_summaries`` is True) counts
+        files represented by a fresh summary instead of their digest.
     """
     if not file_uuids:
-        return DigestScopeHits([], {"files_without_artifacts": 0})
+        return DigestScopeHits([], {"files_without_artifacts": 0, "files_no_content": 0})
     from app.models.file_facts import FileFacts
     from app.models.media import MediaFile
     from app.services.search.chunk_retrieval import ChunkHit
@@ -310,10 +317,11 @@ def scope_digest_hits(
         )
     except Exception:  # noqa: BLE001 — a missing map degrades the answer, never breaks it
         logger.exception("Could not read file_facts for the scope map")
-        return DigestScopeHits([], {"files_without_artifacts": 0})
+        return DigestScopeHits([], {"files_without_artifacts": 0, "files_no_content": 0})
 
     hits: list[Any] = []
     files_without_artifacts = 0
+    files_no_content = 0
     summary_hits = 0
     # #403 Stage-6 gate: which uuids the MEDIA query above actually matched — a
     # document's uuid never appears in `media_file`, so anything left over
@@ -354,6 +362,7 @@ def scope_digest_hits(
             # through to the digest below rather than contributing nothing for
             # a file the digest tier can still cover.
 
+        file_contributed = False
         for section in sections[:sections_per_file]:
             hits.append(
                 ChunkHit(
@@ -367,6 +376,15 @@ def scope_digest_hits(
                     digest_section=int(section.get("index", 0)),
                 )
             )
+            file_contributed = True
+        if not file_contributed:
+            # A real ``file_facts`` row with a digest, but the digest's own
+            # ``sections`` list is empty (an extractive digest that selected
+            # nothing — e.g. a near-silent recording). Distinct from
+            # ``files_without_artifacts`` above: this file WAS read, it just
+            # had nothing to offer, and a caller reconciling coverage needs to
+            # tell the two apart rather than seeing one unexplained gap.
+            files_no_content += 1
 
     # The DOCUMENT half of a mixed collection (#403 Stage-6 gate). Only for
     # uuids the media query did not match — the two tables share no uuid
@@ -387,13 +405,17 @@ def scope_digest_hits(
         # split must not introduce.
         from app.services.chat import mapreduce as _mapreduce_pkg
 
-        doc_hits, doc_without_artifacts = _mapreduce_pkg._document_scope_hits(
+        doc_hits, doc_without_artifacts, doc_no_content = _mapreduce_pkg._document_scope_hits(
             db, remaining, sections_per_file
         )
         hits.extend(doc_hits)
         files_without_artifacts += doc_without_artifacts
+        files_no_content += doc_no_content
 
-    coverage = {"files_without_artifacts": files_without_artifacts}
+    coverage = {
+        "files_without_artifacts": files_without_artifacts,
+        "files_no_content": files_no_content,
+    }
     if use_summaries:
         coverage["summary_hits"] = summary_hits
     return DigestScopeHits(hits, coverage)

@@ -260,6 +260,13 @@ CHAT_FLAG_REGISTRY: tuple[ChatFlagSpec, ...] = (
         value_type=bool,
         default=C.DEFAULT_CHAT_ENRICHMENT_ENABLED,
     ),
+    ChatFlagSpec(
+        field="context_expansion_enabled",
+        setting_key="chat.rag.context_expansion_enabled",
+        description="Widen a short retrieved chunk to its surrounding exchange before masking",
+        value_type=bool,
+        default=C.DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED,
+    ),
 )
 
 #: ``field -> ChatFlagSpec``, for a single-lookup consumer.

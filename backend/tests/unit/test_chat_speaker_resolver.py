@@ -151,6 +151,11 @@ def test_no_roster_match_reports_a_reason():
         "Did Dana mention the budget?",
         "What was Dana's opinion on the redesign?",
         "What did Dana think of the proposal?",
+        # #523: the exact probe wording that found this lexicon gap — a
+        # "contribute" frame was previously absent, so a clearly
+        # speaker-scoped question never reached the parallel speaker leg.
+        "What did the Marketing role contribute across the TS3005 meeting series?",
+        "What did Dana contribute to the plan?",
     ],
 )
 def test_speaker_verb_frame_detected(text):
@@ -181,6 +186,24 @@ def test_unique_match_plus_verb_frame_sets_speaker_focus(db_session):
         db_session, "What did Dana say about pricing?", user_id=1, roster=roster
     )
     assert result.matched == ("Dana",)
+    assert result.speaker_focus is True
+
+
+def test_role_labeled_speaker_contribution_question_sets_speaker_focus(db_session):
+    """#523's reproduction case, at the resolver level: a role used as the
+    diarized speaker label ("Marketing") asked about with "contribute" now
+    resolves to a unique match with speaker focus — the router-level
+    integration (routing this into a PARALLEL retrieval leg) is asserted in
+    ``test_chat_router_speaker_focus.py``/``test_chat_retrieval_speaker_focus.py``;
+    this pins the resolver half that used to silently decline."""
+    roster = _roster("Marketing", "Engineering")
+    result = resolve_speaker_mentions(
+        db_session,
+        "What did the Marketing role contribute across the TS3005 meeting series?",
+        user_id=1,
+        roster=roster,
+    )
+    assert result.matched == ("Marketing",)
     assert result.speaker_focus is True
 
 

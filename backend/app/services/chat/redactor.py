@@ -83,6 +83,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core import constants as C  # noqa: N812
+from app.services.chat import context_expansion
 from app.services.search.chunk_retrieval import ChunkHit
 
 logger = logging.getLogger(__name__)
@@ -1027,6 +1028,7 @@ def mask_chunks(
     user_id: int,
     *,
     unmask_for_local: bool = False,
+    expand_short_chunks: bool = False,
 ) -> list[MaskedChunk]:
     """Apply the STRICTEST-WINS redact-before-LLM policy to retrieved chunks.
 
@@ -1062,12 +1064,31 @@ def mask_chunks(
             (the REQUESTER's ``cfg.redact_before_llm_locked`` — see ``_gather``
             for why the requester alone is the right and sufficient read here),
             in which case the force floor wins and masking still applies.
+        expand_short_chunks: Issue #523, ``chat.context_expansion_enabled``.
+            Widens any chunk under
+            :data:`~app.services.chat.context_expansion.SHORT_CHUNK_WORD_THRESHOLD`
+            words to its surrounding exchange, BY TIME RANGE, before anything
+            below reads a single segment — so the widened ``chunk.start_time``/
+            ``end_time`` this rewrites ``chunks`` with is what every downstream
+            masking decision (cached-span rebuild, the fail-CLOSED branches,
+            the pass-through branch below) actually sees. There is no second
+            masking path for expanded text: it is masked, or withheld, exactly
+            like any other excerpt from the same file. Default False — see
+            ``context_expansion.py``'s module docstring for the budget bound
+            that keeps this from crowding out other files' evidence.
 
     Returns:
         Chunks with prompt-safe text. When the policy does not apply to a given
         chunk — including when the whole turn is skipped for a local provider —
         that chunk's content is passed through untouched.
     """
+    if expand_short_chunks and chunks:
+        try:
+            with session_factory() as db:
+                chunks = context_expansion.expand_chunks(db, chunks)
+        except Exception:  # noqa: BLE001 — an enhancement, never a dependency
+            logger.exception("Context expansion failed; masking the un-expanded chunks instead")
+
     try:
         inputs = _gather(session_factory, user_id, chunks=chunks, unmask_for_local=unmask_for_local)
     except Exception:  # noqa: BLE001

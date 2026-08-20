@@ -736,6 +736,10 @@ _SPEAKER_VERB_RE = re.compile(
     r"suggest(?:ed|s|ing)?|"
     r"propos(?:ed|es|ing)|"
     r"report(?:ed|s|ing)?|"
+    # #523: "what did the Marketing role CONTRIBUTE" — the probe that found
+    # this lexicon gap. A contribution frame is "what did X say/add/bring to
+    # this", the same shape `bring(s)? up` already covers for a narrower verb.
+    r"contribut(?:e|es|ed|ing)|"
     r"think|thinks|thought|"
     r"believ(?:ed|es|ing)|"
     r"feel[s]?|felt|"

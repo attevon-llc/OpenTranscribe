@@ -264,7 +264,7 @@ def _resolve_summary_tier(
     ranked_digests_masked: list[MaskedChunk],
     user_id: int,
     mask_kwargs: dict[str, Any],
-) -> tuple[list[Any], list[MaskedChunk], str | None, int]:
+) -> tuple[list[Any], list[MaskedChunk], str | None, int, int]:
     """Decide which leg feeds the map-reduce overview's summaries (W2.1).
 
     Split out of ``_prepare_context`` so its branching doesn't count against
@@ -297,11 +297,16 @@ def _resolve_summary_tier(
         mask_kwargs: ``mask_digests``' ``unmask_for_local`` kwarg, if set.
 
     Returns:
-        ``(summary_hits, summary_masked, map_leg, files_without_artifacts)``.
-        ``map_leg`` is ``"scope_map"`` | ``"speaker_scope_map"`` |
-        ``"speaker_scope_map_empty"`` | ``"ranked_digests"`` | ``None``
-        (nothing to summarise this turn). ``files_without_artifacts`` is 0
-        whenever the map did not run or found no gap.
+        ``(summary_hits, summary_masked, map_leg, files_without_artifacts,
+        files_no_content)``. ``map_leg`` is ``"scope_map"`` |
+        ``"speaker_scope_map"`` | ``"speaker_scope_map_empty"`` |
+        ``"ranked_digests"`` | ``None`` (nothing to summarise this turn).
+        ``files_without_artifacts`` and ``files_no_content`` are 0 whenever the
+        map did not run or found no gap — see
+        ``mapreduce.scope_digest_hits``'s own docstring for what distinguishes
+        the two (never consulted vs. consulted and genuinely empty), which
+        ``mapreduce.coverage.check_scope_coverage`` reads back off ``meta`` via
+        these same two counts.
     """
     from app.services.chat.mapreduce import scope_digest_hits
     from app.services.chat.mapreduce import scope_speaker_digest_hits
@@ -324,14 +329,21 @@ def _resolve_summary_tier(
                 use_summaries=settings.map_tier_speaker_summaries,
             )
         files_without_artifacts = int(map_hits.coverage.get("files_without_artifacts", 0))
+        files_no_content = int(map_hits.coverage.get("files_no_content", 0))
         if map_hits:
             summary_masked = mask_digests(session_scope, map_hits, user_id, **mask_kwargs)
-            return map_hits, summary_masked, "speaker_scope_map", files_without_artifacts
+            return (
+                map_hits,
+                summary_masked,
+                "speaker_scope_map",
+                files_without_artifacts,
+                files_no_content,
+            )
         # Never a silent zero: the caller still composes an overview from this
         # (empty) map when the turn was speaker-scoped — see
         # `mapreduce._empty_speaker_focus_overview` — rather than silently
         # answering with nothing and no explanation.
-        return [], [], "speaker_scope_map_empty", files_without_artifacts
+        return [], [], "speaker_scope_map_empty", files_without_artifacts, files_no_content
 
     if decision.wants_digest and file_uuids:
         with session_scope() as db:
@@ -347,15 +359,22 @@ def _resolve_summary_tier(
         # with no signal — the coverage block already says so in the header
         # when summaries exist; this is the same count for when they don't.
         files_without_artifacts = int(map_hits.coverage.get("files_without_artifacts", 0))
+        files_no_content = int(map_hits.coverage.get("files_no_content", 0))
         if map_hits:
             summary_masked = mask_digests(session_scope, map_hits, user_id, **mask_kwargs)
-            return map_hits, summary_masked, "scope_map", files_without_artifacts
+            return map_hits, summary_masked, "scope_map", files_without_artifacts, files_no_content
         if ranked_digests:
             # The map covered nothing (every file in scope lacks a digest, or
             # the read failed) but the ranked leg still found something —
             # degrade to it rather than reporting no overview at all.
-            return ranked_digests, ranked_digests_masked, "ranked_digests", files_without_artifacts
-        return [], [], None, files_without_artifacts
+            return (
+                ranked_digests,
+                ranked_digests_masked,
+                "ranked_digests",
+                files_without_artifacts,
+                files_no_content,
+            )
+        return [], [], None, files_without_artifacts, files_no_content
 
     if ranked_digests:
         # Unbounded scope: keep today's ranked-leg-only behaviour. Also
@@ -363,8 +382,8 @@ def _resolve_summary_tier(
         # digest tier at all but which somehow still carries ranked digest
         # hits — the same fallback the pre-decoupling code applied
         # unconditionally to any non-empty `result.digests`.
-        return ranked_digests, ranked_digests_masked, "ranked_digests", 0
-    return [], [], None, 0
+        return ranked_digests, ranked_digests_masked, "ranked_digests", 0, 0
+    return [], [], None, 0, 0
 
 
 def _resolve_speaker_focus(
@@ -1103,6 +1122,48 @@ def _retrieve_or_fanout(
     return result, counted, recurrence_result
 
 
+def _build_mask_kwargs(llm: Any, settings: Any) -> dict[str, bool]:
+    """The keyword arguments every masker call in one turn shares.
+
+    Extracted from ``_prepare_context`` so the two decisions below are testable
+    on their own and so the caller stays under the complexity ceiling — not as
+    tidying. Both are resolved ONCE per turn and threaded to every masker rather
+    than re-derived per call, so the three sites cannot disagree about which
+    provider this turn is using or whether expansion is on.
+
+    ``unmask_for_local`` keys egress masking off WHERE THE MODEL RUNS (owner
+    decision, 2026-08-13): a local model never has this text leave the machine,
+    so masking it costs recall for no egress benefit.
+
+    ⚠️ ``llm`` is None for a legitimate, first-class deployment shape (#403 D6):
+    no ``LLM_PROVIDER`` configured at all still has to produce masked context for
+    the deterministic map/keyphrase/coverage tiers, and that path never had an
+    ``llm`` to read a provider from. ``getattr(llm, "config", None)`` reaches
+    ``is_local_provider``'s own None-safe duck typing instead of a SECOND None
+    check here — one fail-closed decision, not two that could disagree.
+
+    ⚠️ Keys are included ONLY when True. Every pre-existing caller of
+    ``mask_chunks``/``mask_digests`` — and every test that stubs either with a
+    positional-only signature — predates both parameters; passing them
+    unconditionally would break all of them for the overwhelmingly common case
+    (remote provider, expansion off) where they do nothing anyway.
+
+    ``expand_short_chunks`` (#523) widens a chunk under
+    ``context_expansion.SHORT_CHUNK_WORD_THRESHOLD`` words to its surrounding
+    exchange BEFORE masking, inside ``mask_chunks`` itself, so the
+    strictest-wins policy applies to every widened word. Flag-gated, default OFF
+    (``chat.context_expansion_enabled``).
+    """
+    from app.services.redaction.llm_guard import is_local_provider
+
+    kwargs: dict[str, bool] = {}
+    if is_local_provider(getattr(llm, "config", None)):
+        kwargs["unmask_for_local"] = True
+    if getattr(settings, "context_expansion_enabled", False):
+        kwargs["expand_short_chunks"] = True
+    return kwargs
+
+
 def _prepare_context(
     *,
     user_id: int,
@@ -1297,10 +1358,7 @@ def _prepare_context(
     # the overwhelmingly common case (remote provider or no provider at all)
     # where it does nothing anyway. Only a genuinely local provider needs the
     # keyword sent at all.
-    from app.services.redaction.llm_guard import is_local_provider
-
-    unmask_for_local = is_local_provider(getattr(llm, "config", None))
-    _mask_kwargs = {"unmask_for_local": True} if unmask_for_local else {}
+    _mask_kwargs = _build_mask_kwargs(llm, settings)
 
     digest_masked: list[MaskedChunk] = []
     summaries: list[Any] = []
@@ -1321,18 +1379,29 @@ def _prepare_context(
     # `file_facts` for every file) or the ranked digest leg above (unbounded
     # scope, or the map covered nothing). See `_resolve_summary_tier`'s own
     # docstring for the decoupling this replaces.
-    summary_hits, summary_masked, map_leg, files_without_artifacts = _resolve_summary_tier(
-        decision=decision,
-        file_uuids=file_uuids,
-        settings=settings,
-        session_scope=session_scope,
-        ranked_digests=result.digests,
-        ranked_digests_masked=digest_masked,
-        user_id=user_id,
-        mask_kwargs=_mask_kwargs,
+    summary_hits, summary_masked, map_leg, files_without_artifacts, files_no_content = (
+        _resolve_summary_tier(
+            decision=decision,
+            file_uuids=file_uuids,
+            settings=settings,
+            session_scope=session_scope,
+            ranked_digests=result.digests,
+            ranked_digests_masked=digest_masked,
+            user_id=user_id,
+            mask_kwargs=_mask_kwargs,
+        )
     )
     if files_without_artifacts:
         meta["map_files_without_artifacts"] = files_without_artifacts
+    if files_no_content:
+        # Same "counted whether or not the map produced anything" rule as the
+        # line above, and the same reason: distinct from
+        # `files_without_artifacts` (`mapreduce.scope_digest_hits`'s own
+        # docstring), a file counted here WAS read and had a real digest —
+        # it just had nothing in it — which `mapreduce.coverage` needs to
+        # tell apart from "never consulted" when reconciling this turn's
+        # scope coverage from `meta` alone.
+        meta["map_files_no_content"] = files_no_content
 
     # W2.3. Single-speaker focus only — same simplification
     # `aggregation_service._run_speaker_stats` already applies

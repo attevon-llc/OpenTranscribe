@@ -241,6 +241,7 @@ def test_a_file_with_no_facts_row_is_counted_not_dropped(db_session):
 
     assert isinstance(hits, DigestScopeHits)
     assert hits.coverage["files_without_artifacts"] == 1
+    assert hits.coverage["files_no_content"] == 0
     assert all(hit.file_uuid != str(missing.uuid) for hit in hits)
     assert any(hit.file_uuid == str(present.uuid) for hit in hits)
 
@@ -248,7 +249,14 @@ def test_a_file_with_no_facts_row_is_counted_not_dropped(db_session):
 def test_a_file_with_an_empty_digest_is_not_counted_as_missing_artifacts(db_session):
     """A `file_facts` row with zero sections (e.g. a 10-second clip, a real, documented
     outcome per `ingest_artifacts/CLAUDE.md`) is NOT the same gap as no row at all — it
-    was covered, it just had nothing to say. Only a genuinely absent row counts."""
+    was covered, it just had nothing to say. Only a genuinely absent row counts.
+
+    Issue #63: that "covered, nothing to say" fact must itself be COUNTED, not just
+    correctly excluded from the wrong counter — ``coverage["files_no_content"]`` is
+    what makes it distinguishable from ``test_a_file_with_no_facts_row_is_counted_not_dropped``
+    above (never consulted) rather than the two collapsing to the same silent
+    zero-hits outcome a caller reconciling coverage cannot tell apart.
+    """
     user = _make_user(db_session)
     media_file = _make_completed_file(db_session, user.id)
     _make_facts_row(db_session, media_file, sections=False)
@@ -256,6 +264,7 @@ def test_a_file_with_an_empty_digest_is_not_counted_as_missing_artifacts(db_sess
     hits = scope_digest_hits(db_session, [str(media_file.uuid)])
 
     assert hits.coverage["files_without_artifacts"] == 0
+    assert hits.coverage["files_no_content"] == 1
     assert list(hits) == []
 
 
@@ -268,13 +277,14 @@ def test_every_file_covered_reports_zero_missing(db_session):
     hits = scope_digest_hits(db_session, [str(media_file.uuid)])
 
     assert hits.coverage["files_without_artifacts"] == 0
+    assert hits.coverage["files_no_content"] == 0
     assert len(hits) == 1
 
 
 def test_an_empty_scope_reports_zero_without_touching_the_database(db_session):
     hits = scope_digest_hits(db_session, [])
     assert hits == []
-    assert hits.coverage == {"files_without_artifacts": 0}
+    assert hits.coverage == {"files_without_artifacts": 0, "files_no_content": 0}
 
 
 @pytest.mark.parametrize("sections_per_file", [1, 2])

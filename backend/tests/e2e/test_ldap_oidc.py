@@ -40,9 +40,11 @@ from typing import cast
 import pytest
 from playwright.sync_api import expect
 
+from tests.env_gate import gate_enabled
+
 # Skip entire module unless explicitly enabled
 pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_AUTH_E2E", "").lower() != "true",
+    not gate_enabled("RUN_AUTH_E2E"),
     reason="Auth E2E tests require RUN_AUTH_E2E=true, LLDAP/Keycloak containers, and dev env running",
 )
 

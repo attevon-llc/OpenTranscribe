@@ -29,12 +29,13 @@ Run:
     DISPLAY=:13 pytest backend/tests/e2e/test_auth_buttons.py -v --headed
 """
 
-import os
 from typing import cast
 
 import pytest
 from playwright.sync_api import Page
 from playwright.sync_api import expect
+
+from tests.env_gate import gate_enabled
 
 # This module used to define its own ``FRONTEND_URL``/``BACKEND_URL`` constants here.
 # A module constant is evaluated at import time, so it could not see ``--base-url`` and
@@ -284,7 +285,7 @@ class TestLDAPLogin:
     Requires LDAP container running and LDAP enabled in backend config.
     """
 
-    _ldap_e2e = os.environ.get("RUN_AUTH_E2E", "").lower() == "true"
+    _ldap_e2e = gate_enabled("RUN_AUTH_E2E")
 
     def _is_ldap_enabled(self, page: Page) -> bool:
         """Check if LDAP is enabled via API."""

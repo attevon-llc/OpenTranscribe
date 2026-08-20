@@ -273,6 +273,15 @@ def _run_engine_pipeline(
     raw = engine.run_gpu_stage(pre, progress_callback=_progress)
     job_result = engine.run_cpu_finalize(raw)
 
+    # Both halves run on the GPU worker today. Log the split so the CPU-only tail is visible:
+    # that tail is what T4 would move off the GPU slot, and moving it is only worth the extra
+    # Redis hop if it is large next to the GPU stage it delays.
+    logger.info(
+        "TIMING: engine stages for file %s: %s",
+        ctx.file_id,
+        {k: round(v, 3) for k, v in sorted(job_result.stage_timings.items())},
+    )
+
     raw_dict = job_result.to_pipeline_dict()
     raw_dict.setdefault("asr_provider", "local")
     raw_dict.setdefault("asr_model", config.model_name)

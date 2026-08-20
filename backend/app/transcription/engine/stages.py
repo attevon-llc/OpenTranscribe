@@ -640,7 +640,7 @@ class _FinalizeStage:
             overlap_info=result.get("overlap_info", {}),
             native_speaker_embeddings=result.get("native_speaker_embeddings"),
             speaker_gender=result.get("speaker_gender"),
-            stage_timings={"finalize": time.perf_counter() - t0},
+            stage_timings={**raw.stage_timings, "finalize": time.perf_counter() - t0},
         )
 
 

@@ -60,6 +60,20 @@ def write_wav_to_shared_volume(
         wavfile.write(wav_path, SAMPLE_RATE, audio_int16)
         logger.debug(f"Wrote shared-volume WAV: {wav_path} ({len(audio_int16)} samples)")
         return wav_path
+    except PermissionError as e:
+        # A volume created before the image reserved these paths lands root-owned, which
+        # this non-root worker cannot write — the handoff then silently degrades to a
+        # re-decode in Stage 2. Name the repair rather than leaving an EACCES to decode.
+        logger.warning(
+            "Cannot write the shared-volume WAV for task %s: %s. %s is not writable by "
+            "this worker (uid %d) — run scripts/fix-shared-volume-perms.sh to repair the "
+            "volume; the pipeline continues without the handoff.",
+            task_id,
+            e,
+            shared_volume_path,
+            os.getuid(),
+        )
+        return None
     except Exception as e:
         logger.warning(f"Failed to write shared-volume WAV for task {task_id}: {e}")
         return None

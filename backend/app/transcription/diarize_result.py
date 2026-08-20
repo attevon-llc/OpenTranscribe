@@ -18,6 +18,10 @@ class DiarizeResult:
     start: np.ndarray  # float64, shape (N,)
     end: np.ndarray  # float64, shape (N,)
     speaker: np.ndarray  # object dtype, shape (N,) — string labels
+    # Per-speaker gender, when the engine worked it out while it had the audio (the sidecar
+    # classifies from the same decoded buffer). None on the PyAnnote path, which leaves
+    # gender to the enrichment task.
+    speaker_gender: dict | None = None
 
     def __len__(self) -> int:
         return int(self.start.shape[0])

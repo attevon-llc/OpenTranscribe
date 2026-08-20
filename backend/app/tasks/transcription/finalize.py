@@ -15,6 +15,8 @@ from .background import _run_post_gpu_background
 from .context import TranscriptionContext
 from .embeddings import _should_use_native_embeddings
 from .notifications import send_progress_notification
+from .notifications import send_transcript_ready_notification
+from .speaker_processor import apply_sidecar_gender
 from .speaker_processor import create_speaker_mapping
 from .speaker_processor import extract_unique_speakers
 from .speaker_processor import mark_overlapping_segments
@@ -157,6 +159,12 @@ def _process_transcription_result(
     step_start = time.perf_counter()
     with session_scope() as db:
         speaker_mapping = create_speaker_mapping(db, ctx.user_id, ctx.file_id, unique_speakers)
+        # The engine classified gender from the audio it had decoded for diarization, so the
+        # answers are already here — writing them now saves the enrichment task from redoing
+        # the same work on CPU.
+        applied = apply_sidecar_gender(db, ctx.file_id, result.get("speaker_gender"))
+        if applied:
+            logger.info("Applied sidecar gender for %d speakers on file %d", applied, ctx.file_id)
         update_task_status(db, ctx.task_id, "in_progress", progress=0.72)
     logger.info(
         f"TIMING: create_speaker_mapping completed in {time.perf_counter() - step_start:.3f}s"
@@ -230,6 +238,10 @@ def _process_transcription_result(
         )
         update_task_status(db, ctx.task_id, "in_progress", progress=0.78)
 
+    # Segments are committed and readable now; everything after this is speaker matching,
+    # indexing and enrichment. Let the reader open the transcript rather than wait it out.
+    send_transcript_ready_notification(ctx.user_id, ctx.file_id)
+
     # Release GPU memory so next task can start loading models
     hardware_config = detect_hardware()
     hardware_config.optimize_memory_usage()
@@ -294,6 +306,12 @@ def _process_and_save_critical(
 
     with session_scope() as db:
         speaker_mapping = create_speaker_mapping(db, ctx.user_id, ctx.file_id, unique_speakers)
+        # The engine classified gender from the audio it had decoded for diarization, so the
+        # answers are already here — writing them now saves the enrichment task from redoing
+        # the same work on CPU.
+        applied = apply_sidecar_gender(db, ctx.file_id, result.get("speaker_gender"))
+        if applied:
+            logger.info("Applied sidecar gender for %d speakers on file %d", applied, ctx.file_id)
         update_task_status(db, ctx.task_id, "in_progress", progress=0.72)
 
     processed_segments = process_segments_with_speakers(result["segments"], speaker_mapping)
@@ -342,6 +360,10 @@ def _process_and_save_critical(
             diarization_disabled=diarization_disabled,
         )
         update_task_status(db, ctx.task_id, "in_progress", progress=0.78)
+
+    # Segments are committed and readable now; everything after this is speaker matching,
+    # indexing and enrichment. Let the reader open the transcript rather than wait it out.
+    send_transcript_ready_notification(ctx.user_id, ctx.file_id)
 
     # Release GPU memory
     hardware_config = detect_hardware()

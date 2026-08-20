@@ -307,10 +307,21 @@ def poll_task_completion(
 
 
 def collect_benchmark_data(r: redis.Redis, task_id: str) -> dict:
-    """Collect all benchmark timing data from Redis."""
+    """Collect all benchmark timing data from Redis.
+
+    The hash carries descriptive markers alongside the timestamps (``whisper_model`` for
+    one), so anything non-numeric is kept as text instead of failing the whole run.
+    """
     key = f'benchmark:{task_id}'
     raw = r.hgetall(key)
-    return {k.decode(): float(v.decode()) for k, v in raw.items()}
+    data: dict = {}
+    for raw_name, raw_value in raw.items():
+        name, value = raw_name.decode(), raw_value.decode()
+        try:
+            data[name] = float(value)
+        except ValueError:
+            data[name] = value
+    return data
 
 
 def collect_vram_data(r: redis.Redis, task_id: str) -> dict | None:

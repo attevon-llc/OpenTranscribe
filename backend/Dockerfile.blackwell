@@ -41,9 +41,14 @@ WORKDIR /app
 #   when the installed CUDA toolkit doesn't know SM_121 natively.
 # TORCH_CUDA_ARCH_LIST: Tells PyTorch extensions to compile for SM_90
 #   (Hopper), which is binary-compatible with Blackwell via PTX fallback.
+# PYTHONPATH: /app must be importable by any interpreter in this image, not just the
+# Celery CLI (which injects cwd at runtime, in-process). Subprocesses that exec a fresh
+# interpreter -- notably multiprocessing's forkserver -- inherit the environment but not
+# sys.path, and without this they fail with ModuleNotFoundError: No module named 'app'.
 ENV CUDA_FORCE_PTX_JIT=1 \
     TORCH_CUDA_ARCH_LIST="9.0" \
     PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONWARNINGS=ignore::UserWarning:pyannote.audio.core.io \
     DEBIAN_FRONTEND=noninteractive

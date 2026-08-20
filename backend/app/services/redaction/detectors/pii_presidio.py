@@ -219,24 +219,92 @@ def detect_pii(text: str, words: list[dict] | None, cfg: dict) -> list[Redaction
         # fail-closed masker reads. Unlike an unbuildable analyzer this IS worth
         # re-running, so it stays an ordinary exception.
         results = analyzer.analyze(text=chunk, language="en")
-        for r in results:
-            entity_type = _ENTITY_MAP.get(r.entity_type)
-            if entity_type is None or entity_type not in keep_entities:
-                continue
-            if r.score < min_score:
-                continue
-            cs, ce = base + r.start, base + r.end
-            ws, we = map_char_span_to_words(word_offsets, cs, ce)
-            spans.append(
-                RedactionSpan(
-                    char_start=cs,
-                    char_end=ce,
-                    word_start=ws,
-                    word_end=we,
-                    category="pii",
-                    entity_type=entity_type,
-                    detector="presidio",
-                    confidence=float(r.score),
-                )
-            )
+        raw = [(r.entity_type, r.start, r.end, float(r.score)) for r in results]
+        spans.extend(_spans_from_raw(raw, base, word_offsets, keep_entities, min_score))
     return spans
+
+
+def _spans_from_raw(
+    raw: list[tuple],
+    base: int,
+    word_offsets,
+    keep_entities: set,
+    min_score: float,
+) -> list[RedactionSpan]:
+    """Turn one chunk's analyzer output into spans, offset back to absolute positions.
+
+    Shared by the per-segment and batched paths so the two cannot drift: the batched path
+    differs only in *where* analyze() ran, never in how its results are filtered or mapped.
+    ``raw`` items are ``(entity_type, start, end, score)`` — plain tuples, because
+    RecognizerResult does not survive a process boundary.
+    """
+    spans: list[RedactionSpan] = []
+    for entity_raw, r_start, r_end, score in raw:
+        entity_type = _ENTITY_MAP.get(entity_raw)
+        if entity_type is None or entity_type not in keep_entities:
+            continue
+        if score < min_score:
+            continue
+        cs, ce = base + r_start, base + r_end
+        ws, we = map_char_span_to_words(word_offsets, cs, ce)
+        spans.append(
+            RedactionSpan(
+                char_start=cs,
+                char_end=ce,
+                word_start=ws,
+                word_end=we,
+                category="pii",
+                entity_type=entity_type,
+                detector="presidio",
+                confidence=float(score),
+            )
+        )
+    return spans
+
+
+def detect_pii_batch(
+    items: list[tuple[str, list[dict] | None]], cfg: dict
+) -> list[list[RedactionSpan]] | None:
+    """Analyze many segments in parallel; ``None`` means the caller should loop instead.
+
+    Presidio's analyze() is 82% of a redaction scan and does not thread (spaCy holds the GIL),
+    so this fans the chunks across a persistent process pool — measured 7.5x on a 1077-segment
+    transcript with byte-identical results. Returning ``None`` rather than partial output keeps
+    the fail-closed contract: a scan that could not run must never look like a clean one.
+    """
+    if not items:
+        return []
+    use_gliner = bool(cfg.get("pii_use_gliner", C.REDACTION_PII_USE_GLINER))
+    if use_gliner:
+        return None  # GLiNER adds a second model per worker; not worth the memory
+    if _get_analyzer(False) is None:
+        raise DetectorUnavailableError(
+            "Presidio analyzer could not be built (missing dependency, spaCy model "
+            "or weights); these texts were never examined for PII"
+        )
+
+    from app.services.redaction import pii_pool
+
+    # Flatten to chunks exactly as detect_pii would, remembering where each came from.
+    chunks: list[str] = []
+    origin: list[tuple[int, int]] = []  # (item index, char offset)
+    for idx, (text, _words) in enumerate(items):
+        if not text or not text.strip():
+            continue
+        for base in range(0, len(text), _MAX_CHARS):
+            chunks.append(text[base : base + _MAX_CHARS])
+            origin.append((idx, base))
+
+    raw_all = pii_pool.analyze_texts(chunks)
+    if raw_all is None:
+        return None
+
+    keep_entities = set(cfg.get("pii_entities", C.REDACTION_PII_ENTITIES))
+    min_score = float(cfg.get("pii_confidence", C.DEFAULT_REDACTION_PII_CONFIDENCE))
+    offsets_by_item = {
+        idx: build_word_offsets(items[idx][0], items[idx][1]) for idx, _ in set(origin)
+    }
+    out: list[list[RedactionSpan]] = [[] for _ in items]
+    for (idx, base), raw in zip(origin, raw_all, strict=True):
+        out[idx].extend(_spans_from_raw(raw, base, offsets_by_item[idx], keep_entities, min_score))
+    return out

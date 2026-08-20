@@ -662,10 +662,18 @@ def preload_models(**kwargs):
 
             ok_pii = pii_presidio.preload()
             ok_tox = toxicity.preload()
+
+            # Bring the PII pool's workers up now. Spawned workers each import the app and
+            # load spaCy, so a cold pool makes the first scan slower than the sequential
+            # path it replaces — the cost belongs at worker start, not in a user's scan.
+            from app.services.redaction import pii_pool
+
+            ok_pool = pii_pool.warm()
             logger.info(
-                "Redaction models preloaded (pii=%s, toxicity=%s)",
+                "Redaction models preloaded (pii=%s, toxicity=%s, pii_pool=%s)",
                 ok_pii,
                 ok_tox,
+                ok_pool,
             )
         except Exception as e:
             logger.warning(f"Redaction model preloading failed: {e}")

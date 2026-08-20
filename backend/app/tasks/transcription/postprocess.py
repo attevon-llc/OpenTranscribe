@@ -27,6 +27,11 @@ from app.utils.websocket_notify import send_ws_event
 from .notifications import send_completion_notification
 from .notifications import send_progress_notification
 
+# How long to wait before folding the enrichment tail into the timing row. Long enough for
+# indexing, clustering, summary and redaction to finish on a normal file; the upsert merges,
+# so an early flush simply records less rather than corrupting anything.
+TIMING_TAIL_FLUSH_DELAY_S = 180
+
 logger = logging.getLogger(__name__)
 
 
@@ -260,6 +265,11 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
         # Both are no-ops when ENABLE_BENCHMARK_TIMING is off.
         benchmark_timing.mark(task_id, "postprocess_end")
         _persist_timing_row(task_id, file_id, user_id)
+        # Everything after this — indexing, clustering, summary, redaction — writes its
+        # markers to Redis *after* the row above is saved, which is why those columns were
+        # always null. Re-flush once the tail has had time to finish; the upsert merges, and
+        # the Redis hash lives 24 h so nothing is lost if the tail runs long.
+        _schedule_timing_tail_flush(task_id, file_id, user_id)
 
     elapsed = time.perf_counter() - post_start
     logger.info(f"TIMING: postprocess completed in {elapsed:.3f}s for file {file_id}")
@@ -314,6 +324,32 @@ def _fire_completion_metering(
         )
     except Exception as e:  # pragma: no cover - metering must never break the pipeline
         logger.warning(f"Completion metering hook failed for file {file_id} (contained): {e}")
+
+
+def _schedule_timing_tail_flush(task_id: str, file_id: int, user_id: int) -> None:
+    """Re-persist the timing row once the enrichment tail has settled."""
+    if not benchmark_timing.benchmark_enabled():
+        return
+    try:
+        flush_pipeline_timing_tail.apply_async(
+            args=[task_id, file_id, user_id],
+            countdown=TIMING_TAIL_FLUSH_DELAY_S,
+            queue="utility",
+        )
+    except Exception as e:  # pragma: no cover — instrumentation must not break the pipeline
+        logger.debug(f"Timing tail flush not scheduled for file {file_id}: {e}")
+
+
+@celery_app.task(name="pipeline_timing.flush_tail", priority=CPUPriority.MAINTENANCE)
+def flush_pipeline_timing_tail(task_id: str, file_id: int, user_id: int) -> dict:
+    """Fold the enrichment tail's markers into the durable timing row.
+
+    Without this the row only ever describes the part of the job the user waits for, and the
+    work that follows — indexing, clustering, summary, redaction — is invisible in telemetry
+    even though every marker is sitting in Redis.
+    """
+    _persist_timing_row(task_id, file_id, user_id)
+    return {"status": "flushed", "file_id": file_id}
 
 
 def _persist_timing_row(task_id: str, file_id: int, user_id: int) -> None:

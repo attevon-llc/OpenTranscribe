@@ -31,6 +31,69 @@ class RedactionService:
 
     # ------------------------------------------------------------------ detection
     @staticmethod
+    def _apply_segment_spans(
+        segments,
+        det_cfg,
+        tox_scores,
+        pii_batch,
+        llm_spans_by_idx,
+        *,
+        run_profanity,
+        run_pii,
+        failures,
+        unavailable,
+    ) -> int:
+        """Write each segment's spans, and return how many PII spans were found.
+
+        ``pii_batch`` carries PII already analysed in parallel; when it is ``None`` the
+        per-segment detector runs PII inline instead, which is the original behaviour.
+        """
+        pii_count = 0
+        for idx, seg in enumerate(segments):
+            span_dicts, _ = RedactionService.detect_segment_spans(
+                str(seg.text),
+                seg.words,
+                det_cfg,
+                run_profanity=run_profanity,
+                run_pii=run_pii and pii_batch is None,
+                run_toxicity=False,
+                failures=failures,
+                unavailable=unavailable,
+            )
+            if pii_batch is not None:
+                span_dicts = span_dicts + [s.model_dump() for s in pii_batch[idx]]
+            if idx in llm_spans_by_idx:
+                span_dicts = span_dicts + llm_spans_by_idx[idx]
+            pii_count += sum(1 for s in span_dicts if s.get("category") == "pii")
+            seg.redactions = span_dicts or None
+            seg.toxicity = tox_scores[idx]
+        return pii_count
+
+    @staticmethod
+    def _batch_pii(segments, det_cfg, run_pii, file_id, failures, unavailable):
+        """Analyze every segment's PII in one parallel pass.
+
+        PII is 82% of a scan and does not thread (spaCy holds the GIL), so it is fanned across
+        a process pool rather than analysed segment by segment. Returns ``(spans_per_segment,
+        run_pii)``: a ``None`` batch means the pool was unavailable or the work too small, and
+        the caller then runs PII inline exactly as before.
+        """
+        if not run_pii:
+            return None, run_pii
+        try:
+            from app.services.redaction.detectors import pii_presidio
+
+            batch = pii_presidio.detect_pii_batch(
+                [(str(s.text), s.words) for s in segments], det_cfg
+            )
+            return batch, run_pii
+        except DetectorUnavailableError as exc:
+            logger.warning("PII detector unavailable for file %s: %s", file_id, exc)
+            failures.append("pii")
+            unavailable.append("pii")
+            return None, False
+
+    @staticmethod
     def detect_segment_spans(
         text: str,
         words: list[dict] | None,
@@ -213,22 +276,21 @@ class RedactionService:
                         logger.warning("Batch toxicity failed for file %s: %s", file_id, exc)
                         detector_failures.append("toxicity")
 
-                for idx, seg in enumerate(segments):
-                    span_dicts, _ = RedactionService.detect_segment_spans(
-                        str(seg.text),
-                        seg.words,  # type: ignore[arg-type]
-                        det_cfg,
-                        run_profanity=run_profanity,
-                        run_pii=run_pii,
-                        run_toxicity=False,
-                        failures=detector_failures,
-                        unavailable=detector_unavailable,
-                    )
-                    if idx in llm_spans_by_idx:
-                        span_dicts = span_dicts + llm_spans_by_idx[idx]
-                    pii_count += sum(1 for s in span_dicts if s.get("category") == "pii")
-                    seg.redactions = span_dicts or None  # type: ignore[assignment]
-                    seg.toxicity = tox_scores[idx]  # type: ignore[assignment]
+                pii_batch, run_pii = RedactionService._batch_pii(
+                    segments, det_cfg, run_pii, file_id, detector_failures, detector_unavailable
+                )
+
+                pii_count += RedactionService._apply_segment_spans(
+                    segments,
+                    det_cfg,
+                    tox_scores,
+                    pii_batch,
+                    llm_spans_by_idx,
+                    run_profanity=run_profanity,
+                    run_pii=run_pii,
+                    failures=detector_failures,
+                    unavailable=detector_unavailable,
+                )
             # An UNAVAILABLE detector is reported as skipped, not failed — FAILED is
             # not an inert label, and llm_guard turns it into a permanent refusal
             # (see DetectorUnavailableError). The maskers are unaffected either way:

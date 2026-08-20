@@ -317,6 +317,9 @@ services:
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
       # Per-container batch size override (default worker is typically a smaller GPU)
       - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
+      # Silero VAD silence gate. The engine has always read this, but no compose file passed
+      # it, so the documented knob could not actually be set on a deployment.
+      - VAD_MIN_SILENCE_MS=${VAD_MIN_SILENCE_MS:-2000}
       # Signal to celery.py preload_models() that this is a GPU worker.
       # Without this, ALL workers preload Whisper + PyAnnote onto GPU (~15GB wasted).
       - PRELOAD_GPU_MODELS=true
@@ -734,6 +737,9 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
       - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
+      # Silero VAD silence gate. The engine has always read this, but no compose file passed
+      # it, so the documented knob could not actually be set on a deployment.
+      - VAD_MIN_SILENCE_MS=${VAD_MIN_SILENCE_MS:-2000}
       - PRELOAD_GPU_MODELS=true
       # docker-compose.gpu-split.yml reserves the host GPU (GPU_TRANSCRIBE_DEVICE_ID)
       # for this worker; docker maps that reserved card to index 0 in the container,
@@ -789,6 +795,9 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
       - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
+      # Silero VAD silence gate. The engine has always read this, but no compose file passed
+      # it, so the documented knob could not actually be set on a deployment.
+      - VAD_MIN_SILENCE_MS=${VAD_MIN_SILENCE_MS:-2000}
       - PRELOAD_GPU_MODELS=true
       # docker-compose.gpu-split.yml reserves the host GPU (GPU_DIARIZE_DEVICE_ID)
       # for this worker; docker maps that reserved card to index 0 in the container,

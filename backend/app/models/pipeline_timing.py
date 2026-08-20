@@ -95,6 +95,12 @@ class FilePipelineTiming(Base):
     gpu_audio_load_start_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     gpu_audio_load_end_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     gpu_end_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Overlap markers: when diarization was handed to the sidecar and when it was collected.
+    # The gap between them against transcription's span is how much of diarization ran for free.
+    diarize_request_sent_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    diarize_joined_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # When the transcript became readable, ahead of completion — the perceived-latency saving.
+    transcript_ready_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     # --- Stage 13-15: CPU postprocess + completion ---
     postprocess_received_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

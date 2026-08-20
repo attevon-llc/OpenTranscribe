@@ -1,5 +1,6 @@
 import logging
 import uuid as uuid_module
+from datetime import UTC
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -379,3 +380,32 @@ def mark_overlapping_segments(
         f"({len(valid_region_indices)} overlap groups, {len(segments)} total segments)"
     )
     return segments
+
+
+def apply_sidecar_gender(db: Session, media_file_id: int, speaker_gender: dict | None) -> int:
+    """Persist per-speaker gender the diarization engine already worked out.
+
+    The sidecar classifies from the audio it decoded for diarization, so by the time the
+    speaker rows exist the verdicts are in hand. Writing them here means the enrichment task
+    finds the work done — its idempotency guard keys on ``attributes_predicted_at`` — and the
+    pipeline stops paying 87-90 s of CPU wav2vec2 per file.
+
+    Returns the number of speakers updated.
+    """
+    if not speaker_gender:
+        return 0
+
+    from datetime import datetime
+
+    now = datetime.now(UTC)
+    updated = 0
+    speakers = db.query(Speaker).filter(Speaker.media_file_id == media_file_id).all()
+    for speaker in speakers:
+        verdict = speaker_gender.get(speaker.name)
+        if not verdict:
+            continue
+        speaker.predicted_gender = verdict.get("label")
+        speaker.attribute_confidence = {"gender": round(float(verdict.get("confidence", 0.0)), 3)}
+        speaker.attributes_predicted_at = now
+        updated += 1
+    return updated

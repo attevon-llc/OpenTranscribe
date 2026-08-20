@@ -66,6 +66,16 @@ export function handleFileNotification(
   const fileId = ctx.getFileId();
   const { t } = ctx;
 
+  // The transcript is committed and readable before the job finishes, so show it now instead
+  // of at completion. Progress deliberately keeps running — speaker matching, indexing and
+  // enrichment still follow, and speaker labels attach in place via `speaker_updated` below.
+  if (latestNotification.type === 'transcript_ready') {
+    if (ctx.getFile()?.uuid) {
+      ctx.fetchTranscriptData();
+    }
+    return;
+  }
+
   // Handle transcription status updates
   if (latestNotification.type === 'transcription_status') {
     // Get status from notification (progressive notifications set it at root level)

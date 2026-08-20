@@ -147,8 +147,13 @@ RUN chmod +x /usr/local/bin/deno
 # Set LD_LIBRARY_PATH for cuDNN libraries from PyTorch package
 # This ensures PyAnnote and other tools can find cuDNN 9 libraries
 # Set cache directories to user home
+# PYTHONPATH: /app must be importable by any interpreter in this image, not just the
+# Celery CLI (which injects cwd at runtime, in-process). Subprocesses that exec a fresh
+# interpreter -- notably multiprocessing's forkserver -- inherit the environment but not
+# sys.path, and without this they fail with ModuleNotFoundError: No module named 'app'.
 ENV PATH=/home/appuser/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONWARNINGS=ignore::UserWarning:pyannote.audio.core.io \
     LD_LIBRARY_PATH=/home/appuser/.local/lib/python3.13/site-packages/nvidia/cudnn/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cuda_runtime/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cublas/lib \
@@ -159,6 +164,13 @@ ENV PATH=/home/appuser/.local/bin:$PATH \
 
 # Copy application code
 COPY --chown=appuser:appuser . .
+
+# Reserve the pipeline's shared-volume mount points. A named volume inherits the image
+# directory's ownership at creation, so without this it lands root-owned and the non-root
+# worker cannot write the stage-to-stage WAV handoff. Existing deployments predate this and
+# need scripts/fix-shared-volume-perms.sh once.
+RUN mkdir -p /scratch/opentranscribe /tmp/transcription && \
+    chown appuser:appuser /scratch/opentranscribe /tmp/transcription
 
 # Switch to non-root user
 USER appuser

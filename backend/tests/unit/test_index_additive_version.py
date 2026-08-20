@@ -132,6 +132,94 @@ def _helper(index_name):
 
 
 # --------------------------------------------------------------------------- #
+# Whole-module version (deployment-tiers plan): not just the two named additive
+# entry points above, but every function this module defines. Extends the two
+# targeted checks rather than duplicating them -- this is the closed-allowlist
+# form that would also catch a NEW function (topology, or anything else added to
+# this module later) reaching the destructive path by a route the two named
+# checks above never anticipated.
+# --------------------------------------------------------------------------- #
+
+
+def test_no_function_in_this_module_other_than_itself_calls_the_destructive_recreate():
+    """The two legitimate callers of ``recreate_index_for_dimension`` -- the model-switch
+    endpoint (``model_switch.py``) and the reindex-task dimension reconciliation
+    (``tasks/reindex_task.py``) -- both live OUTSIDE this module and import it lazily
+    rather than going through a local wrapper defined here. So within
+    ``indexing_service.py`` itself, the only function whose body may call
+    ``recreate_index_for_dimension`` is the destructive function's own name, appearing as
+    the AST node it defines (it does not call itself). Anything else reaching it --
+    whether from the additive machinery, the new env-tunable index topology, or a
+    function nobody has written yet -- is the exact hazard this whole file exists to
+    catch, generalized past the two functions the narrower tests above name explicitly.
+    """
+    tree = ast.parse(inspect.getsource(svc))
+    graph = _build_call_graph(tree)
+    offending = {
+        name
+        for name in graph
+        if name != "recreate_index_for_dimension"
+        and "recreate_index_for_dimension" in _reachable(graph, name)
+    }
+    assert not offending, (
+        f"{sorted(offending)} reach recreate_index_for_dimension (DELETES the index) from "
+        "inside indexing_service.py. The only legitimate callers are in OTHER modules "
+        "(model_switch.py, tasks/reindex_task.py) that import it explicitly for an "
+        "intentional embedding-dimension change -- nothing defined in this module should "
+        "route to it internally."
+    )
+
+
+def test_the_whole_module_guard_fires_on_a_deliberately_broken_sample():
+    """Must-fire control for the whole-module guard above: a NEW function (standing in
+    for, say, a future topology-apply helper) that reaches the destructive call must be
+    caught, exactly like the two narrower guards are proven to catch their own targets."""
+    broken_source = """
+def some_new_helper_nobody_reviewed():
+    _apply_topology(384)
+
+def _apply_topology(dimension):
+    recreate_index_for_dimension(dimension)
+
+def recreate_index_for_dimension(dimension):
+    pass
+"""
+    tree = ast.parse(broken_source)
+    graph = _build_call_graph(tree)
+    offending = {
+        name
+        for name in graph
+        if name != "recreate_index_for_dimension"
+        and "recreate_index_for_dimension" in _reachable(graph, name)
+    }
+    assert offending == {"some_new_helper_nobody_reviewed", "_apply_topology"}
+
+
+def test_the_whole_module_guard_stays_clean_on_a_function_with_no_destructive_call():
+    """Must-stay-clean sibling: a function that merely logs, or that IS
+    ``recreate_index_for_dimension`` itself, is not flagged."""
+    clean_source = """
+def some_new_helper_nobody_reviewed():
+    _apply_topology(384)
+
+def _apply_topology(dimension):
+    log_something(dimension)
+
+def recreate_index_for_dimension(dimension):
+    pass
+"""
+    tree = ast.parse(clean_source)
+    graph = _build_call_graph(tree)
+    offending = {
+        name
+        for name in graph
+        if name != "recreate_index_for_dimension"
+        and "recreate_index_for_dimension" in _reachable(graph, name)
+    }
+    assert not offending
+
+
+# --------------------------------------------------------------------------- #
 # The version split itself.
 # --------------------------------------------------------------------------- #
 

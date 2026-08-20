@@ -187,12 +187,21 @@ _PERMANENT_ERROR_TYPES = frozenset(
 )
 
 # Index config for transcript chunks
+#
+# number_of_shards / number_of_replicas are env-tunable (OPENSEARCH_CHUNKS_INDEX_SHARDS /
+# OPENSEARCH_CHUNKS_INDEX_REPLICAS) but ONLY take effect when the index is CREATED — OpenSearch
+# does not let an existing index change its shard count in place, and this module never
+# recreates the index to pick up a new value (that would mean deleting it; see
+# recreate_index_for_dimension's docstring for why that path is reserved for a dimension
+# change, and _apply_pending_additive_steps's for why the additive path never reaches it).
+# Defaults (1 shard, 0 replicas) are the shipped single-node topology and are pinned by
+# tests/unit/test_index_topology.py — do not change them here.
 TRANSCRIPT_CHUNKS_INDEX_BODY = {
     "settings": {
         "index": {
             "knn": True,
-            "number_of_shards": 1,
-            "number_of_replicas": 0,
+            "number_of_shards": settings.OPENSEARCH_CHUNKS_INDEX_SHARDS,
+            "number_of_replicas": settings.OPENSEARCH_CHUNKS_INDEX_REPLICAS,
             "sort.field": ["file_uuid", "chunk_index"],
             "sort.order": ["asc", "asc"],
         },

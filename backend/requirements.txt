@@ -314,6 +314,8 @@ lxml==6.1.1
 # drifted. A package that starts drifting later belongs here too; the check that
 # finds it is a `pip freeze` diff of a fresh venv against a fresh image.
 cuda-pathfinder==1.6.1     # via cuda-bindings
+botocore==1.43.75          # via boto3 — drifted 1.43.74 (venv) vs 1.43.75 (image), 2026-08-20
+docling-core==2.92.0       # via docling-slim — drifted 2.91.0 (venv) vs 2.92.0 (image), 2026-08-20
 docling-parse==7.14.0      # via docling (document parsing sidecar tier)
 httpcore2==2.12.0          # via httpx2
 httpx2==2.12.0             # via openai

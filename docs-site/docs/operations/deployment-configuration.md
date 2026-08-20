@@ -41,6 +41,7 @@ workers that silently re-download every file. See
 | **PKI / mTLS** | `./opentr.sh start prod --build --with-pki` | mTLS at `https://localhost:5182`. **Production mode only** (Vite can't do mTLS). |
 | **Offline / air-gapped** | See `scripts/install-offline-package.sh` | Pre-downloaded models, `HF_HUB_OFFLINE=1`, no network calls. |
 | **Benchmark** | `./opentr.sh bench …` | Isolated `otbench-*` stack for performance measurement. |
+| **AWS (managed OpenSearch + S3)** | `./opentr.sh start prod --build` with `.env` set to [the AWS profile](../configuration/environment-variables.md#the-aws-profile) | No dedicated overlay/flag — SigV4 auth, a managed embedding model, native S3, and (on a multi-node domain) `OPENSEARCH_CHUNKS_INDEX_REPLICAS>0` are all plain env vars the existing seams already branch on. |
 
 Flags combine where they make sense (e.g. `--gpu-scale --nas`,
 `--with-monitoring --with-watch`). Mixing dev and prod overlays requires explicit

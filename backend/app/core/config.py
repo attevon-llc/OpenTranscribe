@@ -2,6 +2,7 @@ import logging
 import os
 from pathlib import Path
 
+from pydantic import ValidationInfo
 from pydantic import field_validator
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
@@ -493,6 +494,34 @@ class Settings(BaseSettings):
 
     # Search & RAG settings
     OPENSEARCH_CHUNKS_INDEX: str = "transcript_chunks"
+    # Index topology, applied ONLY at index CREATION (deployment-tier plan, AWS profile).
+    # Defaults are the historical single-node values and MUST NOT change here — a changed
+    # default silently reshards every fresh install, and shards cannot be changed on a live
+    # index without a full reindex into a new one. Replicas > 0 need more than one data node
+    # to mean anything; on a single-node box (laptop/home-server) they leave every replica
+    # shard permanently UNASSIGNED and the index status yellow. See
+    # docs-site/docs/operations/deployment-configuration.md's AWS profile section.
+    OPENSEARCH_CHUNKS_INDEX_SHARDS: int = max(_int_env("OPENSEARCH_CHUNKS_INDEX_SHARDS", 1), 1)
+    OPENSEARCH_CHUNKS_INDEX_REPLICAS: int = max(_int_env("OPENSEARCH_CHUNKS_INDEX_REPLICAS", 0), 0)
+
+    @field_validator("OPENSEARCH_CHUNKS_INDEX_SHARDS", "OPENSEARCH_CHUNKS_INDEX_REPLICAS")
+    @classmethod
+    def _clamp_chunks_index_topology(cls, v: int, info: ValidationInfo) -> int:
+        """Floor each field again, AFTER pydantic-settings has resolved it.
+
+        The ``max(_int_env(...), N)`` in the field default above only runs once, at class
+        BODY execution time, to compute the field's *default* — but ``Settings`` is a
+        ``BaseSettings`` subclass, so pydantic-settings separately re-reads the matching env
+        var at every ``Settings()`` construction and casts it straight to ``int``, bypassing
+        that default (and its clamp) entirely whenever the var is actually set. A negative
+        ``OPENSEARCH_CHUNKS_INDEX_SHARDS`` env var reached ``settings.OPENSEARCH_CHUNKS_INDEX_
+        SHARDS`` unclamped until this validator was added — caught by
+        ``tests/unit/test_index_topology.py::test_negative_values_are_clamped_to_the_topology_floor``
+        failing against the ``max()``-only version of this field.
+        """
+        floor = 1 if info.field_name == "OPENSEARCH_CHUNKS_INDEX_SHARDS" else 0
+        return max(v, floor)
+
     OPENSEARCH_SEARCH_PIPELINE: str = "transcript-hybrid-search"
     SEARCH_CHUNK_TARGET_WORDS: int = _int_env("SEARCH_CHUNK_TARGET_WORDS", 200)
     SEARCH_CHUNK_OVERLAP_WORDS: int = _int_env("SEARCH_CHUNK_OVERLAP_WORDS", 40)

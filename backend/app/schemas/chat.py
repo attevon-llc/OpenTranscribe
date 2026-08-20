@@ -187,8 +187,10 @@ class Citation(BaseModel):
     ``"digest"`` (extractive prose spanning several turns — never a quote),
     ``"summary"`` (issue #464 — LLM-generated prose about the recording; a
     LABELLED INTERPRETATION, never a quote, and never attributed to a
-    speaker). A later lane is expected to add ``"document"`` and a
-    no-timestamp ``"recurrence"`` kind onto this same field.
+    speaker), ``"recurrence"`` (W2.5 — a group of items judged the same thing
+    recurring across MULTIPLE recordings; the UI seam is built ahead of the
+    emitter, same as ``"document"`` was). A later lane is expected to add
+    ``"document"`` onto this same field.
 
     ``snippet`` is stored/returned post-masking, matching what was sent to the LLM.
     """
@@ -198,13 +200,17 @@ class Citation(BaseModel):
     #: ``Literal``/enum on purpose: a new kind added by a later lane, in a file
     #: outside this one, must not need an edit here to stay valid.
     kind: str = "chunk"
+    #: The PRIMARY file — for ``"recurrence"``, the first entry of
+    #: :attr:`file_uuids` (never empty when that field is set), so a reader
+    #: that only knows the old single-file contract still gets a valid uuid
+    #: rather than an empty string.
     file_uuid: str
     title: str = ""
     chunk_index: int = 0
-    #: ``None`` for a kind with no natural single timestamp (a future
-    #: multi-file ``"recurrence"`` citation, chiefly) — the absence is a first-
-    #: class case here for the same reason the frontend ``ChatSource`` type
-    #: makes it optional, not a ``0`` sentinel a client would render as 0:00.
+    #: ``None`` for a kind with no natural single timestamp (``"summary"``, or
+    #: a multi-file ``"recurrence"`` citation) — the absence is a first-class
+    #: case here for the same reason the frontend ``ChatSource`` type makes it
+    #: optional, not a ``0`` sentinel a client would render as 0:00.
     start_time: float | None = 0.0
     end_time: float | None = None
     speaker: str | None = None
@@ -219,6 +225,12 @@ class Citation(BaseModel):
     section_path: str | None = None
     char_start: int | None = None
     char_end: int | None = None
+    #: W2.5, ``kind == "recurrence"`` ONLY. Every recording the recurring
+    #: group spans (``RecurrenceGroup.file_uuids``) — ``None`` for every other
+    #: kind. A recurrence group is not one person's words in one place, so it
+    #: cannot be represented by ``file_uuid`` alone the way a chunk/digest/
+    #: summary citation is; this is the field a later lane's emitter fills in.
+    file_uuids: list[str] | None = None
 
 
 class ChatMessageOut(BaseModel):
@@ -393,6 +405,7 @@ class ChatAdminSettings(BaseModel):
     map_tier_summaries: bool = False
     speaker_resolver_enabled: bool = False
     map_tier_speaker_summaries: bool = False
+    recurrence_enabled: bool = False
 
 
 class ChatAdminSettingsUpdate(BaseModel):
@@ -414,3 +427,4 @@ class ChatAdminSettingsUpdate(BaseModel):
     map_tier_summaries: bool | None = None
     speaker_resolver_enabled: bool | None = None
     map_tier_speaker_summaries: bool | None = None
+    recurrence_enabled: bool | None = None

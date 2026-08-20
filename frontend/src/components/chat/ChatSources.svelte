@@ -36,6 +36,20 @@
     return source.kind === 'summary';
   }
 
+  /**
+   * A `recurrence` citation (W2.5) names a GROUP of items recurring across
+   * multiple recordings — never one person's words, never a single moment,
+   * and not even a single file the way `summary` is. It gets its own badge
+   * and a "N recordings" count instead of a clock or a speaker name.
+   */
+  function isRecurrence(source: ChatSource): boolean {
+    return source.kind === 'recurrence';
+  }
+
+  function recurrenceFileCount(source: ChatSource): number {
+    return source.file_uuids && source.file_uuids.length > 0 ? source.file_uuids.length : 1;
+  }
+
   function toggle(): void {
     expanded = !expanded;
   }
@@ -76,13 +90,19 @@
               data-testid="chat-source-link"
               title={isSummary(source)
                 ? $t('chat.sources.openSummary')
-                : $t('chat.sources.openAt', { time: formatClock(source.start_time) })}
+                : isRecurrence(source)
+                  ? $t('chat.sources.openRecurrence')
+                  : $t('chat.sources.openAt', { time: formatClock(source.start_time) })}
             >
               <span class="source-index">[{source.id}]</span>
               <span class="source-body">
                 <span class="source-title">{source.title || $t('chat.sources.untitled')}</span>
                 <span class="source-meta">
-                  {#if isSummary(source)}
+                  {#if isRecurrence(source)}
+                    <span class="source-kind" data-testid="chat-source-recurrence">
+                      {$t('chat.sources.recurrenceBadge')}
+                    </span>
+                  {:else if isSummary(source)}
                     <span class="source-kind" data-testid="chat-source-summary">
                       {$t('chat.sources.aiSummaryBadge')}
                     </span>
@@ -93,7 +113,11 @@
                   {:else if source.speaker}
                     <span class="source-speaker">{source.speaker}</span>
                   {/if}
-                  {#if !isSummary(source)}
+                  {#if isRecurrence(source)}
+                    <span class="source-recurrence-count" data-testid="chat-source-recurrence-count">
+                      {$t('chat.sources.recurrenceCount', { count: recurrenceFileCount(source) })}
+                    </span>
+                  {:else if !isSummary(source)}
                     <span class="source-time">{formatClock(source.start_time)}</span>
                   {/if}
                 </span>
@@ -219,7 +243,8 @@
     color: var(--text-secondary);
   }
 
-  .source-time {
+  .source-time,
+  .source-recurrence-count {
     font-variant-numeric: tabular-nums;
   }
 

@@ -1,10 +1,20 @@
 <script lang="ts">
+  import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import { formatDate } from '$lib/utils/formatting';
   import { formatFileSize } from '$lib/utils/metadataMapper';
   import type { DocumentResponse } from '$lib/types/document';
 
   export let doc: DocumentResponse;
+
+  const dispatch = createEventDispatcher<{ retry: { uuid: string } }>();
+
+  function handleRetry(event: MouseEvent) {
+    // The card is an <a>; a click on the retry button must not also navigate.
+    event.preventDefault();
+    event.stopPropagation();
+    dispatch('retry', { uuid: doc.uuid });
+  }
 
   const EXT_ICON: Record<string, string> = {
     'application/pdf': '📄',
@@ -52,6 +62,9 @@
       <span class="card-error" title={doc.last_error_message}>
         {doc.last_error_message}
       </span>
+      <button type="button" class="card-retry" on:click={handleRetry}>
+        {$t('gallery.retry')}
+      </button>
     {/if}
     <span class="card-date">{formatDate(doc.created_at)}</span>
   </div>
@@ -147,5 +160,26 @@
   .card-date {
     font-size: 0.7rem;
     color: var(--text-secondary);
+  }
+
+  .card-retry {
+    align-self: flex-start;
+    margin-top: 0.125rem;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 6px;
+    cursor: pointer;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease;
+  }
+
+  .card-retry:hover {
+    background: rgba(239, 68, 68, 0.18);
+    border-color: rgba(239, 68, 68, 0.5);
   }
 </style>

@@ -76,14 +76,64 @@ def _load_document_for_indexing(document_id: int) -> dict[str, Any] | None:
         }
 
 
-def _index_document(document_id: int) -> dict[str, Any]:
+def _upsert_index_task_row(
+    *,
+    task_id: str | None,
+    user_id: int,
+    document_id: int,
+    status: str,
+    error_message: str | None = None,
+) -> None:
+    """Best-effort ``task`` row for ``documents.index`` (v399, #362 lane C4).
+
+    No-op without a real ``task_id`` — same reasoning as ``document_tasks.py``'s
+    ``_upsert_task_row``, which this is a smaller sibling of: indexing has no
+    meaningful intermediate progress (it is one bulk call), so this only ever writes
+    the initial ``in_progress`` row and the terminal ``completed``/``failed``/
+    ``skipped`` one, never a partial percentage.
+    """
+    if task_id is None:
+        return
+    from datetime import UTC as _UTC
+    from datetime import datetime as _datetime
+
+    from app.models.media import Task
+
+    with session_scope() as db:
+        row = db.query(Task).filter(Task.id == task_id).first()
+        if row is None:
+            row = Task(
+                id=task_id,
+                user_id=user_id,
+                document_id=document_id,
+                task_type="document_index",
+                status=status,
+            )
+            db.add(row)
+        else:
+            row.status = status
+        if error_message is not None:
+            row.error_message = error_message
+        if status in ("completed", "failed", "skipped"):
+            row.completed_at = _datetime.now(_UTC)
+        db.commit()
+
+
+def _index_document(document_id: int, *, task_id: str | None = None) -> dict[str, Any]:
     info = _load_document_for_indexing(document_id)
     if info is None:
         logger.error("document %s not found for indexing", document_id)
         return {"status": "error", "reason": "not_found"}
 
+    _upsert_index_task_row(
+        task_id=task_id, user_id=info["user_id"], document_id=document_id, status="in_progress"
+    )
+
     if not info["chunks"]:
         logger.warning("document %s has no chunks to index", document_id)
+        _upsert_index_task_row(
+            task_id=task_id, user_id=info["user_id"], document_id=document_id, status="skipped"
+        )
         return {"status": "skipped", "reason": "no_chunks"}
 
     from app.services.search.indexing_service import TranscriptIndexingService
@@ -104,8 +154,18 @@ def _index_document(document_id: int) -> dict[str, Any]:
     if isinstance(result, int):
         # 0 means OpenSearch was unavailable or the bulk load raised — see
         # index_document_chunks's own logging for which.
+        _upsert_index_task_row(
+            task_id=task_id,
+            user_id=info["user_id"],
+            document_id=document_id,
+            status="failed",
+            error_message="indexing_unavailable",
+        )
         return {"status": "error", "reason": "indexing_unavailable", "document_id": document_id}
 
+    _upsert_index_task_row(
+        task_id=task_id, user_id=info["user_id"], document_id=document_id, status="completed"
+    )
     return {"status": "success", "document_id": document_id, **result}
 
 
@@ -127,7 +187,7 @@ def index_document_task(self, document_id: int) -> dict[str, Any]:
         A status dict. ``status: "skipped"`` (no chunks) is a real outcome, not a task
         failure — a document that parsed to nothing indexable is not an error.
     """
-    return _index_document(document_id)
+    return _index_document(document_id, task_id=self.request.id)
 
 
 def dispatch_document_index(document_id: int) -> None:

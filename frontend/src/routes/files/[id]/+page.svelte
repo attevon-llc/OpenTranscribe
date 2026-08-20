@@ -843,6 +843,24 @@
     return { isValid: true };
   }
 
+  /**
+   * Whether this speaker's display name differs from the last-saved baseline —
+   * including a change TO empty, which is the supported way to clear a label back
+   * to the raw diarizer name (`PUT /speakers/{uuid}` accepts `display_name: ""`;
+   * `canonical_speaker_label` on the backend falls back to the raw `SPEAKER_XX`
+   * name whenever `display_name` is empty/unset). Filtering on the CURRENT
+   * value's shape — empty or `SPEAKER_`-prefixed — instead of on whether it
+   * actually changed was the bug: it silently dropped exactly the "clear a
+   * label" case from the save payload, while the bulk save still reported
+   * "saved successfully" for it.
+   */
+  function speakerHasUnsavedChange(speaker: SpeakerItem): boolean {
+    if (!speaker.uuid) return false;
+    const originalName = originalSpeakerNames.get(speaker.uuid) ?? '';
+    const currentName = (speaker.display_name ?? '').trim();
+    return originalName !== currentName;
+  }
+
   // Handle speaker name input changes (for reactivity)
   function handleSpeakerNameChanged(event: CustomEvent) {
     // Trigger reactivity by reassigning the speakerList array
@@ -1360,17 +1378,23 @@
     savingSpeakers = true;
 
     try {
-      // Validate all speaker names first
-      const speakersToUpdate = speakerList.filter(speaker =>
-        speaker.uuid &&
-        speaker.display_name &&
-        speaker.display_name.trim() !== "" &&
-        !speaker.display_name.startsWith('SPEAKER_')
-      );
+      // Speakers whose display name actually changed since the last load/save —
+      // including a change to empty (see speakerHasUnsavedChange). The old filter
+      // dropped both empty and SPEAKER_-prefixed CURRENT values regardless of
+      // whether they had changed, so "clear a label" issued no PUT at all.
+      const speakersToUpdate = speakerList.filter(speakerHasUnsavedChange);
 
-      // Validate each speaker name
+      if (speakersToUpdate.length === 0) {
+        savingSpeakers = false;
+        return;
+      }
+
+      // Validate non-empty names only — an empty name is a deliberate clear
+      // (see speakerHasUnsavedChange), not a validation failure.
       for (const speaker of speakersToUpdate) {
-        const validation = validateSpeakerName(speaker.display_name ?? '', speaker.uuid);
+        const trimmed = (speaker.display_name ?? '').trim();
+        if (trimmed === '') continue;
+        const validation = validateSpeakerName(trimmed, speaker.uuid);
         if (!validation.isValid) {
           toastStore.error(`${speaker.name}: ${validation.error}`);
           savingSpeakers = false;
@@ -1378,9 +1402,13 @@
         }
       }
 
-      // Check for speakers that need profile confirmation (skip when diarization disabled)
+      // Check for speakers that need profile confirmation (skip when diarization
+      // disabled, and skip a clear — there is no new name to reconcile against
+      // the linked profile).
       const speakersNeedingConfirmation = diarizationDisabled ? [] : speakersToUpdate.filter(speaker =>
-        speaker.profile && speaker.profile.name !== (speaker.display_name ?? '').trim()
+        speaker.profile &&
+        (speaker.display_name ?? '').trim() !== '' &&
+        speaker.profile.name !== (speaker.display_name ?? '').trim()
       );
 
       if (speakersNeedingConfirmation.length > 0) {
@@ -1408,12 +1436,7 @@
   // Perform bulk save with confirmation decisions
   async function performBulkSaveWithDecisions() {
     try {
-      const speakersToUpdate = speakerList.filter(speaker =>
-        speaker.uuid &&
-        speaker.display_name &&
-        speaker.display_name.trim() !== "" &&
-        !speaker.display_name.startsWith('SPEAKER_')
-      );
+      const speakersToUpdate = speakerList.filter(speakerHasUnsavedChange);
 
       await performBulkSave(speakersToUpdate, bulkSaveDecisions);
 
@@ -1491,6 +1514,7 @@
     );
 
     const failed = speakersToUpdate.filter((_, i) => results[i].status === 'rejected');
+    const failedUuids = new Set(failed.map(speaker => speaker.uuid));
     results.forEach((result, i) => {
       if (result.status === 'rejected') {
         console.error(`Failed to save speaker ${speakersToUpdate[i].uuid}:`, result.reason);
@@ -1499,7 +1523,6 @@
 
     // Restore the names that did not save, so nothing renders as though it persisted.
     if (failed.length > 0) {
-      const failedUuids = new Set(failed.map(speaker => speaker.uuid));
       speakerList = speakerList.map(speaker =>
         failedUuids.has(speaker.uuid)
           ? { ...speaker, display_name: originalSpeakerNames.get(speaker.uuid) ?? speaker.display_name }
@@ -1512,7 +1535,9 @@
     isEditingSpeakers = false;
     if (failed.length > 0) {
       toastStore.error($t('speakerProfile.bulkSavePartialFailure', { count: failed.length }));
-    } else {
+    } else if (speakersToUpdate.length > 0) {
+      // Only announce success when something was actually attempted and persisted.
+      // With an empty `speakersToUpdate` (nothing changed) this used to still fire.
       toastStore.success($t('speakerProfile.savedSuccess'));
     }
 
@@ -1522,20 +1547,22 @@
     );
 
     // STEP 5: Apply the saved names everywhere the page renders them (instant).
-    // Blank and still-unnamed speakers are skipped deliberately — clearing a label back to
-    // the raw SPEAKER_XX does not rewrite the segments.
-    const renames = speakerList
-      .filter((speaker: SpeakerItem) =>
-        speaker.uuid &&
-        speaker.display_name &&
-        speaker.display_name.trim() !== '' &&
-        !speaker.display_name.startsWith('SPEAKER_')
-      )
-      .map((speaker: SpeakerItem) => ({
-        uuid: speaker.uuid,
-        label: speaker.name,
-        displayName: (speaker.display_name ?? '').trim()
-      }));
+    // Every speaker in `speakersToUpdate` that did NOT fail was just persisted —
+    // including a clear (an empty `display_name`). `renameSpeakersInFile` /
+    // `transcriptStore.updateSpeakerName` write whatever string they're given
+    // VERBATIM into `resolved_speaker_name`, and an empty one renders downstream as
+    // "Unknown Speaker" rather than reverting to the raw label — so a cleared
+    // speaker's raw `speaker.name` (SPEAKER_XX) is what gets applied here, never ''.
+    const renames = speakersToUpdate
+      .filter((speaker: SpeakerItem) => speaker.uuid && !failedUuids.has(speaker.uuid))
+      .map((speaker: SpeakerItem) => {
+        const trimmed = (speaker.display_name ?? '').trim();
+        return {
+          uuid: speaker.uuid,
+          label: speaker.name,
+          displayName: trimmed === '' ? (speaker.name ?? '') : trimmed
+        };
+      });
 
     renames.forEach(rename => transcriptStore.updateSpeakerName(rename.uuid, rename.displayName));
     file = renameSpeakersInFile(file, renames);

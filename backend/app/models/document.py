@@ -46,6 +46,7 @@ from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
     from app.models.file_facts import FileFacts
+    from app.models.media import Task
     from app.models.user import User
 
 
@@ -145,6 +146,31 @@ class Document(Base):
     )
     parsed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # --- Abuse / DMCA / safe-harbor takedown (v399) — same shape as MediaFile's, so
+    # ``services/takedown_service.py`` extends its existing enforcement instead of
+    # growing a parallel implementation. Independent of ``status``: a COMPLETED
+    # document can be quarantined and later released back to exactly its prior state.
+    # ``quarantined_by`` is ON DELETE SET NULL from day one (media_file needed a
+    # separate v387 repair to get there) — see two FKs into "user" note below.
+    is_quarantined: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false", index=True
+    )
+    quarantine_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quarantined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: FK is named to match the migration's explicit CONSTRAINT — same reasoning as
+    #: ``user_id`` above. Two FKs into "user" (``user_id`` + ``quarantined_by``) means
+    #: any *relationship* built on either needs an explicit ``foreign_keys=``; only
+    #: ``user_id`` has one because ``quarantined_by`` has no relationship, only a column.
+    quarantined_by: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("user.id", ondelete="SET NULL", name="document_quarantined_by_fkey"),
+        nullable=True,
+    )
+    pre_quarantine_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    legal_hold: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
     user: Mapped[User] = relationship("User", foreign_keys=[user_id])
     chunks: Mapped[list[DocumentChunk]] = relationship(
         "DocumentChunk",
@@ -163,6 +189,16 @@ class Document(Base):
         uselist=False,
         cascade="all, delete-orphan",
         passive_deletes=True,
+    )
+    #: v399 (#362 lane C3/C4) — the parse/index ``Task`` rows this document's pipeline
+    #: writes (``app/tasks/document_tasks.py``, ``document_indexing_task.py``). ``Task``
+    #: mirrors ``MediaFile.tasks``'s shape exactly: ``task.document_id`` is a plain NO
+    #: ACTION FK (a task row is cheap history, not worth a DB-level decision), so this
+    #: ORM ``delete-orphan`` relationship is what actually sweeps it on an instance
+    #: delete — NOT ``passive_deletes`` here, unlike ``facts_row``, because there is no
+    #: database-level CASCADE to defer to.
+    tasks: Mapped[list[Task]] = relationship(
+        "Task", back_populates="document", cascade="all, delete-orphan"
     )
 
     __table_args__ = (

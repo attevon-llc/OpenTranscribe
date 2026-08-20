@@ -61,7 +61,18 @@ INTENT_LOOKUP = "lookup"
 INTENT_TEMPORAL = "temporal"
 INTENT_SUMMARIZE = "summarize"
 INTENT_AGGREGATE = "aggregate"
-INTENTS: tuple[str, ...] = (INTENT_LOOKUP, INTENT_TEMPORAL, INTENT_SUMMARIZE, INTENT_AGGREGATE)
+#: W2.5. "What keeps coming up across our meetings" — most specific of the
+#: five, and flag-gated end to end (``chat.recurrence_enabled``): with the
+#: flag off, :func:`classify` never tests the recurrence lexicon at all, so
+#: this label is never produced and every existing route is byte-identical.
+INTENT_RECURRENCE = "recurrence"
+INTENTS: tuple[str, ...] = (
+    INTENT_LOOKUP,
+    INTENT_TEMPORAL,
+    INTENT_SUMMARIZE,
+    INTENT_AGGREGATE,
+    INTENT_RECURRENCE,
+)
 
 _SPECIFICITY: dict[str, int] = {name: rank for rank, name in enumerate(INTENTS)}
 
@@ -71,12 +82,18 @@ _SPECIFICITY: dict[str, int] = {name: rank for rank, name in enumerate(INTENTS)}
 TIER_CHUNK = "chunk"
 TIER_DIGEST = "digest"
 TIER_AGGREGATE = "aggregate"
+#: W2.5. The scope-wide, no-ranking recurrence detector
+#: (``aggregation_service.answer_recurrence``) — reads ``summary_data`` and
+#: ``file_facts.keyphrases`` across a bounded scope, the same "bounded scope,
+#: Postgres, no ranking" shape ``TIER_AGGREGATE`` already uses.
+TIER_RECURRENCE = "recurrence"
 
 TIERS_BY_INTENT: dict[str, tuple[str, ...]] = {
     INTENT_LOOKUP: (TIER_CHUNK,),
     INTENT_TEMPORAL: (TIER_CHUNK,),
     INTENT_SUMMARIZE: (TIER_DIGEST, TIER_CHUNK),
     INTENT_AGGREGATE: (TIER_AGGREGATE, TIER_CHUNK),
+    INTENT_RECURRENCE: (TIER_RECURRENCE, TIER_CHUNK),
 }
 
 #: Nouns that mean "a thing in this corpus". An aggregate head alone is not
@@ -190,6 +207,37 @@ _SUMMARIZE_WEAK: tuple[tuple[str, str], ...] = (
 #: transcript they are far more often reported speech than a filter — "why were
 #: the thanks expressed to the House of Commons today" is a lookup — and they
 #: were the only temporal false positive in the first run.
+#: W2.5. STRONG markers only, deliberately — recurrence changes the retrieval
+#: shape entirely (a bounded, no-ranking, cross-file detector rather than a
+#: chunk search), so a weak/ambiguous marker misrouting a lookup here is a
+#: worse failure than the ``_SUMMARIZE_WEAK`` case, which still gets the
+#: chunk tier. Every pattern here names recurrence EXPLICITLY: "keeps coming
+#: up", "recurring", "a pattern/trend across meetings" — never a bare
+#: "again" or "repeat", which are common enough in ordinary transcript
+#: questions ("can you repeat that") to be a false-positive magnet.
+_RECURRENCE_STRONG: tuple[tuple[str, str], ...] = (
+    ("recurring", r"\brecurr(?:ing|ed|ence|ent)\b"),
+    (
+        "keeps-coming-up",
+        r"\bkeeps? (?:coming up|showing up|being (?:mentioned|brought up|raised))\b",
+    ),
+    (
+        "comes-up-repeatedly",
+        r"\bcomes? up (?:repeatedly|again and again|over and over|"
+        r"(?:in|across) multiple (?:meetings|recordings|calls|sessions))\b",
+    ),
+    ("common-theme", r"\b(?:common|recurring) (?:theme|thread|pattern)s?\b"),
+    (
+        "pattern-across",
+        r"\b(?:pattern|trend)s? across (?:meetings|recordings|calls|sessions|conversations)\b",
+    ),
+    (
+        "repeated-items",
+        r"\brepeated (?:action items?|topics?|themes?|issues?|decisions?|requests?)\b",
+    ),
+    ("same-issue-again", r"\bsame (?:issue|topic|problem|question) (?:again|every time)\b"),
+)
+
 _TEMPORAL_MARKERS: tuple[tuple[str, str], ...] = (
     ("when-did", r"\bwhen (?:did|was|were|will|has|have)\b"),
     ("since", r"\bsince\b"),
@@ -257,6 +305,7 @@ _COMPILED: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
     "summarize_weak": tuple((n, re.compile(p, re.IGNORECASE)) for n, p in _SUMMARIZE_WEAK),
     "discourse_noun": ((("discourse-noun", re.compile(rf"\b{_DISCOURSE_NOUN}\b", re.I))),),
     "temporal": tuple((n, re.compile(p, re.IGNORECASE)) for n, p in _TEMPORAL_MARKERS),
+    "recurrence": tuple((n, re.compile(p, re.IGNORECASE)) for n, p in _RECURRENCE_STRONG),
 }
 
 
@@ -327,6 +376,17 @@ class Route:
     @property
     def wants_digest(self) -> bool:
         return TIER_DIGEST in self.tiers
+
+    @property
+    def wants_recurrence(self) -> bool:
+        """W2.5. Whether this turn asked for the cross-meeting recurrence block.
+
+        Derived from ``intent`` alone, exactly like :attr:`wants_digest` — the
+        flag gate lives upstream, in :func:`route` (which never produces
+        ``INTENT_RECURRENCE`` when ``chat.recurrence_enabled`` is off), so this
+        property does not need its own flag check to stay byte-identical.
+        """
+        return self.intent == INTENT_RECURRENCE
 
     @property
     def wants_aggregate(self) -> bool:
@@ -419,19 +479,30 @@ def extract_temporal(text: str) -> TemporalHint | None:
     return None
 
 
-def classify(text: str) -> tuple[str, tuple[str, ...]]:
+def classify(text: str, *, recurrence_enabled: bool = False) -> tuple[str, tuple[str, ...]]:
     """Label one query string from the lexicon alone.
 
-    Precedence is ``aggregate`` > ``summarize`` > ``temporal`` > ``lookup``, and
-    it is not arbitrary. An aggregation with a date ("how many meetings in March
-    discussed X") is an aggregation whose filter happens to be a date — the hint
-    rides along on :class:`Route` — whereas labelling it ``temporal`` would send
-    a counting question to a ranking tier that cannot count. Summarize outranks
-    temporal for the same reason: "recap last month's calls" is a summary over a
-    date range, not a date question.
+    Precedence is ``recurrence`` > ``aggregate`` > ``summarize`` > ``temporal`` >
+    ``lookup``, and it is not arbitrary. Recurrence outranks aggregate because
+    its markers are the most specific in the lexicon (see
+    ``_RECURRENCE_STRONG``'s docstring) and a recurrence question phrased as a
+    count ("how many times has budget come up across our meetings") is still
+    fundamentally about the cross-file pattern, not a single number. An
+    aggregation with a date ("how many meetings in March discussed X") is an
+    aggregation whose filter happens to be a date — the hint rides along on
+    :class:`Route` — whereas labelling it ``temporal`` would send a counting
+    question to a ranking tier that cannot count. Summarize outranks temporal
+    for the same reason: "recap last month's calls" is a summary over a date
+    range, not a date question.
 
     Args:
         text: The question.
+        recurrence_enabled: ``chat.recurrence_enabled``. When ``False`` — the
+            default — the recurrence lexicon is never tested at all, so this
+            function cannot return ``INTENT_RECURRENCE`` and every other
+            precedence decision is exactly what it was before this label
+            existed. This is what makes the flag gate the PATTERNS, not just
+            the shape built from them.
 
     Returns:
         ``(intent, signals)`` — the label and the pattern names that produced it.
@@ -440,6 +511,11 @@ def classify(text: str) -> tuple[str, tuple[str, ...]]:
     clean = " ".join(str(text or "").split())
     if not clean:
         return INTENT_LOOKUP, ()
+
+    if recurrence_enabled:
+        recurrence = _fired(clean, "recurrence")
+        if recurrence:
+            return INTENT_RECURRENCE, recurrence
 
     standalone = _fired(clean, "aggregate_standalone")
     if standalone:
@@ -523,6 +599,7 @@ def route(
     llm_intent: str | None = None,
     speakers: list[str] | None = None,
     speaker_focus: bool = False,
+    recurrence_enabled: bool = False,
 ) -> Route:
     """Decide the tiers for one turn.
 
@@ -547,20 +624,32 @@ def route(
             unchanged — this function does not derive it, only records it,
             since resolving a mention needs the roster (Postgres) and this
             module loads nothing and calls nothing.
+        recurrence_enabled: W2.5. ``chat.recurrence_enabled``. Threaded into
+            every :func:`classify` call AND into the LLM-tiebreak branch below
+            — both are how a question could reach ``INTENT_RECURRENCE``, and
+            flag-off must close both, not just the lexicon, or a rewrite's
+            free-text ``INTENT: recurrence`` line could produce the label with
+            the flag off and the "gates the patterns AND the shape" contract
+            would be false for that one path.
 
     Returns:
         A :class:`Route`. Always includes :data:`TIER_CHUNK`.
     """
     original = " ".join(str(question or "").split())
-    intent, signals = classify(original)
+    intent, signals = classify(original, recurrence_enabled=recurrence_enabled)
     source = "rules" if signals else "default"
 
     if rewritten and rewritten.strip() and rewritten.strip() != original:
-        alt_intent, alt_signals = classify(rewritten)
+        alt_intent, alt_signals = classify(rewritten, recurrence_enabled=recurrence_enabled)
         if _SPECIFICITY[alt_intent] > _SPECIFICITY[intent]:
             intent, signals, source = alt_intent, alt_signals, "rules:rewritten"
 
-    if not signals and llm_intent in _SPECIFICITY and llm_intent != INTENT_LOOKUP:
+    if (
+        not signals
+        and llm_intent in _SPECIFICITY
+        and llm_intent != INTENT_LOOKUP
+        and (llm_intent != INTENT_RECURRENCE or recurrence_enabled)
+    ):
         intent, signals, source = llm_intent, ("llm-intent-line",), "llm"
 
     temporal = extract_temporal(original)

@@ -15,9 +15,23 @@ is untouched by anything in this module. Ambiguity resolves to no filter at
 all — the caller surfaces ``ChatWarningCode.AMBIGUOUS_SPEAKER`` with the
 candidate names instead of guessing.
 
-**English-first.** Candidate extraction leans on Latin-script capitalization
-conventions; a later, script-aware pass is tracked separately (see the RAG
-multilingual notes in ``backend/app/services/chat/CLAUDE.md``).
+**Script-aware, not English-only.** Candidate extraction has two tracks. Latin
+capitalization conventions (``extract_candidates``) still drive the original
+track. A second track (``extract_script_aware_candidates``) covers scripts
+where capitalization carries no signal at all: scriptio-continua scripts
+(CJK ideographs, kana, Thai/Lao/Myanmar/Khmer — no word boundaries, so ``\\b``
+never matches inside them) extract as maximal same-script RUNS instead of
+words, and spaced-but-caseless scripts (Hangul, Arabic, Hebrew, Devanagari)
+extract as ordinary whitespace tokens with no common-word/sentence-initial
+filter, because that filter exists to use a capitalization signal these
+scripts do not have. :func:`match_candidate` carries the matching side: a
+grapheme-level prefix rung for scriptio-continua names, a suffix-tolerant
+prefix rung for Korean (particles attach to names), and a fuzzy-match floor
+that scales with name length rather than one flat constant — the flat Latin
+floor never lets a plausible one-character typo in a 2-3 character name
+through. What no track adds is a CJK/Thai *segmenter* — deliberately out of
+scope (no new dependency); a scriptio-continua candidate is a whole run, and
+recovering the name from it is the prefix rung's job, not the extractor's.
 """
 
 from __future__ import annotations
@@ -37,6 +51,7 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
 from app.models.media import Speaker
+from app.services.search.chunking_service import _NO_SPACE_CHAR_RE
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
 from app.utils.speaker_labels import canonical_speaker_label
 
@@ -68,6 +83,134 @@ MAX_RESOLUTION_ITEMS = 10
 #: that a possible false positive here is a better trade than losing every
 #: legitimate typo below it).
 FUZZY_MATCH_THRESHOLD = 0.85
+
+#: A typo is a small EDIT — a substitution, or an insertion/deletion of a
+#: diacritic or doubled letter — not a truncation or extension by several
+#: characters; that shape (a name plus unrelated trailing text) belongs to
+#: the dedicated prefix rungs, which bound it explicitly (unbounded but
+#: ANCHORED-or-substring for scriptio continua, capped by
+#: :data:`_KOREAN_PARTICLE_MAX_CHARS` for Korean). Without this cap, a short
+#: name's necessarily low :func:`_fuzzy_threshold` floor also accepted
+#: candidates the prefix rungs deliberately declined — measured: "다나였습니다"
+#: (Dana + a 4-syllable copula the Korean rung's particle cap correctly
+#: rejects) still scored 0.5 against "다나" by the fuzzy formula alone,
+#: clearing the 0.45 floor a genuine short typo needs. ``2`` does not affect
+#: any existing Latin case: "Alicce"/"Alice" and "Ann"/"Anna" both differ by
+#: exactly 1 character.
+_FUZZY_MAX_LENGTH_DELTA = 2
+
+# ---------------------------------------------------------------------------
+# Script classification — drives both extraction and matching below.
+# ---------------------------------------------------------------------------
+
+#: Hangul syllable block. Korean is written WITH spaces (unlike the scripts in
+#: ``_NO_SPACE_CHAR_RE``), but has no case, so it needs its own extraction path
+#: (ordinary whitespace tokens) and its own matching rung (particles attach to
+#: names, so a token is often the name PLUS a trailing grammatical particle).
+_HANGUL_RE = re.compile("[가-힣]")
+
+#: Scripts that are written WITH spaces but carry no case distinction at all —
+#: Arabic, Hebrew, Devanagari. These tokenize like Latin text but cannot use
+#: the capitalization-based candidate filter, so every token becomes a
+#: candidate and the matching ladder's ambiguity rule (a tie declines) is what
+#: guards against a false positive, in place of that filter.
+_CASELESS_SPACED_RE = re.compile(
+    "[֐-׿"  # Hebrew
+    "؀-ۿ"  # Arabic
+    "ݐ-ݿ"  # Arabic supplement
+    "ऀ-ॿ"  # Devanagari
+    "]"
+)
+
+#: One or more consecutive scriptio-continua characters — derived from
+#: ``_NO_SPACE_CHAR_RE`` (imported, not re-derived) by repeating its pattern.
+#: This is the closest analogue to a "word" these scripts have without a
+#: segmenter: a run typically contains a name PLUS trailing text with no
+#: boundary between them, which is exactly what the grapheme-prefix rung in
+#: :func:`match_candidate` is for.
+_NO_SPACE_RUN_RE = re.compile(_NO_SPACE_CHAR_RE.pattern + "+")
+
+#: A run of Unicode letters, for tokenizing spaced scripts (Korean, Arabic,
+#: Hebrew, Devanagari) without a language-specific tokenizer. Matches Latin
+#: text too; callers filter to the scripts they care about so this pass never
+#: reprocesses what :func:`extract_candidates` already covers.
+#:
+#: ``[^\W\d_]`` alone (plain "word characters") is NOT enough: Devanagari,
+#: Hebrew and Arabic spell a syllable as a base consonant plus a COMBINING
+#: mark (a matra/vowel sign, Unicode category Mn) that ``\w`` does not treat
+#: as a word character. Measured before this union: "दाना" ("Dana") split
+#: into two single-consonant fragments ("द", "न") with the combining vowel
+#: signs silently dropped as boundaries — every Devanagari/Hebrew/Arabic
+#: candidate came out shredded to isolated consonants. The alternation
+#: below re-derives the caseless-spaced ranges from :data:`_CASELESS_SPACED_RE`
+#: (not a second hand-written class) so a combining mark in THOSE scripts
+#: stays attached to its base letter.
+_TOKEN_RE = re.compile(r"(?:[^\W\d_]|[" + _CASELESS_SPACED_RE.pattern[1:-1] + r"])+", re.UNICODE)
+
+#: Korean particles (조사) are almost always one or two syllable blocks —
+#: 이/가/은/는/을/를/의/와/과/도/만 (1), 에서/으로/한테/에게 (2). A token that
+#: extends a roster name by more than this is more likely a different word
+#: entirely than a name plus a longer, rarer particle.
+_KOREAN_PARTICLE_MAX_CHARS = 2
+
+
+def _entry_script(name: str) -> str:
+    """Classify a roster entry's script for matching purposes.
+
+    Checked in this order because the ranges are disjoint by construction
+    (no character in ``_NO_SPACE_CHAR_RE`` is also Hangul or in the
+    caseless-spaced set), so order does not affect correctness — it is
+    written narrowest-first only for readability.
+    """
+    norm = _normalize(name)
+    if _NO_SPACE_CHAR_RE.search(norm):
+        return "no_space"
+    if _HANGUL_RE.search(norm):
+        return "korean"
+    if _CASELESS_SPACED_RE.search(norm):
+        return "caseless_spaced"
+    return "cased"
+
+
+def _fuzzy_threshold(entry_name_norm: str, script: str) -> float | None:
+    """The fuzzy-match floor for one roster entry, or ``None`` to skip fuzzy entirely.
+
+    ``difflib.SequenceMatcher.ratio()`` is edit-distance-shaped: a single
+    one-character substitution in a name of normalized length ``n`` scores
+    ``(n-1)/n`` — measured 0.500 for a 2-character CJK/Japanese/Korean/Thai
+    name, 0.667 for 3, 0.750-0.857 for a 4-character Arabic/Devanagari name.
+    :data:`FUZZY_MATCH_THRESHOLD` (0.85) was calibrated against 4-8 character
+    Western given names and refuses every one of those outright — a real typo
+    on a short name never reaches it, so the fuzzy rung was silently a no-op
+    for these scripts.
+
+    The floor here is the computed single-substitution ratio minus a small
+    margin (0.05), floored at 0.35 and capped at the Latin constant so no
+    script gets a MORE permissive floor than English. A lower floor for a
+    short name is safe, not merely convenient: the ladder declines on any
+    TIE rather than guessing (the module's existing rule), so a coincidental
+    match against an unrelated short name costs a decline, never a wrong
+    match, unless it happens to be the unique closest entry — the same
+    residual risk the flat 0.85 constant already accepts for "Ann"/"Anna".
+    Names of normalized length 0-1 skip fuzzy matching altogether: a single
+    character's ratio against anything is either 1.0 (already caught by the
+    exact rung) or 0.0, so there is nothing a threshold could usefully gate.
+
+    Args:
+        entry_name_norm: The roster entry's name, already NFKC+casefolded.
+        script: One of ``_entry_script``'s return values.
+
+    Returns:
+        The ratio floor to require, or ``None`` when fuzzy matching this
+        entry is not meaningful.
+    """
+    if script == "cased":
+        return FUZZY_MATCH_THRESHOLD
+    n = len(entry_name_norm)
+    if n <= 1:
+        return None
+    computed = (n - 1) / n - 0.05
+    return max(0.35, min(computed, FUZZY_MATCH_THRESHOLD))
 
 
 @dataclass(frozen=True)
@@ -362,6 +505,55 @@ def extract_candidates(text: str) -> list[str]:
     return candidates
 
 
+def _no_space_runs(text: str) -> list[str]:
+    """Maximal runs of scriptio-continua characters in *text*.
+
+    Stands in for word-boundary extraction, which these scripts do not have
+    (``\\b`` never matches inside a run of them). A run is typically the
+    closest thing to a "word" available without a segmenter — often longer
+    than the name it contains, since nothing marks where the name ends and
+    the next word begins. :func:`match_candidate`'s grapheme-prefix rung is
+    what recovers the name from a run like "达娜说了什么" ("what did Dana say").
+    """
+    return [m.group(0) for m in _NO_SPACE_RUN_RE.finditer(text)]
+
+
+def extract_script_aware_candidates(text: str) -> list[str]:
+    """Non-Latin candidate phrases that :func:`extract_candidates` cannot see at all.
+
+    ``extract_candidates``'s ``_WORD_RE`` only matches ``[A-Za-z]``, so a
+    Chinese, Japanese, Korean, Thai, Arabic or Hindi name in the question was
+    previously never even attempted against the roster — independent of
+    anything the matching ladder does, because no candidate reached it.
+
+    Two extraction strategies, chosen by script:
+
+    - **Scriptio continua** (CJK ideographs, kana, Thai/Lao/Myanmar/Khmer):
+      candidates are maximal runs (:func:`_no_space_runs`), broken at the
+      first character outside that script.
+    - **Spaced, caseless scripts** (Hangul, Arabic, Hebrew, Devanagari): the
+      text already has whitespace-delimited tokens, so ordinary tokenization
+      applies. Unlike the Latin pass there is no common-word/sentence-initial
+      filter here — that filter exists specifically to use a capitalization
+      signal these scripts do not carry. Every token becomes a candidate, and
+      the matching ladder's ambiguity rule (a tie declines rather than
+      guesses) is what stands in for it.
+
+    Args:
+        text: The user's question, as typed.
+
+    Returns:
+        Candidate phrases, duplicates included — the caller
+        (:func:`resolve_speaker_mentions`) dedupes by normalized form, the
+        same as :func:`extract_candidates`'s output.
+    """
+    candidates: list[str] = list(_no_space_runs(text))
+    for token in _TOKEN_RE.findall(text):
+        if _HANGUL_RE.search(token) or _CASELESS_SPACED_RE.search(token):
+            candidates.append(token)
+    return candidates
+
+
 # ---------------------------------------------------------------------------
 # Matching ladder: NFKC + casefold, then exact -> unique token-subset -> fuzzy.
 # ---------------------------------------------------------------------------
@@ -383,12 +575,80 @@ class _MatchOutcome:
     reason: str
 
 
+def _prefix_rung(
+    norm_candidate: str,
+    roster: Roster,
+    script: str,
+    *,
+    max_extra_chars: int | None,
+    anchored: bool,
+) -> _MatchOutcome | None:
+    """One prefix-based rung: roster entries of *script* whose normalized name
+    is a PREFIX of *norm_candidate* — or, when ``anchored`` is False, a prefix
+    starting at ANY position (equivalently, a substring). Ties break on the
+    LONGEST matching name — a longer specific match accounts for more of the
+    candidate than a coincidentally-matching shorter one — and only a genuine
+    tie at the max length is reported as ambiguous.
+
+    ``anchored=False`` is what the scriptio-continua rung needs: a run has no
+    internal boundaries at all, so a name is as likely to sit mid-run ("那次
+    会议上达娜说了什么" — "达娜" starts at position 5, not 0) as at its start,
+    and requiring position 0 missed the common case outright. ``anchored=True``
+    is what the Korean rung needs instead: its candidate is already ONE
+    whitespace-isolated token, so the only thing that can follow the name
+    within it is a particle, never a second word — matching from any
+    position there would let the rung swallow a name mid-word inside an
+    unrelated token, with a much weaker structural reason to expect one.
+    ``max_extra_chars`` bounds the leftover after the match (``None`` =
+    unbounded, since a scriptio-continua run's leftover is unrelated
+    following text with no boundary to stop at, not a particle).
+
+    Returns ``None`` (not an outcome) when no entry of this script is even a
+    candidate, so the caller can fall through to the next rung instead of
+    reporting a hard miss prematurely.
+    """
+    hits = []
+    for e in roster.entries:
+        if _entry_script(e.name) != script:
+            continue
+        name_norm = _normalize(e.name)
+        if not name_norm or norm_candidate == name_norm:  # exact rung owns equality
+            continue
+        if anchored:
+            if not norm_candidate.startswith(name_norm):
+                continue
+            extra = len(norm_candidate) - len(name_norm)
+        else:
+            if name_norm not in norm_candidate:
+                continue
+            extra = 0  # position, not trailing length, is what matters unanchored
+        if max_extra_chars is not None and extra > max_extra_chars:
+            continue
+        hits.append(e)
+    if not hits:
+        return None
+    max_len = max(len(_normalize(e.name)) for e in hits)
+    longest = [e for e in hits if len(_normalize(e.name)) == max_len]
+    if len(longest) == 1:
+        return _MatchOutcome(longest[0].name, (), "")
+    return _MatchOutcome(None, tuple(e.name for e in longest), "")
+
+
 def match_candidate(candidate: str, roster: Roster) -> _MatchOutcome:
-    """Run one candidate through the ladder: exact -> token-subset -> fuzzy.
+    """Run one candidate through the ladder: exact -> token-subset ->
+    grapheme-prefix (scriptio continua) -> suffix-tolerant prefix (Korean) -> fuzzy.
 
     Every rung requires a UNIQUE hit to resolve; two or more roster entries
     tying at any rung is ambiguity, not a pick between them — per the design
     constraint, ambiguity means no filter, ever, never a best-effort guess.
+
+    The two prefix rungs are script-scoped (only scriptio-continua roster
+    entries compete on the first, only Korean entries on the second), so a
+    mixed-script roster never lets one script's rung swallow a candidate that
+    was headed for another. The fuzzy rung's threshold is chosen PER ENTRY
+    by :func:`_fuzzy_threshold` — a mixed roster can therefore hold, say, a
+    2-character Chinese name and an 8-character English one, each scored
+    against a floor appropriate to its own length and script.
 
     Returns:
         A :class:`_MatchOutcome`. ``matched`` is set only on a unique hit;
@@ -414,10 +674,32 @@ def match_candidate(candidate: str, roster: Roster) -> _MatchOutcome:
         if len(subset) > 1:
             return _MatchOutcome(None, tuple(e.name for e in subset), "")
 
+    no_space_outcome = _prefix_rung(
+        norm_candidate, roster, "no_space", max_extra_chars=None, anchored=False
+    )
+    if no_space_outcome is not None:
+        return no_space_outcome
+
+    korean_outcome = _prefix_rung(
+        norm_candidate,
+        roster,
+        "korean",
+        max_extra_chars=_KOREAN_PARTICLE_MAX_CHARS,
+        anchored=True,
+    )
+    if korean_outcome is not None:
+        return korean_outcome
+
     scored: list[tuple[float, str]] = []
     for entry in roster.entries:
-        ratio = difflib.SequenceMatcher(None, norm_candidate, _normalize(entry.name)).ratio()
-        if ratio >= FUZZY_MATCH_THRESHOLD:
+        entry_norm = _normalize(entry.name)
+        threshold = _fuzzy_threshold(entry_norm, _entry_script(entry.name))
+        if threshold is None:
+            continue
+        if abs(len(norm_candidate) - len(entry_norm)) > _FUZZY_MAX_LENGTH_DELTA:
+            continue
+        ratio = difflib.SequenceMatcher(None, norm_candidate, entry_norm).ratio()
+        if ratio >= threshold:
             scored.append((ratio, entry.name))
     if scored:
         best = max(ratio for ratio, _ in scored)
@@ -520,7 +802,13 @@ def resolve_speaker_mentions(
     organization_id: OrgScope = UNSCOPED,
     roster: Roster | None = None,
 ) -> SpeakerMentionResolution:
-    """Resolve every capitalized-name candidate in ``question`` against the roster.
+    """Resolve every name candidate in ``question`` against the roster.
+
+    Candidates come from both extraction tracks — :func:`extract_candidates`
+    (Latin capitalization) and :func:`extract_script_aware_candidates`
+    (scriptio-continua runs plus Hangul/Arabic/Hebrew/Devanagari tokens) — so
+    a roster mixing, say, an English and a Chinese name is matched against
+    equally regardless of which script the question itself is written in.
 
     Args:
         db: A short-lived session — this function issues exactly the roster
@@ -546,7 +834,7 @@ def resolve_speaker_mentions(
     if not roster.entries:
         return SpeakerMentionResolution()
 
-    candidates = extract_candidates(question)
+    candidates = extract_candidates(question) + extract_script_aware_candidates(question)
     if not candidates:
         return SpeakerMentionResolution()
 

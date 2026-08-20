@@ -41,6 +41,7 @@ from typing import Protocol
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.document import Document
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
@@ -49,6 +50,13 @@ logger = logging.getLogger(__name__)
 
 # Media object key prefix laid down by every ingest path: media/<user_id>/<uuid>.<ext>
 MEDIA_PREFIX = "media"
+
+# Document object key prefix (documents.py::upload_document):
+# documents/user_<user_id>/document_<old_id>/<filename>. Unlike media's key, the OLD
+# integer id embedded here is meaningless after a DB loss (a re-ingested row gets a
+# fresh id/uuid) — it is kept only because it was already part of the key every
+# existing object was written with; discovery does not parse it out of anything.
+DOCUMENT_PREFIX = "documents"
 
 # Object key of the resumable YouTube-metadata sidecar inside the media bucket.
 YOUTUBE_METADATA_SIDECAR = "recovery/youtube_metadata.json"
@@ -330,6 +338,183 @@ def reingest_objects(
             except Exception as exc:
                 summary.errors += 1
                 logger.error("dispatch failed for media_file id=%s: %s", media_file.id, exc)
+
+    return summary
+
+
+# ---------------------------------------------------------------------------
+# Document orphan re-ingestion (v399, #362 lane C4) — the document counterpart of
+# everything above. Same no-duplication / idempotent-by-storage_path contract; NOT the
+# YouTube-metadata-matching machinery below, which is media-only by construction (a
+# document has no upload URL to have come from).
+# ---------------------------------------------------------------------------
+
+# Extension → MIME, extension-only (no magic-byte read) — same "the extension is
+# authoritative" reasoning `content_type_for` gives for media, with one caveat unique to
+# documents: `documents.parse` re-detects the real mime from the object's own bytes via
+# `detect_document_mime` on its very next read, so a wrong guess here is corrected
+# automatically at parse time rather than persisting. Deliberately a SMALL, explicit map
+# rather than importing `services/documents/detect.py`'s private `_TEXTUAL_EXTENSIONS` —
+# that name is underscore-prefixed for a reason, and duplicating seven entries here is
+# cheaper than reaching into another module's internals.
+_DOCUMENT_CONTENT_TYPE_BY_EXT: dict[str, str] = {
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".odt": "application/vnd.oasis.opendocument.text",
+    ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+    ".epub": "application/epub+zip",
+    ".txt": "text/plain",
+    ".text": "text/plain",
+    ".log": "text/plain",
+    ".md": "text/markdown",
+    ".markdown": "text/markdown",
+    ".csv": "text/csv",
+    ".tsv": "text/tab-separated-values",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".doc": "application/x-ole-storage",
+    ".ppt": "application/x-ole-storage",
+    ".xls": "application/x-ole-storage",
+    ".rtf": "application/rtf",
+}
+
+
+def document_content_type_for(object_name: str) -> str | None:
+    """Resolve a document MIME type from the object key's extension, or ``None`` for an
+    extension the document plane does not recognise (the caller's cue to skip it — a
+    stray non-document object under ``documents/`` is not this sweep's job).
+    """
+    ext = _object_extension(object_name)
+    return _DOCUMENT_CONTENT_TYPE_BY_EXT.get(ext)
+
+
+def iter_document_objects(
+    minio_client: Any, user_id: int | None = None
+) -> Iterator[tuple[str, int]]:
+    """Yield ``(object_name, size)`` for document objects under ``documents/``.
+
+    Mirrors :func:`iter_media_objects` exactly, scoped to the document prefix and mime
+    table instead of the media one.
+    """
+    prefix = f"{DOCUMENT_PREFIX}/user_{user_id}/" if user_id is not None else f"{DOCUMENT_PREFIX}/"
+    for obj in minio_client.list_objects(settings.MEDIA_BUCKET_NAME, prefix=prefix, recursive=True):
+        name = obj.object_name
+        if not name:
+            continue
+        if document_content_type_for(name) is None:
+            continue
+        yield name, int(obj.size or 0)
+
+
+def existing_document_storage_paths(db: Session) -> set[str]:
+    """Every ``storage_path`` a ``Document`` row already references — the same O(1)
+    idempotency set :func:`existing_storage_paths` builds for ``MediaFile``.
+    """
+    rows = db.query(Document.storage_path).filter(Document.storage_path != "").all()
+    return {r[0] for r in rows if r[0]}
+
+
+def register_document_object(db: Session, *, object_name: str, size: int, user: User) -> Document:
+    """Create a PENDING ``Document`` row pointing at the EXISTING object key.
+
+    The document counterpart of :func:`register_object` — same no-copy trick, same
+    placeholder-filename-until-parse shape. ``documents.parse`` (dispatched by the
+    caller) fills in ``parser``/``page_count``/``word_count``/etc. and corrects
+    ``content_type`` from the object's real bytes on its first read.
+    """
+    basename = object_name.rsplit("/", 1)[-1]
+    from app.services.organization_service import resolve_owner_org_id
+
+    organization_id = resolve_owner_org_id(db, int(user.id))
+    document = Document(
+        user_id=user.id,
+        organization_id=organization_id,
+        filename=basename,
+        storage_path=object_name,  # <- existing key; no copy/move
+        file_size=int(size),
+        content_type=document_content_type_for(object_name) or "application/octet-stream",
+        status=FileStatus.PENDING,
+    )
+    db.add(document)
+    db.flush()
+    return document
+
+
+def reingest_document_objects(
+    db: Session,
+    *,
+    minio_client: Any,
+    user: User,
+    dry_run: bool = False,
+    limit: int | None = None,
+    user_scope_id: int | None = None,
+    dispatch: bool = True,
+) -> ReingestSummary:
+    """Discover, register, and dispatch in-place document objects.
+
+    Same contract as :func:`reingest_objects`: idempotent by ``storage_path``, no bytes
+    moved. No fingerprinting pass — ``Document.file_hash`` is computed at UPLOAD time from
+    the spooled stream (``documents.py``), and there is no equivalent "range-read the
+    object and hash it" helper for documents the way ``imohash_service.compute_from_minio``
+    gives media; a recovered document's ``file_hash`` stays ``NULL`` until a future dedup
+    pass adds one, which only weakens duplicate detection, not correctness.
+
+    Returns:
+        A :class:`ReingestSummary` — same shape, same counters, so a caller can report
+        media and document recovery through one code path.
+    """
+    summary = ReingestSummary()
+    seen_paths = existing_document_storage_paths(db)
+
+    for object_name, size in iter_document_objects(minio_client, user_id=user_scope_id):
+        summary.discovered += 1
+
+        if object_name in seen_paths:
+            summary.skipped_existing += 1
+            logger.info("skip (already registered): %s", object_name)
+            continue
+
+        if limit is not None and summary.registered >= limit:
+            logger.info("reached --limit %d; stopping discovery", limit)
+            break
+
+        if dry_run:
+            summary.registered += 1
+            seen_paths.add(object_name)
+            logger.info("[dry-run] would register: %s (%d bytes)", object_name, size)
+            continue
+
+        try:
+            document = register_document_object(db, object_name=object_name, size=size, user=user)
+            db.commit()
+            db.refresh(document)
+            seen_paths.add(object_name)
+            summary.registered += 1
+            summary.registered_uuids.append(str(document.uuid))
+            logger.info(
+                "registered document id=%s uuid=%s path=%s",
+                document.id,
+                document.uuid,
+                object_name,
+            )
+        except Exception as exc:
+            db.rollback()
+            summary.errors += 1
+            logger.error("failed to register %s: %s", object_name, exc)
+            continue
+
+        if dispatch:
+            try:
+                from app.tasks.document_tasks import dispatch_document_parse
+
+                dispatch_document_parse(document.id)
+                summary.dispatched += 1
+                logger.info("dispatched parse for document id=%s", document.id)
+            except Exception as exc:
+                summary.errors += 1
+                logger.error("dispatch failed for document id=%s: %s", document.id, exc)
 
     return summary
 

@@ -59,13 +59,19 @@ export function isScopeUnfiltered(scope: ChatScope | null | undefined): boolean 
  * provenance the UI badges differently. Older messages predate the field and
  * carry nothing, which is why every read treats an absent value as `chunk`.
  *
- * A later lane is expected to add `document` and a no-timestamp `recurrence`
- * kind onto this same union — this mirrors `backend/app/schemas/chat.py`'s
- * `Citation.kind`, widened deliberately at the same time for the same reason
- * (see that schema's docstring): growing it kind-by-kind risks a persisted
- * message losing an already-shipped field the next time this union grows.
+ * `recurrence` (W2.5) is a GROUP of items judged to be the same thing,
+ * recurring across MULTIPLE recordings — never one person's words, never
+ * anchored to a single moment, and not even anchored to a single FILE the
+ * way `summary` is. It carries `file_uuids` (every recording the group
+ * spans) instead of relying on `file_uuid` alone.
+ *
+ * A later lane is expected to add `document` onto this same union — this
+ * mirrors `backend/app/schemas/chat.py`'s `Citation.kind`, widened
+ * deliberately at the same time for the same reason (see that schema's
+ * docstring): growing it kind-by-kind risks a persisted message losing an
+ * already-shipped field the next time this union grows.
  */
-export type ChatSourceKind = 'chunk' | 'digest' | 'summary';
+export type ChatSourceKind = 'chunk' | 'digest' | 'summary' | 'recurrence';
 
 /** One retrieved excerpt an answer may reference as `[n]`. */
 export interface ChatSource {
@@ -79,10 +85,10 @@ export interface ChatSource {
   digest_section?: number | null;
   /**
    * `null`/absent for a kind with no natural single timestamp — a `summary`
-   * citation describes the whole recording, and a future multi-file
-   * `recurrence` citation spans several. The absence is a first-class case on
-   * purpose: rendering a missing timestamp as `0` would look like a working
-   * "jump to 0:00" link that just happens to be wrong.
+   * citation describes the whole recording, and a `recurrence` citation
+   * spans several. The absence is a first-class case on purpose: rendering a
+   * missing timestamp as `0` would look like a working "jump to 0:00" link
+   * that just happens to be wrong.
    */
   start_time: number | null;
   end_time: number | null;
@@ -95,6 +101,13 @@ export interface ChatSource {
   section_path?: string | null;
   char_start?: number | null;
   char_end?: number | null;
+  /**
+   * `kind === 'recurrence'` ONLY: every recording the recurring group spans.
+   * `undefined`/`null` for every other kind. `file_uuid` still carries the
+   * PRIMARY (first) recording, so a reader that only knows the single-file
+   * contract still gets a valid uuid.
+   */
+  file_uuids?: string[] | null;
 }
 
 /** Diagnostics attached to an assistant message (ids/counts only). */

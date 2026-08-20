@@ -26,13 +26,33 @@ export interface MajorTopic {
   participants: string[];
 }
 
+/**
+ * Shape-tolerant on purpose (W2.5 Task 1). The DEFAULT summary prompt
+ * (`backend/app/core/default_prompts.py`, the `action_items` block) emits
+ * `{item, owner, due_date, priority, context, mentioned_timestamp}` — a
+ * DIFFERENT shape from the one this interface used to declare exclusively
+ * (`{text, assigned_to, ..., status}`, mirroring `backend/app/schemas/
+ * summary.py`'s `ActionItem`, which is exported but DEAD — nothing on the
+ * backend validates or produces it). Both spellings are declared here,
+ * optional, because `SummaryData` is `extra="allow"` and a custom prompt may
+ * emit either, or neither. `SummaryDisplay.svelte`'s `actionItemText()`/
+ * `actionItemOwner()` helpers are the actual shape-tolerant readers; this
+ * type exists so a literal built from either shape still type-checks.
+ */
 export interface ActionItem {
-  text: string;
-  assigned_to: string | null;
-  due_date: string | null;
-  priority: 'high' | 'medium' | 'low';
-  context: string;
+  // The shape the DEFAULT prompt actually emits.
+  item?: string;
+  owner?: string | null;
+  mentioned_timestamp?: string | null;
+  // The dead `schemas/summary.py` shape — kept for backward compatibility
+  // with anything that was already relying on it.
+  text?: string;
+  assigned_to?: string | null;
   status?: 'pending' | 'completed' | 'cancelled';
+  // Common to both.
+  due_date?: string | null;
+  priority?: 'high' | 'medium' | 'low';
+  context?: string;
 }
 
 export interface SummaryMetadata {

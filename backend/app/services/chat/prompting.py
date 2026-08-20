@@ -40,7 +40,9 @@ Rules:
 9. When the excerpts point somewhere obviously worth following up — an unresolved decision, a named person who was not asked about, a promised action with no outcome — end with a single short "Next:" line proposing that question. Skip it when the answer is complete.
 10. A <counted> block holds numbers computed by querying the whole library, not by reading the excerpts. Report those numbers exactly as given. Never recount them from the excerpts, never estimate, and never contradict them — the excerpts are a handful of examples, not the full set, so counting them yourself will be wrong. If a <counted> block reports a limitation, say so in your answer.
 11. Answer in the SAME LANGUAGE as the user's question. When you quote a transcript, quote it in the language it was spoken in and do not translate the quotation — a translated quote is no longer evidence of what was said. Explain or paraphrase around it in the user's language.
-12. An <overview> block summarises EVERY recording in scope, while the excerpts below it cover only a few of them. When the question is about a collection rather than a moment, answer from the overview and cover every recording it lists — do not narrow the answer to whichever recordings happen to have excerpts. Use the excerpts for specific quotes and timestamps."""  # noqa: E501
+12. An <overview> block summarises EVERY recording in scope, while the excerpts below it cover only a few of them. When the question is about a collection rather than a moment, answer from the overview and cover every recording it lists — do not narrow the answer to whichever recordings happen to have excerpts. Use the excerpts for specific quotes and timestamps.
+13. A <recurrence> block lists items (action items, decisions, follow-ups or recurring topics) that came up in TWO OR MORE separate recordings, grouped by similarity. It does not track whether an item was later completed, resolved or superseded — there is no "open" vs "done" status in this data, so never say an item is still open or outstanding based on this block alone; describe it as something that recurred, and if the block reports items it could not group (a truncated or declined language note), repeat that limitation rather than silently ignoring it.
+14. When an <overview> block opens with a "focus speaker" line, this turn is scoped to what that ONE named person specifically said or did — answer about them, not about the recording as a whole, and use the rest of the overview (talk time, turns, coverage notes) as exact figures for that person rather than the group."""  # noqa: E501
 
 NO_CONTEXT_SYSTEM_RULES = """You are OpenTranscribe's assistant, currently in direct chat mode with no transcript context attached.
 
@@ -385,6 +387,85 @@ def format_counted_block(result) -> str:
         if value is not None:
             lines.append(f"note: {_sanitize_attribute(f'{name} = {value}')}")
     return _COUNTED_OPEN + "\n".join(lines) + "\n" + _COUNTED_CLOSE
+
+
+# W2.5. Same row-cap posture as `_MAX_COUNTED_ROWS` — a 1,500-item recurrence
+# scan can produce more groups than a prompt can afford to list, and a
+# truncated list read as complete is the same silent-wrong-answer shape the
+# rest of this module exists to remove.
+_MAX_RECURRENCE_ROWS = 30
+_RECURRENCE_OPEN = "<recurrence>\n"
+_RECURRENCE_CLOSE = "</recurrence>\n\n"
+
+
+def format_recurrence_block(result) -> str:
+    """Render a :class:`~app.services.chat.recurrence.RecurrenceResult`.
+
+    Same sanitization posture as :func:`format_counted_block`: every value
+    that originated as user/model text (a representative item, an owner
+    name) goes through :func:`_sanitize_attribute`, since this is a short
+    discrete value interpolated into a delimited block, not free-running
+    prose. Deliberately does NOT import
+    ``app.services.chat.recurrence`` — ``result`` is duck-typed, matching
+    :func:`format_counted_block`'s treatment of ``AggregationResult``, so
+    this module never needs to import that dataclass just to type a
+    parameter.
+
+    Args:
+        result: A ``RecurrenceResult``, or ``None``.
+
+    Returns:
+        A delimited block, or ``""`` when there is nothing to report — either
+        ``result`` is ``None`` or it ran and found zero recurring groups AND
+        has no honesty note worth surfacing (an empty scan with nothing
+        declined or truncated says nothing a model needs told).
+    """
+    if result is None:
+        return ""
+    groups = list(getattr(result, "groups", ()) or ())
+    coverage = dict(getattr(result, "coverage", {}) or {})
+    truncated = bool(getattr(result, "truncated", False))
+    declined_for_language = int(getattr(result, "declined_for_language", 0) or 0)
+    declined_languages = list(getattr(result, "declined_languages", ()) or ())
+    masking_failed = int(coverage.get("masking_failed_files") or 0)
+
+    if not groups and not truncated and not declined_for_language and not masking_failed:
+        return ""
+
+    lines: list[str] = [f"recurring items: {len(groups)}"]
+    lines.append(
+        "note: this data does not track whether an item is open or completed — "
+        "report only that it recurred"
+    )
+    for group in groups[:_MAX_RECURRENCE_ROWS]:
+        text = _sanitize_attribute(getattr(group, "representative_text", "")) or "(untitled item)"
+        files = len(getattr(group, "file_uuids", ()) or ())
+        owners = [_sanitize_attribute(o) for o in (getattr(group, "owners", ()) or ())]
+        owners = [o for o in owners if o]
+        suffix = f" (owners: {', '.join(owners)})" if owners else ""
+        lines.append(f'- "{text}" — {files} recordings{suffix}')
+    hidden = len(groups) - min(len(groups), _MAX_RECURRENCE_ROWS)
+    if hidden > 0:
+        lines.append(
+            f"(+{hidden} more recurring items not listed here; the count above is complete)"
+        )
+    if truncated:
+        lines.append(
+            f"note: scanned {getattr(result, 'considered', 0)} items and stopped there — "
+            "more may exist in scope but were not examined"
+        )
+    if declined_for_language:
+        langs = ", ".join(declined_languages) or "unknown"
+        lines.append(
+            f"note: {declined_for_language} item(s) in {langs} were excluded — recurrence "
+            "detection does not yet support that script"
+        )
+    if masking_failed:
+        lines.append(
+            f"note: {masking_failed} recording(s) were excluded because their content "
+            "could not be safely masked"
+        )
+    return _RECURRENCE_OPEN + "\n".join(lines) + "\n" + _RECURRENCE_CLOSE
 
 
 # Priority order for the evidence blocks that precede the excerpts, HIGHEST

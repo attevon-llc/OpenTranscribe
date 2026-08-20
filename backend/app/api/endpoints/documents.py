@@ -17,6 +17,9 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+from datetime import UTC
+from datetime import datetime
+from typing import Any
 from typing import BinaryIO
 from typing import cast
 from uuid import UUID
@@ -26,6 +29,7 @@ from fastapi import Depends
 from fastapi import File
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
 from fastapi import UploadFile
 from fastapi import status
 from sqlalchemy.orm import Session
@@ -33,15 +37,23 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
 from app.api.deps_context import scope_to_context
+from app.api.endpoints.auth import get_current_admin_user
 from app.core import constants as C  # noqa: N812
+from app.core.enums import FileStatus
 from app.db.base import get_db
 from app.models.document import Document
 from app.models.document import DocumentChunk
+from app.models.user import User
 from app.schemas.document import DocumentChunkListResponse
 from app.schemas.document import DocumentChunkResponse
 from app.schemas.document import DocumentDownloadResponse
 from app.schemas.document import DocumentListResponse
+from app.schemas.document import DocumentQuarantineActionResponse
+from app.schemas.document import DocumentQuarantineRequest
+from app.schemas.document import DocumentReleaseRequest
 from app.schemas.document import DocumentResponse
+from app.schemas.document import QuarantinedDocument
+from app.schemas.document import QuarantinedDocumentsList
 from app.schemas.document import display_status
 from app.services.documents import DOCUMENT_MIME_TYPES
 from app.services.documents import LEGACY_MIME_TYPES
@@ -88,6 +100,8 @@ def _to_response(doc: Document) -> DocumentResponse:
         created_at=doc.created_at,
         updated_at=doc.updated_at,
         parsed_at=doc.parsed_at,
+        is_quarantined=bool(doc.is_quarantined),
+        legal_hold=bool(doc.legal_hold),
     )
 
 
@@ -105,6 +119,13 @@ def _get_owned_document(db: Session, document_uuid: UUID, ctx: RequestContext) -
     never across one — matching org-admin surfaces elsewhere in this API
     (`require_org_admin`), rather than `get_file_by_uuid_with_permission`'s unconditional
     admin bypass, which documents deliberately do not inherit.
+
+    A quarantined document (v399) is hidden from every non-admin the same way
+    ``takedown_service.is_hidden_for`` hides a taken-down ``MediaFile`` — 404, not a
+    distinguishable "this exists but is quarantined" response, so a non-admin cannot
+    even confirm a takedown happened by probing the id. Admins pass through so they can
+    review it (matches ``GET /documents/admin/quarantined`` being the only listing that
+    shows it at all).
     """
     doc = get_by_uuid(db, Document, document_uuid, error_message="Document not found")
     in_scope = (
@@ -115,7 +136,24 @@ def _get_owned_document(db: Session, document_uuid: UUID, ctx: RequestContext) -
     is_admin = ctx.user.role in ("admin", "super_admin")
     if doc.user_id != ctx.user.id and not is_admin:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    if bool(doc.is_quarantined) and not is_admin:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     return doc
+
+
+#: `GET /documents` sort fields — mirrors `files/__init__.py::list_media_files`'s
+#: `sort_field_mapping` convention (own dict local to the endpoint, not a shared module,
+#: since the two field sets do not overlap: a document has no `duration`). Typed `Any`
+#: rather than the precise `InstrumentedAttribute` union — the values are a mix of
+#: `Mapped[str]`/`Mapped[int]`/`Mapped[datetime | None]` columns, and the sort call
+#: below only needs `.asc()`/`.desc()`, which every column expression provides.
+_SORT_FIELDS: dict[str, Any] = {
+    "created_at": Document.created_at,
+    "filename": Document.filename,
+    "file_size": Document.file_size,
+    "word_count": Document.word_count,
+    "parsed_at": Document.parsed_at,
+}
 
 
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
@@ -234,21 +272,186 @@ async def upload_document(
 async def list_documents(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    search: str | None = Query(None, description="Case-insensitive filename search"),
+    status: list[str] | None = Query(  # noqa: A002 - matches list_media_files' own shadow
+        None, description="Filter by status: pending, processing, completed, error"
+    ),
+    sort_by: str = Query(
+        "created_at",
+        description="Field to sort by: created_at, filename, file_size, word_count, parsed_at",
+    ),
+    sort_order: str = Query("desc", description="Sort order: asc or desc"),
     ctx: RequestContext = Depends(get_current_context),
     db: Session = Depends(get_db),
 ) -> DocumentListResponse:
-    """List the documents reachable from the active tenant scope, newest first.
+    """List the documents reachable from the active tenant scope.
 
     Owner-scoped within that scope — see :func:`_get_owned_document` for why there is no
     sharing to account for yet. ``scope_to_context`` is the same default-deny helper every
     other org-aware listing in this API uses: org context -> the org's documents,
-    otherwise the caller's own personal-scope documents.
+    otherwise the caller's own personal-scope documents. Quarantined documents (v399) are
+    excluded here for every caller, admin included — the dedicated review queue
+    (``GET /documents/admin/quarantined``) is the only place they are ever listed,
+    matching ``exclude_quarantined``'s media-gallery precedent of excluding on this
+    surface and showing them only on the admin queue.
+
+    ``skip``/``limit`` stay unbounded on ``skip`` (the pre-existing shape) — the "hard
+    200 cap" a document past position 200 was invisible behind was never the backend's
+    ceiling on ONE page (already raisable via ``skip``); it was the frontend never
+    asking for a second page at all. See ``routes/documents/+page.svelte``.
     """
     query = scope_to_context(db.query(Document), Document, ctx)
+    query = query.filter(Document.is_quarantined.is_(False))
+
+    if search:
+        query = query.filter(Document.filename.ilike(f"%{search}%"))
+    if status:
+        query = query.filter(Document.status.in_(status))
+
     total = query.count()
-    documents = query.order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
+
+    sort_field = _SORT_FIELDS.get(sort_by, Document.created_at)
+    query = query.order_by(sort_field.asc() if sort_order.lower() == "asc" else sort_field.desc())
+
+    documents = query.offset(skip).limit(limit).all()
     return DocumentListResponse(
         documents=[_to_response(d) for d in documents], total=total, skip=skip, limit=limit
+    )
+
+
+# =============================================================================
+# ADMIN: abuse/DMCA takedown (v399, #362 lane C4) — the document counterpart of
+# admin.py's media quarantine trio. MUST be registered before `/{document_uuid}` below:
+# a literal path segment ("admin") has to win the route-matching order, or it is parsed
+# as an attempted UUID and 422s instead of matching this router (app/api/CLAUDE.md's
+# "static routes before /{id} routes" rule, from the tags-package precedent).
+# =============================================================================
+
+
+@router.get("/admin/quarantined", response_model=QuarantinedDocumentsList)
+def list_quarantined_documents(
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> QuarantinedDocumentsList:
+    """List taken-down documents for admin review — the only surface that shows them
+    at all, since :func:`list_documents` excludes them for every caller, admin included.
+    """
+    base = db.query(Document).filter(Document.is_quarantined.is_(True))
+    total = base.count()
+    rows = (
+        base.order_by(Document.quarantined_at.desc().nullslast()).offset(offset).limit(limit).all()
+    )
+    documents = [
+        QuarantinedDocument(
+            uuid=d.uuid,
+            filename=d.filename,
+            quarantine_reason=d.quarantine_reason,
+            quarantined_at=d.quarantined_at.isoformat() if d.quarantined_at else None,
+            legal_hold=bool(d.legal_hold),
+        )
+        for d in rows
+    ]
+    return QuarantinedDocumentsList(documents=documents, total=total)
+
+
+@router.post("/{document_uuid}/quarantine", response_model=DocumentQuarantineActionResponse)
+def quarantine_document(
+    document_uuid: UUID,
+    request_body: DocumentQuarantineRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> DocumentQuarantineActionResponse:
+    """Take a document down (abuse/DMCA). Hides it from every read surface for
+    non-admins; the row, chunks, and storage object are NOT deleted — reversible via
+    ``/release``, matching ``admin.py``'s media takedown exactly.
+    """
+    doc = get_by_uuid(db, Document, document_uuid, error_message="Document not found")
+    doc.is_quarantined = True
+    doc.quarantine_reason = request_body.reason
+    doc.quarantined_at = datetime.now(UTC)
+    doc.quarantined_by = current_user.id
+    if doc.status != FileStatus.ERROR:
+        doc.pre_quarantine_status = (
+            doc.status.value if hasattr(doc.status, "value") else str(doc.status)
+        )
+    if request_body.legal_hold:
+        doc.legal_hold = True
+    db.commit()
+    db.refresh(doc)
+
+    if request_body.legal_hold and doc.storage_path:
+        try:
+            from app.services.minio_service import set_object_legal_hold
+
+            set_object_legal_hold(str(doc.storage_path), True)
+        except Exception as exc:  # noqa: BLE001 — advisory; never break the takedown
+            logger.warning("Storage legal-hold enable failed for document %s: %s", doc.id, exc)
+
+    logger.info(
+        "Document %s (%s) quarantined by admin %s: %s",
+        doc.id,
+        doc.uuid,
+        current_user.id,
+        request_body.reason,
+    )
+    return DocumentQuarantineActionResponse(
+        uuid=doc.uuid,
+        is_quarantined=bool(doc.is_quarantined),
+        legal_hold=bool(doc.legal_hold),
+        status=str(doc.status.value if hasattr(doc.status, "value") else doc.status),
+    )
+
+
+@router.post("/{document_uuid}/release", response_model=DocumentQuarantineActionResponse)
+def release_document(
+    document_uuid: UUID,
+    request: Request,
+    request_body: DocumentReleaseRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> DocumentQuarantineActionResponse:
+    """Release a quarantined document: restore access, optionally lift the legal-hold."""
+    doc = get_by_uuid(db, Document, document_uuid, error_message="Document not found")
+    if not doc.is_quarantined:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Document is not quarantined"
+        )
+    clear_hold = request_body.clear_legal_hold if request_body is not None else True
+
+    doc.is_quarantined = False
+    doc.quarantine_reason = None
+    doc.quarantined_at = None
+    doc.quarantined_by = None
+    if doc.pre_quarantine_status:
+        try:
+            doc.status = FileStatus(doc.pre_quarantine_status)
+        except ValueError:
+            doc.status = FileStatus.COMPLETED
+    doc.pre_quarantine_status = None
+    if clear_hold:
+        doc.legal_hold = False
+    db.commit()
+    db.refresh(doc)
+
+    if clear_hold and doc.storage_path:
+        try:
+            from app.services.minio_service import set_object_legal_hold
+
+            set_object_legal_hold(str(doc.storage_path), False)
+        except Exception as exc:  # noqa: BLE001 — advisory; never break the release
+            logger.warning("Storage legal-hold disable failed for document %s: %s", doc.id, exc)
+
+    logger.info(
+        "Document %s (%s) released from quarantine by admin %s", doc.id, doc.uuid, current_user.id
+    )
+    return DocumentQuarantineActionResponse(
+        uuid=doc.uuid,
+        is_quarantined=bool(doc.is_quarantined),
+        legal_hold=bool(doc.legal_hold),
+        status=str(doc.status.value if hasattr(doc.status, "value") else doc.status),
     )
 
 
@@ -310,6 +513,35 @@ async def get_document_download_url(
         content_type=content_type,
     )
     return DocumentDownloadResponse(url=url, filename=filename, content_type=content_type)
+
+
+@router.post("/{document_uuid}/reparse", response_model=DocumentResponse)
+async def reparse_document(
+    document_uuid: UUID,
+    ctx: RequestContext = Depends(get_current_context),
+    db: Session = Depends(get_db),
+) -> DocumentResponse:
+    """Retry parsing a failed (or stuck) document — owner or admin.
+
+    A failed parse was previously a dead end: no button, no endpoint, nothing short of
+    re-uploading the file under a new row. This resets the document back to PENDING
+    (clearing the prior error) and re-dispatches ``documents.parse`` exactly the way
+    the original upload did — same task, same idempotent delete-then-insert chunk
+    write, so a reparse is safe to run any number of times. Not restricted to
+    ``error`` status: a document wedged in PROCESSING with no live task (stuck-task
+    recovery has no document-specific arm yet, see ``app/tasks/CLAUDE.md``) can also
+    be kicked back to PENDING from here.
+    """
+    doc = _get_owned_document(db, document_uuid, ctx)
+    doc.status = FileStatus.PENDING
+    doc.error_category = None
+    doc.last_error_message = None
+    db.commit()
+    db.refresh(doc)
+
+    dispatch_document_parse(doc.id)
+    logger.info("Document %s (%s) reparse dispatched by user %s", doc.id, doc.uuid, ctx.user.id)
+    return _to_response(doc)
 
 
 @router.delete("/{document_uuid}", status_code=status.HTTP_204_NO_CONTENT)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import uuid
+from unittest.mock import patch
 
 import pytest
 from fastapi import status
@@ -344,3 +345,167 @@ def test_delete_someone_else_s_document_is_404(
     assert response.status_code == status.HTTP_404_NOT_FOUND
     # And it must still exist, unmodified by the attempt.
     assert db_session.query(Document).filter(Document.uuid == doc.uuid).first() is not None
+
+
+# ---------------------------------------------------------------------------
+# List: sort / filter (v399, #362 lane C3)
+# ---------------------------------------------------------------------------
+
+
+def test_list_filters_by_status(client, user_token_headers, normal_user, db_session):
+    _make_document(db_session, normal_user, filename="a.html", status="completed")
+    _make_document(db_session, normal_user, filename="b.html", status="error")
+
+    response = client.get("/api/documents?status=error", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["total"] == 1
+    assert body["documents"][0]["filename"] == "b.html"
+
+
+def test_list_search_matches_filename_case_insensitively(
+    client, user_token_headers, normal_user, db_session
+):
+    _make_document(db_session, normal_user, filename="Quarterly-Report.html")
+    _make_document(db_session, normal_user, filename="unrelated.html")
+
+    response = client.get("/api/documents?search=quarterly", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["total"] == 1
+    assert body["documents"][0]["filename"] == "Quarterly-Report.html"
+
+
+def test_list_sorts_by_filename_ascending(client, user_token_headers, normal_user, db_session):
+    _make_document(db_session, normal_user, filename="zeta.html")
+    _make_document(db_session, normal_user, filename="alpha.html")
+
+    response = client.get(
+        "/api/documents?sort_by=filename&sort_order=asc", headers=user_token_headers
+    )
+    assert response.status_code == status.HTTP_200_OK
+    names = [d["filename"] for d in response.json()["documents"]]
+    assert names == sorted(names)
+    assert names[0] == "alpha.html"
+
+
+def test_list_excludes_quarantined_documents_for_the_owner(
+    client, user_token_headers, normal_user, db_session
+):
+    """A quarantined document must not appear in the owner's own listing."""
+    doc = _make_document(db_session, normal_user, filename="taken-down.html")
+    doc.is_quarantined = True
+    db_session.commit()
+
+    response = client.get("/api/documents", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["total"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Reparse (v399, #362 lane C3) — a failed parse was previously a dead end
+# ---------------------------------------------------------------------------
+
+
+def test_reparse_resets_status_and_dispatches(client, user_token_headers, normal_user, db_session):
+    doc = _make_document(
+        db_session,
+        normal_user,
+        status="error",
+        error_category="parse_error",
+        last_error_message="bad zip",
+    )
+
+    with patch("app.api.endpoints.documents.dispatch_document_parse") as mock_dispatch:
+        response = client.post(f"/api/documents/{doc.uuid}/reparse", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["error_category"] is None
+    assert body["last_error_message"] is None
+    mock_dispatch.assert_called_once_with(doc.id)
+
+    db_session.refresh(doc)
+    assert doc.status.value == "pending"
+
+
+def test_reparse_someone_else_s_document_is_404(
+    client, other_user_token_headers, normal_user, db_session
+):
+    doc = _make_document(db_session, normal_user, status="error")
+    response = client.post(f"/api/documents/{doc.uuid}/reparse", headers=other_user_token_headers)
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+# ---------------------------------------------------------------------------
+# Admin quarantine / release (v399, #362 lane C4)
+# ---------------------------------------------------------------------------
+
+
+def test_quarantine_requires_admin(client, user_token_headers, normal_user, db_session):
+    doc = _make_document(db_session, normal_user)
+    response = client.post(
+        f"/api/documents/{doc.uuid}/quarantine",
+        headers=user_token_headers,
+        json={"reason": "DMCA notice #1"},
+    )
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_admin_quarantine_then_release_round_trip(
+    client, admin_token_headers, user_token_headers, normal_user, db_session
+):
+    doc = _make_document(db_session, normal_user, status="completed")
+
+    quarantine_resp = client.post(
+        f"/api/documents/{doc.uuid}/quarantine",
+        headers=admin_token_headers,
+        json={"reason": "DMCA notice #42", "legal_hold": True},
+    )
+    assert quarantine_resp.status_code == status.HTTP_200_OK
+    body = quarantine_resp.json()
+    assert body["is_quarantined"] is True
+    assert body["legal_hold"] is True
+
+    # Hidden from the owner (404, not a distinguishable "quarantined" response).
+    owner_get = client.get(f"/api/documents/{doc.uuid}", headers=user_token_headers)
+    assert owner_get.status_code == status.HTTP_404_NOT_FOUND
+    # Still visible to an admin.
+    admin_get = client.get(f"/api/documents/{doc.uuid}", headers=admin_token_headers)
+    assert admin_get.status_code == status.HTTP_200_OK
+    assert admin_get.json()["is_quarantined"] is True
+
+    # Shows up in the admin review queue.
+    queue = client.get("/api/documents/admin/quarantined", headers=admin_token_headers)
+    assert queue.status_code == status.HTTP_200_OK
+    assert queue.json()["total"] == 1
+    assert queue.json()["documents"][0]["uuid"] == str(doc.uuid)
+
+    release_resp = client.post(
+        f"/api/documents/{doc.uuid}/release",
+        headers=admin_token_headers,
+        json={"clear_legal_hold": True},
+    )
+    assert release_resp.status_code == status.HTTP_200_OK
+    release_body = release_resp.json()
+    assert release_body["is_quarantined"] is False
+    assert release_body["legal_hold"] is False
+
+    # Restored to the owner's own listing.
+    owner_get_after = client.get(f"/api/documents/{doc.uuid}", headers=user_token_headers)
+    assert owner_get_after.status_code == status.HTTP_200_OK
+    assert owner_get_after.json()["status"] == "completed"
+
+
+def test_release_a_non_quarantined_document_is_409(
+    client, admin_token_headers, normal_user, db_session
+):
+    doc = _make_document(db_session, normal_user)
+    response = client.post(f"/api/documents/{doc.uuid}/release", headers=admin_token_headers)
+    assert response.status_code == status.HTTP_409_CONFLICT
+
+
+def test_list_quarantined_requires_admin(client, user_token_headers):
+    response = client.get("/api/documents/admin/quarantined", headers=user_token_headers)
+    assert response.status_code == status.HTTP_403_FORBIDDEN

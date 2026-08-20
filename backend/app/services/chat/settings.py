@@ -16,52 +16,26 @@ from dataclasses import replace
 from sqlalchemy.orm import Session
 
 from app.core import constants as C  # noqa: N812
+from app.core.chat_flag_registry import CHAT_FLAG_REGISTRY
 
 logger = logging.getLogger(__name__)
 
 # SystemSettings key ↔ dataclass field.
 KEY_PREFIX = "chat."
-SETTING_KEYS: dict[str, str] = {
-    "candidate_pool": "chat.rag.candidate_pool",
-    "final_chunks": "chat.rag.final_chunks",
-    "max_chunks_per_file": "chat.rag.max_chunks_per_file",
-    "rerank_enabled": "chat.rag.rerank_enabled",
-    "rerank_max_pairs": "chat.rag.rerank_max_pairs",
-    "query_rewrite_enabled": "chat.rag.query_rewrite_enabled",
-    "cache_ttl_seconds": "chat.rag.cache_ttl_seconds",
-    "semantic_cache_enabled": "chat.rag.semantic_cache_enabled",
-    "semantic_cache_threshold": "chat.rag.semantic_cache_threshold",
-    "history_max_turns": "chat.history_max_turns",
-    "messages_per_hour": "chat.limits.messages_per_hour",
-    "max_concurrent_streams": "chat.limits.max_concurrent_streams",
-    "retention_days": "chat.retention_days",
-    "speaker_facet_content_scope": "chat.aggregate.speaker_facet_content_scope",
-    "speaker_stats_enabled": "chat.aggregate.speaker_stats_enabled",
-    "map_tier_summaries": "chat.rag.map_tier_summaries",
-    "speaker_resolver_enabled": "chat.speaker_resolver_enabled",
-    "map_tier_speaker_summaries": "chat.rag.map_tier_speaker_summaries",
-}
 
-DEFAULTS: dict[str, int | bool | float] = {
-    "candidate_pool": C.DEFAULT_CHAT_RAG_CANDIDATE_POOL,
-    "final_chunks": C.DEFAULT_CHAT_RAG_FINAL_CHUNKS,
-    "max_chunks_per_file": C.DEFAULT_CHAT_RAG_MAX_CHUNKS_PER_FILE,
-    "rerank_enabled": C.DEFAULT_CHAT_RAG_RERANK_ENABLED,
-    "rerank_max_pairs": C.DEFAULT_CHAT_RAG_RERANK_MAX_PAIRS,
-    "query_rewrite_enabled": C.DEFAULT_CHAT_RAG_QUERY_REWRITE_ENABLED,
-    "cache_ttl_seconds": C.DEFAULT_CHAT_RAG_CACHE_TTL_SECONDS,
-    "semantic_cache_enabled": C.DEFAULT_CHAT_RAG_SEMANTIC_CACHE_ENABLED,
-    "semantic_cache_threshold": C.DEFAULT_CHAT_RAG_SEMANTIC_CACHE_THRESHOLD,
-    "history_max_turns": C.DEFAULT_CHAT_HISTORY_MAX_TURNS,
-    "messages_per_hour": C.DEFAULT_CHAT_MESSAGES_PER_HOUR,
-    "max_concurrent_streams": C.DEFAULT_CHAT_MAX_CONCURRENT_STREAMS,
-    "retention_days": C.DEFAULT_CHAT_RETENTION_DAYS,
-    "speaker_facet_content_scope": C.DEFAULT_CHAT_AGGREGATE_SPEAKER_FACET_CONTENT_SCOPE,
-    "speaker_stats_enabled": C.DEFAULT_CHAT_AGGREGATE_SPEAKER_STATS_ENABLED,
-    "map_tier_summaries": C.DEFAULT_CHAT_MAP_TIER_SUMMARIES,
-    "speaker_resolver_enabled": C.DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED,
-    "map_tier_speaker_summaries": C.DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES,
-}
+#: DERIVED from `CHAT_FLAG_REGISTRY` — a field added there needs no matching
+#: edit here. This used to be a second hand-written dict, kept in sync with
+#: the registry only by convention and a completeness test that caught it
+#: when they drifted; deriving it removes the chance to drift at all. The
+#: `ChatSettings` dataclass below is NOT similarly derived — a dataclass
+#: field needs a real type annotation and a coded default, which cannot be
+#: synthesized this way — so it is still hand-declared, and
+#: `find_missing_pieces(dataclass_fields=...)` is what now guards THAT piece
+#: (see `core/chat_flag_registry.py`).
+SETTING_KEYS: dict[str, str] = {spec.field: spec.setting_key for spec in CHAT_FLAG_REGISTRY}
+
+#: DERIVED from `CHAT_FLAG_REGISTRY`, same reasoning as `SETTING_KEYS` above.
+DEFAULTS: dict[str, int | bool | float] = {spec.field: spec.default for spec in CHAT_FLAG_REGISTRY}
 
 
 @dataclass(frozen=True)
@@ -107,6 +81,10 @@ class ChatSettings:
     #: (plus owner-matched action items) over the per-sentence digest
     #: fallback. Off by default: a new, unmeasured retrieval shape.
     map_tier_speaker_summaries: bool = C.DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES
+    #: W2.5. Cross-meeting recurrence detection: gates both the router's
+    #: recurrence lexicon and the `<recurrence>` evidence block. Off by
+    #: default — a new, unmeasured shape.
+    recurrence_enabled: bool = C.DEFAULT_CHAT_RECURRENCE_ENABLED
     #: Ceiling on the answer, sent to the provider as max_tokens. ``None`` means
     #: "use whatever the LLM config derived", which is the community behaviour.
     max_output_tokens: int | None = None

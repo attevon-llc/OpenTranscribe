@@ -1143,6 +1143,15 @@ DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED = False  # chat.speaker_resolver_enabled
 # needs measured answer-quality evidence this flag does not yet have.
 DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES = False  # chat.rag.map_tier_speaker_summaries
 
+# W2.5: cross-meeting recurrence detection — "what keeps coming up across our
+# meetings". Gates BOTH the router's recurrence lexicon (`router.classify`)
+# and the `<recurrence>` evidence block (`aggregation_service.answer_recurrence`),
+# so flag-off is byte-identical to before this feature existed on every layer,
+# not just the shape. Default OFF: a new, unmeasured retrieval/synthesis shape
+# whose masking subject also follows an unresolved-in-general policy question
+# (issue #402) — see `services/chat/CLAUDE.md`.
+DEFAULT_CHAT_RECURRENCE_ENABLED = False  # chat.recurrence_enabled
+
 
 # =============================================================================
 # Document ingestion (issue #362 / #403 Stage 6)

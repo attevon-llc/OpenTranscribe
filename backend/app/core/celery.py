@@ -120,6 +120,7 @@ celery_app = Celery(
         "app.tasks.thumbnail_migration",
         "app.tasks.embedding_migration_v4",
         "app.tasks.imohash_recompute",
+        "app.tasks.file_hash_recompute",
         "app.tasks.watch_source_tasks",
         "app.tasks.speaker_embedding_migration",
         "app.tasks.baseline_export",
@@ -314,6 +315,7 @@ celery_app.conf.update(
         "export_transcript_baseline": {"queue": CeleryQueues.UTILITY},
         "compare_transcript_baseline": {"queue": CeleryQueues.UTILITY},
         "imohash_recompute.recompute_all": {"queue": CeleryQueues.UTILITY},
+        "file_hash_recompute.backfill_document_file_hashes": {"queue": CeleryQueues.UTILITY},
         # Watch Sources (issue #26)
         "watch_source.scan_all": {"queue": CeleryQueues.UTILITY},
         "watch_source.scan_single": {"queue": CeleryQueues.DOWNLOAD},

@@ -94,27 +94,10 @@ def mask_summary(summary_data: dict[str, Any], cfg: EffectiveRedactionConfig) ->
         SummaryMaskingUnavailableError: A detector feeding an enabled category
             could not run, so some of this text was never examined.
     """
-    cats = set(cfg.enabled_categories) & MASKABLE_CATEGORIES
-    if not cfg.enabled or not cats:
+    policy = resolve_summary_leaf_policy(cfg)
+    if policy is None:
         return summary_data
-
-    # Gate the detectors on the CATEGORIES, not just on `enabled`. PII masking is
-    # opt-in twice over (redaction is opt-out, and `pii` is not in
-    # DEFAULT_REDACTION_CATEGORIES), and constructing Presidio costs 0.8-2.1 s
-    # against 3-14 ms for the wordlist. A profanity-only user must never
-    # construct the analyzer.
-    run_profanity = "profanity" in cats
-    run_pii = "pii" in cats
-    run_custom = "custom" in cats and bool(cfg.custom_words)
-    if not (run_profanity or run_pii or run_custom):
-        return summary_data
-
-    # Summaries are always label-styled, for the same reason snippets are: `blur`
-    # emits markup the client does not sanitize for this surface, and
-    # `first_letter` / `asterisks` are indistinguishable from the model's own
-    # emphasis. Everything else about the policy — pii_entities, allowlist,
-    # custom words, categories — is applied by `mask_segment`, the one masker.
-    label_cfg = dataclasses.replace(cfg, style="label")
+    run_profanity, run_pii, run_custom, label_cfg = policy
 
     failures: list[str] = []
     masked = {
@@ -145,6 +128,84 @@ def mask_summary(summary_data: dict[str, Any], cfg: EffectiveRedactionConfig) ->
             f"detectors unavailable for enabled categories: {sorted(blocking)}"
         )
 
+    return masked
+
+
+def resolve_summary_leaf_policy(
+    cfg: EffectiveRedactionConfig,
+) -> tuple[bool, bool, bool, EffectiveRedactionConfig] | None:
+    """Which detectors a summary-prose masker must run, or ``None`` for "none".
+
+    Shared by :func:`mask_summary` (whole tree) and :func:`mask_summary_leaf`
+    (one string), so the two cannot drift. They did: the recurrence detector
+    grew its own leaf masker that ran ``detection_config_for_all()`` directly,
+    which skipped the custom-wordlist spans and the label-style forcing below,
+    and constructed Presidio even for a profanity-only user.
+
+    Gate the detectors on the CATEGORIES, not just on ``enabled``. PII masking is
+    opt-in twice over (redaction is opt-out, and ``pii`` is not in
+    ``DEFAULT_REDACTION_CATEGORIES``), and constructing Presidio costs 0.8-2.1 s
+    against 3-14 ms for the wordlist. A profanity-only user must never construct
+    the analyzer.
+
+    Returns:
+        ``(run_profanity, run_pii, run_custom, label_cfg)``, or ``None`` when the
+        policy masks nothing and the caller should return its input unchanged so
+        a redaction-disabled deployment stays byte-identical.
+    """
+    cats = set(cfg.enabled_categories) & MASKABLE_CATEGORIES
+    if not cfg.enabled or not cats:
+        return None
+
+    run_profanity = "profanity" in cats
+    run_pii = "pii" in cats
+    run_custom = "custom" in cats and bool(cfg.custom_words)
+    if not (run_profanity or run_pii or run_custom):
+        return None
+
+    # Summaries are always label-styled, for the same reason snippets are: `blur`
+    # emits markup the client does not sanitize for this surface, and
+    # `first_letter` / `asterisks` are indistinguishable from the model's own
+    # emphasis. Everything else about the policy — pii_entities, allowlist,
+    # custom words, categories — is applied by `mask_segment`, the one masker.
+    return run_profanity, run_pii, run_custom, dataclasses.replace(cfg, style="label")
+
+
+def mask_summary_leaf(text: str, cfg: EffectiveRedactionConfig) -> str:
+    """Mask ONE summary-derived string (an action item, a keyphrase, ...).
+
+    The single-string entry point onto the same machinery :func:`mask_summary`
+    uses for a whole tree. Cross-meeting recurrence needs this shape: it groups
+    individual item strings, which have no ``segment_ids`` provenance to rebuild
+    from, so each is detected live exactly like a summary leaf.
+
+    Raises:
+        SummaryMaskingUnavailableError: A detector feeding an enabled category
+            could not run, so this text was never fully examined. Callers drop
+            the whole file's items rather than pass half-masked text through.
+    """
+    policy = resolve_summary_leaf_policy(cfg)
+    if policy is None or not text.strip():
+        return text
+    run_profanity, run_pii, run_custom, label_cfg = policy
+
+    failures: list[str] = []
+    masked = _mask_leaf(
+        text,
+        label_cfg,
+        failures,
+        run_profanity=run_profanity,
+        run_pii=run_pii,
+        run_custom=run_custom,
+    )
+
+    from app.services.redaction.config import blocking_detector_failures
+
+    blocking = blocking_detector_failures(failures, cfg.enabled_categories)
+    if blocking:
+        raise SummaryMaskingUnavailableError(
+            f"detectors unavailable for enabled categories: {sorted(blocking)}"
+        )
     return masked
 
 

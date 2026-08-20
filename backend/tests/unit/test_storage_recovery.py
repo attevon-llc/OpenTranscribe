@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.models.document import Document
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services import storage_recovery_service as recovery
@@ -194,6 +195,143 @@ def test_reingest_dispatches_per_file(db_session, normal_user):
             minio_client=client,
             user=normal_user,
             dispatch=True,
+        )
+    assert summary.dispatched == 1
+    assert mock_dispatch.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Document orphan re-ingestion (v399, #362 lane C4) — mirrors the MediaFile block above.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        ("documents/user_1/document_9/report.pdf", "application/pdf"),
+        (
+            "documents/user_1/document_9/notes.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ),
+        ("documents/user_1/document_9/readme.txt", "text/plain"),
+        ("documents/user_1/document_9/data.csv", "text/csv"),
+    ],
+)
+def test_document_content_type_for(key, expected):
+    assert recovery.document_content_type_for(key) == expected
+
+
+def test_document_content_type_for_unknown_returns_none():
+    """Unlike media's fallback to octet-stream, an unrecognised extension under
+    ``documents/`` returns None — the discovery loop's cue to skip a stray object
+    rather than register a fabricated document.
+    """
+    assert recovery.document_content_type_for("documents/user_1/document_9/x.zzqq") is None
+
+
+def test_iter_document_objects_filters_non_document():
+    client = _FakeMinio(
+        [
+            _FakeObj("documents/user_1/document_1/a.pdf", 100),
+            _FakeObj("documents/user_1/document_2/b.mp4", 50),  # media ext -> skipped
+            _FakeObj("documents/user_1/document_3/c.docx", 200),
+        ]
+    )
+    found = list(recovery.iter_document_objects(client))
+    assert found == [
+        ("documents/user_1/document_1/a.pdf", 100),
+        ("documents/user_1/document_3/c.docx", 200),
+    ]
+
+
+def test_iter_document_objects_user_scope():
+    client = _FakeMinio(
+        [
+            _FakeObj("documents/user_1/document_1/a.pdf", 100),
+            _FakeObj("documents/user_2/document_2/b.pdf", 200),
+        ]
+    )
+    found = list(recovery.iter_document_objects(client, user_id=2))
+    assert found == [("documents/user_2/document_2/b.pdf", 200)]
+
+
+def test_register_document_object_row_shape(db_session, normal_user):
+    obj = "documents/user_1/document_7/report.pdf"
+    doc = recovery.register_document_object(
+        db_session, object_name=obj, size=2048, user=normal_user
+    )
+
+    assert doc.storage_path == obj  # no copy/move — points in place
+    assert doc.filename == "report.pdf"
+    assert doc.content_type == "application/pdf"
+    assert doc.file_size == 2048
+    assert doc.status == FileStatus.PENDING
+    assert doc.user_id == normal_user.id
+
+
+def test_reingest_documents_idempotent_skips_existing(db_session, normal_user):
+    existing_key = "documents/user_1/document_1/already.pdf"
+    db_session.add(
+        Document(
+            user_id=normal_user.id,
+            filename="already.pdf",
+            storage_path=existing_key,
+            file_size=10,
+            content_type="application/pdf",
+            status=FileStatus.COMPLETED,
+        )
+    )
+    db_session.commit()
+
+    client = _FakeMinio(
+        [
+            _FakeObj(existing_key, 10),  # already registered -> skip
+            _FakeObj("documents/user_1/document_2/fresh.pdf", 20),  # new -> register
+        ]
+    )
+
+    summary = recovery.reingest_document_objects(
+        db_session, minio_client=client, user=normal_user, dispatch=False
+    )
+
+    assert summary.discovered == 2
+    assert summary.skipped_existing == 1
+    assert summary.registered == 1
+
+    rows = (
+        db_session.query(Document)
+        .filter(Document.storage_path == "documents/user_1/document_2/fresh.pdf")
+        .all()
+    )
+    assert len(rows) == 1
+
+
+def test_reingest_documents_dry_run_creates_no_rows(db_session, normal_user):
+    client = _FakeMinio(
+        [
+            _FakeObj("documents/user_1/document_1/x.pdf", 1),
+            _FakeObj("documents/user_1/document_2/y.pdf", 2),
+        ]
+    )
+
+    before = db_session.query(Document).count()
+    summary = recovery.reingest_document_objects(
+        db_session, minio_client=client, user=normal_user, dry_run=True, dispatch=False
+    )
+    after = db_session.query(Document).count()
+
+    assert summary.discovered == 2
+    assert summary.registered == 2  # would-register count
+    assert before == after  # but no rows actually created
+
+
+def test_reingest_documents_dispatches_parse_per_file(db_session, normal_user):
+    client = _FakeMinio([_FakeObj("documents/user_1/document_1/d.pdf", 5)])
+    with patch(
+        "app.tasks.document_tasks.dispatch_document_parse", return_value=None
+    ) as mock_dispatch:
+        summary = recovery.reingest_document_objects(
+            db_session, minio_client=client, user=normal_user, dispatch=True
         )
     assert summary.dispatched == 1
     assert mock_dispatch.call_count == 1

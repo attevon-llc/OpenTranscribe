@@ -121,9 +121,19 @@ class TestFileSelection:
         expect(next_btn).to_be_enabled(timeout=5000)
 
     def test_invalid_file_type_shows_error(self, upload_modal: Page, tmp_path):
-        """A non-media file is rejected client-side with an error message."""
-        bad_file = tmp_path / "not_media.txt"
-        bad_file.write_text("this is not audio")
+        """A non-media file is rejected client-side with an error message.
+
+        Deliberately NOT a ``.txt`` fixture (the file this test used before #362):
+        ``.txt``/``text/plain`` is now a genuinely SUPPORTED upload type app-wide, just
+        through the separate document-upload flow
+        (``services/documents/detect.py::DOCUMENT_MIME_TYPES``), so it stopped being an
+        honest example of "not a valid upload anywhere in the app" even though this
+        particular modal (`MediaFilePanel`, ``accept="audio/*,video/*"``) still rejects
+        it correctly today. ``.exe`` has no MIME mapping in either upload path and stays
+        invalid regardless of what documents/media each modal grows to accept next.
+        """
+        bad_file = tmp_path / "not_media.exe"
+        bad_file.write_bytes(b"MZ\x00\x00not a real executable, just bytes for upload rejection")
         upload_modal.set_input_files("#drop-zone input[type=file]", str(bad_file))
         expect(upload_modal.locator(".message.error-msg")).to_be_visible(timeout=5000)
         expect(upload_modal.locator(".selected-file")).to_have_count(0)

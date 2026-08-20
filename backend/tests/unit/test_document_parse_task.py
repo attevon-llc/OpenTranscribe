@@ -162,6 +162,85 @@ def test_a_document_with_real_content_parses_chunks_and_completes(db_session, us
         _delete(object_name)
 
 
+def test_a_successful_parse_writes_a_completed_task_row(db_session, user_id):
+    """v399 (#362 lane C4): before this, a document's pipeline history lived only in
+    Redis (services/documents/progress.py) — invisible to GET /tasks and to a worker
+    restart. ``task_id`` threaded through mirrors the bound Celery task's real id.
+    """
+    from app.models.media import Task
+    from app.tasks.document_tasks import _parse_document
+
+    object_name = _object_name("report.html")
+    _upload(object_name, _HTML_WITH_CONTENT, "text/html")
+    document_id = _new_document(
+        db_session, user_id, storage_path=object_name, content_type="text/html"
+    )
+    task_id = f"test-task-{uuid_pkg.uuid4().hex[:10]}"
+
+    try:
+        result = _parse_document(document_id, task_id=task_id)
+        assert result["status"] == "success", result
+
+        db_session.expire_all()
+        task = db_session.get(Task, task_id)
+        assert task is not None, "no task row was written for a real task_id"
+        assert task.document_id == document_id
+        assert task.user_id == user_id
+        assert task.task_type == "document_parse"
+        assert task.status == "completed"
+        assert task.progress == 100.0
+        assert task.completed_at is not None
+    finally:
+        _delete(object_name)
+
+
+def test_a_failed_parse_writes_a_failed_task_row(db_session, user_id):
+    from app.models.media import Task
+    from app.tasks.document_tasks import _parse_document
+
+    # No object uploaded at all -> download_file raises FileNotFoundError -> _mark_error.
+    document_id = _new_document(
+        db_session,
+        user_id,
+        storage_path=_object_name("missing.html"),
+        content_type="text/html",
+    )
+    task_id = f"test-task-{uuid_pkg.uuid4().hex[:10]}"
+
+    result = _parse_document(document_id, task_id=task_id)
+    assert result["status"] == "error"
+
+    db_session.expire_all()
+    task = db_session.get(Task, task_id)
+    assert task is not None
+    assert task.status == "failed"
+    assert task.completed_at is not None
+    assert task.error_message
+
+
+def test_no_task_row_is_written_without_a_real_task_id(db_session, user_id):
+    """The direct-call path (unit tests, any future non-Celery caller) must not
+    synthesize a task id — a row GET /tasks/{id} could never be asked for by its real
+    Celery id would be worse than no row at all.
+    """
+    from app.models.media import Task
+    from app.tasks.document_tasks import _parse_document
+
+    object_name = _object_name("report.html")
+    _upload(object_name, _HTML_WITH_CONTENT, "text/html")
+    document_id = _new_document(
+        db_session, user_id, storage_path=object_name, content_type="text/html"
+    )
+
+    try:
+        result = _parse_document(document_id)  # task_id defaults to None
+        assert result["status"] == "success", result
+
+        assert db_session.query(Task).filter(Task.document_id == document_id).count() == 0
+    finally:
+        _delete(object_name)
+
+
 def test_reparsing_the_same_document_does_not_duplicate_chunks(db_session, user_id):
     """The idempotency requirement from the handoff: a retried parse must not duplicate
     chunks. ``UniqueConstraint(document_id, chunk_index)`` is the backstop; the delete-

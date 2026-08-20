@@ -21,6 +21,8 @@ export interface DocumentResponse {
   created_at: string;
   updated_at: string;
   parsed_at: string | null;
+  is_quarantined: boolean;
+  legal_hold: boolean;
 }
 
 export interface DocumentListResponse {

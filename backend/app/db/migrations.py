@@ -515,6 +515,19 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE conname = 'ck_file_facts_exactly_one_owner')"
     )
 
+    # v399: document quarantine/legal-hold columns + task.document_id (lane C3/C4, #362
+    # follow-up). Keyed on the partial index rather than a bare column, same reasoning
+    # v370's own has_media_file_quarantine gives: the index only exists once the whole
+    # guarded block ran, so a database left with columns but no index by a partial run
+    # falls through to v398 and safely re-runs this revision's idempotent DDL.
+    has_document_quarantine = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'ix_document_is_quarantined')"
+    )
+    has_task_document_id = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'task' AND column_name = 'document_id')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -557,6 +570,21 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
+    # v399: same as v398 plus document quarantine + task.document_id.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+        and has_watch_source_file_document_id
+        and has_document_chunk_redaction_cache
+        and has_document_tenancy_backfill_v397
+        and has_file_facts_document_support
+        and has_document_quarantine
+        and has_task_document_id
+    ):
+        return "v399_add_document_quarantine_and_task_link"
     # v398: same as v397 plus file_facts' exactly-one-owner CHECK.
     if (
         matches_v389

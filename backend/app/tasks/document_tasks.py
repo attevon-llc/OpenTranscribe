@@ -107,7 +107,61 @@ def _notify(
     )
 
 
-def _mark_error(document_id: int, *, error_category: str, error_message: str) -> None:
+def _upsert_task_row(
+    db,
+    *,
+    task_id: str | None,
+    user_id: int,
+    document_id: int,
+    task_type: str,
+    status: str,
+    progress: float | None = None,
+    error_message: str | None = None,
+    completed: bool = False,
+) -> None:
+    """Write/update the ``task`` row for a document pipeline step (v399, #362 lane C4).
+
+    Best-effort and a no-op when ``task_id`` is ``None`` — callers invoked directly (unit
+    tests, a future non-Celery caller) rather than through the bound Celery task have no
+    real id to key on, and synthesizing one would create a row `GET /tasks/{id}` could
+    never be asked for by its real Celery id. Mirrors the transcription pipeline's
+    `Task` bookkeeping shape (`task_type`/`status`/`progress`/`error_message`/
+    `completed_at`) so `GET /tasks` and stuck-task detection see a document parse/index
+    exactly the way they already see a transcription — before this, a document's
+    pipeline history lived only in Redis (`services/documents/progress.py`), which does
+    not survive a worker restart and is invisible to `GET /tasks`.
+    """
+    if task_id is None:
+        return
+    from datetime import UTC as _UTC
+    from datetime import datetime as _datetime
+
+    from app.models.media import Task
+
+    row = db.query(Task).filter(Task.id == task_id).first()
+    if row is None:
+        row = Task(
+            id=task_id,
+            user_id=user_id,
+            document_id=document_id,
+            task_type=task_type,
+            status=status,
+        )
+        db.add(row)
+    else:
+        row.status = status
+    if progress is not None:
+        row.progress = progress
+    if error_message is not None:
+        row.error_message = error_message
+    if completed:
+        row.completed_at = _datetime.now(_UTC)
+    db.commit()
+
+
+def _mark_error(
+    document_id: int, *, error_category: str, error_message: str, task_id: str | None = None
+) -> None:
     """Phase 3 (error path) — short, DB-only write."""
     with session_scope() as db:
         doc = db.query(Document).filter(Document.id == document_id).first()
@@ -117,9 +171,21 @@ def _mark_error(document_id: int, *, error_category: str, error_message: str) ->
         doc.error_category = error_category
         doc.last_error_message = error_message
         db.commit()
+        _upsert_task_row(
+            db,
+            task_id=task_id,
+            user_id=int(doc.user_id),
+            document_id=document_id,
+            task_type="document_parse",
+            status="failed",
+            error_message=error_message,
+            completed=True,
+        )
 
 
-def _mark_pending_for_retry(document_id: int, *, error_message: str) -> None:
+def _mark_pending_for_retry(
+    document_id: int, *, error_message: str, task_id: str | None = None
+) -> None:
     """The ``DocumentParserUnavailableError`` outcome: the document is fine, the tier
     wasn't reachable. Left at PENDING rather than ERROR — Celery's own ``autoretry_for``
     re-invokes this task, and a retry that lands successfully should not have spent a
@@ -133,6 +199,15 @@ def _mark_pending_for_retry(document_id: int, *, error_message: str) -> None:
         doc.error_category = "processing_error"
         doc.last_error_message = error_message
         db.commit()
+        _upsert_task_row(
+            db,
+            task_id=task_id,
+            user_id=int(doc.user_id),
+            document_id=document_id,
+            task_type="document_parse",
+            status="pending",
+            error_message=error_message,
+        )
 
 
 def _parse_with_escalation(source: ParseSource, filename: str, mime: str):
@@ -170,9 +245,11 @@ def _parse_with_escalation(source: ParseSource, filename: str, mime: str):
         raise
 
 
-def _parse_document(document_id: int) -> dict[str, Any]:
+def _parse_document(document_id: int, *, task_id: str | None = None) -> dict[str, Any]:
     """Inner implementation of :func:`parse_document_task`. See the module docstring for
-    the phase split.
+    the phase split. ``task_id`` is the bound Celery task's own id (``self.request.id``),
+    threaded through so the ``task`` row it drives (:func:`_upsert_task_row`) can be
+    created/updated at each phase boundary.
     """
     info = _load_document(document_id)
     if info is None:
@@ -200,6 +277,15 @@ def _parse_document(document_id: int) -> dict[str, Any]:
         if doc is not None:
             doc.status = FileStatus.PROCESSING
             db.commit()
+            _upsert_task_row(
+                db,
+                task_id=task_id,
+                user_id=user_id,
+                document_id=document_id,
+                task_type="document_parse",
+                status="in_progress",
+                progress=0.0,
+            )
 
     notify("processing", "Downloading document", overall_progress("download", 0.0))
 
@@ -210,7 +296,9 @@ def _parse_document(document_id: int) -> dict[str, Any]:
         data_stream, _size, _minio_content_type = download_file(info["storage_path"])
     except FileNotFoundError:
         message = "the uploaded file is missing from storage"
-        _mark_error(document_id, error_category="processing_error", error_message=message)
+        _mark_error(
+            document_id, error_category="processing_error", error_message=message, task_id=task_id
+        )
         notify("error", message, 0.0)
         return {"status": "error", "reason": "missing_object"}
     except Exception as exc:  # noqa: BLE001 - storage errors here are not typed; see below
@@ -218,7 +306,9 @@ def _parse_document(document_id: int) -> dict[str, Any]:
         # the only way to keep a transient MinIO hiccup from leaving the row stuck at
         # PROCESSING forever with no visible error and nothing to retry it.
         message = f"could not download the document from storage: {exc}"
-        _mark_error(document_id, error_category="processing_error", error_message=message)
+        _mark_error(
+            document_id, error_category="processing_error", error_message=message, task_id=task_id
+        )
         notify("error", message, 0.0)
         return {"status": "error", "reason": "download_failed"}
     data = data_stream.getvalue()
@@ -231,17 +321,21 @@ def _parse_document(document_id: int) -> dict[str, Any]:
         parsed = _parse_with_escalation(source, filename, mime)
     except DocumentParserUnavailableError as exc:
         message = str(exc)
-        _mark_pending_for_retry(document_id, error_message=message)
+        _mark_pending_for_retry(document_id, error_message=message, task_id=task_id)
         notify("pending", f"Parser unavailable, will retry: {message}", 0.0)
         raise
     except DocumentEmptyError as exc:
         message = str(exc)
-        _mark_error(document_id, error_category=exc.error_category, error_message=message)
+        _mark_error(
+            document_id, error_category=exc.error_category, error_message=message, task_id=task_id
+        )
         notify("error", message, 0.0)
         return {"status": "error", "reason": "empty"}
     except DocumentParseError as exc:
         message = str(exc)
-        _mark_error(document_id, error_category=exc.error_category, error_message=message)
+        _mark_error(
+            document_id, error_category=exc.error_category, error_message=message, task_id=task_id
+        )
         notify("error", message, 0.0)
         return {"status": "error", "reason": exc.error_category}
 
@@ -285,6 +379,16 @@ def _parse_document(document_id: int) -> dict[str, Any]:
         doc.chunk_count = len(chunks)
         doc.parsed_at = datetime.now(UTC)
         db.commit()
+        _upsert_task_row(
+            db,
+            task_id=task_id,
+            user_id=user_id,
+            document_id=document_id,
+            task_type="document_parse",
+            status="completed",
+            progress=100.0,
+            completed=True,
+        )
 
     notify("completed", "Document ready", 100.0)
     dispatch_document_index(document_id)
@@ -321,7 +425,7 @@ def parse_document_task(self, document_id: int) -> dict[str, Any]:
         A status dict. ``status: "error"`` with a ``reason`` is a real, non-retryable
         outcome (malformed input, empty extraction) — not a task failure.
     """
-    return _parse_document(document_id)
+    return _parse_document(document_id, task_id=self.request.id)
 
 
 def _dispatch_document_redaction(document_id: int, user_id: int) -> None:

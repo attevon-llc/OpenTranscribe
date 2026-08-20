@@ -34,6 +34,7 @@ from app.db.base import Base
 from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
+    from app.models.document import Document
     from app.models.file_facts import FileFacts
     from app.models.prompt import SummaryPrompt
     from app.models.sharing import CollectionShare
@@ -771,6 +772,18 @@ class Task(Base):
     media_file_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("media_file.id"), nullable=True
     )
+    #: v399 (#362 lane C3/C4). Same NO ACTION DB rule as ``media_file_id`` above — the
+    #: FK itself forces no decision — but unlike ``media_file_id`` this one DOES have an
+    #: ORM ``delete-orphan`` cascade (``Document.tasks`` below), so both instance-delete
+    #: call sites (``documents.py::delete_document``, GDPR's ``_purge_documents``) take
+    #: a document's task rows with it for free, the same shape ``MediaFile.tasks``
+    #: already gives ``task.media_file_id``. Registered in
+    #: ``tests/unit/test_document_deletion_fk_coverage.py``. Nullable and NOT mutually
+    #: exclusive with ``media_file_id`` (neither has ever had that constraint); a task
+    #: belongs to at most one of the two in practice.
+    document_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("document.id", name="task_document_id_fkey"), nullable=True
+    )
     task_type: Mapped[str] = mapped_column(
         String, nullable=False
     )  # E.g., "transcription", "summarization"
@@ -790,6 +803,7 @@ class Task(Base):
     # Relationships
     user: Mapped["User"] = relationship("User")
     media_file: Mapped["MediaFile | None"] = relationship("MediaFile", back_populates="tasks")
+    document: Mapped["Document | None"] = relationship("Document", back_populates="tasks")
 
 
 class Analytics(Base):

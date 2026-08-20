@@ -13,6 +13,8 @@ class of drift that used to reach production silently.
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from app.api.endpoints.chat.admin_settings import _DESCRIPTIONS as ENDPOINT_DESCRIPTIONS
@@ -24,8 +26,25 @@ from app.core.chat_flag_registry import find_missing_pieces
 from app.schemas.chat import ChatAdminSettingsUpdate
 from app.services.chat.settings import DEFAULTS as SETTINGS_DEFAULTS
 from app.services.chat.settings import SETTING_KEYS as REAL_SETTING_KEYS
+from app.services.chat.settings import ChatSettings
 
 pytestmark = pytest.mark.unit
+
+#: `ChatSettings` fields that are deliberately NOT registered flags, so they
+#: are excluded before comparing the dataclass's field set to the registry.
+#: `max_output_tokens` is resolved from tenant limits (`apply_tenant_limits`),
+#: never admin- or user-set directly, so it has no `SystemSettings` row, no
+#: registry entry, and no `ChatAdminSettingsUpdate` field either.
+_CHATSETTINGS_FIELDS_WITH_NO_REGISTRY_ENTRY = frozenset({"max_output_tokens"})
+
+
+def _chatsettings_registrable_fields() -> set[str]:
+    return {
+        f.name
+        for f in dataclasses.fields(ChatSettings)
+        if f.name not in _CHATSETTINGS_FIELDS_WITH_NO_REGISTRY_ENTRY
+    }
+
 
 # The dict this replaced, verbatim — proves the migration is byte-identical,
 # not just "close enough". If this ever needs to change, the registry's
@@ -57,6 +76,9 @@ _OLD_HAND_WRITTEN_DESCRIPTIONS = {
     "map_tier_speaker_summaries": (
         "Prefer each file's fresh LLM speaker analysis over its digest in the per-speaker map"
     ),
+    "recurrence_enabled": (
+        "Detect items recurring across multiple recordings and surface a <recurrence> block"
+    ),
 }
 
 
@@ -79,6 +101,13 @@ def test_every_registry_field_exists_on_chat_admin_settings_update():
     assert registry_fields == schema_fields
 
 
+def test_every_registry_field_exists_on_the_chatsettings_dataclass():
+    """The one comparison nothing previously made — see `find_missing_pieces`'s
+    `dataclass_fields` docstring for why `ChatSettings` cannot be derived the
+    way `SETTING_KEYS`/`DEFAULTS` now are."""
+    assert set(BY_FIELD) == _chatsettings_registrable_fields()
+
+
 def test_every_registry_default_matches_the_coded_default_in_settings_py():
     """The registry's `default` is sourced from `core.constants`, same as
     `services.chat.settings.DEFAULTS` — this proves neither drifted from the
@@ -92,6 +121,7 @@ def test_find_missing_pieces_reports_nothing_for_the_real_registry():
     problems = find_missing_pieces(
         setting_keys=REAL_SETTING_KEYS,
         schema_fields=set(ChatAdminSettingsUpdate.model_fields),
+        dataclass_fields=_chatsettings_registrable_fields(),
     )
     assert problems == {}
 
@@ -139,6 +169,25 @@ def test_find_missing_pieces_fires_on_a_field_absent_from_the_schema():
 
     assert "retention_days" in problems
     assert any("ChatAdminSettingsUpdate" in p for p in problems["retention_days"])
+
+
+def test_find_missing_pieces_fires_on_a_field_absent_from_the_chatsettings_dataclass():
+    incomplete_dataclass_fields = _chatsettings_registrable_fields() - {"retention_days"}
+
+    problems = find_missing_pieces(dataclass_fields=incomplete_dataclass_fields)
+
+    assert "retention_days" in problems
+    assert any("ChatSettings dataclass" in p for p in problems["retention_days"])
+
+
+def test_find_missing_pieces_fires_on_a_dataclass_field_absent_from_the_registry():
+    extended_dataclass_fields = _chatsettings_registrable_fields() | {
+        "a_field_the_registry_has_never_heard_of"
+    }
+
+    problems = find_missing_pieces(dataclass_fields=extended_dataclass_fields)
+
+    assert "a_field_the_registry_has_never_heard_of" in problems
 
 
 def test_find_missing_pieces_skips_comparisons_that_were_not_asked_for():

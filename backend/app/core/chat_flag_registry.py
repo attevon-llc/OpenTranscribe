@@ -10,17 +10,27 @@ missing ``_DESCRIPTIONS`` entry was not caught anywhere — it raised
 ``KeyError`` inside the PUT handler, i.e. a 500 on save, the first time an
 admin tried to change the new flag.
 
-**What this module owns, and what it does not (yet).** ``CHAT_FLAG_REGISTRY``
+**What this module owns, and what it still does not.** ``CHAT_FLAG_REGISTRY``
 is the single declarative table this repo has for the *description* and
-*bounds* of each flag, and ``api/endpoints/chat/admin_settings.py`` now reads
-its descriptions from here instead of a second hand-maintained dict. It does
-**not** replace ``services/chat/settings.SETTING_KEYS``/``ChatSettings`` or
-``schemas/chat.ChatAdminSettings``/``ChatAdminSettingsUpdate`` — those still
-exist and this registry is written to match them exactly, field for field and
+*bounds* of each flag. ``api/endpoints/chat/admin_settings.py`` reads its
+descriptions from here instead of a second hand-maintained dict, and
+``services/chat/settings.SETTING_KEYS``/``DEFAULTS`` are now DERIVED from
+this registry (a dict comprehension over ``CHAT_FLAG_REGISTRY``), not a
+second hand-written copy — a field added only here is picked up by both
+automatically. It still does **not** replace the ``ChatSettings`` dataclass
+(also in ``services/chat/settings.py``) or ``schemas/chat.ChatAdminSettings``/
+``ChatAdminSettingsUpdate``: a dataclass field and a Pydantic field each need
+a real type annotation and a coded default, which cannot be synthesized from
+a tuple of specs without dynamic class construction — those three remain
+hand-declared, written to match this registry exactly, field for field and
 key for key. ``tests/unit/test_chat_flag_registry.py`` is the completeness
-test: it fails the moment this registry and those two modules disagree, on
-any of field set, setting key, or bounds — which is the drift that used to
-surface as a runtime 500 instead of a test failure.
+test: it fails the moment this registry and those three disagree, on any of
+field set, setting key, default, or bounds — which is the drift that used to
+surface as a runtime 500 (or, for the dataclass, a ``TypeError`` in
+``get_chat_settings()``) instead of a test failure. Adding a flag today is
+four edits, down from the original seven: one ``ChatFlagSpec`` here, one
+``DEFAULT_CHAT_*`` constant in ``core/constants.py``, one ``ChatSettings``
+field, and one field on each of the two schemas in ``schemas/chat.py``.
 
 **None of the 16 registered flags are experimental.** ``experimental=True`` is
 plumbing for admin-tunable knobs that require a working LLM provider to have
@@ -220,6 +230,13 @@ CHAT_FLAG_REGISTRY: tuple[ChatFlagSpec, ...] = (
         value_type=bool,
         default=C.DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES,
     ),
+    ChatFlagSpec(
+        field="recurrence_enabled",
+        setting_key="chat.recurrence_enabled",
+        description="Detect items recurring across multiple recordings and surface a <recurrence> block",
+        value_type=bool,
+        default=C.DEFAULT_CHAT_RECURRENCE_ENABLED,
+    ),
 )
 
 #: ``field -> ChatFlagSpec``, for a single-lookup consumer.
@@ -244,20 +261,37 @@ def find_missing_pieces(
     *,
     setting_keys: dict[str, str] | None = None,
     schema_fields: set[str] | None = None,
+    dataclass_fields: set[str] | None = None,
 ) -> dict[str, list[str]]:
     """Report registry entries missing a derived piece, keyed by field.
 
     Used by the completeness test (and safe to call from a startup check): a
-    field present in the registry but absent from ``setting_keys`` or
-    ``schema_fields`` — or present there with no registry entry — is exactly
-    the class of drift that used to reach production as a missing
-    ``_DESCRIPTIONS`` key and a 500 on save.
+    field present in the registry but absent from ``setting_keys``,
+    ``schema_fields`` or ``dataclass_fields`` — or present there with no
+    registry entry — is exactly the class of drift that used to reach
+    production as a missing ``_DESCRIPTIONS`` key and a 500 on save.
 
     Args:
         setting_keys: ``services.chat.settings.SETTING_KEYS``, or ``None`` to
             skip that comparison.
         schema_fields: ``schemas.chat.ChatAdminSettingsUpdate.model_fields``
             keys, or ``None`` to skip that comparison.
+        dataclass_fields: ``{f.name for f in dataclasses.fields(ChatSettings)}``,
+            or ``None`` to skip that comparison. ``SETTING_KEYS``/``DEFAULTS``
+            in ``services.chat.settings`` are now DERIVED from this registry
+            (a field added there is automatic), but the ``ChatSettings``
+            dataclass itself still needs an explicit field declaration — a
+            real type annotation and a coded default cannot be synthesized
+            without dynamic class construction, which this repo does not do
+            for a hand-read, hand-typed settings object. This comparison is
+            what closes that remaining gap: nothing previously checked the
+            dataclass's field set against the registry at all, so a field
+            added to one and forgotten in the other surfaced only as a
+            runtime ``TypeError`` in ``get_chat_settings()``, the first time
+            that code path actually ran. The caller is expected to exclude
+            ``max_output_tokens`` first — it is deliberately NOT a registered
+            flag (resolved from tenant limits, never admin- or user-set
+            directly), so it is not registry-comparable at all.
 
     Returns:
         ``{field: [problem, ...]}`` for every field with at least one problem.
@@ -283,5 +317,11 @@ def find_missing_pieces(
             _note(field, "missing from ChatAdminSettingsUpdate")
         for field in schema_fields - registry_fields:
             _note(field, "missing from CHAT_FLAG_REGISTRY (found in ChatAdminSettingsUpdate)")
+
+    if dataclass_fields is not None:
+        for field in registry_fields - dataclass_fields:
+            _note(field, "missing from the ChatSettings dataclass")
+        for field in dataclass_fields - registry_fields:
+            _note(field, "missing from CHAT_FLAG_REGISTRY (found on the ChatSettings dataclass)")
 
     return problems

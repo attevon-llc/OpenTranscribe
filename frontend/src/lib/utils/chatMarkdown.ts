@@ -149,6 +149,8 @@ export interface CitationLinkSource {
   start_time?: number | null;
   digest_section?: number | null;
   chunk_index?: number;
+  /** `kind === 'recurrence'` only — see `ChatSource.file_uuids`. */
+  file_uuids?: string[] | null;
 }
 
 /**
@@ -160,6 +162,12 @@ export interface CitationLinkSource {
  * - `summary`: no single moment to seek to — a summary describes the whole
  *   recording, not a turn in it — so this deep-links to the file's summary
  *   view (`?view=summary[&section=N]`, amendment c) instead of the player.
+ * - `recurrence` (W2.5): spans MULTIPLE recordings, so there is no single
+ *   file this could deep-link into meaningfully. Lands on the FIRST
+ *   recording's own page (`file_uuids[0]`, falling back to `file_uuid`) with
+ *   no `t=`/`view=` — "go look at one of the recordings this recurred in" is
+ *   honest; a fabricated timestamp or view into one file would imply the
+ *   whole group lives there.
  * - `document` (a later lane's kind, handled here so THAT lane needs no
  *   `citationHref` edit): `/documents/{uuid}?chunk=N`, **never**
  *   `start_time=0` — a document chunk has no timestamp, and a fabricated
@@ -177,6 +185,11 @@ export function citationHref(source: CitationLinkSource): string {
     return section != null
       ? `/files/${uuid}?view=summary&section=${section}`
       : `/files/${uuid}?view=summary`;
+  }
+  if (kind === 'recurrence') {
+    const first =
+      source.file_uuids && source.file_uuids.length > 0 ? source.file_uuids[0] : source.file_uuid;
+    return `/files/${encodeURIComponent(first)}`;
   }
   if (kind === 'document') {
     return `/documents/${uuid}?chunk=${source.chunk_index ?? 0}`;

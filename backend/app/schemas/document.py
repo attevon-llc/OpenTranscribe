@@ -49,6 +49,10 @@ class DocumentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     parsed_at: datetime | None = None
+    #: v399 (#362 lane C4) — the same takedown/legal-hold pair ``MediaFile`` exposes,
+    #: so the gallery card and admin review queue render one shape for both.
+    is_quarantined: bool = False
+    legal_hold: bool = False
 
 
 class DocumentListResponse(BaseModel):
@@ -76,6 +80,41 @@ class DocumentChunkResponse(BaseModel):
 
 class DocumentChunkListResponse(BaseModel):
     chunks: list[DocumentChunkResponse]
+    total: int
+
+
+class DocumentQuarantineRequest(BaseModel):
+    """Admin takedown request — mirrors ``admin.py``'s ``QuarantineRequest`` for media."""
+
+    reason: str = Field(..., min_length=1, max_length=2000)
+    legal_hold: bool = True
+
+
+class DocumentReleaseRequest(BaseModel):
+    clear_legal_hold: bool = True
+
+
+class DocumentQuarantineActionResponse(BaseModel):
+    uuid: UUID
+    is_quarantined: bool
+    legal_hold: bool
+    status: str
+
+
+class QuarantinedDocument(BaseModel):
+    """One row in the admin takedown review queue — the document counterpart of
+    ``admin.py``'s ``QuarantinedFile``.
+    """
+
+    uuid: UUID
+    filename: str
+    quarantine_reason: str | None = None
+    quarantined_at: str | None = None
+    legal_hold: bool = False
+
+
+class QuarantinedDocumentsList(BaseModel):
+    documents: list[QuarantinedDocument]
     total: int
 
 

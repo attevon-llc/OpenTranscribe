@@ -110,29 +110,60 @@ first.** The gate *condition* is identical to summarization's
 (`tasks/summarization.py`): apply when `cfg.enabled and cfg.redact_before_llm`,
 with the admin force floor already folded in by `resolve_effective_config`.
 
-The **subject** is not. Summarization resolves the *file owner's* config
-(`redaction/llm_guard.py` reads `media_file.user_id`); chat resolves the
-*requesting user's*, because one turn retrieves across a library of shared
-recordings with no single owner. Anything layering summaries onto chat retrieval
-(#383) must pick a subject deliberately rather than inherit whichever the
-surrounding code used.
+**The subject is STRICTEST-WINS, resolved PER FILE (task #40) — superseding both
+earlier answers below.** The plan said the *file owner's* config
+(`redaction/llm_guard.py` reads `media_file.user_id`, matching summarization);
+issue #402 shipped the *requesting user's*, because one turn retrieves across a
+library of shared recordings with no single owner. **Both are wrong in one
+direction**: requester-subject (#402, what shipped) lets a sharee whose own
+policy is permissive read PII the owner meant to hide; owner-subject (the plan)
+ignores a stricter requester-side mandate. `redaction/config.py`'s
+`union_effective_config(requester_cfg, owner_cfg)` masks if EITHER side's policy
+says to, with the union of what each masks — enabled_categories/detectors/
+pii_entities/custom_words unioned, `allowlist` **intersected** (an allowlist
+exempts, so unioning it would be the opposite of strictest-wins), style/
+toxicity_threshold take the more protective value, and the admin force floor
+(`locked_categories`, `redact_before_llm_locked`) is OR'd so neither side can
+shed it. `chat/redactor._effective_cfg_for_owner` resolves this **per chunk /
+per digest section**, not once for the whole turn — a single global union
+across a many-file scope would over-mask every file to the strictest owner in
+the set, which per-file resolution avoids
+(`tests/unit/test_chat_redactor_strictest_wins.py::test_multi_file_scope_resolves_strictest_wins_per_file_not_globally`
+is the test that would catch a regression back to a global union). Unresolvable
+owner (missing scan row, missing `user_id`, or their own policy read raising)
+unions in `redaction/config.py`'s `most_restrictive_config()` — fails closed,
+never silently falls through to the requester's policy alone, which would look
+identical to "the owner permits it". Anything layering summaries onto chat
+retrieval (#383) inherits this per-file union rather than picking a subject of
+its own.
 
-**Recorded for a later phase, not built today:** chat's digest/summary tiers
-(`mask_digests`, `mapreduce.build_file_summaries`) currently follow the same
-subject as `mask_chunks` — the requesting user, deliberately, per the paragraph
-above. But unlike a turn's chunk excerpts, which pool candidates from every file
-in scope with no single owner, a digest section is always drawn from exactly
-**one** file, so "whose content is this" has the same clean answer it does for
-`tasks/summarization.py`. A later phase that strengthens chat's summary tier
-should therefore mask **per file, under that file's OWNER's policy**, for the
-egress decision — matching `llm_guard.resolve_llm_masking`'s subject rather than
-the reader's. The **reader's own** policy still governs what the model *writes*
-about that material, unconditionally, via `OutputRedactor` — egress subject and
-display subject are never the same question, and conflating them here would be
-the same mistake #402 fixed in reverse. Not built: doing this today means
-`mask_digests` resolving up to N different owners' configs within one call
-instead of one config for the whole batch, which is a real restructuring, not a
-follow-on edit.
+**This composes with, and does not replace, the local-provider exemption below.**
+`unmask_for_local` is decided from the REQUESTER's config alone, before any
+per-file owner lookup runs at all (`chat/redactor._gather`) — the provider rule
+answers "does this leave the deployment", which strictest-wins does not change:
+if nothing egresses, there is no "either policy" question left to ask, for any
+file's owner. It is also safe to read off the requester alone mechanically:
+`redact_before_llm_locked` is derived purely from the deployment-wide admin
+floor, identical for every user by construction, so re-deriving it from an
+owner would answer the same question at the cost of a lookup that must not
+happen at all for a fully-exempted turn — see
+`test_local_provider_skips_masking_when_the_policy_would_otherwise_apply`,
+which asserts zero `db.query()` calls for exactly that case.
+
+Chat's digest/summary tiers (`mask_digests`, `mapreduce.build_file_summaries`)
+take the SAME per-file strictest-wins union as `mask_chunks` — unlike a turn's
+chunk excerpts, which pool candidates from every file in scope with no single
+owner, a digest section is always drawn from exactly **one** file, so "whose
+content is this" was always answerable; task #40 is what actually wired that
+answer in, closing the gap this section used to flag as "recorded, not built".
+The **reader's own** policy still governs what the model *writes* about that
+material, unconditionally, via `OutputRedactor` — egress subject and display
+subject are never the same question. Whether `OutputRedactor` should also move
+to a per-file strictest-wins union is an open question, deliberately not
+decided here: it masks the model's own generated prose after the fact, which
+has no single "file" to resolve an owner from in the same sense an excerpt
+does, and changing it needs its own deliberate decision, not inheritance from
+this one.
 
 Masking **fails closed**. If the policy cannot be resolved, or a chunk cannot be
 masked, the chunk's content becomes `""` and contributes nothing — never the raw

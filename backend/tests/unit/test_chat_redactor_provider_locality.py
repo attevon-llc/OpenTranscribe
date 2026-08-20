@@ -190,17 +190,23 @@ def test_the_policy_off_case_is_unaffected_by_the_local_flag():
     assert masked_true[0].was_masked is masked_false[0].was_masked is False
 
 
-def _db_with(status, segments, coverage=None, language="en"):
+def _db_with(status, segments, coverage=None, language="en", user_id=1):
     """Same shape as ``test_chat_redactor.py``'s helper of the same name — kept
 
     local rather than imported, per this repo's "new test files stay
-    self-contained" convention for parallel-lane work.
+    self-contained" convention for parallel-lane work. ``user_id`` self-owns
+    the file (task #40, strictest-wins) so every existing call in this module
+    (all masking as ``user_id=1``) unions to a no-op, unaffected by #40.
     """
     db = MagicMock()
     scan_q = MagicMock()
     scan_q.filter.return_value.scalar.return_value = status
     scan_q.filter.return_value.first.return_value = SimpleNamespace(
-        id=1, redaction_status=status, redaction_coverage=coverage, language=language
+        id=1,
+        redaction_status=status,
+        redaction_coverage=coverage,
+        language=language,
+        user_id=user_id,
     )
     seg_q = MagicMock()
     seg_q.filter.return_value.order_by.return_value.all.return_value = segments
@@ -259,7 +265,7 @@ def test_mask_digests_respects_the_force_floor_too():
     db = MagicMock()
     scan_q = MagicMock()
     scan_q.filter.return_value.first.return_value = SimpleNamespace(
-        id=6, redaction_status="done", redaction_coverage=None, language="en"
+        id=6, redaction_status="done", redaction_coverage=None, language="en", user_id=1
     )
     facts_q = MagicMock()
     facts_q.filter.return_value.first.return_value = (digest_row.digest,)
@@ -296,7 +302,20 @@ def test_mask_digests_respects_the_force_floor_too():
 
 @contextmanager
 def _null_session():
-    yield None
+    """A DB-shaped session that answers any query with an auto-vivified MagicMock.
+
+    Used to be a literal ``yield None``: before task #40, ``mask_chunks`` never
+    touched the session at all when the (mocked) policy disabled masking, so a
+    real ``None`` stayed safely unused. Strictest-wins changed that — even a
+    fully-disabled REQUESTER policy must still look up the file's OWNER before
+    deciding not to mask, so the masking phase now always issues at least one
+    ``db.query(...)`` on this session. A ``MagicMock`` answers that safely (every
+    attribute/call auto-vivifies to another mock rather than raising), and
+    ``resolve_effective_config`` stays patched below to the same canned config
+    for every user id it's called with, so the union is a no-op either way —
+    this test is still exercising the `llm=None` call site, not real Postgres.
+    """
+    yield MagicMock()
 
 
 def test_prepare_context_completes_with_no_llm_configured(monkeypatch):
@@ -311,8 +330,8 @@ def test_prepare_context_completes_with_no_llm_configured(monkeypatch):
         "retrieve_context",
         lambda **_kwargs: RetrievalResult(chunks=[hit], retrieved=1),
     )
-    # Phase 3.5 (quarantine drop) runs a real Postgres query; this test's session
-    # factory yields `None` on purpose to stay Postgres-free, matching
+    # Phase 3.5 (quarantine drop) would run a real Postgres query; it is stubbed
+    # below regardless of what the session yields, matching
     # `test_chat_masking_diagnostics.py`'s `_prepare` helper.
     monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
     # The real `mask_chunks`/`redactor._gather` run for real here (not stubbed)

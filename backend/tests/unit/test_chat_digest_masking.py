@@ -151,6 +151,11 @@ def _facts_db(sentences, *, status="completed", segment_batches=None):
                 redaction_status=resolved_status,
                 redaction_coverage=None,  # pre-v391 row: trusted, so the gate stays open
                 language="en",
+                # Self-owned (task #40, strictest-wins): every hit in this
+                # module masks as `user_id=1`, so this makes the union a
+                # no-op against the mocked `resolve_effective_config` return
+                # value — matching this module's pre-#40 behaviour exactly.
+                user_id=1,
             )
         elif "digest" in key:
             result.filter.return_value.first.return_value = (digest_payload,)
@@ -190,6 +195,7 @@ def test_the_chunk_path_over_discloses_a_digest():
         redaction_status=C.REDACTION_STATUS_DONE,
         redaction_coverage=None,  # pre-v391 row: trusted, so the coverage gate stays open
         language="en",
+        user_id=1,  # self-owned (task #40) — matches the mask_chunks(user_id=1) call below
     )
     seg_q = MagicMock()
     seg_q.filter.return_value.order_by.return_value.all.return_value = list(segments.values())

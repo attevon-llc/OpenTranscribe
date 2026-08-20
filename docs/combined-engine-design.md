@@ -83,7 +83,7 @@ Wraps `TranscriptionConfig` and adds engine-level settings:
 |-------|---------|---------|
 | `shared_volume_path` | `/tmp/transcription` | Directory for the shared-volume WAV |
 | `transcriber_backend` | `faster_whisper` | Backend registry key |
-| `diarizer_backend` | `pyannote` | Backend registry key |
+| `diarizer_backend` | `native` | Backend registry key (`native` primary, `pyannote` failover) |
 | `gpu_split` | `False` | Multi-GPU split (Phase 4) |
 | `precompute_vad` | `False` | Pre-run Silero VAD in Stage 1 (Phase 3) |
 
@@ -188,7 +188,7 @@ via `clean_segments()`, and calls `assign_speakers()` for the final segment-spea
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `ENGINE_TRANSCRIBER_BACKEND` | `faster_whisper` | Transcriber backend key |
-| `ENGINE_DIARIZER_BACKEND` | `pyannote` | Diarizer backend key |
+| `ENGINE_DIARIZER_BACKEND` | `native` | Diarizer backend key (`native` primary, `pyannote` failover) |
 | `ENGINE_GPU_SPLIT` | `false` | Enable Phase 4 multi-GPU split |
 | `ENGINE_SHARED_VOLUME_PATH` | `/tmp/transcription` | Shared-volume mount point |
 | `ENGINE_PRECOMPUTE_VAD` | `false` | Pre-run Silero VAD in Stage 1 (Phase 3) |

@@ -41,7 +41,7 @@ _KEYS = {
 
 _ENV_DEFAULTS: dict[str, Any] = {
     "transcriber_backend": ("ENGINE_TRANSCRIBER_BACKEND", "faster_whisper"),
-    "diarizer_backend": ("ENGINE_DIARIZER_BACKEND", "pyannote"),
+    "diarizer_backend": ("ENGINE_DIARIZER_BACKEND", "native"),
     "boundary_smoothing_enabled": ("ENGINE_BOUNDARY_SMOOTHING_ENABLED", "true"),
     "boundary_acoustic_recheck_enabled": ("ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED", "false"),
     "boundary_acoustic_cosine_margin": ("ENGINE_BOUNDARY_ACOUSTIC_COSINE_MARGIN", "0.05"),
@@ -57,7 +57,11 @@ _FLOAT_KEYS = {"boundary_acoustic_cosine_margin", "boundary_acoustic_max_word_du
 
 _DESCRIPTIONS = {
     "transcriber_backend": "Transcription backend (faster_whisper | whisperx | cloud)",
-    "diarizer_backend": "Speaker diarization backend (pyannote)",
+    "diarizer_backend": (
+        "Speaker diarization backend (native | pyannote) — native (diar-native, "
+        "Rust/speakrs) is primary; pyannote is the explicit failover, also used "
+        "automatically whenever the native sidecar is unreachable"
+    ),
     "boundary_smoothing_enabled": (
         "Collapse 1-3 word wrong-speaker islands at turn boundaries (issue #193)"
     ),
@@ -131,6 +135,20 @@ def update_engine_settings(
     updates = body.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields provided to update")
+
+    if "diarizer_backend" in updates:
+        from app.transcription.engine.backends import VALID_DIARIZER_BACKENDS
+
+        value = updates["diarizer_backend"]
+        if value.lower() not in VALID_DIARIZER_BACKENDS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown diarizer_backend '{value}'. "
+                    f"Valid values: {sorted(VALID_DIARIZER_BACKENDS)}"
+                ),
+            )
+        updates["diarizer_backend"] = value.lower()
 
     for field, value in updates.items():
         db_key = _KEYS[field]

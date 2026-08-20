@@ -33,7 +33,7 @@
 
   // Draft values (bound to form controls)
   let draftTranscriberBackend = 'faster_whisper';
-  let draftDiarizerBackend = 'pyannote';
+  let draftDiarizerBackend = 'native';
   let draftBoundarySmoothing = false;
   let draftAcousticRecheck = false;
   let draftAcousticCosineMargin = 0.05;
@@ -229,7 +229,8 @@
             class="form-select"
             disabled={saving || resetInProgress !== null}
           >
-            <option value="pyannote">pyannote</option>
+            <option value="native">native (default)</option>
+            <option value="pyannote">pyannote (failover)</option>
           </select>
         </div>
       </div>

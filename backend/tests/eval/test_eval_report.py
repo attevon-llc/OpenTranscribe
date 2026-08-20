@@ -185,12 +185,28 @@ class TestBuildRetrievalPerQuery:
 
 
 def _iter_baseline_metrics(baselines_dir: Path) -> list[tuple[str, dict[str, Any]]]:
-    """(baseline name, parsed metrics.json) for every baseline directory that
-    has one. A directory with no metrics.json (``stage4-router`` — a
-    classifier report that touches no index, per baselines/README.md) is not
-    a retrieval-scored baseline at all and is excluded here rather than
-    exempted by name below; the two are different reasons and this sweep
-    keeps them distinguishable."""
+    """(baseline name, parsed metrics.json) for every RETRIEVAL-scored baseline
+    directory that has one.
+
+    Two different reasons a directory is excluded, kept distinguishable on
+    purpose:
+
+    * No ``metrics.json`` at all (``stage4-router`` — a classifier report that
+      touches no index, per ``baselines/README.md``) is not a retrieval-scored
+      baseline and never reaches this sweep.
+    * A ``metrics.json`` that is not ``report.build_results``'s own schema —
+      ``probe-chat-live-2026-08-20`` (issue #72), from
+      ``tests.eval.harness.probe_metrics.build_probe_results`` — is a different
+      instrument (the live chat-RAG HTTP probe) with its own ``rows``/
+      ``summary``/``target`` shape, not a `schema_version`-2-without-
+      `retrieval_per_query` case of THIS shape. Forcing it through
+      ``LEGACY_BASELINE_ALLOWLIST`` would assert something false: that it is a
+      pre-``8117e6f3`` retrieval baseline waiting to be regenerated, which it
+      is not and never will be. Detected structurally by the absence of
+      ``control_name`` — a required, no-default keyword of
+      ``report.build_results`` that is therefore present in every genuine
+      retrieval baseline and in none of this family.
+    """
     found: list[tuple[str, dict[str, Any]]] = []
     for entry in sorted(baselines_dir.iterdir()):
         if not entry.is_dir():
@@ -198,7 +214,10 @@ def _iter_baseline_metrics(baselines_dir: Path) -> list[tuple[str, dict[str, Any
         metrics_path = entry / "metrics.json"
         if not metrics_path.is_file():
             continue
-        found.append((entry.name, json.loads(metrics_path.read_text(encoding="utf-8"))))
+        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+        if "control_name" not in metrics:
+            continue
+        found.append((entry.name, metrics))
     return found
 
 
@@ -251,6 +270,36 @@ def check_baseline_integrity(
             "the baselines directory at all — remove it from LEGACY_BASELINE_ALLOWLIST"
         )
     return violations
+
+
+class TestIterBaselineMetrics:
+    """``_iter_baseline_metrics``'s non-retrieval-baseline exclusion (issue #72)."""
+
+    def test_excludes_a_directory_whose_metrics_json_has_no_control_name(
+        self, tmp_path: Path
+    ) -> None:
+        retrieval_dir = tmp_path / "a-real-retrieval-baseline"
+        retrieval_dir.mkdir()
+        (retrieval_dir / "metrics.json").write_text(
+            json.dumps({"control_name": "stage1-baseline", "schema_version": 2}),
+            encoding="utf-8",
+        )
+        probe_dir = tmp_path / "probe-chat-live-2026-08-20"
+        probe_dir.mkdir()
+        (probe_dir / "metrics.json").write_text(
+            json.dumps({"schema_version": 1, "run_name": "probe-chat-live-2026-08-20"}),
+            encoding="utf-8",
+        )
+
+        found = _iter_baseline_metrics(tmp_path)
+
+        assert [name for name, _ in found] == ["a-real-retrieval-baseline"]
+
+    def test_the_committed_probe_baseline_is_excluded_from_the_real_sweep(self) -> None:
+        """The must-stay-clean case against the real, committed artifact rather
+        than a synthetic stand-in — proves this isn't just a passing fixture."""
+        found = _iter_baseline_metrics(BASELINES_DIR)
+        assert "probe-chat-live-2026-08-20" not in {name for name, _ in found}
 
 
 class TestBaselineIntegritySweep:

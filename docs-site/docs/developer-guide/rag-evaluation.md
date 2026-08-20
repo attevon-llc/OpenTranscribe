@@ -2287,3 +2287,75 @@ Stated plainly, because a benchmark's limits are part of its result:
 - **Multilingual coverage is 20 languages scored, not 100.** The unscored remainder is enumerated
   with a specific reason each — no public benchmark with relevance judgements, transcripts but no
   queries, or non-commercial licensing — rather than being implied by the product's language list.
+
+## Live chat-RAG HTTP probe (issue #72)
+
+Everything above drives `retrieve_chunks`/`retrieve_digests` in-process and never involves an LLM
+(D6) — that is what makes it fast and byte-identical. `scripts/probe_chat_rag.py` is the
+deliberate exception: it drives the **real chat HTTP path** — login, create a conversation with a
+file scope, POST a message, read the SSE stream, re-fetch the thread for `msg_metadata` — against
+a **real LLM**. It is a spot-check instrument, not a gate: useful for "does a multi-file scope
+query actually consult every file it should", not for a per-commit number.
+
+```bash
+python3 scripts/probe_chat_rag.py --port 5274 --question-set my-questions.json \
+    --llm-base-url http://llm-test-vllm:8000/v1 --llm-model gemma-4-e4b \
+    --out /tmp/ot-probe --metrics-out backend/tests/eval/baselines/probe-my-run
+```
+
+Question sets are supplied as an external `--question-set` JSON file, never hardcoded in the
+script — see the licence note below. `--out` writes the full-fidelity report (question text,
+reference answers, the app's generated answer prose, citation snippets) and must never be
+committed. `--metrics-out` writes the metrics-only artifact
+(`tests/eval/harness/probe_metrics.py`) that IS safe to commit: per-turn query id, category, scope
+size, files actually consulted, chunks used, retrieved count, warning codes, and the derived
+**coverage ratio** (`files_consulted / scope_size`) — never the question, the reference answer, the
+app's answer, or a citation's transcript snippet.  `tests.eval.harness.probe_metrics.
+assert_no_prose` walks the assembled artifact and refuses to serialise it if any of those fields
+appear at any depth, so a future field copy-pasted from the full-fidelity record cannot leak text
+into a committed baseline by accident.
+
+### Two environment gotchas, because each cost a debugging cycle the first time
+
+- **vLLM publishes on `127.0.0.1` only, on the *dev* project's Docker network.** A fresh/
+  measurement stack cannot resolve `llm-test-vllm` until the container is joined to that stack's
+  network **with the alias the app's LLM config names**:
+
+  ```bash
+  docker network connect --alias llm-test-vllm otfresh-<name>_default opentranscribe-llm-test-vllm
+  ```
+
+  The `--alias` is not optional — a plain `docker network connect` registers the CONTAINER name on
+  the new network, not the compose SERVICE alias every LLM config's `base_url` resolves against,
+  and DNS lookup from the backend fails silently until this is done.
+- **Every mutating request needs an `X-CSRF-Token` header matching the `csrf_token` cookie**
+  (double-submit, `backend/app/middleware/csrf.py`). GETs are exempt, so login followed by a
+  read-only call looks fine right up until the first POST 403s. `probe_chat_rag.login()` attaches
+  it automatically from the cookie the login response sets.
+
+### Committed baseline: `probe-chat-live-2026-08-20`
+
+`backend/tests/eval/baselines/probe-chat-live-2026-08-20/` records a 14-question run against
+`otfresh-ragmeas` (the 2,250-file / 144,527-chunk measurement corpus) and a Gemma vLLM instance,
+converted offline from the raw probe output through `probe_metrics.build_probe_results` — no
+question text, reference answer, or answer prose survived the conversion. Headline finding: **the
+four `multi_file` questions, each scoped to all four TS3005 meetings, consulted 3/4, 3/4, 2/4, 2/4
+files** (`coverage_ratio` 0.75, 0.75, 0.5, 0.5 in `metrics.json`) — a scoped multi-file
+conversation does not reliably cite every file in scope even when nothing prevents it from doing
+so. The two negative controls (an absent topic, an absent speaker/role) both correctly declined
+rather than fabricating; every `single_specific`/`single_general` question consulted exactly the
+one file in its scope.
+
+### Arms and flags this instrument does NOT yet cover
+
+Recorded here so a future session does not have to rediscover it by reading code:
+
+- **`chat.speaker_resolver_enabled`** — default **FALSE**. **UNMEASURED** (W2.2).
+- **`chat.context_expansion_enabled`** — default **FALSE**. **UNMEASURED** (issue #523).
+- **Fusion strategy** — `rrf` is the shipped default. #403 Stage 5 measured **24 arms** across two
+  corpora and adopted **zero** of them: the two corpora's per-arm rankings are **anti-correlated**
+  (Kendall's tau-b −0.714 / −0.905 — a config that helps one corpus tends to hurt the other). See
+  [Stage 5](#stage-5-the-retrieval-tuning-bake-off) above for the full arm table.
+- **Cross-encoder reranking** — measured **worse** than the unreranked candidate order (see
+  [Reranker candidates](#reranker-candidates-the-licence-gate-came-first) above) and deliberately
+  **not adopted**.

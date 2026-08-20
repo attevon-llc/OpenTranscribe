@@ -71,6 +71,27 @@ So the current verdict on **every** baseline, re-derived ones included, is `unat
 re-derived four now record is not "which model", but the auditable fact that **nobody can tell** —
 which is a claim a later comparison can check, where silence was not.
 
+## `probe-chat-live-2026-08-20` — a different instrument, a different schema
+
+Every baseline above is scored by `scripts/benchmark_rag.py` against `retrieve_chunks`/
+`retrieve_digests` in-process, and their `metrics.json` share one schema (`rows`, `qrels`, the
+`index`/`retrieval` provenance blocks). `probe-chat-live-2026-08-20/metrics.json` is NOT that
+schema — it comes from `scripts/probe_chat_rag.py` (issue #72), which drives the **real chat HTTP
+path** end to end against a **real LLM**, and its `metrics.json` carries `rows`/`summary`/`target`
+as `tests/eval/harness/probe_metrics.py` defines them: per-turn query id, category, scope size,
+files consulted, chunks used, retrieved count, warning codes, and the derived coverage ratio
+(`files_consulted / scope_size`). **Do not diff it against a retrieval baseline** — different
+instrument, different measures, not comparable row for row.
+
+It records a 14-question run against `otfresh-ragmeas` and a Gemma vLLM instance
+(`gemma-4-e4b`), converted offline from the raw probe output through
+`probe_metrics.build_probe_results` — see `docs-site/docs/developer-guide/rag-evaluation.md`'s
+"Live chat-RAG HTTP probe" section for the full write-up, including why no question text,
+reference answer, or answer prose is present (QMSum licence ambiguity; `assert_no_prose` enforces
+it). Headline finding: the four `multi_file` questions consulted **3/4, 3/4, 2/4, 2/4** of their
+scoped files. Regenerate only by re-running the probe and re-converting through the same
+function — never by hand-editing the numbers.
+
 ## Re-deriving one
 
 ```bash

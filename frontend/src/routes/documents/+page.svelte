@@ -4,9 +4,10 @@
   import { toastStore } from '$stores/toast';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import DocumentUploadPanel from '$components/documents/DocumentUploadPanel.svelte';
   import DocumentCard from '$components/documents/DocumentCard.svelte';
-  import { listDocuments, reparseDocument } from '$lib/api/documents';
+  import { listDocuments, reparseDocument, getDocument, deleteDocument } from '$lib/api/documents';
   import type { DocumentResponse } from '$lib/types/document';
 
   const PAGE_SIZE = 50;
@@ -16,12 +17,69 @@
   let loading = true;
   let loadingMore = false;
   let error = '';
-  let pollHandle: ReturnType<typeof setInterval> | null = null;
 
   let search = '';
   let sortBy: 'created_at' | 'filename' | 'file_size' = 'created_at';
   let sortOrder: 'asc' | 'desc' = 'desc';
   let searchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+  // Bulk select (v400, #362 lane C3-remainder) — parity with the media gallery's
+  // selection mode (`nav.selectFiles`/`nav.deleteSelected`/etc. are shared, generic
+  // keys, not media-specific wording).
+  let isSelecting = false;
+  let selectedUuids = new Set<string>();
+  let showDeleteConfirm = false;
+  let deleting = false;
+  $: allSelected = documents.length > 0 && selectedUuids.size === documents.length;
+
+  function toggleSelectionMode() {
+    isSelecting = !isSelecting;
+    if (!isSelecting) selectedUuids = new Set();
+  }
+
+  function toggleSelected(uuid: string) {
+    const next = new Set(selectedUuids);
+    if (next.has(uuid)) next.delete(uuid);
+    else next.add(uuid);
+    selectedUuids = next;
+  }
+
+  function toggleSelectAll() {
+    selectedUuids = allSelected ? new Set() : new Set(documents.map((d) => d.uuid));
+  }
+
+  async function confirmBulkDelete() {
+    deleting = true;
+    const targets = Array.from(selectedUuids);
+    let succeeded = 0;
+    const failed: string[] = [];
+    for (const uuid of targets) {
+      try {
+        await deleteDocument(uuid);
+        succeeded++;
+      } catch {
+        failed.push(uuid);
+      }
+    }
+    documents = documents.filter((d) => !selectedUuids.has(d.uuid) || failed.includes(d.uuid));
+    total -= succeeded;
+    selectedUuids = new Set(failed);
+    deleting = false;
+    showDeleteConfirm = false;
+    if (succeeded > 0) toastStore.success($t('gallery.deleteSuccess', { count: succeeded }));
+    if (failed.length > 0) toastStore.error($t('gallery.deleteFailed', { count: failed.length }));
+    if (failed.length === 0) isSelecting = false;
+  }
+
+  // WS-driven status (v400, #362 lane C3-remainder) — replaces the previous 4 s/60 s
+  // poll after upload. The `document_status` websocket message already dispatches a
+  // `document-status` window CustomEvent (stores/websocket.ts) that
+  // routes/documents/[id]/+page.svelte already consumes; this page listens for the
+  // same event to keep an already-visible row's status live without any polling at
+  // all. `getDocument` refetches the single row on a terminal status so word_count/
+  // chunk_count/display_status catch up — a full-list reload would be wasteful for
+  // a one-row change.
+  let documentStatusHandler: ((event: Event) => void) | null = null;
 
   // `documents.length < total` is the "past position 200" fix (#362 lane C3): the
   // page used to fetch a single fixed batch of 200 and never ask for more, so a
@@ -74,28 +132,44 @@
 
   function handleUploaded() {
     toastStore.success($t('documents.addedToQueue'));
-    // No document-list-scoped websocket event exists yet (document_status is keyed
-    // and consumed by the detail page only — see stores/websocket.ts) — a short poll
-    // picks up the new row and any status transitions cheaply for however many
-    // documents a user reasonably has in flight at once (v1 scope; the media gallery's
-    // server-driven pagination is overkill while document volumes stay far below file
-    // volumes, per the plan this task was built against).
+    // The new row's own status ticks arrive over the `document-status` websocket
+    // event handled below — one reload to pick up the new row, no polling.
     loadDocuments(true);
-    if (!pollHandle) {
-      pollHandle = setInterval(() => loadDocuments(true), 4000);
-      setTimeout(() => {
-        if (pollHandle) {
-          clearInterval(pollHandle);
-          pollHandle = null;
-        }
-      }, 60000);
-    }
   }
 
-  onMount(() => loadDocuments(true));
+  onMount(() => {
+    loadDocuments(true);
+
+    documentStatusHandler = (event: Event) => {
+      const detail = (event as CustomEvent).detail as {
+        document_id?: string;
+        status?: string;
+      };
+      if (!detail?.document_id) return;
+      const uuid = detail.document_id;
+      const existing = documents.find((d) => d.uuid === uuid);
+      if (!existing) return; // not a row this page has loaded (e.g. a later page)
+
+      if (detail.status === 'completed' || detail.status === 'error') {
+        getDocument(uuid)
+          .then((updated) => {
+            documents = documents.map((d) => (d.uuid === uuid ? updated : d));
+          })
+          .catch(() => {
+            /* row will show stale status until the next full reload; not fatal */
+          });
+      } else if (detail.status) {
+        const status = detail.status;
+        documents = documents.map((d) =>
+          d.uuid === uuid ? { ...d, status, display_status: status } : d
+        );
+      }
+    };
+    window.addEventListener('document-status', documentStatusHandler);
+  });
   onDestroy(() => {
-    if (pollHandle) clearInterval(pollHandle);
     if (searchDebounce) clearTimeout(searchDebounce);
+    if (documentStatusHandler) window.removeEventListener('document-status', documentStatusHandler);
   });
 </script>
 
@@ -137,6 +211,37 @@
       >
         {sortOrder === 'desc' ? '↓' : '↑'}
       </button>
+      {#if !isSelecting}
+        <button
+          type="button"
+          class="select-mode-btn"
+          title={$t('gallery.bulk.selectFilesTooltip')}
+          on:click={toggleSelectionMode}
+        >
+          {$t('nav.selectFiles')}
+        </button>
+      {:else}
+        <button type="button" class="select-mode-btn" title={$t('gallery.bulk.selectAllTooltip')} on:click={toggleSelectAll}>
+          {allSelected ? $t('nav.deselectAll') : $t('nav.selectAll')}
+        </button>
+        <button
+          type="button"
+          class="select-mode-btn danger"
+          disabled={selectedUuids.size === 0}
+          title={$t('gallery.bulk.deleteTooltip')}
+          on:click={() => (showDeleteConfirm = true)}
+        >
+          {$t('nav.deleteSelected', { count: selectedUuids.size })}
+        </button>
+        <button
+          type="button"
+          class="select-mode-btn"
+          title={$t('gallery.bulk.cancelSelectionTooltip')}
+          on:click={toggleSelectionMode}
+        >
+          ✕
+        </button>
+      {/if}
     </section>
   {/if}
 
@@ -159,7 +264,13 @@
     {:else}
       <div class="document-grid">
         {#each documents as doc (doc.uuid)}
-          <DocumentCard {doc} on:retry={handleRetry} />
+          <DocumentCard
+            {doc}
+            selectionMode={isSelecting}
+            selected={selectedUuids.has(doc.uuid)}
+            on:retry={handleRetry}
+            on:toggleSelect={(e) => toggleSelected(e.detail.uuid)}
+          />
         {/each}
       </div>
       {#if hasMore}
@@ -181,6 +292,18 @@
     {/if}
   </section>
 </div>
+
+<ConfirmationModal
+  bind:isOpen={showDeleteConfirm}
+  title={$t('gallery.deleteConfirmTitle')}
+  message={$t('gallery.deleteConfirmMessage', { count: selectedUuids.size })}
+  confirmText={deleting ? $t('documents.deleting') : $t('documents.delete')}
+  cancelText={$t('documents.cancel')}
+  confirmButtonClass="modal-warning-button"
+  cancelButtonClass="modal-primary-button"
+  on:confirm={confirmBulkDelete}
+  on:cancel={() => (showDeleteConfirm = false)}
+/>
 
 <style>
   .documents-page {
@@ -262,6 +385,37 @@
 
   .sort-order-btn:hover {
     border-color: var(--primary-color, #3b82f6);
+  }
+
+  .select-mode-btn {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--surface-color);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .select-mode-btn:hover:not(:disabled) {
+    border-color: var(--primary-color, #3b82f6);
+  }
+
+  .select-mode-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .select-mode-btn.danger {
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+
+  .select-mode-btn.danger:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.5);
   }
 
   .load-more-row {

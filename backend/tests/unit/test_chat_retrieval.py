@@ -428,14 +428,83 @@ def test_semantic_cache_degrades_when_embedding_unavailable():
         )
 
 
+class _SpecCompliantEvalFake:
+    """A Redis double that actually implements `_REMEMBER_SCRIPT`'s CONTRACT.
+
+    #403 W2.6: `remember_semantic` moved from a plain GET-then-SETEX (racy
+    under a parallel fan-out) to a single atomic `EVAL`. A bare `MagicMock`
+    can record that `.eval()` was called but proves nothing about what the
+    real Lua script running server-side would do; this fake instead performs
+    the exact append-trim-write contract the script promises (append one
+    JSON-decoded entry, keep only the last N, write back), keyed on the
+    SAME positional `ARGV` order `remember_semantic` sends. It is not a Lua
+    interpreter — it is a spec double for the one script this module ships,
+    which is what makes it able to catch a broken ARGV order without needing
+    a live Redis.
+    """
+
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+
+    def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+    def eval(self, _script: str, numkeys: int, *args: object) -> int:
+        assert numkeys == 1
+        key = str(args[0])
+        ttl, entry_json, max_history = args[1], args[2], args[3]
+        entries = json.loads(self.store[key]) if key in self.store else []
+        entries.append(json.loads(str(entry_json)))
+        # str() first: the *args signature is `object`, and int(object) has no
+        # overload. The real client receives these as strings over the wire.
+        entries = entries[-int(str(max_history)) :]
+        self.store[key] = json.dumps(entries)
+        assert int(str(ttl)) > 0
+        return 1
+
+
 def test_semantic_cache_history_is_bounded():
     """The per-user entry list must not grow without limit."""
     from app.services.chat import retrieval_cache
 
     existing = [{"key": f"k{i}", "vector": [1.0], "scope": "s", "rev": "r"} for i in range(60)]
-    redis = MagicMock()
-    redis.get.return_value = json.dumps(existing)
+    fake = _SpecCompliantEvalFake()
+    fake.store[retrieval_cache._SEMANTIC_KEY.format(user_id=1, org=0, leg_kind="main")] = (
+        json.dumps(existing)
+    )
 
+    with patch("app.core.redis.get_redis", return_value=fake):
+        retrieval_cache.remember_semantic(
+            user_id=1,
+            organization_id=None,
+            query="q",
+            cache_key_value="new-key",
+            scope_digest="s",
+            settings_rev="r",
+            ttl_seconds=300,
+            embedding=[1.0],
+        )
+
+    stored = json.loads(
+        fake.store[retrieval_cache._SEMANTIC_KEY.format(user_id=1, org=0, leg_kind="main")]
+    )
+    assert len(stored) == 50
+    assert stored[-1]["key"] == "new-key"
+
+
+def test_semantic_cache_write_is_atomic_via_a_single_eval_call():
+    """#403 W2.6: no more read-then-write — one round trip, one script.
+
+    The old shape (`client.get` then a later `client.setex`) races under a
+    parallel fan-out: two legs finishing in the same window both read the
+    same starting list and whichever `setex` lands second silently discards
+    the other leg's entry. `EVAL` runs server-side as one atomic step, so
+    there is exactly one write call and it is `eval`, never `setex`.
+    """
+    from app.services.chat import retrieval_cache
+
+    redis = MagicMock()
+    redis.get.return_value = None
     with patch("app.core.redis.get_redis", return_value=redis):
         retrieval_cache.remember_semantic(
             user_id=1,
@@ -448,9 +517,58 @@ def test_semantic_cache_history_is_bounded():
             embedding=[1.0],
         )
 
-    stored = json.loads(redis.setex.call_args[0][2])
-    assert len(stored) == 50
-    assert stored[-1]["key"] == "new-key"
+    redis.eval.assert_called_once()
+    redis.setex.assert_not_called()
+    # Real data flow, not just call bookkeeping: the entry the script will
+    # append is the one this call actually produced.
+    sent_entry = json.loads(redis.eval.call_args[0][4])
+    assert sent_entry["key"] == "new-key"
+    assert sent_entry["vector"] == [1.0]
+
+
+def test_semantic_cache_leg_kind_namespaces_the_redis_key():
+    """#403 W2.6: without this, a sub-question leg reuses its PARENT's cache.
+
+    A sub-question is frequently near-paraphrastic to the question it split
+    from, and at the default 0.97 threshold that would resolve to the
+    parent's own cached hits — the fan-out would then return nothing new
+    while reporting success. Namespacing by `leg_kind` is what keeps a
+    `"subquestion"` leg's remembered entries out of a `"main"` leg's lookup
+    and vice versa.
+    """
+    from app.services.chat import retrieval_cache
+
+    main_redis = MagicMock()
+    with patch("app.core.redis.get_redis", return_value=main_redis):
+        retrieval_cache.remember_semantic(
+            user_id=1,
+            organization_id=None,
+            query="q",
+            cache_key_value="k",
+            scope_digest="s",
+            settings_rev="r",
+            ttl_seconds=300,
+            embedding=[1.0],
+            leg_kind="main",
+        )
+    main_key = main_redis.eval.call_args[0][2]
+
+    subq_redis = MagicMock()
+    with patch("app.core.redis.get_redis", return_value=subq_redis):
+        retrieval_cache.remember_semantic(
+            user_id=1,
+            organization_id=None,
+            query="q",
+            cache_key_value="k",
+            scope_digest="s",
+            settings_rev="r",
+            ttl_seconds=300,
+            embedding=[1.0],
+            leg_kind="subquestion",
+        )
+    subq_key = subq_redis.eval.call_args[0][2]
+
+    assert main_key != subq_key
 
 
 def test_semantic_cache_write_is_skipped_when_caching_disabled():

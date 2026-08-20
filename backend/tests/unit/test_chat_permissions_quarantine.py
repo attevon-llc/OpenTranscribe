@@ -225,7 +225,7 @@ def test_unscoped_turn_retrieves_zero_chunk_hits_from_a_quarantined_file(
     """
     blocked = _make_file(db_session, normal_user, quarantined=True, title="Blocked")
 
-    masked, _meta, _counted, _overview = _run_prepare_context(
+    masked, _meta, _counted, _overview, _synthesis, _recurrence = _run_prepare_context(
         monkeypatch, db_session, normal_user, chunks=[_hit(str(blocked.uuid))], digests=[]
     )
 
@@ -243,7 +243,7 @@ def test_unscoped_turn_retrieves_zero_digest_hits_from_a_quarantined_file(
     """
     blocked = _make_file(db_session, normal_user, quarantined=True, title="Blocked")
 
-    masked, meta, _counted, _overview = _run_prepare_context(
+    masked, meta, _counted, _overview, _synthesis, _recurrence = _run_prepare_context(
         monkeypatch,
         db_session,
         normal_user,
@@ -267,7 +267,7 @@ def test_quarantine_drop_does_not_impersonate_a_masking_failure(
     """
     blocked = _make_file(db_session, normal_user, quarantined=True, title="Blocked")
 
-    _masked, meta, _counted, _overview = _run_prepare_context(
+    _masked, meta, _counted, _overview, _synthesis, _recurrence = _run_prepare_context(
         monkeypatch, db_session, normal_user, chunks=[_hit(str(blocked.uuid))], digests=[]
     )
 
@@ -285,7 +285,7 @@ def test_quarantine_drop_counter_absent_when_nothing_was_quarantined(
     documented (`service.py`) as present only when a drop actually happened."""
     ok = _make_file(db_session, normal_user, quarantined=False, title="Fine")
 
-    _masked, meta, _counted, _overview = _run_prepare_context(
+    _masked, meta, _counted, _overview, _synthesis, _recurrence = _run_prepare_context(
         monkeypatch, db_session, normal_user, chunks=[_hit(str(ok.uuid))], digests=[]
     )
 
@@ -303,7 +303,7 @@ def test_unscoped_turn_still_retrieves_an_ordinary_accessible_file(
     """
     ok = _make_file(db_session, normal_user, quarantined=False, title="Fine")
 
-    masked, _meta, _counted, _overview = _run_prepare_context(
+    masked, _meta, _counted, _overview, _synthesis, _recurrence = _run_prepare_context(
         monkeypatch, db_session, normal_user, chunks=[_hit(str(ok.uuid))], digests=[]
     )
 

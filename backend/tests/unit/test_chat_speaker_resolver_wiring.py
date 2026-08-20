@@ -176,7 +176,7 @@ def _prepare(monkeypatch, *, resolution, speaker_resolver_enabled, question="Wha
     monkeypatch.setattr(chat_service, "retrieve_context", _fake_retrieve_context)
     monkeypatch.setattr(chat_service, "mask_chunks", lambda *_a, **_k: [])
 
-    masked, meta, _counted, _overview = chat_service._prepare_context(
+    masked, meta, _counted, _overview, _synthesis, _recurrence = chat_service._prepare_context(
         user_id=1,
         organization_id=None,
         question=question,
@@ -286,7 +286,13 @@ async def _stream_with_meta(monkeypatch, *, meta_extra: dict):
     monkeypatch.setattr(
         chat_service,
         "_prepare_context",
-        lambda *_a, **_k: ([chunk], dict(diagnostics), None, None),
+        # Six values since #403 W2.6 added the fan-out's `<synthesis>`/
+        # `<recurrence>` blocks to `_prepare_context`'s return; both empty for a
+        # turn the router left on the chunk plane. A stale arity here does NOT
+        # surface as an error: the unpack raises inside `stream_reply`, whose
+        # broad `except` turns it into a `provider_error` frame, so the warning
+        # frame under test simply never appears.
+        lambda *_a, **_k: ([chunk], dict(diagnostics), None, None, "", ""),
     )
     monkeypatch.setattr(chat_service.limits, "is_cancelled", lambda _uuid: False)
 

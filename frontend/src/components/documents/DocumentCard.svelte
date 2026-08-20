@@ -6,14 +6,25 @@
   import type { DocumentResponse } from '$lib/types/document';
 
   export let doc: DocumentResponse;
+  /** Gallery bulk-select (v400, #362 lane C3-remainder) — parity with the media
+   * gallery's bulk operations. When true the card becomes a selection toggle
+   * instead of a navigation link. */
+  export let selectionMode = false;
+  export let selected = false;
 
-  const dispatch = createEventDispatcher<{ retry: { uuid: string } }>();
+  const dispatch = createEventDispatcher<{ retry: { uuid: string }; toggleSelect: { uuid: string } }>();
 
   function handleRetry(event: MouseEvent) {
     // The card is an <a>; a click on the retry button must not also navigate.
     event.preventDefault();
     event.stopPropagation();
     dispatch('retry', { uuid: doc.uuid });
+  }
+
+  function handleCardClick(event: MouseEvent) {
+    if (!selectionMode) return;
+    event.preventDefault();
+    dispatch('toggleSelect', { uuid: doc.uuid });
   }
 
   const EXT_ICON: Record<string, string> = {
@@ -44,7 +55,22 @@
           : 'status-pending';
 </script>
 
-<a class="document-card" href="/documents/{doc.uuid}">
+<a
+  class="document-card"
+  class:selection-mode={selectionMode}
+  class:selected
+  href="/documents/{doc.uuid}"
+  on:click={handleCardClick}
+>
+  {#if selectionMode}
+    <input
+      type="checkbox"
+      class="card-select-checkbox"
+      checked={selected}
+      on:click|stopPropagation={() => dispatch('toggleSelect', { uuid: doc.uuid })}
+      aria-label={$t('gallery.selectItem')}
+    />
+  {/if}
   <div class="card-icon">{icon}</div>
   <div class="card-body">
     <span class="card-filename" title={doc.filename}>{doc.filename}</span>
@@ -88,6 +114,24 @@
   .document-card:hover {
     border-color: var(--primary-color, #3b82f6);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  .document-card.selection-mode {
+    cursor: pointer;
+  }
+
+  .document-card.selected {
+    border-color: var(--primary-color, #3b82f6);
+    background: rgba(59, 130, 246, 0.06);
+  }
+
+  .card-select-checkbox {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin-top: 0.125rem;
+    cursor: pointer;
+    accent-color: var(--primary-color, #3b82f6);
   }
 
   .card-icon {

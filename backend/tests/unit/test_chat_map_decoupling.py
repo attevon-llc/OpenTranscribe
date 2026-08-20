@@ -114,7 +114,7 @@ def test_the_scope_map_runs_even_when_the_ranked_digest_leg_returned_nothing(mon
         [_digest_hit(f"uuid-{c}", i, f"Recording {c.upper()}") for i, c in enumerate("abc")],
         {"files_without_artifacts": 0},
     )
-    _masked, meta, _counted, overview = _prepare(
+    _masked, meta, _counted, overview, _synthesis, _recurrence = _prepare(
         monkeypatch, file_uuids=file_uuids, map_hits=map_hits, digests=()
     )
 
@@ -133,7 +133,7 @@ def test_unbounded_scope_keeps_the_ranked_leg_behaviour(monkeypatch):
     as before the decoupling."""
     digest_hits = [_digest_hit("uuid-a", 1, "Ranked A"), _digest_hit("uuid-b", 2, "Ranked B")]
 
-    _masked, meta, _counted, overview = _prepare(
+    _masked, meta, _counted, overview, _synthesis, _recurrence = _prepare(
         monkeypatch,
         file_uuids=None,
         map_hits=DigestScopeHits([], {"files_without_artifacts": 0}),
@@ -153,7 +153,7 @@ def test_a_bounded_map_with_nothing_covered_falls_back_to_the_ranked_leg(monkeyp
     reporting no overview at all."""
     digest_hits = [_digest_hit("uuid-a", 1, "Ranked Only")]
 
-    _masked, meta, _counted, overview = _prepare(
+    _masked, meta, _counted, overview, _synthesis, _recurrence = _prepare(
         monkeypatch,
         file_uuids=["uuid-a"],
         map_hits=DigestScopeHits([], {"files_without_artifacts": 1}),
@@ -171,7 +171,7 @@ def test_nothing_covered_and_no_ranked_digests_produces_no_overview(monkeypatch)
     empty one) — `build_overview` already returns `block == ""` for empty
     summaries, and `_prepare_context` must not stamp `meta["overview"]`/
     `meta["map_source"]` in that case."""
-    _masked, meta, _counted, overview = _prepare(
+    _masked, meta, _counted, overview, _synthesis, _recurrence = _prepare(
         monkeypatch,
         file_uuids=["uuid-a"],
         map_hits=DigestScopeHits([], {"files_without_artifacts": 1}),
@@ -194,7 +194,7 @@ def test_a_lookup_turn_never_runs_the_map(monkeypatch):
     the map must not run even though the scope is bounded — `scope_digest_hits`
     is stubbed to explode if called, so this is a red-if-it-runs assertion,
     not merely an absent-key one."""
-    _masked, meta, _counted, overview = _prepare(
+    _masked, meta, _counted, overview, _synthesis, _recurrence = _prepare(
         monkeypatch,
         file_uuids=["uuid-a"],
         route=Route(intent="lookup", tiers=("chunk",)),

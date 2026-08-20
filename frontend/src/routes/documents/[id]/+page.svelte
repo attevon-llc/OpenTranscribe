@@ -11,8 +11,11 @@
   import { toastStore } from '$stores/toast';
   import Spinner from '$components/ui/Spinner.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import CommentSection from '$components/CommentSection.svelte';
+  import SummarySearch from '$components/SummarySearch.svelte';
   import DocumentOriginalViewer from '$components/documents/DocumentOriginalViewer.svelte';
   import DocumentParsedTextViewer from '$components/documents/DocumentParsedTextViewer.svelte';
+  import ShareDocumentModal from '$components/documents/ShareDocumentModal.svelte';
   import {
     getDocument,
     getDocumentChunks,
@@ -31,6 +34,24 @@
   let activeTab: 'original' | 'text' = 'text';
   let showDeleteConfirm = false;
   let deleting = false;
+  let showShareModal = false;
+  let commentCount = 0;
+
+  // Search-within-document (v400, #362 lane C5) — state owned by the coordinator
+  // (this page), matching count/highlighting delegated to DocumentParsedTextViewer
+  // via $lib/utils/searchHighlight, the same reuse rule SummaryModal's own find bar
+  // follows for its own child.
+  let searchQuery = '';
+  let currentMatchIndex = 0;
+  let totalMatches = 0;
+
+  // v400 (#362 lane C3-remainder) — Share and Delete are owner-only on the backend
+  // (`_get_owned_document(..., min_permission="owner")` in documents.py); a viewer or
+  // editor sharee who clicked either got a bare 404 "Document not found" (the same
+  // 404 a stranger gets, by design — see that function's docstring). Gate the
+  // buttons on `doc.my_permission`, mirroring `files/[id]/+page.svelte`'s own
+  // `canEdit` derivation and the `null`-means-owner convention `my_permission` uses.
+  $: canManage = !!doc && (!doc.my_permission || doc.my_permission === 'owner');
 
   // document_status ticks (parsing progress) — see stores/websocket.ts for why this
   // is a raw window CustomEvent rather than the shared progressive-notification path.
@@ -72,6 +93,42 @@
   function switchTab(tab: 'original' | 'text') {
     activeTab = tab;
     if (tab === 'text') void applyChunkHighlight();
+  }
+
+  // Search-within-document handlers — mirrors TranscriptModal/SummaryModal's own
+  // next/previous/clear cycle, just driving DocumentParsedTextViewer's props
+  // instead of local highlighting.
+  function handleSearch(event: CustomEvent<{ query: string }>) {
+    searchQuery = event.detail.query;
+    currentMatchIndex = 0;
+    void scrollToCurrentMatch();
+  }
+
+  function handleClearSearch() {
+    searchQuery = '';
+    currentMatchIndex = 0;
+  }
+
+  function handleNextMatch() {
+    if (totalMatches === 0) return;
+    currentMatchIndex = (currentMatchIndex + 1) % totalMatches;
+    void scrollToCurrentMatch();
+  }
+
+  function handlePreviousMatch() {
+    if (totalMatches === 0) return;
+    currentMatchIndex = currentMatchIndex > 0 ? currentMatchIndex - 1 : totalMatches - 1;
+    void scrollToCurrentMatch();
+  }
+
+  async function scrollToCurrentMatch() {
+    await tick();
+    setTimeout(() => {
+      const current = document.querySelector('.transcript-search-highlight.current');
+      if (current) {
+        current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 50);
   }
 
   async function handleDownload(forceDownload: boolean) {
@@ -164,16 +221,23 @@
         </div>
       </div>
       <div class="header-actions">
+        {#if canManage}
+          <button type="button" class="action-btn" on:click={() => (showShareModal = true)}>
+            {$t('sharing.shareButton')}
+          </button>
+        {/if}
         <button type="button" class="action-btn" on:click={() => handleDownload(true)}>
           {$t('documents.download')}
         </button>
-        <button
-          type="button"
-          class="action-btn action-btn-danger"
-          on:click={() => (showDeleteConfirm = true)}
-        >
-          {$t('documents.delete')}
-        </button>
+        {#if canManage}
+          <button
+            type="button"
+            class="action-btn action-btn-danger"
+            on:click={() => (showDeleteConfirm = true)}
+          >
+            {$t('documents.delete')}
+          </button>
+        {/if}
       </div>
     </header>
 
@@ -211,6 +275,18 @@
       </button>
     </div>
 
+    {#if activeTab === 'text' && doc.status === 'completed'}
+      <SummarySearch
+        bind:searchQuery
+        totalMatches={totalMatches}
+        {currentMatchIndex}
+        on:search={handleSearch}
+        on:clearSearch={handleClearSearch}
+        on:nextMatch={handleNextMatch}
+        on:previousMatch={handlePreviousMatch}
+      />
+    {/if}
+
     <div class="tab-content">
       {#if activeTab === 'original'}
         <DocumentOriginalViewer
@@ -219,13 +295,35 @@
           filename={doc.filename}
         />
       {:else if doc.status === 'completed'}
-        <DocumentParsedTextViewer {chunks} />
+        <DocumentParsedTextViewer
+          {chunks}
+          {searchQuery}
+          {currentMatchIndex}
+          on:matchesChanged={(e) => (totalMatches = e.detail.total)}
+        />
       {:else}
         <p class="not-ready-note">{$t('documents.textNotReadyYet')}</p>
       {/if}
     </div>
+
+    <section class="notes-section">
+      <CommentSection
+        mode="document"
+        documentId={doc.uuid}
+        on:commentsChanged={(e) => (commentCount = e.detail.count)}
+      />
+    </section>
   {/if}
 </div>
+
+{#if showShareModal && doc}
+  <ShareDocumentModal
+    documentUuid={doc.uuid}
+    documentName={doc.filename}
+    on:close={() => (showShareModal = false)}
+    on:shared={() => (showShareModal = false)}
+  />
+{/if}
 
 <ConfirmationModal
   bind:isOpen={showDeleteConfirm}
@@ -397,5 +495,9 @@
     padding: 3rem 1rem;
     text-align: center;
     color: var(--text-secondary);
+  }
+
+  .notes-section {
+    margin-top: 0.5rem;
   }
 </style>

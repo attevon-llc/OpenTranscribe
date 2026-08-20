@@ -35,6 +35,7 @@ from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
     from app.models.document import Document
+    from app.models.document import DocumentChunk
     from app.models.file_facts import FileFacts
     from app.models.prompt import SummaryPrompt
     from app.models.sharing import CollectionShare
@@ -649,13 +650,42 @@ class Speaker(Base):
 
 
 class Comment(Base):
+    """A note anchored to a media file OR a document — exactly one (v400, #362 lane
+    C3-remainder/C5). ``media_file_id`` was NOT NULL until v400; it is nullable now so a
+    document-anchored comment can leave it unset, enforced by the database-level
+    ``ck_comment_exactly_one_owner`` XOR CHECK rather than by convention (the same shape
+    ``v398`` gave ``file_facts``). ``timestamp`` doubles as the document anchor: for a
+    media comment it is a playback offset in seconds; for a document comment it is
+    unused (NULL) — the chunk/page anchor a document note needs lives in
+    ``document_chunk_id`` instead, since a document has no single scalar position axis
+    the way a recording's timeline does.
+    """
+
     __tablename__ = "comment"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
         UUID(as_uuid=True), unique=True, nullable=False, default=uuid7, index=True
     )
-    media_file_id: Mapped[int] = mapped_column(Integer, ForeignKey("media_file.id"), nullable=False)
+    media_file_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("media_file.id"), nullable=True
+    )
+    #: v400. ``ON DELETE CASCADE`` (unlike ``media_file_id``, which has never had an
+    #: ``ondelete`` and relies on ``MediaFile.comments``'s ORM-level cascade running
+    #: before the file row is deleted) — ``Document`` has no such ORM-cascaded
+    #: ``comments`` relationship, so the database must remove these rows itself or a
+    #: bare ``db.delete(doc)`` (``documents.py:delete_document``) raises.
+    document_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("document.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    #: v400. The chunk a document comment is anchored to, mirroring how ``timestamp``
+    #: anchors a media comment to an instant. Nullable: a comment attached while chunks
+    #: had not finished parsing, or a general (unanchored) document note, has none.
+    document_chunk_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("document_chunk.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("user.id"), nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     timestamp: Mapped[float | None] = mapped_column(
@@ -665,8 +695,20 @@ class Comment(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
+    __table_args__ = (
+        CheckConstraint(
+            "(CASE WHEN media_file_id IS NOT NULL THEN 1 ELSE 0 END) "
+            "+ (CASE WHEN document_id IS NOT NULL THEN 1 ELSE 0 END) = 1",
+            name="ck_comment_exactly_one_owner",
+        ),
+    )
+
     # Relationships
-    media_file: Mapped["MediaFile"] = relationship("MediaFile", back_populates="comments")
+    media_file: Mapped["MediaFile | None"] = relationship("MediaFile", back_populates="comments")
+    document: Mapped["Document | None"] = relationship("Document", back_populates="comments")
+    #: v400. No back-reference on ``DocumentChunk`` — a chunk does not need to enumerate
+    #: the comments anchored to it, only a comment needs to resolve its anchor.
+    document_chunk: Mapped["DocumentChunk | None"] = relationship("DocumentChunk")
     user: Mapped["User"] = relationship("User", back_populates="comments")
 
 

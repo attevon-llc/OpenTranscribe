@@ -85,6 +85,16 @@ class ChatSettings:
     #: recurrence lexicon and the `<recurrence>` evidence block. Off by
     #: default — a new, unmeasured shape.
     recurrence_enabled: bool = C.DEFAULT_CHAT_RECURRENCE_ENABLED
+    #: W2.6. Build a plan for a multi-part/ambiguous/recurrence turn and run
+    #: its legs in parallel (`services/chat/planner.py` + `legs.py`). Off by
+    #: default — a new, unmeasured shape; with the flag off (or no LLM
+    #: configured) every turn routes exactly as it did before this existed.
+    planner_enabled: bool = C.DEFAULT_CHAT_PLANNER_ENABLED
+    #: W2.6. Ceiling on the shared leg executor for one turn's fan-out.
+    planner_max_parallel_legs: int = C.DEFAULT_CHAT_PLANNER_MAX_PARALLEL_LEGS
+    #: W2.6. One bounded non-streaming call reconciling merged fan-out
+    #: evidence into a `<synthesis>` block. Independent of `planner_enabled`.
+    enrichment_enabled: bool = C.DEFAULT_CHAT_ENRICHMENT_ENABLED
     #: Ceiling on the answer, sent to the provider as max_tokens. ``None`` means
     #: "use whatever the LLM config derived", which is the community behaviour.
     max_output_tokens: int | None = None

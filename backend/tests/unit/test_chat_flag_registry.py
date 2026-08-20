@@ -79,6 +79,13 @@ _OLD_HAND_WRITTEN_DESCRIPTIONS = {
     "recurrence_enabled": (
         "Detect items recurring across multiple recordings and surface a <recurrence> block"
     ),
+    # #403 W2.6 — added in the same commit as the registry entries, per this
+    # test's own docstring above.
+    "planner_enabled": "Plan multi-part questions into parallel retrieval legs before answering",
+    "planner_max_parallel_legs": "Maximum retrieval legs run in parallel for a planned turn",
+    "enrichment_enabled": (
+        "Reconcile merged multi-leg evidence into a <synthesis> block before answering"
+    ),
 }
 
 

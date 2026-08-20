@@ -42,7 +42,8 @@ Rules:
 11. Answer in the SAME LANGUAGE as the user's question. When you quote a transcript, quote it in the language it was spoken in and do not translate the quotation — a translated quote is no longer evidence of what was said. Explain or paraphrase around it in the user's language.
 12. An <overview> block summarises EVERY recording in scope, while the excerpts below it cover only a few of them. When the question is about a collection rather than a moment, answer from the overview and cover every recording it lists — do not narrow the answer to whichever recordings happen to have excerpts. Use the excerpts for specific quotes and timestamps.
 13. A <recurrence> block lists items (action items, decisions, follow-ups or recurring topics) that came up in TWO OR MORE separate recordings, grouped by similarity. It does not track whether an item was later completed, resolved or superseded — there is no "open" vs "done" status in this data, so never say an item is still open or outstanding based on this block alone; describe it as something that recurred, and if the block reports items it could not group (a truncated or declined language note), repeat that limitation rather than silently ignoring it.
-14. When an <overview> block opens with a "focus speaker" line, this turn is scoped to what that ONE named person specifically said or did — answer about them, not about the recording as a whole, and use the rest of the overview (talk time, turns, coverage notes) as exact figures for that person rather than the group."""  # noqa: E501
+14. When an <overview> block opens with a "focus speaker" line, this turn is scoped to what that ONE named person specifically said or did — answer about them, not about the recording as a whole, and use the rest of the overview (talk time, turns, coverage notes) as exact figures for that person rather than the group.
+15. A <synthesis> block is a MACHINE-DRAFTED reconciliation of several pieces of evidence, produced by the same kind of model you are — not a human-verified source. Treat it as a draft: verify every claim in it against the excerpts before repeating it, and prefer the excerpts' own wording when they disagree with the synthesis."""  # noqa: E501
 
 NO_CONTEXT_SYSTEM_RULES = """You are OpenTranscribe's assistant, currently in direct chat mode with no transcript context attached.
 
@@ -466,6 +467,35 @@ def format_recurrence_block(result) -> str:
             "could not be safely masked"
         )
     return _RECURRENCE_OPEN + "\n".join(lines) + "\n" + _RECURRENCE_CLOSE
+
+
+# #403 W2.6. Same posture as `format_recurrence_block`: a bounded, sanitized
+# block that precedes the excerpts. Unlike `counted`/`overview`/`recurrence`,
+# its text is FREE-RUNNING MODEL PROSE (the enrichment call's own reply), not
+# assembled from discrete named fields — so it goes through the body-safe
+# sanitizer (`_sanitize_body_text`, unbounded length, tag-defusing only)
+# rather than the attribute one, exactly like an excerpt's transcript
+# content is sanitized.
+_SYNTHESIS_OPEN = "<synthesis>\n"
+_SYNTHESIS_CLOSE = "\n</synthesis>\n\n"
+
+
+def format_synthesis_block(text: str) -> str:
+    """Wrap an enrichment reply as a delimited ``<synthesis>`` block.
+
+    Args:
+        text: The enrichment call's own reply — machine-drafted, and base
+            rule 15 (added alongside this) tells the model to treat it as a
+            draft to verify against the excerpts, not a second source of
+            truth.
+
+    Returns:
+        A delimited block, or ``""`` when there is nothing to wrap.
+    """
+    clean = (text or "").strip()
+    if not clean:
+        return ""
+    return _SYNTHESIS_OPEN + _sanitize_body_text(clean) + _SYNTHESIS_CLOSE
 
 
 # Priority order for the evidence blocks that precede the excerpts, HIGHEST

@@ -9,6 +9,9 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
 
+from app.schemas.base import UUIDBaseSchema
+from app.schemas.user import UserBrief
+
 #: Maps ``Document.status`` (reuses ``FileStatus``) to a human label. Only the four
 #: values a document ever actually takes are listed — ``QUEUED``/``DOWNLOADING``/
 #: ``CANCELLING``/``CANCELLED``/``ORPHANED``/``QUARANTINED`` are transcript-pipeline
@@ -53,6 +56,17 @@ class DocumentResponse(BaseModel):
     #: so the gallery card and admin review queue render one shape for both.
     is_quarantined: bool = False
     legal_hold: bool = False
+    #: v400 (#362 lane C3-remainder) — caller's effective permission, same convention
+    #: as ``files/crud.py``'s own ``my_permission``: ``None`` means the caller is the
+    #: actual owner, else ``"owner"|"editor"|"viewer"`` (an admin viewing someone
+    #: else's document reports "owner" without becoming the row's owner). Only
+    #: ``get_document`` computes this precisely today; every other endpoint that builds
+    #: a ``DocumentResponse`` (upload, list, reparse, delete) leaves it ``None`` because
+    #: the caller is always the owner at those call sites. The document detail page
+    #: gates its owner-only Share/Delete buttons on this field — without it a sharee
+    #: sees affordances that always 404 (``_get_owned_document(..., min_permission="owner")``
+    #: hides "you lack permission" behind the same 404 a stranger gets).
+    my_permission: str | None = None
 
 
 class DocumentListResponse(BaseModel):
@@ -129,3 +143,65 @@ class DocumentDownloadResponse(BaseModel):
     url: str
     filename: str
     content_type: str
+
+
+# =============================================================================
+# Sharing (v400, #362 lane C3-remainder) — mirrors ``schemas/sharing.py``'s
+# ShareCreate/ShareUpdate/Share exactly, re-scoped to a document. A document has
+# no collection concept, so this is a sibling shape rather than a reuse of it.
+# =============================================================================
+
+
+class DocumentShareCreate(BaseModel):
+    target_type: str = Field(..., pattern="^(user|group)$")
+    target_uuid: UUID
+    permission: str = Field("viewer", pattern="^(viewer|editor)$")
+
+
+class DocumentShareUpdate(BaseModel):
+    permission: str = Field(..., pattern="^(viewer|editor)$")
+
+
+class DocumentShare(UUIDBaseSchema):
+    """Share record for display — the document counterpart of ``schemas/sharing.Share``."""
+
+    target_type: str
+    target_uuid: UUID
+    target_name: str
+    target_email: str | None = None  # only for user targets
+    member_count: int | None = None  # only for group targets
+    permission: str
+    shared_by: UserBrief
+    created_at: datetime
+
+
+class SharedDocumentInfo(BaseModel):
+    """Document info from the perspective of someone it's shared with."""
+
+    uuid: UUID
+    filename: str
+    my_permission: str
+    shared_by: UserBrief
+    shared_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# =============================================================================
+# Notes / comments (v400, #362 lane C5) — the document analogue of
+# ``schemas/media.py``'s ``CommentCreate``. Response shape is the shared
+# ``schemas/media.Comment`` (one comment plane, media_file_id XOR document_id).
+# =============================================================================
+
+
+class DocumentCommentCreate(BaseModel):
+    """Comment creation for a document — the document analogue of ``CommentCreate``.
+
+    No ``timestamp``: a document has no playback axis; the anchor is a chunk index
+    instead, matching what ``DocumentChunkResponse.chunk_index`` already exposes as
+    that chunk's public identifier. ``document_uuid`` comes from the URL path, not
+    the body, same as ``CommentCreate``'s ``media_file_id``.
+    """
+
+    text: str
+    document_chunk_index: int | None = None

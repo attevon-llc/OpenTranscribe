@@ -64,6 +64,20 @@ class UUIDBaseSchema(BaseModel):
         if hasattr(data, "media_file") and hasattr(data.media_file, "uuid"):
             data_dict["media_file_id"] = data.media_file.uuid
 
+        # Map document relationship (v400, #362 lane C3-remainder — Comment's document
+        # arm). Overrides the raw internal int already copied by _convert_to_dict, same
+        # reasoning the media_file mapping above gives.
+        if hasattr(data, "document") and hasattr(data.document, "uuid"):
+            data_dict["document_id"] = data.document.uuid
+
+        # Map document_chunk relationship -> its chunk_index. DocumentChunk has no
+        # public uuid (its ``id`` is only ever exposed as chunk_index, see
+        # DocumentChunkResponse), so a comment's chunk anchor is exposed the same way
+        # rather than inventing a uuid for a row nothing else identifies by one.
+        document_chunk = getattr(data, "document_chunk", None)
+        if document_chunk is not None:
+            data_dict["document_chunk_index"] = document_chunk.chunk_index
+
         # Map speaker relationship
         if hasattr(data, "speaker") and hasattr(data.speaker, "uuid"):
             data_dict["speaker_id"] = data.speaker.uuid

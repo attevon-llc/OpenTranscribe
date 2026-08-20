@@ -16,8 +16,25 @@
   export let fileId = "";
   /** @type {number} */
   export let currentTime = 0;
+  /**
+   * v400 (#362 lane C5) — notes on a document, the document analogue of a media
+   * comment. When `mode === 'document'` this component talks to
+   * `/comments/documents/{documentId}/comments` instead of the media nested route,
+   * and hides the timestamp/"mark current time" affordance (a document has no
+   * playback axis). `documentId` is the document's public uuid.
+   * @type {'media' | 'document'}
+   */
+  export let mode = 'media';
+  /** @type {string} */
+  export let documentId = "";
 
-  /** @type {Array<{uuid: string, text: string, timestamp: number, user: {uuid: string, email?: string, full_name?: string, username?: string}, created_at: string}>} */
+  $: isDocument = mode === 'document';
+  $: targetId = isDocument ? documentId : fileId;
+  $: commentsEndpoint = isDocument
+    ? `/comments/documents/${targetId}/comments`
+    : `/comments/files/${targetId}/comments`;
+
+  /** @type {Array<{uuid: string, text: string, timestamp: number | null, document_chunk_index?: number | null, user: {uuid: string, email?: string, full_name?: string, username?: string}, created_at: string}>} */
   let comments = [];
   /** @type {boolean} */
   let loading = true;
@@ -55,17 +72,36 @@
   async function fetchComments() {
     loading = true;
     try {
-      // Validate fileId
-      if (!fileId) {
-        console.error('Invalid file ID:', fileId);
+      // Validate the target id
+      if (!targetId) {
+        console.error('Invalid target ID for comments:', mode, targetId);
         toastStore.error($t('comments.invalidFileId'));
         loading = false;
         return;
       }
 
+      // Document mode has no legacy history to fall back to — the nested route
+      // is the only route it has ever had.
+      if (isDocument) {
+        try {
+          const response = await axiosInstance.get(commentsEndpoint);
+          comments = Array.isArray(response.data) ? response.data : [];
+          comments.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+        } catch (/** @type {any} */ error) {
+          if (error.response?.status === 401) {
+            toastStore.error($t('comments.loginRequired'));
+          } else {
+            toastStore.error($t('comments.loadFailed', { error: error.message }));
+          }
+        } finally {
+          loading = false;
+        }
+        return;
+      }
+
       let response;
       try {
-        const endpoint = `/comments/files/${fileId}/comments`;
+        const endpoint = commentsEndpoint;
         response = await axiosInstance.get(endpoint);
       } catch (/** @type {any} */ error) {
         console.error('Error fetching comments:', error?.message, error?.response?.status, error?.response?.data);
@@ -163,6 +199,31 @@
 
     // Use the timestamp input if it was explicitly set, otherwise use null
     const timestamp = timestampInput !== null ? timestampInput : null;
+
+    if (isDocument) {
+      const currentUser = $authStore.user;
+      try {
+        const response = await axiosInstance.post(commentsEndpoint, { text: newComment });
+        const commentWithUser = {
+          ...response.data,
+          user: response.data.user || {
+            uuid: response.data.user_id || currentUser?.uuid || '',
+            email: currentUser?.email,
+            full_name: currentUser?.full_name || currentUser?.email || 'User ' + response.data.user_id
+          }
+        };
+        comments = [...comments, commentWithUser];
+        newComment = '';
+        dispatch('commentAdded', commentWithUser);
+      } catch (/** @type {any} */ err) {
+        if (err.response?.status === 401) {
+          toastStore.error($t('comments.loginRequiredToAdd'));
+        } else {
+          toastStore.error($t('comments.addFailed', { error: err.message }));
+        }
+      }
+      return;
+    }
 
     // Store locally for optimistic UI updates
     try {
@@ -458,43 +519,54 @@
         title={$t('comments.enterCommentHint')}
       ></textarea>
       <div class="form-actions">
-        <div class="timestamp-actions">
-          {#if timestampInput === null}
-            <button
-              type="button"
-              class="timestamp-button"
-              on:click={useCurrentTime}
-              title={$t('comments.markTimeHint')}
-            >
-              <span class="button-icon">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="10"/>
-                  <polyline points="12,6 12,12 16,14"/>
-                </svg>
-              </span>
-              <span>{$t('comments.markCurrentTime')}</span>
-            </button>
-          {:else}
-            <div class="current-timestamp">
-              <span class="timestamp-value">{$t('comments.markedTime', { time: formatTimestamp(timestampInput) })}</span>
+        {#if !isDocument}
+          <div class="timestamp-actions">
+            {#if timestampInput === null}
               <button
                 type="button"
-                class="clear-button"
-                on:click|stopPropagation={() => timestampInput = null}
-                title={$t('comments.clearTimestampHint')}
+                class="timestamp-button"
+                on:click={useCurrentTime}
+                title={$t('comments.markTimeHint')}
               >
-                ✖
+                <span class="button-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12,6 12,12 16,14"/>
+                  </svg>
+                </span>
+                <span>{$t('comments.markCurrentTime')}</span>
               </button>
-            </div>
-          {/if}
-        </div>
+            {:else}
+              <div class="current-timestamp">
+                <span class="timestamp-value">{$t('comments.markedTime', { time: formatTimestamp(timestampInput) })}</span>
+                <button
+                  type="button"
+                  class="clear-button"
+                  on:click|stopPropagation={() => timestampInput = null}
+                  title={$t('comments.clearTimestampHint')}
+                >
+                  ✖
+                </button>
+              </div>
+            {/if}
+          </div>
+        {:else}
+          <!-- Documents have no playback timeline, so there is nothing to mark — the
+               spacer keeps the submit button right-aligned the same way the media
+               form does. -->
+          <div class="timestamp-actions"></div>
+        {/if}
         <button
           type="submit"
           class="submit-button"
-          disabled={!newComment.trim() || timestampInput === null}
-          title={!newComment.trim() || timestampInput === null
+          disabled={!newComment.trim() || (!isDocument && timestampInput === null)}
+          title={!newComment.trim()
             ? $t('comments.mustAddTextAndTime')
-            : $t('comments.addCommentAtTime', { time: formatTimestamp(timestampInput) })}
+            : (!isDocument && timestampInput === null)
+              ? $t('comments.mustAddTextAndTime')
+              : isDocument
+                ? $t('comments.addComment')
+                : $t('comments.addCommentAtTime', { time: formatTimestamp(timestampInput) })}
         >
           {$t('comments.addComment')}
         </button>

@@ -329,7 +329,7 @@ def test_prepare_context_completes_with_no_llm_configured(monkeypatch):
         ),
     )
 
-    masked, meta, counted, overview = chat_service._prepare_context(
+    masked, meta, counted, overview, _synthesis, _recurrence = chat_service._prepare_context(
         user_id=1,
         organization_id=None,
         question="What did they decide?",

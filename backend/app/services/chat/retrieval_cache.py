@@ -176,8 +176,21 @@ def set_cached(key: str, hits: list[ChunkHit], ttl_seconds: int) -> None:
 # thing). The cosine floor is admin-tunable and defaults to 0.97.
 # ---------------------------------------------------------------------------
 
-_SEMANTIC_KEY = "chat:semantic:{user_id}:{org}"
+#: ``leg_kind`` (#403 W2.6) is a cache-namespace DISCRIMINATOR, not decoration.
+#: Without it a sub-question leg's query is often near-paraphrastic to its
+#: PARENT question — "what did the team decide about pricing" vs "pricing
+#: decision" — which at the default 0.97 threshold resolves to the parent's
+#: OWN cached hits. The fan-out would then return nothing the parent leg had
+#: not already found while reporting success, which is worse than the
+#: semantic cache being off: the feature looks like it worked and did
+#: nothing. Every leg kind gets its OWN namespace (a distinct Redis key), so
+#: a sub-question can only ever match a previous sub-question's result, never
+#: its parent's. Default ``"main"`` for every pre-existing caller, so the
+#: single-leg pipeline (no fan-out involved) is byte-identical to before this
+#: parameter existed.
+_SEMANTIC_KEY = "chat:semantic:{user_id}:{org}:{leg_kind}"
 _SEMANTIC_HISTORY = 50
+DEFAULT_LEG_KIND = "main"
 
 
 def _embed_query(text: str) -> list[float] | None:
@@ -230,6 +243,7 @@ def find_semantic_match(
     scope_digest: str,
     settings_rev: str,
     threshold: float,
+    leg_kind: str = DEFAULT_LEG_KIND,
 ) -> tuple[list[ChunkHit], list[float]] | None:
     """Find a recent near-identical question's cached retrieval.
 
@@ -253,7 +267,10 @@ def find_semantic_match(
     try:
         from app.core.redis import get_redis
 
-        raw = get_redis().get(_SEMANTIC_KEY.format(user_id=user_id, org=organization_id or 0))
+        redis_key = _SEMANTIC_KEY.format(
+            user_id=user_id, org=organization_id or 0, leg_kind=leg_kind
+        )
+        raw = get_redis().get(redis_key)
         entries = json.loads(raw) if raw else []
     except Exception as exc:  # noqa: BLE001
         logger.debug(f"Chat semantic cache read failed: {exc}")
@@ -284,6 +301,37 @@ def find_semantic_match(
     return hits, embedding
 
 
+#: Atomic read-append-trim-write. `remember_semantic` used to do this as a
+#: plain GET followed by a later SETEX, which races under a parallel fan-out
+#: (#403 W2.6): two legs finishing within the same window both read the same
+#: starting list, each append their own entry, and whichever SETEX lands
+#: second silently discards the other leg's write. A Lua script runs the
+#: whole read-modify-write as one atomic step on the Redis server, so two
+#: concurrent legs' entries always both survive. `cjson` is a Redis-bundled
+#: library, not a Python dependency.
+_REMEMBER_SCRIPT = """
+local raw = redis.call('GET', KEYS[1])
+local entries
+if raw then
+  entries = cjson.decode(raw)
+else
+  entries = {}
+end
+table.insert(entries, cjson.decode(ARGV[2]))
+local n = #entries
+local max_history = tonumber(ARGV[3])
+if n > max_history then
+  local trimmed = {}
+  for i = n - max_history + 1, n do
+    table.insert(trimmed, entries[i])
+  end
+  entries = trimmed
+end
+redis.call('SETEX', KEYS[1], ARGV[1], cjson.encode(entries))
+return 1
+"""
+
+
 def remember_semantic(
     *,
     user_id: int,
@@ -294,26 +342,24 @@ def remember_semantic(
     settings_rev: str,
     ttl_seconds: int,
     embedding: list[float] | None = None,
+    leg_kind: str = DEFAULT_LEG_KIND,
 ) -> None:
-    """Record this question's embedding so a later rephrasing can reuse it."""
+    """Record this question's embedding so a later rephrasing can reuse it.
+
+    Args:
+        leg_kind: The cache-namespace discriminator — see the module-level
+            note on :data:`_SEMANTIC_KEY`. Must match whatever
+            :func:`find_semantic_match` for this leg is called with, or the
+            two operate on different keys and nothing is ever found.
+    """
     if ttl_seconds <= 0:
         return
     vector = embedding if embedding is not None else _embed_query(query)
     if vector is None:
         return
 
-    redis_key = _SEMANTIC_KEY.format(user_id=user_id, org=organization_id or 0)
-    try:
-        from app.core.redis import get_redis
-
-        client = get_redis()
-        raw = client.get(redis_key)
-        entries = json.loads(raw) if raw else []
-    except Exception as exc:  # noqa: BLE001
-        logger.debug(f"Chat semantic cache read-before-write failed: {exc}")
-        return
-
-    entries.append(
+    redis_key = _SEMANTIC_KEY.format(user_id=user_id, org=organization_id or 0, leg_kind=leg_kind)
+    entry = json.dumps(
         {
             "key": cache_key_value,
             "vector": vector,
@@ -322,10 +368,9 @@ def remember_semantic(
             "corpus": corpus_version(),
         }
     )
-    # Keep only the most recent N so the value stays a bounded size.
-    entries = entries[-_SEMANTIC_HISTORY:]
-
     try:
-        client.setex(redis_key, ttl_seconds, json.dumps(entries))
+        from app.core.redis import get_redis
+
+        get_redis().eval(_REMEMBER_SCRIPT, 1, redis_key, ttl_seconds, entry, _SEMANTIC_HISTORY)
     except Exception as exc:  # noqa: BLE001
         logger.debug(f"Chat semantic cache write failed: {exc}")

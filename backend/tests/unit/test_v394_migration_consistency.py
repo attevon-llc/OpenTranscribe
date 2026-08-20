@@ -73,24 +73,40 @@ def _new_document(conn, user_id: int, **overrides) -> int:
     )
 
 
-def _drop_v395_dependent_fk(conn) -> None:
-    """Drop the one FK a later revision (v395) added onto ``document`` before this
+def _drop_later_revision_dependent_fks(conn) -> None:
+    """Drop every FK a LATER revision put on ``document`` / ``document_chunk`` before this
     revision's own DOWNGRADE_SQL runs.
 
-    A real ``alembic downgrade`` walks the chain newest-first, so v395's downgrade (which
-    drops ``watch_source_file.document_id`` and its FK) always runs before v394's — this
-    reproduces just that ordering for a test that otherwise calls v394's DOWNGRADE_SQL in
-    isolation. Same shape the module docstring on "each new migration breaks the previous
-    suite's detection assertion" describes for detection arms, applied to a downgrade
-    instead: a later revision growing a real DB dependency on an earlier one's tables is
-    expected, not a regression in either revision.
+    A real ``alembic downgrade`` walks the chain newest-first, so each later revision's
+    downgrade (v395's ``watch_source_file.document_id``, v398's ``file_facts.document_id``,
+    v399's ``task.document_id``, v400's ``document_share`` and ``comment.document_id`` /
+    ``comment.document_chunk_id``) always runs before v394's — this reproduces just that
+    ordering for a test that otherwise calls v394's DOWNGRADE_SQL in isolation. Same shape
+    the module docstring on "each new migration breaks the previous suite's detection
+    assertion" describes for detection arms, applied to a downgrade instead: a later
+    revision growing a real DB dependency on an earlier one's tables is expected, not a
+    regression in either revision.
+
+    **Discovered from ``pg_constraint``, not listed by name** — deliberately. The
+    hand-written v395-only version went red the moment v400 added the first FK onto
+    ``document_chunk``, with a `DependentObjectsStillExist` that reads as v394 breakage
+    rather than as v400 arriving. The repo rule is "widen the older, pin the exact value
+    in the newest": v400's own suite pins v400's constraints by name, so this one only has
+    to stop being surprised by them. FKs *internal* to the two tables are left alone —
+    dropping the tables removes them, and v394's own
+    ``document_chunk_document_id_fkey`` is asserted on elsewhere in this module.
     """
-    conn.execute(
+    rows = conn.execute(
         text(
-            "ALTER TABLE watch_source_file "
-            "DROP CONSTRAINT IF EXISTS watch_source_file_document_id_fkey"
+            "SELECT c.conrelid::regclass::text AS child, c.conname "
+            "FROM pg_constraint c "
+            "WHERE c.contype = 'f' "
+            "AND c.confrelid::regclass::text IN ('document', 'document_chunk') "
+            "AND c.conrelid::regclass::text NOT IN ('document', 'document_chunk')"
         )
-    )
+    ).all()
+    for child, conname in rows:
+        conn.execute(text(f'ALTER TABLE {child} DROP CONSTRAINT IF EXISTS "{conname}"'))
 
 
 def _new_chunk(conn, document_id: int, chunk_index: int = 0, **overrides) -> int:
@@ -372,7 +388,7 @@ def test_detection_stamps_lower_without_the_tables(db_session):
 
     conn = db_session.connection()
     try:
-        _drop_v395_dependent_fk(conn)
+        _drop_later_revision_dependent_fks(conn)
         conn.execute(text("DROP TABLE document_chunk"))
         conn.execute(text("DROP TABLE document"))
         tables = [
@@ -461,7 +477,7 @@ def test_the_downgrade_removes_both_tables_and_the_upgrade_restores_them(db_sess
     module = _revision_module()
     conn = db_session.connection()
     try:
-        _drop_v395_dependent_fk(conn)
+        _drop_later_revision_dependent_fks(conn)
         conn.execute(text(module.DOWNGRADE_SQL))
         conn.execute(text(module.DOWNGRADE_SQL))  # idempotent both ways
         tables = inspect(conn).get_table_names()

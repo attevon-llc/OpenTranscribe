@@ -28,10 +28,12 @@ from sqlalchemy import CheckConstraint
 from sqlalchemy import DateTime
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import ForeignKey
+from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
 from sqlalchemy import UniqueConstraint
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
@@ -46,6 +48,8 @@ from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
     from app.models.file_facts import FileFacts
+    from app.models.group import UserGroup
+    from app.models.media import Comment
     from app.models.media import Task
     from app.models.user import User
 
@@ -200,6 +204,24 @@ class Document(Base):
     tasks: Mapped[list[Task]] = relationship(
         "Task", back_populates="document", cascade="all, delete-orphan"
     )
+    #: v400 (#362 lane C3-remainder) — direct shares granting another user or group
+    #: access to this document. ``passive_deletes`` because the FK is ON DELETE
+    #: CASCADE (``document_share.document_id``), same reasoning ``facts_row`` gives.
+    shares: Mapped[list[DocumentShare]] = relationship(
+        "DocumentShare",
+        back_populates="document",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    #: v400 — notes anchored to this document (the document analogue of
+    #: ``MediaFile.comments``). ``passive_deletes`` because ``comment.document_id`` is
+    #: ON DELETE CASCADE.
+    comments: Mapped[list[Comment]] = relationship(
+        "Comment",
+        back_populates="document",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     __table_args__ = (
         UniqueConstraint("uuid", name="uq_document_uuid"),
@@ -260,3 +282,112 @@ class DocumentChunk(Base):
 
     def __repr__(self) -> str:
         return f"<DocumentChunk document_id={self.document_id} index={self.chunk_index}>"
+
+
+class DocumentShare(Base):
+    """Sharing grant on a document for a user or group (v400, #362 lane C3-remainder).
+
+    The direct-share counterpart of :class:`~app.models.sharing.CollectionShare` — not a
+    second copy of it. A document has no ``collection`` concept: ``collection_member``
+    (``app/models/media.py``) has only ever pointed at ``media_file``, and widening it to
+    also carry documents is a larger, separate change this table deliberately avoids by
+    granting access to exactly ONE document per row instead. Field-for-field identical to
+    ``CollectionShare`` (target XOR, ``viewer``/``editor`` permission, same partial unique
+    indexes) so :class:`~app.services.permission_service.PermissionService`'s new document
+    methods read as the file-sharing rule's obvious sibling rather than a new design.
+
+    This is also the grant source
+    ``app/tasks/search_indexing_task.py::_document_accessible_user_ids`` was written to be
+    extended by — see that function's docstring.
+    """
+
+    __tablename__ = "document_share"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    #: ``unique=True`` deliberately NOT set — same reasoning ``Document.uuid`` gives: it
+    #: would create an unnamed unique constraint the ORM cannot mirror. Named explicitly
+    #: in ``__table_args__`` below, matching the migration's ``document_share_uuid_key``
+    #: (the migration's inline ``UNIQUE (uuid)`` is what Postgres auto-names that way).
+    uuid: Mapped[uuid_pkg.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, default=uuid7, index=True
+    )
+    #: Every FK below is named explicitly to match Postgres's own
+    #: ``<table>_<column>_fkey`` default naming for the migration's inline
+    #: ``REFERENCES`` clauses — the same reasoning ``Document.user_id`` documents.
+    document_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("document.id", ondelete="CASCADE", name="document_share_document_id_fkey"),
+        nullable=False,
+        index=True,
+    )
+    shared_by_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("user.id", ondelete="CASCADE", name="document_share_shared_by_id_fkey"),
+        nullable=False,
+        index=True,
+    )
+    target_type: Mapped[str] = mapped_column(String(20), nullable=False)  # "user" or "group"
+    target_user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("user.id", ondelete="CASCADE", name="document_share_target_user_id_fkey"),
+        nullable=True,
+        index=True,
+    )
+    target_group_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("user_group.id", ondelete="CASCADE", name="document_share_target_group_id_fkey"),
+        nullable=True,
+        index=True,
+    )
+    permission: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="viewer"
+    )  # "viewer" or "editor"
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("uuid", name="document_share_uuid_key"),
+        CheckConstraint(
+            "(target_user_id IS NOT NULL AND target_group_id IS NULL) OR "
+            "(target_user_id IS NULL AND target_group_id IS NOT NULL)",
+            name="_document_share_target_check",
+        ),
+        CheckConstraint(
+            "permission IN ('viewer', 'editor')",
+            name="_document_share_permission_check",
+        ),
+        CheckConstraint(
+            "target_type IN ('user', 'group')",
+            name="_document_share_target_type_check",
+        ),
+        Index(
+            "_document_share_user_uc",
+            "document_id",
+            "target_user_id",
+            unique=True,
+            postgresql_where=text("target_user_id IS NOT NULL"),
+        ),
+        Index(
+            "_document_share_group_uc",
+            "document_id",
+            "target_group_id",
+            unique=True,
+            postgresql_where=text("target_group_id IS NOT NULL"),
+        ),
+    )
+
+    # Two FKs to `user` (shared_by_id and target_user_id) need explicit foreign_keys on
+    # BOTH sides, or mapper configuration crashes at import time (app/models/CLAUDE.md).
+    document: Mapped[Document] = relationship("Document", back_populates="shares")
+    shared_by: Mapped[User] = relationship("User", foreign_keys=[shared_by_id])
+    target_user: Mapped[User | None] = relationship("User", foreign_keys=[target_user_id])
+    target_group: Mapped[UserGroup | None] = relationship(
+        "UserGroup", foreign_keys=[target_group_id]
+    )
+
+    def __repr__(self) -> str:
+        return f"<DocumentShare document_id={self.document_id} target_type={self.target_type}>"

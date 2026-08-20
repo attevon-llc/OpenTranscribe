@@ -97,7 +97,7 @@ def test_a_speaker_scoped_summarize_calls_the_speaker_map_with_the_route_speaker
         [_digest_hit("uuid-a", 1, "Weekly sync", "Dana Whitfield")],
         {"files_without_artifacts": 0, "files_with_no_speaker_match": 0},
     )
-    _masked, meta, _counted, overview, calls = _prepare(
+    _masked, meta, _counted, overview, _synthesis, _recurrence, calls = _prepare(
         monkeypatch, file_uuids=["uuid-a"], map_hits=map_hits
     )
 
@@ -113,7 +113,7 @@ def test_it_never_runs_for_an_unscoped_summarize(monkeypatch):
     def _explode(*_a, **_k):
         raise AssertionError("scope_speaker_digest_hits must not run without a speaker filter")
 
-    _masked, meta, _counted, overview, _calls = _prepare(
+    _masked, meta, _counted, overview, _synthesis, _recurrence, _calls = _prepare(
         monkeypatch,
         file_uuids=["uuid-a"],
         map_hits=DigestScopeHits([], {"files_without_artifacts": 0}),
@@ -127,7 +127,7 @@ def test_never_a_silent_zero_when_the_speaker_map_finds_nothing(monkeypatch):
     """THE property this whole task exists for: an empty map still produces
     an explicit block naming the speaker, not silence."""
     map_hits = DigestScopeHits([], {"files_without_artifacts": 0, "files_with_no_speaker_match": 1})
-    _masked, meta, _counted, overview, _calls = _prepare(
+    _masked, meta, _counted, overview, _synthesis, _recurrence, _calls = _prepare(
         monkeypatch, file_uuids=["uuid-a"], map_hits=map_hits
     )
 
@@ -142,7 +142,7 @@ def test_files_without_artifacts_is_surfaced_in_meta(monkeypatch):
         [_digest_hit("uuid-a", 1, "Weekly sync", "Dana Whitfield")],
         {"files_without_artifacts": 3, "files_with_no_speaker_match": 0},
     )
-    _masked, meta, _counted, _overview, _calls = _prepare(
+    _masked, meta, _counted, _overview, _synthesis, _recurrence, _calls = _prepare(
         monkeypatch, file_uuids=["uuid-a", "uuid-b", "uuid-c", "uuid-d"], map_hits=map_hits
     )
 
@@ -156,7 +156,7 @@ def test_multi_speaker_scope_is_threaded_through_as_a_list(monkeypatch):
         ],
         {"files_without_artifacts": 0, "files_with_no_speaker_match": 0},
     )
-    _masked, _meta, _counted, _overview, calls = _prepare(
+    _masked, _meta, _counted, _overview, _synthesis, _recurrence, calls = _prepare(
         monkeypatch,
         file_uuids=["uuid-a"],
         map_hits=map_hits,
@@ -173,7 +173,7 @@ def test_unbounded_scope_does_not_run_the_speaker_map(monkeypatch):
     def _explode(*_a, **_k):
         raise AssertionError("the speaker map cannot run over an unbounded scope")
 
-    _masked, meta, _counted, overview, _calls = _prepare(
+    _masked, meta, _counted, overview, _synthesis, _recurrence, _calls = _prepare(
         monkeypatch,
         file_uuids=None,
         map_hits=DigestScopeHits([], {"files_without_artifacts": 0}),

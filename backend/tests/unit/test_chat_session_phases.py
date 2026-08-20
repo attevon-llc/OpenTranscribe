@@ -137,7 +137,12 @@ async def _run_turn(monkeypatch, *, file_uuids=None, history=None) -> tuple[_Led
         lambda: _CountingClient(ledger),
     )
 
-    def _rewrite(_llm, _history, question):
+    def _rewrite(_llm, _history, question, **_kwargs):
+        # `**_kwargs` absorbs `want_plan` (#403 W2.6): this harness's default
+        # `ChatSettings()` has `planner_enabled=False`, so `_prepare_context`
+        # never asks for one, but the real call site always passes the
+        # keyword — a stub with the old positional-only signature would
+        # break on every turn, planner or not.
         ledger.note("query-rewrite")
         return RewriteResult(query=question, intent=None)
 
@@ -304,3 +309,124 @@ async def test_an_empty_scope_still_means_match_nothing(monkeypatch):
 
     _ledger, all_accessible = await _run_turn(monkeypatch, file_uuids=None)
     assert all_accessible["retrieval_file_uuids"] is None
+
+
+# --------------------------------------------------------------------------- #403 W2.6: the fan-out
+#
+# Extends this file's coverage to the planner-driven parallel leg fan-out
+# (`chat_service._run_plan_fanout`, backed by `legs.run_legs`'s shared
+# executor). The same rule applies PER LEG here, not just per turn — a
+# fan-out multiplies any session-held-across-slow-work violation by leg
+# count, so this is the test that would catch a leg built with an open
+# session instead of a factory.
+
+
+class _FakeLLMWithPlan:
+    """A `_FakeLLM` that also answers the standalone planner call (turn 1,
+    no history) with a well-formed two-subquestion plan."""
+
+    def __init__(self) -> None:
+        self.config = _FakeConfig()
+        self.user_context_window = 32000
+        self.response_tokens = 1000
+
+    def chat_completion(self, _messages, **_kwargs):
+        return SimpleNamespace(
+            content='{"subquestions": ["sub one", "sub two"], "speakers": [], '
+            '"time": {}, "wants": []}'
+        )
+
+    def chat_completion_stream(self, messages, cancel_event=None, **_kwargs):  # noqa: ARG002
+        yield LLMStreamEvent(type="delta", text="An answer.")
+        yield LLMStreamEvent(type="done", finish_reason="stop")
+
+    def estimate_tokens(self, text: str) -> int:
+        return len(text) // 4
+
+
+async def _run_fanout_turn(monkeypatch) -> tuple[_Ledger, dict]:
+    """Drive one real planner-fan-out turn. Mirrors `_run_turn`'s shape and
+    exists for the same reason: keeping every monkeypatch in ONE shared
+    helper is what keeps each test function itself under the mock-heavy
+    threshold, the same structure the rest of this file already uses.
+    """
+    ledger = _Ledger()
+    seen: dict = {}
+    monkeypatch.setattr("app.db.session_utils.session_scope", ledger.session_scope)
+
+    call_count = {"n": 0}
+
+    def _retrieve_chunks(_query, **_kwargs):
+        call_count["n"] += 1
+        ledger.note("fanout-chunk-leg")
+        return [_hit(call_count["n"])]
+
+    monkeypatch.setattr("app.services.search.chunk_retrieval.retrieve_chunks", _retrieve_chunks)
+    monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
+
+    def _mask(session_factory, chunks, _user_id, **_kwargs):
+        with session_factory() as db:
+            ledger.sessions_seen.setdefault("masking", []).append(db)
+        return [MaskedChunk(source=chunk, content=chunk.content) for chunk in chunks]
+
+    monkeypatch.setattr(chat_service, "mask_chunks", _mask)
+    monkeypatch.setattr(
+        chat_service,
+        "_resolve_output_policy",
+        lambda _user_id: SimpleNamespace(enabled=False, enabled_categories=set()),
+    )
+    monkeypatch.setattr(chat_service.limits, "is_cancelled", lambda _uuid: False)
+
+    async def _fake_finalize(**_kwargs):
+        return None
+
+    monkeypatch.setattr(chat_service, "_finalize_turn", _fake_finalize)
+
+    from app.services.chat.settings import ChatSettings as _ChatSettings
+
+    generator = chat_service.ChatService.stream_reply(
+        conversation_id=1,
+        conversation_uuid="conv-uuid",
+        user_id=1,
+        organization_id=None,
+        # Multi-part turn 1 (no history): fires `needs_plan` deterministically.
+        question="What did Dana say about pricing? What did Ravi say about the budget?",
+        history=[],
+        file_uuids=None,
+        speakers=[],
+        settings=_ChatSettings(planner_enabled=True, rerank_enabled=False),
+        use_context=True,
+        system_prompt="SYS",
+        search_mode="hybrid",
+        temperature=None,
+        max_tokens=None,
+        top_p=None,
+        llm=_FakeLLMWithPlan(),
+        assistant_message_uuid="00000000-0000-0000-0000-0000000000cc",
+        user_message_uuid="00000000-0000-0000-0000-0000000000dd",
+        is_first_exchange=True,
+    )
+    frames = []
+    async for raw in generator:
+        if raw.startswith(":"):
+            continue
+        frames.append(raw)
+
+    seen["frames"] = frames
+    seen["chunk_leg_calls"] = call_count["n"]
+    return ledger, seen
+
+
+@pytest.mark.asyncio
+async def test_the_fanouts_chunk_legs_run_with_no_db_session_open(monkeypatch):
+    """Each of the fan-out's OpenSearch legs (main + 2 subquestions) must see
+    zero live sessions — the same invariant `test_retrieval_runs_with_no_db_
+    session_open` pins for the single-leg path, now checked per leg."""
+    ledger, seen = await _run_fanout_turn(monkeypatch)
+
+    assert seen["chunk_leg_calls"] >= 3, "expected the main leg plus 2 subquestion legs to run"
+    assert ledger.live_during["fanout-chunk-leg"] == [0] * seen["chunk_leg_calls"], (
+        f"a DB session was live during a fan-out chunk leg: {ledger.live_during}"
+    )
+    names = [raw.split("event: ", 1)[1].split("\n", 1)[0] for raw in seen["frames"]]
+    assert "start" in names and "done" in names, "the fan-out turn must still answer end to end"

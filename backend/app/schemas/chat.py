@@ -406,6 +406,9 @@ class ChatAdminSettings(BaseModel):
     speaker_resolver_enabled: bool = False
     map_tier_speaker_summaries: bool = False
     recurrence_enabled: bool = False
+    planner_enabled: bool = False
+    planner_max_parallel_legs: int = Field(4, ge=1, le=8)
+    enrichment_enabled: bool = False
 
 
 class ChatAdminSettingsUpdate(BaseModel):
@@ -428,3 +431,6 @@ class ChatAdminSettingsUpdate(BaseModel):
     speaker_resolver_enabled: bool | None = None
     map_tier_speaker_summaries: bool | None = None
     recurrence_enabled: bool | None = None
+    planner_enabled: bool | None = None
+    planner_max_parallel_legs: int | None = Field(default=None, ge=1, le=8)
+    enrichment_enabled: bool | None = None

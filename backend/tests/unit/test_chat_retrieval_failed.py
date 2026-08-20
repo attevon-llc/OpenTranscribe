@@ -169,7 +169,10 @@ async def _collect(monkeypatch, *, meta: dict):
     monkeypatch.setattr(
         chat_service,
         "_prepare_context",
-        lambda *_args, **_kwargs: ([], dict(meta), None, None),
+        # Six values since #403 W2.6 added the fan-out's `<synthesis>`/
+        # `<recurrence>` blocks to `_prepare_context`'s return; both empty for
+        # a turn the router left on the serial chunk-plane pipeline.
+        lambda *_args, **_kwargs: ([], dict(meta), None, None, "", ""),
     )
     monkeypatch.setattr(chat_service.limits, "is_cancelled", lambda _uuid: False)
 

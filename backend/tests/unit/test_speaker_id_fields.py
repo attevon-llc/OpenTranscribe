@@ -24,6 +24,7 @@ id-vs-name equivalence check ready for when someone proposes it.
 
 from __future__ import annotations
 
+import time
 import uuid as uuid_pkg
 from typing import Any
 from typing import cast
@@ -31,6 +32,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from opensearchpy.exceptions import TransportError
 
 import app.services.search.indexing_service as svc
 from app.core.config import settings
@@ -555,13 +557,45 @@ def test_speaker_id_and_speaker_name_filters_agree_on_the_live_index():
     client = maybe_client
 
     chunk_clause = digest_mapping.chunk_plane_clause()
-    sample = client.search(
-        index=_INDEX,
-        body={
+
+    def _search(body: dict[str, Any]) -> dict[str, Any]:
+        """Search the LIVE index, tolerating a rebuild in progress.
+
+        This test reads the real dev index, which other processes rewrite: every
+        ``backend/app/**`` save hot-reloads the backend, and startup dispatches
+        ``search_index_maintenance``, which reindexes. A search landing in that
+        window returns ``503 search_phase_execution_exception`` / "all shards
+        failed" with an EMPTY ``root_cause`` and EMPTY ``failed_shards`` — the
+        signature of a shard being momentarily unavailable rather than of a bad
+        query. Measured: 3 consecutive failures during an edit burst, then 30
+        consecutive successes once edits stopped, with the cluster reporting
+        green throughout.
+
+        So retry a bounded number of times — and then **FAIL**, never skip. A
+        persistent 503 is a real defect (a malformed body, or a field the mapping
+        does not carry) and must not be laundered into a green run by a broad
+        except. The retry only absorbs the transient rebuild window.
+        """
+        last: Exception | None = None
+        for attempt in range(4):
+            try:
+                return cast(dict[str, Any], client.search(index=_INDEX, body=body))
+            except TransportError as exc:  # noqa: PERF203 - retry is the point
+                if getattr(exc, "status_code", None) != 503:
+                    raise
+                last = exc
+                time.sleep(1.5 * (attempt + 1))
+        raise AssertionError(
+            f"the chunk index stayed unavailable across 4 attempts ({last}). "
+            "That is no longer a rebuild window — investigate the query or the mapping."
+        )
+
+    sample = _search(
+        {
             "size": 1,
             "query": {"bool": {"filter": [chunk_clause, {"exists": {"field": "speaker_id"}}]}},
-            "_source": ["speaker_id", "speaker"],
-        },
+            "_source": ["speaker_id", "speaker", "file_uuid"],
+        }
     )
     hits = sample["hits"]["hits"]
     if not hits:
@@ -572,33 +606,81 @@ def test_speaker_id_and_speaker_name_filters_agree_on_the_live_index():
 
     source = hits[0]["_source"]
     speaker_id, speaker_name = source["speaker_id"], source["speaker"]
+    file_uuid = source["file_uuid"]
+
+    result_cap = 2000
 
     def _ids(extra_clause: dict[str, Any]) -> set[str]:
-        resp = client.search(
-            index=_INDEX,
-            body={
-                "size": 500,
+        resp = _search(
+            {
+                "size": result_cap,
                 "query": {"bool": {"filter": [chunk_clause, extra_clause]}},
                 "_source": False,
-            },
+            }
         )
-        return {hit["_id"] for hit in resp["hits"]["hits"]}
+        got = {hit["_id"] for hit in resp["hits"]["hits"]}
+        # A set truncated at the cap cannot be compared to a complete one — the
+        # original version of this test compared 72 ids against a set pinned at
+        # its own `size: 500`, which is not an equivalence, it is an artefact.
+        assert len(got) < result_cap, (
+            f"result hit the {result_cap} cap, so this set is truncated and any set "
+            "comparison below would be meaningless. Raise the cap or narrow the query."
+        )
+        return got
 
-    by_id = _ids({"term": {"speaker_id": speaker_id}})
-    by_name_with_id = _ids(
+    # ⚠️ THE INVARIANT IS ONE-WAY, and that is a property of the data model.
+    #
+    # A `speaker_id` is a `Speaker` ROW, and diarization legitimately produces several
+    # rows for the same person in one recording — measured on the dev index, inside a
+    # single file "Joe Rogan" is speaker_id 2811 (347 chunks) AND 2812 (72 chunks),
+    # because two diarized clusters were both identified as him. Across files it is
+    # worse: 16 distinct speaker_ids over 12 recordings.
+    #
+    # So `terms(speaker_id)` is SOUND but not COMPLETE with respect to `terms(speaker)`:
+    # it never selects a chunk belonging to someone else, but it does not select every
+    # chunk belonging to this person. An earlier version of this test asserted set
+    # EQUALITY in both directions and was therefore asserting something the architecture
+    # never claimed — first globally, then per-file. Both were wrong.
+    #
+    # This is exactly why W2.7d specifies the flip as a UNION,
+    # `should: [terms(speaker_id), terms(speaker)]`, rather than a substitution — and
+    # why the cross-recording identity is `profile_id`, not `speaker_id`.
+    same_file = {"term": {"file_uuid": file_uuid}}
+    by_id = _ids({"bool": {"filter": [{"term": {"speaker_id": speaker_id}}, same_file]}})
+    by_name_same_file = _ids(
         {
             "bool": {
                 "filter": [
                     {"term": {"speaker": speaker_name}},
                     {"exists": {"field": "speaker_id"}},
+                    same_file,
                 ]
             }
         }
     )
 
     assert by_id, "the sampled speaker_id itself did not round-trip through its own filter"
-    assert by_id == by_name_with_id, (
-        f"id-filtered set ({len(by_id)}) and name-filtered set restricted to "
-        f"documents carrying speaker_id ({len(by_name_with_id)}) disagree — the "
-        "id-keyed filter is NOT yet a safe drop-in for the name-keyed one"
+
+    # SOUNDNESS: every chunk the id selects is also selected by that speaker's name.
+    # This is the property a filter flip actually depends on — it is what guarantees an
+    # id-keyed filter can never surface another person's words.
+    assert by_id <= by_name_same_file, (
+        f"{len(by_id - by_name_same_file)} chunk(s) matched speaker_id={speaker_id} but "
+        f"NOT the name {speaker_name!r} in the same file. The id and the label are out of "
+        "step, which means the write path attached an id to the wrong speaker's chunk."
+    )
+
+    # And the direct form of the same guarantee, read from the documents themselves:
+    # a speaker_id addresses exactly ONE display name.
+    resp = _search(
+        {
+            "size": 0,
+            "query": {"bool": {"filter": [chunk_clause, {"term": {"speaker_id": speaker_id}}]}},
+            "aggs": {"names": {"terms": {"field": "speaker", "size": 10}}},
+        }
+    )
+    names = [b["key"] for b in resp["aggregations"]["names"]["buckets"]]
+    assert names == [speaker_name], (
+        f"speaker_id={speaker_id} resolves to {names} — a single Speaker row must carry "
+        "exactly one display name, so more than one means two speakers share an id."
     )

@@ -192,8 +192,18 @@ export interface ChatMessageMetadata {
    */
   legs_failed?: string[];
   /**
+   * #403 W2.6: per-leg wall time (ms) for a planner-driven parallel fan-out
+   * (`legs.FanOutResult.timings_ms`), keyed by leg name (`"main"`,
+   * `"subquestion-0"`, `"speaker"`, `"counted"`, `"recurrence"`, …). Absent
+   * unless the fan-out ran this turn.
+   */
+  leg_timings_ms?: Record<string, number>;
+  /** #403 W2.6: `Object.keys(leg_timings_ms).length`, named for direct display. */
+  leg_count?: number;
+  /**
    * Wave 2: bounded LLM calls a reducer spent on this turn (e.g.
-   * `BatchReducer`'s per-batch condense calls in `mapreduce.py`).
+   * `BatchReducer`'s per-batch condense calls in `mapreduce.py`). #403 W2.6
+   * extends this to the planner/enrichment/rewrite-extension calls too.
    */
   llm_calls?: number;
   /**
@@ -345,7 +355,11 @@ export interface ChatAdminSettings {
 
 // --- SSE frame contract (must match services/chat/service.py) ----------------
 
-type StreamStage = 'rewriting' | 'retrieving' | 'reranking' | 'generating';
+// #403 W2.6: 'planning' is a turn-1 (no-history) stage for a question that
+// will trigger a standalone LLM query-planner call before retrieval starts —
+// see `services/chat/service.py`'s `stream_reply`. Only reachable when
+// `chat.planner_enabled` is on; every other deployment never emits it.
+type StreamStage = 'rewriting' | 'retrieving' | 'reranking' | 'planning' | 'generating';
 
 /**
  * Non-fatal conditions the server surfaces mid-turn.
@@ -444,6 +458,13 @@ export type StreamStatus =
   | 'idle'
   | 'submitting'
   | 'retrieving'
+  // #403 W2.6: a turn-1 standalone planner call is in flight (`stage:
+  // 'planning'`). `stores/chat.ts`'s `status` fold maps the SSE `stage` onto
+  // this — see that file's `case 'status':` for the current mapping; a code
+  // owner outside this lane still needs to add `event.stage === 'planning'`
+  // there for the live indicator to actually reach this value, the same way
+  // every other Wave-2 SSE addition in this codebase ships its type first.
+  | 'planning'
   | 'thinking'
   | 'streaming'
   | 'done'

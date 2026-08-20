@@ -34,6 +34,7 @@
     Boolean(meta.map_source) ||
     meta.llm_calls !== undefined ||
     Boolean(meta.legs_failed?.length) ||
+    Boolean(meta.leg_count) ||
     Boolean(meta.speaker_resolution) ||
     Boolean(meta.plan?.steps?.length) ||
     Boolean(meta.router_language_unmatched) ||
@@ -121,6 +122,20 @@
         {#if meta.llm_calls !== undefined}
           <dt>{$t('chat.meta.llmCalls')}</dt>
           <dd>{meta.llm_calls}</dd>
+        {/if}
+
+        {#if meta.leg_count}
+          <dt>{$t('chat.meta.legCount')}</dt>
+          <dd data-testid="chat-meta-leg-count">
+            {meta.leg_count}
+            {#if meta.leg_timings_ms}
+              <span class="estimated">
+                ({Object.entries(meta.leg_timings_ms)
+                  .map(([name, ms]) => `${name}: ${ms}ms`)
+                  .join(', ')})
+              </span>
+            {/if}
+          </dd>
         {/if}
 
         {#if meta.legs_failed?.length}

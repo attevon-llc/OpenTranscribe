@@ -496,12 +496,14 @@ def generate_document_artifacts_task(document_id: int) -> dict[str, Any]:
 def dispatch_document_artifacts(document_id: int) -> None:
     """Fire-and-forget dispatch, contained — a broker hiccup must not fail the parse.
 
-    Routed explicitly to the **nlp** queue (``apply_async(queue=...)``, matching
-    ``directory_sync_task.py``'s pattern) rather than relying on a ``task_routes``
-    entry in ``app/core/celery.py`` — that file is outside this lane's file set, and a
-    task with no route entry falls back to the default queue with only a startup
-    warning, which would put CPU-bound digest generation on the same queue as
-    everything else with no route.
+    The **nlp** queue is the authority in ``app/core/celery.py``'s ``task_routes``,
+    beside ``artifacts.generate_file_facts``; the explicit ``apply_async(queue=...)``
+    here matches it and must keep matching it. Both exist because a task with no
+    route entry falls back to the default queue with only a startup warning — which
+    would put CPU-bound digest generation on an arbitrary worker — and because
+    ``tests/unit/test_compose_sentence_splitter_mounts.py`` derives queue -> compose
+    service -> ``nltk_data`` mount from the route table, so a dispatch-site-only
+    queue is invisible to the #436 guard.
     """
     try:
         generate_document_artifacts_task.apply_async(

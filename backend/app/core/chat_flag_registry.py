@@ -237,6 +237,29 @@ CHAT_FLAG_REGISTRY: tuple[ChatFlagSpec, ...] = (
         value_type=bool,
         default=C.DEFAULT_CHAT_RECURRENCE_ENABLED,
     ),
+    ChatFlagSpec(
+        field="planner_enabled",
+        setting_key="chat.planner_enabled",
+        description="Plan multi-part questions into parallel retrieval legs before answering",
+        value_type=bool,
+        default=C.DEFAULT_CHAT_PLANNER_ENABLED,
+    ),
+    ChatFlagSpec(
+        field="planner_max_parallel_legs",
+        setting_key="chat.planner.max_parallel_legs",
+        description="Maximum retrieval legs run in parallel for a planned turn",
+        value_type=int,
+        default=C.DEFAULT_CHAT_PLANNER_MAX_PARALLEL_LEGS,
+        ge=1,
+        le=8,
+    ),
+    ChatFlagSpec(
+        field="enrichment_enabled",
+        setting_key="chat.enrichment_enabled",
+        description="Reconcile merged multi-leg evidence into a <synthesis> block before answering",
+        value_type=bool,
+        default=C.DEFAULT_CHAT_ENRICHMENT_ENABLED,
+    ),
 )
 
 #: ``field -> ChatFlagSpec``, for a single-lookup consumer.

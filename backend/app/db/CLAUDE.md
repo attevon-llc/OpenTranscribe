@@ -79,11 +79,14 @@ in the consistency test), plus every prose reference to the old numbers across
 `app/tasks/document_tasks.py`, `app/services/watch_sources/document_ingest.py`,
 `app/models/document.py`, `tests/unit/test_user_deletion_fk_coverage.py`,
 `docs-site/docs/developer-guide/documents.md`, `docs/handoff/*.md`, and this file.
-⚠️ `v393_add_overlap_timing_columns` has **no detection-arm marker of its own** in
-`_detect_schema_version()` — a pre-existing gap on `master`, out of scope for this
-renumbering — so the document chain's lowest arm (`v394_add_document_tables`) still falls
-back to `v392`'s fingerprint rather than to a `v393`-specific one when the document tables
-are absent.
+`v393_add_overlap_timing_columns` had **no detection-arm marker of its own** in
+`_detect_schema_version()` — a pre-existing gap on `master`, out of scope for that
+renumbering. It is **closed now**: `has_overlap_timing_columns` probes
+`file_pipeline_timing.transcript_ready_ms` and there is a `v393` arm between `v394`'s and
+`v392`'s. ⚠️ `v394_add_document_tables` still does **not** require that marker even though
+`v393` is its parent on `master`, and that asymmetry is deliberate: a database migrated
+from the *pre-renumbering* branch carries the document tables **without** the timing
+columns, and requiring both would drop it to `v392` and re-run the entire document chain.
 
 **Renumbering note 2 (2026-08-13) — and it happened EXACTLY the way note 1 warns.**
 The `#403` RAG chain added `v389_add_file_facts` while `chore/test-suite-perf-and-quality-overhaul`

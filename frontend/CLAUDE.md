@@ -8,7 +8,10 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
 - **SvelteKit 2 + Svelte 5 + TypeScript + Vite 6**, `@sveltejs/adapter-static` → a pure
   **client-side SPA** (`fallback: index.html`, no SSR, no `+page.server.ts`). Data is fetched
   client-side (`onMount`/reactive) from the FastAPI backend.
-- i18n via i18next (8 locales in `src/lib/i18n/locales`). Node pinned to 22 (`.nvmrc`).
+- i18n via i18next (**11** locales in `src/lib/i18n/locales`: ar de en es fr ja ko nl pt ru zh —
+  `ar` is RTL, driven by `document.documentElement.dir` from `stores/locale.ts`). `it` is the one
+  language the backend's `LLM_OUTPUT_LANGUAGES` supports that the UI does not yet.
+  Node pinned to 22 (`.nvmrc`).
   Locales are **code-split, one chunk per language** — `src/lib/i18n/index.ts` globs them
   non-eagerly and `ensureLocaleLoaded()` fetches only the active one. Never static-import a
   locale JSON: that puts all ~2.3 MB back into the entry chunk. Only the active language is

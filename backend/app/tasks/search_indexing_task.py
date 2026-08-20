@@ -389,20 +389,26 @@ def _document_plane_exclusion_clause() -> dict[str, Any]:
     }
 
 
-def _document_accessible_user_ids(owner_id: int) -> list[int]:
-    """The full grant list for one document's chunks — currently just its owner.
+def _document_accessible_user_ids(db: Any, document_id: int, owner_id: int) -> list[int]:
+    """The full grant list for one document's chunks.
 
-    The named seam a future document-sharing lane extends: once a real grant
-    source exists (a direct or collection-style document share), this is the one
-    place that widens past ``[owner_id]``, the same role
+    v400 (#362 lane C3-remainder) is the grant source this seam was written to be
+    extended by: ``PermissionService.get_users_with_document_access`` reads
+    ``DocumentShare`` (direct + group grants), the same role
     ``PermissionService.get_users_with_file_access`` already plays for media files.
-    Kept as its own function (rather than inlined in :func:`update_document_access_index`'s
-    loop) so a test can monkeypatch exactly this and prove the REST of the rewrite
-    mechanism — the plane-scoped ``update_by_query`` — already produces a
-    sharee-visible chunk today, with no other change needed when that grant source
-    lands.
+    Falls back to ``[owner_id]`` when the service reports nothing at all — it always
+    seeds the set with the owner unless the ``Document`` row itself could not be
+    resolved, which :func:`update_document_access_index`'s caller has already
+    handled by this point (``owners`` is read from a live ``Document`` row), so this
+    is a defensive floor, not the expected path. Kept as its own function (rather
+    than inlined in :func:`update_document_access_index`'s loop) so a test can
+    monkeypatch exactly this and prove the REST of the rewrite mechanism — the
+    plane-scoped ``update_by_query`` — already produces a sharee-visible chunk.
     """
-    return [owner_id]
+    from app.services.permission_service import PermissionService
+
+    accessible = PermissionService.get_users_with_document_access(db, document_id)
+    return accessible or [owner_id]
 
 
 def _document_plane_clause() -> dict[str, Any]:
@@ -543,14 +549,13 @@ def update_document_access_index(document_ids: list[int]) -> dict[str, Any]:
     sibling of :func:`update_file_access_index` (#T10's shared-visibility half).
 
     ``services/search/indexing_service.py``'s ``index_document_chunks`` hard-codes
-    ``accessible_user_ids: [user_id]`` at index time because documents have no
-    sharing model YET (v1 scope, ``api/endpoints/documents.py``'s own docstrings say
-    so). This task is the missing rewrite path a future document-sharing lane needs —
-    without it, granting a document share would have nothing to dispatch to, the same
-    gap :func:`update_file_access_index` already closes for media files. Until that
-    lane adds a real grant source, ``accessible_ids`` per document is just its owner,
-    which is a correct (if trivial) no-op rewrite — the plumbing this task adds is
-    the reusable part, not a new sharing feature.
+    ``accessible_user_ids: [user_id]`` at index time; this task is the rewrite path
+    a document share change dispatches to — the same gap
+    :func:`update_file_access_index` already closes for media files. v400 (#362 lane
+    C3-remainder) is the real grant source: ``documents.py``'s share endpoints call
+    this after every create/revoke, and ``_document_accessible_user_ids`` reads
+    ``PermissionService.get_users_with_document_access`` (owner + direct/group
+    ``DocumentShare`` grants) rather than returning ``[owner_id]`` unconditionally.
 
     One shape with :func:`update_file_access_index`: the ``update_by_query`` body is
     identical in both; only the plane predicate differs (:func:`_document_plane_clause`
@@ -584,12 +589,19 @@ def update_document_access_index(document_ids: list[int]) -> dict[str, Any]:
     missing_document_ids: list[int] = []
     plane_filter = _document_plane_clause()
 
-    # One grouped query for the whole batch — same reasoning as
-    # update_file_tags_index's tags_by_file lookup below.
+    # Read phase: owners AND accessible-id sets computed for the whole batch inside
+    # one short session — no OpenSearch call runs while it is open (the session-
+    # lifetime rule, app/tasks/CLAUDE.md). PermissionService reads are plain DB
+    # queries, so bundling them into this pass costs nothing further from the
+    # single-owner query update_file_tags_index's tags_by_file lookup already pays.
     with session_scope() as db:
         owners = dict(
             db.query(Document.id, Document.user_id).filter(Document.id.in_(document_ids)).all()
         )
+        accessible_by_document = {
+            document_id: _document_accessible_user_ids(db, document_id, int(owner_id))
+            for document_id, owner_id in owners.items()
+        }
 
     for document_id in document_ids:
         owner_id = owners.get(document_id)
@@ -602,7 +614,7 @@ def update_document_access_index(document_ids: list[int]) -> dict[str, Any]:
             )
             continue
 
-        accessible_ids = _document_accessible_user_ids(int(owner_id))
+        accessible_ids = accessible_by_document[document_id]
         try:
             response = client.update_by_query(
                 index=index_name,

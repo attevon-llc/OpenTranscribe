@@ -1079,6 +1079,22 @@ DEFAULT_CHAT_RAG_RERANK_ENABLED = True  # chat.rag.rerank_enabled
 DEFAULT_CHAT_RAG_RERANK_MAX_PAIRS = 50  # chat.rag.rerank_max_pairs
 CHAT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
+# Multilingual reranker arm (issue #453/ML1) — a SELECTABLE second model, default OFF.
+# `chat/reranker.py` skips reranking outright when the candidate pool is predominantly
+# non-English, because CHAT_RERANKER_MODEL above is an English MS MARCO model and
+# `rerank()` OVERWRITES `hit.score`, so letting it run destroys a correct retrieval
+# order using a model that cannot read the text. This constant is the mechanism for a
+# MEASURED alternative to that skip, not the decision to use it — the skip stays the
+# shipped behaviour (this defaults False) until a sweep says otherwise.
+#
+# Licence, verified 2026-08-20 (huggingface.co model cards, not memory): bge-reranker-v2-m3
+# is Apache-2.0. The only other shippable multilingual candidate is bge-reranker-base (MIT) —
+# `jina-reranker-v2` is CC-BY-NC (non-commercial, unshippable in a published image) and the
+# `gte`-family rerankers require `trust_remote_code=True` (arbitrary code execution from a
+# downloaded model repo). Neither of those two is acceptable here.
+DEFAULT_CHAT_RAG_MULTILINGUAL_RERANK_ENABLED = False  # chat.rag.multilingual_rerank_enabled
+CHAT_RERANKER_MODEL_MULTILINGUAL = "BAAI/bge-reranker-v2-m3"  # Apache-2.0
+
 # Conversational query rewriting: expands pronouns/references ("what about her?")
 # into a standalone query before retrieval.
 DEFAULT_CHAT_RAG_QUERY_REWRITE_ENABLED = True  # chat.rag.query_rewrite_enabled
@@ -1151,6 +1167,25 @@ DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES = False  # chat.rag.map_tier_speaker_sum
 # whose masking subject also follows an unresolved-in-general policy question
 # (issue #402) — see `services/chat/CLAUDE.md`.
 DEFAULT_CHAT_RECURRENCE_ENABLED = False  # chat.recurrence_enabled
+
+# W2.6: the LLM query planner + parallel-leg fan-out
+# (`services/chat/planner.py` + `services/chat/legs.py`). OFF by default: with
+# no LLM configured (or the flag off) every turn routes exactly as it did
+# before this module existed — rules-only routing, D6's "no LLM provider is
+# still a first-class deployment" holds because nothing here is on the
+# no-flag path. `needs_plan()` is pure and costs nothing to evaluate; only
+# actually BUILDING a plan (an LLM call) is gated on this flag.
+DEFAULT_CHAT_PLANNER_ENABLED = False  # chat.planner_enabled
+# Ceiling on the process-wide leg executor (`legs.get_executor`). Sized once,
+# at first use — a later change to this setting takes a process restart, the
+# same trade every other lazy singleton in this package makes (see
+# `reranker.py`).
+DEFAULT_CHAT_PLANNER_MAX_PARALLEL_LEGS = 4  # chat.planner.max_parallel_legs
+# W2.6: a single bounded non-streaming call that reconciles merged evidence
+# from a multi-leg fan-out into a `<synthesis>` block. OFF by default and
+# INDEPENDENT of `chat.planner_enabled` — a deployment can run the fan-out
+# without ever paying for the extra reconciliation call.
+DEFAULT_CHAT_ENRICHMENT_ENABLED = False  # chat.enrichment_enabled
 
 
 # =============================================================================

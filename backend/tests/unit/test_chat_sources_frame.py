@@ -90,10 +90,12 @@ async def _collect(
     monkeypatch.setattr(
         chat_service,
         "_prepare_context",
-        # Four values since #403 Stage 4: the counted-aggregation result and the
-        # map-reduce overview, both None for a turn the router left on the chunk
-        # plane — which is every turn these tests drive.
-        lambda *_args, **_kwargs: (list(chunks), dict(diagnostics), None, None),
+        # Six values since #403 W2.6: the counted-aggregation result and the
+        # map-reduce overview stay None for a turn the router left on the chunk
+        # plane — which is every turn these tests drive — and the fan-out's
+        # `<synthesis>`/`<recurrence>` blocks stay empty for the same reason
+        # (that tier never engages on the serial pipeline).
+        lambda *_args, **_kwargs: (list(chunks), dict(diagnostics), None, None, "", ""),
     )
     monkeypatch.setattr(chat_service.limits, "is_cancelled", lambda _uuid: False)
 

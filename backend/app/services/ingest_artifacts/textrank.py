@@ -54,7 +54,50 @@ _SNOWBALL_LANG_MAP: dict[str, str] = {
 }
 
 #: ISO 639-1 → NLTK stopword corpus name.
-_STOPWORD_LANG_MAP: dict[str, str] = dict(_SNOWBALL_LANG_MAP, el="greek", tr="turkish")
+#:
+#: Widened (#453/ML3) from the 17 Snowball+el/tr entries to every OTHER corpus actually
+#: present in the mounted ``nltk_data`` (verified via ``stopwords.fileids()`` against
+#: ``models/nltk_data/corpora/stopwords/`` — 33 total; do not add an entry without
+#: checking the corpus is really there, the same trap ``_FALLBACK_ENGLISH_STOPWORDS``
+#: exists for). None of these 14 have a Snowball stemmer, so :func:`_stemmer` returns
+#: ``None`` for them by construction and ``tokenize`` degrades to unstemmed tokens —
+#: correct, not a bug: stopword removal and stemming are independent capabilities.
+#:
+#: **Two of the 16 unused corpora are deliberately NOT mapped, with the reason kept
+#: here rather than silently omitted:**
+#: - ``chinese`` (``zh``) — a no-space script. ``_TOKEN_RE`` above is a whitespace/
+#:   punctuation-delimited word tokenizer; over unsegmented CJK text it matches one
+#:   token per contiguous run of ideographs (an entire sentence, typically), so a
+#:   stopword *corpus* keyed on individual words would filter nothing and imply a
+#:   support level that isn't there. Fixing that needs a real CJK segmenter, which is
+#:   explicitly deferred (a new model/dependency violates the no-new-models-on-a-laptop
+#:   rule) — decline-with-disclosure here rather than pretend. ``chat/recurrence.py``
+#:   declines the same set of no-space scripts (``NO_SPACE_LANGUAGES`` — zh, ja, ko,
+#:   th, lo, km, my) for the identical reason; neither ``ja`` nor ``ko`` has an NLTK
+#:   stopword corpus at all, so only ``zh`` is a live decision here.
+#: - ``hinglish`` — NLTK's corpus is code-mixed Hindi/English chat-register stopwords,
+#:   not a standalone language's stopword list, and has no ISO 639-1 code of its own.
+#:   Mapping it to ``hi`` would assert real Hindi support (WhisperX/UI both treat "hi"
+#:   as Hindi) from a corpus that is not that.
+_STOPWORD_LANG_MAP: dict[str, str] = dict(
+    _SNOWBALL_LANG_MAP,
+    el="greek",
+    tr="turkish",
+    sq="albanian",
+    az="azerbaijani",
+    eu="basque",
+    be="belarusian",
+    bn="bengali",
+    ca="catalan",
+    he="hebrew",
+    id="indonesian",
+    kk="kazakh",
+    ne="nepali",
+    sl="slovene",
+    tg="tajik",
+    ta="tamil",
+    uz="uzbek",
+)
 
 
 def _combining_mark_ranges(limit: int = 0x10000) -> str:

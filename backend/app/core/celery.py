@@ -284,6 +284,13 @@ celery_app.conf.update(
         # Document ingestion (#362 Stage 6b). CPU queue: no GPU, and the pipeline the
         # user is watching, same reasoning as the transcription pipeline's own tasks.
         "documents.parse": {"queue": CeleryQueues.CPU},
+        # Deterministic document artifacts (#403 Stage 6) — the document-plane twin of
+        # `artifacts.generate_file_facts` above, on the same nlp pool for the same
+        # reason: CPU-only TextRank/NLTK enrichment, no LLM and no model load. It
+        # chunks sentences, so its queue must be served by a worker with the
+        # `nltk_data` mount (#436); `tests/unit/test_compose_sentence_splitter_mounts.py`
+        # derives task -> queue -> service -> mount from this entry and fails without it.
+        "documents.generate_artifacts": {"queue": CeleryQueues.NLP},
         # Redaction Queue - Content moderation detection (dedicated CPU service)
         "redaction.detect": {"queue": CeleryQueues.REDACTION},
         "redaction.detect_document": {"queue": CeleryQueues.REDACTION},

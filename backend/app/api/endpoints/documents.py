@@ -32,7 +32,9 @@ from fastapi import Query
 from fastapi import Request
 from fastapi import UploadFile
 from fastapi import status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import joinedload
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
@@ -43,6 +45,9 @@ from app.core.enums import FileStatus
 from app.db.base import get_db
 from app.models.document import Document
 from app.models.document import DocumentChunk
+from app.models.document import DocumentShare as DocumentShareModel
+from app.models.group import UserGroup
+from app.models.group import UserGroupMember
 from app.models.user import User
 from app.schemas.document import DocumentChunkListResponse
 from app.schemas.document import DocumentChunkResponse
@@ -52,9 +57,13 @@ from app.schemas.document import DocumentQuarantineActionResponse
 from app.schemas.document import DocumentQuarantineRequest
 from app.schemas.document import DocumentReleaseRequest
 from app.schemas.document import DocumentResponse
+from app.schemas.document import DocumentShare as DocumentShareSchema
+from app.schemas.document import DocumentShareCreate
+from app.schemas.document import DocumentShareUpdate
 from app.schemas.document import QuarantinedDocument
 from app.schemas.document import QuarantinedDocumentsList
 from app.schemas.document import display_status
+from app.schemas.user import UserBrief
 from app.services.documents import DOCUMENT_MIME_TYPES
 from app.services.documents import LEGACY_MIME_TYPES
 from app.services.documents import detect_document_mime
@@ -62,8 +71,11 @@ from app.services.imohash_service import compute_from_stream
 from app.services.minio_service import delete_file
 from app.services.minio_service import get_presigned_download_url
 from app.services.minio_service import upload_file_tuned
+from app.services.permission_service import PERMISSION_LEVELS
+from app.services.permission_service import PermissionService
 from app.services.system_settings_service import get_setting_int
 from app.tasks.document_tasks import dispatch_document_parse
+from app.tasks.search_indexing_task import update_document_access_index
 from app.utils.filename import sanitize_filename
 from app.utils.uuid_helpers import get_by_uuid
 
@@ -71,13 +83,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+#: Fallback for a NULL ``created_at`` — same sentinel media_collections.py uses.
+_UNKNOWN_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)
+
 #: Everything the parser stack can name — the fast, upload-time rejection. The parse
 #: task's own DocumentUnsupportedError is the backstop for anything this check misses
 #: (a format-family match that a specific tier still declines), not a duplicate of it.
 _SUPPORTED_MIME_TYPES = frozenset(DOCUMENT_MIME_TYPES) | LEGACY_MIME_TYPES
 
 
-def _to_response(doc: Document) -> DocumentResponse:
+def _to_response(doc: Document, *, my_permission: str | None = None) -> DocumentResponse:
     return DocumentResponse(
         uuid=doc.uuid,
         filename=doc.filename,
@@ -102,17 +117,37 @@ def _to_response(doc: Document) -> DocumentResponse:
         parsed_at=doc.parsed_at,
         is_quarantined=bool(doc.is_quarantined),
         legal_hold=bool(doc.legal_hold),
+        my_permission=my_permission,
     )
 
 
-def _get_owned_document(db: Session, document_uuid: UUID, ctx: RequestContext) -> Document:
+def _document_my_permission(db: Session, doc: Document, ctx: RequestContext) -> str | None:
+    """Caller's effective permission on *doc*, in ``files/crud.py``'s ``None``-means-owner
+    convention. Only called from endpoints reachable after ``_get_owned_document`` has
+    already proven access, so a ``None`` return from ``PermissionService`` here (the
+    "stranger" case) cannot occur in practice — it is defensive, not a real branch.
+    """
+    if doc.user_id == ctx.user.id:
+        return None
+    if ctx.user.role in ("admin", "super_admin"):
+        return "owner"
+    return PermissionService.get_document_permission(
+        db, doc.id, ctx.user.id, organization_id=ctx.org_id
+    )
+
+
+def _get_owned_document(
+    db: Session, document_uuid: UUID, ctx: RequestContext, *, min_permission: str = "viewer"
+) -> Document:
     """404 (never 403) on a document that exists but is not reachable from *ctx*.
 
-    Documents have no sharing/collections yet (v1 scope) — within one tenant scope every
-    document is owner-only or admin-visible, so there is no "exists but you can't see it"
-    case worth distinguishing from "does not exist"; the tag plane's `_writable_tag_ids`
-    reasoning for 404-not-403 (`app/api/CLAUDE.md`) applies for the same reason: a 403
-    confirms the id refers to something real, which is enumerable.
+    v400 (#362 lane C3-remainder) widened this from owner-or-admin-only to also admit a
+    ``DocumentShare`` sharee at or above *min_permission* — read endpoints (detail,
+    chunks, download) ask for the default ``viewer``; owner-sensitive endpoints (delete,
+    reparse, share management) ask for ``owner`` explicitly. The tag plane's
+    `_writable_tag_ids` reasoning for 404-not-403 (`app/api/CLAUDE.md`) still applies: a
+    403 confirms the id refers to something real, which is enumerable, so an
+    insufficient-permission sharee gets the same 404 as a stranger.
 
     The tenant check runs FIRST and applies to admins too: a global admin reviewing
     documents does so from within a tenant scope (personal, or a specific org context),
@@ -135,7 +170,11 @@ def _get_owned_document(db: Session, document_uuid: UUID, ctx: RequestContext) -
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     is_admin = ctx.user.role in ("admin", "super_admin")
     if doc.user_id != ctx.user.id and not is_admin:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+        permission = PermissionService.get_document_permission(
+            db, doc.id, ctx.user.id, organization_id=ctx.org_id
+        )
+        if permission is None or PERMISSION_LEVELS[permission] < PERMISSION_LEVELS[min_permission]:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     if bool(doc.is_quarantined) and not is_admin:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     return doc
@@ -286,21 +325,31 @@ async def list_documents(
 ) -> DocumentListResponse:
     """List the documents reachable from the active tenant scope.
 
-    Owner-scoped within that scope — see :func:`_get_owned_document` for why there is no
-    sharing to account for yet. ``scope_to_context`` is the same default-deny helper every
-    other org-aware listing in this API uses: org context -> the org's documents,
-    otherwise the caller's own personal-scope documents. Quarantined documents (v399) are
-    excluded here for every caller, admin included — the dedicated review queue
-    (``GET /documents/admin/quarantined``) is the only place they are ever listed,
-    matching ``exclude_quarantined``'s media-gallery precedent of excluding on this
-    surface and showing them only on the admin queue.
+    In an org context this stays ``scope_to_context``'s plain org-wide listing (every org
+    member already sees every org document, same as every other org-aware listing in this
+    API). In personal scope (v400, #362 lane C3-remainder) this now also includes
+    documents shared directly or via a group — the personal-scope half of
+    ``scope_to_context`` was ``user_id == ctx.user.id`` only, which is exactly the "no
+    sharing to account for" gap :func:`_get_owned_document` used to have too. Quarantined
+    documents (v399) are excluded here for every caller, admin included — the dedicated
+    review queue (``GET /documents/admin/quarantined``) is the only place they are ever
+    listed, matching ``exclude_quarantined``'s media-gallery precedent of excluding on
+    this surface and showing them only on the admin queue.
 
     ``skip``/``limit`` stay unbounded on ``skip`` (the pre-existing shape) — the "hard
     200 cap" a document past position 200 was invisible behind was never the backend's
     ceiling on ONE page (already raisable via ``skip``); it was the frontend never
     asking for a second page at all. See ``routes/documents/+page.svelte``.
     """
-    query = scope_to_context(db.query(Document), Document, ctx)
+    if ctx.is_org_context:
+        query = scope_to_context(db.query(Document), Document, ctx)
+    else:
+        accessible = PermissionService.get_accessible_document_ids_subquery(
+            db, ctx.user.id, organization_id=ctx.org_id
+        )
+        query = db.query(Document).filter(
+            Document.organization_id.is_(None), Document.id.in_(select(accessible))
+        )
     query = query.filter(Document.is_quarantined.is_(False))
 
     if search:
@@ -462,7 +511,7 @@ async def get_document(
     db: Session = Depends(get_db),
 ) -> DocumentResponse:
     doc = _get_owned_document(db, document_uuid, ctx)
-    return _to_response(doc)
+    return _to_response(doc, my_permission=_document_my_permission(db, doc, ctx))
 
 
 @router.get("/{document_uuid}/chunks", response_model=DocumentChunkListResponse)
@@ -474,6 +523,17 @@ async def get_document_chunks(
     """The document's chunk evidence, ordered — what a detail view cites from or jumps
     to (``page``/``char_start``/``char_end`` anchor a viewer, ``section_path`` labels a
     breadcrumb). Empty for a document that has not finished parsing yet, not an error.
+
+    v400 (#362 lane C5): masks each chunk's ``text`` at read time using its cached
+    ``redactions`` spans (v396), the same read-time-transform contract
+    ``services/redaction/spans.apply_redactions`` gives ``TranscriptSegment.text`` —
+    this endpoint previously served every chunk's text raw regardless of the caller's
+    redaction policy, the exact "unmasked read surface" root ``CLAUDE.md``'s retrieval
+    trap warns about for a different plane. Fails closed (503) if the policy cannot be
+    resolved, and withholds (409) while the file's scan is still pending — mirroring
+    ``files/crud.py``'s transcript-read contract, minus that endpoint's owner
+    ``?redact=false`` reveal (not yet built for documents; every category the caller's
+    policy enables stays masked here with no bypass).
     """
     doc = _get_owned_document(db, document_uuid, ctx)
     rows = (
@@ -482,7 +542,37 @@ async def get_document_chunks(
         .order_by(DocumentChunk.chunk_index)
         .all()
     )
-    chunks = [DocumentChunkResponse.model_validate(row) for row in rows]
+
+    from app.services.redaction.config import resolve_effective_config
+    from app.services.redaction.export_policy import export_masking_is_pending
+    from app.services.redaction.spans import apply_redactions
+
+    try:
+        cfg = resolve_effective_config(db, ctx.user.id)
+    except Exception as exc:  # noqa: BLE001 — fail closed, see docstring
+        logger.exception(
+            "Failed to resolve redaction config for document %s; refusing the chunk read", doc.id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Redaction policy is temporarily unavailable; document text withheld.",
+        ) from exc
+
+    if export_masking_is_pending(cfg, doc.redaction_status):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Document redaction scan is still in progress; chunks withheld.",
+        )
+
+    chunks = []
+    for row in rows:
+        chunk_response = DocumentChunkResponse.model_validate(row)
+        if cfg.enabled and row.redactions:
+            masked_text, _ = apply_redactions(
+                row.text, row.redactions, style=cfg.style, enabled_categories=cfg.enabled_categories
+            )
+            chunk_response.text = masked_text
+        chunks.append(chunk_response)
     return DocumentChunkListResponse(chunks=chunks, total=len(chunks))
 
 
@@ -530,9 +620,10 @@ async def reparse_document(
     write, so a reparse is safe to run any number of times. Not restricted to
     ``error`` status: a document wedged in PROCESSING with no live task (stuck-task
     recovery has no document-specific arm yet, see ``app/tasks/CLAUDE.md``) can also
-    be kicked back to PENDING from here.
+    be kicked back to PENDING from here. Requires ``editor``+ (owner, admin, or an
+    editor-permission sharee) — a viewer-permission sharee cannot trigger reprocessing.
     """
-    doc = _get_owned_document(db, document_uuid, ctx)
+    doc = _get_owned_document(db, document_uuid, ctx, min_permission="editor")
     doc.status = FileStatus.PENDING
     doc.error_category = None
     doc.last_error_message = None
@@ -554,8 +645,12 @@ async def delete_document(
     storage object. Storage/index failures are logged, not raised — the row is gone
     either way, and an orphaned object/index entry is a cleanup-sweep concern, not a
     reason to tell the user their delete failed when it mostly succeeded.
+
+    ``owner``-only (or admin) — matches the collection model, where only the owner
+    deletes the collection regardless of an editor share's write permission. Deleting
+    also removes every ``document_share`` row via the FK's ``ON DELETE CASCADE``.
     """
-    doc = _get_owned_document(db, document_uuid, ctx)
+    doc = _get_owned_document(db, document_uuid, ctx, min_permission="owner")
     doc_uuid_str = str(doc.uuid)
     storage_path = doc.storage_path
 
@@ -574,3 +669,252 @@ async def delete_document(
             delete_file(storage_path)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not remove storage object %s: %s", storage_path, exc)
+
+
+# =============================================================================
+# Sharing (v400, #362 lane C3-remainder) — the direct-share counterpart of
+# media_collections.py's collection-share trio, re-scoped to one document at a
+# time since a document has no collection concept. Every mutation dispatches
+# update_document_access_index so the OpenSearch accessible_user_ids grant list
+# (services/search/indexing_service.index_document_chunks) stays in step —
+# without it a granted share would never be retrievable via search or chat.
+# =============================================================================
+
+
+def _build_document_share_response(db: Session, share: DocumentShareModel) -> DocumentShareSchema:
+    """Build a DocumentShare response — mirrors media_collections._build_share_response."""
+    shared_by_brief = UserBrief(
+        uuid=share.shared_by.uuid,
+        full_name=share.shared_by.full_name,
+        email=share.shared_by.email,
+    )
+
+    if share.target_type == "user" and share.target_user:
+        target_uuid = share.target_user.uuid
+        target_name = share.target_user.full_name or share.target_user.email
+        target_email = share.target_user.email
+        member_count = None
+    elif share.target_type == "group" and share.target_group:
+        target_uuid = share.target_group.uuid
+        target_name = share.target_group.name
+        target_email = None
+        member_count = (
+            db.query(UserGroupMember)
+            .filter(UserGroupMember.group_id == share.target_group.id)
+            .count()
+        )
+    else:
+        raise HTTPException(status_code=500, detail="Invalid share target")
+
+    return DocumentShareSchema(
+        uuid=share.uuid,
+        target_type=share.target_type,
+        target_uuid=target_uuid,
+        target_name=target_name,
+        target_email=target_email,
+        member_count=member_count,
+        permission=share.permission,
+        shared_by=shared_by_brief,
+        created_at=share.created_at or _UNKNOWN_TIMESTAMP,
+    )
+
+
+@router.get("/{document_uuid}/shares", response_model=list[DocumentShareSchema])
+def list_document_shares(
+    document_uuid: UUID,
+    ctx: RequestContext = Depends(get_current_context),
+    db: Session = Depends(get_db),
+) -> list[DocumentShareSchema]:
+    """List all shares on a document. Requires direct ownership (or admin)."""
+    doc = _get_owned_document(db, document_uuid, ctx, min_permission="owner")
+    shares = (
+        db.query(DocumentShareModel)
+        .options(
+            joinedload(DocumentShareModel.shared_by),
+            joinedload(DocumentShareModel.target_user),
+            joinedload(DocumentShareModel.target_group),
+        )
+        .filter(DocumentShareModel.document_id == doc.id)
+        .order_by(DocumentShareModel.created_at.desc())
+        .all()
+    )
+    return [_build_document_share_response(db, share) for share in shares]
+
+
+@router.post(
+    "/{document_uuid}/shares",
+    response_model=DocumentShareSchema,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_document_share(
+    document_uuid: UUID,
+    share_in: DocumentShareCreate,
+    ctx: RequestContext = Depends(get_current_context),
+    db: Session = Depends(get_db),
+) -> DocumentShareSchema:
+    """Share a document with a user or group. Requires direct ownership (or admin)."""
+    doc = _get_owned_document(db, document_uuid, ctx, min_permission="owner")
+
+    target_user_id: int | None = None
+    target_group_id: int | None = None
+
+    if share_in.target_type == "user":
+        target_user = get_by_uuid(db, User, str(share_in.target_uuid), "User not found")
+        if target_user.id == ctx.user.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot share a document with yourself",
+            )
+        if doc.organization_id is not None:
+            from app.models.organization import OrganizationMembership
+
+            membership = (
+                db.query(OrganizationMembership)
+                .filter(
+                    OrganizationMembership.organization_id == doc.organization_id,
+                    OrganizationMembership.user_id == target_user.id,
+                )
+                .first()
+            )
+            if membership is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Cannot share an organization document with a user who is "
+                        "not a member of that organization"
+                    ),
+                )
+        existing = (
+            db.query(DocumentShareModel)
+            .filter(
+                DocumentShareModel.document_id == doc.id,
+                DocumentShareModel.target_user_id == target_user.id,
+            )
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Document is already shared with this user",
+            )
+        target_user_id = target_user.id
+    else:
+        target_group = get_by_uuid(db, UserGroup, str(share_in.target_uuid), "Group not found")
+        is_member = (
+            db.query(UserGroupMember)
+            .filter(
+                UserGroupMember.group_id == target_group.id,
+                UserGroupMember.user_id == ctx.user.id,
+            )
+            .first()
+        )
+        if not is_member:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You must be a member of the group to share with it",
+            )
+        existing = (
+            db.query(DocumentShareModel)
+            .filter(
+                DocumentShareModel.document_id == doc.id,
+                DocumentShareModel.target_group_id == target_group.id,
+            )
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Document is already shared with this group",
+            )
+        target_group_id = target_group.id
+
+    share = DocumentShareModel(
+        document_id=doc.id,
+        shared_by_id=ctx.user.id,
+        target_type=share_in.target_type,
+        target_user_id=target_user_id,
+        target_group_id=target_group_id,
+        permission=share_in.permission,
+    )
+    db.add(share)
+    db.commit()
+    db.refresh(share)
+
+    reloaded = (
+        db.query(DocumentShareModel)
+        .options(
+            joinedload(DocumentShareModel.shared_by),
+            joinedload(DocumentShareModel.target_user),
+            joinedload(DocumentShareModel.target_group),
+        )
+        .filter(DocumentShareModel.id == share.id)
+        .first()
+    )
+    assert reloaded is not None  # just committed above
+
+    update_document_access_index.delay([doc.id])
+    logger.info(
+        "Document %s (%s) shared by user %s: target_type=%s permission=%s",
+        doc.id,
+        doc.uuid,
+        ctx.user.id,
+        share_in.target_type,
+        share_in.permission,
+    )
+    return _build_document_share_response(db, reloaded)
+
+
+@router.put("/{document_uuid}/shares/{share_uuid}", response_model=DocumentShareSchema)
+def update_document_share(
+    document_uuid: UUID,
+    share_uuid: UUID,
+    share_update: DocumentShareUpdate,
+    ctx: RequestContext = Depends(get_current_context),
+    db: Session = Depends(get_db),
+) -> DocumentShareSchema:
+    """Update a share's permission level. Requires direct ownership (or admin)."""
+    doc = _get_owned_document(db, document_uuid, ctx, min_permission="owner")
+    share = get_by_uuid(db, DocumentShareModel, str(share_uuid), "Share not found")
+    if share.document_id != doc.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found")
+
+    share.permission = share_update.permission
+    db.commit()
+    db.refresh(share)
+
+    reloaded = (
+        db.query(DocumentShareModel)
+        .options(
+            joinedload(DocumentShareModel.shared_by),
+            joinedload(DocumentShareModel.target_user),
+            joinedload(DocumentShareModel.target_group),
+        )
+        .filter(DocumentShareModel.id == share.id)
+        .first()
+    )
+    assert reloaded is not None  # just committed above
+
+    update_document_access_index.delay([doc.id])
+    return _build_document_share_response(db, reloaded)
+
+
+@router.delete("/{document_uuid}/shares/{share_uuid}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document_share(
+    document_uuid: UUID,
+    share_uuid: UUID,
+    ctx: RequestContext = Depends(get_current_context),
+    db: Session = Depends(get_db),
+) -> None:
+    """Revoke a share. Requires direct ownership (or admin)."""
+    doc = _get_owned_document(db, document_uuid, ctx, min_permission="owner")
+    share = get_by_uuid(db, DocumentShareModel, str(share_uuid), "Share not found")
+    if share.document_id != doc.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found")
+
+    db.delete(share)
+    db.commit()
+
+    update_document_access_index.delay([doc.id])
+    logger.info(
+        "Document %s (%s) share %s revoked by user %s", doc.id, doc.uuid, share_uuid, ctx.user.id
+    )

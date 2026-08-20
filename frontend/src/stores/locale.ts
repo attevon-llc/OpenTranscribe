@@ -1,6 +1,11 @@
 import { writable, derived, get } from 'svelte/store';
 import i18next from 'i18next';
-import { DEFAULT_LANGUAGE, isValidLanguageCode, SUPPORTED_LANGUAGES } from '$lib/i18n/languages';
+import {
+  DEFAULT_LANGUAGE,
+  getLanguageDirection,
+  isValidLanguageCode,
+  SUPPORTED_LANGUAGES,
+} from '$lib/i18n/languages';
 
 // Get initial locale (mirrors theme.js pattern)
 const getInitialLocale = (): string => {
@@ -24,6 +29,10 @@ const getInitialLocale = (): string => {
 if (typeof window !== 'undefined') {
   const initialLocale = getInitialLocale();
   document.documentElement.lang = initialLocale;
+  // #453/ML4: `dir` must be set before first paint the same way `lang` is above — an
+  // Arabic session that only gets `dir="rtl"` after i18next finishes initializing would
+  // render an LTR flash of the whole shell (nav, sidebar, chat panes) before flipping.
+  document.documentElement.dir = getLanguageDirection(initialLocale);
 }
 
 // Create the locale store
@@ -62,9 +71,12 @@ const createLocaleStore = () => {
           void applyLanguage(newLocale);
         }
 
-        // Update document lang attribute for accessibility
+        // Update document lang + dir attributes for accessibility and RTL layout
+        // (#453/ML4). Both are set together — a locale switch that updated `lang`
+        // without `dir` would leave an Arabic UI rendering left-to-right.
         if (typeof document !== 'undefined') {
           document.documentElement.lang = newLocale;
+          document.documentElement.dir = getLanguageDirection(newLocale);
         }
       }
     },

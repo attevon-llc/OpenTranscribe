@@ -181,8 +181,35 @@ class TestGetOwnedDocumentTenantGate:
 
 
 class TestListDocumentsScoping:
-    @pytest.mark.asyncio
-    async def test_an_org_context_lists_only_that_orgs_documents(self, db_session):
+    """Driven through the real HTTP path, with only ``get_current_context`` overridden.
+
+    ⚠️ **Not a direct call, unlike the rest of this module** — and the difference is the
+    point. ``list_documents`` has SIX ``Query(...)``-defaulted parameters, and a
+    ``Query(None)`` sentinel is a truthy object, so a direct call that supplies only
+    ``skip``/``limit`` reaches ``if status:`` with the sentinel and dies inside
+    ``Document.status.in_(Query(None))`` — an ``ArgumentError`` about an IN expression,
+    which reads as a query bug in the endpoint rather than as an unresolved default. The
+    earlier version of these two tests did exactly that: it passed ``skip``/``limit``
+    explicitly *and carried a comment explaining why*, then went red the moment a lane
+    added ``search``/``status``/``sort_by``/``sort_order``. Enumerating every parameter
+    just re-arms that trap for the next one. Letting FastAPI resolve them cannot rot, and
+    the sibling ``TestUploadStampsTheActiveOrg`` below already establishes the override
+    pattern for this exact reason.
+    """
+
+    def _list(self, client, ctx) -> dict:
+        app.dependency_overrides[get_current_context] = lambda: ctx
+        try:
+            response = client.get("/api/documents")
+        finally:
+            app.dependency_overrides.pop(get_current_context, None)
+        assert response.status_code == 200, response.text
+        # Annotate rather than let `.json()`'s Any widen the declared return type —
+        # every caller indexes into this, so the shape is what the tests rely on.
+        payload: dict = response.json()
+        return payload
+
+    def test_an_org_context_lists_only_that_orgs_documents(self, client, db_session):
         owner = _mk_user(db_session, "owner")
         org_a = _mk_org(db_session, "a")
         org_b = _mk_org(db_session, "b")
@@ -191,25 +218,24 @@ class TestListDocumentsScoping:
         _mk_document(db_session, owner, organization_id=None)  # personal, must be excluded
 
         ctx = RequestContext(user=owner, org_id=org_a.id, org_role="org:member")
-        # skip/limit are `Query(...)` FastAPI defaults — only resolved to plain ints
-        # by the ASGI dependency-injection layer, so a direct call must supply real
-        # values or `.offset()`/`.limit()` receive the `Query` sentinel object itself.
-        result = await documents_ep.list_documents(skip=0, limit=50, ctx=ctx, db=db_session)
+        payload = self._list(client, ctx)
 
-        assert result.total == 1
+        assert payload["total"] == 1
 
-    @pytest.mark.asyncio
-    async def test_personal_scope_excludes_every_org_document(self, db_session):
+    def test_personal_scope_excludes_every_org_document(self, client, db_session):
         owner = _mk_user(db_session, "owner")
         org = _mk_org(db_session, "a")
         _mk_document(db_session, owner, organization_id=org.id)
-        personal = _mk_document(db_session, owner, organization_id=None)
+        personal_uuid = _mk_document(db_session, owner, organization_id=None).uuid
 
         ctx = RequestContext(user=owner)
-        result = await documents_ep.list_documents(skip=0, limit=50, ctx=ctx, db=db_session)
+        payload = self._list(client, ctx)
 
-        assert result.total == 1
-        assert result.documents[0].uuid == personal.uuid
+        assert payload["total"] == 1
+        # `str()`, because this crosses a serialization boundary: `Document.uuid` is a
+        # Python `UUID` while `payload` came back through JSON, which has no UUID type.
+        # The assertion is unchanged in strength — a different document still fails it.
+        assert payload["documents"][0]["uuid"] == str(personal_uuid)
 
 
 # ---------------------------------------------------------------------------

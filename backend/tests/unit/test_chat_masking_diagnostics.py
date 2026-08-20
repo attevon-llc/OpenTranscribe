@@ -52,11 +52,13 @@ def _prepare(monkeypatch, *, masked: list[MaskedChunk], retrieved: int) -> dict:
     # `mask_chunks` above; see test_chat_permissions_quarantine.py for the
     # real-database coverage of `_drop_quarantined_hits` itself.
     monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
-    # `_prepare_context` returns (masked_chunks, meta, counted, overview) since
-    # Stage 4 added the counted and overview tiers. Only `meta` is under test
-    # here, so the rest are discarded by name rather than by arity — a bare
-    # `_, meta = ...` broke silently when the tuple grew from two to four.
-    _, meta, _counted, _overview = chat_service._prepare_context(
+    # `_prepare_context` returns (masked_chunks, meta, counted, overview,
+    # synthesis_block, recurrence_block) — Stage 4 added the counted and overview
+    # tiers, W2.6 added the two fan-out blocks. Only `meta` is under test here, so
+    # the rest are discarded by name rather than by arity: a bare `_, meta = ...`
+    # broke silently when the tuple grew, whereas naming every member makes the
+    # next growth a loud `ValueError` in exactly the place that has to be updated.
+    _, meta, _counted, _overview, _synthesis, _recurrence = chat_service._prepare_context(
         user_id=1,
         organization_id=None,
         question="what did we decide?",

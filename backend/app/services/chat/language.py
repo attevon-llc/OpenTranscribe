@@ -30,6 +30,17 @@ Which stage is English-only, and what changes it:
 * **Prompting — FIXED (#453).** Both prompts are authored in English but now
   instruct in it: answer in the question's language, quote in the original and
   never translate a quotation, and never translate the rewritten query.
+* **BM25 field preset — the MECHANISM is built, adoption is not (#506/ML1).**
+  ``search.chunk_retrieval`` has a ``"no-stem"`` ``text_fields`` preset that drops
+  the stemmed ``content`` leg (``english_snowball`` mis-stems non-English tokens)
+  and queries only the unstemmed ``content.exact`` leg instead.
+  :func:`resolve_text_field_preset_for_locale` below is the mapping from a
+  per-turn locale hint to that preset. Nothing calls it yet — a caller that
+  reaches a per-turn locale (the router/planner layer) opts in explicitly by
+  passing its result as ``retrieve_chunks(..., text_fields=resolve_text_field_preset(...))``.
+  Adopting it automatically is a **measured** decision (see
+  ``docs-site/docs/developer-guide/rag-evaluation.md``), not a default flip —
+  this module only supplies the mapping.
 
 ⚠️ **A multilingual embedding model does not make BM25 multilingual**, so the
 warning is not simply switched off — it reports what is *actually* degraded rather
@@ -271,6 +282,37 @@ def describe_context_languages(
         return ContextLanguages()
 
     return _classify((row[0] for row in rows), supported_rag_languages(db))
+
+
+def resolve_text_field_preset_for_locale(locale: str | None) -> str:
+    """Map a per-turn locale hint to a #506 ``text_fields`` preset name.
+
+    This is the adoption path for the no-stemmed-leg arm, not the decision to
+    use it: it only returns a preset **name** (from
+    ``search.chunk_retrieval.TEXT_FIELD_PRESETS``); a caller must still resolve
+    that name to a field list via
+    ``search.chunk_retrieval.resolve_text_field_preset`` and pass it into
+    ``retrieve_chunks``/``retrieve_digests`` as ``text_fields``. Nothing in this
+    module calls it automatically — see the module docstring's "BM25 field
+    preset" entry.
+
+    Args:
+        locale: A BCP-47 or ISO 639-1 locale hint (``"es"``, ``"es-MX"``,
+            ``"en-US"``), or ``None``/blank when no hint is available.
+
+    Returns:
+        ``TEXT_FIELD_PRESET_NO_STEM`` for a recognisable non-English locale,
+        else ``TEXT_FIELD_PRESET_DEFAULT`` — including when the locale is
+        missing or unparseable, so an absent hint behaves exactly as today
+        (the stemmed leg stays in the query).
+    """
+    from app.services.search.chunk_retrieval import TEXT_FIELD_PRESET_DEFAULT
+    from app.services.search.chunk_retrieval import TEXT_FIELD_PRESET_NO_STEM
+
+    code = normalize_language(locale)
+    if code is not None and code != "en":
+        return TEXT_FIELD_PRESET_NO_STEM
+    return TEXT_FIELD_PRESET_DEFAULT
 
 
 def warning_payload(metadata: dict | None) -> dict | None:

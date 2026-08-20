@@ -44,6 +44,7 @@ const BASE_DOC = {
   parsed_at: null,
   is_quarantined: false,
   legal_hold: false,
+  my_permission: null,
 };
 
 describe('DocumentCard — retry (#362 lane C3)', () => {
@@ -79,6 +80,57 @@ describe('DocumentCard — retry (#362 lane C3)', () => {
     expect(retryHandler.mock.calls[0][0].detail).toEqual({ uuid: 'doc-uuid-1' });
     // jsdom's fireEvent reports whether preventDefault() was called — the card is an
     // <a href="/documents/...">, so a retry click must not also trigger navigation.
+    expect(clickEvent).toBe(false);
+  });
+});
+
+describe('DocumentCard — bulk select (v400, #362 lane C3-remainder)', () => {
+  it('shows no checkbox outside selection mode', () => {
+    render(DocumentCard, { props: { doc: BASE_DOC } });
+
+    expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+
+  it('shows an unchecked checkbox in selection mode when not selected', () => {
+    render(DocumentCard, { props: { doc: BASE_DOC, selectionMode: true, selected: false } });
+
+    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+  });
+
+  it('shows a checked checkbox when selected', () => {
+    render(DocumentCard, { props: { doc: BASE_DOC, selectionMode: true, selected: true } });
+
+    const checkbox = screen.getByRole('checkbox') as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it('dispatches toggleSelect with the uuid on checkbox click, without navigating', async () => {
+    const toggleHandler = vi.fn();
+    render(DocumentCard, {
+      props: { doc: BASE_DOC, selectionMode: true, selected: false },
+      events: { toggleSelect: toggleHandler },
+    });
+
+    const checkbox = screen.getByRole('checkbox');
+    const clickEvent = await fireEvent.click(checkbox);
+
+    expect(toggleHandler).toHaveBeenCalledTimes(1);
+    expect(toggleHandler.mock.calls[0][0].detail).toEqual({ uuid: 'doc-uuid-1' });
+    expect(clickEvent).toBe(true); // checkbox click is stopped, not prevented
+  });
+
+  it('dispatches toggleSelect on a card click in selection mode, preventing navigation', async () => {
+    const toggleHandler = vi.fn();
+    render(DocumentCard, {
+      props: { doc: BASE_DOC, selectionMode: true, selected: false },
+      events: { toggleSelect: toggleHandler },
+    });
+
+    const card = screen.getByText('report.pdf').closest('a') as HTMLAnchorElement;
+    const clickEvent = await fireEvent.click(card);
+
+    expect(toggleHandler).toHaveBeenCalledTimes(1);
     expect(clickEvent).toBe(false);
   });
 });

@@ -77,8 +77,15 @@ def _worker_count() -> int:
 
 
 def _init_worker() -> None:
-    """Build one analyzer per worker process, once."""
+    """Build one analyzer per worker process, once.
+
+    Hides the GPU first. These workers run Presidio on the CPU and never touch CUDA, but the
+    app import pulls in torch, and each child was creating its own CUDA context: 294 MiB apiece,
+    2.35 GiB across eight workers, on a 12 GB card that already carries a 7.5 GiB model floor.
+    This must run before the first app import, because torch caches the device list on first use.
+    """
     global _analyzer
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
     try:
         from app.services.redaction.detectors import pii_presidio
 

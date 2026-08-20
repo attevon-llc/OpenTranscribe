@@ -9,6 +9,16 @@
 # shell scripts or network calls in the runtime stage.
 FROM denoland/deno:bin AS deno-bin
 
+# diar-native (T1 diarization sidecar) binary + ONNX Runtime provider libs, pinned by
+# DIGEST so a floating `:latest` on the standalone image can never silently change what
+# ships here (task #59). One shared backend image now carries both the Python stack and
+# this Rust binary; docker-compose.diar-native.yml runs it as its OWN container via a
+# `command:` override — see that file for why (warm ORT arena must survive worker
+# restarts, and gpu-scale runs N workers per container which makes a per-worker sidecar
+# ambiguous). Only ~419 MB of the standalone 3.46 GB image is actually needed: the
+# binary, three ORT libs (see the exclusion note below), and libopenblas0.
+FROM davidamacey/diar-native@sha256:544a6a6536464729834dd1b51dc6d76b538776da23a22682501f220cf2ff999c AS diar-native-bin
+
 # -----------------------------------------------------------------------------
 # Stage 1: Build Stage - Install Python dependencies with compilation
 # -----------------------------------------------------------------------------
@@ -103,6 +113,15 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
+# diar-native's only extra system dependency: libopenblas0 (linked by diar-server itself,
+# per `ldd`). libgfortran5 is openblas's own dependency but is ALREADY present in this
+# image at 0 extra bytes (pulled in transitively by something upstream, e.g. scipy) —
+# verified via `dpkg -l | grep libgfortran` against a built image, not assumed.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libopenblas0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
 # Create non-root user for security
 # Add to video group for GPU access
 RUN groupadd -r appuser && \
@@ -128,6 +147,49 @@ COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
 # permission differs.
 COPY --from=deno-bin /deno /usr/local/bin/deno
 RUN chmod +x /usr/local/bin/deno
+
+# diar-native binary + ONNX Runtime provider libs (task #59). Deliberately EXCLUDES
+# libonnxruntime_providers_tensorrt.so — TensorRT is never installed in this image, so
+# that provider is dead weight that cannot load.
+#
+# ⚠️ ORT VERSION COLLISION: onnxruntime-gpu==1.28.0 (installed above, for Python/
+# PyAnnote's PYANNOTE_USE_ONNX=1 path) ships its OWN unversioned
+# libonnxruntime_providers_cuda.so / libonnxruntime_providers_shared.so. diar ships
+# 1.24.2 of the same two filenames. The core lib is version-tagged
+# (libonnxruntime.so.1.24.2) so it can't collide, but the provider libs collide by name.
+# Installing into /usr/local/lib and running `ldconfig` would publish diar's 1.24.2
+# providers into the SYSTEM-WIDE ld cache for all services in this image, including
+# Python's 1.28.0 — so this installs to a private /opt/diar-native/lib instead, with NO
+# ldconfig call. Only the diar-native compose service's own (non-image-wide)
+# LD_LIBRARY_PATH ever points at it.
+#
+# ⚠️ RUNTIME RESOLUTION: diar-server has zero ELF NEEDED entry for libonnxruntime (ORT is
+# loaded dynamically at runtime, not link-time), and ORT resolves its provider libs
+# relative to the EXECUTABLE'S DIRECTORY and the process CWD — LD_LIBRARY_PATH alone is
+# not sufficient for the providers. diar-native's own docker/Dockerfile.server handles
+# this by symlinking the provider libs into both locations; replicated here into
+# /usr/local/bin (diar-server's directory) and /opt/diar-native/run (the diar-native
+# compose service's working_dir). libonnxruntime.so.1.24.2 itself is found via
+# LD_LIBRARY_PATH (the compose-level env var), replacing what `ldconfig` did in the
+# standalone image.
+RUN mkdir -p /opt/diar-native/lib /opt/diar-native/run
+# --chown at COPY time, not a later `chown -R`: this stage's parent (COPY --from=builder)
+# already put a multi-GB tree in this layer, and a later recursive chown on an
+# already-copied 316 MB file forces an overlayfs copy-up that nearly doubled this
+# block's contribution to image size (374 MB measured for a chown of files that were
+# already 356 MB) — caught by comparing `docker history` layer sizes before/after.
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/bin/diar-server /usr/local/bin/diar-server
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime.so.1.24.2 /opt/diar-native/lib/libonnxruntime.so.1.24.2
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime_providers_cuda.so /opt/diar-native/lib/libonnxruntime_providers_cuda.so
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime_providers_shared.so /opt/diar-native/lib/libonnxruntime_providers_shared.so
+# No `chmod +x` here: the source image's binary is already mode 755 and COPY preserves
+# it — an explicit chmod on an already-copied 33 MB file forces the same overlayfs
+# copy-up as the chown-vs-COPY issue above, for zero behavioral change.
+RUN ln -s /opt/diar-native/lib/libonnxruntime_providers_cuda.so /usr/local/bin/libonnxruntime_providers_cuda.so && \
+    ln -s /opt/diar-native/lib/libonnxruntime_providers_shared.so /usr/local/bin/libonnxruntime_providers_shared.so && \
+    ln -s /opt/diar-native/lib/libonnxruntime_providers_cuda.so /opt/diar-native/run/libonnxruntime_providers_cuda.so && \
+    ln -s /opt/diar-native/lib/libonnxruntime_providers_shared.so /opt/diar-native/run/libonnxruntime_providers_shared.so && \
+    chown -h appuser:appuser /opt/diar-native/run/libonnxruntime_providers_cuda.so /opt/diar-native/run/libonnxruntime_providers_shared.so
 
 # Ensure scripts in .local are usable by adding to PATH
 # Set LD_LIBRARY_PATH for cuDNN libraries from PyTorch package

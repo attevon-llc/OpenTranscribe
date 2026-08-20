@@ -213,6 +213,13 @@ CHAT_FLAG_REGISTRY: tuple[ChatFlagSpec, ...] = (
         value_type=bool,
         default=C.DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED,
     ),
+    ChatFlagSpec(
+        field="map_tier_speaker_summaries",
+        setting_key="chat.rag.map_tier_speaker_summaries",
+        description="Prefer each file's fresh LLM speaker analysis over its digest in the per-speaker map",
+        value_type=bool,
+        default=C.DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES,
+    ),
 )
 
 #: ``field -> ChatFlagSpec``, for a single-lookup consumer.

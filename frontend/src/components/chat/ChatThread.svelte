@@ -17,7 +17,11 @@
   export let status: StreamStatus = 'idle';
   export let streamingMessageId: string | null = null;
 
-  const dispatch = createEventDispatcher<{ regenerate: void; retry: void }>();
+  const dispatch = createEventDispatcher<{
+    regenerate: void;
+    retry: void;
+    disambiguate: string;
+  }>();
 
   /** Anything under this from the bottom counts as "following the stream". */
   const FOLLOW_THRESHOLD_PX = 120;
@@ -70,6 +74,7 @@
         on:regenerate={() => dispatch('regenerate')}
         on:retry={() => dispatch('retry')}
         on:edit
+        on:disambiguate
       />
     {/each}
 

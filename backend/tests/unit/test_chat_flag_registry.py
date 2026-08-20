@@ -54,6 +54,9 @@ _OLD_HAND_WRITTEN_DESCRIPTIONS = {
     "speaker_resolver_enabled": (
         "Resolve a speaker named in the question text into a parallel retrieval leg"
     ),
+    "map_tier_speaker_summaries": (
+        "Prefer each file's fresh LLM speaker analysis over its digest in the per-speaker map"
+    ),
 }
 
 

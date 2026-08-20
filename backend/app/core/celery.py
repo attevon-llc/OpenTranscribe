@@ -259,6 +259,13 @@ celery_app.conf.update(
         # slower utility queue.
         "propagate_speaker_rename": {"queue": CeleryQueues.CPU},
         "propagate_title_rename": {"queue": CeleryQueues.CPU},
+        # Digest-plane regeneration triggered by a rename (#383 addendum-G1).
+        # Same queue and same reasoning as the two routes above: it is
+        # dispatched from the same `dispatch_speaker_rename` call and a
+        # renamed speaker's summary tier should not lag behind the roster
+        # rewrite by much. A task with no route falls through to the default
+        # 'celery' queue silently — see `_validate_task_routes` below.
+        "regenerate_rename_digests": {"queue": CeleryQueues.CPU},
         "process_speaker_merge_background": {"queue": CeleryQueues.CPU},
         "extract_speaker_embeddings": {"queue": CeleryQueues.GPU},
         # NLP Queue - LLM API calls (concurrency=4, no GPU needed)

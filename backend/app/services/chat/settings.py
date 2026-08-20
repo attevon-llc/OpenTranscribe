@@ -39,6 +39,7 @@ SETTING_KEYS: dict[str, str] = {
     "speaker_stats_enabled": "chat.aggregate.speaker_stats_enabled",
     "map_tier_summaries": "chat.rag.map_tier_summaries",
     "speaker_resolver_enabled": "chat.speaker_resolver_enabled",
+    "map_tier_speaker_summaries": "chat.rag.map_tier_speaker_summaries",
 }
 
 DEFAULTS: dict[str, int | bool | float] = {
@@ -59,6 +60,7 @@ DEFAULTS: dict[str, int | bool | float] = {
     "speaker_stats_enabled": C.DEFAULT_CHAT_AGGREGATE_SPEAKER_STATS_ENABLED,
     "map_tier_summaries": C.DEFAULT_CHAT_MAP_TIER_SUMMARIES,
     "speaker_resolver_enabled": C.DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED,
+    "map_tier_speaker_summaries": C.DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES,
 }
 
 
@@ -99,6 +101,12 @@ class ChatSettings:
     #: leg (`services/chat/speaker_resolver.py`). Off by default: a new,
     #: unmeasured retrieval shape.
     speaker_resolver_enabled: bool = C.DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED
+    #: W2.3. Extends #464's map-tier-summaries pattern to the per-speaker map
+    #: (`mapreduce.scope_speaker_digest_hits`). When a file's LLM summary is
+    #: FRESH, prefer its `speakers_analysis[]` entry for the focus speaker
+    #: (plus owner-matched action items) over the per-sentence digest
+    #: fallback. Off by default: a new, unmeasured retrieval shape.
+    map_tier_speaker_summaries: bool = C.DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES
     #: Ceiling on the answer, sent to the provider as max_tokens. ``None`` means
     #: "use whatever the LLM config derived", which is the community behaviour.
     max_output_tokens: int | None = None

@@ -2603,7 +2603,7 @@
   "transcript.highConfidence": "≥75% High (auto-suggested)",
   "transcript.mediumConfidence": "50-74% Medium (verify)",
   "transcript.lowConfidence": "<50% Low (manual)",
-  "transcript.speakerHasProfile": "This speaker has a verified profile (appears in multiple videos)",
+  "transcript.speakerHasProfile": "This speaker has a verified profile (appears in multiple videos) — click to view it",
   "transcript.viewAvailableSuggestions": "View available suggestions for speaker identification",
   "transcript.suggestionsCount": "{{count}} suggestion available",
   "transcript.suggestionsCountPlural": "{{count}} suggestions available",
@@ -5058,5 +5058,12 @@
   "chat.sources.openSummary": "Open the AI-generated summary",
   "chat.meta.speakerAmbiguous": "Ambiguous speaker",
   "chat.meta.speakerAmbiguousHint": "Multiple speakers could match — pick one to filter by and resend:",
-  "chat.context.removeSpeaker": "Remove {{name}} from the speaker filter"
+  "chat.context.removeSpeaker": "Remove {{name}} from the speaker filter",
+  "filter.searchSpeakersPlaceholder": "Search speakers...",
+  "filter.noSpeakersMatchSearch": "No speakers match your search",
+  "speakers.renamePropagationPending": "Updating file summaries…",
+  "speakers.renamePropagationComplete": "Rename propagated — {{count}} file summary/summaries updated",
+  "transcript.sourceContentAnalysis": "Content analysis",
+  "transcript.sourceVoiceProfile": "Voice profile",
+  "transcript.sourceVoiceSimilarity": "Voice similarity"
 }

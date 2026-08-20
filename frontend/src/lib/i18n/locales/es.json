@@ -2420,7 +2420,7 @@
   "transcript.speakerAppearsInVideos": "\"{{name}}\" aparece en {{count}} video",
   "transcript.speakerAppearsInVideosPlural": "\"{{name}}\" aparece en {{count}} videos",
   "transcript.speakerAssignmentUpdated": "Asignación de hablante actualizada",
-  "transcript.speakerHasProfile": "Este hablante tiene un perfil verificado (aparece en múltiples videos)",
+  "transcript.speakerHasProfile": "Este hablante tiene un perfil verificado (aparece en múltiples videos) — haz clic para verlo",
   "transcript.speakerMatchesOthers": "{{speaker}} coincide con {{count}} otro hablante",
   "transcript.speakerMatchesOthersPlural": "{{speaker}} coincide con {{count}} otros hablantes",
   "transcript.speakerSegments": "{{count}} segmentos de hablante",
@@ -5058,5 +5058,12 @@
   "chat.sources.openSummary": "Abrir el resumen generado por IA",
   "chat.meta.speakerAmbiguous": "Hablante ambiguo",
   "chat.meta.speakerAmbiguousHint": "Varios hablantes podrían coincidir. Elige uno para filtrar y reenviar:",
-  "chat.context.removeSpeaker": "Quitar a {{name}} del filtro de hablantes"
+  "chat.context.removeSpeaker": "Quitar a {{name}} del filtro de hablantes",
+  "filter.searchSpeakersPlaceholder": "Buscar hablantes...",
+  "filter.noSpeakersMatchSearch": "Ningún hablante coincide con tu búsqueda",
+  "speakers.renamePropagationPending": "Actualizando resúmenes de archivos…",
+  "speakers.renamePropagationComplete": "Cambio de nombre propagado — {{count}} resumen(es) de archivo actualizado(s)",
+  "transcript.sourceContentAnalysis": "Análisis de contenido",
+  "transcript.sourceVoiceProfile": "Perfil de voz",
+  "transcript.sourceVoiceSimilarity": "Similitud de voz"
 }

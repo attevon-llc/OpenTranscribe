@@ -2590,7 +2590,7 @@
   "transcript.highConfidence": "≥75% Высокая (авто-предложение)",
   "transcript.mediumConfidence": "50-74% Средняя (проверить)",
   "transcript.lowConfidence": "<50% Низкая (вручную)",
-  "transcript.speakerHasProfile": "У этого спикера есть подтвержденный профиль (появляется в нескольких видео)",
+  "transcript.speakerHasProfile": "У этого спикера есть подтвержденный профиль (появляется в нескольких видео) — нажмите, чтобы открыть",
   "transcript.viewAvailableSuggestions": "Посмотреть доступные предложения для идентификации спикера",
   "transcript.suggestionsCount": "{{count}} предложение доступно",
   "transcript.suggestionsCountPlural": "{{count}} предложений доступно",
@@ -5058,5 +5058,12 @@
   "chat.sources.openSummary": "Открыть резюме, созданное ИИ",
   "chat.meta.speakerAmbiguous": "Неоднозначный говорящий",
   "chat.meta.speakerAmbiguousHint": "Возможно совпадение с несколькими говорящими. Выберите одного, чтобы отфильтровать и отправить снова:",
-  "chat.context.removeSpeaker": "Удалить {{name}} из фильтра говорящих"
+  "chat.context.removeSpeaker": "Удалить {{name}} из фильтра говорящих",
+  "filter.searchSpeakersPlaceholder": "Поиск говорящих...",
+  "filter.noSpeakersMatchSearch": "Нет говорящих, соответствующих запросу",
+  "speakers.renamePropagationPending": "Обновление сводок файлов…",
+  "speakers.renamePropagationComplete": "Переименование распространено — обновлено сводок файлов: {{count}}",
+  "transcript.sourceContentAnalysis": "Анализ содержания",
+  "transcript.sourceVoiceProfile": "Голосовой профиль",
+  "transcript.sourceVoiceSimilarity": "Сходство голоса"
 }

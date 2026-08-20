@@ -2420,7 +2420,7 @@
   "transcript.speakerAppearsInVideos": "\"{{name}}\" apparaît dans {{count}} vidéo",
   "transcript.speakerAppearsInVideosPlural": "\"{{name}}\" apparaît dans {{count}} vidéos",
   "transcript.speakerAssignmentUpdated": "Attribution du locuteur mise à jour",
-  "transcript.speakerHasProfile": "Ce locuteur a un profil",
+  "transcript.speakerHasProfile": "Ce locuteur a un profil — cliquez pour l'afficher",
   "transcript.speakerMatchesOthers": "{{speaker}} correspond à {{count}} autre locuteur",
   "transcript.speakerMatchesOthersPlural": "{{speaker}} correspond à {{count}} autres locuteurs",
   "transcript.speakerSegments": "{{count}} segments de locuteur",
@@ -5058,5 +5058,12 @@
   "chat.sources.openSummary": "Ouvrir le résumé généré par l'IA",
   "chat.meta.speakerAmbiguous": "Locuteur ambigu",
   "chat.meta.speakerAmbiguousHint": "Plusieurs locuteurs pourraient correspondre. Choisissez-en un pour filtrer et renvoyer :",
-  "chat.context.removeSpeaker": "Retirer {{name}} du filtre des locuteurs"
+  "chat.context.removeSpeaker": "Retirer {{name}} du filtre des locuteurs",
+  "filter.searchSpeakersPlaceholder": "Rechercher des intervenants...",
+  "filter.noSpeakersMatchSearch": "Aucun intervenant ne correspond à votre recherche",
+  "speakers.renamePropagationPending": "Mise à jour des résumés de fichiers…",
+  "speakers.renamePropagationComplete": "Renommage propagé — {{count}} résumé(s) de fichier mis à jour",
+  "transcript.sourceContentAnalysis": "Analyse du contenu",
+  "transcript.sourceVoiceProfile": "Profil vocal",
+  "transcript.sourceVoiceSimilarity": "Similarité vocale"
 }

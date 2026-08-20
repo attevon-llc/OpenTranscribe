@@ -2600,7 +2600,7 @@
   "transcript.highConfidence": "≥75% Alta (auto-sugerido)",
   "transcript.mediumConfidence": "50-74% Média (verificar)",
   "transcript.lowConfidence": "<50% Baixa (manual)",
-  "transcript.speakerHasProfile": "Este locutor tem um perfil verificado (aparece em vários vídeos)",
+  "transcript.speakerHasProfile": "Este locutor tem um perfil verificado (aparece em vários vídeos) — clique para ver",
   "transcript.viewAvailableSuggestions": "Ver sugestões disponíveis para identificação de locutor",
   "transcript.suggestionsCount": "{{count}} sugestão disponível",
   "transcript.suggestionsCountPlural": "{{count}} sugestões disponíveis",
@@ -5058,5 +5058,12 @@
   "chat.sources.openSummary": "Abrir o resumo gerado por IA",
   "chat.meta.speakerAmbiguous": "Falante ambíguo",
   "chat.meta.speakerAmbiguousHint": "Vários falantes podem corresponder. Escolha um para filtrar e reenviar:",
-  "chat.context.removeSpeaker": "Remover {{name}} do filtro de falantes"
+  "chat.context.removeSpeaker": "Remover {{name}} do filtro de falantes",
+  "filter.searchSpeakersPlaceholder": "Pesquisar oradores...",
+  "filter.noSpeakersMatchSearch": "Nenhum orador corresponde à sua pesquisa",
+  "speakers.renamePropagationPending": "Atualizando resumos de arquivos…",
+  "speakers.renamePropagationComplete": "Renomeação propagada — {{count}} resumo(s) de arquivo atualizado(s)",
+  "transcript.sourceContentAnalysis": "Análise de conteúdo",
+  "transcript.sourceVoiceProfile": "Perfil de voz",
+  "transcript.sourceVoiceSimilarity": "Semelhança de voz"
 }

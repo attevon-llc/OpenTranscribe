@@ -2420,7 +2420,7 @@
   "transcript.speakerAppearsInVideos": "\"{{name}}\" erscheint in {{count}} Video",
   "transcript.speakerAppearsInVideosPlural": "\"{{name}}\" erscheint in {{count}} Videos",
   "transcript.speakerAssignmentUpdated": "Sprecherzuordnung aktualisiert",
-  "transcript.speakerHasProfile": "Dieser Sprecher hat ein verifiziertes Profil (erscheint in mehreren Videos)",
+  "transcript.speakerHasProfile": "Dieser Sprecher hat ein verifiziertes Profil (erscheint in mehreren Videos) — zum Anzeigen klicken",
   "transcript.speakerMatchesOthers": "{{speaker}} stimmt mit {{count}} anderem Sprecher überein",
   "transcript.speakerMatchesOthersPlural": "{{speaker}} stimmt mit {{count}} anderen Sprechern überein",
   "transcript.speakerSegments": "{{count}} Sprechersegmente",
@@ -5058,5 +5058,12 @@
   "chat.sources.openSummary": "KI-generierte Zusammenfassung öffnen",
   "chat.meta.speakerAmbiguous": "Mehrdeutiger Sprecher",
   "chat.meta.speakerAmbiguousHint": "Mehrere Sprecher könnten passen. Wählen Sie einen aus, um zu filtern und erneut zu senden:",
-  "chat.context.removeSpeaker": "{{name}} aus dem Sprecherfilter entfernen"
+  "chat.context.removeSpeaker": "{{name}} aus dem Sprecherfilter entfernen",
+  "filter.searchSpeakersPlaceholder": "Sprecher suchen...",
+  "filter.noSpeakersMatchSearch": "Keine Sprecher entsprechen Ihrer Suche",
+  "speakers.renamePropagationPending": "Dateizusammenfassungen werden aktualisiert…",
+  "speakers.renamePropagationComplete": "Umbenennung übertragen — {{count}} Dateizusammenfassung(en) aktualisiert",
+  "transcript.sourceContentAnalysis": "Inhaltsanalyse",
+  "transcript.sourceVoiceProfile": "Stimmprofil",
+  "transcript.sourceVoiceSimilarity": "Stimmähnlichkeit"
 }

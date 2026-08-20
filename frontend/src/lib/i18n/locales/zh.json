@@ -2600,7 +2600,7 @@
   "transcript.highConfidence": "高置信度",
   "transcript.mediumConfidence": "中等置信度",
   "transcript.lowConfidence": "低置信度",
-  "transcript.speakerHasProfile": "说话人有档案",
+  "transcript.speakerHasProfile": "说话人有档案 — 点击查看",
   "transcript.viewAvailableSuggestions": "查看可用建议",
   "transcript.suggestionsCount": "{{count}} 条建议",
   "transcript.suggestionsCountPlural": "{{count}} 条建议",
@@ -5058,5 +5058,12 @@
   "chat.sources.openSummary": "打开 AI 生成的摘要",
   "chat.meta.speakerAmbiguous": "发言人存在歧义",
   "chat.meta.speakerAmbiguousHint": "可能匹配多个发言人，请选择一个进行筛选并重新发送：",
-  "chat.context.removeSpeaker": "从发言人筛选中移除 {{name}}"
+  "chat.context.removeSpeaker": "从发言人筛选中移除 {{name}}",
+  "filter.searchSpeakersPlaceholder": "搜索说话人...",
+  "filter.noSpeakersMatchSearch": "没有与搜索匹配的说话人",
+  "speakers.renamePropagationPending": "正在更新文件摘要…",
+  "speakers.renamePropagationComplete": "重命名已同步 — 已更新 {{count}} 个文件摘要",
+  "transcript.sourceContentAnalysis": "内容分析",
+  "transcript.sourceVoiceProfile": "声纹档案",
+  "transcript.sourceVoiceSimilarity": "声音相似度"
 }

@@ -392,6 +392,7 @@ class ChatAdminSettings(BaseModel):
     speaker_stats_enabled: bool = False
     map_tier_summaries: bool = False
     speaker_resolver_enabled: bool = False
+    map_tier_speaker_summaries: bool = False
 
 
 class ChatAdminSettingsUpdate(BaseModel):
@@ -412,3 +413,4 @@ class ChatAdminSettingsUpdate(BaseModel):
     speaker_stats_enabled: bool | None = None
     map_tier_summaries: bool | None = None
     speaker_resolver_enabled: bool | None = None
+    map_tier_speaker_summaries: bool | None = None

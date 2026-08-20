@@ -1135,6 +1135,14 @@ CHAT_MAX_SCOPE_FILES = 500
 # this is a new, unmeasured retrieval shape.
 DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED = False  # chat.speaker_resolver_enabled
 
+# W2.3: extends #464's map-tier-summaries pattern to the per-speaker map
+# (`chat/mapreduce.scope_speaker_digest_hits`). When a fresh LLM summary exists
+# for a file, prefer its `summary_data.speakers_analysis[]` entry (plus
+# owner-matched action items) for the focus speaker over the per-sentence
+# digest fallback. Default OFF for the same reason #464 is: on-by-default
+# needs measured answer-quality evidence this flag does not yet have.
+DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES = False  # chat.rag.map_tier_speaker_summaries
+
 
 # =============================================================================
 # Document ingestion (issue #362 / #403 Stage 6)

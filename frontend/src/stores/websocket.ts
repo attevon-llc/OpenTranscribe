@@ -29,6 +29,7 @@ export type NotificationType =
   | 'file_deleted'
   | 'speaker_updated'
   | 'speaker_processing_complete'
+  | 'speaker_rename_propagation'
   | 'gpu_stats_update'
   | 'reindex_progress'
   | 'reindex_complete'
@@ -458,6 +459,28 @@ function createWebSocketStore() {
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(
                   new CustomEvent('speaker-processing-complete', { detail: data.data })
+                );
+              }
+              return;
+            } else if (data.type === 'speaker_rename_propagation') {
+              // A rename's digest-plane regeneration finished (backend/app/tasks/
+              // rename_propagation_task.py:regenerate_rename_digests). Without
+              // this, a user who reopens a file's summary right after a rename
+              // keeps reading the pre-rename cached copy for the rest of its TTL.
+              import('$lib/apiCache')
+                .then(({ apiCache }) => {
+                  // 'files' covers `prefetch:file:` — the file-detail cache that
+                  // holds `summary_data`. There is no separate frontend cache for
+                  // the digest tier yet (it has no dedicated UI outside chat
+                  // citations), so invalidating file detail is the whole of
+                  // "summaries and digests" today.
+                  apiCache.invalidateByScope('files');
+                  apiCache.invalidateByScope('speakers');
+                })
+                .catch(() => {});
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('speaker-rename-propagation', { detail: data.data })
                 );
               }
               return;

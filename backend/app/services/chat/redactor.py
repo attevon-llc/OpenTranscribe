@@ -303,6 +303,42 @@ def _load_digest_rows(db: Session, file_ids: list[int]) -> dict[int, Any]:
     return {int(file_id): digest for file_id, digest in rows}
 
 
+def _filter_sentences_by_speaker(sentences: list[dict], speaker_filter: str) -> list[dict]:
+    """Keep only the sentences ``speaker_filter`` names. THE MASKING SEAM (W2.3).
+
+    ``mapreduce.scope_speaker_digest_hits`` already filtered a real section's
+    sentences by speaker once, to build its hit's own (unmasked, pre-mask)
+    ``content`` — but masking comes back to ``file_facts.digest`` and re-reads
+    the WHOLE real section fresh, because that section may hold OTHER
+    speakers' sentences too (a digest section is a relevance-selected group of
+    sentences, not a per-speaker one). Skipping this filter here rebuilds the
+    full section regardless of which speaker was asked about, and "a summary
+    of Alice" comes back quoting Bob. ``tests/unit/test_chat_digest_masking.py``
+    pins this with a must-fire guard proving the raw section mixes speakers,
+    beside the must-stay-clean proof that the real masked output does not.
+
+    Args:
+        sentences: One section's stored sentences (already resolved to the
+            right section by :func:`_digest_sentences_from_row`).
+        speaker_filter: :attr:`ChunkHit.speaker`, as set by
+            ``scope_speaker_digest_hits`` — the requested names, pipe-joined.
+            An ordinary (non-speaker-scoped) digest hit never sets this field,
+            so this function is a no-op for every pre-W2.3 caller.
+
+    Returns:
+        The subset of ``sentences`` whose own ``speaker`` matches one of the
+        pipe-joined names (case-insensitive). Empty when nothing matches —
+        the caller (:func:`_digest_sentences_from_row`) already treats an
+        empty sentence list as unresolvable and falls through to the inline
+        masker, which is safe here too: it detects directly over the hit's
+        own (already speaker-filtered) ``content``, touching no file lookup.
+    """
+    wanted = {piece.strip().casefold() for piece in speaker_filter.split("|") if piece.strip()}
+    if not wanted:
+        return sentences
+    return [s for s in sentences if str(s.get("speaker") or "").strip().casefold() in wanted]
+
+
 def _digest_sentences_from_row(digest_json: Any, chunk: ChunkHit) -> list[dict] | None:
     """The stored sentences of one digest section, given an ALREADY-LOADED digest.
 
@@ -312,6 +348,12 @@ def _digest_sentences_from_row(digest_json: Any, chunk: ChunkHit) -> list[dict] 
     per masking call (:func:`_gather_digest_plans`). ``None`` means the row or
     the section is not resolvable, and the caller must then fail closed rather
     than fall back.
+
+    ⚠️ When ``chunk.speaker`` is set (a per-speaker map hit from
+    ``mapreduce.scope_speaker_digest_hits``), the section's sentences are
+    additionally filtered to that speaker via :func:`_filter_sentences_by_speaker`
+    — see that function's docstring for why this is not optional. An ordinary
+    digest hit never sets ``speaker``, so this is a no-op for every other caller.
     """
     if not digest_json:
         return None
@@ -324,6 +366,8 @@ def _digest_sentences_from_row(digest_json: Any, chunk: ChunkHit) -> list[dict] 
     for section in sections:
         if int(section.get("index", -1)) == wanted:
             sentences = section.get("sentences") or []
+            if chunk.speaker:
+                sentences = _filter_sentences_by_speaker(sentences, chunk.speaker)
             return list(sentences) if sentences else None
     return None
 
@@ -342,7 +386,15 @@ def _digest_sentences(db: Session, chunk: ChunkHit) -> list[dict] | None:
     directly, to avoid the N+1 this function's per-hit query would otherwise
     reproduce inside a loop. This form remains for any caller that genuinely
     has one hit and no batch to amortize the query over.
+
+    ``None`` for a document-origin ``chunk`` (:attr:`ChunkHit.is_document`),
+    defensively, even though nothing on today's call path reaches this
+    function with one: ``FileFacts.media_file_id`` is never a document's id,
+    and querying it that way risks the same id-collision hazard
+    :func:`_gather_digest_plans` routes document-origin hits around entirely.
     """
+    if chunk.is_document:
+        return None
     from app.models.file_facts import FileFacts
 
     row = db.query(FileFacts.digest).filter(FileFacts.media_file_id == chunk.file_id).first()
@@ -383,20 +435,49 @@ def _gather_digest_plans(db: Session, digests: list[ChunkHit], cfg) -> list[_Dig
     from app.models.media import MediaFile
     from app.services.redaction.coverage import uncovered_detectors
 
-    # ONE query for every digest hit's `file_facts.digest`, not one per hit —
-    # see `_load_digest_rows`'s docstring for the N+1 this replaces. A failure
-    # here degrades every hit to "no digest row read", which the per-hit
-    # `.get()` below already treats as None — the same fail-closed outcome a
-    # per-hit query failure produced before batching, just via one failure
-    # point instead of N independent ones.
+    # ONE query for every MEDIA digest hit's `file_facts.digest`, not one per
+    # hit — see `_load_digest_rows`'s docstring for the N+1 this replaces. A
+    # failure here degrades every media hit to "no digest row read", which the
+    # per-hit `.get()` below already treats as None — the same fail-closed
+    # outcome a per-hit query failure produced before batching, just via one
+    # failure point instead of N independent ones. Document-origin hits are
+    # deliberately excluded from this query's `file_id` list — see the
+    # `is_document` branch below for why.
     try:
-        digest_rows = _load_digest_rows(db, [d.file_id for d in digests])
+        digest_rows = _load_digest_rows(db, [d.file_id for d in digests if not d.is_document])
     except Exception:  # noqa: BLE001
         logger.exception("Batched digest read failed; every hit falls through to unresolvable")
         digest_rows = {}
 
     plans: list[_DigestPlan] = []
     for digest in digests:
+        if digest.is_document:
+            # ⚠️ Document-origin digest hits (`mapreduce._document_scope_hits`,
+            # #403 Stage-6 mixed-collection coverage) NEVER take the MediaFile
+            # lookup below. `Document.id` and `MediaFile.id` are independent
+            # SERIAL sequences that collide in any real deployment — the same
+            # hazard `_gather_chunk_plans` already routes around for the chunk
+            # plane. A collision here would silently mask (and serve) an
+            # UNRELATED media file's cached spans as if they belonged to this
+            # document: `_load_digest_rows`/`_digest_sentences_from_row` would
+            # be handed that other file's real digest JSON, and its section
+            # matching the same `digest_section` index would return a
+            # different file's REAL sentences with REAL provenance — not a
+            # missing-lookup failure, an actively wrong answer.
+            #
+            # The document analog of per-sentence provenance masking exists
+            # (`ingest_artifacts.document_digest_masking.mask_char_range_provenance`)
+            # but is deliberately NOT wired in here — every document-origin
+            # digest hit therefore falls straight through to the inline
+            # masker below (`_mask_inline(digest.content, cfg)`), which
+            # detects directly over the hit's own content (already correctly
+            # scoped by `_document_scope_hits`) and touches no `file_id`
+            # lookup at all, so it cannot cross a file boundary either way.
+            # See `services/chat/CLAUDE.md` for the follow-on work this
+            # leaves open.
+            plans.append(_DigestPlan(sentences=None, unresolvable=True))
+            continue
+
         sentences = None
         try:
             scan = (

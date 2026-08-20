@@ -2600,7 +2600,7 @@
   "transcript.highConfidence": "≥75% 高（自動提案）",
   "transcript.mediumConfidence": "50-74% 中（要確認）",
   "transcript.lowConfidence": "<50% 低（手動）",
-  "transcript.speakerHasProfile": "この話者は検証済みプロファイルを持っています（複数の動画に登場）",
+  "transcript.speakerHasProfile": "この話者は検証済みプロファイルを持っています（複数の動画に登場）— クリックして表示",
   "transcript.viewAvailableSuggestions": "話者識別の利用可能な提案を表示",
   "transcript.suggestionsCount": "{{count}}件の提案があります",
   "transcript.suggestionsCountPlural": "{{count}}件の提案があります",
@@ -5058,5 +5058,12 @@
   "chat.sources.openSummary": "AI生成の要約を開く",
   "chat.meta.speakerAmbiguous": "曖昧な話者",
   "chat.meta.speakerAmbiguousHint": "複数の話者が一致する可能性があります。1人選んでフィルターし、再送信してください:",
-  "chat.context.removeSpeaker": "{{name}} を話者フィルターから削除"
+  "chat.context.removeSpeaker": "{{name}} を話者フィルターから削除",
+  "filter.searchSpeakersPlaceholder": "話者を検索...",
+  "filter.noSpeakersMatchSearch": "検索に一致する話者はいません",
+  "speakers.renamePropagationPending": "ファイルの要約を更新中…",
+  "speakers.renamePropagationComplete": "名前変更が反映されました — {{count}} 件のファイル要約を更新",
+  "transcript.sourceContentAnalysis": "内容分析",
+  "transcript.sourceVoiceProfile": "音声プロファイル",
+  "transcript.sourceVoiceSimilarity": "声の類似性"
 }

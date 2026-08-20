@@ -77,6 +77,7 @@ section keep using ``_sanitize_attribute``, unchanged.
 
 from __future__ import annotations
 
+import difflib
 import logging
 from dataclasses import dataclass
 from dataclasses import field
@@ -154,6 +155,18 @@ class FileSummary:
     #: subject, and a module that quietly did it would be a second place for the
     #: fail-closed contract to drift out of step with `redactor.py`.
     digest: str = ""
+    #: W2.3. When this summary was built for a speaker-scoped map
+    #: (`scope_speaker_digest_hits`), the focus speaker's own
+    #: `file_facts.facts["speakers"]` entry (`total_time`/`turn_count`/
+    #: `longest_turn`) — `None` when no speaker focus was requested, or the
+    #: focus speaker has no stats entry in this file at all.
+    speaker_stats: dict[str, Any] | None = None
+    #: W2.3. True when the focus speaker's canonical name IS in this file's
+    #: `facts["roster"]`, independent of whether `speaker_stats`/`digest`
+    #: above actually carry anything — kept separate so "named in the roster
+    #: but nothing came back" is a coverage note the reducer can render,
+    #: rather than being indistinguishable from "not in this file at all".
+    speaker_in_roster: bool = False
 
 
 @dataclass
@@ -192,7 +205,23 @@ def _clock(seconds: float) -> str:
     return f"{hours}h {remainder // 60:02d}m" if hours else f"{remainder // 60}m"
 
 
-def build_file_summaries(db, digests, *, masked_text: dict[int, str]) -> list[FileSummary]:
+def _speaker_facts_entry(facts: dict[str, Any], speaker_name: str) -> dict[str, Any] | None:
+    """This file's `facts["speakers"]` entry for `speaker_name`, or None."""
+    wanted = speaker_name.strip().casefold()
+    for entry in facts.get("speakers") or []:
+        if isinstance(entry, dict) and str(entry.get("name") or "").strip().casefold() == wanted:
+            return entry
+    return None
+
+
+def _speaker_in_roster(facts: dict[str, Any], speaker_name: str) -> bool:
+    wanted = speaker_name.strip().casefold()
+    return any(str(name).strip().casefold() == wanted for name in facts.get("roster") or [])
+
+
+def build_file_summaries(
+    db, digests, *, masked_text: dict[int, str], speaker_focus: str | None = None
+) -> list[FileSummary]:
     """Group masked digest hits by file and attach each file's stored facts.
 
     Args:
@@ -201,6 +230,13 @@ def build_file_summaries(db, digests, *, masked_text: dict[int, str]) -> list[Fi
         digests: Digest ``ChunkHit``s, in rank order.
         masked_text: ``id(hit) -> masked content``. Passed in rather than read off
             the hit so this module cannot be handed unmasked text by accident.
+        speaker_focus: W2.3. A single active focus speaker's canonical name —
+            same convention `aggregation_service._run_speaker_stats` uses
+            (``route.speakers[0] if len(route.speakers) == 1 else None``).
+            When set, each summary's `speaker_stats`/`speaker_in_roster` are
+            populated from this file's own `facts["speakers"]`/`facts["roster"]`
+            so the reducer can render a talk-time header and an honest
+            coverage note instead of a silent empty answer.
 
     Returns:
         One :class:`FileSummary` per distinct file, in the order the digest leg
@@ -238,6 +274,12 @@ def build_file_summaries(db, digests, *, masked_text: dict[int, str]) -> list[Fi
                     str(entry.get("phrase", "")) for entry in (keyphrases.get("phrases") or [])[:5]
                 ),
                 digest=text,
+                speaker_stats=(
+                    _speaker_facts_entry(facts, speaker_focus) if speaker_focus else None
+                ),
+                speaker_in_roster=(
+                    speaker_focus is not None and _speaker_in_roster(facts, speaker_focus)
+                ),
             )
         )
     return summaries
@@ -266,6 +308,11 @@ class DigestScopeHits(list):
 #: constant exists only so callers that read the raw key (tests, admin tooling)
 #: don't have to spell it twice.
 MAP_TIER_SUMMARIES_SETTING_KEY = "chat.rag.map_tier_summaries"
+
+#: SystemSettings key for the W2.3 per-speaker tiering flag, resolved as
+#: ``ChatSettings.map_tier_speaker_summaries``. Same convention as the
+#: constant above.
+MAP_TIER_SPEAKER_SUMMARIES_SETTING_KEY = "chat.rag.map_tier_speaker_summaries"
 
 
 def _summary_is_fresh(
@@ -424,12 +471,17 @@ def scope_digest_hits(
     hits: list[Any] = []
     files_without_artifacts = 0
     summary_hits = 0
+    # #403 Stage-6 gate: which uuids the MEDIA query above actually matched — a
+    # document's uuid never appears in `media_file`, so anything left over
+    # after this loop is either a document or genuinely gone.
+    matched_uuids: set[str] = set()
     for row in rows:
         if use_summaries:
             file_id, uuid, title, digest, fingerprint, summary_status, summary_data = row
         else:
             file_id, uuid, title, digest = row
             fingerprint = summary_status = summary_data = None
+        matched_uuids.add(str(uuid))
 
         if digest is None:
             files_without_artifacts += 1
@@ -472,7 +524,369 @@ def scope_digest_hits(
                 )
             )
 
+    # The DOCUMENT half of a mixed collection (#403 Stage-6 gate). Only for
+    # uuids the media query did not match — the two tables share no uuid
+    # namespace, so this can never double-count a recording, and it also keeps
+    # every EXISTING media-only caller (and every test mocking the media query
+    # chain above) byte-identical: this second query only ever runs when the
+    # scope actually contains a non-media uuid.
+    remaining = [u for u in file_uuids if str(u) not in matched_uuids]
+    if remaining:
+        doc_hits, doc_without_artifacts = _document_scope_hits(db, remaining, sections_per_file)
+        hits.extend(doc_hits)
+        files_without_artifacts += doc_without_artifacts
+
     coverage = {"files_without_artifacts": files_without_artifacts}
+    if use_summaries:
+        coverage["summary_hits"] = summary_hits
+    return DigestScopeHits(hits, coverage)
+
+
+def _document_scope_hits(
+    db, file_uuids: list[str], sections_per_file: int
+) -> tuple[list[Any], int]:
+    """The document arm of the #403 Stage-6 mixed-collection gate.
+
+    Delegates the join to :func:`ingest_artifacts.scope.scope_facts_for_uuids`
+    — it already gets the "outer join, not inner" and the
+    ``document -> file_facts.document_id`` join right — rather than restating
+    that logic a second time, and converts its ``document``-kind hits into the
+    same :class:`ChunkHit` shape the media arm above produces, tagged
+    ``source_kind="document"`` (:attr:`ChunkHit.is_document`) so every reader
+    downstream — ``mask_digests`` chief among them — can tell the two apart.
+
+    Documents have no speaker roster or duration (unlike a recording's
+    ``FileSummary.speakers``/``duration``); :func:`build_file_summaries`
+    already tolerates an empty roster/None duration for exactly this reason,
+    and ``#464``'s LLM-summary tiering (``use_summaries``) is media-only —
+    ``Document`` carries no ``summary_data``/``summary_status`` at all, so
+    this arm always falls through to the digest sections.
+
+    Returns:
+        ``(hits, files_without_artifacts)`` — never raises; a read failure
+        degrades to ``([], len(file_uuids))`` so one broken arm cannot take
+        down a map that the media half already answered.
+    """
+    from app.services.ingest_artifacts.scope import scope_facts_for_uuids
+    from app.services.search.chunk_retrieval import ChunkHit
+
+    try:
+        coverage = scope_facts_for_uuids(db, file_uuids)
+    except Exception:  # noqa: BLE001 — the document half degrades, never breaks the turn
+        logger.exception("Could not read file_facts for the document half of the scope map")
+        return [], len(file_uuids)
+
+    hits: list[Any] = []
+    for hit in coverage.hits:
+        if hit.kind != "document":
+            # This arm is only ever called with uuids the media query above
+            # did NOT match, so a "media"-kind hit here should not occur —
+            # skip defensively rather than assume the caller's input was
+            # constructed correctly.
+            continue
+        sections = (hit.digest or {}).get("sections", [])
+        for section in sections[:sections_per_file]:
+            hits.append(
+                ChunkHit(
+                    file_uuid=hit.uuid,
+                    file_id=hit.source_id,
+                    chunk_index=-1 - int(section.get("index", 0)),
+                    content=str(section.get("text") or ""),
+                    title=hit.title,
+                    start_time=float(section.get("start_time") or 0.0),
+                    end_time=section.get("end_time"),
+                    digest_section=int(section.get("index", 0)),
+                    source_kind="document",
+                )
+            )
+    return hits, coverage.files_without_artifacts
+
+
+# --------------------------------------------------------------------------- #
+# The per-speaker map (W2.3) — "summarize what Alice said" (Route.wants_
+# speaker_digest_map). Reads file_facts.digest sentence-by-sentence, since the
+# INDEXED digest has no single-valued speaker field to filter on at all.
+# --------------------------------------------------------------------------- #
+
+
+def _sentence_speaker_in(sentence: dict[str, Any], wanted: set[str]) -> bool:
+    """Whether one stored digest sentence belongs to a wanted speaker.
+
+    ``wanted`` is already casefolded and stripped of every spelling in
+    :data:`~app.utils.speaker_labels.UNKNOWN_SPEAKER_LABELS` — "who said X"
+    about an undiarized slot is not a mention anyone could scope to.
+    """
+    speaker = str(sentence.get("speaker") or "").strip()
+    return bool(speaker) and speaker.casefold() in wanted
+
+
+def _speaker_summary_entry(
+    summary_data: dict[str, Any], speaker_name: str
+) -> dict[str, Any] | None:
+    """This file's ``speakers_analysis[]`` entry for ``speaker_name``, or None.
+
+    A two-rung ladder — exact casefold, then best fuzzy match — rather than
+    reusing ``speaker_resolver.match_candidate`` directly: that function
+    matches free text against a whole roster and resolves ambiguity to "no
+    filter", which is right for a question typed in prose. Here the caller
+    already knows exactly which canonical name it wants (this map's own
+    ``speaker_names``), so a single best-fuzzy-match is the correct shape.
+    """
+    from app.services.chat.speaker_resolver import FUZZY_MATCH_THRESHOLD
+
+    entries = summary_data.get("speakers_analysis") or []
+    wanted = speaker_name.strip().casefold()
+    if not wanted:
+        return None
+    for entry in entries:
+        if isinstance(entry, dict) and str(entry.get("speaker") or "").strip().casefold() == wanted:
+            return entry
+    best: tuple[float, dict[str, Any]] | None = None
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("speaker") or "").strip()
+        if not name:
+            continue
+        ratio = difflib.SequenceMatcher(None, wanted, name.casefold()).ratio()
+        if ratio >= FUZZY_MATCH_THRESHOLD and (best is None or ratio > best[0]):
+            best = (ratio, entry)
+    return best[1] if best else None
+
+
+def _owner_matched_action_items(summary_data: dict[str, Any], speaker_name: str) -> list[str]:
+    """Action items whose ``assigned_to`` names ``speaker_name`` (same ladder)."""
+    from app.services.chat.speaker_resolver import FUZZY_MATCH_THRESHOLD
+
+    items = summary_data.get("action_items") or []
+    wanted = speaker_name.strip().casefold()
+    if not wanted:
+        return []
+    matched: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        owner = str(item.get("assigned_to") or "").strip()
+        if not owner:
+            continue
+        ratio = difflib.SequenceMatcher(None, wanted, owner.casefold()).ratio()
+        if owner.casefold() == wanted or ratio >= FUZZY_MATCH_THRESHOLD:
+            text = str(item.get("text") or "").strip()
+            if text:
+                matched.append(text)
+    return matched
+
+
+def _speaker_summary_highlight_text(summary_data: dict[str, Any], speaker_name: str) -> str:
+    """The prose to represent one speaker's contribution in the LLM map tier (#464-style).
+
+    Mirrors ``_summary_highlight_text``'s "unusable shape acts like absent"
+    rule: no matching ``speakers_analysis`` entry AND no owner-matched action
+    item returns ``""``, which the caller treats exactly like "this file's
+    summary said nothing about them" — falling through to the digest tier
+    rather than contributing an empty line.
+
+    ⚠️ Masking subject is UNRESOLVED, deliberately left as-is here: this text
+    is masked by the SAME call `mask_digests` already makes for every digest
+    hit — under the REQUESTING user's policy, matching what this package's
+    CLAUDE.md records as the shipped (not-yet-reconsidered) subject for the
+    whole digest/summary tier, per issue #402's chunk-tier precedent. Nothing
+    here decides that question; it only produces text for the same masking
+    call every other digest hit already goes through.
+    """
+    parts: list[str] = []
+    entry = _speaker_summary_entry(summary_data, speaker_name)
+    if entry:
+        role = str(entry.get("role") or "").strip()
+        if role:
+            parts.append(f"({role})")
+        parts.extend(
+            str(point).strip()
+            for point in (entry.get("key_contributions") or [])
+            if str(point).strip()
+        )
+    action_items = _owner_matched_action_items(summary_data, speaker_name)
+    if action_items:
+        parts.append("Action items: " + "; ".join(action_items))
+    return " ".join(parts).strip()
+
+
+def _speaker_summary_text_for_any(summary_data: dict[str, Any], speaker_names: list[str]) -> str:
+    """OR across every requested speaker: whatever the summary said about any of them."""
+    parts = []
+    for name in speaker_names:
+        text = _speaker_summary_highlight_text(summary_data, name)
+        if text:
+            parts.append(f"{name}: {text}")
+    return " ".join(parts).strip()
+
+
+def scope_speaker_digest_hits(
+    db,
+    file_uuids: list[str],
+    speaker_names: list[str],
+    *,
+    max_sections_per_file: int = 3,
+    use_summaries: bool = False,
+) -> DigestScopeHits:
+    """The per-speaker map: closes ``Route.wants_speaker_digest_map``'s gap.
+
+    ``_apply_structure`` strips the INDEXED digest tier whenever a speaker
+    filter is active — correctly, since a digest carries no single-valued
+    speaker field — but until this function nothing replaced it, so
+    "summarize what Alice said" was structurally impossible even though the
+    data to answer it exists: ``file_facts.digest`` stores a ``speaker`` on
+    every SENTENCE. This reads that directly, filtering each real section's
+    stored sentences down to just the requested speaker(s)' own words (OR
+    semantics — a sentence matches if it belongs to ANY of ``speaker_names``),
+    and emits one hit per (file, real section that had a match) — never a
+    synthetic section divorced from the stored data, so masking's per-sentence
+    provenance lookup still resolves through a REAL section index.
+
+    ⚠️ **THE MASKING SEAM.** This function only decides what feeds the hit's
+    own (pre-mask) ``content`` — used verbatim only when masking does not
+    apply. Masking comes back to ``file_facts.digest`` independently via
+    ``redactor.mask_digests`` and re-reads the WHOLE real section fresh,
+    because that section may hold other speakers' sentences too. Without a
+    matching filter on that side, "a summary of Alice" would come back
+    quoting Bob. That second filter lives in
+    ``redactor._digest_sentences_from_row``, keyed off ``ChunkHit.speaker`` —
+    set below to every requested name, pipe-joined — so it can be re-applied
+    with no session held. See that function's docstring and
+    ``tests/unit/test_chat_digest_masking.py``'s must-fire guard.
+
+    Args:
+        db: Session.
+        file_uuids: The resolved scope. Bounded, same precondition
+            :func:`scope_digest_hits` documents — an unbounded scope cannot be
+            mapped over.
+        speaker_names: The requested speakers, already canonical display
+            labels (``Route.speakers``, or the resolver's matched names).
+        max_sections_per_file: Cap on how many of a file's real sections may
+            contribute, so a speaker who talks throughout a long recording
+            cannot balloon the block past its budget.
+        use_summaries: ``ChatSettings.map_tier_speaker_summaries`` (#W2.3,
+            mirrors #464). When True, a file whose LLM summary is FRESH
+            contributes its ``speakers_analysis[]`` entry (plus owner-matched
+            action items) instead of digest sentences. Stale, absent, or
+            unusable summaries fall back to the digest exactly as before, per
+            file — never removing the digest fallback's coverage guarantee.
+
+    Returns:
+        A :class:`DigestScopeHits`. ``.coverage`` carries
+        ``files_without_artifacts`` (no ``file_facts`` row at all — same
+        meaning as :func:`scope_digest_hits`) and ``files_with_no_speaker_match``
+        (a digest exists but no sentence was attributed to any requested
+        speaker) — surfaced so an empty or partial answer always says why,
+        never silently. Documents are never included: they have no speakers.
+    """
+    empty_coverage = {"files_without_artifacts": 0, "files_with_no_speaker_match": 0}
+    if not file_uuids or not speaker_names:
+        return DigestScopeHits([], dict(empty_coverage))
+
+    from app.models.file_facts import FileFacts
+    from app.models.media import MediaFile
+    from app.services.search.chunk_retrieval import ChunkHit
+    from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
+
+    unknown = {label.casefold() for label in UNKNOWN_SPEAKER_LABELS}
+    requested = [str(n).strip() for n in speaker_names if str(n).strip()]
+    wanted = {n.casefold() for n in requested} - unknown
+    if not wanted:
+        return DigestScopeHits([], dict(empty_coverage))
+    # One filter string, computed once — every hit this call builds carries the
+    # SAME requested set, so `_digest_sentences_from_row` re-derives an
+    # identical filter regardless of which hit it is masking.
+    speaker_filter = " | ".join(sorted(requested))
+
+    columns: list[Any] = [MediaFile.id, MediaFile.uuid, MediaFile.title, FileFacts.digest]
+    if use_summaries:
+        columns += [FileFacts.source_fingerprint, MediaFile.summary_status, MediaFile.summary_data]
+
+    try:
+        rows = (
+            db.query(*columns)
+            .outerjoin(FileFacts, FileFacts.media_file_id == MediaFile.id)
+            .filter(MediaFile.uuid.in_(list(file_uuids)))
+            .filter(MediaFile.is_quarantined.is_(False))
+            .all()
+        )
+    except Exception:  # noqa: BLE001 — a missing map degrades the answer, never breaks it
+        logger.exception("Could not read file_facts for the speaker scope map")
+        return DigestScopeHits([], dict(empty_coverage))
+
+    hits: list[Any] = []
+    files_without_artifacts = 0
+    files_with_no_match = 0
+    summary_hits = 0
+    for row in rows:
+        if use_summaries:
+            file_id, uuid, title, digest, fingerprint, summary_status, summary_data = row
+        else:
+            file_id, uuid, title, digest = row
+            fingerprint = summary_status = summary_data = None
+
+        if digest is None:
+            files_without_artifacts += 1
+            continue
+
+        sections = (digest or {}).get("sections", [])
+
+        if use_summaries and _summary_is_fresh(summary_status, summary_data, fingerprint):
+            summary_text = _speaker_summary_text_for_any(summary_data, requested)
+            if summary_text:
+                hits.append(
+                    ChunkHit(
+                        file_uuid=str(uuid),
+                        file_id=int(file_id),
+                        chunk_index=-1,
+                        content=summary_text,
+                        title=str(title or ""),
+                        speaker=speaker_filter,
+                        start_time=0.0,
+                        end_time=None,
+                        digest_section=len(sections),
+                    )
+                )
+                summary_hits += 1
+                continue
+            # A fresh summary that said nothing about any requested speaker —
+            # fall through to the digest sentences rather than reporting
+            # nothing for a file the digest tier can still cover.
+
+        matched_any = False
+        included = 0
+        for section in sections:
+            if included >= max_sections_per_file:
+                break
+            sentences = section.get("sentences") or []
+            matched = [s for s in sentences if _sentence_speaker_in(s, wanted)]
+            if not matched:
+                continue
+            matched_any = True
+            included += 1
+            starts = [float((s.get("provenance") or {}).get("start_time") or 0.0) for s in matched]
+            ends = [float((s.get("provenance") or {}).get("end_time") or 0.0) for s in matched]
+            hits.append(
+                ChunkHit(
+                    file_uuid=str(uuid),
+                    file_id=int(file_id),
+                    chunk_index=-1 - int(section.get("index", 0)),
+                    content=" ".join(str(s.get("text") or "") for s in matched).strip(),
+                    title=str(title or ""),
+                    speaker=speaker_filter,
+                    start_time=min(starts),
+                    end_time=max(ends),
+                    digest_section=int(section.get("index", 0)),
+                )
+            )
+        if not matched_any:
+            files_with_no_match += 1
+
+    coverage = {
+        "files_without_artifacts": files_without_artifacts,
+        "files_with_no_speaker_match": files_with_no_match,
+    }
     if use_summaries:
         coverage["summary_hits"] = summary_hits
     return DigestScopeHits(hits, coverage)
@@ -550,6 +964,71 @@ def _corpus_header(summaries: list[FileSummary], files_in_scope: int = 0) -> lis
     return lines
 
 
+def _speaker_focus_header(
+    speaker_focus: str,
+    summaries: list[FileSummary],
+    files_in_scope: int = 0,  # noqa: ARG001
+) -> list[str]:
+    """The speaker-focus header: talk time / turns / longest monologue.
+
+    W2.3. Also the "never a silent zero" line for a speaker-scoped map: a file
+    whose roster names the focus speaker but whose digest contributed no
+    stats/content for them gets an explicit coverage note here, rather than
+    the whole answer just being short with no explanation. ``files_in_scope``
+    is accepted (unused) for signature symmetry with ``_corpus_header``.
+    """
+    from app.services.chat.prompting import _sanitize_body_text
+
+    safe_name = _sanitize_body_text(speaker_focus)
+    lines = [f"focus speaker: {safe_name}"]
+
+    with_stats: list[dict[str, Any]] = []
+    for summary in summaries:
+        if summary.speaker_stats is not None:
+            with_stats.append(summary.speaker_stats)
+    if with_stats:
+        total_seconds = sum(float(stats.get("total_time") or 0.0) for stats in with_stats)
+        total_turns = sum(int(stats.get("turn_count") or 0) for stats in with_stats)
+        longest = max(float(stats.get("longest_turn") or 0.0) for stats in with_stats)
+        lines.append(
+            f"talk time across {len(with_stats)} recording(s) with stats: "
+            f"{_clock(total_seconds)}, {total_turns} turns, "
+            f"longest single turn {_clock(longest)}"
+        )
+
+    # A file whose roster names this speaker but whose digest carries neither
+    # stats nor content for them: the extractive digest never selected one of
+    # their sentences, OR the row predates a speaker rename — facts/digest are
+    # regenerated TOGETHER on a fingerprint change, so a genuinely stale row
+    # would still name the OLD label and simply would not match `roster` here
+    # at all, which is why this note names both possibilities rather than
+    # asserting either.
+    uncovered = [
+        s for s in summaries if s.speaker_in_roster and not s.speaker_stats and not s.digest
+    ]
+    if uncovered:
+        lines.append(
+            f"{len(uncovered)} recording(s) list {safe_name} in the roster but have no "
+            "matching content here (the digest may not have selected their sentences, "
+            "or the digest may predate a speaker rename)"
+        )
+    return lines
+
+
+def _empty_speaker_focus_overview(reducer_name: str, speaker_focus: str) -> Overview:
+    """Never a silent zero: no file in scope matched the focus speaker at all."""
+    from app.services.chat.prompting import _sanitize_body_text
+
+    safe_name = _sanitize_body_text(speaker_focus)
+    block = (
+        _OVERVIEW_OPEN
+        + f"focus speaker: {safe_name}\n"
+        + "no recording in scope has digest content attributed to this speaker.\n"
+        + _OVERVIEW_CLOSE
+    )
+    return Overview(block=block, reducer=reducer_name)
+
+
 class CodeComposer:
     """The NO-LLM reducer. Renders the collection view in code (**D6**).
 
@@ -561,14 +1040,29 @@ class CodeComposer:
     name = "code"
 
     def reduce(
-        self, question: str, summaries: list[FileSummary], files_in_scope: int = 0, **_kwargs
+        self,
+        question: str,
+        summaries: list[FileSummary],
+        files_in_scope: int = 0,
+        *,
+        speaker_focus: str | None = None,
+        **_kwargs,
     ) -> Overview:  # noqa: ARG002
         if not summaries:
+            if speaker_focus:
+                return _empty_speaker_focus_overview(self.name, speaker_focus)
             return Overview(reducer=self.name)
         from app.services.chat.prompting import _sanitize_attribute
         from app.services.chat.prompting import _sanitize_body_text
 
-        lines = _corpus_header(summaries, files_in_scope)
+        lines = (
+            list(_speaker_focus_header(speaker_focus, summaries, files_in_scope))
+            if (speaker_focus)
+            else []
+        )
+        if lines:
+            lines.append("")
+        lines.extend(_corpus_header(summaries, files_in_scope))
         listed = summaries[:MAX_LISTED_FILES]
         if listed:
             lines.append("")
@@ -629,19 +1123,37 @@ class BatchReducer:
         self.batch_files = max(1, int(batch_files))
 
     def reduce(
-        self, question: str, summaries: list[FileSummary], files_in_scope: int = 0, **_kwargs
+        self,
+        question: str,
+        summaries: list[FileSummary],
+        files_in_scope: int = 0,
+        *,
+        speaker_focus: str | None = None,
+        **_kwargs,
     ) -> Overview:
         if not summaries:
+            # Preserves the exact pre-W2.3 shape (`reducer == self.name`) when
+            # there is no speaker focus; only a speaker-scoped empty result
+            # needs the "never a silent zero" note, which is CodeComposer's.
+            if speaker_focus:
+                return _empty_speaker_focus_overview(self.name, speaker_focus)
             return Overview(reducer=self.name)
         composer = CodeComposer()
         if self.llm is None:
-            return composer.reduce(question, summaries, files_in_scope)
+            return composer.reduce(question, summaries, files_in_scope, speaker_focus=speaker_focus)
 
         batches = [
             summaries[i : i + self.batch_files] for i in range(0, len(summaries), self.batch_files)
         ]
         capped = batches[:MAX_REDUCE_CALLS]
-        lines = _corpus_header(summaries, files_in_scope)
+        lines = (
+            list(_speaker_focus_header(speaker_focus, summaries, files_in_scope))
+            if (speaker_focus)
+            else []
+        )
+        if lines:
+            lines.append("")
+        lines.extend(_corpus_header(summaries, files_in_scope))
         lines.append("")
 
         calls = 0
@@ -710,6 +1222,7 @@ def build_overview(
     use_llm: bool = False,
     batch_files: int = DEFAULT_BATCH_FILES,
     files_in_scope: int = 0,
+    speaker_focus: str | None = None,
 ) -> Overview:
     """Reduce file summaries to one collection view.
 
@@ -725,9 +1238,13 @@ def build_overview(
         files_in_scope: How many recordings the user's scope contains. When it
             exceeds what the map covered, the block says so instead of reporting
             the covered count as the total.
+        speaker_focus: W2.3. A single active focus speaker's canonical name,
+            when this overview was built from ``scope_speaker_digest_hits``.
+            Renders a talk-time header and the "never a silent zero" coverage
+            notes; ``None`` reproduces the pre-W2.3 block exactly.
 
     Returns:
         An :class:`Overview`. Empty ``block`` when there is nothing to summarise.
     """
     reducer = BatchReducer(llm, batch_files=batch_files) if (use_llm and llm) else CodeComposer()
-    return reducer.reduce(question, summaries, files_in_scope)
+    return reducer.reduce(question, summaries, files_in_scope, speaker_focus=speaker_focus)

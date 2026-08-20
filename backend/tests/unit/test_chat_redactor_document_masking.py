@@ -15,6 +15,7 @@ cached-span path cannot be trusted, mask inline rather than send raw text.
 
 from __future__ import annotations
 
+import json
 import uuid as uuid_pkg
 from contextlib import contextmanager
 from types import SimpleNamespace
@@ -25,6 +26,7 @@ from sqlalchemy import text
 
 from app.core import constants as C  # noqa: N812
 from app.services.chat.redactor import mask_chunks
+from app.services.chat.redactor import mask_digests
 from app.services.chat.redactor import mask_document_chunks
 from app.services.search.chunk_retrieval import ChunkHit
 
@@ -118,6 +120,103 @@ def test_a_document_chunk_never_queries_or_serves_an_unrelated_media_files_trans
             "transcript text — the file_id collision guard failed"
         )
         assert "SECRET-DO-NOT-LEAK" not in masked[0].content
+    finally:
+        db_session.rollback()
+
+
+def test_a_document_digest_hit_never_queries_or_serves_an_unrelated_medias_digest(db_session):
+    """The digest-plane collision (#403 Stage-6 mixed-collection coverage, W2.3),
+    one level up from the chunk-plane test above. Same setup — a real
+    ``MediaFile`` and ``Document`` forced to share one id — but this time the
+    colliding ``MediaFile`` has a ``file_facts`` row with a digest SECTION AT
+    THE SAME INDEX the document-origin hit carries. If ``_gather_digest_plans``
+    ever routed a document-origin hit through the ``MediaFile``/
+    ``FileFacts.media_file_id`` lookup, this section would resolve and its
+    sentences — a DIFFERENT file's real, provenance-backed content — would be
+    served as if they belonged to this document.
+
+    The guard is structural: document-origin digest hits never reach that
+    lookup at all (``ChunkHit.is_document`` routes them to
+    ``_DigestPlan(sentences=None, unresolvable=True)`` before any query runs),
+    so they fall through to the inline masker over their OWN content only —
+    proved here by patching ``_mask_inline`` and asserting it was called with
+    the document hit's own text, never the colliding file's digest.
+    """
+    conn = db_session.connection()
+    try:
+        user_id = _new_user(conn)
+        shared_id = 900001 + (uuid_pkg.uuid4().int % 5000)
+
+        conn.execute(
+            text(
+                "INSERT INTO document (id, uuid, user_id, filename, storage_path, file_size, "
+                "content_type, redaction_status) VALUES "
+                "(:id, :u, :uid, 'collision.pdf', 'x/collision.pdf', 1, 'application/pdf', 'done')"
+            ),
+            {"id": shared_id, "u": str(uuid_pkg.uuid4()), "uid": user_id},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO media_file (id, uuid, user_id, filename, storage_path, file_size, "
+                "content_type, redaction_status) VALUES "
+                "(:id, :u, :uid, 'collision.wav', 'x/collision.wav', 1, 'audio/wav', 'done')"
+            ),
+            {"id": shared_id, "u": str(uuid_pkg.uuid4()), "uid": user_id},
+        )
+        secret_digest = {
+            "sections": [
+                {
+                    "index": 0,
+                    "sentences": [
+                        {
+                            "text": "SECRET-DO-NOT-LEAK the unrelated recording's own digest",
+                            "order": 0,
+                            "speaker": "Someone Else",
+                            "provenance": {
+                                "kind": "segment_ids",
+                                "segment_ids": [1],
+                                "start_time": 0.0,
+                                "end_time": 1.0,
+                            },
+                        }
+                    ],
+                }
+            ]
+        }
+        conn.execute(
+            text(
+                "INSERT INTO file_facts (media_file_id, digest, facts, keyphrases, "
+                "generator_version, source_fingerprint) VALUES "
+                "(:f, CAST(:d AS jsonb), '{}'::jsonb, '{}'::jsonb, '1.1.1', 'fp-collision')"
+            ),
+            {"f": shared_id, "d": json.dumps(secret_digest)},
+        )
+
+        document_hit = ChunkHit(
+            file_uuid="33333333-3333-3333-3333-333333333333",
+            file_id=shared_id,
+            chunk_index=-1,
+            content="the document's own digest text",
+            title="Report",
+            source_kind="document",
+            digest_section=0,
+        )
+        cfg = _cfg(enabled=True, redact_before_llm=True)
+        with (
+            patch("app.services.redaction.config.resolve_effective_config", return_value=cfg),
+            patch(
+                "app.services.chat.redactor._mask_inline",
+                side_effect=lambda t, _cfg: f"[MASKED] {t}",
+            ) as inline,
+        ):
+            masked = mask_digests(_factory(db_session), [document_hit], user_id=user_id)
+
+        assert "SECRET-DO-NOT-LEAK" not in masked[0].content, (
+            "a document digest hit's masked output contained an UNRELATED media "
+            "file's digest content — the file_id collision guard failed"
+        )
+        inline.assert_called_once_with("the document's own digest text", cfg)
+        assert masked[0].content == "[MASKED] the document's own digest text"
     finally:
         db_session.rollback()
 

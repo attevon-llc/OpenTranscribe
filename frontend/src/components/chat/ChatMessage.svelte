@@ -26,6 +26,8 @@
     regenerate: void;
     retry: void;
     edit: { uuid: string; content: string };
+    /** Forwarded from `ChatMessageMeta` — see its own doc comment. */
+    disambiguate: string;
   }>();
 
   let editing = false;
@@ -184,7 +186,7 @@
       {/if}
 
       <ChatSources {sources} />
-      <ChatMessageMeta {message} />
+      <ChatMessageMeta {message} on:disambiguate={(e) => dispatch('disambiguate', e.detail)} />
     {/if}
   </div>
 

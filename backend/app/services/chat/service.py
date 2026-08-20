@@ -264,13 +264,40 @@ def _resolve_summary_tier(
 
     Returns:
         ``(summary_hits, summary_masked, map_leg, files_without_artifacts)``.
-        ``map_leg`` is ``"scope_map"`` | ``"ranked_digests"`` | ``None``
+        ``map_leg`` is ``"scope_map"`` | ``"speaker_scope_map"`` |
+        ``"speaker_scope_map_empty"`` | ``"ranked_digests"`` | ``None``
         (nothing to summarise this turn). ``files_without_artifacts`` is 0
         whenever the map did not run or found no gap.
     """
     from app.services.chat.mapreduce import scope_digest_hits
+    from app.services.chat.mapreduce import scope_speaker_digest_hits
     from app.services.chat.mapreduce import sections_budget
     from app.services.chat.redactor import mask_digests
+
+    if decision.wants_speaker_digest_map and file_uuids:
+        # W2.3: closes the gap `Route.wants_speaker_digest_map` documents. A
+        # speaker filter already removed the INDEXED digest tier above
+        # (correctly — the index has no single-valued speaker field to filter
+        # on), so `decision.wants_digest` is False for exactly this case; this
+        # branch is the fallback that used to be missing entirely, leaving
+        # "summarize what Alice said" structurally impossible.
+        with session_scope() as db:
+            map_hits = scope_speaker_digest_hits(
+                db,
+                file_uuids,
+                list(decision.speakers),
+                max_sections_per_file=sections_budget(len(file_uuids)),
+                use_summaries=settings.map_tier_speaker_summaries,
+            )
+        files_without_artifacts = int(map_hits.coverage.get("files_without_artifacts", 0))
+        if map_hits:
+            summary_masked = mask_digests(session_scope, map_hits, user_id, **mask_kwargs)
+            return map_hits, summary_masked, "speaker_scope_map", files_without_artifacts
+        # Never a silent zero: the caller still composes an overview from this
+        # (empty) map when the turn was speaker-scoped — see
+        # `mapreduce._empty_speaker_focus_overview` — rather than silently
+        # answering with nothing and no explanation.
+        return [], [], "speaker_scope_map_empty", files_without_artifacts
 
     if decision.wants_digest and file_uuids:
         with session_scope() as db:
@@ -304,6 +331,73 @@ def _resolve_summary_tier(
         # unconditionally to any non-empty `result.digests`.
         return ranked_digests, ranked_digests_masked, "ranked_digests", 0
     return [], [], None, 0
+
+
+def _resolve_speaker_focus(
+    *, question: str, user_id: int, organization_id: int | None, session_scope
+):
+    """Phase 1.5 of ``_prepare_context`` (W2.2, wired W2.3): a MENTIONED speaker.
+
+    Split out so ``_prepare_context`` stays under ruff's complexity limit —
+    the same reason ``_resolve_summary_tier`` documents for its own
+    extraction. The caller (``_prepare_context``) is the ONE place that
+    decides whether to run this at all, gated on
+    ``settings.speaker_resolver_enabled`` — this function does not re-check
+    the flag itself.
+
+    Its own short session: the roster read is one bounded query, closing well
+    before the LLM round trip / retrieval that follow in the phases below.
+    Reads ``question`` as typed, never the rewrite —
+    ``speaker_resolver.resolve_speaker_mentions`` is explicit that a rewrite
+    can lose or paraphrase a name the original carried.
+
+    Returns:
+        A ``SpeakerMentionResolution`` — always, even when nothing matched, so
+        the caller has one shape to read ``.as_meta()``/``.speaker_focus`` off.
+    """
+    from app.services.chat.speaker_resolver import resolve_speaker_mentions
+
+    with session_scope() as db:
+        return resolve_speaker_mentions(
+            db, question, user_id=user_id, organization_id=organization_id
+        )
+
+
+def _apply_speaker_resolution(
+    *,
+    settings: ChatSettings,
+    question: str,
+    user_id: int,
+    organization_id: int | None,
+    session_scope,
+    meta: dict[str, Any],
+) -> list[str]:
+    """Resolve a mentioned speaker and fold it into ``meta`` (W2.2, wired W2.3).
+
+    A second extraction on top of :func:`_resolve_speaker_focus` — this one
+    holds the branching (whether the flag is on, whether anything resolved),
+    which is what pushed ``_prepare_context`` over ruff's complexity limit.
+    Same reasoning :func:`_resolve_summary_tier` documents for its own split.
+    Mutates ``meta`` in place, matching how ``_prepare_context`` already
+    threads its own ``meta`` dict through several stages.
+
+    Returns:
+        The uniquely matched names when the turn has a resolved speaker
+        focus, else ``[]`` — always a list, never ``None``, so the caller
+        treats "flag off" and "nothing resolved" identically.
+    """
+    if not settings.speaker_resolver_enabled:
+        return []
+    resolution = _resolve_speaker_focus(
+        question=question,
+        user_id=user_id,
+        organization_id=organization_id,
+        session_scope=session_scope,
+    )
+    resolution_meta = resolution.as_meta()
+    if resolution_meta:
+        meta["speaker_resolution"] = resolution_meta
+    return list(resolution.matched) if resolution.speaker_focus else []
 
 
 def _prepare_context(
@@ -369,6 +463,21 @@ def _prepare_context(
             (time.monotonic() - rewrite_started) * 1000
         )
 
+    # --- Phase 1.5: resolve a speaker MENTIONED in the question text (W2.2,
+    # wired W2.3). Gated on `chat.speaker_resolver_enabled`, off by default —
+    # a flag-off turn takes none of this branch and stays byte-identical to
+    # before it existed: no `meta["speaker_resolution"]` key, `speaker_focus`
+    # stays False, `speaker_focus_names` stays empty. Its own short session
+    # (see `_resolve_speaker_focus`).
+    speaker_focus_names = _apply_speaker_resolution(
+        settings=settings,
+        question=question,
+        user_id=user_id,
+        organization_id=organization_id,
+        session_scope=session_scope,
+        meta=meta,
+    )
+
     from app.services.chat.router import route
 
     decision = route(
@@ -376,6 +485,7 @@ def _prepare_context(
         rewritten=effective_query if effective_query != question else None,
         llm_intent=llm_intent,
         speakers=speakers,
+        speaker_focus=bool(speaker_focus_names),
     )
     meta["route"] = decision.as_metadata()
 
@@ -437,6 +547,7 @@ def _prepare_context(
         settings=retrieval_settings,
         search_mode=search_mode,
         wants_digest=decision.wants_digest,
+        speaker_focus_names=speaker_focus_names or None,
     )
 
     # --- Phase 3.5: drop quarantined hits before anything downstream sees
@@ -532,6 +643,14 @@ def _prepare_context(
     if files_without_artifacts:
         meta["map_files_without_artifacts"] = files_without_artifacts
 
+    # W2.3. Single-speaker focus only — same simplification
+    # `aggregation_service._run_speaker_stats` already applies
+    # (`route.speakers[0] if len(route.speakers) == 1 else None`): a map over
+    # SEVERAL speakers still serves their combined content correctly (OR
+    # semantics in `scope_speaker_digest_hits`), it just does not get the
+    # single-name talk-time header/coverage notes below.
+    speaker_focus_for_summary = decision.speakers[0] if len(decision.speakers) == 1 else None
+
     if summary_hits:
         from app.services.chat.mapreduce import build_file_summaries
 
@@ -540,15 +659,28 @@ def _prepare_context(
                 db,
                 summary_hits,
                 masked_text={id(m.source): m.content for m in summary_masked},
+                speaker_focus=speaker_focus_for_summary,
             )
 
     # --- Phase 5: composition and diagnostics. Pure, except the language read
     # below, which takes one short session of its own. -------------------------
-    if summaries:
+    #
+    # The speaker map's own "never a silent zero" case (`map_leg ==
+    # "speaker_scope_map_empty"`) has `summaries == []` by construction, so the
+    # plain `if summaries:` gate below would skip building an overview
+    # entirely — leaving the turn to answer with no explanation of why a
+    # speaker-scoped summarize came back with nothing. Building one anyway,
+    # for exactly this case, is what makes
+    # `mapreduce._empty_speaker_focus_overview`'s explicit note reach the
+    # prompt at all.
+    if summaries or (map_leg == "speaker_scope_map_empty" and speaker_focus_for_summary):
         from app.services.chat.mapreduce import build_overview
 
         overview = build_overview(
-            question, summaries, files_in_scope=len(file_uuids) if file_uuids else 0
+            question,
+            summaries,
+            files_in_scope=len(file_uuids) if file_uuids else 0,
+            speaker_focus=speaker_focus_for_summary,
         )
         meta["overview"] = overview.as_metadata()
         # The frontend's pre-existing "Overview source" row: which REDUCER
@@ -946,6 +1078,17 @@ class ChatService:
                 turn.metadata.update(meta)
                 counted_block = format_counted_block(counted)
                 overview_block = overview.block if overview is not None else ""
+
+                # W2.2/W2.3: a speaker mention that matched more than one
+                # roster entry resolves to NO filter (never a guess) — surface
+                # the candidates so the user can disambiguate, exactly like
+                # `context_dropped`/language warn elsewhere in this turn.
+                ambiguous_speakers = (meta.get("speaker_resolution") or {}).get("ambiguous") or []
+                if ambiguous_speakers:
+                    yield sse(
+                        "warning",
+                        {"code": "ambiguous_speaker", "candidates": list(ambiguous_speakers)},
+                    )
 
             # Resolve the answer budget BEFORE building the prompt: build_messages
             # reserves context for the reply, so raising max_tokens after the fact

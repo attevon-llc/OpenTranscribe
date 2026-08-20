@@ -332,6 +332,30 @@ class Route:
     def wants_aggregate(self) -> bool:
         return TIER_AGGREGATE in self.tiers
 
+    @property
+    def wants_speaker_digest_map(self) -> bool:
+        """W2.3. A speaker-scoped summarize turn: the closed routing gap.
+
+        ``_apply_structure`` removes :data:`TIER_DIGEST` whenever an explicit
+        speaker filter is active, because the INDEXED digest genuinely cannot
+        answer "summarize what Alice said" — a digest carries no single-valued
+        speaker field. That removal is correct and stays; what was missing is
+        the fallback it should have had: a per-speaker Postgres map
+        (``mapreduce.scope_speaker_digest_hits``) that filters digest
+        *sentences* by their own per-sentence speaker, which the indexed
+        document cannot do but the stored JSONB can. Without this property
+        "summarize what Alice said" was structurally impossible — the digest
+        tier was gone and nothing replaced it — even though the data to answer
+        it exists.
+
+        Derived, not stored: true exactly when a summarize turn's digest tier
+        was removed for the SPEAKER reason specifically, not the literal-quote
+        one (:attr:`literal`) — a quoted phrase still has no sentence-level
+        speaker index to fall back to, so that case is left exactly as it was.
+        ``retrieve_digests`` (the ranked leg) stays untouched either way.
+        """
+        return self.intent == INTENT_SUMMARIZE and bool(self.speakers) and not self.literal
+
     def as_metadata(self) -> dict[str, Any]:
         """The ``meta.intent`` payload persisted on the assistant message."""
         payload: dict[str, Any] = {
@@ -346,6 +370,8 @@ class Route:
             payload["temporal"] = self.temporal.as_metadata()
         if self.speaker_focus:
             payload["speaker_focus"] = True
+        if self.wants_speaker_digest_map:
+            payload["speaker_digest_map"] = True
         return payload
 
 

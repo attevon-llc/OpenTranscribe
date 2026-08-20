@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
+  import { page } from '$app/stores';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
@@ -39,7 +40,13 @@
   import { apiCache } from '$lib/apiCache';
 
   type Tab = 'clusters' | 'profiles' | 'inbox';
-  let activeTab: Tab = 'clusters';
+  // Deep link from elsewhere in the app — currently the file-detail speaker
+  // list's "has a profile" badge (`transcript/SpeakerEditorPanel.svelte`),
+  // which links here as `/speakers?tab=profiles` so a labeled speaker's
+  // profile is one click from where it was noticed rather than a manual
+  // tab switch + hunt.
+  const initialTab = $page.url.searchParams.get('tab');
+  let activeTab: Tab = initialTab === 'profiles' || initialTab === 'inbox' ? initialTab : 'clusters';
 
   // Clusters state
   let clusters: SpeakerCluster[] = [];
@@ -124,6 +131,51 @@
   // Clustering progress state (via WebSocket)
   let clusteringProgress: { step: number; total_steps: number; message: string; progress: number } | null = null;
 
+  // Rename-propagation progress (via WebSocket, issue W2.3a).
+  //
+  // Every rename here — a cluster label edit, promoting a cluster to a
+  // profile, or accepting an inbox suggestion — assigns Speaker.display_name
+  // through SpeakerClusteringService, which batches its renames through
+  // SpeakerRenameTracker and flushes via dispatch_speaker_rename. That now
+  // also queues per-file digest regeneration (backend/app/tasks/
+  // rename_propagation_task.py), reported back as a single
+  // `speaker_rename_propagation` WebSocket message per batch — there is no
+  // "started" frame, only "completed", so this counter is bumped optimistically
+  // right after the triggering action succeeds and cleared by the completion
+  // event (or a timeout, in case the event never arrives — a stopped worker
+  // must not leave the indicator stuck forever).
+  let pendingRenamePropagations = 0;
+  let renamePropagationTimers: ReturnType<typeof setTimeout>[] = [];
+  const RENAME_PROPAGATION_TIMEOUT_MS = 20000;
+
+  function beginRenamePropagation() {
+    pendingRenamePropagations += 1;
+    const timer = setTimeout(() => {
+      pendingRenamePropagations = Math.max(0, pendingRenamePropagations - 1);
+    }, RENAME_PROPAGATION_TIMEOUT_MS);
+    renamePropagationTimers.push(timer);
+  }
+
+  function handleRenamePropagation(event: Event) {
+    const detail = (event as CustomEvent).detail as
+      | { new_name?: string; regenerated?: number; errors?: number; total?: number }
+      | undefined;
+    const timer = renamePropagationTimers.shift();
+    if (timer) clearTimeout(timer);
+    pendingRenamePropagations = Math.max(0, pendingRenamePropagations - 1);
+
+    const regenerated = detail?.regenerated ?? 0;
+    if (regenerated > 0) {
+      toastStore.success(
+        $t('speakers.renamePropagationComplete', { count: regenerated, name: detail?.new_name ?? '' })
+      );
+    }
+    // Refresh whichever tab is showing summaries/profiles derived from the
+    // renamed speaker, so the page doesn't keep displaying stale data next to
+    // a toast that just said it changed.
+    if (activeTab === 'profiles') loadProfiles(true);
+  }
+
   // --- WebSocket event handlers ---
 
   function handleClusteringProgress(event: Event) {
@@ -169,14 +221,17 @@
     window.addEventListener('clustering-progress', handleClusteringProgress);
     window.addEventListener('clustering-complete', handleClusteringComplete);
     window.addEventListener('clustering-file-complete', handleClusteringFileComplete);
+    window.addEventListener('speaker-rename-propagation', handleRenamePropagation);
   });
 
   onDestroy(() => {
     window.removeEventListener('clustering-progress', handleClusteringProgress);
     window.removeEventListener('clustering-complete', handleClusteringComplete);
     window.removeEventListener('clustering-file-complete', handleClusteringFileComplete);
+    window.removeEventListener('speaker-rename-propagation', handleRenamePropagation);
     clearTimeout(searchTimeout);
     if (reclusterTimeout) clearTimeout(reclusterTimeout);
+    renamePropagationTimers.forEach(clearTimeout);
   });
 
   // --- Section collapse ---
@@ -328,6 +383,9 @@
       clusters = clusters.map(cluster =>
         cluster.uuid === e.detail.uuid ? { ...cluster, ...updated } : cluster
       );
+      // A label edit renames every speaker in the cluster (SpeakerClusteringService),
+      // which queues digest regeneration server-side — see the state comment above.
+      beginRenamePropagation();
     } catch {
       toastStore.error($t('speakers.error.updateCluster'));
     }
@@ -378,6 +436,7 @@
     try {
       await promoteCluster(promoteTargetUuid, promoteNameInput.trim());
       toastStore.success($t('speakers.cluster.promoted'));
+      beginRenamePropagation();
       await loadClusters();
     } catch {
       toastStore.error($t('speakers.error.promote'));
@@ -704,6 +763,7 @@
         inboxItems = inboxItems.filter((i) => i.speaker_uuid !== speaker_uuid);
         inboxTotal = Math.max(0, inboxTotal - 1);
         toastStore.success($t('speakers.inbox.accepted'));
+        beginRenamePropagation();
       } else if (type === 'skip') {
         await batchVerifySpeakers([speaker_uuid], 'skip');
         inboxItems = inboxItems.filter((i) => i.speaker_uuid !== speaker_uuid);
@@ -773,6 +833,16 @@
       </svg>
     </a>
     <h1>{$t('speakers.title')}</h1>
+    {#if pendingRenamePropagations > 0}
+      <span
+        class="rename-propagation-indicator"
+        data-testid="rename-propagation-indicator"
+        title={$t('speakers.renamePropagationPending')}
+      >
+        <span class="rename-propagation-spinner" aria-hidden="true"></span>
+        {$t('speakers.renamePropagationPending')}
+      </span>
+    {/if}
   </div>
 
   <div class="tabs">
@@ -973,6 +1043,34 @@
     font-weight: 600;
     color: var(--text-color);
     margin: 0;
+  }
+
+  .rename-propagation-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-left: 0.5rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    background-color: rgba(var(--primary-color-rgb), 0.1);
+    color: var(--primary-color);
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+
+  .rename-propagation-spinner {
+    width: 0.8rem;
+    height: 0.8rem;
+    border: 2px solid rgba(var(--primary-color-rgb), 0.3);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: rename-propagation-spin 0.7s linear infinite;
+  }
+
+  @keyframes rename-propagation-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .back-to-gallery {

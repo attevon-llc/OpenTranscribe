@@ -234,6 +234,150 @@ def test_the_digest_path_returns_only_the_digest_sentences():
     assert len(masked[0].content) <= len(DIGEST_TEXT) + 1
 
 
+# ------------------------------------------------ speaker-scoped masking (W2.3)
+#
+# `mapreduce.scope_speaker_digest_hits` (W2.3) filters a real section's
+# sentences by speaker to build a hit's own PRE-MASK content — but masking
+# comes back to `file_facts.digest` and re-reads the WHOLE real section
+# fresh, because that section may hold other speakers' sentences too. Without
+# a matching filter on THIS side, "a summary of Dana" would come back quoting
+# Bob's card number. Same must-fire / must-stay-clean pairing as the two
+# tests directly above, one level deeper: those prove `mask_digests` !=
+# `mask_chunks`; these prove the per-speaker filter inside `mask_digests`
+# itself is what keeps a mixed-speaker section from leaking.
+
+
+def _speaker_sentence(text: str, segment_ids: list[int], speaker: str) -> dict:
+    return {
+        "text": text,
+        "order": 0,
+        "speaker": speaker,
+        "provenance": {
+            "kind": "segment_ids",
+            "segment_ids": segment_ids,
+            "start_time": 12.5,
+            "end_time": 20.0,
+        },
+    }
+
+
+def _speaker_digest_hit(speaker: str | None, content: str = "") -> ChunkHit:
+    return ChunkHit(
+        file_uuid="22222222-2222-2222-2222-222222222222",
+        file_id=5,
+        chunk_index=-1,
+        content=content,
+        title="Weekly sync",
+        speaker=speaker,
+        start_time=12.5,
+        end_time=20.0,
+        digest_section=0,
+    )
+
+
+_MIXED_SPEAKER_SECTION = {
+    "sections": [
+        {
+            "index": 0,
+            "sentences": [
+                _speaker_sentence("We agreed the budget.", [1], "Dana"),
+                _speaker_sentence("My card number is 4111 1111 1111 1111.", [2], "Bob"),
+            ],
+        }
+    ]
+}
+
+
+def test_an_unfiltered_section_read_over_discloses_the_other_speaker():
+    """MUST-FIRE. Proves the hazard is real: resolving a real section by INDEX
+    ALONE, with no speaker filter, returns every speaker's sentences —
+    including a card number that belongs to someone other than the speaker
+    being summarised. This is exactly what a per-speaker map hit would get if
+    `ChunkHit.speaker` were ever left unset, or the filter it drives were
+    removed.
+    """
+    from app.services.chat.redactor import _digest_sentences_from_row
+
+    unfiltered_hit = _speaker_digest_hit(speaker=None)
+
+    sentences = _digest_sentences_from_row(_MIXED_SPEAKER_SECTION, unfiltered_hit)
+    assert sentences is not None
+
+    speakers = {s["speaker"] for s in sentences}
+    assert speakers == {"Dana", "Bob"}, (
+        "the hazard is gone — resolving a section by index alone no longer "
+        "mixes speakers, so re-derive whether the speaker filter in "
+        "scope_speaker_digest_hits/_digest_sentences_from_row is still required"
+    )
+    assert any("4111" in s["text"] for s in sentences), "it returned the whole section verbatim"
+
+
+def test_the_speaker_filter_excludes_the_other_speakers_sentences():
+    """The must-stay-clean twin: the SAME mixed section, filtered to Dana."""
+    from app.services.chat.redactor import _digest_sentences_from_row
+
+    dana_hit = _speaker_digest_hit(speaker="Dana")
+
+    sentences = _digest_sentences_from_row(_MIXED_SPEAKER_SECTION, dana_hit)
+    assert sentences is not None
+
+    assert {s["speaker"] for s in sentences} == {"Dana"}
+    assert not any("4111" in s["text"] for s in sentences)
+
+
+def test_mask_digests_end_to_end_never_quotes_the_other_speaker():
+    """Full pipeline, not just the resolver: `mask_digests` on a
+    speaker-scoped hit must not surface Bob's card number even though it
+    shares Dana's own real section."""
+    sentences = [
+        _speaker_sentence("We agreed the budget.", [1], "Dana"),
+        _speaker_sentence("My card number is 4111 1111 1111 1111.", [2], "Bob"),
+    ]
+    db = _facts_db(sentences, segment_batches=[[_segment(1, "We agreed the budget.")]])
+    dana_hit = _speaker_digest_hit(speaker="Dana")
+
+    with (
+        patch("app.services.redaction.config.resolve_effective_config", return_value=_cfg()),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            side_effect=lambda text, *_a, **_k: (text, []),
+        ),
+    ):
+        masked = mask_digests(_factory(db), [dana_hit], user_id=1)
+
+    assert "4111" not in masked[0].content
+    assert "budget" in masked[0].content
+
+
+def test_an_unset_speaker_filter_reproduces_the_pre_w23_behaviour_exactly():
+    """A digest hit that never sets `speaker` (every hit before W2.3, and
+    every ordinary — non-speaker-scoped — hit today) must mask identically to
+    before this change: both sentences survive."""
+    sentences = [
+        _speaker_sentence("We agreed the budget.", [1], "Dana"),
+        _speaker_sentence("We shipped on Friday.", [4], "Dana"),
+    ]
+    db = _facts_db(
+        sentences,
+        segment_batches=[
+            [_segment(1, "We agreed the budget.")],
+            [_segment(4, "We shipped on Friday.")],
+        ],
+    )
+
+    with (
+        patch("app.services.redaction.config.resolve_effective_config", return_value=_cfg()),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            side_effect=lambda text, *_a, **_k: (text, []),
+        ),
+    ):
+        masked = mask_digests(_factory(db), [_digest_hit()], user_id=1)
+
+    assert "We agreed the budget." in masked[0].content
+    assert "We shipped on Friday." in masked[0].content
+
+
 # ------------------------------------------------------------- fail closed
 
 

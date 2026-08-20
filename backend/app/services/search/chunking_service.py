@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from app.core.config import settings
+from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 
 logger = logging.getLogger(__name__)
 
@@ -460,7 +461,7 @@ def _group_segments_into_speaker_turns(
         return list(seg.get("words") or [])
 
     current_turn = {
-        "speaker": segments[0].get("speaker", "Unknown"),
+        "speaker": segments[0].get("speaker", UNKNOWN_SPEAKER_LABEL),
         "speaker_id": segments[0].get("speaker_id"),
         "profile_id": segments[0].get("profile_id"),
         "text": segments[0].get("text", "").strip(),
@@ -470,7 +471,7 @@ def _group_segments_into_speaker_turns(
     }
 
     for seg in segments[1:]:
-        seg_speaker = seg.get("speaker", "Unknown")
+        seg_speaker = seg.get("speaker", UNKNOWN_SPEAKER_LABEL)
         seg_text = seg.get("text", "").strip()
 
         if seg_speaker == current_turn["speaker"]:

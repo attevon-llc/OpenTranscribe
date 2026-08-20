@@ -46,6 +46,31 @@ def test_a_suggestion_below_threshold_is_ignored():
     )
 
 
+def test_a_suggestion_below_threshold_with_no_raw_name_is_unidentified():
+    """The exact shape of the 398-chunk drift (``tests/integration/
+    test_speaker_label_index_drift.py``): a sub-threshold suggestion next to an
+    unresolved raw name must fall all the way through to the canonical unknown
+    label, never to the rejected suggestion."""
+    assert (
+        canonical_speaker_label(None, suggested_name="Joe Rogan", confidence=0.7006)
+        == UNKNOWN_SPEAKER_LABEL
+    )
+
+
+def test_a_suggestion_exactly_at_threshold_is_used():
+    """The comparison is ``>=``, not ``>`` — pin the boundary itself rather than
+    only its interior on each side."""
+    assert canonical_speaker_label("SPEAKER_00", suggested_name="Bob", confidence=0.75) == "Bob"
+
+
+def test_a_suggestion_just_below_threshold_is_ignored():
+    """The other side of the boundary, one float ULP-scale step under it."""
+    assert (
+        canonical_speaker_label("SPEAKER_00", suggested_name="Bob", confidence=0.7499999)
+        == "SPEAKER_00"
+    )
+
+
 def test_a_display_name_beats_a_confident_suggestion():
     """A human's label outranks a machine's guess — the deliberate resolution of the
     disagreement between the two prior implementations (see module docstring)."""

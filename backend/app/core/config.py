@@ -589,6 +589,34 @@ class Settings(BaseSettings):
         _int_env("DB_IDLE_IN_TRANSACTION_TIMEOUT_MS", DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS), 0
     )
 
+    @field_validator(
+        "DB_POOL_SIZE",
+        "DB_MAX_OVERFLOW",
+        "SEARCH_BULK_BATCH_SIZE",
+        "DB_IDLE_IN_TRANSACTION_TIMEOUT_MS",
+    )
+    @classmethod
+    def _clamp_pool_and_batch_floors(cls, v: int, info: ValidationInfo) -> int:
+        """Floor each field again, AFTER pydantic-settings has resolved it.
+
+        Same bug class as ``_clamp_chunks_index_topology`` above: the ``max(_int_env(...),
+        N)`` written on each field default only runs once, at class BODY execution time, to
+        compute the field's *default* — but ``Settings`` is a ``BaseSettings`` subclass, so
+        pydantic-settings separately re-reads the matching env var at every ``Settings()``
+        construction and casts it straight to ``int``, bypassing that default (and its
+        clamp) entirely whenever the var is actually set. A ``DB_POOL_SIZE`` env var reached
+        ``settings.DB_POOL_SIZE`` unclamped until this validator was added — a measured +3
+        discrepancy versus the intended floor.
+        """
+        floors = {
+            "DB_POOL_SIZE": 1,
+            "DB_MAX_OVERFLOW": 0,
+            "SEARCH_BULK_BATCH_SIZE": 1,
+            "DB_IDLE_IN_TRANSACTION_TIMEOUT_MS": 0,
+        }
+        assert info.field_name is not None  # always set for a field_validator
+        return max(v, floors[info.field_name])
+
     # Observability. LOG_FORMAT="json" switches the root logger to structured
     # JSON lines (Loki/CloudWatch-ready); "text" keeps the human-readable format.
     # SLOW_QUERY_MS gates the slow-query WARNING in app.core.db_metrics.

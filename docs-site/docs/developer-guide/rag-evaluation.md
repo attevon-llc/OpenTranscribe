@@ -101,10 +101,37 @@ and SHA256 per artefact, and supports offline `--verify`. Non-commercial corpora
 | CIRAL | A (Apache-2.0) | pooled human | 4 African languages (CLIR) |
 | Mr. TyDi | A (Apache-2.0) | human, positives-only | multilingual, 11 languages |
 | MeetingBank | **B** (CC BY-NC-ND) | none | 31.7 M words — internal scale testing only |
-| ELITR | **B** (CC BY-NC-SA) | manual span alignments | internal |
+| ELITR (Minuting) | **B** (CC BY-NC-SA) | manual span alignments | internal |
+| ELITR-Bench | A (CC BY-4.0, **not yet independently re-verified**) | manual QA pairs incl. a "who" category | candidate — see note below |
 
 Corpora with **no relevance judgements cannot score retrieval.** They contribute ingest realism —
 real timings, real speaker structure — and nothing is claimed from them beyond that.
+
+:::warning ELITR-Bench and ELITR (Minuting) are two different artifacts — do not tier one as the other
+[ELITR-Bench](https://github.com/utter-project/ELITR-Bench) (COLING 2025) is manually-crafted
+human question-answer pairs over meeting transcripts, with a **"who" question category** that
+directly exercises speaker attribution, speaker identity preserved in the transcripts, and
+"answer-position" metadata usable as a coarse gold-span proxy — genuinely relevant to this
+project's evaluation needs, and licensed **CC-BY-4.0**. It is not the same artifact as **ELITR
+(Minuting)**, the CC-BY-NC-SA meeting-minuting corpus in the row above, internal-only. The
+row is named `ELITR (Minuting)` specifically so the two are never conflated by the bare name
+`ELITR`.
+
+**Not yet independently verified**: this page has already caught platform metadata misstating a
+licence four times (the box above). ELITR-Bench's CC-BY-4.0 claim has not yet had the same
+in-archive-file check that caught MeetingBank's Zenodo-vs-`LICENSE.txt` mismatch — do that check
+before citing it as Tier A in a publishable result. Until then, treat the "A" tier above as
+provisional.
+
+**SPGISpeech is disqualified for speaker-attribution evaluation, not merely untiered.** Kensho's
+Terms of Usage explicitly forbid identifying the real-world identity of individual speakers from
+the dataset — a direct conflict with using it to evaluate speaker-attributed retrieval,
+independent of whatever its transcription-quality licence terms allow.
+
+**MeetingQA (Adobe)** is a candidate whose licence type could not be confirmed during this
+research pass — recorded here as unresolved rather than silently assumed permissive, per the rule
+this page applies everywhere else.
+:::
 
 ### Tier 3 — synthetic
 
@@ -2106,6 +2133,52 @@ raises an `ImportError` naming the exact install command
 `_run_judge_subprocess` refuses before ever spawning a process — so a deployment with no judge
 venv still runs the deterministic floor and reports "not measured" for the judged tier, never a
 crash.
+
+### Judge calibration: how much do we trust a judge score
+
+`faithfulness` and `answer_correctness` discriminating on a clean pair (1.0 vs 0.0, 0.946 vs
+0.042, above) proves the judge can tell a good answer from a bad one on an easy case. It says
+nothing about how much to trust a score in between, and the LLM-as-judge agreement literature is
+specific enough that it belongs in this methodology rather than assumed.
+
+- **MT-Bench** (Zheng et al., [arXiv:2306.05685](https://arxiv.org/abs/2306.05685), NeurIPS 2023)
+  — **verified**: GPT-4-as-judge reaches **>80% agreement** with human preferences, matching the
+  measured human-human agreement rate (~81%) on the same comparisons. This is the result that
+  makes an LLM judge viable **at all** for this harness, not a formality to cite past.
+- **"Reliability without Validity"** ([arXiv:2606.19544](https://arxiv.org/abs/2606.19544)) — raw
+  percent-agreement **overstates chance-corrected discrimination by 33–41 percentage points**
+  across 21 models. ⚠️ **Reported as cited by a downstream paper, not independently verified
+  against the primary source** — flagged rather than presented as measured, the same distinction
+  this page draws everywhere else between a number we ran and a number we read.
+- **"Judge's Verdict"** ([arXiv:2510.09738](https://arxiv.org/abs/2510.09738)) — correlation
+  (Pearson r) alone is insufficient: a judge can correlate perfectly with human scores while being
+  systematically harsh or lenient, because correlation is invariant to a constant offset. Proposes
+  Cohen's Kappa plus a z-score against the human-human kappa distribution instead.
+
+**Policy adopted from the above, to write down rather than rediscover per stage:**
+
+1. **Report Cohen's Kappa, never raw percent-agreement**, when a judge score is compared against a
+   human label — raw agreement is the exact number "Reliability without Validity" shows overstates
+   discrimination.
+2. **Calibrate against 50–100 hand-labelled answers before tuning anything on a judge score.**
+   Optimising against an uncalibrated judge optimises the judge, not the answers — the same
+   failure shape as the [replaced map-reduce metric](#a-metric-we-replaced) above, one level up
+   the stack.
+
+**Known bias modes** — position, verbosity, and self-preference bias are established findings in
+the LLM-as-judge literature. ⚠️ The specific magnitudes behind that sentence came from
+search-engine synthesis of secondary sources during this research pass, not a primary paper read
+end to end, so they are recorded as **claimed, not verified**, and deliberately omitted rather
+than quoted at a precision the sourcing does not support. Self-preference bias is
+**task-dependent, not universal** — at least one physics-grading study found none of it — so
+"judges favor their own family's outputs" should not be assumed to transfer to every task without
+checking.
+
+**Humans are not a clean gold standard either**, which matters for how the 50–100-answer
+calibration set above should be built: assertive-but-wrong answers are claimed to be rated
+**15–20% higher** than accurate-but-hedged ones by human raters. ⚠️ Claimed, not independently
+verified here. The actionable consequence: grade the calibration set against the source
+transcript, never against the confidence of the answer's tone.
 
 ### Negative result: `gemma-4-e4b` has no reasoning off-switch, and it eats the completion budget
 

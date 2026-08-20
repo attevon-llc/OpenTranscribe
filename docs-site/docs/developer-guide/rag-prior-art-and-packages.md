@@ -148,6 +148,39 @@ sets of boundaries and three sets of off-by-one bugs. The same test applies insi
 outside it.
 :::
 
+### Checking the novelty claim: pre-LLM prior art exists, modern RAG prior art does not
+
+"A generic package cannot know about speaker turns, and speaker turns are the product," above, is
+a claim about *retrieval*, so it deserves the same scrutiny as anything else on this page: has
+anyone already built this?
+
+**No citable modern RAG system treats speaker identity as a first-class retrieval signal** —
+something that filters, boosts, or routes a query, the way `speaker_focus_names` does in
+`chat/speaker_resolver.py`. The adjacent systems stop short of it in a specific, checkable way:
+
+- **SA-ASR** (speaker-attributed ASR) stops at producing a *labelled transcript*. Attribution ends
+  at the transcription step; nothing downstream retrieves by it.
+- **MeetingQA** (ACL 2023, [aclanthology.org/2023.acl-long.837](https://aclanthology.org/2023.acl-long.837))
+  cares about speakers in the **answer** — "what did X say" is a question type it evaluates — but
+  does not retrieve *by* speaker; the retrieval stage is speaker-blind.
+- **Backtracing** ([arXiv:2403.03956](https://arxiv.org/abs/2403.03956)) renders speaker identity
+  as text fed to a likelihood retriever — a feature engineered into the input, not a structural
+  filter/boost/route the way a numeric `speaker_id` axis is.
+
+**There is genuine prior art, just not from the RAG era.** The late-1990s/2000s spoken-document-retrieval
+(SDR) literature has patents combining content and speaker indexes: **US6345252** ("retrieving
+audio information using content and speaker information") and **US6434520** (voiceprint-based
+segment retrieval). The idea of indexing audio by who-said-it alongside what-was-said is roughly
+20 years old.
+
+**Write this honestly, because an absence claim needs its evidence stated:** what appears
+unexplored is applying that idea *inside a modern hybrid BM25/kNN RAG pipeline over ASR +
+diarization output* — not the underlying idea of speaker-indexed audio retrieval, which predates
+this project by two decades. The search behind this finding was English-language web search only,
+roughly 15 queries, with no ACL Anthology index crawl and no patent-database search beyond
+locating the two numbers above. Treat "unexplored in modern RAG" as the current best read of an
+incomplete search, not as an exhaustively verified negative.
+
 ## Part 3 — What we implement, in industry terms
 
 So that the mapping is unambiguous:
@@ -210,6 +243,26 @@ It will look like a redundant second retrieval path and it is not. Increasing `s
 it: ranking gives you no coverage guarantee at **any** K. `tests/unit/test_chat_mapreduce.py::test_the_scope_map_covers_every_file_not_the_best_ranked_ones`
 fails if the map is replaced by a ranked retrieval.
 :::
+
+### No eval framework catches this bug — surveyed for that reason
+
+The `recordings: 8` failure above is not only something none of our own tests caught until one was
+written for it — it is something an adopted evaluation framework could not have caught either, on
+purpose, because of what those frameworks measure. Six were surveyed, following the same
+adopted/rejected discipline as the package ledger in Part 2:
+
+| Framework | Rejected because |
+|---|---|
+| **RAGAS** `Context Recall` | Scores groundedness against whatever context was **retrieved**, never against the scope a query claimed to cover. Would grade the `recordings: 8` run **perfect** — every claim genuinely was grounded in the 8 files the map step saw. The failure is invisible to a per-claim metric by construction. |
+| **DeepEval** `Coverage` | Completeness of **one** generated summary against **one** source document — not scope across N files. The name invites exactly the wrong conclusion for this use case: it answers "did the summary miss anything the document said," never "did the system look at every document in scope." |
+| **ARES** ([arXiv:2311.09476](https://arxiv.org/abs/2311.09476), Stanford, NAACL 2024) | Worth naming for what distinguishes it: prediction-powered inference (PPI) propagates the judge's own uncertainty from a small human-labelled calibration set, rather than trusting a single LLM-judge score outright. Still scores per-claim groundedness against retrieved context — the calibration is orthogonal to the scope-coverage gap. |
+| **TruLens**, **FActScore**, **continuous-eval** | Same shape as RAGAS/DeepEval: per-claim or per-passage groundedness against retrieved context, with no notion of the scope a map step was supposed to cover. |
+| **SummHay** ("Summary of a Haystack", Salesforce, [arXiv:2407.01370](https://arxiv.org/abs/2407.01370), EMNLP 2024) | The one surveyed artifact whose design is structurally right for this: a known ground-truth insight→document map, scored against what the system actually cited. Not adoptable as-is — a synthetic, **research-purposes-only** benchmark, not a runtime metric. It can inform how a coverage check is *designed*; it cannot replace one run in CI. |
+
+**Conclusion:** this is why `mapreduce.scope_digest_hits`'s coverage guarantee
+(`test_the_scope_map_covers_every_file_not_the_best_ranked_ones`, above) is our own assertion
+rather than an adopted framework — and it needs no LLM at all, because `files_touched ==
+files_in_scope` is a count, not a judgement.
 
 ### RAPTOR — the one open idea worth measuring
 

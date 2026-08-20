@@ -287,6 +287,15 @@ Each would have put an unpublishable number in a paper. The generalisable rule: 
 permissive metadata field is not evidence of a permissive licence.** Read the card body, the repo
 `LICENSE`, and any licence file shipped *inside* the archive — the last one binds.
 
+**The MeetingBank case recurred, independently, during this page's own upkeep.** A fresh web
+search run to survey corpora for a later research pass reported MeetingBank as "CC BY per
+Zenodo" — reproducing, verbatim, the exact error the table above already caught by opening the
+archive. Nothing new was learned about MeetingBank's licence; what this demonstrates is the
+argument for maintaining this table at all: **a fresh external search result does not override a
+measured finding already recorded here.** When the two disagree, re-verify from the primary
+source — the archive, the repo's own `LICENSE`, the authors' site — never take the search result
+as the tiebreaker.
+
 The same trap has a tooling face: `pytrec_eval_terrier` declares MIT, but that covers the Python
 wrapper; several embedded `trec_eval` C sources carry "permission is granted for use and
 modification of this file for research, non-commercial purposes". Hence it is an **evaluation-only

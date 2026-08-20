@@ -71,13 +71,29 @@ _MAX_COMBINED_PROMPT_CHARS = 4000
 _CHARS_PER_TOKEN = 4
 
 
-# Matches an excerpt tag opener in any casing, with optional whitespace, e.g.
-# "<excerpt", "</excerpt", "< / EXCERPT". Used to defuse breakout attempts.
-_EXCERPT_TAG_RE = re.compile(r"<\s*/?\s*excerpt", re.IGNORECASE)
+# Matches the opener of any HIGH-TRUST block tag, in any casing, with optional
+# whitespace — "<excerpt", "</overview", "< / SYNTHESIS". Used to defuse
+# breakout attempts. Originally excerpt-only; widened to every block the prompt
+# assembles from user-influenced text, because a wrapper the model is told to
+# trust unconditionally (base rules 10 and 12) is exactly the wrapper worth
+# forging. `counted`/`overview` ship today; `recurrence`/`synthesis`/
+# `scope_note` are Wave 2 additions defused ahead of the callers that emit them.
+_BLOCK_TAG_RE = re.compile(
+    r"<\s*/?\s*(?:excerpt|counted|overview|recurrence|synthesis|scope_note)",
+    re.IGNORECASE,
+)
 
 
-def _sanitize_chunk_text(text: str) -> str:
-    """Neutralize attempts to break out of the excerpt wrapper.
+def _sanitize_body_text(text: str) -> str:
+    """Defuse block-tag breakout attempts with NO length cap.
+
+    Body-safe, unlike :func:`_sanitize_attribute`: transcript excerpts, digest
+    text, a speaker roster and a keyphrase list can all legitimately run long,
+    and truncating them here would silently shred content a caller relies on
+    being complete — the excerpt budget already trims deliberately elsewhere,
+    and a second, accidental truncation point here would fight it. This
+    function only ever neutralizes a tag opener; it never removes or shortens
+    anything else.
 
     Regex-based ON PURPOSE. An earlier version walked the string comparing
     against ``text.lower()`` — which desynchronizes for characters whose
@@ -86,18 +102,32 @@ def _sanitize_chunk_text(text: str) -> str:
     real ``</excerpt>`` slips through intact while unrelated characters get
     clobbered. Never index one string with another string's offsets.
     """
-    return _EXCERPT_TAG_RE.sub(lambda m: "<\\" + m.group(0)[1:], text)
+    return _BLOCK_TAG_RE.sub(lambda m: "<\\" + m.group(0)[1:], text or "")
+
+
+def _sanitize_chunk_text(text: str) -> str:
+    """Neutralize attempts to break out of the excerpt wrapper.
+
+    Thin alias over :func:`_sanitize_body_text` — chunk content is exactly the
+    body-safe case: it must be defused, never truncated, here.
+    """
+    return _sanitize_body_text(text)
 
 
 def _sanitize_attribute(value: str) -> str:
-    """Make a metadata value safe to interpolate into an excerpt tag attribute.
+    """Make a metadata value safe to interpolate into a block tag attribute.
 
     File titles and speaker names are arbitrary user strings, and in a shared or
     org deployment the person who set them is not necessarily the person
     chatting. A title containing a quote plus a closing tag would otherwise end
     the wrapper early and inject instructions above the transcript body.
+
+    Unlike :func:`_sanitize_body_text`, this ALSO strips quote/angle/newline
+    characters and caps length at 120 chars — appropriate for a short discrete
+    value (a name, a title) that is interpolated as an attribute, and wrong for
+    anything long enough to be "body" text.
     """
-    cleaned = _EXCERPT_TAG_RE.sub("", value or "")
+    cleaned = _BLOCK_TAG_RE.sub("", value or "")
     for ch in ('"', "<", ">", "\n", "\r"):
         cleaned = cleaned.replace(ch, " ")
     return " ".join(cleaned.split())[:120]
@@ -156,8 +186,15 @@ def build_system_prompt(
     """
     base = BASE_SYSTEM_RULES if use_context else NO_CONTEXT_SYSTEM_RULES
     if use_context and speakers:
-        # Names are ours (validated scope values), not model output — safe to join.
-        base += SPEAKER_SCOPE_RULE.format(names=", ".join(speakers))
+        # Names are a validated SCOPE value (they came from the request, not
+        # from model output) but are NOT trusted text: on a shared recording
+        # the speaker who is named is not necessarily the person chatting, so
+        # an owner-set display name is attacker-controlled from the current
+        # user's point of view. Defused the same way excerpt content is —
+        # this interpolates straight into the SYSTEM prompt, the highest-trust
+        # layer there is.
+        safe_names = ", ".join(_sanitize_body_text(name) for name in speakers)
+        base += SPEAKER_SCOPE_RULE.format(names=safe_names)
 
     # Each layer is capped on its own so one verbose layer cannot crowd the
     # others out, then the joined block is capped again: three maxed-out layers
@@ -289,6 +326,15 @@ _COUNTED_OPEN = "<counted>\n"
 _COUNTED_CLOSE = "</counted>\n\n"
 
 
+def _format_seconds(total: float) -> str:
+    """``742.3`` -> ``"12m 22s"``. Plain, so the model quotes a readable figure."""
+    total_int = int(round(total))
+    minutes, seconds = divmod(max(total_int, 0), 60)
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
+
 def format_counted_block(result) -> str:
     """Render an :class:`~app.services.chat.aggregation.AggregationResult`.
 
@@ -310,10 +356,21 @@ def format_counted_block(result) -> str:
     if result.count is not None:
         lines.append(f"total: {int(result.count)}")
     if result.speaker:
-        lines.append(
-            f"top speaker: {_sanitize_attribute(result.speaker)} "
-            f"({int(result.speaker_sessions or 0)} recordings)"
-        )
+        # `speaker_seconds` (SHAPE_SPEAKER_STATS, W2.4: exact talk time) and
+        # `speaker_sessions` (SHAPE_SPEAKER_FACET: attendance) are different
+        # units of the same "top speaker" idea and never both set — rendering
+        # sessions for a talk-time result would report "(0 recordings)" next
+        # to a name that may have appeared in every recording in scope.
+        if result.speaker_seconds is not None:
+            lines.append(
+                f"top speaker: {_sanitize_attribute(result.speaker)} "
+                f"({_format_seconds(result.speaker_seconds)} talk time)"
+            )
+        else:
+            lines.append(
+                f"top speaker: {_sanitize_attribute(result.speaker)} "
+                f"({int(result.speaker_sessions or 0)} recordings)"
+            )
 
     titles = list(result.file_titles) or [""] * len(result.file_uuids)
     if result.file_uuids:
@@ -330,6 +387,96 @@ def format_counted_block(result) -> str:
     return _COUNTED_OPEN + "\n".join(lines) + "\n" + _COUNTED_CLOSE
 
 
+# Priority order for the evidence blocks that precede the excerpts, HIGHEST
+# priority first. `counted` IS the answer to an aggregation (base rule 10);
+# `overview` covers every recording in scope (base rule 12); `recurrence` and
+# `synthesis` are Wave 2 additions (not produced by any caller yet) that add
+# broader framing on top of those two. Used only to fix the JOIN order in
+# `build_messages` — trimming eligibility is `_TRIMMABLE_BLOCKS` below, which
+# deliberately excludes `counted`.
+_BLOCK_PRIORITY: tuple[str, ...] = ("counted", "overview", "recurrence", "synthesis")
+
+# Blocks the budget mechanism may drop, REVERSE priority order (trimming
+# walks this list as given: `overview` first considered for keeping,
+# `synthesis` first dropped — see the loop in `_trim_evidence_blocks`, which
+# iterates `reversed(_TRIMMABLE_BLOCKS)`).
+#
+# `counted` is excluded ON PURPOSE, not merely last-priority: it is the
+# literal answer to an aggregation question (base rule 10), and this repo
+# already has a pinned invariant that it survives a budget too small for any
+# excerpt at all (`test_the_counted_block_survives_a_budget_that_fits_no_
+# excerpts`) — losing the actual answer to make room for zero-or-more example
+# excerpts would be exactly backwards. It keeps the same unconditional,
+# comes-off-the-top treatment it had before this budget mechanism existed.
+_TRIMMABLE_BLOCKS: tuple[str, ...] = ("overview", "recurrence", "synthesis")
+
+# Combined TRIMMABLE evidence blocks may never claim more than this fraction
+# of the budget remaining after `counted`. Uncapped, a large synthesis/
+# recurrence payload (or a big overview over a huge scope) could crowd every
+# excerpt out — and base rule 3 ("answer from the excerpts") depends on there
+# being excerpts at all.
+_MAX_BLOCK_BUDGET_FRACTION = 0.5
+
+# Whatever is left after `counted`, this many chars are always reserved for
+# the excerpts. Matches `_MIN_TRUNCATED_EXCERPT_CHARS`: below that a first
+# excerpt is skipped rather than shown as a fragment, so reserving less than
+# this would guarantee the reply has nothing to cite from the overview/
+# recurrence/synthesis framing blocks' share of the budget.
+_MIN_EXCERPT_BUDGET_CHARS = _MIN_TRUNCATED_EXCERPT_CHARS
+
+
+def _trim_evidence_blocks(
+    blocks: dict[str, str], *, budget_chars: int
+) -> tuple[dict[str, str], int]:
+    """Cap and trim the TRIMMABLE evidence blocks so excerpts keep a floor.
+
+    ``counted`` is charged to the budget but is NEVER trimmed — see
+    `_TRIMMABLE_BLOCKS`'s docstring. Two ceilings apply to the other three,
+    against what is left of ``budget_chars`` after ``counted``:
+
+    1. Combined trimmable blocks may claim at most
+       `_MAX_BLOCK_BUDGET_FRACTION` of the post-``counted`` room.
+    2. Excerpts are guaranteed at least `_MIN_EXCERPT_BUDGET_CHARS` out of
+       that same room — narrowing ceiling 1 further if honouring it in full
+       would leave less than that.
+
+    Blocks are dropped WHOLE, never partially truncated — a half-rendered
+    ``<overview>`` reads as a data-integrity bug, not a budget decision. Drop
+    order is the REVERSE of `_TRIMMABLE_BLOCKS`: ``synthesis`` first, then
+    ``recurrence``, then ``overview``.
+
+    Args:
+        blocks: ``name -> rendered block text``, keyed by `_BLOCK_PRIORITY`.
+        budget_chars: Chars available before the excerpts (including
+            whatever ``counted`` will consume).
+
+    Returns:
+        ``(kept_blocks, remaining_budget)`` — the surviving blocks (as a dict
+        containing ``counted`` whenever it was non-empty, plus whichever
+        trimmable blocks fit) and what is left over for
+        :func:`format_excerpts`.
+    """
+    budget_chars = max(0, budget_chars)
+    counted = blocks.get("counted", "")
+    post_counted = max(0, budget_chars - len(counted))
+
+    excerpt_floor = min(_MIN_EXCERPT_BUDGET_CHARS, post_counted)
+    max_block_budget = int(post_counted * _MAX_BLOCK_BUDGET_FRACTION)
+    ceiling = max(0, min(max_block_budget, post_counted - excerpt_floor))
+
+    kept = {name: blocks.get(name, "") for name in _TRIMMABLE_BLOCKS}
+    total = sum(len(v) for v in kept.values())
+    for name in reversed(_TRIMMABLE_BLOCKS):
+        if total <= ceiling:
+            break
+        total -= len(kept.pop(name, ""))
+
+    if counted:
+        kept["counted"] = counted
+
+    return kept, max(0, post_counted - total)
+
+
 def build_messages(
     *,
     system_prompt: str,
@@ -342,6 +489,8 @@ def build_messages(
     diagnostics: dict[str, int] | None = None,
     counted_block: str = "",
     overview_block: str = "",
+    recurrence_block: str = "",
+    synthesis_block: str = "",
 ) -> tuple[list[dict[str, str]], list[int]]:
     """Assemble the full message list for the provider.
 
@@ -363,6 +512,12 @@ def build_messages(
             the *trimmed* history, which is what actually consumes the window —
             so recomputing it in the caller would be a second implementation of
             the rule that decides how much room excerpts get.
+        counted_block: Rendered ``<counted>`` block, or ``""``.
+        overview_block: Rendered ``<overview>`` block, or ``""``.
+        recurrence_block: Rendered ``<recurrence>`` block, or ``""`` (Wave 2;
+            no caller populates this yet).
+        synthesis_block: Rendered ``<synthesis>`` block, or ``""`` (Wave 2; no
+            caller populates this yet).
 
     Returns:
         ``(messages, excerpt_ids)`` — the 1-based ids of the chunks that reached
@@ -379,17 +534,24 @@ def build_messages(
 
     overhead = len(system_prompt) + sum(len(m["content"]) for m in messages[1:]) + len(question)
     budget_chars = max(0, (context_window - response_tokens) * _CHARS_PER_TOKEN - overhead)
-    # The counted block comes off the TOP of the budget, not out of what is left
-    # after the excerpts. It is the answer to an aggregation question; excerpts
-    # are the examples beside it. Dropping it to fit one more speaker turn would
-    # leave the model to count the examples, which is the failure the counted
-    # tier exists to remove.
-    # Both structured blocks come off the TOP of the budget, in a fixed order:
-    # counted first (it is the answer to an aggregation), then the overview (it
-    # is the shape of the collection), then the excerpts (they are the evidence).
-    counted = counted_block or ""
-    overview = overview_block or ""
-    budget_chars = max(0, budget_chars - len(counted) - len(overview))
+    # Evidence blocks come off the TOP of the budget, not out of what is left
+    # after the excerpts — each IS more authoritative than the excerpts beside
+    # it (base rules 10 and 12), so losing one to fit one more speaker turn
+    # would be backwards. `_trim_evidence_blocks` bounds how much of the
+    # budget they may claim in total and guarantees the excerpts a floor.
+    blocks, budget_chars = _trim_evidence_blocks(
+        {
+            "counted": counted_block or "",
+            "overview": overview_block or "",
+            "recurrence": recurrence_block or "",
+            "synthesis": synthesis_block or "",
+        },
+        budget_chars=budget_chars,
+    )
+    # Blocks are already ordered by `_BLOCK_PRIORITY` (counted, overview,
+    # recurrence, synthesis); joining in that order is what makes rule 10 read
+    # before rule 12 reads before either broader-framing block.
+    evidence_prefix = "".join(blocks.get(name, "") for name in _BLOCK_PRIORITY)
 
     excerpt_ids: list[int] = []
     if chunks and budget_chars > 0:
@@ -397,12 +559,15 @@ def build_messages(
         if excerpt_block:
             # Concatenation only — question and excerpts are both untrusted text.
             messages.append(
-                {"role": "user", "content": counted + overview + excerpt_block + "\n" + question}
+                {
+                    "role": "user",
+                    "content": evidence_prefix + excerpt_block + "\n" + question,
+                }
             )
             _record(diagnostics, budget_chars, len(chunks) - len(excerpt_ids))
             return messages, excerpt_ids
 
-    messages.append({"role": "user", "content": counted + overview + question})
+    messages.append({"role": "user", "content": evidence_prefix + question})
     _record(diagnostics, budget_chars, len(chunks) - len(excerpt_ids))
     return messages, excerpt_ids
 

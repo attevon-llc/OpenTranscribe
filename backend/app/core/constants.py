@@ -1095,6 +1095,23 @@ DEFAULT_CHAT_MESSAGES_PER_HOUR = 120  # chat.limits.messages_per_hour
 DEFAULT_CHAT_MAX_CONCURRENT_STREAMS = 2  # chat.limits.max_concurrent_streams
 DEFAULT_CHAT_RETENTION_DAYS = 0  # chat.retention_days (0 = keep forever)
 
+# W2.4: the aggregation tier's speaker-facet/speaker-stats fixes. Both default
+# OFF — they change what an existing question mechanism answers (facet scope)
+# or add a new one (talk-time stats), and either is a measurement-gated rollout
+# rather than a safe-by-construction default.
+DEFAULT_CHAT_AGGREGATE_SPEAKER_FACET_CONTENT_SCOPE = (
+    False  # chat.aggregate.speaker_facet_content_scope
+)
+DEFAULT_CHAT_AGGREGATE_SPEAKER_STATS_ENABLED = False  # chat.aggregate.speaker_stats_enabled
+
+# #464: prefer each file's LLM summary over its digest in the bounded-scope map
+# tier (`chat/mapreduce.scope_digest_hits`), when the summary is FRESH (its
+# stored source_fingerprint matches the file's current file_facts row) — an
+# absent or stale summary falls back to the digest unconditionally. Default OFF:
+# on-by-default needs measured answer-quality evidence this flag does not yet
+# have (a separate, later change).
+DEFAULT_CHAT_MAP_TIER_SUMMARIES = False  # chat.rag.map_tier_summaries
+
 # A provider that accepts the request but never emits a first token would
 # otherwise hold the stream open until the read timeout.
 DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S = 90

@@ -1,0 +1,78 @@
+# LLM-judged answer-quality tier (issue #463) — RAGAS. Installed ONLY into
+# `backend/venv-eval/`, a SEPARATE interpreter from `backend/venv`. NEVER install
+# this file into `backend/venv`, into any Docker image, or merge it into
+# `requirements-eval.txt` (which `backend/venv` DOES install).
+#
+#   python3.12 -m venv backend/venv-eval
+#   backend/venv-eval/bin/pip install -r backend/requirements-eval-judge.txt
+#
+# ---------------------------------------------------------------------------
+# Why a separate venv, not a separate `pip install` into the same one
+# ---------------------------------------------------------------------------
+# `ragas==0.4.3` (Apache-2.0) requires `instructor` unconditionally (no extras
+# gate). `instructor==1.15.4` (the newest version PyPI has, checked 2026-08-19 —
+# no newer release exists) requires `openai<3.0.0,>=2.0.0`. `backend/
+# requirements.txt` pins `openai==3.3.0` — the app's real LLM client, exercised
+# by host-venv pytest and mypy alike, in a checkout where other agents run
+# against `backend/venv` concurrently. `pip install --dry-run` with ragas added
+# to `backend/venv` resolved to "Would install ... openai-2.54.0" — a silent
+# DOWNGRADE of the shared venv's openai package for every other consumer. That
+# is exactly the venv/image divergence issue #492 exists to prevent, just
+# relocated to venv-vs-venv instead of venv-vs-image.
+#
+# The fix is a separate INTERPRETER, not a relaxed pin: nothing in `backend/
+# venv` ever imports `ragas`. `tests/eval/harness/answer_judge.py` (running in
+# `backend/venv`) talks to this venv over a subprocess boundary — JSONL records
+# in, JSONL scores out — via `harness/judge_runner.py`, the ONE file in the
+# whole answer-quality tier that imports `ragas`. The two venvs' dependency
+# graphs never need to be compatible, because they are never the same Python
+# process. Do NOT "simplify" this back into one venv later — that reintroduces
+# the openai downgrade this split exists to prevent.
+#
+# ---------------------------------------------------------------------------
+# A second, independently-discovered conflict: ragas 0.4.3 vs current
+# langchain-community
+# ---------------------------------------------------------------------------
+# `ragas==0.4.3` declares `Requires-Dist: langchain-community` with NO version
+# bound at all, so an unconstrained install resolves the newest release
+# (0.4.2, checked 2026-08-19). `ragas/llms/base.py` imports
+# `from langchain_community.chat_models.vertexai import ChatVertexAI` at
+# MODULE level (not lazily, not behind a provider check) — and that submodule
+# does not exist in `langchain-community==0.4.2` at all (verified: `find
+# .../langchain_community/chat_models -iname '*vertex*'` finds nothing; that
+# package's own README says it "is being sunset," and Vertex AI support moved
+# to the standalone `langchain-google-vertexai` package). The result is
+# `ModuleNotFoundError: No module named
+# 'langchain_community.chat_models.vertexai'` on a bare `import ragas` — not a
+# provider-specific failure, a top-level one, verified against this exact
+# venv before this pin was added.
+#
+# `langchain-community==0.3.31` (the last 0.3.x release, one before the
+# deprecation-era 0.4 line) still ships `chat_models.vertexai` and resolves
+# cleanly alongside everything else `ragas` needs (`langchain>=0.3.27,<2.0.0` —
+# `langchain==1.3.15` here satisfies that numerically). Verified: `import
+# ragas`, `from ragas.llms.base import llm_factory`, `from
+# ragas.metrics.collections import Faithfulness, AnswerCorrectness`, and `from
+# ragas.embeddings.huggingface_provider import HuggingFaceEmbeddings` all
+# succeed with this pin in place. This is an upstream ragas packaging gap
+# (an unpinned, unconditionally-imported integration dependency), not a
+# choice — pin it explicitly rather than let it float, per `backend/CLAUDE.md`
+# (#492): "every spec is pinned, a floor is not a pin."
+langchain-community==0.3.31
+
+ragas==0.4.3
+
+# `ragas.embeddings.huggingface_provider.HuggingFaceEmbeddings(use_api=False)` —
+# `answer_correctness`'s LOCAL similarity embedder (module docstring: never a
+# remote embedding call) — lazy-imports sentence-transformers and raises its own
+# ImportError without it; ragas does not declare it as a hard dependency because
+# not every metric needs it. Verified missing on first real run of this file
+# (`answer_correctness` failed at construction with exactly that ImportError,
+# `faithfulness` — which does not need an embedder — worked before this line was
+# added). Pinned to the SAME version `backend/requirements.txt` already resolves
+# for the app's own embedder (`sentence-transformers==5.7.0`), so `venv-eval`'s
+# `all-MiniLM-L6-v2` behaves identically to the app's, not coincidentally close.
+sentence-transformers==5.7.0
+
+# RAGAS_DO_NOT_TRACK=true — set in the environment wherever judge_runner.py runs,
+# never hardcoded here (this file has no way to set process environment).

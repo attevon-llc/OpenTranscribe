@@ -10,8 +10,17 @@
   import { t } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { toastStore } from '$stores/toast';
+  import { llmStatusStore } from '$stores/llmStatus';
   import { getChatAdminSettings, updateChatAdminSettings } from '$lib/api/chatApi';
   import type { ChatAdminSettings } from '$lib/types/chat';
+
+  // Experimental (measurement-gated) settings — knobs that only do anything
+  // with a working LLM provider behind them (a future planner/enrichment
+  // toggle is the motivating case; see `backend/app/core/chat_flag_registry.py`).
+  // None are registered yet, so this renders explanatory copy rather than
+  // controls — the section exists so the FIRST one only needs a registry
+  // entry, not a new mechanism or a second gating pattern.
+  $: llmAvailable = $llmStatusStore.available;
 
   const DEFAULTS: ChatAdminSettings = {
     candidate_pool: 48,
@@ -38,6 +47,7 @@
   $: settingsModalStore.setDirty('chat-admin', hasChanges);
 
   onMount(() => {
+    llmStatusStore.initialize();
     (async () => {
       try {
         const loaded = await getChatAdminSettings();
@@ -238,6 +248,19 @@
         {saving ? $t('common.saving') : $t('common.save')}
       </button>
     </div>
+
+    <section class="experimental-subsection" data-testid="chat-admin-experimental">
+      <h3 class="experimental-title">{$t('chat.adminSettings.experimentalTitle')}</h3>
+      <p class="section-description">{$t('chat.adminSettings.experimentalDescription')}</p>
+
+      {#if !llmAvailable}
+        <p class="hint experimental-hint" data-testid="chat-admin-experimental-hint">
+          {$t('chat.adminSettings.experimentalNoProvider')}
+        </p>
+      {/if}
+
+      <p class="hint">{$t('chat.adminSettings.experimentalEmpty')}</p>
+    </section>
   {/if}
 </section>
 
@@ -333,5 +356,25 @@
   .actions {
     display: flex;
     justify-content: flex-end;
+  }
+
+  .experimental-subsection {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    padding-top: 1rem;
+    border-top: 1px dashed var(--border-color);
+  }
+
+  .experimental-title {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .experimental-hint {
+    color: var(--warning-color, var(--text-secondary));
   }
 </style>

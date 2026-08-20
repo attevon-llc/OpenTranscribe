@@ -3,7 +3,10 @@
 > **Single reference document.** Combines all market research, benchmark data, competitive analysis, Recall.ai positioning, current technical capabilities, and the feature roadmap into one place. Detailed baseball cards live in `cloud-asr-market-research.md` and `competitor-landscape.md`. Benchmark raw data in `BENCHMARK_RESULTS.md` and `diarization-boundary-results/cloud-comparison.md`.
 >
 > **Last updated**: August 2026 (refreshed for the pending v0.5.0 release — see the "Shipped since the
-> roadmap below was written" callout and the capability table for what changed since May 2026).
+> roadmap below was written" callout and the capability table for what changed since May 2026. Also
+> adds a second competitive front — multi-source document RAG plus speaker-attributed
+> cross-referencing, opened by issue #362/#403 — see "The Full-Product Vision, Revised" below and
+> `competitor-landscape.md`'s "A Second Competitive Front" section).
 
 ---
 
@@ -47,6 +50,14 @@ The speech-to-text market has three tiers. Every competitor lives on exactly one
              │  position in the entire market.              │
              └──────────────────────────────────────────────┘
 ```
+
+**A fourth axis is opening (August 2026, issue #362/#403 in progress):** documents-as-first-class
+corpus members plus speaker-attributed cross-referencing puts OpenTranscribe into a second market
+this three-tier diagram doesn't capture at all — multi-source RAG/knowledge tools (Google NotebookLM)
+and personal-knowledge-management linking patterns (Obsidian/Roam). Neither of those tools does
+diarization or self-hosts; no transcription competitor above does multi-source document RAG or
+speaker-text attribution. See "The Full-Product Vision, Revised" below and `competitor-landscape.md`'s
+"A Second Competitive Front" section.
 
 ---
 
@@ -201,7 +212,7 @@ above — no separate benchmark figures for multi-GPU throughput are published h
 | HIPAA/air-gap compatible | ✗ | **✓ by design** |
 | Open source (AGPL) | ✗ all proprietary | **✓** |
 | Multi-provider LLM summarization | ✗ | **✓ (12 output languages)** |
-| RAG / chat over transcript archive, with citations | ✗ | **✓ shipped — issue #52 (v0.5.0)** |
+| RAG / chat over transcript archive, with citations | ✗ | **✓ shipped — issue #52 (v0.5.0); English-only in practice — non-Latin-script (CJK) transcripts currently produce one un-chunked blob rather than proper retrieval units (issue #453, open)** |
 | Watch folder / bucket auto-ingest (local / S3 / SMB) | ✗ | **✓ shipped — issue #26 (v0.5.0)** |
 | Content redaction (PII / profanity / toxicity) | unconfirmed — see note | **✓ shipped — read-time masking + admin policy floor (v0.5.0)** |
 | Enterprise auth breadth (LDAP + OIDC + SAML + PKI/mTLS + proxy header + MFA + SCIM, one build) | unconfirmed — see note | **✓ shipped (v0.5.0)** |
@@ -288,6 +299,32 @@ enterprise" segment.
 
 ### Priority 1 — Category-defining features still open
 
+**Corpus-scale RAG** *(issue #383, orchestrated under #403 alongside #362 and #363 — plan published,
+not started)* Summary tier (query an entire corpus without retrieving every chunk), query routing
+(pick the right retrieval strategy per question shape), cross-file aggregation, model-tier parity
+(quality doesn't degrade on a smaller/cheaper model), and a real evaluation harness to measure
+retrieval quality changes objectively rather than by feel. This is the scale half of "actionable
+insight into large datasets" — #362 (below) is the corpus-breadth half (documents alongside
+transcripts); #383 is what keeps answers accurate as that corpus grows into the tens or hundreds of
+thousands of items.
+
+**Documents as first-class corpus members + speaker-attributed cross-referencing** *(issue #362,
+orchestrated under #403 — in progress on `feat/doc-ingestion`; cross-linking + quote-attribution
+follow-up issue: to be filed)*
+Ingests PDFs/DOCX/HTML/PPTX/etc. into the same retrieval plane as transcripts (v6 `transcript_chunks`
+index, RRF-fused), so a chat answer cites both a recording and a supporting document with equal
+citation quality. Planned immediate follow-up, not deferred: (1) collection-level linking so mixed
+media/document collections work (e.g. an investigation case file with recordings, articles, and
+records together); (2) item-level linking from a specific recording to specific supporting
+documents; (3) automatic quote-attribution in document text — NER + dependency-parsing to resolve
+"John Smith said..." to a known `Speaker`/`SpeakerProfile`, surfaced as a suggestion and never
+auto-applied (same rule this repo already enforces for every other speaker-ID inference) — with a
+manual highlight-and-tag fallback where auto-attribution can't resolve a name. Both attribution paths
+feed a single **speaker segment** concept queryable identically whether it came from diarized audio or
+tagged document text — "everything this person said or was quoted saying, across every recording and
+document." This is the category-defining bet described in "The Full-Product Vision, Revised" below —
+no competitor combines diarized audio, external-document RAG, and cross-modal speaker attribution.
+
 **Recall.ai Integration** *(issue #365 — plan + gist published, not started)*
 Register as an ingestion source alongside yt-dlp. Webhook receiver → Celery task → existing pipeline. Enables passive meeting capture. No core pipeline changes needed. Positions OT as self-hosted Fireflies/Otter Teams replacement. Recall.ai cost: \$0.70/hr meeting captured.
 
@@ -309,6 +346,19 @@ Talk time by speaker, activity over time, topic frequency, rolled up across the 
 
 **#46 — Transcript Version Control**
 Edit tracking for journalism/legal workflows where an audit trail matters. Differentiates from Sonix/Trint in the media and legal verticals.
+
+**#366 — NVIDIA NeMo (Parakeet / Canary) as a first-class local transcription engine** *(not started)*
+A second local ASR engine alongside WhisperX, at parity per the issue's plan. Broadens the "pluggable
+ASR backend" story (already a differentiator — see capability table) with an NVIDIA-native option;
+not category-defining on its own, but strengthens the developer/technical-team segment's "benchmark
+every option against your own audio" pitch.
+
+**#283 — Cross-platform standalone desktop app** *(Tauri + SQLite/sqlite-vec + local inference core,
+not started)* Opens a segment none of the roadmap above addresses: an individual user who wants local
+transcription and search with **no server to deploy at all** — not self-hosted-on-your-infrastructure,
+but local-only-on-your-laptop. Different buyer (a person, not an IT/compliance decision-maker) and a
+different distribution model (an installer, not a Docker Compose file). See new market segment #6
+below.
 
 ---
 
@@ -340,28 +390,58 @@ Evaluate all 10 ASR providers against their own audio. Reference implementation 
 - **Message**: *One frontend, every ASR provider, benchmark on your own data.*
 - **Unlock**: Live today.
 
+### 6. Individual / prosumer, zero-infrastructure (new, needs #283)
+A different buyer than every segment above: one person who wants local transcription and search with
+no server to stand up at all — not "self-hosted on infrastructure you control," but "runs entirely on
+my laptop." Distribution is an installer, not a Docker Compose file; the sale is to a person, not an
+IT or compliance decision-maker.
+- **Message**: *Your own transcription and search, no server, no subscription, nothing leaves your machine.*
+- **Unlock**: Needs #283 (Tauri + SQLite/sqlite-vec + local inference core), not started.
+
 ---
 
-## The Full-Product Vision
+## The Full-Product Vision, Revised
 
-When the roadmap above is complete, OpenTranscribe is:
+The original vision (below, kept for the record) was audio/video-only. Issue #362/#403 — documents as
+first-class corpus members, fused into the same retrieval plane as transcripts, with a planned
+speaker-attribution layer that extends diarization's "who said what" into arbitrary text — changes the
+category. This is deliberate, not scope creep: the goal is not "a transcription app" and not "a
+search/chat app," but **actionable insight into a mixed corpus of recordings and documents, with
+speaker identity as the thread that ties both together.**
 
-> **Self-hosted organizational memory for audio and video.**
+> **Self-hosted, speaker-aware organizational memory — for everything you recorded and everything you
+> collected about it.**
 >
-> Drop a file, point to a folder, join a meeting, or paste a URL → everything is transcribed, speaker-labeled, cross-referenced by voice, indexed, and searchable. Ask it questions in natural language. It knows who said what, when, and in which recording. All data stays on your infrastructure.
+> Drop a file, point to a folder, join a meeting, or paste a URL → everything is transcribed,
+> speaker-labeled, cross-referenced by voice, indexed, and searchable. Upload a document — a report, an
+> article, a case file — and it joins the same searchable, citable corpus. Ask a question in natural
+> language and get an answer with citations that jump to the exact spot in a recording *or* a document.
+> Ask "everything this person said or was quoted saying" and get results across both. All data stays on
+> your infrastructure.
 
-No competitor in any tier offers this combination:
+No competitor in any tier or adjacent market offers this combination:
 
 | Competitor | Why it falls short |
 |---|---|
-| Fireflies / Otter / Grain | Cloud-only, no archive depth, no RAG, no self-hosting |
-| Trint / Sonix / Rev | File-based only, no meeting capture, no cross-file RAG |
+| Fireflies / Otter / Grain | Cloud-only, no archive depth, no document RAG, no self-hosting |
+| Trint / Sonix / Rev | File-based only, no meeting capture, no cross-file or cross-document RAG |
 | Verbit | Cloud-only despite enterprise pricing, no self-serve |
 | Deepgram / AssemblyAI | API only — they're the infrastructure OT runs on top of |
 | Recall.ai | No UI — the capture backend OT should consume |
 | Speechmatics | On-prem ASR API only; OT + Speechmatics backend = ideal enterprise pairing |
+| **Google NotebookLM** | **No diarization, no speaker identity, not self-hostable** — owns the citation-jump multi-source UX pattern but not the audio/speaker axis |
+| **Obsidian / Roam / Logseq** | **No audio ingestion, no diarization, no enterprise retrieval** — owns the bidirectional-linking UX pattern, nothing else |
+| **Dovetail / Grain (research repos)** | Not self-hosted, weaker diarization, documents are internal synthesis output only — not ingested external sources |
 
-OpenTranscribe, complete, is a category of one: **self-hosted meeting and media intelligence with best-in-class diarization accuracy and a full-stack RAG interface.**
+OpenTranscribe, complete, is a category of one: **self-hosted, speaker-aware organizational memory
+spanning recordings and documents, with best-in-class diarization, fused document RAG, and
+cross-modal speaker attribution.**
+
+### Original vision (audio/video-only, kept for the record)
+
+> **Self-hosted organizational memory for audio and video.**
+>
+> Drop a file, point to a folder, join a meeting, or paste a URL → everything is transcribed, speaker-labeled, cross-referenced by voice, indexed, and searchable. Ask it questions in natural language. It knows who said what, when, and in which recording. All data stays on your infrastructure.
 
 ---
 

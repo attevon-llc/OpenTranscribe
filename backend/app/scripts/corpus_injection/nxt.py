@@ -64,6 +64,45 @@ def normalize_token(raw: str) -> str:
     return _TOKEN_CLEAN_RE.sub("", raw.lower().replace("’", "'"))
 
 
+def read_meeting_channels(meetings_xml: Path) -> dict[str, dict[str, dict[str, str]]]:
+    """Parse AMI's ``corpusResources/meetings.xml`` into per-meeting channel metadata.
+
+    Returns ``{observation_id: {nxt_channel_letter: {"role": ..., "global_name": ...}}}``.
+    Shared by :class:`~.adapters.qmsum.QMSumAdapter` (which needs the QMSum-role-labelled
+    subset of this — see ``AMI_ROLE_TO_QMSUM``) and :class:`~.adapters.ami.AMIDistractorAdapter`
+    (which needs every channel, not just the four-role subset).
+
+    ``role`` is only populated for AMI's four-role Scenario/Product meetings
+    (``PM``/``ID``/``UI``/``ME``) — a meeting recorded outside that protocol has no ``role``
+    attribute on its `<speaker>` entries at all (checked against the real corpus: 33 of the 34
+    Product-excluded meetings), so a caller that needs a speaker label for every meeting MUST
+    fall back to something else. ``global_name`` is present for every meeting checked but is
+    still not guaranteed by the schema, hence also optional here (empty string, never absent).
+
+    ⚠️ **`meetings.xml`'s own `<speaker>` list undercounts a real meeting's channels** — IN1001
+    lists 3 speakers (A/B/C) but ships 4 channels' worth of `segments.xml`/`words.xml` (A-D).
+    Channel *presence* must come from the `segments`/`words` directory listing, never from this
+    file; this function exists only to attach a friendlier label where one exists.
+    """
+    root = ET.parse(meetings_xml).getroot()  # noqa: S314  # nosec B314 — see module note on XML trust
+    out: dict[str, dict[str, dict[str, str]]] = {}
+    for meeting in root:
+        observation = meeting.get("observation")
+        if not observation:
+            continue
+        channels: dict[str, dict[str, str]] = {}
+        for speaker in meeting:
+            channel = speaker.get("nxt_agent")
+            if not channel:
+                continue
+            channels[channel] = {
+                "role": speaker.get("role") or "",
+                "global_name": speaker.get("global_name") or "",
+            }
+        out[observation] = channels
+    return out
+
+
 def read_channel_words(path: Path) -> list[TimedToken]:
     """Parse one NXT ``*.words.xml`` into timed tokens, in file order.
 

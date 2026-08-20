@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.services.search.chunking_service import split_into_sentences
+from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 
 from . import sizing
 from .provenance import segment_provenance
@@ -63,8 +64,8 @@ def _turns(segments: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     """Group consecutive same-speaker segments, mirroring the search chunker's notion."""
     turns: list[list[dict[str, Any]]] = []
     for segment in segments:
-        speaker = segment.get("speaker") or "Unknown"
-        if turns and (turns[-1][0].get("speaker") or "Unknown") == speaker:
+        speaker = segment.get("speaker") or UNKNOWN_SPEAKER_LABEL
+        if turns and (turns[-1][0].get("speaker") or UNKNOWN_SPEAKER_LABEL) == speaker:
             turns[-1].append(segment)
         else:
             turns.append([segment])
@@ -98,7 +99,7 @@ def _sentences_for_turn(
         return []
 
     turn_text = " ".join(pieces)
-    speaker = turn[0].get("speaker") or "Unknown"
+    speaker = turn[0].get("speaker") or UNKNOWN_SPEAKER_LABEL
 
     results: list[SourceSentence] = []
     search_from = 0

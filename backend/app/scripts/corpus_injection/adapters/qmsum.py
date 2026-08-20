@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import re
-import xml.etree.ElementTree as ET  # noqa: S405  # nosec B405 — see nxt.py's XML trust note
 from functools import cached_property
 from pathlib import Path
 
@@ -28,6 +27,7 @@ from app.scripts.corpus_injection.model import MeetingDoc
 from app.scripts.corpus_injection.model import TimingInfo
 from app.scripts.corpus_injection.model import Turn
 from app.scripts.corpus_injection.nxt import align_turns_to_channels
+from app.scripts.corpus_injection.nxt import read_meeting_channels
 
 DOMAINS = ("Academic", "Product", "Committee")
 
@@ -104,24 +104,27 @@ class QMSumAdapter(CorpusAdapter):
 
     @cached_property
     def _ami_channels(self) -> dict[str, dict[str, str]]:
-        """meeting id -> {QMSum speaker label: NXT channel letter}, from AMI."""
+        """meeting id -> {QMSum speaker label: NXT channel letter}, from AMI.
+
+        A thin, QMSum-role-keyed projection of :func:`~..nxt.read_meeting_channels` — every
+        distractor meeting (:class:`~.ami.AMIDistractorAdapter`) needs the same
+        ``meetings.xml`` parse but keyed by channel letter, since most of them carry no
+        ``role`` attribute at all (see that function's docstring).
+        """
         if not self.ami_root:
             return {}
         meetings_xml = self._find(self.ami_root, "corpusResources/meetings.xml")
         if meetings_xml is None:
             return {}
-        root = ET.parse(meetings_xml).getroot()  # noqa: S314  # nosec B314 — trusted corpus file
-        out: dict[str, dict[str, str]] = {}
-        for meeting in root:
-            observation = meeting.get("observation")
-            if not observation:
-                continue
-            out[observation] = {
-                AMI_ROLE_TO_QMSUM[speaker.get("role", "")]: speaker.get("nxt_agent", "")
-                for speaker in meeting
-                if speaker.get("role") in AMI_ROLE_TO_QMSUM and speaker.get("nxt_agent")
+        channels_by_meeting = read_meeting_channels(meetings_xml)
+        return {
+            meeting_id: {
+                AMI_ROLE_TO_QMSUM[info["role"]]: channel
+                for channel, info in channels.items()
+                if info["role"] in AMI_ROLE_TO_QMSUM
             }
-        return out
+            for meeting_id, channels in channels_by_meeting.items()
+        }
 
     @cached_property
     def _ami_words_dir(self) -> Path | None:

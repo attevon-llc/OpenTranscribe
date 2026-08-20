@@ -20,6 +20,7 @@ from app.api.endpoints.auth import get_current_admin_user
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
+from app.core.chat_flag_registry import DESCRIPTIONS as _DESCRIPTIONS
 from app.db.base import get_db
 from app.schemas.chat import ChatAdminSettings
 from app.schemas.chat import ChatAdminSettingsUpdate
@@ -31,21 +32,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_DESCRIPTIONS = {
-    "candidate_pool": "Chunks retrieved before reranking",
-    "final_chunks": "Chunks included in the prompt",
-    "max_chunks_per_file": "Maximum chunks contributed by any one recording",
-    "rerank_enabled": "Rerank retrieved chunks with a CPU cross-encoder",
-    "rerank_max_pairs": "Maximum (query, chunk) pairs scored per message",
-    "query_rewrite_enabled": "Expand follow-up questions into standalone queries",
-    "cache_ttl_seconds": "Retrieval cache lifetime (0 disables)",
-    "semantic_cache_enabled": "Reuse results for near-identical questions",
-    "semantic_cache_threshold": "Cosine similarity required for a semantic cache hit",
-    "history_max_turns": "Prior exchanges (question + answer) replayed to the model",
-    "messages_per_hour": "Per-user hourly message ceiling",
-    "max_concurrent_streams": "Per-user simultaneous streaming replies",
-    "retention_days": "Delete conversations older than N days (0 keeps forever)",
-}
+# `_DESCRIPTIONS` used to be a second, hand-maintained dict here — a field
+# added to `ChatAdminSettingsUpdate` without a matching entry raised
+# `KeyError` on the very first save (a 500, not a 400) with nothing at commit
+# time to catch it. It is now sourced from `core.chat_flag_registry`, the one
+# declarative table these 13 flags are described in;
+# `tests/unit/test_chat_flag_registry.py` is the completeness check that
+# fails if the registry and `SETTING_KEYS`/the schema ever disagree again.
 
 
 @router.get("", response_model=ChatAdminSettings)
@@ -71,7 +64,15 @@ def update_chat_admin_settings(
 
     for field, value in updates.items():
         stored = "true" if value is True else "false" if value is False else str(value)
-        set_setting(db, SETTING_KEYS[field], stored, _DESCRIPTIONS[field])
+        # `.get(..., field)` rather than `[field]`: a field that reaches here
+        # is already schema-validated by `ChatAdminSettingsUpdate`, so
+        # `SETTING_KEYS`/`_DESCRIPTIONS` SHOULD always have it — but "should"
+        # is exactly the assumption that produced the 500 this guards
+        # against, and a readable fallback description beats a 500 even for a
+        # registry that has since drifted.
+        setting_key = SETTING_KEYS.get(field, f"chat.{field}")
+        description = _DESCRIPTIONS.get(field, field.replace("_", " "))
+        set_setting(db, setting_key, stored, description)
 
     audit_logger.log(
         event_type=AuditEventType.ADMIN_SETTINGS_CHANGE,

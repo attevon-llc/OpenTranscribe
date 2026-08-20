@@ -23,6 +23,7 @@ from app.core.constants import get_speaker_index_v4
 from app.core.redis import get_redis
 from app.db.base import get_db
 from app.models.user import User
+from app.schemas.search import SEARCH_RESULT_TYPES
 from app.schemas.search import SetEmbeddingModelSchema
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 
@@ -137,6 +138,16 @@ def search_transcripts(
             "find bar to list every match across the whole paginated transcript."
         ),
     ),
+    result_type: str = Query(
+        "transcripts",
+        description=(
+            "Which result group(s) to return: transcripts, summaries, documents, or all. "
+            "Defaults to transcripts for byte-identical behavior against existing callers. "
+            "'documents' (issue #463) searches the document-chunk plane and returns "
+            "document_results/document_total, alongside the transcript/summary shapes "
+            "when combined via 'all'."
+        ),
+    ),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
@@ -187,40 +198,74 @@ def search_transcripts(
     if search_mode not in ("hybrid", "keyword"):
         raise HTTPException(status_code=400, detail="search_mode must be: hybrid or keyword")
 
-    from app.services.search.hybrid_search_service import HybridSearchService
+    if result_type not in SEARCH_RESULT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"result_type must be one of: {', '.join(SEARCH_RESULT_TYPES)}",
+        )
+    want_transcripts = result_type in ("transcripts", "all")
+    want_summaries = result_type in ("summaries", "all")
+    want_documents = result_type in ("documents", "all")
 
-    search_service = HybridSearchService()
-    response = search_service.search(
-        query=q,
-        user_id=ctx.user.id,
-        page=page,
-        page_size=page_size,
-        speakers=speakers,
-        tags=tags,
-        date_from=date_from,
-        date_to=date_to,
-        sort_by=sort_by,
-        sort_order=sort_order,
-        search_mode=search_mode,
-        file_type=file_type,
-        collection_id=collection_id,
-        min_duration=min_duration,
-        max_duration=max_duration,
-        min_file_size=min_file_size,
-        max_file_size=max_file_size,
-        language=language,
-        title_filter=title_filter,
-        organization_id=ctx.org_id,
-        file_uuid=file_uuid,
-    )
+    if want_transcripts:
+        from app.services.search.hybrid_search_service import HybridSearchService
 
-    # Abuse/DMCA: the OpenSearch transcript index has no quarantine field, so
-    # drop any taken-down files from the result page against the DB (page-sized,
-    # one IN query). Admins keep visibility for review.
-    if not ctx.user.is_admin:
-        _drop_quarantined_search_hits(db, response)
+        search_service = HybridSearchService()
+        response = search_service.search(
+            query=q,
+            user_id=ctx.user.id,
+            page=page,
+            page_size=page_size,
+            speakers=speakers,
+            tags=tags,
+            date_from=date_from,
+            date_to=date_to,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            search_mode=search_mode,
+            file_type=file_type,
+            collection_id=collection_id,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            min_file_size=min_file_size,
+            max_file_size=max_file_size,
+            language=language,
+            title_filter=title_filter,
+            organization_id=ctx.org_id,
+            file_uuid=file_uuid,
+        )
 
-    return _search_response_to_schema(response)
+        # Abuse/DMCA: the OpenSearch transcript index has no quarantine field, so
+        # drop any taken-down files from the result page against the DB (page-sized,
+        # one IN query). Admins keep visibility for review.
+        if not ctx.user.is_admin:
+            _drop_quarantined_search_hits(db, response)
+
+        payload = _search_response_to_schema(response)
+    else:
+        # Same shape a transcript-search response carries, with nothing found —
+        # so a `summaries`-only caller still gets a well-formed SearchResponseSchema
+        # and doesn't have to special-case an absent `results` key.
+        payload = {
+            "query": q,
+            "results": [],
+            "total_results": 0,
+            "total_files": 0,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": 0,
+            "search_time_ms": 0.0,
+            "filters_applied": {},
+            "search_mode": search_mode,
+        }
+
+    if want_summaries:
+        payload.update(_summary_search_payload(db, ctx, q, page, page_size))
+
+    if want_documents:
+        payload.update(_document_search_payload(db, ctx, q, page, page_size, search_mode))
+
+    return payload
 
 
 @router.get("/count")
@@ -278,6 +323,151 @@ def _drop_quarantined_search_hits(db: Session, response: Any) -> None:
         response.total_results = max(0, int(getattr(response, "total_results", 0)) - removed)
     if hasattr(response, "total_files"):
         response.total_files = max(0, int(getattr(response, "total_files", 0)) - removed)
+
+
+def _summary_search_payload(
+    db: Session, ctx: RequestContext, q: str, page: int, page_size: int
+) -> dict[str, Any]:
+    """Build the ``summary_results``/``summary_total`` pair for issue #462.
+
+    Access control is ``PermissionService.get_accessible_file_ids_subquery`` —
+    the same authority every owner-scoped listing uses — applied inside
+    ``search_summaries`` itself; this function does not re-derive visibility.
+
+    Masking uses the REQUESTING user's policy (the read-surface rule from #85,
+    the same subject the summary-detail endpoint already resolves) and fails
+    CLOSED: a detector outage feeding one of the caller's enabled categories
+    withholds these results with a 503 rather than serving an unmasked
+    summary. Masking runs per-leaf, before any snippet is extracted — see
+    ``services/search/summary_search.py`` and ``redaction/summary_redaction.py``
+    for why batching leaks repeated names.
+    """
+    from app.services.redaction.config import resolve_effective_config
+    from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
+    from app.services.search.summary_search import search_summaries
+
+    cfg = resolve_effective_config(db, ctx.user.id)
+    try:
+        result = search_summaries(
+            db,
+            q,
+            ctx.user.id,
+            organization_id=ctx.org_id,
+            page=page,
+            page_size=page_size,
+            redaction_cfg=cfg,
+        )
+    except SummaryMaskingUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+    hits = result.results
+    removed = 0
+    # Abuse/DMCA: same treatment as the transcript branch above — a summary is
+    # derived from the transcript, so a takedown must hide it too.
+    if not ctx.user.is_admin and hits:
+        from app.models.media import MediaFile
+
+        uuids = [h.file_uuid for h in hits]
+        quarantined = {
+            str(row[0])
+            for row in db.query(MediaFile.uuid)
+            .filter(MediaFile.uuid.in_(uuids), MediaFile.is_quarantined.is_(True))
+            .all()
+        }
+        if quarantined:
+            before = len(hits)
+            hits = [h for h in hits if h.file_uuid not in quarantined]
+            removed = before - len(hits)
+
+    return {
+        "summary_results": [
+            {
+                "file_uuid": hit.file_uuid,
+                "file_id": hit.file_id,
+                "title": hit.title,
+                "matches": [{"key_path": m.key_path, "snippet": m.snippet} for m in hit.matches],
+            }
+            for hit in hits
+        ],
+        "summary_total": max(0, result.total - removed),
+    }
+
+
+def _document_search_payload(
+    db: Session, ctx: RequestContext, q: str, page: int, page_size: int, search_mode: str
+) -> dict[str, Any]:
+    """Build the ``document_results``/``document_total`` pair (issue #463).
+
+    Access control is the ``accessible_user_ids`` term
+    ``chunk_retrieval.search_document_chunks`` applies inside the OpenSearch
+    query itself — the same authority every other plane of this index uses.
+    Documents have no sharing model yet, so today that is always
+    ``[owner_id]`` (``services/search/indexing_service.index_document_chunks``);
+    ``update_document_access_index`` is the rewrite path a future
+    document-sharing lane will drive, and nothing here needs to change when
+    it lands.
+
+    Masking follows the same read-time-snippet pattern the transcript leg
+    uses (``HybridSearchService._redact_snippets`` /
+    ``services/search/snippet_redaction.py``) rather than a third masking
+    implementation: a parsed document is exactly as capable of containing PII
+    as a transcript, and ``Document.redaction_status`` exists for the same
+    reason ``MediaFile``'s does. Fails CLOSED, like the summary leg: a
+    detector outage feeding one of the caller's enabled categories withholds
+    these results with a 503 rather than serving unmasked document text.
+    """
+    from app.services.redaction.config import resolve_effective_config
+    from app.services.search.chunk_retrieval import search_document_chunks
+    from app.services.search.snippet_redaction import SnippetMaskingUnavailableError
+    from app.services.search.snippet_redaction import mask_snippets
+
+    result = search_document_chunks(
+        q,
+        user_id=ctx.user.id,
+        organization_id=ctx.org_id,
+        page=page,
+        page_size=page_size,
+        search_mode=search_mode,
+    )
+
+    flat_snippets = [match.snippet for hit in result.results for match in hit.matches]
+    if flat_snippets:
+        cfg = resolve_effective_config(db, ctx.user.id)
+        try:
+            masked_snippets = mask_snippets(flat_snippets, cfg)
+        except SnippetMaskingUnavailableError as e:
+            raise HTTPException(status_code=503, detail=str(e)) from e
+    else:
+        masked_snippets = []
+
+    document_results = []
+    cursor = 0
+    for hit in result.results:
+        matches = []
+        for match in hit.matches:
+            matches.append(
+                {
+                    "chunk_index": match.chunk_index,
+                    "page": match.page,
+                    "section_path": match.section_path,
+                    "snippet": masked_snippets[cursor],
+                    "score": match.score,
+                }
+            )
+            cursor += 1
+        document_results.append(
+            {
+                "file_uuid": hit.file_uuid,
+                "file_id": hit.file_id,
+                "title": hit.title,
+                "matches": matches,
+            }
+        )
+
+    return {
+        "document_results": document_results,
+        "document_total": result.total_files,
+    }
 
 
 @router.get("/suggestions")

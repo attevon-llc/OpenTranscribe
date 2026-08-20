@@ -6,7 +6,7 @@ that is wrong whenever the answer exceeds the excerpt budget — which, on a
 corpus, is most of the time. So this tier does not rank at all: it counts, with
 **OpenSearch aggregations and Postgres**, and hands the model a table.
 
-Four bounded shapes, and a worst case written down rather than discovered:
+Five bounded shapes, and a worst case written down rather than discovered:
 **one** ``size: 0`` search plus at most **one** Postgres query, whatever the
 scope. Never N searches, never a per-file LLM call.
 
@@ -14,8 +14,9 @@ scope. Never N searches, never a per-file LLM call.
 |---|---|
 | ``count_files`` | ``size: 0`` phrase filter + ``terms(file_uuid)`` |
 | ``list_files`` | the same body; the bucket keys are the answer |
-| ``speaker_facet`` | the same body + ``terms(speakers)`` × ``terms(file_uuid)`` |
+| ``speaker_facet`` | the same body + ``terms(speakers)`` × ``terms(file_uuid)`` — attendance |
 | ``count_events`` | **Postgres** ``regexp_count`` over ``transcript_segment.text`` |
+| ``speaker_stats`` (W2.4, flag-gated) | **Postgres** ``file_facts.facts['speakers']`` — talk time, not attendance |
 
 ## Three constraints that are not negotiable
 
@@ -65,7 +66,19 @@ SHAPE_COUNT_FILES = "count_files"
 SHAPE_LIST_FILES = "list_files"
 SHAPE_SPEAKER_FACET = "speaker_facet"
 SHAPE_COUNT_EVENTS = "count_events"
-SHAPES = (SHAPE_COUNT_FILES, SHAPE_LIST_FILES, SHAPE_SPEAKER_FACET, SHAPE_COUNT_EVENTS)
+#: W2.4. Exact per-speaker talk time from ``file_facts.facts['speakers']`` —
+#: Postgres, like ``count_events``, and for the same reason: this is a
+#: "how much" question about something already computed at ingest, not a
+#: search. Distinct from ``SHAPE_SPEAKER_FACET``, which answers "who attended"
+#: (session/title tally), never "who talked".
+SHAPE_SPEAKER_STATS = "speaker_stats"
+SHAPES = (
+    SHAPE_COUNT_FILES,
+    SHAPE_LIST_FILES,
+    SHAPE_SPEAKER_FACET,
+    SHAPE_COUNT_EVENTS,
+    SHAPE_SPEAKER_STATS,
+)
 
 #: Bucket ceiling. Deliberately above :data:`app.core.constants.CHAT_MAX_SCOPE_FILES`
 #: (500) so a full-scope aggregation can never be truncated by this number — and
@@ -193,6 +206,11 @@ class AggregationResult:
     file_titles: tuple[str, ...] = ()
     speaker: str | None = None
     speaker_sessions: int | None = None
+    #: W2.4, ``SHAPE_SPEAKER_STATS`` only: the named speaker's total talk time
+    #: in seconds. A separate field from ``speaker_sessions`` — sessions and
+    #: seconds are different units and conflating them is exactly the bug this
+    #: shape exists to fix (attendance vs. participation).
+    speaker_seconds: float | None = None
     #: Facet buckets as ``(key, n)``, already sorted. Rendered into the table.
     rows: tuple[tuple[str, int], ...] = ()
     coverage: dict[str, Any] = field(default_factory=dict)
@@ -259,6 +277,16 @@ def choose_shape(route: Route) -> str | None:
     number from the wrong one is indistinguishable from a right one.
     """
     signals = set(route.signals)
+    # Checked FIRST: "who talked the most" also satisfies `who-most`'s generic
+    # "the most" shape (see router.py's `_AGGREGATE_HEADS_STANDALONE`), so both
+    # signals can be present at once. `who-talked-most` wins — a talk-time
+    # question must not be answered by the attendance mechanism. When the
+    # feature is flag-disabled, `answer_aggregation` falls back to whatever
+    # this function would have returned with that signal removed, which is
+    # what keeps the flag-off behaviour byte-identical to before this shape
+    # existed.
+    if "who-talked-most" in signals:
+        return SHAPE_SPEAKER_STATS
     if signals & {"which-speakers", "who-most"}:
         return SHAPE_SPEAKER_FACET
     if signals & {"which-plural", "list-all", "every-single"}:

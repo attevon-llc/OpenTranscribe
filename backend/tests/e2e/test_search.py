@@ -186,6 +186,49 @@ class TestSearchExecution:
                 )
 
 
+class TestSearchResultType:
+    """Result-type toggle (issue #462: transcripts vs summaries)."""
+
+    def test_summaries_tab_switches_view_and_updates_url(self, search_page: Page):
+        """Switching to the Summaries tab updates the URL and renders an outcome.
+
+        Read-only: this never creates or deletes anything, so no data-hygiene
+        skip/cleanup is needed. Result content is corpus-dependent (whether any
+        file has a generated summary matching the query), so this asserts the
+        page reaches a well-formed outcome state rather than a specific hit —
+        same pattern as `test_nonsense_query_leaves_welcome_state`.
+        """
+        _run_search(search_page, KNOWN_QUERY)
+        # Kept deliberately: the next statements are `.count()`-based, which does
+        # not auto-wait (issue #431's pattern, repeated throughout this module).
+        search_page.wait_for_timeout(2000)
+
+        toggle = search_page.locator(".result-type-toggle")
+        expect(toggle).to_be_visible(timeout=5000)
+
+        summaries_tab = toggle.get_by_role("tab", name="Summaries")
+        summaries_tab.click()
+        search_page.wait_for_load_state("networkidle")
+        search_page.wait_for_timeout(1500)
+
+        assert "type=summaries" in search_page.url
+
+        # Summary hits render as a sibling of .results-list, never inside it —
+        # the invariant `.results-list > *` (above) protects. Either an outcome
+        # (summary-results-list) or the empty state is a well-formed result;
+        # .results-list itself must NOT be what's showing for this tab.
+        outcome = search_page.locator(".summary-results-list, .state-container")
+        expect(outcome.first).to_be_visible(timeout=10000)
+        assert search_page.locator(".results-list").count() == 0
+
+        # Switching back returns to the transcript view and drops the URL param.
+        transcripts_tab = toggle.get_by_role("tab", name="Transcripts")
+        transcripts_tab.click()
+        search_page.wait_for_load_state("networkidle")
+        search_page.wait_for_timeout(1500)
+        assert "type=summaries" not in search_page.url
+
+
 class TestSearchControls:
     """Result-area controls (only rendered once a search ran)."""
 

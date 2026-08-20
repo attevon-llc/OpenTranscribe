@@ -53,8 +53,26 @@ existing streaming call is the final reduce, which means:
 ## Assembly is concatenation-only
 
 Same rule as `prompting.py` and for the same reason: a recording title
-containing ``{evil}`` would raise or interpolate under `str.format`. Every value
-that reaches a prompt here goes through `prompting._sanitize_attribute` first.
+containing ``{evil}`` would raise or interpolate under `str.format`.
+
+⚠️ **This section used to claim every value reaching a prompt here went
+through ``prompting._sanitize_attribute`` first. That was false, and the gap
+was a real cross-user prompt-injection surface.** Per-file titles and digests
+in the listed-recordings section always went through it — but the CORPUS
+HEADER's speaker roster and recurring-keyphrase list (`_corpus_header`) were
+interpolated into the ``<overview>`` block completely unsanitized. Speaker
+display names are OWNER-controlled on a shared recording, so on a
+multi-tenant deployment a name containing `` </overview><synthesis> `` was
+attacker-controlled text landing, unescaped, in the highest-trust part of the
+prompt the model is told to treat as authoritative (base rule 12).
+
+Fixed: the roster and keyphrases now go through
+``prompting._sanitize_body_text`` — the BODY-safe sanitizer, not the
+attribute one. That distinction matters here specifically: the attribute
+sanitizer caps at 120 chars, which is fine for one title but would silently
+truncate a roster of a dozen names or a keyphrase list mid-render if applied
+per-block instead of per-value. Per-file titles and digests in the listed
+section keep using ``_sanitize_attribute``, unchanged.
 """
 
 from __future__ import annotations
@@ -194,7 +212,77 @@ def build_file_summaries(db, digests, *, masked_text: dict[int, str]) -> list[Fi
     return summaries
 
 
-def scope_digest_hits(db, file_uuids: list[str], *, sections_per_file: int = 1) -> list:
+class DigestScopeHits(list):
+    """The map's hits, PLUS the coverage of the map itself.
+
+    A ``list`` subclass rather than a ``(hits, coverage)`` tuple: ``service.py``'s call
+    site (``map_hits = scope_digest_hits(...)``, then ``if map_hits:`` and
+    ``mask_digests(session_scope, map_hits, ...)``) is outside this change's file set and
+    already treats the return value as a plain list. A tuple would silently break that
+    call — iterating it, or truthiness-testing it, would see the ``(list, dict)`` pair
+    instead of the hits. Subclassing keeps every existing use (truthiness, iteration,
+    ``len()``, equality against a bare ``[]``) working unmodified while making
+    ``coverage`` available to a caller that wants it.
+    """
+
+    def __init__(self, hits: list, coverage: dict[str, int]) -> None:
+        super().__init__(hits)
+        self.coverage = coverage
+
+
+#: SystemSettings key for the #464 tiering flag, resolved as
+#: ``ChatSettings.map_tier_summaries`` (``services/chat/settings.py``) — this
+#: constant exists only so callers that read the raw key (tests, admin tooling)
+#: don't have to spell it twice.
+MAP_TIER_SUMMARIES_SETTING_KEY = "chat.rag.map_tier_summaries"
+
+
+def _summary_is_fresh(
+    summary_status: Any, summary_data: Any, digest_fingerprint: str | None
+) -> bool:
+    """Whether a file's LLM summary is trustworthy enough to replace its digest.
+
+    **Mismatch OR absent fingerprint ⇒ stale ⇒ the caller falls back to the
+    digest.** A summary generated before ``tasks/summarization.py`` started
+    stamping ``metadata.source_fingerprint`` (every summary that predates #464)
+    therefore self-heals to the digest tier instead of being trusted on faith —
+    a stale summary silently describing a transcript that has since been
+    edited, re-diarized, or had a speaker renamed is worse than no summary at
+    all, because unlike an absent one it *looks* authoritative.
+
+    ``digest_fingerprint`` is ``file_facts.source_fingerprint``, computed by the
+    exact same ``ingest_artifacts.service.source_fingerprint`` function over the
+    exact same ordered-segment shape — the one automatically-current freshness
+    baseline available without a second stored copy of "when was this last
+    generated".
+    """
+    if summary_status != "completed" or not summary_data or not digest_fingerprint:
+        return False
+    metadata = summary_data.get("metadata") or {}
+    stored_fingerprint = metadata.get("source_fingerprint")
+    return bool(stored_fingerprint) and stored_fingerprint == digest_fingerprint
+
+
+def _summary_highlight_text(summary_data: dict[str, Any]) -> str:
+    """The prose to represent a file by in the map tier.
+
+    ``brief_summary`` is preferred over ``bluf`` when both exist — it is
+    normally the fuller paragraph, and the map already renders one entry per
+    file rather than a one-line bottom-line. Custom prompts are validated for
+    NOTHING (``llm_service._parse_summary_response``'s own docstring), so
+    neither key is guaranteed; falling through to ``""`` is what makes an
+    unusable summary shape act exactly like an absent one to the caller.
+    """
+    return str(summary_data.get("brief_summary") or summary_data.get("bluf") or "").strip()
+
+
+def scope_digest_hits(
+    db,
+    file_uuids: list[str],
+    *,
+    sections_per_file: int = 1,
+    use_summaries: bool = False,
+) -> DigestScopeHits:
     """One digest per file **for every file in scope** — the actual MAP step.
 
     ⚠️ **This is not the ranked digest leg, and the difference is a measured
@@ -213,36 +301,133 @@ def scope_digest_hits(db, file_uuids: list[str], *, sections_per_file: int = 1) 
     *same* ``redactor.mask_digests`` path as the ranked leg. A second masking
     implementation for the same text is how a fail-closed contract drifts.
 
+    ⚠️ **Excludes quarantined files, unconditionally.** ``file_uuids`` is trusted
+    scope by contract (see above) and for a bounded, explicitly-resolved scope
+    that is already quarantine-clean (``context_resolver._visible_files_query``
+    excludes one for every caller, admin included). But this function is also
+    reachable with a scope resolved for a DIFFERENT permission profile than the
+    caller who eventually reads the map, and re-deriving that agreement here —
+    rather than trusting every caller to have already enforced it — is what
+    keeps this rule from silently drifting out of step the way
+    ``service._drop_quarantined_hits``'s docstring once claimed it could not:
+    the ranked digest leg (``retrieve_digests``) is dropped at phase 3.5 and,
+    without this filter, the MAP leg here would serve the same file's digest
+    sections regardless. Filtering by predicate rather than a second post-fetch
+    matches ``_accessible_scoped_files``'s approach in ``aggregation_service.py``.
+
+    ⚠️ **Outer join, not inner.** A file completed before ``file_facts`` (v390)
+    existed — or one the periodic backfill (``tasks/search_maintenance_task``)
+    has not reached yet — has no ``FileFacts`` row at all. An INNER JOIN made
+    such a file vanish from the map with no signal: not "covered with an empty
+    digest", just silently absent, which is indistinguishable from the file
+    never having been in scope. The outer join finds the file and reports it in
+    ``coverage["files_without_artifacts"]`` instead.
+
+    ⚠️ **Tiering (#464, flag ``chat.rag.map_tier_summaries``, coded default
+    OFF).** When ``use_summaries`` is True, a file whose LLM summary is FRESH
+    (:func:`_summary_is_fresh`) contributes a summary-derived hit instead of a
+    digest section — one file, one hit, one better-written paragraph rather
+    than ``sections_per_file`` extractive sections. Absent, unconfigured,
+    failed, or **stale** (fingerprint mismatch or missing) summaries fall back
+    to the digest exactly as before; the flag can only ever ADD a hit shape,
+    never remove the digest fallback's coverage guarantee. With the flag off —
+    the default — this function's query and output are byte-identical to
+    before #464.
+
+    The summary hit's ``digest_section`` is set to ``len(sections)`` — one
+    PAST the file's last real digest section index — deliberately, not to a
+    real section number. Downstream, ``mask_digests``/``redactor._gather``
+    re-masks every hit this function returns through the digest plane's
+    provenance lookup (``_digest_sentences``), which matches a hit's
+    ``digest_section`` against ``file_facts.digest["sections"][i]["index"]``.
+    An out-of-range index can never coincidentally match a real section — so
+    provenance resolution declines for a summary hit exactly as it does for
+    any digest whose provenance cannot be resolved, and masking falls through
+    to that path's existing, already fail-closed-safe inline fallback rather
+    than either (a) matching a real section and substituting the WRONG file
+    content, or (b) needing a second "this hit is pre-masked, skip me" contract
+    plumbed through ``redactor.py`` and ``ChunkHit`` — a real change, and one
+    outside this module.
+
     Args:
         db: Session.
         file_uuids: The resolved scope. Bounded — an unbounded scope cannot be
             mapped over and must use the ranked leg instead.
         sections_per_file: Leading digest sections per file. One is usually
             enough for a collection view and keeps the block inside its budget.
+        use_summaries: Resolved ``ChatSettings.map_tier_summaries``. ``False`` —
+            the default — reproduces pre-#464 behaviour exactly.
 
     Returns:
-        ``ChunkHit``s carrying ``digest_section``, in scope order.
+        A :class:`DigestScopeHits` — behaves as the list of ``ChunkHit``s (carrying
+        ``digest_section``, in scope order) it always was, with a ``.coverage`` dict
+        attached: ``coverage["files_without_artifacts"]`` counts files in scope with no
+        ``file_facts`` row — counted, never silently dropped. ``coverage["summary_hits"]``
+        (present only when ``use_summaries`` is True) counts files represented by a fresh
+        summary instead of their digest.
     """
     if not file_uuids:
-        return []
+        return DigestScopeHits([], {"files_without_artifacts": 0})
     from app.models.file_facts import FileFacts
     from app.models.media import MediaFile
     from app.services.search.chunk_retrieval import ChunkHit
 
+    columns: list[Any] = [MediaFile.id, MediaFile.uuid, MediaFile.title, FileFacts.digest]
+    if use_summaries:
+        # Only requested when the flag is set: keeps the flag-off query — and
+        # every existing mock of it — byte-identical to before #464.
+        columns += [FileFacts.source_fingerprint, MediaFile.summary_status, MediaFile.summary_data]
+
     try:
         rows = (
-            db.query(MediaFile.id, MediaFile.uuid, MediaFile.title, FileFacts.digest)
-            .join(FileFacts, FileFacts.media_file_id == MediaFile.id)
+            db.query(*columns)
+            .outerjoin(FileFacts, FileFacts.media_file_id == MediaFile.id)
             .filter(MediaFile.uuid.in_(list(file_uuids)))
+            .filter(MediaFile.is_quarantined.is_(False))
             .all()
         )
     except Exception:  # noqa: BLE001 — a missing map degrades the answer, never breaks it
         logger.exception("Could not read file_facts for the scope map")
-        return []
+        return DigestScopeHits([], {"files_without_artifacts": 0})
 
     hits: list[Any] = []
-    for file_id, uuid, title, digest in rows:
-        for section in (digest or {}).get("sections", [])[:sections_per_file]:
+    files_without_artifacts = 0
+    summary_hits = 0
+    for row in rows:
+        if use_summaries:
+            file_id, uuid, title, digest, fingerprint, summary_status, summary_data = row
+        else:
+            file_id, uuid, title, digest = row
+            fingerprint = summary_status = summary_data = None
+
+        if digest is None:
+            files_without_artifacts += 1
+            continue
+
+        sections = (digest or {}).get("sections", [])
+
+        if use_summaries and _summary_is_fresh(summary_status, summary_data, fingerprint):
+            text = _summary_highlight_text(summary_data)
+            if text:
+                hits.append(
+                    ChunkHit(
+                        file_uuid=str(uuid),
+                        file_id=int(file_id),
+                        chunk_index=-1,
+                        content=text,
+                        title=str(title or ""),
+                        start_time=0.0,
+                        end_time=None,
+                        digest_section=len(sections),
+                    )
+                )
+                summary_hits += 1
+                continue
+            # An empty/unusable summary shape acts like an absent one — fall
+            # through to the digest below rather than contributing nothing for
+            # a file the digest tier can still cover.
+
+        for section in sections[:sections_per_file]:
             hits.append(
                 ChunkHit(
                     file_uuid=str(uuid),
@@ -255,7 +440,11 @@ def scope_digest_hits(db, file_uuids: list[str], *, sections_per_file: int = 1) 
                     digest_section=int(section.get("index", 0)),
                 )
             )
-    return hits
+
+    coverage = {"files_without_artifacts": files_without_artifacts}
+    if use_summaries:
+        coverage["summary_hits"] = summary_hits
+    return DigestScopeHits(hits, coverage)
 
 
 def _load_facts(db, file_ids: list[int]) -> dict[str, dict[str, Any]]:
@@ -275,18 +464,31 @@ def _load_facts(db, file_ids: list[int]) -> dict[str, dict[str, Any]]:
 
 
 def _corpus_header(summaries: list[FileSummary], files_in_scope: int = 0) -> list[str]:
-    """The facts that are true of the whole scope, and are exact."""
+    """The facts that are true of the whole scope, and are exact.
+
+    The roster and keyphrase list are sanitized with
+    ``prompting._sanitize_body_text`` — NOT ``_sanitize_attribute`` — because
+    speaker display names are OWNER-controlled on a shared recording: the
+    person who named "Dana" is not necessarily the person chatting, so an
+    unescaped ``</overview><synthesis>`` in a display name would be cross-user
+    prompt injection into the highest-trust block the prompt assembles. See
+    the module docstring's "Assembly is concatenation-only" section for why
+    this is the body-safe sanitizer and not the attribute one.
+    """
+    from app.services.chat.prompting import _sanitize_body_text
+
     dates = sorted(s.recorded_at for s in summaries if s.recorded_at)
     total_seconds = sum(float(s.duration or 0.0) for s in summaries)
     roster: dict[str, None] = {}
     for summary in summaries:
         for name in summary.speakers:
-            roster.setdefault(name, None)
+            roster.setdefault(_sanitize_body_text(name), None)
 
     counts: dict[str, int] = {}
     for summary in summaries:
         for phrase in summary.keyphrases:
-            counts[phrase] = counts.get(phrase, 0) + 1
+            safe_phrase = _sanitize_body_text(phrase)
+            counts[safe_phrase] = counts.get(safe_phrase, 0) + 1
     # Recurring means recurring: a phrase from one recording is that recording's
     # topic, not the collection's.
     recurring = sorted(

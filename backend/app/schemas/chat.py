@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 from typing import Literal
 
@@ -37,6 +38,44 @@ def _validate_uuid_list(values: list[str]) -> list[str]:
         if not _UUID_RE.match(value):
             raise ValueError(f"Invalid UUID: {value!r}")
     return values
+
+
+class ChatWarningCode(StrEnum):
+    """Codes a ``warning`` SSE frame's ``code`` field may carry (issue #52+).
+
+    Must mirror `frontend/src/lib/types/chat.ts`'s ``ChatWarningCode`` union
+    exactly — a code present on only one side means either the server reports
+    a problem nobody ever sees (missing from the TS union, silently dropped by
+    the client) or the client claims to handle a code the server never sends.
+    `tests/unit/test_chat_sse_contract.py` checks both directions.
+
+    `services/chat/service.py` currently builds ``warning`` frames as plain
+    dicts with a literal string ``code``, not by referencing this enum — this
+    is the canonical list new callers should read from rather than inventing
+    a new string, not (yet) a type the frame payload is constructed through.
+    """
+
+    CONTEXT_DROPPED = "context_dropped"
+    NO_CONTEXT = "no_context"
+    #: The chunk-plane search itself raised or had no OpenSearch client,
+    #: distinct from `NO_CONTEXT` where the search ran and genuinely found
+    #: nothing (issue #438's open half — landed on `frontend/src/lib/types/
+    #: chat.ts` and in `services/search/chunk_retrieval.py` while this enum
+    #: was being written; added here so the two sides agree).
+    RETRIEVAL_FAILED = "retrieval_failed"
+    UNSUPPORTED_LANGUAGE = "unsupported_language"
+    #: A speaker filter matched more than one candidate and could not be
+    #: resolved to a single person without asking (Wave 2; no emitter yet).
+    AMBIGUOUS_SPEAKER = "ambiguous_speaker"
+    #: A recurrence/trend block was requested but could not be produced for
+    #: this scope (Wave 2; no emitter yet).
+    RECURRENCE_UNAVAILABLE = "recurrence_unavailable"
+    #: The router's query plan could not be built or failed to execute, and
+    #: the turn fell back to an unplanned answer (Wave 2; no emitter yet).
+    PLAN_FAILED = "plan_failed"
+    #: The question's detected language did not match what the router
+    #: expected/could route with confidence (Wave 2; no emitter yet).
+    ROUTER_LANGUAGE_UNMATCHED = "router_language_unmatched"
 
 
 class ChatScope(BaseModel):
@@ -123,19 +162,63 @@ class ConversationUpdate(BaseModel):
 
 
 class Citation(BaseModel):
-    """One retrieved transcript excerpt the answer may reference as ``[n]``.
+    """One retrieved excerpt the answer may reference as ``[n]`` — the FULL union
+    across every citation kind the RAG pipeline can produce (issue #464 amendment a).
+
+    ⚠️ **Widened deliberately, ALL AT ONCE, rather than kind by kind.** Pydantic
+    v2 silently DROPS a dict key that is not a declared field on validation (no
+    ``extra="forbid"`` here, by the repo's own no-aliases-anywhere convention) —
+    and ``ChatMessageOut.citations`` validates straight from the persisted
+    ``chat_message.citations`` JSONB column (``models/chat.py``,
+    ``Mapped[list | None]``) every time a conversation is reloaded. Before this
+    widening, ``chat/citations.py.build_citation`` already put ``kind`` and
+    ``digest_section`` into that dict at STREAM time (`KIND_CHUNK` /
+    `KIND_DIGEST`, ``chunk.source.digest_section``) and both survived the SSE
+    frame — but neither field existed here, so both were silently gone the
+    moment the SAME message was read back after a reload: a digest citation the
+    user saw correctly labelled mid-stream rendered as an ordinary quote after
+    a refresh, with no error anywhere. A later lane's document-plane citations
+    (``page``/``section_path``/``char_start``/``char_end``, #362/#403 Stage 6)
+    reuse this union rather than re-triggering the same silent-drop bug and
+    re-migrating every already-persisted message a second time.
+
+    ``kind`` values in play: ``"chunk"`` (a transcript speech turn — the
+    default, matching every citation minted before this field existed),
+    ``"digest"`` (extractive prose spanning several turns — never a quote),
+    ``"summary"`` (issue #464 — LLM-generated prose about the recording; a
+    LABELLED INTERPRETATION, never a quote, and never attributed to a
+    speaker). A later lane is expected to add ``"document"`` and a
+    no-timestamp ``"recurrence"`` kind onto this same field.
 
     ``snippet`` is stored/returned post-masking, matching what was sent to the LLM.
     """
 
     id: int
+    #: See the kind list in the class docstring. Untyped ``str`` rather than a
+    #: ``Literal``/enum on purpose: a new kind added by a later lane, in a file
+    #: outside this one, must not need an edit here to stay valid.
+    kind: str = "chunk"
     file_uuid: str
     title: str = ""
     chunk_index: int = 0
-    start_time: float = 0.0
+    #: ``None`` for a kind with no natural single timestamp (a future
+    #: multi-file ``"recurrence"`` citation, chiefly) — the absence is a first-
+    #: class case here for the same reason the frontend ``ChatSource`` type
+    #: makes it optional, not a ``0`` sentinel a client would render as 0:00.
+    start_time: float | None = 0.0
     end_time: float | None = None
     speaker: str | None = None
     snippet: str = ""
+    #: Set for ``kind in ("digest", "summary")`` — which extractive section (or,
+    #: for a summary citation, the sentinel index ``chat/mapreduce.
+    #: scope_digest_hits`` uses) the citation draws from. ``None`` for a chunk.
+    digest_section: int | None = None
+    #: Document-plane fields (a later lane, #362/#403 Stage 6). ``None`` for
+    #: every kind this lane emits.
+    page: int | None = None
+    section_path: str | None = None
+    char_start: int | None = None
+    char_end: int | None = None
 
 
 class ChatMessageOut(BaseModel):
@@ -305,6 +388,9 @@ class ChatAdminSettings(BaseModel):
     messages_per_hour: int = Field(120, ge=1, le=10000)
     max_concurrent_streams: int = Field(2, ge=1, le=20)
     retention_days: int = Field(0, ge=0, le=3650)
+    speaker_facet_content_scope: bool = False
+    speaker_stats_enabled: bool = False
+    map_tier_summaries: bool = False
 
 
 class ChatAdminSettingsUpdate(BaseModel):
@@ -321,3 +407,6 @@ class ChatAdminSettingsUpdate(BaseModel):
     messages_per_hour: int | None = Field(default=None, ge=1, le=10000)
     max_concurrent_streams: int | None = Field(default=None, ge=1, le=20)
     retention_days: int | None = Field(default=None, ge=0, le=3650)
+    speaker_facet_content_scope: bool | None = None
+    speaker_stats_enabled: bool | None = None
+    map_tier_summaries: bool | None = None

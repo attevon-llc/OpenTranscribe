@@ -136,13 +136,23 @@ empty set and got **every snippet on every page verbatim**. Four things about th
   Withholding the previews instead (as the fail-closed branch does) was rejected: that branch
   exists for when we *cannot* mask, not when masking is merely slow, and a search UI with no
   previews is the feature removed rather than a trade.
-  - ⚠️ **The response cache does not key on the redaction policy**, so for up to
-    `SEARCH_CACHE_TTL_SECONDS` after a user enables masking, queries they had already run
-    still return the previously cached unmasked snippets. Pre-existing (it applied to
-    profanity identically) and bounded, but `redaction/export_policy.py` argues the general
-    case — a cached artifact must name the policy it was rendered under — and this cache
-    does not. Fixing it means resolving the config *before* the cache lookup and folding a
-    policy fingerprint into `_make_cache_key`.
+  - **FIXED: the response cache keys on the redaction policy.** It used to key only on
+    `user_id`, so for up to `SEARCH_CACHE_TTL_SECONDS` after a user enabled masking, queries
+    they had already run still returned the previously cached unmasked snippets — the same
+    class of leak `redaction/export_policy.py` argues in general (a cached artifact must name
+    the policy it was rendered under). `HybridSearchService.search` now resolves the config
+    via `_resolve_redaction_config_for_cache` **before** the cache lookup — not inside
+    `_redact_snippets`, which used to run only after a cache miss — and folds
+    `_redaction_policy_fingerprint(cfg)` into `_make_cache_key` as `redaction_policy`. The
+    fingerprint covers only the fields that can move `mask_snippets`'s output on this surface
+    (`enabled_categories & MASKABLE_CATEGORIES`, `pii_entities`, `custom_words`, `allowlist`)
+    — `toxicity_threshold` and `style` are excluded because neither can change a rendered
+    snippet here: `toxicity` has no maskable spans on this path, and `mask_snippets` always
+    forces `style="label"` regardless of the user's own preference. An unresolvable config
+    gets its own fixed `"unresolvable"` bucket so it can never collide with a real policy's
+    fingerprint. `cfg` is resolved exactly ONCE per request and passed into `_redact_snippets`
+    (now a required third parameter) rather than re-resolved there, so the config that decided
+    the cache key is provably the config that did the masking.
   - The first masked search in a fresh API process pays the **~7-10 s Presidio build** unless
     `redaction/warmup.py` already ran, and that warm-up's gate is evaluated at startup — so a
     user who enables redaction on a process that started with it off pays it once. Measured

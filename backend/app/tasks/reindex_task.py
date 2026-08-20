@@ -102,13 +102,15 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
     # Batch-fetch all speakers for this file (avoid N+1 queries)
     speaker_ids = {seg.speaker_id for seg in segments if seg.speaker_id}
     speakers_map: dict[int, str] = {}
+    profile_map: dict[int, int | None] = {}
     if speaker_ids:
         spk_rows = (
-            db.query(Speaker.id, Speaker.name, Speaker.display_name)
+            db.query(Speaker.id, Speaker.name, Speaker.display_name, Speaker.profile_id)
             .filter(Speaker.id.in_(speaker_ids))
             .all()
         )
         speakers_map = {r.id: r.display_name or r.name or "Unknown" for r in spk_rows}
+        profile_map = {r.id: r.profile_id for r in spk_rows}
 
     # Convert ORM objects to dicts
     segment_dicts = []
@@ -120,6 +122,13 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
             "text": seg.text or "",
             "speaker": speaker_name,
         }
+        # Same only-when-known convention as `chunking_service._make_chunk`: a
+        # segment with no resolved Speaker row carries neither key at all.
+        if seg.speaker_id:
+            seg_dict["speaker_id"] = seg.speaker_id
+            profile_id = profile_map.get(seg.speaker_id)
+            if profile_id is not None:
+                seg_dict["profile_id"] = profile_id
         if seg.words:
             seg_dict["words"] = seg.words  # Already a list of dicts from JSONB
         segment_dicts.append(seg_dict)

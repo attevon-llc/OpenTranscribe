@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from dataclasses import field
 from typing import Any
 
 from app.core.config import settings
@@ -57,12 +58,47 @@ class ChunkHit:
     language: str = ""
     #: Section number for a digest document; ``None`` for a transcript chunk.
     digest_section: int | None = None
+    #: ``"media"`` (default) or ``"document"`` — which table ``file_id`` addresses.
+    #: **Load-bearing, not descriptive.** ``Document.id`` and ``MediaFile.id`` are
+    #: independent SERIAL sequences that WILL collide in any real deployment (both
+    #: get written into the same ``file_id`` index field), so any code that queries
+    #: a table by ``chunk.file_id`` — masking chief among them
+    #: (``services/chat/redactor.py``) — must dispatch on this field FIRST and never
+    #: infer the source from "the MediaFile lookup returned None". Populated from the
+    #: index document's ``doc_type`` (``document_chunk`` → ``"document"``, anything
+    #: else → ``"media"``) at construction time, never guessed downstream.
+    source_kind: str = "media"
+    #: 1-based page number a document chunk falls on, or ``None`` for a
+    #: transcript chunk/digest (no page concept) or a document chunk whose
+    #: source format has no pages. **Must round-trip through the cache** —
+    #: see the note on ``to_cache_dict``/``from_cache_dict`` below.
+    page: int | None = None
+    #: Heading breadcrumb a document chunk falls under (``["Chapter 2", "2.1
+    #: Scope"]``), empty for anything that is not a document chunk.
+    section_path: list[str] = field(default_factory=list)
+    #: Character offsets into the parsed document's full text. ``None`` for
+    #: anything that is not a document chunk.
+    char_start: int | None = None
+    char_end: int | None = None
 
     @property
     def is_digest(self) -> bool:
         return self.digest_section is not None
 
+    @property
+    def is_document(self) -> bool:
+        return self.source_kind == "document"
+
     def to_cache_dict(self) -> dict[str, Any]:
+        """Serialize for the Redis retrieval cache.
+
+        ⚠️ **``page``/``section_path``/``char_start``/``char_end`` MUST stay
+        here and in :meth:`from_cache_dict`, in lockstep with the ``_source``
+        allowlist in :func:`_build_body`.** Drop any one of the three and a
+        document citation renders correctly on a cache MISS (fresh from
+        OpenSearch) and silently loses its page/section on a cache HIT — an
+        intermittent bug that looks like a frontend rendering defect and isn't.
+        """
         return {
             "file_uuid": self.file_uuid,
             "file_id": self.file_id,
@@ -74,11 +110,19 @@ class ChunkHit:
             "end_time": self.end_time,
             "score": self.score,
             "digest_section": self.digest_section,
+            "source_kind": self.source_kind,
+            "page": self.page,
+            "section_path": self.section_path,
+            "char_start": self.char_start,
+            "char_end": self.char_end,
         }
 
     @classmethod
     def from_cache_dict(cls, raw: dict[str, Any]) -> ChunkHit:
         section = raw.get("digest_section")
+        page = raw.get("page")
+        char_start = raw.get("char_start")
+        char_end = raw.get("char_end")
         return cls(
             file_uuid=str(raw.get("file_uuid", "")),
             file_id=int(raw.get("file_id", 0)),
@@ -90,6 +134,11 @@ class ChunkHit:
             end_time=raw.get("end_time"),
             score=float(raw.get("score", 0.0)),
             digest_section=None if section is None else int(section),
+            source_kind=str(raw.get("source_kind") or "media"),
+            page=None if page is None else int(page),
+            section_path=list(raw.get("section_path") or []),
+            char_start=None if char_start is None else int(char_start),
+            char_end=None if char_end is None else int(char_end),
         )
 
 
@@ -104,6 +153,8 @@ def dynamic_rrf_window(size: int) -> int:
 
 
 def _hit_to_chunk(hit: dict[str, Any]) -> ChunkHit | None:
+    from app.services.ingest_artifacts.index_mapping import DOC_TYPE_DOCUMENT_CHUNK
+
     source = hit.get("_source") or {}
     file_uuid = source.get("file_uuid")
     content = source.get("content")
@@ -120,6 +171,11 @@ def _hit_to_chunk(hit: dict[str, Any]) -> ChunkHit | None:
         end_time=source.get("end_time"),
         score=float(hit.get("_score") or 0.0),
         language=str(source.get("language") or ""),
+        source_kind="document" if source.get("doc_type") == DOC_TYPE_DOCUMENT_CHUNK else "media",
+        page=None if source.get("page") is None else int(source["page"]),
+        section_path=list(source.get("section_path") or []),
+        char_start=None if source.get("char_start") is None else int(source["char_start"]),
+        char_end=None if source.get("char_end") is None else int(source["char_end"]),
     )
 
 
@@ -155,6 +211,16 @@ def _build_body(
         "start_time",
         "end_time",
         "language",
+        "doc_type",
+        # Document-chunk fields (issue #463). Absent on a transcript chunk/digest
+        # hit, so they read back as None there — see the ChunkHit fields' own
+        # docstrings for why dropping any of these here (or from the cache
+        # round-trip) is the specific intermittent-render trap this allowlist
+        # exists to close.
+        "page",
+        "section_path",
+        "char_start",
+        "char_end",
     ]
 
     if use_neural and model_id:
@@ -199,6 +265,51 @@ def _build_body(
     }
 
 
+def _widen_to_document_plane(
+    filters: list[dict[str, Any]], speakers: list[str] | None
+) -> list[dict[str, Any]]:
+    """OR the document-chunk plane into the chunk plane :func:`_build_filters` built.
+
+    Document chunks are meant to **join** the same retrieval leg transcript
+    chunks use, never replace or fuse-rank against it as a second query — one
+    ``bool``/``should`` in place of the single ``chunk_plane_clause()`` entry
+    ``HybridSearchService._build_filters`` always appends.
+
+    ⚠️ **Speaker-filtered turns must never widen.** A document has no ``speaker``
+    field, so a speaker-scoped question ("what did Dana say about X") that
+    included the document plane would silently dilute an attributable answer
+    with unattributable text — worse than not finding it, because nothing marks
+    it as unattributable. Guarding this here, rather than trusting every caller
+    to remember, is the same defense-in-depth ``retrieve_digests`` uses by
+    simply having no ``speakers`` parameter at all; this function can't offer
+    that (transcript chunks and the speaker filter both live on this leg), so
+    it checks instead.
+
+    Args:
+        filters: The filter list ``HybridSearchService._build_filters`` returned
+            — must still contain its ``chunk_plane_clause()`` entry unchanged.
+        speakers: The caller's speaker filter, if any.
+
+    Returns:
+        ``filters`` unchanged when ``speakers`` is truthy; otherwise a new list
+        with the chunk-plane entry replaced by an OR of it and
+        ``document_chunk_plane_clause()``.
+    """
+    if speakers:
+        return filters
+    from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
+    from app.services.ingest_artifacts.index_mapping import document_chunk_plane_clause
+
+    chunk_clause = chunk_plane_clause()
+    widened = {
+        "bool": {
+            "should": [chunk_clause, document_chunk_plane_clause()],
+            "minimum_should_match": 1,
+        }
+    }
+    return [widened if f == chunk_clause else f for f in filters]
+
+
 def retrieve_chunks(
     query: str,
     *,
@@ -209,8 +320,15 @@ def retrieve_chunks(
     size: int = 48,
     search_mode: str = "hybrid",
     fusion: FusionConfig | None = None,
+    diagnostics: dict[str, Any] | None = None,
 ) -> list[ChunkHit]:
     """Retrieve the best-matching transcript chunks for ``query``.
+
+    **Also retrieves document chunks** (issue #463), joined onto the SAME leg
+    as transcript chunks — never a second, separately-ranked query — via
+    :func:`_widen_to_document_plane`. Downstream (masking, citations) already
+    dispatches on ``ChunkHit.source_kind``/``is_document``; nothing about that
+    plumbing changes here. Suppressed automatically when ``speakers`` is set.
 
     Args:
         query: The (possibly rewritten) user question.
@@ -219,13 +337,25 @@ def retrieve_chunks(
         file_uuids: Resolved scope. ``None`` means every accessible transcript;
             an empty list means nothing matches (a scope that resolved to no files).
         speakers: Restrict to chunks spoken by these display names. Exact, because
-            chunks are speaker turns — one chunk is one person talking.
+            chunks are speaker turns — one chunk is one person talking. Also
+            gates document-chunk inclusion (see below) — a document has no
+            speaker, so any non-empty ``speakers`` excludes the document plane
+            entirely rather than returning unattributable hits.
         size: Candidate pool size to return before reranking.
         search_mode: ``hybrid`` (BM25 + vector), ``semantic``, or ``keyword``.
         fusion: Hybrid fusion strategy for **this call** (#363). None uses the
             configured default. Chat fuses over ``dynamic_rrf_window(size)``
             while the search UI always fuses over 500, so an A/B here does not
             characterise ``/api/search`` and vice versa — measure both.
+        diagnostics: Optional out-param. On any retrieval FAILURE (no client
+            configured, or the search itself raising) this is set to
+            ``{"retrieval_failed": True}`` so a caller holding an empty list can
+            tell "the search backend was down" from "nothing matched" (issue
+            #438's open half — the `no_context` warning could not yet say
+            which). Left untouched — not even set to ``False`` — on every path
+            that legitimately found nothing (blank query, an empty resolved
+            scope, or a search that genuinely returned zero hits), so its
+            ABSENCE is itself the "ordinary empty result" signal.
 
     Returns:
         Chunk hits in provider-ranked order; empty on any retrieval failure —
@@ -241,6 +371,8 @@ def retrieve_chunks(
     client = get_opensearch_client()
     if not client:
         logger.warning("Chat retrieval unavailable: no OpenSearch client")
+        if diagnostics is not None:
+            diagnostics["retrieval_failed"] = True
         return []
 
     service = HybridSearchService()
@@ -253,6 +385,7 @@ def retrieve_chunks(
         organization_id=organization_id,
         file_uuids=file_uuids,
     )
+    filters = _widen_to_document_plane(filters, speakers)
 
     _, use_neural, use_neural_query = service._generate_query_embedding(clean, search_mode)
     model_id = service._get_neural_model_id() if use_neural_query else None
@@ -270,6 +403,8 @@ def retrieve_chunks(
         )
     except Exception as exc:  # noqa: BLE001 — retrieval failure must not break chat
         logger.warning(f"Chat chunk retrieval failed: {exc}")
+        if diagnostics is not None:
+            diagnostics["retrieval_failed"] = True
         return []
 
     hits = response.get("hits", {}).get("hits", [])
@@ -452,3 +587,197 @@ def diversity_sample(hits: list[ChunkHit], *, max_per_file: int, cap: int) -> li
                 if len(selected) >= cap:
                     return selected
     return selected
+
+
+# --------------------------------------------------------------------------- #
+# Document search — the /api/search?result_type=documents|all leg (issue #463)
+# --------------------------------------------------------------------------- #
+
+#: Chunk-level candidates fetched from OpenSearch before grouping into
+#: file-level hits and paginating in Python (below). Scaled by the requested
+#: page so a deep page still has enough candidates to reach it, capped so a
+#: pathological page_size can't request an unbounded pool.
+_DOCUMENT_SEARCH_CANDIDATE_FLOOR = 100
+_DOCUMENT_SEARCH_CANDIDATE_CAP = 1000
+#: Matching chunks kept per document hit — mirrors the search UI's per-file
+#: occurrence cap in spirit; documents don't need the full snippet/highlight
+#: machinery ``HybridSearchService`` builds for the transcript leg.
+_DOCUMENT_SEARCH_MATCHES_PER_FILE = 3
+_DOCUMENT_SNIPPET_CHARS = 300
+
+
+@dataclass
+class DocumentChunkMatch:
+    """One matching chunk inside a document hit."""
+
+    chunk_index: int
+    page: int | None
+    section_path: list[str]
+    snippet: str
+    score: float
+
+
+@dataclass
+class DocumentSearchHit:
+    """A file-level document search result — ``file_id``/``file_uuid`` address
+    ``Document.id``/``Document.uuid``, a SEPARATE id space from ``MediaFile``
+    (see ``ChunkHit.source_kind``'s docstring). Never merge this with a
+    transcript ``SearchHitSchema`` result keyed only by a bare integer id.
+    """
+
+    file_uuid: str
+    file_id: int
+    title: str
+    matches: list[DocumentChunkMatch] = field(default_factory=list)
+
+
+@dataclass
+class DocumentSearchResult:
+    """A page of document search results."""
+
+    results: list[DocumentSearchHit] = field(default_factory=list)
+    total_results: int = 0
+    total_files: int = 0
+
+
+def _document_snippet(text: str) -> str:
+    clean = " ".join(text.split())
+    if len(clean) <= _DOCUMENT_SNIPPET_CHARS:
+        return clean
+    cut = clean[:_DOCUMENT_SNIPPET_CHARS]
+    if " " in cut:
+        cut = cut[: cut.rfind(" ")]
+    return cut + "…"
+
+
+def search_document_chunks(
+    query: str,
+    *,
+    user_id: int,
+    organization_id: int | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    search_mode: str = "hybrid",
+) -> DocumentSearchResult:
+    """Search the document-chunk plane for ``GET /api/search?result_type=documents``.
+
+    Grouped and paginated at the FILE level, same shape as the summary search
+    leg (``services/search/summary_search.py``) and the transcript leg's
+    collapsed response — never a bare list of chunk hits, which would show the
+    same document several times on one results page.
+
+    **Candidate-window pagination, not a true collapse.** A `collapse` query
+    against the RRF-fused hybrid body risks the same
+    `ArrayIndexOutOfBoundsException` `hybrid_search_service`'s module docs warn
+    about for aggregations on that pipeline shape, so this fetches a bounded
+    pool of chunk hits (already relevance-ordered by OpenSearch), groups them by
+    ``file_uuid`` in Python preserving first-seen (= best-scoring) order, and
+    paginates the resulting file list. ``total_files``/``total_results`` are
+    therefore exact **within the fetched candidate window**, not a true
+    corpus-wide count — the same trade-off ``dynamic_rrf_window`` documents for
+    chat. A page deep enough to exceed the window returns short rather than
+    wrong; widen ``_DOCUMENT_SEARCH_CANDIDATE_CAP`` if that is ever observed in
+    practice.
+
+    Access control is the same ``accessible_user_ids`` term + tenant gate every
+    other plane of this index uses — documents have no separate sharing model
+    yet (``index_document_chunks`` stamps ``accessible_user_ids: [owner_id]``
+    at index time; ``update_document_access_index`` is the rewrite path a
+    future document-sharing lane will drive).
+
+    Args:
+        query: Search text.
+        user_id: Caller — enforced via ``accessible_user_ids``.
+        organization_id: Active tenant, or None for personal scope.
+        page: 1-indexed page number, over FILES.
+        page_size: Files per page.
+        search_mode: ``hybrid`` | ``semantic`` | ``keyword``.
+
+    Returns:
+        A page of file-level hits. Empty on any failure — a broken document
+        leg must not break the rest of a combined ``result_type=all`` search.
+    """
+    from app.services.ingest_artifacts.index_mapping import document_chunk_plane_clause
+    from app.services.search.tenant_scope import org_filter_clauses
+
+    clean = (query or "").strip()
+    if not clean:
+        return DocumentSearchResult()
+
+    client = get_opensearch_client()
+    if not client:
+        logger.warning("Document search unavailable: no OpenSearch client")
+        return DocumentSearchResult()
+
+    filters: list[dict[str, Any]] = [{"terms": {"accessible_user_ids": [user_id]}}]
+    filters.extend(org_filter_clauses(organization_id))
+    filters.append(document_chunk_plane_clause())
+
+    service = HybridSearchService()
+    _, _use_neural, use_neural_query = service._generate_query_embedding(clean, search_mode)
+    model_id = service._get_neural_model_id() if use_neural_query else None
+
+    candidate_size = min(
+        _DOCUMENT_SEARCH_CANDIDATE_CAP,
+        max(_DOCUMENT_SEARCH_CANDIDATE_FLOOR, page * page_size * 10),
+    )
+    body = _build_body(
+        clean, filters, candidate_size, use_neural_query, model_id, service, search_mode
+    )
+
+    params = {}
+    if use_neural_query and model_id and search_mode != "semantic":
+        params["search_pipeline"] = ensure_fusion_pipeline(None)
+
+    try:
+        response = client.search(
+            index=settings.OPENSEARCH_CHUNKS_INDEX, body=body, params=params or None
+        )
+    except Exception as exc:  # noqa: BLE001 — a failed document leg must not break search
+        logger.warning(f"Document search failed: {exc}")
+        return DocumentSearchResult()
+
+    hits = response.get("hits", {}).get("hits", [])
+
+    by_file: dict[str, DocumentSearchHit] = {}
+    file_order: list[str] = []
+    for hit in hits:
+        source = hit.get("_source") or {}
+        file_uuid = source.get("file_uuid")
+        content = source.get("content")
+        if not file_uuid or not content:
+            continue
+        file_uuid = str(file_uuid)
+        doc_hit = by_file.get(file_uuid)
+        if doc_hit is None:
+            doc_hit = DocumentSearchHit(
+                file_uuid=file_uuid,
+                file_id=int(source.get("file_id") or 0),
+                title=str(source.get("title") or ""),
+            )
+            by_file[file_uuid] = doc_hit
+            file_order.append(file_uuid)
+        if len(doc_hit.matches) < _DOCUMENT_SEARCH_MATCHES_PER_FILE:
+            doc_hit.matches.append(
+                DocumentChunkMatch(
+                    chunk_index=int(source.get("chunk_index") or 0),
+                    page=source.get("page"),
+                    section_path=list(source.get("section_path") or []),
+                    snippet=_document_snippet(str(content)),
+                    score=float(hit.get("_score") or 0.0),
+                )
+            )
+
+    total_files = len(file_order)
+    start = max(0, (page - 1) * page_size)
+    page_uuids = file_order[start : start + page_size]
+    results = [by_file[u] for u in page_uuids]
+
+    logger.info(
+        "Document search: %d candidate chunks -> %d files (mode=%s, neural=%s)",
+        len(hits),
+        total_files,
+        search_mode,
+        bool(model_id),
+    )
+    return DocumentSearchResult(results=results, total_results=len(hits), total_files=total_files)

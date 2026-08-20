@@ -233,6 +233,20 @@ _OWNER_SCOPED: dict[str, Disposition] = {
         "vocabulary and must never be deleted with an account. Its file_tag rows are "
         "detached first: one may hang off another user's file.",
     ),
+    "document.user_id": Disposition(
+        NO_ACTION,
+        "Document",
+        _ADMIN_OWNED,
+        _GDPR_ROWS,
+        "v394 (#362). Same house rule as media_file.user_id: a document is its own "
+        "first-class row, not a media_file discriminator, so it needed its own entry "
+        "rather than riding MediaFile's. document_chunk.document_id IS ON DELETE "
+        "CASCADE, so only the document row itself needs an explicit sweep. Admin bulk-"
+        "deletes the rows (chunks cascade at the DB level, storage/OpenSearch orphans "
+        "are a cleanup-sweep concern, matching MediaFile's admin path); GDPR goes "
+        "per-document so OpenSearch chunks and the MinIO object are erased too, not "
+        "just the row.",
+    ),
 }
 
 #: Actor FKs: the row belongs to somebody else and records what THIS user did to it.

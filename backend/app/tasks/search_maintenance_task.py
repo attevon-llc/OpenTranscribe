@@ -16,6 +16,13 @@ from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 
 logger = logging.getLogger(__name__)
 
+#: Cap on how many files get a ``file_facts`` backfill dispatch per maintenance tick.
+#: Bounded so a large backlog (every file completed before v390 shipped) drains over
+#: several 6-hourly runs instead of flooding the nlp queue in one shot; unbounded
+#: dispatch is also how a beat tick becomes an outage, the same reasoning
+#: `_report_embedding_provenance` already documents for not auto-reindexing.
+FACTS_BACKFILL_BATCH_SIZE = 200
+
 
 def _get_indexed_uuids() -> set[str] | None:
     """Query OpenSearch to get all file UUIDs currently in the chunks index.
@@ -159,6 +166,73 @@ def search_index_maintenance_task() -> dict[str, Any]:
         r.delete("search_maintenance_lock")
 
 
+def _dispatch_facts_backfill(
+    db: Any, stats: dict[str, int | bool | str], *, batch_size: int = FACTS_BACKFILL_BATCH_SIZE
+) -> None:
+    """Dispatch artifact generation for completed files with no ``file_facts`` row.
+
+    Files that finished transcription before ``file_facts`` (v390, #383 Phase 2) existed
+    permanently lack it: nothing else ever revisits a COMPLETED file, so without this arm
+    the coverage map's INNER JOIN (now an outer join, see
+    ``services/chat/mapreduce.scope_digest_hits``) would keep dropping them on every
+    upgraded deployment forever, and a later "we covered every file in scope" guarantee
+    would be false on any library that predates this table.
+
+    Covers **all users** — this is server-side maintenance over the whole installation,
+    not a per-owner operation like the reindex arm above. Ordered newest-first
+    (``MediaFile.id`` descending, ids are time-ordered UUIDv7-adjacent auto-increment) so
+    a large backlog backfills the most recently completed — and most likely to be
+    actively viewed — files first.
+
+    Args:
+        db: Open session (short-lived; this function only reads and dispatches).
+        stats: The maintenance stats dict, annotated in place with
+            ``missing_facts_files`` (files found missing a row, before the batch cap) and
+            ``facts_backfill_dispatched`` (how many were actually dispatched this tick).
+        batch_size: Cap on dispatches this tick. Parameterized so tests can exercise the
+            cap without monkeypatching the module constant.
+    """
+    from sqlalchemy import exists
+    from sqlalchemy import select
+
+    from app.models.file_facts import FileFacts
+    from app.models.media import FileStatus
+    from app.models.media import MediaFile
+    from app.models.media import TranscriptSegment
+    from app.tasks.ingest_artifacts_task import dispatch_file_facts
+
+    has_segments = exists(
+        select(TranscriptSegment.id).where(TranscriptSegment.media_file_id == MediaFile.id)
+    )
+    has_facts = exists(select(FileFacts.id).where(FileFacts.media_file_id == MediaFile.id))
+
+    base_query = db.query(MediaFile.id).filter(
+        MediaFile.status == FileStatus.COMPLETED, has_segments, ~has_facts
+    )
+    # order_by(None): a COUNT does not need the ORDER BY the id list below uses —
+    # same reasoning as `utils/pagination.paginate()`.
+    stats["missing_facts_files"] = base_query.order_by(None).count()
+    stats["facts_backfill_dispatched"] = 0
+    if not stats["missing_facts_files"]:
+        return
+
+    file_ids = [
+        int(row[0]) for row in base_query.order_by(MediaFile.id.desc()).limit(batch_size).all()
+    ]
+
+    for file_id in file_ids:
+        # dispatch_file_facts already contains its own try/except — a broker hiccup on
+        # one file must not stop the rest of the batch from being dispatched.
+        dispatch_file_facts(file_id)
+    stats["facts_backfill_dispatched"] = len(file_ids)
+    logger.info(
+        "file_facts backfill: dispatched artifact generation for %d completed file(s) "
+        "with no file_facts row (batch capped at %d)",
+        len(file_ids),
+        batch_size,
+    )
+
+
 def _is_reindex_running() -> bool:
     """Check if a reindex is already in progress (any user)."""
     r = get_redis()
@@ -186,9 +260,18 @@ def _run_search_maintenance() -> dict[str, Any]:
         "indexed_files": 0,
         "unindexed_files": 0,
         "reindex_triggered": False,
+        "missing_facts_files": 0,
+        "facts_backfill_dispatched": 0,
     }
 
     try:
+        # file_facts backfill runs independent of the reindex-in-progress guard below:
+        # it dispatches to the nlp queue, never cpu, so it cannot collide with a chunk
+        # reindex, and skipping it whenever a reindex happens to be in flight would mean
+        # an upgraded library only gets backfilled on a lucky tick.
+        with session_scope() as db:
+            _dispatch_facts_backfill(db, stats)
+
         # Don't dispatch reindex if one is already running
         if _is_reindex_running():
             logger.info("Reindex already in progress, skipping maintenance dispatch")

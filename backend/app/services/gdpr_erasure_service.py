@@ -88,6 +88,7 @@ from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.models.chat import ChatConversation
 from app.models.custom_vocabulary import CustomVocabulary
+from app.models.document import Document
 from app.models.erasure import ErasureLedgerEntry
 from app.models.media import Collection
 from app.models.media import Comment
@@ -236,6 +237,36 @@ def _erase_profile_embedding(profile_uuid: str, errors: list[dict[str, Any]]) ->
         errors.append({"stage": "profile_embedding", "profile_uuid": profile_uuid, "error": str(e)})
 
 
+def _erase_document_artifacts(
+    doc_uuid: str, storage_path: str | None, errors: list[dict[str, Any]]
+) -> None:
+    """Remove one document's OpenSearch chunks and storage object. Never raises.
+
+    Same shape as ``_erase_profile_embedding``, and for the same reason: the row
+    coming out of Postgres is not erasure by itself when document text landed
+    unredacted in ``transcript_chunks`` (root CLAUDE.md's chat retrieval trap) and
+    the original bytes still sit in MinIO. Best-effort, recorded on failure —
+    mirrors ``documents.py::delete_document``'s API-path cleanup exactly, since
+    this is the same destroy operation reached from a different caller.
+    """
+    try:
+        from app.services.search.indexing_service import TranscriptIndexingService
+
+        TranscriptIndexingService().delete_transcript_chunks(doc_uuid)
+    except Exception as e:  # noqa: BLE001 — record, never abort the relational delete
+        logger.warning(f"Document chunk removal failed for {doc_uuid}: {e}")
+        errors.append({"stage": "document_chunks", "document_uuid": doc_uuid, "error": str(e)})
+
+    if storage_path:
+        try:
+            from app.services.minio_service import delete_file
+
+            delete_file(storage_path)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Document storage removal failed for {doc_uuid}: {e}")
+            errors.append({"stage": "document_storage", "document_uuid": doc_uuid, "error": str(e)})
+
+
 def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -> None:
     """Run the canonical per-file destroy for every file, accumulating counters.
 
@@ -328,6 +359,17 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
         db.query(Tag).filter(Tag.user_id == user_id).delete(synchronize_session=False)
         summary["tags_deleted"] = len(tag_ids)
 
+    # Documents (#362): per-row, like SpeakerProfile above, not bulk like Tag —
+    # each one carries OpenSearch chunks and a storage object that must be erased
+    # too, not just the row. document.user_id is NO ACTION (same house rule as
+    # media_file.user_id); document_chunk.document_id cascades at the database
+    # level, so no separate chunk-row query is needed here.
+    documents = db.query(Document).filter(Document.user_id == user_id).all()
+    for document in documents:
+        _erase_document_artifacts(str(document.uuid), document.storage_path, summary["errors"])
+        db.delete(document)
+        summary["documents_deleted"] += 1
+
     # Whatever the subject wrote on OTHER people's files. The rows on their own
     # files are already gone via purge_media_file's ORM cascade; these are the
     # ones no per-file pass can see, and both FKs are NOT NULL / NO ACTION, so
@@ -351,6 +393,7 @@ def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
         "speaker_collections_deleted": 0,
         "collections_deleted": 0,
         "tags_deleted": 0,
+        "documents_deleted": 0,
         "comments_deleted": 0,
         "tasks_deleted": 0,
         "chat_conversations_deleted": 0,

@@ -20,8 +20,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-#: Bumped when the payload's shape changes.
-FACTS_SCHEMA_VERSION = 1
+from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
+from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
+
+#: Bumped when the payload's shape changes. v2 (#W2.0): ``roster``/``speakers`` exclude
+#: the undiarized bucket and a new ``coverage`` key reports it, instead of an "Unknown
+#: Speaker" row silently appearing as a participant.
+FACTS_SCHEMA_VERSION = 2
 
 
 def _turn_stats(segments: list[dict[str, Any]]) -> tuple[int, dict[str, Any], dict[str, Any]]:
@@ -58,7 +63,7 @@ def _turn_stats(segments: list[dict[str, Any]]) -> tuple[int, dict[str, Any], di
             }
 
     for segment in segments:
-        speaker = str(segment.get("speaker") or "Unknown Speaker")
+        speaker = str(segment.get("speaker") or UNKNOWN_SPEAKER_LABEL)
         start = float(segment.get("start_time") or 0.0)
         end = float(segment.get("end_time") or 0.0)
         if speaker != current_speaker:
@@ -104,6 +109,24 @@ def build_facts(
     word_count = sum(len(str(s.get("text") or "").split()) for s in segments)
     spoken_seconds = sum(float(stats.get("total_time") or 0.0) for stats in speaker_stats.values())
 
+    # The roster and the `speakers` list both answer "who's in this" — undiarized
+    # speech is not a person, so both must exclude it rather than count "Unknown
+    # Speaker" as though it were a participant. The excluded segments are still real
+    # content (they count toward segment_count/word_count/spoken_seconds above), so
+    # this is reported, never silently dropped: `coverage["undiarized_files_excluded"]`
+    # is 1 for this file when it happened, 0 otherwise, so a caller aggregating facts
+    # across many files can sum it into an honest count of files with a gap in
+    # attribution — the same shape as the chat aggregation tier's
+    # `coverage["undated_files_excluded"]`.
+    diarized_stats = {
+        name: stats for name, stats in speaker_stats.items() if name not in UNKNOWN_SPEAKER_LABELS
+    }
+    undiarized_segment_count = sum(
+        int(stats.get("segment_count") or 0)
+        for name, stats in speaker_stats.items()
+        if name in UNKNOWN_SPEAKER_LABELS
+    )
+
     speakers: list[dict[str, Any]] = [
         {
             "name": name,
@@ -114,7 +137,7 @@ def build_facts(
             "turn_count": int(turn_by_speaker.get(name, {}).get("turn_count", 0)),
             "longest_turn": round(float(turn_by_speaker.get(name, {}).get("longest_turn", 0.0)), 2),
         }
-        for name, stats in sorted(speaker_stats.items())
+        for name, stats in sorted(diarized_stats.items())
     ]
     # Presentation order: loudest first, name as the tiebreak. Sorting a dict's keys and
     # then re-sorting by a float is two total orders composed, so the list is stable even
@@ -131,8 +154,12 @@ def build_facts(
         "word_count": word_count,
         "spoken_seconds": round(spoken_seconds, 2),
         "speaker_count": len(speakers),
-        "roster": sorted(speaker_stats),
+        "roster": sorted(diarized_stats),
         "speakers": speakers,
+        "coverage": {
+            "undiarized_files_excluded": 1 if undiarized_segment_count > 0 else 0,
+            "undiarized_segment_count": undiarized_segment_count,
+        },
         "longest_monologue": longest,
         "first_utterance_at": round(float(segments[0].get("start_time") or 0.0), 2)
         if segments

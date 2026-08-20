@@ -126,10 +126,24 @@ _AGGREGATE_HEADS_SCOPED: tuple[tuple[str, str], ...] = (
 #: the sentence also contains the word "meetings", and requiring a second marker
 #: would send it to the ranking tier, which cannot enumerate. ``which-plural``
 #: is here because the plural corpus noun is inside its own pattern.
+#: W2.4. Distinct from ``who-most`` below: "who attended the most" is about
+#: SESSIONS (a title-scoped facet tally), "who talked the most" is about TALK
+#: TIME (``file_facts.facts['speakers']``) — different mechanisms, different
+#: answers, and this repo shipped the bug of answering the second question with
+#: the first mechanism. The two patterns are allowed to both fire on the same
+#: text ("who talked the most" also satisfies ``who-most``'s generic "the
+#: most" shape) — ``aggregation.choose_shape`` gives this one priority, which
+#: is also what keeps the flag-off fallback byte-identical to the pre-existing
+#: behaviour (see ``aggregation_service.answer_aggregation``).
 _AGGREGATE_HEADS_STANDALONE: tuple[tuple[str, str], ...] = (
     ("which-plural", rf"\bwhich {_CORPUS_NOUN_PLURAL}\b"),
     ("which-speakers", r"\bwhich (?:speakers?|people|participants?|attendees?)\b"),
     ("who-most", r"\bwho\b[^?]{0,60}\bthe most\b"),
+    (
+        "who-talked-most",
+        r"\bwho\b[^?]{0,60}\b(?:talked|spoke|speaking)\s+(?:the\s+)?(?:most|longest)\b"
+        r"|\bmost\s+talk(?:ing)?\s+time\b",
+    ),
 )
 
 #: Recording-level objects. The weak summarize markers below only count when the
@@ -291,6 +305,14 @@ class Route:
     #: present in the transcript, and answering "not mentioned" from a digest is
     #: the silent-wrong-answer shape this epic keeps hitting.
     literal: bool = False
+    #: The active speaker scope this turn was asked under, exactly as passed to
+    #: :func:`route`. Carried here — not just consumed for
+    #: :func:`_apply_structure`'s digest-removal check — so a Postgres-backed
+    #: aggregation shape (``aggregation_service._run_speaker_stats``), which
+    #: never sees ``service.py``'s original ``speakers`` argument, can still
+    #: narrow a per-speaker answer to the one name already in scope with no new
+    #: parameter threaded through ``answer_aggregation``.
+    speakers: tuple[str, ...] = ()
 
     @property
     def wants_digest(self) -> bool:
@@ -515,4 +537,5 @@ def route(
         temporal=temporal,
         source=source,
         literal=literal,
+        speakers=tuple(speakers) if speakers else (),
     )

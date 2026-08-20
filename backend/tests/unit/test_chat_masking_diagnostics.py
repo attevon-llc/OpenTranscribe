@@ -47,6 +47,11 @@ def _prepare(monkeypatch, *, masked: list[MaskedChunk], retrieved: int) -> dict:
         lambda **_: RetrievalResult(chunks=[chunk.source for chunk in masked], retrieved=retrieved),
     )
     monkeypatch.setattr(chat_service, "mask_chunks", lambda *_args, **_kwargs: masked)
+    # Phase 3.5 (quarantine drop) runs a real Postgres query and this module's
+    # session factory yields `None` on purpose, to stay Postgres-free like
+    # `mask_chunks` above; see test_chat_permissions_quarantine.py for the
+    # real-database coverage of `_drop_quarantined_hits` itself.
+    monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
     # `_prepare_context` returns (masked_chunks, meta, counted, overview) since
     # Stage 4 added the counted and overview tiers. Only `meta` is under test
     # here, so the rest are discarded by name rather than by arity — a bare

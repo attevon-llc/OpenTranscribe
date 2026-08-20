@@ -117,34 +117,64 @@ recordings with no single owner. Anything layering summaries onto chat retrieval
 (#383) must pick a subject deliberately rather than inherit whichever the
 surrounding code used.
 
+**Recorded for a later phase, not built today:** chat's digest/summary tiers
+(`mask_digests`, `mapreduce.build_file_summaries`) currently follow the same
+subject as `mask_chunks` — the requesting user, deliberately, per the paragraph
+above. But unlike a turn's chunk excerpts, which pool candidates from every file
+in scope with no single owner, a digest section is always drawn from exactly
+**one** file, so "whose content is this" has the same clean answer it does for
+`tasks/summarization.py`. A later phase that strengthens chat's summary tier
+should therefore mask **per file, under that file's OWNER's policy**, for the
+egress decision — matching `llm_guard.resolve_llm_masking`'s subject rather than
+the reader's. The **reader's own** policy still governs what the model *writes*
+about that material, unconditionally, via `OutputRedactor` — egress subject and
+display subject are never the same question, and conflating them here would be
+the same mistake #402 fixed in reverse. Not built: doing this today means
+`mask_digests` resolving up to N different owners' configs within one call
+instead of one config for the whole batch, which is a real restructuring, not a
+follow-on edit.
+
 Masking **fails closed**. If the policy cannot be resolved, or a chunk cannot be
 masked, the chunk's content becomes `""` and contributes nothing — never the raw
 text. Tests in `tests/unit/test_chat_redactor.py` pin this; do not "fix" them by
 falling back to the original content.
 
-### ⚠️ Masking is to be conditional on WHERE the model runs — DECIDED, NOT YET BUILT
+### Masking is conditional on WHERE the model runs — BUILT
 
-Owner decision, 2026-08-13. A **local** model — vLLM on our own GPU — is to receive excerpt text
-unmasked: the text never leaves the machine, so masking costs recall and buys nothing. A **remote
-or cloud provider** still receives masked text, because sending unredacted PII to a third party is
-a data-egress event in a way a local inference call is not. Key that decision off the
-**provider**, never off a global setting.
+Owner decision, 2026-08-13, landed. A **local** model — vLLM/Ollama on our own GPU, or a
+`custom` OpenAI-compatible endpoint whose `base_url` resolves to loopback / RFC1918 /
+link-local / IPv6 ULA / a bare docker-compose hostname — receives excerpt text unmasked:
+the text never leaves the machine, so masking costs recall and buys nothing. A **remote or
+cloud provider** still receives masked text, because sending unredacted PII to a third party
+is a data-egress event in a way a local inference call is not. The decision is keyed off the
+**provider**, never off a global setting: `redaction.llm_guard.is_local_provider(llm.config)`
+is the ONE place that classification happens, and it **fails closed** — any ambiguity (an
+unresolvable hostname, a mixed public/private DNS answer, a provider it does not recognise)
+reads as remote, so masking still applies.
 
-⚠️ **None of that is in the code yet.** `mask_chunks` / `mask_digests` still gate on
-`cfg.enabled and cfg.redact_before_llm` with no provider check anywhere, so **input masking
-applies to every provider today** and a local deployment is *not* currently less protected than
-before the decision. Say so accurately: this was mis-stated once already.
+`chat/service.py._prepare_context` resolves `is_local_provider(llm.config)` exactly once per
+turn (pure — reads only the LLM config, no I/O) and threads it as `unmask_for_local` to all
+**three** masking call sites: the chunk leg (`mask_chunks`) and both digest calls
+(`mask_digests`, for the retrieved digests and for the scope-wide summary map). `_gather` in
+`redactor.py` is where the exemption actually applies: it only skips masking when the policy
+would otherwise mask (`cfg.enabled and cfg.redact_before_llm`) **and** the admin has not
+forced it (`cfg.redact_before_llm_locked` is False). **The admin force floor always wins the
+local exemption** — an operator who ticks "mandate masked text before every LLM provider"
+gets that mandate for their own vLLM too, not just external ones. That is why
+`EffectiveRedactionConfig` carries `redact_before_llm_locked` alongside `redact_before_llm`:
+the exemption needs to know not just THAT masking would apply, but whether an admin decision
+specifically overrides skipping it.
 
-**Order of operations is a safety constraint, not a preference.** Output redaction (below) had to
-land *first*, and it has. Land the provider keying the other way round and the gap is real,
-between two commits, on a deployment that believes it is protected.
-
-When the keying does land, tighten the admin string with it. The floor
-(`redaction.force_redact_before_llm`) already describes itself as **external**-only in all three
-places a human reads it — the audit description ("Mandate masked text to external LLM providers")
-and both i18n strings — so exempting a local model is the control finally matching its label, not
-an override of it. But an admin on a local-only deployment may have set it believing it covered
-their own vLLM, so the label should say that outright.
+The admin string (`redaction.force_redact_before_llm`, both the audit description in
+`api/endpoints/redaction_settings.py` and the two i18n strings in
+`frontend/src/lib/i18n/locales/*.json`) used to describe itself as **external**-only. That
+was accurate before this landed and became a trap after: an admin who read "external
+providers" and left the floor off, believing their own vLLM was covered by the exemption
+alone, would be right — but the string no longer explained that ticking the floor closes
+that exemption too. The i18n text (`settings.redactionPolicy.forceRedactBeforeLlm{,Help}`)
+now says the floor covers every provider **including** self-hosted ones; the Python-side
+audit description in `api/endpoints/redaction_settings.py` still needs the matching edit —
+it lives outside this package.
 
 ### Output redaction: masking what the model WRITES (`output_redactor.py`)
 
@@ -433,9 +463,14 @@ model answered confidently from the remainder. Don't write a fourth sharing rule
 here; if an axis needs one, it is already wrong. Tag names are unique **per
 owner**, so matching by name deliberately spans every user's tag row — that is
 what lets a sharee's `atlas` scope reach the owner's atlas-tagged recording.
-Unlike collections, tags have **no admin bypass**: a uuid is a deliberate pick, a
-tag name is a wide net, and a tenant-wide one would resolve tags the admin's own
-picker never shows them.
+**None of the three axes has an admin bypass** — collections and explicit files never
+did (`_resolve_explicit_files`/`_resolve_collections`), and tags never did either: a uuid
+is a deliberate pick, a tag name is a wide net, and a tenant-wide one would resolve tags
+the admin's own picker never shows them. (An earlier revision of this note said "unlike
+collections", which was already false the day it was amended for #385 — check the code,
+not this sentence, before repeating the claim.) Quarantine visibility follows the same
+rule: `_visible_files_query` excludes a quarantined file for every caller, admin included
+— chat is a retrieval surface, not the admin review one (`GET /admin/files/quarantined`).
 
 ## Prompt assembly is concatenation-only
 
@@ -524,10 +559,15 @@ Three rules that only hold together (issues #384, #386, #387):
    means adding it to `chatStream.ts`'s `known` list too, or the client drops it
    as an unknown future event.
 4. **When NOTHING reached the prompt**, the turn sets `msg_metadata.no_context`
-   and emits `{"code": "no_context", "retrieved": N, "files_searched": F}`
-   (issue #438). The two codes are mutually exclusive branches of one `if`:
-   `context_dropped` means excerpts existed and the budget rejected them,
-   `no_context` means none survived to be budgeted.
+   (search genuinely found nothing, or masking failed closed on every chunk) or
+   `msg_metadata.retrieval_failed` (the search itself broke) and emits the
+   matching `{"code": ..., "retrieved": N, "files_searched": F}` (issue #438).
+   All **three** — `context_dropped`, `no_context`, `retrieval_failed` — are
+   mutually exclusive branches of one `if`/`elif` in `service.py`:
+   `context_dropped` means excerpts existed and the budget rejected them;
+   between the other two, `retrieval_failed` means the chunk-plane search itself
+   raised or had no client, `no_context` means it ran and genuinely found
+   nothing (or masking dropped everything it found).
 
    It exists because **`retrieve_chunks` degrades to `[]` on ANY failure** — the
    run that opened #438 was an OpenSearch `503 search_phase_execution_exception`
@@ -535,14 +575,16 @@ Three rules that only hold together (issues #384, #386, #387):
    that fail-soft handler. The model then answered "I do not have enough
    information in the provided excerpts" over a 432-file corpus full of matching
    material, and nothing distinguished that from a grounded negative. `retrieved`
-   separates the two remaining causes: `0` is an empty (or failed) search,
-   non-zero is masking failing closed on every chunk.
+   still separates the *other* two causes inside `no_context` (`0` is an empty
+   search, non-zero is masking having failed closed on every chunk).
 
-   ⚠️ It cannot yet say *which*: the exception is caught inside
-   `services/search/chunk_retrieval.retrieve_chunks`, which returns `[]` with no
-   signal. Threading a `retrieval_failed` flag out of there would let the frame
-   distinguish "your library has nothing about this" from "search was down" —
-   worth doing, and it is a one-line change in a module this package does not own.
+   **Now says which** (closed the gap this note used to flag): `retrieve_chunks`
+   takes an optional `diagnostics: dict | None` out-param and sets
+   `diagnostics["retrieval_failed"] = True` on the no-client and exception
+   branches only — never on a legitimately empty result, so its *absence* is the
+   "ordinary empty search" signal. `chat/retrieval.retrieve_context` threads it
+   onto `RetrievalResult.retrieval_failed`, and `_prepare_context` folds it into
+   `msg_metadata` only when true (most turns never carry the key at all).
 
    A warning **code** is as much a contract as a frame name: it needs a
    `ChatWarningCode` entry in `frontend/src/lib/types/chat.ts`, a branch in the

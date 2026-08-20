@@ -7,6 +7,7 @@ import secrets
 import time
 from collections.abc import Callable
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any
 
 from app.core.config import settings
@@ -38,6 +39,74 @@ _neural_pipeline_available = False
 #     services/ingest_artifacts/index_mapping.py, which Stage 2 pinned so this
 #     bump could carry all of them in ONE reindex.
 _INDEX_VERSION = digest_mapping.TARGET_INDEX_VERSION
+
+
+@dataclass(frozen=True)
+class AdditiveMappingStep:
+    """One MINOR, non-destructive mapping change: new fields, nothing that could
+    conflict with what is already indexed.
+
+    Contrast with ``_INDEX_VERSION`` (MAJOR): that number names a change big
+    enough to need a full reindex — a changed analyzer, a field whose TYPE
+    changed, a vector dimension change — and the only tool this codebase has
+    for landing one is ``recreate_index_for_dimension``, which **deletes the
+    index**. An additive step is the opposite case: a brand-new field that no
+    existing document has an opinion about, applied with ``indices.put_mapping``,
+    which OpenSearch accepts against a live index with no downtime and no data
+    loss. Old documents simply lack the field until they are next written —
+    see the compat-arm rule at :func:`chunk_plane_clause` for why every reader
+    of a NEW additive field must check ``exists`` rather than assume it.
+
+    Attributes:
+        version: The ``_meta.additive_version`` this step brings the index to.
+            Steps apply in ascending order and each one is independently
+            idempotent — OpenSearch's own mapping-merge semantics make PUTting
+            an unchanged field definition a no-op, so replaying an already-
+            applied step is safe by construction, not just by the version gate
+            in :func:`_apply_pending_additive_steps`.
+        description: One line, for the log line that records it happened.
+        properties: The ``mappings.properties`` fragment this step adds.
+    """
+
+    version: int
+    description: str
+    properties: dict[str, Any]
+
+
+#: Append here for the next additive field. Never edit a landed entry's
+#: ``properties`` after it has shipped — that changes what step N meant on every
+#: deployment that already applied it; add step N+1 instead.
+ADDITIVE_MAPPING_STEPS: tuple[AdditiveMappingStep, ...] = (
+    AdditiveMappingStep(
+        version=1,
+        description="speaker_id / profile_id integer fields for id-based speaker filtering",
+        properties={
+            # Plain integers, NOT `eager_global_ordinals` (unlike `speaker`/`tags`
+            # above): that setting pre-builds a global ordinal map at refresh time
+            # to speed up aggregations/sorts on a keyword field with many distinct
+            # values, and an integer field gets no such option. These two exist to
+            # be filtered on, not aggregated, and are lazy-backfilled (old
+            # documents lack them entirely) — building eager global ordinals for a
+            # sparse, mostly-integer field on every refresh would be pure cost for
+            # a facet nothing reads yet.
+            "speaker_id": {"type": "integer"},
+            "profile_id": {"type": "integer"},
+        },
+    ),
+)
+
+#: The highest step version — what a freshly created index is stamped with, and
+#: what ``_apply_pending_additive_steps`` brings an existing index up to.
+_ADDITIVE_VERSION = max((step.version for step in ADDITIVE_MAPPING_STEPS), default=0)
+
+#: Union of every step's field additions, folded into the base mapping so a
+#: FRESH index is created with them already present — only an EXISTING index
+#: needs the incremental ``put_mapping`` walk.
+_ADDITIVE_MAPPING_ADDITIONS: dict[str, dict[str, Any]] = {
+    field: definition
+    for step in ADDITIVE_MAPPING_STEPS
+    for field, definition in step.properties.items()
+}
 
 # Transient bulk error types that are safe to retry
 _RETRYABLE_ERROR_TYPES = frozenset(
@@ -133,6 +202,10 @@ TRANSCRIPT_CHUNKS_INDEX_BODY = {
     "mappings": {
         "_meta": {
             "version": _INDEX_VERSION,
+            # MINOR schema counter (see AdditiveMappingStep). A freshly created
+            # index is stamped at the latest step; ensure_chunks_index_exists()
+            # walks an EXISTING index up to it via put_mapping.
+            "additive_version": _ADDITIVE_VERSION,
         },
         "properties": {
             # Identity
@@ -188,6 +261,10 @@ TRANSCRIPT_CHUNKS_INDEX_BODY = {
             # services/ingest_artifacts/index_mapping.py so Stage 2 could pin the
             # shape and Stage 3 could apply it unchanged.
             **digest_mapping.TARGET_MAPPING_ADDITIONS,
+            # Additive (MINOR) fields — see ADDITIVE_MAPPING_STEPS. Folded in here
+            # so a FRESH index already has them; an existing index gets them via
+            # _apply_pending_additive_steps instead of a version bump + reindex.
+            **_ADDITIVE_MAPPING_ADDITIONS,
         },
     },
 }
@@ -306,6 +383,62 @@ def file_plane_query(file_uuid: str) -> dict[str, Any]:
     return {"bool": {"filter": [{"term": {"file_uuid": file_uuid}}]}}
 
 
+def document_chunk_plane_query(
+    document_uuid: str,
+    *,
+    from_chunk_index: int | None = None,
+) -> dict[str, Any]:
+    """The document-chunk-plane sibling of :func:`chunk_plane_query` (#362 Stage 6c).
+
+    Documents reuse the ``file_uuid`` field name for their own uuid — a distinct UUID
+    space from media files, so no collision, and it is what lets
+    :meth:`TranscriptIndexingService._bulk_index_chunks` and
+    :meth:`TranscriptIndexingService._orphaned_document_ids` serve a second entity type
+    with no change: only the plane predicate differs. No compat arm, for the same reason
+    as :func:`digest_plane_query` — every document_chunk document postdates v6, so there
+    is no legacy population with a missing ``doc_type``.
+
+    Args:
+        document_uuid: UUID of the document whose chunks are selected.
+        from_chunk_index: When set, restrict to chunks at or above this index — the stale
+            tail a shorter re-parse leaves behind, the same shape chunk_plane_query prunes
+            for transcripts (#400).
+
+    Returns:
+        An OpenSearch query body fragment.
+    """
+    filters: list[dict[str, Any]] = [
+        {"term": {"file_uuid": document_uuid}},
+        digest_mapping.document_chunk_plane_clause(),
+    ]
+    if from_chunk_index is not None:
+        filters.append({"range": {"chunk_index": {"gte": from_chunk_index}}})
+    return {"bool": {"filter": filters}}
+
+
+def _build_hybrid_search_pipeline() -> dict[str, Any]:
+    """Build the RRF search pipeline configuration with configurable rank_constant.
+
+    Lower rank_constant values give more weight to top-ranked results.
+    ``SEARCH_RRF_RANK_CONSTANT`` defaults to 30, tuned for transcript search (shorter
+    queries, focused collections). The standard value of 60 from the original RRF
+    paper is optimized for web search.
+    """
+    return {
+        "description": "Hybrid BM25 + vector search with RRF",
+        "phase_results_processors": [
+            {
+                "score-ranker-processor": {
+                    "combination": {
+                        "technique": "rrf",
+                        "rank_constant": settings.SEARCH_RRF_RANK_CONSTANT,
+                    }
+                }
+            }
+        ],
+    }
+
+
 def ensure_chunks_index_exists() -> bool:
     """Ensure the transcript chunks index exists with proper kNN config.
 
@@ -319,8 +452,15 @@ def ensure_chunks_index_exists() -> bool:
     index_name = settings.OPENSEARCH_CHUNKS_INDEX
     try:
         if opensearch_client.indices.exists(index=index_name):
-            # Check index version from _meta
+            # Check MAJOR index version from _meta (log-only; a real upgrade
+            # needs a full reindex, never done here).
             _check_index_version(index_name)
+            # Apply any pending MINOR (additive) mapping steps. Idempotent and
+            # non-destructive — see _apply_pending_additive_steps. This is the
+            # ONLY thing standing between "add a field" and "bump _INDEX_VERSION
+            # and cost every deployment a full reindex" for a change that does
+            # not actually need one.
+            _apply_pending_additive_steps(index_name)
             return True
 
         # Get dimension from settings service (reads from DB with default fallback)
@@ -773,6 +913,145 @@ def _check_index_version(index_name: str) -> None:
         logger.debug(f"Could not check index version for {index_name}: {e}")
 
 
+def _apply_pending_additive_steps(index_name: str) -> None:
+    """Bring an EXISTING index's additive (MINOR) schema up to date, in place.
+
+    This is the machinery that makes "add a field" not cost a reindex.
+    ``_check_index_version`` above only *logs* a MAJOR-version drift — nothing
+    upgrades a live index's analyzer or vector dimension without a full
+    ``recreate_index_for_dimension`` (which deletes it). An additive field is a
+    different kind of change: no existing document has an opinion about a field
+    it has never seen, so OpenSearch's ``indices.put_mapping`` can add one to a
+    live index with no downtime, no delete, and no reindex.
+
+    **Idempotent by construction, twice over.** The version comparison below
+    skips work once ``additive_version`` already meets the target, so a second
+    call in the same process is a single ``get_mapping`` and nothing else. And
+    even without that gate, PUTting an unchanged field definition is itself a
+    no-op to OpenSearch's mapping-merge — so calling this against an index that
+    somehow already has the fields (say, from a hand-run ``put_mapping``) is
+    still safe; only a field whose type genuinely CHANGED would error, and that
+    is precisely a case this mechanism is not for (bump ``_INDEX_VERSION``
+    instead).
+
+    **Deliberately never calls ``recreate_index_for_dimension``.** That
+    function deletes and recreates the index; nothing an additive step needs
+    to do requires that, and reaching for it here would turn a live,
+    zero-downtime field addition into the exact destructive operation this
+    machinery exists to avoid. See
+    ``tests/unit/test_index_additive_version.py`` for the structural guard.
+
+    Args:
+        index_name: The chunks index to check and, if needed, update.
+    """
+    if not opensearch_client:
+        return
+
+    try:
+        mapping = opensearch_client.indices.get_mapping(index=index_name)
+        meta = mapping.get(index_name, {}).get("mappings", {}).get("_meta", {}) or {}
+        current_additive = int(meta.get("additive_version", 0) or 0)
+
+        pending = [step for step in ADDITIVE_MAPPING_STEPS if step.version > current_additive]
+        if not pending:
+            logger.debug(
+                f"Index '{index_name}' additive schema is current "
+                f"(additive_version={current_additive})"
+            )
+            return
+
+        for step in pending:
+            opensearch_client.indices.put_mapping(
+                index=index_name, body={"properties": step.properties}
+            )
+            logger.info(
+                f"Applied additive mapping step {step.version} to '{index_name}': "
+                f"{step.description}"
+            )
+
+        # Preserve whatever MAJOR version is already stored — this call must
+        # never claim the index reached a major version it did not actually
+        # reindex to. Only additive_version moves.
+        new_additive_version = max(step.version for step in pending)
+        opensearch_client.indices.put_mapping(
+            index=index_name,
+            body={
+                "_meta": {
+                    "version": meta.get("version", 0),
+                    "additive_version": new_additive_version,
+                }
+            },
+        )
+        logger.info(f"Index '{index_name}' additive_version now {new_additive_version}")
+    except Exception as e:
+        logger.error(f"Could not apply pending additive mapping steps to '{index_name}': {e}")
+
+
+def survey_speaker_id_coverage() -> dict[str, Any]:
+    """Measure what fraction of the CHUNK plane carries the new ``speaker_id`` field.
+
+    This is the instrument a future "flip the speaker filter from names to ids"
+    decision would read before proposing it (services/search/CLAUDE.md's rule for a
+    measured change, same shape as ``embedding_provenance.survey_embedding_models``).
+    It does **not** decide anything itself — ``speaker_id``/``profile_id`` are written
+    going forward and backfilled lazily (rename propagation, per-file reindex, the
+    opt-in maintenance pass), so coverage starts near 0% on any existing deployment
+    and climbs only as documents are naturally rewritten.
+
+    **Deliberately not built on the ``_get_indexed_uuids`` shape.** That function's
+    ``terms`` aggregation on ``file_uuid`` has a hard 50,000-bucket ceiling — past
+    that many distinct files it silently truncates and undercounts. This survey
+    never enumerates distinct values at all: a ``filter`` aggregation returns one
+    bounded ``doc_count``, correct at any corpus size.
+
+    Returns:
+        ``{"verdict": ..., "total": int, "with_speaker_id": int, "coverage_ratio": float}``.
+        ``verdict`` is ``"unavailable"`` (no client, no index, or the query failed —
+        never read as "zero coverage"), ``"empty"`` (index exists, chunk plane has
+        no documents), or ``"measured"``.
+    """
+    empty_result: dict[str, Any] = {
+        "verdict": "unavailable",
+        "total": 0,
+        "with_speaker_id": 0,
+        "coverage_ratio": 0.0,
+    }
+    if not opensearch_client:
+        return empty_result
+
+    index_name = settings.OPENSEARCH_CHUNKS_INDEX
+    try:
+        if not opensearch_client.indices.exists(index=index_name):
+            return empty_result
+
+        response = opensearch_client.search(
+            index=index_name,
+            body={
+                "size": 0,
+                "track_total_hits": True,
+                "query": {"bool": {"filter": [digest_mapping.chunk_plane_clause()]}},
+                "aggs": {"with_speaker_id": {"filter": {"exists": {"field": "speaker_id"}}}},
+            },
+        )
+    except Exception as e:
+        logger.debug(f"Could not survey speaker_id coverage: {e}")
+        return empty_result
+
+    total = int((response.get("hits") or {}).get("total", {}).get("value", 0) or 0)
+    if total == 0:
+        return {"verdict": "empty", "total": 0, "with_speaker_id": 0, "coverage_ratio": 0.0}
+
+    with_speaker_id = int(
+        (response.get("aggregations") or {}).get("with_speaker_id", {}).get("doc_count", 0) or 0
+    )
+    return {
+        "verdict": "measured",
+        "total": total,
+        "with_speaker_id": with_speaker_id,
+        "coverage_ratio": round(with_speaker_id / total, 4),
+    }
+
+
 @contextlib.contextmanager
 def _suspended_refresh_for_large_index(
     index_name: str,
@@ -1085,6 +1364,129 @@ class TranscriptIndexingService:
             # indistinguishable from the legitimate zero-chunk case.
             logger.exception(f"Bulk indexing failed for file {file_uuid}")
             raise
+
+    def index_document_chunks(
+        self,
+        document_id: int,
+        document_uuid: str,
+        user_id: int,
+        chunks: list[dict[str, Any]],
+        title: str,
+        upload_time: str | None = None,
+        language: str | None = None,
+        content_type: str = "",
+        file_size: int | None = None,
+        organization_id: int | None = None,
+    ) -> dict[str, Any] | int:
+        """Index a parsed document's chunks into the document plane of v6 (#362 Stage 6c).
+
+        The same index the transcript plane already uses (``services/search/CLAUDE.md``
+        "Index v6"), not a third one — a separate index would fork retrieval and break the
+        router. Chunks carry ``doc_type: document_chunk`` and the ``{uuid}_{chunk_index}``
+        id scheme transcript chunks already use, with the document's uuid standing in for
+        ``file_uuid``: that is what lets :meth:`_bulk_index_chunks` and
+        :meth:`_orphaned_document_ids` serve this second entity type with no change to
+        either — only the plane predicate (:func:`document_chunk_plane_query`) differs.
+
+        No speaker roster, no digest plane: a document has no speakers, and whether
+        documents get a digest tier is still an open question (state-of-the-code doc) left
+        for later.
+
+        Args:
+            document_id: ``Document.id``.
+            document_uuid: ``Document.uuid`` (str).
+            user_id: Owner.
+            chunks: ``DocumentChunk.to_row()``-shaped dicts (``chunk_index``, ``text``,
+                ``char_start``, ``char_end``, ``page``, …) — durable storage read back from
+                Postgres, not re-parsed.
+            title: Document filename, for the ``embedding_text`` header (same
+                contextualization ``build_embedding_text`` gives a transcript chunk).
+            upload_time: ISO string (defaults to now).
+            language: Language code, or ``None`` when undetected.
+            content_type: Detected mime.
+            file_size: Bytes.
+            organization_id: Tenant scope (``None`` = personal), same convention as the
+                transcript plane.
+
+        Returns:
+            Dict with indexing stats, or ``0`` when OpenSearch is unavailable or there is
+            nothing to index.
+        """
+        client = get_opensearch_client()
+        if not client:
+            logger.warning("OpenSearch client not initialized, skipping document chunk indexing")
+            return 0
+
+        if not chunks:
+            logger.warning(f"No chunks to index for document {document_uuid}")
+            return 0
+
+        ensure_chunks_index_exists()
+        ensure_search_pipeline_exists()
+
+        if upload_time is None:
+            upload_time = datetime.datetime.now(datetime.UTC).isoformat()
+        now = datetime.datetime.now(datetime.UTC).isoformat()
+
+        index_docs: list[dict[str, Any]] = []
+        for chunk in chunks:
+            body = str(chunk.get("text") or "")
+            doc: dict[str, Any] = {
+                "file_id": document_id,
+                "file_uuid": document_uuid,
+                "user_id": user_id,
+                "chunk_index": chunk["chunk_index"],
+                "content": body,
+                "title": title,
+                # No sharing/collections for documents yet (v1 scope) — owner-only access,
+                # the same shape a media file with no shares carries.
+                "accessible_user_ids": [user_id],
+                "upload_time": upload_time,
+                "language": language,
+                "content_type": content_type,
+                "file_size": file_size,
+                "indexed_at": now,
+                digest_mapping.DOC_TYPE_FIELD: digest_mapping.DOC_TYPE_DOCUMENT_CHUNK,
+                # The pipeline embeds this field, not `content` — see
+                # `_build_neural_ingest_pipeline`. BM25 still scores `content`. No roster:
+                # a document has no speakers.
+                "embedding_text": digest_mapping.build_embedding_text(
+                    title=title, recorded_at=upload_time, roster=[], body=body
+                ),
+            }
+            if organization_id is not None:
+                doc["organization_id"] = organization_id
+            index_docs.append(doc)
+
+        t_index_start = time.time()
+        try:
+            use_neural = is_neural_pipeline_available()
+            provenance = active_embedding_model()
+            for doc in index_docs:
+                doc["embedding_model"] = provenance if use_neural else None
+
+            indexed = self._bulk_index_chunks(index_docs, use_neural_pipeline=use_neural)
+            stale_removed = self._prune_stale_document_chunks(
+                document_uuid, keep_count=len(index_docs)
+            )
+
+            index_ms = round((time.time() - t_index_start) * 1000)
+            mode_str = "neural" if use_neural else "text-only"
+            logger.info(
+                f"Indexed {indexed} document chunks for document {document_uuid} "
+                f"(mode: {mode_str}, index={index_ms}ms)"
+            )
+            _invalidate_chat_retrieval_cache()
+            return {
+                "chunk_count": indexed,
+                "index_ms": index_ms,
+                "mode": mode_str,
+                "neural": use_neural,
+                "stale_removed": stale_removed,
+            }
+        except Exception as e:
+            logger.error(f"Bulk indexing failed for document {document_uuid}: {e}")
+            return 0
 
     def delete_transcript_chunks(self, file_uuid: str) -> int:
         """Delete **every** indexed document for a file — both planes.
@@ -1410,6 +1812,59 @@ class TranscriptIndexingService:
         except Exception as e:
             logger.error(
                 f"Could not prune stale chunks for file {file_uuid} "
+                f"(chunks >= {keep_count} may still be searchable): {e}"
+            )
+            return 0
+
+    def _prune_stale_document_chunks(self, document_uuid: str, *, keep_count: int) -> int:
+        """The document-chunk-plane sibling of :meth:`_prune_stale_chunks` (#362 Stage 6c).
+
+        Same #435 realtime-probe gate, same reason: a re-parse that shrank the chunk count
+        must not leave a searchable stale tail, and a ``count``/``search`` gate would miss
+        it inside the refresh window for exactly the reason ``_prune_stale_chunks``'s
+        docstring measures. Uses :func:`document_chunk_plane_query` rather than
+        :func:`chunk_plane_query` — the transcript predicate's compat arm would also match
+        (or exclude) the wrong population here, since document chunks and transcript chunks
+        share no ``doc_type`` value.
+        """
+        if not opensearch_client:
+            return 0
+
+        index_name = settings.OPENSEARCH_CHUNKS_INDEX
+        try:
+            stale_ids = self._orphaned_document_ids(
+                index_name=index_name,
+                document_id=lambda n: f"{document_uuid}_{n}",
+                first_orphan=keep_count,
+                plane_query=document_chunk_plane_query(document_uuid),
+                counter_field="chunk_index",
+            )
+            if not stale_ids:
+                return 0
+
+            opensearch_client.indices.refresh(index=index_name)
+            response = opensearch_client.delete_by_query(
+                index=index_name,
+                body={
+                    "query": document_chunk_plane_query(document_uuid, from_chunk_index=keep_count)
+                },
+                refresh=True,
+                conflicts="proceed",
+            )
+            deleted = int(response.get("deleted", 0))
+            logger.info(
+                f"Pruned {deleted} stale document chunk(s) for document {document_uuid} "
+                f"(re-parse shrank to {keep_count} chunks)"
+            )
+            if deleted != len(stale_ids):
+                logger.warning(
+                    f"Stale document-chunk prune for {document_uuid} found {len(stale_ids)} "
+                    f"orphan id(s) but the document-chunk-plane predicate deleted {deleted}"
+                )
+            return deleted
+        except Exception as e:
+            logger.error(
+                f"Could not prune stale document chunks for {document_uuid} "
                 f"(chunks >= {keep_count} may still be searchable): {e}"
             )
             return 0

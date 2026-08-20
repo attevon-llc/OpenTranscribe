@@ -150,11 +150,22 @@ async def _run_turn(monkeypatch, *, file_uuids=None, history=None) -> tuple[_Led
 
     monkeypatch.setattr(chat_service, "retrieve_context", _retrieve)
 
-    def _mask(session_factory, chunks, _user_id):
+    # Quarantine dropping (phase 3.5) is a real Postgres query
+    # (`app.models.media.MediaFile`), and this harness's session is a bare
+    # `_FakeSession()` sentinel with no `.query` — it exists to count live
+    # sessions, not to answer real queries. Every stage in this file is
+    # already a mocked identity pass-through for exactly that reason; this
+    # one is no different. `_drop_quarantined_hits` itself is covered against
+    # a real database in test_chat_permissions_quarantine.py.
+    monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
+
+    def _mask(session_factory, chunks, _user_id, **_kwargs):
         # The masker is handed the FACTORY, not a session (#83): it gathers its
         # cached spans, closes, and only then runs a detector that may cost a
         # ~10 s Presidio build. So the stub records BOTH — the depth at entry
         # (must be 0) and the depth inside the gather it opens (must be 1).
+        # `**_kwargs` absorbs `unmask_for_local` (the provider-locality keying,
+        # a separate concern from what this file measures).
         ledger.note("masking")
         with session_factory() as db:
             ledger.note("masking-gather")

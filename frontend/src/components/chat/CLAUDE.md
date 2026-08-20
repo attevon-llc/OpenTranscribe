@@ -46,21 +46,27 @@ a backend-only change ships a frame nobody ever sees. Frames today: `start`,
 `status`, `sources`, `warning`, `delta`, `usage`, `done`, `error`.
 
 `warning` (`{code, retrieved}`) reports that the answer is NOT grounded in the
-user's recordings, and carries one of **two** codes:
+user's recordings, and carries one of **three** codes:
 
 - `context_dropped` (#384) — retrieval found excerpts and none fit the model's
   context window.
-- `no_context` (#438) — nothing reached the prompt at all. Retrieval degrades to
-  an empty result on any failure, so this covers "nothing matched", "search was
-  unavailable" and "masking dropped every chunk"; the `retrieved` count (also
-  folded in) is what separates them.
+- `no_context` (#438) — nothing reached the prompt at all, and the search itself
+  ran and genuinely found nothing (or masking dropped every chunk it found);
+  the `retrieved` count separates the two.
+- `retrieval_failed` (#438's open half, closed) — nothing reached the prompt
+  because the chunk-plane search itself raised or had no OpenSearch client,
+  distinct from `no_context` where the search ran. `services/search/
+chunk_retrieval.retrieve_chunks` sets this via a `diagnostics` out-param on
+  the no-client and exception branches only, never on a legitimately empty
+  result — its absence is the "ordinary empty search" signal.
 
-The store folds both into `msg_metadata` (`context_dropped` / `no_context`)
-rather than holding separate stream state, so `ChatMessage` has **one** render
-path and the notice survives a reload; the server persists the same flags on the
-message row. The two notices are an `{#if}`/`{:else if}`, never stacked — they
-name different defects and only one can be true. `sources` carries only the
-excerpts that actually reached the prompt.
+The store folds all three into `msg_metadata` (`context_dropped` /
+`no_context` / `retrieval_failed`) rather than holding separate stream state,
+so `ChatMessage` has **one** render path and the notice survives a reload; the
+server persists the same flags on the message row. The three notices are an
+`{#if}`/`{:else if}`/`{:else if}`, never stacked — they name different defects
+and only one can be true. `sources` carries only the excerpts that actually
+reached the prompt.
 
 **A new warning `code` is as invisible as a new frame** if the client does not
 know it: the store's fold checks the code explicitly, so an unhandled one is

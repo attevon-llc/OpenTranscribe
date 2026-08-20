@@ -31,7 +31,7 @@ pipeline described in [RAG Chat](./rag-chat.md) — everything else on this page
 | 3 | Index v6 — one reindex, digests in the index | Not started |
 | 4 | Query router, map-reduce, aggregation | Not started |
 | 5 | Retrieval tuning bake-off (fusion, reranker, synonyms) | Not started |
-| 6 | [Documents](../features/documents.md) | Not started |
+| 6 | [Documents](../features/documents.md) | In progress — upload/parse/index/view shipped; redaction, document-aware chat citations, and cross-linking to recordings not yet built |
 | 7 | Opt-in enrichment | Not started |
 | 8 | Whitepaper | Not started |
 
@@ -396,6 +396,6 @@ assumed settled.
 - [RAG Evaluation Methodology](./rag-evaluation.md) — corpora, metric definitions, and how to
   reproduce every number here
 - [RAG Chat (Internals)](./rag-chat.md) — the pipeline as it exists today
-- [Documents (Planned)](../features/documents.md) — Stage 6
+- [Documents](../features/documents.md) — Stage 6
 - [Working Without an AI Model](../user-guide/without-an-ai-model.md) — the D6 deployment these
   decisions protect

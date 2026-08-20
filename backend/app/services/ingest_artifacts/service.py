@@ -28,6 +28,7 @@ from sqlalchemy.orm import joinedload
 from app.models.file_facts import FileFacts
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 from app.utils.transcript_builders import compute_speaker_stats
 from app.utils.transcript_builders import get_speaker_name
 
@@ -157,7 +158,7 @@ class _StatSegment:
         self.text = data.get("text") or ""
         self.start_time = float(data.get("start_time") or 0.0)
         self.end_time = float(data.get("end_time") or 0.0)
-        self.speaker = _ResolvedSpeaker(str(data.get("speaker") or "Unknown Speaker"))
+        self.speaker = _ResolvedSpeaker(str(data.get("speaker") or UNKNOWN_SPEAKER_LABEL))
 
 
 class _ResolvedSpeaker:

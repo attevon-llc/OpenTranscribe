@@ -2006,6 +2006,23 @@
     }
   }
 
+  // Handle ?view=summary[&section=N] — the deep link a `kind: "summary"` chat
+  // citation points at (issue #464 amendment c). A summary citation labels
+  // machine-generated prose about the whole recording, never a moment in it —
+  // there is no timestamp to seek to, so this opens the summary modal instead
+  // of the player. `section` is accepted (forward-compatible with the
+  // citation's `digest_section`) but not yet used: `summary_data` has no
+  // per-section structure to scroll to or highlight, unlike the transcript's
+  // digest sections.
+  let hasSeenSummaryView = false;
+  $: if (!isLoading && file?.uuid && !hasSeenSummaryView) {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('view') === 'summary') {
+      hasSeenSummaryView = true;
+      handleShowSummary();
+    }
+  }
+
   function scrollToSegmentAtTime(time: number) {
     const transcriptData = file?.transcript_segments;
     if (!transcriptData || !Array.isArray(transcriptData)) return;

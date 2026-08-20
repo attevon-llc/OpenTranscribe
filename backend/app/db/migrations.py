@@ -472,6 +472,36 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'media_file' AND column_name = 'redaction_coverage')"
     )
 
+    # v394: document / document_chunk — the document ingestion plane (#362). Two brand new
+    # tables with no prior-revision dependency, so table existence IS the fingerprint, the
+    # same shape v390's has_file_facts uses.
+    has_document_table = "document" in tables and "document_chunk" in tables
+
+    # v395: watch_source_file.document_id — auto-import routes documents too (#362).
+    # Single-marker revision (one ADD COLUMN, no constraint the column itself doesn't
+    # already carry), so the column IS the fingerprint, the same shape v392's
+    # has_redaction_coverage uses.
+    has_watch_source_file_document_id = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'watch_source_file' AND column_name = 'document_id')"
+    )
+
+    # v396: document_chunk.redactions / .toxicity — cached detection spans (#362).
+    # Single-marker revision (two ADD COLUMNs, no constraint), same shape v395 uses.
+    has_document_chunk_redaction_cache = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'document_chunk' AND column_name = 'redactions')"
+    )
+
+    # v397: the document.organization_id backfill + its completion marker (#362
+    # follow-up, lane C0). Pure data migration, no DDL — same shape v379 uses, except
+    # the fingerprint is an explicit system_settings row rather than the absence of
+    # retired data, because there is no schema object this revision's UPDATE leaves
+    # behind to probe for.
+    has_document_tenancy_backfill_v397 = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM system_settings WHERE key = 'documents.tenancy_backfill_v397')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -514,6 +544,51 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
+    # v397: same as v396 plus the tenancy-backfill completion marker.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+        and has_watch_source_file_document_id
+        and has_document_chunk_redaction_cache
+        and has_document_tenancy_backfill_v397
+    ):
+        return "v397_backfill_document_tenancy_and_hash"
+    # v396: same as v395 plus document_chunk's redaction-cache columns.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+        and has_watch_source_file_document_id
+        and has_document_chunk_redaction_cache
+    ):
+        return "v396_add_document_chunk_redaction_cache"
+    # v395: same as v394 plus watch_source_file.document_id.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+        and has_watch_source_file_document_id
+    ):
+        return "v395_add_watch_source_file_document_id"
+    # v394: same as v392 plus the document ingestion tables. (v393_add_overlap_timing_columns
+    # has no schema fingerprint of its own — see backend/app/db/CLAUDE.md's "Renumbering
+    # note 3" — so this arm falls straight back to v392's markers, same as before the
+    # document chain existed.)
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+    ):
+        return "v394_add_document_tables"
     # v392: same as v391 plus the redaction-coverage column.
     if matches_v389 and has_file_facts and has_recorded_date_provenance and has_redaction_coverage:
         return "v392_add_redaction_coverage"

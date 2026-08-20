@@ -35,7 +35,9 @@ detection pass mid-request, so it masks inline instead
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
@@ -46,6 +48,16 @@ from app.services.redaction.coverage import describe_gap
 from app.services.redaction.coverage import uncovered_detectors
 
 logger = logging.getLogger(__name__)
+
+#: Provider names (matching ``LLMService.LLMProvider``'s string values) that are
+#: this deployment's own self-hosted inference servers, whatever host they
+#: happen to be reached at. Compared by value, not by importing the enum, so
+#: this module never has to import ``llm_service`` at runtime — see
+#: :func:`is_local_provider`.
+_LOCAL_HOSTED_PROVIDERS = frozenset({"vllm", "ollama"})
+
+#: Hostnames that name "this machine" without needing a DNS round trip.
+_LOCAL_HOSTNAMES = frozenset({"localhost", "localhost.localdomain"})
 
 
 class RedactionNotReadyError(Exception):
@@ -186,3 +198,126 @@ def _dispatch_detection(file_id: int) -> None:
         logger.info("Dispatched missing redaction detection for file %s", file_id)
     except Exception:  # noqa: BLE001
         logger.exception("Could not dispatch redaction detection for file %s", file_id)
+
+
+def is_local_provider(config: object) -> bool:
+    """Does this LLM configuration reach a model running on our own deployment?
+
+    Owner decision, 2026-08-13 (see this repo's ``chat/CLAUDE.md``): a **local**
+    model never has the transcript leave the machine, so masking it before the
+    call costs recall and buys nothing; a **remote** provider still gets masked
+    text, because that call is a genuine data-egress event. This function is the
+    ONE place that decision is keyed off the provider — callers must never infer
+    locality from a global setting or a deployment flag.
+
+    Two ways a config is judged local:
+
+    * ``provider`` is ``vllm`` or ``ollama`` — this deployment's own self-hosted
+      inference servers, whatever host they happen to be reached at.
+    * ``provider`` is ``custom`` (a generic OpenAI-compatible endpoint) **and**
+      its ``base_url`` names a loopback / RFC1918 / link-local / IPv6 ULA
+      address, or a bare "dotless" hostname — the shape of an unqualified
+      docker-compose/Kubernetes service name (``http://backend:8000``,
+      ``http://mock-llm:5199/v1``), which cannot resolve outside this
+      deployment's own network and would otherwise fail DNS in exactly the
+      environments (CI, a fresh dev stack) where treating a lookup failure as
+      "remote" would be wrong most often.
+
+    Every other provider (``openai``, ``anthropic``, ``claude``, ``openrouter``,
+    ``bedrock``) is a hosted third-party API by construction and is never local,
+    whatever its ``base_url`` says.
+
+    **ANY ambiguity resolves to False (remote — mask).** An unparseable
+    ``base_url``, a missing one, a hostname that fails to resolve, or one that
+    resolves to a public address are all judged remote. This function is a
+    safety gate, not a diagnostic: a config it cannot confidently classify as
+    local must be treated exactly like a real third-party endpoint.
+
+    Args:
+        config: The ``LLMConfig`` in play for this turn, typed ``object`` because
+            this function is genuinely structural: every read goes through
+            ``getattr(config, "...", default)``, so this module never has to
+            import ``llm_service`` at runtime (see ``_LOCAL_HOSTED_PROVIDERS``)
+            and an object carrying neither attribute is accepted rather than
+            rejected — it simply reads as remote, the same as an unrecognised
+            provider string. ``None`` is accepted directly for the same reason
+            — a deployment with no ``LLM_PROVIDER`` configured at all is a
+            first-class shape (#403 D6: deterministic maps/keyphrase/coverage
+            tiers still run with no LLM), and that path has no config to read
+            a provider from. Ambiguity fails closed, not a special case.
+
+    Returns:
+        True only when every check above resolves to "local"; False otherwise
+        (including when ``config`` is ``None``).
+    """
+    provider = str(getattr(config, "provider", "") or "").strip().lower()
+    if provider in _LOCAL_HOSTED_PROVIDERS:
+        return True
+    if provider != "custom":
+        return False
+    return _custom_endpoint_is_local(getattr(config, "base_url", None))
+
+
+def _custom_endpoint_is_local(base_url: str | None) -> bool:
+    """Is a ``custom`` provider's ``base_url`` a host that can only be ours?
+
+    Split out of :func:`is_local_provider` so each failure mode (no URL, an
+    unparseable one, a hostname that fails to resolve) has one visible ``return
+    False`` rather than being buried in a single long function.
+    """
+    if not base_url:
+        return False
+    try:
+        parsed = urlparse(base_url)
+    except ValueError:
+        return False
+    hostname = (parsed.hostname or "").strip().lower()
+    if not hostname:
+        return False
+    if hostname in _LOCAL_HOSTNAMES:
+        return True
+
+    try:
+        literal = ipaddress.ip_address(hostname)
+    except ValueError:
+        literal = None
+    if literal is not None:
+        return _is_local_address(literal)
+
+    if "." not in hostname:
+        # A bare service name — `http://backend:8000`, `http://mock-llm:5199/v1`.
+        # Only a docker-compose/K8s service name is shaped like this; a public
+        # hostname always has a dot. Judged local WITHOUT a DNS round trip: many
+        # of the environments this matters most in (a fresh dev stack, CI, the
+        # mock-LLM fixture) have no resolver entry for it outside the app's own
+        # network, and treating that lookup failure as "remote" would misclassify
+        # the common case rather than the rare one.
+        return True
+
+    from app.utils.url_validation import resolve_public_addresses
+
+    # `allow_private=True` here does not loosen anything we care about: it only
+    # widens which addresses come BACK (so a private one isn't pre-filtered away
+    # before we can judge it ourselves) while still refusing cloud metadata
+    # addresses outright — and nothing self-hosts an inference server behind
+    # instance metadata, so a metadata verdict is correctly judged remote below.
+    addresses, reason = resolve_public_addresses(base_url, allow_private=True)
+    if not addresses or reason:
+        # DNS failure, malformed URL, or blocked as instance metadata — all
+        # ambiguous or definitively not-ours. Fail closed to remote.
+        return False
+    # Every resolved address must be local — a hostname split between a private
+    # and a public A record is exactly the ambiguity this function refuses to
+    # guess about.
+    return all(_is_local_address(ipaddress.ip_address(addr)) for addr in addresses)
+
+
+def _is_local_address(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Loopback / RFC1918 / link-local / IPv6 ULA — the ranges this deployment's
+    own network uses. ``is_private`` already covers loopback and link-local for
+    both address families; the explicit checks document the ranges by name
+    rather than relying on that alone.
+    """
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    return bool(ip.is_loopback or ip.is_link_local or ip.is_private)

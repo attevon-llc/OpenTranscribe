@@ -43,6 +43,7 @@ from app.core.constants import CeleryQueues
 from app.core.security import get_password_hash
 from app.core.version import APP_VERSION
 from app.db.base import get_db
+from app.models.document import Document
 from app.models.media import Analytics
 from app.models.media import Collection
 from app.models.media import CollectionMember
@@ -465,6 +466,20 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
         db.query(FileTag).filter(FileTag.tag_id.in_(tag_ids)).delete(synchronize_session=False)
         db.query(Tag).filter(Tag.user_id == user_id).delete(synchronize_session=False)
         logger.info(f"Deleted {len(tag_ids)} tags for user {user_id}")
+
+    # Documents (#362): document.user_id is NO ACTION, same house rule as
+    # media_file.user_id. document_chunk.document_id IS ON DELETE CASCADE, so a
+    # bulk delete of the document rows takes their chunks with it at the database
+    # level — no separate query needed, unlike the FKs above. OpenSearch chunks and
+    # the MinIO object are left as an orphan-cleanup-sweep concern, matching how
+    # this same function leaves MediaFile's storage/index behind for
+    # _delete_user_media_files below (this is a hard-delete path, not the GDPR
+    # erasure path, which does clean those up per document).
+    doc_count = (
+        db.query(Document).filter(Document.user_id == user_id).delete(synchronize_session=False)
+    )
+    if doc_count:
+        logger.info(f"Deleted {doc_count} documents for user {user_id}")
 
 
 def _delete_user_media_files(db: Session, user_id: int) -> None:

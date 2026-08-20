@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from app.scripts.corpus_injection.adapters.ami import AMIDistractorAdapter
 from app.scripts.corpus_injection.adapters.base import CorpusAdapter
 from app.scripts.corpus_injection.adapters.miracl import DEFAULT_QUERY_COUNT
 from app.scripts.corpus_injection.adapters.miracl import MiraclAdapter
@@ -34,6 +35,14 @@ _BUILDERS: dict[str, tuple[str, Builder]] = {
         lambda root, data_dir, _options: QMSumAdapter(
             root, ami_root=data_dir / "ami", icsi_root=data_dir / "icsi"
         ),
+    ),
+    # Distractor-only: 34 AMI meetings QMSum's Product domain does not already
+    # redistribute (issue #461 A5). Ships no query loader in harness/corpora.py on
+    # purpose — it enlarges the retrieval haystack for QMSum's own gold queries, it
+    # does not add judgements of its own. See adapters/ami.py's module docstring.
+    "ami": (
+        "ami",
+        lambda root, data_dir, _options: AMIDistractorAdapter(root, qmsum_root=data_dir / "qmsum"),
     ),
     # MIRACL lives one level down from $RAG_EVAL_DATA_DIR: the topics/qrels and the
     # passage shards are sibling directories under `multilingual/`, so the adapter
@@ -87,4 +96,11 @@ def build_adapter(
     return builder(resolved, Path(data_dir), options or {})
 
 
-__all__ = ["AVAILABLE", "CorpusAdapter", "QMSumAdapter", "SyntheticAdapter", "build_adapter"]
+__all__ = [
+    "AVAILABLE",
+    "AMIDistractorAdapter",
+    "CorpusAdapter",
+    "QMSumAdapter",
+    "SyntheticAdapter",
+    "build_adapter",
+]

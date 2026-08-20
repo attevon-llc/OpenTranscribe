@@ -218,9 +218,17 @@ def _prepare_turn(
 
         file_uuids = None
         speakers: list[str] = []
+        # Populated by `resolve_scope_file_uuids` only when it dropped one of
+        # the caller's EXPLICIT file picks (inaccessible, deleted, or
+        # quarantined) — most visible for an admin, whose picker offers every
+        # tenant file (`list_media_files` ignores `ownership` for admins) while
+        # scope resolution has no admin bypass on any axis. Threaded to
+        # `stream_reply` below so the discrepancy is surfaced rather than
+        # silently reflected only in a smaller `files_searched`.
+        scope_diagnostics: dict = {}
         if use_context:
             scope = resolve_effective_scope(conversation, project)
-            file_uuids = resolve_scope_file_uuids(db, ctx, scope)
+            file_uuids = resolve_scope_file_uuids(db, ctx, scope, diagnostics=scope_diagnostics)
             # Speakers filter WITHIN the resolved recordings rather than
             # reducing them, so it is passed straight to retrieval.
             speakers = scope.speakers
@@ -290,6 +298,7 @@ def _prepare_turn(
             "assistant_message_uuid": assistant_uuid,
             "user_message_uuid": str(user_message.uuid),
             "is_first_exchange": is_first_exchange,
+            "scope_files_dropped": scope_diagnostics.get("files_dropped", 0),
             # Carried out so the response wrapper can release exactly this slot.
             "_slot_id": slot_id,
         }

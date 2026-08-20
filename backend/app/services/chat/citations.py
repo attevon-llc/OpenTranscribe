@@ -31,11 +31,15 @@ def _snippet(text: str) -> str:
 
 
 #: What a citation points at. ``chunk`` is somebody's words at a timestamp;
-#: ``digest`` is derived text summarising a span of the same recording. The
-#: frontend must render them differently — a digest quoted as speech would
-#: attribute to a person words nobody said (addendum **G7**).
+#: ``digest`` is derived text summarising a span of the same recording;
+#: ``document`` (issue #463) is a chunk of a parsed non-media document — no
+#: timeline, no speaker, addressed by page/section instead. The frontend must
+#: render all three differently — a digest quoted as speech would attribute
+#: to a person words nobody said (addendum **G7**), and a document rendered
+#: as a transcript excerpt would invent a speaker and a timestamp for a PDF.
 KIND_CHUNK = "chunk"
 KIND_DIGEST = "digest"
+KIND_DOCUMENT = "document"
 
 
 def build_citation(index: int, chunk: MaskedChunk) -> dict:
@@ -52,19 +56,46 @@ def build_citation(index: int, chunk: MaskedChunk) -> dict:
       extractive builder's provenance. A digest indexed at ``start_time=0``
       would deep-link every summary citation to ``0:00``, which looks like a
       working link and is not.
+
+    A **document** citation (``chunk.source.is_document``) applies the same
+    "never a 0 sentinel" rule one step further: a document has no timeline at
+    all, so ``start_time``/``end_time`` are ``None`` rather than
+    ``chunk.start_time``'s inherited ``0.0`` default — a real ``0`` there would
+    render as a clickable ``00:00`` on a thing that was never a recording. It
+    carries ``page``/``section_path`` instead, for a
+    ``/documents/{uuid}?chunk=N`` link the frontend builds from ``kind`` +
+    ``file_uuid`` + ``chunk_index`` (never a server-constructed URL — same
+    convention as every other citation kind).
+
+    ``schemas/chat.py``'s ``Citation.section_path`` is a single ``str | None``
+    (a breadcrumb, not a list) — the already-landed union this dict validates
+    against on reload — so a document chunk's ``list[str]`` section path is
+    joined with ``" > "`` here rather than passed through raw.
     """
     is_digest = getattr(chunk.source, "is_digest", False)
+    is_document = getattr(chunk.source, "is_document", False)
+    if is_document:
+        kind = KIND_DOCUMENT
+    elif is_digest:
+        kind = KIND_DIGEST
+    else:
+        kind = KIND_CHUNK
+    section_path = getattr(chunk.source, "section_path", None) if is_document else None
     return {
         "id": index,
-        "kind": KIND_DIGEST if is_digest else KIND_CHUNK,
+        "kind": kind,
         "file_uuid": chunk.file_uuid,
         "title": chunk.title,
         "chunk_index": chunk.chunk_index,
         "digest_section": getattr(chunk.source, "digest_section", None),
-        "start_time": chunk.start_time,
-        "end_time": chunk.end_time,
-        "speaker": None if is_digest else chunk.speaker,
+        "start_time": None if is_document else chunk.start_time,
+        "end_time": None if is_document else chunk.end_time,
+        "speaker": None if (is_digest or is_document) else chunk.speaker,
         "snippet": _snippet(chunk.content),
+        "page": getattr(chunk.source, "page", None) if is_document else None,
+        "section_path": " > ".join(section_path) if section_path else None,
+        "char_start": getattr(chunk.source, "char_start", None) if is_document else None,
+        "char_end": getattr(chunk.source, "char_end", None) if is_document else None,
     }
 
 

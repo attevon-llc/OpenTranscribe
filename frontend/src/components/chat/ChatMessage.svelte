@@ -87,6 +87,11 @@
   // degraded to a context-free answer (issue #438). Without this the model's
   // "I don't have enough information" reads as a grounded negative.
   $: noContext = Boolean(message.msg_metadata?.no_context);
+  // A specialization of `noContext`: the search backend itself was unavailable
+  // rather than genuinely finding nothing (issue #438's open half). Rendered
+  // with its own message so "your library has nothing about this" and "search
+  // is temporarily unavailable" read as the different problems they are.
+  $: retrievalFailed = Boolean(message.msg_metadata?.retrieval_failed);
   // The context included recordings in a language RAG cannot rank or read, so
   // they were effectively invisible to the question (task #37). Transcription is
   // multilingual; retrieval, reranking and prompting are not.
@@ -161,6 +166,10 @@
       {#if contextDropped}
         <p class="context-warning" data-testid="chat-context-dropped">
           {$t('chat.message.contextDropped')}
+        </p>
+      {:else if retrievalFailed}
+        <p class="context-warning" data-testid="chat-retrieval-failed">
+          {$t('chat.message.retrievalFailed')}
         </p>
       {:else if noContext}
         <p class="context-warning" data-testid="chat-no-context">

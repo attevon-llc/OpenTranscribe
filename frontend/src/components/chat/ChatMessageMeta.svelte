@@ -20,7 +20,14 @@
     Boolean(message.model) ||
     Boolean(message.total_tokens) ||
     meta.retrieved !== undefined ||
-    Boolean(meta.rewritten_query);
+    Boolean(meta.rewritten_query) ||
+    Boolean(meta.map_source) ||
+    meta.llm_calls !== undefined ||
+    Boolean(meta.legs_failed?.length) ||
+    Boolean(meta.speaker_resolution) ||
+    Boolean(meta.plan?.steps?.length) ||
+    Boolean(meta.router_language_unmatched) ||
+    Boolean(meta.scope_files_dropped);
 </script>
 
 {#if hasContent}
@@ -76,6 +83,11 @@
           </dd>
         {/if}
 
+        {#if meta.scope_files_dropped}
+          <dt>{$t('chat.meta.scopeFilesDropped')}</dt>
+          <dd data-testid="chat-meta-scope-files-dropped">{meta.scope_files_dropped}</dd>
+        {/if}
+
         {#if meta.rewritten_query}
           <dt>{$t('chat.meta.rewrittenQuery')}</dt>
           <dd class="rewritten">{meta.rewritten_query}</dd>
@@ -88,6 +100,47 @@
 
         {#if meta.cache_hit}
           <dt>{$t('chat.meta.cacheHit')}</dt>
+          <dd>{$t('common.yes')}</dd>
+        {/if}
+
+        {#if meta.map_source}
+          <dt>{$t('chat.meta.mapSource')}</dt>
+          <dd>{meta.map_source}</dd>
+        {/if}
+
+        {#if meta.llm_calls !== undefined}
+          <dt>{$t('chat.meta.llmCalls')}</dt>
+          <dd>{meta.llm_calls}</dd>
+        {/if}
+
+        {#if meta.legs_failed?.length}
+          <dt>{$t('chat.meta.legsFailed')}</dt>
+          <dd>{meta.legs_failed.join(', ')}</dd>
+        {/if}
+
+        {#if meta.speaker_resolution}
+          <dt>{$t('chat.meta.speakerResolution')}</dt>
+          <dd>
+            {[
+              meta.speaker_resolution.matched?.length
+                ? meta.speaker_resolution.matched.join(', ')
+                : null,
+              meta.speaker_resolution.ambiguous?.length
+                ? `? ${meta.speaker_resolution.ambiguous.join(', ')}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' — ')}
+          </dd>
+        {/if}
+
+        {#if meta.plan?.steps?.length}
+          <dt>{$t('chat.meta.plan')}</dt>
+          <dd>{meta.plan.steps.join(' → ')}</dd>
+        {/if}
+
+        {#if meta.router_language_unmatched}
+          <dt>{$t('chat.meta.routerLanguageUnmatched')}</dt>
           <dd>{$t('common.yes')}</dd>
         {/if}
       </dl>

@@ -12,10 +12,14 @@ excerpts that actually reached the prompt — see the comment at its yield site.
 
 ``warning`` carries a ``code`` naming exactly one way the answer ended up
 ungrounded: ``context_dropped`` (excerpts were retrieved and the budget fit none
-of them) or ``no_context`` (nothing reached masking at all — retrieval matched
-nothing, every chunk failed closed under masking, or the search backend was
-unavailable and degraded to a context-free answer). Adding a code means teaching
-``frontend/src/lib/types/chat.ts``'s ``ChatWarningCode`` about it too.
+of them), ``no_context`` (nothing reached masking at all and the search itself
+was not the cause — retrieval genuinely matched nothing, or every chunk failed
+closed under masking), or ``retrieval_failed`` (the chunk-plane search itself
+raised or had no client, so retrieval degraded to empty rather than reporting an
+empty library — issue #438's open half, now closed: see
+``search/chunk_retrieval.retrieve_chunks``'s ``diagnostics`` out-param). Adding a
+code means teaching ``frontend/src/lib/types/chat.ts``'s ``ChatWarningCode`` about
+it too.
 
 Threading model: everything except the SSE plumbing is synchronous (OpenSearch,
 SQLAlchemy, ``requests``), so the blocking stages run via Starlette's threadpool
@@ -38,6 +42,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 import anyio
+from sqlalchemy.orm import Session
 from starlette.concurrency import iterate_in_threadpool
 from starlette.concurrency import run_in_threadpool
 
@@ -61,6 +66,7 @@ from app.services.chat.redactor import MaskedChunk
 from app.services.chat.redactor import mask_chunks
 from app.services.chat.retrieval import retrieve_context
 from app.services.chat.settings import ChatSettings
+from app.services.search.chunk_retrieval import ChunkHit
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +173,51 @@ class ChatTurn:
         if self.finish_reason == "cancelled":
             return STATUS_CANCELLED
         return STATUS_COMPLETE
+
+
+def _drop_quarantined_hits(db: Session, hits: list[ChunkHit]) -> list[ChunkHit]:
+    """Remove hits belonging to quarantined files, chunk **or** digest.
+
+    Quarantine status is not an OpenSearch filter field — it can lag a takedown
+    by a reindex — so scope resolution filters it in Postgres
+    (``context_resolver._visible_files_query``) whenever a turn is explicitly
+    scoped. An **unscoped** turn (``file_uuids is None``) never routes through
+    that resolver at all: retrieval goes straight to the index, which still
+    returns the quarantined file's chunks and digest sections. This is the
+    chat-plane analogue of ``api/endpoints/search.py::_drop_quarantined_search_hits``
+    and must run over both planes, since a summarize-routed turn's digest hits
+    never pass through the chunk leg.
+
+    ⚠️ **This is NOT the only place a quarantine flag is enforced in the chat
+    pipeline, and an earlier revision of this docstring claiming that was
+    itself the bug** (W2.0g's adversarial review). This function runs at
+    ``_prepare_context`` phase 3.5 and only ever sees ``result.chunks`` /
+    ``result.digests`` — the RANKED tiers. The counted/aggregation tier
+    (``aggregation_service.answer_aggregation``) runs a whole phase EARLIER, at
+    phase 2, and is a separate code path this function never touches:
+    ``aggregation_service._accessible_scoped_files`` and
+    ``aggregation_service._quarantined_among`` are the enforcement points for
+    that tier, on the Postgres and OpenSearch shapes respectively. The
+    map-reduce overview's bounded-scope leg (``mapreduce.scope_digest_hits``)
+    is a third, independent enforcement point for the same reason — it re-reads
+    ``file_facts`` directly rather than routing through this function's output.
+    """
+    if not hits:
+        return hits
+    from app.models.media import MediaFile
+
+    uuids = {hit.file_uuid for hit in hits if hit.file_uuid}
+    if not uuids:
+        return hits
+    quarantined = {
+        str(row[0])
+        for row in db.query(MediaFile.uuid)
+        .filter(MediaFile.uuid.in_(uuids), MediaFile.is_quarantined.is_(True))
+        .all()
+    }
+    if not quarantined:
+        return hits
+    return [hit for hit in hits if hit.file_uuid not in quarantined]
 
 
 def _prepare_context(
@@ -302,6 +353,29 @@ def _prepare_context(
         wants_digest=decision.wants_digest,
     )
 
+    # --- Phase 3.5: drop quarantined hits before anything downstream sees
+    # them (its own short session). See `_drop_quarantined_hits` for what this
+    # does and does NOT cover — retrieval itself has no quarantine predicate,
+    # so this is the enforcement point for the RANKED tiers of an unscoped turn.
+    chunks_before = len(result.chunks)
+    with session_scope() as db:
+        result.chunks = _drop_quarantined_hits(db, result.chunks)
+        result.digests = _drop_quarantined_hits(db, result.digests)
+    # `result.retrieved` feeds the `no_context` warning's contract (documented
+    # at the yield site below and in `services/chat/CLAUDE.md`): non-zero means
+    # masking failed closed on every chunk. A quarantined chunk never reaches
+    # masking at all, so leaving it counted in `retrieved` made a quarantine
+    # drop impersonate a masking failure — `{"code": "no_context", "retrieved":
+    # 3}` beside `chunks_dropped_empty_after_masking == 0`, two diagnostics that
+    # contradicted each other and pointed at the wrong subsystem. Decrementing
+    # keeps `retrieved` meaning "chunks that could have reached masking", and
+    # the drop still has its own named counter so a quarantine cause is never
+    # read as a bare "search returned less".
+    chunks_dropped_quarantined = chunks_before - len(result.chunks)
+    if chunks_dropped_quarantined:
+        result.retrieved = max(0, result.retrieved - chunks_dropped_quarantined)
+        meta["chunks_dropped_quarantined"] = chunks_dropped_quarantined
+
     # --- Phase 4: the database phase. Every session here is SHORT and every
     # value that leaves it is a plain dataclass — an ORM instance would re-open a
     # session on the first attribute read afterwards and quietly undo the split.
@@ -311,9 +385,38 @@ def _prepare_context(
     # cannot be trusted falls through to inline Presidio, and a cold analyzer
     # build is ~10 s — measured at 13.9 s `idle in transaction` when it ran
     # inside this phase's session.
+    #
+    # `unmask_for_local` keys egress masking off WHERE THE MODEL RUNS (owner
+    # decision, 2026-08-13): a local model never has this text leave the
+    # machine, so masking it costs recall for no egress benefit. Resolved ONCE
+    # here (pure — reads only `llm.config`, no I/O) and threaded to every
+    # masker call below rather than re-derived per call, so the three sites
+    # cannot disagree about which provider this turn is actually using.
+    #
+    # `llm` is None for a legitimate, first-class deployment shape (#403 D6):
+    # no LLM_PROVIDER configured at all still has to produce masked context for
+    # the deterministic maps/keyphrase/coverage tiers, and that path never had
+    # an `llm` to read a provider from. `getattr(llm, "config", None)` reaches
+    # `is_local_provider`'s own None-safe duck typing (`getattr(config,
+    # "provider", "")` on a None config is `""`, which resolves to "not a known
+    # local provider") instead of a SECOND None check here — one fail-closed
+    # decision, not two that could disagree.
+    #
+    # `_mask_kwargs` only includes the keyword when it is True. Every existing
+    # caller of `mask_chunks`/`mask_digests` in this codebase — and every test
+    # that stubs either with a positional-only signature — predates this
+    # parameter; passing it unconditionally would break every one of them for
+    # the overwhelmingly common case (remote provider or no provider at all)
+    # where it does nothing anyway. Only a genuinely local provider needs the
+    # keyword sent at all.
+    from app.services.redaction.llm_guard import is_local_provider
+
+    unmask_for_local = is_local_provider(getattr(llm, "config", None))
+    _mask_kwargs = {"unmask_for_local": True} if unmask_for_local else {}
+
     digest_masked: list[MaskedChunk] = []
     summaries: list[Any] = []
-    masked = mask_chunks(session_scope, result.chunks, user_id)
+    masked = mask_chunks(session_scope, result.chunks, user_id, **_mask_kwargs)
     if result.digests:
         # A SEPARATE masking call, not an overload. A digest is
         # non-contiguous selected sentences; `mask_chunks` would rebuild it
@@ -325,7 +428,7 @@ def _prepare_context(
         from app.services.chat.mapreduce import scope_digest_hits
         from app.services.chat.redactor import mask_digests
 
-        digest_masked = mask_digests(session_scope, result.digests, user_id)
+        digest_masked = mask_digests(session_scope, result.digests, user_id, **_mask_kwargs)
         # The MAP output, read not computed: level 1 ran at ingest, so a
         # summary over a large scope costs no map-time work (#403 Phase 4).
         #
@@ -335,9 +438,13 @@ def _prepare_context(
         # document — using the ranked leg as the map produced a block headed
         # "recordings: 8" over a 25-file scope, and an answer that said so.
         with session_scope() as db:
-            map_hits = scope_digest_hits(db, file_uuids or []) if file_uuids else []
+            map_hits = (
+                scope_digest_hits(db, file_uuids or [], use_summaries=settings.map_tier_summaries)
+                if file_uuids
+                else []
+            )
         if map_hits:
-            map_masked = mask_digests(session_scope, map_hits, user_id)
+            map_masked = mask_digests(session_scope, map_hits, user_id, **_mask_kwargs)
             summary_hits, summary_masked = map_hits, map_masked
         else:
             summary_hits, summary_masked = result.digests, digest_masked
@@ -391,6 +498,10 @@ def _prepare_context(
     meta["retrieved"] = result.retrieved
     meta["reranked"] = result.reranked
     meta["cache_hit"] = result.cache_hit
+    # Only when true: a key most turns never carry keeps `msg_metadata` from
+    # growing a permanent "search worked fine" marker on every ordinary turn.
+    if result.retrieval_failed:
+        meta["retrieval_failed"] = True
     meta["files_searched"] = "all" if file_uuids is None else len(file_uuids)
     if speakers:
         meta["speakers_filtered"] = list(speakers)
@@ -609,6 +720,7 @@ class ChatService:
         history: list[dict[str, str]],
         file_uuids: list[str] | None,
         speakers: list[str] | None,
+        scope_files_dropped: int = 0,
         settings: ChatSettings,
         use_context: bool,
         system_prompt: str,
@@ -634,6 +746,14 @@ class ChatService:
             history: Prior turns, oldest first.
             file_uuids: Resolved scope; None = all accessible transcripts.
             speakers: Restrict retrieval to these speakers' turns.
+            scope_files_dropped: How many of the caller's EXPLICIT file picks
+                (never collections/tags) `resolve_scope_file_uuids` could not
+                resolve into `file_uuids` — inaccessible, deleted, or
+                quarantined. Stamped onto `msg_metadata` so a picker offering
+                files the scope then silently discards (most visible for an
+                admin, whose picker is tenant-wide while scope resolution has
+                no admin bypass) is visible in the reply rather than only in
+                a smaller `files_searched`.
             settings: Admin-tuned RAG knobs.
             use_context: False skips retrieval entirely (pure-LLM chat).
             system_prompt: Fully layered system prompt.
@@ -660,6 +780,8 @@ class ChatService:
             SSE frame strings.
         """
         turn = ChatTurn()
+        if scope_files_dropped:
+            turn.metadata["scope_files_dropped"] = scope_files_dropped
         keepalive_q: asyncio.Queue = asyncio.Queue()
         cancel_event = threading.Event()
         started = time.monotonic()
@@ -767,20 +889,32 @@ class ChatService:
                     # reindex produced a confident "I don't know" over a corpus
                     # full of matching material), so the counters are the only
                     # evidence the user can be shown. `retrieved` separates the
-                    # two remaining cases: 0 means the search returned nothing,
+                    # remaining two: 0 means the search returned nothing,
                     # non-zero means masking failed closed on every chunk.
-                    turn.metadata["no_context"] = True
+                    #
+                    # `retrieval_failed` is a THIRD, more specific fact
+                    # `_prepare_context` now threads out of `retrieve_chunks`'s
+                    # `diagnostics` param: the search backend itself raised or was
+                    # unreachable, rather than genuinely returning zero hits. That
+                    # is worth its own code — "your library has nothing about
+                    # this" and "search was down" call for different next steps —
+                    # so the two are mutually exclusive branches here, exactly
+                    # like `context_dropped`/`no_context` below.
+                    retrieval_failed = bool(turn.metadata.get("retrieval_failed"))
+                    code = "retrieval_failed" if retrieval_failed else "no_context"
+                    turn.metadata[code] = True
                     logger.warning(
-                        "Chat turn %s answered with NO excerpts: retrieved=%s, "
+                        "Chat turn %s answered with NO excerpts (%s): retrieved=%s, "
                         "files_searched=%s — the reply is ungrounded",
                         assistant_message_uuid,
+                        code,
                         turn.metadata.get("retrieved", 0),
                         turn.metadata.get("files_searched", 0),
                     )
                     yield sse(
                         "warning",
                         {
-                            "code": "no_context",
+                            "code": code,
                             "retrieved": turn.metadata.get("retrieved", 0),
                             "files_searched": turn.metadata.get("files_searched", 0),
                         },

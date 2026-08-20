@@ -1,163 +1,117 @@
 ---
 sidebar_position: 10
-title: Documents (Planned)
-description: The planned document knowledge base — formats, OCR, and mixed-collection chat
+title: Documents
+description: Upload PDFs, Office files, and more — parsed, chunked, and searchable alongside your transcripts
 ---
 
 # Documents
 
-:::danger Planned — none of this has shipped
-Nothing on this page exists in OpenTranscribe today. You cannot currently upload a PDF, and the
-gallery has no document lens. This page describes the **intended** shape of the document
-knowledge base ([issue&nbsp;#362](https://github.com/attevon-llc/OpenTranscribe/issues/362),
-sequenced as Stage&nbsp;6 of
-[issue&nbsp;#403](https://github.com/attevon-llc/OpenTranscribe/issues/403)) so the design is
-reviewable before it is built.
+OpenTranscribe knows what was *said*. A meeting rarely stands alone: there is a contract, a
+deck, a statement of work, a scanned invoice. Documents ([issue&nbsp;#362](https://github.com/attevon-llc/OpenTranscribe/issues/362),
+Stage&nbsp;6 of [issue&nbsp;#403](https://github.com/attevon-llc/OpenTranscribe/issues/403))
+bring that outside material into the same library, the same search index, and the same chat as
+your recordings.
 
-Numbers, formats and limits below are **plan values**. They are recorded here because they were
-decided deliberately, not because they have been measured in a running system. Expect some to
-change during implementation.
+:::note What's here today vs. what's still coming
+Upload, parsing, chunking, search indexing, and a dedicated viewer all work today. Two things
+from the original design are **not built yet** — see "Known limitations" below before you rely
+on either:
+- **Documents don't yet share a library view with recordings.** They live at their own
+  **Documents** section, not as a lens inside the main gallery. Collections and tags do not yet
+  mix media and documents.
+- **Content redaction has not been extended to document text yet.** Transcripts get PII/
+  profanity/toxicity masking; documents currently do not. Don't upload documents containing
+  sensitive information you'd rely on redaction to protect.
 :::
 
-## What it is for
+## What it does
 
-OpenTranscribe knows what was *said*. A meeting rarely stands alone: there is a contract, a deck,
-a statement of work, a scanned invoice. The motivating question for the whole feature is one
-sentence long:
+Upload a PDF, Word document, spreadsheet, presentation, web page, or plain-text file. It is
+parsed into clean text, split into chunks the same way your transcripts are, and indexed into
+the **same search index** transcripts use — so a hybrid search or a chat question can surface a
+passage from a document exactly like it surfaces a moment from a recording.
 
-> *"Does what we agreed in the call match what the contract says?"*
+## Supported formats
 
-Answering it means one library, one search index and one conversation covering both recordings
-and documents — not a second product bolted alongside the first.
-
-## Planned formats
-
-| Format | Status in the plan |
+| Format | Notes |
 |---|---|
-| PDF (text layer) | v1 |
-| PDF (scanned) | v1, via OCR |
-| DOCX, PPTX, XLSX | v1 |
-| CSV, Markdown, HTML, TXT | v1 |
-| Images (PNG/JPEG and similar) | v1, via OCR |
-| Legacy `.doc` / `.xls` / `.ppt`, RTF | **Only** with the optional Apache Tika fallback container. Without it the API returns a clear "convert to .docx or .pdf first" error rather than failing obscurely |
-| Email (`.eml` / `.msg`) | A later phase, not v1 |
+| PDF | Text-layer PDFs parse directly; scanned/image-only pages route through OCR |
+| DOCX, XLSX, PPTX | Microsoft Office (OOXML) |
+| ODT, ODS | OpenDocument (LibreOffice) |
+| EPUB | |
+| HTML | |
+| Markdown, plain text, CSV, TSV | |
+| PNG, JPEG, GIF, BMP, TIFF, WEBP | Images — always go through OCR |
+| Legacy `.doc` / `.xls` / `.ppt`, RTF | **Only** with the optional Apache Tika sidecar (`--with-documents`). Without it, these formats are rejected with a clear error rather than failing obscurely |
 
-The parser is [Docling](https://github.com/docling-project/docling) (MIT). Format selection is
-not guesswork: the `.docx`, `.xlsx`, `.pptx`, ODF and EPUB containers are all ZIP archives with
-identical magic bytes, so the planned detector inspects the archive rather than trusting the
-extension.
+Format detection inspects file content, not the extension — the `.docx`/`.xlsx`/`.pptx`/ODF/EPUB
+containers are all ZIP archives with identical magic bytes, so a mislabeled or renamed file is
+still classified correctly.
 
-## OCR
+## How parsing works
 
-Scanned pages are in scope **on day one**, not deferred — a document knowledge base that quietly
-ignores every scanned contract is not one.
+Parsing runs in one of three tiers, chosen automatically:
 
-- **Engine:** RapidOCR (Apache-2.0), running PaddleOCR models on ONNX Runtime. Around 50–80&nbsp;MB,
-  usable on CPU, faster on GPU.
-- **When it runs:** never inline. If a page's extractable text layer falls below a threshold, the
-  document is indexed from what text there is and the pages are queued for OCR, then re-indexed
-  when they come back.
-- **Why it is sharded:** a 500-page scan is split into 20-page units, so it becomes roughly 25
-  one-minute jobs rather than a single 25-minute job that starves the queue behind it.
-- **Per document control:** `auto` (OCR only when the text layer is thin), `force`, or `never`,
-  with a page ceiling and a global on/off. These are planned as database-backed settings editable
-  in the admin UI — following the existing convention, not new `.env` variables.
-- **GPU manners:** transcription always wins. Document OCR is designed as the lowest-priority GPU
-  consumer — it checks for free VRAM per shard, yields to everything else, and falls back to CPU
-  rather than queueing behind a transcription job.
+- **In-worker (always available)** — handles the text-layer formats above without any extra
+  container. This is the fast path for the large majority of uploads.
+- **OCR sidecar (`--with-documents`)** — a CPU-only [Docling](https://github.com/docling-project/docling)
+  service that handles scanned pages and images. It only runs when a page's extractable text
+  falls below a threshold, so a normal text-based PDF never pays the OCR cost.
+- **Legacy sidecar (`--with-documents`)** — Apache Tika, for the pre-2007 Office formats and RTF
+  that nothing else can read.
 
-If the OCR service is unavailable, the plan requires the document to be marked as text-layer-only
-rather than silently indexed as if it were complete. **Silent degradation is the failure mode the
-design is most concerned with.**
+If a document needs OCR and the sidecar isn't running, you get a clear, actionable error rather
+than a silently incomplete parse — a parser that quietly drops content is worse than one that
+says so.
 
-## Planned parse limits
+## Chunking
 
-These exist because a document parser is an attack surface, not merely a feature.
+Parsed text is split into chunks using the same target size your transcript chunks use, so
+document and transcript results rank comparably against each other in search and chat (mismatched
+chunk lengths would otherwise skew ranking toward one or the other). Tables are never split
+across chunks — a table's header row and its data always land together, because half a table is
+not a useful search result.
 
-| Limit | Planned value |
-|---|---|
-| Pages per document | 2,000 |
-| Upload size | 256&nbsp;MB (deliberately far below the 15&nbsp;GB media limit — "a 15&nbsp;GB document is an attack, not a use case") |
-| ZIP total uncompressed size | 512&nbsp;MB |
-| ZIP compression ratio | 200:1 |
-| ZIP member count | 5,000 |
-| ZIP nesting depth | 1 |
-| Password-protected PDFs | Rejected outright, not prompted for a password |
-| OCR shard size | 20 pages |
+## Viewing a document
 
-XML entity expansion attacks (XXE, "billion laughs") are blocked at import time for every parser
-path.
+Each document has its own page with two views:
 
-There is deliberately **no stated maximum chunk count per document**; the page cap is the bound
-that matters.
+- **Original** — PDF, HTML, Markdown, and plain-text files render directly in the browser.
+  Office formats (DOCX/PPTX/XLSX) don't have a browser-native renderer, so you get a **Download**
+  button instead of an inline preview for those.
+- **Parsed Text** — the extracted text in reading order, with page markers where the source has
+  pages. Linking directly to a specific chunk (`?chunk=N`) opens the document and scrolls to and
+  highlights that passage — the same mechanism a chat citation would use, once chat citations
+  become document-aware (see "Known limitations").
 
-## Mixed collections
+## Automatic import (watch sources)
 
-Documents and recordings are planned to share **one** library, not two.
+If you use [Watch Sources](./watch-sources.md) to auto-import media, documents dropped into the
+same watched folder, bucket, or share are picked up too — they no longer get skipped as an
+"invalid type." The same duplicate-detection (content fingerprinting, within-source and
+cross-source) applies.
 
-- The gallery gains **All / Media / Documents** lenses over the same grid, and the filter rail —
-  collections, tags, dates — stays cross-type. Filter by a collection and you see both kinds,
-  grouped with counts ("8 recordings · 23 documents").
-- Collections, tags and sharing work identically for both.
-- The chat context picker gains a **Documents** tab writing into the same selection as
-  recordings, so one conversation can be scoped to a collection containing both.
+## Known limitations
 
-The obligation that comes with mixing them: an answer must not quietly cover only half the
-collection. *"Summarise the Acme collection"* over 8 recordings and 23 documents has to say so,
-and aggregate answers are expected to report coverage per type — *"mentions X in 9 recordings and
-4 documents"*.
+Recorded here deliberately, because a documentation page that only lists what works is
+misleading by omission:
 
-## Citations, per type
-
-Citations are the feature's trust surface, and a document has no timestamp to jump to.
-
-| Source | Citation points at |
-|---|---|
-| Recording | The recording, opened **at that second** in the player |
-| Document | The document, opened at **that page and passage**, with the page and section shown on the card |
-
-A document citation that deep-links to `0:00` is treated as a **failure of the feature**, even if
-the prose answer is correct — it is exactly the kind of plausible-looking wrong link that teaches
-people to stop clicking citations. For the same reason, document excerpts are planned to omit
-speaker and timestamp fields entirely rather than carry `"Unknown"` and `0.0`, so *"what did Dana
-say about pricing?"* cannot be answered from a PDF.
-
-The assistant also gets document-specific instructions, because two of the transcript rules are
-actively wrong for a contract: "speech is messy, do not smooth over hesitation" and "attribute
-every statement to a speaker". For documents it is told to cite page and section, quote clause
-text verbatim, and — when a document and a recording disagree — **report both and say which is
-which**.
-
-## Deliberately not planned
-
-Recorded here because "we considered it and said no" is more useful than silence:
-
-- **No knowledge graph / GraphRAG.** The decision is evidence-based rather than aesthetic: on a
-  39,190-artifact enterprise benchmark, retrieval over structured metadata scored 32.96 and plain
-  hybrid search 20.61, while a GraphRAG variant scored 10.31 — at an indexing cost two to three
-  orders of magnitude higher.
-- **No chunk-level metadata facets.** Document-level metadata measures as a clear win; the same
-  study measured chunk-level metadata as a small *negative*.
-- **No LLM-generated per-chunk context in v1.**
-- **No second search index.** Documents join the existing one through an additive mapping change.
-- **No speaker features for documents** — no diarization, no voiceprints, no speaker suggestions.
-  Timestamps, waveform and subtitle export are replaced by page, section and passage anchors.
-- **No off-the-shelf RAG server.** Every candidate would duplicate four subsystems OpenTranscribe
-  already owns to supply the one it lacks, and the three that could talk to our OpenSearch are
-  licence-blocked for an AGPL project (branding riders, multi-tenant prohibitions, or enterprise
-  code shipped inside the official images).
-- **PDF page → chunk scroll sync.** Not feasible with an embedded browser viewer; chunk → page is.
-
-## Where this sits in the plan
-
-Documents are Stage 6 of the corpus-scale RAG programme, deliberately after the retrieval work
-they depend on: the evaluation harness, the summary/digest tier, and the citation machinery all
-have to exist first, or documents would be built on rails that are still moving. See
-[How Corpus-Scale RAG Is Designed and Validated](../developer-guide/rag-design-and-validation.md)
-for that sequence and the measurement discipline behind it.
+- **No redaction yet.** `redaction_status` exists on every document row, but nothing currently
+  populates it — PII/profanity/toxicity detection has not been extended from transcripts to
+  document text. Treat document uploads as unredacted.
+- **Chat citations aren't document-aware yet.** Document text is indexed into the same search
+  plane transcripts use, so it *can* surface in a chat answer's retrieved context — but the
+  citation-building code is currently written for timestamp-addressed transcript excerpts. A
+  citation pointing at a document passage (page and section, the way a transcript citation points
+  at a timestamp) is planned but not yet built.
+- **No cross-linking between documents and recordings.** A document that's clearly "the contract
+  for this meeting" isn't yet something you can express in the app — no shared collections
+  across both types, no "referenced by" relationship. This is the planned next phase.
+- **No speaker attribution in document text.** Diarization is audio-only; a quote in a document
+  ("Smith said...") isn't resolved to a `Speaker` record.
 
 ## Related
 
-- [AI Chat (RAG)](./rag-chat.md) — the feature documents will join
-- [RAG Evaluation Methodology](../developer-guide/rag-evaluation.md)
-- [Content Redaction](./content-redaction.md) — planned to apply to documents on the same terms
+- [Watch Sources](./watch-sources.md) — auto-import now includes documents
+- [AI Chat (RAG)](./rag-chat.md) — the search plane documents share with transcripts
+- [Content Redaction](./content-redaction.md) — not yet extended to documents; see above

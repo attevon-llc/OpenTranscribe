@@ -25,6 +25,17 @@
     return source.kind === 'digest';
   }
 
+  /**
+   * A `summary` citation (#464) is LLM-generated prose ABOUT the recording,
+   * not extracted from it — a labelled interpretation, never a quote, and
+   * (unlike a digest) not anchored to a moment in the recording at all. It
+   * gets its own badge and its own clock-less rendering rather than reusing
+   * the digest branch, so the two provenances stay visually distinguishable.
+   */
+  function isSummary(source: ChatSource): boolean {
+    return source.kind === 'summary';
+  }
+
   function toggle(): void {
     expanded = !expanded;
   }
@@ -61,22 +72,30 @@
           <li>
             <a
               class="source-card"
-              href={citationHref(source.file_uuid, source.start_time)}
+              href={citationHref(source)}
               data-testid="chat-source-link"
-              title={$t('chat.sources.openAt', { time: formatClock(source.start_time) })}
+              title={isSummary(source)
+                ? $t('chat.sources.openSummary')
+                : $t('chat.sources.openAt', { time: formatClock(source.start_time) })}
             >
               <span class="source-index">[{source.id}]</span>
               <span class="source-body">
                 <span class="source-title">{source.title || $t('chat.sources.untitled')}</span>
                 <span class="source-meta">
-                  {#if isDigest(source)}
+                  {#if isSummary(source)}
+                    <span class="source-kind" data-testid="chat-source-summary">
+                      {$t('chat.sources.aiSummaryBadge')}
+                    </span>
+                  {:else if isDigest(source)}
                     <span class="source-kind" data-testid="chat-source-digest">
                       {$t('chat.sources.summaryBadge')}
                     </span>
                   {:else if source.speaker}
                     <span class="source-speaker">{source.speaker}</span>
                   {/if}
-                  <span class="source-time">{formatClock(source.start_time)}</span>
+                  {#if !isSummary(source)}
+                    <span class="source-time">{formatClock(source.start_time)}</span>
+                  {/if}
                 </span>
                 {#if source.snippet}
                   <span class="source-snippet">{source.snippet}</span>

@@ -11,6 +11,13 @@ Stages, in order:
 
 Over-fetching then narrowing is the point: recall-oriented retrieval finds the
 candidates, precision-oriented reranking picks which ones are worth prompt space.
+
+**Document chunks (issue #463) join the chunk-plane retrieval in step 2** — see
+``chunk_retrieval.retrieve_chunks``'s ``_widen_to_document_plane``. They are
+never a second, separately-ranked query: one OpenSearch call, one relevance
+order, transcript and document hits interleaved by score. Speaker-filtered
+turns are the one exception (documents have no ``speaker`` field) and that
+exclusion is enforced inside ``retrieve_chunks`` itself, not here.
 """
 
 from __future__ import annotations
@@ -19,6 +26,7 @@ import logging
 import time
 from dataclasses import dataclass
 from dataclasses import field
+from typing import Any
 
 from app.services.chat.settings import ChatSettings
 from app.services.search.chunk_retrieval import ChunkHit
@@ -40,6 +48,11 @@ class RetrievalResult:
     retrieved: int = 0
     reranked: int = 0
     cache_hit: bool = False
+    #: True when the chunk-plane search itself failed (no OpenSearch client, or
+    #: the query raising) rather than legitimately returning zero hits. Lets a
+    #: caller with an empty ``chunks`` list distinguish "your library has
+    #: nothing about this" from "search was down" (issue #438's open half).
+    retrieval_failed: bool = False
     timings_ms: dict[str, int] = field(default_factory=dict)
 
 
@@ -138,6 +151,7 @@ def retrieve_context(
 
     # Over-fetch: the pool feeds diversity sampling and reranking, not the prompt.
     retrieve_started = time.monotonic()
+    chunk_diagnostics: dict[str, Any] = {}
     hits = retrieve_chunks(
         query,
         user_id=user_id,
@@ -146,8 +160,10 @@ def retrieve_context(
         speakers=speakers,
         size=settings.candidate_pool,
         search_mode=search_mode,
+        diagnostics=chunk_diagnostics,
     )
     result.retrieved = len(hits)
+    result.retrieval_failed = bool(chunk_diagnostics.get("retrieval_failed"))
     result.timings_ms["retrieve"] = int((time.monotonic() - retrieve_started) * 1000)
 
     if not hits:

@@ -289,6 +289,11 @@ msal==1.37.0
 #                   files hit it; installing this took DOCX coverage 27/32 → 32/32.
 #   convert-core    rtree/scipy/numpy/pillow, needed by the shared document model.
 docling-slim[format-office,format-html,format-markdown,format-pdf,format-latex,convert-core]==2.120.3
+# lxml: already an incidental transitive pin (python-docx/python-pptx/doclang all require
+# it unconditionally), but `docling_slim.py`'s HTML repair step (issue #69) now imports it
+# directly — pin it explicitly rather than depending on another package's transitive graph
+# to keep providing it. Torch-free (pure libxml2/libxslt), so the slim tier stays clean.
+lxml==6.1.1
 
 # -----------------------------------------------------------------------------
 # Transitive pins — measured drift, not housekeeping

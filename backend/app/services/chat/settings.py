@@ -35,6 +35,9 @@ SETTING_KEYS: dict[str, str] = {
     "messages_per_hour": "chat.limits.messages_per_hour",
     "max_concurrent_streams": "chat.limits.max_concurrent_streams",
     "retention_days": "chat.retention_days",
+    "speaker_facet_content_scope": "chat.aggregate.speaker_facet_content_scope",
+    "speaker_stats_enabled": "chat.aggregate.speaker_stats_enabled",
+    "map_tier_summaries": "chat.rag.map_tier_summaries",
 }
 
 DEFAULTS: dict[str, int | bool | float] = {
@@ -51,6 +54,9 @@ DEFAULTS: dict[str, int | bool | float] = {
     "messages_per_hour": C.DEFAULT_CHAT_MESSAGES_PER_HOUR,
     "max_concurrent_streams": C.DEFAULT_CHAT_MAX_CONCURRENT_STREAMS,
     "retention_days": C.DEFAULT_CHAT_RETENTION_DAYS,
+    "speaker_facet_content_scope": C.DEFAULT_CHAT_AGGREGATE_SPEAKER_FACET_CONTENT_SCOPE,
+    "speaker_stats_enabled": C.DEFAULT_CHAT_AGGREGATE_SPEAKER_STATS_ENABLED,
+    "map_tier_summaries": C.DEFAULT_CHAT_MAP_TIER_SUMMARIES,
 }
 
 
@@ -71,6 +77,20 @@ class ChatSettings:
     messages_per_hour: int = C.DEFAULT_CHAT_MESSAGES_PER_HOUR
     max_concurrent_streams: int = C.DEFAULT_CHAT_MAX_CONCURRENT_STREAMS
     retention_days: int = C.DEFAULT_CHAT_RETENTION_DAYS
+    #: W2.4. Score the speaker facet ("which speakers discussed X") by spoken
+    #: content instead of the recording's title. Off by default: it changes
+    #: what an existing mechanism answers.
+    speaker_facet_content_scope: bool = C.DEFAULT_CHAT_AGGREGATE_SPEAKER_FACET_CONTENT_SCOPE
+    #: W2.4. Answer "who talked the most" from exact per-speaker talk time in
+    #: ``file_facts``, distinct from the attendance-style speaker facet. Off by
+    #: default: a new shape, gated for rollout.
+    speaker_stats_enabled: bool = C.DEFAULT_CHAT_AGGREGATE_SPEAKER_STATS_ENABLED
+    #: #464. Prefer each file's LLM summary over its digest in the bounded-scope
+    #: map tier (``chat/mapreduce.scope_digest_hits``) whenever the summary is
+    #: FRESH — its stored ``source_fingerprint`` matches the file's current
+    #: ``file_facts`` row. Off by default: on-by-default needs measured
+    #: answer-quality evidence this flag does not yet have.
+    map_tier_summaries: bool = C.DEFAULT_CHAT_MAP_TIER_SUMMARIES
     #: Ceiling on the answer, sent to the provider as max_tokens. ``None`` means
     #: "use whatever the LLM config derived", which is the community behaviour.
     max_output_tokens: int | None = None

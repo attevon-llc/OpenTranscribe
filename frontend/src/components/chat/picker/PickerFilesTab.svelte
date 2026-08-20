@@ -9,6 +9,7 @@
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import { user } from '$stores/auth';
   import SearchBar from '$components/ui/SearchBar.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
 
@@ -25,6 +26,8 @@
     title?: string | null;
     duration?: number | null;
     upload_time?: string | null;
+    /** Owner's uuid — compared against `$user` to badge shared-with-me recordings. */
+    user_id?: string | null;
   }
 
   let files: PickerFile[] = [];
@@ -46,6 +49,10 @@
         page: reset ? 1 : page,
         page_size: PAGE_SIZE,
         status: 'completed',
+        // Without this the backend defaults to 'mine' — the #385 shape recurring
+        // here: a recording shared with the caller (but not owned by them) simply
+        // never appeared in this list, and chat could not be scoped to it at all.
+        ownership: 'all',
       };
       if (query.trim()) params.search = query.trim();
 
@@ -90,6 +97,10 @@
   function displayName(file: PickerFile): string {
     return file.title || file.filename;
   }
+
+  function isOwned(file: PickerFile): boolean {
+    return !file.user_id || file.user_id === $user?.uuid;
+  }
 </script>
 
 <div class="picker-tab">
@@ -112,6 +123,14 @@
             data-testid="picker-file-checkbox"
           />
           <span class="row-label">{displayName(file)}</span>
+          {#if !isOwned(file)}
+            <span
+              class="ownership-badge"
+              data-testid="picker-file-shared-badge"
+              aria-label={$t('chat.picker.sharedBadgeLabel')}
+              >{$t('chat.picker.sharedBadge')}</span
+            >
+          {/if}
         </label>
       </li>
     {/each}
@@ -183,8 +202,25 @@
   }
 
   .row-label {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Badges a recording that is shared-with-me rather than owned (#385 shape) —
+     without `ownership: all` on the list request these never appeared here at
+     all, so their presence needs a visible cue distinguishing them from the
+     caller's own recordings. */
+  .ownership-badge {
+    flex: none;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background-color: var(--button-hover);
     white-space: nowrap;
   }
 

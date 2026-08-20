@@ -247,6 +247,19 @@ def _gather_chunk_plans(db: Session, chunks: list[ChunkHit], cfg) -> list[_Chunk
     plans: list[_ChunkPlan] = []
     for chunk in chunks:
         try:
+            # ⚠️ Document-origin chunks NEVER take the MediaFile lookup below.
+            # ``Document.id`` and ``MediaFile.id`` are independent SERIAL sequences that
+            # collide in any real deployment — a document chunk querying `MediaFile.id ==
+            # chunk.file_id` can silently match an UNRELATED media file and, if their time
+            # ranges happen to overlap, serve that file's transcript content as if it were
+            # this document's masked text. Route by ``source_kind`` before any query runs;
+            # never infer the source from "the lookup returned None".
+            #
+            # Both branches return ``_SegmentSpans`` (plain data), so the masking phase in
+            # :func:`_apply_chunk_plan` is shared and holds no session either way.
+            if chunk.is_document:
+                plans.append(_ChunkPlan(segments=_gather_document_chunk_spans(db, chunk, cfg)))
+                continue
             plans.append(_ChunkPlan(segments=_gather_chunk_segments(db, chunk, cfg)))
         except Exception:  # noqa: BLE001
             logger.exception("Cached-span lookup failed for chunk; withholding content")
@@ -362,18 +375,32 @@ def _gather(
     *,
     chunks: list[ChunkHit] | None = None,
     digests: list[ChunkHit] | None = None,
+    unmask_for_local: bool = False,
 ) -> _MaskingInputs:
     """Open ONE short session, read everything, close it.
 
     Raises whatever the factory or the config read raises; the callers turn that
     into a fail-closed result for every item, because a policy that cannot be
     resolved is not a policy that permits sending text.
+
+    Args:
+        unmask_for_local: True when the turn's LLM config is local
+            (``llm_guard.is_local_provider``) — the text never leaves the
+            machine, so masking it before the call costs recall for no egress
+            benefit. Only takes effect when the policy would otherwise mask
+            AND the admin has not forced ``redact_before_llm``
+            (``cfg.redact_before_llm_locked``): the force floor exists
+            specifically to override a per-provider exemption like this one, so
+            a locked policy masks for every provider, local included.
     """
     from app.services.redaction.config import resolve_effective_config
 
     with session_factory() as db:
         cfg = resolve_effective_config(db, user_id)
-        inputs = _MaskingInputs(cfg=cfg, applies=bool(cfg.enabled and cfg.redact_before_llm))
+        applies = bool(cfg.enabled and cfg.redact_before_llm)
+        if applies and unmask_for_local and not cfg.redact_before_llm_locked:
+            applies = False
+        inputs = _MaskingInputs(cfg=cfg, applies=applies)
         if not inputs.applies:
             return inputs
         if chunks is not None:
@@ -383,9 +410,96 @@ def _gather(
         return inputs
 
 
+def _gather_document_chunk_spans(db: Session, chunk: ChunkHit, cfg) -> list[_SegmentSpans] | None:
+    """The document analog of :func:`_gather_chunk_segments`. Phase A — reads only.
+
+    Simpler than the transcript case by construction: a ``document_chunk`` row
+    already **is** the retrieval unit indexed into OpenSearch (1:1) — there is no
+    "rebuild from several overlapping rows" step, just a direct lookup by
+    ``(document_id, chunk_index)`` and a read of that row's own cached spans.
+
+    Returns ``None`` whenever the cached-span path cannot be trusted (mirrors
+    :func:`_gather_chunk_segments` exactly: unscanned, or scanned with a coverage
+    gap against this policy), so the masking phase falls back to inline detection.
+    Returns plain ``_SegmentSpans``, never an ORM row — the first attribute read on
+    a detached row would re-open a transaction in the masking phase, which is the
+    whole point of the split.
+    """
+    from app.models.document import Document
+    from app.models.document import DocumentChunk
+    from app.services.redaction.coverage import uncovered_detectors
+
+    scan = (
+        db.query(
+            Document.id,
+            Document.redaction_status,
+            Document.redaction_coverage,
+            Document.language,
+        )
+        .filter(Document.id == chunk.file_id)
+        .first()
+    )
+    if scan is None or scan.redaction_status != C.REDACTION_STATUS_DONE:
+        return None
+
+    gap = uncovered_detectors(scan, cfg)
+    if gap:
+        logger.warning(
+            "Cached spans do not cover %s for document %s; masking inline instead",
+            sorted(gap),
+            chunk.file_id,
+        )
+        return None
+
+    row = (
+        db.query(DocumentChunk.text, DocumentChunk.redactions)
+        .filter(
+            DocumentChunk.document_id == chunk.file_id,
+            DocumentChunk.chunk_index == chunk.chunk_index,
+        )
+        .first()
+    )
+    if row is None or not row.text:
+        return None
+
+    # One row, not a rebuild: a ``document_chunk`` IS the indexed retrieval unit (1:1).
+    # ``words=None`` — a document has no word timings; ``mask_segment`` takes that.
+    return [_SegmentSpans(text=row.text, redactions=list(row.redactions or []), words=None)]
+
+
 # --------------------------------------------------------------------------- #
 # Phase B — CPU. Nothing below may touch the database.
 # --------------------------------------------------------------------------- #
+
+
+def mask_document_chunks(
+    session_factory: SessionFactory,
+    chunks: list[ChunkHit],
+    user_id: int,
+    *,
+    unmask_for_local: bool = False,
+) -> list[MaskedChunk]:
+    """Apply the requesting user's redact-before-LLM policy to document chunks.
+
+    The document counterpart of :func:`mask_chunks`, addressed by
+    ``(document_id, chunk_index)`` rather than a transcript's time range — a document
+    has no timeline, so ``chunk.char_start``/``char_end`` (stamped on every
+    ``DocumentChunk`` by the chunker) is the addressing scheme, exactly as
+    anticipated in this module's own history: "expect a new
+    ``mask_document_chunks``-style function keyed on char offsets, following the
+    same fail-closed contract." Same fail-closed contract as ``mask_chunks``:
+    unresolvable policy or unmaskable content becomes ``""``, never raw text.
+
+    Callers that already know they only have document-origin chunks can call this
+    directly; ``mask_chunks`` also routes to the same logic internally for a mixed
+    list, so calling the wrong one on a document chunk is not a safety hole — it is
+    redundant, not incorrect.
+
+    Two-phase like :func:`mask_chunks` (issue #83): one short session gathers, the
+    session closes, and the masking — which may pay a cold Presidio build on the
+    inline fallback — runs with nothing held.
+    """
+    return mask_chunks(session_factory, chunks, user_id, unmask_for_local=unmask_for_local)
 
 
 def _mask_inline(text: str, cfg) -> str:
@@ -471,7 +585,11 @@ def _apply_chunk_plan(plan: _ChunkPlan, chunk: ChunkHit, cfg) -> tuple[str, bool
 
 
 def mask_chunks(
-    session_factory: SessionFactory, chunks: list[ChunkHit], user_id: int
+    session_factory: SessionFactory,
+    chunks: list[ChunkHit],
+    user_id: int,
+    *,
+    unmask_for_local: bool = False,
 ) -> list[MaskedChunk]:
     """Apply the **requesting user's** redact-before-LLM policy to retrieved chunks.
 
@@ -497,13 +615,19 @@ def mask_chunks(
         chunks: Chunks straight out of retrieval (unredacted index content).
         user_id: The REQUESTING user, whose effective policy governs (admin force
             floor included) — matching :func:`mask_digests` beside it.
+        unmask_for_local: True when the turn's LLM is local
+            (``redaction.llm_guard.is_local_provider``) — the excerpt text never
+            leaves the machine, so this policy's masking is skipped unless the
+            admin has forced ``redact_before_llm`` (``cfg.redact_before_llm_locked``),
+            in which case the force floor wins and masking still applies.
 
     Returns:
-        Chunks with prompt-safe text. When the policy does not apply, content is
-        passed through untouched.
+        Chunks with prompt-safe text. When the policy does not apply — including
+        when it is skipped for a local provider — content is passed through
+        untouched.
     """
     try:
-        inputs = _gather(session_factory, user_id, chunks=chunks)
+        inputs = _gather(session_factory, user_id, chunks=chunks, unmask_for_local=unmask_for_local)
     except Exception:  # noqa: BLE001
         logger.exception("Could not resolve redaction config; masking all chunk content")
         # Fail CLOSED: if we cannot tell whether masking is required, don't send text.
@@ -530,7 +654,11 @@ def mask_chunks(
 
 
 def mask_digests(
-    session_factory: SessionFactory, digests: list[ChunkHit], user_id: int
+    session_factory: SessionFactory,
+    digests: list[ChunkHit],
+    user_id: int,
+    *,
+    unmask_for_local: bool = False,
 ) -> list[MaskedChunk]:
     """Re-mask digest sections **through their provenance**, failing closed per sentence.
 
@@ -559,6 +687,9 @@ def mask_digests(
         digests: Digest hits from ``retrieve_digests``.
         user_id: Subject of the effective redaction policy (the requester, as in
             chat generally — not the file owner).
+        unmask_for_local: Same rule as :func:`mask_chunks` — skip masking for a
+            local LLM unless the admin force floor
+            (``cfg.redact_before_llm_locked``) overrides the exemption.
 
     Returns:
         Masked digests. A section whose provenance cannot be resolved comes back
@@ -567,7 +698,9 @@ def mask_digests(
     if not digests:
         return []
     try:
-        inputs = _gather(session_factory, user_id, digests=digests)
+        inputs = _gather(
+            session_factory, user_id, digests=digests, unmask_for_local=unmask_for_local
+        )
     except Exception:  # noqa: BLE001
         logger.exception("Could not resolve redaction config; withholding all digest content")
         return [MaskedChunk(source=d, content="", was_masked=True) for d in digests]

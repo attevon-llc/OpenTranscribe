@@ -9,6 +9,7 @@ import logging
 from typing import Any
 
 from app.core import constants as C  # noqa: N812
+from app.utils.speaker_labels import canonical_speaker_label
 
 logger = logging.getLogger(__name__)
 
@@ -55,17 +56,26 @@ def mask_segment_text(segment, redaction_cfg=None) -> str:
 def get_speaker_name(segment) -> str:
     """Get the best available speaker name from a transcript segment.
 
-    Priority: verified display_name > high-confidence suggestion > original label.
+    Delegates to :func:`app.utils.speaker_labels.canonical_speaker_label` — the single
+    home for this resolution, shared with ``ingest_artifacts`` (facts/digest) and
+    ``SpeakerStatusService`` so all three planes agree on one label for the same speaker.
     """
     if not segment.speaker:
-        return "Unknown Speaker"
+        return canonical_speaker_label(None)
 
     speaker = segment.speaker
-    if speaker.display_name and speaker.verified:
-        return str(speaker.display_name)
-    if speaker.suggested_name and speaker.confidence and speaker.confidence >= 0.75:
-        return f"{speaker.suggested_name} (suggested)"
-    return str(speaker.name)
+    # getattr, not attribute access: the real `Speaker` ORM model always carries
+    # `suggested_name`/`confidence`, but callers across the codebase (and this
+    # module's own test doubles) pass duck-typed stand-ins that model only the
+    # fields their scenario needs. A stand-in missing `suggested_name` must
+    # degrade to "no suggestion" rather than raise — the label a caller cannot
+    # resolve is `UNKNOWN_SPEAKER_LABEL`/the raw name, never an AttributeError.
+    return canonical_speaker_label(
+        speaker.name,
+        display_name=speaker.display_name,
+        suggested_name=getattr(speaker, "suggested_name", None),
+        confidence=getattr(speaker, "confidence", None),
+    )
 
 
 def build_full_transcript(transcript_segments, redaction_cfg=None) -> str:

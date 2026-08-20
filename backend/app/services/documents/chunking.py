@@ -234,7 +234,17 @@ def _split_long_block(document: ParsedDocument, block: Block, target: int) -> li
     """
     from app.services.search.chunking_service import split_into_sentences
 
-    sentences = split_into_sentences(block.text)
+    # `document.language` is the parser's detected language, or None when it could
+    # not tell (ir.py's ParsedDocument.language). Passing None here — never
+    # defaulting to "en" — is deliberate: split_into_sentences's own guard
+    # (`chunking_service._punkt_can_read`, issue #448) only applies its
+    # script/terminator disqualifiers when the language is NOT a recognised punkt
+    # code, so a hardcoded "en" defeated the guard for every document regardless of
+    # actual language — Thai and Devanagari text was silently handed to English
+    # punkt and returned as one giant "sentence". None takes the guard's own
+    # no-language path: it falls through to the text-based script/terminator check
+    # instead of trusting a language nobody actually asserted.
+    sentences = split_into_sentences(block.text, language=document.language)
     spans: list[tuple[int, int]] = []
     cursor = block.char_start
     for sentence in sentences:

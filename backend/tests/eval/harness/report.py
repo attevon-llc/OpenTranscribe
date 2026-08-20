@@ -235,6 +235,68 @@ def build_retrieval_per_query(queries: list[EvalQuery], result: EvalResult) -> l
     return details
 
 
+def build_scored_rows(
+    queries: list[EvalQuery], result: Any, *, scored_on: str, measures: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    """One row per (corpus, query class) for a #461 W2.E1 scored-family result.
+
+    Shared by SPEAKER_ATTR (``scored_on="attribution"``), SPEAKER_SUMMARY
+    (``"speaker_summary"``) and ATTRIBUTION_PROBE (``"attribution_probe"``) — the
+    three families ``tests.eval.harness.attribution`` produces, all shaped the
+    same way (an :class:`~tests.eval.harness.attribution.AttributionResult`-like
+    object with ``per_query``/``aggregate``/``query_count``). Mirrors
+    :func:`build_answer_rows`'s per-(corpus, class) grouping but takes its measure
+    names as a parameter, since the three families report different measures.
+    """
+    from tests.eval.harness.attribution import subset_attribution
+
+    by_corpus: dict[str, list[EvalQuery]] = {}
+    for query in queries:
+        if query.scored_on != scored_on:
+            continue
+        by_corpus.setdefault(query.corpus, []).append(query)
+
+    rows: list[dict[str, Any]] = []
+    for corpus in sorted(by_corpus):
+        members = by_corpus[corpus]
+        tier = members[0].license_tier
+        for query_class in sorted({q.query_class for q in members}):
+            selected = [q for q in members if q.query_class == query_class]
+            scoped = subset_attribution(result, {q.query_id for q in selected})
+            rows.append(
+                {
+                    "corpus": corpus,
+                    "license_tier": tier,
+                    "query_class": query_class,
+                    "scored_on": scored_on,
+                    "queries": scoped.query_count,
+                    "unanswered": len(scoped.unanswered),
+                    "metrics": _round({name: scoped.aggregate.get(name, 0.0) for name in measures}),
+                }
+            )
+    return rows
+
+
+def render_scored_table(rows: list[dict[str, Any]], measures: tuple[str, ...]) -> str:
+    """Render a #461 W2.E1 scored-family table. See :func:`build_scored_rows`."""
+    header = ["corpus", "tier", "class", "n", "unans."] + list(measures)
+    lines = [
+        "| " + " | ".join(header) + " |",
+        "|" + "|".join(["---"] * len(header)) + "|",
+    ]
+    for row in rows:
+        cells = [
+            row["corpus"],
+            row["license_tier"],
+            row["query_class"],
+            str(row["queries"]),
+            str(row["unanswered"]),
+        ]
+        cells += [f"{row['metrics'].get(name, 0.0):.4f}" for name in measures]
+        lines.append("| " + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
 def build_results(
     *,
     control_name: str,
@@ -246,12 +308,19 @@ def build_results(
     rows: list[dict[str, Any]],
     retrieval_per_query: list[dict[str, Any]],
     answers: dict[str, Any] | None = None,
+    wave2: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """The committed results document. Deterministic by construction.
 
     ``answers`` is a self-contained block — its own scoring provenance, its own
     answerer identity, its own rows — so no reader can arrive at an EM value
     without also reading what produced it.
+
+    ``wave2`` is the #461 W2.E1 block: attribution/speaker_summary/
+    attribution_probe rows, a recurrence summary, and per-turn instrumentation
+    coverage, each independently present or explicitly absent — see
+    ``chat_instrumentation.summarize_instrumentation``'s "absent is not zero"
+    rule, which this block preserves rather than flattening into a default.
     """
     from tests.eval.harness.metrics import measure_provenance
 
@@ -269,6 +338,7 @@ def build_results(
         # `rows` is a point estimate nobody can put an interval around.
         "retrieval_per_query": retrieval_per_query,
         "answers": answers or {"scored": 0, "note": "no answer-scored queries in this run"},
+        "wave2": wave2 or {"scored": 0, "note": "no #461 W2.E1 classes scored in this run"},
     }
 
 

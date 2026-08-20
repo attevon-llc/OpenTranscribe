@@ -56,6 +56,13 @@ _ALLOWED: dict[str, str] = {
         "G5, same shape: tags are denormalised onto every document of the file, "
         "digests included, or a tag-scoped chat query silently skips them."
     ),
+    "tasks/search_indexing_task.py::update_document_access_index": (
+        "#T10: the document-plane sibling of update_file_access_index. Uses "
+        "_document_plane_clause (a document's own chunks only), which is not one of "
+        "the DECIDED markers above because it lives in this module, not "
+        "indexing_service.py — same reasoning as update_file_access_index just above, "
+        "mirrored for the other plane."
+    ),
     "tasks/tenant_backfill_task.py::_backfill_transcript_chunks": (
         "G5: the tenant stamp keys on file_uuid and must reach every plane, or a "
         "digest stays personal-scope inside an organization."

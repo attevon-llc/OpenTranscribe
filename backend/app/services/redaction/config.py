@@ -73,6 +73,11 @@ class EffectiveRedactionConfig:
     allowlist: list[str] = field(default_factory=list)
     toxicity_threshold: float = C.DEFAULT_REDACTION_TOXICITY_THRESHOLD
     redact_before_llm: bool = C.DEFAULT_REDACTION_REDACT_BEFORE_LLM
+    # Admin force floor (`redaction.force_redact_before_llm`). When set, the
+    # per-provider local-model exemption (`llm_guard.is_local_provider`) must be
+    # ignored and masking applied regardless of where the model runs — the
+    # admin is mandating masked text for every provider, not only external ones.
+    redact_before_llm_locked: bool = False
     export_redacted: bool = C.DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED
     export_locked: bool = False  # admin mandates censored exports
 
@@ -223,6 +228,7 @@ def resolve_effective_config(db: Session, user_id: int) -> EffectiveRedactionCon
             prefs.get("redaction_redact_before_llm"), C.DEFAULT_REDACTION_REDACT_BEFORE_LLM
         )
         or admin["force_redact_before_llm"],
+        redact_before_llm_locked=admin["force_redact_before_llm"],
         export_redacted=_parse_bool(
             prefs.get("redaction_default_export_redacted"),
             C.DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED,

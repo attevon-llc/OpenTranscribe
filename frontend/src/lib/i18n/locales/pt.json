@@ -5055,5 +5055,8 @@
   "search.viewSummary": "Ver resumo",
   "search.jumpToSummarySection": "Ir para esta seção do resumo",
   "chat.sources.aiSummaryBadge": "Resumo de IA",
-  "chat.sources.openSummary": "Abrir o resumo gerado por IA"
+  "chat.sources.openSummary": "Abrir o resumo gerado por IA",
+  "chat.meta.speakerAmbiguous": "Falante ambíguo",
+  "chat.meta.speakerAmbiguousHint": "Vários falantes podem corresponder. Escolha um para filtrar e reenviar:",
+  "chat.context.removeSpeaker": "Remover {{name}} do filtro de falantes"
 }

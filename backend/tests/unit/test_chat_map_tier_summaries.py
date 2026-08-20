@@ -462,6 +462,11 @@ def _facts_db_for_summary_hit(sections_count: int, *, status: str = "completed")
             )
         elif "digest" in key:
             result.filter.return_value.first.return_value = (digest_payload,)
+            # See the matching comment in test_chat_digest_masking.py: the
+            # digest read is now one batched `file_id IN (...)` query per
+            # masking call (W2.1 amendment b), not one per hit. Every hit built
+            # by `_summary_hit()` in this module uses `file_id=1`.
+            result.filter.return_value.all.return_value = [(1, digest_payload)]
         else:
             result.filter.return_value.order_by.return_value.all.return_value = []
         return result

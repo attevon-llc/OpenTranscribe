@@ -268,6 +268,66 @@ def _gather_chunk_plans(db: Session, chunks: list[ChunkHit], cfg) -> list[_Chunk
     return plans
 
 
+def _load_digest_rows(db: Session, file_ids: list[int]) -> dict[int, Any]:
+    """``media_file_id -> digest JSON`` for every digest hit in ONE masking call.
+
+    A single ``file_id IN (...)`` query, instead of the one-query-per-hit
+    :func:`_digest_sentences` used to run inside :func:`_gather_digest_plans`'s
+    loop. A bounded-scope summarize turn's map (``mapreduce.scope_digest_hits``)
+    is exactly the shape that made this an N+1 in practice: with the default
+    ``sections_per_file``, one hit per file in scope means one round trip per
+    file — 25 files, 25 round trips, for data that fits in a single ``IN``
+    query. Deliberately a plain dict lookup afterward, not a second query per
+    hit, however many hits share a file (multiple sections of one file).
+
+    Args:
+        db: Session.
+        file_ids: The ``file_id`` of every digest hit this masking call covers.
+            Duplicates are fine; the query dedupes via ``set()``.
+
+    Returns:
+        A dict covering every file that HAS a ``file_facts`` row. A file with
+        no row (never ingested, or predates ``file_facts``) is simply absent —
+        callers already treat an absent/empty digest as "fall through to the
+        inline masker", the same contract :func:`_digest_sentences` had.
+    """
+    from app.models.file_facts import FileFacts
+
+    if not file_ids:
+        return {}
+    rows = (
+        db.query(FileFacts.media_file_id, FileFacts.digest)
+        .filter(FileFacts.media_file_id.in_(set(file_ids)))
+        .all()
+    )
+    return {int(file_id): digest for file_id, digest in rows}
+
+
+def _digest_sentences_from_row(digest_json: Any, chunk: ChunkHit) -> list[dict] | None:
+    """The stored sentences of one digest section, given an ALREADY-LOADED digest.
+
+    Split out of :func:`_digest_sentences` so the section-matching rule has one
+    implementation whether the digest JSON came from a single-hit query (that
+    function) or from the batched read :func:`_load_digest_rows` performs once
+    per masking call (:func:`_gather_digest_plans`). ``None`` means the row or
+    the section is not resolvable, and the caller must then fail closed rather
+    than fall back.
+    """
+    if not digest_json:
+        return None
+    # `is None`, never `or`: section 0 is a real section and it is the FIRST one
+    # of every digest, so `chunk.digest_section or -1` matched nothing for it and
+    # sent every leading section down the inline-masking fallback. Found by the
+    # per-sentence test, not by reading.
+    wanted = -1 if chunk.digest_section is None else int(chunk.digest_section)
+    sections = (digest_json or {}).get("sections") or []
+    for section in sections:
+        if int(section.get("index", -1)) == wanted:
+            sentences = section.get("sentences") or []
+            return list(sentences) if sentences else None
+    return None
+
+
 def _digest_sentences(db: Session, chunk: ChunkHit) -> list[dict] | None:
     """The stored sentences of one digest section, with their provenance.
 
@@ -275,23 +335,20 @@ def _digest_sentences(db: Session, chunk: ChunkHit) -> list[dict] | None:
     — so re-masking has to come back to ``file_facts`` for the provenance the
     extractive builder recorded. ``None`` means the row or the section is not
     resolvable, and the caller must then fail closed rather than fall back.
+
+    The single-hit form: reads its own row. :func:`_gather_digest_plans` does
+    NOT call this — it batches the read for every hit in the masking call via
+    :func:`_load_digest_rows` and calls :func:`_digest_sentences_from_row`
+    directly, to avoid the N+1 this function's per-hit query would otherwise
+    reproduce inside a loop. This form remains for any caller that genuinely
+    has one hit and no batch to amortize the query over.
     """
     from app.models.file_facts import FileFacts
 
     row = db.query(FileFacts.digest).filter(FileFacts.media_file_id == chunk.file_id).first()
-    if row is None or not row[0]:
+    if row is None:
         return None
-    # `is None`, never `or`: section 0 is a real section and it is the FIRST one
-    # of every digest, so `chunk.digest_section or -1` matched nothing for it and
-    # sent every leading section down the inline-masking fallback. Found by the
-    # per-sentence test, not by reading.
-    wanted = -1 if chunk.digest_section is None else int(chunk.digest_section)
-    sections = (row[0] or {}).get("sections") or []
-    for section in sections:
-        if int(section.get("index", -1)) == wanted:
-            sentences = section.get("sentences") or []
-            return list(sentences) if sentences else None
-    return None
+    return _digest_sentences_from_row(row[0], chunk)
 
 
 def _gather_sentence_segments(db: Session, sentence: dict) -> list[_SegmentSpans]:
@@ -326,6 +383,18 @@ def _gather_digest_plans(db: Session, digests: list[ChunkHit], cfg) -> list[_Dig
     from app.models.media import MediaFile
     from app.services.redaction.coverage import uncovered_detectors
 
+    # ONE query for every digest hit's `file_facts.digest`, not one per hit —
+    # see `_load_digest_rows`'s docstring for the N+1 this replaces. A failure
+    # here degrades every hit to "no digest row read", which the per-hit
+    # `.get()` below already treats as None — the same fail-closed outcome a
+    # per-hit query failure produced before batching, just via one failure
+    # point instead of N independent ones.
+    try:
+        digest_rows = _load_digest_rows(db, [d.file_id for d in digests])
+    except Exception:  # noqa: BLE001
+        logger.exception("Batched digest read failed; every hit falls through to unresolvable")
+        digest_rows = {}
+
     plans: list[_DigestPlan] = []
     for digest in digests:
         sentences = None
@@ -349,7 +418,7 @@ def _gather_digest_plans(db: Session, digests: list[ChunkHit], cfg) -> list[_Dig
                 and scan.redaction_status == C.REDACTION_STATUS_DONE
                 and not uncovered_detectors(scan, cfg)
             ):
-                sentences = _digest_sentences(db, digest)
+                sentences = _digest_sentences_from_row(digest_rows.get(digest.file_id), digest)
         except Exception:  # noqa: BLE001
             logger.exception("Digest provenance lookup failed; withholding the section")
             sentences = None

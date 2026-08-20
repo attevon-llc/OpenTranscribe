@@ -133,8 +133,45 @@ def _sort_speakers(speakers: list[Speaker]) -> list[Speaker]:
     return speakers
 
 
+#: Default page size for the ``for_filter=True`` fast path, and its ceiling.
+#: A picker doing type-to-search never needs more than a screenful before the
+#: user narrows further with ``q`` — matches the roster decline threshold in
+#: ``services/chat/speaker_resolver.py`` (a picker showing 500 unfiltered
+#: names is already past the point of being useful).
+SPEAKER_FILTER_DEFAULT_LIMIT = 200
+SPEAKER_FILTER_MAX_LIMIT = 500
+
+
+def _resolve_profile_filter_id(
+    db: Session, current_user: User, profile_uuid: str | None
+) -> int | None:
+    """Resolve a profile UUID query param to an internal id, or ``None``.
+
+    Non-admins are scoped to their own profiles — a profile UUID does not
+    belong to the sharing model the speaker/file axes use, so there is no
+    "shared profile" case to admit here. An unresolvable UUID (not found, or
+    belongs to someone else) returns ``None``, which the caller treats as "no
+    such profile" and answers an empty list rather than a 404 — this is a
+    filter parameter on a picker, not a resource fetch.
+    """
+    if not profile_uuid:
+        return None
+    query = db.query(SpeakerProfile.id).filter(SpeakerProfile.uuid == profile_uuid)
+    if not current_user.is_admin:
+        query = query.filter(SpeakerProfile.user_id == current_user.id)
+    found = query.scalar()
+    return int(found) if found is not None else None
+
+
 def _get_unique_speakers_for_filter(
-    db: Session, current_user: User, organization_id: OrgScope = UNSCOPED
+    db: Session,
+    current_user: User,
+    organization_id: OrgScope = UNSCOPED,
+    *,
+    q: str | None = None,
+    limit: int = SPEAKER_FILTER_DEFAULT_LIMIT,
+    profile_id: int | None = None,
+    is_profile: bool | None = None,
 ) -> list[dict[str, Any]]:
     """
     Get unique speakers by display name for filter use with media file counts.
@@ -143,10 +180,34 @@ def _get_unique_speakers_for_filter(
     speakers appear in the filter sidebar. ``organization_id`` tenant-gates the
     accessible-file resolution (default-deny across scopes).
 
-    Uses DISTINCT ON to pick a deterministic representative speaker per display
-    name (the one with the lowest id), then counts media files per display name.
+    ⚠️ **Quarantined files are excluded explicitly.** The accessible-files
+    subquery alone does not filter quarantine — it answers "can this user
+    reach this file", and quarantine is a separate, independent gate every
+    other read surface (gallery, detail, search, streaming) already applies.
+    Before this fix, a quarantined shared file's speakers — and their file
+    counts — surfaced in this picker for every user the file had been shared
+    with, including after the takedown, because nothing here ever asked.
 
-    Returns list of dicts with uuid, name, display_name, and media_count.
+    Groups by display name in ONE query (``GROUP BY``, not a separate
+    ``DISTINCT ON`` pass + a second count query): the media-file count is what
+    ``limit``/ordering are computed against, so counting first and then
+    picking a representative row for the winners is both cheaper and — unlike
+    the old two-query shape, which capped the alphabetically-first N rows
+    before sorting by count — actually returns the top-N by relevance.
+
+    Args:
+        q: Case-insensitive substring filter on display name (server-side
+            type-to-search; the picker no longer filters a fully-fetched list
+            client-side).
+        limit: Page size, clamped to :data:`SPEAKER_FILTER_MAX_LIMIT`.
+        profile_id: Restrict to speakers linked to this profile (internal id,
+            already resolved by the caller).
+        is_profile: ``True`` = only profile-linked speakers, ``False`` = only
+            unlinked, ``None`` = no filter.
+
+    Returns:
+        List of dicts with uuid, name, display_name, media_count, and
+        profile_id (the profile's UUID, or ``None``).
     """
     from sqlalchemy import func
     from sqlalchemy import select
@@ -165,40 +226,64 @@ def _get_unique_speakers_for_filter(
         )
         base_filter.append(Speaker.media_file_id.in_(select(accessible_sq)))
 
-    # Step 1: Get one representative speaker per display_name using DISTINCT ON
-    # This gives deterministic UUID selection (lowest id wins)
-    representative_speakers = (
-        db.query(Speaker)
-        .filter(*base_filter)
-        .distinct(Speaker.display_name)
-        .order_by(Speaker.display_name, Speaker.id)
-        .all()
-    )
+    quarantined_ids = select(MediaFile.id).where(MediaFile.is_quarantined.is_(True))
+    base_filter.append(~Speaker.media_file_id.in_(quarantined_ids))
 
-    # Step 2: Get media file counts per display_name in a single query
-    count_rows = (
+    if q and q.strip():
+        base_filter.append(Speaker.display_name.ilike(f"%{q.strip()}%"))
+    if profile_id is not None:
+        base_filter.append(Speaker.profile_id == profile_id)
+    if is_profile is True:
+        base_filter.append(Speaker.profile_id.isnot(None))
+    elif is_profile is False:
+        base_filter.append(Speaker.profile_id.is_(None))
+
+    bounded_limit = max(1, min(limit, SPEAKER_FILTER_MAX_LIMIT))
+    media_count_col = func.count(func.distinct(Speaker.media_file_id))
+    grouped = (
         db.query(
             Speaker.display_name,
-            func.count(func.distinct(Speaker.media_file_id)).label("media_count"),
+            media_count_col.label("media_count"),
+            func.min(Speaker.id).label("rep_id"),
+            func.min(Speaker.profile_id).label("profile_id"),
         )
         .filter(*base_filter)
         .group_by(Speaker.display_name)
+        .order_by(media_count_col.desc(), Speaker.display_name)
+        .limit(bounded_limit)
         .all()
     )
-    media_counts = {row.display_name: row.media_count for row in count_rows}
+    if not grouped:
+        return []
 
-    # Step 3: Combine and sort by media_count descending, then display_name
-    results = [
-        {
-            "uuid": str(speaker.uuid),
-            "name": speaker.name,
-            "display_name": speaker.display_name,
-            "media_count": media_counts.get(speaker.display_name, 0),
+    rep_ids = [row.rep_id for row in grouped]
+    rep_rows = db.query(Speaker.id, Speaker.uuid, Speaker.name).filter(Speaker.id.in_(rep_ids))
+    reps_by_id = {row.id: row for row in rep_rows}
+
+    profile_ids = {row.profile_id for row in grouped if row.profile_id is not None}
+    profile_uuids: dict[int, str] = {}
+    if profile_ids:
+        profile_uuids = {
+            pid: str(puuid)
+            for pid, puuid in db.query(SpeakerProfile.id, SpeakerProfile.uuid).filter(
+                SpeakerProfile.id.in_(profile_ids)
+            )
         }
-        for speaker in representative_speakers
-    ]
-    results.sort(key=lambda r: (-r["media_count"], r["display_name"] or ""))
 
+    results: list[dict[str, Any]] = []
+    for row in grouped:
+        rep = reps_by_id.get(row.rep_id)
+        if rep is None:
+            continue
+        results.append(
+            {
+                "uuid": str(rep.uuid),
+                "name": rep.name,
+                "display_name": row.display_name,
+                "media_count": row.media_count,
+                "profile_id": profile_uuids.get(row.profile_id) if row.profile_id else None,
+            }
+        )
     return results
 
 
@@ -611,6 +696,17 @@ def list_speakers(
     verified_only: bool = False,
     file_uuid: str | None = None,
     for_filter: bool = False,
+    q: str | None = Query(None, description="for_filter only: substring search on display name"),
+    limit: int = Query(
+        SPEAKER_FILTER_DEFAULT_LIMIT,
+        ge=1,
+        le=SPEAKER_FILTER_MAX_LIMIT,
+        description="for_filter only: page size",
+    ),
+    profile_id: str | None = Query(None, description="for_filter only: profile UUID"),
+    is_profile: bool | None = Query(
+        None, description="for_filter only: restrict to profile-linked (true) or unlinked (false)"
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -631,6 +727,8 @@ def list_speakers(
         verified_only (bool): If true, return only verified speakers.
         file_uuid (Optional[str]): If provided, return only speakers associated with this file.
         for_filter (bool): If true, return only speakers with distinct display names for filtering.
+        q, limit, profile_id, is_profile: ``for_filter=True`` only — server-side type-to-search
+            (substring, case-insensitive), page size, and profile scoping. Ignored otherwise.
 
     Returns:
         List[dict]: Speaker objects with embedded suggestion data and profile information.
@@ -641,7 +739,21 @@ def list_speakers(
         # Fast path: filter mode only needs aggregated display names
         # Skip loading all speaker objects, profiles, and media files
         if for_filter:
-            return _get_unique_speakers_for_filter(db, current_user, organization_id=ctx.org_id)
+            resolved_profile_id = _resolve_profile_filter_id(db, current_user, profile_id)
+            if profile_id and resolved_profile_id is None:
+                # A profile UUID was given and did not resolve (not found, or
+                # not this caller's) — an empty result, not a 404: this is a
+                # filter parameter, not a resource fetch.
+                return []
+            return _get_unique_speakers_for_filter(
+                db,
+                current_user,
+                organization_id=ctx.org_id,
+                q=q,
+                limit=limit,
+                profile_id=resolved_profile_id,
+                is_profile=is_profile,
+            )
 
         # Convert file_uuid to file_id if provided (tenant-gated via ctx.org_id)
         file_id = _resolve_file_uuid_to_id(file_uuid, current_user, db, organization_id=ctx.org_id)

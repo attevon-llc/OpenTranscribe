@@ -99,15 +99,31 @@ def cache_key(
     settings_rev: str,
     search_mode: str,
     corpus_rev: str | None = None,
+    text_fields_preset: str = "default",
 ) -> str:
     """Build the cache key for one retrieval.
 
     The key binds everything that can change the answer: who is asking, in which
     tenant, the normalized question, the resolved file scope, the admin settings
     revision, the retrieval mode, and the corpus version. Miss on any of them.
+
+    Args:
+        text_fields_preset: The #506 BM25 field preset (see
+            ``chunk_retrieval.resolve_text_field_preset``) the retrieval was — or
+            will be — run under. ⚠️ **Load-bearing, not decoration.** This cache
+            sits directly in front of ``retrieve_chunks``/``retrieve_digests``,
+            both of which now accept a ``text_fields`` override; without this
+            parameter in the key, an arm run under one preset would serve its
+            cached hits to a request asking for a different preset for up to
+            the cache TTL, silently voiding the comparison. Defaults to
+            ``"default"`` so every caller that has not been taught about
+            presets yet keeps hitting the same bucket it always has.
     """
     corpus = corpus_rev if corpus_rev is not None else corpus_version()
-    material = f"{_normalize(query)}|{scope_digest}|{settings_rev}|{search_mode}|c{corpus}"
+    material = (
+        f"{_normalize(query)}|{scope_digest}|{settings_rev}|{search_mode}|c{corpus}"
+        f"|tf{text_fields_preset}"
+    )
     digest = hashlib.sha256(material.encode()).hexdigest()[:32]
     return _KEY.format(user_id=user_id, org=organization_id or 0, digest=digest)
 

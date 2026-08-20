@@ -38,6 +38,7 @@ SETTING_KEYS: dict[str, str] = {
     "speaker_facet_content_scope": "chat.aggregate.speaker_facet_content_scope",
     "speaker_stats_enabled": "chat.aggregate.speaker_stats_enabled",
     "map_tier_summaries": "chat.rag.map_tier_summaries",
+    "speaker_resolver_enabled": "chat.speaker_resolver_enabled",
 }
 
 DEFAULTS: dict[str, int | bool | float] = {
@@ -57,6 +58,7 @@ DEFAULTS: dict[str, int | bool | float] = {
     "speaker_facet_content_scope": C.DEFAULT_CHAT_AGGREGATE_SPEAKER_FACET_CONTENT_SCOPE,
     "speaker_stats_enabled": C.DEFAULT_CHAT_AGGREGATE_SPEAKER_STATS_ENABLED,
     "map_tier_summaries": C.DEFAULT_CHAT_MAP_TIER_SUMMARIES,
+    "speaker_resolver_enabled": C.DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED,
 }
 
 
@@ -91,6 +93,12 @@ class ChatSettings:
     #: ``file_facts`` row. Off by default: on-by-default needs measured
     #: answer-quality evidence this flag does not yet have.
     map_tier_summaries: bool = C.DEFAULT_CHAT_MAP_TIER_SUMMARIES
+    #: W2.2. Resolve a speaker named in the question text (e.g. "what did Dana
+    #: say about pricing") against the caller's roster and, on a unique match
+    #: paired with a speaker-verb frame, add a PARALLEL speaker-scoped chunk
+    #: leg (`services/chat/speaker_resolver.py`). Off by default: a new,
+    #: unmeasured retrieval shape.
+    speaker_resolver_enabled: bool = C.DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED
     #: Ceiling on the answer, sent to the provider as max_tokens. ``None`` means
     #: "use whatever the LLM config derived", which is the community behaviour.
     max_output_tokens: int | None = None

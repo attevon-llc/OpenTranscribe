@@ -154,6 +154,12 @@ def _facts_db(sentences, *, status="completed", segment_batches=None):
             )
         elif "digest" in key:
             result.filter.return_value.first.return_value = (digest_payload,)
+            # `_gather_digest_plans` now reads every hit's digest through ONE
+            # batched `file_id IN (...)` query (`_load_digest_rows`) instead of
+            # a per-hit `_digest_sentences` call (W2.1 amendment b). Every hit
+            # in this module uses `_digest_hit()`'s default `file_id=5`, so a
+            # single-row `.all()` answer covers every existing test here.
+            result.filter.return_value.all.return_value = [(5, digest_payload)]
         else:
             ordered = result.filter.return_value.order_by.return_value
             ordered.all.return_value = batches.pop(0) if batches else []

@@ -220,6 +220,92 @@ def _drop_quarantined_hits(db: Session, hits: list[ChunkHit]) -> list[ChunkHit]:
     return [hit for hit in hits if hit.file_uuid not in quarantined]
 
 
+def _resolve_summary_tier(
+    *,
+    decision,
+    file_uuids: list[str] | None,
+    settings: ChatSettings,
+    session_scope,
+    ranked_digests: list[ChunkHit],
+    ranked_digests_masked: list[MaskedChunk],
+    user_id: int,
+    mask_kwargs: dict[str, Any],
+) -> tuple[list[Any], list[MaskedChunk], str | None, int]:
+    """Decide which leg feeds the map-reduce overview's summaries (W2.1).
+
+    Split out of ``_prepare_context`` so its branching doesn't count against
+    that function's own complexity — it is a single decision, made once.
+
+    **The scope map used to run ONLY when the ranked digest leg had already
+    found something** (``if result.digests: ... scope_digest_hits(...)``), so
+    the coverage map died exactly when it mattered most: a bounded scope whose
+    ranked search simply did not surface any digest sections. It now runs
+    whenever the router asked for the digest tier AND the scope is bounded,
+    independent of what the ranked leg returned.
+
+    The MAP output is READ, not computed: level 1 ran at ingest, so a summary
+    over a large scope costs no map-time work (#403 Phase 4). A BOUNDED scope
+    is mapped over in full; the ranked leg is only a fallback for "all
+    accessible" (``file_uuids is None``), where mapping over everything is not
+    possible — there is no enumerated list to map. Ranking picks the best
+    passages, mapping covers every document — using the ranked leg as the map
+    produced a block headed "recordings: 8" over a 25-file scope, and an
+    answer that said so.
+
+    Args:
+        decision: The router's ``Route`` for this turn.
+        file_uuids: The resolved scope. ``None``/unbounded cannot be mapped.
+        settings: Admin-tuned RAG knobs (``map_tier_summaries``).
+        session_scope: Factory for a short-lived Postgres session.
+        ranked_digests: ``result.digests`` — the OpenSearch-ranked digest leg.
+        ranked_digests_masked: Those same hits, already masked.
+        user_id: The requesting user, for the masker's policy resolution.
+        mask_kwargs: ``mask_digests``' ``unmask_for_local`` kwarg, if set.
+
+    Returns:
+        ``(summary_hits, summary_masked, map_leg, files_without_artifacts)``.
+        ``map_leg`` is ``"scope_map"`` | ``"ranked_digests"`` | ``None``
+        (nothing to summarise this turn). ``files_without_artifacts`` is 0
+        whenever the map did not run or found no gap.
+    """
+    from app.services.chat.mapreduce import scope_digest_hits
+    from app.services.chat.mapreduce import sections_budget
+    from app.services.chat.redactor import mask_digests
+
+    if decision.wants_digest and file_uuids:
+        with session_scope() as db:
+            map_hits = scope_digest_hits(
+                db,
+                file_uuids,
+                sections_per_file=sections_budget(len(file_uuids)),
+                use_summaries=settings.map_tier_summaries,
+            )
+        # Counted whether or not the map produced anything, so an upgraded
+        # library (files whose `file_facts` row has not been backfilled yet)
+        # reports the gap on `meta` rather than the file simply being absent
+        # with no signal — the coverage block already says so in the header
+        # when summaries exist; this is the same count for when they don't.
+        files_without_artifacts = int(map_hits.coverage.get("files_without_artifacts", 0))
+        if map_hits:
+            summary_masked = mask_digests(session_scope, map_hits, user_id, **mask_kwargs)
+            return map_hits, summary_masked, "scope_map", files_without_artifacts
+        if ranked_digests:
+            # The map covered nothing (every file in scope lacks a digest, or
+            # the read failed) but the ranked leg still found something —
+            # degrade to it rather than reporting no overview at all.
+            return ranked_digests, ranked_digests_masked, "ranked_digests", files_without_artifacts
+        return [], [], None, files_without_artifacts
+
+    if ranked_digests:
+        # Unbounded scope: keep today's ranked-leg-only behaviour. Also
+        # reachable for a bounded scope the router did not route to the
+        # digest tier at all but which somehow still carries ranked digest
+        # hits — the same fallback the pre-decoupling code applied
+        # unconditionally to any non-empty `result.digests`.
+        return ranked_digests, ranked_digests_masked, "ranked_digests", 0
+    return [], [], None, 0
+
+
 def _prepare_context(
     *,
     user_id: int,
@@ -417,6 +503,7 @@ def _prepare_context(
     digest_masked: list[MaskedChunk] = []
     summaries: list[Any] = []
     masked = mask_chunks(session_scope, result.chunks, user_id, **_mask_kwargs)
+
     if result.digests:
         # A SEPARATE masking call, not an overload. A digest is
         # non-contiguous selected sentences; `mask_chunks` would rebuild it
@@ -424,30 +511,30 @@ def _prepare_context(
         # whole span verbatim — more text than the digest holds, from a
         # function whose name says it masked it. `mask_digests` goes through
         # the per-sentence provenance.
-        from app.services.chat.mapreduce import build_file_summaries
-        from app.services.chat.mapreduce import scope_digest_hits
         from app.services.chat.redactor import mask_digests
 
         digest_masked = mask_digests(session_scope, result.digests, user_id, **_mask_kwargs)
-        # The MAP output, read not computed: level 1 ran at ingest, so a
-        # summary over a large scope costs no map-time work (#403 Phase 4).
-        #
-        # A BOUNDED scope is mapped over in full; the ranked leg is only a
-        # fallback for "all accessible", where mapping over everything is not
-        # possible. Ranking picks the best passages, mapping covers every
-        # document — using the ranked leg as the map produced a block headed
-        # "recordings: 8" over a 25-file scope, and an answer that said so.
-        with session_scope() as db:
-            map_hits = (
-                scope_digest_hits(db, file_uuids or [], use_summaries=settings.map_tier_summaries)
-                if file_uuids
-                else []
-            )
-        if map_hits:
-            map_masked = mask_digests(session_scope, map_hits, user_id, **_mask_kwargs)
-            summary_hits, summary_masked = map_hits, map_masked
-        else:
-            summary_hits, summary_masked = result.digests, digest_masked
+
+    # W2.1: which leg feeds the overview — the scope map (bounded scope, reads
+    # `file_facts` for every file) or the ranked digest leg above (unbounded
+    # scope, or the map covered nothing). See `_resolve_summary_tier`'s own
+    # docstring for the decoupling this replaces.
+    summary_hits, summary_masked, map_leg, files_without_artifacts = _resolve_summary_tier(
+        decision=decision,
+        file_uuids=file_uuids,
+        settings=settings,
+        session_scope=session_scope,
+        ranked_digests=result.digests,
+        ranked_digests_masked=digest_masked,
+        user_id=user_id,
+        mask_kwargs=_mask_kwargs,
+    )
+    if files_without_artifacts:
+        meta["map_files_without_artifacts"] = files_without_artifacts
+
+    if summary_hits:
+        from app.services.chat.mapreduce import build_file_summaries
+
         with session_scope() as db:
             summaries = build_file_summaries(
                 db,
@@ -457,16 +544,32 @@ def _prepare_context(
 
     # --- Phase 5: composition and diagnostics. Pure, except the language read
     # below, which takes one short session of its own. -------------------------
-    if result.digests:
+    if summaries:
         from app.services.chat.mapreduce import build_overview
 
         overview = build_overview(
             question, summaries, files_in_scope=len(file_uuids) if file_uuids else 0
         )
         meta["overview"] = overview.as_metadata()
+        # The frontend's pre-existing "Overview source" row: which REDUCER
+        # composed the block ("code" | "llm-batch"), already carried inside
+        # `overview.as_metadata()["reducer"]` but promoted to a top-level key
+        # because `ChatMessageMeta.svelte` reads `meta.map_source` directly,
+        # not `meta.overview.reducer`.
+        meta["map_source"] = overview.reducer
+        # The decoupling provenance this task is actually about: which LEG
+        # supplied the summaries the reducer above ran over. Not on the
+        # frontend allowlist — a diagnostic for `meta`'s general-purpose bag,
+        # same as `chunk_leg_reduced_to` / `chunks_dropped_quarantined` below.
+        meta["map_leg"] = map_leg
+    if digest_masked:
         # Digests lead: they are the recording-level answer a summarize turn
-        # asked for, and the chunk excerpts under them are the evidence.
+        # asked for, and the chunk excerpts under them are the evidence. This
+        # is independent of whether the OVERVIEW came from the scope map or
+        # the ranked leg — the ranked digest hits are still evidence chunks
+        # either way.
         masked = digest_masked + masked
+    if result.digests:
         meta["digests_retrieved"] = len(result.digests)
 
     kept = [chunk for chunk in masked if chunk.content.strip()]

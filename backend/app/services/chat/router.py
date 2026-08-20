@@ -313,6 +313,16 @@ class Route:
     #: narrow a per-speaker answer to the one name already in scope with no new
     #: parameter threaded through ``answer_aggregation``.
     speakers: tuple[str, ...] = ()
+    #: W2.2. An AXIS, not a fifth intent: whether ``chat.speaker_resolver``
+    #: found a UNIQUE speaker mention in the question text paired with a
+    #: speaker-verb frame ("what did Dana say about pricing"). Orthogonal to
+    #: ``intent``/``tiers`` — it never changes either, and it is not consulted
+    #: by :func:`_apply_structure`, which only ever narrows tiers for the
+    #: EXPLICIT, hard ``speakers`` scope above. A resolved mention is soft: it
+    #: is evidence for a PARALLEL retrieval leg the caller may add, never for
+    #: removing or narrowing what the existing tiers already return — so
+    #: unlike ``speakers``, this field earns no place in ``_apply_structure``.
+    speaker_focus: bool = False
 
     @property
     def wants_digest(self) -> bool:
@@ -334,6 +344,8 @@ class Route:
             payload["literal"] = True
         if self.temporal is not None and not self.temporal.is_empty:
             payload["temporal"] = self.temporal.as_metadata()
+        if self.speaker_focus:
+            payload["speaker_focus"] = True
         return payload
 
 
@@ -484,6 +496,7 @@ def route(
     rewritten: str | None = None,
     llm_intent: str | None = None,
     speakers: list[str] | None = None,
+    speaker_focus: bool = False,
 ) -> Route:
     """Decide the tiers for one turn.
 
@@ -503,6 +516,11 @@ def route(
             but it is a reasonable tiebreak for a query with no signal at all.
         speakers: Active speaker scope, which narrows the tiers (see
             :func:`_apply_structure`).
+        speaker_focus: W2.2. Whether ``chat.speaker_resolver`` found a unique
+            mention plus a speaker-verb frame. Carried onto :attr:`Route.speaker_focus`
+            unchanged — this function does not derive it, only records it,
+            since resolving a mention needs the roster (Postgres) and this
+            module loads nothing and calls nothing.
 
     Returns:
         A :class:`Route`. Always includes :data:`TIER_CHUNK`.
@@ -538,4 +556,5 @@ def route(
         source=source,
         literal=literal,
         speakers=tuple(speakers) if speakers else (),
+        speaker_focus=speaker_focus,
     )

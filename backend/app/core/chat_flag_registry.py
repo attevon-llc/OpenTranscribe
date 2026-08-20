@@ -206,6 +206,13 @@ CHAT_FLAG_REGISTRY: tuple[ChatFlagSpec, ...] = (
         value_type=bool,
         default=C.DEFAULT_CHAT_MAP_TIER_SUMMARIES,
     ),
+    ChatFlagSpec(
+        field="speaker_resolver_enabled",
+        setting_key="chat.speaker_resolver_enabled",
+        description="Resolve a speaker named in the question text into a parallel retrieval leg",
+        value_type=bool,
+        default=C.DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED,
+    ),
 )
 
 #: ``field -> ChatFlagSpec``, for a single-lookup consumer.

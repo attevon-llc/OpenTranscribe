@@ -93,6 +93,28 @@ ADDITIVE_MAPPING_STEPS: tuple[AdditiveMappingStep, ...] = (
             "profile_id": {"type": "integer"},
         },
     ),
+    AdditiveMappingStep(
+        version=2,
+        description=(
+            "page / section_path / char_start / char_end for document-chunk citations "
+            "(#463 write-side). The read side (ChunkHit, the _source allowlist, the cache "
+            "round-trip) landed first; this is what index_document_chunks actually writes."
+        ),
+        properties={
+            # 1-based page a document chunk falls on. Integer, not analyzed — a citation
+            # reads it back verbatim, never searches "page 3".
+            "page": {"type": "integer"},
+            # Heading breadcrumb (["Chapter 2", "2.1 Scope"]). `keyword`, not `text`: this
+            # is a citation label to render, not prose to rank documents on, and a keyword
+            # array lets a future feature filter by section without an analyzer decision
+            # nobody has asked for yet.
+            "section_path": {"type": "keyword"},
+            # Character offsets into the parsed document's full text — citation-only,
+            # never queried.
+            "char_start": {"type": "integer"},
+            "char_end": {"type": "integer"},
+        },
+    ),
 )
 
 #: The highest step version — what a freshly created index is stamped with, and
@@ -1447,6 +1469,15 @@ class TranscriptIndexingService:
                 "file_size": file_size,
                 "indexed_at": now,
                 digest_mapping.DOC_TYPE_FIELD: digest_mapping.DOC_TYPE_DOCUMENT_CHUNK,
+                # Citation fields (#463 write-side gap). Read from the real parsed
+                # document structure (`DocumentChunk.to_row()`-shaped dicts) — NEVER
+                # folded into `embedding_text` below: a page number or a character
+                # offset changing the embedded text would mean every existing vector
+                # implicitly needs a re-embed, which this write-side fix must not imply.
+                "page": chunk.get("page"),
+                "section_path": list(chunk.get("section_path") or []),
+                "char_start": chunk.get("char_start"),
+                "char_end": chunk.get("char_end"),
                 # The pipeline embeds this field, not `content` — see
                 # `_build_neural_ingest_pipeline`. BM25 still scores `content`. No roster:
                 # a document has no speakers.

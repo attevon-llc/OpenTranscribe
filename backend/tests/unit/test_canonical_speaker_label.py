@@ -205,6 +205,93 @@ def test_facts_and_digest_agree_with_get_speaker_name_on_the_same_speaker():
     assert section_speakers == {resolved}
 
 
+# ------------------------------------------------- W2.1: the remaining planes agree too
+#
+# The module docstring named five planes that disagreed. facts/digest/
+# speaker_status_service/transcript_builders were unified above; these tests
+# widen the same agreement check to the chunk-index writers
+# (search_indexing_task, reindex_task), files/crud.py's segment formatter, and
+# formatting_service.py — the "remaining work to close the disagreement
+# completely" the module docstring flagged as still open.
+
+
+def test_the_chunk_index_writers_agree_with_get_speaker_name():
+    """Both chunk-index writers now delegate to `canonical_speaker_label`
+    through their own resolution helpers — called here directly, not via a
+    second call to `canonical_speaker_label`, so a writer that reverted to its
+    own ad hoc chain would make THIS comparison fail rather than trivially
+    re-proving the helper against itself."""
+    from app.tasks.reindex_task import _resolve_reindex_speaker_name
+    from app.tasks.search_indexing_task import resolve_chunk_speaker_name
+
+    speaker = _StatsSpeaker(
+        "SPEAKER_00", display_name="Priya", suggested_name="Someone Else", confidence=0.99
+    )
+    resolved = get_speaker_name(_StatsSegment("hi", 0.0, 1.0, speaker))
+    assert resolved == "Priya"
+
+    assert resolve_chunk_speaker_name(speaker) == resolved
+    assert _resolve_reindex_speaker_name(speaker) == resolved
+
+
+def test_files_crud_and_formatting_service_agree_with_get_speaker_name():
+    from app.api.endpoints.files.crud import _resolve_segment_speaker_name
+    from app.services.formatting_service import FormattingService
+
+    # `_speaker()` (defined above), not `_StatsSpeaker`: the functions under
+    # test here are typed against the real ORM `Speaker`, and `_speaker()`'s
+    # own signature is deliberately untyped (mypy then treats its return as
+    # `Any`, same as every other `_speaker(...)` call in this file) — a
+    # concrete stub class would fail mypy's `Speaker`-typed parameters.
+    speaker = _speaker(
+        name="SPEAKER_01", display_name=None, suggested_name="Marcus", confidence=0.9
+    )
+    resolved = get_speaker_name(_segment(speaker))
+    assert resolved == "Marcus"
+
+    assert _resolve_segment_speaker_name(speaker) == resolved
+    assert FormattingService.format_speaker_name(speaker) == resolved
+    assert FormattingService.create_speaker_summary([speaker])["primary_speakers"] == [resolved]
+
+
+def test_every_plane_agrees_on_the_canonical_unknown_spelling():
+    """Regression: the chunk-index writers defaulted an unattributed segment to
+    the bare ``"Unknown"`` and `files/crud.py` to lowercase ``"Unknown
+    speaker"`` — a THIRD and FOURTH spelling next to `file_facts`'s
+    ``"Unknown Speaker"``. All must now agree on `UNKNOWN_SPEAKER_LABEL`."""
+    from app.api.endpoints.files.crud import _resolve_segment_speaker_name
+    from app.tasks.search_indexing_task import resolve_chunk_speaker_name
+
+    assert resolve_chunk_speaker_name(None) == UNKNOWN_SPEAKER_LABEL
+    assert _resolve_segment_speaker_name(None) == UNKNOWN_SPEAKER_LABEL
+
+
+def test_a_drifted_plane_would_be_caught_by_the_agreement_tests_above(monkeypatch):
+    """Guards the guard, as the review brief asked: deliberately revert ONE
+    plane to its old ad hoc chain (in-process, restored by monkeypatch's own
+    teardown — no source file is edited) and prove the agreement assertion
+    would have failed had the drift been real."""
+    import app.tasks.search_indexing_task as sit
+
+    def _old_ad_hoc_resolution(speaker):
+        if speaker is None:
+            return "Unknown"
+        display_name = speaker.display_name if speaker and speaker.display_name else speaker.name
+        return display_name or "Unknown"
+
+    monkeypatch.setattr(sit, "resolve_chunk_speaker_name", _old_ad_hoc_resolution)
+
+    speaker = _StatsSpeaker("SPEAKER_00", suggested_name="Marcus", confidence=0.9)
+    resolved = get_speaker_name(_StatsSegment("hi", 0.0, 1.0, speaker))
+
+    assert resolved == "Marcus"
+    assert sit.resolve_chunk_speaker_name(speaker) == "SPEAKER_00", (
+        "the drifted (old) resolution must disagree with the canonical one, "
+        "proving the agreement tests above are load-bearing rather than vacuous"
+    )
+    assert sit.resolve_chunk_speaker_name(speaker) != resolved
+
+
 # --------------------------------------------------------------- facts coverage/exclusion
 
 

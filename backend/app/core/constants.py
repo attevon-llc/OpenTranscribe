@@ -1126,6 +1126,15 @@ DEFAULT_CHAT_SEARCH_MODE = "hybrid"
 # rejected (HTTP 400) rather than silently truncated.
 CHAT_MAX_SCOPE_FILES = 500
 
+# W2.2: deterministic, Postgres-only speaker-mention resolution
+# (`services/chat/speaker_resolver.py`) — matches a name typed in the question
+# text against the caller's accessible roster and, on a unique match paired
+# with a speaker-verb frame ("what did X say"), adds a PARALLEL speaker-scoped
+# retrieval leg. Never replaces or narrows the main leg, and an explicit
+# checkbox scope (`ChatScope.speakers`) is unaffected either way. Default OFF:
+# this is a new, unmeasured retrieval shape.
+DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED = False  # chat.speaker_resolver_enabled
+
 
 # =============================================================================
 # Document ingestion (issue #362 / #403 Stage 6)

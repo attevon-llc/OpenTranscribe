@@ -5055,5 +5055,8 @@
   "search.viewSummary": "要約を表示",
   "search.jumpToSummarySection": "要約内のこのセクションに移動",
   "chat.sources.aiSummaryBadge": "AI要約",
-  "chat.sources.openSummary": "AI生成の要約を開く"
+  "chat.sources.openSummary": "AI生成の要約を開く",
+  "chat.meta.speakerAmbiguous": "曖昧な話者",
+  "chat.meta.speakerAmbiguousHint": "複数の話者が一致する可能性があります。1人選んでフィルターし、再送信してください:",
+  "chat.context.removeSpeaker": "{{name}} を話者フィルターから削除"
 }

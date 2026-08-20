@@ -45,6 +45,7 @@ from app.db.base import Base
 from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
+    from app.models.file_facts import FileFacts
     from app.models.user import User
 
 
@@ -151,6 +152,17 @@ class Document(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="DocumentChunk.chunk_index",
+    )
+    #: The document-owned counterpart of ``MediaFile.facts_row`` (v398, #403 Stage 6) —
+    #: deterministic facts/digest/keyphrases from ``services/ingest_artifacts``, keyed by
+    #: ``file_facts.document_id`` rather than ``media_file_id``. ``passive_deletes``
+    #: because the FK is ON DELETE CASCADE, same reasoning ``MediaFile.facts_row`` gives.
+    facts_row: Mapped[FileFacts | None] = relationship(
+        "FileFacts",
+        back_populates="document",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     __table_args__ = (

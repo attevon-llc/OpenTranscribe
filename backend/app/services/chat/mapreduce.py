@@ -100,8 +100,39 @@ DEFAULT_BATCH_FILES = 8
 #: turn can survive, and the block says when it bit.
 MAX_REDUCE_CALLS = 12
 
+#: Rough character budget the scope map targets when deciding how many leading
+#: digest sections to pull PER FILE (`scope_digest_hits`'s `sections_per_file`).
+#: The REAL excerpt budget is only known once the model's context window and
+#: reply-token reservation are resolved (`prompting.build_messages`), which
+#: runs far downstream of the map step — this is a coarse pre-budget so a scope
+#: of many files does not fetch three sections each only to have most of them
+#: trimmed away later by `prompting._trim_evidence_blocks`.
+DEFAULT_MAP_BUDGET_CHARS = 12000
+
 _OVERVIEW_OPEN = "<overview>\n"
 _OVERVIEW_CLOSE = "</overview>\n\n"
+
+
+def sections_budget(files: int, budget_chars: int = DEFAULT_MAP_BUDGET_CHARS) -> int:
+    """How many leading digest sections per file the scope map should pull.
+
+    ``max(1, min(3, budget_chars // files))``: never less than one section —
+    every file in a bounded scope must contribute something to the map — and
+    never more than three, so a small scope's per-file allowance cannot balloon
+    unbounded. Shrinks as the scope grows, so a 25-file "summarize everything"
+    turn does not fetch three sections apiece only to see most of them dropped
+    by the excerpt-budget trim that runs later in the pipeline.
+
+    Args:
+        files: Number of files in the resolved scope. Zero or negative is
+            treated as one, so a caller need not special-case an empty scope.
+        budget_chars: The coarse pre-budget. Defaults to
+            :data:`DEFAULT_MAP_BUDGET_CHARS`.
+
+    Returns:
+        An integer in ``[1, 3]``.
+    """
+    return max(1, min(3, budget_chars // max(1, files)))
 
 
 @dataclass(frozen=True)
@@ -535,6 +566,7 @@ class CodeComposer:
         if not summaries:
             return Overview(reducer=self.name)
         from app.services.chat.prompting import _sanitize_attribute
+        from app.services.chat.prompting import _sanitize_body_text
 
         lines = _corpus_header(summaries, files_in_scope)
         listed = summaries[:MAX_LISTED_FILES]
@@ -545,7 +577,13 @@ class CodeComposer:
                 date = f" ({summary.recorded_at})" if summary.recorded_at else ""
                 lines.append(f"- {title}{date}")
                 if summary.digest:
-                    lines.append(f"  {_sanitize_attribute(summary.digest)}")
+                    # BODY-safe, not the 120-char attribute sanitizer: a digest is
+                    # prose, not a short discrete value, and the attribute cap
+                    # silently shredded it mid-sentence for anything longer than
+                    # a title. `_sanitize_body_text` defuses the same breakout
+                    # attempts with no length cap — see its docstring and the
+                    # module docstring's "Assembly is concatenation-only" note.
+                    lines.append(f"  {_sanitize_body_text(summary.digest)}")
         hidden = len(summaries) - len(listed)
         if hidden > 0:
             lines.append(

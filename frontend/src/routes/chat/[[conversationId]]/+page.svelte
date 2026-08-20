@@ -270,6 +270,15 @@
     await chatStore.refreshEstimate();
   }
 
+  async function handleRemoveSpeaker(event: CustomEvent<string>): Promise<void> {
+    const name = event.detail;
+    const current = state.scope;
+    await chatStore.persistScope({
+      ...current,
+      speakers: (current?.speakers ?? []).filter((s) => s !== name),
+    });
+  }
+
   async function handleControlsChange(event: CustomEvent<Partial<ConversationSettings>>) {
     const patch = event.detail;
     if ('use_context' in patch) {
@@ -458,6 +467,7 @@
           estimate={state.contextEstimate}
           on:openPicker={() => (pickerOpen = true)}
           on:clear={handleClearScope}
+          on:removeSpeaker={handleRemoveSpeaker}
         />
         <ChatComposer
           bind:this={composer}

@@ -21,6 +21,7 @@
     openPicker: void;
     clear: void;
     toggleContext: boolean;
+    removeSpeaker: string;
   }>();
 
   $: allTranscripts = isScopeEmpty(scope);
@@ -28,6 +29,11 @@
   $: collectionCount = scope?.collection_uuids?.length ?? 0;
   $: tagCount = scope?.tag_names?.length ?? 0;
   $: speakerNames = scope?.speakers ?? [];
+  // Recordings AND speakers are both real scope, even though `isScopeEmpty`
+  // only looks at the recording axis (files/collections/tags) — a
+  // speakers-only scope ("everything Dana said, anywhere") must still offer
+  // a way to clear it, or it is a filter with no way back to "all transcripts".
+  $: hasAnyScope = !allTranscripts || speakerNames.length > 0;
 </script>
 
 <div class="context-bar" data-testid="chat-context-bar">
@@ -69,6 +75,39 @@
         {$t('chat.context.tagsCount', { count: tagCount })}
       </span>
     {/if}
+  {/if}
+
+  {#if useContext}
+    {#each speakerNames as name (name)}
+      <span class="chip chip-speaker" data-testid="chat-scope-speaker">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
+        <span class="speaker-name">{name}</span>
+        <button
+          type="button"
+          class="chip-remove"
+          on:click={() => dispatch('removeSpeaker', name)}
+          {disabled}
+          aria-label={$t('chat.context.removeSpeaker', { name })}
+          data-testid="chat-scope-speaker-remove"
+        >
+          &times;
+        </button>
+      </span>
+    {/each}
+  {/if}
+
+  {#if useContext && hasAnyScope}
     <button
       type="button"
       class="text-action"
@@ -78,26 +117,6 @@
     >
       {$t('chat.context.clearAll')}
     </button>
-  {/if}
-
-  {#if useContext && speakerNames.length > 0}
-    <span class="chip chip-speaker" data-testid="chat-scope-speakers">
-      <svg
-        width="12"
-        height="12"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        aria-hidden="true"
-      >
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-        <circle cx="12" cy="7" r="4" />
-      </svg>
-      {speakerNames.length === 1
-        ? speakerNames[0]
-        : $t('chat.context.speakersCount', { count: speakerNames.length })}
-    </span>
   {/if}
 
   {#if useContext && estimate && estimate.warning_level !== 'ok'}
@@ -175,8 +194,39 @@
     color: var(--primary-color);
     font-weight: 500;
     max-width: 16rem;
+  }
+
+  .speaker-name {
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    padding: 0;
+    margin: 0 -0.15rem 0 0.05rem;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: inherit;
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .chip-remove:hover:not(:disabled) {
+    background-color: rgba(var(--primary-color-rgb), 0.2);
+  }
+
+  .chip-remove:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
 
   .chip-estimate {

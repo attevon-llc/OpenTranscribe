@@ -238,6 +238,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--search-mode', default='hybrid', choices=('hybrid', 'semantic', 'keyword')
     )
+    parser.add_argument(
+        '--bm25-fields',
+        default='default',
+        choices=('default', 'no-stem'),
+        help='BM25 field set for retrieve_chunks/retrieve_digests (#506, the '
+        "no-stemmed-leg arm). 'default' is this module's historical, unboosted "
+        "['content', 'content.exact', 'title']. 'no-stem' drops the STEMMED `content` "
+        'leg entirely, querying only content.exact/title(/speaker) via '
+        "HybridSearchService's own boosted field list (use_exact=True). Recorded in "
+        'runinfo.json under retrieval.text_fields_preset.',
+    )
     _add_fusion_arguments(parser)
     parser.add_argument('--size', type=int, default=48, help='Candidate pool per query')
     parser.add_argument(
@@ -765,6 +776,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
         scope=args.scope,
         workers=args.workers,
         fusion=_build_fusion(args),
+        text_fields_preset=args.bm25_fields,
         **_build_budget(args),
     )
 

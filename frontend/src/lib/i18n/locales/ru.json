@@ -5055,5 +5055,8 @@
   "search.viewSummary": "Показать резюме",
   "search.jumpToSummarySection": "Перейти к этому разделу резюме",
   "chat.sources.aiSummaryBadge": "ИИ-резюме",
-  "chat.sources.openSummary": "Открыть резюме, созданное ИИ"
+  "chat.sources.openSummary": "Открыть резюме, созданное ИИ",
+  "chat.meta.speakerAmbiguous": "Неоднозначный говорящий",
+  "chat.meta.speakerAmbiguousHint": "Возможно совпадение с несколькими говорящими. Выберите одного, чтобы отфильтровать и отправить снова:",
+  "chat.context.removeSpeaker": "Удалить {{name}} из фильтра говорящих"
 }

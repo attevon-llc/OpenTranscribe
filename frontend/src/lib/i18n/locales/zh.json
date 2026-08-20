@@ -5055,5 +5055,8 @@
   "search.viewSummary": "查看摘要",
   "search.jumpToSummarySection": "跳转到摘要中的此部分",
   "chat.sources.aiSummaryBadge": "AI 摘要",
-  "chat.sources.openSummary": "打开 AI 生成的摘要"
+  "chat.sources.openSummary": "打开 AI 生成的摘要",
+  "chat.meta.speakerAmbiguous": "发言人存在歧义",
+  "chat.meta.speakerAmbiguousHint": "可能匹配多个发言人，请选择一个进行筛选并重新发送：",
+  "chat.context.removeSpeaker": "从发言人筛选中移除 {{name}}"
 }

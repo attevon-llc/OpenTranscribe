@@ -7,10 +7,20 @@
   whether retrieval or generation is at fault.
 -->
 <script lang="ts">
+  import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { ChatMessage } from '$lib/types/chat';
 
   export let message: ChatMessage;
+
+  /**
+   * `disambiguate`: the reader picked one of the ambiguous speaker-mention
+   * candidates (`msg_metadata.speaker_resolution.ambiguous`, W2.2). The
+   * parent is responsible for adding the name to `ChatScope.speakers` and
+   * re-sending — this component only reports the pick, since scope mutation
+   * and resend both live above the message list.
+   */
+  const dispatch = createEventDispatcher<{ disambiguate: string }>();
 
   let expanded = false;
 
@@ -118,19 +128,27 @@
           <dd>{meta.legs_failed.join(', ')}</dd>
         {/if}
 
-        {#if meta.speaker_resolution}
+        {#if meta.speaker_resolution?.matched?.length}
           <dt>{$t('chat.meta.speakerResolution')}</dt>
+          <dd>{meta.speaker_resolution.matched.join(', ')}</dd>
+        {/if}
+
+        {#if meta.speaker_resolution?.ambiguous?.length}
+          <dt>{$t('chat.meta.speakerAmbiguous')}</dt>
           <dd>
-            {[
-              meta.speaker_resolution.matched?.length
-                ? meta.speaker_resolution.matched.join(', ')
-                : null,
-              meta.speaker_resolution.ambiguous?.length
-                ? `? ${meta.speaker_resolution.ambiguous.join(', ')}`
-                : null,
-            ]
-              .filter(Boolean)
-              .join(' — ')}
+            <div class="disambiguation-hint">{$t('chat.meta.speakerAmbiguousHint')}</div>
+            <div class="disambiguation-row" data-testid="chat-speaker-disambiguation">
+              {#each meta.speaker_resolution.ambiguous as candidate (candidate)}
+                <button
+                  type="button"
+                  class="disambiguation-chip"
+                  on:click={() => dispatch('disambiguate', candidate)}
+                  data-testid="chat-speaker-disambiguation-chip"
+                >
+                  {candidate}
+                </button>
+              {/each}
+            </div>
           </dd>
         {/if}
 
@@ -201,5 +219,31 @@
     color: var(--text-secondary);
     font-size: 0.72rem;
     margin-left: 0.25rem;
+  }
+
+  .disambiguation-hint {
+    margin-bottom: 0.3rem;
+    color: var(--text-secondary);
+  }
+
+  .disambiguation-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .disambiguation-chip {
+    padding: 0.18rem 0.55rem;
+    border: 1px solid rgba(var(--primary-color-rgb), 0.35);
+    border-radius: 999px;
+    background-color: rgba(var(--primary-color-rgb), 0.08);
+    color: var(--primary-color);
+    font-size: 0.76rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .disambiguation-chip:hover {
+    background-color: rgba(var(--primary-color-rgb), 0.18);
   }
 </style>

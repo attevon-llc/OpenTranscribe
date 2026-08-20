@@ -217,6 +217,40 @@ def test_scope_hash_is_order_independent():
     assert retrieval_cache.scope_hash(["b", "a"]) == retrieval_cache.scope_hash(["a", "b"])
     # "all accessible" is stable and distinct from any explicit selection.
     assert retrieval_cache.scope_hash(None) == retrieval_cache.scope_hash(None)
+
+
+def test_cache_key_changes_with_the_text_field_preset():
+    """#506: retrieve_chunks/retrieve_digests now accept a BM25 `text_fields`
+    override (the no-stemmed-leg arm). Without the resolved preset in the cache
+    key, a request run under one preset would silently serve its cached hits to
+    a request asking for a different preset — voiding the whole comparison.
+    """
+    from app.services.chat import retrieval_cache
+
+    def key(preset: str) -> str:
+        return retrieval_cache.cache_key(
+            user_id=1,
+            organization_id=None,
+            query="what was decided",
+            scope_digest="s",
+            settings_rev="r",
+            search_mode="hybrid",
+            corpus_rev="0",
+            text_fields_preset=preset,
+        )
+
+    assert key("default") != key("no-stem")
+    # Omitting the parameter must be identical to explicitly asking for "default" —
+    # every caller written before presets existed keeps hitting the same bucket.
+    assert key("default") == retrieval_cache.cache_key(
+        user_id=1,
+        organization_id=None,
+        query="what was decided",
+        scope_digest="s",
+        settings_rev="r",
+        search_mode="hybrid",
+        corpus_rev="0",
+    )
     assert retrieval_cache.scope_hash(None) != retrieval_cache.scope_hash(["a"])
 
 

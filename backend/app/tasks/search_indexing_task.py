@@ -12,6 +12,46 @@ from app.utils import benchmark_timing
 logger = logging.getLogger(__name__)
 
 
+def resolve_chunk_speaker_name(speaker: Any) -> str:
+    """The chunk-index writer's speaker-label resolution.
+
+    Delegates to :func:`~app.utils.speaker_labels.canonical_speaker_label` — the
+    SINGLE home for this resolution — rather than the ad hoc
+    ``display_name or name or "Unknown"`` chain this writer used to run
+    inline. That chain emitted a bare ``"Unknown"`` for an unresolved segment
+    while ``file_facts`` wrote ``"Unknown Speaker"`` and ``files/crud.py``
+    wrote lowercase ``"Unknown speaker"`` — a THIRD spelling of "nobody was
+    attributed here" in the one plane a `terms(speaker)` search filter reads.
+    It also never looked at a confident LLM/embedding suggestion, so a speaker
+    the digest/facts planes already named from ``suggested_name`` still
+    indexed under the raw diarization label here.
+
+    A pure function (no I/O) so it is directly testable and directly reused —
+    see this module's own docstring note and
+    ``tests/unit/test_canonical_speaker_label.py``'s cross-plane agreement
+    tests, which import and call this exact function rather than a copy of
+    its logic.
+
+    Args:
+        speaker: The segment's linked ``Speaker`` ORM row (or any object with
+            the same four attributes), or ``None`` for an unresolved segment.
+
+    Returns:
+        The canonical display label. Never the bare ``"Unknown"`` this writer
+        used to emit for an unattributed segment.
+    """
+    from app.utils.speaker_labels import canonical_speaker_label
+
+    if speaker is None:
+        return canonical_speaker_label(None)
+    return canonical_speaker_label(
+        speaker.name,
+        display_name=speaker.display_name,
+        suggested_name=speaker.suggested_name,
+        confidence=speaker.confidence,
+    )
+
+
 def extract_file_index_metadata(db: Any, media_file: Any, file_id: int) -> dict[str, Any]:
     """Collect the per-file metadata a search document carries.
 
@@ -177,21 +217,18 @@ def index_transcript_search_task(  # noqa: C901
                 return {"status": "skipped", "reason": "no_segments"}
 
             # Shared per-segment derived values consumed by both indexes.
-            # Chunk-level index wants a non-null "Unknown" fallback so the
-            # BM25 ``speaker`` field is always filterable; the full-doc
-            # index wants the raw name or None to preserve
-            # speaker-transition structure in the document body.
+            # Chunk-level index wants a non-null, CANONICAL fallback
+            # (`resolve_chunk_speaker_name`) so the BM25 ``speaker`` field is
+            # always filterable and agrees with every other plane on how "no
+            # attribution" spells; the full-doc index wants the raw name or
+            # None to preserve speaker-transition structure in the document
+            # body.
             seg_dicts_full: list[dict[str, str | None]] = []
             segment_dicts: list[dict[str, float | str | int | None]] = []
             for seg in segments:
                 speaker_obj = seg.speaker
                 raw_name = speaker_obj.name if speaker_obj else None
-                display_name = (
-                    speaker_obj.display_name
-                    if speaker_obj and speaker_obj.display_name
-                    else raw_name
-                )
-                chunk_speaker = display_name or "Unknown"
+                chunk_speaker = resolve_chunk_speaker_name(speaker_obj)
 
                 seg_dicts_full.append({"text": seg.text, "speaker": raw_name})
                 segment_dicts.append(
@@ -223,8 +260,14 @@ def index_transcript_search_task(  # noqa: C901
             # document, so an unsorted one made the same transcript index to
             # different content — and therefore different EMBEDDINGS — depending
             # on which worker happened to pick up the task.
+            from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
+
             speaker_names = sorted(
-                {str(s["speaker"]) for s in segment_dicts if s["speaker"] != "Unknown"}
+                {
+                    str(s["speaker"])
+                    for s in segment_dicts
+                    if s["speaker"] not in UNKNOWN_SPEAKER_LABELS
+                }
             )
             update_task_status(db, task_id, "in_progress", progress=0.4)
 

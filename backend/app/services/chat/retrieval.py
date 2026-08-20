@@ -53,6 +53,12 @@ class RetrievalResult:
     #: caller with an empty ``chunks`` list distinguish "your library has
     #: nothing about this" from "search was down" (issue #438's open half).
     retrieval_failed: bool = False
+    #: W2.2. How many hits the parallel speaker-focus leg (see
+    #: ``retrieve_context``'s ``speaker_focus_names``) contributed that the
+    #: main leg had not already found. ``0`` both when the leg was not run and
+    #: when it ran and added nothing new — the caller only needs to know a
+    #: contribution happened, not to distinguish those two zeros.
+    speaker_focus_added: int = 0
     timings_ms: dict[str, int] = field(default_factory=dict)
 
 
@@ -67,6 +73,7 @@ def retrieve_context(
     search_mode: str = "hybrid",
     wants_digest: bool = False,
     digest_size: int = 6,
+    speaker_focus_names: list[str] | None = None,
 ) -> RetrievalResult:
     """Run the retrieval pipeline for one question.
 
@@ -75,11 +82,30 @@ def retrieve_context(
         user_id: Caller — enforced inside the OpenSearch filter.
         organization_id: Active tenant, or None for personal scope.
         file_uuids: Resolved scope; None means all accessible transcripts.
-        speakers: Restrict to these speakers' turns (None/empty = anyone).
+        speakers: The EXPLICIT, hard scope (``ChatScope.speakers`` / a
+            checkbox pick) — restricts the main leg to these speakers' turns
+            (None/empty = anyone). Untouched by ``speaker_focus_names`` below.
         settings: Admin-tuned RAG knobs.
         search_mode: ``hybrid`` | ``semantic`` | ``keyword``.
         wants_digest: Run the digest leg as well (the router's summarize tier).
         digest_size: How many digest sections to fetch.
+        speaker_focus_names: W2.2. Names ``chat.speaker_resolver`` resolved
+            from a MENTION in the question text (behind
+            ``chat.speaker_resolver_enabled``, off by default) — NOT the
+            explicit ``speakers`` scope above, and never merged with it.
+            When set, a PARALLEL second chunk leg
+            (``retrieve_chunks(speakers=speaker_focus_names)``) is unioned
+            into the candidate pool, deduped by ``(file_uuid, chunk_index)``,
+            before reranking — so the cross-encoder scores the combined pool
+            on one scale rather than two legs reranked separately. This can
+            only WIDEN what the main leg already returns: nothing is dropped
+            to make room for it, and an explicit ``speakers`` scope is never
+            narrowed or replaced by it. Skipped on a cache hit — a hit already
+            reflects whatever leg mix produced it the first time this exact
+            query/scope/settings combination ran, matching how the exact-cache
+            tier treats retrieval as one atomic unit (unlike the digest leg,
+            which runs unconditionally because its cost/staleness profile
+            differs).
 
     Returns:
         A :class:`RetrievalResult`; empty chunks when nothing matched or
@@ -165,6 +191,34 @@ def retrieve_context(
     result.retrieved = len(hits)
     result.retrieval_failed = bool(chunk_diagnostics.get("retrieval_failed"))
     result.timings_ms["retrieve"] = int((time.monotonic() - retrieve_started) * 1000)
+
+    # W2.2: the parallel speaker-focus leg. Additive only — see the
+    # `speaker_focus_names` docstring above for why this never narrows the
+    # main leg and never touches the explicit `speakers` scope.
+    if speaker_focus_names:
+        focus_started = time.monotonic()
+        focus_hits = retrieve_chunks(
+            query,
+            user_id=user_id,
+            organization_id=organization_id,
+            file_uuids=file_uuids,
+            speakers=speaker_focus_names,
+            size=settings.candidate_pool,
+            search_mode=search_mode,
+        )
+        result.timings_ms["speaker_focus"] = int((time.monotonic() - focus_started) * 1000)
+        if focus_hits:
+            seen = {(h.file_uuid, h.chunk_index) for h in hits}
+            added = [h for h in focus_hits if (h.file_uuid, h.chunk_index) not in seen]
+            if added:
+                hits = hits + added
+                result.retrieved += len(added)
+                result.speaker_focus_added = len(added)
+                logger.info(
+                    "Chat speaker-focus leg (%s): +%d chunks merged into the main pool",
+                    ", ".join(speaker_focus_names),
+                    len(added),
+                )
 
     if not hits:
         result.timings_ms["total"] = int((time.monotonic() - started) * 1000)

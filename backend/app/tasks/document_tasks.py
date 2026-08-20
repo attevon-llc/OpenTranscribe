@@ -37,7 +37,9 @@ from datetime import datetime
 from typing import Any
 
 from app.core.celery import celery_app
+from app.core.constants import CeleryQueues
 from app.core.constants import CPUPriority
+from app.core.constants import NLPPriority
 from app.db.session_utils import session_scope
 from app.models.document import Document
 from app.models.document import DocumentChunk
@@ -51,6 +53,7 @@ from app.services.documents import ParseSource
 from app.services.documents import detect_document_mime
 from app.services.documents import get_parser_for
 from app.services.documents.chunking import chunk_document
+from app.services.documents.language import detect_document_language
 from app.services.documents.progress import overall_progress
 from app.services.documents.registry import mark_unavailable
 from app.services.minio_service import download_file
@@ -267,7 +270,13 @@ def _parse_document(document_id: int) -> dict[str, Any]:
         doc.parser_version = parsed.parser_version
         doc.parse_version = parsed.ir_version
         doc.page_count = parsed.page_count
-        doc.language = parsed.language
+        # `parsed.language` is an OCR *hint* the caller supplied (usually unset — see
+        # `services/documents/language.py`'s module docstring); when the parser gave
+        # us nothing, detect from the parsed text instead of leaving the column NULL
+        # forever. `detect_document_language` declines (returns None) rather than
+        # guessing, and that None is passed straight through — never coerced to "en",
+        # the exact bug `chunking.py::_split_long_block`'s own guard exists to avoid.
+        doc.language = parsed.language or detect_document_language(parsed.text)
         doc.has_embedded_text = parsed.has_embedded_text
         doc.ocr_applied = parsed.ocr_applied
         doc.ocr_pages = parsed.ocr_pages
@@ -280,6 +289,7 @@ def _parse_document(document_id: int) -> dict[str, Any]:
     notify("completed", "Document ready", 100.0)
     dispatch_document_index(document_id)
     _dispatch_document_redaction(document_id, user_id)
+    dispatch_document_artifacts(document_id)
 
     return {
         "status": "success",
@@ -351,3 +361,54 @@ def dispatch_document_parse(document_id: int) -> None:
         logger.info("Dispatched document parse for document %s", document_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to dispatch document parse for document %s: %s", document_id, exc)
+
+
+@celery_app.task(
+    name="documents.generate_artifacts",
+    priority=NLPPriority.AUTO_PIPELINE,
+    ignore_result=True,
+)
+def generate_document_artifacts_task(document_id: int) -> dict[str, Any]:
+    """Build and upsert the document-owned ``file_facts`` row (#403 Stage 6).
+
+    Mirrors ``tasks/ingest_artifacts_task.py``'s transcript equivalent exactly, down to
+    the priority: its own short session, dispatched fire-and-forget rather than run
+    inline in the parse task's write phase — the same "never hold a DB session across
+    slow non-DB work" reasoning this module's own docstring states for its three
+    phases, except here it is CPU work (TextRank/NLTK) rather than I/O that must stay
+    off the parse write transaction.
+    """
+    from app.services.ingest_artifacts.document_service import generate_document_artifacts
+
+    with session_scope() as db:
+        row = generate_document_artifacts(db, document_id)
+        db.commit()
+        return {
+            "status": "success" if row is not None else "skipped",
+            "document_id": document_id,
+        }
+
+
+def dispatch_document_artifacts(document_id: int) -> None:
+    """Fire-and-forget dispatch, contained — a broker hiccup must not fail the parse.
+
+    Routed explicitly to the **nlp** queue (``apply_async(queue=...)``, matching
+    ``directory_sync_task.py``'s pattern) rather than relying on a ``task_routes``
+    entry in ``app/core/celery.py`` — that file is outside this lane's file set, and a
+    task with no route entry falls back to the default queue with only a startup
+    warning, which would put CPU-bound digest generation on the same queue as
+    everything else with no route.
+    """
+    try:
+        generate_document_artifacts_task.apply_async(
+            kwargs={"document_id": document_id},
+            queue=CeleryQueues.NLP,
+            priority=NLPPriority.AUTO_PIPELINE,
+        )
+        logger.info("Dispatched document artifact generation for document %s", document_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Failed to dispatch document artifact generation for document %s: %s",
+            document_id,
+            exc,
+        )

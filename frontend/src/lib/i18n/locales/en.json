@@ -5055,5 +5055,8 @@
   "search.viewSummary": "View summary",
   "search.jumpToSummarySection": "Jump to this section in the summary",
   "chat.sources.aiSummaryBadge": "AI summary",
-  "chat.sources.openSummary": "Open the AI-generated summary"
+  "chat.sources.openSummary": "Open the AI-generated summary",
+  "chat.meta.speakerAmbiguous": "Ambiguous speaker",
+  "chat.meta.speakerAmbiguousHint": "Multiple speakers could match — pick one to filter by and resend:",
+  "chat.context.removeSpeaker": "Remove {{name}} from the speaker filter"
 }

@@ -84,6 +84,7 @@ def _chunks(count: int, *, marker: str) -> list[dict]:
             "char_start": i * 100,
             "char_end": i * 100 + 50,
             "page": i + 1,
+            "section_path": ["Chapter 1", f"Section {i}"],
         }
         for i in range(count)
     ]
@@ -129,6 +130,33 @@ def test_a_document_chunk_is_written_with_the_document_chunk_doc_type(chunk_inde
     assert all(d["file_id"] == DOCUMENT_DB_ID for d in docs)
     assert "ORIGINAL paragraph number 1" in docs[1]["content"]
     assert docs[1]["embedding_text"].startswith("Quarterly Budget Report.pdf")
+
+
+def test_a_document_chunk_carries_its_page_and_section_path_when_read_back(chunk_index):
+    """The write-side half of issue #463's citation fields.
+
+    Mocked hits cannot catch this class of bug: the read side (`ChunkHit.page`,
+    the `_source` allowlist, the cache round-trip) landed first and every test
+    against a hand-built `_source` dict passed regardless of whether
+    `index_document_chunks` ever actually wrote the field. Only a real
+    OpenSearch round trip, against the REAL mapping, proves the field survives
+    analysis/indexing rather than just existing in a Python dict on the way in.
+    """
+    document_uuid = str(uuid_pkg.uuid4())
+    _index(_chunks(3, marker="ORIGINAL"), document_uuid=document_uuid)
+
+    docs = _docs(chunk_index, document_uuid)
+    # chunk 1's page is i + 1 = 2, not None — the exact class of value that was
+    # silently dropped before this fix, and that a mocked-hit test cannot see.
+    assert docs[1]["page"] == 2
+    assert docs[1]["section_path"] == ["Chapter 1", "Section 1"]
+    assert docs[1]["char_start"] == 100
+    assert docs[1]["char_end"] == 150
+    # And the fields must NOT have leaked into what gets embedded — a page number
+    # or a character offset changing embedding_text would imply every existing
+    # vector needs a re-embed, which this write-side fix must not cause.
+    assert "Chapter 1" not in docs[1]["embedding_text"]
+    assert "150" not in docs[1]["embedding_text"]
 
 
 def test_document_chunk_plane_query_excludes_sibling_doc_types(chunk_index):
@@ -256,6 +284,8 @@ def test_the_index_document_task_indexes_real_postgres_chunk_rows(
                 text=f"Board resolution {i}: approved the annual budget line item.",
                 char_start=i * 60,
                 char_end=i * 60 + 55,
+                page=i + 1,
+                section_path=["Minutes", f"Resolution {i}"],
             )
         )
     db_session.commit()
@@ -271,6 +301,13 @@ def test_the_index_document_task_indexes_real_postgres_chunk_rows(
     assert all(d["doc_type"] == "document_chunk" for d in docs)
     assert "Board resolution 2" in docs[2]["content"]
     assert docs[0]["title"] == "board_minutes.docx"
+    # The full read (Postgres) -> write (OpenSearch) path for the citation fields —
+    # this is what actually exercises `_load_document_for_indexing`'s `section_path`
+    # read, which `index_document_chunks`'s own unit-of-work cannot reach on its own.
+    assert docs[2]["page"] == 3
+    assert docs[2]["section_path"] == ["Minutes", "Resolution 2"]
+    assert docs[2]["char_start"] == 120
+    assert docs[2]["char_end"] == 175
 
 
 def test_indexing_a_document_with_no_chunks_is_skipped_not_erred(

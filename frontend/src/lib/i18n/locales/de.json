@@ -5055,5 +5055,8 @@
   "search.viewSummary": "Zusammenfassung anzeigen",
   "search.jumpToSummarySection": "Zu diesem Abschnitt in der Zusammenfassung springen",
   "chat.sources.aiSummaryBadge": "KI-Zusammenfassung",
-  "chat.sources.openSummary": "KI-generierte Zusammenfassung öffnen"
+  "chat.sources.openSummary": "KI-generierte Zusammenfassung öffnen",
+  "chat.meta.speakerAmbiguous": "Mehrdeutiger Sprecher",
+  "chat.meta.speakerAmbiguousHint": "Mehrere Sprecher könnten passen. Wählen Sie einen aus, um zu filtern und erneut zu senden:",
+  "chat.context.removeSpeaker": "{{name}} aus dem Sprecherfilter entfernen"
 }

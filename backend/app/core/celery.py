@@ -288,6 +288,9 @@ celery_app.conf.update(
         # Access/tag index updates are lightweight OpenSearch writes (no GPU/embedding needed)
         "update_file_access_index": {"queue": CeleryQueues.UTILITY},
         "update_file_tags_index": {"queue": CeleryQueues.UTILITY},
+        # Opt-in speaker_id/profile_id backfill maintenance pass (search_indexing_task.py) —
+        # lightweight OpenSearch writes, same shape as its two siblings above.
+        "backfill_speaker_id_fields": {"queue": CeleryQueues.UTILITY},
         # Utility Queue - Lightweight maintenance tasks (concurrency=8)
         "system.startup_recovery": {"queue": CeleryQueues.UTILITY},
         "system.recover_user_files": {"queue": CeleryQueues.UTILITY},

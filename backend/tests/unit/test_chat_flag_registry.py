@@ -51,6 +51,9 @@ _OLD_HAND_WRITTEN_DESCRIPTIONS = {
     "map_tier_summaries": (
         "Prefer each file's fresh LLM summary over its digest in the collection map"
     ),
+    "speaker_resolver_enabled": (
+        "Resolve a speaker named in the question text into a parallel retrieval leg"
+    ),
 }
 
 

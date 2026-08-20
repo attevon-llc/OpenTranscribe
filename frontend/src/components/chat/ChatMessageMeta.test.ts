@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/svelte';
 
 import ChatMessageMeta from './ChatMessageMeta.svelte';
+import ChatMessageMetaDisambiguateTestHost from './ChatMessageMetaDisambiguateTestHost.svelte';
 import type { ChatMessage as ChatMessageType } from '$lib/types/chat';
 
 function assistantMessage(overrides: Partial<ChatMessageType> = {}): ChatMessageType {
@@ -82,6 +83,53 @@ describe('ChatMessageMeta — Wave 2 metadata keys', () => {
     });
     await expandPanel(getByTestId);
     expect(container.textContent).toContain('Alex');
+  });
+
+  it('W2.2: renders one disambiguation chip per ambiguous candidate', async () => {
+    const { getByTestId, getAllByTestId } = render(ChatMessageMeta, {
+      props: {
+        message: assistantMessage({
+          msg_metadata: {
+            speaker_resolution: { matched: [], ambiguous: ['Alice', 'Alex'] },
+          },
+        }),
+      },
+    });
+    await expandPanel(getByTestId);
+    const chips = getAllByTestId('chat-speaker-disambiguation-chip');
+    expect(chips.map((c) => c.textContent?.trim())).toEqual(['Alice', 'Alex']);
+  });
+
+  it('W2.2: clicking a disambiguation chip dispatches the candidate name', async () => {
+    let picked: string | undefined;
+    const { getByTestId, getAllByTestId } = render(ChatMessageMetaDisambiguateTestHost, {
+      props: {
+        message: assistantMessage({
+          msg_metadata: { speaker_resolution: { matched: [], ambiguous: ['Alice'] } },
+        }),
+        onDisambiguate: (name: string) => {
+          picked = name;
+        },
+      },
+    });
+    await expandPanel(getByTestId);
+
+    getAllByTestId('chat-speaker-disambiguation-chip')[0].dispatchEvent(
+      new MouseEvent('click', { bubbles: true })
+    );
+    expect(picked).toBe('Alice');
+  });
+
+  it('W2.2: no disambiguation row when there are no ambiguous candidates', async () => {
+    const { getByTestId, queryByTestId } = render(ChatMessageMeta, {
+      props: {
+        message: assistantMessage({
+          msg_metadata: { speaker_resolution: { matched: ['Dana'], ambiguous: [] } },
+        }),
+      },
+    });
+    await expandPanel(getByTestId);
+    expect(queryByTestId('chat-speaker-disambiguation')).toBeNull();
   });
 
   it('renders plan steps joined with an arrow', async () => {

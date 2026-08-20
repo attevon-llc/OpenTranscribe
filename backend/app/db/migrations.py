@@ -502,6 +502,19 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "SELECT EXISTS(SELECT 1 FROM system_settings WHERE key = 'documents.tenancy_backfill_v397')"
     )
 
+    # v398: file_facts widened so documents join the artifact/summary tiers (#403
+    # Stage 6). Probed on the XOR CHECK rather than on `document_id` alone, same
+    # reasoning v391's `has_recorded_date_provenance` gives: the constraint is the
+    # half of the revision that carries the design (a row naming both or neither
+    # owner is unrepresentable), so a database left with the column but not the
+    # CHECK by a partial run falls through to v397 and re-runs v398, which the
+    # idempotent DDL handles. Keying on the column alone would stamp that database
+    # as done and leave the invariant unenforced.
+    has_file_facts_document_support = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_file_facts_exactly_one_owner')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -544,6 +557,19 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
+    # v398: same as v397 plus file_facts' exactly-one-owner CHECK.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+        and has_watch_source_file_document_id
+        and has_document_chunk_redaction_cache
+        and has_document_tenancy_backfill_v397
+        and has_file_facts_document_support
+    ):
+        return "v398_widen_file_facts_for_documents"
     # v397: same as v396 plus the tenancy-backfill completion marker.
     if (
         matches_v389

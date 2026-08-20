@@ -53,6 +53,11 @@ def _load_document_for_indexing(document_id: int) -> dict[str, Any] | None:
                 "char_start": int(c.char_start),
                 "char_end": int(c.char_end),
                 "page": c.page,
+                # #463 write-side gap: this used to stop at `page`, so
+                # `index_document_chunks` had no `section_path` to write even after it
+                # learned to write one — the row exists in Postgres and was simply
+                # never read.
+                "section_path": list(c.section_path or []),
             }
             for c in chunk_rows
         ]

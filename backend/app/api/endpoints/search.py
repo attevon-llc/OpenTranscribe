@@ -1,6 +1,7 @@
 """Search API endpoints with hybrid BM25 + vector search."""
 
 import logging
+import math
 from typing import Any
 
 from fastapi import APIRouter
@@ -264,6 +265,21 @@ def search_transcripts(
 
     if want_documents:
         payload.update(_document_search_payload(db, ctx, q, page, page_size, search_mode))
+
+    if not want_transcripts:
+        # The transcript leg is what fills `total_pages` above; a `summaries`- or
+        # `documents`-only request never runs it, so the placeholder built earlier
+        # left it hardcoded at 0 regardless of how many summary/document hits were
+        # actually found, and real pagination never reached the client. `total_results`/
+        # `total_files` stay as built — they describe the (absent) transcript leg, same
+        # as `results == []`, and `summary_total`/`document_total` are each leg's own
+        # counter. `result_type` is validated to a single value earlier in this
+        # function, so exactly one of want_summaries/want_documents is true here —
+        # page over that leg's own total.
+        total_for_paging = (
+            payload.get("summary_total", 0) if want_summaries else payload.get("document_total", 0)
+        )
+        payload["total_pages"] = math.ceil(total_for_paging / page_size) if total_for_paging else 0
 
     return payload
 

@@ -268,7 +268,7 @@ def ensure_llm_config(
                     ', '.join(f'{k}: {was!r} -> {want!r}' for k, (was, want) in stale.items()),
                 )
                 patch = session.put(
-                    f'{base_url}/llm-settings/{config_uuid}',
+                    f'{base_url}/llm-settings/config/{config_uuid}',
                     json={
                         'max_tokens': max_tokens,
                         'model_name': model_name,

@@ -671,6 +671,52 @@ fresh_generate_baked_overlay() {
   echo "$file"
 }
 
+# Verify a baked (--no-bindmount) stack is actually RUNNING the code it claims to
+# (issue #528). Compose has been observed accepting `--force-recreate` on the wire
+# and still leaving old containers up, so after `up` we read GIT_SHA back from
+# every baked service and compare it to the SHA this run exported. A mismatch is
+# self-healed once with the surgical per-service recreate (measured to work where
+# the blanket flag did not), then re-checked; if it STILL disagrees we exit 1 —
+# a baked stack on stale code silently invalidates every measurement taken
+# against it, which is worse than a failed start.
+#
+# $1 = the compose "-f ..." chain for this deployment. Uses $GIT_SHA (exported
+# at script top) as the expected value. Containers reporting nothing or
+# "unknown" count as stale: an unstamped container cannot attribute a
+# measurement either.
+fresh_verify_baked_git_sha() {
+  local files="$1"
+  local expected="$GIT_SHA"
+  local attempt svc cid got stale
+  for attempt in 1 2; do
+    stale=()
+    for svc in "${FRESH_BAKED_SERVICES[@]}"; do
+      # shellcheck disable=SC2086
+      cid="$(docker compose $files ps -q "$svc" 2>/dev/null)"
+      [ -z "$cid" ] && continue # not part of this deployment (profile off)
+      got="$(docker exec "$cid" printenv GIT_SHA 2>/dev/null || echo '<unset>')"
+      if [ "$got" != "$expected" ]; then
+        stale+=("$svc")
+        echo "   ✗ ${svc}: GIT_SHA=${got} (expected ${expected})"
+      fi
+    done
+    if [ "${#stale[@]}" -eq 0 ]; then
+      echo "🔏 Baked-stack code verified: GIT_SHA=${expected} on every baked service."
+      return 0
+    fi
+    if [ "$attempt" -eq 1 ]; then
+      echo "⚠️  ${#stale[@]} baked service(s) are running STALE code — recreating surgically (issue #528)..."
+      # shellcheck disable=SC2086
+      docker compose $files up -d --no-deps --force-recreate "${stale[@]}"
+    fi
+  done
+  echo ""
+  echo "❌ Baked stack is STILL running stale code after a surgical recreate (issue #528)."
+  echo "   Any measurement against this stack would describe code nobody is running."
+  echo "   Inspect: docker compose ${files} ps   and compare printenv GIT_SHA per container."
+  exit 1
+}
+
 # Every host port a fresh dev stack publishes, as "VAR=default" pairs. VAR is the
 # variable the base compose files already interpolate into their single `ports:`
 # entry; default is the value baked into that entry.
@@ -1839,6 +1885,12 @@ start_app() {
   # the volume is root-owned by default, which breaks the shared-memory
   # handoff between CPU preprocess and GPU/embedding workers.
   fix_pipeline_scratch_permissions
+
+  # Baked stack: prove the containers run the code this invocation built
+  # (issue #528) — compose has served a stale image here despite --force-recreate.
+  if [ -n "$NO_BINDMOUNT_FLAG" ] && [ -n "$FRESH_FLAG" ]; then
+    fresh_verify_baked_git_sha "$COMPOSE_FILES"
+  fi
 
   # Display container status
   echo "📊 Container status:"

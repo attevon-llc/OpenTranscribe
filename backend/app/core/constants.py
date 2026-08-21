@@ -840,6 +840,21 @@ LLM_REASONING_PROBE_PROMPT = (
     "spoken in total? Show your working."
 )
 
+# --- Context-window discovery (issue #533) — the reasoning probe's sibling. ---
+# Same design: the RESULT is a measurement in `SystemSettings`, keyed by the
+# (provider, base_url, model) fingerprint, written only by the probe. The values
+# below are the instrument's settings, not tunables.
+
+#: `SystemSettings` key prefix. Suffix = the same fingerprint scheme as
+#: `llm_reasoning.capability_key`, under its own prefix so the two measurements
+#: can never shadow each other.
+LLM_CONTEXT_WINDOW_KEY_PREFIX = "llm.context_window."
+
+#: One metadata HTTP call (`/v1/models` or `/api/show`) — no generation, so a
+#: short timeout: a slow endpoint yields "unreachable", it does not hang the
+#: settings page.
+LLM_CONTEXT_WINDOW_PROBE_TIMEOUT_S = 10
+
 # =============================================================================
 # Organization Context Settings
 # =============================================================================

@@ -787,8 +787,9 @@
                   disabled={saving}
                   class="form-control"
                   min="100"
-                  max="200000"
+                  max="2000000"
                 />
+                <p class="field-desc">{$t('llm.maxTokensHelp')}</p>
               </div>
 
               <div class="form-group">
@@ -884,6 +885,13 @@
     font-size: 1.25rem;
     font-weight: 600;
     color: var(--text-color);
+  }
+
+  .field-desc {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 0.375rem 0 0 0;
+    line-height: 1.5;
   }
 
   .unsaved-dot {

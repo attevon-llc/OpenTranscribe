@@ -21,6 +21,7 @@ from app import models
 from app import schemas
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
+from app.services import llm_context_window
 from app.services import llm_reasoning
 from app.services.llm_service import LLMConfig
 from app.services.llm_service import LLMProvider as ServiceLLMProvider
@@ -999,6 +1000,92 @@ def _reasoning_capability_payload(
         reasoning_chars_on=int(chars.get("on") or 0),
         reasoning_chars_off=int(chars.get("off") or 0),
         reasoning_chars_omitted=int(chars.get("omitted") or 0),
+        detail=str(stored.get("detail") or ""),
+    )
+
+
+@router.get("/config/{config_uuid}/context-window", response_model=schemas.ContextWindowCapability)
+def get_context_window(
+    config_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """Read the recorded context-window measurement for one configuration.
+
+    Pure read — it never dials the provider. An unprobed model reports
+    ``unknown`` and the user's declared ``max_tokens`` stands.
+    """
+    user_config = get_llm_config_by_uuid(db, config_uuid)
+    if not user_config.is_shared:
+        require_resource_owner(
+            user_config,
+            current_user,
+            forbidden_detail="Not authorized to access this configuration",
+        )
+    return _context_window_payload(db, user_config)
+
+
+@router.post(
+    "/config/{config_uuid}/context-window-probe", response_model=schemas.ContextWindowCapability
+)
+def probe_context_window(
+    config_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """Discover, and record, the model's maximum context window (issue #533).
+
+    One metadata call (``/v1/models`` or ``/api/show``) — no generation, no user
+    content. **Explicitly invoked, never automatic**, for the same reason as the
+    reasoning probe beside it: a background sweep would dial every configured
+    endpoint unprompted. The verdict is keyed to (provider, endpoint, model);
+    editing any of the three orphans it rather than staling it.
+    """
+    user_config = get_llm_config_by_uuid(db, config_uuid)
+    if not user_config.is_shared:
+        require_resource_owner(
+            user_config,
+            current_user,
+            forbidden_detail="Not authorized to access this configuration",
+        )
+    llm_config = _config_to_llm_config(db, user_config)
+    result = llm_context_window.probe(llm_config)
+    llm_context_window.record(db, llm_config, result)
+    return _context_window_payload(db, user_config)
+
+
+def _context_window_payload(
+    db: Session, user_config: models.UserLLMSettings
+) -> schemas.ContextWindowCapability:
+    """Shape a stored measurement (or its absence) into the wire schema."""
+    provider = str(user_config.provider)
+    base_url = str(user_config.base_url) if user_config.base_url else None
+    model = str(user_config.model_name)
+    stored = llm_context_window.read_record(db, provider, base_url, model)
+    window = llm_context_window.measured_window(stored)
+    configured = int(user_config.max_tokens)
+    relation = None
+    if window is not None:
+        relation = "below" if configured < window else "above" if configured > window else "match"
+    probed_at = None
+    raw_probed_at = stored.get("probed_at")
+    if isinstance(raw_probed_at, str):
+        with contextlib.suppress(ValueError):
+            probed_at = datetime.fromisoformat(raw_probed_at)
+    raw_status = stored.get("status")
+    try:
+        status = llm_context_window.ContextWindowStatus(str(raw_status))
+    except ValueError:
+        # Includes a record written by a newer build: an unrecognised status
+        # must read as unprobed, not raise the settings page.
+        status = llm_context_window.ContextWindowStatus.UNKNOWN
+    return schemas.ContextWindowCapability(
+        status=status,
+        discoverable=(ServiceLLMProvider(provider) in llm_context_window.DISCOVERABLE_PROVIDERS),
+        context_window=window,
+        configured_max_tokens=configured,
+        relation=relation,
+        probed_at=probed_at,
         detail=str(stored.get("detail") or ""),
     )
 

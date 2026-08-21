@@ -13,6 +13,7 @@ from tests.eval.harness.answer_judge import agreement_report
 from tests.eval.harness.answer_judge import build_judge_prompt
 from tests.eval.harness.answer_judge import cohens_kappa
 from tests.eval.harness.answer_judge import interpret_kappa
+from tests.eval.harness.answer_judge import looks_like_refusal
 from tests.eval.harness.answer_judge import parse_judgement
 
 # ------------------------------------------------------------------ Kappa
@@ -147,3 +148,37 @@ def test_the_prompt_never_names_the_arm_or_system():
     prompt = build_judge_prompt("q?", "r", "a").lower()
     for leak in ("arm", "baseline", "control", "config", "run ", "variant", "candidate_pool"):
         assert leak not in prompt, f"judge prompt leaks the identifier {leak!r}"
+
+
+# ------------------------------------------------- refusal pre-filter (widened)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        # Both of these were scored as HALLUCINATIONS by the narrow pattern and
+        # reported as safety regressions before anyone read them. They are correct
+        # refusals, and the second is better than a bare one — it says who IS there.
+        "There is no speaker named 'Legal Counsel'. The speakers present are Marketing and PM.",
+        "The provided excerpts do not include a speaker named 'Head of Procurement'.",
+        "The provided transcript excerpts do not contain any information regarding that.",
+        "I cannot find any discussion of that topic in these recordings.",
+        "No such topic appears in the excerpts.",
+    ],
+)
+def test_real_refusal_phrasings_are_recognised(answer):
+    assert looks_like_refusal(answer) is True
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "The team decided the selling price will be twenty five Euro.",
+        "Marketing raised concerns about the button layout and the cost target.",
+    ],
+)
+def test_a_substantive_answer_is_not_read_as_a_refusal(answer):
+    """The control. A pre-filter that matched everything would score every arm as
+    perfectly safe, which is the failure that flatters rather than alarms.
+    """
+    assert looks_like_refusal(answer) is False

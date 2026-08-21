@@ -214,3 +214,78 @@ def test_clear_cancel_is_contained():
             limits.clear_cancel("msg-uuid")
 
     client.delete.assert_called_once()
+
+
+# --------------------- the hourly quota is a SPEND control (local ≠ remote)
+
+
+class _Cfg:
+    """Minimal stand-in for an LLM config: `is_local_provider` reads only these."""
+
+    def __init__(self, provider: str, base_url: str = ""):
+        self.provider = provider
+        self.base_url = base_url
+
+
+def test_a_local_provider_is_recognised_as_local():
+    """The precondition for the endpoint's quota skip. Without this the skip
+    below would be unreachable and its test would pass vacuously.
+    """
+    from app.services.redaction.llm_guard import is_local_provider
+
+    assert is_local_provider(_Cfg("vllm")) is True
+    assert is_local_provider(_Cfg("ollama")) is True
+
+
+def test_a_remote_provider_is_not_local_so_the_quota_still_applies():
+    """The control. A spend control must keep applying where there IS spend —
+    and `is_local_provider` fails closed, so anything unrecognised reads remote.
+    """
+    from app.services.redaction.llm_guard import is_local_provider
+
+    assert is_local_provider(_Cfg("openai")) is False
+    assert is_local_provider(_Cfg("anthropic")) is False
+    assert is_local_provider(_Cfg("openrouter")) is False
+
+
+def test_the_endpoint_gates_the_hourly_check_on_provider_locality():
+    """The quota check must be reached only for a non-local provider.
+
+    Asserted against the endpoint SOURCE rather than by driving a stream: the
+    handler needs a conversation, an LLM, Redis and a live scope to reach this
+    line, and a test that mocked all four would be asserting on the mocks. What
+    matters structurally is that `check_hourly_limit` sits under an
+    `is_local_provider` guard and that the guard is negated -- an un-negated one
+    would skip the quota for exactly the providers that bill.
+    """
+    import inspect
+    import re
+
+    from app.api.endpoints.chat import messages as messages_mod
+
+    src = inspect.getsource(messages_mod)
+    guard = re.search(
+        r"if not is_local_provider\(llm\.config\):\s*\n\s*allowed, retry_after = "
+        r"limits\.check_hourly_limit\(",
+        src,
+    )
+    assert guard, "check_hourly_limit must sit under `if not is_local_provider(llm.config):`"
+    # And it must appear exactly once -- a second, ungated call site would
+    # reinstate the quota for local models while this test still passed.
+    assert src.count("limits.check_hourly_limit(") == 1
+
+
+def test_the_concurrency_slot_is_not_gated_on_locality():
+    """max_concurrent_streams bounds GPU contention, which is just as real for a
+    local model. Gating it the same way would be the plausible-looking mistake.
+    """
+    import inspect
+
+    from app.api.endpoints.chat import messages as messages_mod
+
+    src = inspect.getsource(messages_mod)
+    acquire = src.index("limits.acquire_stream_slot(")
+    preceding = src[max(0, acquire - 400) : acquire]
+    assert "is_local_provider" not in preceding, (
+        "the concurrency slot must stay unconditional -- it is not a spend control"
+    )

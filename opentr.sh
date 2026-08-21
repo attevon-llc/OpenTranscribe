@@ -2995,7 +2995,15 @@ case "$1" in
     add_gpu_overlay
 
     # shellcheck disable=SC2086
-    docker compose $COMPOSE_FILES build
+    if ! docker compose $COMPOSE_FILES build; then
+      # A build failure used to print "✅ Build complete" and exit 0, because the
+      # success line was unconditional. The next `start` then served the PREVIOUS
+      # image, so a change simply did not appear — the same class of silent-stale
+      # deployment as issue #75, and equally hard to attribute to the build.
+      echo "❌ Build FAILED. The previous images are unchanged; do not start and"
+      echo "   assume your changes are deployed. Scroll up for the build error."
+      exit 1
+    fi
     echo "✅ Build complete. Use './opentr.sh start' to start the application."
     ;;
 

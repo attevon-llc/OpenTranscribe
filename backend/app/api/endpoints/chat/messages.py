@@ -60,6 +60,7 @@ from app.services.chat.settings import apply_tenant_limits
 from app.services.chat.settings import apply_user_preferences
 from app.services.chat.settings import get_chat_settings
 from app.services.llm_service import LLMService
+from app.services.redaction.llm_guard import is_local_provider
 
 logger = logging.getLogger(__name__)
 
@@ -172,14 +173,10 @@ def _prepare_turn(
         rerank_enabled=user_defaults.get("rerank_enabled"),
     )
 
-    allowed, retry_after = limits.check_hourly_limit(ctx.user.id, chat_settings.messages_per_hour)
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail="Hourly chat limit reached. Try again shortly.",
-            headers={"Retry-After": str(retry_after)},
-        )
-
+    # NOTE: the hourly quota is checked further down, AFTER the provider is known
+    # — it is a spend control and does not apply to a local model. The concurrency
+    # slot below is a different question and is always enforced: it bounds GPU
+    # contention, which is just as real for a model on our own card.
     slot_id = limits.acquire_stream_slot(ctx.user.id, chat_settings.max_concurrent_streams)
     if slot_id is None:
         raise HTTPException(
@@ -211,6 +208,28 @@ def _prepare_turn(
                 status_code=403,
                 detail="That model is not available on your plan. Choose another in chat settings.",
             )
+
+        # The hourly quota is a SPEND control, and there is no spend to control
+        # when inference runs on this deployment's own GPU: a local model has no
+        # per-token bill and no third-party rate limit, so capping a self-hosted
+        # user at N messages an hour throttles them for nothing. Keyed off the
+        # PROVIDER via the same `is_local_provider` seam the input-masking policy
+        # already uses (a local model receives unmasked text because nothing
+        # egresses) — never off a global setting, and it fails closed, so any
+        # ambiguity reads as remote and the quota still applies.
+        #
+        # Raised INSIDE the try on purpose: the `except` below releases the
+        # concurrency slot acquired above, so a 429 here cannot leak one.
+        if not is_local_provider(llm.config):
+            allowed, retry_after = limits.check_hourly_limit(
+                ctx.user.id, chat_settings.messages_per_hour
+            )
+            if not allowed:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Hourly chat limit reached. Try again shortly.",
+                    headers={"Retry-After": str(retry_after)},
+                )
 
         conv_settings = conversation.settings or {}
         use_context = resolve_use_context(conversation, user_defaults)

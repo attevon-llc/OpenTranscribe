@@ -1150,6 +1150,38 @@ def _retrieve_or_fanout(
     return result, counted, recurrence_result
 
 
+def _build_digest_mask_kwargs(llm: Any) -> dict[str, bool]:
+    """Masker kwargs for the DIGEST plane — deliberately narrower than the chunk plane.
+
+    ⚠️ ``expand_short_chunks`` MUST NOT appear here, and the reason is the same one
+    that keeps ``mask_chunks`` and ``mask_digests`` separate functions at all:
+    ``mask_chunks`` addresses text by **time range**, ``mask_digests`` by
+    **provenance** (each sentence's own ``segment_ids``). Read-time expansion widens a
+    hit's time window to its surrounding exchange, which is meaningful for a chunk and
+    is the over-disclosure trap for a digest — a digest rebuilt from a widened span
+    returns material the digest never held, from a function whose name says it masked it.
+
+    Passing the chunk-plane kwargs to ``mask_digests`` was a real, measured outage, not a
+    hypothetical: every turn that routed through the digest tier died with
+    ``mask_digests() got an unexpected keyword argument 'expand_short_chunks'`` and a
+    ``provider_error`` frame, while chunk-only turns were unaffected — so 4 of 14 probe
+    questions returned nothing and it read as a coverage regression rather than a crash.
+    The unit suite did not catch it because no test drove the digest path with expansion
+    on; ``test_chat_digest_masking.py`` now does.
+    """
+    kwargs: dict[str, bool] = {}
+    if _unmask_for_local(llm):
+        kwargs["unmask_for_local"] = True
+    return kwargs
+
+
+def _unmask_for_local(llm: Any) -> bool:
+    """Whether this turn's provider is local, so egress masking can be skipped."""
+    from app.services.redaction.llm_guard import is_local_provider
+
+    return bool(is_local_provider(getattr(llm, "config", None)))
+
+
 def _build_mask_kwargs(llm: Any, settings: Any) -> dict[str, bool]:
     """The keyword arguments every masker call in one turn shares.
 
@@ -1181,11 +1213,15 @@ def _build_mask_kwargs(llm: Any, settings: Any) -> dict[str, bool]:
     exchange BEFORE masking, inside ``mask_chunks`` itself, so the
     strictest-wins policy applies to every widened word. Flag-gated, default OFF
     (``chat.context_expansion_enabled``).
-    """
-    from app.services.redaction.llm_guard import is_local_provider
 
+    ⚠️ THIS IS THE CHUNK PLANE ONLY. The digest plane takes
+    :func:`_build_digest_mask_kwargs`, which omits ``expand_short_chunks`` — see its
+    docstring for why feeding it to ``mask_digests`` is both a TypeError and a
+    conceptual over-disclosure. These returned dicts are deliberately NOT interchangeable;
+    do not re-merge them into one.
+    """
     kwargs: dict[str, bool] = {}
-    if is_local_provider(getattr(llm, "config", None)):
+    if _unmask_for_local(llm):
         kwargs["unmask_for_local"] = True
     if getattr(settings, "context_expansion_enabled", False):
         kwargs["expand_short_chunks"] = True
@@ -1388,6 +1424,9 @@ def _prepare_context(
     # where it does nothing anyway. Only a genuinely local provider needs the
     # keyword sent at all.
     _mask_kwargs = _build_mask_kwargs(llm, settings)
+    # ⚠️ NOT the same dict. The digest plane must never receive
+    # `expand_short_chunks` — see `_build_digest_mask_kwargs`.
+    _digest_mask_kwargs = _build_digest_mask_kwargs(llm)
 
     digest_masked: list[MaskedChunk] = []
     summaries: list[Any] = []
@@ -1402,7 +1441,7 @@ def _prepare_context(
         # the per-sentence provenance.
         from app.services.chat.redactor import mask_digests
 
-        digest_masked = mask_digests(session_scope, result.digests, user_id, **_mask_kwargs)
+        digest_masked = mask_digests(session_scope, result.digests, user_id, **_digest_mask_kwargs)
 
     # W2.1: which leg feeds the overview — the scope map (bounded scope, reads
     # `file_facts` for every file) or the ranked digest leg above (unbounded
@@ -1417,7 +1456,7 @@ def _prepare_context(
             ranked_digests=result.digests,
             ranked_digests_masked=digest_masked,
             user_id=user_id,
-            mask_kwargs=_mask_kwargs,
+            mask_kwargs=_digest_mask_kwargs,
         )
     )
     if files_without_artifacts:

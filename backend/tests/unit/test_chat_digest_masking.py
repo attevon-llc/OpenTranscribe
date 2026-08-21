@@ -669,3 +669,72 @@ def test_section_zero_resolves_because_zero_is_falsy_not_absent():
 
     assert found is not None, "section 0 must resolve like any other section"
     assert len(found) == 1
+
+
+# --------------------------------------------------------------------------------------- #
+# The chunk plane's kwargs must never reach the digest plane (#523 regression, measured)
+# --------------------------------------------------------------------------------------- #
+
+
+def test_mask_digests_does_not_accept_the_chunk_planes_expansion_kwarg():
+    """``expand_short_chunks`` belongs to ``mask_chunks`` ALONE, and this proves it.
+
+    ⚠️ This is a MEASURED outage, not a hypothetical. When
+    ``chat.context_expansion_enabled`` was first switched on against the live stack,
+    every turn that routed through the digest tier died with::
+
+        mask_digests() got an unexpected keyword argument 'expand_short_chunks'
+
+    and returned a ``provider_error`` frame. 4 of 14 probe questions produced no answer
+    at all, and because ``files_consulted`` went to 0 it initially read as a *coverage
+    regression* rather than a crash. Chunk-only turns were unaffected, which is exactly
+    what made it look like a tuning trade-off.
+
+    The whole unit suite stayed green because nothing drove the digest path with the flag
+    on — the gap this test closes.
+
+    It is also not merely a signature mismatch. ``mask_chunks`` addresses text by TIME
+    RANGE and ``mask_digests`` by PROVENANCE; read-time expansion widens a hit's time
+    window, which is meaningful for a chunk and is the over-disclosure trap for a digest
+    (a digest rebuilt from a widened span returns material it never held). So the right
+    fix was two separate kwarg builders, never one dict with the key filtered out
+    downstream.
+    """
+    import inspect
+
+    params = inspect.signature(mask_digests).parameters
+    assert "expand_short_chunks" not in params, (
+        "mask_digests must NOT grow an expand_short_chunks parameter — expansion is a "
+        "chunk-plane concept keyed on time range, and applying it to a provenance-"
+        "addressed digest is the over-disclosure trap those two functions exist to keep "
+        "apart. If this fails, someone 'fixed' the TypeError by widening the signature."
+    )
+    assert "expand_short_chunks" in inspect.signature(mask_chunks).parameters, (
+        "control: mask_chunks IS the plane that takes the expansion kwarg, so this test "
+        "cannot pass merely because the parameter was deleted everywhere."
+    )
+
+
+def test_the_service_builds_separate_mask_kwargs_for_each_plane():
+    """The service must not hand one kwargs dict to both maskers.
+
+    The outage above came from a single ``_mask_kwargs`` dict being splatted into
+    ``mask_chunks``, ``mask_digests`` AND the summary tier. Consolidating them looked
+    like tidying; it coupled two planes that this codebase deliberately keeps apart.
+    """
+    from app.services.chat.service import _build_digest_mask_kwargs
+    from app.services.chat.service import _build_mask_kwargs
+
+    settings = SimpleNamespace(context_expansion_enabled=True)
+    llm = None  # remote/absent provider — the common case
+
+    chunk_kwargs = _build_mask_kwargs(llm, settings)
+    digest_kwargs = _build_digest_mask_kwargs(llm)
+
+    assert chunk_kwargs.get("expand_short_chunks") is True, (
+        "control: with the flag on, the CHUNK plane must request expansion — otherwise "
+        "this test would pass against a build where expansion was simply removed."
+    )
+    assert "expand_short_chunks" not in digest_kwargs, (
+        "the digest plane must never be handed the chunk plane's expansion kwarg"
+    )

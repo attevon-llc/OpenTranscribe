@@ -98,6 +98,25 @@ services:
     image: ollama/ollama:${LLM_TEST_OLLAMA_TAG:-latest}
     container_name: ${LLM_TEST_OLLAMA_CONTAINER_NAME:-opentranscribe-llm-test-ollama}
     profiles: ["ollama"]  # opt-in only; not started by --with-llm-test alone (see header)
+    environment:
+      # ⚠️ Ollama's DEFAULT context is 4096 tokens, which silently TRUNCATES a RAG
+      # prompt rather than erroring. A chat turn here carries an <overview> block
+      # plus a dozen excerpts (~10k chars, ~2.5k tokens) before the question, and
+      # a long conversation adds history on top — so the default would quietly cut
+      # the evidence and any answer-quality comparison against vLLM would be
+      # measuring truncation, not the model.
+      OLLAMA_CONTEXT_LENGTH: "${LLM_TEST_OLLAMA_CTX:-32768}"
+      # Unlike vLLM, Ollama does not pre-allocate a KV cache sized by a
+      # utilization fraction, so the VRAM it leaves free is what makes room for
+      # these parallel slots. Each slot costs context-length worth of KV.
+      OLLAMA_NUM_PARALLEL: "${LLM_TEST_OLLAMA_PARALLEL:-8}"
+      # Queue rather than reject once the parallel slots are full: the eval probe
+      # runs 81 questions at concurrency 8 and a 503 would look like an app error.
+      OLLAMA_MAX_QUEUE: "${LLM_TEST_OLLAMA_MAX_QUEUE:-512}"
+      # Keep the weights resident between questions. The default unloads after 5
+      # minutes, and a 27B reload mid-run adds minutes of latency to whichever
+      # question happens to follow the gap — which then reads as a slow turn.
+      OLLAMA_KEEP_ALIVE: "${LLM_TEST_OLLAMA_KEEP_ALIVE:-60m}"
     volumes:
       - llm_test_ollama_data:/root/.ollama
     ports:

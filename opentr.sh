@@ -122,6 +122,7 @@ show_help() {
   echo "                         panel; placement is the reservation this flag sets."
   echo "  --nas                - Use custom storage paths (NAS for media, NVMe for DB/search)"
   echo "  --no-nas             - Suppress the auto-loaded NAS overlay (use Docker named volumes)"
+  echo "  --no-diar-native     - Suppress the auto-loaded native diarization sidecar"
   echo "  --fresh [name]       - Isolated dev deployment: own project + named volumes, NAS"
   echo "                         overlay NEVER loaded, real data untouched (dev mode only)"
   echo "  --port-offset N      - With --fresh: offset every published port by N (run side-by-side;"
@@ -151,6 +152,12 @@ show_help() {
   echo "                         OLE2 .doc/.ppt/.xls + RTF, localhost:5198). Without this"
   echo "                         flag the in-worker 'slim' tier still parses PDF/OOXML/text;"
   echo "                         scans and legacy Office get a typed 'not available' error."
+  echo "  --with-diar-native   - Start the native diarization sidecar (diar-server), the"
+  echo "                         PRIMARY engine when engine.diarizer_backend=native."
+  echo "                         GPU: DIAR_NATIVE_GPU, else GPU_DEVICE_ID; the sidecar"
+  echo "                         holds ~4.1 GB of warm ORT arena on that card while up."
+  echo "                         Without this flag a native-configured stack silently"
+  echo "                         falls back to the in-process PyAnnote fork per file."
   echo "  --with-keycloak-test - Start Keycloak test container (dev or prod; localhost:8180)"
   echo "  --with-authentik-test - Start Authentik test container (dev or prod; localhost:9022)"
   echo "  --with-watch         - Mount the host watch folder (WATCH_HOST_PATH, default ./watch) for auto-import"
@@ -225,6 +232,7 @@ show_help() {
   echo "  ./opentr.sh start dev --with-mock-llm        # Dev with a fake LLM for chat/AI testing"
   echo "  ./opentr.sh start dev --with-llm-test        # Dev with a real GPU-backed LLM (vLLM) for chat testing"
   echo "  ./opentr.sh start dev --with-documents       # Dev with the OCR + legacy-Office parser sidecars"
+  echo "  ./opentr.sh start dev --with-diar-native     # Dev with the native diarization sidecar"
   echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
   echo "  ./opentr.sh start dev --with-authentik-test  # Dev with Authentik test container"
   echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
@@ -539,6 +547,9 @@ FRESH_MOCK_LLM_SERVICES=(mock-llm)
 # publish a loopback port, so both need the #347 isolation treatment or a fresh stack
 # collides with the main one on 5197/5198.
 FRESH_DOCUMENTS_SERVICES=(docling-serve tika)
+# Native diarization sidecar (--with-diar-native). No published host port, but the
+# service still needs re-pinning into the fresh project so two stacks never share one.
+FRESH_DIAR_NATIVE_SERVICES=(diar-native)
 FRESH_SMB_SERVICES=(smb-test)
 FRESH_MONITORING_SERVICES=(prometheus grafana)
 
@@ -1102,6 +1113,8 @@ start_app() {
   WITH_LDAP_TEST_FLAG=""
   WITH_MOCK_LLM_FLAG=""
   WITH_DOCUMENTS_FLAG=""
+  WITH_DIAR_NATIVE_FLAG=""
+  NO_DIAR_NATIVE_FLAG=""
   WITH_LLM_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
   WITH_AUTHENTIK_TEST_FLAG=""
@@ -1210,6 +1223,14 @@ start_app() {
         WITH_DOCUMENTS_FLAG="--with-documents"
         shift
         ;;
+      --with-diar-native)
+        WITH_DIAR_NATIVE_FLAG="--with-diar-native"
+        shift
+        ;;
+      --no-diar-native)
+        NO_DIAR_NATIVE_FLAG="--no-diar-native"
+        shift
+        ;;
       --with-llm-test)
         WITH_LLM_TEST_FLAG="--with-llm-test"
         shift
@@ -1306,6 +1327,10 @@ start_app() {
       _port_vars+=("${FRESH_DOCUMENTS_PORT_VARS[@]}")
       _aux_services+=("${FRESH_DOCUMENTS_SERVICES[@]}")
       _aux_files+=("docker-compose.documents.yml")
+    fi
+    if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
+      _aux_services+=("${FRESH_DIAR_NATIVE_SERVICES[@]}")
+      _aux_files+=("docker-compose.diar-native.yml")
     fi
     if [ -n "$WITH_SMB_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_SMB_PORT_VARS[@]}")
@@ -1672,6 +1697,32 @@ start_app() {
       echo "   Sets DOCUMENT_PARSER_URL + DOCUMENT_TIKA_URL on backend and the CPU workers."
     else
       echo "⚠️  --with-documents specified but docker-compose.documents.yml not found"
+    fi
+  fi
+
+  # Native diarization sidecar auto-load: `native` is the coded default engine, so a
+  # stack without the sidecar silently serves every file from the in-process PyAnnote
+  # fallback. Mirrors the NAS auto-detect: announced, and --no-diar-native suppresses.
+  # Guarded on the models dir existing — without it the sidecar restart-loops and
+  # `up --wait` would fail the whole startup on checkouts with no local model export.
+  # Fresh stacks stay opt-in (pass --with-diar-native explicitly).
+  if [ -z "$WITH_DIAR_NATIVE_FLAG" ] && [ -z "$NO_DIAR_NATIVE_FLAG" ] && [ -z "$FRESH_FLAG" ] \
+     && [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ] \
+     && [ -d "${DIAR_NATIVE_MODELS_DIR:-/mnt/nvm/repos/diar-native/models_folded}" ]; then
+    WITH_DIAR_NATIVE_FLAG="auto"
+    echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
+  fi
+
+  # Add the native diarization sidecar if requested
+  if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
+    if [ -f "docker-compose.diar-native.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
+      echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
+      echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~4.1 GB warm ORT arena while up."
+      echo "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);"
+      echo "   without the sidecar that config falls back to the in-process PyAnnote fork."
+    else
+      echo "⚠️  --with-diar-native specified but docker-compose.diar-native.yml not found"
     fi
   fi
 
@@ -2307,6 +2358,32 @@ reset_and_init() {
       echo "   Sets DOCUMENT_PARSER_URL + DOCUMENT_TIKA_URL on backend and the CPU workers."
     else
       echo "⚠️  --with-documents specified but docker-compose.documents.yml not found"
+    fi
+  fi
+
+  # Native diarization sidecar auto-load: `native` is the coded default engine, so a
+  # stack without the sidecar silently serves every file from the in-process PyAnnote
+  # fallback. Mirrors the NAS auto-detect: announced, and --no-diar-native suppresses.
+  # Guarded on the models dir existing — without it the sidecar restart-loops and
+  # `up --wait` would fail the whole startup on checkouts with no local model export.
+  # Fresh stacks stay opt-in (pass --with-diar-native explicitly).
+  if [ -z "$WITH_DIAR_NATIVE_FLAG" ] && [ -z "$NO_DIAR_NATIVE_FLAG" ] && [ -z "$FRESH_FLAG" ] \
+     && [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ] \
+     && [ -d "${DIAR_NATIVE_MODELS_DIR:-/mnt/nvm/repos/diar-native/models_folded}" ]; then
+    WITH_DIAR_NATIVE_FLAG="auto"
+    echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
+  fi
+
+  # Add the native diarization sidecar if requested
+  if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
+    if [ -f "docker-compose.diar-native.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
+      echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
+      echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~4.1 GB warm ORT arena while up."
+      echo "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);"
+      echo "   without the sidecar that config falls back to the in-process PyAnnote fork."
+    else
+      echo "⚠️  --with-diar-native specified but docker-compose.diar-native.yml not found"
     fi
   fi
 

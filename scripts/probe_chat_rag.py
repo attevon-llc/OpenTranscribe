@@ -110,6 +110,15 @@ class Result:
     files_consulted_uuids: list[str] = field(default_factory=list)
     chunks_used: int | None = None
     retrieved: int | None = None
+    #: The ``sources`` SSE frame's citations, captured mid-stream and stripped down to
+    #: ``id``/``file_uuid`` only (see :func:`_offered_citation_refs`). This is the FULL
+    #: set the model was offered — a superset of ``citations`` above, which is the
+    #: PERSISTED/used subset re-fetched after the stream closes (issue #384: "the
+    #: citations a user can click are exactly the excerpts the model was given" is a
+    #: claim about the offered set, not the used one). Traceability metrics
+    #: (``tests.eval.harness.traceability``) need this to check the #384 invariant and
+    #: a scope leak per turn, not only in a unit test.
+    offered_citations: list[dict[str, Any]] = field(default_factory=list)
 
 
 def parse_scope(value: str) -> list[str]:
@@ -270,9 +279,31 @@ def create_conversation(session: Any, base_url: str, file_uuids: list[str], titl
     return str(response.json()['uuid'])
 
 
+def _offered_citation_refs(citations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Strip a ``sources`` frame's citations down to ``id``/``file_uuid`` only.
+
+    The full citation payload carries a ``snippet`` (a transcript excerpt) and a
+    ``title`` — prose this public repo cannot commit (see
+    ``tests.eval.harness.probe_metrics``'s module docstring, ``FORBIDDEN_KEYS``).
+    Traceability only needs to know WHICH excerpt id was offered and WHICH file it
+    belongs to, so everything else is dropped before it ever reaches :class:`Result`.
+    A malformed entry (missing ``id`` or ``file_uuid``) is skipped rather than raising —
+    this is a probe against a live server, and one odd frame must not abort the run.
+    """
+    refs: list[dict[str, Any]] = []
+    for citation in citations:
+        if not isinstance(citation, dict):
+            continue
+        cid, file_uuid = citation.get('id'), citation.get('file_uuid')
+        if cid is None or file_uuid is None:
+            continue
+        refs.append({'id': int(cid), 'file_uuid': str(file_uuid)})
+    return refs
+
+
 def send_message_and_collect(
     session: Any, base_url: str, conversation_uuid: str, content: str
-) -> tuple[str, str, list[dict[str, Any]], float]:
+) -> tuple[str, str, list[dict[str, Any]], list[dict[str, Any]], float]:
     """POST a message and read its SSE stream to completion.
 
     Args:
@@ -282,12 +313,16 @@ def send_message_and_collect(
         content: The message text.
 
     Returns:
-        ``(answer_text, reasoning_text, warnings, latency_seconds)``.
+        ``(answer_text, reasoning_text, warnings, offered_citations, latency_seconds)``.
+        ``offered_citations`` is the ``sources`` frame's citation list, stripped by
+        :func:`_offered_citation_refs` — empty if no ``sources`` frame arrived (e.g. a
+        no-context turn, issue #384's frame is conditional on there being any excerpt).
     """
     start = time.monotonic()
     answer_parts: list[str] = []
     reasoning_parts: list[str] = []
     warnings: list[dict[str, Any]] = []
+    offered_citations: list[dict[str, Any]] = []
     with session.post(
         f'{base_url}/chat/conversations/{conversation_uuid}/messages',
         json={'content': content},
@@ -322,8 +357,10 @@ def send_message_and_collect(
                 warnings.append(data)
             elif event_name == 'error':
                 warnings.append({'code': 'error_frame', **data})
+            elif event_name == 'sources':
+                offered_citations = _offered_citation_refs(data.get('citations') or [])
     latency = time.monotonic() - start
-    return ''.join(answer_parts), ''.join(reasoning_parts), warnings, latency
+    return ''.join(answer_parts), ''.join(reasoning_parts), warnings, offered_citations, latency
 
 
 def fetch_thread_metadata(session: Any, base_url: str, conversation_uuid: str) -> dict[str, Any]:
@@ -354,12 +391,13 @@ def run_question(session: Any, base_url: str, question: Question) -> Result:
             session, base_url, question.file_uuids, f'probe: {question.label}'
         )
         result.conversation_uuid = conversation_uuid
-        answer, reasoning, warnings, latency = send_message_and_collect(
+        answer, reasoning, warnings, offered_citations, latency = send_message_and_collect(
             session, base_url, conversation_uuid, question.question
         )
         result.answer_text = answer
         result.reasoning_text = reasoning
         result.warnings = warnings
+        result.offered_citations = offered_citations
         result.latency_s = latency
 
         # Persistence lands shortly after the stream closes; msg_metadata/citations
@@ -404,6 +442,7 @@ def result_to_record(result: Result) -> dict[str, Any]:
         'warnings': result.warnings,
         'msg_metadata': result.msg_metadata,
         'citations': result.citations,
+        'offered_citations': result.offered_citations,
         'files_consulted_uuids': result.files_consulted_uuids,
         'chunks_used': result.chunks_used,
         'retrieved': result.retrieved,
@@ -596,6 +635,26 @@ def main(argv: list[str] | None = None) -> int:
             encoding='utf-8',
         )
         logger.info('Wrote metrics-only output to %s (safe to commit)', metrics_dir)
+
+        from tests.eval.harness import traceability
+
+        trace_results = traceability.build_traceability_results(
+            run_name=run_name,
+            target={
+                'host': args.host,
+                'port': args.port,
+                'llm_provider': args.llm_provider,
+                'llm_model': args.llm_model,
+            },
+            records=records,
+        )
+        (metrics_dir / 'traceability.json').write_text(
+            traceability.dumps(trace_results), encoding='utf-8'
+        )
+        (metrics_dir / 'traceability.md').write_text(
+            traceability.render_traceability_table(trace_results['rows']), encoding='utf-8'
+        )
+        logger.info('Wrote traceability-only output to %s (safe to commit)', metrics_dir)
 
     return 0
 

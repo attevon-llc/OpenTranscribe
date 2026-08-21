@@ -213,6 +213,7 @@ def test_result_to_record_shape_matches_probe_metrics_expectations() -> None:
         files_consulted_uuids=["a"],
         chunks_used=4,
         retrieved=10,
+        offered_citations=[{"id": 1, "file_uuid": "a"}],
     )
     record = probe.result_to_record(result)
     # Every field tests.eval.harness.probe_metrics.extract_turn_metrics reads.
@@ -231,3 +232,54 @@ def test_result_to_record_shape_matches_probe_metrics_expectations() -> None:
     assert record["label"] == "q1"
     assert record["scope_file_uuids"] == ["a", "b"]
     assert record["latency_s"] == 1.23  # rounded
+    # tests.eval.harness.traceability's extra field, additive to the shape above.
+    assert record["offered_citations"] == [{"id": 1, "file_uuid": "a"}]
+
+
+def test_result_offered_citations_defaults_to_empty_list() -> None:
+    """A Result built without the kwarg (e.g. an errored turn) must not carry a
+    mutable-default landmine shared across instances."""
+    question = probe.Question(label="q", category="c", question="t", file_uuids=["a"])
+    first = probe.Result(q=question)
+    second = probe.Result(q=question)
+    first.offered_citations.append({"id": 1, "file_uuid": "a"})
+    assert second.offered_citations == []
+
+
+# ---------------------------------------------------------------------------
+# _offered_citation_refs — strips a 'sources' frame's citations to id/file_uuid
+# ---------------------------------------------------------------------------
+
+
+def test_offered_citation_refs_keeps_only_id_and_file_uuid() -> None:
+    refs = probe._offered_citation_refs(
+        [
+            {
+                "id": 3,
+                "file_uuid": "abc",
+                "snippet": "a transcript excerpt that must not survive",
+                "title": "Recording title",
+            }
+        ]
+    )
+    assert refs == [{"id": 3, "file_uuid": "abc"}]
+    assert "snippet" not in refs[0]
+    assert "title" not in refs[0]
+
+
+def test_offered_citation_refs_skips_malformed_entries() -> None:
+    """A missing id/file_uuid is dropped, not raised — one odd frame from a live
+    server must not abort the whole probe run."""
+    refs = probe._offered_citation_refs(
+        [
+            {"id": 1, "file_uuid": "a"},
+            {"id": 2},  # no file_uuid
+            {"file_uuid": "b"},  # no id
+            "not-a-dict",  # type: ignore[list-item]
+        ]
+    )
+    assert refs == [{"id": 1, "file_uuid": "a"}]
+
+
+def test_offered_citation_refs_empty_input_is_empty_output() -> None:
+    assert probe._offered_citation_refs([]) == []

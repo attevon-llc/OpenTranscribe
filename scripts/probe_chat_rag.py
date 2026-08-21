@@ -78,6 +78,12 @@ logger = logging.getLogger('probe_chat_rag')
 DEFAULT_EMAIL = 'admin@example.com'
 DEFAULT_PASSWORD = 'password'  # noqa: S105 - documented dev-stack test credential, not a secret
 
+#: Bounded retries for a 429 on the message POST. The app's concurrency cap is a
+#: real limit, not a failure, so the probe waits it out rather than recording a
+#: per-question error that reads as the arm under test breaking.
+_RATE_LIMIT_RETRIES = 5
+_RATE_LIMIT_BACKOFF_S = 3.0
+
 
 @dataclass
 class Question:
@@ -238,7 +244,42 @@ def ensure_llm_config(
     for config in response.json().get('configurations', []):
         if config.get('base_url') == llm_base_url:
             config_uuid = str(config['uuid'])
-            logger.info('reusing existing LLM config %s', config_uuid)
+            # ⚠️ Reuse must RECONCILE, not just adopt. Matching on base_url alone and
+            # keeping whatever the row already held silently discarded --llm-max-tokens,
+            # and because that field IS the context window (LLMService sets
+            # `user_context_window = config.max_tokens`), an arm asking for a 60,000
+            # window ran at the pre-existing 8,192 and reported `budget_chars` identical
+            # to the control. The arm looked like a null result when it had never been
+            # applied — the most expensive kind of wrong answer, because it argues
+            # against the change.
+            stale = {
+                key: (config.get(key), value)
+                for key, value in (
+                    ('max_tokens', max_tokens),
+                    ('model_name', model_name),
+                    ('provider', provider),
+                )
+                if config.get(key) != value
+            }
+            if stale:
+                logger.warning(
+                    'existing LLM config %s differs from the requested arm (%s) — updating it',
+                    config_uuid,
+                    ', '.join(f'{k}: {was!r} -> {want!r}' for k, (was, want) in stale.items()),
+                )
+                patch = session.put(
+                    f'{base_url}/llm-settings/{config_uuid}',
+                    json={
+                        'max_tokens': max_tokens,
+                        'model_name': model_name,
+                        'provider': provider,
+                        'temperature': temperature,
+                    },
+                    timeout=30,
+                )
+                patch.raise_for_status()
+            else:
+                logger.info('reusing existing LLM config %s', config_uuid)
             break
     else:
         payload = {
@@ -262,6 +303,31 @@ def ensure_llm_config(
         timeout=30,
     )
     response.raise_for_status()
+
+    # Read the window BACK from the server and refuse to run on a mismatch. The
+    # value decides the whole excerpt budget, so an arm that silently ran at a
+    # different one is not a measurement of anything — and every other symptom of
+    # that (identical `budget_chars`, unchanged `chunks_used`) reads as "the change
+    # did nothing" rather than "the change never happened".
+    check = session.get(f'{base_url}/llm-settings', timeout=30)
+    check.raise_for_status()
+    for config in check.json().get('configurations', []):
+        if str(config.get('uuid')) == config_uuid:
+            resolved = config.get('max_tokens')
+            if resolved != max_tokens:
+                raise SystemExit(
+                    f'LLM config {config_uuid} reports max_tokens={resolved!r} after an update '
+                    f'to {max_tokens!r}. Refusing to run: this field IS the context window, so '
+                    f'the arm would silently measure a different budget than it claims.'
+                )
+            logger.info(
+                'ACTIVE LLM config %s — model=%s provider=%s CONTEXT WINDOW=%s',
+                config_uuid,
+                config.get('model_name'),
+                config.get('provider'),
+                resolved,
+            )
+            break
     return config_uuid
 
 
@@ -325,13 +391,33 @@ def send_message_and_collect(
     reasoning_parts: list[str] = []
     warnings: list[dict[str, Any]] = []
     offered_citations: list[dict[str, Any]] = []
-    with session.post(
-        f'{base_url}/chat/conversations/{conversation_uuid}/messages',
-        json={'content': content},
-        stream=True,
-        timeout=180,
-        headers={'Accept': 'text/event-stream'},
-    ) as response:
+    # A 429 here is the app's CONCURRENCY cap, not a failure of the thing under
+    # test — two eval arms running in parallel, or a --concurrency above
+    # chat.limits.max_concurrent_streams, will hit it. Recording it as a per-
+    # question error made 58 of 81 questions look like the arm breaking, which is
+    # exactly the misreading a retry removes. Bounded and backed off so a genuine
+    # sustained refusal still surfaces rather than hanging the run.
+    for attempt in range(_RATE_LIMIT_RETRIES):
+        response = session.post(
+            f'{base_url}/chat/conversations/{conversation_uuid}/messages',
+            json={'content': content},
+            stream=True,
+            timeout=180,
+            headers={'Accept': 'text/event-stream'},
+        )
+        if response.status_code != 429:
+            break
+        response.close()
+        delay = _RATE_LIMIT_BACKOFF_S * (attempt + 1)
+        logger.warning(
+            'rate limited (429) on attempt %d/%d — backing off %.1fs',
+            attempt + 1,
+            _RATE_LIMIT_RETRIES,
+            delay,
+        )
+        time.sleep(delay)
+
+    with response:
         response.raise_for_status()
         event_name: str | None = None
         for raw_line in response.iter_lines(decode_unicode=True):

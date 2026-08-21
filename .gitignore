@@ -26,6 +26,8 @@ PLANS/
 .env.development
 .env.test
 .env.*.local
+# dated .env backups (e.g. .env.bak21aug) — real secrets, never tracked
+.env.bak*
 
 # Release-test secrets (template at .env.test-secrets.example is committed)
 scripts/release-tests/.env.test-secrets

@@ -1228,6 +1228,32 @@ def _build_mask_kwargs(llm: Any, settings: Any) -> dict[str, bool]:
     return kwargs
 
 
+def _overview_citation_start(settings, digest_masked: list, masked: list) -> int | None:
+    """#532 arm (a): the id base for citable overview entries, or ``None`` (off).
+
+    Excerpt markers are POSITIONS into the final chunk list, and that list can
+    only SHRINK after this point (the empty-after-masking filter), so
+    ``len(digest_masked) + len(masked)`` is an upper bound that can never
+    collide with an excerpt id.
+    """
+    if not settings.overview_citable:
+        return None
+    return len(digest_masked) + len(masked)
+
+
+def _finalize_overview_citations(overview, summaries: list) -> None:
+    """#532 arm (a): attach citation payloads when the composer assigned ids.
+
+    A no-op for every turn where the arm is off (``cited_entries`` empty) —
+    payloads carry snippets and ride the Overview object, never ``meta``.
+    """
+    if not overview.cited_entries:
+        return
+    from app.services.chat.citations import build_overview_citations
+
+    overview.citation_payloads = tuple(build_overview_citations(overview.cited_entries, summaries))
+
+
 def _prepare_context(
     *,
     user_id: int,
@@ -1509,7 +1535,9 @@ def _prepare_context(
             summaries,
             files_in_scope=len(file_uuids) if file_uuids else 0,
             speaker_focus=speaker_focus_for_summary,
+            citation_start=_overview_citation_start(settings, digest_masked, masked),
         )
+        _finalize_overview_citations(overview, summaries)
         meta["overview"] = overview.as_metadata()
         # The frontend's pre-existing "Overview source" row: which REDUCER
         # composed the block ("code" | "llm-batch"), already carried inside
@@ -2032,6 +2060,8 @@ class ChatService:
                 overview_block=overview_block,
                 recurrence_block=recurrence_block,
                 synthesis_block=synthesis_block,
+                overview_block_rule=settings.overview_block_rule,
+                overview_after_excerpts=settings.overview_after_excerpts,
             )
             chunks_used = len(excerpt_ids)
             turn.metadata["chunks_used"] = chunks_used
@@ -2039,6 +2069,20 @@ class ChatService:
 
             if use_context:
                 turn.offered_citations = citations_mod.build_offered_citations(masked, excerpt_ids)
+                # #532 arm (a): the overview's own citation ids join the offer —
+                # but only when the block actually SURVIVED into the prompt.
+                # Offering ids for a budget-dropped block is exactly the
+                # sourced-but-not-grounded failure issue #384 closed.
+                if (
+                    settings.overview_citable
+                    and overview is not None
+                    and overview.citation_payloads
+                    and overview_block
+                    and "overview" not in (prompt_diagnostics.get("evidence_blocks_dropped") or ())
+                ):
+                    turn.offered_citations = turn.offered_citations + list(
+                        overview.citation_payloads
+                    )
                 yield sse("sources", {"citations": turn.offered_citations})
 
                 if not masked:

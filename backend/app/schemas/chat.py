@@ -419,6 +419,9 @@ class ChatAdminSettings(BaseModel):
     planner_max_parallel_legs: int = Field(4, ge=1, le=8)
     enrichment_enabled: bool = False
     context_expansion_enabled: bool = False
+    overview_citable: bool = False
+    overview_block_rule: bool = False
+    overview_after_excerpts: bool = False
 
 
 class ChatAdminSettingsUpdate(BaseModel):
@@ -445,3 +448,6 @@ class ChatAdminSettingsUpdate(BaseModel):
     planner_max_parallel_legs: int | None = Field(default=None, ge=1, le=8)
     enrichment_enabled: bool | None = None
     context_expansion_enabled: bool | None = None
+    overview_citable: bool | None = None
+    overview_block_rule: bool | None = None
+    overview_after_excerpts: bool | None = None

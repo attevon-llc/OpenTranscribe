@@ -88,6 +88,16 @@ class Overview:
     llm_calls: int = 0
     truncated: bool = False
     diagnostics: dict[str, Any] = field(default_factory=dict)
+    #: #532 arm (a), EXPERIMENT — ``(citation_id, file_uuid)`` per listed file,
+    #: populated only when the composer was given a ``citation_start``. Empty
+    #: means the block carries no ids (today's shipped behaviour). Never in
+    #: ``as_metadata()``: ids are prompt bookkeeping, not a count.
+    cited_entries: tuple[tuple[int, str], ...] = ()
+    #: The rendered citation payloads for ``cited_entries``, filled by
+    #: ``_prepare_context`` (where the FileSummary list is in scope) and read
+    #: by the streaming half when extending ``offered_citations``. Carries
+    #: snippets, so it must NEVER enter ``as_metadata()`` — that dict persists.
+    citation_payloads: tuple[dict, ...] = ()
 
     def as_metadata(self) -> dict[str, Any]:
         """Counts only, never content — the same rule the rest of chat follows.

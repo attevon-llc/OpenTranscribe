@@ -163,6 +163,7 @@ class CodeComposer:
         files_in_scope: int = 0,
         *,
         speaker_focus: str | None = None,
+        citation_start: int | None = None,
         **_kwargs,
     ) -> Overview:  # noqa: ARG002
         if not summaries:
@@ -181,12 +182,26 @@ class CodeComposer:
             lines.append("")
         lines.extend(_corpus_header(summaries, files_in_scope))
         listed = summaries[:MAX_LISTED_FILES]
+        cited_entries: list[tuple[int, str]] = []
+        if citation_start is not None and listed:
+            # #532 arm (a): each listed recording carries a citation id the
+            # model may use, closing the rule-12-vs-rule-2 conflict (the block
+            # said "answer from the overview" while nothing in it was citable).
+            lines.append(
+                "Each recording below carries a citation id — cite it for a claim "
+                "drawn from that recording's summary."
+            )
         if listed:
             lines.append("")
-            for summary in listed:
+            for position, summary in enumerate(listed, start=1):
                 title = _sanitize_attribute(summary.title) or "Untitled recording"
                 date = f" ({summary.recorded_at})" if summary.recorded_at else ""
-                lines.append(f"- {title}{date}")
+                if citation_start is not None:
+                    citation_id = citation_start + position
+                    cited_entries.append((citation_id, summary.file_uuid))
+                    lines.append(f"- {title}{date} [{citation_id}]")
+                else:
+                    lines.append(f"- {title}{date}")
                 if summary.digest:
                     # BODY-safe, not the 120-char attribute sanitizer: a digest is
                     # prose, not a short discrete value, and the attribute cap
@@ -208,6 +223,7 @@ class CodeComposer:
             files_in_scope=files_in_scope or len(summaries),
             files_listed=len(listed),
             truncated=hidden > 0,
+            cited_entries=tuple(cited_entries),
         )
 
 
@@ -340,6 +356,7 @@ def build_overview(
     batch_files: int = DEFAULT_BATCH_FILES,
     files_in_scope: int = 0,
     speaker_focus: str | None = None,
+    citation_start: int | None = None,
 ) -> Overview:
     """Reduce file summaries to one collection view.
 
@@ -363,5 +380,18 @@ def build_overview(
     Returns:
         An :class:`Overview`. Empty ``block`` when there is nothing to summarise.
     """
+    # #532 arm (a): citation ids need the deterministic composer — an LLM
+    # condensation could drop or renumber an entry, detaching an id from its
+    # file. The experiment therefore forces the code path when ids are asked
+    # for; measuring the arm on the LLM reducer would need id-preservation
+    # guarantees that reducer cannot give.
+    if citation_start is not None:
+        return CodeComposer().reduce(
+            question,
+            summaries,
+            files_in_scope,
+            speaker_focus=speaker_focus,
+            citation_start=citation_start,
+        )
     reducer = BatchReducer(llm, batch_files=batch_files) if (use_llm and llm) else CodeComposer()
     return reducer.reduce(question, summaries, files_in_scope, speaker_focus=speaker_focus)

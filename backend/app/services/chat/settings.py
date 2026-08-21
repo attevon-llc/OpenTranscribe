@@ -100,6 +100,13 @@ class ChatSettings:
     #: default: a new, unmeasured retrieval shape, same posture as every
     #: other W2.x flag above.
     context_expansion_enabled: bool = C.DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED
+    #: #532 synthesis-gap EXPERIMENT arms — delete after measurement (see
+    #: constants.py). (a) overview entries carry citation ids; (b) the
+    #: anti-narrowing rule rides ON the overview block; (c) the overview is
+    #: placed after the excerpts instead of before.
+    overview_citable: bool = C.DEFAULT_CHAT_OVERVIEW_CITABLE
+    overview_block_rule: bool = C.DEFAULT_CHAT_OVERVIEW_BLOCK_RULE
+    overview_after_excerpts: bool = C.DEFAULT_CHAT_OVERVIEW_AFTER_EXCERPTS
     #: Ceiling on the answer, sent to the provider as max_tokens. ``None`` means
     #: "use whatever the LLM config derived", which is the community behaviour.
     max_output_tokens: int | None = None

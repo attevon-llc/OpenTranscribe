@@ -267,6 +267,29 @@ CHAT_FLAG_REGISTRY: tuple[ChatFlagSpec, ...] = (
         value_type=bool,
         default=C.DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED,
     ),
+    # --- #532 synthesis-gap EXPERIMENT arms (see constants.py) — DELETE after
+    # measurement, in either direction.
+    ChatFlagSpec(
+        field="overview_citable",
+        setting_key="chat.rag.overview_citable",
+        description="#532 arm (a): overview file entries get citation ids the model can use",
+        value_type=bool,
+        default=C.DEFAULT_CHAT_OVERVIEW_CITABLE,
+    ),
+    ChatFlagSpec(
+        field="overview_block_rule",
+        setting_key="chat.rag.overview_block_rule",
+        description="#532 arm (b): attach the anti-narrowing rule to the overview block itself",
+        value_type=bool,
+        default=C.DEFAULT_CHAT_OVERVIEW_BLOCK_RULE,
+    ),
+    ChatFlagSpec(
+        field="overview_after_excerpts",
+        setting_key="chat.rag.overview_after_excerpts",
+        description="#532 arm (c): place the overview after the excerpts instead of before",
+        value_type=bool,
+        default=C.DEFAULT_CHAT_OVERVIEW_AFTER_EXCERPTS,
+    ),
 )
 
 #: ``field -> ChatFlagSpec``, for a single-lookup consumer.

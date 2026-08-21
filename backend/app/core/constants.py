@@ -1213,6 +1213,19 @@ DEFAULT_CHAT_ENRICHMENT_ENABLED = False  # chat.enrichment_enabled
 # posture as every other W2.x flag above.
 DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED = False  # chat.rag.context_expansion_enabled
 
+# --- #532 synthesis-gap EXPERIMENT flags. -----------------------------------
+# The measured defect: retrieval OFFERS 99% of a multi-file scope, the answer
+# cites 75% — and the worst observed turn cited one excerpt for every claim
+# while holding an overview of all 4 recordings. These three flags are the
+# one-variable-at-a-time arms of that experiment, matching the published
+# multi-document "dispersion"/position-bias literature. ⚠️ EXPERIMENT flags,
+# not features: after measurement each is either promoted to default and the
+# flag DELETED, or reverted and DELETED with its arm table on #532. Do not
+# build on them.
+DEFAULT_CHAT_OVERVIEW_CITABLE = False  # chat.rag.overview_citable
+DEFAULT_CHAT_OVERVIEW_BLOCK_RULE = False  # chat.rag.overview_block_rule
+DEFAULT_CHAT_OVERVIEW_AFTER_EXCERPTS = False  # chat.rag.overview_after_excerpts
+
 
 # =============================================================================
 # Document ingestion (issue #362 / #403 Stage 6)

@@ -141,6 +141,57 @@ def build_citation(index: int, chunk: MaskedChunk) -> dict:
     }
 
 
+def build_overview_citations(
+    cited_entries: tuple[tuple[int, str], ...],
+    summaries: list,
+) -> list[dict]:
+    """Citation payloads for the overview's listed recordings (#532 arm (a)).
+
+    EXPERIMENT support — delete with the arm. ``kind`` is ``digest`` (the
+    entries ARE masked digest text with per-file provenance), so the UI's
+    existing summary labelling applies. ``chunk_index``/``digest_section`` are
+    ``None``: an overview entry cites the recording's digest as a whole, not
+    one indexed section — the snippet carries exactly the text the model saw,
+    which is the #384 property that matters.
+
+    Args:
+        cited_entries: ``Overview.cited_entries`` — ``(citation_id, file_uuid)``
+            in listing order.
+        summaries: The ``FileSummary`` list the overview was composed from
+            (already masked by the map stage).
+
+    Returns:
+        One payload per cited entry, in id order. Entries whose file_uuid no
+        longer matches a summary are skipped rather than cited empty.
+    """
+    by_uuid = {s.file_uuid: s for s in summaries}
+    payloads: list[dict] = []
+    for citation_id, file_uuid in cited_entries:
+        summary = by_uuid.get(file_uuid)
+        if summary is None:
+            continue
+        payloads.append(
+            {
+                "id": citation_id,
+                "kind": KIND_DIGEST,
+                "file_uuid": file_uuid,
+                "title": summary.title,
+                "chunk_index": None,
+                "digest_section": None,
+                "start_time": None,
+                "end_time": None,
+                "speaker": None,
+                "snippet": _snippet(summary.digest or "", SNIPPET_CHARS),
+                "expanded": False,
+                "page": None,
+                "section_path": None,
+                "char_start": None,
+                "char_end": None,
+            }
+        )
+    return payloads
+
+
 def build_offered_citations(
     chunks: list[MaskedChunk], excerpt_ids: list[int] | None = None
 ) -> list[dict]:

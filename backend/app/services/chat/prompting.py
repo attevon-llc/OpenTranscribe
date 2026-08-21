@@ -596,6 +596,18 @@ def _trim_evidence_blocks(
     return kept, max(0, post_counted - total), tuple(dropped)
 
 
+#: #532 arm (b): the anti-narrowing rule attached to the overview block itself,
+#: mirroring how rules 10/11 exist because rule 3 fights the counted/overview
+#: blocks from a distance. The literature behind the arm: per-document
+#: scaffolding at the evidence beats a general instruction thirteen rules away.
+_OVERVIEW_ATTACHED_RULE = (
+    "\n(Rule for the overview above: the answer MUST cover every recording it "
+    "lists. An answer describing fewer recordings than the overview lists is "
+    "incomplete even if each individual claim is correct. Never narrow to the "
+    "recordings that happen to have excerpts below.)\n"
+)
+
+
 def build_messages(
     *,
     system_prompt: str,
@@ -610,6 +622,8 @@ def build_messages(
     overview_block: str = "",
     recurrence_block: str = "",
     synthesis_block: str = "",
+    overview_block_rule: bool = False,
+    overview_after_excerpts: bool = False,
 ) -> tuple[list[dict[str, str]], list[int]]:
     """Assemble the full message list for the provider.
 
@@ -637,6 +651,13 @@ def build_messages(
             no caller populates this yet).
         synthesis_block: Rendered ``<synthesis>`` block, or ``""`` (Wave 2; no
             caller populates this yet).
+        overview_block_rule: #532 arm (b). Attach the anti-narrowing rule to
+            the overview block itself rather than relying on base rule 12
+            thirteen rules away. No-op when the overview is empty or dropped.
+        overview_after_excerpts: #532 arm (c). Place the overview AFTER the
+            excerpt block (adjacent to the question) instead of before it —
+            the input-order/primacy arm. The budget maths are unchanged: the
+            overview still comes off the top of the budget either way.
 
     Returns:
         ``(messages, excerpt_ids)`` — the 1-based ids of the chunks that reached
@@ -667,9 +688,18 @@ def build_messages(
         },
         budget_chars=budget_chars,
     )
+    # #532 arm (b): the rule rides ON the block, so it survives exactly when
+    # the block does — attached after trimming, or a dropped overview would
+    # leave a rule pointing at nothing.
+    if overview_block_rule and blocks.get("overview"):
+        blocks["overview"] = blocks["overview"] + _OVERVIEW_ATTACHED_RULE
+
     # Blocks are already ordered by `_BLOCK_PRIORITY` (counted, overview,
     # recurrence, synthesis); joining in that order is what makes rule 10 read
-    # before rule 12 reads before either broader-framing block.
+    # before rule 12 reads before either broader-framing block. #532 arm (c)
+    # pulls the overview out of the prefix and re-inserts it after the
+    # excerpts — position is the ONE variable that arm moves.
+    overview_suffix = blocks.pop("overview", "") if overview_after_excerpts else ""
     evidence_prefix = "".join(blocks.get(name, "") for name in _BLOCK_PRIORITY)
 
     excerpt_ids: list[int] = []
@@ -680,7 +710,7 @@ def build_messages(
             messages.append(
                 {
                     "role": "user",
-                    "content": evidence_prefix + excerpt_block + "\n" + question,
+                    "content": evidence_prefix + excerpt_block + overview_suffix + "\n" + question,
                 }
             )
             _record(
@@ -691,7 +721,7 @@ def build_messages(
             )
             return messages, excerpt_ids
 
-    messages.append({"role": "user", "content": evidence_prefix + question})
+    messages.append({"role": "user", "content": evidence_prefix + overview_suffix + question})
     _record(
         diagnostics,
         budget_chars,

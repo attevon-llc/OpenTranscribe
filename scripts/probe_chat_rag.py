@@ -59,7 +59,9 @@ import argparse
 import json
 import logging
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -504,6 +506,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--label', default='ad-hoc', help='Label for an ad hoc --question')
     parser.add_argument('--category', default='ad_hoc', help='Category for an ad hoc --question')
 
+    parser.add_argument(
+        '--concurrency',
+        type=int,
+        default=1,
+        help=(
+            'Questions to run in parallel (default 1, serial). Bounded by the app'
+            " admin's chat.limits.max_concurrent_streams AND by vLLM's --max-num-seqs;"
+            ' exceeding either just queues. Latency becomes non-comparable above 1.'
+        ),
+    )
+
     parser.add_argument('--llm-name', default='probe-llm-config')
     parser.add_argument('--llm-provider', default='vllm')
     parser.add_argument('--llm-model', default='gemma-4-e4b')
@@ -576,19 +589,50 @@ def main(argv: list[str] | None = None) -> int:
         )
         logger.info('active LLM config: %s', config_uuid)
 
-    records: list[dict[str, Any]] = []
-    for question in questions:
-        logger.info('=== %s ===', question.label)
-        result = run_question(session, base_url, question)
+    total = len(questions)
+
+    def run_one(index_and_question: tuple[int, Question], sess: Any) -> dict[str, Any]:
+        index, question = index_and_question
+        logger.info('=== [%d/%d] %s ===', index + 1, total, question.label)
+        result = run_question(sess, base_url, question)
         logger.info(
-            'latency=%.1fs error=%s chunks_used=%s retrieved=%s files_consulted=%d',
+            '[%d/%d] %s latency=%.1fs error=%s chunks_used=%s retrieved=%s files_consulted=%d',
+            index + 1,
+            total,
+            question.label,
             result.latency_s,
             result.error,
             result.chunks_used,
             result.retrieved,
             len(result.files_consulted_uuids),
         )
-        records.append(result_to_record(result))
+        return result_to_record(result)
+
+    records: list[dict[str, Any]]
+    if args.concurrency <= 1:
+        records = [run_one(item, session) for item in enumerate(questions)]
+    else:
+        # One Session per worker THREAD, not one shared: requests.Session is not
+        # thread-safe, and each carries its own auth + CSRF cookie pair (see the
+        # module docstring). ThreadPoolExecutor.map preserves input order, so the
+        # records stay in question order however the turns interleave.
+        local = threading.local()
+
+        def worker(item: tuple[int, Question]) -> dict[str, Any]:
+            sess = getattr(local, 'session', None)
+            if sess is None:
+                sess = requests.Session()
+                login(sess, base_url, args.email, args.password)
+                local.session = sess
+            return run_one(item, sess)
+
+        logger.warning(
+            'concurrency=%d: per-question latency is measured UNDER LOAD and is NOT '
+            'comparable to a serial run. Answer content is unaffected.',
+            args.concurrency,
+        )
+        with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
+            records = list(pool.map(worker, enumerate(questions)))
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)

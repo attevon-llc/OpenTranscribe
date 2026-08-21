@@ -57,9 +57,9 @@ services:
       --reasoning-parser gemma4
       --enable-auto-tool-choice
       --tool-call-parser gemma4
-      --limit-mm-per-prompt '{"image":4,"audio":0}'
-      --max-num-seqs 4
-      --max-num-batched-tokens 20000
+      --limit-mm-per-prompt '{"image":0,"audio":0,"video":0}'
+      --max-num-seqs ${LLM_TEST_VLLM_MAX_SEQS:-16}
+      --max-num-batched-tokens ${LLM_TEST_VLLM_BATCHED_TOKENS:-20000}
       --enable-prefix-caching
     environment:
       # Standard var name huggingface_hub reads inside the container, sourced from

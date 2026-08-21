@@ -175,6 +175,13 @@ _SUMMARIZE_STRONG: tuple[tuple[str, str], ...] = (
     ("summarize-verb", r"\b(?:summar(?:ize|ise|y|ies|isation|ization))\b"),
     ("recap", r"\b(?:recap|tl;?dr|synopsis|debrief|catch me up|brief me|rundown)\b"),
     ("key-points", r"\bkey (?:points?|takeaways?|themes?|decisions?)\b"),
+    # Fixed multiword artifact terms, STRONG for the same reason "key decisions"
+    # is: they name the extracted artifact list itself, not a topic inside the
+    # recording, so there is no reading of "what are the action items" that wants
+    # ranked excerpts instead of the per-file map. Measured: 6 of 6 AMI
+    # action-item questions routed to the chunk tier alone and reached full scope
+    # coverage 0 times, because nothing here matched them.
+    ("action-items", r"\b(?:action items?|follow[- ]ups?|next steps?)\b"),
 )
 
 #: Imperatives that make the whole question a summary request. Anchored at the
@@ -201,6 +208,17 @@ _SUMMARIZE_WEAK: tuple[tuple[str, str], ...] = (
     ("overview", r"\b(?:overview|high[- ]level|at a glance)\b"),
     ("main-topics", r"\bmain (?:topics?|themes?|points?)\b"),
     ("what-covered", r"\bwhat (?:was|were|got) (?:covered|discussed)\b"),
+    # Artifact nouns that are summary-shaped ONLY about a recording. WEAK, not
+    # STRONG, precisely because each is an ordinary lookup noun on its own:
+    # "what problems did the LCD have" and "what decisions did the PM make about
+    # the chip" are both lookups and must stay lookups. The discourse noun is the
+    # discriminator, exactly as it is for "overview" above.
+    #
+    # ``decisions`` is here as well as inside ``key-points`` above: that pattern
+    # requires the literal word "key", so the far commoner "what decisions were
+    # made across the meetings" matched nothing.
+    ("decisions", r"\bdecisions?\b"),
+    ("problems-concerns", r"\b(?:problems?|concerns?|issues?|blockers?|risks?)\b"),
 )
 
 #: ``today``/``yesterday`` are deliberately absent. In a question about a

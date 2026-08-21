@@ -316,3 +316,61 @@ def test_as_metadata_omits_absent_facts_rather_than_reporting_nulls():
     assert "temporal" not in payload
     assert "literal" not in payload
     assert payload["intent"] == INTENT_LOOKUP
+
+
+# ------------------------------------ meeting-artifact summarize frames (AMI-81)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Measured on the AMI-81 baseline: every one of these routed to the chunk
+        # tier ALONE and reached full scope coverage 0 times out of 12, because
+        # the summarize lexicon had no frame for "action items" or "problems".
+        "what action items or follow-ups came out of the IS1000 meeting series?",
+        "what problems or concerns were raised across the IS1000 meetings?",
+        # `key-points` requires the literal word "key", so the commoner phrasing
+        # matched nothing at all.
+        "what decisions were made across the meetings?",
+        "what are the next steps?",
+        "what issues came up in those recordings?",
+    ],
+)
+def test_meeting_artifact_questions_route_to_summarize(text):
+    """A request for a meeting's extracted artifacts wants the per-file map.
+
+    These reach the digest tier, which maps EVERY file in a bounded scope, rather
+    than the chunk tier, which ranks and therefore guarantees no coverage.
+    """
+    intent, signals = classify(text)
+    assert intent == INTENT_SUMMARIZE, f"{text!r} routed to {intent} with signals {signals}"
+    assert signals, "a summarize decision must record which pattern fired"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The control that makes the parametrization above meaningful: the same
+        # artifact nouns aimed at a TOPIC rather than at a recording are ordinary
+        # lookups and must stay lookups. Without the discourse-noun gate every one
+        # of these would be dragged into summarize.
+        "what problems did the LCD have",
+        "what decisions did the Project Manager make about the chip",
+        "what concerns did Marketing raise about the price",
+        "what issues came up with the battery",
+        "what was the target selling price",
+    ],
+)
+def test_the_same_artifact_nouns_aimed_at_a_topic_stay_lookups(text):
+    intent, signals = classify(text)
+    assert intent == INTENT_LOOKUP, f"{text!r} routed to {intent} with signals {signals}"
+
+
+def test_the_artifact_frames_reach_the_digest_tier_not_just_the_label():
+    """The label is not the point — the TIER is. A summarize label that did not
+    carry the digest tier would leave coverage exactly as broken as it was.
+    """
+    decision = route("what action items came out of the meeting series?")
+    assert decision.intent == INTENT_SUMMARIZE
+    assert TIER_DIGEST in decision.tiers
+    assert TIER_CHUNK in decision.tiers, "the chunk tier is never removed by a route"

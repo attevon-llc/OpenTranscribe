@@ -17,6 +17,7 @@ from typing import Any
 
 from app.scripts.corpus_injection.adapters.ami import AMIDistractorAdapter
 from app.scripts.corpus_injection.adapters.base import CorpusAdapter
+from app.scripts.corpus_injection.adapters.elitr_bench import ElitrBenchAdapter
 from app.scripts.corpus_injection.adapters.miracl import DEFAULT_QUERY_COUNT
 from app.scripts.corpus_injection.adapters.miracl import MiraclAdapter
 from app.scripts.corpus_injection.adapters.qmsum import QMSumAdapter
@@ -55,6 +56,13 @@ _BUILDERS: dict[str, tuple[str, Builder]] = {
             query_count=int(options.get("query_count", DEFAULT_QUERY_COUNT)),
             split=str(options.get("split", "dev")),
         ),
+    ),
+    # 18 noisy ASR meeting transcripts + 271 human QA pairs incl. a dedicated "who"
+    # category (#521). Tier B via the TRANSCRIPTS (ELITR-minuting, CC BY-NC-SA); the
+    # QA layer itself is CC-BY-4.0 — see adapters/elitr_bench.py's module docstring.
+    "elitr-bench": (
+        "elitr-bench",
+        lambda root, _data_dir, _options: ElitrBenchAdapter(root),
     ),
     "synthetic": (
         "synthetic",
@@ -100,6 +108,7 @@ __all__ = [
     "AVAILABLE",
     "AMIDistractorAdapter",
     "CorpusAdapter",
+    "ElitrBenchAdapter",
     "QMSumAdapter",
     "SyntheticAdapter",
     "build_adapter",

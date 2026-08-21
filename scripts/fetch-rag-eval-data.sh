@@ -180,7 +180,7 @@ DATA_DIR="${RAG_EVAL_DATA_DIR:-/mnt/nas/opentranscribe-benchmarks}"
 #   A = permissive, a metric derived from it MAY be published.
 #   B = non-commercial / no-licence-granted. Fetch needs --accept-noncommercial,
 #       and NO number derived from it may appear in a published artefact.
-DATASETS=(qmsum ami icsi icsi-orig earnings meetingbank elitr)
+DATASETS=(qmsum ami icsi icsi-orig earnings meetingbank elitr elitr-bench)
 
 declare -A META=(
     [qmsum.TIER]="A"
@@ -309,6 +309,28 @@ declare -A META=(
               qrels-shaped signal no other Tier B set provides. Already pseudonymised
               to [PERSON5]/(PERSON8), so it doubles as a redaction fixture. Recordings
               were withheld upstream for privacy; there is no audio to fetch."
+
+    [elitr-bench.TIER]="B"
+    [elitr-bench.NAME]="ELITR-Bench — 271 human QA pairs over 18 ELITR-minuting transcripts"
+    [elitr-bench.LICENSE]="SPLIT: QA layer CC BY 4.0 (LICENSE-DATA.txt in-repo); transcripts inherit ELITR-minuting's CC BY-NC-SA 4.0"
+    [elitr-bench.LICENSE_URL]="https://github.com/utter-project/ELITR-Bench/blob/main/LICENSE-DATA.txt"
+    [elitr-bench.HOMEPAGE]="https://github.com/utter-project/ELITR-Bench"
+    [elitr-bench.URL]="https://codeload.github.com/utter-project/ELITR-Bench/tar.gz/83649521b016e78b6293ceaf2585ea96f2ed9162"
+    [elitr-bench.SUBDIR]="elitr-bench"
+    [elitr-bench.ARCHIVE]="ELITR-Bench-8364952.tar.gz"
+    [elitr-bench.SHA256]="e93aeece8945934478718bc2b4c9c0ff233bcd62800fb4e749ec2bad343c9d98"
+    [elitr-bench.EXTRACT]="ELITR-Bench-83649521b016e78b6293ceaf2585ea96f2ed9162"
+    [elitr-bench.REFERER]=""
+    [elitr-bench.NOTE]="TIER B via the TRANSCRIPTS, not the QA layer (issue #521): data.zip in
+              this repo (password 'utter', an anti-contamination guard documented in its
+              README) holds only questions/answers/metadata under CC BY 4.0. The 18
+              transcripts are extracted FROM the elitr dataset above (CC BY-NC-SA) by
+              'python -m preparation.extract_transcripts' run at the repo root beside an
+              unzipped ELITR-minuting-corpus. Staged layout on the NAS: data/ = the 4 QA
+              JSONs, transcripts/ = the 18 extracted .txt files (meeting_en_dev_006 is
+              unattributed — no (PERSONn) markers in its source variant; measured).
+              96 of the 271 questions are the 'who' category — the speaker-attribution
+              axis nothing else in this table tests with human-written QA."
 )
 
 # --- Multilingual / cross-lingual manifest (issue #403) -----------------------

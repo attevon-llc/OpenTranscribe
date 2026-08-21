@@ -2370,7 +2370,7 @@ Recorded here so a future session does not have to rediscover it by reading code
 - **Fusion strategy** — `rrf` is the shipped default. #403 Stage 5 measured **24 arms** across two
   corpora and adopted **zero** of them: the two corpora's per-arm rankings are **anti-correlated**
   (Kendall's tau-b −0.714 / −0.905 — a config that helps one corpus tends to hurt the other). See
-  [Stage 5](#stage-5-the-retrieval-tuning-bake-off) above for the full arm table.
+  [Stage 5](#stage-5--the-retrieval-tuning-bake-off) above for the full arm table.
 - **Cross-encoder reranking** — measured **worse** than the unreranked candidate order (see
-  [Reranker candidates](#reranker-candidates-the-licence-gate-came-first) above) and deliberately
+  [Reranker candidates](#reranker-candidates--the-licence-gate-came-first) above) and deliberately
   **not adopted**.

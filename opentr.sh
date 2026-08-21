@@ -1752,6 +1752,41 @@ start_app() {
     COMPOSE_FILES="$COMPOSE_FILES -f $FRESH_BAKED_OVERLAY"
   fi
 
+  # --no-bindmount means "the IMAGE is the code", so it MUST force a recreate.
+  #
+  # Compose keys recreation on the SERVICE CONFIG, and `opentranscribe-backend:latest`
+  # is the same *name* even when the tag points at a different image — so `up -d --build`
+  # rebuilt the image and left the old containers running. Measured: the measurement stack
+  # served a two-hour-old image (866eace4) while the tag had moved to 9bfae667, and
+  # `printenv GIT_SHA` inside the container disagreed with the SHA baked into that image.
+  # "Rebuild + redeploy" deployed nothing, silently, and every measurement taken against
+  # it described code nobody was running.
+  #
+  # Fatal for a BAKED stack specifically: with the bind mount gone there is no other route
+  # for new code to reach the container. Bind-mounted dev is unaffected (the source is
+  # live), which is why this is scoped to the flag instead of applied to every start.
+  #
+  # Computed BEFORE the dry-run block on purpose — a preview that omits a flag the real
+  # run passes is the same class of defect as the bug above.
+  #
+  # ⚠️ MEASURED 2026-08-20: THIS IS NOT SUFFICIENT ON ITS OWN. `bash -x` confirms the flag
+  # reaches the wire — `up -d --wait --wait-timeout 700 --build --force-recreate` — and
+  # compose still reported 0 "Recreated" lines and left containers at their previous
+  # creation timestamp. So `--force-recreate` is necessary but not honoured here, and the
+  # cause is in compose rather than in this script (issue #75, still open).
+  #
+  # Until that is understood, VERIFY after any rebuild that is going to be measured:
+  #     docker exec <proj>-backend printenv GIT_SHA
+  #     docker run --rm --entrypoint printenv opentranscribe-backend:latest GIT_SHA
+  # and if they disagree, recreate surgically (this DOES work):
+  #     COMPOSE_PROJECT_NAME=<proj> <the *_PORT vars for the offset> \
+  #     docker compose <the same -f chain> up -d --no-deps --force-recreate \
+  #       backend celery-worker celery-embedding-worker
+  RECREATE_CMD=""
+  if [[ -n "$NO_BINDMOUNT_FLAG" ]]; then
+    RECREATE_CMD="--force-recreate"
+  fi
+
   # Dry-run: print exactly what WOULD run and exit without touching Docker.
   if [ -n "$DRY_RUN_FLAG" ]; then
     echo ""
@@ -1770,7 +1805,7 @@ start_app() {
     echo "     GPU_DEVICE_ID=${GPU_DEVICE_ID:-0} REDACTION_GPU_DEVICE_ID=${REDACTION_GPU_DEVICE_ID:-0} GPU_SCALE_DEVICE_ID=${GPU_SCALE_DEVICE_ID:-2}"
     echo "     GPU_TRANSCRIBE_DEVICE_ID=${GPU_TRANSCRIBE_DEVICE_ID:-0} GPU_DIARIZE_DEVICE_ID=${GPU_DIARIZE_DEVICE_ID:-1} LLM_TEST_GPU_DEVICE_ID=${LLM_TEST_GPU_DEVICE_ID:-2}"
     echo "   Command that WOULD run:"
-    echo "     docker compose $COMPOSE_FILES up -d $BUILD_CMD"
+    echo "     docker compose $COMPOSE_FILES up -d $BUILD_CMD $RECREATE_CMD"
     [ -n "$FRESH_FLAG" ] && echo "   (fresh mode: NAS overlay omitted by design; real data untouched)"
     [ -n "$SEED_BENCHMARK_FLAG" ] && echo "   (would seed benchmark media via scripts/seed-fresh-deployment.sh after healthy)"
     return 0
@@ -1787,7 +1822,7 @@ start_app() {
   # "created-but-never-started" container surfaces as a non-zero exit instead of
   # a silent failure. --wait-timeout 700 covers the backend's 600s start_period.
   # shellcheck disable=SC2086
-  if ! docker compose $COMPOSE_FILES up -d --wait --wait-timeout 700 $BUILD_CMD; then
+  if ! docker compose $COMPOSE_FILES up -d --wait --wait-timeout 700 $BUILD_CMD $RECREATE_CMD; then
     echo ""
     echo "❌ Startup failed — one or more services did not become healthy."
     echo "📊 Service status:"

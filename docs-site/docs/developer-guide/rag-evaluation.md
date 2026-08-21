@@ -2039,17 +2039,26 @@ own worked examples kept running into.
 |---|---|---|---|
 | Deterministic floor | `rougeL_f`, `rouge1_f`, `token_f1`, `answered` | `harness/answer_text.py` | Nothing — no LLM, no GPU |
 | Deterministic floor (optional) | `bertscore_f1` | `harness/answer_text.py` (`microsoft/deberta-large-mnli`, `rescale_with_baseline=True`, `lang="en"` — pinned at the one call site) | torch + transformers (already app deps) |
-| LLM-judged, reference-free | `faithfulness` | `harness/answer_judge.py` → `harness/judge_runner.py` (RAGAS, in `backend/venv-eval/`) | A configured judge provider + `backend/venv-eval/` |
-| LLM-judged, reference-based | `answer_correctness` | `harness/answer_judge.py` → `harness/judge_runner.py` (RAGAS, local sentence-transformers embedder, in `backend/venv-eval/`) | A configured judge provider + `backend/venv-eval/` |
+| LLM-judged, reference-free | `faithfulness` | `harness/faithfulness_judge.py` → `harness/judge_runner.py` (RAGAS, in `backend/venv-eval/`) | A configured judge provider + `backend/venv-eval/` |
+| LLM-judged, reference-based | FULL/PARTIAL/NONE/REFUSED label | `harness/answer_judge.py` (the **label judge**: `run_judge` via a plain OpenAI-compatible call, in `backend/venv` — no ragas) | A configured judge provider (judge model ≠ model under test) |
 | Negative control | `false_answer_rate` | `synthetic/unanswerable.py` | Nothing to PLANT; a real system to submit against |
 
 **The floor and the judged tiers answer different questions, and neither substitutes for the
 other.** ROUGE/token-F1 reward lexical overlap with QMSum's own gold answer — a correct
 answer phrased differently scores low here on purpose, which is exactly why it is a floor, not
-a verdict. `faithfulness` and `answer_correctness` are two SEPARATE axes reported side by side,
+a verdict. Faithfulness and the label judge are two SEPARATE axes reported side by side,
 never merged: a model can be faithful to bad context (high faithfulness, wrong answer) or
-unfaithful to good context (low faithfulness, accidentally right) — see `answer_judge.py`'s
-module docstring for the full argument.
+unfaithful to good context (low faithfulness, accidentally right) — see
+`faithfulness_judge.py`'s module docstring for the full argument.
+
+> **The label judge SUPERSEDED RAGAS `answer_correctness`** (`f02428ea` + the repair that
+> followed it). Both were reference-based — two paths for one axis — and the label judge is
+> strictly better suited here: categorical labels are what a human grader can produce for a
+> Kappa calibration (#518), its FULL/PARTIAL distinction matches this system's real failure
+> mode (answering a quarter of the question), and it needs no ragas, no venv-eval and no
+> embedder. `answer_correctness` was removed from `judge_runner.py` with its harness-side
+> caller; the historical evidence that it discriminated (0.946 vs 0.042) is kept below for
+> the record.
 
 ### The RAGAS judge tier lives in its own venv, talked to over a subprocess boundary
 
@@ -2073,10 +2082,10 @@ is installed **only** into `backend/venv-eval/` (gitignored: `python3.12 -m venv
 installed into `backend/venv`, a Docker image, or merged into `requirements-eval.txt`.
 `backend/tests/eval/harness/judge_runner.py` is the **one file in the whole answer-quality
 tier that imports `ragas`** — it runs exclusively under `backend/venv-eval/bin/python`, as a
-subprocess of `answer_judge.py` (which runs in `backend/venv` and never imports `ragas` at all).
-The boundary is JSONL over stdin/argv/stdout: `answer_judge.py` writes `{question, answer,
-contexts, ground_truth}` records to a temp file, invokes
-`backend/venv-eval/bin/python judge_runner.py --mode ... --input ... --output ...`
+subprocess of `faithfulness_judge.py` (which runs in `backend/venv` and never imports `ragas`
+at all). The boundary is JSONL over stdin/argv/stdout: `faithfulness_judge.py` writes
+`{question, answer, contexts, ground_truth}` records to a temp file, invokes
+`backend/venv-eval/bin/python judge_runner.py --mode faithfulness --input ... --output ...`
 (`subprocess.run`, `timeout=1800s`), and reads `{query_id, score}` back — `score: null` for a
 per-record judge failure (counted as a NaN, never dropped, same convention as the rest of this
 harness), a non-zero exit for an infrastructure failure (bad input, ragas won't import, the
@@ -2097,14 +2106,12 @@ independently of the `openai` conflict above:**
   'langchain_community.chat_models.vertexai'` on a bare `import ragas`, not a provider-specific
   failure. Pinned to `langchain-community==0.3.31` — the last 0.3.x release, which still ships
   `chat_models.vertexai` and satisfies ragas's own `langchain>=0.3.27,<2.0.0` bound.
-- `ragas.embeddings.huggingface_provider.HuggingFaceEmbeddings(use_api=False)` —
-  `answer_correctness`'s local similarity embedder — lazy-imports `sentence-transformers` and
-  raises its own `ImportError` without it; ragas does not declare it as a hard dependency because
-  not every metric needs an embedder. `faithfulness` worked before this pin was added;
-  `answer_correctness` failed at construction with exactly that `ImportError` until it was.
-  Pinned to `sentence-transformers==5.7.0` — the same version `backend/requirements.txt` already
-  resolves for the app's own embedder, so `venv-eval`'s `all-MiniLM-L6-v2` behaves identically to
-  the app's, not coincidentally close.
+- `ragas.embeddings.huggingface_provider.HuggingFaceEmbeddings(use_api=False)` — the local
+  similarity embedder the since-removed `answer_correctness` mode needed — lazy-imports
+  `sentence-transformers` and raises its own `ImportError` without it. The pin
+  (`sentence-transformers==5.7.0`, matching the app's own resolve) stays in
+  `requirements-eval-judge.txt` for the record even though `faithfulness` — the only mode
+  left — never touches an embedder; see that file's header before changing it.
 
 Both pins, with the exact evidence above, are documented in
 `backend/requirements-eval-judge.txt`'s own header — read it before touching either version.
@@ -2113,13 +2120,13 @@ Both pins, with the exact evidence above, are documented in
 (`http://localhost:5195/v1`, `gemma-4-e4b`, temperature 0), before being reported as working:**
 
 - `faithfulness` discriminates: a faithful answer scored **1.0**, a fabricated one **0.0**.
-- `answer_correctness` discriminates: a correct paraphrase of the gold answer scored **0.946**,
-  a wrong answer scored **0.042**.
+- `answer_correctness` (historical — measure since removed, kept for the record): a correct
+  paraphrase of the gold answer scored **0.946**, a wrong answer scored **0.042**.
 
 Verified through both the raw `judge_runner.py` script directly and through the full
-`answer_judge.py` API running in `backend/venv` (confirming the subprocess plumbing end to end,
-not just the runner script in isolation). `backend/tests/eval/test_eval_answer_judge.py`'s
-`TestRealFaithfulness`/`TestRealAnswerCorrectness`/`TestRealBatchEvaluation` classes are gated on
+orchestrator API running in `backend/venv` (confirming the subprocess plumbing end to end,
+not just the runner script in isolation). `backend/tests/eval/test_eval_faithfulness_judge.py`'s
+`TestRealFaithfulness`/`TestRealBatchEvaluation` classes are gated on
 both `backend/venv-eval` being present and the vLLM being TCP-reachable
 (`pytest.mark.skipif`, port derived from `LLM_TEST_PORT`, default 5195 — never a bare literal, so
 the probe follows a `--fresh ... --port-offset N` stack instead of always asking about whichever
@@ -2136,10 +2143,18 @@ crash.
 
 ### Judge calibration: how much do we trust a judge score
 
-`faithfulness` and `answer_correctness` discriminating on a clean pair (1.0 vs 0.0, 0.946 vs
-0.042, above) proves the judge can tell a good answer from a bad one on an easy case. It says
-nothing about how much to trust a score in between, and the LLM-as-judge agreement literature is
-specific enough that it belongs in this methodology rather than assumed.
+A judge discriminating on a clean pair (1.0 vs 0.0 above) proves it can tell a good answer
+from a bad one on an easy case. It says nothing about how much to trust a score in between,
+and the LLM-as-judge agreement literature is specific enough that it belongs in this
+methodology rather than assumed.
+
+**The calibration machinery lives in `harness/answer_judge.py`** (#518): the
+FULL/PARTIAL/NONE/REFUSED label set and grading prompt (mechanical — "is the reference's
+content present", never "is this helpful"), the `run_judge` executor (plain OpenAI-compatible
+call at temperature 0; **the judge model must not be the model under test**), and
+`cohens_kappa`/`agreement_report`/`interpret_kappa` (Landis & Koch bands). Unparseable judge
+replies degrade to a flagged fallback label (`degraded=True`) and are **excluded from any
+Kappa** — a Kappa computed partly over regex output measures the regex.
 
 - **MT-Bench** (Zheng et al., [arXiv:2306.05685](https://arxiv.org/abs/2306.05685), NeurIPS 2023)
   — **verified**: GPT-4-as-judge reaches **>80% agreement** with human preferences, matching the

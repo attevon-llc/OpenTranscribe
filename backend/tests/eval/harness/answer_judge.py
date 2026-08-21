@@ -36,6 +36,12 @@ from dataclasses import dataclass
 from typing import Any
 from typing import Literal
 
+#: Pinned for BOTH judged tiers — this label judge's executor below, and the RAGAS
+#: faithfulness subprocess (``faithfulness_judge.py`` passes it on the runner's
+#: argv). Never left to a client or library default, which could silently vary
+#: between the local vLLM and any other OpenAI-compatible provider.
+JUDGE_TEMPERATURE = 0.0
+
 #: The label set. Three levels, not two: collapsing PARTIAL into either extreme
 #: throws away the distinction that matters most for this system, whose failure
 #: mode is answering a quarter of the question rather than answering wrongly.
@@ -166,6 +172,67 @@ def parse_judgement(raw: str, *, answer: str = "") -> Judgement:
     return Judgement(
         label=fallback, covered=0, total=0, why="unparseable judge reply", degraded=True
     )
+
+
+@dataclass(frozen=True)
+class JudgeEndpoint:
+    """Where the label judge runs. A plain OpenAI-compatible endpoint — never
+    :class:`~app.services.llm_service.LLMService`, which is app-runtime-shaped
+    (DB-backed provider resolution, streaming, redaction hooks). The harness talks
+    to the eval LLM directly, the same way ``answerers.RagAnswerer`` does.
+
+    ⚠️ **The judge model must not be the model under test** (#518): a judge grading
+    its own generations measures self-preference, not correctness. Point this at
+    the OTHER local server (e.g. qwen on Ollama judging gemma answers).
+    """
+
+    base_url: str
+    model: str
+    api_key: str = "not-needed"
+    timeout_s: float = 180.0
+
+    def as_provenance(self) -> dict[str, Any]:
+        """Judge identity for run artifacts. ``api_key`` deliberately omitted."""
+        return {
+            "base_url": self.base_url,
+            "model": self.model,
+            "temperature": JUDGE_TEMPERATURE,
+        }
+
+
+def run_judge(
+    endpoint: JudgeEndpoint, *, question: str, reference: str, answer: str, client: Any = None
+) -> Judgement:
+    """Grade one answer against its human reference via a real LLM call.
+
+    Args:
+        endpoint: judge identity. Blind to the arm — nothing identifying the system
+            under test may reach the prompt (module docstring).
+        question: the question the answer responded to.
+        reference: the human-written reference (authoritative).
+        answer: the answer being graded.
+        client: an existing ``openai.OpenAI`` client to reuse across a batch;
+            built from ``endpoint`` when ``None``.
+
+    Returns:
+        A :class:`Judgement`. An unparseable reply degrades (``degraded=True``)
+        rather than raising — one bad reply must not abort a calibration batch,
+        and degraded items are excluded from any Kappa.
+    """
+    if client is None:
+        from openai import OpenAI
+
+        client = OpenAI(
+            base_url=endpoint.base_url, api_key=endpoint.api_key, timeout=endpoint.timeout_s
+        )
+    prompt = build_judge_prompt(question, reference, answer)
+    response = client.chat.completions.create(
+        model=endpoint.model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=JUDGE_TEMPERATURE,
+    )
+    raw = response.choices[0].message.content or ""
+    return parse_judgement(raw, answer=answer)
 
 
 def cohens_kappa(a: list[str], b: list[str]) -> float:

@@ -136,8 +136,9 @@ class EvalQuery:
     ``spans``; ``answer`` goes to :mod:`tests.eval.harness.answers` against
     ``gold_answer``; ``attribution``/``speaker_summary``/``attribution_probe`` go
     to :mod:`tests.eval.harness.attribution` (#461 W2.E1); ``answer_text`` goes to
-    :mod:`tests.eval.harness.answer_text` and, opt-in, :mod:`tests.eval.harness.
-    answer_judge` against ``gold_text`` (#463). An aggregation query's ranked
+    :mod:`tests.eval.harness.answer_text` and, opt-in, the judged tier — the label
+    judge in :mod:`tests.eval.harness.answer_judge` against ``gold_text``, plus
+    :mod:`tests.eval.harness.faithfulness_judge` (#463/#518). An aggregation query's ranked
     numbers are context, not its result (``.rag-403/synthetic-tier-design.md`` §12).
     """
 
@@ -158,7 +159,8 @@ class EvalQuery:
     #: The gold FREE-TEXT answer, for ``scored_on == "answer_text"`` queries only
     #: (#463) — QMSum's own human-written answer, scored by
     #: :mod:`tests.eval.harness.answer_text` (ROUGE/token-F1, deterministic) and,
-    #: opt-in, :mod:`tests.eval.harness.answer_judge` (RAGAS ``answer_correctness``).
+    #: opt-in, :mod:`tests.eval.harness.answer_judge` (the FULL/PARTIAL/NONE/REFUSED
+    #: label judge — superseded RAGAS ``answer_correctness``).
     gold_text: str | None = None
 
 

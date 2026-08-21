@@ -1,9 +1,9 @@
 """Tests for the pure/CLI parts of ``harness.judge_runner`` — importable from ``backend/venv``
 without ragas, because every ``ragas``/``openai`` import in that module is lazy (inside
 ``_build_metric``, only reached once a real judge call happens). This file does NOT invoke
-``main()`` end-to-end against a real judge — that is ``test_eval_answer_judge.py``'s
-``TestRealBatchEvaluation``, run via the ``backend/venv-eval`` subprocess. This file covers the
-argument parsing, JSONL I/O, and error-exit-code contract ``answer_judge.py`` depends on.
+``main()`` end-to-end against a real judge — that is ``test_eval_faithfulness_judge.py``'s
+real-execution tier, run via the ``backend/venv-eval`` subprocess. This file covers the
+argument parsing, JSONL I/O, and error-exit-code contract ``faithfulness_judge.py`` depends on.
 """
 
 from __future__ import annotations
@@ -114,44 +114,31 @@ class TestMainArgumentValidation:
             assert exc.code == 2
         assert raised, "argparse should reject an unknown --mode with SystemExit(2)"
 
+    def test_answer_correctness_mode_is_gone(self, tmp_path: Path) -> None:
+        """The reference-based axis moved to the in-venv label judge
+        (``harness/answer_judge.py``); this runner scores faithfulness only. A
+        resurrected ``answer_correctness`` mode would mean two paths for one axis
+        again — the exact pattern the removal commit deleted."""
+        try:
+            judge_runner.main(
+                [
+                    "--mode",
+                    "answer_correctness",
+                    "--input",
+                    str(tmp_path / "x.jsonl"),
+                    "--output",
+                    str(tmp_path / "out.jsonl"),
+                    "--model",
+                    "m",
+                    "--base-url",
+                    "http://x",
+                ]
+            )
+            raised = False
+        except SystemExit as exc:
+            raised = True
+            assert exc.code == 2
+        assert raised, "argparse should reject --mode answer_correctness with SystemExit(2)"
+
     def test_default_temperature_matches_the_module_constant(self) -> None:
         assert judge_runner.DEFAULT_TEMPERATURE == 0.0
-
-    def test_default_concurrency_and_embedding_model_are_sane(self, tmp_path: Path) -> None:
-        """A malformed-input exit (2) happens before the judge is built, so this
-        reaches argparse's defaults without needing ragas at all."""
-        parser_defaults: dict[str, object] = {}
-
-        class _CaptureNamespace:
-            def __setattr__(self, key: str, value: object) -> None:
-                parser_defaults[key] = value
-
-        import argparse
-
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--mode", required=True, choices=("faithfulness", "answer_correctness"))
-        parser.add_argument("--input", required=True, type=Path)
-        parser.add_argument("--output", required=True, type=Path)
-        parser.add_argument("--model", required=True)
-        parser.add_argument("--base-url", required=True)
-        parser.add_argument("--api-key", default="not-needed")
-        parser.add_argument("--embedding-model", default="sentence-transformers/all-MiniLM-L6-v2")
-        parser.add_argument("--concurrency", type=int, default=4)
-        parser.add_argument("--temperature", type=float, default=judge_runner.DEFAULT_TEMPERATURE)
-        args = parser.parse_args(
-            [
-                "--mode",
-                "faithfulness",
-                "--input",
-                "x",
-                "--output",
-                "y",
-                "--model",
-                "m",
-                "--base-url",
-                "u",
-            ]
-        )
-        assert args.concurrency == 4
-        assert args.api_key == "not-needed"
-        assert args.embedding_model == "sentence-transformers/all-MiniLM-L6-v2"

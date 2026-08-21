@@ -1,8 +1,8 @@
-"""Tests for the LLM-judged answer-quality tier (#463) — subprocess boundary + D6-safe degrade.
+"""Tests for the RAGAS faithfulness tier (#463/#518) — subprocess boundary + D6-safe degrade.
 
-``ragas`` is NEVER imported by ``answer_judge.py`` or anything in ``backend/venv`` — it lives in
-``backend/venv-eval/`` (gitignored), talked to over a subprocess boundary. Two kinds of coverage
-live here:
+``ragas`` is NEVER imported by ``faithfulness_judge.py`` or anything in ``backend/venv`` — it
+lives in ``backend/venv-eval/`` (gitignored), talked to over a subprocess boundary. Two kinds of
+coverage live here:
 
 1. **The degrade-cleanly path, forced via monkeypatch** — ``is_available()`` returning ``False``
    must not depend on the local machine's setup, so every "absent" test below points
@@ -11,8 +11,13 @@ live here:
    that ran the judge for real does).
 2. **Real subprocess execution against ``venv-eval`` + the live vLLM**, gated on both being
    reachable (``pytest.mark.skipif``, TCP-probe + path-exists — the same pattern this repo uses
-   for OpenSearch/MinIO). Executed for real while this file was written: see the class docstrings
-   below for the measured scores.
+   for OpenSearch/MinIO). Executed for real while the orchestrator was first written: see the
+   class docstrings below for the measured scores.
+
+The former ``answer_correctness`` tests are gone WITH the measure: the reference-based axis is
+the label judge in ``harness/answer_judge.py`` now (its unit tests live in
+``tests/unit/test_answer_judge.py``), and this file covers only what the subprocess tier still
+owns — reference-free faithfulness.
 """
 
 from __future__ import annotations
@@ -23,19 +28,17 @@ from pathlib import Path
 
 import pytest
 
-from tests.eval.harness import answer_judge
+from tests.eval.harness import faithfulness_judge
 from tests.eval.harness.answer_judge import JUDGE_TEMPERATURE
-from tests.eval.harness.answer_judge import Judge
-from tests.eval.harness.answer_judge import JudgeConfig
-from tests.eval.harness.answer_judge import JudgedResult
-from tests.eval.harness.answer_judge import _finalize
-from tests.eval.harness.answer_judge import build_judge
-from tests.eval.harness.answer_judge import eval_venv_python
-from tests.eval.harness.answer_judge import evaluate_answer_correctness
-from tests.eval.harness.answer_judge import evaluate_faithfulness
-from tests.eval.harness.answer_judge import is_available
-from tests.eval.harness.answer_judge import score_answer_correctness_one
-from tests.eval.harness.answer_judge import score_faithfulness_one
+from tests.eval.harness.faithfulness_judge import Judge
+from tests.eval.harness.faithfulness_judge import JudgeConfig
+from tests.eval.harness.faithfulness_judge import JudgedResult
+from tests.eval.harness.faithfulness_judge import _finalize
+from tests.eval.harness.faithfulness_judge import build_judge
+from tests.eval.harness.faithfulness_judge import eval_venv_python
+from tests.eval.harness.faithfulness_judge import evaluate_faithfulness
+from tests.eval.harness.faithfulness_judge import is_available
+from tests.eval.harness.faithfulness_judge import score_faithfulness_one
 
 #: `docker-compose.llm-test.yml` publishes vLLM at `${LLM_TEST_PORT:-5195}` (see `opentr.sh`'s
 #: own `--with-llm-test` banner) — read the same variable here instead of a bare literal, so this
@@ -63,48 +66,40 @@ _REAL_JUDGE_CONFIG = JudgeConfig(model="gemma-4-e4b", base_url=_LLM_TEST_BASE_UR
 class TestEvalVenvPython:
     def test_points_at_a_sibling_of_backend_venv(self) -> None:
         path = eval_venv_python()
-        assert path.parts[-3:] == ("venv-eval", "bin", "python")
+        assert path.name == "python"
+        assert path.parent.name == "bin"
+        assert path.parent.parent.name == "venv-eval"
 
 
 class TestIsAvailableForcedAbsent:
-    """`is_available()` with `_EVAL_VENV_PYTHON` monkeypatched to a path that provably
-    does not exist — independent of whatever this machine actually has installed."""
+    """The degrade path, decoupled from whether THIS machine has the venv."""
 
     def test_returns_false_when_the_venv_python_does_not_exist(self, monkeypatch) -> None:
         monkeypatch.setattr(
-            answer_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/venv-eval/bin/python")
+            faithfulness_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/venv-eval/bin/python")
         )
         assert is_available() is False
 
     def test_build_judge_raises_a_clear_importerror(self, monkeypatch) -> None:
-        monkeypatch.setattr(
-            answer_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/venv-eval/bin/python")
-        )
+        monkeypatch.setattr(faithfulness_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/python"))
         with pytest.raises(ImportError, match="does not exist"):
             build_judge(_REAL_JUDGE_CONFIG)
 
     def test_build_judge_error_tells_the_caller_how_to_create_the_venv(self, monkeypatch) -> None:
-        monkeypatch.setattr(
-            answer_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/venv-eval/bin/python")
-        )
+        monkeypatch.setattr(faithfulness_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/python"))
         with pytest.raises(ImportError, match="requirements-eval-judge.txt"):
             build_judge(_REAL_JUDGE_CONFIG)
 
     def test_run_judge_subprocess_also_refuses_without_the_venv(self, monkeypatch) -> None:
-        monkeypatch.setattr(
-            answer_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/venv-eval/bin/python")
-        )
-        with pytest.raises(ImportError):
-            answer_judge._run_judge_subprocess(
-                "faithfulness", [{"query_id": "q1"}], _REAL_JUDGE_CONFIG
-            )
+        """Defense in depth: even a caller that skipped ``build_judge`` cannot spawn a
+        subprocess against a missing interpreter."""
+        monkeypatch.setattr(faithfulness_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/python"))
+        with pytest.raises(ImportError, match="does not exist"):
+            faithfulness_judge._run_judge_subprocess([], _REAL_JUDGE_CONFIG)
 
 
 class TestIsAvailableOnThisMachine:
     def test_is_available_matches_the_real_on_disk_state(self) -> None:
-        """No monkeypatch: whatever this really is (True on a machine with venv-eval
-        set up, False otherwise) must match a plain path check — the function must
-        not do anything cleverer than that."""
         assert is_available() == eval_venv_python().is_file()
 
 
@@ -113,9 +108,7 @@ class TestJudgeConfig:
         assert JUDGE_TEMPERATURE == 0.0
 
     def test_provenance_never_includes_the_api_key(self) -> None:
-        config = JudgeConfig(
-            model="gemma-4-e4b", base_url="http://localhost:5195/v1", api_key="super-secret"
-        )
+        config = JudgeConfig(model="m", base_url="http://x", api_key="super-secret")
         provenance = config.as_provenance()
         assert "super-secret" not in str(provenance)
         assert "api_key" not in provenance
@@ -126,11 +119,6 @@ class TestJudgeConfig:
         assert provenance["temperature"] == 0.0
         assert provenance["concurrency"] == 4
 
-    def test_default_embedding_model_is_local_sentence_transformers(self) -> None:
-        """Never a remote embedding endpoint — see module docstring."""
-        config = JudgeConfig(model="m", base_url="http://x")
-        assert "sentence-transformers" in config.embedding_model
-
 
 class TestEvaluateFaithfulnessValidatesBeforeAnySubprocessCall:
     """The empty-context / empty-queries checks must fire before a subprocess is ever
@@ -139,7 +127,7 @@ class TestEvaluateFaithfulnessValidatesBeforeAnySubprocessCall:
     of ValueError."""
 
     def test_empty_queries_raises(self, monkeypatch) -> None:
-        monkeypatch.setattr(answer_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/python"))
+        monkeypatch.setattr(faithfulness_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/python"))
         judge = Judge(config=_REAL_JUDGE_CONFIG)
         with pytest.raises(ValueError, match="queries is empty"):
             evaluate_faithfulness(judge, {})
@@ -149,24 +137,18 @@ class TestEvaluateFaithfulnessValidatesBeforeAnySubprocessCall:
         loudly, not have it quietly excluded from the mean — the same "never
         silently narrow the denominator" rule the rest of this harness enforces
         everywhere else."""
-        monkeypatch.setattr(answer_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/python"))
+        monkeypatch.setattr(faithfulness_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/python"))
         judge = Judge(config=_REAL_JUDGE_CONFIG)
         queries: dict[str, tuple[str, str, list[str]]] = {"q1": ("question", "answer", [])}
         with pytest.raises(ValueError, match="empty contexts"):
             evaluate_faithfulness(judge, queries)
 
     def test_a_query_with_only_blank_contexts_also_raises(self, monkeypatch) -> None:
-        monkeypatch.setattr(answer_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/python"))
+        monkeypatch.setattr(faithfulness_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/python"))
         judge = Judge(config=_REAL_JUDGE_CONFIG)
         queries: dict[str, tuple[str, str, list[str]]] = {"q1": ("q", "a", ["", "   "])}
         with pytest.raises(ValueError, match="empty contexts"):
             evaluate_faithfulness(judge, queries)
-
-    def test_empty_queries_raises_for_answer_correctness_too(self, monkeypatch) -> None:
-        monkeypatch.setattr(answer_judge, "_EVAL_VENV_PYTHON", Path("/nonexistent/python"))
-        judge = Judge(config=_REAL_JUDGE_CONFIG)
-        with pytest.raises(ValueError, match="queries is empty"):
-            evaluate_answer_correctness(judge, {})
 
 
 class TestFinalizeNanHandling:
@@ -204,16 +186,12 @@ class TestFinalizeNanHandling:
 # Real execution against `backend/venv-eval` + the live vLLM. Skips cleanly when
 # either is unreachable (CI, a fresh checkout with no judge venv set up yet).
 #
-# Executed for real while this file was written, against gemma-4-e4b at
-# http://localhost:5195/v1 (temperature 0):
-#   faithfulness:        answer matching context -> 1.0; answer contradicting
-#                         context ("regulates trade tariffs" for a qualifications
-#                         regulator) -> 0.0.
-#   answer_correctness:  accurate paraphrase of the gold answer -> 0.946;
-#                         wrong answer ("manages national parks") -> 0.042.
-# Both measures discriminated a right answer from a wrong one correctly and by a
-# wide margin — this is the "actually run it and report the real scores" evidence,
-# not a claim from the wheel's docs.
+# Executed for real when the orchestrator was first written, against gemma-4-e4b
+# at http://localhost:5195/v1 (temperature 0): an answer matching its context
+# scored 1.0; an answer contradicting it ("regulates trade tariffs" for a
+# qualifications regulator) scored 0.0. The measure discriminated correctly and
+# by a wide margin — "actually run it and report the real scores" evidence, not
+# a claim from the wheel's docs.
 # ---------------------------------------------------------------------------
 
 pytestmark_real = pytest.mark.skipif(
@@ -267,31 +245,6 @@ class TestRealFaithfulness:
         assert unfaithful < faithful
 
 
-class TestRealAnswerCorrectness:
-    @pytestmark_real
-    def test_a_correct_paraphrase_scores_higher_than_a_wrong_answer(self) -> None:
-        judge = build_judge(_REAL_JUDGE_CONFIG)
-        reference = (
-            "Qualification Wales regulates the design of qualifications and the "
-            "delivery of assessments."
-        )
-        correct = score_answer_correctness_one(
-            judge,
-            question="What does Qualification Wales regulate?",
-            answer="It regulates qualification design and assessment delivery.",
-            reference=reference,
-        )
-        wrong = score_answer_correctness_one(
-            judge,
-            question="What does Qualification Wales regulate?",
-            answer="It manages national parks and forestry.",
-            reference=reference,
-        )
-        assert correct > 0.5
-        assert wrong < 0.5
-        assert correct > wrong
-
-
 class TestRealBatchEvaluation:
     @pytestmark_real
     def test_evaluate_faithfulness_batches_into_one_subprocess_call(self) -> None:
@@ -318,4 +271,3 @@ class TestRealBatchEvaluation:
         assert result.query_count == 2
         assert result.judge_failures == []
         assert set(result.per_query) == {"f1", "f2"}
-        assert result.per_query["f1"] > result.per_query["f2"]

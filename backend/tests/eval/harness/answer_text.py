@@ -9,9 +9,9 @@ never pays for a model load.
 **This is the floor, not the ceiling.** ROUGE and token-F1 are lexical-overlap measures —
 they reward a submitted answer that reuses the gold answer's words, and QMSum's own gold
 answers are free-text summaries a system could express correctly in different words and
-still score low here. That gap is exactly what the LLM-judged tier (``answer_judge.py``,
-RAGAS ``faithfulness``/``answer_correctness``) exists to close; this module never claims to
-measure semantic correctness on its own.
+still score low here. That gap is exactly what the LLM-judged tier (the label judge in
+``answer_judge.py``, plus RAGAS ``faithfulness`` via ``faithfulness_judge.py``) exists to
+close; this module never claims to measure semantic correctness on its own.
 
 ``token_f1`` follows the SQuAD evaluation script's normalisation (casefold, strip
 punctuation, collapse whitespace, then bag-of-words F1) — the same normalisation family as

@@ -8,8 +8,9 @@ answerers below imports one.
 
 ``RagAnswerer`` (#463, added below) is deliberately the exception, not a
 contradiction of the rule above: it answers a DIFFERENT ``scored_on``
-(``answer_text``, free-text QMSum queries — see ``harness/answer_text.py`` and
-``harness/answer_judge.py``), never the aggregation class, and D6 is exactly why
+(``answer_text``, free-text QMSum queries — see ``harness/answer_text.py``,
+``harness/answer_judge.py`` and ``harness/faithfulness_judge.py``), never the
+aggregation class, and D6 is exactly why
 it exists — measuring answer QUALITY needs an actual generation to score, the
 same way #403's aggregation measurement needed a real count. Nothing about D6
 says "never build the instrument that measures the LLM-optional deployment's
@@ -526,7 +527,7 @@ class RagAnswer:
     """One generated answer, plus the context it was generated from.
 
     ``contexts`` is the masked excerpt TEXT that actually reached the prompt —
-    exactly what ``answer_judge.score_faithfulness_one`` needs as
+    exactly what ``faithfulness_judge.score_faithfulness_one`` needs as
     ``retrieved_contexts``, and exactly why this is a separate return type from
     the other answerers' bare ``Answer | None``: an ``answer_text``-scored query
     is judged on two different things (the text itself, against

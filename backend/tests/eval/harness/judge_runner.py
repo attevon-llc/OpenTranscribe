@@ -9,7 +9,13 @@ app, the harness package, or the rest of this eval suite — it reads four field
 (``question``, ``answer``, ``contexts``, ``ground_truth``) from a JSONL file, scores them, and
 writes ``{"query_id", "score"}`` JSONL back. It is invoked exactly as
 ``backend/venv-eval/bin/python judge_runner.py --mode ... --input ... --output ...`` by
-``harness/answer_judge.py``, which runs in ``backend/venv``.
+``harness/faithfulness_judge.py``, which runs in ``backend/venv``.
+
+The only mode is ``faithfulness`` (reference-free context-groundedness). The former
+``answer_correctness`` mode was removed with its harness-side caller: the label judge in
+``harness/answer_judge.py`` covers the reference-based axis in-process with no ragas at
+all, and two paths for one axis is the pattern this repo's conventions forbid. ``--mode``
+stays a required, single-choice flag so the argv contract is explicit about what ran.
 
 A record's judge failure (a model error, a timeout, a structured-output parse failure) writes
 ``"score": null`` for that record — read back as ``NaN`` by the caller, a COUNTED failure, never
@@ -29,8 +35,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-#: Pinned identically to `answer_judge.JUDGE_TEMPERATURE` — kept as a literal here rather
-#: than imported, because this script must not import anything from `backend/venv`'s package
+#: Pinned identically to ``answer_judge.JUDGE_TEMPERATURE`` — kept as a literal here rather
+#: than imported, because this script must not import anything from ``backend/venv``'s package
 #: tree (the whole point of the subprocess boundary is that it doesn't need to).
 DEFAULT_TEMPERATURE = 0.0
 
@@ -51,37 +57,23 @@ def _write_results(path: Path, results: list[dict[str, Any]]) -> None:
             handle.write(json.dumps(row) + "\n")
 
 
-def _build_metric(
-    mode: str, *, model: str, base_url: str, api_key: str, embedding_model: str, temperature: float
-) -> Any:
+def _build_metric(*, model: str, base_url: str, api_key: str, temperature: float) -> Any:
     from openai import AsyncOpenAI
-    from ragas.embeddings.huggingface_provider import HuggingFaceEmbeddings
     from ragas.llms.base import llm_factory
-    from ragas.metrics.collections import AnswerCorrectness
     from ragas.metrics.collections import Faithfulness
 
     client = AsyncOpenAI(base_url=base_url, api_key=api_key)
     llm = llm_factory(model, client=client, temperature=temperature)
-    if mode == "faithfulness":
-        return Faithfulness(llm=llm)
-    embeddings = HuggingFaceEmbeddings(model=embedding_model, use_api=False)
-    return AnswerCorrectness(llm=llm, embeddings=embeddings)
+    return Faithfulness(llm=llm)
 
 
-async def _score_one(metric: Any, mode: str, record: dict[str, Any]) -> dict[str, Any]:
+async def _score_one(metric: Any, record: dict[str, Any]) -> dict[str, Any]:
     try:
-        if mode == "faithfulness":
-            result = await metric.ascore(
-                user_input=record["question"],
-                response=record["answer"],
-                retrieved_contexts=list(record["contexts"]),
-            )
-        else:
-            result = await metric.ascore(
-                user_input=record["question"],
-                response=record["answer"],
-                reference=record["ground_truth"],
-            )
+        result = await metric.ascore(
+            user_input=record["question"],
+            response=record["answer"],
+            retrieved_contexts=list(record["contexts"]),
+        )
         return {"query_id": record["query_id"], "score": float(result.value)}
     except Exception as exc:  # noqa: BLE001 - a per-record judge failure is data (null), not a crash
         print(f"[judge_runner] record {record.get('query_id')!r} failed: {exc}", file=sys.stderr)
@@ -89,26 +81,25 @@ async def _score_one(metric: Any, mode: str, record: dict[str, Any]) -> dict[str
 
 
 async def _score_all(
-    metric: Any, mode: str, records: list[dict[str, Any]], *, concurrency: int
+    metric: Any, records: list[dict[str, Any]], *, concurrency: int
 ) -> list[dict[str, Any]]:
     semaphore = asyncio.Semaphore(concurrency)
 
     async def _bounded(record: dict[str, Any]) -> dict[str, Any]:
         async with semaphore:
-            return await _score_one(metric, mode, record)
+            return await _score_one(metric, record)
 
     return await asyncio.gather(*(_bounded(record) for record in records))
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", required=True, choices=("faithfulness", "answer_correctness"))
+    parser.add_argument("--mode", required=True, choices=("faithfulness",))
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--model", required=True)
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--api-key", default="not-needed")
-    parser.add_argument("--embedding-model", default="sentence-transformers/all-MiniLM-L6-v2")
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--temperature", type=float, default=DEFAULT_TEMPERATURE)
     args = parser.parse_args(argv)
@@ -124,18 +115,14 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         metric = _build_metric(
-            args.mode,
             model=args.model,
             base_url=args.base_url,
             api_key=args.api_key,
-            embedding_model=args.embedding_model,
             temperature=args.temperature,
         )
     except ImportError as exc:
         print(
-            f"[judge_runner] ragas (or one of its optional providers, e.g. "
-            f"sentence-transformers for the local embedder) is not importable in "
-            f"this interpreter: {exc}",
+            f"[judge_runner] ragas is not importable in this interpreter: {exc}",
             file=sys.stderr,
         )
         return 3
@@ -143,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[judge_runner] failed to build the {args.mode} judge: {exc}", file=sys.stderr)
         return 3
 
-    results = asyncio.run(_score_all(metric, args.mode, records, concurrency=args.concurrency))
+    results = asyncio.run(_score_all(metric, records, concurrency=args.concurrency))
     _write_results(args.output, results)
     failures = sum(1 for row in results if row["score"] is None)
     print(

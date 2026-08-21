@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import pytest
 
+from tests.eval.harness.answer_judge import JUDGE_TEMPERATURE
+from tests.eval.harness.answer_judge import JudgeEndpoint
 from tests.eval.harness.answer_judge import agreement_report
 from tests.eval.harness.answer_judge import build_judge_prompt
 from tests.eval.harness.answer_judge import cohens_kappa
 from tests.eval.harness.answer_judge import interpret_kappa
 from tests.eval.harness.answer_judge import looks_like_refusal
 from tests.eval.harness.answer_judge import parse_judgement
+from tests.eval.harness.answer_judge import run_judge
 
 # ------------------------------------------------------------------ Kappa
 
@@ -182,3 +185,86 @@ def test_a_substantive_answer_is_not_read_as_a_refusal(answer):
     perfectly safe, which is the failure that flatters rather than alarms.
     """
     assert looks_like_refusal(answer) is False
+
+
+# ------------------------------------------------------- run_judge executor
+
+
+class _FakeCompletions:
+    """Stands in for ``client.chat.completions``; records the request it was sent."""
+
+    def __init__(self, reply: str) -> None:
+        self.reply = reply
+        self.requests: list[dict] = []
+
+    def create(self, **kwargs):
+        self.requests.append(kwargs)
+
+        class _Msg:
+            content = self.reply
+
+        class _Choice:
+            message = _Msg()
+
+        class _Resp:
+            choices = [_Choice()]
+
+        return _Resp()
+
+
+class _FakeClient:
+    def __init__(self, reply: str) -> None:
+        self.completions = _FakeCompletions(reply)
+
+    @property
+    def chat(self):
+        return self
+
+
+class TestRunJudge:
+    def test_a_json_reply_becomes_a_real_judgement(self) -> None:
+        client = _FakeClient('{"label": "PARTIAL", "covered": 2, "total": 5, "why": "two points"}')
+        endpoint = JudgeEndpoint(base_url="http://judge/v1", model="judge-model")
+        judgement = run_judge(
+            endpoint, question="Q?", reference="ref points", answer="the answer", client=client
+        )
+        assert judgement.label == "PARTIAL"
+        assert judgement.covered == 2
+        assert judgement.total == 5
+        assert judgement.degraded is False
+
+    def test_temperature_is_pinned_and_the_prompt_carries_all_three_fields(self) -> None:
+        client = _FakeClient('{"label": "FULL", "covered": 1, "total": 1, "why": "x"}')
+        endpoint = JudgeEndpoint(base_url="http://judge/v1", model="judge-model")
+        run_judge(
+            endpoint,
+            question="what was the price?",
+            reference="the price is 25 euro",
+            answer="twenty-five euros",
+            client=client,
+        )
+        request = client.completions.requests[0]
+        assert request["temperature"] == JUDGE_TEMPERATURE == 0.0
+        assert request["model"] == "judge-model"
+        prompt = request["messages"][0]["content"]
+        assert "what was the price?" in prompt
+        assert "the price is 25 euro" in prompt
+        assert "twenty-five euros" in prompt
+
+    def test_an_unparseable_reply_degrades_instead_of_raising(self) -> None:
+        """One garbage reply must not abort a calibration batch — and the degraded
+        flag is what keeps it OUT of any Kappa computed later."""
+        client = _FakeClient("I think this answer is pretty good overall!")
+        endpoint = JudgeEndpoint(base_url="http://judge/v1", model="judge-model")
+        judgement = run_judge(
+            endpoint, question="Q?", reference="ref", answer="substantive answer", client=client
+        )
+        assert judgement.degraded is True
+
+    def test_endpoint_provenance_omits_the_api_key(self) -> None:
+        endpoint = JudgeEndpoint(
+            base_url="http://judge/v1", model="judge-model", api_key="super-secret"
+        )
+        provenance = endpoint.as_provenance()
+        assert "super-secret" not in str(provenance)
+        assert provenance["temperature"] == 0.0

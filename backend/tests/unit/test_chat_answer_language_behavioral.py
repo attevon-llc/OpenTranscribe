@@ -11,7 +11,7 @@ effect, which is the gap being closed here, not a full per-language sweep (that 
 the eval harness, per that file's own docstring).
 
 Skips (never fails) when nothing answers on ``localhost:$LLM_TEST_PORT`` (default 5195) —
-the identical TCP-probe-and-skip pattern ``tests/eval/test_eval_answer_judge.py`` uses for
+the identical TCP-probe-and-skip pattern ``tests/eval/test_eval_faithfulness_judge.py`` uses for
 the same class of dependency, so CI (which has no such server) reports these as skipped
 rather than red, and a dev machine with ``--with-llm-test`` (or the project's local vLLM at
 :5195) exercises them for real.
@@ -40,7 +40,7 @@ from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
 from app.services.search.chunk_retrieval import ChunkHit
 
-#: Same variable `tests/eval/test_eval_answer_judge.py` reads, so this follows a
+#: Same variable `tests/eval/test_eval_faithfulness_judge.py` reads, so this follows a
 #: `--fresh ... --port-offset N` LLM-test stack instead of always asking about whichever
 #: stack happens to own the base port.
 _LLM_TEST_PORT = os.environ.get("LLM_TEST_PORT", "5195")

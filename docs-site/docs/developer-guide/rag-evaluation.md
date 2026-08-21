@@ -1366,12 +1366,16 @@ alongside the existing one — topic segments for broad questions, speaker turns
 never a replacement. Note that `doc_type` (D1) already makes a second plane in one index a
 solved shape, and the digest plane is a working precedent for it.
 
-### The 48/12/4 budget sweep
+### The retrieval budget sweep
 
-`candidate_pool` / `final_chunks` / `max_chunks_per_file` are **48 / 12 / 4**
-(`core/constants.DEFAULT_CHAT_RAG_*`), chosen by judgement and never measured. `--stage rerank`
-now measures them at the shipped values — it used to default to **20/3**, so every rerank number
-ever taken described a deployment nobody runs.
+`candidate_pool` / `final_chunks` / `max_chunks_per_file` are **48 / 40 / 12**
+(`core/constants.DEFAULT_CHAT_RAG_*`). The original 48/12/4 was chosen by judgement and never
+measured; #531 (2026-08-21) measured 40/12 at ~1.8–2× the AMI-81 answer-content recall of 12/4
+on two corpora, judge-corroborated, with negative controls intact and +13% latency, and shipped
+it. Note these knobs are inert to retrieval nDCG — they move **answer** metrics only, which is
+why the change was gated on the answer-quality campaign rather than the retrieval sweep.
+`--stage rerank` measures at the shipped values — it used to default to **20/3**, so every
+rerank number ever taken described a deployment nobody runs.
 
 ```bash
 # the shipped centre point, full corpus

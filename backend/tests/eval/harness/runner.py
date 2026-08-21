@@ -60,8 +60,8 @@ SCOPES = ("corpus", "gold-files")
 #: ``faster_whisper`` in at import time and these logic tests must stay
 #: stack-free; ``test_eval_fusion_arm`` fails if the two ever drift apart.
 DEFAULT_SIZE = 48
-DEFAULT_FINAL_CHUNKS = 12
-DEFAULT_MAX_PER_FILE = 4
+DEFAULT_FINAL_CHUNKS = 40
+DEFAULT_MAX_PER_FILE = 12
 DEFAULT_RERANK_MAX_PAIRS = 50
 
 

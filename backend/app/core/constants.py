@@ -1086,8 +1086,11 @@ REDACTION_STATUS_FAILED = "failed"
 # per file keeps one long recording from crowding out the rest of a multi-file
 # selection — the whole point of chatting across transcripts.
 DEFAULT_CHAT_RAG_CANDIDATE_POOL = 48  # chat.rag.candidate_pool
-DEFAULT_CHAT_RAG_FINAL_CHUNKS = 12  # chat.rag.final_chunks
-DEFAULT_CHAT_RAG_MAX_CHUNKS_PER_FILE = 4  # chat.rag.max_chunks_per_file
+# 40/12 measured (#531, 2026-08-21): ~1.8-2x AMI-81 answer recall over 12/4 on two
+# corpora, judge-corroborated, negative controls intact, +13% latency. With ~4 files
+# in scope the per-file cap binds first, so raising final_chunks alone does nothing.
+DEFAULT_CHAT_RAG_FINAL_CHUNKS = 40  # chat.rag.final_chunks
+DEFAULT_CHAT_RAG_MAX_CHUNKS_PER_FILE = 12  # chat.rag.max_chunks_per_file
 
 # Cross-encoder reranking (CPU-only, lazily loaded in the backend container).
 DEFAULT_CHAT_RAG_RERANK_ENABLED = True  # chat.rag.rerank_enabled

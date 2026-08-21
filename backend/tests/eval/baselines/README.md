@@ -92,6 +92,21 @@ it). Headline finding: the four `multi_file` questions consulted **3/4, 3/4, 2/4
 scoped files. Regenerate only by re-running the probe and re-converting through the same
 function — never by hand-editing the numbers.
 
+## `probe-ami81-shipped-defaults-2026-08-21` — the shipped-defaults answer baseline (#531)
+
+Same probe instrument and schema as `probe-chat-live-2026-08-20`, superseding it as the
+current control: the AMI-81 question set (25 single-specific + 25 single-general + 25
+multi-file + 6 negative controls) against `otfresh-ragmeas` post-ELITR-injection (2,268
+files), build `35213f11`, `gemma-4-e4b` at a 60k window, at the configuration #531 shipped
+as the coded defaults — `candidate_pool` 48 / `final_chunks` 40 / `max_chunks_per_file` 12 /
+rerank ON. 81/81 turns clean, negative controls 6/6, map coverage complete on all 52 turns
+that carried one, multi-file offered coverage min 0.75 / 22 of 25 full. The judge-graded
+floors pinned to this same run live in `tests/eval/test_acceptance_query_shapes.py` (its
+judgements file is gitignored with the rest of `.rag-403/`; only these derived metrics are
+committed). ⚠️ The corpus context matters: numbers here are not comparable to any run taken
+before the ELITR-Bench injection — the injection alone moved the identical config's floor
+score by ~40%.
+
 ## Re-deriving one
 
 ```bash

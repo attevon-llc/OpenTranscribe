@@ -135,6 +135,14 @@ class MaskedChunk:
     def chunk_index(self) -> int:
         return self.source.chunk_index
 
+    @property
+    def expanded(self) -> bool:
+        """Issue #526: whether ``context_expansion`` widened this chunk's own
+        time range before masking. Read by :func:`citations.build_citation` so
+        the citation payload can say so — see :class:`ChunkHit`'s docstring for
+        why this can never disagree with ``start_time``/``end_time``."""
+        return bool(getattr(self.source, "expanded", False))
+
 
 @dataclass(frozen=True)
 class _SegmentSpans:

@@ -18,13 +18,37 @@ logger = logging.getLogger(__name__)
 _CITATION_RE = re.compile(r"\[(\d{1,3})\]")
 SNIPPET_CHARS = 240
 
+#: Snippet ceiling for an EXPANDED citation (issue #526). ``context_expansion``
+#: already bounds a widened chunk to ``MAX_EXPANDED_WORDS`` (250) words before
+#: masking ever sees it, so this is a generous char-per-word estimate on that
+#: SAME bound, not a second independent cap — the point is "cover the whole
+#: widened excerpt", not "pick a new limit". Masking can only shrink text
+#: (placeholders replace spans, never lengthen them), so this is already an
+#: overestimate of the true ceiling.
+#:
+#: ⚠️ Do not reuse this for an ordinary (unexpanded) chunk. The excerpt budget
+#: (``prompting.format_excerpts``) is untouched by #526 — this only changes how
+#: much of an ALREADY-SENT excerpt the citation shows the reader, never what
+#: reaches the prompt.
+EXPANDED_SNIPPET_CHARS = 10 * 250
 
-def _snippet(text: str) -> str:
-    """First ~240 chars of masked text, cut on a word boundary."""
+
+def _snippet(text: str, limit: int = SNIPPET_CHARS) -> str:
+    """First ``limit`` chars of masked text, cut on a word boundary.
+
+    ``limit`` defaults to :data:`SNIPPET_CHARS` for an ordinary chunk —
+    unchanged from before issue #526, so an unexpanded citation's snippet is
+    byte-identical to today's. :func:`build_citation` passes
+    :data:`EXPANDED_SNIPPET_CHARS` for a chunk ``context_expansion`` widened,
+    so the snippet can show the reader everything the model actually read
+    instead of silently truncating a widened excerpt back down to the size of
+    an ordinary one — the #526 defect (a citation naming a shorter span than
+    what the model was given).
+    """
     clean = " ".join(text.split())
-    if len(clean) <= SNIPPET_CHARS:
+    if len(clean) <= limit:
         return clean
-    cut = clean[:SNIPPET_CHARS]
+    cut = clean[:limit]
     if " " in cut:
         cut = cut[: cut.rfind(" ")]
     return cut + "…"
@@ -71,6 +95,21 @@ def build_citation(index: int, chunk: MaskedChunk) -> dict:
     (a breadcrumb, not a list) — the already-landed union this dict validates
     against on reload — so a document chunk's ``list[str]`` section path is
     joined with ``" > "`` here rather than passed through raw.
+
+    **``expanded`` (issue #526).** True only for a transcript-chunk citation
+    whose ``start_time``/``end_time`` were widened by
+    ``chat/context_expansion.py`` to the chunk's surrounding exchange before
+    masking — never for a digest or document citation, which that module never
+    touches (:func:`~app.services.chat.context_expansion.needs_expansion`
+    excludes both by construction). It exists so the UI, and any reader
+    inspecting the raw payload, can tell "this span is wider than its own
+    indexed chunk" apart from an ordinary citation — a fabricated distinction
+    would be dishonest given ``chunk_index`` still names the ORIGINAL,
+    unexpanded chunk in the index (a reindex-free read-time widening has
+    nothing else to name it by). When ``expanded`` is True the snippet is also
+    NOT capped to the ordinary :data:`SNIPPET_CHARS` — see :func:`_snippet` —
+    so what the reader sees is everything the model was actually given for
+    this citation, not a truncated prefix of it.
     """
     is_digest = getattr(chunk.source, "is_digest", False)
     is_document = getattr(chunk.source, "is_document", False)
@@ -81,6 +120,8 @@ def build_citation(index: int, chunk: MaskedChunk) -> dict:
     else:
         kind = KIND_CHUNK
     section_path = getattr(chunk.source, "section_path", None) if is_document else None
+    expanded = bool(getattr(chunk, "expanded", False)) if kind == KIND_CHUNK else False
+    snippet_limit = EXPANDED_SNIPPET_CHARS if expanded else SNIPPET_CHARS
     return {
         "id": index,
         "kind": kind,
@@ -91,7 +132,8 @@ def build_citation(index: int, chunk: MaskedChunk) -> dict:
         "start_time": None if is_document else chunk.start_time,
         "end_time": None if is_document else chunk.end_time,
         "speaker": None if (is_digest or is_document) else chunk.speaker,
-        "snippet": _snippet(chunk.content),
+        "snippet": _snippet(chunk.content, snippet_limit),
+        "expanded": expanded,
         "page": getattr(chunk.source, "page", None) if is_document else None,
         "section_path": " > ".join(section_path) if section_path else None,
         "char_start": getattr(chunk.source, "char_start", None) if is_document else None,

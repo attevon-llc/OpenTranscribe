@@ -227,6 +227,136 @@ def test_flag_on_expands_the_fragment_to_its_surrounding_exchange():
     assert masked[0].content.strip() != "Y"
 
 
+def test_flag_on_citation_covers_the_widened_span_not_the_original_fragment():
+    """Issue #526's reproduction, end to end through the real citation builder.
+
+    RED before #526: ``ChunkHit``/``MaskedChunk`` had no ``expanded`` attribute
+    at all — ``AttributeError``/``KeyError`` on the assertions below — and the
+    snippet was capped to the ordinary ~240-char limit regardless of how wide
+    the chunk actually got. GREEN after: the citation names a span that
+    genuinely CONTAINS the original short fragment's own time range (90-109 s
+    covers the "Y" turn's own 100-101 s), is marked ``expanded``, and its
+    snippet is everything the model was given — not a truncated prefix of it.
+    """
+    expansion_segments = [
+        _seg("What did the Marketing role contribute to the launch?", 90.0, 96.0),
+        _seg("Y", 100.0, 101.0),
+        _seg("We redesigned the pricing page and ran the launch campaign.", 102.0, 109.0),
+    ]
+    rebuild_segments = list(expansion_segments)
+    db = _ExpandThenMaskDB(expansion_segments, _scan_row(), rebuild_segments)
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            side_effect=_mask_segment_passthrough,
+        ),
+    ):
+        masked = mask_chunks(_factory(db), [_chunk("Y")], user_id=1, expand_short_chunks=True)
+
+    from app.services.chat.citations import build_citation
+
+    citation = build_citation(1, masked[0])
+
+    # The click target is the WIDENED exchange, not the original chunk's own
+    # 100.0-101.0 span — but it still covers that original span.
+    assert citation["start_time"] == 90.0
+    assert citation["end_time"] == 109.0
+    assert citation["start_time"] <= 100.0 <= citation["end_time"]
+    assert citation["expanded"] is True
+    # chunk_index still names the ORIGINAL indexed chunk (index 3, see
+    # `_chunk`) — expansion is read-time only, the index is never rewritten.
+    assert citation["chunk_index"] == 3
+    # Everything the model saw for this citation is in the snippet.
+    assert "contribute to the launch" in citation["snippet"]
+    assert "launch campaign" in citation["snippet"]
+
+
+def test_flag_off_citation_is_byte_identical_to_before_526():
+    """Control: with expansion off (today's default), the citation's
+    start/end/expanded/snippet are exactly what they were before issue #526 —
+    the original chunk's own span, unmarked, untruncated-beyond-today's-cap."""
+    db = _ExpandThenMaskDB(
+        expansion_segments=[],
+        scan=_scan_row(),
+        rebuild_segments=[_seg("Y", 100.0, 101.0)],
+        expect_expansion_query=False,
+    )
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            side_effect=_mask_segment_passthrough,
+        ),
+    ):
+        masked = mask_chunks(_factory(db), [_chunk("Y")], user_id=1, expand_short_chunks=False)
+
+    from app.services.chat.citations import build_citation
+
+    citation = build_citation(1, masked[0])
+
+    assert citation["start_time"] == 100.0
+    assert citation["end_time"] == 101.0
+    assert citation["expanded"] is False
+    assert citation["snippet"] == "Y"
+
+
+def test_expanded_pii_in_the_neighbouring_material_is_masked_in_the_citation_too():
+    """The masking assertion the brief calls for: a PII span living OUTSIDE
+    the original short fragment, pulled in only by expansion, must be masked
+    in whatever the citation's snippet carries — not just in the raw
+    ``masked[0].content`` this module already pins."""
+    expansion_segments = [
+        _seg("Call me back at 555-1234 after the sync.", 90.0, 96.0),
+        _seg("Y", 100.0, 101.0),
+    ]
+    rebuild_segments = [
+        _seg(
+            "Call me back at 555-1234 after the sync.",
+            90.0,
+            96.0,
+            redactions=[
+                {"char_start": 16, "char_end": 24, "category": "pii", "entity_type": "PHONE"}
+            ],
+        ),
+        _seg("Y", 100.0, 101.0, redactions=[]),
+    ]
+    db = _ExpandThenMaskDB(expansion_segments, _scan_row(), rebuild_segments)
+
+    def _mask_with_phone_redaction(text, spans, words, cfg, allowlist):
+        if spans:
+            return "Call me back at [PHONE] after the sync.", spans
+        return text, []
+
+    with (
+        patch(
+            "app.services.redaction.config.resolve_effective_config",
+            return_value=_cfg(enabled=True, redact_before_llm=True),
+        ),
+        patch(
+            "app.services.redaction.service.RedactionService.mask_segment",
+            side_effect=_mask_with_phone_redaction,
+        ),
+    ):
+        masked = mask_chunks(_factory(db), [_chunk("Y")], user_id=1, expand_short_chunks=True)
+
+    from app.services.chat.citations import build_citation
+
+    citation = build_citation(1, masked[0])
+
+    assert citation["expanded"] is True
+    assert "555-1234" not in citation["snippet"]
+    assert "[PHONE]" in citation["snippet"]
+
+
 def test_expanded_pii_is_masked_not_just_the_original_fragment():
     """Security assertion, not a nicety: a PII span living in the
     NEIGHBOURING material — not in the original short chunk itself — must

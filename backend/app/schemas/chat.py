@@ -231,6 +231,15 @@ class Citation(BaseModel):
     #: cannot be represented by ``file_uuid`` alone the way a chunk/digest/
     #: summary citation is; this is the field a later lane's emitter fills in.
     file_uuids: list[str] | None = None
+    #: Issue #526, ``kind == "chunk"`` ONLY. True when ``chat/context_expansion.py``
+    #: widened this citation's ``start_time``/``end_time``/``snippet`` to the
+    #: chunk's surrounding exchange before masking — see
+    #: ``chat/citations.py.build_citation``'s docstring for why this can never
+    #: disagree with the widened span it describes, and why it exists at all
+    #: (``chunk_index`` still names the ORIGINAL, unexpanded indexed chunk).
+    #: Absent/``False`` on every citation minted before this field existed,
+    #: which is the correct read for them: none of them were ever expanded.
+    expanded: bool = False
 
 
 class ChatMessageOut(BaseModel):

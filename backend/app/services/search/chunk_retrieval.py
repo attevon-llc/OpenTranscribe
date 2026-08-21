@@ -120,6 +120,18 @@ class ChunkHit:
     #: anything that is not a document chunk.
     char_start: int | None = None
     char_end: int | None = None
+    #: True once ``chat/context_expansion.py`` has widened this chunk's own
+    #: ``start_time``/``end_time``/``content`` to its surrounding exchange
+    #: (issue #523). Never set at construction time — only
+    #: ``context_expansion._widen_from_segments`` ever writes it — and
+    #: deliberately excluded from :meth:`to_cache_dict`/:meth:`from_cache_dict`:
+    #: expansion is a READ-TIME step that runs strictly after a retrieval
+    #: result is fetched (cached or not), never before, so a cached hit always
+    #: round-trips as unexpanded and gets the chance to expand fresh on this
+    #: read (issue #526). ``citations.build_citation`` surfaces it as
+    #: ``expanded`` so a citation naming a widened span can be told apart from
+    #: one naming exactly its own indexed chunk.
+    expanded: bool = False
 
     @property
     def is_digest(self) -> bool:

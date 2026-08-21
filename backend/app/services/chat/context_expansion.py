@@ -173,7 +173,14 @@ def select_expansion_segments(
 
 
 def _widen_from_segments(chunk: ChunkHit, segments: list[_SegmentLike]) -> ChunkHit:
-    """Rebuild ``chunk`` from ``segments``, or return it unchanged if that fails."""
+    """Rebuild ``chunk`` from ``segments``, or return it unchanged if that fails.
+
+    Sets ``expanded=True`` on the returned chunk (issue #526) — the ONE place
+    that flag is ever written. It rides the same ``dataclasses.replace`` that
+    already widens ``start_time``/``end_time``/``content``, so a citation built
+    from this chunk cannot report the widened span without also reporting that
+    it is widened: there is no code path that produces one without the other.
+    """
     if not segments:
         return chunk
     content = " ".join(str(seg.text or "").strip() for seg in segments).strip()
@@ -181,7 +188,7 @@ def _widen_from_segments(chunk: ChunkHit, segments: list[_SegmentLike]) -> Chunk
         return chunk
     new_start = min(float(seg.start_time) for seg in segments)
     new_end = max(float(seg.end_time) for seg in segments)
-    return replace(chunk, content=content, start_time=new_start, end_time=new_end)
+    return replace(chunk, content=content, start_time=new_start, end_time=new_end, expanded=True)
 
 
 def expand_one(db: Session, chunk: ChunkHit) -> ChunkHit:

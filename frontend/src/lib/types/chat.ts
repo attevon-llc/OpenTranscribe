@@ -95,6 +95,16 @@ export interface ChatSource {
   /** Always null for a digest or summary: neither is one person's words. */
   speaker: string | null;
   snippet: string;
+  /**
+   * `kind === 'chunk'` ONLY (#526). True when the backend widened this
+   * citation's `start_time`/`end_time`/`snippet` to the chunk's surrounding
+   * exchange before masking (`chat.context_expansion_enabled`) — the
+   * `chunk_index` still names the ORIGINAL, unexpanded indexed chunk, so this
+   * is what tells a reader the span shown is wider than that index entry.
+   * Absent/`false` on every citation from before this field existed, which is
+   * the correct read for them: none of them were ever expanded.
+   */
+  expanded?: boolean;
   /** Document-plane fields (#362/#403 Stage 6, a later lane). Undefined for
    * every kind this app emits today. */
   page?: number | null;

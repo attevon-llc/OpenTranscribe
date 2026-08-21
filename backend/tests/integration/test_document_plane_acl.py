@@ -308,7 +308,7 @@ class TestTheDocumentPlaneAclRewritePath:
         monkeypatch.setattr(
             search_indexing_task,
             "_document_accessible_user_ids",
-            lambda owner_id: [owner_id, sharee.id],
+            lambda db, document_id, owner_id: [owner_id, sharee.id],
         )
 
         result = update_document_access_index([document_id])

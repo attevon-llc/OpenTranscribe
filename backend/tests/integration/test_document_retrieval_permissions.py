@@ -32,10 +32,13 @@ import pytest
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
-pytestmark = pytest.mark.skipif(
-    _OPENSEARCH_ABSENT,
-    reason="No OpenSearch reachable (SKIP_OPENSEARCH) — needs the real chunks index.",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        _OPENSEARCH_ABSENT,
+        reason="No OpenSearch reachable (SKIP_OPENSEARCH) — needs the real chunks index.",
+    ),
+]
 
 
 @pytest.fixture
@@ -210,7 +213,7 @@ class TestSharedVisibilityThroughRetrieveChunks:
         monkeypatch.setattr(
             search_indexing_task,
             "_document_accessible_user_ids",
-            lambda owner_id: [owner_id, sharee.id],
+            lambda db, document_id, owner_id: [owner_id, sharee.id],
         )
         result = update_document_access_index([doc.id])
         assert result["status"] == "success"

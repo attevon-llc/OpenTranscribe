@@ -639,12 +639,12 @@ fresh_generate_baked_overlay() {
     echo "services:"
     local svc vols cmd has_reload
     for svc in "${FRESH_BAKED_SERVICES[@]}"; do
-      if ! jq -e --arg s "$svc" '.services[$s] != null' >/dev/null 2>&1 <<<"$resolved"; then
+      if ! jq -e --arg svc "$svc" '.services[$svc] != null' >/dev/null 2>&1 <<<"$resolved"; then
         continue # not part of this deployment (e.g. a gpu-scale/gpu-split worker that's off)
       fi
       echo "  ${svc}:"
-      vols="$(jq -r --arg s "$svc" '
-        .services[$s].volumes[]?
+      vols="$(jq -r --arg svc "$svc" '
+        .services[$svc].volumes[]?
         | select(.target != "/app" and .target != "/app/venv")
         | select(.source != null)
         | "\(.source):\(.target)"
@@ -661,9 +661,9 @@ fresh_generate_baked_overlay() {
         # out empties the list. Explicit empty flow sequence keeps it a list.
         echo "    volumes: !override []"
       fi
-      has_reload="$(jq -r --arg s "$svc" '(.services[$s].command // []) | any(. == "--reload")' <<<"$resolved")"
+      has_reload="$(jq -r --arg svc "$svc" '(.services[$svc].command // []) | any(. == "--reload")' <<<"$resolved")"
       if [ "$has_reload" = "true" ]; then
-        cmd="$(jq -c --arg s "$svc" '.services[$s].command | map(select(. != "--reload"))' <<<"$resolved")"
+        cmd="$(jq -c --arg svc "$svc" '.services[$svc].command | map(select(. != "--reload"))' <<<"$resolved")"
         echo "    command: ${cmd}"
       fi
     done

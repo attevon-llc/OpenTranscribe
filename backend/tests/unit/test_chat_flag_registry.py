@@ -90,6 +90,14 @@ _OLD_HAND_WRITTEN_DESCRIPTIONS = {
     "context_expansion_enabled": (
         "Widen a short retrieved chunk to its surrounding exchange before masking"
     ),
+    # #532 experiment arms — added with their registry entries, same rule.
+    "overview_citable": ("#532 arm (a): overview file entries get citation ids the model can use"),
+    "overview_block_rule": (
+        "#532 arm (b): attach the anti-narrowing rule to the overview block itself"
+    ),
+    "overview_after_excerpts": (
+        "#532 arm (c): place the overview after the excerpts instead of before"
+    ),
 }
 
 

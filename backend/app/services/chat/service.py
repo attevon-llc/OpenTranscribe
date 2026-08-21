@@ -2018,7 +2018,7 @@ class ChatService:
             # it earlier meant the UI could render clickable citations for
             # excerpts the model was never given — an answer that looks sourced
             # but is not grounded in the cited material (issue #384).
-            prompt_diagnostics: dict[str, int] = {}
+            prompt_diagnostics: dict[str, Any] = {}
             messages, excerpt_ids = build_messages(
                 system_prompt=system_prompt,
                 chunks=masked,

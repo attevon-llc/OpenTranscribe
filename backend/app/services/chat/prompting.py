@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 
 from app.services.chat.redactor import MaskedChunk
 
@@ -538,7 +539,7 @@ _MIN_EXCERPT_BUDGET_CHARS = _MIN_TRUNCATED_EXCERPT_CHARS
 
 def _trim_evidence_blocks(
     blocks: dict[str, str], *, budget_chars: int
-) -> tuple[dict[str, str], int]:
+) -> tuple[dict[str, str], int, tuple[str, ...]]:
     """Cap and trim the TRIMMABLE evidence blocks so excerpts keep a floor.
 
     ``counted`` is charged to the budget but is NEVER trimmed — see
@@ -562,7 +563,7 @@ def _trim_evidence_blocks(
             whatever ``counted`` will consume).
 
     Returns:
-        ``(kept_blocks, remaining_budget)`` — the surviving blocks (as a dict
+        ``(kept_blocks, remaining_budget, dropped_names)`` — the surviving blocks (as a dict
         containing ``counted`` whenever it was non-empty, plus whichever
         trimmable blocks fit) and what is left over for
         :func:`format_excerpts`.
@@ -577,15 +578,22 @@ def _trim_evidence_blocks(
 
     kept = {name: blocks.get(name, "") for name in _TRIMMABLE_BLOCKS}
     total = sum(len(v) for v in kept.values())
+    dropped: list[str] = []
     for name in reversed(_TRIMMABLE_BLOCKS):
         if total <= ceiling:
             break
-        total -= len(kept.pop(name, ""))
+        removed = kept.pop(name, "")
+        total -= len(removed)
+        # Only a block that HAD content counts as dropped. An absent block is
+        # not a loss, and reporting it as one would make the diagnostic fire on
+        # every ordinary turn (`recurrence`/`synthesis` have no caller yet).
+        if removed:
+            dropped.append(name)
 
     if counted:
         kept["counted"] = counted
 
-    return kept, max(0, post_counted - total)
+    return kept, max(0, post_counted - total), tuple(dropped)
 
 
 def build_messages(
@@ -597,7 +605,7 @@ def build_messages(
     context_window: int,
     response_tokens: int,
     max_history_turns: int = 10,
-    diagnostics: dict[str, int] | None = None,
+    diagnostics: dict[str, Any] | None = None,
     counted_block: str = "",
     overview_block: str = "",
     recurrence_block: str = "",
@@ -650,7 +658,7 @@ def build_messages(
     # it (base rules 10 and 12), so losing one to fit one more speaker turn
     # would be backwards. `_trim_evidence_blocks` bounds how much of the
     # budget they may claim in total and guarantees the excerpts a floor.
-    blocks, budget_chars = _trim_evidence_blocks(
+    blocks, budget_chars, blocks_dropped = _trim_evidence_blocks(
         {
             "counted": counted_block or "",
             "overview": overview_block or "",
@@ -675,23 +683,53 @@ def build_messages(
                     "content": evidence_prefix + excerpt_block + "\n" + question,
                 }
             )
-            _record(diagnostics, budget_chars, len(chunks) - len(excerpt_ids))
+            _record(
+                diagnostics,
+                budget_chars,
+                len(chunks) - len(excerpt_ids),
+                blocks_dropped=blocks_dropped,
+            )
             return messages, excerpt_ids
 
     messages.append({"role": "user", "content": evidence_prefix + question})
-    _record(diagnostics, budget_chars, len(chunks) - len(excerpt_ids))
+    _record(
+        diagnostics,
+        budget_chars,
+        len(chunks) - len(excerpt_ids),
+        blocks_dropped=blocks_dropped,
+    )
     return messages, excerpt_ids
 
 
-def _record(diagnostics: dict[str, int] | None, budget_chars: int, dropped: int) -> None:
+def _record(
+    diagnostics: dict[str, Any] | None,
+    budget_chars: int,
+    dropped: int,
+    *,
+    blocks_dropped: tuple[str, ...] = (),
+) -> None:
     """Fill the out-parameter, if the caller asked for one.
 
     ``budget_chars`` is what a long conversation actually leaves for excerpts:
     ``resolve_answer_tokens`` caps the reply at half the window and the overhead
     subtraction takes the rest, so a turn can retrieve well and still have room
     for nothing. Without the number, that reads as a retrieval problem.
+
+    ``blocks_dropped`` closes the same gap one level up. `_trim_evidence_blocks`
+    drops an evidence block WHOLE, and the turn's ``msg_metadata.overview`` is
+    written by the MAP stage — it records that an overview was *built*, not that
+    it survived into the prompt. So a turn could report ``files_listed: 4`` while
+    the model never saw the block, and base rule 12 ("cover every recording the
+    overview lists") would be addressed to something that is not there. That is
+    indistinguishable from a model ignoring the rule, which is exactly the
+    ambiguity ``retrieval_failed`` exists to remove on the retrieval side (#438).
+
+    Only ever set when something WAS dropped, so the key's absence is the
+    ordinary "everything fitted" signal rather than a value to interpret.
     """
     if diagnostics is None:
         return
     diagnostics["budget_chars"] = budget_chars
     diagnostics["chunks_dropped_for_budget"] = max(0, dropped)
+    if blocks_dropped:
+        diagnostics["evidence_blocks_dropped"] = list(blocks_dropped)

@@ -600,7 +600,7 @@ def test_evidence_blocks_trim_in_reverse_priority_order():
     three. overview(300) fits under 475 only once synthesis(300) and
     recurrence(300) are both dropped.
     """
-    blocks, remaining = _trim_evidence_blocks(
+    blocks, remaining, _dropped = _trim_evidence_blocks(
         {
             "counted": "C" * 50,
             "overview": "O" * 300,
@@ -618,7 +618,7 @@ def test_evidence_blocks_trim_in_reverse_priority_order():
 
 def test_evidence_blocks_drop_overview_whole_never_partially():
     """A single block bigger than the ceiling is dropped ENTIRELY, not trimmed."""
-    blocks, remaining = _trim_evidence_blocks(
+    blocks, remaining, _dropped = _trim_evidence_blocks(
         {"counted": "C" * 50, "overview": "O" * 800, "recurrence": "", "synthesis": ""},
         budget_chars=1000,
     )
@@ -637,7 +637,7 @@ def test_counted_is_never_trimmed_by_the_evidence_block_ceiling():
     budget too small even for `counted` itself is accepted here exactly like
     that test accepts zero excerpts: the answer survives, examples do not.
     """
-    blocks, remaining = _trim_evidence_blocks(
+    blocks, remaining, _dropped = _trim_evidence_blocks(
         {"counted": "C" * 5000, "overview": "", "recurrence": "", "synthesis": ""},
         budget_chars=100,
     )
@@ -649,7 +649,7 @@ def test_counted_is_never_trimmed_by_the_evidence_block_ceiling():
 def test_combined_trimmable_blocks_never_exceed_half_the_post_counted_budget():
     budget = 2000
     counted = "C" * 400
-    blocks, _ = _trim_evidence_blocks(
+    blocks, _, _dropped = _trim_evidence_blocks(
         {
             "counted": counted,
             "overview": "O" * 400,
@@ -666,7 +666,7 @@ def test_combined_trimmable_blocks_never_exceed_half_the_post_counted_budget():
 def test_the_excerpt_floor_is_never_squeezed_to_nothing_by_trimmable_blocks():
     """Whatever the overview/recurrence/synthesis blocks do, excerpts keep at
     least the floor out of whatever `counted` left behind."""
-    blocks, remaining = _trim_evidence_blocks(
+    blocks, remaining, _dropped = _trim_evidence_blocks(
         {
             "counted": "",
             "overview": "O" * 5000,
@@ -684,7 +684,7 @@ def test_the_excerpt_floor_holds_across_every_budget_size(budget_chars):
     """No `counted` block in play here — this pins the Wave-2 (overview/
     recurrence/synthesis) guarantee specifically. `counted` has its own,
     stronger, unconditional guarantee tested separately above."""
-    blocks, remaining = _trim_evidence_blocks(
+    blocks, remaining, _dropped = _trim_evidence_blocks(
         {"counted": "", "overview": "O" * 10_000, "recurrence": "", "synthesis": ""},
         budget_chars=budget_chars,
     )
@@ -743,3 +743,61 @@ def test_build_messages_accepts_recurrence_and_synthesis_blocks_and_orders_them(
     assert content.index("<counted>") < content.index("<overview>")
     assert content.index("<overview>") < content.index("<recurrence>")
     assert content.index("<recurrence>") < content.index("<synthesis>")
+
+
+# ------------------------------- a dropped evidence block must not be silent
+
+
+def test_a_dropped_overview_block_is_reported_not_silent():
+    """`msg_metadata.overview` is written by the MAP stage, so it says an overview
+    was BUILT — not that it survived into the prompt. Without this diagnostic a
+    turn reports ``files_listed: 4`` while the model never saw the block, and base
+    rule 12 ("cover every recording the overview lists") is addressed to something
+    that is not there. That is indistinguishable from a model ignoring the rule.
+    """
+    diagnostics: dict = {}
+    build_messages(
+        system_prompt="sys",
+        chunks=[],
+        history=[],
+        question="what were the key decisions across the meetings?",
+        # Tiny window: the overview cannot fit, so it must be dropped AND said.
+        context_window=200,
+        response_tokens=50,
+        diagnostics=diagnostics,
+        overview_block="<overview>" + ("recording detail. " * 400) + "</overview>",
+    )
+    assert diagnostics.get("evidence_blocks_dropped") == ["overview"], (
+        "a whole evidence block was dropped for budget and nothing recorded it"
+    )
+
+
+def test_an_overview_that_fits_reports_no_drop_at_all():
+    """The control. The key's ABSENCE is the ordinary "everything fitted" signal,
+    so it must not appear on a turn that dropped nothing — otherwise the
+    diagnostic above fires on every turn and means nothing.
+    """
+    diagnostics: dict = {}
+    build_messages(
+        system_prompt="sys",
+        chunks=[],
+        history=[],
+        question="what were the key decisions across the meetings?",
+        context_window=100_000,
+        response_tokens=500,
+        diagnostics=diagnostics,
+        overview_block="<overview>four recordings</overview>",
+    )
+    assert "evidence_blocks_dropped" not in diagnostics
+
+
+def test_an_absent_block_is_never_reported_as_dropped():
+    """`recurrence`/`synthesis` have no caller yet, so they are empty on every
+    real turn. Counting an empty block as "dropped" would make the diagnostic
+    fire constantly and train the reader to ignore it.
+    """
+    _kept, _remaining, dropped = _trim_evidence_blocks(
+        {"counted": "", "overview": "", "recurrence": "", "synthesis": ""},
+        budget_chars=0,
+    )
+    assert dropped == ()

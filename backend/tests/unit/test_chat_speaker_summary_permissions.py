@@ -121,8 +121,8 @@ def _share_with(db, owner, recipient, media_file) -> None:
 
 def _accessible_uuids(db, viewer_id: int) -> list[str]:
     """The viewer's real resolved scope — the same authority
-    `context_resolver`/`speaker_resolver.build_roster` route every sharing
-    check through in this package, never re-derived ad hoc."""
+    `context_resolver`/`speaker_resolver.build_candidate_roster` route every
+    sharing check through in this package, never re-derived ad hoc."""
     from sqlalchemy import select
 
     from app.models.media import MediaFile

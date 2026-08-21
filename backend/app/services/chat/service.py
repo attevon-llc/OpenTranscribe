@@ -387,7 +387,12 @@ def _resolve_summary_tier(
 
 
 def _resolve_speaker_focus(
-    *, question: str, user_id: int, organization_id: int | None, session_scope
+    *,
+    question: str,
+    user_id: int,
+    organization_id: int | None,
+    session_scope,
+    file_uuids: list[str] | None = None,
 ):
     """Phase 1.5 of ``_prepare_context`` (W2.2, wired W2.3): a MENTIONED speaker.
 
@@ -398,11 +403,15 @@ def _resolve_speaker_focus(
     ``settings.speaker_resolver_enabled`` — this function does not re-check
     the flag itself.
 
-    Its own short session: the roster read is one bounded query, closing well
-    before the LLM round trip / retrieval that follow in the phases below.
-    Reads ``question`` as typed, never the rewrite —
+    Its own short session: the candidate-roster read is a small number of
+    bounded queries (#524 — no longer one unbounded roster read), closing
+    well before the LLM round trip / retrieval that follow in the phases
+    below. Reads ``question`` as typed, never the rewrite —
     ``speaker_resolver.resolve_speaker_mentions`` is explicit that a rewrite
-    can lose or paraphrase a name the original carried.
+    can lose or paraphrase a name the original carried. ``file_uuids`` is the
+    turn's ALREADY-resolved scope (``_prepare_context`` receives it as a
+    parameter) — threading it through scopes the speaker lookup to the same
+    files the turn will retrieve from, per #524 design direction #3.
 
     Returns:
         A ``SpeakerMentionResolution`` — always, even when nothing matched, so
@@ -412,7 +421,11 @@ def _resolve_speaker_focus(
 
     with session_scope() as db:
         return resolve_speaker_mentions(
-            db, question, user_id=user_id, organization_id=organization_id
+            db,
+            question,
+            user_id=user_id,
+            organization_id=organization_id,
+            file_uuids=file_uuids,
         )
 
 
@@ -424,6 +437,7 @@ def _apply_speaker_resolution(
     organization_id: int | None,
     session_scope,
     meta: dict[str, Any],
+    file_uuids: list[str] | None = None,
 ) -> list[str]:
     """Resolve a mentioned speaker and fold it into ``meta`` (W2.2, wired W2.3).
 
@@ -446,6 +460,7 @@ def _apply_speaker_resolution(
         user_id=user_id,
         organization_id=organization_id,
         session_scope=session_scope,
+        file_uuids=file_uuids,
     )
     resolution_meta = resolution.as_meta()
     if resolution_meta:
@@ -459,6 +474,7 @@ def _validate_plan_speakers(
     user_id: int,
     organization_id: int | None,
     session_scope,
+    file_uuids: list[str] | None = None,
 ) -> list[str]:
     """Re-validate planner-supplied names against the real roster (T3, T9).
 
@@ -473,7 +489,12 @@ def _validate_plan_speakers(
     Its own short session, opened and closed here — this is exactly the kind
     of Postgres read a leg must not hold across the parallel retrieval calls
     the caller is about to fan out, so it runs BEFORE the fan-out starts,
-    not as one of the legs themselves.
+    not as one of the legs themselves. ``file_uuids`` is the SAME scope T9
+    requires every leg to share (see this function's caller) — the roster a
+    plan's speaker names are validated against is scoped to the turn's own
+    files, never the whole library (#524 design direction #3). The planner
+    already caps ``plan.speakers`` at ``MAX_SPEAKERS`` (5), so this is itself
+    a bounded, candidate-targeted lookup — never the old unbounded roster.
 
     Returns:
         Validated, deduplicated roster names. Empty when ``names`` is empty,
@@ -481,12 +502,18 @@ def _validate_plan_speakers(
     """
     if not names:
         return []
-    from app.services.chat.speaker_resolver import build_roster
+    from app.services.chat.speaker_resolver import build_candidate_roster
     from app.services.chat.speaker_resolver import match_candidate
 
     try:
         with session_scope() as db:
-            roster = build_roster(db, user_id, organization_id=organization_id)
+            roster = build_candidate_roster(
+                db,
+                user_id,
+                list(names),
+                organization_id=organization_id,
+                file_uuids=file_uuids,
+            )
     except Exception as exc:  # noqa: BLE001 — an enhancement, never a dependency
         logger.info(f"Chat plan speaker validation could not build a roster: {exc}")
         return []
@@ -708,6 +735,7 @@ def _run_plan_fanout(
         user_id=user_id,
         organization_id=organization_id,
         session_scope=session_scope,
+        file_uuids=file_uuids,  # SAME scope as every other leg — T9
     )
     if validated_speakers:
         built.append(
@@ -1253,6 +1281,7 @@ def _prepare_context(
         organization_id=organization_id,
         session_scope=session_scope,
         meta=meta,
+        file_uuids=file_uuids,
     )
 
     from app.services.chat.router import route

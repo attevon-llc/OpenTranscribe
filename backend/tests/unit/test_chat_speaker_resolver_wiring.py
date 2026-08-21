@@ -149,19 +149,31 @@ def test_an_ambiguous_match_is_reported_but_resolves_no_focus(monkeypatch):
 # ------------------------------------------------------ _prepare_context wiring
 
 
-def _prepare(monkeypatch, *, resolution, speaker_resolver_enabled, question="What did Dana say?"):
+def _prepare(
+    monkeypatch,
+    *,
+    resolution,
+    speaker_resolver_enabled,
+    question="What did Dana say?",
+    file_uuids=None,
+):
     """Drive the real `_prepare_context`, capturing what `route()` and
     `retrieve_context()` were called with — the two threading points this
     lane wires up. Retrieval/masking/mapping are stubbed no-ops; only the
     resolver wiring is under test."""
     monkeypatch.setattr("app.db.session_utils.session_scope", _null_session)
     monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
-    monkeypatch.setattr(
-        "app.services.chat.speaker_resolver.resolve_speaker_mentions",
-        lambda *_a, **_k: resolution,
-    )
 
     captured: dict = {}
+
+    def _fake_resolve_speaker_mentions(*_a, **kwargs):
+        captured["resolve_speaker_mentions_kwargs"] = kwargs
+        return resolution
+
+    monkeypatch.setattr(
+        "app.services.chat.speaker_resolver.resolve_speaker_mentions",
+        _fake_resolve_speaker_mentions,
+    )
 
     def _fake_route(*_a, **kwargs):
         captured["route_kwargs"] = kwargs
@@ -182,7 +194,7 @@ def _prepare(monkeypatch, *, resolution, speaker_resolver_enabled, question="Wha
         question=question,
         history=[],
         settings=ChatSettings(speaker_resolver_enabled=speaker_resolver_enabled),
-        file_uuids=None,
+        file_uuids=file_uuids,
         speakers=None,
         search_mode="hybrid",
         llm=None,
@@ -216,6 +228,36 @@ def test_flag_on_threads_the_resolved_focus_into_route_and_retrieval(monkeypatch
     assert captured["route_kwargs"]["speaker_focus"] is True
     assert captured["retrieve_kwargs"]["speaker_focus_names"] == ["Dana Whitfield"]
     assert meta["speaker_resolution"]["matched"] == ["Dana Whitfield"]
+
+
+def test_flag_on_threads_the_turns_own_file_uuids_into_the_resolver(monkeypatch):
+    """#524 design direction #3: the turn's ALREADY-resolved scope reaches
+    `resolve_speaker_mentions`, so a mention is looked up against the same
+    files the turn will retrieve from — never a wider, whole-library read."""
+    scope = ["11111111-1111-1111-1111-111111111111"]
+    _masked, _meta, captured = _prepare(
+        monkeypatch,
+        resolution=SpeakerMentionResolution(matched=("Dana Whitfield",), speaker_focus=True),
+        speaker_resolver_enabled=True,
+        file_uuids=scope,
+    )
+
+    assert captured["resolve_speaker_mentions_kwargs"]["file_uuids"] == scope
+
+
+def test_flag_on_with_unscoped_turn_passes_none_through(monkeypatch):
+    """The unscoped ("all accessible") shape must reach the resolver as
+    `None`, never an empty list — an empty list means "match nothing"
+    everywhere else in this package, and would silently resolve zero
+    mentions on every unscoped turn."""
+    _masked, _meta, captured = _prepare(
+        monkeypatch,
+        resolution=SpeakerMentionResolution(matched=("Dana Whitfield",), speaker_focus=True),
+        speaker_resolver_enabled=True,
+        file_uuids=None,
+    )
+
+    assert captured["resolve_speaker_mentions_kwargs"]["file_uuids"] is None
 
 
 def test_flag_on_with_no_resolution_reproduces_the_flag_off_shape(monkeypatch):

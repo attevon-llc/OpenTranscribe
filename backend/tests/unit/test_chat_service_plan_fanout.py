@@ -62,6 +62,14 @@ def test_every_chunk_leg_reuses_the_exact_same_file_scope():
         return [_hit("11111111-1111-1111-1111-111111111111", 0)]
 
     plan = planner.Plan(subquestions=("sub one", "sub two"), speakers=("Dana",))
+    roster_calls: list[dict] = []
+
+    def _fake_build_candidate_roster(*_args, **kwargs):
+        roster_calls.append(kwargs)
+        return SimpleNamespace(
+            entries=(SimpleNamespace(name="Dana", profile_id=None, file_count=1),),
+            declined=False,
+        )
 
     with (
         patch(
@@ -69,11 +77,8 @@ def test_every_chunk_leg_reuses_the_exact_same_file_scope():
             side_effect=_fake_retrieve_chunks,
         ),
         patch(
-            "app.services.chat.speaker_resolver.build_roster",
-            return_value=SimpleNamespace(
-                entries=(SimpleNamespace(name="Dana", profile_id=None, file_count=1),),
-                declined=False,
-            ),
+            "app.services.chat.speaker_resolver.build_candidate_roster",
+            side_effect=_fake_build_candidate_roster,
         ),
         patch(
             "app.services.chat.speaker_resolver.match_candidate",
@@ -101,6 +106,11 @@ def test_every_chunk_leg_reuses_the_exact_same_file_scope():
     for scoped in seen_scopes:
         assert scoped == scope
         assert scoped is scope or scoped == scope  # never a different list object's content
+
+    # #524: the plan's speaker names are validated against a roster scoped to
+    # the SAME file_uuids — never a wider, whole-library read.
+    assert len(roster_calls) == 1
+    assert roster_calls[0]["file_uuids"] == scope
 
 
 def test_a_plan_never_adds_a_counted_leg_the_router_did_not_also_want():
@@ -160,7 +170,7 @@ def test_unvalidated_plan_speakers_never_reach_a_leg():
             side_effect=_fake_retrieve_chunks,
         ),
         patch(
-            "app.services.chat.speaker_resolver.build_roster",
+            "app.services.chat.speaker_resolver.build_candidate_roster",
             return_value=SimpleNamespace(entries=(), declined=False),
         ),
     ):

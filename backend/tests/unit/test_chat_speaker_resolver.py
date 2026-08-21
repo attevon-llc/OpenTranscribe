@@ -22,7 +22,8 @@ import pytest
 from app.services.chat.speaker_resolver import MAX_RESOLUTION_ITEMS
 from app.services.chat.speaker_resolver import Roster
 from app.services.chat.speaker_resolver import RosterEntry
-from app.services.chat.speaker_resolver import build_roster
+from app.services.chat.speaker_resolver import SpeakerResolutionDeclineReason
+from app.services.chat.speaker_resolver import build_candidate_roster
 from app.services.chat.speaker_resolver import extract_candidates
 from app.services.chat.speaker_resolver import has_speaker_verb_frame
 from app.services.chat.speaker_resolver import match_candidate
@@ -245,6 +246,46 @@ def test_declined_roster_resolves_nothing_and_flags_declined(db_session):
     assert result.as_meta() == {"declined": True}
 
 
+def test_no_candidates_reports_the_reason(db_session):
+    """#524 secondary ask: a categorized, non-identifying reason distinguishes
+    "the question named nobody" from every other empty outcome."""
+    result = resolve_speaker_mentions(db_session, "What were the main action items?", user_id=1)
+    assert result.matched == ()
+    assert result.declined is False
+    assert result.decline_reason is SpeakerResolutionDeclineReason.NO_CANDIDATES
+    assert result.as_meta() == {"reason": "no_candidates"}
+
+
+def test_ambiguous_only_outcome_reports_ambiguous_tie_reason(db_session):
+    roster = _roster("Alice Chen", "Alice Ng")
+    result = resolve_speaker_mentions(
+        db_session, "What did Alice say about pricing?", user_id=1, roster=roster
+    )
+    assert result.matched == ()
+    assert "Alice" in result.ambiguous
+    assert result.decline_reason is SpeakerResolutionDeclineReason.AMBIGUOUS_TIE
+    assert result.as_meta()["reason"] == "ambiguous_tie"
+
+
+def test_no_match_outcome_reports_no_match_reason(db_session):
+    roster = _roster("Bob")
+    result = resolve_speaker_mentions(db_session, "What did Zephyr say?", user_id=1, roster=roster)
+    assert result.matched == ()
+    assert result.ambiguous == ()
+    assert result.decline_reason is SpeakerResolutionDeclineReason.NO_MATCH
+    assert result.as_meta()["reason"] == "no_match"
+
+
+def test_a_unique_match_carries_no_decline_reason(db_session):
+    roster = _roster("Dana")
+    result = resolve_speaker_mentions(
+        db_session, "What did Dana say about pricing?", user_id=1, roster=roster
+    )
+    assert result.matched == ("Dana",)
+    assert result.decline_reason is None
+    assert "reason" not in result.as_meta()
+
+
 def test_resolution_lists_are_size_capped(db_session):
     names = [f"Person{i} Surname{i}" for i in range(MAX_RESOLUTION_ITEMS + 10)]
     roster = _roster(*names)
@@ -339,7 +380,7 @@ def test_t3_leak_an_unshared_speaker_is_unresolvable_and_absent(
     unshared = _make_file(db_session, other_user, title="Not shared")
     _add_speaker(db_session, unshared, other_user, display_name="Priya Patel")
 
-    roster = build_roster(db_session, normal_user.id)
+    roster = build_candidate_roster(db_session, normal_user.id, ["Priya Patel"])
     assert "Priya Patel" not in {e.name for e in roster.entries}
 
     result = resolve_speaker_mentions(
@@ -354,7 +395,7 @@ def test_t3_shared_resolves_on_a_genuinely_shared_file(db_session, normal_user, 
     _add_speaker(db_session, shared, other_user, display_name="Priya Patel")
     _share_with(db_session, other_user, normal_user, shared)
 
-    roster = build_roster(db_session, normal_user.id)
+    roster = build_candidate_roster(db_session, normal_user.id, ["Priya Patel"])
     assert "Priya Patel" in {e.name for e in roster.entries}
 
     result = resolve_speaker_mentions(
@@ -363,18 +404,75 @@ def test_t3_shared_resolves_on_a_genuinely_shared_file(db_session, normal_user, 
     assert result.matched == ("Priya Patel",)
 
 
+def test_a_speaker_resolves_even_when_the_account_owns_hundreds_of_others(db_session, normal_user):
+    """THE #524 reproduction, reproduced structurally rather than inferred.
+
+    Before #524, ``build_roster`` (removed) read every distinct speaker name
+    the caller could access BEFORE looking at the question at all, and
+    declined the WHOLE turn once that count exceeded a whole-roster cap of
+    500 — so a real, heavily-discussed speaker never resolved. Measured
+    live: an account owning 529 distinct speaker names got a clean decline
+    asking about "Marketing", a speaker with 862 chunks in scope, because the
+    roster built just to check was itself too big to check safely.
+
+    501 distinct OTHER speakers here reproduces that "just over the old cap"
+    shape almost exactly (529 measured vs 502 here) using one bulk insert to
+    stay fast. Run against the pre-#524 source this is RED (the account is
+    over the old cap, so `Marketing` never resolves) — see the red-check in
+    this issue's PR description. The new candidate-targeted design never
+    reads the account's total distinct count at all, so it resolves
+    regardless of how many other speakers exist.
+    """
+    from app.models.media import Speaker
+
+    media = _make_file(db_session, normal_user)
+    db_session.add_all(
+        [
+            Speaker(
+                uuid=uuid_pkg.uuid4(),
+                user_id=normal_user.id,
+                media_file_id=media.id,
+                name=f"SPEAKER_{i:04d}",
+                display_name=f"Distractor {i}",
+                verified=True,
+            )
+            for i in range(501)
+        ]
+    )
+    db_session.add(
+        Speaker(
+            uuid=uuid_pkg.uuid4(),
+            user_id=normal_user.id,
+            media_file_id=media.id,
+            name="SPEAKER_9999",
+            display_name="Marketing",
+            verified=True,
+        )
+    )
+    db_session.commit()
+
+    result = resolve_speaker_mentions(
+        db_session,
+        "What did the Marketing role contribute across the meeting series?",
+        user_id=normal_user.id,
+    )
+    assert result.matched == ("Marketing",)
+    assert result.speaker_focus is True
+    assert result.declined is False
+
+
 def test_roster_never_uses_speaker_user_id_as_the_access_gate(db_session, normal_user, other_user):
     """The single highest-risk detail in the brief: `Speaker.user_id` is the
     file OWNER's id, and scoping the roster to it (rather than to accessible
     files) would silently drop every speaker on a shared recording. This test
-    fails if `build_roster` is ever rewritten to filter on `Speaker.user_id
-    == user_id` instead of the accessible-files subquery."""
+    fails if `build_candidate_roster` is ever rewritten to filter on
+    `Speaker.user_id == user_id` instead of the accessible-files subquery."""
     shared = _make_file(db_session, other_user, title="Shared with me")
     speaker = _add_speaker(db_session, shared, other_user, display_name="Priya Patel")
     assert speaker.user_id == other_user.id  # owner-attributed, not the reader's id
     _share_with(db_session, other_user, normal_user, shared)
 
-    roster = build_roster(db_session, normal_user.id)
+    roster = build_candidate_roster(db_session, normal_user.id, ["Priya Patel"])
     assert "Priya Patel" in {e.name for e in roster.entries}
 
 
@@ -382,8 +480,56 @@ def test_roster_excludes_quarantined_files(db_session, normal_user):
     quarantined = _make_file(db_session, normal_user, title="Quarantined", quarantined=True)
     _add_speaker(db_session, quarantined, normal_user, display_name="Priya Patel")
 
-    roster = build_roster(db_session, normal_user.id)
+    roster = build_candidate_roster(db_session, normal_user.id, ["Priya Patel"])
     assert "Priya Patel" not in {e.name for e in roster.entries}
+
+
+def test_candidate_roster_file_uuids_cannot_widen_past_accessible_files(
+    db_session, normal_user, other_user
+):
+    """#524 design direction #5: passing an INACCESSIBLE file's uuid in
+    ``file_uuids`` must not leak a speaker on it — permission is enforced
+    independent of what the caller asks to scope to. The permission
+    intersection (accessible-files subquery AND ``file_uuids``) is applied
+    unconditionally, so a scope containing a file the user cannot access
+    contributes nothing from it, exactly as if it were never in scope."""
+    unshared = _make_file(db_session, other_user, title="Not shared")
+    _add_speaker(db_session, unshared, other_user, display_name="Priya Patel")
+
+    roster = build_candidate_roster(
+        db_session,
+        normal_user.id,
+        ["Priya Patel"],
+        file_uuids=[str(unshared.uuid)],
+    )
+    assert roster.entries == ()
+
+    result = resolve_speaker_mentions(
+        db_session,
+        "What did Priya Patel say about the roadmap?",
+        user_id=normal_user.id,
+        file_uuids=[str(unshared.uuid)],
+    )
+    assert result.matched == ()
+
+
+def test_candidate_roster_scopes_to_the_files_passed_in_file_uuids(db_session, normal_user):
+    """#524 design direction #3: an explicit turn scope narrows the lookup to
+    those files, not the caller's whole accessible library — a speaker that
+    exists on an ACCESSIBLE but OUT-OF-SCOPE file must not resolve."""
+    in_scope = _make_file(db_session, normal_user, title="In scope")
+    out_of_scope = _make_file(db_session, normal_user, title="Out of scope")
+    _add_speaker(db_session, in_scope, normal_user, display_name="Priya Patel")
+    _add_speaker(db_session, out_of_scope, normal_user, display_name="Priya Patel")
+
+    roster = build_candidate_roster(
+        db_session,
+        normal_user.id,
+        ["Priya Patel"],
+        file_uuids=[str(in_scope.uuid)],
+    )
+    entry = next(e for e in roster.entries if e.name == "Priya Patel")
+    assert entry.file_count == 1  # only the in-scope file, not both
 
 
 def test_roster_reports_profile_id_and_file_count(db_session, normal_user):
@@ -401,7 +547,7 @@ def test_roster_reports_profile_id_and_file_count(db_session, normal_user):
         speaker.profile_id = profile.id
         db_session.commit()
 
-    roster = build_roster(db_session, normal_user.id)
+    roster = build_candidate_roster(db_session, normal_user.id, ["Priya Patel"])
     entry = next(e for e in roster.entries if e.name == "Priya Patel")
     assert entry.file_count == 2
     assert entry.profile_id == profile.id
@@ -415,30 +561,69 @@ def test_roster_excludes_unknown_speaker_labels(db_session, normal_user):
     media = _make_file(db_session, normal_user)
     _add_speaker(db_session, media, normal_user, display_name=None, name="Unknown")
 
-    roster = build_roster(db_session, normal_user.id)
+    roster = build_candidate_roster(db_session, normal_user.id, ["Unknown"])
     assert roster.entries == ()
 
 
-def test_roster_distinct_cap_declines_a_pathologically_large_roster(
+def test_candidate_row_cap_declines_an_unsafely_large_candidate_lookup(
     db_session, normal_user, monkeypatch
 ):
-    """Exercise the REAL decline branch in `build_roster` — the cap is
-    monkeypatched down to 2 rather than creating 500+ real rows (too slow for
-    the fast suite), but the grouping/decline code path is exactly the one
-    a real oversized roster would hit."""
+    """Exercise the REAL decline branch in `build_candidate_roster` — the cap
+    is monkeypatched down to 2 rather than creating 200+ real rows (too slow
+    for the fast suite), but the fetch/decide code path is exactly the one a
+    genuinely unbounded candidate (a bare common word matching many roster
+    entries) would hit. Replaces the old whole-roster
+    `ROSTER_DISTINCT_CAP`/`build_roster` decline test (#524): the cap now
+    bounds ONE candidate's targeted lookup, never the caller's whole roster."""
     import app.services.chat.speaker_resolver as resolver_mod
 
-    monkeypatch.setattr(resolver_mod, "ROSTER_DISTINCT_CAP", 2)
+    monkeypatch.setattr(resolver_mod, "_CANDIDATE_ROW_CAP", 2)
     media = _make_file(db_session, normal_user)
-    for i, display in enumerate(("Alice Chen", "Bob Ng", "Priya Patel")):
+    for i, display in enumerate(("Team Alpha", "Team Beta", "Team Gamma")):
         _add_speaker(db_session, media, normal_user, display_name=display, name=f"SPEAKER_{i:02d}")
 
-    roster = build_roster(db_session, normal_user.id)
+    roster = build_candidate_roster(db_session, normal_user.id, ["Team"])
     assert roster.declined is True
     assert roster.entries == ()
+    assert roster.decline_reason is SpeakerResolutionDeclineReason.ROSTER_TOO_LARGE
 
-    result = resolve_speaker_mentions(
-        db_session, "What did Alice Chen say?", user_id=normal_user.id
-    )
+    result = resolve_speaker_mentions(db_session, "What did the Team say?", user_id=normal_user.id)
     assert result.declined is True
     assert result.matched == ()
+    assert result.decline_reason is SpeakerResolutionDeclineReason.ROSTER_TOO_LARGE
+    assert result.as_meta()["reason"] == "roster_too_large"
+
+
+def test_too_many_candidates_are_capped_not_declined(db_session, normal_user, monkeypatch):
+    """Design direction #2: cap the INPUT, not the corpus. A question naming
+    more candidates than the cap must not refuse the whole turn — it resolves
+    the first `MAX_CANDIDATES_PER_QUESTION` and silently drops the rest, the
+    same way `MAX_RESOLUTION_ITEMS` already caps the OUTPUT lists."""
+    import app.services.chat.speaker_resolver as resolver_mod
+
+    monkeypatch.setattr(resolver_mod, "MAX_CANDIDATES_PER_QUESTION", 2)
+    media = _make_file(db_session, normal_user)
+    for i, name in enumerate(("Alice", "Bob", "Carol")):
+        _add_speaker(db_session, media, normal_user, display_name=name, name=f"SPEAKER_{i:02d}")
+
+    roster = build_candidate_roster(db_session, normal_user.id, ["Alice", "Bob", "Carol"])
+    names = {e.name for e in roster.entries}
+    assert names == {"Alice", "Bob"}
+    assert roster.declined is False
+
+
+def test_candidate_roster_includes_a_short_typo_via_the_sql_prefilter(db_session, normal_user):
+    """The SQL prefilter that replaces reading the whole roster must still
+    surface a genuine short-typo match — "Alicce" for "Alice" is the same
+    case the pure-Python fuzzy rung already tolerates (0.909 ratio, see
+    `test_fuzzy_match_tolerates_a_short_typo` above)."""
+    media = _make_file(db_session, normal_user)
+    _add_speaker(db_session, media, normal_user, display_name="Alice", name="SPEAKER_00")
+
+    roster = build_candidate_roster(db_session, normal_user.id, ["Alicce"])
+    assert "Alice" in {e.name for e in roster.entries}
+
+    result = resolve_speaker_mentions(
+        db_session, "What did Alicce say about pricing?", user_id=normal_user.id
+    )
+    assert result.matched == ("Alice",)

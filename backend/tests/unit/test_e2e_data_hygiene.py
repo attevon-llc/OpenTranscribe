@@ -12,8 +12,8 @@ live stack that had to be deleted by hand. ``scripts/cleanup-test-users.py`` exi
 because of that class of leak, and its own keep-list still carries ``test@example.com``
 as though it were a legitimate dev account.
 
-Three hazards, one per check
-----------------------------
+Four hazards, one per check
+---------------------------
 1. **Create without teardown.** A test (or fixture) that POSTs to a creating endpoint,
    or drives a creating form, and has no ``finally`` / cleaning fixture / finalizer.
 2. **Hard-coded identity.** An email, a created object's name, or a value typed into a
@@ -28,6 +28,15 @@ Three hazards, one per check
    account's email by ``canonical_identifier``), so one such test poisons every later
    test that logs in as that account. The correct form is a **nonexistent** account,
    which takes the identical 401 path.
+4. **Mutating an AMBIENT entity** — a row the test found by listing whatever the dev
+   library happens to hold, rather than one it created (issue #541). The first three
+   checks are all about *creation* and shared *configuration*, and this shape slipped
+   between them: ``test_gallery_actions.py`` picked "the shortest completed file" and
+   ran a genuine **reprocess** on it, re-running ASR and diarization over somebody's
+   recording. Deleting afterwards cannot undo it — the transcript is rewritten in
+   place, and the auto-accept path in ``speaker_matching_service`` then rewrote the
+   ambient speaker profile the new voice matched, changing the speakers page for good
+   and breaking two visual baselines.
 
 Why AST and not "run it and see"
 -------------------------------
@@ -257,6 +266,50 @@ _FIXED_IDENTITY_ALLOWLIST: dict[str, str] = {}
 
 #: Negative logins against an existing account, and why the lockout risk is accepted.
 _WRONG_PASSWORD_ALLOWLIST: dict[str, str] = {}
+
+# ---------------------------------------------------------------------------
+# Ambient-entity mutation (issue #541)
+#
+# The three detectors above are all about CREATION and shared CONFIGURATION.
+# Nothing detected the third shape: acting destructively on a row that was
+# already there. That is what let #541 through, and the damage was real —
+# `test_gallery_actions.py` picked "the shortest completed file" out of the dev
+# library and ran a genuine reprocess on it, re-running ASR and diarization over
+# somebody's recording. The new speaker then auto-matched an ambient speaker
+# profile above the 0.75 threshold, so `speaker_matching_service` rewrote that
+# profile's OpenSearch centroid and its counters too. The speakers page changed
+# permanently and two visual-regression baselines broke.
+# ---------------------------------------------------------------------------
+
+#: Path suffixes whose POST mutates an EXISTING row. Suffix-matched because the
+#: uuid segment in front of them normalizes to ``*``.
+_AMBIENT_MUTATION_SUFFIXES: tuple[tuple[str, str], ...] = (
+    ("/identify-speakers", "queues LLM speaker identification"),
+    ("/confirm-gender", "writes predicted_gender (and bulk-updates linked speakers)"),
+    ("/assign-profile", "reassigns a speaker to a profile"),
+)
+
+#: ``POST /files/management/bulk-action`` multiplexes many verbs. Only these mutate.
+#: ``delete`` is absent on purpose: deleting is what a *cleanup* does.
+_BULK_ACTION_PATH = "/api/files/management/bulk-action"
+_MUTATING_BULK_ACTIONS = frozenset({"reprocess", "retry", "summarize"})
+
+#: Listings/detail reads that hand back somebody else's row. A function that reads
+#: one of these and then mutates is, by construction, mutating ambient data —
+#: unless it created the thing itself or takes a fixture that cleans up.
+_AMBIENT_SOURCE_PATHS = (
+    "/api/files",
+    "/api/speaker-clusters",
+    "/api/speaker-profiles/profiles",
+)
+
+#: Tests that mutate an ambient entity, and why that is accepted.
+#:
+#: DELIBERATELY NOT COVERED YET: the speaker-cluster merge/split/promote/recluster
+#: family. Grep confirms no e2e test calls any of them, and a detector shipped with
+#: zero real examples to calibrate against is the "matches nothing, reports clean"
+#: trap this module exists to prevent. Extend the table when a test needs one.
+_AMBIENT_MUTATION_ALLOWLIST: dict[str, str] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -542,6 +595,111 @@ def _creation_reasons(
     return sorted(set(reasons))
 
 
+def _reads_ambient_source(
+    fn: ast.FunctionDef | ast.AsyncFunctionDef, literals: dict[str, str]
+) -> bool:
+    """Whether this function reads a listing/detail endpoint that returns ambient rows.
+
+    Args:
+        fn: Function to inspect.
+        literals: Module + conftest constants, for resolving f-string URLs.
+
+    Returns:
+        True if any ``.get(...)`` targets an ambient source path.
+    """
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call) or _call_name(node) != "get":
+            continue
+        path = _api_path(node.args[0] if node.args else None, literals)
+        if path and any(
+            path == source or path.startswith(f"{source}/") for source in _AMBIENT_SOURCE_PATHS
+        ):
+            return True
+    return False
+
+
+def _mutating_bulk_actions(node: ast.Call, literals: dict[str, str]) -> list[str]:
+    """The mutating ``action`` values in a ``bulk-action`` POST, if any."""
+    actions: list[str] = []
+    for keyword in node.keywords:
+        if keyword.arg != "json" or not isinstance(keyword.value, ast.Dict):
+            continue
+        for key, value in zip(keyword.value.keys, keyword.value.values, strict=False):
+            if _flatten(key, literals) != "action":
+                continue
+            action = _flatten(value, literals)
+            if action in _MUTATING_BULK_ACTIONS:
+                actions.append(action)
+    return actions
+
+
+def _ambient_mutation_reasons(
+    fn: ast.FunctionDef | ast.AsyncFunctionDef, literals: dict[str, str]
+) -> list[str]:
+    """Why this function mutates a row it did not create (empty = it does not).
+
+    Only the *call shapes* are detected here; whether the target is ambient is
+    decided by the caller, which also knows about creation and cleaning fixtures.
+    """
+    reasons: list[str] = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call) or _call_name(node) != "post":
+            continue
+        path = _api_path(node.args[0] if node.args else None, literals)
+        if not path:
+            continue
+        if path == _BULK_ACTION_PATH:
+            reasons.extend(
+                f"POST {path} action={action}" for action in _mutating_bulk_actions(node, literals)
+            )
+        for suffix, why in _AMBIENT_MUTATION_SUFFIXES:
+            if path.endswith(suffix):
+                reasons.append(f"POST {path} ({why})")
+    return sorted(set(reasons))
+
+
+def _ambient_mutation_findings(
+    fn: ast.FunctionDef | ast.AsyncFunctionDef,
+    literals: dict[str, str],
+    docstrings: set[int],
+    ambient_source_helpers: set[str],
+    cleaning_fixtures: set[str],
+) -> list[str]:
+    """The whole verdict: mutates, ambient, and not owned.
+
+    ONE implementation, called by both ``_collect`` and the guard-the-guard tests.
+    A selftest that re-implemented this decision would be testing a copy — the exact
+    shape that lets a detector drift away from what it is asserted to do.
+
+    Args:
+        fn: Function to judge.
+        literals: Module + conftest constants, for resolving f-string URLs.
+        docstrings: ``id()`` of docstring constants, so prose is not read as code.
+        ambient_source_helpers: Module helpers that read a listing of ambient rows.
+        cleaning_fixtures: Fixtures whose teardown deletes what they made.
+
+    Returns:
+        Reasons the function mutates an entity it does not own; empty if it is fine.
+    """
+    reasons = _ambient_mutation_reasons(fn, literals)
+    if not reasons:
+        return []
+
+    called = {n for n in ast.walk(fn) if isinstance(n, ast.Call)}
+    sourced_ambient = (
+        _reads_ambient_source(fn, literals)
+        or bool(_params(fn) & ambient_source_helpers)
+        or bool({_call_name(n) for n in called} & ambient_source_helpers)
+    )
+    # Owned when the function created the thing itself, or takes a fixture whose
+    # teardown deletes it. Both escapes reuse the creation detector's machinery, so a
+    # suite fixed the right way clears this gate with no special-casing.
+    owns_it = bool(_creation_reasons(fn, literals, docstrings)) or bool(
+        _params(fn) & cleaning_fixtures
+    )
+    return reasons if sourced_ambient and not owns_it else []
+
+
 def _cleans_up(
     fn: ast.FunctionDef | ast.AsyncFunctionDef,
     cleaning_fixtures: set[str],
@@ -709,15 +867,67 @@ def _wrong_password_findings(
 # ---------------------------------------------------------------------------
 
 
-def _collect() -> tuple[dict[str, str], dict[str, str], dict[str, str], int, int]:
-    """Return (uncleaned, fixed_identities, wrong_passwords, modules, functions)."""
+def _tree_wide_helpers() -> tuple[set[str], set[str]]:
+    """Deleting helpers and cleaning fixtures visible across the whole e2e tree.
+
+    Fixture resolution is what pytest does, not what one file does: a fixture defined
+    in ``e2e/conftest.py`` is available to every module, and shared upload/teardown
+    machinery belongs there rather than duplicated per suite. Computing this per module
+    (as this scanner did) meant a test taking a conftest fixture that deletes read as
+    having no cleanup at all — a blind spot that would have forced an allowlist entry
+    for correctly written tests.
+
+    Returns:
+        ``(deleting_helpers, cleaning_fixtures)`` unioned over every e2e module.
+    """
+    deleting_helpers: set[str] = set()
+    cleaning_fixtures: set[str] = set()
+
+    parsed: list[list[ast.FunctionDef | ast.AsyncFunctionDef]] = []
+    for path in _e2e_modules():
+        try:
+            tree = ast.parse(path.read_text())
+        except SyntaxError:  # pragma: no cover - a syntax error fails collection anyway
+            continue
+        functions = [
+            n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
+        ]
+        parsed.append(functions)
+        deleting_helpers |= {fn.name for fn in functions if _region_deletes(list(fn.body), set())}
+
+    # Second pass: a fixture's teardown may call a deleting helper defined in another
+    # module (conftest's, typically), so the helper set has to be complete first.
+    fixtures = [fn for functions in parsed for fn in functions if _is_fixture(fn)]
+    for fn in fixtures:
+        if _region_deletes(_teardown_region(fn), deleting_helpers):
+            cleaning_fixtures.add(fn.name)
+
+    # Third pass: fixtures COMPOSE. `owned_media_file` requests `owned_media_factory`
+    # and returns what it produced, so the factory's teardown is what removes it — the
+    # requesting fixture has no teardown of its own and would otherwise read as dirty.
+    # Iterate to a fixed point, since a chain can be any length.
+    changed = True
+    while changed:
+        changed = False
+        for fn in fixtures:
+            if fn.name not in cleaning_fixtures and _params(fn) & cleaning_fixtures:
+                cleaning_fixtures.add(fn.name)
+                changed = True
+
+    return deleting_helpers, cleaning_fixtures
+
+
+def _collect() -> tuple[dict[str, str], dict[str, str], dict[str, str], dict[str, str], int, int]:
+    """Return (uncleaned, identities, wrong_passwords, ambient_mutations, modules, functions)."""
     uncleaned: dict[str, str] = {}
     identities: dict[str, str] = {}
     wrong_passwords: dict[str, str] = {}
+    ambient_mutations: dict[str, str] = {}
     module_count = 0
     function_count = 0
 
     conftest = _conftest_literals()
+    deleting_helpers, cleaning_fixtures = _tree_wide_helpers()
 
     for path in _e2e_modules():
         source = path.read_text()
@@ -734,16 +944,13 @@ def _collect() -> tuple[dict[str, str], dict[str, str], dict[str, str], int, int
             n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
         ]
 
-        # Module-level helpers that themselves delete, so a `finally: _delete_user(...)`
-        # and a fixture teardown that calls one both resolve.
-        deleting_helpers = {fn.name for fn in functions if _region_deletes(list(fn.body), set())}
-        cleaning_fixtures = {
-            fn.name
-            for fn in functions
-            if _is_fixture(fn) and _region_deletes(_teardown_region(fn), deleting_helpers)
-        }
         # Helpers that mint a run-unique value (`_unique_tag_name`, `_unique_email`).
         uniquifying_helpers = {fn.name for fn in functions if _has_uniquifier(fn)}
+        # Module-level helpers that read a listing of ambient rows, so a test calling
+        # `_get_shortest_completed_file(...)` inherits the ambient-source signal.
+        ambient_source_helpers = {
+            fn.name for fn in functions if _reads_ambient_source(fn, literals)
+        }
 
         for fn in functions:
             interesting = fn.name.startswith("test_") or _is_fixture(fn)
@@ -765,6 +972,12 @@ def _collect() -> tuple[dict[str, str], dict[str, str], dict[str, str], int, int
             if bad_logins and ident not in _WRONG_PASSWORD_ALLOWLIST:
                 wrong_passwords[ident] = "; ".join(bad_logins)
 
+            mutations = _ambient_mutation_findings(
+                fn, literals, docstrings, ambient_source_helpers, cleaning_fixtures
+            )
+            if mutations and ident not in _AMBIENT_MUTATION_ALLOWLIST:
+                ambient_mutations[ident] = "; ".join(mutations)
+
         # Module-level fixed identities. Only top-level statements that are NOT function
         # or class definitions: those are reported against the owning function above, and
         # walking them here would double-report every finding.
@@ -785,10 +998,17 @@ def _collect() -> tuple[dict[str, str], dict[str, str], dict[str, str], int, int
         if module_emails and module_ident not in _FIXED_IDENTITY_ALLOWLIST:
             identities[module_ident] = "; ".join(f"fixed email {e!r}" for e in module_emails)
 
-    return uncleaned, identities, wrong_passwords, module_count, function_count
+    return uncleaned, identities, wrong_passwords, ambient_mutations, module_count, function_count
 
 
-_UNCLEANED, _IDENTITIES, _WRONG_PASSWORDS, _MODULES, _FUNCTIONS = _collect()
+(
+    _UNCLEANED,
+    _IDENTITIES,
+    _WRONG_PASSWORDS,
+    _AMBIENT_MUTATIONS,
+    _MODULES,
+    _FUNCTIONS,
+) = _collect()
 
 
 def _report(findings: dict[str, str]) -> str:
@@ -830,6 +1050,20 @@ def test_no_negative_login_targets_an_existing_account() -> None:
         "escalates, so every later test that logs in as that account inherits the "
         "failure. Use a NONEXISTENT account — it takes the identical 401 path "
         "(backend/tests/CLAUDE.md):\n  " + _report(_WRONG_PASSWORDS)
+    )
+
+
+def test_no_e2e_test_mutates_an_ambient_entity() -> None:
+    """Acting destructively on a row you did not create is not undoable by deleting."""
+    assert not _AMBIENT_MUTATIONS, (
+        "These e2e tests run a MUTATING pipeline action against a row they did not "
+        "create — one they found by listing whatever the dev library happens to hold. "
+        "Deleting afterwards does not undo it: a reprocess rewrites the transcript in "
+        "place, and the auto-accept path then rewrites any ambient speaker profile the "
+        "new voice matches (issue #541 — that is how a real profile's centroid and "
+        "counters were altered and two visual baselines broke). Upload your own file "
+        "and delete it in a teardown, or allow-list it with a reason:\n  "
+        + _report(_AMBIENT_MUTATIONS)
     )
 
 
@@ -897,6 +1131,132 @@ def test_scanner_reads_the_shared_dev_credentials() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Guard the ambient-mutation detector (issue #541)
+#
+# Synthetic sources, not the live tree: a detector asserted only against the
+# current suite stops firing the moment the suite is fixed, and "0 findings" then
+# means nothing. Every case below states what the detector must decide and why.
+# ---------------------------------------------------------------------------
+
+_PRE_FIX_AMBIENT_SHAPE = """
+def _get_shortest_completed_file(backend_url, token):
+    resp = requests.get(f"{backend_url}/api/files", headers=h, params=p, timeout=30)
+    return resp.json()["items"][0]
+
+def test_reprocess_api_changes_status(api_token, backend_url):
+    file = _get_shortest_completed_file(backend_url, api_token)
+    resp = requests.post(
+        f"{backend_url}/api/files/management/bulk-action",
+        headers=h,
+        json={"file_uuids": [file["uuid"]], "action": "reprocess"},
+        timeout=30,
+    )
+"""
+
+_FIXED_OWNED_SHAPE = """
+def test_reprocess_full_cycle(api_token, backend_url):
+    with open(path, "rb") as fh:
+        up = requests.post(f"{backend_url}/api/files", files={"file": (name, fh)}, timeout=300)
+    file_uuid = up.json()["uuid"]
+    try:
+        requests.post(
+            f"{backend_url}/api/files/management/bulk-action",
+            json={"file_uuids": [file_uuid], "action": "reprocess"},
+            timeout=30,
+        )
+    finally:
+        requests.delete(f"{backend_url}/api/files/{file_uuid}", timeout=30)
+"""
+
+_FIXTURE_OWNED_SHAPE = """
+def test_speaker_id_api(owned_media_file, api_token, backend_url):
+    resp = requests.post(
+        f"{backend_url}/api/files/{owned_media_file['uuid']}/identify-speakers",
+        headers=h,
+        timeout=30,
+    )
+"""
+
+_READ_ONLY_AMBIENT_SHAPE = """
+def test_export_srt_via_api(api_token, backend_url):
+    listing = requests.get(f"{backend_url}/api/files", headers=h, timeout=30)
+    file_uuid = listing.json()["items"][0]["uuid"]
+    resp = requests.get(
+        f"{backend_url}/api/files/{file_uuid}/subtitles", params={"subtitle_format": "srt"}
+    )
+"""
+
+
+def _ambient_verdict(source: str, name: str, *, cleaning_fixtures: set[str] | None = None) -> bool:
+    """Run the REAL detector over a synthetic module; report whether *name* is flagged.
+
+    Calls ``_ambient_mutation_findings`` — the same function ``_collect`` uses — rather
+    than re-deriving the verdict. A guard that re-implements the logic it guards passes
+    happily while the two drift apart, which is the failure this whole module exists to
+    prevent one level down.
+    """
+    tree = ast.parse(source)
+    functions = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)]
+    literals = _module_literals(tree)
+    helpers = {fn.name for fn in functions if _reads_ambient_source(fn, literals)}
+    fn = next(f for f in functions if f.name == name)
+
+    return bool(
+        _ambient_mutation_findings(
+            fn, literals, _docstring_nodes(tree), helpers, cleaning_fixtures or set()
+        )
+    )
+
+
+def test_ambient_detector_fires_on_the_shape_that_caused_541() -> None:
+    """The literal pre-fix code: list ambient files, then reprocess one of them."""
+    assert _ambient_verdict(_PRE_FIX_AMBIENT_SHAPE, "test_reprocess_api_changes_status")
+
+
+def test_ambient_detector_stays_clean_when_the_test_uploads_and_deletes() -> None:
+    """Creating the file yourself and deleting it in a ``finally`` is the fix shape."""
+    assert not _ambient_verdict(_FIXED_OWNED_SHAPE, "test_reprocess_full_cycle")
+
+
+def test_ambient_detector_stays_clean_behind_a_cleaning_fixture() -> None:
+    """What every repaired test in this suite actually looks like.
+
+    The object arrives from a fixture whose teardown deletes it, so the test body
+    contains no creation of its own and no listing read.
+    """
+    assert not _ambient_verdict(
+        _FIXTURE_OWNED_SHAPE, "test_speaker_id_api", cleaning_fixtures={"owned_media_file"}
+    )
+
+
+def test_ambient_detector_ignores_read_only_use_of_ambient_data() -> None:
+    """Reading someone's file is fine; it is mutating it that is not.
+
+    Without this the trigger table could be as coarse as "touches /api/files" and
+    still pass the must-fire case above.
+    """
+    assert not _ambient_verdict(_READ_ONLY_AMBIENT_SHAPE, "test_export_srt_via_api")
+
+
+def test_ambient_detector_ignores_non_mutating_bulk_actions() -> None:
+    """``bulk-action`` multiplexes many verbs and only some of them mutate."""
+    source = _PRE_FIX_AMBIENT_SHAPE.replace('"action": "reprocess"', '"action": "export"')
+    assert not _ambient_verdict(source, "test_reprocess_api_changes_status")
+
+
+def test_fixture_resolution_spans_the_whole_e2e_tree() -> None:
+    """A conftest fixture is visible to every module, and the scanner must agree.
+
+    Shared upload/teardown machinery belongs in ``e2e/conftest.py``; resolving
+    fixtures per module made a test that used it read as having no cleanup.
+    """
+    _deleting, cleaning = _tree_wide_helpers()
+    assert "owned_media_factory" in cleaning, (
+        "conftest's owned-media fixture deletes what it uploads and must resolve tree-wide"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Allow-list honesty (mirrors test_ddl_marker_discipline.py)
 # ---------------------------------------------------------------------------
 
@@ -909,6 +1269,7 @@ def test_allowlists_are_honest() -> None:
         _CREATES_WITHOUT_CLEANUP_ALLOWLIST,
         _FIXED_IDENTITY_ALLOWLIST,
         _WRONG_PASSWORD_ALLOWLIST,
+        _AMBIENT_MUTATION_ALLOWLIST,
     ):
         for ident, reason in sorted(allowlist.items()):
             module, _, name = ident.partition("::")

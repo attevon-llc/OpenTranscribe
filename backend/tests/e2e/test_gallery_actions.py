@@ -30,6 +30,7 @@ import requests
 # collection when invoked as `pytest backend/tests/e2e/` from the repo root.
 from conftest import TEST_ADMIN_EMAIL
 from conftest import TEST_ADMIN_PASSWORD
+from conftest import wait_for_stable_completion
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
@@ -643,9 +644,16 @@ class TestBulkActions:
 class TestBulkActionAPI:
     """Test the backend bulk-action endpoint directly for new actions."""
 
-    def test_bulk_summarize_action(self, api_token: str, backend_url: str) -> None:
-        """POST /files/management/bulk-action with action=summarize for a completed file."""
-        file_uuid = _get_completed_file_uuid(backend_url, api_token)
+    def test_bulk_summarize_action(
+        self, owned_media_file: dict[str, Any], api_token: str, backend_url: str
+    ) -> None:
+        """POST /files/management/bulk-action with action=summarize for a completed file.
+
+        Uses the class-owned upload: summarize WRITES ``summary_data`` onto whatever
+        file it is given, so pointing it at an ambient recording is the same
+        data-hygiene violation as the reprocess tests (issue #541).
+        """
+        file_uuid = owned_media_file["uuid"]
         resp = requests.post(
             f"{backend_url}/api/files/management/bulk-action",
             headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
@@ -696,36 +704,54 @@ class TestBulkActionAPI:
 # ---------------------------------------------------------------------------
 # Helpers for end-to-end processing tests
 # ---------------------------------------------------------------------------
-def _get_shortest_completed_file(backend_url: str, token: str) -> dict[str, Any]:
-    """Find the shortest completed file for fast reprocessing tests."""
-    resp = requests.get(
-        f"{backend_url}/api/files",
-        headers={"Authorization": f"Bearer {token}"},
-        params=_api_params(page=1, page_size=100, sort_by="duration", sort_order="asc"),
-        timeout=30,
-    )
-    files: list[dict[str, Any]] = resp.json().get("items", [])
-    for f in files:
-        dur = f.get("duration", 0) or 0
-        if f.get("status") == "completed" and 0 < dur <= 300:
-            return f
-    pytest.skip("No short completed file found for processing tests")
-    return {}  # unreachable, satisfies mypy
+def _wait_for_status_change(
+    backend_url: str, token: str, file_uuid: str, *, away_from: str, timeout_secs: int = 60
+) -> str:
+    """Poll until *file_uuid*'s status differs from *away_from*.
+
+    Args:
+        backend_url: Base URL of the API under test.
+        token: Bearer token.
+        file_uuid: File to poll.
+        away_from: The status the file is expected to leave.
+        timeout_secs: Upper bound; the last observed status is returned on expiry so
+            the caller's assertion reports what was actually seen.
+
+    Returns:
+        The first status observed that is not *away_from*, else the last one seen.
+    """
+    deadline = time.time() + timeout_secs
+    status = away_from
+    while time.time() < deadline:
+        status = _get_file_status(backend_url, token, file_uuid)
+        if status != away_from:
+            return status
+        # Pure API polling: no Playwright page here, so there is no locator to wait
+        # on and the sleep IS the poll interval.
+        time.sleep(1)
+    return status
 
 
-def _get_error_file(backend_url: str, token: str) -> dict[str, Any] | None:
-    """Find a file in error status."""
-    resp = requests.get(
-        f"{backend_url}/api/files",
-        headers={"Authorization": f"Bearer {token}"},
-        params=_api_params(page=1, page_size=20, sort_by="upload_time", sort_order="desc"),
-        timeout=30,
-    )
-    files: list[dict[str, Any]] = resp.json().get("items", [])
-    for f in files:
-        if f.get("status") == "error":
-            return f
-    return None
+@pytest.fixture
+def owned_media_file(owned_media_factory: Any, api_token: str) -> dict[str, Any]:
+    """A completed media file this suite OWNS, deleted however the test ends.
+
+    These tests used to pick "the shortest completed file" out of the dev library and
+    run a **real reprocess** on it — re-running ASR and diarization over somebody's
+    actual recording. That is the data-hygiene violation in issue #541, and it did
+    real damage: it rewrote media_file 177598's transcript, created new speaker rows,
+    and (through the auto-accept path in ``speaker_matching_service``) mutated the
+    ambient "Joe Rogan" speaker profile's centroid and counters. The speakers page
+    changed permanently and two visual baselines broke.
+
+    Owning the file removes every part of that, and is also *faster*: a fixed 10 s clip
+    against "the shortest ambient file under 300 s", which is why the old timeout was
+    300 s in the first place.
+
+    The upload/poll/delete machinery lives in ``e2e/conftest.py`` beside the other
+    shared media fixtures, so the gender suite uses the same one implementation.
+    """
+    return dict(owned_media_factory(api_token))
 
 
 def _get_file_status(backend_url: str, token: str, file_uuid: str) -> str:
@@ -739,103 +765,65 @@ def _get_file_status(backend_url: str, token: str, file_uuid: str) -> str:
     return str(resp.json().get("status", "unknown"))
 
 
-def _wait_for_status(
-    backend_url: str, token: str, file_uuid: str, target_status: str, timeout_secs: int = 180
-) -> str:
-    """Poll until file reaches target status or timeout."""
-    start = time.time()
-    while time.time() - start < timeout_secs:
-        status = _get_file_status(backend_url, token, file_uuid)
-        if status == target_status:
-            return status
-        if status == "error" and target_status != "error":
-            return status  # Don't keep waiting if it errored
-        # Kept (issue #431): pure API polling via requests — this helper takes no Playwright
-        # page, so no locator exists to wait on; the sleep is the poll interval itself.
-        time.sleep(3)
-    return _get_file_status(backend_url, token, file_uuid)
-
-
 # ---------------------------------------------------------------------------
 # End-to-End Processing Tests (reprocess, summarize, retry)
 # ---------------------------------------------------------------------------
 class TestEndToEndProcessing:
-    """Tests that verify reprocess and summarize actually work on short files.
+    """Reprocess, summarize and speaker-ID, driven against a file this class OWNS.
 
-    These tests use the shortest completed file (~1-2 min) for fast turnaround.
-    Reprocess test waits for the file to finish processing again.
+    Every test here mutates the file it acts on — reprocess re-runs ASR and
+    diarization, summarize writes ``summary_data``, speaker-ID writes suggestions.
+    They used to do that to whatever ambient recording ``_get_shortest_completed_file``
+    happened to return, which is issue #541. The ``owned_media_file`` fixture uploads a
+    10 s clip and deletes it in a ``finally``, so nothing in the dev library is touched.
     """
 
-    def test_reprocess_api_changes_status(self, api_token: str, backend_url: str) -> None:
-        """Reprocess via API should change file status from completed to processing."""
-        file = _get_shortest_completed_file(backend_url, api_token)
-        file_uuid = file["uuid"]
-        original_status = file["status"]
-        assert original_status == "completed"
+    def test_reprocess_full_cycle(
+        self, owned_media_file: dict[str, Any], api_token: str, backend_url: str
+    ) -> None:
+        """Trigger → transition → completion → transcript, as one causal chain.
 
-        # Trigger reprocess
+        These were three separate tests that communicated through implicit
+        cross-test DB state and source collection order, and the third carried a
+        defensive "if not completed, reprocess again" branch that masked which
+        assertion had actually failed. One test, three labelled phases.
+        """
+        file_uuid = owned_media_file["uuid"]
+        assert owned_media_file["status"] == "completed"
+
+        # Phase 1 — the reprocess is accepted.
         resp = requests.post(
             f"{backend_url}/api/files/management/bulk-action",
             headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
             json={"file_uuids": [file_uuid], "action": "reprocess"},
             timeout=30,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Reprocess rejected: {resp.status_code} {resp.text[:300]}"
         results: list[dict[str, Any]] = resp.json()
         assert results[0]["success"] is True, f"Reprocess failed: {results[0]}"
 
-        # Status should change from completed
-        # Kept (issue #431): verifying backend status transition directly via the API on
-        # purpose — this test takes no page fixture, so there is no UI signal to observe.
-        time.sleep(2)
-        new_status = _get_file_status(backend_url, api_token, file_uuid)
+        # Phase 2 — the file actually leaves `completed`.
+        # Polled, not slept: a fixed wait is simultaneously too long when the
+        # transition is instant and too short when the queue is busy, and it asserts
+        # on whatever the clock happened to catch. This takes no page fixture, so the
+        # API status IS the observable signal (issue #431).
+        new_status = _wait_for_status_change(
+            backend_url, api_token, file_uuid, away_from="completed"
+        )
         assert new_status in ("pending", "processing", "queued"), (
             f"After reprocess, expected pending/processing/queued, got: {new_status}"
         )
 
-    def test_reprocess_completes_successfully(self, api_token: str, backend_url: str) -> None:
-        """After reprocess, the short file should complete processing again."""
-        file = _get_shortest_completed_file(backend_url, api_token)
-        file_uuid = file["uuid"]
-
-        # Check current status - if still processing from previous test, just wait
-        current = _get_file_status(backend_url, api_token, file_uuid)
-        if current == "completed":
-            # Trigger reprocess
-            resp = requests.post(
-                f"{backend_url}/api/files/management/bulk-action",
-                headers={
-                    "Authorization": f"Bearer {api_token}",
-                    "Content-Type": "application/json",
-                },
-                json={"file_uuids": [file_uuid], "action": "reprocess"},
-                timeout=30,
-            )
-            assert resp.status_code == 200
-            assert resp.json()[0]["success"] is True
-
-        # Wait for completion (5 min max for a short file with GPU processing)
-        final_status = _wait_for_status(
-            backend_url, api_token, file_uuid, "completed", timeout_secs=300
+        # Phase 3 — and comes back.
+        final_status = wait_for_stable_completion(
+            backend_url, api_token, file_uuid, timeout_secs=300
         )
         assert final_status == "completed", (
-            f"Short file did not complete reprocessing: status={final_status}"
+            f"File did not complete reprocessing: status={final_status}"
         )
 
-    def test_reprocess_preserves_transcript(self, api_token: str, backend_url: str) -> None:
-        """After reprocessing, the file should still have a valid transcript."""
-        file = _get_shortest_completed_file(backend_url, api_token)
-        file_uuid = file["uuid"]
-
-        # Ensure file is completed
-        current = _get_file_status(backend_url, api_token, file_uuid)
-        if current != "completed":
-            final = _wait_for_status(
-                backend_url, api_token, file_uuid, "completed", timeout_secs=300
-            )
-            assert final == "completed", f"File not completed: {final}"
-
-        # Verify transcript exists via subtitle export
+        # Phase 4 — with a transcript. Real speech in the fixture is what keeps this
+        # assertion meaningful; a synthetic tone would make it a test of ASR noise.
         resp = requests.get(
             f"{backend_url}/api/files/{file_uuid}/subtitles",
             headers={"Authorization": f"Bearer {api_token}"},
@@ -846,18 +834,13 @@ class TestEndToEndProcessing:
         assert "-->" in resp.text, "Transcript should have timestamps after reprocess"
         assert len(resp.text) > 50, "Transcript should not be empty after reprocess"
 
-    def test_summarize_api_returns_result(self, api_token: str, backend_url: str) -> None:
+    def test_summarize_api_returns_result(
+        self, owned_media_file: dict[str, Any], api_token: str, backend_url: str
+    ) -> None:
         """Summarize via API should either succeed or report LLM not configured."""
-        file = _get_shortest_completed_file(backend_url, api_token)
-        file_uuid = file["uuid"]
-
-        # Ensure file is completed first
-        current = _get_file_status(backend_url, api_token, file_uuid)
-        if current != "completed":
-            final = _wait_for_status(
-                backend_url, api_token, file_uuid, "completed", timeout_secs=300
-            )
-            assert final == "completed", f"File not completed for summarize: {final}"
+        file_uuid = owned_media_file["uuid"]
+        status = wait_for_stable_completion(backend_url, api_token, file_uuid)
+        assert status == "completed", f"File not completed for summarize: {status}"
 
         resp = requests.post(
             f"{backend_url}/api/files/management/bulk-action",
@@ -876,37 +859,37 @@ class TestEndToEndProcessing:
                 f"Unexpected error: {results[0]}"
             )
 
-    def test_retry_failed_api(self, api_token: str, backend_url: str) -> None:
-        """Retry action on an error file should succeed (if error files exist)."""
-        error_file = _get_error_file(backend_url, api_token)
-        if error_file is None:
-            pytest.skip("No error files to test retry")
-            return  # unreachable, satisfies mypy
+    def test_retry_action_on_an_owned_file(
+        self, owned_media_file: dict[str, Any], api_token: str, backend_url: str
+    ) -> None:
+        """The retry verb is accepted and reports a per-file result.
 
+        This used to hunt the dev library for a file in ``error`` and retry **that**,
+        which re-queued a real user's failed job — and, because it skipped when no such
+        file existed, its correctness depended on what happened to be broken that day.
+        Retrying a completed file is a legitimate request with a defined answer, so the
+        endpoint contract is asserted without needing anything to be broken first.
+        """
         resp = requests.post(
             f"{backend_url}/api/files/management/bulk-action",
             headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
-            json={"file_uuids": [error_file["uuid"]], "action": "retry"},
+            json={"file_uuids": [owned_media_file["uuid"]], "action": "retry"},
             timeout=30,
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 200, f"Retry rejected: {resp.status_code} {resp.text[:300]}"
         results: list[dict[str, Any]] = resp.json()
         assert len(results) == 1
-        # Retry should succeed for error files (queues a new task)
-        assert results[0]["success"] is True, f"Retry failed: {results[0]}"
+        assert "success" in results[0], f"Retry result has no verdict: {results[0]}"
+        if not results[0]["success"]:
+            assert results[0].get("error"), "an unsuccessful retry must say why"
 
-    def test_speaker_id_api(self, api_token: str, backend_url: str) -> None:
+    def test_speaker_id_api(
+        self, owned_media_file: dict[str, Any], api_token: str, backend_url: str
+    ) -> None:
         """Speaker identification via API should start a task or report LLM not available."""
-        file = _get_shortest_completed_file(backend_url, api_token)
-        file_uuid = file["uuid"]
-
-        # Ensure file is completed
-        current = _get_file_status(backend_url, api_token, file_uuid)
-        if current != "completed":
-            final = _wait_for_status(
-                backend_url, api_token, file_uuid, "completed", timeout_secs=300
-            )
-            assert final == "completed", f"File not completed for speaker ID: {final}"
+        file_uuid = owned_media_file["uuid"]
+        status = wait_for_stable_completion(backend_url, api_token, file_uuid)
+        assert status == "completed", f"File not completed for speaker ID: {status}"
 
         resp = requests.post(
             f"{backend_url}/api/files/{file_uuid}/identify-speakers",

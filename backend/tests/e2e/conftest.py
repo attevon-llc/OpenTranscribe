@@ -31,10 +31,12 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import cast
 
 import pytest
+import requests
 from playwright.sync_api import Page
 
 #: Repo root, derived from this file: backend/tests/e2e/conftest.py
@@ -432,6 +434,138 @@ def sample_video() -> Path:
             "-shortest",
         ],
     )
+
+
+# ---------------------------------------------------------------------------
+# Owned media: the alternative to acting on whatever the dev library holds
+# ---------------------------------------------------------------------------
+#: The committed 10 s / mono / 16 kHz clip — see ``tests/fixtures/media/README.md``.
+#: Real speech, unlike the ffmpeg sine tones above, so transcript assertions stay
+#: meaningful; short, so a real reprocess costs seconds and fits any GPU.
+COMMITTED_SAMPLE_MEDIA = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "media" / "sample_short.wav"
+)
+
+#: Prefix for every file these suites upload. Also listed in
+#: ``scripts/cleanup-test-users.py``'s ORPHAN_PATTERNS, the backstop for a run that
+#: dies before its teardown.
+OWNED_MEDIA_PREFIX = "e2e-owned-"
+
+#: Statuses a file can never leave on its own. Reaching one decides the answer, so
+#: continuing to poll for "completed" only burns the rest of the window.
+TERMINAL_FAILURE_STATUSES = frozenset({"error", "cancelled"})
+
+
+def wait_for_stable_completion(
+    backend_url: str, token: str, file_uuid: str, timeout_secs: int = 300
+) -> str:
+    """Poll until *file_uuid* is STABLY completed.
+
+    One ``completed`` poll is not enough: chained async stages (analytics, search
+    indexing) can flip a file back to PROCESSING moments later, racing the next
+    request into an INVALID_STATUS rejection.
+
+    Args:
+        backend_url: Base URL of the API under test.
+        token: Bearer token.
+        file_uuid: File to poll.
+        timeout_secs: Upper bound on the wait.
+
+    Returns:
+        The last observed status.
+    """
+    headers = {"Authorization": f"Bearer {token}"}
+    consecutive = 0
+    deadline = time.time() + timeout_secs
+    status = "unknown"
+    while time.time() < deadline:
+        resp = requests.get(f"{backend_url}/api/files/{file_uuid}", headers=headers, timeout=30)
+        status = str(resp.json().get("status", "unknown")) if resp.status_code == 200 else "unknown"
+        if status in TERMINAL_FAILURE_STATUSES:
+            return status
+        consecutive = consecutive + 1 if status == "completed" else 0
+        if consecutive >= 2:
+            return status
+        # Pure API polling: this helper takes no Playwright page, so there is no
+        # locator to wait on and the sleep IS the poll interval (issue #431).
+        time.sleep(3)
+    return status
+
+
+def delete_media_file(backend_url: str, token: str, file_uuid: str) -> None:
+    """Remove a test-created file, retrying past the window where it is still busy.
+
+    A file mid-pipeline answers 409, so a single DELETE is not enough. Falls back to
+    ``/force`` so a failed test can never leave its upload in the dev library.
+    """
+    headers = {"Authorization": f"Bearer {token}"}
+    deadline = time.time() + 90
+    while time.time() < deadline:
+        try:
+            resp = requests.delete(
+                f"{backend_url}/api/files/{file_uuid}", headers=headers, timeout=30
+            )
+            if resp.status_code in (200, 204, 404):
+                return
+        except requests.RequestException:
+            pass
+        time.sleep(5)
+    try:
+        requests.delete(f"{backend_url}/api/files/{file_uuid}/force", headers=headers, timeout=30)
+    except requests.RequestException:
+        pass
+
+
+@pytest.fixture
+def owned_media_factory(backend_url: str):
+    """Upload media the calling suite OWNS, and delete it however the test ends.
+
+    Exists because several suites used to run **real, mutating** pipeline actions —
+    reprocess, summarize, speaker identification — against whatever recording the dev
+    library happened to contain. That is issue #541, and it did measurable damage: a
+    reprocess rewrote an ambient file's transcript, created new speaker rows, and
+    through the auto-accept path mutated an ambient speaker profile's centroid and
+    counters, permanently changing the speakers page.
+
+    Yields:
+        ``upload(token) -> dict``: uploads the committed clip, waits for a stable
+        completion and returns the file payload. Every file it creates is deleted on
+        teardown, in a ``finally``-equivalent — a cleanup that only runs on the happy
+        path is exactly the one that does not run when a test fails.
+    """
+    created: list[tuple[str, str]] = []
+
+    def _upload(token: str, *, timeout_secs: int = 300) -> dict:
+        if not COMMITTED_SAMPLE_MEDIA.exists():  # pragma: no cover - the fixture is tracked
+            pytest.skip(f"missing media fixture {COMMITTED_SAMPLE_MEDIA}")
+
+        headers = {"Authorization": f"Bearer {token}"}
+        # uuid-suffixed: never a fixed identity for a persisted object, and it makes
+        # the upload identifiable in a listing while a run is being debugged.
+        name = f"{OWNED_MEDIA_PREFIX}{uuid.uuid4().hex[:8]}{COMMITTED_SAMPLE_MEDIA.suffix}"
+        with COMMITTED_SAMPLE_MEDIA.open("rb") as fh:
+            resp = requests.post(
+                f"{backend_url}/api/files",
+                headers=headers,
+                files={"file": (name, fh, "audio/wav")},
+                timeout=300,
+            )
+        assert resp.status_code == 200, f"Upload failed: {resp.status_code} {resp.text[:300]}"
+        file_uuid = str(resp.json()["uuid"])
+        created.append((token, file_uuid))
+
+        status = wait_for_stable_completion(backend_url, token, file_uuid, timeout_secs)
+        assert status == "completed", f"uploaded fixture never completed (status={status})"
+
+        detail = requests.get(f"{backend_url}/api/files/{file_uuid}", headers=headers, timeout=30)
+        assert detail.status_code == 200, f"Failed to re-read upload: {detail.text[:300]}"
+        return dict(detail.json())
+
+    try:
+        yield _upload
+    finally:
+        for token, file_uuid in created:
+            delete_media_file(backend_url, token, file_uuid)
 
 
 @pytest.fixture

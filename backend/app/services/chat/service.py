@@ -438,6 +438,7 @@ def _apply_speaker_resolution(
     session_scope,
     meta: dict[str, Any],
     file_uuids: list[str] | None = None,
+    recorder: TraceRecorder | None = None,
 ) -> list[str]:
     """Resolve a mentioned speaker and fold it into ``meta`` (W2.2, wired W2.3).
 
@@ -454,6 +455,14 @@ def _apply_speaker_resolution(
         treats "flag off" and "nothing resolved" identically.
     """
     if not settings.speaker_resolver_enabled:
+        emit_trace(
+            recorder,
+            QueryStage.PARSED_NAMES,
+            TraceOutcome.SKIPPED,
+            node_id="names",
+            parent="turn",
+            reason="disabled",
+        )
         return []
     resolution = _resolve_speaker_focus(
         question=question,
@@ -465,7 +474,31 @@ def _apply_speaker_resolution(
     resolution_meta = resolution.as_meta()
     if resolution_meta:
         meta["speaker_resolution"] = resolution_meta
-    return list(resolution.matched) if resolution.speaker_focus else []
+    matched = list(resolution.matched) if resolution.speaker_focus else []
+    # ⚠️ COUNTS ONLY. `resolution.matched` and `as_meta()["ambiguous"]` hold REAL
+    # SPEAKER NAMES, which are permission-scoped. Never `**resolution_meta`.
+    #
+    # Three outcomes, not two: a mention that matched several roster entries
+    # resolves to NO filter on purpose (never a guess), and reporting that as
+    # "found nothing" would hide a deliberate refusal behind an empty result.
+    ambiguous = (resolution_meta or {}).get("ambiguous") or []
+    if ambiguous:
+        outcome, count = TraceOutcome.DECLINED, len(ambiguous)
+    elif matched:
+        outcome, count = TraceOutcome.OK, len(matched)
+    else:
+        outcome, count = TraceOutcome.EMPTY, 0
+    emit_trace(
+        recorder,
+        QueryStage.PARSED_NAMES,
+        outcome,
+        node_id="names",
+        parent="turn",
+        source="postgres",
+        count=count,
+        **({"reason": "ambiguous"} if ambiguous else {}),
+    )
+    return matched
 
 
 def _validate_plan_speakers(
@@ -536,6 +569,7 @@ def _maybe_rewrite(
     rewrite_enabled: bool,
     settings: ChatSettings,
     meta: dict[str, Any],
+    recorder: TraceRecorder | None = None,
 ):
     """Phase 1 of `_prepare_context`: the query-rewrite LLM round trip.
 
@@ -550,6 +584,14 @@ def _maybe_rewrite(
         `_resolve_plan` for a follow-up turn's piggybacked `PLAN:` line.
     """
     if not (rewrite_enabled and history):
+        emit_trace(
+            recorder,
+            QueryStage.REWRITTEN,
+            TraceOutcome.SKIPPED,
+            node_id="rewrite",
+            parent="turn",
+            reason="disabled" if not rewrite_enabled else "not_applicable",
+        )
         return question, None, None, 0
 
     from app.services.chat.query_rewriter import rewrite_query
@@ -565,6 +607,18 @@ def _maybe_rewrite(
     if effective_query != question:
         meta["rewritten_query"] = effective_query
     meta.setdefault("timings_ms", {})["rewrite"] = int((time.monotonic() - rewrite_started) * 1000)
+    # ⚠️ `ms` ONLY. The obvious thing to show on this node is the rewritten
+    # query, which is the USER'S OWN TEXT. `_scrub` would drop a `query` key,
+    # but the call site must never construct one.
+    emit_trace(
+        recorder,
+        QueryStage.REWRITTEN,
+        TraceOutcome.OK if effective_query != question else TraceOutcome.EMPTY,
+        node_id="rewrite",
+        parent="turn",
+        source="llm",
+        ms=meta["timings_ms"]["rewrite"],
+    )
     return effective_query, rewrite.intent, rewrite, 1
 
 
@@ -990,6 +1044,7 @@ def _run_serial_pipeline(
     session_scope,
     settings_config,
     meta: dict[str, Any],
+    recorder: TraceRecorder | None = None,
 ):
     """Phases 2+3 of `_prepare_context`: the pre-#403 W2.6 counted-then-retrieve
     pipeline, unchanged — this is the path every turn takes with the planner
@@ -1061,6 +1116,7 @@ def _run_serial_pipeline(
         search_mode=search_mode,
         wants_digest=decision.wants_digest,
         speaker_focus_names=speaker_focus_names or None,
+        recorder=recorder,
     )
     return result, counted
 
@@ -1124,6 +1180,7 @@ def _retrieve_or_fanout(
             session_scope=session_scope,
             settings_config=settings_config,
             meta=meta,
+            recorder=recorder,
         )
         return result, counted, None
 
@@ -1267,6 +1324,7 @@ def _prepare_context(
     llm,
     rewrite_enabled: bool,
     assistant_message_uuid: str = "",
+    recorder: TraceRecorder | None = None,
 ) -> tuple[list[MaskedChunk], dict[str, Any], Any, Any, str, str]:
     """Run the blocking RAG stages: rewrite → route → count → retrieve → mask.
 
@@ -1327,6 +1385,7 @@ def _prepare_context(
         rewrite_enabled=rewrite_enabled,
         settings=settings,
         meta=meta,
+        recorder=recorder,
     )
     llm_calls += rewrite_calls
 
@@ -1344,6 +1403,7 @@ def _prepare_context(
         session_scope=session_scope,
         meta=meta,
         file_uuids=file_uuids,
+        recorder=recorder,
     )
 
     from app.services.chat.router import route
@@ -1391,6 +1451,7 @@ def _prepare_context(
         settings_config=settings_config,
         assistant_message_uuid=assistant_message_uuid,
         meta=meta,
+        recorder=recorder,
     )
 
     # --- Phase 3.5: drop quarantined hits before anything downstream sees
@@ -1412,6 +1473,15 @@ def _prepare_context(
     # the drop still has its own named counter so a quarantine cause is never
     # read as a bare "search returned less".
     chunks_dropped_quarantined = chunks_before - len(result.chunks)
+    emit_trace(
+        recorder,
+        QueryStage.FILTERED,
+        node_id="quarantine",
+        parent="turn",
+        source="postgres",
+        kept=len(result.chunks),
+        dropped=chunks_dropped_quarantined,
+    )
     if chunks_dropped_quarantined:
         result.retrieved = max(0, result.retrieved - chunks_dropped_quarantined)
         meta["chunks_dropped_quarantined"] = chunks_dropped_quarantined
@@ -1565,6 +1635,18 @@ def _prepare_context(
     # nothing. Without this counter that is indistinguishable from retrieval
     # returning less, which is a different defect with a different fix.
     meta["chunks_dropped_empty_after_masking"] = len(masked) - len(kept)
+    # The headline case this panel exists for: retrieval worked, masking failed
+    # closed on EVERY chunk, and the model answered anyway. `EMPTY` rather than
+    # `OK` when nothing survived, so it cannot read as a filter that passed.
+    emit_trace(
+        recorder,
+        QueryStage.FILTERED,
+        TraceOutcome.OK if kept else TraceOutcome.EMPTY,
+        node_id="masking",
+        parent="turn",
+        kept=len(kept),
+        dropped=len(masked) - len(kept),
+    )
     masked = kept
 
     # RAG is English-only (see services/chat/language.py). Recording what the turn
@@ -1607,6 +1689,7 @@ def _prepare_context(
         recurrence_result=recurrence_result,
         assistant_message_uuid=assistant_message_uuid,
         meta=meta,
+        recorder=recorder,
     )
     llm_calls += enrichment_calls
 

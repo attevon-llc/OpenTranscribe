@@ -177,8 +177,12 @@ def _check_opensearch_health(summary: dict) -> None:
     """
     try:
         from app.services.opensearch_service import check_and_repair_indices
+        from app.services.search.index_health import check_and_repair_chunks_index
 
-        repaired_indices = check_and_repair_indices()
+        # Two calls, one per layer: the speaker/legacy indices belong to
+        # opensearch_service, the chunk plane to services/search (issue #540 —
+        # merging them would form a package cycle; see index_health's docstring).
+        repaired_indices = check_and_repair_indices() + check_and_repair_chunks_index()
         if repaired_indices:
             summary["opensearch_indices_repaired"] = repaired_indices
             logger.info(

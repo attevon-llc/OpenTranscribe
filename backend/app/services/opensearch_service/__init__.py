@@ -31,6 +31,7 @@ from app.services.opensearch_service.aliases import get_write_index
 from app.services.opensearch_service.aliases import invalidate_active_speaker_index_cache
 from app.services.opensearch_service.aliases import migrate_to_alias_based_indices
 from app.services.opensearch_service.aliases import swap_speaker_alias
+from app.services.opensearch_service.client import KnnProbeResult
 from app.services.opensearch_service.client import _get_alias_target
 from app.services.opensearch_service.client import _get_index_embedding_dimension
 from app.services.opensearch_service.client import _get_sentence_transformer
@@ -39,6 +40,9 @@ from app.services.opensearch_service.client import _is_index_corruption_error
 from app.services.opensearch_service.client import _safe_index_exists
 from app.services.opensearch_service.client import _speaker_org_filter_clauses
 from app.services.opensearch_service.client import get_opensearch_client
+from app.services.opensearch_service.client import probe_knn_health
+from app.services.opensearch_service.client import probe_knn_health_cached
+from app.services.opensearch_service.client import reset_knn_health_cache
 from app.services.opensearch_service.clusters import delete_cluster_embedding
 from app.services.opensearch_service.clusters import find_matching_clusters
 from app.services.opensearch_service.clusters import store_cluster_embedding
@@ -112,6 +116,10 @@ __all__ = [
     "_repair_index",
     "_safe_index_exists",
     "_speaker_org_filter_clauses",
+    "KnnProbeResult",
+    "probe_knn_health",
+    "probe_knn_health_cached",
+    "reset_knn_health_cache",
     "add_speaker_embedding",
     "add_speaker_embedding_v4",
     "batch_find_matching_speakers",

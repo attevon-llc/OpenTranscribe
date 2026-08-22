@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.constants import CPUPriority
 from app.core.redis import get_redis
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
+from app.utils.task_lock import with_task_lock
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +141,13 @@ def _dispatch_reindex_tasks(unindexed_by_user: dict[int, list[str]]) -> None:
             logger.error(f"Failed to dispatch reindex for user {user_id}: {e}")
 
 
+#: Lock key for this task. Matches the registered Celery task name, the same
+#: convention ``recovery.periodic_health_check_task`` follows.
+MAINTENANCE_LOCK_KEY = "search_index_maintenance"
+
+
 @celery_app.task(name="search_index_maintenance", priority=CPUPriority.MAINTENANCE)
+@with_task_lock(MAINTENANCE_LOCK_KEY, timeout=120)
 def search_index_maintenance_task() -> dict[str, Any]:
     """
     Check for completed files missing from the search index and trigger re-indexing.
@@ -151,19 +158,15 @@ def search_index_maintenance_task() -> dict[str, Any]:
     - Failed indexing: files where chunk indexing failed during transcription
     - Index recovery: after OpenSearch data loss or index recreation
 
-    Returns:
-        Dict with maintenance stats.
-    """
-    # Prevent concurrent maintenance runs
-    r = get_redis()
-    if not r.set("search_maintenance_lock", "1", nx=True, ex=120):
-        logger.info("Search maintenance already running, skipping")
-        return {"status": "already_running"}
+    Concurrency is held off by ``with_task_lock`` rather than a hand-rolled
+    ``SET NX``: the manual version let a ``redis.RedisError`` propagate out of
+    the task, where ``TaskLockManager`` fails open and still does the work.
 
-    try:
-        return _run_search_maintenance()
-    finally:
-        r.delete("search_maintenance_lock")
+    Returns:
+        Dict with maintenance stats, or ``with_task_lock``'s ``{"skipped": True,
+        ...}`` when another pass already holds the lock.
+    """
+    return _run_search_maintenance()
 
 
 def _dispatch_facts_backfill(

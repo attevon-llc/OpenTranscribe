@@ -16,6 +16,37 @@ from app.services.opensearch_service.indices import ensure_indices_exist
 logger = logging.getLogger(__name__)
 
 
+def _verify_index_queryable(index_name: str) -> bool:
+    """Confirm *index_name* answers the kind of query it exists to answer.
+
+    A ``match_all`` is a BM25/scan query, and Lucene's text segments are
+    crash-safe while its HNSW vector files are not. Verifying a vector-backed
+    index with ``match_all`` therefore reports "repaired" for the exact failure
+    mode issue #540 describes — BM25 fine, every kNN answering 503 — and the
+    caller then never escalates to a strategy that would actually fix it.
+
+    Args:
+        index_name: Concrete index to verify.
+
+    Returns:
+        True if the index answered. For an index declaring a knn_vector
+        dimension this means the **vector** plane answered; an index holding no
+        documents counts as answering (see ``KnnProbeResult.is_serviceable``).
+
+    Raises:
+        Exception: Propagated from the probe query so the caller's ``except``
+            still sees a failed strategy as failed.
+    """
+    if not _client.opensearch_client:
+        return False
+
+    if _client._supports_ann_search(index_name):
+        return _client.probe_knn_health(index_name).is_serviceable
+
+    _client.opensearch_client.search(index=index_name, body={"query": {"match_all": {}}, "size": 0})
+    return True
+
+
 def _repair_index(index_name: str, db: "Any | None" = None) -> bool:
     """Attempt to repair a corrupted OpenSearch index.
 
@@ -64,22 +95,22 @@ def _repair_index(index_name: str, db: "Any | None" = None) -> bool:
     try:
         _client.opensearch_client.indices.close(index=index_name)
         _client.opensearch_client.indices.open(index=index_name)
-        _client.opensearch_client.search(
-            index=index_name, body={"query": {"match_all": {}}, "size": 0}
-        )
-        logger.info(f"Index {index_name} repaired via close/reopen")
-        return True
+        if _verify_index_queryable(index_name):
+            logger.info(f"Index {index_name} repaired via close/reopen")
+            _client.reset_knn_health_cache()
+            return True
+        logger.warning(f"Close/reopen left {index_name} still unable to answer a kNN query")
     except Exception as e:
         logger.warning(f"Close/reopen failed for {index_name}: {e}")
 
     # Strategy 2: Force merge to compact corrupted segments
     try:
         _client.opensearch_client.indices.forcemerge(index=index_name, max_num_segments=1)
-        _client.opensearch_client.search(
-            index=index_name, body={"query": {"match_all": {}}, "size": 0}
-        )
-        logger.info(f"Index {index_name} repaired via force merge")
-        return True
+        if _verify_index_queryable(index_name):
+            logger.info(f"Index {index_name} repaired via force merge")
+            _client.reset_knn_health_cache()
+            return True
+        logger.warning(f"Force merge left {index_name} still unable to answer a kNN query")
     except Exception as e:
         logger.warning(f"Force merge failed for {index_name}: {e}")
 
@@ -463,9 +494,21 @@ def check_and_repair_indices() -> list[str]:
     """Check OpenSearch indices health and auto-repair corrupted shards.
 
     Checks:
-    1. Query health: match_all query succeeds (catches 503, corrupted segments)
+    1. Query health. For an index declaring a ``knn_vector`` dimension this is a
+       real kNN probe, not ``match_all`` — Lucene's text segments are crash-safe
+       while its HNSW vector files are not, so a BM25 probe reports a healthy
+       index while every vector query answers 503 (issue #540).
     2. Mapping correctness: speaker index embedding field is knn_vector, not float
        (catches dynamic mapping auto-creation with wrong type)
+
+    ⚠️ **``transcript_chunks`` is deliberately NOT in this list.** Repairing the
+    chunk plane needs ``ensure_chunks_index_exists`` and the reindex coordinator,
+    both of which live in ``services/search`` — the layer *above* this package —
+    so importing them here forms a cycle that makes mypy resolve
+    ``indexing_service``'s view of this module to ``Any`` and silently deletes
+    type checking across 66 call sites. Its health check lives in
+    ``services/search/index_health.check_and_repair_chunks_index``, which the
+    same two callers invoke immediately after this function (issue #540).
 
     Returns:
         List of index names that were repaired (empty if all healthy).
@@ -505,7 +548,33 @@ def check_and_repair_indices() -> list[str]:
             except Exception as e:
                 logger.warning(f"Mapping check failed for {index_name}: {e}")
 
-        # Check 2: Query health
+        # Check 2: Query health, in the plane the index actually serves.
+        #
+        # Gated on ANN capability, not merely on a declared dimension: the
+        # legacy `transcripts` index declares knn_vector WITHOUT a method, so an
+        # ANN query there is rejected 400 with a message containing
+        # `search_phase_execution_exception` — which `_is_index_corruption_error`
+        # matches. Probing it would report a healthy index as corrupt and
+        # rebuild it on every tick.
+        if _client._supports_ann_search(index_name):
+            probe = _client.probe_knn_health(index_name)
+            if probe.is_serviceable:
+                logger.info(f"kNN health check passed: {index_name} ({probe.status})")
+                continue
+            if not probe.is_corrupt:
+                logger.warning(
+                    f"kNN health check inconclusive for {index_name}: "
+                    f"{probe.status} ({probe.detail})"
+                )
+                continue
+
+            logger.error(f"Index {index_name} has a corrupted vector plane: {probe.detail}")
+            if _repair_index(index_name):
+                repaired.append(index_name)
+            else:
+                logger.error(f"Index {index_name} could not be repaired automatically")
+            continue
+
         try:
             _client.opensearch_client.search(
                 index=index_name, body={"query": {"match_all": {}}, "size": 0}

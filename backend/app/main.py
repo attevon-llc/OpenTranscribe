@@ -348,8 +348,8 @@ def _clear_stale_task_state():
         # Auto-labeling
         "auto_label_lock:*",
         "auto_label_progress:*",
-        # Search and data integrity
-        "search_maintenance_lock",
+        # Search and data integrity (TaskLockManager-based, like system.health_check)
+        "search_index_maintenance",
         "data_integrity_running",
         # Embedding tasks
         "normalize_embeddings_lock",
@@ -382,10 +382,23 @@ async def _run_startup_recovery():
 
 
 async def _run_search_maintenance():
-    """Schedule search index maintenance after a delay."""
+    """Schedule search index maintenance after a delay, once per boot window.
+
+    Elected like ``opensearch_repair_indices`` below, and for the same reason:
+    this dispatch fans out one reindex coordinator per user against the shared
+    ``transcript_chunks`` index, and two overlapping passes have already
+    corrupted three reindexes in one day (root CLAUDE.md). Back-to-back stack
+    recreations — and, in dev, an ordinary hot reload on every ``app/**.py``
+    save — are exactly the window ``run_once_per_boot`` closes.
+    """
     try:
         await asyncio.sleep(30)
         from app.tasks.search_maintenance_task import search_index_maintenance_task
+        from app.utils.boot_once import run_once_per_boot
+
+        if not run_once_per_boot("search_index_maintenance_dispatch"):
+            logger.info("Search index maintenance already dispatched this boot window; skipping")
+            return
 
         result = search_index_maintenance_task.delay()
         logger.info(f"Search index maintenance task scheduled: {result.id}")
@@ -754,12 +767,17 @@ async def lifespan(app: FastAPI):
         from app.services.opensearch_service import check_and_repair_indices
         from app.services.opensearch_service import ensure_indices_exist
         from app.services.opensearch_service import ensure_v4_index_exists
+        from app.services.search.index_health import check_and_repair_chunks_index
         from app.utils.boot_once import run_once_per_boot
 
         ensure_indices_exist()
         ensure_v4_index_exists()
         if run_once_per_boot("opensearch_repair_indices"):
             check_and_repair_indices()
+            # The chunk plane's health lives one layer up, in services/search —
+            # its repair needs the reindex coordinator, and importing that from
+            # opensearch_service forms a package cycle (issue #540).
+            check_and_repair_chunks_index()
     except Exception as e:
         logger.warning(f"OpenSearch startup health check failed (non-fatal): {e}")
 

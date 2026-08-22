@@ -1445,7 +1445,14 @@ def get_neural_search_status(
         space; reporting it there would imply the repair had addressed it. Only a
         reindex does, and this is the endpoint an operator reads before deciding
         to run one.
+
+        Also carries ``chunks_index_knn`` — a real kNN query against the index,
+        not a configuration read. Every other field here can report perfect
+        health while the vector segments are corrupt and *every* semantic query
+        answers 503, because they describe the pipeline, the model registry and a
+        ``terms`` aggregation, none of which touch the HNSW graph (issue #540).
     """
+    from app.services.opensearch_service import probe_knn_health_cached
     from app.services.search.embedding_provenance import survey_embedding_models
     from app.services.search.indexing_service import is_neural_pipeline_available
     from app.services.search.ml_model_service import get_ml_model_service
@@ -1463,6 +1470,8 @@ def get_neural_search_status(
         if active_model_name and active_model_name in OPENSEARCH_EMBEDDING_MODELS:
             active_model_info = OPENSEARCH_EMBEDDING_MODELS[active_model_name]
 
+    knn_probe = probe_knn_health_cached(settings.OPENSEARCH_CHUNKS_INDEX)
+
     return {
         "neural_enabled": settings.OPENSEARCH_NEURAL_SEARCH_ENABLED,
         "neural_pipeline_available": is_neural_pipeline_available(),
@@ -1471,4 +1480,11 @@ def get_neural_search_status(
         "active_model_dimension": active_model_info["dimension"] if active_model_info else None,
         "pipeline_name": settings.OPENSEARCH_NEURAL_PIPELINE,
         "embedding_provenance": provenance_payload(survey_embedding_models()),
+        "chunks_index_knn": {
+            "index": settings.OPENSEARCH_CHUNKS_INDEX,
+            "status": knn_probe.status,
+            "healthy": knn_probe.is_serviceable,
+            "detail": knn_probe.detail,
+            "latency_ms": knn_probe.latency_ms,
+        },
     }

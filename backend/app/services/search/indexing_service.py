@@ -40,6 +40,13 @@ _neural_pipeline_available = False
 #     bump could carry all of them in ONE reindex.
 _INDEX_VERSION = digest_mapping.TARGET_INDEX_VERSION
 
+#: Read alias in front of ``OPENSEARCH_CHUNKS_INDEX``. Named once because its
+#: creation and teardown are duplicated across ``ensure_chunks_index_exists`` and
+#: ``recreate_index_for_dimension`` and must stay in sync — and the corruption
+#: repair in ``opensearch_service/repair.py`` is now a third site that has to
+#: tear it down before deleting the index behind it.
+CHUNKS_ALIAS_NAME = "transcript_search"
+
 
 @dataclass(frozen=True)
 class AdditiveMappingStep:
@@ -504,7 +511,7 @@ def ensure_chunks_index_exists() -> bool:
         logger.info(f"Created transcript chunks index: {index_name} (version={_INDEX_VERSION})")
 
         # Create alias
-        alias_name = "transcript_search"
+        alias_name = CHUNKS_ALIAS_NAME
         if not opensearch_client.indices.exists_alias(name=alias_name):
             opensearch_client.indices.put_alias(index=index_name, name=alias_name)
             logger.info(f"Created alias {alias_name} -> {index_name}")
@@ -555,7 +562,7 @@ def recreate_index_for_dimension(dimension: int) -> bool:
             )
 
             # Remove alias first if it exists
-            alias_name = "transcript_search"
+            alias_name = CHUNKS_ALIAS_NAME
             try:
                 if opensearch_client.indices.exists_alias(name=alias_name):
                     opensearch_client.indices.delete_alias(index=index_name, name=alias_name)
@@ -572,7 +579,7 @@ def recreate_index_for_dimension(dimension: int) -> bool:
         logger.info(f"Created index {index_name} with dimension {dimension}")
 
         # Recreate alias
-        alias_name = "transcript_search"
+        alias_name = CHUNKS_ALIAS_NAME
         opensearch_client.indices.put_alias(index=index_name, name=alias_name)
         logger.info(f"Created alias {alias_name} -> {index_name}")
 

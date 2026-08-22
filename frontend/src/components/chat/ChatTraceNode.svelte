@@ -55,31 +55,38 @@
 >
   <div class="trace-row">
     <span class="trace-marker {markerClass(node.outcome)}" aria-hidden="true"></span>
-    <span class="trace-label">{$t(stageLabelKey(node.labelStage ?? node.stage))}</span>
+    <!-- The marker sits OUTSIDE the wrapping box on purpose. A row carrying
+         three badges plus a count overflows at this width, and with the marker
+         inside the same wrap context the overflow landed hard against the left
+         edge, under the marker, reading as a stray line rather than as a
+         continuation of the row above it. -->
+    <span class="trace-content">
+      <span class="trace-label">{$t(stageLabelKey(node.labelStage ?? node.stage))}</span>
 
-    {#if subject}
-      <span class="trace-badge trace-badge--subject">{$t(subject)}</span>
-    {/if}
+      {#if subject}
+        <span class="trace-badge trace-badge--subject">{$t(subject)}</span>
+      {/if}
 
-    {#if source}
-      <span class="trace-badge trace-badge--source">{$t(source)}</span>
-    {/if}
+      {#if source}
+        <span class="trace-badge trace-badge--source">{$t(source)}</span>
+      {/if}
 
-    <span class="trace-badge trace-badge--outcome" data-testid="trace-outcome">
-      {$t(outcomeLabelKey(node.outcome))}
+      <span class="trace-badge trace-badge--outcome" data-testid="trace-outcome">
+        {$t(outcomeLabelKey(node.outcome))}
+      </span>
+
+      {#each chips as chip (chip.key)}
+        <span class="trace-chip">{$t(chip.key, chip.params)}</span>
+      {/each}
+
+      {#if reason}
+        <span class="trace-reason">{reason}</span>
+      {/if}
+
+      {#if timing}
+        <span class="trace-ms">{$t(timing.key, timing.params)}</span>
+      {/if}
     </span>
-
-    {#each chips as chip (chip.key)}
-      <span class="trace-chip">{$t(chip.key, chip.params)}</span>
-    {/each}
-
-    {#if reason}
-      <span class="trace-reason">{reason}</span>
-    {/if}
-
-    {#if timing}
-      <span class="trace-ms">{$t(timing.key, timing.params)}</span>
-    {/if}
   </div>
 
   {#if node.children.length}
@@ -105,9 +112,20 @@
     display: flex;
     align-items: baseline;
     gap: 0.4rem;
-    flex-wrap: wrap;
     font-size: 0.78rem;
     line-height: 1.6;
+  }
+
+  /* The wrapping box. `min-width: 0` is load-bearing: a flex item defaults to
+     `min-width: auto`, so without it a long row pushes past the panel instead
+     of wrapping inside it. */
+  .trace-content {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    flex: 1;
+    min-width: 0;
   }
 
   .trace-marker {

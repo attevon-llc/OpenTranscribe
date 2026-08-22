@@ -511,8 +511,14 @@ def test_unique_speaker_names_are_returned_in_a_stable_order(run_in_clean_proces
         "re-indexing an unchanged file writes a different OpenSearch document "
         "(issue #433's class of bug)"
     )
-    # `ast.literal_eval`, not `eval` — same parse, no `# noqa: S307` needed. The
-    # suppression is avoidable here, so per this repo's rule it is not taken.
+    # `ast.literal_eval`, not `eval` — same parse, and no S307 suppression
+    # needed. It is avoidable here, so per this repo's rule it is not taken.
+    #
+    # Written without the literal directive spelling on purpose: ruff scans the
+    # text of EVERY comment for one, so prose describing a suppression parsed as
+    # a malformed one and printed `Invalid # noqa directive` on every run of the
+    # whole repo — permanent noise from a comment whose point is that nothing is
+    # suppressed here.
     returned = ast.literal_eval(first.strip())
 
     # Two controls, because the equality above can hold trivially:

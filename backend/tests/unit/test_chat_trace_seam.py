@@ -136,13 +136,33 @@ def test_every_stage_in_the_documented_workflow_exists():
         "submitted",
         "validated",
         "parsed_names",
+        "rewritten",
+        "cache_lookup",
         "planned",
         "fanned_relational",
         "fanned_vector",
         "found",
-        "filtered",
         "reranked",
+        "sampled",
+        "expanded",
+        "filtered",
+        "budgeted",
         "reviewed",
         "presented",
     }
     assert {s.value for s in QueryStage} == expected
+
+
+def test_a_configured_limit_is_carryable_but_content_still_is_not():
+    """``limit`` carries a CONFIGURED bound, never anything derived from content.
+
+    It exists so "48 -> 12, max 4 per file" and "9 of 12 excerpts fit" are
+    reportable. The paired negative is the point: widening the allowlist for a
+    number must not widen it for a string that happens to sit beside one.
+    """
+    rec = ListTraceRecorder()
+    emit(rec, QueryStage.SAMPLED, kept=12, dropped=36, limit=4, title="Q3 Board Review")
+
+    recorded = rec.events[0].detail
+    assert recorded == {"kept": 12, "dropped": 36, "limit": 4}
+    assert "title" not in recorded, "an identifying key must still be scrubbed"

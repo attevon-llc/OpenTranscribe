@@ -85,7 +85,6 @@ from app.services.opensearch_service.speaker_write import add_speaker_embedding
 from app.services.opensearch_service.speaker_write import add_speaker_embedding_v4
 from app.services.opensearch_service.speaker_write import bulk_add_speaker_embeddings_v4
 from app.services.opensearch_service.transcripts import index_transcript
-from app.services.opensearch_service.transcripts import search_transcripts
 from app.services.opensearch_service.transcripts import update_transcript_title
 
 
@@ -158,7 +157,6 @@ __all__ = [
     "rebuild_speaker_index",
     "remove_profile_embedding",
     "remove_speaker_embedding",
-    "search_transcripts",
     "settings",
     "store_cluster_embedding",
     "store_profile_embedding",

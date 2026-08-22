@@ -1,13 +1,47 @@
-"""Transcript document indexing and full-text search."""
+"""Write path for the ``transcripts`` index — one full-document row per media file.
+
+**This module WRITES; it does not search** (issue #542). It carried a
+``search_transcripts`` that had zero callers anywhere in the tree, and whose
+``use_semantic`` branch — defaulting to **True** — built an ANN ``knn`` query that
+could never have succeeded:
+
+* ``transcripts.embedding`` is mapped ``knn_vector`` with **no ``method`` block**, so
+  the field has no HNSW graph. Measured live:
+  ``400 … Field 'embedding' is not built for ANN search``.
+* No document carries an ``embedding`` at all — ``index_transcript`` omits the field
+  when it is ``None``, and every caller passes ``None``.
+* On any embedding failure it fell back to a **zero vector**, which ``cosinesimil``
+  rejects outright.
+
+It survived because a **different** function with the same name — the real HTTP
+endpoint in ``api/endpoints/search.py`` — is live and heavily used, so grepping the
+name found working code one directory away. It was deleted rather than repaired: the
+capability was already provided elsewhere (``files/filtering.py`` builds its own
+keyword query against this index for the gallery filter), so keeping a second,
+broken implementation bought nothing.
+
+Dead, but not harmless while it lasted: the 400 carries the literal string
+``search_phase_execution_exception``, which ``_is_index_corruption_error`` matches, so
+the first cut of the #540 kNN health probe classified this index as **corrupt**.
+
+Who still uses this index — it is very much alive:
+
+* written here on every transcription (``tasks/transcription/{postprocess,background}``,
+  ``tasks/search_indexing_task``) and retitled from ``files/crud``;
+* read directly by ``api/endpoints/files/filtering.py`` (the gallery's
+  transcript-content filter), ``opensearch_service/speaker_metadata.py``, the
+  integrity task and ``file_cleanup_service``.
+
+**Semantic retrieval is `transcript_chunks`**, through
+``services/search/hybrid_search_service.py``. The vestigial ``embedding`` field in
+this index's mapping should go on the next index version bump.
+"""
 
 import datetime
 import logging
-from typing import Any
 
 from app.core.config import settings
-from app.core.constants import SENTENCE_TRANSFORMER_DIMENSION
 from app.services.opensearch_service import client as _client
-from app.services.opensearch_service.client import _get_sentence_transformer
 from app.services.opensearch_service.indices import ensure_indices_exist
 
 logger = logging.getLogger(__name__)
@@ -113,139 +147,3 @@ def update_transcript_title(file_uuid: str, new_title: str):
             )
         else:
             logger.error(f"Error updating transcript title for file {file_uuid}: {e}")
-
-
-def search_transcripts(  # noqa: C901
-    query: str,
-    user_id: int,
-    speaker: str | None = None,
-    tags: list[str] | None = None,
-    limit: int = 10,
-    use_semantic: bool = True,
-) -> list[dict[str, Any]]:
-    """
-    Search for transcripts matching the query
-
-    Args:
-        query: Search query text
-        user_id: ID of the user performing the search
-        speaker: Optional speaker name to filter by
-        tags: Optional list of tags to filter by
-        limit: Maximum number of results to return
-        use_semantic: Whether to use semantic (vector) search in addition to text search
-
-    Returns:
-        List of matching documents
-    """
-    # Return empty results when OpenSearch is disabled or unavailable
-    if not settings.OPENSEARCH_ENABLED:
-        logger.debug("OpenSearch is disabled, returning empty search results")
-        return []
-    if not _client.opensearch_client:
-        logger.debug("OpenSearch client not initialized, returning empty search results")
-        return []
-
-    try:
-        # Build the search query
-        must_conditions: list[dict[str, Any]] = [
-            {"term": {"user_id": user_id}}  # Restrict to user's files
-        ]
-
-        # Add full-text search
-        if query:
-            must_conditions.append({"match": {"content": {"query": query, "fuzziness": "AUTO"}}})
-
-        # Add speaker filter if specified
-        if speaker:
-            must_conditions.append({"term": {"speakers": speaker}})
-
-        # Add tags filter if specified
-        if tags and len(tags) > 0:
-            must_conditions.append({"terms": {"tags": tags}})
-
-        # Construct basic search
-        search_body = {
-            "query": {"bool": {"must": must_conditions}},
-            "size": limit,
-            "_source": [
-                "file_id",
-                "file_uuid",
-                "title",
-                "content",
-                "speakers",
-                "tags",
-                "upload_time",
-            ],
-            "highlight": {
-                "fields": {
-                    "content": {
-                        "pre_tags": ["<em>"],
-                        "post_tags": ["</em>"],
-                        "fragment_size": 150,
-                    }
-                }
-            },
-        }
-
-        # Add semantic search if requested
-        if use_semantic and query:
-            # Compute the query embedding using sentence-transformers
-            try:
-                embedding_model = _get_sentence_transformer()
-
-                # Generate embedding for the query
-                query_embedding = embedding_model.encode(query, normalize_embeddings=True).tolist()
-                logger.info(f"Generated embedding for query: {query[:30]}...")
-            except ImportError:
-                logger.warning(
-                    "sentence-transformers package not installed, using fallback embedding"
-                )
-                # Fallback to zero vector
-                query_embedding = [0.0] * SENTENCE_TRANSFORMER_DIMENSION
-            except Exception as e:
-                logger.warning(f"Error generating query embedding: {e}")
-                # Fallback to zero vector
-                query_embedding = [0.0] * SENTENCE_TRANSFORMER_DIMENSION
-
-            # Add kNN query
-            knn_query: dict[str, Any] = {
-                "knn": {"embedding": {"vector": query_embedding, "k": limit}}
-            }
-
-            # Combine text search with vector search
-            search_body_query = search_body["query"]
-            if isinstance(search_body_query, dict) and "bool" in search_body_query:
-                search_body_query["bool"]["should"] = [knn_query]
-
-        # Execute search
-        response = _client.opensearch_client.search(
-            index=settings.OPENSEARCH_TRANSCRIPT_INDEX, body=search_body
-        )
-
-        # Process results
-        results = []
-        for hit in response["hits"]["hits"]:
-            source = hit["_source"]
-            result = {
-                "file_id": source["file_id"],
-                "file_uuid": source.get("file_uuid"),
-                "title": source["title"],
-                "speakers": source["speakers"],
-                "upload_time": source["upload_time"],
-            }
-
-            # Add highlighted snippet if available
-            if "highlight" in hit and "content" in hit["highlight"]:
-                result["snippet"] = "...".join(hit["highlight"]["content"])
-            else:
-                # Fallback to first part of content
-                content = source.get("content", "")
-                result["snippet"] = content[:150] + "..." if len(content) > 150 else content
-
-            results.append(result)
-
-        return results
-
-    except Exception as e:
-        logger.error(f"Error searching transcripts: {e}")
-        return []

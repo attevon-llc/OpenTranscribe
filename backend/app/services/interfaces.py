@@ -76,10 +76,16 @@ class StorageService(Protocol):
 
 
 class SearchService(Protocol):
-    """Interface for transcript indexing and full-text search.
+    """Interface for transcript indexing.
 
-    Mirrors the module-level functions ``index_transcript`` and
-    ``search_transcripts`` in ``opensearch_service.py``.
+    Mirrors the module-level functions in ``opensearch_service``.
+
+    It declared a ``search_transcripts`` member until #542. Nothing implemented it
+    usefully: the only implementation searched the legacy full-document index and had
+    a semantic branch the mapping could not serve, and it had zero callers. A Protocol
+    member that no implementation can honour advertises a capability at the seam that
+    does not exist, so it went with the function. Transcript SEARCH is the chunk plane
+    (``services/search/hybrid_search_service.py``), which this Protocol does not model.
     """
 
     def index_transcript(
@@ -94,18 +100,6 @@ class SearchService(Protocol):
         embedding: list[float] | None = None,
     ) -> None:
         """Index a transcript for full-text and optional vector search."""
-        ...
-
-    def search_transcripts(
-        self,
-        query: str,
-        user_id: int,
-        speaker: str | None = None,
-        tags: list[str] | None = None,
-        limit: int = 10,
-        use_semantic: bool = True,
-    ) -> list[dict[str, Any]]:
-        """Search indexed transcripts and return matching documents."""
         ...
 
     def remove_speaker_embedding(self, speaker_uuid: str) -> bool:

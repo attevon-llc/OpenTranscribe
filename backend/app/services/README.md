@@ -553,8 +553,10 @@ Manages full-text search, indexing, and search analytics for transcripts and fil
 def index_transcript(file_id: int, user_id: int, full_transcript: str, speaker_names: List[str], file_title: str) -> None:
     """Index transcript for full-text search."""
 
-def search_transcripts(user_id: int, query: str, filters: dict = None) -> List[Dict]:
-    """Search across user's transcripts."""
+# NOTE: there is deliberately NO search function here (#542). The one that existed
+# had zero callers and a semantic branch this index cannot serve. Transcript SEARCH is
+# `services/search/hybrid_search_service.py` over `transcript_chunks`; the gallery's
+# keyword filter builds its own query in `api/endpoints/files/filtering.py`.
 
 def add_speaker_embedding(speaker_id: int, embedding_vector: List[float]) -> None:
     """Store speaker voice embedding for similarity search."""

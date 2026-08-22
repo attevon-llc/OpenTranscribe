@@ -19,6 +19,7 @@ the same *answer*:
 from __future__ import annotations
 
 import dataclasses
+from types import SimpleNamespace
 
 import pytest
 
@@ -379,3 +380,97 @@ def test_every_emitted_node_names_itself(monkeypatch, no_cache):
     assert recorder.events, "precondition: the run recorded something to inspect"
     anonymous = [e.stage.value for e in recorder.events if e.node_id is None]
     assert not anonymous, f"stages emitted with no node_id: {sorted(set(anonymous))}"
+
+
+# ---------------------------------------------------------------------------
+# The counted tier: three outcomes, and DECLINED is not EMPTY
+# ---------------------------------------------------------------------------
+
+
+class _Counted:
+    """Stand-in for an `AggregationResult`."""
+
+    def __init__(self, count=0, declined=None):
+        self.count = count
+        self.coverage = {"declined": declined} if declined else {}
+
+    def as_metadata(self):
+        return {"count": self.count, "coverage": self.coverage}
+
+
+def _run_counted(monkeypatch, counted):
+    """Drive the SERIAL counted tier and return what it recorded."""
+    from app.services.chat import service as chat_service
+
+    recorder = ListTraceRecorder()
+    monkeypatch.setattr(chat_service, "retrieve_context", lambda **_k: RetrievalResult())
+    monkeypatch.setattr(
+        "app.services.chat.aggregation_service.answer_aggregation", lambda *a, **k: counted
+    )
+    monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: object())
+    decision = SimpleNamespace(
+        wants_aggregate=True, wants_digest=False, wants_recurrence=False, intent="aggregate"
+    )
+    chat_service._run_serial_pipeline(
+        question="how many meetings discussed the migration",
+        effective_query="how many meetings discussed the migration",
+        decision=decision,
+        user_id=1,
+        organization_id=None,
+        file_uuids=None,
+        speakers=None,
+        speaker_focus_names=[],
+        settings=_settings(),
+        search_mode="hybrid",
+        session_scope=None,
+        settings_config=SimpleNamespace(OPENSEARCH_CHUNKS_INDEX="transcript_chunks"),
+        meta={},
+        recorder=recorder,
+    )
+    return {e.node_id: e for e in recorder.events if e.stage is QueryStage.FOUND}
+
+
+def test_a_refused_counted_shape_is_declined_not_empty(monkeypatch):
+    """A mechanism that REFUSED is not a mechanism that counted zero.
+
+    Every counted shape declines rather than guessing, because a number from the
+    wrong mechanism is indistinguishable from a number from the right one. If
+    the panel showed a refusal as `empty`, it would report "we counted, and the
+    answer is none" for a question nothing ever counted.
+    """
+    declined = _run_counted(
+        monkeypatch,
+        _Counted(count=0, declined="talk-time stats need a bounded set of recordings"),
+    )["counted"]
+
+    assert declined.outcome is Outcome.DECLINED
+    assert declined.detail["reason"] == "unsupported_shape"
+
+
+def test_a_counted_shape_that_genuinely_found_none_is_empty(monkeypatch):
+    """The opposite outcome, so DECLINED cannot be always-on."""
+    empty = _run_counted(monkeypatch, _Counted(count=0))["counted"]
+
+    assert empty.outcome is Outcome.EMPTY
+    assert empty.detail["count"] == 0
+    assert "reason" not in empty.detail
+
+
+def test_a_counted_shape_with_a_real_number_reports_it(monkeypatch):
+    found = _run_counted(monkeypatch, _Counted(count=7))["counted"]
+
+    assert found.outcome is Outcome.OK
+    assert found.detail["count"] == 7
+
+
+def test_the_declined_prose_never_reaches_a_trace_node(monkeypatch):
+    """`coverage["declined"]` is free ENGLISH, and `reason` is a closed vocabulary.
+
+    Forwarding it would put an unbounded sentence into a field the UI renders
+    and the scrub cannot validate.
+    """
+    prose = "talk-time stats need a bounded set of recordings, not the whole library"
+    events = _run_counted(monkeypatch, _Counted(count=0, declined=prose))
+
+    assert events, "precondition: the counted tier recorded something"
+    assert prose not in str(events["counted"].detail)

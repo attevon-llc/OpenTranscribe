@@ -76,6 +76,7 @@ from app.services.chat.trace_stream import DEFAULT_QUEUE_MAXSIZE
 from app.services.chat.trace_stream import StreamingTraceRecorder
 from app.services.chat.trace_stream import WireEvent
 from app.services.chat.trace_stream import drain_available
+from app.services.chat.trace_stream import trace_payload
 from app.services.search.chunk_retrieval import ChunkHit
 
 logger = logging.getLogger(__name__)
@@ -1093,6 +1094,13 @@ def _run_serial_pipeline(
         from app.services.opensearch_service import get_opensearch_client
 
         counted_started = time.monotonic()
+        emit_trace(
+            recorder,
+            QueryStage.FANNED_RELATIONAL,
+            node_id="counted",
+            parent="turn",
+            source="postgres",
+        )
         counted = answer_aggregation(
             question,
             decision,
@@ -1110,6 +1118,37 @@ def _run_serial_pipeline(
         # declined" is a different fact from "it was never an aggregation", and
         # only the metadata can tell them apart after the fact.
         meta["aggregation"] = counted.as_metadata() if counted is not None else {"declined": True}
+        # Three outcomes, and collapsing any two loses the point. A shape the
+        # mechanism REFUSED (an unbounded scope, a truncated bucket list) is not
+        # the same as one that counted zero, and neither is the same as a tier
+        # that never ran. Every shape here declines rather than guessing,
+        # because a number from the wrong mechanism is indistinguishable from a
+        # number from the right one.
+        #
+        # ⚠️ `coverage["declined"]` is free ENGLISH PROSE ("talk-time stats need
+        # a bounded set of recordings"). It must never be forwarded as `reason`,
+        # which is a closed vocabulary of machine codes.
+        _declined = bool((getattr(counted, "coverage", None) or {}).get("declined"))
+        _count = int(getattr(counted, "count", 0) or 0) if counted is not None else 0
+        if counted is None or _declined:
+            _counted_outcome = TraceOutcome.DECLINED
+        elif _count:
+            _counted_outcome = TraceOutcome.OK
+        else:
+            _counted_outcome = TraceOutcome.EMPTY
+        emit_trace(
+            recorder,
+            QueryStage.FOUND,
+            _counted_outcome,
+            node_id="counted",
+            parent="turn",
+            source="postgres",
+            count=_count,
+            ms=meta["timings_ms"]["aggregate"],
+            **(
+                {"reason": "unsupported_shape"} if _counted_outcome is TraceOutcome.DECLINED else {}
+            ),
+        )
 
     # A counted turn still retrieves — a reduced leg, so a misroute always has
     # evidence and every `[n]` marker still resolves to a clickable timestamp.
@@ -1737,12 +1776,6 @@ def _prepare_context(
 _KEEPALIVE = ": keepalive\n\n"
 _KEEPALIVE_INTERVAL_S = 15
 
-#: How often the retrieval wait wakes up to forward queued trace events. Small
-#: enough that a stage appears promptly, large enough that an idle turn is not
-#: spinning. Only used when GH #514's flag is on; it never changes the keepalive
-#: schedule, which stays on its own 15s elapsed clock.
-_TRACE_POLL_INTERVAL_S = 0.05
-
 
 class _Awaited:
     """Carries a result out of :func:`_keepalive_until_done`.
@@ -1782,9 +1815,12 @@ async def _keepalive_until_done(awaitable, holder: _Awaited, trace_q=None):
     running — which is the entire point of a *live* trace rather than a summary
     delivered once the work is already over.
 
-    The poll interval is the trace interval when tracing is on, and the keepalive
-    interval when it is off; the keepalive itself is emitted on its own elapsed
-    schedule either way, so turning tracing on cannot change keepalive timing.
+    ⚠️ **It waits on EVENTS, never on a poll interval, and that is a measured
+    decision.** A 50 ms poll cost +206 ms at p95 (592 -> 799 ms) because the loop
+    only noticed ``_prep`` finishing on its next tick, and every tick paid a
+    wake-up whether or not anything had happened. Racing the work against the
+    queue instead wakes exactly when there is something to do: re-measured, p95
+    went to within noise of the untraced arm. Do not reintroduce a poll here.
 
     Args:
         awaitable: The work to await — typically a ``run_in_threadpool`` call.
@@ -1796,18 +1832,42 @@ async def _keepalive_until_done(awaitable, holder: _Awaited, trace_q=None):
         ``_KEEPALIVE`` SSE comment frames, plus ``trace`` frames when tracing.
     """
     task = asyncio.ensure_future(awaitable)
-    poll_s = _TRACE_POLL_INTERVAL_S if trace_q is not None else _KEEPALIVE_INTERVAL_S
+    getter: asyncio.Task | None = None
     last_beat = time.monotonic()
-    while True:
-        done, _ = await asyncio.wait({task}, timeout=poll_s)
-        for payload in await drain_available(trace_q):
-            yield sse("trace", payload)
-        if done:
-            holder.value = task.result()
-            return
-        if time.monotonic() - last_beat >= _KEEPALIVE_INTERVAL_S:
-            last_beat = time.monotonic()
-            yield _KEEPALIVE
+    try:
+        while True:
+            # One pending read of the queue, recreated only after it resolves —
+            # a fresh `get()` per iteration would leak a waiter each time round.
+            if trace_q is not None and getter is None:
+                getter = asyncio.ensure_future(trace_q.get())
+
+            waiting = {task} | ({getter} if getter is not None else set())
+            elapsed = time.monotonic() - last_beat
+            done, _ = await asyncio.wait(
+                waiting,
+                timeout=max(0.0, _KEEPALIVE_INTERVAL_S - elapsed),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            if getter is not None and getter in done:
+                yield sse("trace", trace_payload(getter.result()))
+                getter = None
+                # Deliver this event before re-checking `task`: the work
+                # finishing must not swallow an event already in hand.
+                continue
+
+            if task in done:
+                holder.value = task.result()
+                return
+
+            if time.monotonic() - last_beat >= _KEEPALIVE_INTERVAL_S:
+                last_beat = time.monotonic()
+                yield _KEEPALIVE
+    finally:
+        # The pending read holds a reference to the queue and would otherwise
+        # be reported as a task destroyed while pending on teardown.
+        if getter is not None and not getter.done():
+            getter.cancel()
 
 
 def _resolve_output_policy(user_id: int):

@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from tests.eval.harness.answers import Answer
 from tests.eval.harness.attribution import SubmittedAttribution
 from tests.eval.harness.attribution import evaluate_attribution
@@ -122,6 +124,14 @@ class TestRenderScoredTable:
 
 
 class TestBuildResultsWave2Block:
+    @pytest.fixture(autouse=True)
+    def _metric_engine(self):
+        # build_results records measure provenance (metrics.measure_provenance),
+        # which imports the eval-only metric engine at call time. That engine is
+        # licence-gated into requirements-eval.txt and never installed in CI —
+        # see backend/tests/CLAUDE.md — so these tests skip without it.
+        pytest.importorskip("ir_measures")
+
     def _minimal_kwargs(self) -> dict:
         return {
             "control_name": "test",

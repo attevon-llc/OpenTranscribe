@@ -9,6 +9,7 @@ no MinIO. ``.delay()`` never reaches a real broker (autouse session fixture, con
 from __future__ import annotations
 
 import io
+import os
 import uuid
 from unittest.mock import patch
 
@@ -17,6 +18,10 @@ from fastapi import status
 
 from app.core.security import get_password_hash
 from app.models.document import Document
+
+# The download endpoint presigns against the real object store, so these two
+# tests need a reachable MinIO — same gate as test_files_upload.py.
+S3_LIVE = os.environ.get("SKIP_S3", "True").lower() != "true"
 from app.models.document import DocumentChunk
 from app.models.user import User
 
@@ -286,6 +291,7 @@ def test_get_document_chunks_404_for_someone_else_s_document(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not S3_LIVE, reason="download URL presigns against MinIO (SKIP_S3=False)")
 def test_get_document_download_url_defaults_to_inline(
     client, user_token_headers, normal_user, db_session
 ):
@@ -300,6 +306,7 @@ def test_get_document_download_url_defaults_to_inline(
     assert "response-content-disposition" not in body["url"]
 
 
+@pytest.mark.skipif(not S3_LIVE, reason="download URL presigns against MinIO (SKIP_S3=False)")
 def test_get_document_download_url_with_download_forces_attachment(
     client, user_token_headers, normal_user, db_session
 ):

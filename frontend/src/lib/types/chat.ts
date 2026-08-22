@@ -259,6 +259,15 @@ export interface ChatMessage {
    * undefined for messages loaded from history — there is no live timing to
    * replay, only the persisted text.
    */
+  /**
+   * GH #514. The query-execution trace for this turn, folded from `trace`
+   * frames. CLIENT-ONLY and deliberately not persisted: a typical trace is
+   * 1.5-2.5 KB against a whole message row of ~1.5 KB, so storing it would
+   * roughly double every conversation-load payload for diagnostics shown one
+   * turn at a time. A message loaded from history therefore has none, which is
+   * exactly the "traces are not stored" state the panel renders.
+   */
+  trace?: TraceState;
   reasoningStreaming?: boolean;
   reasoningStartedAt?: number;
   reasoningDurationMs?: number;
@@ -424,6 +433,13 @@ export type ChatWarningCode =
  * ORs the document plane into the SAME chunk query rather than running a second
  * leg, so a separate node would misreport what actually ran.
  */
+// `TraceState` is owned by `$lib/chat/traceTree`, which owns the fold logic.
+// A type-only import is erased at compile time, so the mutual reference between
+// these two modules is not a runtime cycle — and one definition cannot drift
+// from a copy.
+import type { TraceState } from '$lib/chat/traceTree';
+export type { TraceState };
+
 export type TraceStage =
   | 'submitted'
   | 'validated'
@@ -529,7 +545,17 @@ export type ChatStreamEvent =
       total_tokens: number;
       estimated: boolean;
     }
-  | { type: 'done'; finish_reason: string; title?: string }
+  | {
+      type: 'done';
+      finish_reason: string;
+      title?: string;
+      /**
+       * GH #514. The recorder dropped events. Carried here rather than as a
+       * stage because truncation describes the WHOLE trace, and inventing a
+       * stage for it would make the vocabulary describe the transport.
+       */
+      trace_truncated?: boolean;
+    }
   | { type: 'error'; code: ChatErrorCode; message: string };
 
 /** Where the composer/thread is in the send lifecycle. */

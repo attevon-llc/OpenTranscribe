@@ -17,6 +17,7 @@ import { generateId } from '$lib/utils/ids';
 import * as chatApi from '$lib/api/chatApi';
 import { canTransition } from '$lib/utils/chatStateMachine';
 import { streamChatMessage, streamEditMessage, streamRegenerate } from '$lib/api/chatStream';
+import { foldTraceFrame, markTruncated } from '$lib/chat/traceTree';
 import {
   emptyScope,
   type ChatMessage,
@@ -257,6 +258,18 @@ function createChatStore() {
         break;
       }
 
+      case 'trace':
+        // GH #514. `foldTraceFrame` returns a NEW state and never mutates a
+        // node, which is what lets Svelte see the change: mutating in place
+        // under a spread-only update re-renders inconsistently.
+        update((s) => ({
+          ...s,
+          messages: s.messages.map((m) =>
+            m.uuid === s.streamingMessageId ? { ...m, trace: foldTraceFrame(m.trace, event) } : m
+          ),
+        }));
+        break;
+
       case 'reasoning':
         update((s) => ({
           ...s,
@@ -337,8 +350,19 @@ function createChatStore() {
             // clear the pending flag in that case — rewriting status to
             // 'complete' would erase the error text AND the Retry button,
             // leaving a blank bubble with no explanation.
+            // GH #514: truncation is a property of the WHOLE trace, so it
+            // rides `done` rather than being invented as a stage. Widening
+            // QueryStage for it would make the vocabulary describe the
+            // transport instead of the pipeline.
+            const trace = event.trace_truncated ? markTruncated(m.trace) : m.trace;
             if (m.status === 'error' || m.status === 'cancelled') {
-              return { ...m, pending: false, reasoningStreaming: false, reasoningDurationMs };
+              return {
+                ...m,
+                pending: false,
+                reasoningStreaming: false,
+                reasoningDurationMs,
+                trace,
+              };
             }
             return {
               ...m,
@@ -346,6 +370,7 @@ function createChatStore() {
               status: 'complete',
               reasoningStreaming: false,
               reasoningDurationMs,
+              trace,
             };
           }),
           // The server names a conversation from its first question.

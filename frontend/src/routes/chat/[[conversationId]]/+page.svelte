@@ -32,6 +32,7 @@
   import ChatContextBar from '$components/chat/ChatContextBar.svelte';
   import ChatEmptyState from '$components/chat/ChatEmptyState.svelte';
   import ChatControlsPanel from '$components/chat/ChatControlsPanel.svelte';
+  import ChatTracePanel from '$components/chat/ChatTracePanel.svelte';
   import FilePickerModal from '$components/chat/FilePickerModal.svelte';
   import TokenUsagePanel from '$components/chat/TokenUsagePanel.svelte';
   import LargeSelectionWarningModal from '$components/chat/LargeSelectionWarningModal.svelte';
@@ -44,6 +45,30 @@
   let composerValue = '';
   let pickerOpen = false;
   let controlsOpen = false;
+
+  // GH #514. Collapsed by default — an inspector, not a distraction — and the
+  // choice persists. Same inline try/catch shape as `RetrievalQualityNotice`,
+  // and like it this is a UI preference, so `clearUserState` deliberately does
+  // not clear it.
+  const TRACE_OPEN_KEY = 'opentr:chat:tracePanelOpen';
+  let traceOpen = false;
+  let traceReady = false;
+
+  function readTraceOpen(): boolean {
+    try {
+      return localStorage.getItem(TRACE_OPEN_KEY) === 'open';
+    } catch {
+      return false;
+    }
+  }
+
+  function persistTraceOpen(value: boolean): void {
+    try {
+      localStorage.setItem(TRACE_OPEN_KEY, value ? 'open' : 'closed');
+    } catch {
+      // Private browsing / quota. A lost preference is not worth an error.
+    }
+  }
   let sidebarOpen = false;
   let lastLoadedId: string | null = null;
   let gearEl: HTMLButtonElement;
@@ -56,7 +81,18 @@
   $: llmAvailable = $llmStatusStore.available;
   $: state = $chatStore;
   $: hasMessages = state.messages.length > 0;
+
+  // The panel always tracks the LATEST assistant turn, matching every other live
+  // indicator on this page. Keyed on the message id rather than recomputed from
+  // the array on every store update: during a stream that runs once per delta
+  // frame, i.e. hundreds of O(n) scans per answer.
+  $: latestAssistant = [...state.messages].reverse().find((m) => m.role === 'assistant');
+  $: latestTrace = latestAssistant?.trace;
+  $: latestTurnId = latestAssistant?.uuid ?? null;
+  $: traceFailedEarly = latestAssistant?.status === 'error' && !latestTrace;
   $: settings = state.activeConversation?.settings ?? state.draftSettings;
+  $: if (traceReady) persistTraceOpen(traceOpen);
+
   $: isStreaming = ['submitting', 'retrieving', 'thinking', 'streaming'].includes(
     state.streamStatus
   );
@@ -83,6 +119,10 @@
   onMount(() => {
     chatStore.loadConversations(true);
     loadProjects();
+    // Read BEFORE enabling persistence, or mounting writes the default back
+    // over whatever the user chose last time.
+    traceOpen = readTraceOpen();
+    traceReady = true;
 
     // Mirror the 900px breakpoint the layout uses. Below it the sidebar is an
     // off-screen drawer; above it, a normal column that must stay reachable.
@@ -413,6 +453,37 @@
           </button>
         {/if}
 
+        {#if hasMessages}
+          <button
+            type="button"
+            class="gear trace-toggle"
+            on:click={() => (traceOpen = !traceOpen)}
+            aria-label={$t('chat.trace.toggleLabel')}
+            aria-expanded={traceOpen}
+            title={$t('chat.trace.toggleLabel')}
+            data-testid="chat-trace-toggle"
+          >
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <circle cx="6" cy="5" r="2" />
+              <circle cx="18" cy="12" r="2" />
+              <circle cx="6" cy="19" r="2" />
+              <path d="M6 7v10" />
+              <path d="M6 12h10" />
+            </svg>
+            {#if isStreaming && latestTrace}
+              <span class="trace-live-dot" aria-hidden="true"></span>
+            {/if}
+          </button>
+        {/if}
+
         <button
           type="button"
           class="gear"
@@ -447,6 +518,18 @@
           on:change={handleControlsChange}
           on:model={(e) => handleModelChange(e.detail)}
           on:close={() => (controlsOpen = false)}
+        />
+
+        <!-- Rendered from the header, but `position: fixed` takes it out of the
+             grid entirely so opening it cannot reflow the answer column. -->
+        <ChatTracePanel
+          open={traceOpen}
+          trace={latestTrace}
+          streaming={isStreaming}
+          turnId={latestTurnId}
+          failedEarly={traceFailedEarly}
+          contextOff={!state.useContext}
+          on:close={() => (traceOpen = false)}
         />
       </header>
 
@@ -667,6 +750,23 @@
     justify-content: center;
     height: 60vh;
     color: var(--text-secondary);
+  }
+
+  /* Scoped to this button rather than added to `.gear`: `ChatControlsPanel`
+     positions itself against the HEADER, and making every gear a containing
+     block would move it. */
+  .trace-toggle {
+    position: relative;
+  }
+
+  .trace-live-dot {
+    position: absolute;
+    top: 0.28rem;
+    right: 0.28rem;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--primary-color);
   }
 
   .sidebar-scrim {

@@ -5163,6 +5163,7 @@
   "chat.trace.detail.keptOfDropped": "оставлено: {{kept}} · отброшено: {{dropped}}",
   "chat.trace.detail.legs": "ветвей: {{count}}",
   "chat.trace.detail.perFile": "не более {{limit}}/файл",
+  "chat.trace.detail.widened": "расширено: {{count}} из {{kept}}",
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "Трассировка запроса",

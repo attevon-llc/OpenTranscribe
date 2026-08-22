@@ -5163,6 +5163,7 @@
   "chat.trace.detail.keptOfDropped": "{{kept}} kept · {{dropped}} dropped",
   "chat.trace.detail.legs": "{{count}} legs",
   "chat.trace.detail.perFile": "max {{limit}}/file",
+  "chat.trace.detail.widened": "{{count}} of {{kept}} widened",
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "Query trace",

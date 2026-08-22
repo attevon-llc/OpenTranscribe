@@ -5163,6 +5163,7 @@
   "chat.trace.detail.keptOfDropped": "{{kept}} محفوظة · {{dropped}} مستبعدة",
   "chat.trace.detail.legs": "{{count}} فروع",
   "chat.trace.detail.perFile": "بحد أقصى {{limit}}/ملف",
+  "chat.trace.detail.widened": "تم توسيع {{count}} من {{kept}}",
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "تتبُّع الاستعلام",

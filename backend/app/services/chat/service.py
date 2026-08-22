@@ -1335,6 +1335,40 @@ def _build_mask_kwargs(llm: Any, settings: Any) -> dict[str, bool]:
     return kwargs
 
 
+def _emit_expansion(recorder, masked: list, *, enabled: bool) -> None:
+    """Report read-time context expansion (#523) on the trace.
+
+    It runs INSIDE ``mask_chunks``, so the count is only knowable after masking
+    returns — hence a helper called from there rather than an emit beside the
+    other narrowing stages.
+
+    ``chat.context_expansion_enabled`` is default-OFF, and a stage that did not
+    run still reports ``SKIPPED`` rather than vanishing: an absent row reads as
+    "not part of this pipeline", which is precisely the ambiguity the panel
+    exists to remove. ``chunk.expanded`` counts chunks whose own time range was
+    widened; the rest were already long enough to keep as they were.
+    """
+    if not enabled:
+        emit_trace(
+            recorder,
+            QueryStage.EXPANDED,
+            TraceOutcome.SKIPPED,
+            node_id="expansion",
+            reason="disabled",
+        )
+        return
+
+    widened = sum(1 for chunk in masked if chunk.expanded)
+    emit_trace(
+        recorder,
+        QueryStage.EXPANDED,
+        TraceOutcome.OK if widened else TraceOutcome.EMPTY,
+        node_id="expansion",
+        count=widened,
+        kept=len(masked),
+    )
+
+
 def _overview_citation_start(settings, digest_masked: list, masked: list) -> int | None:
     """#532 arm (a): the id base for citable overview entries, or ``None`` (off).
 
@@ -1576,6 +1610,8 @@ def _prepare_context(
     digest_masked: list[MaskedChunk] = []
     summaries: list[Any] = []
     masked = mask_chunks(session_scope, result.chunks, user_id, **_mask_kwargs)
+
+    _emit_expansion(recorder, masked, enabled="expand_short_chunks" in _mask_kwargs)
 
     if result.digests:
         # A SEPARATE masking call, not an overload. A digest is

@@ -5163,6 +5163,7 @@
   "chat.trace.detail.keptOfDropped": "{{kept}}건 유지 · {{dropped}}건 제외",
   "chat.trace.detail.legs": "{{count}}개 분기",
   "chat.trace.detail.perFile": "파일당 최대 {{limit}}건",
+  "chat.trace.detail.widened": "{{kept}}건 중 {{count}}건 확장",
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "쿼리 추적",

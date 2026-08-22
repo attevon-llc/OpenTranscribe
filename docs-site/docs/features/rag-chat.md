@@ -146,6 +146,7 @@ it took:
 ● Search         chunk plane   48 found       214ms
 ● Reranked       12                            91ms
 ● Sampled        12 kept · 36 dropped · max 4/file
+– Expanded       disabled
 ● Filtered       masking       12 kept · 0 dropped
 ● Budgeted       12 kept · 0 dropped
 ● Answered       12 excerpts

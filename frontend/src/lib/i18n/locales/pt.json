@@ -5163,6 +5163,7 @@
   "chat.trace.detail.keptOfDropped": "{{kept}} mantidos · {{dropped}} descartados",
   "chat.trace.detail.legs": "{{count}} ramos",
   "chat.trace.detail.perFile": "máx. {{limit}}/arquivo",
+  "chat.trace.detail.widened": "{{count}} de {{kept}} ampliados",
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "Rastro da consulta",

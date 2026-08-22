@@ -5163,6 +5163,7 @@
   "chat.trace.detail.keptOfDropped": "{{kept}} mantenuti · {{dropped}} scartati",
   "chat.trace.detail.legs": "{{count}} rami",
   "chat.trace.detail.perFile": "max {{limit}}/file",
+  "chat.trace.detail.widened": "{{count}} di {{kept}} ampliati",
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "Traccia della query",

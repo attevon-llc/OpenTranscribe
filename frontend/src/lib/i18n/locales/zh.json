@@ -5163,6 +5163,7 @@
   "chat.trace.detail.keptOfDropped": "保留 {{kept}} 条 · 丢弃 {{dropped}} 条",
   "chat.trace.detail.legs": "{{count}} 个分支",
   "chat.trace.detail.perFile": "每文件最多 {{limit}} 条",
+  "chat.trace.detail.widened": "{{kept}} 条中扩展 {{count}} 条",
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "查询轨迹",

@@ -67,6 +67,17 @@ export function detailChips(node: TraceNode): DetailChip[] {
 
   if (outcome === 'skipped') return chips;
 
+  // Expansion reports "how many of the surviving chunks were widened", which
+  // the generic kept/count pair renders as "12 kept · 4 found" — two numbers
+  // that describe neither thing. One chip, in the stage's own words.
+  if (node.stage === 'expanded' && detail.count !== undefined && detail.kept !== undefined) {
+    chips.push({
+      key: 'chat.trace.detail.widened',
+      params: { count: detail.count, kept: detail.kept },
+    });
+    return chips;
+  }
+
   if (detail.kept !== undefined && detail.dropped !== undefined) {
     chips.push({
       key: 'chat.trace.detail.keptOfDropped',

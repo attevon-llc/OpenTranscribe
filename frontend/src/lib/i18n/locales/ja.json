@@ -5163,6 +5163,7 @@
   "chat.trace.detail.keptOfDropped": "{{kept}} 件保持 · {{dropped}} 件除外",
   "chat.trace.detail.legs": "{{count}} 分岐",
   "chat.trace.detail.perFile": "ファイルあたり最大 {{limit}} 件",
+  "chat.trace.detail.widened": "{{kept}} 件中 {{count}} 件を拡張",
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "クエリトレース",

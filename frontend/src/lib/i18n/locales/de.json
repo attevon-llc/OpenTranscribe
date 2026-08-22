@@ -5163,6 +5163,7 @@
   "chat.trace.detail.keptOfDropped": "{{kept}} behalten · {{dropped}} verworfen",
   "chat.trace.detail.legs": "{{count}} Zweige",
   "chat.trace.detail.perFile": "max. {{limit}}/Datei",
+  "chat.trace.detail.widened": "{{count}} von {{kept}} erweitert",
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "Abfrageverlauf",

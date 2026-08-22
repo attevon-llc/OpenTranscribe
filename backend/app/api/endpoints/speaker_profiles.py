@@ -114,7 +114,11 @@ def list_speaker_profiles(
             row.profile_id: (row.media_count, row.instance_count) for row in count_rows
         }
 
-        # Batch query: most common gender per profile using window function (1 query)
+        # Batch query: most common gender per profile using window function (1 query).
+        #
+        # This is the DERIVED gender — a majority vote over the profile's member
+        # speakers. It is the fallback, not the answer: a gender the user explicitly
+        # CONFIRMED on the profile wins (see the COALESCE below, issue #543).
         gender_subq = (
             db.query(
                 Speaker.profile_id,
@@ -171,7 +175,23 @@ def list_speaker_profiles(
                     "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
                     "instance_count": instance_count,
                     "media_count": media_count,
-                    "predicted_gender": gender_by_profile.get(profile_id),
+                    # A CONFIRMED gender wins over the derived majority (#543).
+                    #
+                    # `SpeakerProfile.predicted_gender` had exactly one writer
+                    # (`confirm_profile_gender`) and ZERO readers, so confirming a
+                    # gender persisted a column nothing ever looked at. On a profile
+                    # WITH members it appeared to work only because that same call
+                    # also bulk-sets every member, which moved the derived majority;
+                    # on a member-less profile the write was invisible everywhere and
+                    # the UI toggle could never light up.
+                    #
+                    # Behaviour-preserving for every profile that has ever been
+                    # confirmed: the confirm writes both, so the column and the
+                    # majority already agree (verified on live data). A profile that
+                    # was never confirmed has NULL here and still reports the derived
+                    # value — byte-identical to before.
+                    "predicted_gender": profile.predicted_gender
+                    or gender_by_profile.get(profile_id),
                     "avatar_url": avatar_url,
                     "is_shared": is_shared,
                     "owner_name": owner_names.get(int(profile.user_id)) if is_shared else None,

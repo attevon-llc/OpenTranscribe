@@ -87,7 +87,6 @@ class TestDeclaredSurface:
     def test_search_service_declares_exactly_these_methods(self):
         assert _protocol_method_names(SearchService) == {
             "index_transcript",
-            "search_transcripts",
             "remove_speaker_embedding",
         }
 
@@ -136,12 +135,6 @@ class TestSearchServiceMatchesOpenSearchModuleFunctions:
 
         assert _params(SearchService.index_transcript) == _params(index_transcript)
         assert _defaults(SearchService.index_transcript) == _defaults(index_transcript)
-
-    def test_search_transcripts_signature_matches(self):
-        from app.services.opensearch_service import search_transcripts
-
-        assert _params(SearchService.search_transcripts) == _params(search_transcripts)
-        assert _defaults(SearchService.search_transcripts) == _defaults(search_transcripts)
 
     def test_remove_speaker_embedding_signature_matches(self):
         from app.services.opensearch_service import remove_speaker_embedding

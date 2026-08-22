@@ -20,6 +20,7 @@ Run (visible on XRDP):
 """
 
 import os
+import uuid
 
 import pytest
 import requests
@@ -54,6 +55,78 @@ def api_session(backend_url: str) -> requests.Session:
     token = resp.json()["access_token"]
     session.headers.update({"Authorization": f"Bearer {token}"})
     return session
+
+
+@pytest.fixture(scope="session")
+def api_token(api_session: requests.Session) -> str:
+    """The bearer token behind ``api_session``, for helpers that take a raw token."""
+    return str(api_session.headers["Authorization"]).removeprefix("Bearer ")
+
+
+@pytest.fixture
+def owned_profile(api_session: requests.Session, backend_url: str):
+    """A speaker profile this test OWNS, deleted however the test ends.
+
+    The gender-confirm tests used to re-confirm an ambient profile's existing gender,
+    reasoning that re-sending the same value is a no-op. It is not:
+    ``confirm_profile_gender`` also runs an **unconditional bulk UPDATE** of every
+    linked ``Speaker`` row's ``predicted_gender`` and ``gender_confirmed_by_user``,
+    so any member that disagreed with the profile was silently coerced — across every
+    file that speaker appears in. Owning the profile makes the write unambiguous.
+
+    Yields:
+        The created profile's UUID.
+    """
+    # `name`/`description` are bare function params on the handler, so FastAPI treats
+    # them as QUERY parameters — a JSON body is silently ignored here.
+    resp = api_session.post(
+        f"{backend_url}/api/speaker-profiles/profiles",
+        params={"name": f"e2e-gender-{uuid.uuid4().hex[:8]}"},
+        timeout=15,
+    )
+    assert resp.status_code in (200, 201), f"Create profile failed: {resp.status_code} {resp.text}"
+    profile = resp.json()
+    profile_uuid = str(profile["uuid"])
+    try:
+        yield profile_uuid
+    finally:
+        # In a `finally`: a cleanup on the happy path is the one that does not run
+        # when the assertion above it fails.
+        try:
+            api_session.delete(
+                f"{backend_url}/api/speaker-profiles/profiles/{profile_uuid}", timeout=15
+            )
+        except requests.RequestException:
+            pass
+
+
+@pytest.fixture
+def owned_speaker(
+    owned_media_factory, api_token: str, api_session: requests.Session, backend_url: str
+):
+    """A diarized ``Speaker`` row belonging to a file this test uploaded.
+
+    A speaker only exists after real diarization, so this uploads the committed 10 s
+    clip and reads its speakers back. Deleting the file cascades its speakers
+    (``MediaFile.speakers`` is ``cascade="all, delete-orphan"``), so the file teardown
+    in ``owned_media_factory`` is the whole cleanup.
+
+    Read from ``GET /api/speakers?file_uuid=`` rather than the file detail's own
+    ``speakers`` array: that array is a display projection carrying only
+    ``profile_name`` / ``profile_status``, with no identifier to address a speaker by.
+
+    Returns:
+        The first speaker payload of the uploaded file.
+    """
+    media = owned_media_factory(api_token)
+    resp = api_session.get(
+        f"{backend_url}/api/speakers", params={"file_uuid": media["uuid"]}, timeout=30
+    )
+    assert resp.status_code == 200, f"Could not list speakers: {resp.text[:300]}"
+    payload = resp.json()
+    speakers = payload if isinstance(payload, list) else payload.get("items", [])
+    assert speakers, f"diarization produced no speakers for {media['uuid']}"
+    return dict(speakers[0])
 
 
 # ---------------------------------------------------------------------------
@@ -163,50 +236,103 @@ class TestGenderIconsOnMemberRows:
 class TestProfileGenderConfirmation:
     """Verify gender confirm buttons on profile cards."""
 
-    def test_profiles_tab_has_gender_buttons(self, authenticated_page: Page, base_url: str):
-        """Navigate to profiles tab and verify gender toggle buttons exist."""
-        authenticated_page.goto(f"{base_url}/speakers")
-        authenticated_page.wait_for_load_state("networkidle")
-        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
-        profiles_tab = authenticated_page.locator("button:has-text('Profiles')")
-        if profiles_tab.count() == 0:
-            pytest.skip("No profiles tab found")
+    def test_profiles_tab_has_gender_buttons(
+        self, owned_profile: str, authenticated_page: Page, base_url: str
+    ):
+        """Navigate to profiles tab and verify gender toggle buttons exist.
 
+        Takes ``owned_profile`` so there is guaranteed to be a card to look at. It
+        previously skipped on "No profiles found" — and did, on this stack, despite a
+        real profile existing: ``.profile-card`` was queried with ``count()``, which
+        does **not** wait, so it read the DOM before the profiles tab had rendered.
+        A test that skips whenever it is early asserts nothing and reports success.
+        """
+        authenticated_page.goto(f"{base_url}/speakers")
+        # `loadProfiles()` prefers a single-use prefetch cache that may predate the
+        # profile created above; one reload guarantees a live `listProfiles()`.
+        authenticated_page.reload()
+        authenticated_page.wait_for_load_state("networkidle")
+
+        profiles_tab = authenticated_page.locator("button:has-text('Profiles')")
+        expect(profiles_tab).to_be_visible(timeout=10000)
         profiles_tab.click()
-        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
-        profile_cards = authenticated_page.locator(".profile-card")
-        if profile_cards.count() == 0:
-            pytest.skip("No profiles found")
+
+        # expect() polls; count() does not. That difference is the whole bug above.
+        cards = authenticated_page.locator(".profile-card")
+        expect(cards.first).to_be_visible(timeout=10000)
 
         gender_btns = authenticated_page.locator(".gender-toggle-btn")
-        assert gender_btns.count() >= 2, "Expected at least 2 gender toggle buttons"
-        expect(gender_btns.first).to_be_visible()
+        expect(gender_btns.first).to_be_visible(timeout=10000)
+        assert gender_btns.count() >= 2, "Expected male and female toggles on a profile card"
 
-    def test_click_gender_confirm_updates_state(self, authenticated_page: Page, base_url: str):
-        """Click a gender confirm button and verify state updates."""
+    def test_click_gender_confirm_updates_state(
+        self,
+        owned_profile: str,
+        owned_speaker: dict,
+        api_session: requests.Session,
+        authenticated_page: Page,
+        base_url: str,
+        backend_url: str,
+    ):
+        """Click the gender toggle on a profile this test created and see it stick.
+
+        The Profiles tab's ``.gender-toggle-btn`` is **profile**-level, so it drives the
+        same bulk-update endpoint as the API test above — it was never the no-op the old
+        comment claimed. It also used to click whichever already-active button happened
+        to be on screen, and skip when none was, so on a stack with no confirmed profile
+        it asserted nothing at all.
+
+        ⚠️ The profile must have a MEMBER for the toggle to render active.
+        ``GET /speaker-profiles/profiles`` does not report
+        ``SpeakerProfile.predicted_gender`` at all — it reports the most common
+        ``predicted_gender`` among the profile's linked speakers. So confirming a gender
+        on a member-less profile persists to the column and is invisible everywhere the
+        UI looks. Filed separately; this test works with the read model as it is.
+        """
+        # Give the profile a member, so the derived gender has something to derive from.
+        assign = api_session.post(
+            f"{backend_url}/api/speaker-profiles/speakers/{owned_speaker['uuid']}/assign-profile",
+            params={"profile_uuid": owned_profile},
+            timeout=30,
+        )
+        assert assign.status_code == 200, f"could not assign speaker: {assign.text[:300]}"
+
+        seed = api_session.post(
+            f"{backend_url}/api/speaker-profiles/profiles/{owned_profile}/confirm-gender",
+            params={"gender": "female"},
+            timeout=10,
+        )
+        assert seed.status_code == 200, f"could not seed profile gender: {seed.text[:300]}"
+        assert seed.json()["updated_count"] == 1, "the member should have been bulk-updated"
+
+        listing = api_session.get(f"{backend_url}/api/speaker-profiles/profiles", timeout=10).json()
+        profile = next(p for p in listing if p["uuid"] == owned_profile)
+        assert profile["predicted_gender"] == "female", (
+            "the API must report the gender before the UI can render it as active"
+        )
+        name = profile["name"]
+
         authenticated_page.goto(f"{base_url}/speakers")
+        # `loadProfiles()` serves `apiCache.get('speakers:profiles')` in preference to a
+        # live fetch, and that prefetch may predate the profile just created above — in
+        # which case the card never renders and the assertion below fails against
+        # correct code. The cache is single-use (`invalidate` immediately after read),
+        # so one reload guarantees the second load calls `listProfiles()` for real.
+        authenticated_page.reload()
         authenticated_page.wait_for_load_state("networkidle")
-        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         profiles_tab = authenticated_page.locator("button:has-text('Profiles')")
-        if profiles_tab.count() == 0:
-            pytest.skip("No profiles tab found")
-
+        expect(profiles_tab).to_be_visible(timeout=10000)
         profiles_tab.click()
-        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
-        gender_btns = authenticated_page.locator(".gender-toggle-btn")
-        if gender_btns.count() == 0:
-            pytest.skip("No gender buttons found")
 
-        # E2E must NOT mutate dev data: only re-click an ALREADY-active gender
-        # button (re-confirms the same gender — no net change). Real mutation
-        # is covered by tests/test_speaker_gender_confirm.py.
-        active_btns = authenticated_page.locator(".gender-toggle-btn.active")
-        if active_btns.count() == 0:
-            pytest.skip("No confirmed-gender profile — mutation covered by unit tests")
+        # Scope to OUR card by name, so the click cannot land on someone else's profile.
+        card = authenticated_page.locator(".profile-card", has_text=name)
+        expect(card).to_be_visible(timeout=10000)
 
-        active_btns.first.click()
-        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
-        expect(authenticated_page.locator(".gender-toggle-btn.active").first).to_be_visible()
+        active = card.locator(".gender-toggle-btn.active")
+        expect(active.first).to_be_visible(timeout=10000)
+        active.first.click()
+
+        expect(card.locator(".gender-toggle-btn.active").first).to_be_visible()
 
 
 # ---------------------------------------------------------------------------
@@ -257,90 +383,73 @@ class TestSpeakerClustersAPI:
             assert "gender_confidence" in member
             assert "gender_confirmed_by_user" in member
 
-    def test_confirm_speaker_gender_endpoint(self, api_session: requests.Session, backend_url: str):
-        """POST /speakers/{uuid}/confirm-gender sets gender."""
-        resp = api_session.get(f"{backend_url}/api/speaker-clusters", timeout=10)
-        data = resp.json()
-        if data.get("total", 0) == 0:
-            pytest.skip("No clusters exist")
+    def test_confirm_speaker_gender_endpoint(
+        self, owned_speaker: dict, api_session: requests.Session, backend_url: str
+    ):
+        """POST /speakers/{uuid}/confirm-gender sets gender on a speaker we own.
 
-        cluster_uuid = data["items"][0]["uuid"]
-        detail_resp = api_session.get(
-            f"{backend_url}/api/speaker-clusters/{cluster_uuid}", timeout=10
-        )
-        members = detail_resp.json().get("members", [])
-        if not members:
-            pytest.skip("No members in cluster")
-
-        # E2E must NOT mutate dev data (it drifts the speakers visual
-        # baselines). Only re-confirm a member that is ALREADY confirmed with
-        # its existing gender — a no-op write. Mutation behavior is covered by
-        # tests/test_speaker_gender_confirm.py (savepoint-rolled-back).
-        confirmed = [
-            m
-            for m in members
-            if m.get("gender_confirmed_by_user") and m.get("predicted_gender") in ("male", "female")
-        ]
-        if not confirmed:
-            pytest.skip("No already-confirmed member — mutation covered by unit tests")
-
-        speaker_uuid = confirmed[0]["speaker_uuid"]
-        gender = confirmed[0]["predicted_gender"]
+        This used to re-confirm an ambient cluster member's existing gender and call
+        that a no-op. Even where the write really is value-preserving, it is a write to
+        somebody's real row — and it skipped entirely when no confirmed member existed,
+        so whether it tested anything depended on the state of the dev library.
+        Owning the speaker means the assertion is unconditional and the value can
+        actually be *changed*, which is what the endpoint is for.
+        """
+        speaker_uuid = owned_speaker["uuid"]
 
         confirm_resp = api_session.post(
-            f"{backend_url}/api/speakers/{speaker_uuid}/confirm-gender?gender={gender}",
+            f"{backend_url}/api/speakers/{speaker_uuid}/confirm-gender?gender=female",
+            timeout=10,
+        )
+        assert confirm_resp.status_code == 200, f"confirm-gender failed: {confirm_resp.text[:300]}"
+        result = confirm_resp.json()
+        assert result["predicted_gender"] == "female"
+        assert result["gender_confirmed_by_user"] is True
+
+        # The opposite value, so "always returns what you sent" cannot pass.
+        confirm_resp = api_session.post(
+            f"{backend_url}/api/speakers/{speaker_uuid}/confirm-gender?gender=male",
             timeout=10,
         )
         assert confirm_resp.status_code == 200
-        result = confirm_resp.json()
-        assert result["predicted_gender"] == gender
-        assert result["gender_confirmed_by_user"] is True
+        assert confirm_resp.json()["predicted_gender"] == "male"
 
-    def test_confirm_speaker_gender_invalid(self, api_session: requests.Session, backend_url: str):
-        """POST /speakers/{uuid}/confirm-gender rejects invalid gender."""
-        resp = api_session.get(f"{backend_url}/api/speaker-clusters", timeout=10)
-        data = resp.json()
-        if data.get("total", 0) == 0:
-            pytest.skip("No clusters exist")
+    def test_confirm_speaker_gender_invalid(
+        self, owned_speaker: dict, api_session: requests.Session, backend_url: str
+    ):
+        """POST /speakers/{uuid}/confirm-gender rejects an invalid gender.
 
-        cluster_uuid = data["items"][0]["uuid"]
-        detail_resp = api_session.get(
-            f"{backend_url}/api/speaker-clusters/{cluster_uuid}", timeout=10
-        )
-        members = detail_resp.json().get("members", [])
-        if not members:
-            pytest.skip("No members in cluster")
-
-        speaker_uuid = members[0]["speaker_uuid"]
-
+        Validation is refused before any write, so this could not corrupt an ambient
+        speaker — but it previously *skipped* whenever the dev library held no
+        clusters, meaning it provided no coverage on a fresh stack. Using the owned
+        speaker makes it unconditional.
+        """
         bad_resp = api_session.post(
-            f"{backend_url}/api/speakers/{speaker_uuid}/confirm-gender?gender=invalid",
+            f"{backend_url}/api/speakers/{owned_speaker['uuid']}/confirm-gender?gender=invalid",
             timeout=10,
         )
         assert bad_resp.status_code == 400
 
-    def test_confirm_profile_gender_endpoint(self, api_session: requests.Session, backend_url: str):
+    def test_confirm_profile_gender_endpoint(
+        self, owned_profile: str, api_session: requests.Session, backend_url: str
+    ):
         """POST /speaker-profiles/profiles/{uuid}/confirm-gender bulk-updates.
 
-        E2E must NOT mutate dev data — only re-confirm a profile's EXISTING
-        gender (no-op write). See tests/test_speaker_gender_confirm.py for
-        the mutating coverage.
+        Acts on a profile this test created. The previous version re-confirmed an
+        ambient profile's existing gender and described that as a no-op write — but the
+        handler *also* bulk-updates every linked ``Speaker``'s ``predicted_gender`` and
+        ``gender_confirmed_by_user`` unconditionally, so it was never a no-op for the
+        members. ``updated_count`` is asserted here rather than merely present, which is
+        what makes the fan-out visible at all.
         """
-        resp = api_session.get(f"{backend_url}/api/speaker-profiles/profiles", timeout=10)
-        assert resp.status_code == 200
-        profiles = resp.json()
-        confirmed = [p for p in profiles if p.get("predicted_gender") in ("male", "female")]
-        if not confirmed:
-            pytest.skip("No profile with a set gender — mutation covered by unit tests")
-
-        profile_uuid = confirmed[0]["uuid"]
-        gender = confirmed[0]["predicted_gender"]
-
         confirm_resp = api_session.post(
-            f"{backend_url}/api/speaker-profiles/profiles/{profile_uuid}/confirm-gender?gender={gender}",
+            f"{backend_url}/api/speaker-profiles/profiles/{owned_profile}/confirm-gender",
+            params={"gender": "female"},
             timeout=10,
         )
-        assert confirm_resp.status_code == 200
+        assert confirm_resp.status_code == 200, f"confirm failed: {confirm_resp.text[:300]}"
         result = confirm_resp.json()
-        assert result["predicted_gender"] == gender
-        assert "updated_count" in result
+        assert result["predicted_gender"] == "female"
+        # A freshly created profile has no members, so the bulk UPDATE must touch
+        # nothing. On an ambient profile this number was never checked at all.
+        assert result["updated_count"] == 0

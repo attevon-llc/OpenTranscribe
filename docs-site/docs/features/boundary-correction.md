@@ -55,7 +55,14 @@ The acoustic re-check listens to the disputed word again and reassigns it to the
 
 Boundary smoothing fixes wrong-speaker islands. It is:
 
-- **On by default** — it shipped after validation showed a **32% reduction in word-speaker error rate (WSER)** on a hand-labeled podcast clip, with **no regression** on the AMI meeting benchmark (diarization error rate unchanged).
+- **On by default** — and it matters *more* under the current diarizer, not less. Measured on the same hand-labeled podcast clip, per diarization backend:
+
+  | Diarizer | WSER off | WSER on | Reduction | Bleed islands |
+  |---|---|---|---|---|
+  | `diar-native` (speakrs) — **the default** | 0.01152 | 0.00266 | **−76.9%** | 13 → 3 |
+  | PyAnnote (the documented failover) | 0.00932 | 0.00621 | −33.3% | 7 → 1 |
+
+  The original 32% figure described PyAnnote, which was the default when smoothing shipped. Re-derived against speakrs for issue #520: speakrs' *raw* boundaries are noisier (more short bleed islands), and the smoother removes them very effectively — so the smoothed result is **better** than PyAnnote's even though the unsmoothed one is worse. Turning smoothing off costs roughly three times as much now as it did then. No regression on the AMI meeting benchmark (diarization error rate unchanged).
 - **Fast and pure-CPU** — it only inspects the per-word speaker labels and timings. It never touches the audio or loads a model, so it adds negligible time.
 - **Conservative** — it only collapses a short run (1–3 words by default) when it is flanked on *both* sides by genuine, longer runs of the *same* other speaker, and there is *no real pause* at either seam. A pause is treated as evidence of a true turn and left alone.
 

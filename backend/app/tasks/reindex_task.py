@@ -2,6 +2,7 @@
 
 import contextlib
 import logging
+from contextlib import AbstractContextManager
 from typing import Any
 from uuid import uuid4
 
@@ -16,6 +17,17 @@ from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
+
+#: How long one holder may own the chunks-index structure lock. Sized to the
+#: guarded work (a delete + create + alias swap), NOT to a whole reindex — a TTL
+#: long enough to cover hours of bulk indexing is also long enough to freeze
+#: every other owner if the holder dies.
+INDEX_STRUCTURE_LOCK_TIMEOUT_SECONDS = 60
+
+#: How long a coordinator waits for that lock before proceeding without the
+#: structural check. Bounded so a stuck holder delays a reindex rather than
+#: failing it.
+INDEX_STRUCTURE_LOCK_WAIT_SECONDS = 30
 
 
 def _resolve_reindex_speaker_name(row: Any) -> str:
@@ -312,6 +324,33 @@ def _periodic_refresh(files_since_refresh: int) -> int:
         logger.warning(f"Periodic index refresh failed: {e}")
 
     return 0
+
+
+def _index_structure_lock() -> "AbstractContextManager[bool]":
+    """Mutual exclusion over structural changes to the shared chunks index.
+
+    ``reindex_lock:{user_id}`` serialises coordinators **per owner**, which is
+    correct for the data-copy phase and useless for the structure phase: the
+    index is one shared object, and both ``_check_and_recreate_stale_index`` and
+    ``recreate_index_for_dimension`` can delete it. Two owners' coordinators
+    starting together could therefore have one delete the index out from under
+    the other's freshly created one.
+
+    Blocking, but briefly. The guarded calls are no-ops unless a genuine
+    recreate is due, so waiting is cheap in the common case; a caller that gives
+    up still indexes its own files (additive, always safe) and the next pass
+    re-checks the structure.
+
+    Returns:
+        Context manager yielding True when the lock is held.
+    """
+    from app.utils.task_lock import task_lock_manager
+
+    return task_lock_manager.acquire_lock(
+        f"opensearch_index_structure_lock:{settings.OPENSEARCH_CHUNKS_INDEX}",
+        timeout=INDEX_STRUCTURE_LOCK_TIMEOUT_SECONDS,
+        blocking_timeout=INDEX_STRUCTURE_LOCK_WAIT_SECONDS,
+    )
 
 
 def _check_and_recreate_stale_index() -> None:
@@ -681,19 +720,36 @@ def reindex_transcripts_task(
             _release_reindex_lock(redis_lock, user_id, task_id)
             return error
 
-    # Recreate stale index if schema version has changed
-    _check_and_recreate_stale_index()
+    # Structural reconciliation of the SHARED chunks index. `reindex_lock` is
+    # per-user, so N owners' coordinators reach these two calls concurrently —
+    # and both of them can DELETE and recreate the index. The scope is
+    # deliberately just this pair, not the whole coordinator: both are
+    # check-then-return no-ops in the common case (matching version, matching
+    # dimension), so the lock is held for milliseconds, and the expensive bulk
+    # re-embed below stays parallel across owners the way the fan-out intends.
+    with _index_structure_lock() as acquired:
+        if acquired:
+            # Recreate stale index if schema version has changed
+            _check_and_recreate_stale_index()
 
-    # Reconcile index dimension with settings (handles model switch via API
-    # where model_id is not passed to this task but is already saved to DB)
-    try:
-        from app.services.search.indexing_service import recreate_index_for_dimension
-        from app.services.search.settings_service import get_search_embedding_dimension
+            # Reconcile index dimension with settings (handles model switch via API
+            # where model_id is not passed to this task but is already saved to DB)
+            try:
+                from app.services.search.indexing_service import recreate_index_for_dimension
+                from app.services.search.settings_service import get_search_embedding_dimension
 
-        target_dim = get_search_embedding_dimension()
-        recreate_index_for_dimension(target_dim)
-    except Exception as e:
-        logger.warning(f"Dimension reconciliation failed: {e}")
+                target_dim = get_search_embedding_dimension()
+                recreate_index_for_dimension(target_dim)
+            except Exception as e:
+                logger.warning(f"Dimension reconciliation failed: {e}")
+        else:
+            # Another coordinator (or a corruption repair) is reconciling the
+            # same index right now. Indexing our own files is still correct and
+            # additive; the next run re-checks the structure.
+            logger.warning(
+                "Index structure lock busy; skipping stale-index/dimension reconciliation "
+                "for this run"
+            )
 
     # Ensure neural pipeline is ready AFTER index/dimension are reconciled,
     # so concurrent embedding queue tasks also use the correct model

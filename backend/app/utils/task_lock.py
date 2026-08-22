@@ -5,6 +5,7 @@ This module provides Redis-based distributed locking to prevent multiple
 instances of the same task from running simultaneously.
 """
 
+import functools
 import logging
 from contextlib import contextmanager
 
@@ -160,6 +161,11 @@ def with_task_lock(lock_key: str, timeout: int = 300):
     """
 
     def decorator(func):
+        # functools.wraps keeps __name__/__doc__/__wrapped__ intact. Without it
+        # every decorated task presents as "wrapper", which breaks Celery's
+        # implicit task naming for any caller that does not pass name= and hides
+        # the real docstring from introspection.
+        @functools.wraps(func)
         def wrapper(*args, **kwargs):
             with task_lock_manager.acquire_lock(lock_key, timeout=timeout) as acquired:
                 if acquired:

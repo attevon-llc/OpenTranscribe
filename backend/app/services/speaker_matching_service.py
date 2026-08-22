@@ -684,6 +684,25 @@ class SpeakerMatchingService:
                 organization_id=organization_id,
             )
 
+    def _linked_speaker_count(self, profile_id: int) -> int:
+        """Count the speakers currently assigned to *profile_id*.
+
+        This is the profile's embedding population, and therefore the weight its
+        stored centroid carries. It is queried rather than remembered so the
+        incremental update cannot drift from the number a full recalculation
+        would produce.
+
+        Args:
+            profile_id: Profile whose members to count.
+
+        Returns:
+            Number of ``Speaker`` rows pointing at the profile.
+        """
+        return (
+            self.db.query(func.count(Speaker.id)).filter(Speaker.profile_id == profile_id).scalar()
+            or 0
+        )
+
     def _handle_speaker_match(
         self,
         speaker: Speaker,
@@ -776,23 +795,40 @@ class SpeakerMatchingService:
                         .first()
                     )
                     if profile:
-                        # Weighted incremental average with existing profile embedding
+                        # Weighted incremental average with existing profile embedding.
+                        #
+                        # The count is DERIVED from the profile's linked speakers,
+                        # never read back from the column and incremented. The old
+                        # `count = profile.embedding_count; count += 1` grew
+                        # monotonically on every auto-accept, including re-matches of
+                        # a speaker already linked to this profile — which is what a
+                        # reprocess produces. Observed on the dev stack: a profile
+                        # reading `embedding_count = 7` against **3** linked speakers.
+                        # Because the blend weights the stored centroid by `count`,
+                        # an inflated count silently under-weights new voice evidence
+                        # (here by >2x) and the profile freezes. Deriving it also
+                        # makes this path converge on the authoritative definition in
+                        # `profile_embedding_service._process_profile_with_embeddings`
+                        # (`embedding_count = len(embeddings)`) instead of drifting
+                        # away from it until an admin runs a full recalculation.
                         existing = get_profile_embedding(str(profile.uuid))
-                        count = int(profile.embedding_count) if profile.embedding_count else 0
+                        linked_count = self._linked_speaker_count(int(profile.id))
+                        # `speaker.profile_id` was assigned and flushed above, so the
+                        # count already includes this speaker. The stored centroid
+                        # represents the others.
+                        prior_count = max(linked_count - 1, 0)
+                        count = max(linked_count, 1)
                         new_emb = aggregated_embedding.tolist()
-                        if existing and count > 0:
+                        if existing and prior_count > 0:
                             import numpy as np
 
                             old = np.array(existing)
                             added = np.array(new_emb)
-                            merged = (old * count + added) / (count + 1)
+                            merged = (old * prior_count + added) / (prior_count + 1)
                             norm = np.linalg.norm(merged)
                             if norm > 0:
                                 merged = merged / norm
                             new_emb = merged.tolist()
-                            count += 1
-                        else:
-                            count = max(count, 1)
                         store_profile_embedding(
                             profile_id=int(profile.id),
                             profile_uuid=str(profile.uuid),

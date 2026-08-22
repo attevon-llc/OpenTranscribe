@@ -111,7 +111,12 @@ def watch_source_names(backend_url: str):
         headers = {"Authorization": f"Bearer {token}"}
         listing = requests.get(f"{backend_url}/api/watch-sources", headers=headers, timeout=15)
         payload = listing.json() if listing.status_code == 200 else {}
-        sources = payload if isinstance(payload, list) else payload.get("items", [])
+        # The envelope key is ``sources`` (``WatchSourcesList``). This read ``items``,
+        # which is never present — so the sweep this fixture exists for iterated an
+        # empty list every run and reaped nothing, while its docstring promised it
+        # reaped rows from aborted runs. A cleanup that silently cleans nothing is
+        # worse than none: it is believed.
+        sources = payload if isinstance(payload, list) else payload.get("sources", [])
         for source in sources:
             if str(source.get("name", "")).startswith(SOURCE_PREFIX):
                 requests.delete(
@@ -283,3 +288,176 @@ class TestWatchSourcesPanel:
         card.first.get_by_role("button", name="Delete").click()
         app_page.locator(".modal-container").get_by_role("button", name="Delete").click()
         expect(app_page.locator(".source-card", has_text=name)).to_have_count(0, timeout=8000)
+
+
+def _create_local_source(page: Page, name: str) -> None:
+    """Walk the stepper to Save. The panel then lists a card for ``name``."""
+    page.get_by_role("button", name="Add Watch Source").click()
+    dialog = page.locator(".modal-container")
+    page.fill("#ws-name", name)
+    for _ in range(3):
+        nxt = dialog.get_by_role("button", name="Next", exact=True)
+        expect(nxt).to_be_enabled(timeout=5000)
+        nxt.click()
+        # See the note in test_create_and_delete_local_source: every step renders its
+        # own enabled "Next", so without a settle a step can be clicked twice.
+        page.wait_for_timeout(200)
+    dialog.get_by_role("button", name="Save", exact=True).click()
+    expect(page.locator(".source-card", has_text=name).first).to_be_visible(timeout=8000)
+
+
+class TestPerFileManagement:
+    """The #489 Files modal, driven through the real UI.
+
+    Everything here runs against a throwaway source created and deleted by the test, so
+    no pre-existing watch source is opened, filtered or mutated.
+    """
+
+    def test_files_modal_opens_and_reports_an_empty_history(
+        self, app_page: Page, require_local_watch: None, watch_source_names
+    ) -> None:
+        """A brand-new source has imported nothing, and must say so.
+
+        The empty state is the case a table most often gets wrong — an unstyled blank
+        area reads as a failed request rather than as "nothing here yet".
+        """
+        _open_watch_sources(app_page)
+        name = watch_source_names()
+        _create_local_source(app_page, name)
+        card = app_page.locator(".source-card", has_text=name).first
+
+        try:
+            card.get_by_role("button", name="Files").click()
+            dialog = app_page.locator(".modal-container")
+            expect(dialog.get_by_text("No files tracked yet")).to_be_visible(timeout=8000)
+            # The controls render even with nothing to filter — a source that has just
+            # been created is exactly when an operator goes looking.
+            expect(dialog.get_by_placeholder("Search by file name…")).to_be_visible()
+            dialog.get_by_role("button", name="Close").click()
+        finally:
+            card.get_by_role("button", name="Delete").click()
+            app_page.locator(".modal-container").get_by_role("button", name="Delete").click()
+            expect(app_page.locator(".source-card", has_text=name)).to_have_count(0, timeout=8000)
+
+    def test_status_filter_requeries_the_server(
+        self, app_page: Page, require_local_watch: None, watch_source_names
+    ) -> None:
+        """Choosing a status issues a new request rather than filtering in the browser.
+
+        Asserted on the wire, not on the rendered rows: with an empty history both
+        behaviours look identical on screen, so only the request distinguishes them.
+        """
+        _open_watch_sources(app_page)
+        name = watch_source_names()
+        _create_local_source(app_page, name)
+        card = app_page.locator(".source-card", has_text=name).first
+
+        try:
+            card.get_by_role("button", name="Files").click()
+            dialog = app_page.locator(".modal-container")
+            expect(dialog.get_by_text("No files tracked yet")).to_be_visible(timeout=8000)
+
+            with app_page.expect_request(
+                lambda r: "/files?" in r.url and "status=error" in r.url, timeout=8000
+            ):
+                dialog.locator("select").first.select_option("error")
+
+            dialog.get_by_role("button", name="Close").click()
+        finally:
+            card.get_by_role("button", name="Delete").click()
+            app_page.locator(".modal-container").get_by_role("button", name="Delete").click()
+            expect(app_page.locator(".source-card", has_text=name)).to_have_count(0, timeout=8000)
+
+    def test_search_box_requeries_the_server(
+        self, app_page: Page, require_local_watch: None, watch_source_names
+    ) -> None:
+        """Typing a name issues a debounced `q=` request — the filter is server-side."""
+        _open_watch_sources(app_page)
+        name = watch_source_names()
+        _create_local_source(app_page, name)
+        card = app_page.locator(".source-card", has_text=name).first
+
+        try:
+            card.get_by_role("button", name="Files").click()
+            dialog = app_page.locator(".modal-container")
+            expect(dialog.get_by_text("No files tracked yet")).to_be_visible(timeout=8000)
+
+            with app_page.expect_request(
+                lambda r: "/files?" in r.url and "q=board" in r.url, timeout=8000
+            ):
+                dialog.get_by_placeholder("Search by file name…").fill("board")
+
+            dialog.get_by_role("button", name="Close").click()
+        finally:
+            card.get_by_role("button", name="Delete").click()
+            app_page.locator(".modal-container").get_by_role("button", name="Delete").click()
+            expect(app_page.locator(".source-card", has_text=name)).to_have_count(0, timeout=8000)
+
+
+class TestPerSourceEmailLinks:
+    """The #490 Notifications panel.
+
+    Deliberately does NOT attach a deliverable configuration: a completed scan on a
+    source with a live link dispatches ``send_notification`` and would open a real
+    SMTP/Graph session against whatever host the config names.
+    """
+
+    def test_notifications_panel_opens_and_explains_the_per_scan_rule(
+        self, app_page: Page, require_local_watch: None, watch_source_names
+    ) -> None:
+        """The panel must state that the flags are per scan, not per file.
+
+        Without it an admin reasonably reads "notify on error" as per-file and concludes
+        notifications are broken when one mail arrives for a scan with three failures.
+        """
+        _open_watch_sources(app_page)
+        name = watch_source_names()
+        _create_local_source(app_page, name)
+        card = app_page.locator(".source-card", has_text=name).first
+
+        try:
+            card.get_by_role("button", name="Notifications").click()
+            dialog = app_page.locator(".modal-container")
+            expect(dialog.get_by_text("per scan", exact=False)).to_be_visible(timeout=8000)
+            expect(dialog.get_by_text("No email notifications for this source")).to_be_visible(
+                timeout=8000
+            )
+            dialog.get_by_role("button", name="Close").click()
+        finally:
+            card.get_by_role("button", name="Delete").click()
+            app_page.locator(".modal-container").get_by_role("button", name="Delete").click()
+            expect(app_page.locator(".source-card", has_text=name)).to_have_count(0, timeout=8000)
+
+    def test_panel_says_who_can_create_a_config_when_none_exist(
+        self, app_page: Page, require_local_watch: None, watch_source_names
+    ) -> None:
+        """With no configurations at all, the picker must not just be empty.
+
+        A source owner cannot create one, so a bare empty dropdown reads as a broken
+        page rather than as "an administrator has to do this first". Skips when the
+        deployment already has configurations, since then the state under test does not
+        exist.
+        """
+        _open_watch_sources(app_page)
+        name = watch_source_names()
+        _create_local_source(app_page, name)
+        card = app_page.locator(".source-card", has_text=name).first
+
+        try:
+            card.get_by_role("button", name="Notifications").click()
+            dialog = app_page.locator(".modal-container")
+            expect(dialog.get_by_text("No email notifications for this source")).to_be_visible(
+                timeout=8000
+            )
+
+            picker = dialog.locator("select")
+            if picker.count():
+                pytest.skip("this deployment already has email configurations")
+            expect(dialog.get_by_text("Ask an administrator", exact=False)).to_be_visible(
+                timeout=5000
+            )
+            dialog.get_by_role("button", name="Close").click()
+        finally:
+            card.get_by_role("button", name="Delete").click()
+            app_page.locator(".modal-container").get_by_role("button", name="Delete").click()
+            expect(app_page.locator(".source-card", has_text=name)).to_have_count(0, timeout=8000)

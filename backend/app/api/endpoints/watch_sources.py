@@ -365,7 +365,12 @@ def _email_to_response(cfg: EmailNotificationConfig) -> dict:
         # Deleting a config cascades its links away, silently un-notifying every
         # source that used it. Surfacing the count is what makes that consequence
         # visible at the moment of the decision rather than after the fact.
-        "linked_source_count": len(cfg.links),
+        #
+        # ``or []`` because this helper serialises whatever it is handed. A real ORM
+        # row always has a collection here, but its callers include test stands-in
+        # whose unset columns are ``None`` — and a response builder that raises on an
+        # empty column is a worse contract than one that reports zero.
+        "linked_source_count": len(cfg.links or []),
     }
 
 

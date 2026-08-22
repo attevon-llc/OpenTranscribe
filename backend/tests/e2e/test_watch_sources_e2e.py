@@ -18,7 +18,6 @@ from __future__ import annotations
 import os
 import tempfile
 import uuid
-from http import HTTPStatus
 
 import pytest
 import requests
@@ -452,8 +451,9 @@ class TestPerSourceEmailLinks:
             },
             timeout=20,
         )
-        if cfg.status_code == HTTPStatus.FORBIDDEN:
-            pytest.skip("creating an email config is super_admin; this account cannot")
+        # Asserted, not skipped-on-403. The E2E account is super_admin (verified
+        # against /auth/me), so a 403 here means the tier or the route's gate changed —
+        # which this test should report, not quietly stop running for.
         assert cfg.status_code == 200, cfg.text
         cfg_uuid = cfg.json()["uuid"]
 

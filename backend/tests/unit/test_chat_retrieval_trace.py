@@ -352,3 +352,30 @@ def test_speaker_resolution_never_records_a_speaker_name(monkeypatch):
         blob = " ".join(str(e.detail) for e in recorder.events)
         assert "Alice Chen" not in blob, "a speaker name reached a trace node"
         assert "Alice Chu" not in blob, "a candidate name reached a trace node"
+
+
+# ---------------------------------------------------------------------------
+# Every node must be addressable
+# ---------------------------------------------------------------------------
+
+
+def test_every_emitted_node_names_itself(monkeypatch, no_cache):
+    """A node without an id is not addressable, and the client keys on it.
+
+    `traceTree` identifies a node by `(parent, node_id ?? stage)`. The stage
+    fallback works, but it is only safe while at most one such emitter fires per
+    parent — so an anonymous node is a latent collision, not a cosmetic gap.
+    `REVIEWED` shipped anonymous and was caught by a live probe rather than by a
+    test; this is that test.
+    """
+    settings = _settings(rerank_enabled=False)
+    recorder, _ = _run(
+        monkeypatch,
+        hits=lambda *a, **k: [_hit(0)],
+        settings=settings,
+        wants_digest=True,
+    )
+
+    assert recorder.events, "precondition: the run recorded something to inspect"
+    anonymous = [e.stage.value for e in recorder.events if e.node_id is None]
+    assert not anonymous, f"stages emitted with no node_id: {sorted(set(anonymous))}"

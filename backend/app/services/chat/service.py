@@ -1009,13 +1009,27 @@ def _maybe_run_enrichment(
         enrichment actually fired and produced text.
     """
     if not (settings.enrichment_enabled and llm is not None):
-        emit_trace(recorder, QueryStage.REVIEWED, TraceOutcome.SKIPPED, reason="disabled")
+        emit_trace(
+            recorder,
+            QueryStage.REVIEWED,
+            TraceOutcome.SKIPPED,
+            node_id="review",
+            parent="turn",
+            reason="disabled",
+        )
         return "", 0
 
     recurrence_groups = len(getattr(recurrence_result, "groups", ()) or ())
     subq_with_evidence = int(meta.get("subquestion_legs_with_evidence", 0))
     if not (recurrence_groups >= 3 or subq_with_evidence >= 2):
-        emit_trace(recorder, QueryStage.REVIEWED, TraceOutcome.SKIPPED, reason="not_applicable")
+        emit_trace(
+            recorder,
+            QueryStage.REVIEWED,
+            TraceOutcome.SKIPPED,
+            node_id="review",
+            parent="turn",
+            reason="not_applicable",
+        )
         return "", 0
 
     _check_cancelled(assistant_message_uuid)
@@ -1028,6 +1042,8 @@ def _maybe_run_enrichment(
         recorder,
         QueryStage.REVIEWED,
         TraceOutcome.OK if block else TraceOutcome.EMPTY,
+        node_id="review",
+        parent="turn",
         count=1 if block else 0,
     )
     return block, calls

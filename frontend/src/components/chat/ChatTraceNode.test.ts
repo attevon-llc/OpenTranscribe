@@ -37,6 +37,9 @@ function node(over: Partial<TraceNode> = {}): TraceNode {
     seq: 1,
     updatedSeq: 1,
     ...over,
+    // A leg is labelled by the stage that created it, so a test overriding
+    // `stage` gets a matching label unless it deliberately sets one.
+    labelStage: over.labelStage ?? over.stage ?? ('found' as TraceStage),
   };
 }
 

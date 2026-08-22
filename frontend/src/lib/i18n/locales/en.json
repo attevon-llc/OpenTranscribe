@@ -5166,5 +5166,8 @@
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "Query trace",
-  "chat.adminSettings.traceEnabledHint": "Stream a per-stage execution trace for each answer, shown in a collapsible panel beside the chat. Diagnostic only — it never changes the answer."
+  "chat.adminSettings.traceEnabledHint": "Stream a per-stage execution trace for each answer, shown in a collapsible panel beside the chat. Diagnostic only — it never changes the answer.",
+  "chat.trace.node.quarantine": "quarantine",
+  "chat.trace.node.masking": "masking",
+  "chat.trace.detail.budgetChars": "{{limit}} char budget"
 }

@@ -5166,5 +5166,8 @@
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "Трассировка запроса",
-  "chat.adminSettings.traceEnabledHint": "Передаёт поэтапную трассировку выполнения для каждого ответа в сворачиваемой панели рядом с чатом. Только диагностика — ответ никогда не меняется."
+  "chat.adminSettings.traceEnabledHint": "Передаёт поэтапную трассировку выполнения для каждого ответа в сворачиваемой панели рядом с чатом. Только диагностика — ответ никогда не меняется.",
+  "chat.trace.node.quarantine": "карантин",
+  "chat.trace.node.masking": "маскирование",
+  "chat.trace.detail.budgetChars": "бюджет {{limit}} символов"
 }

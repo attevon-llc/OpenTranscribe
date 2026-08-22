@@ -41,6 +41,15 @@ export interface TraceNode {
   /** The raw wire id, used to resolve other frames' `parent` references. */
   nodeId: string | null;
   stage: TraceStage;
+  /**
+   * The stage that CREATED this node, which is what it is LABELLED by.
+   *
+   * A leg reports `fanned_vector` then `found` under one id. Labelling by the
+   * latest stage renamed a resolved leg from "Search" to "Found", so the row
+   * read "Found · chunk plane · 48 found" — redundant, and it lost what the
+   * node actually is. The outcome badge and count already say how it went.
+   */
+  labelStage: TraceStage;
   outcome: TraceOutcome;
   detail: TraceDetail;
   children: TraceNode[];
@@ -176,6 +185,7 @@ export function applyTraceFrame(prev: TraceState | undefined, frame: TraceFrame)
     key,
     nodeId: frame.node_id,
     stage: frame.stage,
+    labelStage: frame.stage,
     outcome: frame.outcome,
     detail: { ...frame.detail },
     children: [],

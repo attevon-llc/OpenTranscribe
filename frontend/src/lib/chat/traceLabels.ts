@@ -84,8 +84,16 @@ export function detailChips(node: TraceNode): DetailChip[] {
   if (detail.legs !== undefined) {
     chips.push({ key: 'chat.trace.detail.legs', params: { count: detail.legs } });
   }
-  if (detail.limit !== undefined && detail.kept !== undefined) {
-    chips.push({ key: 'chat.trace.detail.perFile', params: { limit: detail.limit } });
+  // `limit` is a configured bound, but WHICH bound depends on the stage, and
+  // one shared label was wrong: the excerpt budget is a character count, so
+  // rendering it as "max 92096/file" invented a per-file cap that does not
+  // exist. Only label a limit where its meaning is known.
+  if (detail.limit !== undefined) {
+    if (node.stage === 'sampled') {
+      chips.push({ key: 'chat.trace.detail.perFile', params: { limit: detail.limit } });
+    } else if (node.stage === 'budgeted') {
+      chips.push({ key: 'chat.trace.detail.budgetChars', params: { limit: detail.limit } });
+    }
   }
   return chips;
 }
@@ -106,6 +114,19 @@ export const OUTCOME_MARKERS: Record<TraceOutcome, string> = {
   declined: 'slash',
   failed: 'cross',
 };
+
+/**
+ * Node ids that need to be shown, because the stage label alone is ambiguous.
+ *
+ * `FILTERED` fires twice per turn — quarantine and masking — and two rows both
+ * reading "Filtered" with different numbers looks like a bug rather than two
+ * different filters. Anything not listed here is already unambiguous from its
+ * stage, and labelling every node would just add noise.
+ */
+const SUBJECT_NODES = new Set(['quarantine', 'masking']);
+
+export const subjectLabelKey = (nodeId: string | null): string | null =>
+  nodeId && SUBJECT_NODES.has(nodeId) ? `chat.trace.node.${nodeId}` : null;
 
 export const markerClass = (outcome: TraceOutcome): string =>
   `trace-marker--${OUTCOME_MARKERS[outcome] ?? 'dot'}`;

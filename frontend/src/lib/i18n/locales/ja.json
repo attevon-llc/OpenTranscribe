@@ -5166,5 +5166,8 @@
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "クエリトレース",
-  "chat.adminSettings.traceEnabledHint": "各回答の段階ごとの実行トレースを、チャット横の折りたたみパネルに配信します。診断専用で、回答内容が変わることはありません。"
+  "chat.adminSettings.traceEnabledHint": "各回答の段階ごとの実行トレースを、チャット横の折りたたみパネルに配信します。診断専用で、回答内容が変わることはありません。",
+  "chat.trace.node.quarantine": "隔離",
+  "chat.trace.node.masking": "マスキング",
+  "chat.trace.detail.budgetChars": "{{limit}} 文字の上限"
 }

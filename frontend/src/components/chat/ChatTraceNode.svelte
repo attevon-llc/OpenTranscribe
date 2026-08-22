@@ -22,7 +22,8 @@
     outcomeLabelKey,
     reasonLabelKey,
     sourceLabelKey,
-    stageLabelKey
+    stageLabelKey,
+    subjectLabelKey
   } from '$lib/chat/traceLabels';
   import ChatTraceTree from './ChatTraceTree.svelte';
 
@@ -34,6 +35,7 @@
 
   $: pending = streaming && isPending(node);
   $: source = sourceLabelKey(node.detail);
+  $: subject = subjectLabelKey(node.nodeId);
   $: timing = formatMs(node.detail.ms);
   $: chips = detailChips(node);
   // The raw code is the fallback, so a `reason` the backend added after this
@@ -53,7 +55,11 @@
 >
   <div class="trace-row">
     <span class="trace-marker {markerClass(node.outcome)}" aria-hidden="true"></span>
-    <span class="trace-label">{$t(stageLabelKey(node.stage))}</span>
+    <span class="trace-label">{$t(stageLabelKey(node.labelStage ?? node.stage))}</span>
+
+    {#if subject}
+      <span class="trace-badge trace-badge--subject">{$t(subject)}</span>
+    {/if}
 
     {#if source}
       <span class="trace-badge trace-badge--source">{$t(source)}</span>
@@ -180,6 +186,10 @@
     letter-spacing: 0.02em;
     text-transform: uppercase;
     white-space: nowrap;
+  }
+
+  .trace-badge--subject {
+    border-style: dashed;
   }
 
   .trace-node[data-outcome='failed'] .trace-badge--outcome {

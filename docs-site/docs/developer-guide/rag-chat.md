@@ -36,6 +36,127 @@ Each stage is its own module so the two security-critical ones (`redactor.py`,
 | `service.py` | SSE orchestration, persistence, audit, hooks |
 | `limits.py` | Per-user hourly + concurrency caps |
 | `hooks.py` | Cloud seam |
+| `trace.py` | Query-trace vocabulary: 16 stages, 6 outcomes, a scrubbed detail allowlist |
+| `trace_stream.py` | Bridges trace events from worker threads onto the SSE stream |
+
+## The query trace (GH #514)
+
+A chat turn reports what it actually did, stage by stage, over the SSE stream.
+The client renders it as a collapsible tree beside the answer.
+
+It exists because this pipeline keeps producing answers that *look* grounded but
+ran on less evidence than the reader assumes — an empty ranked leg, masking
+failing closed on every chunk, a coverage map that covered 8 of 25 files. Each
+produces a confident, well-formed answer and says nothing.
+
+### The vocabulary
+
+Sixteen stages (`QueryStage`) and six outcomes (`Outcome`). The outcomes are
+where the value is, because several of them are indistinguishable downstream:
+
+| Outcome | Means |
+|---|---|
+| `ok` | ran and produced something |
+| `empty` | **ran and found nothing** |
+| `skipped` | **never ran** — carries a machine-code `reason` |
+| `cached` | served from cache; the work was skipped |
+| `declined` | refused on purpose (unbounded scope, a truncated bucket list) |
+| `failed` | broke |
+
+`empty` versus `skipped` is the pair the whole feature exists to separate, and
+`failed` versus `empty` is the one that matters most in practice:
+`retrieve_chunks` degrades to `[]` on **any** failure, so an OpenSearch outage
+and a genuine no-match are byte-identical downstream. That is the confident-
+wrong-answer failure issue #438 was opened for; the trace separates them.
+
+### It must never become a second source of truth
+
+Four rules, in the order they matter:
+
+1. **The trace reports; it never participates.** Nothing in the pipeline reads
+   it back or branches on it, and a trace failure can never fail a turn — every
+   public function swallows its own errors.
+2. **Free when off.** With no recorder attached, `emit()` returns immediately:
+   no frame, no queue, no allocation. `chat.trace_enabled` is a hard branch, not
+   a fast path through shared code.
+3. **It cannot leak.** `SAFE_DETAIL_KEYS` is an allowlist of NON-identifying
+   values — counts, plane names, durations, configured limits. A file title or
+   speaker name would be a permission leak the moment the panel rendered it, so
+   the trace never holds one. `reason` is a **closed vocabulary of machine
+   codes**, never free text: `coverage["declined"]` contains English prose and
+   is mapped to a code rather than forwarded.
+4. **A stage that ran and found nothing is not a stage that never ran.**
+
+### Transport: in-process, not Redis
+
+Retrieval runs inside one `run_in_threadpool` call, so the async generator is
+blocked for its duration and cannot yield. Trace events are produced on that
+worker (and on `legs.py`'s fan-out threads) while only the event loop can write
+to the socket, so `loop.call_soon_threadsafe` hands them across.
+
+Redis pub/sub would add a network hop and a lost-wakeup race to cross a boundary
+that does not exist — retrieval happens in the same process and the same request
+as the SSE generator. If a stage ever moves to Celery, copy `download_stream`
+(`endpoints/files/__init__.py`) or `bulk_export_stream`
+(`endpoints/files/subtitles.py`), both of which subscribe properly.
+
+⚠️ **`drain_available` yields to the loop before reading the queue, and that is
+load-bearing.** `call_soon_threadsafe` *schedules* the enqueue rather than
+running it, even on the loop thread, so draining without first yielding inspects
+a queue the callbacks have not reached. The live drain hides this because
+`asyncio.wait` yields anyway; the post-retrieval flush does not, and without the
+yield `BUDGETED` and `PRESENTED` were emitted, queued, and never delivered —
+silently, with no error.
+
+### Cost, measured
+
+`chat.trace_enabled` defaults **on**, and that default is a measurement rather
+than an assumption. Mock LLM, isolated stack, cache-warmed, 45 samples per arm:
+
+| | trace off | trace on | delta |
+|---|---|---|---|
+| median TTFT | 573.3 ms | 576.3 ms | +3.0 ms (+0.5%) |
+| p95 TTFT | 659.3 ms | 688.9 ms | +29.6 ms (+4.5%) |
+
+The median cost is inside that host's own run-to-run noise — the untraced arm's
+median ranged 544–573 ms across four runs — so a typical turn pays nothing
+distinguishable. The p95 cost is real and small: roughly 15 extra SSE frames
+reach the socket before the first answer token.
+
+⚠️ **An earlier shape failed this gate at +206 ms p95 (+35%)**, because the drain
+loop polled every 50 ms and so only noticed retrieval finishing on the next tick.
+If this number ever regresses, look there first: `_keepalive_until_done` must
+wait on events, never on an interval.
+
+The measurement harness also asserts the untraced arm emits **zero** trace
+frames, which is what makes "free when off" a fact rather than an intention.
+
+### Live-only, deliberately
+
+Nothing is persisted. A trace exists for the turn that produced it and is gone
+on reload. Measured: a typical trace is 1.5–2.5 KB against a whole chat message
+row of ~1.5 KB (content 649 B + citations 644 B + msg_metadata 255 B), so
+storing it would roughly double every conversation-load payload for diagnostics
+shown one turn at a time. The panel says so rather than rendering blank.
+
+### Adding a stage
+
+1. Add the member to `QueryStage` in `trace.py` and widen
+   `test_chat_trace_seam.py`'s pinning test in the same commit — a vocabulary
+   change is a deliberate act, not drift.
+2. Emit with `trace.emit(recorder, ...)`, the only function pipeline code should
+   call. It takes `None` so a call site needs no guard.
+3. **Always pass a `node_id`.** The client identifies a node by
+   `(parent, node_id ?? stage)`; the stage fallback is safe only while at most
+   one anonymous emitter fires per parent.
+4. Add the i18n key to **all 12 locales** (`npm run check:i18n` enforces parity).
+5. Pass counts, never content. `test_every_emitted_node_names_itself` and the
+   leak tests in `test_chat_retrieval_trace.py` are the guards.
+
+⚠️ **Adding a new SSE frame NAME is a two-sided change.** `chatStream.ts`'s
+`known` array silently drops anything unrecognised, and
+`test_chat_sse_contract.py` asserts the backend's emitted set is a subset of it.
+Backend and client must land together.
 
 ## Prompt-injection hardening
 

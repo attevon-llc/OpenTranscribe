@@ -5166,5 +5166,8 @@
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "查询轨迹",
-  "chat.adminSettings.traceEnabledHint": "为每个回答流式输出分阶段的执行轨迹，显示在聊天旁的可折叠面板中。仅用于诊断 — 绝不会改变回答内容。"
+  "chat.adminSettings.traceEnabledHint": "为每个回答流式输出分阶段的执行轨迹，显示在聊天旁的可折叠面板中。仅用于诊断 — 绝不会改变回答内容。",
+  "chat.trace.node.quarantine": "隔离",
+  "chat.trace.node.masking": "脱敏",
+  "chat.trace.detail.budgetChars": "{{limit}} 字符预算"
 }

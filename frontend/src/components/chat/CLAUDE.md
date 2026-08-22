@@ -43,7 +43,9 @@ not fatal).
 **A new server frame is invisible until you add it to the parser's `known`
 list.** That forward-compatibility rule silently drops anything unrecognised, so
 a backend-only change ships a frame nobody ever sees. Frames today: `start`,
-`status`, `sources`, `warning`, `delta`, `usage`, `done`, `error`.
+`status`, `sources`, `warning`, `trace`, `delta`, `reasoning`, `usage`, `done`,
+`error`. `backend/tests/unit/test_chat_sse_contract.py` asserts the backend's
+emitted set is a SUBSET of that array, so the two sides must land together.
 
 `warning` (`{code, retrieved}`) reports that the answer is NOT grounded in the
 user's recordings, and carries one of **three** codes:
@@ -121,18 +123,60 @@ Exactly ONE stream is in flight at a time.
 
 ## Component map
 
-| Component             | Note                                                                                                                                                                                                                                                                                     |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ChatThread`          | Auto-scroll follows the stream **only while already at the bottom**; scrolling up suppresses follow and shows a jump pill                                                                                                                                                                |
-| `ChatMessage`         | Hover-revealed actions; permanently visible on touch (`@media (hover: none)`)                                                                                                                                                                                                            |
-| `ChatMarkdown`        | Re-parses the full buffer per throttled tick (rAF + 100ms floor), one final unthrottled render on completion                                                                                                                                                                             |
-| `ChatReasoning`       | Collapsed-by-default reasoning/"thinking" block above `ChatMarkdown`; wraps `ui/ExpandableSection` + reuses `ChatMarkdown` for its body — never a second markdown pipeline. Rendered only when `message.reasoning_content` is non-empty                                                  |
-| `ChatSources`         | Citation cards; hrefs from structured data only                                                                                                                                                                                                                                          |
-| `ChatComposer`        | Enter sends, Shift+Enter newline; send button **morphs** to Stop rather than disabling                                                                                                                                                                                                   |
-| `ChatContextBar`      | Empty scope shows "All transcripts" explicitly; context-off gets its own chip                                                                                                                                                                                                            |
-| `FilePickerModal`     | Edits a **draft**, commits on Confirm — scope changes rewrite what every later answer is based on                                                                                                                                                                                        |
-| `ChatStatusIndicator` | The ONLY `aria-live` region; announcing the token stream would read the answer character by character                                                                                                                                                                                    |
-| `ChatEmptyState`      | Hosts `$components/RetrievalQualityNotice` (#461) — the ONE place in chat where that notice renders exactly once. `ChatSources` was the other candidate and was rejected: it renders per assistant message, so three expanded source lists would stack three copies of the same sentence |
+| Component                         | Note                                                                                                                                                                                                                                                                                                 |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ChatThread`                      | Auto-scroll follows the stream **only while already at the bottom**; scrolling up suppresses follow and shows a jump pill                                                                                                                                                                            |
+| `ChatMessage`                     | Hover-revealed actions; permanently visible on touch (`@media (hover: none)`)                                                                                                                                                                                                                        |
+| `ChatMarkdown`                    | Re-parses the full buffer per throttled tick (rAF + 100ms floor), one final unthrottled render on completion                                                                                                                                                                                         |
+| `ChatReasoning`                   | Collapsed-by-default reasoning/"thinking" block above `ChatMarkdown`; wraps `ui/ExpandableSection` + reuses `ChatMarkdown` for its body — never a second markdown pipeline. Rendered only when `message.reasoning_content` is non-empty                                                              |
+| `ChatSources`                     | Citation cards; hrefs from structured data only                                                                                                                                                                                                                                                      |
+| `ChatComposer`                    | Enter sends, Shift+Enter newline; send button **morphs** to Stop rather than disabling                                                                                                                                                                                                               |
+| `ChatContextBar`                  | Empty scope shows "All transcripts" explicitly; context-off gets its own chip                                                                                                                                                                                                                        |
+| `FilePickerModal`                 | Edits a **draft**, commits on Confirm — scope changes rewrite what every later answer is based on                                                                                                                                                                                                    |
+| `ChatStatusIndicator`             | The ONLY `aria-live` region; announcing the token stream would read the answer character by character                                                                                                                                                                                                |
+| `ChatTracePanel`                  | GH #514's query trace. Fixed overlay, NOT a grid column — `.chat-page`'s message column is centred at 52rem, so a third track would reflow the answer. Non-modal (no focus trap, no click-outside): an inspector you keep open, like devtools. Owns the reveal pacer and the reduced-motion listener |
+| `ChatTraceTree` / `ChatTraceNode` | A plain nested `<ul>`, deliberately not `role="tree"` — that pattern promises arrow-key navigation this read-only panel does not have. Adds no second `aria-live` region                                                                                                                             |
+| `ChatEmptyState`                  | Hosts `$components/RetrievalQualityNotice` (#461) — the ONE place in chat where that notice renders exactly once. `ChatSources` was the other candidate and was rejected: it renders per assistant message, so three expanded source lists would stack three copies of the same sentence             |
+
+### The `trace` frame and its panel (GH #514)
+
+One frame per stage: `{seq, stage, outcome, parent, node_id, detail}`. `detail`
+stays a NESTED object rather than spread flat, so a future allowlist key can
+never collide with a frame-level one.
+
+Four rules live in `$lib/chat/traceTree.ts`, each because the naive version is
+wrong:
+
+- **A leg reports itself TWICE under one `node_id`** — `legs.py` emits a
+  `fanned_*` when it starts and a `found` when it finishes. Those collapse into
+  ONE node that advances, never two rows; that is also what gives every node a
+  pending → resolved transition to animate.
+- **Never regress a node's stage** on a late frame, but always merge `detail`,
+  so the `plane` from the start frame survives the finish frame's counts.
+- **Orphans are parked and re-parented**, never dropped — a fan-out completes
+  out of order by design.
+- **Never mutate a node in place.** Svelte reactivity keys off object identity,
+  and the fold's own tests would pass while the DOM never repainted.
+
+⚠️ **`empty` and `skipped` must never render alike.** They differ by marker
+FAMILY (a hollow ring versus a dash), not by fill — a fill difference is exactly
+what low-vision and colourblind readers miss, and that pair is the whole reason
+the panel exists.
+
+⚠️ **The reveal pacer is what stops a flicker.** On a cached turn all ~16 frames
+land inside ~5ms (measured), so revealing each on arrival is a flash, not a
+sequence. `$lib/chat/revealPacer.ts` decouples arrival from reveal. Reduced
+motion needs THREE fixes: `animations.css` collapses CSS durations, but it
+reaches neither a Svelte transition (Web Animations API) nor the pacer (plain
+JS).
+
+Escape uses `$lib/actions/escapeKey`, whose `stopPropagation` is load-bearing —
+the page listens on `svelte:window` and uses Escape to CANCEL generation, so
+without it closing the panel would abort the answer.
+
+Traces are **live only**, so a reloaded conversation legitimately has none. The
+panel says "not stored" rather than rendering blank, because a blank panel gets
+reported as a bug.
 
 ## ⚠️ Events must be forwarded at EVERY hop
 

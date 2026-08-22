@@ -465,7 +465,6 @@ def _apply_speaker_resolution(
             QueryStage.PARSED_NAMES,
             TraceOutcome.SKIPPED,
             node_id="names",
-            parent="turn",
             reason="disabled",
         )
         return []
@@ -498,7 +497,6 @@ def _apply_speaker_resolution(
         QueryStage.PARSED_NAMES,
         outcome,
         node_id="names",
-        parent="turn",
         source="postgres",
         count=count,
         **({"reason": "ambiguous"} if ambiguous else {}),
@@ -594,7 +592,6 @@ def _maybe_rewrite(
             QueryStage.REWRITTEN,
             TraceOutcome.SKIPPED,
             node_id="rewrite",
-            parent="turn",
             reason="disabled" if not rewrite_enabled else "not_applicable",
         )
         return question, None, None, 0
@@ -620,7 +617,6 @@ def _maybe_rewrite(
         QueryStage.REWRITTEN,
         TraceOutcome.OK if effective_query != question else TraceOutcome.EMPTY,
         node_id="rewrite",
-        parent="turn",
         source="llm",
         ms=meta["timings_ms"]["rewrite"],
     )
@@ -1015,7 +1011,6 @@ def _maybe_run_enrichment(
             QueryStage.REVIEWED,
             TraceOutcome.SKIPPED,
             node_id="review",
-            parent="turn",
             reason="disabled",
         )
         return "", 0
@@ -1028,7 +1023,6 @@ def _maybe_run_enrichment(
             QueryStage.REVIEWED,
             TraceOutcome.SKIPPED,
             node_id="review",
-            parent="turn",
             reason="not_applicable",
         )
         return "", 0
@@ -1044,7 +1038,6 @@ def _maybe_run_enrichment(
         QueryStage.REVIEWED,
         TraceOutcome.OK if block else TraceOutcome.EMPTY,
         node_id="review",
-        parent="turn",
         count=1 if block else 0,
     )
     return block, calls
@@ -1098,7 +1091,6 @@ def _run_serial_pipeline(
             recorder,
             QueryStage.FANNED_RELATIONAL,
             node_id="counted",
-            parent="turn",
             source="postgres",
         )
         counted = answer_aggregation(
@@ -1141,7 +1133,6 @@ def _run_serial_pipeline(
             QueryStage.FOUND,
             _counted_outcome,
             node_id="counted",
-            parent="turn",
             source="postgres",
             count=_count,
             ms=meta["timings_ms"]["aggregate"],
@@ -1536,7 +1527,6 @@ def _prepare_context(
         recorder,
         QueryStage.FILTERED,
         node_id="quarantine",
-        parent="turn",
         source="postgres",
         kept=len(result.chunks),
         dropped=chunks_dropped_quarantined,
@@ -1702,7 +1692,6 @@ def _prepare_context(
         QueryStage.FILTERED,
         TraceOutcome.OK if kept else TraceOutcome.EMPTY,
         node_id="masking",
-        parent="turn",
         kept=len(kept),
         dropped=len(masked) - len(kept),
     )
@@ -2140,11 +2129,11 @@ class ChatService:
         if settings.trace_enabled:
             trace_q = asyncio.Queue(maxsize=DEFAULT_QUEUE_MAXSIZE)
             recorder = StreamingTraceRecorder(asyncio.get_running_loop(), trace_q)
-            emit_trace(recorder, QueryStage.SUBMITTED, node_id="turn")
+            emit_trace(recorder, QueryStage.SUBMITTED, node_id="submitted")
             emit_trace(
                 recorder,
                 QueryStage.VALIDATED,
-                node_id="turn",
+                node_id="validated",
                 dropped=scope_files_dropped or 0,
             )
 
@@ -2316,7 +2305,6 @@ class ChatService:
                 QueryStage.BUDGETED,
                 TraceOutcome.OK if chunks_used else TraceOutcome.EMPTY,
                 node_id="budget",
-                parent="turn",
                 kept=chunks_used,
                 dropped=int(prompt_diagnostics.get("chunks_dropped_for_budget") or 0),
                 limit=int(prompt_diagnostics.get("budget_chars") or 0),
@@ -2325,7 +2313,7 @@ class ChatService:
                 recorder,
                 QueryStage.PRESENTED,
                 TraceOutcome.OK if chunks_used else TraceOutcome.EMPTY,
-                node_id="turn",
+                node_id="answer",
                 count=chunks_used,
                 ms=int((time.monotonic() - started) * 1000),
             )

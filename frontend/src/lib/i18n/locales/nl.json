@@ -5166,5 +5166,8 @@
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "Querytracering",
-  "chat.adminSettings.traceEnabledHint": "Streamt per antwoord een uitvoeringstracering per fase, in een inklapbaar paneel naast de chat. Alleen diagnostisch — het verandert het antwoord nooit."
+  "chat.adminSettings.traceEnabledHint": "Streamt per antwoord een uitvoeringstracering per fase, in een inklapbaar paneel naast de chat. Alleen diagnostisch — het verandert het antwoord nooit.",
+  "chat.trace.node.quarantine": "quarantaine",
+  "chat.trace.node.masking": "maskering",
+  "chat.trace.detail.budgetChars": "budget van {{limit}} tekens"
 }

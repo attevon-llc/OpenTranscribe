@@ -5166,5 +5166,8 @@
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "쿼리 추적",
-  "chat.adminSettings.traceEnabledHint": "각 답변의 단계별 실행 추적을 채팅 옆 접이식 패널로 스트리밍합니다. 진단 전용이며 답변 내용을 바꾸지 않습니다."
+  "chat.adminSettings.traceEnabledHint": "각 답변의 단계별 실행 추적을 채팅 옆 접이식 패널로 스트리밍합니다. 진단 전용이며 답변 내용을 바꾸지 않습니다.",
+  "chat.trace.node.quarantine": "격리",
+  "chat.trace.node.masking": "마스킹",
+  "chat.trace.detail.budgetChars": "{{limit}}자 예산"
 }

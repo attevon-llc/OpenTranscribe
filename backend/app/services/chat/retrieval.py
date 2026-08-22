@@ -66,7 +66,9 @@ class RetrievalResult:
     timings_ms: dict[str, int] = field(default_factory=dict)
 
 
-def _emit_narrowing_skipped(recorder: TraceRecorder | None, parent: str, *, reason: str) -> None:
+def _emit_narrowing_skipped(
+    recorder: TraceRecorder | None, parent: str | None, *, reason: str
+) -> None:
     """Mark rerank and diversity sampling as never having run.
 
     Rendering them as SKIPPED rather than simply omitting them is the honesty
@@ -77,7 +79,9 @@ def _emit_narrowing_skipped(recorder: TraceRecorder | None, parent: str, *, reas
         emit(recorder, stage, Outcome.SKIPPED, parent=parent, node_id=node_id, reason=reason)
 
 
-def _emit_search_skipped(recorder: TraceRecorder | None, parent: str, *, reason: str) -> None:
+def _emit_search_skipped(
+    recorder: TraceRecorder | None, parent: str | None, *, reason: str
+) -> None:
     """Mark the search itself, and everything downstream of it, as never run.
 
     Only correct where the search genuinely did not happen — a cache hit. Do NOT
@@ -110,7 +114,7 @@ def retrieve_context(
     digest_size: int = 6,
     speaker_focus_names: list[str] | None = None,
     recorder: TraceRecorder | None = None,
-    parent: str = "turn",
+    parent: str | None = None,
 ) -> RetrievalResult:
     """Run the retrieval pipeline for one question.
 

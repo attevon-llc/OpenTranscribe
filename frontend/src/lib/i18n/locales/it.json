@@ -5166,5 +5166,8 @@
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "Traccia della query",
-  "chat.adminSettings.traceEnabledHint": "Trasmette una traccia di esecuzione per fase di ogni risposta, in un pannello richiudibile accanto alla chat. Solo diagnostica: non cambia mai la risposta."
+  "chat.adminSettings.traceEnabledHint": "Trasmette una traccia di esecuzione per fase di ogni risposta, in un pannello richiudibile accanto alla chat. Solo diagnostica: non cambia mai la risposta.",
+  "chat.trace.node.quarantine": "quarantena",
+  "chat.trace.node.masking": "mascheramento",
+  "chat.trace.detail.budgetChars": "budget di {{limit}} caratteri"
 }

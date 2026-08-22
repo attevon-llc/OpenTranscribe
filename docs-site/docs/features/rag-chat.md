@@ -129,6 +129,58 @@ built-in **summary** feature for that — it reads the entire transcript — and
 chat for questions that point at specific moments.
 :::
 
+## Seeing what the assistant did — the query trace
+
+The paragraph above describes retrieval in general. The **query trace** shows you
+what happened for *this particular question*.
+
+Open it with the branch icon in the chat header. It is collapsed by default, does
+not move the answer when it opens, and remembers whether you left it open.
+
+Each row is one step, and names the data it touched, what it found and how long
+it took:
+
+```
+● Rewritten      Model                       612ms
+▪ Cache          miss                          1ms
+● Search         chunk plane   48 found       214ms
+● Reranked       12                            91ms
+● Sampled        12 kept · 36 dropped · max 4/file
+● Filtered       masking       12 kept · 0 dropped
+● Budgeted       12 kept · 0 dropped
+● Answered       12 excerpts
+```
+
+**The marks matter more than they look.** Six states, and three of them look
+identical in the answer itself:
+
+| Mark | Means |
+|---|---|
+| ● Done | the step ran and produced something |
+| ○ Empty | it ran and **found nothing** |
+| – Skipped | it **never ran** — the row says why |
+| ▪ Cached | answered from cache; the work was skipped |
+| ⊘ Declined | refused on purpose, rather than guessing |
+| ✕ Failed | something broke |
+
+"Found nothing" and "never ran" produce the same answer and the same absence of
+citations, so without the trace there is no way to tell them apart. The same goes
+for **Failed**: if search breaks, the assistant still answers — from whatever it
+had — and the reply looks entirely normal. The trace is what makes that visible.
+
+:::tip What to look for when an answer seems thin
+Check **Sampled** and **Filtered**. `48 found` followed by `12 kept · 36 dropped`
+is normal narrowing. But `12 kept · 0 dropped` at Filtered followed by
+`0 excerpts` at Answered means the evidence was found and then removed — usually
+by redaction — and the answer was written without it.
+:::
+
+Traces are **live only**: they are not stored, so reopening an old conversation
+shows "not stored" rather than a tree. Ask the question again to see one.
+
+Availability is an administrator setting (**Settings → Chat & RAG → Query
+trace**). It is diagnostic only and never changes the answer.
+
 ## Getting better answers
 
 **Name things the way they were said.** Retrieval matches your words against the

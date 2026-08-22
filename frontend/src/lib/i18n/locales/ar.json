@@ -5166,5 +5166,8 @@
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "تتبُّع الاستعلام",
-  "chat.adminSettings.traceEnabledHint": "يبثّ تتبُّع تنفيذ لكل مرحلة من مراحل كل إجابة، ضمن لوحة قابلة للطي بجانب المحادثة. للتشخيص فقط — لا يغيّر الإجابة أبدًا."
+  "chat.adminSettings.traceEnabledHint": "يبثّ تتبُّع تنفيذ لكل مرحلة من مراحل كل إجابة، ضمن لوحة قابلة للطي بجانب المحادثة. للتشخيص فقط — لا يغيّر الإجابة أبدًا.",
+  "chat.trace.node.quarantine": "الحجر",
+  "chat.trace.node.masking": "الإخفاء",
+  "chat.trace.detail.budgetChars": "ميزانية {{limit}} حرفًا"
 }

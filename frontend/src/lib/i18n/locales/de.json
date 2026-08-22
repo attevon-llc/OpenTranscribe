@@ -5166,5 +5166,8 @@
   "chat.trace.timing.ms": "{{ms}}ms",
   "chat.trace.timing.s": "{{s}}s",
   "chat.adminSettings.traceEnabled": "Abfrageverlauf",
-  "chat.adminSettings.traceEnabledHint": "Überträgt für jede Antwort einen Ausführungsverlauf pro Stufe, angezeigt in einem einklappbaren Bereich neben dem Chat. Nur zur Diagnose — die Antwort ändert sich dadurch nie."
+  "chat.adminSettings.traceEnabledHint": "Überträgt für jede Antwort einen Ausführungsverlauf pro Stufe, angezeigt in einem einklappbaren Bereich neben dem Chat. Nur zur Diagnose — die Antwort ändert sich dadurch nie.",
+  "chat.trace.node.quarantine": "Quarantäne",
+  "chat.trace.node.masking": "Maskierung",
+  "chat.trace.detail.budgetChars": "{{limit}} Zeichen Budget"
 }

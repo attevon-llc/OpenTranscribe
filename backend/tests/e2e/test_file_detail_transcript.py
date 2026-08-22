@@ -477,11 +477,20 @@ def _pick_search_word(page: Page) -> str:
 
     Guarantees the transcript find bar will have at least one literal match to
     highlight and navigate, without mutating any data.
+
+    Stripping non-alpha characters from a token can produce a string that is no
+    longer a literal substring of the source text — a contraction like "Code's"
+    cleans to "Codes", which never appears in "Code's" itself. The frontend's
+    highlighter (`searchHighlight.ts`) does a plain case-insensitive
+    `indexOf`, so searching for such a word finds zero matches and the test
+    times out waiting for a highlight that can never render. Verify the
+    cleaned candidate is actually present in the text before returning it.
     """
     text = (page.locator(".transcript-segment .segment-text").first.text_content() or "").strip()
+    lowered = text.lower()
     for token in text.split():
         cleaned = "".join(ch for ch in token if ch.isalpha())
-        if len(cleaned) >= 4:
+        if len(cleaned) >= 4 and cleaned.lower() in lowered:
             return cleaned
     return "the"
 

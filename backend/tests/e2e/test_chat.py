@@ -622,9 +622,10 @@ def test_speaker_tab_scopes_the_conversation(
     checkbox.check()
 
     gallery_page.locator('[data-testid="picker-confirm"]').click()
-    expect(gallery_page.locator('[data-testid="chat-scope-speakers"]')).to_be_visible(
-        timeout=15_000
-    )
+    # ChatContextBar renders one chip per selected speaker (singular testid,
+    # commit 1bbc8e5b renamed it from the plural container-level id this test
+    # was still targeting) inside a `{#each speakerNames}` loop.
+    expect(gallery_page.locator('[data-testid="chat-scope-speaker"]')).to_be_visible(timeout=15_000)
 
 
 # ---------------------------------------------------------------------------

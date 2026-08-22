@@ -387,6 +387,38 @@ class EmailLinkCreate(BaseModel):
     notify_on_success: bool = True
     notify_on_error: bool = True
 
+    @field_validator("additional_recipients")
+    @classmethod
+    def _validate_additional_recipients(cls, value: str | None) -> str | None:
+        """Reject a CSV entry that cannot be an address.
+
+        ``_merge_recipients`` (``tasks/watch_source_tasks.py``) splits this on commas
+        and hands the parts straight to the mailer, so an unusable entry is dropped
+        inside a send whose per-address result nothing inspects — the link goes on
+        reporting itself as configured while that person never receives anything.
+        Checking at the wire edge is the only place the caller still has a way to be
+        told.
+
+        Deliberately a shape check, not an RFC 5322 parser: the goal is to catch the
+        typo the admin can fix, not to adjudicate exotic-but-legal addresses. The
+        value is stored **verbatim** (whitespace and all) because the send path is
+        what splits it, and normalising here would put this function in the business
+        of rewriting stored data.
+        """
+        if value is None or not value.strip():
+            return value
+        for part in value.split(","):
+            candidate = part.strip()
+            if not candidate:
+                continue
+            local, _, domain = candidate.partition("@")
+            if not local or not domain or "." not in domain:
+                raise ValueError(
+                    f"{candidate!r} is not a usable email address; "
+                    "give a comma-separated list like 'ops@example.com,oncall@example.com'"
+                )
+        return value
+
 
 class EmailLinkResponse(BaseModel):
     """An email config linked to a watch source."""

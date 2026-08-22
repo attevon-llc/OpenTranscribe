@@ -17,6 +17,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
 
 from app.api.deps_context import RequestContext
 from app.api.deps_context import get_current_context
@@ -355,6 +356,10 @@ def _email_to_response(cfg: EmailNotificationConfig) -> dict:
         "test_message": cfg.test_message,
         "created_at": cfg.created_at,
         "updated_at": cfg.updated_at,
+        # Deleting a config cascades its links away, silently un-notifying every
+        # source that used it. Surfacing the count is what makes that consequence
+        # visible at the moment of the decision rather than after the fact.
+        "linked_source_count": len(cfg.links),
     }
 
 
@@ -370,7 +375,14 @@ def list_email_configs(
     this is the super_admin tier and why there is no owner filter. Secrets are
     never returned — ``_email_to_response`` emits ``has_*`` booleans instead.
     """
-    configs = db.query(EmailNotificationConfig).order_by(EmailNotificationConfig.name).all()
+    # ``selectinload`` because ``_email_to_response`` counts ``cfg.links``: without it
+    # that is one extra query per config on a list endpoint.
+    configs = (
+        db.query(EmailNotificationConfig)
+        .options(selectinload(EmailNotificationConfig.links))
+        .order_by(EmailNotificationConfig.name)
+        .all()
+    )
     return {"configs": [_email_to_response(c) for c in configs]}
 
 
@@ -768,7 +780,13 @@ def list_source_files(
     row. Newest first.
     """
     source = _get_source_or_404(db, source_uuid, current_user)
-    query = db.query(WatchSourceFile).filter(WatchSourceFile.watch_source_id == source.id)
+    # ``selectinload`` because the serialization below reads ``r.media_file`` on every
+    # row: lazily that is one query per row, and ``page_size`` goes up to 200.
+    query = (
+        db.query(WatchSourceFile)
+        .options(selectinload(WatchSourceFile.media_file))
+        .filter(WatchSourceFile.watch_source_id == source.id)
+    )
     if status_filter:
         query = query.filter(WatchSourceFile.status == status_filter)
     total = query.count()

@@ -437,6 +437,9 @@ class TestPerSourceEmailLinks:
             timeout=15,
         ).json()["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
+        # Both suffixes inline: `test_e2e_data_hygiene` reads the AST and looks for a
+        # uuid4 call in the value itself, so hoisting it into a local first hides it
+        # and the guard reports a fixed identity. They need not match each other.
         cfg_name = f"{SOURCE_PREFIX}mailer-{uuid.uuid4().hex[:8]}"
         cfg = requests.post(
             f"{backend_url}/api/watch-sources/email-configs",
@@ -446,7 +449,11 @@ class TestPerSourceEmailLinks:
                 "provider": "smtp",
                 "smtp_host": "smtp.invalid.example.com",
                 "smtp_port": 587,
-                "from_address": "noreply@example.com",
+                # Suffixed too. Nothing reads this address — the config is created
+                # disabled so no mail is ever sent — but a fixed identity on a persisted
+                # row is what the hygiene guard refuses, and it is right to: a run that
+                # dies before teardown leaves a row the next run cannot tell from its own.
+                "from_address": f"noreply+{uuid.uuid4().hex[:8]}@example.com",
                 "is_enabled": False,
             },
             timeout=20,

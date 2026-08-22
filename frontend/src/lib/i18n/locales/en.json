@@ -5115,6 +5115,7 @@
   "chat.trace.live": "Live",
   "chat.trace.truncated": "Trace truncated — earlier steps are not shown.",
   "chat.trace.empty.notStored": "Traces are not stored. Ask again to see this turn's trace.",
+  "chat.trace.empty.noTurnYet": "Ask a question to see how the assistant answers it.",
   "chat.trace.empty.waiting": "Waiting for the first step…",
   "chat.trace.empty.failedEarly": "This turn failed before any step ran.",
   "chat.trace.empty.contextOff": "Recordings were not searched for this turn.",

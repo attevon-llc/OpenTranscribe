@@ -5115,6 +5115,7 @@
   "chat.trace.live": "实时",
   "chat.trace.truncated": "轨迹已截断 — 未显示较早的步骤。",
   "chat.trace.empty.notStored": "轨迹不会被保存。重新提问即可查看本轮轨迹。",
+  "chat.trace.empty.noTurnYet": "提出一个问题，即可查看助手如何作答。",
   "chat.trace.empty.waiting": "正在等待第一个步骤…",
   "chat.trace.empty.failedEarly": "本轮在任何步骤执行前就失败了。",
   "chat.trace.empty.contextOff": "本轮未检索任何录音。",

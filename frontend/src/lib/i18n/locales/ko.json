@@ -5115,6 +5115,7 @@
   "chat.trace.live": "실시간",
   "chat.trace.truncated": "추적이 잘렸습니다 — 이전 단계는 표시되지 않습니다.",
   "chat.trace.empty.notStored": "추적은 저장되지 않습니다. 다시 질문하면 볼 수 있습니다.",
+  "chat.trace.empty.noTurnYet": "질문하면 어시스턴트가 어떻게 답하는지 볼 수 있습니다.",
   "chat.trace.empty.waiting": "첫 단계를 기다리는 중…",
   "chat.trace.empty.failedEarly": "이 차례는 어떤 단계도 실행되기 전에 실패했습니다.",
   "chat.trace.empty.contextOff": "이 차례에서는 녹음을 검색하지 않았습니다.",

@@ -5115,6 +5115,7 @@
   "chat.trace.live": "Live",
   "chat.trace.truncated": "Tracering ingekort — eerdere stappen worden niet getoond.",
   "chat.trace.empty.notStored": "Traceringen worden niet bewaard. Stel de vraag opnieuw om de tracering te zien.",
+  "chat.trace.empty.noTurnYet": "Stel een vraag om te zien hoe de assistent die beantwoordt.",
   "chat.trace.empty.waiting": "Wachten op de eerste stap…",
   "chat.trace.empty.failedEarly": "Deze beurt mislukte voordat er een stap liep.",
   "chat.trace.empty.contextOff": "Er is in deze beurt niet in opnames gezocht.",

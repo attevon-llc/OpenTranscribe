@@ -5115,6 +5115,7 @@
   "chat.trace.live": "In diretta",
   "chat.trace.truncated": "Traccia troncata: i passaggi precedenti non sono mostrati.",
   "chat.trace.empty.notStored": "Le tracce non vengono salvate. Chiedi di nuovo per vedere la traccia.",
+  "chat.trace.empty.noTurnYet": "Fai una domanda per vedere come l'assistente vi risponde.",
   "chat.trace.empty.waiting": "In attesa del primo passaggio…",
   "chat.trace.empty.failedEarly": "Questo turno è fallito prima di ogni passaggio.",
   "chat.trace.empty.contextOff": "Nessuna ricerca nelle registrazioni per questo turno.",

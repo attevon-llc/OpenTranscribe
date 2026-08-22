@@ -357,7 +357,7 @@
     <p>{$t('chat.errors.unavailable')}</p>
   </div>
 {:else}
-  <div class="chat-page" class:sidebar-open={sidebarOpen}>
+  <div class="chat-page" class:sidebar-open={sidebarOpen} class:trace-open={traceOpen}>
     <div class="sidebar-pane" inert={isNarrow && !sidebarOpen ? true : undefined}>
       <ChatSidebar
         conversations={state.conversations}
@@ -453,36 +453,40 @@
           </button>
         {/if}
 
-        {#if hasMessages}
-          <button
-            type="button"
-            class="gear trace-toggle"
-            on:click={() => (traceOpen = !traceOpen)}
-            aria-label={$t('chat.trace.toggleLabel')}
-            aria-expanded={traceOpen}
-            title={$t('chat.trace.toggleLabel')}
-            data-testid="chat-trace-toggle"
+        <!-- NOT gated on `hasMessages`, unlike the export button beside it.
+             The panel's whole claim is that you can watch retrieval happen, and
+             gating the toggle on an existing turn meant the FIRST question of a
+             conversation could only ever be inspected after its answer had
+             finished — the one turn a new user actually watches. Opening it on
+             an empty thread shows "ask a question to see how it is answered". -->
+        <button
+          type="button"
+          class="gear trace-toggle"
+          on:click={() => (traceOpen = !traceOpen)}
+          aria-label={$t('chat.trace.toggleLabel')}
+          aria-expanded={traceOpen}
+          title={$t('chat.trace.toggleLabel')}
+          data-testid="chat-trace-toggle"
+        >
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
           >
-            <svg
-              width="17"
-              height="17"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              aria-hidden="true"
-            >
-              <circle cx="6" cy="5" r="2" />
-              <circle cx="18" cy="12" r="2" />
-              <circle cx="6" cy="19" r="2" />
-              <path d="M6 7v10" />
-              <path d="M6 12h10" />
-            </svg>
-            {#if isStreaming && latestTrace}
-              <span class="trace-live-dot" aria-hidden="true"></span>
-            {/if}
-          </button>
-        {/if}
+            <circle cx="6" cy="5" r="2" />
+            <circle cx="18" cy="12" r="2" />
+            <circle cx="6" cy="19" r="2" />
+            <path d="M6 7v10" />
+            <path d="M6 12h10" />
+          </svg>
+          {#if isStreaming && latestTrace}
+            <span class="trace-live-dot" aria-hidden="true"></span>
+          {/if}
+        </button>
 
         <button
           type="button"
@@ -529,6 +533,7 @@
           turnId={latestTurnId}
           failedEarly={traceFailedEarly}
           contextOff={!state.useContext}
+          hasTurn={hasMessages}
           on:close={() => (traceOpen = false)}
         />
       </header>
@@ -632,6 +637,34 @@
     min-width: 0;
     min-height: 0;
     padding: 0 1.25rem;
+    transition: padding-right 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* ⚠️ The open trace panel MUST reserve its own width, and the earlier
+     "it never reflows the answer" rule was wrong about the cost of not doing
+     so. The panel is `position: fixed; right: 0; width: min(24rem, 92vw)`, and
+     the message column is centred at 52rem inside `1fr` — so measured at a
+     1280px viewport the panel's left edge lands at x=896 while the send button
+     ends at x=1183. The panel covered the composer by 287px (207px at 1440px),
+     and Playwright refused to click Send with
+     "<div class="trace-body"> ... intercepts pointer events". Opening the
+     inspector made the chat unusable on any laptop-class screen.
+
+     Reserving the width shifts the answer column left, which is exactly what
+     Chrome DevTools docked right, VS Code's panels and Linear's detail pane all
+     do. A transition keeps it from being a jump. Below the mobile breakpoint
+     the panel is a full-width overlay and `.chat-main` is `inert`, so no
+     reservation applies — there is nothing behind it to click. */
+  @media (min-width: 900px) {
+    .chat-page.trace-open .chat-main {
+      padding-right: calc(min(24rem, 92vw) + 1.25rem);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chat-main {
+      transition: none;
+    }
   }
 
   .chat-header {

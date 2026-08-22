@@ -5115,6 +5115,7 @@
   "chat.trace.live": "Ao vivo",
   "chat.trace.truncated": "Rastro truncado — as etapas anteriores não são exibidas.",
   "chat.trace.empty.notStored": "Os rastros não são armazenados. Pergunte novamente para ver o rastro.",
+  "chat.trace.empty.noTurnYet": "Faça uma pergunta para ver como o assistente a responde.",
   "chat.trace.empty.waiting": "Aguardando a primeira etapa…",
   "chat.trace.empty.failedEarly": "Este turno falhou antes de qualquer etapa.",
   "chat.trace.empty.contextOff": "Nenhuma gravação foi pesquisada neste turno.",

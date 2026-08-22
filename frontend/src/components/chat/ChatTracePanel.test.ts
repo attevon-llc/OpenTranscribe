@@ -59,6 +59,24 @@ describe('ChatTracePanel', () => {
     expect(screen.getByTestId('chat-trace-empty')).toHaveTextContent('chat.trace.empty.notStored');
   });
 
+  it('invites a question on a thread that has no turn yet', () => {
+    // The toggle is deliberately not gated on an existing turn — the panel's
+    // whole claim is that you can WATCH retrieval happen, and gating it meant
+    // the first question of a conversation could only be inspected after its
+    // answer had finished. Opening it on an empty thread must not claim a
+    // trace "was not stored" for a question nobody asked.
+    open({ trace: undefined, streaming: false, hasTurn: false });
+    expect(screen.getByTestId('chat-trace-empty')).toHaveTextContent('chat.trace.empty.noTurnYet');
+  });
+
+  it('still says not-stored for a real turn whose trace is gone', () => {
+    // The control for the case above: `noTurnYet` is checked first, so it must
+    // not swallow the reloaded-turn state that every other empty case is
+    // measured against.
+    open({ trace: undefined, streaming: false, hasTurn: true });
+    expect(screen.getByTestId('chat-trace-empty')).toHaveTextContent('chat.trace.empty.notStored');
+  });
+
   it('distinguishes waiting, failed-early and context-off from not-stored', () => {
     // Four different facts. Collapsing them into one message would make a
     // legitimately empty panel indistinguishable from a broken one.

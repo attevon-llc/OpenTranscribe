@@ -5115,6 +5115,7 @@
   "chat.trace.live": "مباشر",
   "chat.trace.truncated": "تم اقتطاع التتبُّع — الخطوات الأقدم غير معروضة.",
   "chat.trace.empty.notStored": "لا يتم تخزين التتبُّع. اسأل مرة أخرى لرؤيته.",
+  "chat.trace.empty.noTurnYet": "اطرح سؤالاً لترى كيف يُجيب عنه المساعد.",
   "chat.trace.empty.waiting": "في انتظار الخطوة الأولى…",
   "chat.trace.empty.failedEarly": "فشلت هذه الجولة قبل تنفيذ أي خطوة.",
   "chat.trace.empty.contextOff": "لم يتم البحث في التسجيلات في هذه الجولة.",

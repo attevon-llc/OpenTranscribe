@@ -5115,6 +5115,7 @@
   "chat.trace.live": "ライブ",
   "chat.trace.truncated": "トレースは切り詰められました — 以前の手順は表示されません。",
   "chat.trace.empty.notStored": "トレースは保存されません。もう一度質問すると表示されます。",
+  "chat.trace.empty.noTurnYet": "質問すると、アシスタントがどう回答するかを確認できます。",
   "chat.trace.empty.waiting": "最初の手順を待っています…",
   "chat.trace.empty.failedEarly": "このターンは手順の実行前に失敗しました。",
   "chat.trace.empty.contextOff": "このターンでは録音を検索していません。",

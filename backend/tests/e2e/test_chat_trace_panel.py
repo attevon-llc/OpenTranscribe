@@ -317,6 +317,66 @@ def test_closing_the_panel_does_not_cancel_the_answer(
     ).to_be_visible()
 
 
+def test_the_open_panel_never_covers_the_composer(
+    gallery_page: Page, base_url: str, backend_url: str, api_session, conversation: str
+) -> None:
+    """Opening the inspector must not make the chat unusable.
+
+    The panel is ``position: fixed; right: 0`` so it cannot reflow the answer.
+    Measured at a 1280px viewport, that put its left edge at x=896 while the
+    send button ended at x=1183 — **the panel covered Send by 287px** (207px at
+    1440px), and Playwright refused the click with "trace-body ... intercepts
+    pointer events". Every other test in this module opens the panel AFTER
+    asking, which is exactly why none of them saw it.
+
+    Asserted as geometry rather than "the click worked", because Playwright
+    auto-retries an intercepted click for the whole timeout and can succeed on a
+    layout that is still wrong for a human with one shot at it.
+    """
+    _requirements_or_skip(api_session, backend_url)
+    _ask(gallery_page, base_url, conversation, "What concerns were raised?")
+    _open_panel(gallery_page)
+
+    panel = gallery_page.locator(TRACE_PANEL).bounding_box()
+    send = gallery_page.locator('[data-testid="chat-send"]').bounding_box()
+    assert panel and send, "panel and send button must both be laid out"
+    assert send["x"] + send["width"] <= panel["x"], (
+        f"the open trace panel (left edge x={panel['x']:.0f}) covers the send "
+        f"button (right edge x={send['x'] + send['width']:.0f}); the chat cannot "
+        "be used while the inspector is open"
+    )
+
+
+def test_a_turn_can_be_started_with_the_panel_already_open(
+    gallery_page: Page, base_url: str, backend_url: str, api_session, conversation: str
+) -> None:
+    """The panel's whole claim is that you can WATCH retrieval happen.
+
+    The toggle used to render only ``{#if hasMessages}``, so the FIRST question
+    of a conversation could only ever be inspected after its answer had already
+    finished — the one turn a new user actually watches. This drives the order a
+    real user would: open, then ask.
+    """
+    _requirements_or_skip(api_session, backend_url)
+    gallery_page.goto(f"{base_url}/chat/{conversation}")
+    composer = gallery_page.locator('[data-testid="chat-composer-input"]')
+    expect(composer).to_be_visible(timeout=30_000)
+
+    _open_panel(gallery_page)
+    # An untouched thread must invite a question, not claim a trace was lost.
+    expect(gallery_page.locator('[data-testid="chat-trace-empty"]')).to_be_visible()
+
+    composer.fill("What concerns were raised?")
+    gallery_page.locator('[data-testid="chat-send"]').click()
+
+    expect(
+        gallery_page.locator('[data-testid="chat-message-assistant"][data-status="complete"]').last
+    ).to_be_visible(timeout=STREAM_TIMEOUT_MS)
+    assert gallery_page.locator(TRACE_NODE).count() >= 8, (
+        "the panel was open for the whole turn and should hold its tree"
+    )
+
+
 def test_the_open_state_survives_a_reload(
     gallery_page: Page, base_url: str, backend_url: str, api_session, conversation: str
 ) -> None:

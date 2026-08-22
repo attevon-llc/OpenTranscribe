@@ -37,6 +37,14 @@
   export let failedEarly = false;
   /** True when the turn deliberately searched no recordings. */
   export let contextOff = false;
+  /**
+   * Whether the conversation has any turn at all.
+   *
+   * Defaults to `true` so every existing call site keeps its current copy; the
+   * page passes the real value. Without it, opening the panel on a brand-new
+   * thread claims the trace "was not stored" for a question nobody asked.
+   */
+  export let hasTurn = true;
 
   const dispatch = createEventDispatcher<{ close: void }>();
 
@@ -92,17 +100,23 @@
   // Always a string — it is only read in the `{:else}` branch, and returning
   // `null` there would only force a non-null assertion at the call site.
   //
-  // The four states are deliberately distinct copy: "this turn failed before
-  // step 1", "context was off for this turn", "waiting" and "traces are not
-  // stored" are four different facts, and collapsing them would make a
-  // legitimately empty panel read as a bug.
-  $: emptyKey = failedEarly
-    ? 'chat.trace.empty.failedEarly'
-    : contextOff
-      ? 'chat.trace.empty.contextOff'
-      : streaming
-        ? 'chat.trace.empty.waiting'
-        : 'chat.trace.empty.notStored';
+  // The five states are deliberately distinct copy: "nothing has been asked
+  // yet", "this turn failed before step 1", "context was off for this turn",
+  // "waiting" and "traces are not stored" are five different facts, and
+  // collapsing them would make a legitimately empty panel read as a bug.
+  //
+  // `noTurnYet` is checked FIRST because a thread with no turns satisfies none
+  // of the others in any meaningful way — telling someone their trace "was not
+  // stored" for a question they have not asked is simply wrong.
+  $: emptyKey = !hasTurn
+    ? 'chat.trace.empty.noTurnYet'
+    : failedEarly
+      ? 'chat.trace.empty.failedEarly'
+      : contextOff
+        ? 'chat.trace.empty.contextOff'
+        : streaming
+          ? 'chat.trace.empty.waiting'
+          : 'chat.trace.empty.notStored';
 </script>
 
 {#if open}

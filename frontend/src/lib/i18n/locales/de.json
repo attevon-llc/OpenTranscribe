@@ -5115,6 +5115,7 @@
   "chat.trace.live": "Live",
   "chat.trace.truncated": "Verlauf gekürzt — frühere Schritte werden nicht angezeigt.",
   "chat.trace.empty.notStored": "Verläufe werden nicht gespeichert. Frage erneut, um den Verlauf zu sehen.",
+  "chat.trace.empty.noTurnYet": "Stellen Sie eine Frage, um zu sehen, wie sie beantwortet wird.",
   "chat.trace.empty.waiting": "Warte auf den ersten Schritt…",
   "chat.trace.empty.failedEarly": "Dieser Durchlauf schlug vor dem ersten Schritt fehl.",
   "chat.trace.empty.contextOff": "Für diesen Durchlauf wurden keine Aufnahmen durchsucht.",

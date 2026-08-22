@@ -5115,6 +5115,7 @@
   "chat.trace.live": "В реальном времени",
   "chat.trace.truncated": "Трассировка усечена — ранние шаги не показаны.",
   "chat.trace.empty.notStored": "Трассировки не сохраняются. Задайте вопрос ещё раз, чтобы увидеть её.",
+  "chat.trace.empty.noTurnYet": "Задайте вопрос, чтобы увидеть, как ассистент на него отвечает.",
   "chat.trace.empty.waiting": "Ожидание первого шага…",
   "chat.trace.empty.failedEarly": "Этот запрос завершился ошибкой до первого шага.",
   "chat.trace.empty.contextOff": "В этом запросе записи не искались.",

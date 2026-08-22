@@ -95,6 +95,10 @@ class ChatSettings:
     #: W2.6. One bounded non-streaming call reconciling merged fan-out
     #: evidence into a `<synthesis>` block. Independent of `planner_enabled`.
     enrichment_enabled: bool = C.DEFAULT_CHAT_ENRICHMENT_ENABLED
+    #: GH #514. Emit a per-stage execution trace over SSE for the query panel.
+    #: Purely observational: nothing in the pipeline reads it back, and a trace
+    #: failure can never fail a turn.
+    trace_enabled: bool = C.DEFAULT_CHAT_TRACE_ENABLED
     #: Issue #523. Widen a short retrieved chunk to its surrounding exchange,
     #: by timestamp, before masking — see `chat/context_expansion.py`. Off by
     #: default: a new, unmeasured retrieval shape, same posture as every

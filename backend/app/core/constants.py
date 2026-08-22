@@ -1205,6 +1205,14 @@ DEFAULT_CHAT_PLANNER_MAX_PARALLEL_LEGS = 4  # chat.planner.max_parallel_legs
 # without ever paying for the extra reconciliation call.
 DEFAULT_CHAT_ENRICHMENT_ENABLED = False  # chat.enrichment_enabled
 
+# GH #514: stream a per-stage query-execution trace to the chat client. The
+# panel is an inspector, collapsed by default, and the emitters are a no-op
+# without a recorder attached — but the DEFAULT stays off until the
+# time-to-first-token measurement described in the issue has been recorded.
+# Shipping a new per-turn cost shape on a guess is the thing this repo's
+# measured-gate rule exists to stop.
+DEFAULT_CHAT_TRACE_ENABLED = False  # chat.trace_enabled
+
 # Issue #523: read-time "small-to-big" context expansion. A short retrieved
 # chunk (`services/chat/context_expansion.py`'s `SHORT_CHUNK_WORD_THRESHOLD`)
 # is widened to its surrounding exchange BY TIMESTAMP before it reaches

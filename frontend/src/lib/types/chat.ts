@@ -414,6 +414,60 @@ export type ChatWarningCode =
   | 'plan_failed'
   | 'router_language_unmatched';
 
+/**
+ * GH #514 — the query-execution trace vocabulary, mirroring
+ * `backend/app/services/chat/trace.py`'s `QueryStage` exactly. A value missing
+ * from this union is a stage the SPA cannot place, the same trap
+ * `ChatWarningCode` above documents.
+ *
+ * NOTE there is deliberately no `document` plane: `_widen_to_document_plane`
+ * ORs the document plane into the SAME chunk query rather than running a second
+ * leg, so a separate node would misreport what actually ran.
+ */
+export type TraceStage =
+  | 'submitted'
+  | 'validated'
+  | 'parsed_names'
+  | 'rewritten'
+  | 'cache_lookup'
+  | 'planned'
+  | 'fanned_relational'
+  | 'fanned_vector'
+  | 'found'
+  | 'reranked'
+  | 'sampled'
+  | 'expanded'
+  | 'filtered'
+  | 'budgeted'
+  | 'reviewed'
+  | 'presented';
+
+/**
+ * How a stage ended. `empty` and `skipped` are the pair this whole feature
+ * exists to separate — "we looked and found nothing" versus "we never looked" —
+ * so they must never be collapsed or rendered alike.
+ */
+export type TraceOutcome = 'ok' | 'empty' | 'skipped' | 'cached' | 'declined' | 'failed';
+
+/**
+ * Mirrors `trace.py`'s `SAFE_DETAIL_KEYS`. Deliberately NON-identifying: no file
+ * title, speaker name, uuid or query text ever reaches a trace node, so no
+ * rendering mistake here can leak one.
+ */
+export interface TraceDetail {
+  plane?: 'chunk' | 'digest';
+  source?: 'postgres' | 'opensearch' | 'cache' | 'llm';
+  count?: number;
+  kept?: number;
+  dropped?: number;
+  leg?: string;
+  legs?: number;
+  reason?: string;
+  ms?: number;
+  /** A CONFIGURED bound (max-per-file, budget chars) — never derived from content. */
+  limit?: number;
+}
+
 export type ChatErrorCode =
   | 'llm_unconfigured'
   | 'quota_exceeded'
@@ -445,6 +499,21 @@ export type ChatStreamEvent =
       files_searched?: number | 'all';
       /** `unsupported_language` only: the languages seen and how many files. */
       context_languages?: ChatMessageMetadata['context_languages'];
+    }
+  /**
+   * GH #514. One node's state at one moment. A leg reports itself TWICE under
+   * one `node_id` — a `fanned_*` when it starts and a `found` when it finishes
+   * — and the client folds those into a single node that advances, never two
+   * rows. `seq` is a delivery stamp; a gap means the recorder hit its cap.
+   */
+  | {
+      type: 'trace';
+      seq: number;
+      stage: TraceStage;
+      outcome: TraceOutcome;
+      parent: string | null;
+      node_id: string | null;
+      detail: TraceDetail;
     }
   | { type: 'delta'; text: string }
   /**

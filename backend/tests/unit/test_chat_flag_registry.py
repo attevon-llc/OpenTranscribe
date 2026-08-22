@@ -98,6 +98,8 @@ _OLD_HAND_WRITTEN_DESCRIPTIONS = {
     "overview_after_excerpts": (
         "#532 arm (c): place the overview after the excerpts instead of before"
     ),
+    # GH #514 — added with its registry entry, same rule as the arms above.
+    "trace_enabled": ("Stream a live query-execution trace for each answer (GH #514)"),
 }
 
 

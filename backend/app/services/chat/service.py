@@ -72,6 +72,10 @@ from app.services.chat.trace import Outcome as TraceOutcome
 from app.services.chat.trace import QueryStage
 from app.services.chat.trace import TraceRecorder
 from app.services.chat.trace import emit as emit_trace
+from app.services.chat.trace_stream import DEFAULT_QUEUE_MAXSIZE
+from app.services.chat.trace_stream import StreamingTraceRecorder
+from app.services.chat.trace_stream import WireEvent
+from app.services.chat.trace_stream import drain_available
 from app.services.search.chunk_retrieval import ChunkHit
 
 logger = logging.getLogger(__name__)
@@ -1717,6 +1721,12 @@ def _prepare_context(
 _KEEPALIVE = ": keepalive\n\n"
 _KEEPALIVE_INTERVAL_S = 15
 
+#: How often the retrieval wait wakes up to forward queued trace events. Small
+#: enough that a stage appears promptly, large enough that an idle turn is not
+#: spinning. Only used when GH #514's flag is on; it never changes the keepalive
+#: schedule, which stays on its own 15s elapsed clock.
+_TRACE_POLL_INTERVAL_S = 0.05
+
 
 class _Awaited:
     """Carries a result out of :func:`_keepalive_until_done`.
@@ -1731,8 +1741,8 @@ class _Awaited:
         self.value: Any = None
 
 
-async def _keepalive_until_done(awaitable, holder: _Awaited):
-    """Await ``awaitable``, YIELDING a keepalive frame every 15s while it runs.
+async def _keepalive_until_done(awaitable, holder: _Awaited, trace_q=None):
+    """Await ``awaitable``, YIELDING frames while it runs.
 
     ⚠️ **Yielding is the entire point, and buffering is the bug this replaces.**
     The previous shape pushed keepalives into a queue that the caller drained
@@ -1750,20 +1760,38 @@ async def _keepalive_until_done(awaitable, holder: _Awaited):
     the work runs in a threadpool and stops at its own next cancellation check,
     not because the socket went away.
 
+    GH #514 rides the same loop. Trace events are produced on the SAME worker
+    thread this is awaiting (and on ``legs.py``'s fan-out threads), so this is
+    the only place that can put them on the wire while the phase is still
+    running — which is the entire point of a *live* trace rather than a summary
+    delivered once the work is already over.
+
+    The poll interval is the trace interval when tracing is on, and the keepalive
+    interval when it is off; the keepalive itself is emitted on its own elapsed
+    schedule either way, so turning tracing on cannot change keepalive timing.
+
     Args:
         awaitable: The work to await — typically a ``run_in_threadpool`` call.
         holder: Receives the awaited result on completion.
+        trace_q: GH #514's event queue, or ``None`` when the flag is off. ``None``
+            keeps the original keepalive-only shape exactly.
 
     Yields:
-        ``_KEEPALIVE`` SSE comment frames, one per elapsed interval.
+        ``_KEEPALIVE`` SSE comment frames, plus ``trace`` frames when tracing.
     """
     task = asyncio.ensure_future(awaitable)
+    poll_s = _TRACE_POLL_INTERVAL_S if trace_q is not None else _KEEPALIVE_INTERVAL_S
+    last_beat = time.monotonic()
     while True:
-        done, _ = await asyncio.wait({task}, timeout=_KEEPALIVE_INTERVAL_S)
+        done, _ = await asyncio.wait({task}, timeout=poll_s)
+        for payload in await drain_available(trace_q):
+            yield sse("trace", payload)
         if done:
             holder.value = task.result()
             return
-        yield _KEEPALIVE
+        if time.monotonic() - last_beat >= _KEEPALIVE_INTERVAL_S:
+            last_beat = time.monotonic()
+            yield _KEEPALIVE
 
 
 def _resolve_output_policy(user_id: int):
@@ -2028,6 +2056,22 @@ class ChatService:
         cancel_event = threading.Event()
         started = time.monotonic()
 
+        # GH #514. `trace_q is None` is the flag-off path and stays a hard
+        # branch, not a fast path through shared code, so "free when off" is
+        # structural rather than a hope.
+        trace_q: asyncio.Queue[WireEvent] | None = None
+        recorder: TraceRecorder | None = None
+        if settings.trace_enabled:
+            trace_q = asyncio.Queue(maxsize=DEFAULT_QUEUE_MAXSIZE)
+            recorder = StreamingTraceRecorder(asyncio.get_running_loop(), trace_q)
+            emit_trace(recorder, QueryStage.SUBMITTED, node_id="turn")
+            emit_trace(
+                recorder,
+                QueryStage.VALIDATED,
+                node_id="turn",
+                dropped=scope_files_dropped or 0,
+            )
+
         yield sse(
             "start",
             {
@@ -2104,10 +2148,13 @@ class ChatService:
                         llm=llm,
                         rewrite_enabled=settings.query_rewrite_enabled,
                         assistant_message_uuid=assistant_message_uuid,
+                        recorder=recorder,
                     )
 
                 prepared = _Awaited()
-                async for frame in _keepalive_until_done(run_in_threadpool(_prep), prepared):
+                async for frame in _keepalive_until_done(
+                    run_in_threadpool(_prep), prepared, trace_q=trace_q
+                ):
                     yield frame
                 (
                     masked,
@@ -2181,6 +2228,33 @@ class ChatService:
             chunks_used = len(excerpt_ids)
             turn.metadata["chunks_used"] = chunks_used
             turn.metadata.update(prompt_diagnostics)
+
+            # GH #514. BUDGETED and PRESENTED fire AFTER the retrieval drain has
+            # already returned, so without a flush here they would sit in the
+            # queue forever and the last two stages would never reach the client
+            # at all — and a live-only trace has no persistence to cover it.
+            # ⚠️ INTS ONLY: `excerpt_ids` resolve to real chunks and
+            # `turn.offered_citations` carries titles and timestamps.
+            emit_trace(
+                recorder,
+                QueryStage.BUDGETED,
+                TraceOutcome.OK if chunks_used else TraceOutcome.EMPTY,
+                node_id="budget",
+                parent="turn",
+                kept=chunks_used,
+                dropped=int(prompt_diagnostics.get("chunks_dropped_for_budget") or 0),
+                limit=int(prompt_diagnostics.get("budget_chars") or 0),
+            )
+            emit_trace(
+                recorder,
+                QueryStage.PRESENTED,
+                TraceOutcome.OK if chunks_used else TraceOutcome.EMPTY,
+                node_id="turn",
+                count=chunks_used,
+                ms=int((time.monotonic() - started) * 1000),
+            )
+            for _payload in await drain_available(trace_q):
+                yield sse("trace", _payload)
 
             if use_context:
                 turn.offered_citations = citations_mod.build_offered_citations(masked, excerpt_ids)

@@ -1436,11 +1436,31 @@ def _is_sleep_call(node: ast.Call) -> bool:
     whole waiting idiom (~70 sites), it precedes ``expect()`` assertions that auto-retry, and
     reporting it would produce a 70-entry allowlist nobody reads — the "a detector that fires
     on correct code teaches people to allowlist" failure this file already learned once.
+
+    ``asyncio.sleep(0)`` is exempt for the same reason, and it is not a judgement call: a
+    ZERO-duration sleep is the documented way to yield to the event loop once, so it bounds
+    nothing and cannot be the "hope it is ready by now" bet this detector exists to catch. It
+    is also unavoidable — ``loop.call_soon_threadsafe`` SCHEDULES a callback rather than
+    running it, so any test that asserts on the result must let the loop turn first. Flagging
+    it would put a permanent allowlist entry on every async test in the repo, which is exactly
+    how a detector stops being read.
     """
     parts = _dotted(node.func)
     if not parts or parts[-1] != 'sleep':
         return False
-    return len(parts) == 1 or parts[0] in ('time', 'asyncio')
+    if not (len(parts) == 1 or parts[0] in ('time', 'asyncio')):
+        return False
+    return not _is_zero_duration(node)
+
+
+def _is_zero_duration(node: ast.Call) -> bool:
+    """``sleep(0)`` / ``sleep(0.0)`` — a scheduling yield, not a wait."""
+    if len(node.args) != 1 or node.keywords:
+        return False
+    arg = node.args[0]
+    return (
+        isinstance(arg, ast.Constant) and arg.value in (0, 0.0) and not isinstance(arg.value, bool)
+    )
 
 
 def _statement_lists(node: ast.AST) -> list[list[ast.stmt]]:
@@ -2122,6 +2142,15 @@ SELFTEST_CASES: tuple[tuple[str, str], ...] = (
         '    assert _nvml_used_mb() - baseline <= RESIDUE_GATE_MB\n',
     ),
     (
+        # A zero-duration yield must not launder a REAL wait sitting beside it. Without
+        # this the `sleep(0)` exemption could be widened to "any sleep in an async test".
+        'sleep-sync',
+        'async def test_a():\n'
+        '    await asyncio.sleep(0)\n'
+        '    await asyncio.sleep(0.5)\n'
+        '    assert _delivered() == 3\n',
+    ),
+    (
         # Inside a poll loop, but on the branch that LEAVES it: the poll already succeeded
         # and the 5 s is a bare bet on start-up. A whole-loop exemption would clear this.
         'sleep-sync',
@@ -2142,6 +2171,15 @@ SELFTEST_CASES: tuple[tuple[str, str], ...] = (
 
 #: Sources that must produce NO finding — the false-positive half of the calibration.
 SELFTEST_CLEAN: tuple[str, ...] = (
+    # `asyncio.sleep(0)` yields to the loop once and bounds NOTHING, so it cannot be the
+    # "hope it is ready by now" bet sleep-sync exists to catch. It is also unavoidable:
+    # `loop.call_soon_threadsafe` schedules a callback rather than running it, so a test
+    # asserting on the result must let the loop turn. Flagging it would put a permanent
+    # allowlist entry on every async test in the repo.
+    'async def test_a():\n'
+    '    recorder.record(event)\n'
+    '    await asyncio.sleep(0)\n'
+    '    assert _drain(queue) == [event]\n',
     # Redirecting a REAL client at a throwaway index is the correct shape for an
     # integration test: `settings.OPENSEARCH_CHUNKS_INDEX` is the index NAME, not the
     # client, and every assertion still executes on the real engine. The detector fired on

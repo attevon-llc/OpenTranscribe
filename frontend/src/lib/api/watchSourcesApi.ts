@@ -197,8 +197,14 @@ export const RETRYABLE_FILE_STATUSES: ReadonlySet<string> = new Set([
   'skipped_invalid',
 ]);
 
-/** Per-row outcome of a batch retry or batch delete. */
-export interface WatchSourceFileActionResult {
+/**
+ * Per-row outcome of a batch retry or batch delete.
+ *
+ * Not exported: callers reach it through `WatchSourceFileActionResponse.results`, and
+ * a separately-exported name with no importer is exactly the dead surface `knip` is
+ * there to catch.
+ */
+interface WatchSourceFileActionResult {
   file_uuid: string;
   success: boolean;
   status?: string | null;
@@ -330,10 +336,21 @@ export interface EmailLinkCreate {
   notify_on_error?: boolean;
 }
 
-/** An email config linked to one source, with that link's own options. */
+/**
+ * An email config linked to one source, with that link's own options.
+ *
+ * The `config_*` fields describe the CONFIG, and are not redundant with
+ * `EmailConfigOption`: the picker excludes configs already linked, so they are the
+ * only way a caller can learn why an existing link might deliver nothing.
+ */
 export interface EmailLink {
   email_config_uuid: string;
   email_config_name: string;
+  email_config_provider: EmailProvider;
+  /** A disabled config is skipped at send time; the link still looks configured. */
+  config_is_enabled: boolean;
+  /** Whether the config has default recipients — not who they are. */
+  config_has_default_recipients: boolean;
   additional_recipients?: string | null;
   notify_on_success: boolean;
   notify_on_error: boolean;

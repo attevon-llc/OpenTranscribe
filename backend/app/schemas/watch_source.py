@@ -511,10 +511,24 @@ class EmailConfigOption(BaseModel):
 
 
 class EmailLinkResponse(BaseModel):
-    """An email config linked to a watch source."""
+    """An email config linked to a watch source.
+
+    Carries enough of the *config* to explain why a link might deliver nothing. That
+    is not redundancy with ``EmailConfigOption``: the picker deliberately excludes
+    configs already linked, so a caller that only had the picker could never learn
+    these facts about the links it is displaying — and the two states they describe
+    (disabled config, no recipients anywhere) are exactly the ones invisible from the
+    link's own fields. Same minimal projection rules: a flag, never an address.
+    """
 
     email_config_uuid: str
     email_config_name: str
+    email_config_provider: str = "smtp"
+    #: A disabled config is skipped by ``send_notification``; the link still looks set.
+    config_is_enabled: bool = True
+    #: Whether the CONFIG has default recipients — not who they are. With no default
+    #: and no ``additional_recipients``, the merged list is empty and nothing is sent.
+    config_has_default_recipients: bool = False
     additional_recipients: str | None = None
     notify_on_success: bool = True
     notify_on_error: bool = True

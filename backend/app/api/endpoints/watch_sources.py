@@ -1065,6 +1065,12 @@ def list_email_links(
         EmailLinkResponse(
             email_config_uuid=str(link.email_config.uuid),
             email_config_name=link.email_config.name,
+            email_config_provider=link.email_config.provider,
+            config_is_enabled=link.email_config.is_enabled,
+            config_has_default_recipients=bool(
+                link.email_config.default_recipients
+                and link.email_config.default_recipients.strip()
+            ),
             additional_recipients=link.additional_recipients,
             notify_on_success=link.notify_on_success,
             notify_on_error=link.notify_on_error,

@@ -404,6 +404,55 @@ def test_listing_links_returns_each_links_own_options(
     assert body[0]["notify_on_error"] is True
 
 
+def test_listing_links_carries_the_config_facts_a_warning_needs(
+    client, db_session, user_token_headers, normal_user
+):
+    """A link must explain, on its own, why it might deliver nothing.
+
+    The picker (``/emails/available``) deliberately excludes configs that are already
+    linked, so it cannot be the source of these two facts for an existing link — and
+    they are exactly the states invisible from the link's own options: a disabled
+    config, and no recipients on either side. Reading them off the picker meant the
+    warnings could never fire for the rows they exist for.
+    """
+    source = _make_source(db_session, normal_user)
+    config = _make_email_config(db_session)
+    config.is_enabled = False
+    config.default_recipients = None
+    db_session.commit()
+    client.post(
+        f"{BASE}/{source.uuid}/emails",
+        json={"email_config_uuid": str(config.uuid)},
+        headers=user_token_headers,
+    )
+
+    body = client.get(f"{BASE}/{source.uuid}/emails", headers=user_token_headers).json()
+
+    assert body[0]["config_is_enabled"] is False
+    assert body[0]["config_has_default_recipients"] is False
+    assert body[0]["email_config_provider"] == "smtp"
+
+
+def test_listing_links_reports_default_recipients_as_a_flag_not_the_addresses(
+    client, db_session, user_token_headers, normal_user
+):
+    """Same minimal-projection rule as the picker: a boolean, never who is mailed."""
+    source = _make_source(db_session, normal_user)
+    config = _make_email_config(db_session)
+    config.default_recipients = "ops@example.com"
+    db_session.commit()
+    client.post(
+        f"{BASE}/{source.uuid}/emails",
+        json={"email_config_uuid": str(config.uuid)},
+        headers=user_token_headers,
+    )
+
+    body = client.get(f"{BASE}/{source.uuid}/emails", headers=user_token_headers).json()
+
+    assert body[0]["config_has_default_recipients"] is True
+    assert "ops@example.com" not in str(body[0])
+
+
 def test_listing_links_on_an_unlinked_source_is_an_empty_list(
     client, db_session, user_token_headers, normal_user
 ):

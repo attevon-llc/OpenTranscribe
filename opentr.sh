@@ -372,6 +372,7 @@ GPU_DEVICE_VARS=(
   GPU_SCALE_DEVICE_ID       # --gpu-scale workers         (docker-compose.gpu-scale.yml)
   GPU_TRANSCRIBE_DEVICE_ID  # --with-gpu-split transcribe (docker-compose.gpu-split.yml)
   GPU_DIARIZE_DEVICE_ID     # --with-gpu-split diarize    (docker-compose.gpu-split.yml)
+  DIAR_NATIVE_GPU           # diar-native sidecar         (docker-compose.diar-native.yml)
 )
 
 # `--gpu-device N` — retarget every GPU this stack's workers reserve, applied
@@ -1899,8 +1900,13 @@ start_app() {
     # only under --gpu-device) so a dry run answers "which card does this stack
     # actually take?" without reading .env and five overlay files.
     echo "   GPU device reservations (as compose will interpolate them):"
-    echo "     GPU_DEVICE_ID=${GPU_DEVICE_ID:-0} REDACTION_GPU_DEVICE_ID=${REDACTION_GPU_DEVICE_ID:-0} GPU_SCALE_DEVICE_ID=${GPU_SCALE_DEVICE_ID:-2}"
-    echo "     GPU_TRANSCRIBE_DEVICE_ID=${GPU_TRANSCRIBE_DEVICE_ID:-0} GPU_DIARIZE_DEVICE_ID=${GPU_DIARIZE_DEVICE_ID:-1} LLM_TEST_GPU_DEVICE_ID=${LLM_TEST_GPU_DEVICE_ID:-2}"
+    # Iterates GPU_DEVICE_VARS so a device var added to the list (and to compose)
+    # shows up here without a second edit; the guard test parses this block.
+    _resv="  "
+    for _var in "${GPU_DEVICE_VARS[@]}"; do
+      _resv="${_resv} ${_var}=${!_var:-${GPU_DEVICE_ID:-0}}"
+    done
+    echo "   ${_resv} LLM_TEST_GPU_DEVICE_ID=${LLM_TEST_GPU_DEVICE_ID:-2}"
     echo "   Command that WOULD run:"
     echo "     docker compose $COMPOSE_FILES up -d $BUILD_CMD $RECREATE_CMD"
     [ -n "$FRESH_FLAG" ] && echo "   (fresh mode: NAS overlay omitted by design; real data untouched)"

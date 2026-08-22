@@ -1635,20 +1635,52 @@ _KEEPALIVE = ": keepalive\n\n"
 _KEEPALIVE_INTERVAL_S = 15
 
 
-async def _with_keepalive(awaitable, queue: asyncio.Queue):
-    """Await ``awaitable``, pushing a keepalive frame into ``queue`` every 15s."""
+class _Awaited:
+    """Carries a result out of :func:`_keepalive_until_done`.
+
+    An async generator cannot ``return`` a value, and the caller needs both the
+    frames *and* what the awaited work produced.
+    """
+
+    __slots__ = ("value",)
+
+    def __init__(self) -> None:
+        self.value: Any = None
+
+
+async def _keepalive_until_done(awaitable, holder: _Awaited):
+    """Await ``awaitable``, YIELDING a keepalive frame every 15s while it runs.
+
+    ⚠️ **Yielding is the entire point, and buffering is the bug this replaces.**
+    The previous shape pushed keepalives into a queue that the caller drained
+    *after* awaiting — but ``stream_reply`` is an async generator, and an async
+    generator cannot yield from inside an ``await``. So every keepalive produced
+    during retrieval reached the client only once retrieval had finished, in one
+    burst, at exactly the moment it was no longer needed. Measured on the old
+    code: 11 keepalives, all bearing the same timestamp as the end of the phase
+    they were supposed to span.
+
+    The result lands on ``holder`` because an async generator cannot return one.
+
+    The awaited task is deliberately **not cancelled** when this generator is torn
+    down (a client disconnect or Stop). That matches the pre-existing contract:
+    the work runs in a threadpool and stops at its own next cancellation check,
+    not because the socket went away.
+
+    Args:
+        awaitable: The work to await — typically a ``run_in_threadpool`` call.
+        holder: Receives the awaited result on completion.
+
+    Yields:
+        ``_KEEPALIVE`` SSE comment frames, one per elapsed interval.
+    """
     task = asyncio.ensure_future(awaitable)
     while True:
         done, _ = await asyncio.wait({task}, timeout=_KEEPALIVE_INTERVAL_S)
         if done:
-            return task.result()
-        queue.put_nowait(_KEEPALIVE)
-
-
-async def _drain(queue: asyncio.Queue):
-    """Yield everything buffered in ``queue`` without blocking."""
-    while not queue.empty():
-        yield queue.get_nowait()
+            holder.value = task.result()
+            return
+        yield _KEEPALIVE
 
 
 def _resolve_output_policy(user_id: int):
@@ -1910,7 +1942,6 @@ class ChatService:
         turn = ChatTurn()
         if scope_files_dropped:
             turn.metadata["scope_files_dropped"] = scope_files_dropped
-        keepalive_q: asyncio.Queue = asyncio.Queue()
         cancel_event = threading.Event()
         started = time.monotonic()
 
@@ -1992,6 +2023,9 @@ class ChatService:
                         assistant_message_uuid=assistant_message_uuid,
                     )
 
+                prepared = _Awaited()
+                async for frame in _keepalive_until_done(run_in_threadpool(_prep), prepared):
+                    yield frame
                 (
                     masked,
                     meta,
@@ -1999,9 +2033,7 @@ class ChatService:
                     overview,
                     synthesis_block,
                     recurrence_block,
-                ) = await _with_keepalive(run_in_threadpool(_prep), keepalive_q)
-                async for frame in _drain(keepalive_q):
-                    yield frame
+                ) = prepared.value
                 turn.metadata.update(meta)
                 counted_block = format_counted_block(counted)
                 overview_block = overview.block if overview is not None else ""

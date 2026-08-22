@@ -34,7 +34,7 @@
     semantic_cache_threshold: 0.97,
     history_max_turns: 10,
     messages_per_hour: 120,
-    max_concurrent_streams: 2,
+    max_concurrent_streams: 6,
     retention_days: 0,
   };
 

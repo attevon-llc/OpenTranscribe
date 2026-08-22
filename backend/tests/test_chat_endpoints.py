@@ -612,6 +612,86 @@ def test_edit_rewrites_the_question_and_retires_the_tail(client, auth_headers, s
     assert any(m["status"] == "superseded" for m in after)
 
 
+def test_a_conversation_deleted_mid_turn_is_404_not_500(
+    client, auth_headers, stub_llm, monkeypatch
+):
+    """The row can vanish between the read and the write, and that is a 404.
+
+    Another tab, another device, or the retention sweep can delete the
+    conversation after the handler has loaded it. SQLAlchemy answers the
+    resulting zero-row UPDATE with ``StaleDataError``, which reached the client
+    as a **500** — "expected to update 1 row(s); 0 were matched". A 500 says the
+    server is broken; the truth is that the thing being written to is gone.
+
+    The delete is simulated at the commit rather than issued from a second
+    session, because the savepoint harness keeps a concurrent session from
+    seeing — let alone deleting — this test's uncommitted row. The seam is the
+    exact operation that fails in production, and the assertions are on real
+    outcomes: the status code, and that no message was persisted.
+    """
+    from sqlalchemy.orm import Session as _Session
+    from sqlalchemy.orm.exc import StaleDataError
+
+    conversation = _create(client, auth_headers)
+    real_commit = _Session.commit
+    fired = {"count": 0}
+
+    def _vanish(self, *args, **kwargs):
+        # Only the FIRST commit of the turn — the one that writes the user
+        # message and touches `last_message_at`. Raising on every commit would
+        # also break the rollback path and prove nothing about this branch.
+        if fired["count"] == 0:
+            fired["count"] += 1
+            raise StaleDataError(
+                "UPDATE statement on table 'chat_conversation' expected to "
+                "update 1 row(s); 0 were matched."
+            )
+        return real_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(_Session, "commit", _vanish)
+    response = client.post(
+        f"/api/chat/conversations/{conversation['uuid']}/messages",
+        json={"content": "Question into the void"},
+        headers=auth_headers,
+    )
+    monkeypatch.undo()
+
+    assert fired["count"] == 1, "the simulated concurrent delete never fired"
+    assert response.status_code == 404, (
+        f"a vanished conversation must be 404, got {response.status_code}"
+    )
+    assert "no longer exists" in response.json()["detail"]
+
+    # Real state, not just the status line: the refused turn left nothing behind.
+    messages = client.get(
+        f"/api/chat/conversations/{conversation['uuid']}/messages", headers=auth_headers
+    )
+    assert messages.status_code == 200
+    assert messages.json()["messages"] == [], "a refused turn must persist no message"
+
+
+def test_an_ordinary_turn_still_commits(client, auth_headers, stub_llm):
+    """The control for the case above.
+
+    Without it, "returns 404" also passes for a handler that refuses every turn
+    — which would look like a robustness fix and be a total outage.
+    """
+    conversation = _create(client, auth_headers)
+    with client.stream(
+        "POST",
+        f"/api/chat/conversations/{conversation['uuid']}/messages",
+        json={"content": "An ordinary question"},
+        headers=auth_headers,
+    ) as stream:
+        assert stream.status_code == 200
+        b"".join(stream.iter_bytes())
+
+    messages = client.get(
+        f"/api/chat/conversations/{conversation['uuid']}/messages", headers=auth_headers
+    ).json()["messages"]
+    assert [m["content"] for m in messages if m["role"] == "user"] == ["An ordinary question"]
+
+
 def test_editing_another_users_message_is_404(
     client, auth_headers, other_user_auth_headers, stub_llm
 ):

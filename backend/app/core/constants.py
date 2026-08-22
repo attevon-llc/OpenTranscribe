@@ -1126,7 +1126,21 @@ DEFAULT_CHAT_RAG_SEMANTIC_CACHE_THRESHOLD = 0.97  # chat.rag.semantic_cache_thre
 # Conversation shape and abuse controls.
 DEFAULT_CHAT_HISTORY_MAX_TURNS = 10  # chat.history_max_turns
 DEFAULT_CHAT_MESSAGES_PER_HOUR = 120  # chat.limits.messages_per_hour
-DEFAULT_CHAT_MAX_CONCURRENT_STREAMS = 2  # chat.limits.max_concurrent_streams
+# Raised 2 -> 6 after a cap of 2 was measured starving ordinary use. A slot is
+# held for `_ACTIVE_TTL_SECONDS` (300) when a stream dies without releasing —
+# a cancelled generation, a closed tab — so at 2 a user who stops one answer and
+# immediately asks two more is refused with "Too many chats streaming at once"
+# until a slot ages out. The whole `-m chat` E2E suite, which is SERIAL and
+# therefore never genuinely concurrent, failed a different random test on every
+# run for exactly this reason; at 6 it is green and 2.5x faster.
+#
+# Still enforced for local providers, unlike the hourly quota next to it: that
+# one is a SPEND control with nothing to control on your own GPU, while this
+# bounds GPU contention, which is just as real for a self-hosted model. 6 is a
+# starting point, not a policy — admins tune it live in Settings -> Chat & RAG
+# (`chat-concurrent`), no restart and no env var, because it is a DB-backed
+# SystemSettings row like every other knob in this block.
+DEFAULT_CHAT_MAX_CONCURRENT_STREAMS = 6  # chat.limits.max_concurrent_streams
 DEFAULT_CHAT_RETENTION_DAYS = 0  # chat.retention_days (0 = keep forever)
 
 # W2.4: the aggregation tier's speaker-facet/speaker-stats fixes. Both default

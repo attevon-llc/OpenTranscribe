@@ -301,11 +301,19 @@ def _run_prepare_context(monkeypatch, db, *, file_uuids, chunk_file_uuids):
 
     monkeypatch.setattr("app.db.session_utils.session_scope", _fixture_session)
 
-    # It returns FOUR values — (masked, meta, counted, overview) — since the
-    # router gained the counted and overview tiers. Only the first two matter
-    # here; unpacking all four keeps this helper honest about the contract
-    # rather than silently swallowing a future fifth.
-    masked, meta, _counted, _overview = chat_service._prepare_context(
+    # It returns SIX values — (masked, meta, counted, overview, synthesis_block,
+    # recurrence_block) — since the router gained the counted and overview tiers
+    # and W2.6 added the two fan-out blocks. Only the first two matter here;
+    # unpacking all six keeps this helper honest about the contract rather than
+    # silently swallowing a future seventh.
+    (
+        masked,
+        meta,
+        _counted,
+        _overview,
+        _synthesis,
+        _recurrence,
+    ) = chat_service._prepare_context(
         user_id=1,
         organization_id=None,
         question="What did they decide?",
@@ -399,12 +407,18 @@ async def _stream_warnings(monkeypatch, *, meta, use_context=True):
     chunks = [MaskedChunk(source=chunk, content=chunk.content)]
 
     monkeypatch.setattr("app.db.session_utils.session_scope", _null_session)
-    # Four values: (masked, meta, counted, overview). The last two are the router's
-    # structured blocks and are None for this turn — but the arity has to match, or
-    # the unpack raises inside the generator and the warning frame under test is
-    # never reached, which reads as "no warning emitted" rather than as an error.
+    # SIX values since #403 W2.6: (masked, meta, counted, overview,
+    # synthesis_block, recurrence_block). The counted/overview pair are the
+    # router's structured blocks and the last two are the fan-out's rendered
+    # blocks; all four are absent for this turn — but the arity has to match, or
+    # the unpack raises inside the generator, `stream_reply`'s broad `except`
+    # swallows it into a `provider_error` frame, and the warning frame under test
+    # is never reached. That reads as "no warning emitted" rather than as an
+    # error, which is why this double must be kept in step with the real return.
     monkeypatch.setattr(
-        chat_service, "_prepare_context", lambda *_a, **_kw: (list(chunks), dict(meta), None, None)
+        chat_service,
+        "_prepare_context",
+        lambda *_a, **_kw: (list(chunks), dict(meta), None, None, "", ""),
     )
     monkeypatch.setattr(chat_service.limits, "is_cancelled", lambda _uuid: False)
 

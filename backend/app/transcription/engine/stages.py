@@ -37,17 +37,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _overlap_diarization_enabled() -> bool:
+def _overlap_diarization_enabled(tc) -> bool:
     """True when diarization should run alongside transcription instead of after it.
 
-    Requires the sidecar engine: only then is diarization another process's work, so the two
-    genuinely run at once rather than contending for this worker's VRAM and GIL. Set
-    ``DIAR_OVERLAP=0`` to force the sequential order back (an escape hatch for debugging, and
-    the control used to prove the two orders produce identical output).
+    Requires the sidecar engine (``tc.diarizer_backend == "native"``): only then is
+    diarization another process's work, so the two genuinely run at once rather than
+    contending for this worker's VRAM and GIL. Set ``DIAR_OVERLAP=0`` to force the sequential
+    order back (an escape hatch for debugging, and the control used to prove the two orders
+    produce identical output).
     """
     import os
 
-    if os.environ.get("DIARIZER_ENGINE", "python").lower() != "native":
+    if tc.diarizer_backend.lower() != "native":
         return False
     return os.environ.get("DIAR_OVERLAP", "1").lower() not in ("0", "false", "no")
 
@@ -202,7 +203,7 @@ class _GpuStage:
         # With the sidecar engine, diarization is another process's work — run it against the
         # same audio while this worker transcribes, instead of queueing it behind whisper.
         async_diarization: _AsyncDiarization | None = None
-        if tc.enable_diarization and _overlap_diarization_enabled():
+        if tc.enable_diarization and _overlap_diarization_enabled(tc):
             async_diarization = _AsyncDiarization(audio, tc, manager, job.task_id)
 
         # Overlap diarizer load with transcription when single-request mode. Pointless once
@@ -483,7 +484,7 @@ class _GpuRawStage:
         # Sidecar diarization is another process's work — start it now and collect it after
         # transcription, so the GPU stage costs max(transcribe, diarize) rather than the sum.
         async_diarization: _AsyncDiarization | None = None
-        if tc.enable_diarization and _overlap_diarization_enabled():
+        if tc.enable_diarization and _overlap_diarization_enabled(tc):
             async_diarization = _AsyncDiarization(audio, tc, manager, pre.task_id)
 
         diarizer_preload_thread: threading.Thread | None = None

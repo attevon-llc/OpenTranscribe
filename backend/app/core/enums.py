@@ -124,3 +124,31 @@ class ReasoningOffSwitch(enum.StrEnum):
     ABSENT = "absent"
     #: Probed: "off" removed the reasoning. The only value that renders a control.
     WORKS = "works"
+
+
+class ContextWindowStatus(enum.StrEnum):
+    """What a discovery probe concluded about a model's context window (issue #533).
+
+    The sibling of :class:`ReasoningOffSwitch`, for the same reason it lives
+    here: the probe service, the Pydantic response, and the settings UI all
+    read it, and a second copy is how they drift.
+
+    **Only ``MEASURED`` carries a number.** Every other value means the user's
+    declared ``max_tokens`` stands untouched — the probe never guesses, and
+    never guesses upward least of all: an over-declared window turns into
+    provider 400s or silent truncation, which is the failure #533 documents.
+    """
+
+    #: Never probed, or the probe could not complete.
+    UNKNOWN = "unknown"
+    #: This provider exposes no discovery endpoint this build knows how to
+    #: read (Anthropic/OpenRouter/custom OpenAI-clones). Distinct from UNKNOWN
+    #: on purpose: "cannot ask" is different from "never asked".
+    UNSUPPORTED = "unsupported"
+    #: The endpoint answered but did not name this model, or named it without
+    #: a window field — the number could not be read, not "there isn't one".
+    NOT_FOUND = "not_found"
+    #: The endpoint did not answer (connection refused, timeout, non-2xx).
+    UNREACHABLE = "unreachable"
+    #: The endpoint reported the model's maximum context length.
+    MEASURED = "measured"

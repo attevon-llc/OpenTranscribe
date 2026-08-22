@@ -86,3 +86,75 @@ class TestEngineSettingsBoundarySmoothing:
 
         get_resp = client.get(_BASE, headers=super_admin_token_headers)
         assert get_resp.json()["boundary_smoothing_enabled"]["source"] in ("env", "default")
+
+
+class TestEngineSettingsDiarizerBackend:
+    """The diarizer_backend dropdown (issue #58) must actually select something.
+
+    Before this it had exactly one option ('pyannote') and the resolved value was never
+    read by anything — an inert control. It is now the DB-backed half of
+    ``TranscriptionConfig.diarizer_backend``, validated against
+    ``engine.backends.VALID_DIARIZER_BACKENDS``.
+    """
+
+    _DIARIZER_DB_KEY = "engine.diarizer_backend"
+
+    def test_default_is_native(self, client, super_admin_token_headers):
+        """With no DB override and no env var, native (the primary engine) is the default."""
+        client.delete(f"{_BASE}/diarizer_backend", headers=super_admin_token_headers)
+        resp = client.get(_BASE, headers=super_admin_token_headers)
+        assert resp.status_code == 200
+        entry = resp.json()["diarizer_backend"]
+        assert entry["source"] in ("env", "default")
+        if entry["source"] == "default":
+            assert entry["value"] == "native"
+
+    def test_set_pyannote_persists_and_reflects(
+        self, client, super_admin_token_headers, db_session
+    ):
+        """The failover can still be pinned directly, and it round-trips through the DB."""
+        resp = client.post(
+            f"{_BASE}/update",
+            json={"diarizer_backend": "pyannote"},
+            headers=super_admin_token_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["diarizer_backend"] == {"value": "pyannote", "source": "db"}
+        assert get_setting(db_session, self._DIARIZER_DB_KEY) == "pyannote"
+
+        get_resp = client.get(_BASE, headers=super_admin_token_headers)
+        assert get_resp.json()["diarizer_backend"] == {"value": "pyannote", "source": "db"}
+
+    def test_set_native_persists_and_reflects(self, client, super_admin_token_headers, db_session):
+        resp = client.post(
+            f"{_BASE}/update",
+            json={"diarizer_backend": "native"},
+            headers=super_admin_token_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["diarizer_backend"] == {"value": "native", "source": "db"}
+        assert get_setting(db_session, self._DIARIZER_DB_KEY) == "native"
+
+    def test_unknown_backend_is_rejected(self, client, super_admin_token_headers, db_session):
+        """The registry gates writes: a name nothing implements must not persist."""
+        resp = client.post(
+            f"{_BASE}/update",
+            json={"diarizer_backend": "nemo-not-registered"},
+            headers=super_admin_token_headers,
+        )
+        assert resp.status_code == 400
+        assert get_setting(db_session, self._DIARIZER_DB_KEY) is None
+
+    def test_reset_diarizer_backend_removes_db_override(
+        self, client, super_admin_token_headers, db_session
+    ):
+        client.post(
+            f"{_BASE}/update",
+            json={"diarizer_backend": "pyannote"},
+            headers=super_admin_token_headers,
+        )
+        assert get_setting(db_session, self._DIARIZER_DB_KEY) == "pyannote"
+
+        resp = client.delete(f"{_BASE}/diarizer_backend", headers=super_admin_token_headers)
+        assert resp.status_code == 204
+        assert get_setting(db_session, self._DIARIZER_DB_KEY) is None

@@ -59,6 +59,7 @@ describe('locale store', () => {
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.removeAttribute('lang');
+    document.documentElement.removeAttribute('dir');
     mockI18next.t.mockClear();
     mockI18next.on.mockClear();
     mockI18next.changeLanguage.mockClear();
@@ -108,6 +109,49 @@ describe('locale store', () => {
 
       expect(get(locale)).toBe(DEFAULT_LANGUAGE);
       expect(document.documentElement.lang).toBe(DEFAULT_LANGUAGE);
+    });
+  });
+
+  describe('RTL direction (#453/ML4)', () => {
+    it('sets dir="rtl" on the document before first paint for a saved Arabic locale', async () => {
+      localStorage.setItem('locale', 'ar');
+
+      await loadLocaleStore();
+
+      // Set at MODULE EVALUATION time, same as `lang` above — this is what avoids
+      // an LTR flash of the app shell before i18next finishes initializing.
+      expect(document.documentElement.dir).toBe('rtl');
+      expect(document.documentElement.lang).toBe('ar');
+    });
+
+    it('sets dir="ltr" for an ordinary LTR locale', async () => {
+      localStorage.setItem('locale', 'fr');
+
+      await loadLocaleStore();
+
+      expect(document.documentElement.dir).toBe('ltr');
+    });
+
+    it('set() flips dir to "rtl" when switching to Arabic', async () => {
+      mockI18next.isInitialized = false;
+      const { locale } = await loadLocaleStore();
+      expect(document.documentElement.dir).toBe('ltr');
+
+      locale.set('ar');
+
+      expect(document.documentElement.dir).toBe('rtl');
+      expect(document.documentElement.lang).toBe('ar');
+    });
+
+    it('set() flips dir back to "ltr" when switching away from Arabic', async () => {
+      localStorage.setItem('locale', 'ar');
+      mockI18next.isInitialized = false;
+      const { locale } = await loadLocaleStore();
+      expect(document.documentElement.dir).toBe('rtl');
+
+      locale.set('es');
+
+      expect(document.documentElement.dir).toBe('ltr');
     });
   });
 

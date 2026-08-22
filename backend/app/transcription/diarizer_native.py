@@ -2,8 +2,11 @@
 
 Speaks to the diar-server sidecar (Rust/speakrs engine; see /mnt/nvm/repos/diar-native).
 Implements the same surface as SpeakerDiarizer.diarize()/embed_window() so callers are
-untouched. Selection is env-gated (DIARIZER_ENGINE=native) via ModelManager — the pyannote
-fork path stays the default and the automatic fallback.
+untouched. Selection is driven by ``TranscriptionConfig.diarizer_backend`` (SystemSettings
+``engine.diarizer_backend`` -> env ``ENGINE_DIARIZER_BACKEND`` -> default ``"native"``) via
+ModelManager — this engine is now the PRIMARY diarizer (issue #58); the in-process PyAnnote
+fork path is the explicit, documented failover, used automatically whenever the sidecar is
+unreachable or fails mid-job.
 
 Contract parity notes (vs diarizer.py):
 - diarize() returns (DiarizeResult, overlap_info, native_embeddings) where segments come from
@@ -18,7 +21,8 @@ Contract parity notes (vs diarizer.py):
   diar-native PLAN.md M1).
 
 This file is standalone/additive: no existing module is modified. Wiring lives in
-ModelManager behind DIARIZER_ENGINE (see diar-native docs/INSTALL_NATIVE.md).
+ModelManager behind ``TranscriptionConfig.diarizer_backend`` (see diar-native
+docs/INSTALL_NATIVE.md).
 """
 
 from __future__ import annotations
@@ -155,7 +159,7 @@ class NativeSpeakerDiarizer:
             raise RuntimeError("Diarizer not loaded. Call load_model() first.")
         if getattr(self.config, "num_speakers", None) is not None:
             logger.warning(
-                "DIARIZER_ENGINE=native: num_speakers=%s requested but the native engine "
+                "diarizer_backend=native: num_speakers=%s requested but the native engine "
                 "runs auto speaker counting (constraint port pending); proceeding with auto.",
                 self.config.num_speakers,
             )

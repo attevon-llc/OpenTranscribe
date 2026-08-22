@@ -93,6 +93,14 @@ NO_FRONTEND_CALLER: dict[str, str] = {
     # cannot see it. Confirmed real by direct inspection of chatStream.ts.
     "/api/chat/conversations/{conversation_uuid}/regenerate": "Real caller: frontend/src/lib/api/chatStream.ts:streamRegenerate, via the streamPost() helper",
     "/api/chat/conversations/{conversation_uuid}/messages/{message_uuid}/edit": "Real caller: frontend/src/lib/api/chatStream.ts:streamEditMessage, via the streamPost() helper",
+    # v400 (#362 lane C5). CommentSection.svelte serves BOTH planes from one
+    # component: `$: commentsEndpoint = isDocument ? '/comments/documents/...' :
+    # '/comments/files/...'`. That is a Svelte REACTIVE statement, not an inline
+    # literal or a local const, so this scanner's regex cannot resolve it — the
+    # same limitation the two chatStream entries above document. Confirmed real by
+    # direct inspection: GET at CommentSection.svelte:87 (load) and POST at :206
+    # (create), both passing `commentsEndpoint`.
+    "/api/comments/documents/{document_uuid}/comments": "Real caller: frontend/src/components/CommentSection.svelte (mode='document'), via the reactive `commentsEndpoint` template literal — GET line 87, POST line 206",
 }
 
 #: Routes this scanner found no frontend call site for, after the axios/fetch/
@@ -187,6 +195,15 @@ _NOT_YET_VERIFIED: dict[str, str] = {
     "/api/admin/files/{file_uuid}/quarantine": _NO_ADMIN_PANEL_REASON,
     "/api/admin/files/{file_uuid}/release": _NO_ADMIN_PANEL_REASON,
     "/api/admin/files/quarantined": _NO_ADMIN_PANEL_REASON,
+    # v399/#362 lane C4, document plane. The REVIEW half is wired — v400 lane
+    # C3-remainder added DocumentQuarantinePanel.svelte over
+    # `GET /documents/admin/quarantined` and `POST /documents/{uuid}/release`
+    # (frontend/src/lib/api/documents.ts) — but the *take-down* action has no UI,
+    # exactly like its media sibling three lines above: quarantining is an
+    # abuse/DMCA response an operator triggers, not a button in the review queue.
+    # Deliberately NOT wired here rather than left unnoticed; deleting this entry
+    # is the signal that a take-down affordance shipped.
+    "/api/documents/{document_uuid}/quarantine": _NO_ADMIN_PANEL_REASON,
     # --- investigation found the SPA calling a different route for this feature ---
     "/api/admin/settings/media-sources": _SUPERSEDED_OR_DUPLICATE_REASON,
     "/api/admin/settings/media-sources/{source_id}": _SUPERSEDED_OR_DUPLICATE_REASON,

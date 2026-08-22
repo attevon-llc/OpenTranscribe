@@ -472,6 +472,83 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         "WHERE table_name = 'media_file' AND column_name = 'redaction_coverage')"
     )
 
+    # v393: file_pipeline_timing's transcribe/diarize overlap markers. Three ADD COLUMNs,
+    # no constraint, so a column IS the fingerprint — the same shape v392's
+    # has_redaction_coverage uses. `transcript_ready_ms` is the probe rather than one of
+    # the two diarize columns only because it is the one the revision's own docstring
+    # calls the perceived-latency marker; all three land in one statement, so any of them
+    # would do.
+    has_overlap_timing_columns = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'file_pipeline_timing' AND column_name = 'transcript_ready_ms')"
+    )
+
+    # v394: document / document_chunk — the document ingestion plane (#362). Two brand new
+    # tables with no prior-revision dependency, so table existence IS the fingerprint, the
+    # same shape v390's has_file_facts uses.
+    has_document_table = "document" in tables and "document_chunk" in tables
+
+    # v395: watch_source_file.document_id — auto-import routes documents too (#362).
+    # Single-marker revision (one ADD COLUMN, no constraint the column itself doesn't
+    # already carry), so the column IS the fingerprint, the same shape v392's
+    # has_redaction_coverage uses.
+    has_watch_source_file_document_id = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'watch_source_file' AND column_name = 'document_id')"
+    )
+
+    # v396: document_chunk.redactions / .toxicity — cached detection spans (#362).
+    # Single-marker revision (two ADD COLUMNs, no constraint), same shape v395 uses.
+    has_document_chunk_redaction_cache = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'document_chunk' AND column_name = 'redactions')"
+    )
+
+    # v397: the document.organization_id backfill + its completion marker (#362
+    # follow-up, lane C0). Pure data migration, no DDL — same shape v379 uses, except
+    # the fingerprint is an explicit system_settings row rather than the absence of
+    # retired data, because there is no schema object this revision's UPDATE leaves
+    # behind to probe for.
+    has_document_tenancy_backfill_v397 = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM system_settings WHERE key = 'documents.tenancy_backfill_v397')"
+    )
+
+    # v398: file_facts widened so documents join the artifact/summary tiers (#403
+    # Stage 6). Probed on the XOR CHECK rather than on `document_id` alone, same
+    # reasoning v391's `has_recorded_date_provenance` gives: the constraint is the
+    # half of the revision that carries the design (a row naming both or neither
+    # owner is unrepresentable), so a database left with the column but not the
+    # CHECK by a partial run falls through to v397 and re-runs v398, which the
+    # idempotent DDL handles. Keying on the column alone would stamp that database
+    # as done and leave the invariant unenforced.
+    has_file_facts_document_support = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+        "WHERE conname = 'ck_file_facts_exactly_one_owner')"
+    )
+
+    # v399: document quarantine/legal-hold columns + task.document_id (lane C3/C4, #362
+    # follow-up). Keyed on the partial index rather than a bare column, same reasoning
+    # v370's own has_media_file_quarantine gives: the index only exists once the whole
+    # guarded block ran, so a database left with columns but no index by a partial run
+    # falls through to v398 and safely re-runs this revision's idempotent DDL.
+    has_document_quarantine = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'ix_document_is_quarantined')"
+    )
+    has_task_document_id = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'task' AND column_name = 'document_id')"
+    )
+
+    # v400: document_share table + comment.document_id (lane C3-remainder/C5, #362
+    # follow-up). Two markers, same reasoning v399's own pair gives: document_share's
+    # existence and comment's XOR CHECK are each the completion marker for their half of
+    # the revision, so a database left with document_share but not the comment CHECK by a
+    # partial run falls through to v399 and safely re-runs this revision's idempotent DDL.
+    has_document_share = "document_share" in tables
+    has_comment_document_owner_check = _check_exists(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_comment_exactly_one_owner')"
+    )
+
     # Return the highest version stamp that matches (newest first)
     # v389: same as v388 plus the erasure ledger. Purely additive, so — like v388 over
     # v387 — the older arm needs no `not has_erasure_ledger` exclusion: this arm is
@@ -514,6 +591,109 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:  # noqa: C901
         and has_user_group_org
         and has_erasure_ledger
     )
+    # v400: same as v399 plus document_share + comment.document_id.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+        and has_watch_source_file_document_id
+        and has_document_chunk_redaction_cache
+        and has_document_tenancy_backfill_v397
+        and has_file_facts_document_support
+        and has_document_quarantine
+        and has_task_document_id
+        and has_document_share
+        and has_comment_document_owner_check
+    ):
+        return "v400_add_document_sharing_and_comments"
+    # v399: same as v398 plus document quarantine + task.document_id.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+        and has_watch_source_file_document_id
+        and has_document_chunk_redaction_cache
+        and has_document_tenancy_backfill_v397
+        and has_file_facts_document_support
+        and has_document_quarantine
+        and has_task_document_id
+    ):
+        return "v399_add_document_quarantine_and_task_link"
+    # v398: same as v397 plus file_facts' exactly-one-owner CHECK.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+        and has_watch_source_file_document_id
+        and has_document_chunk_redaction_cache
+        and has_document_tenancy_backfill_v397
+        and has_file_facts_document_support
+    ):
+        return "v398_widen_file_facts_for_documents"
+    # v397: same as v396 plus the tenancy-backfill completion marker.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+        and has_watch_source_file_document_id
+        and has_document_chunk_redaction_cache
+        and has_document_tenancy_backfill_v397
+    ):
+        return "v397_backfill_document_tenancy_and_hash"
+    # v396: same as v395 plus document_chunk's redaction-cache columns.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+        and has_watch_source_file_document_id
+        and has_document_chunk_redaction_cache
+    ):
+        return "v396_add_document_chunk_redaction_cache"
+    # v395: same as v394 plus watch_source_file.document_id.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+        and has_watch_source_file_document_id
+    ):
+        return "v395_add_watch_source_file_document_id"
+    # v394: same as v392 plus the document ingestion tables. It deliberately does NOT
+    # require v393's overlap-timing columns even though v393 is its parent on master:
+    # the document chain was renumbered up one slot (see backend/app/db/CLAUDE.md's
+    # "Renumbering note 3"), so a database migrated from the pre-renumbering branch has
+    # the document tables WITHOUT them. Requiring both would drop such a database to
+    # v392 and re-run the whole document chain.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_document_table
+    ):
+        return "v394_add_document_tables"
+    # v393: same as v392 plus file_pipeline_timing's transcribe/diarize overlap markers.
+    # Reached only when the document tables are absent — a database that stopped on
+    # master's v393 before the document chain existed.
+    if (
+        matches_v389
+        and has_file_facts
+        and has_recorded_date_provenance
+        and has_redaction_coverage
+        and has_overlap_timing_columns
+    ):
+        return "v393_add_overlap_timing_columns"
     # v392: same as v391 plus the redaction-coverage column.
     if matches_v389 and has_file_facts and has_recorded_date_provenance and has_redaction_coverage:
         return "v392_add_redaction_coverage"

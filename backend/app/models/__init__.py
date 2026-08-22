@@ -10,6 +10,9 @@ from .chat import ChatConversation
 from .chat import ChatMessage
 from .chat import ChatProject
 from .custom_vocabulary import CustomVocabulary
+from .document import Document
+from .document import DocumentChunk
+from .document import DocumentShare
 from .email_notification_config import EmailNotificationConfig
 from .email_notification_config import WatchSourceEmail
 from .erasure import ErasureLedgerEntry
@@ -105,6 +108,9 @@ __all__ = [
     "UploadBatch",
     "FilePipelineTiming",
     "FileFacts",
+    "Document",
+    "DocumentChunk",
+    "DocumentShare",
     "WatchSource",
     "WatchSourceFile",
     "EmailNotificationConfig",

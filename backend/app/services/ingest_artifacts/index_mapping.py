@@ -129,6 +129,16 @@ def digest_plane_clause() -> dict[str, Any]:
     return {"term": {DOC_TYPE_FIELD: DOC_TYPE_DIGEST}}
 
 
+def document_chunk_plane_clause() -> dict[str, Any]:
+    """Match only document-chunk documents (#362 Stage 6c). No compat arm, for the same
+    reason as :func:`digest_plane_clause`: ``document_chunk`` is a Stage 6 value declared
+    alongside the v6 mapping bump, so every document indexed under it already carries
+    ``doc_type`` — there is no pre-v6 document population with a missing field to fall
+    back for.
+    """
+    return {"term": {DOC_TYPE_FIELD: DOC_TYPE_DOCUMENT_CHUNK}}
+
+
 def digest_document_id(file_uuid: str, section_index: int) -> str:
     """``{uuid}_digest_{n}`` — never colliding with ``{uuid}_{chunk_index}``.
 

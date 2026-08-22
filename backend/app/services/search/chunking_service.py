@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from app.core.config import settings
+from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 
 logger = logging.getLogger(__name__)
 
@@ -209,7 +210,7 @@ def _sentence_joiner(text: str) -> str:
     return "" if _NO_SPACE_CHAR_RE.search(text) else " "
 
 
-def _punkt_can_read(text: str, language: str) -> bool:
+def _punkt_can_read(text: str, language: str | None) -> bool:
     """Whether an NLTK punkt model is a sensible splitter for this text.
 
     ``_PUNKT_LANG_MAP.get(language, "english")`` used to send every unmapped
@@ -218,6 +219,11 @@ def _punkt_can_read(text: str, language: str) -> bool:
     ``!``, ``?`` and Chinese uses ``。``, ``！``, ``？``. The regex fallback below
     already handled those terminators but was never reached, because punkt had
     not failed; it had merely been wrong.
+
+    ``language=None`` (unknown — no caller should ever coerce this to ``"en"``
+    just because English is the default; see ``services/documents/chunking.py``'s
+    #448 fix) falls straight through to the text-based disqualifiers below, the
+    same as any other unmapped code.
     """
     if language in _PUNKT_LANG_MAP:
         return True
@@ -228,7 +234,7 @@ def _punkt_can_read(text: str, language: str) -> bool:
     return not (_NO_SPACE_CHAR_RE.search(text) or _FOREIGN_TERMINATOR_RE.search(text))
 
 
-def split_into_sentences(text: str, language: str = "en") -> list[str]:
+def split_into_sentences(text: str, language: str | None = "en") -> list[str]:
     """Split text into sentences using NLTK punkt with regex fallback.
 
     **Public, and it has to be.** ``services/ingest_artifacts/digest.py`` and
@@ -241,7 +247,13 @@ def split_into_sentences(text: str, language: str = "en") -> list[str]:
 
     Args:
         text: Input text to split.
-        language: ISO 639-1 language code (e.g. "en", "de", "fr").
+        language: ISO 639-1 language code (e.g. "en", "de", "fr"), or ``None``
+            when the caller genuinely does not know — pass ``None``, not a
+            coerced ``"en"``: :func:`_punkt_can_read` only applies its
+            script/terminator disqualifiers to a language it does not
+            recognise, so defaulting an unknown language to English silently
+            defeats that guard (issue #448) instead of taking its no-language
+            path.
 
     Returns:
         List of sentence strings. Returns [text] if splitting fails.
@@ -250,7 +262,12 @@ def split_into_sentences(text: str, language: str = "en") -> list[str]:
         return []
 
     if _punkt_can_read(text, language):
-        nltk_lang = _PUNKT_LANG_MAP.get(language, "english")
+        # `language or ""`: None (unknown) never matches a real map key, so this
+        # still falls through to "english" — same outcome as before, just typed
+        # correctly now that `_punkt_can_read` legitimately returns True for a
+        # None language (the no-language path taken when the script/terminator
+        # checks find nothing disqualifying).
+        nltk_lang = _PUNKT_LANG_MAP.get(language or "", "english")
         tokenizer = _get_nltk_tokenizer(nltk_lang)
         if tokenizer is not None:
             try:
@@ -384,6 +401,8 @@ def chunk_transcript_by_speaker_turns(
                     file_size=file_size,
                     collection_ids=collection_ids,
                     organization_id=organization_id,
+                    speaker_id=turn.get("speaker_id"),
+                    profile_id=turn.get("profile_id"),
                 )
             )
             chunk_index += 1
@@ -442,7 +461,9 @@ def _group_segments_into_speaker_turns(
         return list(seg.get("words") or [])
 
     current_turn = {
-        "speaker": segments[0].get("speaker", "Unknown"),
+        "speaker": segments[0].get("speaker", UNKNOWN_SPEAKER_LABEL),
+        "speaker_id": segments[0].get("speaker_id"),
+        "profile_id": segments[0].get("profile_id"),
         "text": segments[0].get("text", "").strip(),
         "start": segments[0].get("start", 0.0),
         "end": segments[0].get("end", 0.0),
@@ -450,7 +471,7 @@ def _group_segments_into_speaker_turns(
     }
 
     for seg in segments[1:]:
-        seg_speaker = seg.get("speaker", "Unknown")
+        seg_speaker = seg.get("speaker", UNKNOWN_SPEAKER_LABEL)
         seg_text = seg.get("text", "").strip()
 
         if seg_speaker == current_turn["speaker"]:
@@ -464,6 +485,13 @@ def _group_segments_into_speaker_turns(
                 turns.append(current_turn)
             current_turn = {
                 "speaker": seg_speaker,
+                # Taken from the FIRST segment of the new turn. Turns are grouped
+                # by speaker NAME, so this is a display-name-keyed lookup, not an
+                # id-keyed one — two distinct Speaker rows sharing one display name
+                # would merge into one turn and this simply carries whichever id
+                # opened it, the same approximation the name grouping already makes.
+                "speaker_id": seg.get("speaker_id"),
+                "profile_id": seg.get("profile_id"),
                 "text": seg_text,
                 "start": seg.get("start", 0.0),
                 "end": seg.get("end", 0.0),
@@ -606,6 +634,8 @@ def _split_long_turn(
                     file_size=file_size,
                     collection_ids=collection_ids,
                     organization_id=organization_id,
+                    speaker_id=turn.get("speaker_id"),
+                    profile_id=turn.get("profile_id"),
                 )
             )
             chunk_index += 1
@@ -652,6 +682,8 @@ def _split_long_turn(
                 file_size=file_size,
                 collection_ids=collection_ids,
                 organization_id=organization_id,
+                speaker_id=turn.get("speaker_id"),
+                profile_id=turn.get("profile_id"),
             )
         )
 
@@ -720,6 +752,8 @@ def _split_long_turn_by_words(
                 file_size=file_size,
                 collection_ids=collection_ids,
                 organization_id=organization_id,
+                speaker_id=turn.get("speaker_id"),
+                profile_id=turn.get("profile_id"),
             )
         )
         chunk_index += 1
@@ -749,12 +783,26 @@ def _make_chunk(
     file_size: int | None = None,
     collection_ids: list[int] | None = None,
     organization_id: int | None = None,
+    speaker_id: int | None = None,
+    profile_id: int | None = None,
 ) -> dict[str, Any]:
     """Create a chunk document dict.
 
     ``organization_id`` is only written when set (org file). Community/personal
     docs are indexed WITHOUT the field, matching the personal-scope search filter
     (``must_not exists organization_id``) so behavior is unchanged there.
+
+    ``speaker_id`` / ``profile_id`` (issue W2.7) follow the same only-when-known
+    convention, for the same reason: a document indexed before these fields
+    existed, or whose turn has no resolved ``Speaker`` row, carries neither key
+    at all rather than an explicit ``null`` — every reader must use an
+    ``exists`` compat arm (:func:`~app.services.ingest_artifacts.index_mapping`
+    has none of its own for these two; see ``services/search/CLAUDE.md``'s
+    existing compat-arm pattern) rather than assume the field is populated.
+    **Never folded into ``embedding_text``** — that field is what the ingest
+    pipeline embeds, and an id has no semantic content a vector search could
+    use; adding it would silently reshape the vector of every document that
+    carries one.
     """
     chunk: dict[str, Any] = {
         "file_id": file_id,
@@ -777,4 +825,8 @@ def _make_chunk(
     }
     if organization_id is not None:
         chunk["organization_id"] = organization_id
+    if speaker_id is not None:
+        chunk["speaker_id"] = speaker_id
+    if profile_id is not None:
+        chunk["profile_id"] = profile_id
     return chunk

@@ -193,6 +193,54 @@
     return String(value);
   }
 
+  // Action items are shape-tolerant: the DEFAULT summary prompt
+  // (backend/app/core/default_prompts.py) emits {item, owner, due_date,
+  // priority, context, mentioned_timestamp}; schemas/summary.py's ActionItem
+  // model (exported but dead — nothing produces it) declares a DIFFERENT
+  // shape, {text, assigned_to, ..., status}. SummaryData is extra="allow", so
+  // a custom prompt may emit either, or neither. Try both spellings; never
+  // assume one.
+  function actionItemText(item: any): string {
+    if (typeof item === 'string') return item;
+    if (item && typeof item === 'object') {
+      return item.item || item.text || item.description || '';
+    }
+    return '';
+  }
+  function actionItemOwner(item: any): string {
+    if (item && typeof item === 'object') {
+      return item.owner || item.assigned_to || '';
+    }
+    return '';
+  }
+  function actionItemDueDate(item: any): string {
+    return item && typeof item === 'object' && item.due_date ? String(item.due_date) : '';
+  }
+  function actionItemPriority(item: any): string {
+    return item && typeof item === 'object' && item.priority ? String(item.priority) : '';
+  }
+
+  // Speaker analysis: the default prompt's key is `speakers_analysis`, with
+  // entries shaped {speaker, role, talk_time_percentage, key_contributions}.
+  // `summary` field / `SpeakerInfo` shape ({name, percentage, key_points}) is
+  // a legacy/alternate spelling this also tolerates.
+  function speakerEntries(s: SummaryData): any[] {
+    return (s.speakers_analysis as any[]) || (s.speakers as any[]) || [];
+  }
+  function speakerName(entry: any): string {
+    return (entry && (entry.speaker || entry.name)) || '';
+  }
+  function speakerRole(entry: any): string {
+    return (entry && entry.role) || '';
+  }
+  function speakerTalkTime(entry: any): number | null {
+    const pct = entry && (entry.talk_time_percentage ?? entry.percentage);
+    return pct === undefined || pct === null ? null : Number(pct);
+  }
+  function speakerPoints(entry: any): string[] {
+    return (entry && (entry.key_contributions || entry.key_points)) || [];
+  }
+
   // Reactive function to generate highlighted content (for BLUF format)
   function getHighlightedContent() {
     if (!searchQuery || !summary) return null;
@@ -213,6 +261,18 @@
         topic: highlightWithGlobalIndex(escapeHtml(topic.topic || ''), globalIndex),
         key_points: (topic.key_points || []).map(point => highlightWithGlobalIndex(escapeHtml(point || ''), globalIndex)),
         participants: (topic.participants || []).map(p => highlightWithGlobalIndex(escapeHtml(p || ''), globalIndex))
+      })),
+      actionItems: (summary.action_items || []).map(item => ({
+        text: highlightWithGlobalIndex(escapeHtml(actionItemText(item)), globalIndex),
+        owner: actionItemOwner(item) ? highlightWithGlobalIndex(escapeHtml(actionItemOwner(item)), globalIndex) : '',
+        dueDate: actionItemDueDate(item) ? escapeHtml(actionItemDueDate(item)) : '',
+        priority: actionItemPriority(item)
+      })),
+      speakersAnalysis: speakerEntries(summary).map(entry => ({
+        name: highlightWithGlobalIndex(escapeHtml(speakerName(entry)), globalIndex),
+        role: speakerRole(entry) ? escapeHtml(speakerRole(entry)) : '',
+        talkTime: speakerTalkTime(entry),
+        points: speakerPoints(entry).map((p: string) => highlightWithGlobalIndex(escapeHtml(p || ''), globalIndex))
       }))
     };
   }
@@ -223,6 +283,24 @@
     topic: escapeHtml(topic.topic || ''),
     key_points: (topic.key_points || []).map((p: string) => escapeHtml(p || '')),
     participants: (topic.participants || []).map((p: string) => escapeHtml(p || ''))
+  }));
+
+  // Pre-escape action items / speaker analysis for the non-highlighted path.
+  // Neither is rendered anywhere else in this modal today, so this is the
+  // ONLY renderer for them — a per-file recording artifact the product
+  // otherwise never shows.
+  $: escapedActionItems = (summary.action_items || []).map(item => ({
+    text: escapeHtml(actionItemText(item)),
+    owner: escapeHtml(actionItemOwner(item)),
+    dueDate: escapeHtml(actionItemDueDate(item)),
+    priority: actionItemPriority(item)
+  }));
+
+  $: escapedSpeakersAnalysis = speakerEntries(summary).map(entry => ({
+    name: escapeHtml(speakerName(entry)),
+    role: escapeHtml(speakerRole(entry)),
+    talkTime: speakerTalkTime(entry),
+    points: speakerPoints(entry).map((p: string) => escapeHtml(p || ''))
   }));
 
   let highlightedContent: any = null;
@@ -270,6 +348,35 @@
       />
     {/if}
 
+    {#if summary.action_items && summary.action_items.length > 0}
+      <section class="action-items-section">
+        <h3 class="section-title">{$t('summary.actionItems')}</h3>
+        <div class="action-items-list">
+          {#each (highlightedContent?.actionItems || escapedActionItems) as item}
+            <div class="action-item">
+              <div class="action-item-bullet">☐</div>
+              <div class="action-item-body">
+                <div class="action-item-text">{@html sanitizeHighlightHtml(item.text)}</div>
+                {#if item.owner || item.dueDate || item.priority}
+                  <div class="action-item-meta">
+                    {#if item.owner}
+                      <span class="action-item-owner">{$t('summary.owner')}: {@html sanitizeHighlightHtml(item.owner)}</span>
+                    {/if}
+                    {#if item.dueDate}
+                      <span class="action-item-due">{$t('summary.dueDate')}: {@html sanitizeHighlightHtml(item.dueDate)}</span>
+                    {/if}
+                    {#if item.priority}
+                      <span class="action-item-priority priority-{item.priority}">{item.priority}</span>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
     {#if summary.key_decisions && summary.key_decisions.length > 0}
       <section class="key-decisions-section">
         <h3 class="section-title">{$t('summary.keyDecisions')}</h3>
@@ -278,6 +385,32 @@
             <div class="key-decision-item">
               <div class="decision-bullet">✓</div>
               <div class="decision-text">{@html sanitizeHighlightHtml(highlightedContent ? (decision as string) : escapeHtml(extractText(decision)))}</div>
+            </div>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    {#if speakerEntries(summary).length > 0}
+      <section class="speaker-analysis-section">
+        <h3 class="section-title">{$t('summary.speakerAnalysis')}</h3>
+        <div class="speakers-list">
+          {#each (highlightedContent?.speakersAnalysis || escapedSpeakersAnalysis) as s}
+            <div class="speaker-item">
+              <div class="speaker-header">
+                <span class="speaker-name">{@html sanitizeHighlightHtml(s.name)}</span>
+                {#if s.role}<span class="speaker-role">{@html sanitizeHighlightHtml(s.role)}</span>{/if}
+                {#if s.talkTime !== null && s.talkTime !== undefined}
+                  <span class="speaker-talktime">{s.talkTime}%</span>
+                {/if}
+              </div>
+              {#if s.points && s.points.length > 0}
+                <ul class="speaker-points">
+                  {#each s.points as point}
+                    <li>{@html sanitizeHighlightHtml(point)}</li>
+                  {/each}
+                </ul>
+              {/if}
             </div>
           {/each}
         </div>
@@ -374,6 +507,106 @@
   .decision-text, .follow-up-text {
     flex: 1;
     line-height: 1.5;
+  }
+
+  .action-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .action-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .action-item-bullet {
+    color: var(--primary-color);
+    font-weight: 600;
+    margin-top: 0.1rem;
+  }
+
+  .action-item-body {
+    flex: 1;
+  }
+
+  .action-item-text {
+    line-height: 1.5;
+  }
+
+  .action-item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+
+  .action-item-priority {
+    text-transform: uppercase;
+    font-weight: 600;
+    padding: 0.05rem 0.4rem;
+    border-radius: 3px;
+  }
+
+  .action-item-priority.priority-high {
+    color: var(--danger-color, #d32f2f);
+  }
+
+  .action-item-priority.priority-medium {
+    color: var(--warning-color, #ed6c02);
+  }
+
+  .action-item-priority.priority-low {
+    color: var(--text-muted);
+  }
+
+  .speakers-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .speaker-item {
+    padding-left: 0.75rem;
+    border-left: 2px solid var(--border-color);
+  }
+
+  .speaker-header {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .speaker-name {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .speaker-role {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.9rem;
+  }
+
+  .speaker-talktime {
+    color: var(--primary-color);
+    font-weight: 500;
+    font-size: 0.85rem;
+  }
+
+  .speaker-points {
+    margin: 0.4rem 0 0;
+    padding-left: 1.25rem;
+  }
+
+  .speaker-points li {
+    margin-bottom: 0.2rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
   }
 
   .ai-disclaimer-section {

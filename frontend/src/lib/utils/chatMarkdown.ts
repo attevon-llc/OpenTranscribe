@@ -19,6 +19,8 @@
 import createDOMPurify from 'dompurify';
 import { marked } from 'marked';
 
+import type { ChatSourceKind } from '$lib/types/chat';
+
 /**
  * A DEDICATED DOMPurify instance.
  *
@@ -133,14 +135,68 @@ export function escapeHtml(text: string): string {
 }
 
 /**
- * Build a citation deep link from STRUCTURED data only.
+ * Kinds `citationHref` routes on — a strict superset of `ChatSourceKind`.
+ * `document` is not yet a value `ChatSource.kind` can hold (that is the next
+ * lane's own widening of the type, alongside its retrieval-side wiring); the
+ * branch below is written now so landing it needs no `citationHref` edit.
+ */
+export type CitationLinkKind = ChatSourceKind | 'document';
+
+/** The subset of `ChatSource` a citation link needs to decide its shape. */
+export interface CitationLinkSource {
+  file_uuid: string;
+  kind?: CitationLinkKind;
+  start_time?: number | null;
+  digest_section?: number | null;
+  chunk_index?: number;
+  /** `kind === 'recurrence'` only — see `ChatSource.file_uuids`. */
+  file_uuids?: string[] | null;
+}
+
+/**
+ * Build a citation deep link from STRUCTURED data only, kind-aware (#464).
  *
  * Never call this with anything parsed out of model prose — that is precisely
  * what the relative-URL block above exists to prevent.
+ *
+ * - `summary`: no single moment to seek to — a summary describes the whole
+ *   recording, not a turn in it — so this deep-links to the file's summary
+ *   view (`?view=summary[&section=N]`, amendment c) instead of the player.
+ * - `recurrence` (W2.5): spans MULTIPLE recordings, so there is no single
+ *   file this could deep-link into meaningfully. Lands on the FIRST
+ *   recording's own page (`file_uuids[0]`, falling back to `file_uuid`) with
+ *   no `t=`/`view=` — "go look at one of the recordings this recurred in" is
+ *   honest; a fabricated timestamp or view into one file would imply the
+ *   whole group lives there.
+ * - `document` (a later lane's kind, handled here so THAT lane needs no
+ *   `citationHref` edit): `/documents/{uuid}?chunk=N`, **never**
+ *   `start_time=0` — a document chunk has no timestamp, and a fabricated
+ *   `t=0` would look like a working "jump to the start" link that lands
+ *   nowhere meaningful in a player that isn't even showing.
+ * - everything else (`chunk`, `digest`, and an absent `kind` for messages
+ *   persisted before #403 Stage 4): unchanged — `/files/{uuid}?t={seconds}`.
  */
-export function citationHref(fileUuid: string, startTime: number): string {
-  const seconds = Math.max(0, Math.floor(startTime || 0));
-  return `/files/${encodeURIComponent(fileUuid)}?t=${seconds}`;
+export function citationHref(source: CitationLinkSource): string {
+  const uuid = encodeURIComponent(source.file_uuid);
+  const kind = source.kind ?? 'chunk';
+
+  if (kind === 'summary') {
+    const section = source.digest_section;
+    return section != null
+      ? `/files/${uuid}?view=summary&section=${section}`
+      : `/files/${uuid}?view=summary`;
+  }
+  if (kind === 'recurrence') {
+    const first =
+      source.file_uuids && source.file_uuids.length > 0 ? source.file_uuids[0] : source.file_uuid;
+    return `/files/${encodeURIComponent(first)}`;
+  }
+  if (kind === 'document') {
+    return `/documents/${uuid}?chunk=${source.chunk_index ?? 0}`;
+  }
+
+  const seconds = Math.max(0, Math.floor(source.start_time || 0));
+  return `/files/${uuid}?t=${seconds}`;
 }
 
 /** Format seconds as a clock label (`m:ss` or `h:mm:ss`). */

@@ -321,9 +321,19 @@ def test_the_overview_names_every_recording_the_scope_contains():
 
 
 def _scope_db(rows):
-    """A session whose file_facts join returns ``rows``."""
+    """A session whose file_facts (outer) join returns ``rows``.
+
+    Two chained ``.filter()`` calls, not one: ``scope_digest_hits`` filters by
+    ``uuid.in_(...)`` and then by ``is_quarantined.is_(False)`` (Finding #2 —
+    the map leg must exclude a quarantined file exactly like the ranked digest
+    leg does). Configuring only the first ``.filter().all()`` leaves the
+    second an unconfigured `MagicMock` whose `.all()` is a fresh mock too, not
+    ``rows`` — every test using this helper would see an empty result
+    regardless of what it passed in.
+    """
     db = MagicMock()
-    db.query.return_value.join.return_value.filter.return_value.all.return_value = rows
+    query = db.query.return_value.outerjoin.return_value.filter.return_value
+    query.filter.return_value.all.return_value = rows
     return db
 
 

@@ -26,11 +26,15 @@ from app.core import constants as C  # noqa: N812
 
 logger = logging.getLogger(__name__)
 
-_reranker: Any = None
+#: Keyed by model name so the English arm (:data:`C.CHAT_RERANKER_MODEL`) and the
+#: multilingual arm (:data:`C.CHAT_RERANKER_MODEL_MULTILINGUAL`) can be loaded
+#: independently — a deployment that enables the multilingual arm must not evict
+#: the English model it still uses for English pools, and vice versa.
+_rerankers: dict[str, Any] = {}
 _lock = threading.Lock()
-# When the next load may be attempted. 0.0 = now. Set into the future after a
-# failure so a broken load is not retried on every single chat message.
-_retry_after = 0.0
+# When the next load may be attempted, per model name. Absent = now. Set into the
+# future after a failure so a broken load is not retried on every single chat message.
+_retry_after: dict[str, float] = {}
 
 # How long to wait before retrying a failed load. Long enough that a genuinely
 # missing model costs one attempt every few minutes rather than one per request,
@@ -76,11 +80,13 @@ def _is_mostly_non_english(hits: list) -> bool:
     return non_english > len(voting) * _MAX_NON_ENGLISH_SHARE
 
 
-def get_reranker() -> Any:
-    """Return the lazily-loaded CrossEncoder, or None when unavailable.
+def get_reranker(model_name: str = C.CHAT_RERANKER_MODEL) -> Any:
+    """Return the lazily-loaded CrossEncoder for ``model_name``, or None when unavailable.
 
     Double-checked locking: several concurrent first-chats must not each load a
-    copy of the weights.
+    copy of the weights. Loaded models are cached per ``model_name`` (see
+    :data:`_rerankers`), so calling this for the English model and the
+    multilingual arm in the same process keeps both loaded independently.
 
     A failed load is retried after :data:`RETRY_COOLDOWN_S` rather than latched
     off for the life of the process. The load can fail for reasons that fix
@@ -88,49 +94,58 @@ def get_reranker() -> Any:
     starts, a transient error fetching weights — and latching turned any one of
     those into permanently degraded retrieval quality with no signal beyond a
     single startup warning. Silent, and invisible in every later log line.
-    """
-    global _reranker, _retry_after
 
-    if _reranker is not None:
-        return _reranker
-    if time.monotonic() < _retry_after:
+    Args:
+        model_name: HuggingFace model id. Defaults to the shipped English arm
+            (:data:`C.CHAT_RERANKER_MODEL`); pass
+            :data:`C.CHAT_RERANKER_MODEL_MULTILINGUAL` for the multilingual arm.
+    """
+    if model_name in _rerankers:
+        return _rerankers[model_name]
+    if time.monotonic() < _retry_after.get(model_name, 0.0):
         return None
 
     with _lock:
         # Re-check both conditions: another thread may have loaded it, or lost
         # the same race and just started a fresh cooldown.
-        if _reranker is not None:
-            return _reranker
-        if time.monotonic() < _retry_after:
+        if model_name in _rerankers:
+            return _rerankers[model_name]
+        if time.monotonic() < _retry_after.get(model_name, 0.0):
             return None
         try:
             # Heavy optional import — kept inside the function so CPU-only and
             # model-less deployments can still import this module.
             from sentence_transformers import CrossEncoder
 
-            _reranker = CrossEncoder(C.CHAT_RERANKER_MODEL, device="cpu", max_length=512)
-            logger.info(f"Chat reranker loaded on CPU: {C.CHAT_RERANKER_MODEL}")
+            model = CrossEncoder(model_name, device="cpu", max_length=512)
+            _rerankers[model_name] = model
+            logger.info(f"Chat reranker loaded on CPU: {model_name}")
         except Exception as exc:  # noqa: BLE001
-            _retry_after = time.monotonic() + RETRY_COOLDOWN_S
+            _retry_after[model_name] = time.monotonic() + RETRY_COOLDOWN_S
             logger.warning(
-                f"Chat reranker unavailable ({C.CHAT_RERANKER_MODEL}): {exc}. "
+                f"Chat reranker unavailable ({model_name}): {exc}. "
                 f"Reranking is disabled; retrieval order will be used as-is. "
                 f"Retrying in {int(RETRY_COOLDOWN_S)}s. "
                 "Run scripts/download-models.py to pre-fetch the model."
             )
-            _reranker = None
-    return _reranker
+            return None
+    return _rerankers.get(model_name)
 
 
 def reset_reranker_state() -> None:
-    """Clear the cached model and cooldown. For tests only."""
-    global _reranker, _retry_after
+    """Clear every cached model and cooldown. For tests only."""
     with _lock:
-        _reranker = None
-        _retry_after = 0.0
+        _rerankers.clear()
+        _retry_after.clear()
 
 
-def rerank(query: str, hits: list, *, max_pairs: int = 50) -> list:
+def rerank(
+    query: str,
+    hits: list,
+    *,
+    max_pairs: int = 50,
+    multilingual_enabled: bool = False,
+) -> list:
     """Reorder ``hits`` by cross-encoder relevance to ``query``.
 
     Args:
@@ -139,6 +154,14 @@ def rerank(query: str, hits: list, *, max_pairs: int = 50) -> list:
         max_pairs: Ceiling on pairs scored — scoring is linear in pair count and
             this runs inside a request, so the tail of a large candidate pool is
             left in retrieval order rather than blowing the latency budget.
+        multilingual_enabled: Opt-in switch for the #453/ML1 multilingual arm
+            (``chat.rag.multilingual_rerank_enabled``, default ``False``
+            everywhere nothing has wired the setting through yet). When
+            ``False`` — the shipped behaviour — a predominantly non-English
+            pool is left in retrieval order, exactly as before this parameter
+            existed. When ``True``, that pool is scored with
+            :data:`C.CHAT_RERANKER_MODEL_MULTILINGUAL` instead of being
+            skipped; an English-majority pool is unaffected either way.
 
     Returns:
         Hits reordered best-first. Returns the input unchanged when the model is
@@ -152,7 +175,8 @@ def rerank(query: str, hits: list, *, max_pairs: int = 50) -> list:
 
     # Checked against the HEAD, not the whole pool: the head is what would actually
     # be rescored, and the tail keeps its retrieval scores either way.
-    if _is_mostly_non_english(head):
+    non_english_head = _is_mostly_non_english(head)
+    if non_english_head and not multilingual_enabled:
         logger.info(
             "Skipping chat reranking: the candidate pool is predominantly non-English "
             "and %s is an English MS MARCO model. Keeping retrieval order.",
@@ -160,7 +184,8 @@ def rerank(query: str, hits: list, *, max_pairs: int = 50) -> list:
         )
         return hits
 
-    model = get_reranker()
+    model_name = C.CHAT_RERANKER_MODEL_MULTILINGUAL if non_english_head else C.CHAT_RERANKER_MODEL
+    model = get_reranker(model_name)
     if model is None:
         return hits
 

@@ -99,7 +99,7 @@ def test_redaction_disabled_entirely_passes_content_through():
     assert masked[0].was_masked is False
 
 
-def _db_with(status, segments, coverage=None, language="en"):
+def _db_with(status, segments, coverage=None, language="en", user_id=1):
     """A db mock that answers the scan probe and the segment query distinctly.
 
     ``coverage`` is what ``media_file.redaction_coverage`` holds (v391): the
@@ -107,6 +107,13 @@ def _db_with(status, segments, coverage=None, language="en"):
     :func:`~app.services.redaction.coverage.uncovered_detectors` trusts on
     purpose — so a test that wants the coverage gate to BITE must pass a list
     that omits the detector, not leave this defaulted.
+
+    ``user_id`` is the scan row's owner (task #40, strictest-wins) — every
+    caller in this module masks as ``user_id=1``, so the default makes the
+    file SELF-OWNED and the union a no-op against the mocked
+    ``resolve_effective_config`` return value, exactly matching this module's
+    pre-#40 single-subject behaviour. A test that wants to exercise a
+    DIFFERENT owner passes an explicit value.
     """
     db = MagicMock()
     scan_q = MagicMock()
@@ -121,6 +128,7 @@ def _db_with(status, segments, coverage=None, language="en"):
         redaction_status=status,
         redaction_coverage=coverage,
         language=language,
+        user_id=user_id,
     )
     seg_q = MagicMock()
     seg_q.filter.return_value.order_by.return_value.all.return_value = segments

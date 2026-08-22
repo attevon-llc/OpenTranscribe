@@ -16,42 +16,26 @@ from dataclasses import replace
 from sqlalchemy.orm import Session
 
 from app.core import constants as C  # noqa: N812
+from app.core.chat_flag_registry import CHAT_FLAG_REGISTRY
 
 logger = logging.getLogger(__name__)
 
 # SystemSettings key ↔ dataclass field.
 KEY_PREFIX = "chat."
-SETTING_KEYS: dict[str, str] = {
-    "candidate_pool": "chat.rag.candidate_pool",
-    "final_chunks": "chat.rag.final_chunks",
-    "max_chunks_per_file": "chat.rag.max_chunks_per_file",
-    "rerank_enabled": "chat.rag.rerank_enabled",
-    "rerank_max_pairs": "chat.rag.rerank_max_pairs",
-    "query_rewrite_enabled": "chat.rag.query_rewrite_enabled",
-    "cache_ttl_seconds": "chat.rag.cache_ttl_seconds",
-    "semantic_cache_enabled": "chat.rag.semantic_cache_enabled",
-    "semantic_cache_threshold": "chat.rag.semantic_cache_threshold",
-    "history_max_turns": "chat.history_max_turns",
-    "messages_per_hour": "chat.limits.messages_per_hour",
-    "max_concurrent_streams": "chat.limits.max_concurrent_streams",
-    "retention_days": "chat.retention_days",
-}
 
-DEFAULTS: dict[str, int | bool | float] = {
-    "candidate_pool": C.DEFAULT_CHAT_RAG_CANDIDATE_POOL,
-    "final_chunks": C.DEFAULT_CHAT_RAG_FINAL_CHUNKS,
-    "max_chunks_per_file": C.DEFAULT_CHAT_RAG_MAX_CHUNKS_PER_FILE,
-    "rerank_enabled": C.DEFAULT_CHAT_RAG_RERANK_ENABLED,
-    "rerank_max_pairs": C.DEFAULT_CHAT_RAG_RERANK_MAX_PAIRS,
-    "query_rewrite_enabled": C.DEFAULT_CHAT_RAG_QUERY_REWRITE_ENABLED,
-    "cache_ttl_seconds": C.DEFAULT_CHAT_RAG_CACHE_TTL_SECONDS,
-    "semantic_cache_enabled": C.DEFAULT_CHAT_RAG_SEMANTIC_CACHE_ENABLED,
-    "semantic_cache_threshold": C.DEFAULT_CHAT_RAG_SEMANTIC_CACHE_THRESHOLD,
-    "history_max_turns": C.DEFAULT_CHAT_HISTORY_MAX_TURNS,
-    "messages_per_hour": C.DEFAULT_CHAT_MESSAGES_PER_HOUR,
-    "max_concurrent_streams": C.DEFAULT_CHAT_MAX_CONCURRENT_STREAMS,
-    "retention_days": C.DEFAULT_CHAT_RETENTION_DAYS,
-}
+#: DERIVED from `CHAT_FLAG_REGISTRY` — a field added there needs no matching
+#: edit here. This used to be a second hand-written dict, kept in sync with
+#: the registry only by convention and a completeness test that caught it
+#: when they drifted; deriving it removes the chance to drift at all. The
+#: `ChatSettings` dataclass below is NOT similarly derived — a dataclass
+#: field needs a real type annotation and a coded default, which cannot be
+#: synthesized this way — so it is still hand-declared, and
+#: `find_missing_pieces(dataclass_fields=...)` is what now guards THAT piece
+#: (see `core/chat_flag_registry.py`).
+SETTING_KEYS: dict[str, str] = {spec.field: spec.setting_key for spec in CHAT_FLAG_REGISTRY}
+
+#: DERIVED from `CHAT_FLAG_REGISTRY`, same reasoning as `SETTING_KEYS` above.
+DEFAULTS: dict[str, int | bool | float] = {spec.field: spec.default for spec in CHAT_FLAG_REGISTRY}
 
 
 @dataclass(frozen=True)
@@ -71,6 +55,58 @@ class ChatSettings:
     messages_per_hour: int = C.DEFAULT_CHAT_MESSAGES_PER_HOUR
     max_concurrent_streams: int = C.DEFAULT_CHAT_MAX_CONCURRENT_STREAMS
     retention_days: int = C.DEFAULT_CHAT_RETENTION_DAYS
+    #: W2.4. Score the speaker facet ("which speakers discussed X") by spoken
+    #: content instead of the recording's title. Off by default: it changes
+    #: what an existing mechanism answers.
+    speaker_facet_content_scope: bool = C.DEFAULT_CHAT_AGGREGATE_SPEAKER_FACET_CONTENT_SCOPE
+    #: W2.4. Answer "who talked the most" from exact per-speaker talk time in
+    #: ``file_facts``, distinct from the attendance-style speaker facet. Off by
+    #: default: a new shape, gated for rollout.
+    speaker_stats_enabled: bool = C.DEFAULT_CHAT_AGGREGATE_SPEAKER_STATS_ENABLED
+    #: #464. Prefer each file's LLM summary over its digest in the bounded-scope
+    #: map tier (``chat/mapreduce.scope_digest_hits``) whenever the summary is
+    #: FRESH — its stored ``source_fingerprint`` matches the file's current
+    #: ``file_facts`` row. Off by default: on-by-default needs measured
+    #: answer-quality evidence this flag does not yet have.
+    map_tier_summaries: bool = C.DEFAULT_CHAT_MAP_TIER_SUMMARIES
+    #: W2.2. Resolve a speaker named in the question text (e.g. "what did Dana
+    #: say about pricing") against the caller's roster and, on a unique match
+    #: paired with a speaker-verb frame, add a PARALLEL speaker-scoped chunk
+    #: leg (`services/chat/speaker_resolver.py`). Off by default: a new,
+    #: unmeasured retrieval shape.
+    speaker_resolver_enabled: bool = C.DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED
+    #: W2.3. Extends #464's map-tier-summaries pattern to the per-speaker map
+    #: (`mapreduce.scope_speaker_digest_hits`). When a file's LLM summary is
+    #: FRESH, prefer its `speakers_analysis[]` entry for the focus speaker
+    #: (plus owner-matched action items) over the per-sentence digest
+    #: fallback. Off by default: a new, unmeasured retrieval shape.
+    map_tier_speaker_summaries: bool = C.DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES
+    #: W2.5. Cross-meeting recurrence detection: gates both the router's
+    #: recurrence lexicon and the `<recurrence>` evidence block. Off by
+    #: default — a new, unmeasured shape.
+    recurrence_enabled: bool = C.DEFAULT_CHAT_RECURRENCE_ENABLED
+    #: W2.6. Build a plan for a multi-part/ambiguous/recurrence turn and run
+    #: its legs in parallel (`services/chat/planner.py` + `legs.py`). Off by
+    #: default — a new, unmeasured shape; with the flag off (or no LLM
+    #: configured) every turn routes exactly as it did before this existed.
+    planner_enabled: bool = C.DEFAULT_CHAT_PLANNER_ENABLED
+    #: W2.6. Ceiling on the shared leg executor for one turn's fan-out.
+    planner_max_parallel_legs: int = C.DEFAULT_CHAT_PLANNER_MAX_PARALLEL_LEGS
+    #: W2.6. One bounded non-streaming call reconciling merged fan-out
+    #: evidence into a `<synthesis>` block. Independent of `planner_enabled`.
+    enrichment_enabled: bool = C.DEFAULT_CHAT_ENRICHMENT_ENABLED
+    #: Issue #523. Widen a short retrieved chunk to its surrounding exchange,
+    #: by timestamp, before masking — see `chat/context_expansion.py`. Off by
+    #: default: a new, unmeasured retrieval shape, same posture as every
+    #: other W2.x flag above.
+    context_expansion_enabled: bool = C.DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED
+    #: #532 synthesis-gap EXPERIMENT arms — delete after measurement (see
+    #: constants.py). (a) overview entries carry citation ids; (b) the
+    #: anti-narrowing rule rides ON the overview block; (c) the overview is
+    #: placed after the excerpts instead of before.
+    overview_citable: bool = C.DEFAULT_CHAT_OVERVIEW_CITABLE
+    overview_block_rule: bool = C.DEFAULT_CHAT_OVERVIEW_BLOCK_RULE
+    overview_after_excerpts: bool = C.DEFAULT_CHAT_OVERVIEW_AFTER_EXCERPTS
     #: Ceiling on the answer, sent to the provider as max_tokens. ``None`` means
     #: "use whatever the LLM config derived", which is the community behaviour.
     max_output_tokens: int | None = None

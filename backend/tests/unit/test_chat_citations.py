@@ -13,7 +13,14 @@ from app.services.chat.redactor import MaskedChunk
 from app.services.search.chunk_retrieval import ChunkHit
 
 
-def _masked(index: int, content: str = "some transcript content") -> MaskedChunk:
+def _masked(
+    index: int,
+    content: str = "some transcript content",
+    *,
+    expanded: bool = False,
+    digest_section: int | None = None,
+    source_kind: str = "media",
+) -> MaskedChunk:
     return MaskedChunk(
         source=ChunkHit(
             file_uuid=f"file-{index}",
@@ -24,6 +31,9 @@ def _masked(index: int, content: str = "some transcript content") -> MaskedChunk
             speaker="Dana",
             start_time=float(index * 60),
             end_time=float(index * 60 + 30),
+            expanded=expanded,
+            digest_section=digest_section,
+            source_kind=source_kind,
         ),
         content=content,
     )
@@ -53,6 +63,51 @@ def test_snippet_is_truncated_on_a_word_boundary():
     assert len(citation["snippet"]) <= 245
     assert citation["snippet"].endswith("…")
     assert "wor…" not in citation["snippet"]
+
+
+def test_unexpanded_citation_has_expanded_false_and_todays_snippet_cap():
+    """Control (issue #526): a chunk ``context_expansion`` never touched is
+    byte-identical to before this issue — same truncation length, no new
+    ``expanded`` behaviour."""
+    long_content = "word " * 200
+    citation = build_offered_citations([_masked(0, long_content, expanded=False)])[0]
+    assert citation["expanded"] is False
+    assert len(citation["snippet"]) <= 245
+
+
+def test_expanded_citation_is_marked_and_not_truncated_at_the_ordinary_limit():
+    """The #526 reproduction: a citation whose ``chunk_index`` still names the
+    original (short) indexed chunk must say so via ``expanded``, and the
+    snippet must cover the FULL widened+masked text the model was given —
+    not silently cut back down to the ordinary ~240-char cap, which would
+    hide from the reader exactly the part of the excerpt a quote could live
+    in beyond that boundary.
+
+    RED before #526: ``build_citation`` had no ``expanded`` key at all (a
+    ``KeyError`` on the assertion below) and truncated every citation's
+    snippet to :data:`SNIPPET_CHARS` regardless of how the chunk got its text.
+    """
+    wide_content = "context before the turn. " * 20 + "the actual quoted material lives here."
+    assert len(wide_content) > 240  # otherwise this test doesn't exercise truncation at all
+
+    citation = build_offered_citations([_masked(0, wide_content, expanded=True)])[0]
+
+    assert citation["expanded"] is True
+    assert citation["snippet"].rstrip("…") == wide_content
+    assert "the actual quoted material lives here." in citation["snippet"]
+
+
+def test_digest_citation_never_reports_expanded_even_if_the_source_says_so():
+    """Defensive: ``context_expansion`` never touches a digest hit (it excludes
+    both digests and documents by construction — see ``needs_expansion``), so
+    a digest citation must report ``expanded: False`` regardless of whatever
+    the underlying ``ChunkHit.expanded`` happens to hold, rather than trusting
+    a field that should never be set for this kind."""
+    citation = build_offered_citations(
+        [_masked(0, "a summary section", expanded=True, digest_section=2)]
+    )[0]
+    assert citation["kind"] == "digest"
+    assert citation["expanded"] is False
 
 
 def test_only_referenced_citations_are_returned():

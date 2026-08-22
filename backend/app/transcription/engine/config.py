@@ -21,7 +21,7 @@ class EngineConfig:
 
     # Backend selection
     transcriber_backend: str = "faster_whisper"  # faster_whisper | whisperx | cloud
-    diarizer_backend: str = "pyannote"  # pyannote (only supported in v1)
+    diarizer_backend: str = "native"  # native (default, primary) | pyannote (failover)
 
     # Stage-specific toggles
     precompute_vad: bool = False  # Phase 3a — Silero VAD in Stage 1
@@ -106,7 +106,7 @@ class EngineConfig:
             diarizer_backend=(
                 vals.get("engine.diarizer_backend")
                 or os.getenv("ENGINE_DIARIZER_BACKEND")
-                or "pyannote"
+                or "native"
             ),
             gpu_split=_bool("engine.gpu_split", "ENGINE_GPU_SPLIT"),
             precompute_vad=_bool("engine.precompute_vad", "ENGINE_PRECOMPUTE_VAD"),
@@ -145,7 +145,12 @@ class EngineConfig:
 
         engine = cls(
             transcriber_backend=os.getenv("ENGINE_TRANSCRIBER_BACKEND", "faster_whisper"),
-            diarizer_backend=os.getenv("ENGINE_DIARIZER_BACKEND", "pyannote"),
+            # Mirrors tc.diarizer_backend below (single decision point: DB > env > default,
+            # resolved once by TranscriptionConfig._resolve_diarizer_backend) rather than
+            # re-resolving independently from env alone — this is what to_snapshot() serializes
+            # for the split/multi-GPU stages, so it must agree with what ModelManager will
+            # actually select.
+            diarizer_backend=tc.diarizer_backend,
             precompute_vad=os.getenv("ENGINE_PRECOMPUTE_VAD", "false").lower() == "true",
             gpu_split=os.getenv("ENGINE_GPU_SPLIT", "false").lower() == "true",
             boundary_acoustic_recheck_enabled=os.getenv(
@@ -233,10 +238,11 @@ class EngineConfig:
             max_speakers=snapshot.get("max_speakers", 20),
             num_speakers=snapshot.get("num_speakers"),
             overlap_min_duration=snapshot.get("overlap_min_duration", 0.25),
+            diarizer_backend=snapshot.get("diarizer_backend", "native"),
         )
         engine = cls(
             transcriber_backend=snapshot.get("transcriber_backend", "faster_whisper"),
-            diarizer_backend=snapshot.get("diarizer_backend", "pyannote"),
+            diarizer_backend=snapshot.get("diarizer_backend", "native"),
             precompute_vad=snapshot.get("precompute_vad", False),
             gpu_split=snapshot.get("gpu_split", False),
             boundary_acoustic_recheck_enabled=snapshot.get(

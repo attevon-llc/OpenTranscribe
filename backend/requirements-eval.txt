@@ -39,3 +39,55 @@ pytrec_eval_terrier>=0.5.10
 # dependency: pytrec-eval-terrier only. Its optional providers (ranx, trectools,
 # cwl_eval) are extras and are deliberately not installed.
 ir_measures>=0.4.3
+
+# ---------------------------------------------------------------------------
+# Answer-quality tier (issue #463, W2/A2). Deterministic-floor packages below
+# this line are SAFE — verified by `pip install --dry-run` against this exact
+# venv to add ZERO conflicting transitive pins (rouge-score/bert-score/nltk:
+# only `absl-py` new, everything else already satisfied by the app's own
+# torch/transformers/matplotlib/requests stack). `backend/CLAUDE.md` (#492):
+# "every spec is pinned, a floor is not a pin" — `nltk` below is pinned to the
+# exact version `requirements.txt` already resolves (3.10.3), not a new floor.
+# ---------------------------------------------------------------------------
+
+# rougeLsum + a Porter stemmer, matching the summarization-eval convention
+# (`use_stemmer=True`, longest-common-subsequence over SENTENCES for rougeLsum).
+rouge-score==0.1.2
+
+# BERTScore (MIT). Pinned model in every call site, never left to the
+# package's own moving default: `microsoft/deberta-large-mnli`,
+# `rescale_with_baseline=True`, `lang="en"` (QMSum is English-only; see
+# rag-evaluation.md's multilingual coverage table for why this is not a
+# silent scope narrowing). `answer_text.py`'s bertscore_f1 is optional and
+# `pytest.importorskip`-gated for the same licence-adjacent reason the metric
+# engine above is: not a licence issue here, but a genuinely heavy optional
+# dependency (torch + transformers, both already required by the app, but a
+# multi-hundred-MB model download on first use) that must never become a hard
+# import for the deterministic floor.
+bert-score==0.3.13
+
+# Already a hard `requirements.txt` pin (nltk==3.10.3, the #492 NLTK
+# `pathsec`-hardening version) — repeated here, at the SAME version, only so
+# this file's own dependency list is self-describing without cross-reading
+# requirements.txt. Never bump this independently of requirements.txt's pin.
+nltk==3.10.3
+
+# ---------------------------------------------------------------------------
+# LLM-judged tier (RAGAS): moved OUT of this file entirely — see
+# `backend/requirements-eval-judge.txt`, installed ONLY into `backend/
+# venv-eval/`, NEVER into `backend/venv` (this file's own install command,
+# `backend/venv/bin/pip install -r backend/requirements-eval.txt`, must never
+# be able to reach `ragas`, or the whole point of the split below is undone).
+#
+# Why a second file and not a second `pip install` of the same one: `ragas`
+# requires `instructor` unconditionally, and `instructor` requires
+# `openai<3.0.0` — incompatible with this file's own venv, `backend/venv`,
+# which needs `openai==3.3.0` (the app's real client). A single shared
+# requirements file that CONTAINS `ragas` is a landmine even if nobody
+# currently runs `pip install -r requirements-eval.txt` against `backend/
+# venv` on purpose — the documented one-line install command for THIS file is
+# exactly that command. Splitting the file is what makes the split venv safe
+# by construction rather than by discipline. Full rationale, including the
+# discovered `langchain-community` pin, lives in
+# `requirements-eval-judge.txt`'s own header.
+# ---------------------------------------------------------------------------

@@ -24,6 +24,7 @@ import {
   type ChatScope,
   type ChatSource,
   type ChatStreamEvent,
+  type ChatWarningCode,
   type ContextEstimate,
   type Conversation,
   type ConversationSettings,
@@ -201,7 +202,14 @@ function createChatStore() {
         // discarded in silence while still persisting it on the message — the
         // notice then appeared only after a reload. Adding a code to
         // ChatWarningCode without adding it here reintroduces exactly that.
-        const patch: Partial<ChatMessageMetadata> | undefined = {
+        //
+        // Typed as `Partial<Record<...>>` — NOT every ChatWarningCode needs an
+        // entry. `ambiguous_speaker` / `recurrence_unavailable` / `plan_failed`
+        // have no backend emitter yet (Wave 2) and no corresponding
+        // msg_metadata shape decided yet either; indexing with one of them
+        // below falls through to `undefined` (no-op) rather than a compile
+        // error, until whichever lane wires the emitter also adds the patch.
+        const patchMap: Partial<Record<ChatWarningCode, Partial<ChatMessageMetadata>>> = {
           context_dropped: {
             context_dropped: true,
             ...(event.retrieved === undefined ? {} : { retrieved: event.retrieved }),
@@ -215,11 +223,26 @@ function createChatStore() {
             ...(event.retrieved === undefined ? {} : { retrieved: event.retrieved }),
             ...(event.files_searched === undefined ? {} : { files_searched: event.files_searched }),
           },
+          // Same shape as `no_context` — the server sends the same two counts —
+          // but a DIFFERENT key, so the two notices stay distinguishable in
+          // persisted metadata and ChatMessage can render a different message
+          // for "search was down" than for "your library has nothing about this".
+          retrieval_failed: {
+            retrieval_failed: true,
+            ...(event.retrieved === undefined ? {} : { retrieved: event.retrieved }),
+            ...(event.files_searched === undefined ? {} : { files_searched: event.files_searched }),
+          },
           unsupported_language: {
             unsupported_language: true,
             context_languages: event.context_languages,
           },
-        }[event.code];
+          // Persisted like `unsupported_language` above so the notice survives
+          // a reload rather than existing only for the streaming session.
+          router_language_unmatched: {
+            router_language_unmatched: true,
+          },
+        };
+        const patch = patchMap[event.code];
 
         if (patch) {
           update((s) => ({

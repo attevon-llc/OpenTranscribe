@@ -93,7 +93,7 @@ and SHA256 per artefact, and supports offline `--verify`. Non-commercial corpora
 | Corpus | Tier | Relevance judgements | Role |
 |---|---|---|---|
 | QMSum | A (MIT) | **1,576 human queries with gold spans** | the backbone of published retrieval numbers |
-| AMI v1.6.2 | A (CC BY 4.0) | none | real word-level timings, speaker channels |
+| AMI v1.6.2 | A (CC BY 4.0) | none | real word-level timings, speaker channels; 34 of its 171 meetings (not redistributed by QMSum's `Product` domain) are also injectable as a distractor-only haystack — see "AMI distractor haystack" below |
 | ICSI | A (CC BY 4.0) | none | real timings for QMSum's Academic split |
 | Earnings-21 | A (CC BY-SA 4.0) | none | domain realism: real names, sectors, RTTMs |
 | LoCoV1 | A (Apache-2.0) | yes | long-context retrieval |
@@ -101,10 +101,37 @@ and SHA256 per artefact, and supports offline `--verify`. Non-commercial corpora
 | CIRAL | A (Apache-2.0) | pooled human | 4 African languages (CLIR) |
 | Mr. TyDi | A (Apache-2.0) | human, positives-only | multilingual, 11 languages |
 | MeetingBank | **B** (CC BY-NC-ND) | none | 31.7 M words — internal scale testing only |
-| ELITR | **B** (CC BY-NC-SA) | manual span alignments | internal |
+| ELITR (Minuting) | **B** (CC BY-NC-SA) | manual span alignments | internal |
+| ELITR-Bench | A (CC BY-4.0, **not yet independently re-verified**) | manual QA pairs incl. a "who" category | candidate — see note below |
 
 Corpora with **no relevance judgements cannot score retrieval.** They contribute ingest realism —
 real timings, real speaker structure — and nothing is claimed from them beyond that.
+
+:::warning ELITR-Bench and ELITR (Minuting) are two different artifacts — do not tier one as the other
+[ELITR-Bench](https://github.com/utter-project/ELITR-Bench) (COLING 2025) is manually-crafted
+human question-answer pairs over meeting transcripts, with a **"who" question category** that
+directly exercises speaker attribution, speaker identity preserved in the transcripts, and
+"answer-position" metadata usable as a coarse gold-span proxy — genuinely relevant to this
+project's evaluation needs, and licensed **CC-BY-4.0**. It is not the same artifact as **ELITR
+(Minuting)**, the CC-BY-NC-SA meeting-minuting corpus in the row above, internal-only. The
+row is named `ELITR (Minuting)` specifically so the two are never conflated by the bare name
+`ELITR`.
+
+**Not yet independently verified**: this page has already caught platform metadata misstating a
+licence four times (the box above). ELITR-Bench's CC-BY-4.0 claim has not yet had the same
+in-archive-file check that caught MeetingBank's Zenodo-vs-`LICENSE.txt` mismatch — do that check
+before citing it as Tier A in a publishable result. Until then, treat the "A" tier above as
+provisional.
+
+**SPGISpeech is disqualified for speaker-attribution evaluation, not merely untiered.** Kensho's
+Terms of Usage explicitly forbid identifying the real-world identity of individual speakers from
+the dataset — a direct conflict with using it to evaluate speaker-attributed retrieval,
+independent of whatever its transcription-quality licence terms allow.
+
+**MeetingQA (Adobe)** is a candidate whose licence type could not be confirmed during this
+research pass — recorded here as unresolved rather than silently assumed permissive, per the rule
+this page applies everywhere else.
+:::
 
 ### Tier 3 — synthetic
 
@@ -1339,12 +1366,16 @@ alongside the existing one — topic segments for broad questions, speaker turns
 never a replacement. Note that `doc_type` (D1) already makes a second plane in one index a
 solved shape, and the digest plane is a working precedent for it.
 
-### The 48/12/4 budget sweep
+### The retrieval budget sweep
 
-`candidate_pool` / `final_chunks` / `max_chunks_per_file` are **48 / 12 / 4**
-(`core/constants.DEFAULT_CHAT_RAG_*`), chosen by judgement and never measured. `--stage rerank`
-now measures them at the shipped values — it used to default to **20/3**, so every rerank number
-ever taken described a deployment nobody runs.
+`candidate_pool` / `final_chunks` / `max_chunks_per_file` are **48 / 40 / 12**
+(`core/constants.DEFAULT_CHAT_RAG_*`). The original 48/12/4 was chosen by judgement and never
+measured; #531 (2026-08-21) measured 40/12 at ~1.8–2× the AMI-81 answer-content recall of 12/4
+on two corpora, judge-corroborated, with negative controls intact and +13% latency, and shipped
+it. Note these knobs are inert to retrieval nDCG — they move **answer** metrics only, which is
+why the change was gated on the answer-quality campaign rather than the retrieval sweep.
+`--stage rerank` measures at the shipped values — it used to default to **20/3**, so every
+rerank number ever taken described a deployment nobody runs.
 
 ```bash
 # the shipped centre point, full corpus
@@ -1743,14 +1774,21 @@ it**:
 
 ### What this analysis cannot claim
 
-- **No per-query significance test, and it is blocked by an artifact, not by the maths.** These
-  are 21 paired *aggregate* deltas. `MetricResult.per_query` exists in the harness but
-  `report.py` writes per-query rows only for the answer measures, so `metrics.json` carries no
-  per-query nDCG and a paired bootstrap or t-test over queries cannot be computed from the
-  files on disk. **Dumping per-query retrieval measures is the single highest-value improvement
-  to this instrument** — it would turn every Δ on this page from a point estimate into an
-  interval, and it needs no re-run of anything already measured, only of the arms you want
-  intervals for.
+- **The Stage 5 21-arm analysis above still has no per-query significance test — but that is now
+  a baseline-freshness gap, not a structural one.** `report.build_retrieval_per_query` landed at
+  `8117e6f3`, and `metrics.json` has carried a `retrieval_per_query` array (one row per
+  retrieval-scored query, per measure) ever since — see [Paired
+  significance](#paired-significance) below for the method it enables. The Stage 5 arms
+  themselves were measured **before** that commit, and `baselines/README.md` marks their results
+  historical or needing the live `rag403` stack to re-derive, so back-filling per-query rows for
+  those specific 21 arms is a regeneration, not a maths problem. **It is wrong to read "zero
+  `retrieval_per_query` rows" as evidence of a pre-schema-v2 baseline** either: six of the eight
+  non-MIRACL baselines under `tests/eval/baselines/` report `schema_version: 2` and still carry
+  no per-query rows, because schema v2 predates `8117e6f3` by itself — the field is keyed to that
+  commit, not to the results-schema version. `tests/eval/test_eval_report.py`'s baseline-integrity
+  sweep enforces this distinction with an explicit, reasoned allowlist per baseline (never a
+  blanket schema-version skip), so a baseline that regresses silently to missing per-query rows
+  fails a test instead of being read as historical by assumption.
 - **n is small and the p-values are fragile.** 21 arms pooled, 4–9 per family. The pooled
   `all`-class coefficient (p = 0.066) is not significant at α = 0.05, and the pool family's
   +0.667 at n = 4 is not evidence of anything on its own. Only the fusion anti-correlation
@@ -1763,6 +1801,477 @@ it**:
 - **This is agreement about *retrieval ranking*, nothing else.** No LLM was involved (D6), so
   it says nothing about whether the two corpora would agree about answer quality — the axis on
   which the reranker and `final_chunks` decisions actually turn.
+
+### Paired significance
+
+`tests/eval/harness/significance.py` (#461 phase A1) turns two runs' `retrieval_per_query`
+arrays into a per-`(corpus, query_class, measure)` verdict on whether their difference is
+distinguishable from noise. `scripts/benchmark_rag.py --compare-only <baseline-A> <baseline-B>`
+is the CLI entry point — it reads two **committed** baseline directories and needs no running
+stack, no OpenSearch, and no Postgres, so it can be run against any two baselines that both
+carry per-query rows (today: `miracl-es-english` and `miracl-es-multilingual`).
+
+**What it tests.** For each paired query, `score_b - score_a` is a delta. The **primary** method
+is a seeded paired bootstrap: `numpy.random.default_rng(0)`, 10,000 resamples with replacement
+over the *paired* deltas (never over the raw A/B scores separately — resampling deltas is what
+keeps each resampled unit tied to one query), reporting the mean delta and the empirical 95%
+percentile interval around it. Fixing the seed makes the interval **bit-for-bit reproducible**:
+the same two baselines always produce the same numbers, so a quoted CI can be checked rather
+than merely trusted. The **secondary** method is a paired t-test on the same deltas (equivalent
+to a one-sample t-test against 0), reported alongside the CI rather than instead of it — the CI
+answers "how big might the effect be," the p-value answers "how surprising is this under the
+null," and those are different questions that can point different directions on a small, noisy
+axis (the fusion-arm anti-correlation earlier on this page is exactly a case where "significant"
+and "practically meaningful" come apart).
+
+**What a CI containing 0 means.** It means the sample cannot distinguish this delta from no
+change **at this query count** — not that there is no effect. A genuine small effect and a
+genuine null effect can produce visually similar intervals on ~150 queries; only a narrower CI
+(more queries, or a larger effect) resolves that. Read "CI excludes 0" as a positive claim and
+"CI contains 0" as "not yet distinguishable," never as "proved zero."
+
+**Why the `lookup` class is always broken out**, never folded only into an aggregate: this page's
+own Stage 5 analysis found corpus-level sign agreement (62.5%) meaningfully better than
+lookup-class agreement (40.0%, tau-b −0.005 vs +0.301 pooled) — an aggregate delta can look
+stable while hiding a lookup regression inside gains elsewhere, and `lookup` is the query class
+the Stage 5 gate exists to protect. `significance.summarize` reports `lookup` as its own row
+whenever a corpus has any lookup queries, even when it is that corpus's only class.
+
+**Why not Wilcoxon signed-rank**, despite being the common textbook default for paired retrieval
+comparisons: it discards delta *magnitude* and keeps only sign and rank, a needless power loss
+against continuous bounded measures (nDCG, recall, MRR) that have no reason to prefer a rank
+transform. Its validity also assumes a symmetric difference distribution, which per-query
+retrieval deltas routinely strain — many queries tie at delta 0, and nDCG's `[0, 1]` bound clips
+the distribution's tails. This module does **not** claim to have independently measured that
+combination inflating Type-I error here — that would need its own citation-backed study; see
+Urbano, Lima & Hanjalic (SIGIR 2019) for the closest published treatment of significance testing
+in this exact IR setting, whose findings are narrower than a blanket claim. The decision rests on
+the power/symmetry argument alone, which stands on its own: the bootstrap makes no distributional
+assumption at all, and the t-test's normality assumption is checkable from the query count
+already on the row; Wilcoxon buys no advantage over either that would justify the rank
+transform's cost.
+
+**Refusing a silent partial join.** `significance.paired_join` requires both runs to score
+*exactly* the same query id set — a run missing queries the other has raises `PartialJoinError`
+naming the counts on each side, rather than silently intersecting and reporting a comparison over
+whichever queries happened to survive. A comparison across two baselines that scored different
+query counts is not paired data; it is two point estimates wearing a paired analysis's clothing.
+A **duplicated** query id on either side is refused too (`DuplicateQueryIdError`, checked before
+the id-set comparison): a set comparison alone is multiplicity-blind, so a repeated id would pass
+`ids_a == ids_b` and then silently lose all but its last occurrence to a last-wins dict build —
+the identical failure through a different door.
+
+## Wave 2 instruments (#461 W2.E1) — no Wave-2 flag flips without these
+
+Four new query classes and three per-turn instrumentation hooks, gating every feature flag this
+plan turns on. All four classes are deterministic and license-free: they are carved or planted
+from data this harness already loads (QMSum's own human-authored queries, already licensed) or
+synthesized outright, with no new corpus and no LLM required to SCORE against them — though most
+have no product path yet to submit an answer worth scoring (see the table below).
+
+| Class | Carved/planted from | Measure(s) | Engine |
+|---|---|---|---|
+| `SPEAKER_ATTR` | QMSum queries matching an attribution regex (`"according to X"`, `"who said"`, ...) whose gold turn span resolves to exactly one speaker | `answer_names_gold_speaker`, `citation_speaker_match` — **never merged into one number** | `harness/attribution.py` |
+| `SPEAKER_SUMMARY` | Same carving applied to QMSum's SUMMARIZE-class queries | `speaker_coverage` | `harness/attribution.py` |
+| `ATTRIBUTION_PROBE` | One planted negative per SPEAKER_ATTR case: a real OTHER speaker from the same meeting who did NOT say the quoted material (deterministic decoy selection — lexicographically first other speaker, no randomness) | `false_attribution_rate` (**lower is better** — see `significance.MEASURE_DIRECTION`) | `harness/attribution.py` |
+| `RECURRENCE` | Synthetic planted action-item groups across files, in the DEFAULT SUMMARY PROMPT's shape | `group_precision`, `group_recall` (pairwise/co-membership) | `harness/recurrence.py` |
+
+### The RECURRENCE shape: verified, not assumed
+
+The task briefing named a specific risk: planting the WRONG action-item shape produces a harness
+that stays green while production finds zero groups, which is worse than no harness. Both
+candidate shapes were read directly, not assumed:
+
+- `backend/app/core/default_prompts.py` lines 63-71 (`UNIVERSAL_CONTENT_ANALYZER_PROMPT`'s
+  `action_items` block) — what the default summary prompt actually instructs the model to
+  produce: `{item, owner, due_date, priority, context, mentioned_timestamp}`.
+- `backend/app/schemas/summary.py` lines 44-52 (`ActionItem`) — `{text, assigned_to, due_date,
+  priority, context, status}`. A DIFFERENT shape, and — checked by grep across `app/services` and
+  `app/tasks` — **dead code**: `ActionItem` is exported from `app/schemas/__init__.py` but no
+  caller validates or renders a summary through it. `SummaryData.action_items` is typed
+  `list[Any]` and accepts whatever the prompt produces verbatim.
+
+`harness/recurrence.py` plants `PLANTED_FIELDS = (item, owner, due_date, priority, context,
+mentioned_timestamp)` — the prompt shape — and `test_eval_recurrence.py` pins both the exact
+field set and that it is NOT the schema shape, so a future edit reintroducing the wrong shape
+fails a test rather than shipping quietly.
+
+### Measurable vs pending
+
+| Instrument | Status | Why |
+|---|---|---|
+| SPEAKER_ATTR / SPEAKER_SUMMARY carving | **Measurable now** | Pure derivation over data the harness already loads; no product change needed to compute the gold set |
+| ATTRIBUTION_PROBE planting | **Measurable now** | Same — deterministic, reuses SPEAKER_ATTR's resolved gold |
+| Scoring an actual submitted answer for any of the three above | **Pending a product path** | Nothing in the chat pipeline currently returns a structured `(speaker, citations)` answer this harness can consume; until then the only honest submission is the `none` answerer's floor (0 on every measure) — the same pattern Stage 4 established for aggregation's null-answerer floor |
+| RECURRENCE planting + pairwise scoring | **Measurable now** | Pure, deterministic, no product dependency |
+| RECURRENCE detection itself | **Not built in the product at all** | `chat/prompting.py`'s `<recurrence>` block and `schemas/chat.ChatWarningCode.RECURRENCE_UNAVAILABLE` are both explicitly commented "(Wave 2; no emitter yet)" in the current codebase |
+| `llm_calls` per turn | **Partially measurable now** | `chat/mapreduce.Overview.as_metadata()` emits `"llm_calls"` — but only merged into `meta["overview"]` on turns whose route adds an `<overview>` block. A lookup-routed turn carries no `overview` key at all. `harness/chat_instrumentation.extract_llm_calls` returns `None` (not `0`) for those turns |
+| `router_language_unmatched` | **Pending** | `schemas/chat.ChatWarningCode.ROUTER_LANGUAGE_UNMATCHED` exists as a reserved warning code; grepped, no emitter sets it anywhere. The extractor reads a specific, documented key (`meta["route"]["language_unmatched"]`) chosen to match the existing per-stage-block convention, ready the moment an emitter lands |
+| planner fire-rate | **Pending, and the key name itself is unconfirmed** | No "planner" concept exists anywhere in `schemas/chat.py` or `services/chat/` — grepped, zero hits, unlike the other two which at least have a reserved name. `extract_planner_fired` reads a PROPOSED key (`meta["planner"]["fired"]`); treat it as a suggestion for the owning lane, not a contract |
+
+Every extractor in `harness/chat_instrumentation.py` returns `None` — never a default `0`/`False`
+— when its source key is absent, and `summarize_instrumentation` reports `coverage` (how many
+turns actually carried the field) alongside any rate/mean, so a corpus-level rollup can never
+read "not measured" as "measured and zero."
+
+## AMI distractor haystack (#461 A5)
+
+**This adds distractor realism, not new judgements.** A reader who assumes 34 new meetings
+came with relevance judgements will misread every table below it: QMSum's gold set is
+completely unchanged — same 1,576 queries, same gold spans, same qrels. What changes is the
+HAYSTACK those queries are retrieved against. `adapters/ami.py`'s whole job is to inject 34
+real AMI meetings, same domain as QMSum's `Product` split, that carry zero relevance
+judgements of their own and exist purely to make retrieval discriminate against more
+same-domain content — the way a real deployment's index is never just the files a benchmark
+happens to care about.
+
+### The number: measured, not assumed
+
+QMSum's `Product` domain redistributes 137 of AMI v1.6.2's 171 meetings (see "Corpus
+composition is a result, not a detail" above). The other 34 were **measured directly against
+the real corpus**, not taken from the plan that specified this lane:
+
+```
+AMI meetings.xml observations:        171
+QMSum data/Product/all/*.json stems:  137
+Distractor set (AMI − QMSum):          34   (EN 16, IN 10, IB 7, TS 1)
+```
+
+This matches the number the task brief was written against, but it was re-derived rather than
+trusted — `TestAgainstTheRealCorpus::test_distractor_count_and_prefix_distribution` in
+`backend/tests/unit/test_corpus_injection_ami_adapter.py` pins it against the live NAS copy,
+gated the same way `test_corpus_injection_adapters.py` gates its own real-corpus assertions.
+
+### Why no diff-based alignment, unlike QMSum's Product/Academic timing recovery
+
+`qmsum.py` recovers real timings for its AMI/ICSI-sourced meetings by **diffing** QMSum's
+redistributed (and lightly re-edited) text against the reference corpus's timed words
+(`nxt.align_turns_to_channels`) — necessary because QMSum's turns are not identical to AMI's
+own segments (ES2004a: 320 QMSum turns vs 283 AMI segments; see `nxt.py`'s module docstring).
+The 34 distractors need no such reconciliation: `adapters/ami.py` builds turns directly from
+AMI's own `segments.xml` (curator-set `transcriber_start`/`transcriber_end`) and `words.xml`
+(per-word times) — there is no second, independently-redistributed transcript to reconcile
+against, so every turn is real-timed by construction (100%, not a measured alignment rate).
+Two things worth knowing if you read the adapter:
+
+- **`meetings.xml` under-lists a real meeting's channels.** `IN1001` lists 3 `<speaker>`
+  entries (A/B/C) but ships 4 channels' worth of `segments.xml`/`words.xml` (A-D) — measured,
+  not assumed. Channel *presence* comes from the `segments`/`words` directory listing, never
+  from `meetings.xml`.
+- **Non-verbal-only segments are dropped, not emitted empty.** A `<segment>` whose only
+  child is `<vocalsound>` (a laugh, a cough) contributes no turn. Measured across all 34
+  meetings: 23,049 of 25,269 raw `<segment>` elements (91.2%) carry real text.
+
+### Injecting it
+
+```bash
+./scripts/inject-eval-corpus.sh --fresh <name> --corpus qmsum   # the scored corpus, as always
+./scripts/inject-eval-corpus.sh --fresh <name> --corpus ami     # the distractor haystack, same stack
+```
+
+`ami` is a normal `CorpusAdapter` (`adapters/__init__.py`'s registry, key `"ami"`), injected
+through the same production search-indexing path as every other corpus. It is deliberately
+**not** wireable through `scripts/benchmark_rag.py --corpus ami`: `harness/corpora.py` ships no
+query loader for it (`_load_corpus`'s `else` branch raises `SystemExit` naming exactly that), so
+a distractor corpus can never accidentally be scored as though it had judgements. Its only
+effect on a `--corpus qmsum` run is a bigger index to search against — which is the point.
+
+### ⚠️ The control-baseline trap this makes MANDATORY, and how it is closed
+
+Changing index composition invalidates every prior number, and **nothing about `metrics.json`
+shows that on its own** — a distractor corpus contributes no `corpora` entry (it is never
+`--corpus`-scored), so a QMSum-only baseline and a QMSum+AMI-distractors baseline can look
+identical in the file that gets compared. `scripts/benchmark_rag.py` now closes this with an
+**injection identity**, recorded in `runinfo.json` (never `metrics.json` — like every other
+run-circumstance field, it is not part of the deterministic scoring claim):
+
+- `_scan_injection_identity` (in `benchmark_rag.py`) reads every manifest directory actually
+  present in the **measured OpenSearch index** — scored or not — and records
+  `{key, version, meetings_in_manifest, files_present_in_index, scored}` per corpus, sorted by
+  key, plus a `fingerprint` (sha256 of the canonical list, truncated to 16 hex chars). A
+  manifest on disk whose files never landed in *this* index (a stale manifest from an unrelated
+  `--fresh` deployment) is excluded rather than recorded as zero-present — indistinguishable
+  from "present but retrieved nothing" otherwise.
+- `--compare-only` reads both baselines' `runinfo.json` and **refuses (exit 3), not warns**,
+  when both sides recorded an identity and the fingerprints differ — comparing a QMSum-only run
+  against a QMSum+AMI-distractors run would report a delta that is actually a haystack-composition
+  change, not a retrieval change. A baseline committed before this landed (no `runinfo.json`, or
+  one without `injection_identity`) still compares, with a loud warning instead — refusing every
+  legacy baseline would be a regression, not a safety improvement.
+
+Tests: `backend/tests/eval/test_eval_benchmark_injection_identity.py` — including an
+end-to-end CLI-seam test that actually invokes `_run_compare_only` and asserts exit 3. That
+test was itself caught failing to test what it claimed during red-checking: the first version
+gave one baseline no `retrieval_per_query` rows at all, so it hit `_run_compare_only`'s
+*earlier* empty-rows guard and returned 3 for an unrelated reason — mutating the identity
+comparison to always allow the run still passed. Fixed by giving both baselines identical,
+valid rows so exit 3 can only come from the identity refusal.
+
+### ⚠️ Interaction with the Product-domain false-negative trap — report Recall separately
+
+"Corpus composition is a result, not a detail" (above) already measured that QMSum's `Product`
+domain suffers severe qrels false-negativity: R@1 of **0.124** (vs 0.664 for Committee), median
+gold rank 22, and — the number that matters here — **49.2 of the other 136 Product meetings
+score ≥90% of the gold meeting's own score** for a typical query. Product queries are already
+heavily penalised for retrieving a genuinely on-topic AMI meeting that nobody marked relevant,
+because AMI's four-role, one-scenario design makes every Product meeting look like every other
+Product meeting to a retriever.
+
+Injecting 34 MORE same-domain, same-role-structure AMI meetings makes this mechanically worse,
+**not because retrieval got worse** — because there is now more near-duplicate competition for
+Product-domain queries to be marked "wrong" against. A Recall drop on Product-class queries after
+this injection is the **expected shape of the existing false-negative problem**, not evidence of
+a regression, and must never be read as one.
+
+Consequently: **Recall must be reported separately from every other measure after this
+injection, never folded into one blended headline number.** A single "Recall dropped 4 points"
+line invites exactly the misreading this section exists to prevent. Report it broken out at
+least by domain (Product vs Academic vs Committee) or by corpus scope (QMSum-only index vs
+QMSum+AMI-distractors index), the same axis "Corpus composition is a result, not a detail"
+already uses, so a reader can see the Product-domain number moving for the reason this section
+documents rather than inferring a retrieval regression from a corpus-wide average.
+
+## Answer-quality harness (#463, W2/A2)
+
+Where retrieval measures "did the right chunks come back," this tier measures "was the
+*answer* any good" — a question no nDCG/recall number can address, and the gap #453/#461's
+own worked examples kept running into.
+
+### The measures
+
+| Tier | Measure | Engine | Needs |
+|---|---|---|---|
+| Deterministic floor | `rougeL_f`, `rouge1_f`, `token_f1`, `answered` | `harness/answer_text.py` | Nothing — no LLM, no GPU |
+| Deterministic floor (optional) | `bertscore_f1` | `harness/answer_text.py` (`microsoft/deberta-large-mnli`, `rescale_with_baseline=True`, `lang="en"` — pinned at the one call site) | torch + transformers (already app deps) |
+| LLM-judged, reference-free | `faithfulness` | `harness/faithfulness_judge.py` → `harness/judge_runner.py` (RAGAS, in `backend/venv-eval/`) | A configured judge provider + `backend/venv-eval/` |
+| LLM-judged, reference-based | FULL/PARTIAL/NONE/REFUSED label | `harness/answer_judge.py` (the **label judge**: `run_judge` via a plain OpenAI-compatible call, in `backend/venv` — no ragas) | A configured judge provider (judge model ≠ model under test) |
+| Negative control | `false_answer_rate` | `synthetic/unanswerable.py` | Nothing to PLANT; a real system to submit against |
+
+**The floor and the judged tiers answer different questions, and neither substitutes for the
+other.** ROUGE/token-F1 reward lexical overlap with QMSum's own gold answer — a correct
+answer phrased differently scores low here on purpose, which is exactly why it is a floor, not
+a verdict. Faithfulness and the label judge are two SEPARATE axes reported side by side,
+never merged: a model can be faithful to bad context (high faithfulness, wrong answer) or
+unfaithful to good context (low faithfulness, accidentally right) — see
+`faithfulness_judge.py`'s module docstring for the full argument.
+
+> **The label judge SUPERSEDED RAGAS `answer_correctness`** (`f02428ea` + the repair that
+> followed it). Both were reference-based — two paths for one axis — and the label judge is
+> strictly better suited here: categorical labels are what a human grader can produce for a
+> Kappa calibration (#518), its FULL/PARTIAL distinction matches this system's real failure
+> mode (answering a quarter of the question), and it needs no ragas, no venv-eval and no
+> embedder. `answer_correctness` was removed from `judge_runner.py` with its harness-side
+> caller; the historical evidence that it discriminated (0.946 vs 0.042) is kept below for
+> the record.
+
+### The RAGAS judge tier lives in its own venv, talked to over a subprocess boundary
+
+**Resolved, not a workaround — read this before "simplifying" it back into one venv.**
+`ragas==0.4.3` requires `instructor` unconditionally (no extras gate); `instructor==1.15.4` — the
+newest version PyPI has, checked 2026-08-19, no newer release exists — requires
+`openai<3.0.0,>=2.0.0`. This repo's `requirements.txt` pins `openai==3.3.0`, the app's real LLM
+client, exercised by host-venv pytest and mypy alike in a checkout where other agents run against
+`backend/venv` concurrently. `pip install --dry-run` with `ragas` added to `backend/venv`
+resolved to `Would install ... openai-2.54.0` — a silent **downgrade** of the shared venv's
+`openai` package for every other consumer. That is the exact venv/image divergence issue #492
+exists to prevent, just relocated to venv-vs-venv instead of venv-vs-image. `rouge-score==0.1.2`,
+`bert-score==0.3.13` and `nltk==3.10.3` were verified conflict-free the same way (`pip install
+--dry-run`: only `absl-py` new, everything else already satisfied by the app's own
+torch/transformers stack) and stayed in `backend/requirements-eval.txt`, installed into
+`backend/venv` as before.
+
+The fix is a **separate interpreter**, not a relaxed pin. `backend/requirements-eval-judge.txt`
+is installed **only** into `backend/venv-eval/` (gitignored: `python3.12 -m venv backend/venv-eval
+&& backend/venv-eval/bin/pip install -r backend/requirements-eval-judge.txt`), and is never
+installed into `backend/venv`, a Docker image, or merged into `requirements-eval.txt`.
+`backend/tests/eval/harness/judge_runner.py` is the **one file in the whole answer-quality
+tier that imports `ragas`** — it runs exclusively under `backend/venv-eval/bin/python`, as a
+subprocess of `faithfulness_judge.py` (which runs in `backend/venv` and never imports `ragas`
+at all). The boundary is JSONL over stdin/argv/stdout: `faithfulness_judge.py` writes
+`{question, answer, contexts, ground_truth}` records to a temp file, invokes
+`backend/venv-eval/bin/python judge_runner.py --mode faithfulness --input ... --output ...`
+(`subprocess.run`, `timeout=1800s`), and reads `{query_id, score}` back — `score: null` for a
+per-record judge failure (counted as a NaN, never dropped, same convention as the rest of this
+harness), a non-zero exit for an infrastructure failure (bad input, ragas won't import, the
+provider is unreachable), raised as `RuntimeError` so an outage is never misreported as a batch
+of low scores. The two venvs' dependency graphs never need to be compatible, because they are
+never the same Python process — permanent by construction, not by discipline.
+
+**Two more upstream ragas packaging gaps were found and pinned while building `venv-eval`,
+independently of the `openai` conflict above:**
+
+- `ragas==0.4.3` declares `Requires-Dist: langchain-community` with **no version bound at all**,
+  so an unconstrained install resolves the newest release (0.4.2, checked 2026-08-19).
+  `ragas/llms/base.py` imports `from langchain_community.chat_models.vertexai import
+  ChatVertexAI` at **module level** — not lazily, not behind a provider check — and that
+  submodule does not exist in `langchain-community==0.4.2` at all (that package's own README
+  says it "is being sunset," and Vertex AI support moved to the standalone
+  `langchain-google-vertexai` package). The result is `ModuleNotFoundError: No module named
+  'langchain_community.chat_models.vertexai'` on a bare `import ragas`, not a provider-specific
+  failure. Pinned to `langchain-community==0.3.31` — the last 0.3.x release, which still ships
+  `chat_models.vertexai` and satisfies ragas's own `langchain>=0.3.27,<2.0.0` bound.
+- `ragas.embeddings.huggingface_provider.HuggingFaceEmbeddings(use_api=False)` — the local
+  similarity embedder the since-removed `answer_correctness` mode needed — lazy-imports
+  `sentence-transformers` and raises its own `ImportError` without it. The pin
+  (`sentence-transformers==5.7.0`, matching the app's own resolve) stays in
+  `requirements-eval-judge.txt` for the record even though `faithfulness` — the only mode
+  left — never touches an embedder; see that file's header before changing it.
+
+Both pins, with the exact evidence above, are documented in
+`backend/requirements-eval-judge.txt`'s own header — read it before touching either version.
+
+**Unexecuted judge code is not a judge — this was run for real, against the live vLLM
+(`http://localhost:5195/v1`, `gemma-4-e4b`, temperature 0), before being reported as working:**
+
+- `faithfulness` discriminates: a faithful answer scored **1.0**, a fabricated one **0.0**.
+- `answer_correctness` (historical — measure since removed, kept for the record): a correct
+  paraphrase of the gold answer scored **0.946**, a wrong answer scored **0.042**.
+
+Verified through both the raw `judge_runner.py` script directly and through the full
+orchestrator API running in `backend/venv` (confirming the subprocess plumbing end to end,
+not just the runner script in isolation). `backend/tests/eval/test_eval_faithfulness_judge.py`'s
+`TestRealFaithfulness`/`TestRealBatchEvaluation` classes are gated on
+both `backend/venv-eval` being present and the vLLM being TCP-reachable
+(`pytest.mark.skipif`, port derived from `LLM_TEST_PORT`, default 5195 — never a bare literal, so
+the probe follows a `--fresh ... --port-offset N` stack instead of always asking about whichever
+stack owns the base port) and skip cleanly on a machine without either.
+
+**The D6-safe degrade path is tested, not assumed.** `TestIsAvailableForcedAbsent` monkeypatches
+`_EVAL_VENV_PYTHON` to a path that provably does not exist (independent of whether this machine
+actually has `venv-eval` set up) and asserts `is_available()` returns `False`, `build_judge`
+raises an `ImportError` naming the exact install command
+(`backend/venv-eval/bin/pip install -r backend/requirements-eval-judge.txt`), and
+`_run_judge_subprocess` refuses before ever spawning a process — so a deployment with no judge
+venv still runs the deterministic floor and reports "not measured" for the judged tier, never a
+crash.
+
+### Judge calibration: how much do we trust a judge score
+
+A judge discriminating on a clean pair (1.0 vs 0.0 above) proves it can tell a good answer
+from a bad one on an easy case. It says nothing about how much to trust a score in between,
+and the LLM-as-judge agreement literature is specific enough that it belongs in this
+methodology rather than assumed.
+
+**The calibration machinery lives in `harness/answer_judge.py`** (#518): the
+FULL/PARTIAL/NONE/REFUSED label set and grading prompt (mechanical — "is the reference's
+content present", never "is this helpful"), the `run_judge` executor (plain OpenAI-compatible
+call at temperature 0; **the judge model must not be the model under test**), and
+`cohens_kappa`/`agreement_report`/`interpret_kappa` (Landis & Koch bands). Unparseable judge
+replies degrade to a flagged fallback label (`degraded=True`) and are **excluded from any
+Kappa** — a Kappa computed partly over regex output measures the regex.
+
+- **MT-Bench** (Zheng et al., [arXiv:2306.05685](https://arxiv.org/abs/2306.05685), NeurIPS 2023)
+  — **verified**: GPT-4-as-judge reaches **>80% agreement** with human preferences, matching the
+  measured human-human agreement rate (~81%) on the same comparisons. This is the result that
+  makes an LLM judge viable **at all** for this harness, not a formality to cite past.
+- **"Reliability without Validity"** ([arXiv:2606.19544](https://arxiv.org/abs/2606.19544)) — raw
+  percent-agreement **overstates chance-corrected discrimination by 33–41 percentage points**
+  across 21 models. ⚠️ **Reported as cited by a downstream paper, not independently verified
+  against the primary source** — flagged rather than presented as measured, the same distinction
+  this page draws everywhere else between a number we ran and a number we read.
+- **"Judge's Verdict"** ([arXiv:2510.09738](https://arxiv.org/abs/2510.09738)) — correlation
+  (Pearson r) alone is insufficient: a judge can correlate perfectly with human scores while being
+  systematically harsh or lenient, because correlation is invariant to a constant offset. Proposes
+  Cohen's Kappa plus a z-score against the human-human kappa distribution instead.
+
+**Policy adopted from the above, to write down rather than rediscover per stage:**
+
+1. **Report Cohen's Kappa, never raw percent-agreement**, when a judge score is compared against a
+   human label — raw agreement is the exact number "Reliability without Validity" shows overstates
+   discrimination.
+2. **Calibrate against 50–100 hand-labelled answers before tuning anything on a judge score.**
+   Optimising against an uncalibrated judge optimises the judge, not the answers — the same
+   failure shape as the [replaced map-reduce metric](#a-metric-we-replaced) above, one level up
+   the stack.
+
+**Known bias modes** — position, verbosity, and self-preference bias are established findings in
+the LLM-as-judge literature. ⚠️ The specific magnitudes behind that sentence came from
+search-engine synthesis of secondary sources during this research pass, not a primary paper read
+end to end, so they are recorded as **claimed, not verified**, and deliberately omitted rather
+than quoted at a precision the sourcing does not support. Self-preference bias is
+**task-dependent, not universal** — at least one physics-grading study found none of it — so
+"judges favor their own family's outputs" should not be assumed to transfer to every task without
+checking.
+
+**Humans are not a clean gold standard either**, which matters for how the 50–100-answer
+calibration set above should be built: assertive-but-wrong answers are claimed to be rated
+**15–20% higher** than accurate-but-hedged ones by human raters. ⚠️ Claimed, not independently
+verified here. The actionable consequence: grade the calibration set against the source
+transcript, never against the confidence of the answer's tone.
+
+### Negative result: `gemma-4-e4b` has no reasoning off-switch, and it eats the completion budget
+
+Measured directly against the reference vLLM (`http://localhost:5195/v1`) while `RagAnswerer`
+was written — a plain, corpus-free connectivity check, not a judged or retrieval measurement:
+`max_tokens=10` truncated mid-reasoning and returned **no answer content at all**;
+`max_tokens=200` was enough for a trivial arithmetic question's ~47-token reasoning trace. This
+matches `app/services/CLAUDE.md`'s own reasoning table for this exact model (no off-switch;
+`false` is byte-identical to omitting the parameter). `RagAnswerer.response_tokens` defaults to
+2048 for this reason — a starting point, not a calibrated floor, since a real QMSum answer's
+reasoning trace is unmeasured.
+
+### `RagAnswerer` (`harness/answerers.py`) — the real chat path, driven in-process
+
+Drives `retrieve_context` → `mask_chunks` → `build_system_prompt`/`build_messages` →  a raw
+OpenAI-compatible completion, exactly the stages a real chat turn runs (`chat/service.py`).
+Two things worth restating because they were the load-bearing design constraints, not
+afterthoughts:
+
+- **Hard-fails at construction without a configured provider.** `base_url`/`model` are
+  required constructor arguments; missing either raises `ValueError` immediately, so a
+  misconfigured run cannot silently produce a results file full of empty "declined" answers
+  that would read as a real measurement.
+- **`rerank_enabled` bypasses `chat.settings.apply_user_preferences` entirely.** That function
+  narrows one-way — `base.rerank_enabled and rerank_enabled` — so if the resolved admin
+  default happens to be off, asking it for `rerank_enabled=True` silently produces `False`
+  anyway. An A/B whose "on" arm needs to reliably BE on (the eventual #463-adjacent reranker
+  comparison depends on this) cannot be built on that function. `RagAnswerer` constructs its
+  own `ChatSettings` with the caller's exact value written in.
+  `tests/eval/test_eval_rag_answerer.py`'s `TestNeverRoutesRerankThroughApplyUserPreferences`
+  is an AST guard over the module source (not a mocked call path) — it was verified to catch a
+  real reintroduction of `apply_user_preferences` by mutating a throwaway copy of the source
+  and confirming the test goes red.
+
+### Unanswerable controls (`synthetic/unanswerable.py`)
+
+30 deterministic questions about entities engineered to have near-zero chance of appearing in
+real transcript content — invented proper nouns with no dictionary-word roots (`Zorblatt
+Industries`, `Kwenzalotl Corporation`, ...), a stronger guarantee than picking obscure-but-real
+names a committee/business transcript could plausibly mention by coincidence. `false_answer_rate`
+is a conservative text heuristic (checks for an explicit decline phrase; can undercount a decline
+phrased unusually, never overcounts an explicit decline as a fabrication) — the point it exists
+to make is that **no relevance metric can see this failure mode at all**: a system that retrieves
+nothing and correctly declines scores identically, on nDCG/ROUGE alike, to one that fabricates a
+confident answer about something that was never in the corpus.
+
+### `load_qmsum_answer_queries` (`harness/corpora.py`)
+
+Two sources from data already loaded elsewhere in this file, no new corpus:
+`specific_query_list[].answer` (gold_text, spans kept as faithfulness context) and
+`general_query_list` — "Summarize the whole meeting," excluded from retrieval scoring
+(`load_qmsum_queries`) for lacking a `relevant_text_span`, but included here as a
+**gold-file-scoped** SUMMARIZE query (`spans` names exactly one file, so a `--scope gold-files`
+run restricts retrieval to it — asking the full corpus to summarize one meeting is a different,
+undefined task). Verified against the real QMSum data while this was written: **0 missing
+`answer` fields across all 4,728 specific queries** (696 meeting files, every domain/split), and
+**`data/ALL/` has no `all/` split subdirectory at all** (only `jsonl`/`test`/`train`/`val`) — the
+existing `data/{domain}/all/{meeting_id}.json` convention `load_qmsum_queries` already uses is
+the only one that ever resolves.
+
+### DoD status: no baseline committed yet
+
+The plan calls for one committed `baselines/qmsum-answers-<model-slug>/` at temperature 0. That
+needs a real generation run over an injected QMSum corpus, which needs either the live dev
+stack (never — it holds real user data, unrelated to this eval) or a `--fresh` deployment with
+QMSum injected. This lane's permission set excludes `./opentr.sh` (no stack start/stop), and no
+`--fresh` eval deployment was up at the time this was written (checked: no `otfresh-*`/`rag403`
+containers running). **Not run.** Everything upstream of that run — the measures, the loaders,
+the answerer, the negative controls — is built, tested, and CI-safe; generating the committed
+baseline is the one remaining step, and per this lane's own instructions it needs an estimated
+runtime and a go-ahead before it starts (retrieval-only QMSum arms measured previously on this
+machine: ~215-707 s depending on candidate pool; a generation arm calls an LLM per query and
+will be substantially slower — see this lane's final report for the actual estimate once a
+target corpus/query count is known).
 
 ## What we cannot currently claim
 
@@ -1797,3 +2306,75 @@ Stated plainly, because a benchmark's limits are part of its result:
 - **Multilingual coverage is 20 languages scored, not 100.** The unscored remainder is enumerated
   with a specific reason each — no public benchmark with relevance judgements, transcripts but no
   queries, or non-commercial licensing — rather than being implied by the product's language list.
+
+## Live chat-RAG HTTP probe (issue #72)
+
+Everything above drives `retrieve_chunks`/`retrieve_digests` in-process and never involves an LLM
+(D6) — that is what makes it fast and byte-identical. `scripts/probe_chat_rag.py` is the
+deliberate exception: it drives the **real chat HTTP path** — login, create a conversation with a
+file scope, POST a message, read the SSE stream, re-fetch the thread for `msg_metadata` — against
+a **real LLM**. It is a spot-check instrument, not a gate: useful for "does a multi-file scope
+query actually consult every file it should", not for a per-commit number.
+
+```bash
+python3 scripts/probe_chat_rag.py --port 5274 --question-set my-questions.json \
+    --llm-base-url http://llm-test-vllm:8000/v1 --llm-model gemma-4-e4b \
+    --out /tmp/ot-probe --metrics-out backend/tests/eval/baselines/probe-my-run
+```
+
+Question sets are supplied as an external `--question-set` JSON file, never hardcoded in the
+script — see the licence note below. `--out` writes the full-fidelity report (question text,
+reference answers, the app's generated answer prose, citation snippets) and must never be
+committed. `--metrics-out` writes the metrics-only artifact
+(`tests/eval/harness/probe_metrics.py`) that IS safe to commit: per-turn query id, category, scope
+size, files actually consulted, chunks used, retrieved count, warning codes, and the derived
+**coverage ratio** (`files_consulted / scope_size`) — never the question, the reference answer, the
+app's answer, or a citation's transcript snippet.  `tests.eval.harness.probe_metrics.
+assert_no_prose` walks the assembled artifact and refuses to serialise it if any of those fields
+appear at any depth, so a future field copy-pasted from the full-fidelity record cannot leak text
+into a committed baseline by accident.
+
+### Two environment gotchas, because each cost a debugging cycle the first time
+
+- **vLLM publishes on `127.0.0.1` only, on the *dev* project's Docker network.** A fresh/
+  measurement stack cannot resolve `llm-test-vllm` until the container is joined to that stack's
+  network **with the alias the app's LLM config names**:
+
+  ```bash
+  docker network connect --alias llm-test-vllm otfresh-<name>_default opentranscribe-llm-test-vllm
+  ```
+
+  The `--alias` is not optional — a plain `docker network connect` registers the CONTAINER name on
+  the new network, not the compose SERVICE alias every LLM config's `base_url` resolves against,
+  and DNS lookup from the backend fails silently until this is done.
+- **Every mutating request needs an `X-CSRF-Token` header matching the `csrf_token` cookie**
+  (double-submit, `backend/app/middleware/csrf.py`). GETs are exempt, so login followed by a
+  read-only call looks fine right up until the first POST 403s. `probe_chat_rag.login()` attaches
+  it automatically from the cookie the login response sets.
+
+### Committed baseline: `probe-chat-live-2026-08-20`
+
+`backend/tests/eval/baselines/probe-chat-live-2026-08-20/` records a 14-question run against
+`otfresh-ragmeas` (the 2,250-file / 144,527-chunk measurement corpus) and a Gemma vLLM instance,
+converted offline from the raw probe output through `probe_metrics.build_probe_results` — no
+question text, reference answer, or answer prose survived the conversion. Headline finding: **the
+four `multi_file` questions, each scoped to all four TS3005 meetings, consulted 3/4, 3/4, 2/4, 2/4
+files** (`coverage_ratio` 0.75, 0.75, 0.5, 0.5 in `metrics.json`) — a scoped multi-file
+conversation does not reliably cite every file in scope even when nothing prevents it from doing
+so. The two negative controls (an absent topic, an absent speaker/role) both correctly declined
+rather than fabricating; every `single_specific`/`single_general` question consulted exactly the
+one file in its scope.
+
+### Arms and flags this instrument does NOT yet cover
+
+Recorded here so a future session does not have to rediscover it by reading code:
+
+- **`chat.speaker_resolver_enabled`** — default **FALSE**. **UNMEASURED** (W2.2).
+- **`chat.context_expansion_enabled`** — default **FALSE**. **UNMEASURED** (issue #523).
+- **Fusion strategy** — `rrf` is the shipped default. #403 Stage 5 measured **24 arms** across two
+  corpora and adopted **zero** of them: the two corpora's per-arm rankings are **anti-correlated**
+  (Kendall's tau-b −0.714 / −0.905 — a config that helps one corpus tends to hurt the other). See
+  [Stage 5](#stage-5--the-retrieval-tuning-bake-off) above for the full arm table.
+- **Cross-encoder reranking** — measured **worse** than the unreranked candidate order (see
+  [Reranker candidates](#reranker-candidates--the-licence-gate-came-first) above) and deliberately
+  **not adopted**.

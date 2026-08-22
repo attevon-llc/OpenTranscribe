@@ -60,6 +60,22 @@ GPU_DEVICE_ID_FROM_ENV="${GPU_DEVICE_ID}"
 export APP_VERSION
 APP_VERSION=$(cat VERSION 2>/dev/null || echo "unknown")
 
+# Export GIT_SHA so docker compose can pass it through to containers, same as
+# APP_VERSION above. This is measurement attribution (#55): once a stack is built
+# from baked-in source rather than a bind mount, "which commit is this?" can only
+# be answered from inside the image, so the build has to be told. A dirty working
+# tree is not attributable to a commit either, so it gets a "-dirty" suffix rather
+# than silently reporting the last commit as if it were what's actually running.
+export GIT_SHA
+if git rev-parse --short HEAD >/dev/null 2>&1; then
+  GIT_SHA=$(git rev-parse --short HEAD)
+  if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+    GIT_SHA="${GIT_SHA}-dirty"
+  fi
+else
+  GIT_SHA="unknown"
+fi
+
 #######################
 # HELPER FUNCTIONS
 #######################
@@ -78,7 +94,7 @@ show_help() {
   echo "  data-paths                             - Print resolved live data locations (check before deleting!)"
   echo ""
   echo "Fresh Deployment Commands (isolated, guard-railed — never touch real data):"
-  echo "  start dev --fresh [name] [--port-offset N] [--seed-benchmark]"
+  echo "  start dev --fresh [name] [--port-offset N] [--seed-benchmark] [--no-bindmount]"
   echo "                                         - Start an isolated dev stack (own project + volumes)"
   echo "  stop --fresh [name]                    - Stop a fresh deployment (volumes kept)"
   echo "  status --fresh [name]                  - Status of a fresh deployment"
@@ -106,6 +122,7 @@ show_help() {
   echo "                         panel; placement is the reservation this flag sets."
   echo "  --nas                - Use custom storage paths (NAS for media, NVMe for DB/search)"
   echo "  --no-nas             - Suppress the auto-loaded NAS overlay (use Docker named volumes)"
+  echo "  --no-diar-native     - Suppress the auto-loaded native diarization sidecar"
   echo "  --fresh [name]       - Isolated dev deployment: own project + named volumes, NAS"
   echo "                         overlay NEVER loaded, real data untouched (dev mode only)"
   echo "  --port-offset N      - With --fresh: offset every published port by N (run side-by-side;"
@@ -113,6 +130,11 @@ show_help() {
   echo "                         Covers the --with-ldap-test/--with-smb-test/--with-monitoring/"
   echo "                         --with-keycloak-test/--with-authentik-test overlays too."
   echo "  --seed-benchmark     - With --fresh: upload small benchmark media once healthy"
+  echo "  --no-bindmount       - With --fresh: don't bind-mount ./backend into backend/worker"
+  echo "                         containers, and drop uvicorn --reload. The stack then runs the"
+  echo "                         IMAGE built at 'up --build' time, not live edits on disk — for"
+  echo "                         measurement runs where every number must attribute to a commit,"
+  echo "                         not whatever was on disk when a container last reloaded (#55)."
   echo "  --dry-run            - Print the compose files + command that WOULD run; start nothing"
   echo "  --lite               - Cloud-only ASR mode (no GPU required)"
   echo "  --cpu                - CPU-only mode (local transcription, no GPU overlay)"
@@ -130,6 +152,12 @@ show_help() {
   echo "                         OLE2 .doc/.ppt/.xls + RTF, localhost:5198). Without this"
   echo "                         flag the in-worker 'slim' tier still parses PDF/OOXML/text;"
   echo "                         scans and legacy Office get a typed 'not available' error."
+  echo "  --with-diar-native   - Start the native diarization sidecar (diar-server), the"
+  echo "                         PRIMARY engine when engine.diarizer_backend=native."
+  echo "                         GPU: DIAR_NATIVE_GPU, else GPU_DEVICE_ID; the sidecar"
+  echo "                         holds ~4.1 GB of warm ORT arena on that card while up."
+  echo "                         Without this flag a native-configured stack silently"
+  echo "                         falls back to the in-process PyAnnote fork per file."
   echo "  --with-keycloak-test - Start Keycloak test container (dev or prod; localhost:8180)"
   echo "  --with-authentik-test - Start Authentik test container (dev or prod; localhost:9022)"
   echo "  --with-watch         - Mount the host watch folder (WATCH_HOST_PATH, default ./watch) for auto-import"
@@ -204,6 +232,7 @@ show_help() {
   echo "  ./opentr.sh start dev --with-mock-llm        # Dev with a fake LLM for chat/AI testing"
   echo "  ./opentr.sh start dev --with-llm-test        # Dev with a real GPU-backed LLM (vLLM) for chat testing"
   echo "  ./opentr.sh start dev --with-documents       # Dev with the OCR + legacy-Office parser sidecars"
+  echo "  ./opentr.sh start dev --with-diar-native     # Dev with the native diarization sidecar"
   echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
   echo "  ./opentr.sh start dev --with-authentik-test  # Dev with Authentik test container"
   echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
@@ -343,6 +372,7 @@ GPU_DEVICE_VARS=(
   GPU_SCALE_DEVICE_ID       # --gpu-scale workers         (docker-compose.gpu-scale.yml)
   GPU_TRANSCRIBE_DEVICE_ID  # --with-gpu-split transcribe (docker-compose.gpu-split.yml)
   GPU_DIARIZE_DEVICE_ID     # --with-gpu-split diarize    (docker-compose.gpu-split.yml)
+  DIAR_NATIVE_GPU           # diar-native sidecar         (docker-compose.diar-native.yml)
 )
 
 # `--gpu-device N` — retarget every GPU this stack's workers reserve, applied
@@ -518,6 +548,9 @@ FRESH_MOCK_LLM_SERVICES=(mock-llm)
 # publish a loopback port, so both need the #347 isolation treatment or a fresh stack
 # collides with the main one on 5197/5198.
 FRESH_DOCUMENTS_SERVICES=(docling-serve tika)
+# Native diarization sidecar (--with-diar-native). No published host port, but the
+# service still needs re-pinning into the fresh project so two stacks never share one.
+FRESH_DIAR_NATIVE_SERVICES=(diar-native)
 FRESH_SMB_SERVICES=(smb-test)
 FRESH_MONITORING_SERVICES=(prometheus grafana)
 
@@ -554,6 +587,146 @@ fresh_generate_overlay() {
   # Ports are env-var driven now — drop the stale file so nothing picks it up.
   rm -f "${FRESH_OVERLAY_DIR}/${name}-ports.yml"
   echo "$file"
+}
+
+# Services docker-compose.override.yml bind-mounts ./backend:/app into for
+# hot-reload (issue #55). --no-bindmount replaces each one's volumes so the
+# fresh stack runs the built image instead of whatever is on disk.
+# celery-worker-gpu-* are profile-gated (gpu-scale/gpu-split) and simply won't
+# appear in `docker compose config` when their flag wasn't passed — no special
+# casing needed here for that.
+FRESH_BAKED_SERVICES=(
+  backend
+  celery-worker celery-download-worker celery-cpu-worker celery-redaction
+  celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
+  celery-worker-gpu-scaled celery-worker-gpu-transcribe celery-worker-gpu-diarize
+)
+
+# Generate (idempotently) the "baked image" overlay for `--no-bindmount` and
+# echo its path. For every service in FRESH_BAKED_SERVICES, replaces its
+# `volumes:` (via the `!override` YAML tag, Compose >=2.24) with the list
+# `docker compose config` already resolved for THIS deployment, minus the
+# ./backend:/app bind and its /app/venv exclusion — and drops `--reload` from
+# any command that has it (only `backend`'s does today).
+#
+# `!override` is required, not a nicety: compose MERGES a plain `volumes:`
+# key across files rather than replacing it, so an overlay listing fewer
+# volumes would only ADD to the bind, never remove it (the same trap as the
+# ports overlay, issue #343). And the replacement list is machine-generated,
+# never hand-transcribed, because each service also carries model-cache /
+# pipeline_scratch / transcription-temp mounts a hand-written list would
+# silently drop, forcing a ~2.5GB model re-download.
+#
+# $1 = deployment name. $2 = the compose "-f a.yml -f b.yml ..." chain already
+# assembled for this deployment (GPU/aux overlays and the fresh container_name
+# overlay all included) — the baked overlay must reflect exactly what would
+# otherwise be `up`'d, so it has to be generated from that same chain rather
+# than a hand-picked subset of files.
+fresh_generate_baked_overlay() {
+  local name="$1"
+  local files="$2"
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "❌ --no-bindmount needs 'jq' to read the resolved compose config (not found on PATH)." >&2
+    exit 1
+  fi
+  mkdir -p "$FRESH_OVERLAY_DIR"
+  local file="${FRESH_OVERLAY_DIR}/${name}-baked.yml"
+  local resolved
+  # shellcheck disable=SC2086
+  if ! resolved="$(docker compose $files config --format json 2>&1)"; then
+    echo "❌ --no-bindmount: 'docker compose config' failed while generating the baked overlay:" >&2
+    echo "$resolved" >&2
+    exit 1
+  fi
+  {
+    echo "# AUTO-GENERATED by opentr.sh (--no-bindmount) for fresh deployment '${name}'."
+    echo "# Replaces each service's volumes: (via !override — a plain key MERGES"
+    echo "# instead of replacing, issue #343's trap again) with the list already"
+    echo "# resolved by 'docker compose config' minus the ./backend:/app hot-reload"
+    echo "# bind and its /app/venv exclusion, and drops --reload from any command"
+    echo "# that has it. Every other mount (model caches, pipeline_scratch,"
+    echo "# transcription-temp) is carried over unchanged because it came FROM the"
+    echo "# resolved config, not a hand-written list. Safe to delete; regenerated"
+    echo "# on demand. Do NOT edit by hand."
+    echo "services:"
+    local svc vols cmd has_reload
+    for svc in "${FRESH_BAKED_SERVICES[@]}"; do
+      if ! jq -e --arg svc "$svc" '.services[$svc] != null' >/dev/null 2>&1 <<<"$resolved"; then
+        continue # not part of this deployment (e.g. a gpu-scale/gpu-split worker that's off)
+      fi
+      echo "  ${svc}:"
+      vols="$(jq -r --arg svc "$svc" '
+        .services[$svc].volumes[]?
+        | select(.target != "/app" and .target != "/app/venv")
+        | select(.source != null)
+        | "\(.source):\(.target)"
+      ' <<<"$resolved")"
+      if [ -n "$vols" ]; then
+        echo "    volumes: !override"
+        while IFS= read -r v; do
+          echo "      - ${v}"
+        done <<<"$vols"
+      else
+        # A bare "volumes: !override" with nothing under it parses as YAML
+        # null, and compose rejects that with "must be a list" — celery-beat
+        # hits this: its only mount today IS ./backend:/app, so filtering it
+        # out empties the list. Explicit empty flow sequence keeps it a list.
+        echo "    volumes: !override []"
+      fi
+      has_reload="$(jq -r --arg svc "$svc" '(.services[$svc].command // []) | any(. == "--reload")' <<<"$resolved")"
+      if [ "$has_reload" = "true" ]; then
+        cmd="$(jq -c --arg svc "$svc" '.services[$svc].command | map(select(. != "--reload"))' <<<"$resolved")"
+        echo "    command: ${cmd}"
+      fi
+    done
+  } >"$file"
+  echo "$file"
+}
+
+# Verify a baked (--no-bindmount) stack is actually RUNNING the code it claims to
+# (issue #528). Compose has been observed accepting `--force-recreate` on the wire
+# and still leaving old containers up, so after `up` we read GIT_SHA back from
+# every baked service and compare it to the SHA this run exported. A mismatch is
+# self-healed once with the surgical per-service recreate (measured to work where
+# the blanket flag did not), then re-checked; if it STILL disagrees we exit 1 —
+# a baked stack on stale code silently invalidates every measurement taken
+# against it, which is worse than a failed start.
+#
+# $1 = the compose "-f ..." chain for this deployment. Uses $GIT_SHA (exported
+# at script top) as the expected value. Containers reporting nothing or
+# "unknown" count as stale: an unstamped container cannot attribute a
+# measurement either.
+fresh_verify_baked_git_sha() {
+  local files="$1"
+  local expected="$GIT_SHA"
+  local attempt svc cid got stale
+  for attempt in 1 2; do
+    stale=()
+    for svc in "${FRESH_BAKED_SERVICES[@]}"; do
+      # shellcheck disable=SC2086
+      cid="$(docker compose $files ps -q "$svc" 2>/dev/null)"
+      [ -z "$cid" ] && continue # not part of this deployment (profile off)
+      got="$(docker exec "$cid" printenv GIT_SHA 2>/dev/null || echo '<unset>')"
+      if [ "$got" != "$expected" ]; then
+        stale+=("$svc")
+        echo "   ✗ ${svc}: GIT_SHA=${got} (expected ${expected})"
+      fi
+    done
+    if [ "${#stale[@]}" -eq 0 ]; then
+      echo "🔏 Baked-stack code verified: GIT_SHA=${expected} on every baked service."
+      return 0
+    fi
+    if [ "$attempt" -eq 1 ]; then
+      echo "⚠️  ${#stale[@]} baked service(s) are running STALE code — recreating surgically (issue #528)..."
+      # shellcheck disable=SC2086
+      docker compose $files up -d --no-deps --force-recreate "${stale[@]}"
+    fi
+  done
+  echo ""
+  echo "❌ Baked stack is STILL running stale code after a surgical recreate (issue #528)."
+  echo "   Any measurement against this stack would describe code nobody is running."
+  echo "   Inspect: docker compose ${files} ps   and compare printenv GIT_SHA per container."
+  exit 1
 }
 
 # Every host port a fresh dev stack publishes, as "VAR=default" pairs. VAR is the
@@ -775,7 +948,8 @@ print_data_paths() {
     local f n
     for f in "${FRESH_OVERLAY_DIR}"/*.yml; do
       # *-ports.yml is a stale pre-#343 artifact, not a deployment (see #343).
-      case "$f" in *-ports.yml) continue;; esac
+      # *-baked.yml is the --no-bindmount volumes overlay (#55), also not its own deployment.
+      case "$f" in *-ports.yml|*-baked.yml) continue;; esac
       n="$(basename "$f" .yml)"
       echo "   otfresh-${n} → named volumes otfresh-${n}_{postgres,minio,opensearch,redis}_data"
     done
@@ -844,7 +1018,9 @@ fresh_list() {
     local f n proj running offset ports
     for f in "${FRESH_OVERLAY_DIR}"/*.yml; do
       # *-ports.yml is a stale pre-#343 artifact, not a deployment (see #343).
-      case "$f" in *-ports.yml) continue;; esac
+      # *-baked.yml is the --no-bindmount volumes overlay (#55), also not its own deployment —
+      # skip both or fresh_project_name mangles the suffix into a bogus second entry.
+      case "$f" in *-ports.yml|*-baked.yml) continue;; esac
       n="$(basename "$f" .yml)"
       proj="$(fresh_project_name "$n")"
       running="$(docker ps --filter "name=^${proj}-" --format '{{.Names}}' 2>/dev/null | wc -l | tr -d ' ')"
@@ -894,10 +1070,12 @@ fresh_destroy() {
   echo "   Generated files to remove:"
   # <name>.yml = container_name overlay, <name>.offset = recorded --port-offset,
   # <name>.aux = recorded aux overlays (#347),
-  # <name>-ports.yml = stale pre-#343 port overlay (see #343).
+  # <name>-ports.yml = stale pre-#343 port overlay (see #343),
+  # <name>-baked.yml = --no-bindmount volumes overlay (#55).
   ls "${FRESH_OVERLAY_DIR}/${name}.yml" "${FRESH_OVERLAY_DIR}/${name}.offset" \
      "${FRESH_OVERLAY_DIR}/${name}.aux" \
-     "${FRESH_OVERLAY_DIR}/${name}-ports.yml" 2>/dev/null | sed 's/^/     - /' || true
+     "${FRESH_OVERLAY_DIR}/${name}-ports.yml" \
+     "${FRESH_OVERLAY_DIR}/${name}-baked.yml" 2>/dev/null | sed 's/^/     - /' || true
   echo ""
   echo "   This touches ONLY this isolated project — no bind paths, no other stack."
   printf "   Proceed? (y/N) "
@@ -915,7 +1093,8 @@ fresh_destroy() {
   fi
   rm -f "${FRESH_OVERLAY_DIR}/${name}.yml" "${FRESH_OVERLAY_DIR}/${name}.offset" \
         "${FRESH_OVERLAY_DIR}/${name}.aux" \
-        "${FRESH_OVERLAY_DIR}/${name}-ports.yml" 2>/dev/null || true
+        "${FRESH_OVERLAY_DIR}/${name}-ports.yml" \
+        "${FRESH_OVERLAY_DIR}/${name}-baked.yml" 2>/dev/null || true
   echo "✅ Fresh deployment '${name}' destroyed (containers + volumes + generated files)."
 }
 
@@ -935,6 +1114,8 @@ start_app() {
   WITH_LDAP_TEST_FLAG=""
   WITH_MOCK_LLM_FLAG=""
   WITH_DOCUMENTS_FLAG=""
+  WITH_DIAR_NATIVE_FLAG=""
+  NO_DIAR_NATIVE_FLAG=""
   WITH_LLM_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
   WITH_AUTHENTIK_TEST_FLAG=""
@@ -950,6 +1131,7 @@ start_app() {
   PORT_OFFSET=""
   DRY_RUN_FLAG=""
   SEED_BENCHMARK_FLAG=""
+  NO_BINDMOUNT_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -1014,6 +1196,10 @@ start_app() {
         SEED_BENCHMARK_FLAG="--seed-benchmark"
         shift
         ;;
+      --no-bindmount)
+        NO_BINDMOUNT_FLAG="--no-bindmount"
+        shift
+        ;;
       --lite)
         LITE_FLAG="--lite"
         shift
@@ -1036,6 +1222,14 @@ start_app() {
         ;;
       --with-documents)
         WITH_DOCUMENTS_FLAG="--with-documents"
+        shift
+        ;;
+      --with-diar-native)
+        WITH_DIAR_NATIVE_FLAG="--with-diar-native"
+        shift
+        ;;
+      --no-diar-native)
+        NO_DIAR_NATIVE_FLAG="--no-diar-native"
         shift
         ;;
       --with-llm-test)
@@ -1135,6 +1329,10 @@ start_app() {
       _aux_services+=("${FRESH_DOCUMENTS_SERVICES[@]}")
       _aux_files+=("docker-compose.documents.yml")
     fi
+    if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
+      _aux_services+=("${FRESH_DIAR_NATIVE_SERVICES[@]}")
+      _aux_files+=("docker-compose.diar-native.yml")
+    fi
     if [ -n "$WITH_SMB_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_SMB_PORT_VARS[@]}")
       _aux_services+=("${FRESH_SMB_SERVICES[@]}")
@@ -1203,8 +1401,19 @@ start_app() {
     # Force NAS off in fresh mode regardless of .env.
     NO_NAS_FLAG="--no-nas"
     NAS_FLAG=""
-  elif [ -n "$PORT_OFFSET" ]; then
-    echo "⚠️  --port-offset is only honored in fresh mode (--fresh); ignoring."
+
+    if [ -n "$NO_BINDMOUNT_FLAG" ]; then
+      echo "🖼️  --no-bindmount: this deployment will run the BUILT IMAGE, not live"
+      echo "   ./backend edits — a code change needs '--build' + a fresh 'up', not a save."
+      echo ""
+    fi
+  else
+    if [ -n "$PORT_OFFSET" ]; then
+      echo "⚠️  --port-offset is only honored in fresh mode (--fresh); ignoring."
+    fi
+    if [ -n "$NO_BINDMOUNT_FLAG" ]; then
+      echo "⚠️  --no-bindmount is only honored in fresh mode (--fresh); ignoring."
+    fi
   fi
 
   # PKI requires production mode (nginx with mTLS)
@@ -1492,6 +1701,32 @@ start_app() {
     fi
   fi
 
+  # Native diarization sidecar auto-load: `native` is the coded default engine, so a
+  # stack without the sidecar silently serves every file from the in-process PyAnnote
+  # fallback. Mirrors the NAS auto-detect: announced, and --no-diar-native suppresses.
+  # Guarded on the models dir existing — without it the sidecar restart-loops and
+  # `up --wait` would fail the whole startup on checkouts with no local model export.
+  # Fresh stacks stay opt-in (pass --with-diar-native explicitly).
+  if [ -z "$WITH_DIAR_NATIVE_FLAG" ] && [ -z "$NO_DIAR_NATIVE_FLAG" ] && [ -z "$FRESH_FLAG" ] \
+     && [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ] \
+     && [ -d "${DIAR_NATIVE_MODELS_DIR:-/mnt/nvm/repos/diar-native/models_folded}" ]; then
+    WITH_DIAR_NATIVE_FLAG="auto"
+    echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
+  fi
+
+  # Add the native diarization sidecar if requested
+  if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
+    if [ -f "docker-compose.diar-native.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
+      echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
+      echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~4.1 GB warm ORT arena while up."
+      echo "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);"
+      echo "   without the sidecar that config falls back to the in-process PyAnnote fork."
+    else
+      echo "⚠️  --with-diar-native specified but docker-compose.diar-native.yml not found"
+    fi
+  fi
+
   # Add real GPU-backed LLM test provider if requested
   if [ -n "$WITH_LLM_TEST_FLAG" ]; then
     if [ -f "docker-compose.llm-test.yml" ]; then
@@ -1604,6 +1839,52 @@ start_app() {
     COMPOSE_FILES="$COMPOSE_FILES -f $FRESH_OVERLAY"
   fi
 
+  # --no-bindmount: replace the ./backend:/app hot-reload bind (and drop
+  # --reload) on every service it's mounted into, so the fresh stack runs the
+  # built image instead of whatever is on disk (issue #55). Generated from
+  # `docker compose config` over the EXACT chain assembled above (GPU + aux
+  # overlays + the fresh container_name overlay all included), then appended
+  # last so its !override sees — and replaces — the fully-merged volume list.
+  if [ -n "$FRESH_FLAG" ] && [ -n "$NO_BINDMOUNT_FLAG" ]; then
+    FRESH_BAKED_OVERLAY="$(fresh_generate_baked_overlay "$FRESH_NAME" "$COMPOSE_FILES")"
+    COMPOSE_FILES="$COMPOSE_FILES -f $FRESH_BAKED_OVERLAY"
+  fi
+
+  # --no-bindmount means "the IMAGE is the code", so it MUST force a recreate.
+  #
+  # Compose keys recreation on the SERVICE CONFIG, and `opentranscribe-backend:latest`
+  # is the same *name* even when the tag points at a different image — so `up -d --build`
+  # rebuilt the image and left the old containers running. Measured: the measurement stack
+  # served a two-hour-old image (866eace4) while the tag had moved to 9bfae667, and
+  # `printenv GIT_SHA` inside the container disagreed with the SHA baked into that image.
+  # "Rebuild + redeploy" deployed nothing, silently, and every measurement taken against
+  # it described code nobody was running.
+  #
+  # Fatal for a BAKED stack specifically: with the bind mount gone there is no other route
+  # for new code to reach the container. Bind-mounted dev is unaffected (the source is
+  # live), which is why this is scoped to the flag instead of applied to every start.
+  #
+  # Computed BEFORE the dry-run block on purpose — a preview that omits a flag the real
+  # run passes is the same class of defect as the bug above.
+  #
+  # ⚠️ MEASURED 2026-08-20: THIS IS NOT SUFFICIENT ON ITS OWN. `bash -x` confirms the flag
+  # reaches the wire — `up -d --wait --wait-timeout 700 --build --force-recreate` — and
+  # compose still reported 0 "Recreated" lines and left containers at their previous
+  # creation timestamp. So `--force-recreate` is necessary but not honoured here, and the
+  # cause is in compose rather than in this script (issue #75, still open).
+  #
+  # Until that is understood, VERIFY after any rebuild that is going to be measured:
+  #     docker exec <proj>-backend printenv GIT_SHA
+  #     docker run --rm --entrypoint printenv opentranscribe-backend:latest GIT_SHA
+  # and if they disagree, recreate surgically (this DOES work):
+  #     COMPOSE_PROJECT_NAME=<proj> <the *_PORT vars for the offset> \
+  #     docker compose <the same -f chain> up -d --no-deps --force-recreate \
+  #       backend celery-worker celery-embedding-worker
+  RECREATE_CMD=""
+  if [[ -n "$NO_BINDMOUNT_FLAG" ]]; then
+    RECREATE_CMD="--force-recreate"
+  fi
+
   # Dry-run: print exactly what WOULD run and exit without touching Docker.
   if [ -n "$DRY_RUN_FLAG" ]; then
     echo ""
@@ -1619,10 +1900,15 @@ start_app() {
     # only under --gpu-device) so a dry run answers "which card does this stack
     # actually take?" without reading .env and five overlay files.
     echo "   GPU device reservations (as compose will interpolate them):"
-    echo "     GPU_DEVICE_ID=${GPU_DEVICE_ID:-0} REDACTION_GPU_DEVICE_ID=${REDACTION_GPU_DEVICE_ID:-0} GPU_SCALE_DEVICE_ID=${GPU_SCALE_DEVICE_ID:-2}"
-    echo "     GPU_TRANSCRIBE_DEVICE_ID=${GPU_TRANSCRIBE_DEVICE_ID:-0} GPU_DIARIZE_DEVICE_ID=${GPU_DIARIZE_DEVICE_ID:-1} LLM_TEST_GPU_DEVICE_ID=${LLM_TEST_GPU_DEVICE_ID:-2}"
+    # Iterates GPU_DEVICE_VARS so a device var added to the list (and to compose)
+    # shows up here without a second edit; the guard test parses this block.
+    _resv="  "
+    for _var in "${GPU_DEVICE_VARS[@]}"; do
+      _resv="${_resv} ${_var}=${!_var:-${GPU_DEVICE_ID:-0}}"
+    done
+    echo "   ${_resv} LLM_TEST_GPU_DEVICE_ID=${LLM_TEST_GPU_DEVICE_ID:-2}"
     echo "   Command that WOULD run:"
-    echo "     docker compose $COMPOSE_FILES up -d $BUILD_CMD"
+    echo "     docker compose $COMPOSE_FILES up -d $BUILD_CMD $RECREATE_CMD"
     [ -n "$FRESH_FLAG" ] && echo "   (fresh mode: NAS overlay omitted by design; real data untouched)"
     [ -n "$SEED_BENCHMARK_FLAG" ] && echo "   (would seed benchmark media via scripts/seed-fresh-deployment.sh after healthy)"
     return 0
@@ -1639,7 +1925,7 @@ start_app() {
   # "created-but-never-started" container surfaces as a non-zero exit instead of
   # a silent failure. --wait-timeout 700 covers the backend's 600s start_period.
   # shellcheck disable=SC2086
-  if ! docker compose $COMPOSE_FILES up -d --wait --wait-timeout 700 $BUILD_CMD; then
+  if ! docker compose $COMPOSE_FILES up -d --wait --wait-timeout 700 $BUILD_CMD $RECREATE_CMD; then
     echo ""
     echo "❌ Startup failed — one or more services did not become healthy."
     echo "📊 Service status:"
@@ -1656,6 +1942,12 @@ start_app() {
   # the volume is root-owned by default, which breaks the shared-memory
   # handoff between CPU preprocess and GPU/embedding workers.
   fix_pipeline_scratch_permissions
+
+  # Baked stack: prove the containers run the code this invocation built
+  # (issue #528) — compose has served a stale image here despite --force-recreate.
+  if [ -n "$NO_BINDMOUNT_FLAG" ] && [ -n "$FRESH_FLAG" ]; then
+    fresh_verify_baked_git_sha "$COMPOSE_FILES"
+  fi
 
   # Display container status
   echo "📊 Container status:"
@@ -2072,6 +2364,32 @@ reset_and_init() {
       echo "   Sets DOCUMENT_PARSER_URL + DOCUMENT_TIKA_URL on backend and the CPU workers."
     else
       echo "⚠️  --with-documents specified but docker-compose.documents.yml not found"
+    fi
+  fi
+
+  # Native diarization sidecar auto-load: `native` is the coded default engine, so a
+  # stack without the sidecar silently serves every file from the in-process PyAnnote
+  # fallback. Mirrors the NAS auto-detect: announced, and --no-diar-native suppresses.
+  # Guarded on the models dir existing — without it the sidecar restart-loops and
+  # `up --wait` would fail the whole startup on checkouts with no local model export.
+  # Fresh stacks stay opt-in (pass --with-diar-native explicitly).
+  if [ -z "$WITH_DIAR_NATIVE_FLAG" ] && [ -z "$NO_DIAR_NATIVE_FLAG" ] && [ -z "$FRESH_FLAG" ] \
+     && [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ] \
+     && [ -d "${DIAR_NATIVE_MODELS_DIR:-/mnt/nvm/repos/diar-native/models_folded}" ]; then
+    WITH_DIAR_NATIVE_FLAG="auto"
+    echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
+  fi
+
+  # Add the native diarization sidecar if requested
+  if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
+    if [ -f "docker-compose.diar-native.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
+      echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
+      echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~4.1 GB warm ORT arena while up."
+      echo "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);"
+      echo "   without the sidecar that config falls back to the in-process PyAnnote fork."
+    else
+      echo "⚠️  --with-diar-native specified but docker-compose.diar-native.yml not found"
     fi
   fi
 
@@ -2812,7 +3130,15 @@ case "$1" in
     add_gpu_overlay
 
     # shellcheck disable=SC2086
-    docker compose $COMPOSE_FILES build
+    if ! docker compose $COMPOSE_FILES build; then
+      # A build failure used to print "✅ Build complete" and exit 0, because the
+      # success line was unconditional. The next `start` then served the PREVIOUS
+      # image, so a change simply did not appear — the same class of silent-stale
+      # deployment as issue #75, and equally hard to attribute to the build.
+      echo "❌ Build FAILED. The previous images are unchanged; do not start and"
+      echo "   assume your changes are deployed. Scroll up for the build error."
+      exit 1
+    fi
     echo "✅ Build complete. Use './opentr.sh start' to start the application."
     ;;
 

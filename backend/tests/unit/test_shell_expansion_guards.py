@@ -102,7 +102,9 @@ _ASSIGN_RES = (
     # bare declaration: `local name`, `export NAME`
     re.compile(r"^\s*(?:export|readonly|local|declare|typeset)\s+([A-Za-z_]\w*)\s*$"),
     re.compile(r"^\s*for\s+([A-Za-z_]\w*)\s+in\b"),
-    re.compile(r"\bread\b[^;|&]*?\s([A-Za-z_]\w*)\s*$"),
+    # `read -r name` at line end, or followed by `; do` / `; then` in a loop
+    # header (`while IFS= read -r v; do` binds v as surely as at end-of-line).
+    re.compile(r"\bread\b[^;|&]*?\s([A-Za-z_]\w*)\s*(?:;|$)"),
     re.compile(r"\bmapfile\b.*?\s([A-Za-z_]\w*)\s*$"),
 )
 

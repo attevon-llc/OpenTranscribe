@@ -488,6 +488,67 @@ def test_a_short_turn_by_a_different_speaker_is_not_merged():
     assert chunks[1]["chunk_index"] == 1
 
 
+def test_a_segment_with_no_speaker_key_resolves_to_the_canonical_unknown_label():
+    """GH #42: the chunk-index writers upstream (``search_indexing_task``,
+    ``reindex_task``) always populate ``speaker`` with
+    ``canonical_speaker_label()``'s output before handing segments here, so this
+    default is a defensive fallback for a segment dict that omits the key
+    entirely rather than the normal path. It used to default to a bare
+    ``"Unknown"`` — a THIRD spelling of "unidentified" beside
+    ``UNKNOWN_SPEAKER_LABEL`` ("Unknown Speaker") and the legacy lowercase
+    ``"Unknown speaker"`` some API formatters emitted — which split the
+    unidentified population in the index into documents no single `speaker`
+    term filter or facet could ever cover together.
+
+    A segment missing the key altogether (not merely ``speaker=None``) is the
+    only input that reaches ``dict.get``'s default, so the fixture constructs
+    the dict by hand rather than through ``_segment()``, which always sets it.
+    """
+    from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
+
+    segments = [
+        {"start": 0.0, "end": 2.0, "text": "Nobody was attributed to this."},
+    ]
+
+    chunks = chunk_transcript_by_speaker_turns(segments, **BASE_KWARGS)
+
+    assert len(chunks) == 1
+    assert chunks[0]["speaker"] == UNKNOWN_SPEAKER_LABEL
+    assert chunks[0]["speaker"] != "Unknown"
+
+
+def test_the_unattributed_default_is_read_from_the_shared_constant_not_a_literal(
+    monkeypatch,
+):
+    """Structural regression guard, not a restatement of the resolver.
+
+    A test that only asserts ``speaker == UNKNOWN_SPEAKER_LABEL`` would keep
+    passing even if someone re-hardcoded the literal ``"Unknown Speaker"``
+    string inline here instead of importing the constant — the two strings are
+    equal today, so a plain equality check cannot tell "sourced from the single
+    canonical constant" apart from "coincidentally spells the same value".
+
+    This proves the sourcing instead: monkeypatch the constant `chunking_service`
+    imported (module-local binding, so this cannot leak into
+    ``app.utils.speaker_labels`` for any other test) to a value nothing could
+    coincidentally match, and require the emitted chunk to carry THAT value. A
+    hardcoded literal fallback would keep emitting the old string here and this
+    assertion would fail — which is exactly the recurrence this test exists to
+    catch.
+    """
+    sentinel = "__CANONICAL_UNKNOWN_SENTINEL__"
+    monkeypatch.setattr(chunking_service, "UNKNOWN_SPEAKER_LABEL", sentinel)
+
+    segments = [
+        {"start": 0.0, "end": 2.0, "text": "Nobody was attributed to this."},
+    ]
+
+    chunks = chunk_transcript_by_speaker_turns(segments, **BASE_KWARGS)
+
+    assert len(chunks) == 1
+    assert chunks[0]["speaker"] == sentinel
+
+
 # ---------------------------------------------------------------------------
 # 6. Tenant scoping on the emitted document
 # ---------------------------------------------------------------------------

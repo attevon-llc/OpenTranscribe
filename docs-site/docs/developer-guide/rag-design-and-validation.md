@@ -31,7 +31,7 @@ pipeline described in [RAG Chat](./rag-chat.md) — everything else on this page
 | 3 | Index v6 — one reindex, digests in the index | Not started |
 | 4 | Query router, map-reduce, aggregation | Not started |
 | 5 | Retrieval tuning bake-off (fusion, reranker, synonyms) | Not started |
-| 6 | [Documents](../features/documents.md) | Not started |
+| 6 | [Documents](../features/documents.md) | In progress — upload/parse/index/view shipped; redaction, document-aware chat citations, and cross-linking to recordings not yet built |
 | 7 | Opt-in enrichment | Not started |
 | 8 | Whitepaper | Not started |
 
@@ -162,6 +162,23 @@ Recording rejections is cheaper than rediscovering them.
 | Chunk-level metadata facets | Document-level only | Document-level metadata measured as a clear win; chunk-level measured as a small negative |
 | An off-the-shelf RAG server (Open WebUI, Dify, Onyx, Morphik) | Building on our own index | Each duplicates four subsystems we already own to supply the one we lack — and every candidate that could talk to our OpenSearch is licence-blocked for an AGPL project (branding riders, multi-tenant prohibitions, enterprise code inside the official images, or a revenue-capped BSL grant) |
 
+## Deliberately not built — and the evidence gate each one needs
+
+Different from the table above: these are not measured negatives, they are things nobody has
+measured yet, on purpose. Recording the gate is what makes "we chose not to" recoverable — a
+future reader can check whether the gate is now met, instead of re-proposing the idea blind and
+re-discovering the reasons in this document from scratch.
+
+| Deferred | What it would add | The gate |
+|---|---|---|
+| Topic-granularity second chunk plane | A third `doc_type` between `chunk` and `digest`, segmented by topic rather than speaker turn | A measured nDCG/recall win over the existing two-plane structure on a query class that specifically needs topic-level retrieval, large enough to justify a third additive-mapping plane, its own reindex cost, and a third predicate to get wrong (see the three-predicate trap in `services/search/CLAUDE.md`'s "Index v6" section) |
+| Neural sparse third leg | OpenSearch neural sparse search fused alongside the existing BM25 + dense legs | A measured win over the current two-leg RRF fusion on **both** standard corpora (QMSum and synthetic) — the bar the ten already-measured fusion arms failed to clear (see "MEASURED: RRF stays" above); a third leg needs to beat that bar, not merely add a plausible-sounding signal |
+| Action-item embeddings | Embedding `action_items`/`key_decisions` as their own retrievable unit, rather than reading them from `summary_data`/`file_facts.keyphrases` the way `chat/recurrence.py` does today | A measured recall improvement for action-item-specific queries against the current digest/recurrence read path, weighed against the write amplification of a fourth document kind and the loss of the no-LLM degraded mode recurrence detection has today (#403 D6) |
+| GraphRAG | A knowledge graph over entities/relations | **Standing NO, already measured** — not merely deferred. See "What we rejected, and why" above: 32.96 (structured metadata) vs 20.61 (plain hybrid) vs 10.31 (GraphRAG) on a 39,190-artifact benchmark, at 100–2000× the indexing cost. Reopening this needs a fundamentally different graph-construction method **and** a corpus where the dominant query type is genuinely relational, not topical — not a re-run of the same measurement |
+| Boost vs. second leg for speaker mentions | Folding a resolved speaker mention into the main query as a score boost or hard filter, instead of `chat/speaker_resolver.py`'s current design — a resolved mention feeds a **parallel** second retrieval leg (`speaker_focus_names`), unioned with the main leg's results, never narrowing it | A measured precision/recall comparison against the current second-leg design on speaker-attributed queries, showing a boost/filter approach recovers recall the second leg misses without the false-positive risk a hard filter adds when resolution is ambiguous (the resolver already declines to guess — `ChatWarningCode.AMBIGUOUS_SPEAKER` — rather than mis-resolving) |
+| The `speaker_id` filter flip | Filtering chat's speaker axis by the numeric `speaker_id`/`profile_id` fields instead of an exact `terms` match on the `speaker` display name, closing the #405 rename-fragility (a chunk not yet rewritten after a rename is unreachable under the new name) | `survey_speaker_id_coverage()` (`services/search/indexing_service.py`) shows coverage near 100% on a real deployment's corpus. The fields are lazy-backfilled — coverage starts near 0% on any existing deployment — so flipping the filter before coverage is high would silently drop under-covered chunks from every speaker-filtered query, the opposite of the fix's purpose |
+| CJK segmenter dependency | A real scriptio-continua segmenter (jieba / sudachipy / pythainlp / similar) for speaker-mention candidate extraction, replacing `speaker_resolver.py`'s current maximal-same-script-run + prefix/fuzzy-match approach | A measured precision/recall comparison of name-mention extraction on a labeled CJK/Thai corpus showing the current run-based approach materially under- or over-extracts. Even if met, the dependency would need to ship **opt-in** (a document-sidecar-shaped seam), not required — `backend/tests/unit/test_laptop_deployment_invariant.py` pins that the laptop/home-server tier needs no new required model or heavy dependency, and this gate does not override that invariant, it is subordinate to it |
+
 ## The traps
 
 This is the section that should earn or lose your trust in the numbers, because every one of
@@ -269,6 +286,15 @@ Not once, not as an anomaly. Four times in one project, in both directions:
 Each would have put an unpublishable number in a paper. The generalisable rule: **an absent or
 permissive metadata field is not evidence of a permissive licence.** Read the card body, the repo
 `LICENSE`, and any licence file shipped *inside* the archive — the last one binds.
+
+**The MeetingBank case recurred, independently, during this page's own upkeep.** A fresh web
+search run to survey corpora for a later research pass reported MeetingBank as "CC BY per
+Zenodo" — reproducing, verbatim, the exact error the table above already caught by opening the
+archive. Nothing new was learned about MeetingBank's licence; what this demonstrates is the
+argument for maintaining this table at all: **a fresh external search result does not override a
+measured finding already recorded here.** When the two disagree, re-verify from the primary
+source — the archive, the repo's own `LICENSE`, the authors' site — never take the search result
+as the tiebreaker.
 
 The same trap has a tooling face: `pytrec_eval_terrier` declares MIT, but that covers the Python
 wrapper; several embedded `trec_eval` C sources carry "permission is granted for use and
@@ -396,6 +422,6 @@ assumed settled.
 - [RAG Evaluation Methodology](./rag-evaluation.md) — corpora, metric definitions, and how to
   reproduce every number here
 - [RAG Chat (Internals)](./rag-chat.md) — the pipeline as it exists today
-- [Documents (Planned)](../features/documents.md) — Stage 6
+- [Documents](../features/documents.md) — Stage 6
 - [Working Without an AI Model](../user-guide/without-an-ai-model.md) — the D6 deployment these
   decisions protect

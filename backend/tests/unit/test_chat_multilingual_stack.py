@@ -144,7 +144,9 @@ def test_a_non_english_pool_keeps_its_retrieval_order(monkeypatch: pytest.Monkey
     from app.services.chat import reranker
 
     monkeypatch.setattr(
-        reranker, "get_reranker", lambda: pytest.fail("the English reranker was invoked")
+        reranker,
+        "get_reranker",
+        lambda *_a, **_kw: pytest.fail("the English reranker was invoked"),
     )
     hits = [_hit("es"), _hit("es"), _hit("en")]
 
@@ -162,7 +164,7 @@ def test_an_english_pool_is_still_reranked(monkeypatch: pytest.MonkeyPatch) -> N
             called.append(len(pairs))
             return [0.1, 0.9]
 
-    monkeypatch.setattr(reranker, "get_reranker", lambda: _Model())
+    monkeypatch.setattr(reranker, "get_reranker", lambda *_a, **_kw: _Model())
     hits = [_hit("en"), _hit("en")]
 
     result = reranker.rerank("budget", hits)
@@ -182,7 +184,7 @@ def test_an_all_unknown_pool_is_still_reranked(monkeypatch: pytest.MonkeyPatch) 
             called.append(len(pairs))
             return [0.5, 0.4]
 
-    monkeypatch.setattr(reranker, "get_reranker", lambda: _Model())
+    monkeypatch.setattr(reranker, "get_reranker", lambda *_a, **_kw: _Model())
 
     reranker.rerank("budget", [_hit(""), _hit("")])
 
@@ -201,11 +203,95 @@ def test_the_share_is_measured_over_voting_hits_only(monkeypatch: pytest.MonkeyP
     from app.services.chat import reranker
 
     monkeypatch.setattr(
-        reranker, "get_reranker", lambda: pytest.fail("the English reranker was invoked")
+        reranker,
+        "get_reranker",
+        lambda *_a, **_kw: pytest.fail("the English reranker was invoked"),
     )
     hits = [_hit("es"), _hit("es"), _hit("en"), _hit(""), _hit(""), _hit("")]
 
     assert reranker.rerank("presupuesto", hits) is hits
+
+
+# ---------------------------------------------------------------------------
+# 3. The multilingual reranker arm is a MEASURED, opt-in mechanism (#453/ML1)
+#
+# `bge-reranker-v2-m3` (Apache-2.0) is a selectable second model behind
+# `multilingual_enabled`, which defaults False everywhere nothing has wired the
+# setting through yet. These tests are red against the pre-#453/ML1 `reranker.py`,
+# whose `rerank()` had no `multilingual_enabled` parameter at all — a TypeError on
+# the keyword argument, not a logic failure, which is exactly the point: the arm
+# did not exist before this change.
+# ---------------------------------------------------------------------------
+def test_multilingual_enabled_false_by_default_keeps_the_skip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Calling `rerank()` with no `multilingual_enabled` argument at all — the shape
+    every existing caller uses today — must behave exactly as before this arm
+    existed: skip, don't guess at a keyword nobody passed."""
+    from app.services.chat import reranker
+
+    monkeypatch.setattr(
+        reranker,
+        "get_reranker",
+        lambda *_a, **_kw: pytest.fail("no reranker should run on a Spanish pool by default"),
+    )
+    hits = [_hit("es"), _hit("es"), _hit("en")]
+
+    assert reranker.rerank("presupuesto", hits) is hits
+
+
+def test_multilingual_enabled_true_reranks_a_non_english_pool_with_the_multilingual_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The opt-in arm: a Spanish-majority pool is reranked, not skipped, and with
+    the MULTILINGUAL model id — never the English MS MARCO one."""
+    from app.core import constants as C  # noqa: N812
+    from app.services.chat import reranker
+
+    requested_models: list[str] = []
+
+    class _Model:
+        def predict(self, pairs):
+            return [0.9, 0.1]
+
+    def _get_reranker(model_name):
+        requested_models.append(model_name)
+        return _Model()
+
+    monkeypatch.setattr(reranker, "get_reranker", _get_reranker)
+    hits = [_hit("es"), _hit("es")]
+
+    result = reranker.rerank("presupuesto", hits, multilingual_enabled=True)
+
+    assert requested_models == [C.CHAT_RERANKER_MODEL_MULTILINGUAL]
+    assert [h.score for h in result] == [0.9, 0.1], "the Spanish pool was not reordered"
+
+
+def test_multilingual_enabled_true_still_uses_the_english_model_on_an_english_pool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The opt-in flag only changes what happens for a non-English pool — an
+    English-majority pool must keep using the English model either way, not the
+    multilingual one, when the setting is on."""
+    from app.core import constants as C  # noqa: N812
+    from app.services.chat import reranker
+
+    requested_models: list[str] = []
+
+    class _Model:
+        def predict(self, pairs):
+            return [0.1, 0.9]
+
+    def _get_reranker(model_name):
+        requested_models.append(model_name)
+        return _Model()
+
+    monkeypatch.setattr(reranker, "get_reranker", _get_reranker)
+    hits = [_hit("en"), _hit("en")]
+
+    reranker.rerank("budget", hits, multilingual_enabled=True)
+
+    assert requested_models == [C.CHAT_RERANKER_MODEL]
 
 
 def test_the_language_reaches_the_hit_from_the_index() -> None:

@@ -300,11 +300,17 @@ async def _run_turn(monkeypatch, *, deltas, cfg, chunks=None):
     monkeypatch.setattr(
         chat_service,
         "_prepare_context",
+        # Six values since #403 W2.6 added the fan-out's `<synthesis>`/
+        # `<recurrence>` blocks to `_prepare_context`'s return; both empty for
+        # a turn the router left on the serial chunk-plane pipeline — every
+        # turn this file drives.
         lambda *_a, **_k: (
             list(chunks),
             {"retrieved": len(chunks), "files_searched": "all"},
             None,
             None,
+            "",
+            "",
         ),
     )
     monkeypatch.setattr(chat_service.limits, "is_cancelled", lambda _uuid: False)

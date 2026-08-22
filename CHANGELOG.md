@@ -40,6 +40,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check also hung indefinitely on corpora past ~2,000 files (approximate distinct-count
   undercounting by one, forever); it now counts exactly.
 
+- **Chat answers no longer leak prompt-internal block vocabulary** (#536). The base system
+  rules that explain the `<counted>`, `<overview>`, `<recurrence>`, and `<synthesis>` evidence
+  blocks were present on every turn, even when no such block was — so a model could narrate
+  "there is no `<recurrence>` block" to a user who was never supposed to see those names.
+  Block-specific rules are now included exactly when their block survives into the turn's
+  prompt, including the case where the token budget trims a block away mid-assembly.
+
+- **`.env.example` no longer pins new installs away from the native diarization engine.** The
+  template still said `ENGINE_DIARIZER_BACKEND=pyannote  # only option in v1` after `native`
+  became the coded default, so any `.env` copied from it silently overrode the default engine.
+
 - **`directory_sync` (the periodic LDAP reconciliation/deprovisioning sweep) now has an admin
   settings API and UI panel.** Every sibling scheduled-config subsystem (backup, media mirror, ASR, LLM,
   engine, redaction) already had one; this sweep did not, so `directory_sync.enabled` stayed at
@@ -52,6 +63,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Chat retrieval defaults: `final_chunks` 12 → 40, `max_chunks_per_file` 4 → 12** (#531).
+  Measured on two corpora (AMI-81 and ELITR-Bench) against a calibrated answer judge
+  (Cohen's κ 0.857): ~1.8–2× the answer-content recall of the old defaults, with negative
+  controls (absent topics/speakers correctly refused) intact on every arm and median chat
+  latency +13% (~49 s → ~56 s locally). On metered LLM providers the larger excerpt budget
+  means proportionally more input tokens per turn; both values remain admin-tunable
+  (Settings → Chat) and user preferences can still narrow them. `candidate_pool` (48) and
+  reranking (on) are unchanged — a rerank on/off A/B on the current build measured a wash,
+  and widening the pool measurably hurt.
 - **`DELETE /api/tags/cleanup` now defaults to the caller's own tags.** It previously always
   swept every account's unreferenced tags, while its inspection sibling `GET /api/tags/unused`
   is caller-scoped — so an admin who read the list and then ran cleanup irreversibly deleted

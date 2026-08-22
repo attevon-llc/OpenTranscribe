@@ -73,6 +73,11 @@ class EffectiveRedactionConfig:
     allowlist: list[str] = field(default_factory=list)
     toxicity_threshold: float = C.DEFAULT_REDACTION_TOXICITY_THRESHOLD
     redact_before_llm: bool = C.DEFAULT_REDACTION_REDACT_BEFORE_LLM
+    # Admin force floor (`redaction.force_redact_before_llm`). When set, the
+    # per-provider local-model exemption (`llm_guard.is_local_provider`) must be
+    # ignored and masking applied regardless of where the model runs — the
+    # admin is mandating masked text for every provider, not only external ones.
+    redact_before_llm_locked: bool = False
     export_redacted: bool = C.DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED
     export_locked: bool = False  # admin mandates censored exports
 
@@ -223,6 +228,7 @@ def resolve_effective_config(db: Session, user_id: int) -> EffectiveRedactionCon
             prefs.get("redaction_redact_before_llm"), C.DEFAULT_REDACTION_REDACT_BEFORE_LLM
         )
         or admin["force_redact_before_llm"],
+        redact_before_llm_locked=admin["force_redact_before_llm"],
         export_redacted=_parse_bool(
             prefs.get("redaction_default_export_redacted"),
             C.DEFAULT_REDACTION_DEFAULT_EXPORT_REDACTED,
@@ -230,6 +236,201 @@ def resolve_effective_config(db: Session, user_id: int) -> EffectiveRedactionCon
         or admin["force_export_redacted"],
         export_locked=admin["force_export_redacted"],
     )
+
+
+#: Every style, most→least protective for an EGRESS decision (never for display —
+#: see the docstring on :func:`_stricter_style`). ``blur`` is deliberately LAST: it
+#: embeds the ORIGINAL, unmasked text in an HTML attribute for the UI's
+#: reveal-on-hover affordance (``spans.py::_placeholder``), so it is strictly less
+#: protective than doing nothing category-wise wrong — it is a display style that
+#: must never be allowed to win a strictest-wins union.
+_STYLE_STRICTNESS: dict[str, int] = {"label": 3, "asterisks": 2, "first_letter": 1, "blur": 0}
+
+
+def _stricter_style(a: str, b: str) -> str:
+    """The more protective of two masking styles, for an egress-only union.
+
+    Not a general-purpose style preference: ``blur``'s placeholder carries the
+    original text (see the module-level constant above), which is fine for a
+    reveal-on-hover UI and never fine for text about to leave the deployment as
+    part of an LLM prompt. So a union involving ``blur`` prefers whichever style
+    it is paired with, never ``blur`` itself, even though ``VALID_STYLES`` lists
+    it as an ordinary choice.
+    """
+    return a if _STYLE_STRICTNESS.get(a, 0) >= _STYLE_STRICTNESS.get(b, 0) else b
+
+
+def most_restrictive_config() -> EffectiveRedactionConfig:
+    """The fail-closed policy: every category on, nothing exempted, masking mandatory.
+
+    Used whenever a policy this deployment needs to combine with (union) cannot be
+    resolved at all — a missing owner, a DB error resolving their preferences, or a
+    file whose owner id could not be determined. "Most restrictive policy available"
+    (task #40) means: if we cannot tell what the unreadable policy would have said,
+    assume it says mask everything, rather than silently treating the unreadable
+    side as if it had no opinion (which is exactly how a resolvable-but-permissive
+    policy would look, and unioning with it either way could pass raw text).
+
+    ``allowlist`` is intentionally EMPTY: an allowlist is a "never mask this" list,
+    and unioning allowlists is only safe as an INTERSECTION (see
+    :func:`union_effective_config`) — the empty list here is the identity element
+    for that intersection, so this config exempts nothing.
+    """
+    return EffectiveRedactionConfig(
+        enabled=True,
+        detectors={"pii", "profanity", "toxicity"},
+        enabled_categories={"pii", "toxicity", "profanity", "custom"},
+        locked_categories=set(),
+        pii_entities=set(C.REDACTION_PII_ENTITIES),
+        style=C.DEFAULT_REDACTION_STYLE,
+        custom_words=[],
+        allowlist=[],
+        toxicity_threshold=0.0,
+        redact_before_llm=True,
+        # Deliberately True even though no admin actually forced anything: a
+        # fail-closed stand-in for an unreadable policy must not be quietly
+        # unwound by the local-provider exemption either. In practice this
+        # never matters for that exemption (`chat/redactor._gather` decides it
+        # from the REQUESTER's config alone, before any owner lookup runs —
+        # see that module's docstring), but a future caller unioning this value
+        # directly must not be able to read it as "not mandated".
+        redact_before_llm_locked=True,
+        export_redacted=True,
+        export_locked=True,
+    )
+
+
+def union_effective_config(
+    a: EffectiveRedactionConfig, b: EffectiveRedactionConfig
+) -> EffectiveRedactionConfig:
+    """Strictest-wins union of two resolved policies governing the SAME egress decision.
+
+    Task #40. Chat's egress masking used to resolve a single subject's config — first
+    the plan's choice (the file owner), then issue #402's shipped choice (the
+    requester) — and both are wrong in one direction: requester-subject lets a sharee
+    whose own policy is permissive read PII the file's owner meant to hide,
+    owner-subject ignores a stricter requester-side mandate. The fix is neither
+    subject alone: mask if EITHER policy says to, with the union of what they mask.
+
+    Every field takes the MORE PROTECTIVE of the two:
+
+    * ``enabled`` / ``redact_before_llm`` — True if either is True (OR).
+    * ``enabled_categories`` / ``locked_categories`` / ``detectors`` /
+      ``pii_entities`` — the union (more masked, not less).
+    * ``custom_words`` — concatenated and de-duplicated (case-insensitively, first
+      occurrence wins the casing) — a word either side wants masked stays masked.
+    * ``allowlist`` — the INTERSECTION, not the union. An allowlist is a "never mask
+      this" exemption, so unioning it would be the exact opposite of strictest-wins:
+      it would let MORE through unmasked. Only a word BOTH policies exempt survives.
+    * ``style`` — the more protective placeholder (:func:`_stricter_style`); never
+      ``blur``, which embeds the original text for the UI's own reveal affordance
+      and is never safe for text about to leave the deployment.
+    * ``toxicity_threshold`` — the lower (more sensitive) of the two.
+    * ``redact_before_llm_locked`` / ``export_locked`` — OR. In production both
+      operands read this off the SAME deployment-wide admin setting
+      (``resolve_effective_config``'s ``admin["force_redact_before_llm"]``), so this
+      is normally a no-op; it is unioned anyway so a caller handed two policies from
+      different sources (e.g. one already a fail-closed stand-in) never loses the
+      lock by construction.
+
+    Args:
+        a: One resolved policy (either subject).
+        b: The other.
+
+    Returns:
+        A new :class:`EffectiveRedactionConfig` that is at least as protective as
+        either input on every field. Every attribute read is via ``getattr`` with a
+        safe-side default so a duck-typed test double (a ``SimpleNamespace`` missing
+        fields this module has grown since the double was written) still unions
+        correctly instead of raising.
+
+    Note:
+        ``a is b`` returns ``a`` unchanged rather than rebuilding an equal object.
+        This is a real optimization (the common case — a file the requester owns —
+        resolves the SAME config object for both subjects, see
+        ``chat/redactor._effective_cfg_for_owner``) and it is also what keeps every
+        existing single-subject caller and test byte-for-byte unaffected when a
+        test double supplies one canned config for every ``resolve_effective_config``
+        call: the union of a policy with itself is that exact policy, not a
+        reconstruction of one that merely compares equal.
+    """
+    if a is b:
+        return a
+
+    enabled = bool(getattr(a, "enabled", False)) or bool(getattr(b, "enabled", False))
+    enabled_categories = set(getattr(a, "enabled_categories", None) or set()) | set(
+        getattr(b, "enabled_categories", None) or set()
+    )
+    locked_categories = set(getattr(a, "locked_categories", None) or set()) | set(
+        getattr(b, "locked_categories", None) or set()
+    )
+    detectors = set(getattr(a, "detectors", None) or set()) | set(
+        getattr(b, "detectors", None) or set()
+    )
+    pii_entities = set(getattr(a, "pii_entities", None) or set()) | set(
+        getattr(b, "pii_entities", None) or set()
+    )
+    custom_words = _dedupe_casefold(
+        list(getattr(a, "custom_words", None) or []) + list(getattr(b, "custom_words", None) or [])
+    )
+    allowlist = _intersect_casefold(
+        list(getattr(a, "allowlist", None) or []), list(getattr(b, "allowlist", None) or [])
+    )
+    style = _stricter_style(
+        str(getattr(a, "style", None) or C.DEFAULT_REDACTION_STYLE),
+        str(getattr(b, "style", None) or C.DEFAULT_REDACTION_STYLE),
+    )
+    toxicity_threshold = min(
+        float(getattr(a, "toxicity_threshold", C.DEFAULT_REDACTION_TOXICITY_THRESHOLD)),
+        float(getattr(b, "toxicity_threshold", C.DEFAULT_REDACTION_TOXICITY_THRESHOLD)),
+    )
+    redact_before_llm = bool(getattr(a, "redact_before_llm", False)) or bool(
+        getattr(b, "redact_before_llm", False)
+    )
+    redact_before_llm_locked = bool(getattr(a, "redact_before_llm_locked", False)) or bool(
+        getattr(b, "redact_before_llm_locked", False)
+    )
+    export_redacted = bool(getattr(a, "export_redacted", False)) or bool(
+        getattr(b, "export_redacted", False)
+    )
+    export_locked = bool(getattr(a, "export_locked", False)) or bool(
+        getattr(b, "export_locked", False)
+    )
+
+    return EffectiveRedactionConfig(
+        enabled=enabled,
+        detectors=detectors,
+        enabled_categories=enabled_categories,
+        locked_categories=locked_categories,
+        pii_entities=pii_entities,
+        style=style,
+        custom_words=custom_words,
+        allowlist=allowlist,
+        toxicity_threshold=toxicity_threshold,
+        redact_before_llm=redact_before_llm,
+        redact_before_llm_locked=redact_before_llm_locked,
+        export_redacted=export_redacted,
+        export_locked=export_locked,
+    )
+
+
+def _dedupe_casefold(words: list[str]) -> list[str]:
+    """First-occurrence-wins de-duplication, case-insensitive."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for word in words:
+        key = word.strip().casefold()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(word)
+    return out
+
+
+def _intersect_casefold(a: list[str], b: list[str]) -> list[str]:
+    """Entries of ``a`` whose casefolded form also appears in ``b``, order from ``a``."""
+    b_folded = {w.strip().casefold() for w in b}
+    return [w for w in a if w.strip().casefold() in b_folded]
 
 
 def redaction_is_in_use(db: Session) -> bool:

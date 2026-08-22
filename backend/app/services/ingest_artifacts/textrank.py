@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 
 import numpy as np
 
@@ -53,10 +54,101 @@ _SNOWBALL_LANG_MAP: dict[str, str] = {
 }
 
 #: ISO 639-1 → NLTK stopword corpus name.
-_STOPWORD_LANG_MAP: dict[str, str] = dict(_SNOWBALL_LANG_MAP, el="greek", tr="turkish")
+#:
+#: Widened (#453/ML3) from the 17 Snowball+el/tr entries to every OTHER corpus actually
+#: present in the mounted ``nltk_data`` (verified via ``stopwords.fileids()`` against
+#: ``models/nltk_data/corpora/stopwords/`` — 33 total; do not add an entry without
+#: checking the corpus is really there, the same trap ``_FALLBACK_ENGLISH_STOPWORDS``
+#: exists for). None of these 14 have a Snowball stemmer, so :func:`_stemmer` returns
+#: ``None`` for them by construction and ``tokenize`` degrades to unstemmed tokens —
+#: correct, not a bug: stopword removal and stemming are independent capabilities.
+#:
+#: **Two of the 16 unused corpora are deliberately NOT mapped, with the reason kept
+#: here rather than silently omitted:**
+#: - ``chinese`` (``zh``) — a no-space script. ``_TOKEN_RE`` above is a whitespace/
+#:   punctuation-delimited word tokenizer; over unsegmented CJK text it matches one
+#:   token per contiguous run of ideographs (an entire sentence, typically), so a
+#:   stopword *corpus* keyed on individual words would filter nothing and imply a
+#:   support level that isn't there. Fixing that needs a real CJK segmenter, which is
+#:   explicitly deferred (a new model/dependency violates the no-new-models-on-a-laptop
+#:   rule) — decline-with-disclosure here rather than pretend. ``chat/recurrence.py``
+#:   declines the same set of no-space scripts (``NO_SPACE_LANGUAGES`` — zh, ja, ko,
+#:   th, lo, km, my) for the identical reason; neither ``ja`` nor ``ko`` has an NLTK
+#:   stopword corpus at all, so only ``zh`` is a live decision here.
+#: - ``hinglish`` — NLTK's corpus is code-mixed Hindi/English chat-register stopwords,
+#:   not a standalone language's stopword list, and has no ISO 639-1 code of its own.
+#:   Mapping it to ``hi`` would assert real Hindi support (WhisperX/UI both treat "hi"
+#:   as Hindi) from a corpus that is not that.
+_STOPWORD_LANG_MAP: dict[str, str] = dict(
+    _SNOWBALL_LANG_MAP,
+    el="greek",
+    tr="turkish",
+    sq="albanian",
+    az="azerbaijani",
+    eu="basque",
+    be="belarusian",
+    bn="bengali",
+    ca="catalan",
+    he="hebrew",
+    id="indonesian",
+    kk="kazakh",
+    ne="nepali",
+    sl="slovene",
+    tg="tajik",
+    ta="tamil",
+    uz="uzbek",
+)
 
-#: Word characters plus intra-word apostrophes; digits kept ("Q3", "2026").
-_TOKEN_RE = re.compile(r"[^\W\d_]+(?:'[^\W\d_]+)?|\d+(?:[.,]\d+)*", re.UNICODE)
+
+def _combining_mark_ranges(limit: int = 0x10000) -> str:
+    """``\\uXXXX-\\uYYYY`` regex ranges covering every BMP codepoint whose Unicode
+    general category is ``Mn`` (nonspacing mark) or ``Mc`` (spacing combining mark),
+    collapsed into contiguous runs.
+
+    ``[^\\W\\d_]`` — the class ``_TOKEN_RE`` used before this fix — is Python's word
+    class minus digits and underscore, and a combining mark is not a member: Python
+    classifies ``\\w`` from the same general-category table this function reads, and
+    Mn/Mc are neither letters nor digits. So a base consonant followed by its own
+    combining vowel or tone sign (Thai ``ก`` + ``ั``, Devanagari ``क`` + ``ि``) tokenized
+    as two separate one-character matches — TextRank then scored fragments of a single
+    grapheme as if they were independent words, corrupting both the digest and the
+    keyphrase extraction for every language written this way.
+
+    Computed once at import from ``unicodedata`` rather than hand-listing script
+    blocks (contrast ``search/chunking_service._NO_SPACE_SCRIPT``, which deliberately
+    IS a hand-picked script list for a different problem — scriptio-continua word
+    counting): a general-category sweep covers every combining script, not only the
+    two exercised by this fix's tests. Bounded to the BMP — combining marks in the
+    supplementary planes are historic/rare scripts this app has no other support for,
+    and scanning the full 0x110000 codepoint space would cost proportionally more at
+    every import for no realistic gain.
+    """
+    ranges: list[tuple[int, int]] = []
+    start: int | None = None
+    for cp in range(limit):
+        is_mark = unicodedata.category(chr(cp)) in ("Mn", "Mc")
+        if is_mark and start is None:
+            start = cp
+        elif not is_mark and start is not None:
+            ranges.append((start, cp - 1))
+            start = None
+    if start is not None:
+        ranges.append((start, limit - 1))
+    return "".join(f"\\u{a:04x}-\\u{b:04x}" if a != b else f"\\u{a:04x}" for a, b in ranges)
+
+
+#: A "letter" for tokenizing purposes: a word character (minus digits/underscore) OR
+#: a combining mark attached to one — see :func:`_combining_mark_ranges`. Alternation,
+#: not a single negated bracket expression: unioning positive mark ranges INTO a
+#: negated class (``[^\W\d_ั...]``) would EXCLUDE them instead of including them,
+#: since a negated bracket expression matches "none of these", so the two pieces have
+#: to be separate alternatives that are then unioned by `|`.
+_MARK_RANGES = _combining_mark_ranges()
+_LETTER = rf"(?:[^\W\d_]|[{_MARK_RANGES}])"
+
+#: Word characters (letters plus their combining marks) plus intra-word apostrophes;
+#: digits kept ("Q3", "2026").
+_TOKEN_RE = re.compile(rf"{_LETTER}+(?:'{_LETTER}+)?|\d+(?:[.,]\d+)*", re.UNICODE)
 
 #: A minimal English stopword list, used when NLTK's corpus is unavailable.
 #:

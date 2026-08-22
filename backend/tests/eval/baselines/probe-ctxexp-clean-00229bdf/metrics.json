@@ -1,0 +1,208 @@
+{
+  "licence_note": "Metrics only. No question text, reference answers, app answer prose, or citation snippets are recorded here — see the module docstring of tests.eval.harness.probe_metrics (issue #72).",
+  "notes": [],
+  "rows": [
+    {
+      "category": "single_general",
+      "chunks_used": 10,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "general-1-ts3005d",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_general",
+      "chunks_used": 5,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "general-2-es2002a",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "multi_file",
+      "chunks_used": 12,
+      "coverage_ratio": 0.75,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 3,
+      "query_id": "multi-1-speech-recognition-arc",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "multi_file",
+      "chunks_used": 15,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 4,
+      "query_id": "multi-2-action-items-all-four",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "multi_file",
+      "chunks_used": 12,
+      "coverage_ratio": 0.5,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 2,
+      "query_id": "multi-3-marketing-role-contribution",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "multi_file",
+      "chunks_used": 12,
+      "coverage_ratio": 0.25,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "multi-4-target-age-consistency",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "negative_control",
+      "chunks_used": 12,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": true,
+      "files_consulted": 0,
+      "query_id": "negative-1-absent-topic",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "negative_control",
+      "chunks_used": 12,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": true,
+      "files_consulted": 0,
+      "query_id": "negative-2-absent-speaker",
+      "retrieved": 48,
+      "scope_size": 4,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 4,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "single-1-ts3005a-s0",
+      "retrieved": 36,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 4,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "single-2-ts3005b-s2",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 4,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "single-3-ts3005c-s2",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 10,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "single-4-ts3005d-s3",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 4,
+      "coverage_ratio": 1.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 1,
+      "query_id": "single-5-ts3005d-s5",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 6,
+      "coverage_ratio": 0.0,
+      "errored": false,
+      "expect_refusal": false,
+      "files_consulted": 0,
+      "query_id": "single-6-es2002a-s1",
+      "retrieved": 48,
+      "scope_size": 1,
+      "warning_codes": []
+    }
+  ],
+  "run_name": "ctxexp-clean-00229bdf",
+  "schema_version": 1,
+  "summary": {
+    "multi_file": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.625,
+      "min_coverage_ratio": 0.25,
+      "queries": 4
+    },
+    "negative_control": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.0,
+      "min_coverage_ratio": 0.0,
+      "queries": 2
+    },
+    "single_general": {
+      "errored": 0,
+      "mean_coverage_ratio": 1.0,
+      "min_coverage_ratio": 1.0,
+      "queries": 2
+    },
+    "single_specific": {
+      "errored": 0,
+      "mean_coverage_ratio": 0.833333,
+      "min_coverage_ratio": 0.0,
+      "queries": 6
+    }
+  },
+  "target": {
+    "host": "localhost",
+    "llm_model": "gemma-4-e4b",
+    "llm_provider": "vllm",
+    "port": 5274
+  }
+}

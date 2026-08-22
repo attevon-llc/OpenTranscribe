@@ -29,6 +29,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import cast
@@ -38,6 +39,18 @@ from playwright.sync_api import Page
 
 #: Repo root, derived from this file: backend/tests/e2e/conftest.py
 _REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# ``tests/e2e/pytest.ini`` makes ``tests/e2e`` its own rootdir, and pytest's default
+# confcutdir stops conftest collection AT that rootdir — so ``tests/conftest.py`` (which puts
+# ``backend/`` on sys.path for the main suite) never runs here. Without this, `from tests.X
+# import ...` raises "No module named 'tests'" even though `tests/` resolves fine as a PEP 420
+# namespace package once `backend/` is actually on sys.path (verified directly with plain
+# Python — the failure is pytest's collection boundary, not an import-system limitation). Doing
+# it here, once, lets e2e modules use the same dotted imports as the main suite (e.g.
+# `tests.env_gate`) instead of a second, e2e-only copy of shared logic.
+_backend_dir = str(_REPO_ROOT / "backend")
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

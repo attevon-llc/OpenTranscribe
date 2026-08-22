@@ -22,8 +22,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Any
+from typing import Protocol
 
 from app.services.search.chunking_service import split_into_sentences
+from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 
 from . import sizing
 from .provenance import segment_provenance
@@ -63,8 +65,8 @@ def _turns(segments: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     """Group consecutive same-speaker segments, mirroring the search chunker's notion."""
     turns: list[list[dict[str, Any]]] = []
     for segment in segments:
-        speaker = segment.get("speaker") or "Unknown"
-        if turns and (turns[-1][0].get("speaker") or "Unknown") == speaker:
+        speaker = segment.get("speaker") or UNKNOWN_SPEAKER_LABEL
+        if turns and (turns[-1][0].get("speaker") or UNKNOWN_SPEAKER_LABEL) == speaker:
             turns[-1].append(segment)
         else:
             turns.append([segment])
@@ -98,7 +100,7 @@ def _sentences_for_turn(
         return []
 
     turn_text = " ".join(pieces)
-    speaker = turn[0].get("speaker") or "Unknown"
+    speaker = turn[0].get("speaker") or UNKNOWN_SPEAKER_LABEL
 
     results: list[SourceSentence] = []
     search_from = 0
@@ -157,7 +159,32 @@ def candidate_sentences(
     return sentences
 
 
-def _partition(sentences: list[SourceSentence], parts: int) -> list[list[SourceSentence]]:
+class _RankableSentence(Protocol):
+    """The structural shape :func:`_partition`/:func:`_select` actually need.
+
+    Satisfied by :class:`SourceSentence` here and, from
+    ``document_digest.DocumentSourceSentence``, by the document plane's own candidate
+    sentence — a real generalisation (a ``Protocol`` bound on a ``TypeVar``, not a
+    ``cast``/``type: ignore``) so both callers reuse one partition/select
+    implementation instead of a second copy of the same algorithm, and each still gets
+    its own concrete type back out unerased (``document_digest.py`` reads
+    ``.char_start``/``.page`` on what :func:`_select` returns).
+    """
+
+    # Read-only properties, not plain attributes: both concrete types are frozen
+    # dataclasses, whose fields mypy treats as read-only for Protocol matching —
+    # a plain `text: str` here would demand a settable attribute and reject them.
+    @property
+    def text(self) -> str: ...
+
+    @property
+    def order(self) -> int: ...
+
+    @property
+    def word_count(self) -> int: ...
+
+
+def _partition[T: _RankableSentence](sentences: list[T], parts: int) -> list[list[T]]:
     """Split into *parts* contiguous groups of roughly equal word count.
 
     Contiguous, so each section covers a real time span and its digest document can carry
@@ -169,8 +196,8 @@ def _partition(sentences: list[SourceSentence], parts: int) -> list[list[SourceS
         return [sentences]
 
     total_words = sum(s.word_count for s in sentences) or len(sentences)
-    groups: list[list[SourceSentence]] = []
-    current: list[SourceSentence] = []
+    groups: list[list[T]] = []
+    current: list[T] = []
     accumulated = 0
     for sentence in sentences:
         current.append(sentence)
@@ -185,7 +212,7 @@ def _partition(sentences: list[SourceSentence], parts: int) -> list[list[SourceS
     return groups
 
 
-def _select(sentences: list[SourceSentence], language: str) -> list[tuple[SourceSentence, float]]:
+def _select[T: _RankableSentence](sentences: list[T], language: str) -> list[tuple[T, float]]:
     """Rank one section's sentences and take the best until the word target is met."""
     if not sentences:
         return []

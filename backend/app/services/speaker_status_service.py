@@ -20,6 +20,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.models.media import Speaker
+from app.utils.speaker_labels import canonical_speaker_label
 
 logger = logging.getLogger(__name__)
 
@@ -149,13 +150,24 @@ class SpeakerStatusService:
         """
         Resolve the best display name for a speaker.
 
+        Delegates to :func:`app.utils.speaker_labels.canonical_speaker_label` — the single
+        home for this resolution. Previously this method ignored suggestions entirely
+        (unlike ``transcript_builders.get_speaker_name``), which was the live disagreement
+        between the two planes: the same speaker could read one way in the speaker
+        management UI and another in a summary.
+
         Args:
             speaker: Speaker object
 
         Returns:
             Best available display name
         """
-        return str(speaker.display_name or speaker.name or "Unknown Speaker")
+        return canonical_speaker_label(
+            speaker.name,
+            display_name=speaker.display_name,
+            suggested_name=speaker.suggested_name,
+            confidence=speaker.confidence,
+        )
 
     @staticmethod
     def compute_status_for_speakers(db: Session, speakers: list[Speaker]) -> list[dict]:

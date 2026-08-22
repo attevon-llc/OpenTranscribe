@@ -260,8 +260,13 @@ def _run(sandbox_dir: Sandbox, *args, extra_env=None):
 
 
 def _reservations(output: str) -> dict[str, str]:
-    """Parse the `GPU device reservations` block the dry run prints."""
-    return dict(re.findall(r"\b([A-Z][A-Z0-9_]*_DEVICE_ID)=(\d+)", output))
+    """Parse the `GPU device reservations` block the dry run prints.
+
+    Matches any declared device var plus the *_DEVICE_ID family — the old
+    suffix-only pattern silently never matched `DIAR_NATIVE_GPU`, so the
+    moved-to-GPU-N assertion for it could not fail OR pass truthfully."""
+    names = "|".join(sorted(set(_declared_device_vars()), key=len, reverse=True))
+    return dict(re.findall(rf"\b({names}|[A-Z][A-Z0-9_]*_DEVICE_ID)=(\d+)", output))
 
 
 def test_the_control_a_pre_exported_value_is_still_clobbered_by_dotenv(sandbox):

@@ -18,6 +18,35 @@ from app.utils.websocket_notify import send_ws_event
 logger = logging.getLogger(__name__)
 
 
+def _resolve_reindex_speaker_name(row: Any) -> str:
+    """Canonical label for one batch-fetched speaker row.
+
+    ``row`` is one of the ``(id, name, display_name, profile_id,
+    suggested_name, confidence)`` tuples :func:`_extract_file_metadata`
+    batch-fetches. Delegates to
+    :func:`~app.utils.speaker_labels.canonical_speaker_label` — the SINGLE
+    home for this resolution — instead of this writer's old ``display_name or
+    name or "Unknown"`` chain, which emitted a bare ``"Unknown"`` next to
+    ``file_facts``'s ``"Unknown Speaker"`` and never considered a confident
+    LLM/embedding suggestion.
+
+    Args:
+        row: A row exposing ``.name``, ``.display_name``, ``.suggested_name``
+            and ``.confidence`` attributes.
+
+    Returns:
+        The canonical display label.
+    """
+    from app.utils.speaker_labels import canonical_speaker_label
+
+    return canonical_speaker_label(
+        row.name,
+        display_name=row.display_name,
+        suggested_name=row.suggested_name,
+        confidence=row.confidence,
+    )
+
+
 def _ensure_neural_pipeline_ready() -> bool:
     """Ensure neural search pipeline is ready for indexing.
 
@@ -79,6 +108,8 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
     from app.models.media import Speaker
     from app.models.media import TranscriptSegment
     from app.services.permission_service import PermissionService
+    from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
+    from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
 
     file_id = int(media_file.id)
     file_uuid = str(media_file.uuid)
@@ -102,31 +133,51 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
     # Batch-fetch all speakers for this file (avoid N+1 queries)
     speaker_ids = {seg.speaker_id for seg in segments if seg.speaker_id}
     speakers_map: dict[int, str] = {}
+    profile_map: dict[int, int | None] = {}
     if speaker_ids:
         spk_rows = (
-            db.query(Speaker.id, Speaker.name, Speaker.display_name)
+            db.query(
+                Speaker.id,
+                Speaker.name,
+                Speaker.display_name,
+                Speaker.profile_id,
+                Speaker.suggested_name,
+                Speaker.confidence,
+            )
             .filter(Speaker.id.in_(speaker_ids))
             .all()
         )
-        speakers_map = {r.id: r.display_name or r.name or "Unknown" for r in spk_rows}
+        speakers_map = {r.id: _resolve_reindex_speaker_name(r) for r in spk_rows}
+        profile_map = {r.id: r.profile_id for r in spk_rows}
 
     # Convert ORM objects to dicts
     segment_dicts = []
     for seg in segments:
-        speaker_name = speakers_map.get(seg.speaker_id, "Unknown") if seg.speaker_id else "Unknown"
+        speaker_name = (
+            speakers_map.get(seg.speaker_id, UNKNOWN_SPEAKER_LABEL)
+            if seg.speaker_id
+            else UNKNOWN_SPEAKER_LABEL
+        )
         seg_dict = {
             "start": float(seg.start_time),
             "end": float(seg.end_time),
             "text": seg.text or "",
             "speaker": speaker_name,
         }
+        # Same only-when-known convention as `chunking_service._make_chunk`: a
+        # segment with no resolved Speaker row carries neither key at all.
+        if seg.speaker_id:
+            seg_dict["speaker_id"] = seg.speaker_id
+            profile_id = profile_map.get(seg.speaker_id)
+            if profile_id is not None:
+                seg_dict["profile_id"] = profile_id
         if seg.words:
             seg_dict["words"] = seg.words  # Already a list of dicts from JSONB
         segment_dicts.append(seg_dict)
 
     # Get unique speaker names
     speaker_names: list[str] = list(
-        set(str(s["speaker"]) for s in segment_dicts if s["speaker"] != "Unknown")
+        set(str(s["speaker"]) for s in segment_dicts if s["speaker"] not in UNKNOWN_SPEAKER_LABELS)
     )
 
     # Get tags via FileTag -> Tag relationship

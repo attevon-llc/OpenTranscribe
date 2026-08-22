@@ -37,6 +37,23 @@ export interface SearchHit {
   has_both_match_types: boolean;
 }
 
+// Issue #462: one matching leaf inside a summary, addressable for scroll-to-section.
+// Mirrors `backend/app/schemas/search.py::SummarySectionMatchSchema`.
+export interface SummarySectionMatch {
+  key_path: string;
+  snippet: string;
+}
+
+// A file-level summary search result. Mirrors `SummaryHitSchema`.
+export interface SummaryHit {
+  file_uuid: string;
+  file_id: number;
+  title: string;
+  matches: SummarySectionMatch[];
+}
+
+export type SearchResultType = 'transcripts' | 'summaries';
+
 export interface SearchResponse {
   query: string;
   results: SearchHit[];
@@ -48,6 +65,9 @@ export interface SearchResponse {
   search_time_ms: number;
   filters_applied: Record<string, any>;
   search_mode?: string;
+  // Present only when `result_type` requested summaries (`summaries` or `all`).
+  summary_results?: SummaryHit[];
+  summary_total?: number;
 }
 
 export interface SearchState {
@@ -81,6 +101,11 @@ export interface SearchState {
   titleFilter: string;
   lastSearchParams: string;
   scrollPosition: number;
+  // Issue #462: which result group(s) the last/next `GET /search` requested.
+  // `documents` isn't offered here yet — see `backend/app/schemas/search.py:SEARCH_RESULT_TYPES`.
+  resultType: SearchResultType;
+  summaryResults: SummaryHit[];
+  summaryTotal: number;
 }
 
 const initialState: SearchState = {
@@ -111,6 +136,9 @@ const initialState: SearchState = {
   titleFilter: '',
   lastSearchParams: '',
   scrollPosition: 0,
+  resultType: 'transcripts',
+  summaryResults: [],
+  summaryTotal: 0,
 };
 
 function createSearchStore() {
@@ -125,6 +153,7 @@ function createSearchStore() {
     setSort: (sortBy: string, sortOrder: 'asc' | 'desc') =>
       update((s) => ({ ...s, sortBy, sortOrder, page: 1 })),
     setSearchMode: (searchMode: string) => update((s) => ({ ...s, searchMode, page: 1 })),
+    setResultType: (resultType: SearchResultType) => update((s) => ({ ...s, resultType, page: 1 })),
     setLoading: (isLoading: boolean) => update((s) => ({ ...s, isLoading })),
     setError: (error: string | null) => update((s) => ({ ...s, error })),
     setSpeakers: (selectedSpeakers: string[]) =>
@@ -158,6 +187,10 @@ function createSearchStore() {
         totalPages: response.total_pages,
         searchTimeMs: response.search_time_ms,
         filtersApplied: response.filters_applied,
+        // Absent when this response didn't request summaries (result_type=transcripts) —
+        // reset to empty rather than leaving a stale page from a prior 'summaries' search.
+        summaryResults: response.summary_results ?? [],
+        summaryTotal: response.summary_total ?? 0,
         isLoading: false,
         error: null,
       })),

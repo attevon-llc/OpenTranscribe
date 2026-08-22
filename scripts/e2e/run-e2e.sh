@@ -117,14 +117,24 @@ resolve_phase() {
     fi
 }
 
-echo -e "${GREEN}Running E2E (parallel, ${WORKERS} workers, visual excluded):${NC} pytest ${ARGS[*]}"
+echo -e "${GREEN}Running E2E (parallel, ${WORKERS} workers, visual+chat excluded):${NC} pytest ${ARGS[*]}"
 status=0
-"$VENV_PY" -m pytest "${ARGS[@]}" -m "not visual" -n "$WORKERS" --dist loadfile || status=$?
-status=$(resolve_phase "$status" "Phase 1 (-m 'not visual')")
+"$VENV_PY" -m pytest "${ARGS[@]}" -m "not visual and not chat" -n "$WORKERS" --dist loadfile || status=$?
+status=$(resolve_phase "$status" "Phase 1 (-m 'not visual and not chat')")
+
+# The chat family runs serially: each test is a full RAG turn (retrieval +
+# rerank + LLM stream) against the one shared stack, and measured under
+# 3 parallel workers the stack occasionally pushes a turn past the 90s
+# stream watchdog — failing a RANDOM chat test each run. Serial is the
+# honest fix: the flake was contention, never the tests or the app.
+echo -e "${GREEN}Running E2E (chat, serial):${NC}"
+chat_status=0
+"$VENV_PY" -m pytest "${ARGS[@]}" -m chat || chat_status=$?
+chat_status=$(resolve_phase "$chat_status" "Phase 2 (-m chat)")
 
 echo -e "${GREEN}Running E2E (visual regression, serial):${NC}"
 visual_status=0
 "$VENV_PY" -m pytest "${ARGS[@]}" -m visual || visual_status=$?
-visual_status=$(resolve_phase "$visual_status" "Phase 2 (-m visual)")
+visual_status=$(resolve_phase "$visual_status" "Phase 3 (-m visual)")
 
-[[ $status -eq 0 && $visual_status -eq 0 ]]
+[[ $status -eq 0 && $chat_status -eq 0 && $visual_status -eq 0 ]]

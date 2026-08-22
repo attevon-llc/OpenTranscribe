@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel
 from pydantic import field_validator
 
+from app.core.enums import ContextWindowStatus
 from app.core.enums import ReasoningOffSwitch
 from app.schemas.base import UUIDBaseSchema
 
@@ -42,6 +43,13 @@ class UserLLMSettingsBase(BaseModel):
     provider: LLMProvider
     model_name: str
     base_url: str | None = None
+    #: ⚠️ This is the model's CONTEXT WINDOW, not a response cap (issue #533).
+    #: `LLMService.__init__` reads it as `user_context_window`, derives the
+    #: response budget from a quarter of it, and the chat excerpt budget — how
+    #: much transcript the model ever sees — is computed against it. The name
+    #: survives for wire compatibility; the misreading it invites is exactly
+    #: what let this 8192 default silently drive 60k/256k models at 8k. The
+    #: measured ceiling comes from `services/llm_context_window.probe`.
     max_tokens: int = 8192
     temperature: str = "0.3"
     is_active: bool = True
@@ -158,6 +166,32 @@ class ReasoningCapability(BaseModel):
     reasoning_chars_on: int = 0
     reasoning_chars_off: int = 0
     reasoning_chars_omitted: int = 0
+    detail: str = ""
+
+
+class ContextWindowCapability(BaseModel):
+    """A model's MEASURED maximum context window (issue #533).
+
+    ``status`` is the field to branch on; only ``"measured"`` carries a
+    ``context_window``. ``relation`` compares the measurement to the row's
+    configured ``max_tokens`` — which **is** the context window the app drives
+    the model at (see ``LLMService.__init__``), the misreading that let 8192
+    look reasonable:
+
+    * ``"below"`` — configured under the measured maximum: every chat turn is
+      leaving context (and therefore transcript excerpts) unused.
+    * ``"above"`` — configured over it: requests will 400 or silently truncate.
+    * ``"match"`` — configured exactly at the measured maximum.
+
+    ``relation`` is ``None`` whenever there is no measurement to compare to.
+    """
+
+    status: ContextWindowStatus = ContextWindowStatus.UNKNOWN
+    discoverable: bool = False
+    context_window: int | None = None
+    configured_max_tokens: int | None = None
+    relation: str | None = None
+    probed_at: datetime | None = None
     detail: str = ""
 
 

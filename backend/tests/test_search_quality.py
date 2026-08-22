@@ -19,15 +19,16 @@ NOTE: These tests require a running OpenTranscribe server with specific indexed 
 They are skipped by default. Set RUN_SEARCH_QUALITY_TESTS=true to run them.
 """
 
-import os
 import re
 
 import pytest
 import requests
 
+from tests.env_gate import gate_enabled
+
 # Skip all tests - requires live server with specific indexed data
 pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_SEARCH_QUALITY_TESTS", "false").lower() != "true",
+    not gate_enabled("RUN_SEARCH_QUALITY_TESTS"),
     reason="Search quality tests require live server with indexed data (set RUN_SEARCH_QUALITY_TESTS=true to run)",
 )
 

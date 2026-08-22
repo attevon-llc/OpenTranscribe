@@ -52,6 +52,61 @@ def _safe_filename(title: str | None, extension: str) -> str:
     return f"{cleaned}.{extension}"
 
 
+def _render_citation(citation: dict) -> list[str]:
+    """One citation's Markdown lines, kind-aware (issue #464 amendment b).
+
+    Before this, every citation rendered identically — a speaker quote at a
+    timestamp — which is wrong for anything that is not a transcript chunk:
+
+    * ``summary``: LLM-generated prose ABOUT the recording, not a quote from
+      it. No timestamp (there is no single moment it corresponds to), no
+      speaker, and a deep link to the file's summary view rather than a
+      player position — the same distinction ``ChatSources.svelte`` draws for
+      the live-stream rendering of the same citation shape.
+    * ``document`` (a later lane's kind, #362/#403 Stage 6 — handled here so
+      that lane needs no follow-up edit to this file): a chunk index and page
+      under ``/documents/``, never a fabricated ``t=0`` — a document has no
+      timeline, and an audio-style timestamp link would look like it works
+      and land nowhere meaningful.
+    * everything else (``chunk``, ``digest``, and an absent ``kind`` for
+      messages persisted before the field existed): the original rendering,
+      unchanged.
+    """
+    kind = citation.get("kind") or "chunk"
+    title = citation.get("title") or "Untitled recording"
+    cid = citation.get("id")
+    snippet = (citation.get("snippet") or "").strip()
+    file_uuid = citation.get("file_uuid")
+
+    if kind == "summary":
+        section = citation.get("digest_section")
+        link = f"/files/{file_uuid}?view=summary"
+        if section is not None:
+            link += f"&section={section}"
+        lines = [f"- `[{cid}]` **{title}** — AI-generated summary", f"  {link}"]
+        if snippet:
+            # Italicized, never blockquoted: a blockquote reads as "these were
+            # the words", which is exactly what a summary citation is not.
+            lines.append(f"  *{snippet}*")
+        return lines
+
+    if kind == "document":
+        chunk_index = citation.get("chunk_index") or 0
+        link = f"/documents/{file_uuid}?chunk={chunk_index}"
+        lines = [f"- `[{cid}]` **{title}** — document excerpt", f"  {link}"]
+        if snippet:
+            lines.append(f"  > {snippet}")
+        return lines
+
+    speaker = citation.get("speaker") or "Unknown speaker"
+    stamp = _clock(citation.get("start_time"))
+    link = f"/files/{file_uuid}?t={int(citation.get('start_time') or 0)}"
+    lines = [f"- `[{cid}]` **{title}** — {speaker} at {stamp}", f"  {link}"]
+    if snippet:
+        lines.append(f"  > {snippet}")
+    return lines
+
+
 def _render_markdown(conversation, messages: list[ChatMessage]) -> str:
     lines: list[str] = [f"# {conversation.title or 'Chat'}", ""]
 
@@ -85,17 +140,7 @@ def _render_markdown(conversation, messages: list[ChatMessage]) -> str:
             lines.append("**Sources**")
             lines.append("")
             for citation in citations:
-                speaker = citation.get("speaker") or "Unknown speaker"
-                title = citation.get("title") or "Untitled recording"
-                stamp = _clock(citation.get("start_time"))
-                link = (
-                    f"/files/{citation.get('file_uuid')}?t={int(citation.get('start_time') or 0)}"
-                )
-                lines.append(f"- `[{citation.get('id')}]` **{title}** — {speaker} at {stamp}")
-                lines.append(f"  {link}")
-                snippet = (citation.get("snippet") or "").strip()
-                if snippet:
-                    lines.append(f"  > {snippet}")
+                lines.extend(_render_citation(citation))
             lines.append("")
 
         if message.model:

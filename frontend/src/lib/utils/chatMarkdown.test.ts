@@ -145,15 +145,58 @@ describe('escapeHtml', () => {
 
 describe('citationHref', () => {
   it('builds a seekable file link', () => {
-    expect(citationHref('abc-123', 90.7)).toBe('/files/abc-123?t=90');
+    expect(citationHref({ file_uuid: 'abc-123', start_time: 90.7 })).toBe('/files/abc-123?t=90');
   });
 
   it('encodes the uuid', () => {
-    expect(citationHref('a/b?c', 0)).toBe('/files/a%2Fb%3Fc?t=0');
+    expect(citationHref({ file_uuid: 'a/b?c', start_time: 0 })).toBe('/files/a%2Fb%3Fc?t=0');
   });
 
   it('never emits a negative timestamp', () => {
-    expect(citationHref('abc', -5)).toBe('/files/abc?t=0');
+    expect(citationHref({ file_uuid: 'abc', start_time: -5 })).toBe('/files/abc?t=0');
+  });
+
+  it('treats an absent kind as a chunk, matching pre-#403 messages', () => {
+    expect(citationHref({ file_uuid: 'abc', start_time: 12 })).toBe('/files/abc?t=12');
+  });
+
+  it('treats a digest kind exactly like a chunk (still time-anchored)', () => {
+    expect(citationHref({ file_uuid: 'abc', kind: 'digest', start_time: 125.5 })).toBe(
+      '/files/abc?t=125'
+    );
+  });
+
+  // ------------------------------------------------------------ #464: summary
+  it('deep-links a summary citation to the summary view, not the player', () => {
+    expect(citationHref({ file_uuid: 'abc-123', kind: 'summary', start_time: 0 })).toBe(
+      '/files/abc-123?view=summary'
+    );
+  });
+
+  it('carries the section forward when the summary citation has one', () => {
+    expect(
+      citationHref({ file_uuid: 'abc-123', kind: 'summary', start_time: 0, digest_section: 3 })
+    ).toBe('/files/abc-123?view=summary&section=3');
+  });
+
+  it('never puts a timestamp on a summary link, even when start_time is set', () => {
+    // A summary hit's `start_time` is a placeholder (0), never a real moment —
+    // asserting `t=` is absent catches a regression that read start_time back in.
+    const href = citationHref({ file_uuid: 'abc-123', kind: 'summary', start_time: 999 });
+    expect(href).not.toContain('t=999');
+    expect(href).toBe('/files/abc-123?view=summary');
+  });
+
+  // ---------------------------------------------------- #464: forward-looking document kind
+  it('deep-links a document citation under /documents, never with start_time=0', () => {
+    const href = citationHref({
+      file_uuid: 'doc-1',
+      kind: 'document',
+      start_time: 0,
+      chunk_index: 7,
+    });
+    expect(href).toBe('/documents/doc-1?chunk=7');
+    expect(href).not.toContain('t=0');
   });
 });
 

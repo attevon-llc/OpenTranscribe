@@ -1,22 +1,51 @@
-# diar-native sidecar (T1 diarization engine) — ADDITIVE overlay, off by default.
+# diar-native sidecar (the PRIMARY diarization engine) — ADDITIVE overlay.
 #
-# Usage (when ready to test; see diar-native docs/INSTALL_NATIVE.md):
+# Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
 #                  -f docker-compose.diar-native.yml up -d diar-native
-# then set DIARIZER_ENGINE=native on the gpu worker (plus the shared volume below)
-# and apply the ModelManager hook from diar-native/docs/INSTALL_NATIVE.md.
 #
-# Rollback = unset DIARIZER_ENGINE (fork path is the default), stop this service.
+# The engine is selected by `engine.diarizer_backend` (DB) -> ENGINE_DIARIZER_BACKEND
+# (env) -> the coded default, which is now `native`. There is ONE decision point,
+# `TranscriptionConfig.diarizer_backend`; the old ad-hoc DIARIZER_ENGINE env reads in
+# model_manager.py and engine/stages.py are gone, so setting that variable does nothing.
+#
+# Rollback = set `engine.diarizer_backend` to `pyannote` in Settings -> Engine (or
+# ENGINE_DIARIZER_BACKEND=pyannote) and stop this service. Note the worker ALSO falls back
+# to the in-process PyAnnote fork on its own whenever this sidecar is unreachable, and logs
+# when it does — that path is covered by real-TCP-unreachability tests, not mocks.
 
 services:
   diar-native:
-    image: diar-server:latest
+    # Shared backend image (task #59) — NOT a separate diar-server image. One image
+    # carries both the Python stack and the diar-native Rust binary; this service just
+    # overrides the image's default CMD (uvicorn) with the binary. Dockerfile.prod sets
+    # no ENTRYPOINT, so `command:` replaces the whole CMD cleanly.
+    #
+    # Previously `image: diar-server:latest` — an UNQUALIFIED name that Docker resolves
+    # to docker.io/library/diar-server, a namespace we do not control.
+    image: opentranscribe-backend:latest
+    command: ["diar-server"]
+    # ORT resolves its provider libs relative to the executable's directory AND the
+    # process cwd (diar-server has no ELF NEEDED entry for libonnxruntime — it's
+    # dlopen'd at runtime). Dockerfile.prod symlinks the provider libs into both
+    # /usr/local/bin and this working_dir; they must match.
+    working_dir: /opt/diar-native/run
+    user: appuser
     environment:
       - DIAR_MODE=${DIAR_NATIVE_MODE:-cuda}
       - DIAR_MODELS_DIR=/models
       - DIAR_MAX_INFLIGHT=${DIAR_NATIVE_MAX_INFLIGHT:-2}
       - DIAR_BIND=0.0.0.0:8701
       - SPEAKRS_LAZY_SESSIONS=${DIAR_NATIVE_LAZY_SESSIONS:-1}
+      # Scoped to THIS service only — never image-wide (see the ORT version-collision
+      # note in Dockerfile.prod: Python's onnxruntime-gpu==1.28.0 ships providers with
+      # the same filenames as diar's 1.24.2, so the image-wide env must never point at
+      # /opt/diar-native/lib). Covers: diar's own ORT libs, plus the CUDA math libs
+      # (cudart/cublas/cudnn/cufft/curand) diar-native's own image installed via system
+      # apt packages but this shared image gets from the already-installed torch nvidia
+      # wheels instead — verified: every CUDA symbol libonnxruntime_providers_cuda.so
+      # needs resolves against those wheels, zero unsatisfied sonames.
+      - LD_LIBRARY_PATH=/opt/diar-native/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cudnn/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cuda_runtime/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cublas/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cufft/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/curand/lib
     volumes:
       # self-exported community-1 models (gated weights — local only, never distributed)
       - ${DIAR_NATIVE_MODELS_DIR:-/mnt/nvm/repos/diar-native/models_folded}:/models:ro
@@ -27,7 +56,14 @@ services:
           devices:
             - driver: nvidia
               capabilities: [gpu]
-              device_ids: ['${DIAR_NATIVE_GPU:-0}']
+              # ⚠️ Defaults to GPU_DEVICE_ID — the SAME GPU the rest of the stack uses —
+              # never to a bare 0. This used to read `${DIAR_NATIVE_GPU:-0}`, so simply
+              # enabling this overlay without also setting DIAR_NATIVE_GPU would reserve
+              # device 0. On this workstation device 0 is an A6000 reserved for unrelated
+              # work, and the sidecar holds ~4.1 GB of warm ORT arena — it would have sat
+              # on someone else's card indefinitely. Overlays must inherit the project's
+              # configured GPU, not re-pick one.
+              device_ids: ['${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}}']
     restart: unless-stopped   # supervisor: auto-restart (known upstream teardown crash)
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8701/healthz || exit 1"]
@@ -35,12 +71,16 @@ services:
       timeout: 5s
       retries: 3
 
-  # The gpu diarize worker needs the shared audio-handoff volume + engine flag.
+  # The gpu diarize worker needs the shared audio-handoff volume and the sidecar's URL.
   # NOTE: service name must match your compose profile's diarization worker
   # (celery-worker in default gpu profile; celery-worker-diarize under gpu-split).
+  #
+  # DIARIZER_ENGINE was removed here deliberately: it used to be read ad hoc in three
+  # places, and it now selects nothing. Leaving it would have been worse than useless —
+  # it defaulted to "python" while the resolved default is "native", so it read as an
+  # override that was silently doing the opposite of what it said.
   celery-worker:
     environment:
-      - DIARIZER_ENGINE=${DIARIZER_ENGINE:-python}
       - DIAR_NATIVE_URL=http://diar-native:8701
       - DIAR_NATIVE_SHARED_DIR=/tmp/diar-native
     volumes:

@@ -270,6 +270,32 @@
     await chatStore.refreshEstimate();
   }
 
+  async function handleRemoveSpeaker(event: CustomEvent<string>): Promise<void> {
+    const name = event.detail;
+    const current = state.scope;
+    await chatStore.persistScope({
+      ...current,
+      speakers: (current?.speakers ?? []).filter((s) => s !== name),
+    });
+  }
+
+  /**
+   * The reader picked one of the ambiguous speaker-mention candidates
+   * (`ChatMessageMeta`'s `disambiguate` chip, forwarded through `ChatMessage`
+   * and `ChatThread`). Add the resolved name to the retrieval scope and
+   * re-ask the same question so the answer comes back grounded in that
+   * speaker's turns specifically.
+   */
+  async function handleDisambiguateSpeaker(event: CustomEvent<string>): Promise<void> {
+    const name = event.detail;
+    const current = state.scope;
+    const speakers = current?.speakers ?? [];
+    if (speakers.includes(name)) return;
+    await chatStore.persistScope({ ...current, speakers: [...speakers, name] });
+    await chatStore.refreshEstimate();
+    await chatStore.regenerate();
+  }
+
   async function handleControlsChange(event: CustomEvent<Partial<ConversationSettings>>) {
     const patch = event.detail;
     if ('use_context' in patch) {
@@ -444,6 +470,7 @@
             on:regenerate={() => chatStore.regenerate()}
             on:retry={() => chatStore.regenerate()}
             on:edit={(e) => chatStore.editMessage(e.detail.uuid, e.detail.content)}
+            on:disambiguate={handleDisambiguateSpeaker}
           />
         {:else}
           <ChatEmptyState {llmAvailable} on:suggestion={handleSuggestion} />
@@ -458,6 +485,7 @@
           estimate={state.contextEstimate}
           on:openPicker={() => (pickerOpen = true)}
           on:clear={handleClearScope}
+          on:removeSpeaker={handleRemoveSpeaker}
         />
         <ChatComposer
           bind:this={composer}

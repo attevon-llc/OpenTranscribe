@@ -60,8 +60,8 @@ SCOPES = ("corpus", "gold-files")
 #: ``faster_whisper`` in at import time and these logic tests must stay
 #: stack-free; ``test_eval_fusion_arm`` fails if the two ever drift apart.
 DEFAULT_SIZE = 48
-DEFAULT_FINAL_CHUNKS = 12
-DEFAULT_MAX_PER_FILE = 4
+DEFAULT_FINAL_CHUNKS = 40
+DEFAULT_MAX_PER_FILE = 12
 DEFAULT_RERANK_MAX_PAIRS = 50
 
 
@@ -84,6 +84,12 @@ class RetrievalConfig:
     #: ``None`` means the deployment's configured default, which is a different
     #: statement from naming ``rrf`` explicitly and is recorded as such.
     fusion: FusionConfig | None = None
+    #: The #506 BM25 field preset — ``"default"`` (this module's historical field
+    #: list) or ``"no-stem"`` (drops the stemmed ``content`` leg). Resolved via
+    #: ``chunk_retrieval.resolve_text_field_preset`` and recorded in
+    #: :meth:`as_dict` so a run's arm is recoverable from its own runinfo, the
+    #: same rule :meth:`fusion_provenance` follows for the fusion arm.
+    text_fields_preset: str = "default"
 
     def fusion_provenance(self) -> dict[str, object]:
         """The fusion arm this run used, resolved and named.
@@ -135,6 +141,7 @@ class RetrievalConfig:
             "scope": self.scope,
             "workers": self.workers,
             "fusion": self.fusion_provenance(),
+            "text_fields_preset": self.text_fields_preset,
             "scope_note": (
                 "corpus-wide, file_uuids=None"
                 if self.scope == "corpus"
@@ -334,7 +341,12 @@ def execute(
         )
 
     from app.services.search.chunk_retrieval import diversity_sample
+    from app.services.search.chunk_retrieval import resolve_text_field_preset
     from app.services.search.chunk_retrieval import retrieve_chunks
+
+    # Resolved ONCE per run, outside the per-query closure below — the preset is a
+    # run-level knob (#506), not something that could vary between queries in one call.
+    text_fields = resolve_text_field_preset(config.text_fields_preset)
 
     router = None
     retrieve_digests_fn = None
@@ -372,6 +384,7 @@ def execute(
             size=config.size,
             search_mode=config.search_mode,
             fusion=config.fusion,
+            text_fields=text_fields,
         )
         if retrieval_ms is not None:
             # list.append is atomic under the GIL, so the worker pool needs no
@@ -392,6 +405,7 @@ def execute(
                     size=config.digest_size,
                     search_mode=config.search_mode,
                     fusion=config.fusion,
+                    text_fields=text_fields,
                 )
             assert records is not None  # guaranteed by the guard above
             records[query.query_id] = RouteRecord(

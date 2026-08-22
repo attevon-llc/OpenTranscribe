@@ -48,6 +48,8 @@ from app.models.media import Speaker
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.schemas.media import TranscriptSegment
 from app.services.error_categorization_service import ErrorCategorizationService
+from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
+from app.utils.speaker_labels import canonical_speaker_label
 
 logger = logging.getLogger(__name__)
 
@@ -151,12 +153,10 @@ class FormattingService:
         if not speakers:
             return {"count": 0, "primary_speakers": []}
 
-        # Get display names, fallback to original names
-        # Return all speakers - frontend handles truncation based on available space
-        speaker_names = []
-        for speaker in speakers:
-            display_name = speaker.display_name or speaker.name
-            speaker_names.append(display_name)
+        # Canonical resolution (display_name > confident suggestion > raw
+        # name), via `format_speaker_name` — return all speakers, frontend
+        # handles truncation based on available space.
+        speaker_names = [FormattingService.format_speaker_name(speaker) for speaker in speakers]
 
         return {"count": len(speakers), "primary_speakers": speaker_names}
 
@@ -289,23 +289,33 @@ class FormattingService:
         if segment_dict.get("speaker"):
             # Preserve original speaker ID in speaker_label
             segment_dict["speaker_label"] = segment_dict["speaker"].get("name", "Unknown")
-            # Set display name in resolved_speaker_name
-            resolved_name = (
-                segment_dict["speaker"].get("resolved_display_name")
-                or segment_dict["speaker"].get("display_name")
-                or segment_dict["speaker"].get("name")
-                or "Unknown"
+            # Set display name in resolved_speaker_name. `resolved_display_name`
+            # is already the canonical resolution — `SpeakerStatusService`
+            # stamps it via `canonical_speaker_label` before this ever runs —
+            # so the explicit call below is the fallback for a payload that
+            # never went through that step. Either way this unifies the
+            # "no attribution" spelling with every other plane
+            # (`UNKNOWN_SPEAKER_LABEL`, not a fourth bare "Unknown").
+            resolved_name = segment_dict["speaker"].get(
+                "resolved_display_name"
+            ) or canonical_speaker_label(
+                segment_dict["speaker"].get("name"),
+                display_name=segment_dict["speaker"].get("display_name"),
+                suggested_name=segment_dict["speaker"].get("suggested_name"),
+                confidence=segment_dict["speaker"].get("confidence"),
             )
             segment_dict["resolved_speaker_name"] = resolved_name
         elif speaker_mapping and segment_dict.get("speaker_id"):
             # For segments without speaker objects, we can't preserve original ID
             # Use mapping for both fields as fallback
-            resolved_name = speaker_mapping.get(str(segment_dict["speaker_id"]), "Unknown")
+            resolved_name = speaker_mapping.get(
+                str(segment_dict["speaker_id"]), UNKNOWN_SPEAKER_LABEL
+            )
             segment_dict["speaker_label"] = resolved_name
             segment_dict["resolved_speaker_name"] = resolved_name
         else:
-            segment_dict["speaker_label"] = "Unknown"
-            segment_dict["resolved_speaker_name"] = "Unknown"
+            segment_dict["speaker_label"] = UNKNOWN_SPEAKER_LABEL
+            segment_dict["resolved_speaker_name"] = UNKNOWN_SPEAKER_LABEL
 
         # Create a new schema instance from the enriched dict
         return TranscriptSegment.model_validate(segment_dict)  # type: ignore[no-any-return]
@@ -388,13 +398,23 @@ class FormattingService:
         """
         Get the best display name for a speaker.
 
+        Delegates to `canonical_speaker_label` (the single home for this
+        resolution) rather than the ``display_name or name or "Unknown"``
+        chain this method used to run inline, which never looked at a
+        confident LLM/embedding suggestion.
+
         Args:
             speaker: Speaker object
 
         Returns:
             Display name for the speaker
         """
-        return str(speaker.display_name or speaker.name or "Unknown")
+        return canonical_speaker_label(
+            speaker.name,
+            display_name=speaker.display_name,
+            suggested_name=getattr(speaker, "suggested_name", None),
+            confidence=getattr(speaker, "confidence", None),
+        )
 
     @staticmethod
     def get_speaker_number(speaker_name: str) -> int:

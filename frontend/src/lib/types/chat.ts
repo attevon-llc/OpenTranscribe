@@ -48,15 +48,30 @@ export function isScopeUnfiltered(scope: ChatScope | null | undefined): boolean 
 }
 
 /**
- * What a citation points at (#403 Stage 4).
+ * What a citation points at (#403 Stage 4, widened #464).
  *
  * `chunk` is somebody's words at a timestamp. `digest` is DERIVED text — an
  * extractive summary of a span of the same recording — and must never be
  * rendered as a quote: presenting it as speech attributes to a person words
- * nobody actually said. Older messages predate the field and carry nothing,
- * which is why every read treats an absent value as `chunk`.
+ * nobody actually said. `summary` (#464) is LLM-generated prose ABOUT the
+ * recording, not extracted from it — a labelled interpretation, never a
+ * quote, and never attributed to a speaker, same as `digest` but a different
+ * provenance the UI badges differently. Older messages predate the field and
+ * carry nothing, which is why every read treats an absent value as `chunk`.
+ *
+ * `recurrence` (W2.5) is a GROUP of items judged to be the same thing,
+ * recurring across MULTIPLE recordings — never one person's words, never
+ * anchored to a single moment, and not even anchored to a single FILE the
+ * way `summary` is. It carries `file_uuids` (every recording the group
+ * spans) instead of relying on `file_uuid` alone.
+ *
+ * A later lane is expected to add `document` onto this same union — this
+ * mirrors `backend/app/schemas/chat.py`'s `Citation.kind`, widened
+ * deliberately at the same time for the same reason (see that schema's
+ * docstring): growing it kind-by-kind risks a persisted message losing an
+ * already-shipped field the next time this union grows.
  */
-export type ChatSourceKind = 'chunk' | 'digest';
+export type ChatSourceKind = 'chunk' | 'digest' | 'summary' | 'recurrence';
 
 /** One retrieved excerpt an answer may reference as `[n]`. */
 export interface ChatSource {
@@ -66,13 +81,43 @@ export interface ChatSource {
   file_uuid: string;
   title: string;
   chunk_index: number;
-  /** Section number when `kind === 'digest'`, else null. */
+  /** Section number when `kind` is `digest` or `summary`, else null. */
   digest_section?: number | null;
-  start_time: number;
+  /**
+   * `null`/absent for a kind with no natural single timestamp — a `summary`
+   * citation describes the whole recording, and a `recurrence` citation
+   * spans several. The absence is a first-class case on purpose: rendering a
+   * missing timestamp as `0` would look like a working "jump to 0:00" link
+   * that just happens to be wrong.
+   */
+  start_time: number | null;
   end_time: number | null;
-  /** Always null for a digest: a section spans several speakers. */
+  /** Always null for a digest or summary: neither is one person's words. */
   speaker: string | null;
   snippet: string;
+  /**
+   * `kind === 'chunk'` ONLY (#526). True when the backend widened this
+   * citation's `start_time`/`end_time`/`snippet` to the chunk's surrounding
+   * exchange before masking (`chat.context_expansion_enabled`) — the
+   * `chunk_index` still names the ORIGINAL, unexpanded indexed chunk, so this
+   * is what tells a reader the span shown is wider than that index entry.
+   * Absent/`false` on every citation from before this field existed, which is
+   * the correct read for them: none of them were ever expanded.
+   */
+  expanded?: boolean;
+  /** Document-plane fields (#362/#403 Stage 6, a later lane). Undefined for
+   * every kind this app emits today. */
+  page?: number | null;
+  section_path?: string | null;
+  char_start?: number | null;
+  char_end?: number | null;
+  /**
+   * `kind === 'recurrence'` ONLY: every recording the recurring group spans.
+   * `undefined`/`null` for every other kind. `file_uuid` still carries the
+   * PRIMARY (first) recording, so a reader that only knows the single-file
+   * contract still gets a valid uuid.
+   */
+  file_uuids?: string[] | null;
 }
 
 /** Diagnostics attached to an assistant message (ids/counts only). */
@@ -83,6 +128,16 @@ export interface ChatMessageMetadata {
   cache_hit?: boolean;
   chunks_used?: number;
   files_searched?: number | 'all';
+  /**
+   * How many of the caller's EXPLICIT file picks (never collections/tags)
+   * could not be resolved into scope — inaccessible, deleted, or quarantined.
+   * Absent (never zero) when nothing was dropped. Most visible for an admin,
+   * whose file picker offers every tenant recording while scope resolution
+   * applies no admin bypass on any axis: picking 40 files that resolve to 3
+   * would otherwise read as an unexplained `files_searched: 3` with no signal
+   * that 37 were silently excluded.
+   */
+  scope_files_dropped?: number;
   timings_ms?: Record<string, number>;
   /**
    * Excerpts were retrieved but none fit the context window, so the answer is
@@ -100,6 +155,14 @@ export interface ChatMessageMetadata {
    */
   no_context?: boolean;
   /**
+   * A specialization of the "nothing reached the prompt" case above: the
+   * chunk-plane search itself raised or had no client, rather than genuinely
+   * returning zero hits. Mutually exclusive with `no_context` — a turn sets
+   * exactly one of the two, never both, distinguishing "search was down" from
+   * "your library has nothing about this" (issue #438's open half).
+   */
+  retrieval_failed?: boolean;
+  /**
    * The turn's context included recordings in a language RAG is not tuned for.
    * Transcription is multilingual; retrieval, reranking and prompting are
    * English-only, so a non-English recording is effectively invisible to the
@@ -114,6 +177,52 @@ export interface ChatMessageMetadata {
     unknown_files?: number;
     supported?: string[];
   };
+  /**
+   * Wave 2: which `mapreduce.py` reducer produced the `<overview>` block —
+   * `'code'` (no-LLM, first class per D6) or `'llm-batch'`. Absent when no
+   * overview was built for this turn.
+   */
+  map_source?: string;
+  /**
+   * Wave 2: how a speaker-filtered turn resolved the requested names against
+   * the recordings in scope. Shape matches `mapreduce`/router diagnostics,
+   * not a persisted structure of its own.
+   */
+  speaker_resolution?: {
+    matched?: string[];
+    ambiguous?: string[];
+  };
+  /** Wave 2: the query plan the router assembled for this turn, if any. */
+  plan?: {
+    steps?: string[];
+  };
+  /**
+   * Wave 2: names of retrieval/aggregation "legs" that failed and were
+   * skipped rather than failing the whole turn.
+   */
+  legs_failed?: string[];
+  /**
+   * #403 W2.6: per-leg wall time (ms) for a planner-driven parallel fan-out
+   * (`legs.FanOutResult.timings_ms`), keyed by leg name (`"main"`,
+   * `"subquestion-0"`, `"speaker"`, `"counted"`, `"recurrence"`, …). Absent
+   * unless the fan-out ran this turn.
+   */
+  leg_timings_ms?: Record<string, number>;
+  /** #403 W2.6: `Object.keys(leg_timings_ms).length`, named for direct display. */
+  leg_count?: number;
+  /**
+   * Wave 2: bounded LLM calls a reducer spent on this turn (e.g.
+   * `BatchReducer`'s per-batch condense calls in `mapreduce.py`). #403 W2.6
+   * extends this to the planner/enrichment/rewrite-extension calls too.
+   */
+  llm_calls?: number;
+  /**
+   * Wave 2: the question's language did not match what the router
+   * expected/could route with confidence. Set live from the `warning` frame
+   * (`ChatWarningCode.router_language_unmatched`) and persisted, like
+   * {@link unsupported_language}.
+   */
+  router_language_unmatched?: boolean;
 }
 
 export interface ChatMessage {
@@ -256,7 +365,11 @@ export interface ChatAdminSettings {
 
 // --- SSE frame contract (must match services/chat/service.py) ----------------
 
-type StreamStage = 'rewriting' | 'retrieving' | 'reranking' | 'generating';
+// #403 W2.6: 'planning' is a turn-1 (no-history) stage for a question that
+// will trigger a standalone LLM query-planner call before retrieval starts —
+// see `services/chat/service.py`'s `stream_reply`. Only reachable when
+// `chat.planner_enabled` is on; every other deployment never emits it.
+type StreamStage = 'rewriting' | 'retrieving' | 'reranking' | 'planning' | 'generating';
 
 /**
  * Non-fatal conditions the server surfaces mid-turn.
@@ -266,20 +379,40 @@ type StreamStage = 'rewriting' | 'retrieving' | 'reranking' | 'generating';
  * an answer that reads as sourced when it is not is the failure this exists to
  * prevent.
  *
- * `no_context`: nothing reached the prompt at all (issue #438). Retrieval
- * degrades to an empty result on any failure, so this covers "nothing matched",
- * "the search backend was down", and "masking dropped every chunk" alike — the
- * `retrieved` count separates them. It and `context_dropped` are mutually
- * exclusive branches of one server-side `if`.
+ * `no_context`: nothing reached the prompt at all, and the search itself was
+ * not the cause — retrieval genuinely matched nothing, or masking dropped
+ * every chunk it found. Distinguished from `context_dropped` by `retrieved`
+ * being non-zero for the masking case; distinguished from `retrieval_failed`
+ * (below) by the search having actually run.
+ *
+ * `retrieval_failed`: nothing reached the prompt because the chunk-plane
+ * search itself raised or had no client (issue #438's open half, closed) —
+ * distinct from `no_context`, which means the search ran and genuinely found
+ * nothing. `context_dropped` / `no_context` / `retrieval_failed` are mutually
+ * exclusive branches of one server-side `if`/`elif`.
  *
  * `unsupported_language`: the context included recordings in a language the
  * English-only RAG stack cannot rank or read. Same principle: the answer looks
  * complete while a recording was invisible to it.
  *
+ * `ambiguous_speaker` / `recurrence_unavailable` / `plan_failed` /
+ * `router_language_unmatched`: Wave 2 additions mirroring
+ * `backend/app/schemas/chat.py`'s `ChatWarningCode` — no backend emitter uses
+ * them yet, but the code must exist here before one can, or the first turn
+ * that emits one is silently dropped.
+ *
  * ⚠️ A code missing from this union is silently discarded by `stores/chat.ts`,
  * so the server can emit a warning nobody ever sees. Widen both together.
  */
-export type ChatWarningCode = 'context_dropped' | 'no_context' | 'unsupported_language';
+export type ChatWarningCode =
+  | 'context_dropped'
+  | 'no_context'
+  | 'retrieval_failed'
+  | 'unsupported_language'
+  | 'ambiguous_speaker'
+  | 'recurrence_unavailable'
+  | 'plan_failed'
+  | 'router_language_unmatched';
 
 export type ChatErrorCode =
   | 'llm_unconfigured'
@@ -303,11 +436,12 @@ export type ChatStreamEvent =
       code: ChatWarningCode;
       /**
        * `context_dropped`: how many excerpts were retrieved but dropped.
-       * `no_context`: how many were retrieved at all — `0` is an empty or
-       * failed search, non-zero is masking having failed closed on every one.
+       * `no_context`: how many were retrieved at all — `0` is an empty search,
+       * non-zero is masking having failed closed on every one.
+       * `retrieval_failed`: always `0` — the search never completed.
        */
       retrieved?: number;
-      /** `no_context` only: `'all'` for an unscoped turn, else a count. */
+      /** `no_context` / `retrieval_failed` only: `'all'` for an unscoped turn, else a count. */
       files_searched?: number | 'all';
       /** `unsupported_language` only: the languages seen and how many files. */
       context_languages?: ChatMessageMetadata['context_languages'];
@@ -334,6 +468,13 @@ export type StreamStatus =
   | 'idle'
   | 'submitting'
   | 'retrieving'
+  // #403 W2.6: a turn-1 standalone planner call is in flight (`stage:
+  // 'planning'`). `stores/chat.ts`'s `status` fold maps the SSE `stage` onto
+  // this — see that file's `case 'status':` for the current mapping; a code
+  // owner outside this lane still needs to add `event.stage === 'planning'`
+  // there for the live indicator to actually reach this value, the same way
+  // every other Wave-2 SSE addition in this codebase ships its type first.
+  | 'planning'
   | 'thinking'
   | 'streaming'
   | 'done'

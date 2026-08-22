@@ -5,10 +5,12 @@
   import axiosInstance, { isRequestCancelled } from '$lib/axios';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
-  import { searchStore, type SearchResponse, type SearchOccurrence } from '$stores/search';
+  import { searchStore, type SearchResponse, type SearchOccurrence, type SearchResultType } from '$stores/search';
   import SearchResultCard from '$components/search/SearchResultCard.svelte';
   import SearchTranscriptModal from '$components/search/SearchTranscriptModal.svelte';
   import SearchPagination from '$components/search/SearchPagination.svelte';
+  import SummaryResultCard from '$components/search/SummaryResultCard.svelte';
+  import SummaryModal from '$components/SummaryModal.svelte';
   import FilterSidebar from '$components/FilterSidebar.svelte';
   import SearchAutocomplete from '$components/search/SearchAutocomplete.svelte';
   import SearchSortDropdown from '$components/search/SearchSortDropdown.svelte';
@@ -68,6 +70,22 @@
   let transcriptModalFileName = '';
   let transcriptModalOccurrences: SearchOccurrence[] = [];
 
+  // Summary modal state (issue #462) — opened from a summary search hit, scrolled to
+  // the matched section via SummaryModal's own find/highlight machinery.
+  // `SummaryModal`'s `fileId` prop is (despite the name) the file's UUID, not its
+  // integer id — see the note on that prop.
+  let summaryModalOpen = false;
+  let summaryModalFileUuid: string | null = null;
+  let summaryModalFileName = '';
+  let summaryModalKeyPath: string | null = null;
+
+  // Backend total_pages is only computed for the transcripts leg (result_type=summaries
+  // gets the placeholder `SearchResponseSchema` with total_pages hardcoded 0 — see
+  // `api/endpoints/search.py::search_transcripts`). Derived client-side here as a
+  // purely-presentational value from data the page already has, same exception as
+  // export formatting gets under the thin-frontend rule.
+  $: summaryTotalPages = Math.ceil(($searchStore.summaryTotal || 0) / ($searchStore.pageSize || 20));
+
   function findSpeakerAtTime(time: number): string {
     if (!previewData) return '';
     // Find the matching file in results to get all occurrences
@@ -88,6 +106,7 @@
   $: urlSort = $page.url.searchParams.get('sort') || 'relevance';
   $: urlSortOrder = ($page.url.searchParams.get('sort_order') || 'desc') as 'asc' | 'desc';
   $: urlMode = $page.url.searchParams.get('mode') || 'hybrid';
+  $: urlType = ($page.url.searchParams.get('type') || 'transcripts') as SearchResultType;
   $: urlSpeakers = $page.url.searchParams.getAll('speakers');
   $: urlTags = $page.url.searchParams.getAll('tags');
 
@@ -99,6 +118,7 @@
     searchStore.setSortBy(urlSort);
     searchStore.setSortOrder(urlSortOrder);
     searchStore.setSearchMode(urlMode);
+    searchStore.setResultType(urlType);
     if (urlSpeakers.length) searchStore.setSpeakers(urlSpeakers);
     if (urlTags.length) searchStore.setTags(urlTags);
 
@@ -166,7 +186,7 @@
   function buildSearchParamsString(query: string, pageNum: number): string {
     return JSON.stringify({
       q: query, page: pageNum, sort: $searchStore.sortBy, sortOrder: $searchStore.sortOrder,
-      mode: $searchStore.searchMode, speakers: $searchStore.selectedSpeakers,
+      mode: $searchStore.searchMode, resultType: $searchStore.resultType, speakers: $searchStore.selectedSpeakers,
       tags: $searchStore.selectedTags, dateFrom: $searchStore.dateFrom, dateTo: $searchStore.dateTo,
       fileTypes: $searchStore.selectedFileTypes, collectionId: $searchStore.selectedCollectionId,
       durationRange: $searchStore.durationRange, fileSizeRange: $searchStore.fileSizeRange,
@@ -192,6 +212,7 @@
     if ($searchStore.sortBy !== 'relevance') params.set('sort', $searchStore.sortBy);
     if ($searchStore.sortOrder !== 'desc') params.set('sort_order', $searchStore.sortOrder);
     if ($searchStore.searchMode !== 'hybrid') params.set('mode', $searchStore.searchMode);
+    if ($searchStore.resultType !== 'transcripts') params.set('type', $searchStore.resultType);
     $searchStore.selectedSpeakers.forEach((s) => params.append('speakers', s));
     $searchStore.selectedTags.forEach((tag) => params.append('tags', tag));
 
@@ -205,6 +226,7 @@
         sort_by: $searchStore.sortBy,
         sort_order: $searchStore.sortOrder,
         search_mode: $searchStore.searchMode,
+        result_type: $searchStore.resultType,
         speakers: $searchStore.selectedSpeakers.length ? $searchStore.selectedSpeakers : undefined,
         tags: $searchStore.selectedTags.length ? $searchStore.selectedTags : undefined,
         date_from: $searchStore.dateFrom || undefined,
@@ -313,6 +335,24 @@
     if ($searchStore.query) {
       performSearch($searchStore.query, 1);
     }
+  }
+
+  function handleResultTypeChange(resultType: SearchResultType) {
+    if (resultType === $searchStore.resultType) return;
+    searchStore.setResultType(resultType);
+    if ($searchStore.query) {
+      performSearch($searchStore.query, 1);
+    }
+  }
+
+  function handleOpenSummaryMatch(
+    event: CustomEvent<{ fileUuid: string; title: string; keyPath: string | null }>
+  ) {
+    const { fileUuid, title, keyPath } = event.detail;
+    summaryModalFileUuid = fileUuid;
+    summaryModalFileName = title;
+    summaryModalKeyPath = keyPath;
+    summaryModalOpen = true;
   }
 
   function handleFilterEvent(event: CustomEvent) {
@@ -563,6 +603,31 @@
           </button>
         </div>
 
+        {#if $searchStore.query}
+          <div class="result-type-toggle" role="tablist" aria-label={$t('search.resultTypeToggleLabel')}>
+            <button
+              type="button"
+              class="result-type-btn"
+              class:active={$searchStore.resultType === 'transcripts'}
+              role="tab"
+              aria-selected={$searchStore.resultType === 'transcripts'}
+              on:click={() => handleResultTypeChange('transcripts')}
+            >
+              {$t('search.resultTypeTranscripts')}
+            </button>
+            <button
+              type="button"
+              class="result-type-btn"
+              class:active={$searchStore.resultType === 'summaries'}
+              role="tab"
+              aria-selected={$searchStore.resultType === 'summaries'}
+              on:click={() => handleResultTypeChange('summaries')}
+            >
+              {$t('search.resultTypeSummaries')}
+            </button>
+          </div>
+        {/if}
+
         {#if hasActiveFilters}
           <div class="filter-hint">
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -576,8 +641,9 @@
           </div>
         {/if}
 
-        <!-- Results Info Bar -->
-        {#if $searchStore.query && !$searchStore.isLoading && $searchStore.totalResults >= 0 && $searchStore.results.length > 0}
+        <!-- Results Info Bar (transcripts only — the mode toggle/neural status/sort
+             below are all transcript-specific; summaries have their own count line). -->
+        {#if $searchStore.resultType === 'transcripts' && $searchStore.query && !$searchStore.isLoading && $searchStore.totalResults >= 0 && $searchStore.results.length > 0}
           <div class="results-info">
             <span class="result-summary">
               {$t('search.results', { count: $searchStore.totalFiles, time: formatSearchTime($searchStore.searchTimeMs) })}
@@ -632,13 +698,22 @@
             </svg>
             <p class="state-text">{$searchStore.error}</p>
           </div>
-        {:else if $searchStore.query && $searchStore.results.length === 0}
+        {:else if $searchStore.query && $searchStore.resultType === 'transcripts' && $searchStore.results.length === 0}
           <div class="state-container">
             <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
             <p class="state-title">{$t('searchPage.noResults', { query: $searchStore.query })}</p>
+            <p class="state-hint">{$t('search.noResultsHint')}</p>
+          </div>
+        {:else if $searchStore.query && $searchStore.resultType === 'summaries' && $searchStore.summaryResults.length === 0}
+          <div class="state-container">
+            <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <p class="state-title">{$t('search.noSummaryResults', { query: $searchStore.query })}</p>
             <p class="state-hint">{$t('search.noResultsHint')}</p>
           </div>
         {:else if !$searchStore.query}
@@ -651,6 +726,26 @@
             <p class="state-hint">{$t('search.welcomeHint')}</p>
             <p class="state-hint search-tip">{$t('search.speakerSearchTip')}</p>
           </div>
+        {:else if $searchStore.resultType === 'summaries'}
+          <!-- Summary hits are a SIBLING container to .results-list, never nested
+               inside it — test_search.py's `.results-list > *` count must stay a
+               pure count of transcript hits regardless of which tab is active. -->
+          <div class="summary-results-info">
+            {$t('search.summariesFound', { count: $searchStore.summaryTotal })}
+          </div>
+          <div class="summary-results-list">
+            {#each $searchStore.summaryResults as hit (hit.file_uuid)}
+              <SummaryResultCard {hit} on:openMatch={handleOpenSummaryMatch} />
+            {/each}
+          </div>
+
+          {#if summaryTotalPages > 1}
+            <SearchPagination
+              page={$searchStore.page}
+              totalPages={summaryTotalPages}
+              on:pageChange={handlePageChange}
+            />
+          {/if}
         {:else}
           <!-- Smart mode only: Exact mode is literal BM25 keyword matching and is
                untouched by the fusion ranking #461 measured. Kept OUTSIDE
@@ -717,6 +812,16 @@
     occurrences={transcriptModalOccurrences}
     on:close={() => transcriptModalOpen = false}
   />
+
+  {#if summaryModalFileUuid !== null}
+    <SummaryModal
+      fileId={summaryModalFileUuid}
+      fileName={summaryModalFileName}
+      isOpen={summaryModalOpen}
+      scrollToKeyPath={summaryModalKeyPath}
+      on:close={() => (summaryModalOpen = false)}
+    />
+  {/if}
 </div>
 
 <style>
@@ -956,6 +1061,46 @@
     color: var(--text-color, #374151);
   }
 
+  /* Result type toggle (transcripts vs summaries, issue #462) - same pill style as
+     the search-mode toggle above, but result type is orthogonal to it, so it lives
+     as its own control near the search bar rather than inside .results-controls
+     (which only renders once there are transcript results). */
+  .result-type-toggle {
+    display: inline-flex;
+    background: var(--hover-color, #f1f5f9);
+    border-radius: 8px;
+    padding: 2px;
+    gap: 0;
+    margin-top: 0.5rem;
+  }
+
+  .result-type-btn {
+    padding: 0.375rem 0.875rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--text-secondary, #6b7280);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+
+  .result-type-btn.active {
+    background: var(--primary-color, #4f46e5);
+    color: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  }
+
+  .result-type-btn:hover:not(.active) {
+    color: var(--text-color, #374151);
+  }
+
+  .result-type-btn:focus-visible {
+    outline: 2px solid var(--primary-color, #4f46e5);
+    outline-offset: 1px;
+  }
 
   /* Results */
   .results {
@@ -964,6 +1109,19 @@
   }
 
   .results-list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Summary results (issue #462) - a SIBLING container to .results-list, never
+     nested inside it; see the template comment above .summary-results-list. */
+  .summary-results-info {
+    font-size: 0.8125rem;
+    color: var(--text-secondary, #6b7280);
+    margin-bottom: 0.75rem;
+  }
+
+  .summary-results-list {
     display: flex;
     flex-direction: column;
   }

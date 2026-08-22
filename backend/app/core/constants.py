@@ -840,6 +840,21 @@ LLM_REASONING_PROBE_PROMPT = (
     "spoken in total? Show your working."
 )
 
+# --- Context-window discovery (issue #533) — the reasoning probe's sibling. ---
+# Same design: the RESULT is a measurement in `SystemSettings`, keyed by the
+# (provider, base_url, model) fingerprint, written only by the probe. The values
+# below are the instrument's settings, not tunables.
+
+#: `SystemSettings` key prefix. Suffix = the same fingerprint scheme as
+#: `llm_reasoning.capability_key`, under its own prefix so the two measurements
+#: can never shadow each other.
+LLM_CONTEXT_WINDOW_KEY_PREFIX = "llm.context_window."
+
+#: One metadata HTTP call (`/v1/models` or `/api/show`) — no generation, so a
+#: short timeout: a slow endpoint yields "unreachable", it does not hang the
+#: settings page.
+LLM_CONTEXT_WINDOW_PROBE_TIMEOUT_S = 10
+
 # =============================================================================
 # Organization Context Settings
 # =============================================================================
@@ -1071,13 +1086,32 @@ REDACTION_STATUS_FAILED = "failed"
 # per file keeps one long recording from crowding out the rest of a multi-file
 # selection — the whole point of chatting across transcripts.
 DEFAULT_CHAT_RAG_CANDIDATE_POOL = 48  # chat.rag.candidate_pool
-DEFAULT_CHAT_RAG_FINAL_CHUNKS = 12  # chat.rag.final_chunks
-DEFAULT_CHAT_RAG_MAX_CHUNKS_PER_FILE = 4  # chat.rag.max_chunks_per_file
+# 40/12 measured (#531, 2026-08-21): ~1.8-2x AMI-81 answer recall over 12/4 on two
+# corpora, judge-corroborated, negative controls intact, +13% latency. With ~4 files
+# in scope the per-file cap binds first, so raising final_chunks alone does nothing.
+DEFAULT_CHAT_RAG_FINAL_CHUNKS = 40  # chat.rag.final_chunks
+DEFAULT_CHAT_RAG_MAX_CHUNKS_PER_FILE = 12  # chat.rag.max_chunks_per_file
 
 # Cross-encoder reranking (CPU-only, lazily loaded in the backend container).
 DEFAULT_CHAT_RAG_RERANK_ENABLED = True  # chat.rag.rerank_enabled
 DEFAULT_CHAT_RAG_RERANK_MAX_PAIRS = 50  # chat.rag.rerank_max_pairs
 CHAT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+# Multilingual reranker arm (issue #453/ML1) — a SELECTABLE second model, default OFF.
+# `chat/reranker.py` skips reranking outright when the candidate pool is predominantly
+# non-English, because CHAT_RERANKER_MODEL above is an English MS MARCO model and
+# `rerank()` OVERWRITES `hit.score`, so letting it run destroys a correct retrieval
+# order using a model that cannot read the text. This constant is the mechanism for a
+# MEASURED alternative to that skip, not the decision to use it — the skip stays the
+# shipped behaviour (this defaults False) until a sweep says otherwise.
+#
+# Licence, verified 2026-08-20 (huggingface.co model cards, not memory): bge-reranker-v2-m3
+# is Apache-2.0. The only other shippable multilingual candidate is bge-reranker-base (MIT) —
+# `jina-reranker-v2` is CC-BY-NC (non-commercial, unshippable in a published image) and the
+# `gte`-family rerankers require `trust_remote_code=True` (arbitrary code execution from a
+# downloaded model repo). Neither of those two is acceptable here.
+DEFAULT_CHAT_RAG_MULTILINGUAL_RERANK_ENABLED = False  # chat.rag.multilingual_rerank_enabled
+CHAT_RERANKER_MODEL_MULTILINGUAL = "BAAI/bge-reranker-v2-m3"  # Apache-2.0
 
 # Conversational query rewriting: expands pronouns/references ("what about her?")
 # into a standalone query before retrieval.
@@ -1095,6 +1129,23 @@ DEFAULT_CHAT_MESSAGES_PER_HOUR = 120  # chat.limits.messages_per_hour
 DEFAULT_CHAT_MAX_CONCURRENT_STREAMS = 2  # chat.limits.max_concurrent_streams
 DEFAULT_CHAT_RETENTION_DAYS = 0  # chat.retention_days (0 = keep forever)
 
+# W2.4: the aggregation tier's speaker-facet/speaker-stats fixes. Both default
+# OFF — they change what an existing question mechanism answers (facet scope)
+# or add a new one (talk-time stats), and either is a measurement-gated rollout
+# rather than a safe-by-construction default.
+DEFAULT_CHAT_AGGREGATE_SPEAKER_FACET_CONTENT_SCOPE = (
+    False  # chat.aggregate.speaker_facet_content_scope
+)
+DEFAULT_CHAT_AGGREGATE_SPEAKER_STATS_ENABLED = False  # chat.aggregate.speaker_stats_enabled
+
+# #464: prefer each file's LLM summary over its digest in the bounded-scope map
+# tier (`chat/mapreduce.scope_digest_hits`), when the summary is FRESH (its
+# stored source_fingerprint matches the file's current file_facts row) — an
+# absent or stale summary falls back to the digest unconditionally. Default OFF:
+# on-by-default needs measured answer-quality evidence this flag does not yet
+# have (a separate, later change).
+DEFAULT_CHAT_MAP_TIER_SUMMARIES = False  # chat.rag.map_tier_summaries
+
 # A provider that accepts the request but never emits a first token would
 # otherwise hold the stream open until the read timeout.
 DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S = 90
@@ -1108,6 +1159,75 @@ DEFAULT_CHAT_SEARCH_MODE = "hybrid"
 # Resolved-scope ceiling: a selection resolving to more files than this is
 # rejected (HTTP 400) rather than silently truncated.
 CHAT_MAX_SCOPE_FILES = 500
+
+# W2.2: deterministic, Postgres-only speaker-mention resolution
+# (`services/chat/speaker_resolver.py`) — matches a name typed in the question
+# text against the caller's accessible roster and, on a unique match paired
+# with a speaker-verb frame ("what did X say"), adds a PARALLEL speaker-scoped
+# retrieval leg. Never replaces or narrows the main leg, and an explicit
+# checkbox scope (`ChatScope.speakers`) is unaffected either way. Default OFF:
+# this is a new, unmeasured retrieval shape.
+DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED = False  # chat.speaker_resolver_enabled
+
+# W2.3: extends #464's map-tier-summaries pattern to the per-speaker map
+# (`chat/mapreduce.scope_speaker_digest_hits`). When a fresh LLM summary exists
+# for a file, prefer its `summary_data.speakers_analysis[]` entry (plus
+# owner-matched action items) for the focus speaker over the per-sentence
+# digest fallback. Default OFF for the same reason #464 is: on-by-default
+# needs measured answer-quality evidence this flag does not yet have.
+DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES = False  # chat.rag.map_tier_speaker_summaries
+
+# W2.5: cross-meeting recurrence detection — "what keeps coming up across our
+# meetings". Gates BOTH the router's recurrence lexicon (`router.classify`)
+# and the `<recurrence>` evidence block (`aggregation_service.answer_recurrence`),
+# so flag-off is byte-identical to before this feature existed on every layer,
+# not just the shape. Default OFF: a new, unmeasured retrieval/synthesis shape
+# whose masking subject also follows an unresolved-in-general policy question
+# (issue #402) — see `services/chat/CLAUDE.md`.
+DEFAULT_CHAT_RECURRENCE_ENABLED = False  # chat.recurrence_enabled
+
+# W2.6: the LLM query planner + parallel-leg fan-out
+# (`services/chat/planner.py` + `services/chat/legs.py`). OFF by default: with
+# no LLM configured (or the flag off) every turn routes exactly as it did
+# before this module existed — rules-only routing, D6's "no LLM provider is
+# still a first-class deployment" holds because nothing here is on the
+# no-flag path. `needs_plan()` is pure and costs nothing to evaluate; only
+# actually BUILDING a plan (an LLM call) is gated on this flag.
+DEFAULT_CHAT_PLANNER_ENABLED = False  # chat.planner_enabled
+# Ceiling on the process-wide leg executor (`legs.get_executor`). Sized once,
+# at first use — a later change to this setting takes a process restart, the
+# same trade every other lazy singleton in this package makes (see
+# `reranker.py`).
+DEFAULT_CHAT_PLANNER_MAX_PARALLEL_LEGS = 4  # chat.planner.max_parallel_legs
+# W2.6: a single bounded non-streaming call that reconciles merged evidence
+# from a multi-leg fan-out into a `<synthesis>` block. OFF by default and
+# INDEPENDENT of `chat.planner_enabled` — a deployment can run the fan-out
+# without ever paying for the extra reconciliation call.
+DEFAULT_CHAT_ENRICHMENT_ENABLED = False  # chat.enrichment_enabled
+
+# Issue #523: read-time "small-to-big" context expansion. A short retrieved
+# chunk (`services/chat/context_expansion.py`'s `SHORT_CHUNK_WORD_THRESHOLD`)
+# is widened to its surrounding exchange BY TIMESTAMP before it reaches
+# `redactor.mask_chunks` — masking still applies to every widened word (the
+# widened time range is what the cached-span rebuild reads), and the growth
+# is bounded so it comes out of the SAME excerpt budget without silently
+# evicting other files' evidence (`MAX_EXPANSION_SEGMENTS`/
+# `MAX_EXPANDED_WORDS`). Default OFF: a new, unmeasured retrieval shape, same
+# posture as every other W2.x flag above.
+DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED = False  # chat.rag.context_expansion_enabled
+
+# --- #532 synthesis-gap EXPERIMENT flags. -----------------------------------
+# The measured defect: retrieval OFFERS 99% of a multi-file scope, the answer
+# cites 75% — and the worst observed turn cited one excerpt for every claim
+# while holding an overview of all 4 recordings. These three flags are the
+# one-variable-at-a-time arms of that experiment, matching the published
+# multi-document "dispersion"/position-bias literature. ⚠️ EXPERIMENT flags,
+# not features: after measurement each is either promoted to default and the
+# flag DELETED, or reverted and DELETED with its arm table on #532. Do not
+# build on them.
+DEFAULT_CHAT_OVERVIEW_CITABLE = False  # chat.rag.overview_citable
+DEFAULT_CHAT_OVERVIEW_BLOCK_RULE = False  # chat.rag.overview_block_rule
+DEFAULT_CHAT_OVERVIEW_AFTER_EXCERPTS = False  # chat.rag.overview_after_excerpts
 
 
 # =============================================================================

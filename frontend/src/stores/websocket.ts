@@ -11,6 +11,7 @@ import { isCloudEdition } from '$lib/edition';
 export type NotificationType =
   | 'transcription_status'
   | 'transcript_ready'
+  | 'document_status'
   | 'summarization_status'
   | 'redaction_status'
   | 'topic_extraction_status'
@@ -28,6 +29,7 @@ export type NotificationType =
   | 'file_deleted'
   | 'speaker_updated'
   | 'speaker_processing_complete'
+  | 'speaker_rename_propagation'
   | 'gpu_stats_update'
   | 'reindex_progress'
   | 'reindex_complete'
@@ -460,6 +462,28 @@ function createWebSocketStore() {
                 );
               }
               return;
+            } else if (data.type === 'speaker_rename_propagation') {
+              // A rename's digest-plane regeneration finished (backend/app/tasks/
+              // rename_propagation_task.py:regenerate_rename_digests). Without
+              // this, a user who reopens a file's summary right after a rename
+              // keeps reading the pre-rename cached copy for the rest of its TTL.
+              import('$lib/apiCache')
+                .then(({ apiCache }) => {
+                  // 'files' covers `prefetch:file:` — the file-detail cache that
+                  // holds `summary_data`. There is no separate frontend cache for
+                  // the digest tier yet (it has no dedicated UI outside chat
+                  // citations), so invalidating file detail is the whole of
+                  // "summaries and digests" today.
+                  apiCache.invalidateByScope('files');
+                  apiCache.invalidateByScope('speakers');
+                })
+                .catch(() => {});
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('speaker-rename-propagation', { detail: data.data })
+                );
+              }
+              return;
             } else if (data.type === 'clustering_progress') {
               // Speaker clustering progress — dispatch event for SpeakersPage
               if (typeof window !== 'undefined') {
@@ -568,6 +592,23 @@ function createWebSocketStore() {
                 window.dispatchEvent(new CustomEvent('auto-label-status', { detail: data.data }));
               }
               // Fall through to progressive notification handler
+            }
+
+            // Dispatch document-parse status for the document detail page. Keyed on
+            // `document_id`, not `file_id` (backend/app/tasks/document_tasks.py:_notify),
+            // so it cannot be routed through the progressive-notification grouping below —
+            // that machinery keys every progressId off `data.data.file_id` throughout this
+            // file, and document_status genuinely doesn't have one. Same precedent as
+            // auto-label-status above: a raw window CustomEvent, consumed directly by the
+            // one page that needs it. Unlike that one, this RETURNS rather than falling
+            // through: an unmatched type lands in the final `else` below and becomes a
+            // persisted, visible notification-panel entry — exactly what the progressive
+            // path exists to avoid, and parsing emits several progress ticks per document.
+            if (data.type === 'document_status') {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('document-status', { detail: data.data }));
+              }
+              return;
             }
 
             // Handle progressive notifications

@@ -24,9 +24,11 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Page
 
+from tests.env_gate import gate_enabled
+
 # Skip entire module unless PKI E2E is explicitly enabled
 pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_PKI_E2E", "").lower() != "true",
+    not gate_enabled("RUN_PKI_E2E"),
     reason="PKI E2E tests require RUN_PKI_E2E=true and PKI overlay running",
 )
 

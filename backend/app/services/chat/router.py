@@ -61,7 +61,18 @@ INTENT_LOOKUP = "lookup"
 INTENT_TEMPORAL = "temporal"
 INTENT_SUMMARIZE = "summarize"
 INTENT_AGGREGATE = "aggregate"
-INTENTS: tuple[str, ...] = (INTENT_LOOKUP, INTENT_TEMPORAL, INTENT_SUMMARIZE, INTENT_AGGREGATE)
+#: W2.5. "What keeps coming up across our meetings" — most specific of the
+#: five, and flag-gated end to end (``chat.recurrence_enabled``): with the
+#: flag off, :func:`classify` never tests the recurrence lexicon at all, so
+#: this label is never produced and every existing route is byte-identical.
+INTENT_RECURRENCE = "recurrence"
+INTENTS: tuple[str, ...] = (
+    INTENT_LOOKUP,
+    INTENT_TEMPORAL,
+    INTENT_SUMMARIZE,
+    INTENT_AGGREGATE,
+    INTENT_RECURRENCE,
+)
 
 _SPECIFICITY: dict[str, int] = {name: rank for rank, name in enumerate(INTENTS)}
 
@@ -71,12 +82,18 @@ _SPECIFICITY: dict[str, int] = {name: rank for rank, name in enumerate(INTENTS)}
 TIER_CHUNK = "chunk"
 TIER_DIGEST = "digest"
 TIER_AGGREGATE = "aggregate"
+#: W2.5. The scope-wide, no-ranking recurrence detector
+#: (``aggregation_service.answer_recurrence``) — reads ``summary_data`` and
+#: ``file_facts.keyphrases`` across a bounded scope, the same "bounded scope,
+#: Postgres, no ranking" shape ``TIER_AGGREGATE`` already uses.
+TIER_RECURRENCE = "recurrence"
 
 TIERS_BY_INTENT: dict[str, tuple[str, ...]] = {
     INTENT_LOOKUP: (TIER_CHUNK,),
     INTENT_TEMPORAL: (TIER_CHUNK,),
     INTENT_SUMMARIZE: (TIER_DIGEST, TIER_CHUNK),
     INTENT_AGGREGATE: (TIER_AGGREGATE, TIER_CHUNK),
+    INTENT_RECURRENCE: (TIER_RECURRENCE, TIER_CHUNK),
 }
 
 #: Nouns that mean "a thing in this corpus". An aggregate head alone is not
@@ -126,10 +143,24 @@ _AGGREGATE_HEADS_SCOPED: tuple[tuple[str, str], ...] = (
 #: the sentence also contains the word "meetings", and requiring a second marker
 #: would send it to the ranking tier, which cannot enumerate. ``which-plural``
 #: is here because the plural corpus noun is inside its own pattern.
+#: W2.4. Distinct from ``who-most`` below: "who attended the most" is about
+#: SESSIONS (a title-scoped facet tally), "who talked the most" is about TALK
+#: TIME (``file_facts.facts['speakers']``) — different mechanisms, different
+#: answers, and this repo shipped the bug of answering the second question with
+#: the first mechanism. The two patterns are allowed to both fire on the same
+#: text ("who talked the most" also satisfies ``who-most``'s generic "the
+#: most" shape) — ``aggregation.choose_shape`` gives this one priority, which
+#: is also what keeps the flag-off fallback byte-identical to the pre-existing
+#: behaviour (see ``aggregation_service.answer_aggregation``).
 _AGGREGATE_HEADS_STANDALONE: tuple[tuple[str, str], ...] = (
     ("which-plural", rf"\bwhich {_CORPUS_NOUN_PLURAL}\b"),
     ("which-speakers", r"\bwhich (?:speakers?|people|participants?|attendees?)\b"),
     ("who-most", r"\bwho\b[^?]{0,60}\bthe most\b"),
+    (
+        "who-talked-most",
+        r"\bwho\b[^?]{0,60}\b(?:talked|spoke|speaking)\s+(?:the\s+)?(?:most|longest)\b"
+        r"|\bmost\s+talk(?:ing)?\s+time\b",
+    ),
 )
 
 #: Recording-level objects. The weak summarize markers below only count when the
@@ -144,6 +175,13 @@ _SUMMARIZE_STRONG: tuple[tuple[str, str], ...] = (
     ("summarize-verb", r"\b(?:summar(?:ize|ise|y|ies|isation|ization))\b"),
     ("recap", r"\b(?:recap|tl;?dr|synopsis|debrief|catch me up|brief me|rundown)\b"),
     ("key-points", r"\bkey (?:points?|takeaways?|themes?|decisions?)\b"),
+    # Fixed multiword artifact terms, STRONG for the same reason "key decisions"
+    # is: they name the extracted artifact list itself, not a topic inside the
+    # recording, so there is no reading of "what are the action items" that wants
+    # ranked excerpts instead of the per-file map. Measured: 6 of 6 AMI
+    # action-item questions routed to the chunk tier alone and reached full scope
+    # coverage 0 times, because nothing here matched them.
+    ("action-items", r"\b(?:action items?|follow[- ]ups?|next steps?)\b"),
 )
 
 #: Imperatives that make the whole question a summary request. Anchored at the
@@ -170,12 +208,54 @@ _SUMMARIZE_WEAK: tuple[tuple[str, str], ...] = (
     ("overview", r"\b(?:overview|high[- ]level|at a glance)\b"),
     ("main-topics", r"\bmain (?:topics?|themes?|points?)\b"),
     ("what-covered", r"\bwhat (?:was|were|got) (?:covered|discussed)\b"),
+    # Artifact nouns that are summary-shaped ONLY about a recording. WEAK, not
+    # STRONG, precisely because each is an ordinary lookup noun on its own:
+    # "what problems did the LCD have" and "what decisions did the PM make about
+    # the chip" are both lookups and must stay lookups. The discourse noun is the
+    # discriminator, exactly as it is for "overview" above.
+    #
+    # ``decisions`` is here as well as inside ``key-points`` above: that pattern
+    # requires the literal word "key", so the far commoner "what decisions were
+    # made across the meetings" matched nothing.
+    ("decisions", r"\bdecisions?\b"),
+    ("problems-concerns", r"\b(?:problems?|concerns?|issues?|blockers?|risks?)\b"),
 )
 
 #: ``today``/``yesterday`` are deliberately absent. In a question about a
 #: transcript they are far more often reported speech than a filter — "why were
 #: the thanks expressed to the House of Commons today" is a lookup — and they
 #: were the only temporal false positive in the first run.
+#: W2.5. STRONG markers only, deliberately — recurrence changes the retrieval
+#: shape entirely (a bounded, no-ranking, cross-file detector rather than a
+#: chunk search), so a weak/ambiguous marker misrouting a lookup here is a
+#: worse failure than the ``_SUMMARIZE_WEAK`` case, which still gets the
+#: chunk tier. Every pattern here names recurrence EXPLICITLY: "keeps coming
+#: up", "recurring", "a pattern/trend across meetings" — never a bare
+#: "again" or "repeat", which are common enough in ordinary transcript
+#: questions ("can you repeat that") to be a false-positive magnet.
+_RECURRENCE_STRONG: tuple[tuple[str, str], ...] = (
+    ("recurring", r"\brecurr(?:ing|ed|ence|ent)\b"),
+    (
+        "keeps-coming-up",
+        r"\bkeeps? (?:coming up|showing up|being (?:mentioned|brought up|raised))\b",
+    ),
+    (
+        "comes-up-repeatedly",
+        r"\bcomes? up (?:repeatedly|again and again|over and over|"
+        r"(?:in|across) multiple (?:meetings|recordings|calls|sessions))\b",
+    ),
+    ("common-theme", r"\b(?:common|recurring) (?:theme|thread|pattern)s?\b"),
+    (
+        "pattern-across",
+        r"\b(?:pattern|trend)s? across (?:meetings|recordings|calls|sessions|conversations)\b",
+    ),
+    (
+        "repeated-items",
+        r"\brepeated (?:action items?|topics?|themes?|issues?|decisions?|requests?)\b",
+    ),
+    ("same-issue-again", r"\bsame (?:issue|topic|problem|question) (?:again|every time)\b"),
+)
+
 _TEMPORAL_MARKERS: tuple[tuple[str, str], ...] = (
     ("when-did", r"\bwhen (?:did|was|were|will|has|have)\b"),
     ("since", r"\bsince\b"),
@@ -243,6 +323,7 @@ _COMPILED: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
     "summarize_weak": tuple((n, re.compile(p, re.IGNORECASE)) for n, p in _SUMMARIZE_WEAK),
     "discourse_noun": ((("discourse-noun", re.compile(rf"\b{_DISCOURSE_NOUN}\b", re.I))),),
     "temporal": tuple((n, re.compile(p, re.IGNORECASE)) for n, p in _TEMPORAL_MARKERS),
+    "recurrence": tuple((n, re.compile(p, re.IGNORECASE)) for n, p in _RECURRENCE_STRONG),
 }
 
 
@@ -291,14 +372,67 @@ class Route:
     #: present in the transcript, and answering "not mentioned" from a digest is
     #: the silent-wrong-answer shape this epic keeps hitting.
     literal: bool = False
+    #: The active speaker scope this turn was asked under, exactly as passed to
+    #: :func:`route`. Carried here — not just consumed for
+    #: :func:`_apply_structure`'s digest-removal check — so a Postgres-backed
+    #: aggregation shape (``aggregation_service._run_speaker_stats``), which
+    #: never sees ``service.py``'s original ``speakers`` argument, can still
+    #: narrow a per-speaker answer to the one name already in scope with no new
+    #: parameter threaded through ``answer_aggregation``.
+    speakers: tuple[str, ...] = ()
+    #: W2.2. An AXIS, not a fifth intent: whether ``chat.speaker_resolver``
+    #: found a UNIQUE speaker mention in the question text paired with a
+    #: speaker-verb frame ("what did Dana say about pricing"). Orthogonal to
+    #: ``intent``/``tiers`` — it never changes either, and it is not consulted
+    #: by :func:`_apply_structure`, which only ever narrows tiers for the
+    #: EXPLICIT, hard ``speakers`` scope above. A resolved mention is soft: it
+    #: is evidence for a PARALLEL retrieval leg the caller may add, never for
+    #: removing or narrowing what the existing tiers already return — so
+    #: unlike ``speakers``, this field earns no place in ``_apply_structure``.
+    speaker_focus: bool = False
 
     @property
     def wants_digest(self) -> bool:
         return TIER_DIGEST in self.tiers
 
     @property
+    def wants_recurrence(self) -> bool:
+        """W2.5. Whether this turn asked for the cross-meeting recurrence block.
+
+        Derived from ``intent`` alone, exactly like :attr:`wants_digest` — the
+        flag gate lives upstream, in :func:`route` (which never produces
+        ``INTENT_RECURRENCE`` when ``chat.recurrence_enabled`` is off), so this
+        property does not need its own flag check to stay byte-identical.
+        """
+        return self.intent == INTENT_RECURRENCE
+
+    @property
     def wants_aggregate(self) -> bool:
         return TIER_AGGREGATE in self.tiers
+
+    @property
+    def wants_speaker_digest_map(self) -> bool:
+        """W2.3. A speaker-scoped summarize turn: the closed routing gap.
+
+        ``_apply_structure`` removes :data:`TIER_DIGEST` whenever an explicit
+        speaker filter is active, because the INDEXED digest genuinely cannot
+        answer "summarize what Alice said" — a digest carries no single-valued
+        speaker field. That removal is correct and stays; what was missing is
+        the fallback it should have had: a per-speaker Postgres map
+        (``mapreduce.scope_speaker_digest_hits``) that filters digest
+        *sentences* by their own per-sentence speaker, which the indexed
+        document cannot do but the stored JSONB can. Without this property
+        "summarize what Alice said" was structurally impossible — the digest
+        tier was gone and nothing replaced it — even though the data to answer
+        it exists.
+
+        Derived, not stored: true exactly when a summarize turn's digest tier
+        was removed for the SPEAKER reason specifically, not the literal-quote
+        one (:attr:`literal`) — a quoted phrase still has no sentence-level
+        speaker index to fall back to, so that case is left exactly as it was.
+        ``retrieve_digests`` (the ranked leg) stays untouched either way.
+        """
+        return self.intent == INTENT_SUMMARIZE and bool(self.speakers) and not self.literal
 
     def as_metadata(self) -> dict[str, Any]:
         """The ``meta.intent`` payload persisted on the assistant message."""
@@ -312,6 +446,10 @@ class Route:
             payload["literal"] = True
         if self.temporal is not None and not self.temporal.is_empty:
             payload["temporal"] = self.temporal.as_metadata()
+        if self.speaker_focus:
+            payload["speaker_focus"] = True
+        if self.wants_speaker_digest_map:
+            payload["speaker_digest_map"] = True
         return payload
 
 
@@ -359,19 +497,30 @@ def extract_temporal(text: str) -> TemporalHint | None:
     return None
 
 
-def classify(text: str) -> tuple[str, tuple[str, ...]]:
+def classify(text: str, *, recurrence_enabled: bool = False) -> tuple[str, tuple[str, ...]]:
     """Label one query string from the lexicon alone.
 
-    Precedence is ``aggregate`` > ``summarize`` > ``temporal`` > ``lookup``, and
-    it is not arbitrary. An aggregation with a date ("how many meetings in March
-    discussed X") is an aggregation whose filter happens to be a date — the hint
-    rides along on :class:`Route` — whereas labelling it ``temporal`` would send
-    a counting question to a ranking tier that cannot count. Summarize outranks
-    temporal for the same reason: "recap last month's calls" is a summary over a
-    date range, not a date question.
+    Precedence is ``recurrence`` > ``aggregate`` > ``summarize`` > ``temporal`` >
+    ``lookup``, and it is not arbitrary. Recurrence outranks aggregate because
+    its markers are the most specific in the lexicon (see
+    ``_RECURRENCE_STRONG``'s docstring) and a recurrence question phrased as a
+    count ("how many times has budget come up across our meetings") is still
+    fundamentally about the cross-file pattern, not a single number. An
+    aggregation with a date ("how many meetings in March discussed X") is an
+    aggregation whose filter happens to be a date — the hint rides along on
+    :class:`Route` — whereas labelling it ``temporal`` would send a counting
+    question to a ranking tier that cannot count. Summarize outranks temporal
+    for the same reason: "recap last month's calls" is a summary over a date
+    range, not a date question.
 
     Args:
         text: The question.
+        recurrence_enabled: ``chat.recurrence_enabled``. When ``False`` — the
+            default — the recurrence lexicon is never tested at all, so this
+            function cannot return ``INTENT_RECURRENCE`` and every other
+            precedence decision is exactly what it was before this label
+            existed. This is what makes the flag gate the PATTERNS, not just
+            the shape built from them.
 
     Returns:
         ``(intent, signals)`` — the label and the pattern names that produced it.
@@ -380,6 +529,11 @@ def classify(text: str) -> tuple[str, tuple[str, ...]]:
     clean = " ".join(str(text or "").split())
     if not clean:
         return INTENT_LOOKUP, ()
+
+    if recurrence_enabled:
+        recurrence = _fired(clean, "recurrence")
+        if recurrence:
+            return INTENT_RECURRENCE, recurrence
 
     standalone = _fired(clean, "aggregate_standalone")
     if standalone:
@@ -462,6 +616,8 @@ def route(
     rewritten: str | None = None,
     llm_intent: str | None = None,
     speakers: list[str] | None = None,
+    speaker_focus: bool = False,
+    recurrence_enabled: bool = False,
 ) -> Route:
     """Decide the tiers for one turn.
 
@@ -481,20 +637,37 @@ def route(
             but it is a reasonable tiebreak for a query with no signal at all.
         speakers: Active speaker scope, which narrows the tiers (see
             :func:`_apply_structure`).
+        speaker_focus: W2.2. Whether ``chat.speaker_resolver`` found a unique
+            mention plus a speaker-verb frame. Carried onto :attr:`Route.speaker_focus`
+            unchanged — this function does not derive it, only records it,
+            since resolving a mention needs the roster (Postgres) and this
+            module loads nothing and calls nothing.
+        recurrence_enabled: W2.5. ``chat.recurrence_enabled``. Threaded into
+            every :func:`classify` call AND into the LLM-tiebreak branch below
+            — both are how a question could reach ``INTENT_RECURRENCE``, and
+            flag-off must close both, not just the lexicon, or a rewrite's
+            free-text ``INTENT: recurrence`` line could produce the label with
+            the flag off and the "gates the patterns AND the shape" contract
+            would be false for that one path.
 
     Returns:
         A :class:`Route`. Always includes :data:`TIER_CHUNK`.
     """
     original = " ".join(str(question or "").split())
-    intent, signals = classify(original)
+    intent, signals = classify(original, recurrence_enabled=recurrence_enabled)
     source = "rules" if signals else "default"
 
     if rewritten and rewritten.strip() and rewritten.strip() != original:
-        alt_intent, alt_signals = classify(rewritten)
+        alt_intent, alt_signals = classify(rewritten, recurrence_enabled=recurrence_enabled)
         if _SPECIFICITY[alt_intent] > _SPECIFICITY[intent]:
             intent, signals, source = alt_intent, alt_signals, "rules:rewritten"
 
-    if not signals and llm_intent in _SPECIFICITY and llm_intent != INTENT_LOOKUP:
+    if (
+        not signals
+        and llm_intent in _SPECIFICITY
+        and llm_intent != INTENT_LOOKUP
+        and (llm_intent != INTENT_RECURRENCE or recurrence_enabled)
+    ):
         intent, signals, source = llm_intent, ("llm-intent-line",), "llm"
 
     temporal = extract_temporal(original)
@@ -515,4 +688,6 @@ def route(
         temporal=temporal,
         source=source,
         literal=literal,
+        speakers=tuple(speakers) if speakers else (),
+        speaker_focus=speaker_focus,
     )

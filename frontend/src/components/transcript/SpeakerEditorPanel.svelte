@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import { slide } from 'svelte/transition';
   import { getSpeakerColor } from '$lib/utils/speakerColors';
   import SpeakerMerge from '$components/SpeakerMerge.svelte';
@@ -12,6 +12,52 @@
   export let savingSpeakers: boolean = false;
 
   const dispatch = createEventDispatcher();
+
+  // Rename-propagation progress (issue W2.3a). This panel is normally a thin
+  // presentational child — no API calls, no stores-as-state (see this folder's
+  // CLAUDE.md) — but the digest-regeneration a rename triggers server-side
+  // finishes on its own schedule with no request/response the coordinator can
+  // hand down as a prop, only a WebSocket completion event
+  // (`speaker_rename_propagation` -> `speaker-rename-propagation` window
+  // event, `$stores/websocket`). Listening for it here, scoped to "did I just
+  // save", is the narrow exception rather than threading a new prop through
+  // TranscriptDisplay for a purely informational status line.
+  let propagationPending = false;
+  let propagationTimer: ReturnType<typeof setTimeout> | undefined;
+  const PROPAGATION_TIMEOUT_MS = 20000;
+  let wasSaving = savingSpeakers;
+
+  // The transition check and the bookkeeping assignment must share ONE
+  // reactive block: a separate `$: wasSaving = savingSpeakers` block would be
+  // ordered by Svelte's dependency sort to run BEFORE this one (this block
+  // reads `wasSaving`), so the "previous" value would already have been
+  // overwritten with the current one by the time the comparison ran.
+  $: {
+    if (wasSaving && !savingSpeakers) {
+      // The save request just completed — the backend has committed the
+      // rename and queued digest regeneration in the background by now.
+      propagationPending = true;
+      clearTimeout(propagationTimer);
+      propagationTimer = setTimeout(() => {
+        propagationPending = false;
+      }, PROPAGATION_TIMEOUT_MS);
+    }
+    wasSaving = savingSpeakers;
+  }
+
+  function handleRenamePropagation(): void {
+    propagationPending = false;
+    clearTimeout(propagationTimer);
+  }
+
+  onMount(() => {
+    window.addEventListener('speaker-rename-propagation', handleRenamePropagation);
+  });
+
+  onDestroy(() => {
+    window.removeEventListener('speaker-rename-propagation', handleRenamePropagation);
+    clearTimeout(propagationTimer);
+  });
 
   // Create a reactive key based on speakerList to force re-renders of speaker sections
   // This ensures Edit Speakers and Merge Speakers sections update when speakers change
@@ -156,6 +202,19 @@
               </span>
             {/if}
             <div class="speaker-input-wrapper">
+            <!--
+              Deliberately NO `on:focus` auto-fill here. This field used to write
+              `speaker.suggested_name` into `speaker.display_name` the moment the
+              input received focus whenever `is_high_confidence` was true — which
+              fires on nothing more than tabbing or clicking into the field to
+              look at it, not on an affirmative accept. Suggestions (LLM,
+              profile-match, metadata) are never auto-applied — only the explicit
+              chips below (`suggestions-dropdown`) or a same-name edit that Save
+              commits do that, both of which are the one-click accept the rule
+              still allows. The `suggested-high`/`suggested-medium` border colors
+              and the greyed-out placeholder are enough of a visual hint without
+              silently writing a value nobody clicked to accept.
+            -->
             <input
               type="text"
               bind:value={speaker.display_name}
@@ -168,22 +227,22 @@
                 // Dispatch event to notify parent of speaker name change
                 dispatch('speakerNameChanged', { speakerId: speaker.uuid, newName: speaker.display_name });
               }}
-              on:focus={() => {
-                if (speaker.is_high_confidence && speaker.suggested_name) {
-                  speaker.display_name = speaker.suggested_name;
-                  // Dispatch event after auto-fill
-                  dispatch('speakerNameChanged', { speakerId: speaker.uuid, newName: speaker.display_name });
-                }
-              }}
             />
             {#if speaker.show_profile_badge}
-              <div class="speaker-profile-badge" title={$t('transcript.speakerHasProfile')}>
+              <!-- Links to the speakers-page profile view rather than being a
+                   dead-end badge — a labeled speaker's cross-recording profile
+                   (occurrences, avatar, verified voiceprint) lives there, not here. -->
+              <a
+                class="speaker-profile-badge"
+                href="/speakers?tab=profiles"
+                title={$t('transcript.speakerHasProfile')}
+              >
                 <svg class="profile-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                   <circle cx="12" cy="7" r="4"></circle>
                 </svg>
                 <span class="profile-text">{$t('transcript.profile')}</span>
-              </div>
+              </a>
             {/if}
             </div>
           </div>
@@ -268,7 +327,15 @@
                             class:high-confidence={speaker.confidence >= 0.75}
                             class:medium-confidence={speaker.confidence >= 0.5 && speaker.confidence < 0.75}
                             class:low-confidence={speaker.confidence < 0.5}
-                            on:click={() => { speaker.display_name = speaker.suggested_name; }}
+                            on:click={() => {
+                              // Unlike the metadata/profile chips beside it, this one only
+                              // mutated `speaker.display_name` in place and never told the
+                              // parent — `speakerNamesChanged` never flipped true, so Save
+                              // stayed disabled until the user separately typed into the
+                              // input. One click was supposed to be enough.
+                              speaker.display_name = speaker.suggested_name;
+                              dispatch('speakerNameChanged', { speakerId: speaker.uuid, newName: speaker.suggested_name });
+                            }}
                             title={speaker.suggestion_source === 'llm_analysis' ? $t('transcript.aiSuggestedBasedOnContent') : speaker.suggestion_source === 'profile_embedding' ? $t('transcript.aiSuggestedBasedOnProfile') : $t('transcript.aiSuggestedBasedOnSimilarity')}
                           >
                             {#if speaker.suggestion_source === 'llm_analysis'}
@@ -299,6 +366,13 @@
                               <span class="alignment-dot mismatch" title={$t('speaker.genderConflictsHint')}></span>
                             {/if}
                             {speaker.suggested_name}
+                            <span class="chip-source-label">
+                              {speaker.suggestion_source === 'llm_analysis'
+                                ? $t('transcript.sourceContentAnalysis')
+                                : speaker.suggestion_source === 'profile_embedding'
+                                  ? $t('transcript.sourceVoiceProfile')
+                                  : $t('transcript.sourceVoiceSimilarity')}
+                            </span>
                             <span class="chip-confidence">{Math.round(speaker.confidence * 100)}%</span>
                           </button>
                         </div>
@@ -441,6 +515,16 @@
           {$t('transcript.saveSpeakerNames')}
         {/if}
       </button>
+      {#if propagationPending}
+        <span
+          class="propagation-pending"
+          data-testid="rename-propagation-pending"
+          title={$t('speakers.renamePropagationPending')}
+        >
+          <span class="propagation-pending-spinner" aria-hidden="true"></span>
+          {$t('speakers.renamePropagationPending')}
+        </span>
+      {/if}
     </div>
   {:else}
     <p>{$t('transcript.noSpeakersFound')}</p>
@@ -705,6 +789,14 @@
     white-space: nowrap;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
     flex-shrink: 0; /* Don't shrink the badge */
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.15s ease;
+  }
+
+  .speaker-profile-badge:hover {
+    background: #d97706;
+    transform: scale(1.03);
   }
 
   .profile-icon {
@@ -765,6 +857,34 @@
 
   .save-speakers-button .spinner {
     margin-right: 0.5rem;
+  }
+
+  .propagation-pending {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-left: 0.75rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    background-color: rgba(var(--primary-color-rgb), 0.1);
+    color: var(--primary-color);
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+
+  .propagation-pending-spinner {
+    width: 0.8rem;
+    height: 0.8rem;
+    border: 2px solid rgba(var(--primary-color-rgb), 0.3);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: propagation-pending-spin 0.7s linear infinite;
+  }
+
+  @keyframes propagation-pending-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   /* Unsaved changes indicator (yellow dot) - matches AI Prompts modal */
@@ -1151,6 +1271,17 @@
     opacity: 0.7;
     text-transform: capitalize;
     font-style: italic;
+  }
+
+  /* The suggestion's source, always visible on the chip — not only in its
+     hover tooltip. Distinguishing "content analysis" from "voice profile"
+     from "voice similarity" matters for deciding whether to trust a
+     suggestion, and a tooltip is invisible to touch and keyboard use. */
+  .chip-source-label {
+    font-size: 0.62rem;
+    opacity: 0.85;
+    font-style: italic;
+    white-space: nowrap;
   }
 
   .alignment-dot {

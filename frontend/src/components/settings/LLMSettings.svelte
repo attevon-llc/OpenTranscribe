@@ -19,6 +19,7 @@
   let testing = false;
   /** uuid of the config whose reasoning probe is in flight, else null. */
   let probingReasoning: string | null = null;
+  let probingWindow: string | null = null;
 
   let currentSettings: UserLLMSettings | null = null;
   let supportedProviders: ProviderDefaults[] = [];
@@ -295,6 +296,45 @@
       toastStore.error(`${config.name}: ${errorMsg}`, 8000);
     } finally {
       probingReasoning = null;
+    }
+  }
+
+  /**
+   * Discover the model's maximum context window from its own server (#533).
+   *
+   * `max_tokens` IS the context window the app drives the model at, and its
+   * 8192 default silently caps a 60k/256k model — nothing else in the UI says
+   * the window is the binding constraint on how much transcript the model
+   * sees. One metadata call; the server records the measurement and reports
+   * how it compares to this configuration.
+   */
+  async function probeContextWindow(config: UserLLMSettings): Promise<void> {
+    probingWindow = config.uuid;
+
+    try {
+      const result = await LLMSettingsApi.probeContextWindow(config.uuid);
+      if (result.status === 'measured' && result.relation) {
+        const params = {
+          window: result.context_window ?? 0,
+          configured: result.configured_max_tokens ?? 0
+        };
+        const message = $t(`settings.llmProvider.contextWindow.measured_${result.relation}`, params);
+        if (result.relation === 'match') {
+          toastStore.success(`${config.name}: ${message}`, 8000);
+        } else {
+          // Both mismatch directions are actionable, not celebratory: 'below'
+          // wastes the model, 'above' breaks requests.
+          toastStore.warning(`${config.name}: ${message}`, 10000);
+        }
+      } else {
+        const message = $t(`settings.llmProvider.contextWindow.${result.status}`);
+        toastStore.info(`${config.name}: ${message}`, 8000);
+      }
+    } catch (err: unknown) {
+      const errorMsg = getErrorMessage(err, $t('settings.llmProvider.testFailed'));
+      toastStore.error(`${config.name}: ${errorMsg}`, 8000);
+    } finally {
+      probingWindow = null;
     }
   }
 
@@ -610,6 +650,21 @@
                     <path d="M9 18h6"/>
                     <path d="M10 22h4"/>
                     <path d="M12 2a7 7 0 0 0-4 12.7V18h8v-3.3A7 7 0 0 0 12 2z"/>
+                  </svg>
+                </button>
+
+                <button
+                  class="test-connection-button"
+                  on:click={() => probeContextWindow(config)}
+                  disabled={probingWindow !== null}
+                  title={$t('settings.llmProvider.probeContextWindow')}
+                  data-testid="llm-probe-context-window"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="15 3 21 3 21 9"/>
+                    <polyline points="9 21 3 21 3 15"/>
+                    <line x1="21" y1="3" x2="14" y2="10"/>
+                    <line x1="3" y1="21" x2="10" y2="14"/>
                   </svg>
                 </button>
 

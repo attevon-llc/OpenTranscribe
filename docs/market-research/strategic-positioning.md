@@ -164,15 +164,24 @@ Current open GitHub issues map directly onto the competitive gaps above:
 
 ## What to Build, In Priority Order
 
+> **Stale as of this table's original May 2026 writing — refreshed August 2026.** RAG/chat (#52),
+> watch-folder auto-ingest (#26), enterprise auth breadth, and content redaction have since
+> **shipped** (v0.5.0) and are removed from this "to build" list; see `market-and-roadmap.md`'s
+> "Shipped since this roadmap was first written" for what they actually delivered. This table now
+> reflects what's still open, refreshed against `gh issue list` and cross-checked against
+> `CHANGELOG.md`.
+
 | Priority | Feature | Issue | Competitive unlock |
 |---|---|---|---|
-| 1 | Recall.ai integration (meeting bot capture) | new | Compete with Otter/Fireflies/Grain |
-| 2 | RAG / Chat over transcripts | #52 | Category-defining, no competitor has it |
-| 3 | Watch folder / auto-ingest | #26 | Passive pipelines, broadcast/legal/call center |
-| 4 | Live transcription + diarization | #69 | Direct meeting notes competitor |
-| 5 | HIPAA / SOC 2 / GDPR certification | #98 | Enterprise procurement unlock |
-| 6 | Apple Silicon (MLX-Whisper) | #48 | Mac Studio deployment, prosumer self-host |
-| 7 | Analytics dashboard | #20 | Stickiness, reporting for team accounts |
+| 1 | Documents as first-class corpus members + speaker-attributed cross-referencing | #362 (in progress) / follow-up TBD | Category-defining — no competitor combines diarized audio, document RAG, and cross-modal speaker attribution; see `market-and-roadmap.md`'s "Full-Product Vision, Revised" |
+| 1 | Corpus-scale RAG correctness (summary tier, query routing, aggregation, model-tier parity, eval harness) | #383 (orchestrated by #403) | Makes #362's breadth actually correct at scale, not just present |
+| 2 | Recall.ai integration (meeting bot capture) | #365 (plan + gist published) | Compete with Otter/Fireflies/Grain |
+| 3 | Live transcription + diarization | #69 | Direct meeting notes competitor |
+| 4 | HIPAA / SOC 2 / GDPR certification | #98 | Enterprise procurement unlock |
+| 5 | Apple Silicon (MLX-Whisper) | #48 | Mac Studio deployment, prosumer self-host |
+| 5 | NVIDIA NeMo local ASR engine (Parakeet/Canary) | #366 | GPU-accuracy alternative to WhisperX for CUDA deployments |
+| 5 | Tauri desktop app | #283 | New buyer: individual/prosumer, zero-infrastructure — not a self-hosted Compose deployment |
+| 6 | Analytics dashboard | #20 | Stickiness, reporting for team accounts |
 
 ---
 

@@ -107,6 +107,33 @@ export interface ReasoningCapability {
   detail: string;
 }
 
+/**
+ * A model's MEASURED maximum context window (issue #533).
+ *
+ * Only `'measured'` carries a `context_window`. `relation` compares it to the
+ * configuration's `max_tokens` — which IS the context window the app drives
+ * the model at: `'below'` means chat is leaving context (and transcript
+ * excerpts) unused; `'above'` means requests will fail or silently truncate.
+ * Every other status leaves the configured value standing — the server never
+ * guesses.
+ */
+export type ContextWindowStatus =
+  | 'unknown'
+  | 'unsupported'
+  | 'not_found'
+  | 'unreachable'
+  | 'measured';
+
+export interface ContextWindowCapability {
+  status: ContextWindowStatus;
+  discoverable: boolean;
+  context_window?: number | null;
+  configured_max_tokens?: number | null;
+  relation?: 'below' | 'above' | 'match' | null;
+  probed_at?: string | null;
+  detail: string;
+}
+
 export interface UserLLMConfigurationsList {
   configurations: UserLLMSettings[];
   shared_configurations: UserLLMSettings[];
@@ -256,6 +283,27 @@ export class LLMSettingsApi {
   static async probeReasoningCapability(configId: string): Promise<ReasoningCapability> {
     const response = await axiosInstance.post(
       `${this.BASE_PATH}/config/${configId}/reasoning-probe`
+    );
+    return response.data;
+  }
+
+  /**
+   * Read the recorded context-window measurement for a configuration.
+   * Never dials the provider.
+   */
+  static async getContextWindow(configId: string): Promise<ContextWindowCapability> {
+    const response = await axiosInstance.get(`${this.BASE_PATH}/config/${configId}/context-window`);
+    return response.data;
+  }
+
+  /**
+   * Discover and record the model's maximum context window. One metadata call
+   * (`/v1/models` or `/api/show`) against the configured endpoint — cheap, but
+   * still an explicit user action, never automatic.
+   */
+  static async probeContextWindow(configId: string): Promise<ContextWindowCapability> {
+    const response = await axiosInstance.post(
+      `${this.BASE_PATH}/config/${configId}/context-window-probe`
     );
     return response.data;
   }

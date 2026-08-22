@@ -85,8 +85,11 @@ def test_failed_load_is_retried_after_the_cooldown(monkeypatch):
     assert reranker_mod.get_reranker() is None
     assert calls["n"] == 1
 
-    # Simulate the cooldown elapsing rather than sleeping through it.
-    reranker_mod._retry_after = 0.0
+    # Simulate the cooldown elapsing rather than sleeping through it. `_retry_after`
+    # is keyed per model name (#453/ML1 — the multilingual arm needs its own
+    # independent cooldown), so clearing the whole dict is the equivalent of the
+    # single float this used to reset to 0.0.
+    reranker_mod._retry_after.clear()
 
     assert reranker_mod.get_reranker() is encoder, "should recover once the model appears"
     assert calls["n"] == 2

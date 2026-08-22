@@ -11,6 +11,7 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from dataclasses import field
+from typing import TYPE_CHECKING
 from typing import Any
 
 from nltk.stem import SnowballStemmer
@@ -32,7 +33,30 @@ from app.services.search.indexing_service import ensure_search_pipeline_exists
 from app.services.search.snippet_redaction import MASKABLE_CATEGORIES
 from app.services.search.snippet_redaction import mask_snippets
 
+if TYPE_CHECKING:  # pragma: no cover - import cost paid only by type checkers
+    from app.services.redaction.config import EffectiveRedactionConfig
+
 logger = logging.getLogger(__name__)
+
+
+class _NotGiven:
+    """Sentinel type for `_redact_snippets`'s `cfg` param, distinct from a real
+
+    (already-resolved) `None`: `None` means "resolution was attempted and
+    failed" (fail closed), while this type means "the caller did not resolve it
+    at all, do it here" — the original self-resolving contract, kept for any
+    caller of `_redact_snippets` other than `search()`'s own cache-key flow. A
+    dedicated class (rather than a bare `object()`) so the parameter's type
+    hint can name it explicitly instead of widening to `Any`.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<NOT_GIVEN>"
+
+
+_NOT_GIVEN = _NotGiven()
 
 #: What a snippet becomes when its policy cannot be applied. Withholding the
 #: preview is a fail-closed choice: an unmasked one is a policy bypass, and the
@@ -466,6 +490,77 @@ def _make_cache_key(**kwargs) -> str:
     return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()
 
 
+def _resolve_redaction_config_for_cache(user_id: int) -> "EffectiveRedactionConfig | None":
+    """Resolve the requesting user's redaction policy BEFORE the cache lookup.
+
+    Must run here rather than only inside :meth:`_redact_snippets` — the config
+    this returns is exactly what determines whether the response about to be
+    cached is masked, so the cache key has to name it (see
+    :func:`_redaction_policy_fingerprint`). Resolving it only at snippet-mask
+    time, after the cache lookup, was the #86-adjacent gap: for up to
+    ``SEARCH_CACHE_TTL_SECONDS`` after a user flips their redaction policy, a
+    repeat of an already-cached query kept serving whichever masking state won
+    the race to populate that key first — user A's masked page to user B under
+    a different policy, or vice versa, since ``user_id`` alone was already in
+    the key but the POLICY driving the masking was not.
+
+    Args:
+        user_id: The requesting user (matches ``_redact_snippets``'s subject).
+
+    Returns:
+        The effective config, or ``None`` when it could not be resolved at all
+        (DB unreachable, etc.) — never raises, so a config failure degrades to
+        the "unresolvable" cache bucket rather than breaking the search request.
+    """
+    from app.db.session_utils import session_scope
+    from app.services.redaction.config import resolve_effective_config
+
+    try:
+        with session_scope() as db:
+            return resolve_effective_config(db, user_id)
+    except Exception:  # noqa: BLE001 — a config read must not break search
+        logger.exception("Redaction config unavailable while resolving the search cache key")
+        return None
+
+
+def _redaction_policy_fingerprint(cfg: "EffectiveRedactionConfig | None") -> str:
+    """A short deterministic string naming exactly the masking state a cached page holds.
+
+    Folded into the cache key so two requesting users under different redaction
+    policies — or the same user before and after a policy change — can never be
+    served each other's cached snippets. Scoped to the fields that can actually
+    change :func:`snippet_redaction.mask_snippets`'s output on THIS surface:
+    only ``pii``/``profanity``/``custom`` are maskable here at all (see
+    ``MASKABLE_CATEGORIES`` — ``toxicity`` produces no spans on this path), and
+    ``mask_snippets`` always forces ``style="label"`` for a preview regardless
+    of the user's own style preference, so neither ``toxicity_threshold`` nor
+    ``style`` can move the rendered snippet and neither is in the fingerprint.
+
+    An unresolvable config gets its own fixed bucket rather than reusing any
+    other value, so it can never collide with a real policy's fingerprint.
+
+    Args:
+        cfg: The resolved config, or None when it could not be resolved.
+
+    Returns:
+        A short opaque string safe to fold into `_make_cache_key`'s kwargs.
+    """
+    if cfg is None:
+        return "unresolvable"
+    active_categories = (
+        sorted(set(cfg.enabled_categories) & MASKABLE_CATEGORIES) if cfg.enabled else []
+    )
+    payload = {
+        "enabled": bool(active_categories),
+        "categories": active_categories,
+        "pii_entities": sorted(cfg.pii_entities),
+        "custom_words": sorted(cfg.custom_words),
+        "allowlist": sorted(cfg.allowlist),
+    }
+    raw = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()
+
+
 def _get_cached_response(cache_key: str) -> SearchResponse | None:
     """Get a cached response if it exists and hasn't expired."""
     with _search_cache_lock:
@@ -533,6 +628,47 @@ def _append_range_filter(
     if lte_value is not None:
         range_clause["lte"] = lte_value
     filters.append({"range": {field: range_clause}})
+
+
+#: Coarse buckets the SPA's ``file_type`` filter sends today, mapped to the MIME
+#: family prefix that actually appears in the indexed ``content_type`` field
+#: (``audio/mpeg``, ``video/mp4``, ...). See :func:`_file_type_filter_clause`.
+_FILE_TYPE_MIME_PREFIXES: dict[str, str] = {"audio": "audio/", "video": "video/"}
+
+
+def _file_type_filter_clause(file_type: list[str]) -> dict[str, Any]:
+    """Match ``content_type`` against coarse file-type filters (issue #463 lane).
+
+    ``content_type`` stores a FULL MIME type — ``audio/mpeg``, ``video/mp4`` — but
+    ``/api/search``'s ``file_type`` query param documents itself as accepting
+    ``audio``/``video`` and that is exactly what the SPA sends. The filter this
+    replaced, ``{"terms": {"content_type": file_type}}``, compares the literal
+    string ``"audio"`` against ``"audio/mpeg"``: it can never match, so every
+    file-type filter ever applied silently returned zero results. It went
+    unnoticed because the filter is normally combined with a text query that
+    still matches plenty on its own — a filter that excludes everything and a
+    filter that was never applied look identical from the result page.
+
+    Each requested value becomes a ``prefix`` match on its MIME family. A value
+    that is not one of the two known coarse buckets is treated as a literal MIME
+    string/prefix instead of being dropped, so a caller that already has a full
+    MIME type (``audio/mpeg``) still gets an exact match rather than silently
+    losing the filter a second way.
+
+    Args:
+        file_type: Non-empty list of coarse buckets and/or literal MIME values.
+
+    Returns:
+        A ``bool``/``should`` clause suitable for a ``filter`` array entry.
+    """
+    should: list[dict[str, Any]] = []
+    for value in file_type:
+        prefix = _FILE_TYPE_MIME_PREFIXES.get(value.lower())
+        if prefix:
+            should.append({"prefix": {"content_type": prefix}})
+        else:
+            should.append({"term": {"content_type": value}})
+    return {"bool": {"should": should, "minimum_should_match": 1}}
 
 
 def ensure_fusion_pipeline(fusion: FusionConfig | None = None) -> str:
@@ -682,6 +818,17 @@ class HybridSearchService:
         start_time = time.time()
         page_size = min(page_size, SEARCH_MAX_PAGE_SIZE)
 
+        # Redaction policy resolved BEFORE the cache lookup, not after (#86-
+        # adjacent fix): the response this method is about to cache gets masked
+        # under this policy, so the cache key must name it. Resolving it only at
+        # `_redact_snippets` time — the pre-fix behaviour — meant a policy change
+        # (a user flips masking, or the admin floor changes) took up to
+        # `SEARCH_CACHE_TTL_SECONDS` to take effect on a repeated query, and two
+        # policies could collide on one key if `user_id` were ever reused for a
+        # tenant-shared cache in the future.
+        redaction_cfg = _resolve_redaction_config_for_cache(user_id)
+        policy_fingerprint = _redaction_policy_fingerprint(redaction_cfg)
+
         # Check cache
         cache_key = _make_cache_key(
             query=query,
@@ -706,6 +853,7 @@ class HybridSearchService:
             organization_id=organization_id,
             file_uuid=file_uuid,
             fusion_pipeline=search_pipeline_id(fusion),
+            redaction_policy=policy_fingerprint,
         )
         cached = _get_cached_response(cache_key)
         if cached:
@@ -777,8 +925,13 @@ class HybridSearchService:
 
         # Read-time content redaction of snippets, for whichever of PII / profanity /
         # custom words this user's policy masks. Applied before caching so the
-        # per-user cache (cache_key includes user_id) holds the masked version.
-        self._redact_snippets(result, user_id)
+        # cache (keyed on user_id AND the policy fingerprint above) holds the
+        # masked version. `redaction_cfg` is the SAME resolution used for the
+        # cache key above — passed through rather than re-resolved, so the
+        # config that decided the key is provably the config that did the
+        # masking (one DB round trip, not two, and no window for the two to
+        # silently disagree).
+        self._redact_snippets(result, user_id, redaction_cfg)
 
         # Cache the response — but NOT if it fell back to BM25-only due to
         # a transient error, so the next request retries hybrid properly.
@@ -789,7 +942,12 @@ class HybridSearchService:
 
         return result
 
-    def _redact_snippets(self, result: SearchResponse, user_id: int) -> None:
+    def _redact_snippets(
+        self,
+        result: SearchResponse,
+        user_id: int,
+        cfg: "EffectiveRedactionConfig | None | _NotGiven" = _NOT_GIVEN,
+    ) -> None:
         """Mask this page's snippets under the requesting user's redaction policy.
 
         Snippets come out of the ``transcript_chunks`` index, which stores
@@ -804,19 +962,35 @@ class HybridSearchService:
         batching and the detector gate are all its problem. This method owns two
         decisions:
 
-        - **Where the session ends.** The config read closes its session *before*
-          any detector runs. A ~1 s Presidio pass inside an open transaction
-          holds ``ACCESS SHARE`` for its duration and queues every ``ALTER
-          TABLE`` behind it — the defect ``scripts/audit-session-lifetime.py``
-          exists to catch.
-        - **Failing CLOSED, once.** Neither an unresolvable config nor an
-          unavailable detector may render an unmasked preview, so both withhold
-          the page's snippet text. Results, counts and ranking are unaffected.
-          Which detector failures count is
+        - **Where the session ends.** ``cfg`` is resolved by the CALLER
+          (``search()``, via ``_resolve_redaction_config_for_cache`` — it needs
+          the same value to build the cache key, so resolving it a second time
+          here would both duplicate a DB round trip and open a window for the
+          two resolutions to disagree). That session already closed before this
+          method runs, so a ~1 s Presidio pass never holds ``ACCESS SHARE`` open
+          — the defect ``scripts/audit-session-lifetime.py`` exists to catch.
+        - **Failing CLOSED, once.** Neither an unresolvable config (``cfg is
+          None``) nor an unavailable detector may render an unmasked preview, so
+          both withhold the page's snippet text. Results, counts and ranking are
+          unaffected. Which detector failures count is
           ``redaction.config.blocking_detector_failures``, not a second rule
           written here: a broken Presidio must not cost their snippets to a user
           who never asked for PII masking.
+
+        Args:
+            result: The response whose snippets get masked in place.
+            user_id: The requesting user (kept for the log line's subject; the
+                actual policy is ``cfg`, already resolved for this user).
+            cfg: The pre-resolved effective config, or ``None`` when it could
+                not be resolved at all. Omitting the argument entirely
+                (``_NOT_GIVEN``, the default) resolves it here instead — kept
+                for callers outside ``search()``'s own cache-key flow, so this
+                method's original resolve-it-yourself contract still holds for
+                anyone driving it directly.
         """
+        if isinstance(cfg, _NotGiven):
+            cfg = _resolve_redaction_config_for_cache(user_id)
+
         occurrences = [
             occ
             for hit in getattr(result, "results", []) or []
@@ -824,15 +998,13 @@ class HybridSearchService:
             if getattr(occ, "snippet", None)
         ]
 
-        try:
-            from app.db.session_utils import session_scope
-            from app.services.redaction.config import resolve_effective_config
-
-            with session_scope() as db:
-                cfg = resolve_effective_config(db, user_id)
-        except Exception:  # noqa: BLE001 — never break search on redaction failure
-            logger.exception("Snippet redaction config unavailable; withholding snippet text")
-            _withhold_snippets(occurrences)
+        if cfg is None:
+            if occurrences:
+                logger.warning(
+                    "Snippet redaction config unavailable for user %s; withholding snippet text",
+                    user_id,
+                )
+                _withhold_snippets(occurrences)
             return
 
         if not occurrences:
@@ -1269,7 +1441,7 @@ class HybridSearchService:
         if tags:
             filters.append({"terms": {"tags": tags}})
         if file_type:
-            filters.append({"terms": {"content_type": file_type}})
+            filters.append(_file_type_filter_clause(file_type))
         if collection_id is not None:
             filters.append({"term": {"collection_ids": collection_id}})
         if language:

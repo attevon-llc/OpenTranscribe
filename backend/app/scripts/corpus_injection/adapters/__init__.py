@@ -15,7 +15,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from app.scripts.corpus_injection.adapters.ami import AMIDistractorAdapter
 from app.scripts.corpus_injection.adapters.base import CorpusAdapter
+from app.scripts.corpus_injection.adapters.elitr_bench import ElitrBenchAdapter
 from app.scripts.corpus_injection.adapters.miracl import DEFAULT_QUERY_COUNT
 from app.scripts.corpus_injection.adapters.miracl import MiraclAdapter
 from app.scripts.corpus_injection.adapters.qmsum import QMSumAdapter
@@ -35,6 +37,14 @@ _BUILDERS: dict[str, tuple[str, Builder]] = {
             root, ami_root=data_dir / "ami", icsi_root=data_dir / "icsi"
         ),
     ),
+    # Distractor-only: 34 AMI meetings QMSum's Product domain does not already
+    # redistribute (issue #461 A5). Ships no query loader in harness/corpora.py on
+    # purpose — it enlarges the retrieval haystack for QMSum's own gold queries, it
+    # does not add judgements of its own. See adapters/ami.py's module docstring.
+    "ami": (
+        "ami",
+        lambda root, data_dir, _options: AMIDistractorAdapter(root, qmsum_root=data_dir / "qmsum"),
+    ),
     # MIRACL lives one level down from $RAG_EVAL_DATA_DIR: the topics/qrels and the
     # passage shards are sibling directories under `multilingual/`, so the adapter
     # root is that parent rather than either of them.
@@ -46,6 +56,13 @@ _BUILDERS: dict[str, tuple[str, Builder]] = {
             query_count=int(options.get("query_count", DEFAULT_QUERY_COUNT)),
             split=str(options.get("split", "dev")),
         ),
+    ),
+    # 18 noisy ASR meeting transcripts + 271 human QA pairs incl. a dedicated "who"
+    # category (#521). Tier B via the TRANSCRIPTS (ELITR-minuting, CC BY-NC-SA); the
+    # QA layer itself is CC-BY-4.0 — see adapters/elitr_bench.py's module docstring.
+    "elitr-bench": (
+        "elitr-bench",
+        lambda root, _data_dir, _options: ElitrBenchAdapter(root),
     ),
     "synthetic": (
         "synthetic",
@@ -87,4 +104,12 @@ def build_adapter(
     return builder(resolved, Path(data_dir), options or {})
 
 
-__all__ = ["AVAILABLE", "CorpusAdapter", "QMSumAdapter", "SyntheticAdapter", "build_adapter"]
+__all__ = [
+    "AVAILABLE",
+    "AMIDistractorAdapter",
+    "CorpusAdapter",
+    "ElitrBenchAdapter",
+    "QMSumAdapter",
+    "SyntheticAdapter",
+    "build_adapter",
+]

@@ -16,8 +16,20 @@ _TRANSCRIBER_REGISTRY: dict[str, str] = {
 }
 
 _DIARIZER_REGISTRY: dict[str, str] = {
+    # native (diar-native, Rust/speakrs) is the PRIMARY diarizer as of issue #58 — faster and
+    # measurably better on AMI. "pyannote" is the explicit, documented failover: ModelManager
+    # falls back to it automatically whenever the diar-native sidecar is unreachable, and an
+    # admin can still pin it directly via this same registry key.
+    "native": ("app.transcription.engine.backends.diarizers.native_backend.NativeBackend"),
     "pyannote": ("app.transcription.engine.backends.diarizers.pyannote_backend.PyAnnoteBackend"),
 }
+
+#: The valid set of ``engine.diarizer_backend`` / ``ENGINE_DIARIZER_BACKEND`` values — the
+#: single vocabulary consumed by ``TranscriptionConfig._resolve_diarizer_backend`` (the
+#: runtime decision point in ``ModelManager``) and by the admin engine-settings API (request
+#: validation). Keeping both readers pointed at this tuple instead of a hardcoded list is what
+#: makes the registry a real consolidation target rather than a second, driftable copy.
+VALID_DIARIZER_BACKENDS: tuple[str, ...] = tuple(_DIARIZER_REGISTRY)
 
 
 def _import_class(dotted_path: str):

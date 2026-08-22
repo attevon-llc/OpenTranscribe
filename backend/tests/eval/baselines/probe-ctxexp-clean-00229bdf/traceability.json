@@ -1,0 +1,339 @@
+{
+  "licence_note": "Metrics only. No question text, reference answers, app answer prose, or citation snippets are recorded here — the source text is read internally to compute counts/ratios and is never assigned to an output field. See the module docstrings of tests.eval.harness.probe_metrics (issue #72) and tests.eval.harness.traceability (task #11 / GH #463).",
+  "notes": [],
+  "rows": [
+    {
+      "category": "single_general",
+      "chunks_used": 10,
+      "citation_resolution_rate": 1.0,
+      "citation_validity_rate": 1.0,
+      "citations_leaked": 0,
+      "citations_total": 10,
+      "markers_dangling": 0,
+      "markers_total": 9,
+      "offered_citations_count": 10,
+      "prompt_membership_matches": true,
+      "query_id": "general-1-ts3005d",
+      "quote_fidelity": null,
+      "quotes_total": 0,
+      "quotes_unsupported": 0
+    },
+    {
+      "category": "single_general",
+      "chunks_used": 5,
+      "citation_resolution_rate": 1.0,
+      "citation_validity_rate": 1.0,
+      "citations_leaked": 0,
+      "citations_total": 5,
+      "markers_dangling": 0,
+      "markers_total": 6,
+      "offered_citations_count": 5,
+      "prompt_membership_matches": true,
+      "query_id": "general-2-es2002a",
+      "quote_fidelity": null,
+      "quotes_total": 0,
+      "quotes_unsupported": 0
+    },
+    {
+      "category": "multi_file",
+      "chunks_used": 12,
+      "citation_resolution_rate": 1.0,
+      "citation_validity_rate": 1.0,
+      "citations_leaked": 0,
+      "citations_total": 12,
+      "markers_dangling": 0,
+      "markers_total": 6,
+      "offered_citations_count": 12,
+      "prompt_membership_matches": true,
+      "query_id": "multi-1-speech-recognition-arc",
+      "quote_fidelity": 0.6666666666666666,
+      "quotes_total": 3,
+      "quotes_unsupported": 1
+    },
+    {
+      "category": "multi_file",
+      "chunks_used": 15,
+      "citation_resolution_rate": 1.0,
+      "citation_validity_rate": 1.0,
+      "citations_leaked": 0,
+      "citations_total": 15,
+      "markers_dangling": 0,
+      "markers_total": 7,
+      "offered_citations_count": 15,
+      "prompt_membership_matches": true,
+      "query_id": "multi-2-action-items-all-four",
+      "quote_fidelity": null,
+      "quotes_total": 0,
+      "quotes_unsupported": 0
+    },
+    {
+      "category": "multi_file",
+      "chunks_used": 12,
+      "citation_resolution_rate": 1.0,
+      "citation_validity_rate": 1.0,
+      "citations_leaked": 0,
+      "citations_total": 12,
+      "markers_dangling": 0,
+      "markers_total": 3,
+      "offered_citations_count": 12,
+      "prompt_membership_matches": true,
+      "query_id": "multi-3-marketing-role-contribution",
+      "quote_fidelity": null,
+      "quotes_total": 0,
+      "quotes_unsupported": 0
+    },
+    {
+      "category": "multi_file",
+      "chunks_used": 12,
+      "citation_resolution_rate": 1.0,
+      "citation_validity_rate": 1.0,
+      "citations_leaked": 0,
+      "citations_total": 12,
+      "markers_dangling": 0,
+      "markers_total": 1,
+      "offered_citations_count": 12,
+      "prompt_membership_matches": true,
+      "query_id": "multi-4-target-age-consistency",
+      "quote_fidelity": null,
+      "quotes_total": 0,
+      "quotes_unsupported": 0
+    },
+    {
+      "category": "negative_control",
+      "chunks_used": 12,
+      "citation_resolution_rate": null,
+      "citation_validity_rate": 1.0,
+      "citations_leaked": 0,
+      "citations_total": 12,
+      "markers_dangling": 0,
+      "markers_total": 0,
+      "offered_citations_count": 12,
+      "prompt_membership_matches": true,
+      "query_id": "negative-1-absent-topic",
+      "quote_fidelity": null,
+      "quotes_total": 0,
+      "quotes_unsupported": 0
+    },
+    {
+      "category": "negative_control",
+      "chunks_used": 12,
+      "citation_resolution_rate": null,
+      "citation_validity_rate": 1.0,
+      "citations_leaked": 0,
+      "citations_total": 12,
+      "markers_dangling": 0,
+      "markers_total": 0,
+      "offered_citations_count": 12,
+      "prompt_membership_matches": true,
+      "query_id": "negative-2-absent-speaker",
+      "quote_fidelity": null,
+      "quotes_total": 0,
+      "quotes_unsupported": 0
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 4,
+      "citation_resolution_rate": 1.0,
+      "citation_validity_rate": 1.0,
+      "citations_leaked": 0,
+      "citations_total": 4,
+      "markers_dangling": 0,
+      "markers_total": 5,
+      "offered_citations_count": 4,
+      "prompt_membership_matches": true,
+      "query_id": "single-1-ts3005a-s0",
+      "quote_fidelity": null,
+      "quotes_total": 0,
+      "quotes_unsupported": 0
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 4,
+      "citation_resolution_rate": 1.0,
+      "citation_validity_rate": 1.0,
+      "citations_leaked": 0,
+      "citations_total": 4,
+      "markers_dangling": 0,
+      "markers_total": 1,
+      "offered_citations_count": 4,
+      "prompt_membership_matches": true,
+      "query_id": "single-2-ts3005b-s2",
+      "quote_fidelity": 1.0,
+      "quotes_total": 1,
+      "quotes_unsupported": 0
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 4,
+      "citation_resolution_rate": 1.0,
+      "citation_validity_rate": 1.0,
+      "citations_leaked": 0,
+      "citations_total": 4,
+      "markers_dangling": 0,
+      "markers_total": 1,
+      "offered_citations_count": 4,
+      "prompt_membership_matches": true,
+      "query_id": "single-3-ts3005c-s2",
+      "quote_fidelity": null,
+      "quotes_total": 0,
+      "quotes_unsupported": 0
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 10,
+      "citation_resolution_rate": 1.0,
+      "citation_validity_rate": 1.0,
+      "citations_leaked": 0,
+      "citations_total": 10,
+      "markers_dangling": 0,
+      "markers_total": 3,
+      "offered_citations_count": 10,
+      "prompt_membership_matches": true,
+      "query_id": "single-4-ts3005d-s3",
+      "quote_fidelity": 1.0,
+      "quotes_total": 2,
+      "quotes_unsupported": 0
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 4,
+      "citation_resolution_rate": 1.0,
+      "citation_validity_rate": 1.0,
+      "citations_leaked": 0,
+      "citations_total": 4,
+      "markers_dangling": 0,
+      "markers_total": 2,
+      "offered_citations_count": 4,
+      "prompt_membership_matches": true,
+      "query_id": "single-5-ts3005d-s5",
+      "quote_fidelity": 0.5,
+      "quotes_total": 2,
+      "quotes_unsupported": 1
+    },
+    {
+      "category": "single_specific",
+      "chunks_used": 6,
+      "citation_resolution_rate": null,
+      "citation_validity_rate": 1.0,
+      "citations_leaked": 0,
+      "citations_total": 6,
+      "markers_dangling": 0,
+      "markers_total": 0,
+      "offered_citations_count": 6,
+      "prompt_membership_matches": true,
+      "query_id": "single-6-es2002a-s1",
+      "quote_fidelity": null,
+      "quotes_total": 0,
+      "quotes_unsupported": 0
+    }
+  ],
+  "run_name": "ctxexp-clean-00229bdf",
+  "schema_version": 1,
+  "scope_note": "Traceability, not correctness. citation_resolution / citation_validity / prompt_membership are structural checks against what the turn rendered and was offered. quote_fidelity checks only EXPLICITLY QUOTED spans against a ~240-char citation snippet and is not a groundedness or accuracy score. Whether the answer's claims are actually correct needs an LLM judge, which is not calibrated yet (GH #518) and is deliberately not reported here.",
+  "summary": {
+    "multi_file": {
+      "citation_resolution_rate": {
+        "coverage": 4,
+        "mean": 1.0,
+        "min": 1.0,
+        "total": 4
+      },
+      "citation_validity_rate": {
+        "coverage": 4,
+        "mean": 1.0,
+        "min": 1.0,
+        "total": 4
+      },
+      "prompt_membership_matches": {
+        "coverage": 4,
+        "rate": 1.0,
+        "total": 4
+      },
+      "queries": 4,
+      "quote_fidelity": {
+        "coverage": 1,
+        "mean": 0.666667,
+        "min": 0.6666666666666666,
+        "total": 4
+      }
+    },
+    "negative_control": {
+      "citation_resolution_rate": {
+        "coverage": 0,
+        "total": 2
+      },
+      "citation_validity_rate": {
+        "coverage": 2,
+        "mean": 1.0,
+        "min": 1.0,
+        "total": 2
+      },
+      "prompt_membership_matches": {
+        "coverage": 2,
+        "rate": 1.0,
+        "total": 2
+      },
+      "queries": 2,
+      "quote_fidelity": {
+        "coverage": 0,
+        "total": 2
+      }
+    },
+    "single_general": {
+      "citation_resolution_rate": {
+        "coverage": 2,
+        "mean": 1.0,
+        "min": 1.0,
+        "total": 2
+      },
+      "citation_validity_rate": {
+        "coverage": 2,
+        "mean": 1.0,
+        "min": 1.0,
+        "total": 2
+      },
+      "prompt_membership_matches": {
+        "coverage": 2,
+        "rate": 1.0,
+        "total": 2
+      },
+      "queries": 2,
+      "quote_fidelity": {
+        "coverage": 0,
+        "total": 2
+      }
+    },
+    "single_specific": {
+      "citation_resolution_rate": {
+        "coverage": 5,
+        "mean": 1.0,
+        "min": 1.0,
+        "total": 6
+      },
+      "citation_validity_rate": {
+        "coverage": 6,
+        "mean": 1.0,
+        "min": 1.0,
+        "total": 6
+      },
+      "prompt_membership_matches": {
+        "coverage": 6,
+        "rate": 1.0,
+        "total": 6
+      },
+      "queries": 6,
+      "quote_fidelity": {
+        "coverage": 3,
+        "mean": 0.833333,
+        "min": 0.5,
+        "total": 6
+      }
+    }
+  },
+  "target": {
+    "host": "localhost",
+    "llm_model": "gemma-4-e4b",
+    "llm_provider": "vllm",
+    "port": 5274
+  }
+}

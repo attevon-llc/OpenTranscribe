@@ -197,6 +197,107 @@ class TestTablesSurviveWithTheirGrid:
         assert linearize_table([]) == ""
 
 
+class TestHTMLTableRecovery:
+    """Issue #69: docling-slim's HTML backend silently dropped ~85% of a table-heavy
+    document's tables. Both regression shapes below are synthetic — they encode the exact
+    tree shape that defeated Docling, not an incidental property of one corpus file, so
+    they run without the NAS corpus and cannot be satisfied by curve-fitting the one
+    measured file. The corpus test at the bottom pins the real, originally-measured number.
+    """
+
+    def test_a_table_nested_inside_a_paragraph_is_still_captured(self, parser):
+        """``html.parser`` (what Docling's backend hardcodes) does not implement the
+        HTML5 rule that a ``<table>`` start tag implicitly closes an open ``<p>`` — a
+        real browser and a spec-compliant parser (``lxml``) both would. Left alone, the
+        table stays a descendant of the ``<p>`` in Docling's tree and its ``<p>`` handler
+        flattens the whole subtree to plain text, producing zero ``TableItem``s.
+        """
+        html = (
+            b"<html><body><p>Intro text before the table."
+            b"<table><tr><th>Name</th><th>Score</th></tr>"
+            b"<tr><td>Alpha</td><td>1</td></tr>"
+            b"<tr><td>Beta</td><td>2</td></tr></table>"
+            b"</p></body></html>"
+        )
+        document = parser.parse(
+            ParseSource(filename="p_wraps_table.html", mime="text/html", data=html),
+            options=ParseOptions(),
+        )
+        validate_ir(document)
+        tables = [b for b in document.blocks if b.type == "table"]  # type: ignore[attr-defined]
+        assert len(tables) == 1, f"expected 1 table block, got {len(tables)}"
+        assert "Alpha" in document.text and "Beta" in document.text
+
+    def test_a_table_that_is_a_direct_child_of_a_list_is_still_captured(self, parser):
+        """Docling's ``_handle_list`` only recognises ``li``/``ul``/``ol`` as direct
+        children of a list (``find_all({"li","ul","ol"}, recursive=False)``) — a
+        ``<table>`` placed directly under a ``<ul>`` with no ``<li>`` wrapper (invalid
+        HTML, but real: legacy report generators emit exactly this) is skipped outright.
+        Wrapping it in a synthetic ``<li>`` does not help either: that ``<li>``'s text
+        extraction excludes table content (``ignore_list=True``), comes back empty, and
+        the whole list item — table included — is dropped for having "no content".
+        """
+        html = (
+            b"<html><body><ul>"
+            b"<li>A leading list item with real text</li>"
+            b"<table><tr><th>Col</th></tr><tr><td>Orphaned</td></tr></table>"
+            b"</ul></body></html>"
+        )
+        document = parser.parse(
+            ParseSource(filename="table_orphaned_in_list.html", mime="text/html", data=html),
+            options=ParseOptions(),
+        )
+        validate_ir(document)
+        tables = [b for b in document.blocks if b.type == "table"]  # type: ignore[attr-defined]
+        assert len(tables) == 1, f"expected 1 table block, got {len(tables)}"
+        assert "Orphaned" in document.text
+
+    def test_a_rich_cells_content_survives_when_its_own_text_is_empty(self, parser):
+        """A third, independent defect in the same bug class, found scanning
+        ``govdocs1`` after the two tree-shape repairs above: Docling classifies a cell as
+        a ``RichTableCell`` whenever it holds an ``<input>`` (a form field) among other
+        triggers, and stores that cell's content off to the side as a child ``GroupItem``
+        referenced by ``cell.ref`` — ``cell.text`` itself comes back empty. Reading only
+        ``.text`` (what this module used to do) silently drops the cell. Measured on 13 of
+        227 real ``govdocs1`` HTML files, recovering form-field labels like ``guest``,
+        ``email``, ``query`` that a naive read had dropped.
+        """
+        html = (
+            b"<html><body><table><tr><th>Field</th><th>Value</th></tr>"
+            b'<tr><td>guest</td><td><input type="text" name="guestname" value="guest">'
+            b"</td></tr></table></body></html>"
+        )
+        document = parser.parse(
+            ParseSource(filename="rich_cell_input.html", mime="text/html", data=html),
+            options=ParseOptions(),
+        )
+        validate_ir(document)
+        tables = [b for b in document.blocks if b.type == "table"]  # type: ignore[attr-defined]
+        assert len(tables) == 1, f"expected 1 table block, got {len(tables)}"
+        assert "Value: guest" in tables[0].text, (
+            f"the rich cell's own content was dropped — table text was {tables[0].text!r}"
+        )
+
+    def test_the_measured_regression_file_recovers_all_its_tables(self, parser):
+        """The file the bug was originally measured on: a real ``govdocs1`` government
+        report, 140 ``<table>`` tags, 138 of them nested one level inside one giant
+        layout table's single cell — 123 as orphaned direct children of a ``<ul>``
+        (the second defect above) and 15 correctly nested. Before the fix, Docling
+        recovered 17/140 (measured on docling 2.119.0; the original #69 report, on an
+        older docling, was 3/140). After both repairs: 140/140.
+        """
+        path = DOCS / "govdocs1" / "thread0" / "758" / "758458.html"
+        if not path.is_file():
+            pytest.skip("$RAG_EVAL_DATA_DIR/documents/govdocs1 not present")
+
+        document = _parse(parser, path)
+        tables = [b for b in document.blocks if b.type == "table"]  # type: ignore[attr-defined]
+        assert len(tables) == 140, (
+            f"recovered {len(tables)}/140 tables — the HTML tree repair regressed "
+            f"(issue #69: this document silently lost 88% of its tables before the fix)"
+        )
+
+
 class TestPdfTextLayerAndTheScanDiscrimination:
     def test_text_layer_pdfs_extract_with_page_numbers_on_every_block(self, parser):
         files = sorted((DOCS / "pmc-oa" / "pdf").glob("*.pdf"))[:20]

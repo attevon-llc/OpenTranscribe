@@ -26,6 +26,8 @@ PLANS/
 .env.development
 .env.test
 .env.*.local
+# dated .env backups (e.g. .env.bak21aug) — real secrets, never tracked
+.env.bak*
 
 # Release-test secrets (template at .env.test-secrets.example is committed)
 scripts/release-tests/.env.test-secrets
@@ -98,6 +100,12 @@ ENV/
 env.bak/
 venv.bak/
 .python-version
+
+# Eval-only judge venv (#463) — ragas's dependency chain (instructor -> openai<3.0.0)
+# conflicts with backend/venv's openai==3.3.0 pin, so it lives in its own interpreter,
+# talked to over a subprocess boundary. See backend/tests/eval/harness/answer_judge.py
+# and rag-evaluation.md's "answer-quality harness" section for why the split exists.
+backend/venv-eval/
 
 # Testing
 htmlcov/

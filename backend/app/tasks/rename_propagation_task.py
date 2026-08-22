@@ -50,15 +50,27 @@ then ``B -> C``) are independent tasks on an 8-way queue with no ordering: if
 bug, recreated by #405's dispatch model. Re-reading makes both orderings
 converge.
 
-⚠️ **The digest PROSE still bakes the old speaker name and none of this fixes
-that.** Rewriting the roster keeps the filterable fields honest; regenerating the
-prose is the #383 addendum-G1 trigger, whose designated hook is ``_finish``
-below — one place, not scattered across the dispatch sites. Until it lands, a
-renamed speaker's digest text is stale until the file is reindexed.
+The digest PROSE bakes the old speaker name and the roster rewrite above cannot
+reach it — that is the #383 addendum-G1 trigger, closed by
+:func:`regenerate_rename_digests` / :func:`_dispatch_digest_regeneration` below.
+
+⚠️ **Dispatched from here (``dispatch_speaker_rename``), NOT from ``_finish``.**
+The plan that named this trigger pointed at ``_finish``, below — and that is a
+trap, not the seam. ``_finish`` early-returns when ``updated == 0``
+(``if not updated: return``), and ``updated == 0`` is exactly the *stalest*
+case: a rename where every chunk was already indexed under the new name (or
+the file has no chunk-plane documents at all — e.g. a very short recording, or
+one indexed before the chunk plane existed) has nothing for
+``update_by_query`` to touch, so it is the file whose digest most needs
+regenerating. Hooking ``_finish`` would mean the files with *some* stale
+chunks get a fresh digest and the files with *only* a stale digest never do.
+Dispatching from ``dispatch_speaker_rename`` runs unconditionally on every
+coalesced file, independent of whether the chunk-plane rewrite found anything.
 """
 
 from __future__ import annotations
 
+import datetime
 import logging
 from collections.abc import Iterable
 from typing import Any
@@ -67,6 +79,13 @@ from app.core.celery import celery_app
 from app.core.constants import CPUPriority
 
 logger = logging.getLogger(__name__)
+
+# Bounds a bulk rename / profile merge to a fixed number of digest-regeneration
+# Celery tasks rather than one per file. A cluster promotion or a batch-verify
+# can touch hundreds of files in one pass (`SpeakerClusteringService`); without
+# this a single user action would fan out hundreds of tiny CPU-queue tasks,
+# each paying its own DB round trip and OpenSearch bulk call for one document.
+_DIGEST_REGEN_BATCH_SIZE = 20
 
 # Painless, not a partial-doc update: ``speakers`` is an array that has to be
 # rewritten element-wise, and a doc update cannot express "replace this one
@@ -467,6 +486,201 @@ def propagate_title_rename(self: Any, file_uuid: str, new_title: str) -> dict[st
     }
 
 
+@celery_app.task(
+    bind=True,
+    name="regenerate_rename_digests",
+    priority=CPUPriority.USER_TRIGGERED,
+    max_retries=2,
+    default_retry_delay=15,
+)
+def regenerate_rename_digests(
+    self: Any,
+    file_uuids: list[str],
+    new_name: str | None = None,
+    speaker_id: int | None = None,
+) -> dict[str, Any]:
+    """Regenerate ``file_facts`` and the digest-plane documents for renamed files.
+
+    The #383 addendum-G1 trigger this module's docstring points at. A rename's
+    fingerprint self-invalidates the ``file_facts`` row the moment the new name
+    lands in Postgres (``source_fingerprint`` covers the *resolved* speaker
+    display name — ``services/ingest_artifacts/service.py``), so nothing about
+    the regeneration logic itself needed to change. What was missing was a
+    dispatch site: nothing queued the regeneration, so a renamed speaker's
+    digest prose stayed stale until an unrelated full reindex happened to touch
+    the file.
+
+    ⚠️ **Digest plane only — this never touches the chunk plane's vectors.**
+    ``propagate_speaker_rename`` documents a deliberate trade: re-embedding a
+    renamed file's chunks costs hundreds of model calls for a cosmetic edit, so
+    the chunk vector is left stale on purpose and only the roster/keyword
+    fields are rewritten. Reaching the digest via the full
+    ``TranscriptIndexingService.index_transcript_chunks`` would silently undo
+    that trade for every rename (it re-chunks and re-embeds everything).
+    ``_index_digest_plane`` is the one place that already does exactly
+    "regenerate ``file_facts`` via the fingerprint short-circuit, then reindex
+    the digest documents" (its own docstring, addendum G1) — called directly
+    here rather than reimplemented, per this repo's one-implementation rule.
+
+    Args:
+        file_uuids: Media file UUIDs whose renamed speaker(s) invalidated the
+            file's digest. This task IS the batching unit
+            ``_dispatch_digest_regeneration`` uses to bound a bulk rename or
+            profile merge to a fixed number of Celery tasks rather than one
+            per file — see ``_DIGEST_REGEN_BATCH_SIZE``.
+        new_name: The display name the rename applied, carried through only so
+            the completion WebSocket message can say what changed.
+        speaker_id: Postgres id of the renamed speaker, same reason.
+
+    Returns:
+        Dict with counts. Never raises: a digest is derived enrichment, and the
+        rename that triggered this has already committed and already
+        propagated to the chunk plane regardless of what happens here.
+    """
+    from app.db.session_utils import session_scope
+    from app.models.media import MediaFile
+    from app.services.search.embedding_provenance import active_embedding_model
+    from app.services.search.indexing_service import TranscriptIndexingService
+    from app.services.search.indexing_service import is_neural_pipeline_available
+    from app.tasks.search_indexing_task import extract_file_index_metadata
+    from app.utils.websocket_notify import send_ws_event
+
+    uuids = sorted({str(u) for u in (file_uuids or []) if u})
+    if not uuids:
+        return {"status": "skipped", "reason": "no_files", "regenerated": 0, "errors": 0}
+
+    indexing_service = TranscriptIndexingService()
+    use_neural = is_neural_pipeline_available()
+    provenance = active_embedding_model() if use_neural else None
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+
+    regenerated_uuids: list[str] = []
+    errors = 0
+    owners: dict[int, list[str]] = {}
+
+    for file_uuid in uuids:
+        try:
+            with session_scope() as db:
+                media_file = db.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
+                if media_file is None:
+                    continue
+                file_id = int(media_file.id)
+                user_id = int(media_file.user_id)
+                meta = extract_file_index_metadata(db, media_file, file_id)
+
+            base_metadata: dict[str, Any] = {
+                "user_id": user_id,
+                "title": meta["title"],
+                "tags": meta["tag_names"],
+                "upload_time": meta["upload_time"],
+                "language": meta["language"],
+                "content_type": meta["content_type"],
+                "duration": meta["duration"],
+                "file_size": meta["file_size"],
+                "collection_ids": meta["collection_ids"],
+                "accessible_user_ids": meta["accessible_user_ids"] or [user_id],
+                "indexed_at": now,
+                "embedding_model": provenance,
+                **(
+                    {}
+                    if meta.get("organization_id") is None
+                    else {"organization_id": meta["organization_id"]}
+                ),
+            }
+
+            indexing_service._index_digest_plane(
+                file_id=file_id,
+                file_uuid=file_uuid,
+                base_metadata=base_metadata,
+                use_neural=use_neural,
+            )
+            regenerated_uuids.append(file_uuid)
+            owners.setdefault(user_id, []).append(file_uuid)
+        except Exception as exc:  # noqa: BLE001 — a digest miss must not fail a rename
+            logger.warning(f"Could not regenerate digest for file {file_uuid} after rename: {exc}")
+            errors += 1
+
+    logger.info(
+        f"Rename-triggered digest regeneration: {len(regenerated_uuids)} file(s) refreshed, "
+        f"{errors} error(s), {len(uuids)} requested"
+    )
+
+    # One notification per owner, not per file — a bulk rename/profile merge
+    # touches many files at once and the speakers page needs one "propagation
+    # finished" signal to invalidate its cache and clear a progress indicator,
+    # not one toast per file.
+    for user_id, files_for_user in owners.items():
+        try:
+            send_ws_event(
+                user_id=user_id,
+                notification_type="speaker_rename_propagation",
+                data={
+                    "status": "completed",
+                    "new_name": new_name,
+                    "speaker_id": speaker_id,
+                    "file_uuids": files_for_user,
+                    "regenerated": len(files_for_user),
+                    "errors": errors,
+                    "total": len(uuids),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 — best-effort, matches every sibling dispatch here
+            logger.warning(
+                f"Could not send rename-propagation WS notification to user {user_id}: {exc}"
+            )
+
+    return {
+        "status": "success",
+        "regenerated": len(regenerated_uuids),
+        "errors": errors,
+        "total": len(uuids),
+    }
+
+
+def _dispatch_digest_regeneration(
+    file_uuids: Iterable[str],
+    *,
+    new_name: str,
+    speaker_id: int | None,
+) -> int:
+    """Queue digest-plane regeneration for renamed files, in fixed-size batches.
+
+    Explicit cost bound: at most ``ceil(N / _DIGEST_REGEN_BATCH_SIZE)`` Celery
+    tasks regardless of how many files a bulk rename or profile merge touches
+    — a cluster promotion or batch-verify (``SpeakerClusteringService``) can
+    rename many speakers across many files in one pass, and without this a
+    single user action would fan out one task per file onto the CPU queue.
+    Each task processes its own batch of files sequentially, so this also
+    caps how many concurrent per-file OpenSearch bulk calls one rename can
+    generate at once.
+
+    Args:
+        file_uuids: The (already per-file-coalesced) set of files a rename
+            touched — normally ``dispatch_speaker_rename``'s own ``by_file``
+            keys, so a file already appears at most once here too.
+        new_name: Forwarded to the task for the completion notification only.
+        speaker_id: Forwarded to the task for the completion notification only.
+
+    Returns:
+        Number of batch tasks queued.
+    """
+    uuids = sorted({str(u) for u in file_uuids if u})
+    if not uuids:
+        return 0
+
+    dispatched = 0
+    for start in range(0, len(uuids), _DIGEST_REGEN_BATCH_SIZE):
+        batch = uuids[start : start + _DIGEST_REGEN_BATCH_SIZE]
+        try:
+            regenerate_rename_digests.delay(
+                file_uuids=batch, new_name=new_name, speaker_id=speaker_id
+            )
+            dispatched += 1
+        except Exception as exc:  # noqa: BLE001 — dispatch failure must not break the rename
+            logger.warning(f"Could not queue digest regeneration for {len(batch)} file(s): {exc}")
+    return dispatched
+
+
 def dispatch_speaker_rename(
     renames: Iterable[tuple[str | None, str | None]],
     new_name: str,
@@ -481,7 +695,12 @@ def dispatch_speaker_rename(
 
     Every caller of a rename path goes through here rather than calling
     ``propagate_speaker_rename.delay`` directly, so "did this path propagate?" has
-    one answer per path.
+    one answer per path. That single entry point is also why the digest
+    regeneration trigger (#383 addendum-G1) lives here rather than in
+    ``_finish`` below: it fires once per coalesced file for every caller,
+    unconditionally — including the ``updated == 0`` files ``_finish``'s early
+    return would otherwise skip, which are exactly the ones a chunk-plane
+    rewrite found nothing to do on and are therefore the stalest.
 
     Args:
         renames: ``(file_uuid, old_name)`` pairs. Entries that are incomplete or
@@ -517,4 +736,11 @@ def dispatch_speaker_rename(
             )
         except Exception as exc:  # noqa: BLE001 — dispatch failure must not break the rename
             logger.warning(f"Could not queue speaker rename propagation for {file_uuid}: {exc}")
+
+    # Dispatched unconditionally for every coalesced file — NOT gated on the
+    # chunk-plane task above finding anything to rewrite. See the module and
+    # function docstrings for why ``_finish``'s ``updated == 0`` early return
+    # would be the wrong seam for this.
+    _dispatch_digest_regeneration(by_file.keys(), new_name=new_name, speaker_id=speaker_id)
+
     return len(by_file)

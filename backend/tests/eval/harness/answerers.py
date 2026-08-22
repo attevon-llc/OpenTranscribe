@@ -3,7 +3,20 @@
 #403 is explicit: the aggregation class is answered from **OpenSearch
 aggregations or Postgres**, never by an LLM counting, and **D6 makes the no-LLM
 deployment first-class**. An answer-scoring path that needed a model would
-contradict the property it exists to measure, so nothing here imports one.
+contradict the property it exists to measure, so nothing in the first three
+answerers below imports one.
+
+``RagAnswerer`` (#463, added below) is deliberately the exception, not a
+contradiction of the rule above: it answers a DIFFERENT ``scored_on``
+(``answer_text``, free-text QMSum queries — see ``harness/answer_text.py``,
+``harness/answer_judge.py`` and ``harness/faithfulness_judge.py``), never the
+aggregation class, and D6 is exactly why
+it exists — measuring answer QUALITY needs an actual generation to score, the
+same way #403's aggregation measurement needed a real count. Nothing about D6
+says "never build the instrument that measures the LLM-optional deployment's
+LLM path" — it says a deployment WITHOUT an LLM must still be a first-class,
+fully-functional product, which #463's floor tier (``answer_text.py`` — ROUGE,
+token-F1, no model) already guarantees independently of this answerer.
 
 Three answerers ship — a floor, a ceiling, and the thing being measured:
 
@@ -507,6 +520,245 @@ class ProductAnswerer:
         if result.shape in (SHAPE_COUNT_FILES, SHAPE_COUNT_EVENTS):
             return None if result.count is None else Answer.integer(result.count)
         return None
+
+
+@dataclass(frozen=True)
+class RagAnswer:
+    """One generated answer, plus the context it was generated from.
+
+    ``contexts`` is the masked excerpt TEXT that actually reached the prompt —
+    exactly what ``faithfulness_judge.score_faithfulness_one`` needs as
+    ``retrieved_contexts``, and exactly why this is a separate return type from
+    the other answerers' bare ``Answer | None``: an ``answer_text``-scored query
+    is judged on two different things (the text itself, against
+    ``gold_text``; and the text against ITS OWN context, for faithfulness), and
+    only one of those is derivable from a bare string.
+    """
+
+    text: str
+    contexts: list[str]
+    excerpt_ids: list[int]
+    retrieved: int
+    reranked: int
+
+
+class RagAnswerer:
+    """The product's REAL chat retrieve -> prompt -> generate path, driven in-process (#463).
+
+    Unlike ``NullAnswerer``/``ReferenceAnswerer``/``ProductAnswerer`` above, this drives an
+    actual LLM generation — it exists to measure ANSWER QUALITY (#463), not to answer the
+    never-LLM aggregation class those three are scoped to (see module docstring).
+
+    ⚠️ **The single most important correctness constraint in this class**: ``rerank_enabled``
+    is passed to ``retrieve_context`` DIRECTLY, never through
+    ``chat.settings.apply_user_preferences``. That function's ``rerank_enabled`` is
+    **one-way narrowing** — ``base.rerank_enabled and rerank_enabled`` — so if the resolved
+    admin default happens to be ``False``, asking for ``rerank_enabled=True`` through it
+    would silently produce ``False`` anyway. An A/B that needs its "on" arm to reliably BE on
+    (#463's own reranker comparison depends on this) cannot go through that function at all.
+    This class instead constructs its own ``ChatSettings`` with the caller's exact
+    ``rerank_enabled`` value written in, bypassing the narrowing entirely.
+
+    Requires an explicit, working OpenAI-compatible provider (``base_url`` + ``model``) —
+    **hard-fails at construction** with a clear message when none is configured, rather than
+    silently producing empty answers that would read as "the system declined to answer" in a
+    results file instead of "this measurement never ran".
+
+    Args:
+        client: OpenSearch client.
+        index: Chunk index name.
+        user_id: Owner of the corpus.
+        session_factory: Callable returning a session context manager, for
+            ``mask_chunks``'s two-phase gather/mask (``chat/redactor.py``). Required —
+            unlike the aggregation answerers' ``engine: Any | None``, there is no "decline
+            without Postgres" mode here: masking fails closed with NO session, which would
+            silently send unmasked chunk text to the LLM on every deployment that redacts.
+        base_url: The OpenAI-compatible server's base URL.
+        model: Model name as the server names it.
+        api_key: Bearer token, or a placeholder for a server that does not check one.
+        rerank_enabled: Passed directly to ``ChatSettings`` — see the class docstring.
+        search_mode: ``hybrid`` | ``semantic`` | ``keyword``.
+        candidate_pool: Retrieval candidate pool size before reranking.
+        final_chunks: Excerpts that reach the prompt.
+        max_chunks_per_file: Ceiling on chunks contributed by one recording.
+        rerank_max_pairs: Pairs the cross-encoder scores.
+        context_window: The provider's context window, for the excerpt budget calc.
+        response_tokens: Tokens reserved for the answer AND the provider's own
+            completion budget — the default (2048) is set generously because
+            ``gemma-4-e4b`` on the reference vLLM has NO reasoning off-switch
+            (measured: `app/services/CLAUDE.md`'s reasoning table — ``false`` is
+            byte-identical to omitting the kwarg, ~931-1656 reasoning tokens are
+            produced regardless) and reasoning tokens are drawn from the SAME
+            ``max_tokens`` budget as the final answer content. Verified directly
+            against the live vLLM while this class was written: ``max_tokens=10``
+            truncated mid-reasoning and returned NO answer content at all;
+            ``max_tokens=200`` was enough for a trivial question's ~47-token
+            reasoning trace. A real QMSum answer's reasoning trace is unmeasured
+            and could be larger — this default is a starting point, not a
+            calibrated floor.
+        temperature: Sampling temperature. **0.0 by default** — an answer-quality
+            measurement that varied run to run at nonzero temperature would not be
+            reproducible, the same reason ``answer_judge.JUDGE_TEMPERATURE`` is pinned.
+        unmask_for_local: Forwarded to ``mask_chunks`` — whether the provider counts as
+            local under ``redaction/llm_guard.is_local_provider`` (see that module's
+            CLAUDE.md entry). Pass explicitly rather than re-deriving it here, so a caller
+            who already knows the provider is local (e.g. a fixed vLLM base URL under
+            their control) does not pay a DNS-classification call per query.
+    """
+
+    name = "rag"
+
+    def __init__(
+        self,
+        client: Any,
+        index: str,
+        user_id: int,
+        session_factory: Any,
+        *,
+        base_url: str,
+        model: str,
+        api_key: str = "not-needed",
+        rerank_enabled: bool = True,
+        search_mode: str = "hybrid",
+        candidate_pool: int = 48,
+        final_chunks: int = 40,
+        max_chunks_per_file: int = 12,
+        rerank_max_pairs: int = 48,
+        context_window: int = 8192,
+        response_tokens: int = 2048,
+        temperature: float = 0.0,
+        unmask_for_local: bool = False,
+    ) -> None:
+        if not base_url or not model:
+            raise ValueError(
+                "RagAnswerer: base_url and model are both required — this answerer drives "
+                "a REAL generation and must hard-fail here rather than silently producing "
+                "empty answers that would read as 'declined' instead of 'never configured'."
+            )
+        self.client = client
+        self.index = index
+        self.user_id = int(user_id)
+        self.session_factory = session_factory
+        self.base_url = base_url
+        self.model = model
+        self.api_key = api_key
+        self.rerank_enabled = bool(rerank_enabled)
+        self.search_mode = search_mode
+        self.candidate_pool = candidate_pool
+        self.final_chunks = final_chunks
+        self.max_chunks_per_file = max_chunks_per_file
+        self.rerank_max_pairs = rerank_max_pairs
+        self.context_window = context_window
+        self.response_tokens = response_tokens
+        self.temperature = temperature
+        self.unmask_for_local = unmask_for_local
+        self._openai_client: Any = None
+
+    def describe(self) -> dict[str, Any]:
+        return {
+            "answerer": self.name,
+            "summary": (
+                "the PRODUCT's real retrieve -> mask -> prompt -> generate chat path, "
+                "driven in-process for #463 answer-quality measurement."
+            ),
+            "is_production_path": True,
+            "llm_required": True,
+            "provider": {"base_url": self.base_url, "model": self.model},
+            "rerank_enabled": self.rerank_enabled,
+            "rerank_enabled_bypassed_apply_user_preferences": True,
+            "temperature": self.temperature,
+            "retrieval": {
+                "search_mode": self.search_mode,
+                "candidate_pool": self.candidate_pool,
+                "final_chunks": self.final_chunks,
+                "max_chunks_per_file": self.max_chunks_per_file,
+                "rerank_max_pairs": self.rerank_max_pairs,
+            },
+        }
+
+    def _llm_client(self) -> Any:
+        if self._openai_client is None:
+            from openai import OpenAI
+
+            self._openai_client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+        return self._openai_client
+
+    def answer_with_context(self, query) -> RagAnswer | None:
+        """Answer one :class:`~tests.eval.harness.corpora.EvalQuery`, with context.
+
+        Args:
+            query: an ``EvalQuery`` — ``query.spans`` is used, when present, to scope
+                retrieval to the query's own gold file(s) (the "gold-file-scoped"
+                general-summary queries ``corpora.load_qmsum_answer_queries`` produces);
+                otherwise retrieval runs corpus-wide, matching what the product actually
+                does for a real user turn.
+
+        Returns:
+            A :class:`RagAnswer`, or ``None`` if retrieval produced no usable context
+            AND the model still declined to answer from general knowledge (rare, but
+            possible — never silently converted to an empty string).
+        """
+        from app.services.chat.prompting import build_messages
+        from app.services.chat.prompting import build_system_prompt
+        from app.services.chat.redactor import mask_chunks
+        from app.services.chat.retrieval import retrieve_context
+        from app.services.chat.settings import ChatSettings
+
+        file_uuids = sorted({span.file_uuid for span in query.spans}) or None
+        settings = ChatSettings(
+            candidate_pool=self.candidate_pool,
+            final_chunks=self.final_chunks,
+            max_chunks_per_file=self.max_chunks_per_file,
+            # Bypasses apply_user_preferences deliberately -- see class docstring.
+            rerank_enabled=self.rerank_enabled,
+            rerank_max_pairs=self.rerank_max_pairs,
+        )
+        result = retrieve_context(
+            query=query.text,
+            user_id=self.user_id,
+            organization_id=None,
+            file_uuids=file_uuids,
+            settings=settings,
+            search_mode=self.search_mode,
+        )
+        masked = mask_chunks(
+            self.session_factory,
+            result.chunks,
+            self.user_id,
+            unmask_for_local=self.unmask_for_local,
+        )
+        system_prompt = build_system_prompt(use_context=True)
+        messages, excerpt_ids = build_messages(
+            system_prompt=system_prompt,
+            chunks=masked,
+            history=[],
+            question=query.text,
+            context_window=self.context_window,
+            response_tokens=self.response_tokens,
+        )
+        contexts = [masked[i - 1].content for i in excerpt_ids if 1 <= i <= len(masked)]
+
+        response = self._llm_client().chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=self.temperature,
+        )
+        text = (response.choices[0].message.content or "").strip()
+        if not text:
+            return None
+        return RagAnswer(
+            text=text,
+            contexts=contexts,
+            excerpt_ids=excerpt_ids,
+            retrieved=result.retrieved,
+            reranked=result.reranked,
+        )
+
+    def answer(self, query) -> str | None:
+        """Text-only convenience wrapper — the shape ``answer_text.evaluate_answer_text``
+        consumes. Use :meth:`answer_with_context` when faithfulness context is needed too."""
+        result = self.answer_with_context(query)
+        return None if result is None else result.text
 
 
 def build_answerer(name: str, **kwargs: Any):

@@ -154,13 +154,13 @@
         rel="noopener noreferrer"
         class="dropdown-item"
         on:click={handleDocs}
-        title={$t('nav.docs')}
+        title={$t('nav.documentation')}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
           <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
         </svg>
-        <span>{$t('nav.docs')}</span>
+        <span>{$t('nav.documentation')}</span>
       </a>
 
       {#if isAdmin}
@@ -430,8 +430,10 @@
      ⚠️ Coordinated with the identical threshold in ../Navbar.svelte, which
      drops the navbar gap to 1.5rem. Both must move together: raising only the
      Navbar one left the username visible from 1281-1500px, where the bar still
-     needed 1355px and still overflowed. Measured while fixing issue #452. */
-  @media (max-width: 1500px) {
+     needed 1355px and still overflowed. Measured while fixing issue #452, then
+     raised again 1500 -> 1700 when the Documents nav item pushed the measured
+     minimum (with username shown) to 1621px. */
+  @media (max-width: 1700px) {
     .username {
       display: none;
     }

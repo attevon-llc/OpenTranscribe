@@ -88,6 +88,7 @@ from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.models.chat import ChatConversation
 from app.models.custom_vocabulary import CustomVocabulary
+from app.models.document import Document
 from app.models.erasure import ErasureLedgerEntry
 from app.models.media import Collection
 from app.models.media import Comment
@@ -236,6 +237,64 @@ def _erase_profile_embedding(profile_uuid: str, errors: list[dict[str, Any]]) ->
         errors.append({"stage": "profile_embedding", "profile_uuid": profile_uuid, "error": str(e)})
 
 
+def _erase_document_artifacts(
+    doc_uuid: str, storage_path: str | None, errors: list[dict[str, Any]]
+) -> None:
+    """Remove one document's OpenSearch chunks and storage object. Never raises.
+
+    Same shape as ``_erase_profile_embedding``, and for the same reason: the row
+    coming out of Postgres is not erasure by itself when document text landed
+    unredacted in ``transcript_chunks`` (root CLAUDE.md's chat retrieval trap) and
+    the original bytes still sit in MinIO. Best-effort, recorded on failure —
+    mirrors ``documents.py::delete_document``'s API-path cleanup exactly, since
+    this is the same destroy operation reached from a different caller.
+    """
+    try:
+        from app.services.search.indexing_service import TranscriptIndexingService
+
+        TranscriptIndexingService().delete_transcript_chunks(doc_uuid)
+    except Exception as e:  # noqa: BLE001 — record, never abort the relational delete
+        logger.warning(f"Document chunk removal failed for {doc_uuid}: {e}")
+        errors.append({"stage": "document_chunks", "document_uuid": doc_uuid, "error": str(e)})
+
+    if storage_path:
+        try:
+            from app.services.minio_service import delete_file
+
+            delete_file(storage_path)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Document storage removal failed for {doc_uuid}: {e}")
+            errors.append({"stage": "document_storage", "document_uuid": doc_uuid, "error": str(e)})
+
+
+def _purge_documents(db: Session, documents: list[Document], summary: dict[str, Any]) -> None:
+    """Erase a batch of ``Document`` rows, honoring an active legal hold.
+
+    The document counterpart of :func:`_purge_files` — added in v399 (lane C3/C4),
+    which is also what gave ``Document`` a ``legal_hold`` column at all. Before that
+    column existed a document could never be exempted from an erasure the way a
+    held media file already was, which was itself a gap: Art. 17(3)(e) applies to
+    ANY record kept for legal claims, not only media. A held document is skipped and
+    counted in the SAME ``legal_holds_skipped``/``errors`` the media path already
+    populates (one counter, not two, matching how the summary dict has never split
+    "kind of row" for that field) so the deferral is picked up by
+    ``tasks/erasure_reconciliation`` exactly like a held file's would be.
+    """
+    for document in documents:
+        if bool(document.legal_hold):
+            summary["legal_holds_skipped"] += 1
+            summary["errors"].append(
+                {
+                    "document_uuid": str(document.uuid),
+                    "error": "skipped: active legal hold (GDPR Art. 17(3)(e))",
+                }
+            )
+            continue
+        _erase_document_artifacts(str(document.uuid), document.storage_path, summary["errors"])
+        db.delete(document)
+        summary["documents_deleted"] += 1
+
+
 def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -> None:
     """Run the canonical per-file destroy for every file, accumulating counters.
 
@@ -328,6 +387,19 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
         db.query(Tag).filter(Tag.user_id == user_id).delete(synchronize_session=False)
         summary["tags_deleted"] = len(tag_ids)
 
+    # Documents (#362): per-row, like SpeakerProfile above, not bulk like Tag —
+    # each one carries OpenSearch chunks and a storage object that must be erased
+    # too, not just the row. document.user_id is NO ACTION (same house rule as
+    # media_file.user_id); document_chunk.document_id cascades at the database
+    # level, so no separate chunk-row query is needed here. Legal-hold documents
+    # (v399) are skipped by _purge_documents the same way _purge_files skips a
+    # held media file — which means, same as media, a held document blocks THIS
+    # user-row delete too (document.user_id is NO ACTION): the account survives
+    # until the hold lifts, exactly the media-file precedent this module's
+    # docstring already documents as deliberate.
+    documents = db.query(Document).filter(Document.user_id == user_id).all()
+    _purge_documents(db, documents, summary)
+
     # Whatever the subject wrote on OTHER people's files. The rows on their own
     # files are already gone via purge_media_file's ORM cascade; these are the
     # ones no per-file pass can see, and both FKs are NOT NULL / NO ACTION, so
@@ -351,6 +423,7 @@ def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
         "speaker_collections_deleted": 0,
         "collections_deleted": 0,
         "tags_deleted": 0,
+        "documents_deleted": 0,
         "comments_deleted": 0,
         "tasks_deleted": 0,
         "chat_conversations_deleted": 0,
@@ -488,6 +561,7 @@ def erase_user(
             "legal hold were preserved; user row retained until holds release."
         )
     else:
+        ledger_entry_id = ledger_entry.id if ledger_entry is not None else None
         try:
             db.delete(user)
             db.commit()
@@ -496,6 +570,21 @@ def erase_user(
             db.rollback()
             summary["errors"].append({"user_id": user_id, "error": str(e)})
             logger.error(f"erase_user: failed to delete user row {user_id}: {e}")
+            # db.rollback() expires every object the session was tracking, including
+            # `ledger_entry` — opened and COMMITTED independently by record_request
+            # before anything was destroyed, so this rollback cannot have undone it,
+            # but the in-memory instance is now stale. Without re-fetching it,
+            # `ledger.record_outcome` below raises ObjectDeletedError on its first
+            # attribute read, turning a PARTIAL erasure into an unhandled exception —
+            # breaking this function's own "never raises" docstring promise, exactly
+            # the class of bug this module exists to not have (see its own "Partial
+            # erasure" section).
+            if ledger_entry_id is not None:
+                ledger_entry = (
+                    db.query(ErasureLedgerEntry)
+                    .filter(ErasureLedgerEntry.id == ledger_entry_id)
+                    .first()
+                )
 
     audit_logger.log(
         event_type=AuditEventType.ADMIN_USER_DELETE,
@@ -590,6 +679,18 @@ def erase_org_member_data(
         .all()
     )
     _purge_files(db, files, summary)
+
+    # Documents (#362) this member owns WITHIN this org — added in v399/lane C3/C4.
+    # Missing until now: this path swept MediaFile but never Document, so an org-scoped
+    # erasure left every document the member had uploaded to the tenant untouched, with
+    # no error and no ledger deferral to say so — an Art. 17 request that silently did
+    # not complete for an entire content type.
+    documents = (
+        db.query(Document)
+        .filter(Document.user_id == user_id, Document.organization_id == org_id)
+        .all()
+    )
+    _purge_documents(db, documents, summary)
 
     profiles = (
         db.query(SpeakerProfile)
@@ -724,6 +825,21 @@ def erase_organization(
     files = db.query(MediaFile).filter(MediaFile.organization_id == org_id).all()
     _purge_files(db, files, summary)
 
+    # Every document stamped with this org, across ALL members (v399/lane C3/C4).
+    # ⚠️ This was the SILENT FK failure: document.organization_id is a plain NO ACTION
+    # FK (same house rule as media_file.organization_id), and this function used to
+    # never delete a single Document row before `db.delete(org)` below — so on any org
+    # that had ever had a document uploaded to it, that DELETE raised IntegrityError,
+    # was caught by the bare `except Exception` there, appended to summary["errors"],
+    # and the function returned normally. Nothing above that line looked broken: the
+    # audit event still fires and `_resolve_outcome` still reports PARTIAL — but
+    # PARTIAL reads as "one file failed to purge", not "the org row itself never left
+    # the database", and no caller was reading the errors list closely enough to
+    # notice the same organization_id kept coming back from `erase_organization` calls
+    # that were supposed to be idempotent no-ops on a second run.
+    documents = db.query(Document).filter(Document.organization_id == org_id).all()
+    _purge_documents(db, documents, summary)
+
     # Org-scoped speaker profiles (clear their profile embedding first), then
     # the org's collections — across ALL members of the org.
     profiles = db.query(SpeakerProfile).filter(SpeakerProfile.organization_id == org_id).all()
@@ -755,6 +871,7 @@ def erase_organization(
         .filter(OrganizationMembership.organization_id == org_id)
         .count()
     )
+    ledger_entry_id = ledger_entry.id if ledger_entry is not None else None
     try:
         db.delete(org)
         db.commit()
@@ -762,6 +879,20 @@ def erase_organization(
         db.rollback()
         summary["errors"].append({"org_id": org_id, "error": str(e)})
         logger.error(f"erase_organization: failed to delete org row {org_id}: {e}")
+        # See the identical comment in erase_user: db.rollback() expires every object
+        # in the session, including ledger_entry — committed independently by
+        # record_request before anything was destroyed, so this rollback cannot have
+        # undone the row, only the in-memory instance. A held document (v399) or a
+        # held media file both reach this branch, and until this re-fetch,
+        # ledger.record_outcome below raised ObjectDeletedError on its first
+        # attribute read every time — an unhandled exception from a function whose
+        # docstring promises it never raises.
+        if ledger_entry_id is not None:
+            ledger_entry = (
+                db.query(ErasureLedgerEntry)
+                .filter(ErasureLedgerEntry.id == ledger_entry_id)
+                .first()
+            )
 
     summary["memberships_removed"] = member_count
 

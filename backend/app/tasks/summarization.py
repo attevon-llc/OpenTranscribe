@@ -40,15 +40,53 @@ from app.core.constants import NLPPriority
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.services.ingest_artifacts.service import source_fingerprint
 from app.services.llm_service import LLMService
 from app.services.redaction.llm_guard import RedactionNotReadyError
 from app.services.redaction.llm_guard import defer_for_redaction
 from app.services.redaction.llm_guard import resolve_llm_masking
 from app.utils.transcript_builders import build_transcript_and_stats
+from app.utils.transcript_builders import get_speaker_name
 from app.utils.user_settings_helpers import get_user_llm_output_language
 
 # Setup logging
 logger = logging.getLogger(__name__)
+
+
+def fingerprint_transcript_segments(transcript_segments) -> str:
+    """The #464 staleness key: identical shape to ``file_facts.source_fingerprint``.
+
+    ``ingest_artifacts.service.source_fingerprint`` hashes id/timings/resolved
+    speaker/text over a list of plain dicts; this builds that same list from the
+    ORM rows this task already loaded (ordered by ``start_time, end_time, id`` —
+    the same total order ``ingest_artifacts.service.load_ordered_segments`` uses,
+    which is what makes the two fingerprints comparable at all). Extracted to a
+    top-level function so it is directly unit-testable without a database or a
+    bound Celery task — the transformation is the thing that must stay in lockstep
+    with ``load_ordered_segments``, not the query around it.
+
+    Args:
+        transcript_segments: ``TranscriptSegment`` rows (or any duck-typed
+            stand-in exposing ``id``/``text``/``start_time``/``end_time``/
+            ``speaker``), already ordered by ``(start_time, end_time, id)``.
+
+    Returns:
+        The SHA-256 hex digest ``chat/mapreduce.scope_digest_hits`` compares
+        against ``file_facts.source_fingerprint`` to decide whether this file's
+        LLM summary is fresh enough to trust in the map tier.
+    """
+    return source_fingerprint(
+        [
+            {
+                "id": int(segment.id),
+                "text": str(segment.text or ""),
+                "start_time": float(segment.start_time or 0.0),
+                "end_time": float(segment.end_time or 0.0),
+                "speaker": get_speaker_name(segment),
+            }
+            for segment in transcript_segments
+        ]
+    )
 
 
 def _handle_no_llm_configured(
@@ -351,6 +389,11 @@ def _load_summarization_inputs(
         if not transcript_segments:
             raise ValueError(f"No transcript segments found for file {file_id}")
 
+        # #464: the same "has anything changed?" fingerprint the digest tier
+        # stores on `file_facts.source_fingerprint`, computed over the SAME
+        # rows already fetched above — no extra query.
+        source_fingerprint = fingerprint_transcript_segments(transcript_segments)
+
         # Redact PII/profanity before sending to the LLM provider when the
         # owner's (or admin-forced) policy requires it (don't leak to third parties).
         # Errors are NOT swallowed: an unresolvable policy or missing detection
@@ -400,6 +443,7 @@ def _load_summarization_inputs(
         "speaker_stats": speaker_stats,
         "output_language": output_language,
         "organization_context": organization_context,
+        "source_fingerprint": source_fingerprint,
     }
 
 
@@ -468,6 +512,13 @@ def _generate_llm_summary(
         summary_data["metadata"] = {}
     summary_data["metadata"]["processing_time_ms"] = processing_time
     summary_data["metadata"]["output_language"] = output_language
+    # #464: the staleness key `chat/mapreduce.scope_digest_hits` compares
+    # against `file_facts.source_fingerprint` before trusting this summary in
+    # the map tier. Stamped unconditionally — a summary with no fingerprint is
+    # exactly what a pre-#464 (legacy) summary looks like, and the map tier
+    # treats "no fingerprint" as "stale" on purpose (self-healing rather than
+    # trusted on faith).
+    summary_data["metadata"]["source_fingerprint"] = inputs.get("source_fingerprint")
     logger.info(f"LLM summarization completed in {processing_time}ms")
 
     return summary_data

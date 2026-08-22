@@ -52,9 +52,15 @@ class TranscriptionConfig:
     num_speakers: int | None = None
     hf_token: str | None = None
     enable_native_embeddings: bool = True
-    enable_diarization: bool = True  # False to skip PyAnnote entirely
+    enable_diarization: bool = True  # False to skip diarization entirely
     enable_overlap_detection: bool = True
     overlap_min_duration: float = 0.25
+
+    # Which diarization engine to run (issue #58): "native" (diar-native, Rust/speakrs) is the
+    # default/primary; "pyannote" pins the in-process fork directly and is also what
+    # ModelManager falls back to automatically when the native sidecar is unreachable. The
+    # single decision point — see ModelManager._build_diarizer / _diarizer_current.
+    diarizer_backend: str = "native"
 
     # VAD settings (Silero VAD used by faster-whisper BatchedInferencePipeline)
     vad_threshold: float = 0.5
@@ -157,6 +163,7 @@ class TranscriptionConfig:
             ),
             repetition_penalty=float(os.getenv("WHISPER_REPETITION_PENALTY", "1.0")),
             concurrent_requests=cls._resolve_concurrent_requests(),
+            diarizer_backend=cls._resolve_diarizer_backend(),
         )
 
         # Note: batch_size is NOT divided by concurrent_requests. CTranslate2
@@ -313,6 +320,50 @@ class TranscriptionConfig:
         from app.services.asr.model_discovery import resolve_loadable_model_name
 
         return resolve_loadable_model_name(raw)
+
+    @staticmethod
+    def _resolve_diarizer_backend() -> str:
+        """Resolve the diarization engine: SystemSettings DB key -> env var -> default.
+
+        Mirrors ``_resolve_model_name``'s DB > env > default order, re-read on every call
+        (no pinning) so ModelManager's per-task sidecar health probe can react to both an
+        admin toggling the setting and a recovered sidecar, without a worker restart —
+        the same reasoning ``NativeSpeakerDiarizer``/``ModelManager._diarizer_current``
+        already rely on for the reverse direction (a sidecar going away mid-queue).
+
+        The result is validated against ``engine.backends.VALID_DIARIZER_BACKENDS`` — the
+        same vocabulary the admin API validates writes against — so a bad value (typo, a
+        name from a future backend that never got registered) fails safe to "native" with a
+        loud warning instead of silently producing a diarizer nothing selected.
+        """
+        raw = os.getenv("ENGINE_DIARIZER_BACKEND", "native")
+        try:
+            from app.db.session_utils import session_scope
+            from app.models.system_settings import SystemSettings
+
+            with session_scope() as db:
+                setting = (
+                    db.query(SystemSettings)
+                    .filter(SystemSettings.key == "engine.diarizer_backend")
+                    .first()
+                )
+                if setting and setting.value:
+                    raw = str(setting.value)
+        except Exception:  # noqa: S110  # nosec B110
+            # DB not available (e.g., during testing, worker startup race) — fall back to env
+            logger.debug("Could not read engine.diarizer_backend from DB, using env var")
+
+        from app.transcription.engine.backends import VALID_DIARIZER_BACKENDS
+
+        normalized = raw.strip().lower()
+        if normalized not in VALID_DIARIZER_BACKENDS:
+            logger.warning(
+                "Unknown diarizer_backend '%s' (valid: %s); using native",
+                raw,
+                VALID_DIARIZER_BACKENDS,
+            )
+            return "native"
+        return normalized
 
     @staticmethod
     def _resolve_concurrent_requests() -> int:

@@ -14,14 +14,29 @@
 x-dev-environment: &dev-environment
   ENVIRONMENT: development
 
+# All 13 backend-image build blocks below build the same image and must agree on
+# how — most importantly these args. Dockerfile.prod's APP_VERSION/GIT_SHA ARGs
+# default to "unknown"/empty; without args here a stack built from this file
+# (including a detached "the image IS the code" measurement stack, #55) cannot
+# say which commit produced it, which is the whole point of baking source in
+# instead of bind-mounting it. opentr.sh exports both from the environment
+# (VERSION file / `git rev-parse --short HEAD`, with a "-dirty" suffix for an
+# uncommitted tree). One anchor keeps all 13 blocks in sync — a copy-pasted
+# args: block would silently drift as services are added.
+x-backend-build: &backend-build
+  context: ./backend
+  dockerfile: Dockerfile.prod
+  args:
+    APP_VERSION: ${APP_VERSION:-}
+    GIT_SHA: ${GIT_SHA:-}
+
 services:
   # All backend services share the same image to save disk space
   # Image is built once and reused by all backend-based services
   backend:
     image: opentranscribe-backend:latest
     build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       # Exclude the host's backend/venv/ (docs: `backend/CLAUDE.md`) from the container's
@@ -60,8 +75,7 @@ services:
     environment:
       <<: *dev-environment
     build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -75,8 +89,7 @@ services:
     environment:
       <<: *dev-environment
     build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -88,8 +101,7 @@ services:
     environment:
       <<: *dev-environment
     build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -99,8 +111,7 @@ services:
     environment:
       <<: *dev-environment
     build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -112,8 +123,7 @@ services:
     environment:
       <<: *dev-environment
     build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -123,8 +133,7 @@ services:
     environment:
       <<: *dev-environment
     build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -134,8 +143,7 @@ services:
     environment:
       <<: *dev-environment
     build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -146,8 +154,7 @@ services:
     environment:
       <<: *dev-environment
     build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -180,8 +187,7 @@ services:
     environment:
       <<: *dev-environment
     build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+      <<: *backend-build
     volumes:
       # Flower only needs persistent DB storage, not hot-reload source code.
       # Mounted at /app/temp, never /app: a named volume over the image's code
@@ -206,8 +212,7 @@ services:
     environment:
       <<: *dev-environment
     build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -225,8 +230,7 @@ services:
     environment:
       <<: *dev-environment
     build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why
@@ -242,8 +246,7 @@ services:
     environment:
       <<: *dev-environment
     build:
-      context: ./backend
-      dockerfile: Dockerfile.prod
+      <<: *backend-build
     volumes:
       - ./backend:/app  # Mount source code for development
       - /app/venv  # Exclude host backend/venv/ — see the `backend` service above for why

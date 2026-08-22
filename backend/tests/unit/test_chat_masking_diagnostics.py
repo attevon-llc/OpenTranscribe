@@ -47,11 +47,18 @@ def _prepare(monkeypatch, *, masked: list[MaskedChunk], retrieved: int) -> dict:
         lambda **_: RetrievalResult(chunks=[chunk.source for chunk in masked], retrieved=retrieved),
     )
     monkeypatch.setattr(chat_service, "mask_chunks", lambda *_args, **_kwargs: masked)
-    # `_prepare_context` returns (masked_chunks, meta, counted, overview) since
-    # Stage 4 added the counted and overview tiers. Only `meta` is under test
-    # here, so the rest are discarded by name rather than by arity — a bare
-    # `_, meta = ...` broke silently when the tuple grew from two to four.
-    _, meta, _counted, _overview = chat_service._prepare_context(
+    # Phase 3.5 (quarantine drop) runs a real Postgres query and this module's
+    # session factory yields `None` on purpose, to stay Postgres-free like
+    # `mask_chunks` above; see test_chat_permissions_quarantine.py for the
+    # real-database coverage of `_drop_quarantined_hits` itself.
+    monkeypatch.setattr(chat_service, "_drop_quarantined_hits", lambda _db, hits: hits)
+    # `_prepare_context` returns (masked_chunks, meta, counted, overview,
+    # synthesis_block, recurrence_block) — Stage 4 added the counted and overview
+    # tiers, W2.6 added the two fan-out blocks. Only `meta` is under test here, so
+    # the rest are discarded by name rather than by arity: a bare `_, meta = ...`
+    # broke silently when the tuple grew, whereas naming every member makes the
+    # next growth a loud `ValueError` in exactly the place that has to be updated.
+    _, meta, _counted, _overview, _synthesis, _recurrence = chat_service._prepare_context(
         user_id=1,
         organization_id=None,
         question="what did we decide?",

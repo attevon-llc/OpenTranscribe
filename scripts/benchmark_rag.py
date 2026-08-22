@@ -238,6 +238,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--search-mode', default='hybrid', choices=('hybrid', 'semantic', 'keyword')
     )
+    parser.add_argument(
+        '--bm25-fields',
+        default='default',
+        choices=('default', 'no-stem'),
+        help='BM25 field set for retrieve_chunks/retrieve_digests (#506, the '
+        "no-stemmed-leg arm). 'default' is this module's historical, unboosted "
+        "['content', 'content.exact', 'title']. 'no-stem' drops the STEMMED `content` "
+        'leg entirely, querying only content.exact/title(/speaker) via '
+        "HybridSearchService's own boosted field list (use_exact=True). Recorded in "
+        'runinfo.json under retrieval.text_fields_preset.',
+    )
     _add_fusion_arguments(parser)
     parser.add_argument('--size', type=int, default=48, help='Candidate pool per query')
     parser.add_argument(
@@ -297,6 +308,16 @@ def build_parser() -> argparse.ArgumentParser:
         'either way — a subset is never exact.',
     )
     parser.add_argument('--compare', default=None, help='Baseline metrics.json to diff against')
+    parser.add_argument(
+        '--compare-only',
+        nargs=2,
+        default=None,
+        metavar=('BASELINE_A', 'BASELINE_B'),
+        help='Paired-significance diff between two COMMITTED baselines (#461). Each arg is a '
+        'baseline name under tests/eval/baselines/, or a path to a baseline dir or its '
+        'metrics.json. Reads two files and exits — no OpenSearch, Postgres, or corpus '
+        'injection, so it runs with no stack up.',
+    )
     parser.add_argument(
         '--host',
         default='localhost',
@@ -380,6 +401,116 @@ def _load_corpus(key: str, manifest_root: Path, data_dir: Path):
     return corpus, turns, queries
 
 
+def _fingerprint(entries: list[dict[str, Any]]) -> str:
+    """A stable, order-independent digest of an injection-identity entry list."""
+    import hashlib
+
+    canonical = json.dumps(entries, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(canonical.encode('utf-8')).hexdigest()[:16]
+
+
+def _scan_injection_identity(
+    client: Any, index: str, manifest_root: Path, scored_keys: set[str]
+) -> dict[str, Any]:
+    """Every corpus manifest actually present in the measured index, scored or not.
+
+    ``--corpus`` only lists what gets SCORED — a haystack-only corpus like ``ami`` ships
+    no query loader (see the ``else`` branch in :func:`_load_corpus`) and can never appear
+    there — but a distractor corpus injected alongside a scored one still changes what
+    every retrieval number MEASURES: the haystack a query has to be found IN. Two runs
+    with the same scored corpus and a different distractor composition are not
+    comparable, and nothing about ``metrics.json`` would show that on its own; this is
+    what ``--compare-only`` refuses on rather than warns about (see ``_run_compare_only``
+    and ``rag-evaluation.md``'s "AMI distractor haystack" section).
+
+    Recorded in ``runinfo.json``, never ``metrics.json`` — like every other
+    run-circumstance field, it is not part of the deterministic scoring claim.
+
+    A manifest directory on disk with ZERO of its files present in the measured index is
+    excluded rather than recorded as ``files_present_in_index: 0`` — it may be a manifest
+    left over from an unrelated injection (a different ``--fresh`` stack, a deleted
+    corpus), and an empty entry would be indistinguishable from "present but retrieved
+    nothing" in a later read of the file. This is also the mechanism that keeps stale
+    sibling manifests out of a fresh, empty-at-first ``--fresh`` stack's identity: only
+    what actually landed in THIS index counts.
+    """
+    from tests.eval.harness import corpora as corpora_mod
+    from tests.eval.harness import index_reader as index_reader_mod
+
+    entries: list[dict[str, Any]] = []
+    if manifest_root.is_dir():
+        for child in sorted(manifest_root.iterdir()):
+            if not (child / 'manifest.json').is_file():
+                continue
+            try:
+                corpus = corpora_mod.load_manifest(child)
+            except (OSError, ValueError, KeyError) as exc:
+                logger.warning('injection_identity: could not read %s: %s', child, exc)
+                continue
+            chunks = index_reader_mod.fetch_chunks(client, index, corpus.file_uuids)
+            present = sum(1 for v in chunks.values() if v)
+            if present == 0:
+                continue
+            entries.append(
+                {
+                    'key': corpus.key,
+                    'version': corpus.version,
+                    'meetings_in_manifest': len(corpus.file_uuid_by_meeting),
+                    'files_present_in_index': present,
+                    'scored': corpus.key in scored_keys,
+                }
+            )
+    entries.sort(key=lambda e: str(e['key']))
+    return {'corpora': entries, 'fingerprint': _fingerprint(entries)}
+
+
+def _refuse_on_differing_injection_identity(name_a: str, name_b: str) -> str | None:
+    """``None`` if safe to compare; otherwise the refusal message for ``--compare-only``.
+
+    Reads each baseline's ``runinfo.json`` (same directory as its ``metrics.json`` — see
+    ``_resolve_baseline_metrics_path``). Refuses outright when BOTH sides recorded an
+    identity and they differ — a distractor-extended run compared against a QMSum-only
+    run would report a delta that is actually a haystack-composition change, and #461's
+    own instruction is that this must refuse, not warn. When either side predates this
+    field (no ``runinfo.json``, or one without ``injection_identity`` — every baseline
+    committed before this landed), comparison proceeds with a loud warning instead: there
+    is no fingerprint to disagree with, and refusing every legacy baseline would be a
+    regression, not a safety improvement.
+    """
+
+    def _load_identity(name: str) -> dict[str, Any] | None:
+        runinfo_path = _resolve_baseline_metrics_path(name).with_name('runinfo.json')
+        if not runinfo_path.is_file():
+            return None
+        try:
+            runinfo = json.loads(runinfo_path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return None
+        identity = runinfo.get('injection_identity') if isinstance(runinfo, dict) else None
+        return identity if isinstance(identity, dict) else None
+
+    identity_a = _load_identity(name_a)
+    identity_b = _load_identity(name_b)
+    if identity_a is None or identity_b is None:
+        logger.warning(
+            '--compare-only: injection identity unavailable for %r and/or %r (predates '
+            '#461 A5) — comparison proceeding WITHOUT verifying the two runs measured '
+            'the same corpus composition.',
+            name_a,
+            name_b,
+        )
+        return None
+    if identity_a.get('fingerprint') != identity_b.get('fingerprint'):
+        return (
+            f'--compare-only: {name_a!r} and {name_b!r} were measured against DIFFERENT '
+            f'injected corpus compositions — refusing rather than reporting a delta that '
+            f'is actually a haystack change.\n'
+            f'  {name_a}: {identity_a.get("corpora")}\n'
+            f'  {name_b}: {identity_b.get("corpora")}'
+        )
+    return None
+
+
 def _score_answers(args, queries: list, user_id: int, client, settings):
     """Score the answer-scored queries, and record what produced each answer.
 
@@ -437,12 +568,160 @@ def _score_answers(args, queries: list, user_id: int, client, settings):
     }, rows
 
 
+def _resolve_baseline_metrics_path(baseline: str) -> Path:
+    """A baseline name under ``tests/eval/baselines/``, or an explicit path.
+
+    Args:
+        baseline: e.g. ``miracl-es-english``, a baseline directory, or a direct
+            path to a ``metrics.json``.
+
+    Returns:
+        The resolved ``metrics.json`` path.
+
+    Raises:
+        SystemExit: nothing on disk matches ``baseline``.
+    """
+    candidate = Path(baseline)
+    if candidate.is_file():
+        return candidate
+    if candidate.is_dir():
+        return candidate / 'metrics.json'
+    by_name = DEFAULT_BASELINE_ROOT / baseline
+    if by_name.is_dir():
+        return by_name / 'metrics.json'
+    raise SystemExit(
+        f'--compare-only: {baseline!r} is not a metrics.json path, a baseline directory, '
+        f'or a name under {DEFAULT_BASELINE_ROOT}'
+    )
+
+
+def _load_baseline_metrics(baseline: str) -> dict[str, Any]:
+    path = _resolve_baseline_metrics_path(baseline)
+    if not path.is_file():
+        raise SystemExit(f'--compare-only: no metrics.json at {path}')
+    payload = json.loads(path.read_text(encoding='utf-8'))
+    if not isinstance(payload, dict):
+        raise SystemExit(f'--compare-only: {path} is not a JSON object at the top level')
+    return payload
+
+
+def _render_significance_table(rows: list[dict[str, Any]]) -> str:
+    """The ``--compare-only`` table: one line per (corpus, class, measure).
+
+    ``dir`` reads ``↑`` for a higher-is-better measure (nDCG, recall, MRR, ...) and
+    ``↓`` for a lower-is-better one (``false_attribution_rate`` — #461 W2.E1). It is
+    display-only: `higher_is_better` never changes the sign of `delta_mean` itself,
+    only how a reader should interpret a positive one.
+
+    The CI column header is DERIVED from ``row["confidence"]`` (``significance.
+    summarize`` carries it on every row precisely so this never hardcodes "95%" —
+    a mutant that silently changed the bootstrap's actual confidence level would
+    otherwise mislabel its own output). A ``degenerate`` row (n < 2, or every
+    delta identical — see ``significance.summarize``'s docstring) is marked with
+    ``*``: its CI/p-value do not mean what they would over real spread, and a
+    reader scanning only ``ci_contains_zero`` must not mistake it for a real
+    result on a class this small.
+    """
+    confidence = rows[0]['confidence'] if rows else 0.95
+    ci_header = f'{confidence * 100:.0f}% CI'
+    header = ['corpus', 'class', 'measure', 'dir', 'n', 'delta_mean', ci_header, 't', 'p']
+    lines = [
+        '| ' + ' | '.join(header) + ' |',
+        '|' + '|'.join(['---'] * len(header)) + '|',
+    ]
+    any_degenerate = False
+    for row in rows:
+        ci = f'[{row["ci_low"]:+.4f}, {row["ci_high"]:+.4f}]'
+        if row['ci_contains_zero']:
+            ci += ' (contains 0)'
+        t_stat = 'n/a' if row['t_statistic'] is None else f'{row["t_statistic"]:.3f}'
+        p_val = 'n/a' if row['p_value'] is None else f'{row["p_value"]:.4f}'
+        direction = '↑' if row.get('higher_is_better', True) else '↓'
+        degenerate = row.get('degenerate', False)
+        any_degenerate = any_degenerate or degenerate
+        n_cell = f'{row["n"]}*' if degenerate else str(row['n'])
+        lines.append(
+            '| '
+            + ' | '.join(
+                [
+                    row['corpus'],
+                    row['query_class'],
+                    row['measure'],
+                    direction,
+                    n_cell,
+                    f'{row["delta_mean"]:+.4f}',
+                    ci,
+                    t_stat,
+                    p_val,
+                ]
+            )
+            + ' |'
+        )
+    table = '\n'.join(lines) + '\n'
+    if any_degenerate:
+        table += (
+            '\n* degenerate: n < 2 or every delta identical — CI/p-value are not '
+            'meaningful at this sample size, do not gate a decision on them.\n'
+        )
+    return table
+
+
+def _run_compare_only(args: argparse.Namespace) -> int:
+    """``--compare-only A B``: paired significance between two COMMITTED baselines.
+
+    Reads two ``metrics.json`` files and computes it (#461) — no OpenSearch, no
+    Postgres, no corpus injection, so this runs with no stack up at all.
+    """
+    from tests.eval.harness.significance import PartialJoinError, paired_join, summarize
+
+    name_a, name_b = args.compare_only
+    metrics_a = _load_baseline_metrics(name_a)
+    metrics_b = _load_baseline_metrics(name_b)
+
+    refusal = _refuse_on_differing_injection_identity(name_a, name_b)
+    if refusal is not None:
+        logger.error('%s', refusal)
+        return 3
+
+    rows_a = metrics_a.get('retrieval_per_query') or []
+    rows_b = metrics_b.get('retrieval_per_query') or []
+    if not rows_a or not rows_b:
+        empty = name_a if not rows_a else name_b
+        logger.error(
+            '--compare-only: %r has no retrieval_per_query rows — it predates '
+            'report.build_retrieval_per_query (8117e6f3) or was regenerated before it, '
+            'see rag-evaluation.md#paired-significance',
+            empty,
+        )
+        return 3
+
+    try:
+        paired = paired_join(rows_a, rows_b)
+    except PartialJoinError as exc:
+        logger.error('--compare-only: %s', exc)
+        return 3
+
+    # The baseline ARGUMENT identifies which file was read; metrics.json's own
+    # `control_name` is whatever --control-name the run was invoked with (often
+    # left at its default), so printing that instead would show 'stage1-baseline'
+    # for two baselines the caller explicitly told apart by name.
+    summary_rows = summarize(paired)
+    print(f'Paired significance: {name_a!r} (A) vs {name_b!r} (B), {len(paired)} queries')
+    print(_render_significance_table(summary_rows))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read top to bottom
     args = build_parser().parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO, format='%(levelname)s %(message)s'
     )
     logging.getLogger('app.services.search.chunk_retrieval').setLevel(logging.WARNING)
+
+    if args.compare_only:
+        # No stack needed: reads two committed baseline files and exits, before any
+        # of the OpenSearch/Postgres/corpus-injection setup below.
+        return _run_compare_only(args)
 
     # setdefault, not assignment: an explicitly exported host still wins, which
     # is how the ./opentr.sh wrapper and CI point this somewhere else.
@@ -497,6 +776,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
         scope=args.scope,
         workers=args.workers,
         fusion=_build_fusion(args),
+        text_fields_preset=args.bm25_fields,
         **_build_budget(args),
     )
 
@@ -723,6 +1003,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
         answer_table = report_mod.render_answer_table(answer_rows)
         (out_dir / 'answers.md').write_text(answer_table, encoding='utf-8')
     elapsed = time.monotonic() - started
+    injection_identity = _scan_injection_identity(
+        client, settings.OPENSEARCH_CHUNKS_INDEX, manifest_root, scored_keys=set(keys)
+    )
     (out_dir / 'runinfo.json').write_text(
         json.dumps(
             {
@@ -730,6 +1013,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
                 'target': target,
                 'settle': settled,
                 'retrieval_latency_ms': _latency_summary(retrieval_ms, config.workers),
+                'injection_identity': injection_identity,
             },
             indent=2,
         )

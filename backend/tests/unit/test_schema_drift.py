@@ -27,18 +27,19 @@ scripts/run-integration-tests.sh).
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
+from tests.env_gate import gate_enabled
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DRIFT_SCRIPT = REPO_ROOT / "scripts" / "check-schema-drift.py"
 
 pytestmark = pytest.mark.skipif(
-    os.getenv("RUN_SCHEMA_DRIFT_TESTS", "").lower() != "true",
+    not gate_enabled("RUN_SCHEMA_DRIFT_TESTS"),
     reason="needs a live migrated database; set RUN_SCHEMA_DRIFT_TESTS=true",
 )
 

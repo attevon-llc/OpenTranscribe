@@ -1,0 +1,185 @@
+"""``redaction.llm_guard.is_local_provider`` — the provider-keyed masking gate.
+
+Owner decision, 2026-08-13 (see ``services/chat/CLAUDE.md``): a LOCAL model never has
+excerpt text leave the machine, so masking it before the call costs recall for no
+egress benefit; a REMOTE provider still gets masked text, because that call is a real
+data-egress event. ``is_local_provider`` is the ONE place that classification happens,
+and it must **fail closed** — any ambiguity reads as remote.
+
+Every test here avoids live DNS: an IP-literal ``base_url`` needs no resolution at
+all, and the two cases that genuinely go through hostname resolution (a SaaS-shaped
+host, and a hostname DNS cannot resolve) monkeypatch
+``app.utils.url_validation.resolve_public_addresses`` directly rather than depending
+on the sandbox actually having network access — a network-dependent unit test would
+be exactly the kind of "test that cannot fail the way it claims to" this repo's
+auditors exist to catch.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from unittest.mock import patch
+
+from app.services.redaction.llm_guard import is_local_provider
+
+
+@dataclass
+class _Config:
+    provider: str
+    base_url: str | None = None
+
+
+# --------------------------------------------------------------------------- #
+# The required seven-case matrix
+# --------------------------------------------------------------------------- #
+
+
+def test_a_remote_hosted_provider_is_masked():
+    """openai/anthropic/etc. are third-party APIs by construction — never local."""
+    assert is_local_provider(_Config(provider="openai", base_url=None)) is False
+    assert is_local_provider(_Config(provider="anthropic")) is False
+    assert is_local_provider(_Config(provider="openrouter")) is False
+
+
+def test_vllm_is_unmasked():
+    assert is_local_provider(_Config(provider="vllm", base_url=None)) is True
+
+
+def test_ollama_is_unmasked():
+    assert is_local_provider(_Config(provider="ollama", base_url=None)) is True
+
+
+def test_custom_saas_host_is_masked():
+    """A `custom` endpoint naming a public SaaS host is remote, exactly like openai."""
+    with patch(
+        "app.utils.url_validation.resolve_public_addresses",
+        return_value=(["93.184.216.34"], ""),
+    ):
+        cfg = _Config(provider="custom", base_url="https://api.example.com/v1")
+        assert is_local_provider(cfg) is False
+
+
+def test_custom_rfc1918_host_is_unmasked():
+    """An IP literal needs no DNS step — RFC1918 is judged straight from the URL."""
+    cfg = _Config(provider="custom", base_url="http://192.168.1.50:8000/v1")
+    assert is_local_provider(cfg) is True
+
+
+def test_ambiguous_dns_failure_is_masked():
+    """DNS cannot resolve the host at all — ambiguous, so remote (fail closed)."""
+    with patch(
+        "app.utils.url_validation.resolve_public_addresses",
+        return_value=([], "Cannot resolve hostname: nope.invalid"),
+    ):
+        cfg = _Config(provider="custom", base_url="https://nope.invalid/v1")
+        assert is_local_provider(cfg) is False
+
+
+def test_force_floor_locked_and_local_still_masks():
+    """The floor is read by `redactor._gather`, not this function — but the function
+
+    must still correctly report "local" so the floor has something to override.
+    Locking is proven end to end in `test_chat_redactor_provider_locality.py`; this
+    is the half that belongs to this module: `is_local_provider` itself carries no
+    admin-floor awareness and must not — that decision is `cfg.redact_before_llm_locked`,
+    resolved elsewhere.
+    """
+    assert is_local_provider(_Config(provider="vllm")) is True
+
+
+# --------------------------------------------------------------------------- #
+# Fail-closed: every ambiguity resolves to False (remote — mask)
+# --------------------------------------------------------------------------- #
+
+
+def test_no_base_url_is_masked():
+    assert is_local_provider(_Config(provider="custom", base_url=None)) is False
+    assert is_local_provider(_Config(provider="custom", base_url="")) is False
+
+
+def test_unparseable_base_url_is_masked():
+    assert is_local_provider(_Config(provider="custom", base_url="::not a url::")) is False
+
+
+def test_no_hostname_in_url_is_masked():
+    assert is_local_provider(_Config(provider="custom", base_url="file:///etc/passwd")) is False
+
+
+def test_mixed_public_and_private_addresses_is_masked():
+    """A hostname split between a private and a genuinely public A record is
+
+    exactly the ambiguity this function refuses to guess about. ``203.0.113.0/24``
+    would NOT do here — Python's ``ipaddress.is_private`` classifies the whole
+    RFC 5737 documentation range (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24)
+    as private, so a docs-range address is not actually public in the sense this
+    function cares about; ``8.8.8.8`` (a real, routed, non-private address) is.
+    """
+    with patch(
+        "app.utils.url_validation.resolve_public_addresses",
+        return_value=(["10.0.0.5", "8.8.8.8"], ""),
+    ):
+        cfg = _Config(provider="custom", base_url="https://split.example/v1")
+        assert is_local_provider(cfg) is False
+
+
+def test_metadata_blocked_reason_is_masked():
+    """A `reason` on the response (cloud IMDS) is refused outright, never local."""
+    with patch(
+        "app.utils.url_validation.resolve_public_addresses",
+        return_value=([], "Cloud metadata endpoint blocked"),
+    ):
+        cfg = _Config(provider="custom", base_url="http://metadata.example/v1")
+        assert is_local_provider(cfg) is False
+
+
+def test_unknown_provider_is_masked():
+    assert is_local_provider(_Config(provider="bedrock")) is False
+    assert is_local_provider(_Config(provider="totally-unknown")) is False
+
+
+def test_missing_provider_attribute_is_masked():
+    """Duck-typed on `.provider`/`.base_url` — an object missing either fails closed."""
+
+    class _Bare:
+        pass
+
+    assert is_local_provider(_Bare()) is False
+
+
+def test_a_none_config_is_masked():
+    """D6: no LLM_PROVIDER configured at all is a first-class deployment shape
+
+    (deterministic maps / keyphrase / coverage tiers still run with no `llm`).
+    ``getattr(config, "provider", "")`` on ``None`` is ``""``, which is not a
+    known local provider, so this needs no special-cased ``None`` branch to
+    fail closed — callers reach it via ``getattr(llm, "config", None)``
+    (`chat/service.py`), never a bare ``is_local_provider(None)`` in practice,
+    but the function itself must not raise either way.
+    """
+    assert is_local_provider(None) is False
+
+
+# --------------------------------------------------------------------------- #
+# `localhost` and dotless docker-compose hostnames
+# --------------------------------------------------------------------------- #
+
+
+def test_localhost_is_unmasked():
+    cfg = _Config(provider="custom", base_url="http://localhost:8000/v1")
+    assert is_local_provider(cfg) is True
+
+
+def test_dotless_docker_hostname_is_unmasked_without_dns():
+    """`http://backend:8000` — a docker-compose service name, judged local without
+
+    a DNS round trip (many of the environments this matters in have no resolver
+    entry for it at all).
+    """
+    with patch("app.utils.url_validation.resolve_public_addresses") as mocked:
+        cfg = _Config(provider="custom", base_url="http://mock-llm:5199/v1")
+        assert is_local_provider(cfg) is True
+        mocked.assert_not_called()
+
+
+def test_provider_is_case_and_whitespace_insensitive():
+    assert is_local_provider(_Config(provider=" VLLM ")) is True

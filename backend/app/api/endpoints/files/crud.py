@@ -32,6 +32,7 @@ from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_service import tag_ownership
+from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.time_format import format_timestamp_simple as format_timestamp
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 
@@ -357,8 +358,13 @@ def _add_error_info_to_response(response: MediaFileDetail, db_file: MediaFile) -
 def _resolve_segment_speaker_name(speaker: Speaker | None) -> str:
     """Resolve a never-null display name for a segment's speaker.
 
-    Mirrors the frontend's fallback chain so the field can be rendered as-is:
-    ``display_name`` → ``name`` (original speaker label) → ``"Unknown speaker"``.
+    Delegates to :func:`~app.utils.speaker_labels.canonical_speaker_label` —
+    the single home for this resolution — rather than the
+    ``display_name or name or "Unknown speaker"`` chain this endpoint used to
+    run inline. That chain was a THIRD spelling of "no attribution"
+    (lowercase ``"Unknown speaker"``, next to ``file_facts``'s
+    ``"Unknown Speaker"`` and the chunk-index writers' bare ``"Unknown"``) and
+    never considered a confident LLM/embedding suggestion.
 
     Args:
         speaker: The segment's linked Speaker, or None.
@@ -367,8 +373,13 @@ def _resolve_segment_speaker_name(speaker: Speaker | None) -> str:
         A non-empty display name string.
     """
     if speaker is None:
-        return "Unknown speaker"
-    return str(speaker.display_name or speaker.name or "Unknown speaker")
+        return canonical_speaker_label(None)
+    return canonical_speaker_label(
+        speaker.name,
+        display_name=speaker.display_name,
+        suggested_name=speaker.suggested_name,
+        confidence=speaker.confidence,
+    )
 
 
 def _build_grouped_segments(formatted_segments: list[Any], index_offset: int = 0) -> list[Any]:

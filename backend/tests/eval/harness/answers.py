@@ -55,7 +55,18 @@ from typing import Any
 INTEGER = "integer"
 FILE_SET = "file_set"
 SPEAKER_COUNT = "speaker_count"
-KINDS = (INTEGER, FILE_SET, SPEAKER_COUNT)
+#: A bare speaker name — the gold value for a SPEAKER_ATTR/SPEAKER_SUMMARY query
+#: (#461 W2.E1) and the shape a submitted attribution answer is compared against.
+SPEAKER = "speaker"
+#: ``(true_speaker, decoy_speaker)`` — an ATTRIBUTION_PROBE case's gold (#461
+#: W2.E1). Named ``_KIND`` to keep this distinct from
+#: ``corpora.ATTRIBUTION_PROBE`` (the query CLASS) — the two travel together but
+#: are never the same value: a probe query's ``query_class`` is the corpora
+#: constant, its ``gold_answer.kind`` is this one. The decoy is a real speaker in
+#: the SAME meeting who did NOT say the quoted material; a submitted answer
+#: confirming the decoy is a false attribution.
+ATTRIBUTION_PROBE_KIND = "attribution_probe"
+KINDS = (INTEGER, FILE_SET, SPEAKER_COUNT, SPEAKER, ATTRIBUTION_PROBE_KIND)
 
 #: Reported for every answer-scored query. ``EM`` is the gate; ``partial`` is a
 #: diagnostic; ``answered`` is the share of the class the system attempted at all
@@ -95,6 +106,14 @@ class Answer:
         return Answer(SPEAKER_COUNT, (str(speaker), int(sessions)))
 
     @staticmethod
+    def speaker(name: str) -> Answer:
+        return Answer(SPEAKER, str(name))
+
+    @staticmethod
+    def attribution_probe(true_speaker: str, decoy_speaker: str) -> Answer:
+        return Answer(ATTRIBUTION_PROBE_KIND, (str(true_speaker), str(decoy_speaker)))
+
+    @staticmethod
     def from_record(kind: str, value: Any, *, remap: dict[str, str] | None = None) -> Answer:
         """Build from the generator's ``queries.jsonl`` ``answer`` field.
 
@@ -124,6 +143,8 @@ class Answer:
             return list(self.value)
         if self.kind == SPEAKER_COUNT:
             return {"speaker": self.value[0], "sessions": self.value[1]}
+        if self.kind == ATTRIBUTION_PROBE_KIND:
+            return {"true_speaker": self.value[0], "decoy_speaker": self.value[1]}
         return self.value
 
 

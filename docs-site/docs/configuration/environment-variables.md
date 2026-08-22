@@ -180,6 +180,31 @@ SEARCH_MAX_OVERFETCH=200
 SEARCH_RRF_RANK_CONSTANT=30
 ```
 
+### Index Topology
+
+Shard and replica counts for the `transcript_chunks` index, applied **only when the index is
+created** — OpenSearch cannot change a live index's shard count in place, and nothing in this
+app deletes and recreates the index just to pick up a new value (that is the destructive
+`recreate_index_for_dimension` path, reserved for an embedding-dimension change).
+
+```bash
+OPENSEARCH_CHUNKS_INDEX_SHARDS=1     # default -- correct for laptop/home-server (single node)
+OPENSEARCH_CHUNKS_INDEX_REPLICAS=0   # default -- correct for laptop/home-server (single node)
+```
+
+:::warning A replica needs a second node to mean anything
+`number_of_replicas` is a *copy count per shard*. On a single-node deployment (laptop, home
+server, the bundled `opensearch` container) there is nowhere to place a replica shard, so
+setting `OPENSEARCH_CHUNKS_INDEX_REPLICAS` above `0` leaves every replica **UNASSIGNED** and the
+index health **yellow** forever -- it is not a safety margin on one node, only cost. Raise it
+only on a multi-node domain (see the AWS profile below), where OpenSearch actually has a second
+node to place the copy on.
+:::
+
+To change topology on an **existing** deployment: set the variable, then create a fresh index at
+the new topology (a `--fresh` deployment, or a deliberate reindex-from-scratch) rather than
+expecting the running index to pick it up.
+
 ### ML Commons Plugin
 
 The OpenSearch ML Commons plugin enables vector embeddings and semantic search:
@@ -211,6 +236,59 @@ TLS. `OPENSEARCH_EMBEDDING_MODE=managed` adopts a model the domain already hosts
 (`OPENSEARCH_NEURAL_MODEL_ID`) instead of mutating ML Commons cluster settings and registering a
 model by URL -- operations a managed AWS domain does not permit and which otherwise make neural
 search fail to initialize there.
+
+### The AWS profile
+
+The three seams above compose into one deployment profile: OpenSearch auth, where embeddings
+come from, and where objects live. None of them require code changes -- each is an existing env
+var -- but they are only tested and supported **together**, not as a pick-and-mix:
+
+```bash
+# OpenSearch: a managed Amazon OpenSearch Service domain
+OPENSEARCH_HOST=<your-domain>.<region>.es.amazonaws.com
+OPENSEARCH_PORT=443
+OPENSEARCH_AUTH=sigv4
+OPENSEARCH_AWS_REGION=            # empty falls back to AWS_REGION
+OPENSEARCH_AWS_SERVICE=es         # aoss for OpenSearch Serverless
+
+# Embeddings: adopt a model the domain already hosts (managed connector), never register one
+OPENSEARCH_EMBEDDING_MODE=managed
+OPENSEARCH_NEURAL_MODEL_ID=<pre-registered ML Commons model id>
+
+# Object storage: native S3 instead of the bundled MinIO container
+STORAGE_BACKEND=s3
+S3_REGION=<same region as the domain, to avoid cross-region egress>
+S3_USE_IAM_ROLE=true              # IRSA/ECS-task/instance-profile credentials, no static keys
+
+# Index topology: worth a replica once there is a second node to place it on
+OPENSEARCH_CHUNKS_INDEX_SHARDS=1
+OPENSEARCH_CHUNKS_INDEX_REPLICAS=1
+```
+
+What each line implies:
+
+- **`OPENSEARCH_AUTH=sigv4` + `OPENSEARCH_EMBEDDING_MODE=managed` go together.** A managed domain's
+  IAM access policy accepts SigV4-signed requests only, and separately does not expose the
+  cluster settings the `local` embedding path needs to register a model by `file://` or arbitrary
+  URL -- so a managed domain that is reached with `sigv4` but left on `OPENSEARCH_EMBEDDING_MODE=local`
+  fails to initialize neural search, not merely runs it inefficiently.
+- **`STORAGE_BACKEND=s3` is independent of the OpenSearch two**, but the AWS profile sets all
+  three together because a managed OpenSearch domain and a self-hosted MinIO container in the
+  same deployment is an unusual, unmeasured combination -- nothing forbids it, nothing has
+  exercised it.
+- **Replica guidance.** `number_of_replicas` is a per-shard copy count and needs a second data
+  node to place the copy on. A managed multi-node AWS domain (the normal shape once you are
+  paying for SigV4 auth and a managed embedding connector) is exactly that: set
+  `OPENSEARCH_CHUNKS_INDEX_REPLICAS=1` (or higher, per your domain's node count and the
+  redundancy you want) for read availability across nodes and resilience to losing one. Do not
+  set it above `0` on the single-node laptop/home-server profile -- see the topology warning
+  above. Shards stay at the shipped default of `1` unless a corpus is large enough to need
+  horizontal partitioning, which is a capacity decision for the operator's own index, not
+  something this profile changes for you.
+- This is a profile you assemble, not a flag `./opentr.sh` recognizes -- there is no
+  `--aws` overlay. Set the variables in `.env` and start normally
+  (`./opentr.sh start prod --build`); the seams themselves branch on the values above, not on a
+  deployment-type flag.
 
 ## Cloud ASR Providers
 

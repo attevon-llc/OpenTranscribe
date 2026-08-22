@@ -8,7 +8,6 @@ Pattern matches speaker_embedding_service.py::get_cached_embedding_service().
 """
 
 import logging
-import os
 import threading
 from typing import ClassVar
 from typing import cast
@@ -74,7 +73,7 @@ class ModelManager:
 
         with self._lock:
             if self._diarizer is not None and self._diarizer_hash == config_hash:
-                if self._diarizer_current(self._diarizer):
+                if self._diarizer_current(self._diarizer, config):
                     logger.info(f"Reusing cached diarizer (hash={config_hash})")
                     return self._diarizer
                 # The sidecar went away, or came back — release and rebuild on the
@@ -97,11 +96,17 @@ class ModelManager:
     def _build_diarizer(self, config: TranscriptionConfig) -> SpeakerDiarizer:
         """Construct and load the configured diarization engine.
 
-        ``DIARIZER_ENGINE=native`` selects the diar-native sidecar client; anything that
-        keeps it from answering falls back to the in-process PyAnnote engine, which stays
-        the default.
+        ``config.diarizer_backend`` (SystemSettings ``engine.diarizer_backend`` -> env
+        ``ENGINE_DIARIZER_BACKEND`` -> default ``"native"``, resolved once by
+        ``TranscriptionConfig._resolve_diarizer_backend`` and validated against
+        ``engine.backends.VALID_DIARIZER_BACKENDS``) is the single decision point selecting
+        the diarizer — this used to also be checked via an ad-hoc ``DIARIZER_ENGINE`` env
+        read here and in ``engine/stages.py``; both are gone (issue #58). ``"native"``
+        selects the diar-native sidecar client; anything that keeps it from answering falls
+        back to the in-process PyAnnote engine, which is also what ``"pyannote"`` pins
+        directly.
         """
-        if os.environ.get("DIARIZER_ENGINE", "python").lower() == "native":
+        if config.diarizer_backend.lower() == "native":
             try:
                 from app.transcription.diarizer_native import NativeSpeakerDiarizer
 
@@ -117,16 +122,17 @@ class ModelManager:
         return diarizer
 
     @staticmethod
-    def _diarizer_current(diarizer: SpeakerDiarizer) -> bool:
+    def _diarizer_current(diarizer: SpeakerDiarizer, config: TranscriptionConfig) -> bool:
         """Whether the cached diarizer is still the engine that should serve this task.
 
-        With DIARIZER_ENGINE=native the sidecar is probed per task, which keeps the
-        engine choice tracking reality in both directions: losing the sidecar mid-queue
-        falls back to PyAnnote, and a recovered sidecar is picked up again instead of
-        the worker staying degraded until it restarts.
+        With ``config.diarizer_backend == "native"`` the sidecar is probed per task, which
+        keeps the engine choice tracking reality in both directions: losing the sidecar
+        mid-queue falls back to PyAnnote, and a recovered sidecar is picked up again instead
+        of the worker staying degraded until it restarts.
         """
+        native_selected = config.diarizer_backend.lower() == "native"
         native_cached = type(diarizer).__name__ == "NativeSpeakerDiarizer"
-        if os.environ.get("DIARIZER_ENGINE", "python").lower() != "native":
+        if not native_selected:
             return not native_cached
 
         from app.transcription.diarizer_native import sidecar_healthy

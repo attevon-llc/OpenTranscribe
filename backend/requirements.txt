@@ -289,6 +289,11 @@ msal==1.37.0
 #                   files hit it; installing this took DOCX coverage 27/32 → 32/32.
 #   convert-core    rtree/scipy/numpy/pillow, needed by the shared document model.
 docling-slim[format-office,format-html,format-markdown,format-pdf,format-latex,convert-core]==2.120.3
+# lxml: already an incidental transitive pin (python-docx/python-pptx/doclang all require
+# it unconditionally), but `docling_slim.py`'s HTML repair step (issue #69) now imports it
+# directly — pin it explicitly rather than depending on another package's transitive graph
+# to keep providing it. Torch-free (pure libxml2/libxslt), so the slim tier stays clean.
+lxml==6.1.1
 
 # -----------------------------------------------------------------------------
 # Transitive pins — measured drift, not housekeeping
@@ -309,7 +314,13 @@ docling-slim[format-office,format-html,format-markdown,format-pdf,format-latex,c
 # drifted. A package that starts drifting later belongs here too; the check that
 # finds it is a `pip freeze` diff of a fresh venv against a fresh image.
 cuda-pathfinder==1.6.1     # via cuda-bindings
+botocore==1.43.75          # via boto3 — drifted 1.43.74 (venv) vs 1.43.75 (image), 2026-08-20
+docling-core==2.92.0       # via docling-slim — drifted 2.91.0 (venv) vs 2.92.0 (image), 2026-08-20
 docling-parse==7.14.0      # via docling (document parsing sidecar tier)
 httpcore2==2.12.0          # via httpx2
 httpx2==2.12.0             # via openai
 idna==3.19                 # via requests, httpx, anyio, yarl, tldextract
+argon2-cffi-bindings==26.1.0  # via argon2-cffi — drifted 25.1.0 (venv) vs 26.1.0 (image), 2026-08-21
+protobuf==7.36.0           # via grpcio-status, onnx, opensearch-protobufs — drifted 7.35.1 (venv) vs 7.36.0 (image), 2026-08-21
+narwhals==2.25.0           # via altair/plotly family — drifted 2.24.0 (venv) vs 2.25.0 (image), 2026-08-21
+scipy==1.18.1              # via scikit-learn, librosa — drifted 1.18.0 (venv) vs 1.18.1 (image), 2026-08-21

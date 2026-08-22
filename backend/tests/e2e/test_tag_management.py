@@ -274,8 +274,25 @@ class TestTagMutations:
         # Delete goes through the app's shared ConfirmationModal, which carries
         # both counts — confirming without that appearing would mean the
         # confirm step had been skipped.
-        confirm = tags_page.get_by_role("button", name="Delete", exact=True).last
-        expect(confirm).to_be_visible(timeout=5000)
+        #
+        # The impact preview is fetched asynchronously (previewDelete -> an
+        # API round trip) before the modal opens, and TagDetailPanel does not
+        # hide or disable its own "Delete" trigger while that fetch is in
+        # flight — so for a window of real time there are TWO buttons named
+        # exactly "Delete" in the DOM: the still-live trigger and (once the
+        # fetch resolves) the modal's confirm button. `get_by_role(...).last`
+        # is not stable across that window: Playwright can resolve it to the
+        # trigger button (the only match before the modal opens), begin the
+        # click, and have the modal's backdrop render on top an instant later
+        # — "Locator.click: ... modal-backdrop intercepts pointer events" — or
+        # it can click the trigger a second time with no confirm step at all.
+        # `.modal-delete-button` is ConfirmationModal's own confirm-button
+        # class (shared across every delete dialog in the app) and exists
+        # only once the modal has actually mounted, so waiting on it is
+        # waiting on the right signal instead of racing two same-named
+        # buttons.
+        confirm = tags_page.locator(".modal-delete-button")
+        expect(confirm).to_be_visible(timeout=10_000)
         confirm.click()
         expect(_row(tags_page, name)).to_have_count(0, timeout=10000)
 

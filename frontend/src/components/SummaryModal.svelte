@@ -6,6 +6,7 @@
   import { copyToClipboard } from '$lib/utils/clipboard';
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
+  import { resolveSummaryKeyPath } from '$lib/utils/summaryKeyPath';
   import Spinner from './ui/Spinner.svelte';
   import BaseModal from './ui/BaseModal.svelte';
 
@@ -14,15 +15,25 @@
   import SummarySearch from './SummarySearch.svelte';
   import SummaryActions from './SummaryActions.svelte';
 
-  export let fileId: number;
+  // NOTE: despite the name, this is the file's UUID, not its integer id — every
+  // real caller (`routes/files/[id]/+page.svelte`) passes `file.uuid`, and
+  // `/files/{fileId}/summary` etc. below are UUID path params. Was mistyped
+  // `number` (issue #462 caught it: the search-page caller had nothing to check
+  // against, and a plain int file_id 400s every request here).
+  export let fileId: string;
   export let fileName: string = '';
   export let isOpen: boolean = false;
+  // Issue #462: when set (opened from a summary search hit), scroll to and highlight
+  // this leaf once the summary loads, reusing the search box's own find/highlight
+  // machinery below rather than a second one. `key_path` format:
+  // `backend/app/services/search/summary_search.py::SummarySectionMatch`.
+  export let scrollToKeyPath: string | null = null;
 
   const dispatch = createEventDispatcher<{
     close: void;
-    generateSummary: { fileId: number };
-    reprocessSummary: { fileId: number };
-    regenerateWithPrompt: { fileId: number; promptUuid: string | null };
+    generateSummary: { fileId: string };
+    reprocessSummary: { fileId: string };
+    regenerateWithPrompt: { fileId: string; promptUuid: string | null };
   }>();
 
   let summary: SummaryData | null = null;
@@ -42,6 +53,10 @@
   let searchQuery = '';
   let currentMatchIndex = 0;
   let totalMatches = 0;
+  // Set when a resolved scrollToKeyPath primes searchQuery while `loading` is still
+  // true (SummaryDisplay isn't mounted yet, so there's nothing to scroll to). The
+  // reactive block below fires the actual scroll once loading flips false.
+  let pendingKeyPathScroll = false;
 
   $: if (isOpen && fileId) {
     loadSummary();
@@ -55,11 +70,20 @@
     currentMatchIndex = 0;
   }
 
+  $: if (!loading && pendingKeyPathScroll && summary) {
+    pendingKeyPathScroll = false;
+    scrollToCurrentMatch();
+  }
+
   async function loadSummary() {
     if (!fileId) return;
 
     loading = true;
     error = null;
+    // A stale query/highlight from a previously-opened summary must not leak into
+    // this one — this component instance is reused across opens.
+    searchQuery = '';
+    pendingKeyPathScroll = false;
 
     try {
       // First, check summary status and LLM availability
@@ -85,6 +109,20 @@
         const response = await axiosInstance.get(`/files/${fileId}/summary`);
         const data: SummaryResponse = response.data;
         summary = data.summary_data;
+
+        if (scrollToKeyPath && summary) {
+          const resolved = resolveSummaryKeyPath(summary, scrollToKeyPath);
+          if (resolved) {
+            // Using the leaf's own full text as the search term guarantees at least
+            // one match (the leaf itself) regardless of how the backend's Postgres
+            // full-text search matched it, so this doesn't need to replicate that
+            // matching logic client-side.
+            searchQuery = resolved;
+            pendingKeyPathScroll = true;
+          } else {
+            console.warn('SummaryModal: could not resolve scrollToKeyPath', scrollToKeyPath);
+          }
+        }
       } catch (summaryErr: unknown) {
         if (getErrorStatus(summaryErr) === 404) {
           // No summary exists yet

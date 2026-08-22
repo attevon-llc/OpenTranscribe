@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -42,15 +43,31 @@ class RewriteResult:
     its own rules found no signal at all, so a model that ignores or fumbles the
     second line costs nothing — which is the whole reason the hint is allowed to
     piggyback on a call that was already being made.
+
+    ``plan`` (#403 W2.6) is the same "free" piggyback applied to the planner: a
+    follow-up turn extends this same call with a THIRD line instead of paying
+    for a standalone planner round trip. ``None`` unless ``want_plan=True`` was
+    passed AND the model produced a well-formed ``PLAN:`` line.
     """
 
     query: str
     intent: str | None = None
+    plan: Any | None = None
 
 
 MAX_REWRITE_CHARS = 300
 _MAX_HISTORY_TURNS = 6
 _MAX_TURN_CHARS = 500
+
+#: #403 W2.6. A follow-up turn's rewrite call already pays for one LLM round
+#: trip; asking for a third ``PLAN:`` line on it is never a SECOND call, only
+#: more tokens on the one already being made — this is the "never a
+#: routing-only call" rule extended to the planner. 100 -> 300 in the
+#: EXTENDED variant only: the base rewrite call (no plan requested) keeps its
+#: original 100-token budget unchanged, so a deployment with the planner off
+#: pays nothing extra for this at all.
+_REWRITE_MAX_TOKENS = 100
+_REWRITE_WITH_PLAN_MAX_TOKENS = 300
 
 
 def _sanitize(raw: str, fallback: str) -> str:
@@ -78,13 +95,20 @@ def _sanitize(raw: str, fallback: str) -> str:
     return text
 
 
-def rewrite_query(llm, history: list[dict[str, str]], question: str) -> RewriteResult:
+def rewrite_query(
+    llm, history: list[dict[str, str]], question: str, *, want_plan: bool = False
+) -> RewriteResult:
     """Expand a follow-up question into a standalone query.
 
     Args:
         llm: An ``LLMService`` (the user's configured provider).
         history: Prior turns, oldest first.
         question: The current user message.
+        want_plan: #403 W2.6. When true, extend the SAME call with a third
+            ``PLAN:`` line (see ``planner.PLAN_LINE_INSTRUCTION``) instead of
+            making a second, standalone planner call — a follow-up turn's
+            plan is never a routing-only round trip. Raises the reply budget
+            100 -> 300 tokens for this call only.
 
     Returns:
         A :class:`RewriteResult`. On any failure — no history, no LLM, a provider
@@ -105,8 +129,17 @@ def rewrite_query(llm, history: list[dict[str, str]], question: str) -> RewriteR
     if not transcript:
         return RewriteResult(question)
 
+    # Imported here rather than at module scope: the router/planner import
+    # nothing themselves, but the rewriter is loaded on the request path and
+    # a cycle between them would be a startup failure rather than a lint
+    # finding.
+    from app.services.chat.planner import PLAN_LINE_INSTRUCTION
+
+    system = _REWRITE_SYSTEM + ("\n" + PLAN_LINE_INSTRUCTION if want_plan else "")
+    max_tokens = _REWRITE_WITH_PLAN_MAX_TOKENS if want_plan else _REWRITE_MAX_TOKENS
+
     messages = [
-        {"role": "system", "content": _REWRITE_SYSTEM},
+        {"role": "system", "content": system},
         # Concatenation only — history and question are untrusted text.
         {
             "role": "user",
@@ -118,19 +151,21 @@ def rewrite_query(llm, history: list[dict[str, str]], question: str) -> RewriteR
     ]
 
     try:
-        response = llm.chat_completion(messages, max_tokens=100, temperature=0)
+        response = llm.chat_completion(messages, max_tokens=max_tokens, temperature=0)
     except Exception as exc:  # noqa: BLE001 — enhancement, never a dependency
         logger.info(f"Query rewrite unavailable, using original question: {exc}")
         return RewriteResult(question)
 
     raw = getattr(response, "content", "") or ""
     rewritten = _sanitize(raw, question)
-    # Imported here rather than at module scope: the router imports nothing, but
-    # the rewriter is loaded on the request path and a cycle between the two
-    # would be a startup failure rather than a lint finding.
     from app.services.chat.router import parse_intent_line
 
     intent = parse_intent_line(raw)
+    plan = None
+    if want_plan:
+        from app.services.chat.planner import parse_plan_line
+
+        plan = parse_plan_line(raw)
     if rewritten != question:
         logger.info("Chat query rewritten (%d -> %d chars)", len(question), len(rewritten))
-    return RewriteResult(rewritten, intent)
+    return RewriteResult(rewritten, intent, plan)

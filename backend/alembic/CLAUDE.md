@@ -13,15 +13,18 @@ Three branches are being worked in parallel, each in its own worktree. **Two bra
 the same revision number MERGE CLEANLY** — different filenames means no textual conflict, so
 nothing in the conflict list warns you. The fork exists only in the `down_revision` graph and
 surfaces later as a failed `alembic upgrade head`, which in dev aborts backend startup and reads
-as a broken stack rather than a bad merge. This has already happened once (see "Renumbering
-note 2" in `app/db/CLAUDE.md`); the recovery is an hour of mechanical renumbering across four
-places per revision.
+as a broken stack rather than a bad merge. This has already happened **twice** (see "Renumbering
+note 2" and "Renumbering note 3" in `app/db/CLAUDE.md`); the recovery is an hour of mechanical
+renumbering across four places per revision.
 
 | Lane | Branch | Holds | **Take** |
 |---|---|---|---|
 | RAG / chat | `feat/rag-corpus-scale-403` | v390–v392 | **v400+** |
-| Document ingestion | `feat/doc-ingestion` | — | **v393–v399** |
+| Document ingestion | `feat/doc-ingestion` | v394–v396 (renumbered from v393–v395, see note 3) | **v397–v399** |
 | Test hardening | `chore/test-suite-perf-and-quality-overhaul` | v389 | **v410+** |
+
+`master` itself published `v393_add_overlap_timing_columns` — the document-ingestion lane's
+original `v393` collided with it exactly the way the paragraph above warns, and was renumbered.
 
 The chain will be re-linearised at the final merge to `master`, so these blocks are a
 coordination convenience rather than a guarantee — but observe them, because the cost of not

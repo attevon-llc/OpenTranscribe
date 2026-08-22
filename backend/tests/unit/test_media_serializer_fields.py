@@ -19,6 +19,7 @@ from app.api.endpoints.files.crud import _resolve_segment_speaker_name
 from app.schemas.media import TranscriptSegment
 from app.services.formatting_service import FormattingService
 from app.services.speaker_status_service import SpeakerStatusService
+from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 
 # ---------------------------------------------------------------------------
 # Task 1: resolved_speaker_name is always non-null
@@ -102,7 +103,13 @@ def test_resolved_speaker_name_never_null_without_speaker():
 
 
 def test_resolve_segment_speaker_name_helper():
-    assert _resolve_segment_speaker_name(None) == "Unknown speaker"
+    # The canonical spelling, imported rather than spelled: this endpoint's old
+    # inline `display_name or name or "Unknown speaker"` chain was a THIRD
+    # spelling of "no attribution" (lowercase, next to `file_facts`'s
+    # "Unknown Speaker" and the chunk-index writers' bare "Unknown"). It now
+    # delegates to `canonical_speaker_label`, so asserting the literal here would
+    # re-pin the spelling this consolidation removed.
+    assert _resolve_segment_speaker_name(None) == UNKNOWN_SPEAKER_LABEL
     assert _resolve_segment_speaker_name(_make_speaker(display_name="Bob")) == "Bob"
     assert (
         _resolve_segment_speaker_name(_make_speaker(name="SPEAKER_03", display_name=None))

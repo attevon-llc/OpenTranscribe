@@ -28,31 +28,51 @@
     media_count?: number;
   }
 
+  /** How many rows to ask for per query — a screenful; type to narrow further. */
+  const PAGE_SIZE = 100;
+  /** Debounced so typing a name doesn't fire one request per keystroke. */
+  const SEARCH_DEBOUNCE_MS = 300;
+
   let speakers: PickerSpeaker[] = [];
   let loading = true;
+  let searching = false;
   let filter = '';
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
   $: selectedSet = new Set(selected);
-  $: visible = filter.trim()
-    ? speakers.filter((s) =>
-        (s.display_name || '').toLowerCase().includes(filter.trim().toLowerCase())
-      )
-    : speakers;
 
-  onMount(async () => {
+  // Server-side type-to-search (`GET /speakers?for_filter=true&q=...`): the
+  // picker used to fetch every filterable speaker once and filter the full
+  // list client-side, which does not scale to a large roster (the backend
+  // now declines to build one past ~500 distinct names for the same reason —
+  // see `services/chat/speaker_resolver.py`). Each request already returns
+  // deduplicated, tenant-gated, share-aware display names — exactly the
+  // values indexed on each chunk, so the filter matches.
+  async function fetchSpeakers(q: string): Promise<void> {
     try {
-      // for_filter returns speakers deduplicated by display name with counts,
-      // already tenant-gated and share-aware — and those display names are
-      // exactly the values indexed on each chunk, so the filter matches.
-      const { data } = await axiosInstance.get('/speakers', { params: { for_filter: true } });
+      const { data } = await axiosInstance.get('/speakers', {
+        params: { for_filter: true, q: q.trim() || undefined, limit: PAGE_SIZE },
+      });
       const rows: PickerSpeaker[] = Array.isArray(data) ? data : (data?.items ?? []);
       speakers = rows.filter((s) => s.display_name);
     } catch {
       speakers = [];
-    } finally {
-      loading = false;
     }
+  }
+
+  onMount(async () => {
+    await fetchSpeakers('');
+    loading = false;
   });
+
+  function scheduleSearch(): void {
+    clearTimeout(searchTimer);
+    searching = true;
+    searchTimer = setTimeout(async () => {
+      await fetchSpeakers(filter);
+      searching = false;
+    }, SEARCH_DEBOUNCE_MS);
+  }
 
   function toggle(name: string): void {
     dispatch(
@@ -68,16 +88,22 @@
   {:else}
     <p class="tab-hint">{$t('chat.picker.speakersHint')}</p>
 
-    <input
-      class="speaker-filter"
-      type="search"
-      bind:value={filter}
-      placeholder={$t('chat.picker.searchSpeakers')}
-      aria-label={$t('chat.picker.searchSpeakers')}
-    />
+    <div class="search-row">
+      <input
+        class="speaker-filter"
+        type="search"
+        bind:value={filter}
+        on:input={scheduleSearch}
+        placeholder={$t('chat.picker.searchSpeakers')}
+        aria-label={$t('chat.picker.searchSpeakers')}
+      />
+      {#if searching}
+        <Spinner size="small" />
+      {/if}
+    </div>
 
     <ul class="picker-list" data-testid="picker-speakers-list">
-      {#each visible as speaker (speaker.uuid)}
+      {#each speakers as speaker (speaker.uuid)}
         <li>
           <label class="picker-row">
             <input
@@ -96,7 +122,7 @@
         </li>
       {/each}
 
-      {#if visible.length === 0}
+      {#if speakers.length === 0}
         <li class="empty">{$t('chat.picker.emptySpeakers')}</li>
       {/if}
     </ul>
@@ -124,8 +150,15 @@
     line-height: 1.45;
   }
 
+  .search-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
   .speaker-filter {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     padding: 0.45rem 0.7rem;
     border: 1px solid var(--border-color);
     border-radius: 8px;

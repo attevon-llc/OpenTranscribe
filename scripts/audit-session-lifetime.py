@@ -261,8 +261,29 @@ RULES: tuple[Rule, ...] = (
     ),
     Rule(
         'session-thread-pool',
-        frozenset({'ThreadPoolExecutor', 'ProcessPoolExecutor', 'as_completed'}),
-        ('concurrent.futures',),
+        frozenset(
+            {
+                'ThreadPoolExecutor',
+                'ProcessPoolExecutor',
+                'as_completed',
+                # #403 W2.6: `services/chat/legs.py`'s process-wide leg
+                # executor. `run_legs` is the one call site every fan-out
+                # goes through, and it BLOCKS the caller until every leg's
+                # future resolves — the same shape a bare
+                # `with ThreadPoolExecutor() as pool: ...` already trips this
+                # rule for, except the pool here lives outside the function
+                # entirely, so nothing about the CALL SITE looks like a
+                # thread pool unless the name itself is listed. Each leg can
+                # itself make an OpenSearch/LLM/Postgres call, so calling
+                # `run_legs` (or reaching straight for `get_executor`) inside
+                # an open session holds that transaction for as long as the
+                # SLOWEST leg, multiplied by nothing — but still exactly the
+                # class of hold this whole file exists to catch.
+                'run_legs',
+                'get_executor',
+            }
+        ),
+        ('concurrent.futures', 'legs.run_legs', 'legs.get_executor'),
     ),
 )
 
@@ -720,6 +741,17 @@ SELFTEST_CASES: tuple[tuple[str, str], ...] = (
         '        with ThreadPoolExecutor(max_workers=8) as pool:\n'
         '            pool.submit(work)\n',
     ),
+    # #403 W2.6: `legs.run_legs` blocks on every leg's future exactly like a
+    # bare `with ThreadPoolExecutor()`, but the pool itself lives OUTSIDE the
+    # call site (`legs.get_executor`'s lazy singleton) — nothing about this
+    # call looks like a thread pool unless the name is listed.
+    (
+        'session-thread-pool',
+        'def prep(assistant_message_uuid):\n'
+        '    with session_scope() as db:\n'
+        '        built = [Leg(kind="main", name="main", run=lambda: retrieve_chunks("q"))]\n'
+        '        outcome = legs.run_legs(built, max_workers=4)\n',
+    ),
     (
         # THE interprocedural case: this is `_perform_scan(db, source, ...)`, the exact
         # shape whose slow work sat one frame below the caller's `session_scope`.
@@ -836,6 +868,13 @@ SELFTEST_CLEAN: tuple[str, ...] = (
     '        pool.submit(work, name)\n',
     # A pure-CPU helper with no session and no slow call.
     'def _merge(segments):\n    return sorted(segments, key=lambda s: s["start"])\n',
+    # #403 W2.6's real fix shape: `run_legs` called with NO session open at
+    # all — each leg opens its own SHORT session internally (a different
+    # function's body, invisible to a call-site scan, which is the point).
+    'def prep(assistant_message_uuid):\n'
+    '    built = [Leg(kind="main", name="main", run=lambda: retrieve_chunks("q"))]\n'
+    '    outcome = legs.run_legs(built, max_workers=4)\n'
+    '    return outcome\n',
     # Benign methods on a variable whose NAME merely contains a rule keyword. Reading
     # `opensearch_result.get(...)` is a dict lookup and `llm_service.close()` releases a
     # client; flagging them five times in one endpoint is how a gate loses its audience.

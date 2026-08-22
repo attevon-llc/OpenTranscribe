@@ -48,6 +48,7 @@ from .group import GroupUpdate
 from .llm_settings import ConnectionStatus
 from .llm_settings import ConnectionTestRequest
 from .llm_settings import ConnectionTestResponse
+from .llm_settings import ContextWindowCapability
 from .llm_settings import LLMProvider
 from .llm_settings import LLMSettingsStatus
 from .llm_settings import ProviderDefaults
@@ -163,6 +164,7 @@ __all__ = [
     "ProviderDefaults",
     "SupportedProvidersResponse",
     "LLMSettingsStatus",
+    "ContextWindowCapability",
     "ReasoningCapability",
     "TranscriptionSettings",
     "TranscriptionSettingsUpdate",

@@ -175,3 +175,71 @@ class SetActiveNeuralModelSchema(BaseModel):
 
     model_name: str = Field(..., description="Model name to activate")
     reindex: bool = Field(True, description="Whether to trigger reindex after model change")
+
+
+# Result-type union (issue #462) — one parameter, extended by later lanes.
+# "documents" (issue #463) searches the document-chunk plane and returns
+# `document_results` / `document_total`, same shape convention as the
+# `summary_results` / `summary_total` pair below. Do NOT add a second
+# `include_documents`-style flag next to this one — see
+# `api/endpoints/search.py::search_transcripts`.
+SEARCH_RESULT_TYPES = ("transcripts", "summaries", "documents", "all")
+
+
+class SummarySectionMatchSchema(BaseModel):
+    """One matching leaf inside a summary, addressable for scroll-to-section."""
+
+    key_path: str = Field(
+        ...,
+        description=(
+            "JSON key-path to the matching leaf in summary_data, e.g. "
+            "'major_topics[0].key_points[2]'. Stable against the same summary_data "
+            "shape the summary detail endpoint returns."
+        ),
+    )
+    snippet: str = Field(
+        ..., description="The matching leaf text, masked under the reader's policy"
+    )
+
+
+class SummaryHitSchema(BaseModel):
+    """A file-level summary search result."""
+
+    file_uuid: str = Field(..., description="File UUID")
+    file_id: int = Field(..., description="File integer ID")
+    title: str = Field("", description="File title (falls back to filename)")
+    matches: list[SummarySectionMatchSchema] = Field(
+        default_factory=list, description="Matching sections, in document order"
+    )
+
+
+class DocumentChunkMatchSchema(BaseModel):
+    """One matching chunk inside a document search result (issue #463)."""
+
+    chunk_index: int = Field(0, description="Chunk index within the document")
+    page: int | None = Field(None, description="1-based page number, when the source has pages")
+    section_path: list[str] = Field(
+        default_factory=list, description="Heading breadcrumb the chunk falls under"
+    )
+    snippet: str = Field(
+        "", description="Matching text, masked under the reader's redaction policy"
+    )
+    score: float = Field(0.0, description="Relevance score")
+
+
+class DocumentHitSchema(BaseModel):
+    """A file-level document search result.
+
+    ``file_id`` addresses ``Document.id`` here — a SEPARATE integer sequence
+    from the ``MediaFile.id`` a transcript ``SearchHitSchema.file_id`` or a
+    ``SummaryHitSchema.file_id`` addresses. The two can hold the same integer
+    value for unrelated rows; never key a combined-results map by a bare
+    ``file_id`` alone across result types. ``file_uuid`` is always unambiguous.
+    """
+
+    file_uuid: str = Field(..., description="Document UUID")
+    file_id: int = Field(..., description="Document integer ID (Document.id)")
+    title: str = Field("", description="Document filename")
+    matches: list[DocumentChunkMatchSchema] = Field(
+        default_factory=list, description="Matching chunks, best-scoring first"
+    )

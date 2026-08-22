@@ -433,6 +433,17 @@ Three things to know before touching it:
   `metrics.md` are byte-identical across runs by construction; anything non-deterministic
   (elapsed time, target) lives in `runinfo.json`, outside the claim. Regenerate one only when the
   corpus composition genuinely changes, and say so in the PR.
+- **`scripts/probe_chat_rag.py` (issue #72) is the one tool in this family that drives the real
+  chat HTTP path** (login -> scoped conversation -> POST message -> SSE -> re-fetch
+  `msg_metadata`) against a real LLM, rather than calling `retrieve_chunks` in-process. Its
+  question sets are supplied at runtime via `--question-set` (a JSON file, never hardcoded) so the
+  tool itself carries no licence-encumbered content; `--metrics-out` writes a metrics-only artifact
+  (`harness/probe_metrics.py`, `assert_no_prose` enforced) that IS safe to commit, while `--out`'s
+  full-fidelity report (question/reference/answer prose) is NOT. Two environment gotchas
+  (vLLM's `docker network connect --alias`, and the CSRF double-submit header) and the committed
+  `probe-chat-live-2026-08-20` baseline are documented in
+  `docs-site/docs/developer-guide/rag-evaluation.md`'s "Live chat-RAG HTTP probe" section — read it
+  before pointing this at a fresh stack, or the first mutating request 403s with no obvious cause.
 
 Methodology, the overlap->relevance rule, and the committed numbers:
 `docs-site/docs/developer-guide/rag-evaluation.md`.

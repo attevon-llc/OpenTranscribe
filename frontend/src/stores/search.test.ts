@@ -52,6 +52,11 @@ describe('page-resetting filter setters', () => {
       expected: { searchMode: 'semantic' },
     },
     {
+      name: 'setResultType',
+      apply: () => searchStore.setResultType('summaries'),
+      expected: { resultType: 'summaries' },
+    },
+    {
       name: 'setSpeakers',
       apply: () => searchStore.setSpeakers(['alice']),
       expected: { selectedSpeakers: ['alice'] },
@@ -241,6 +246,51 @@ describe('setResults', () => {
     const state = get(searchStore);
     expect(state.isLoading).toBe(false);
     expect(state.error).toBeNull();
+  });
+
+  it('defaults summaryResults/summaryTotal to empty when the response carries none', () => {
+    searchStore.setResults(response);
+
+    const state = get(searchStore);
+    expect(state.summaryResults).toEqual([]);
+    expect(state.summaryTotal).toBe(0);
+  });
+
+  it('populates summaryResults/summaryTotal when the response carries them (result_type=summaries)', () => {
+    const summaryResponse: SearchResponse = {
+      ...response,
+      results: [],
+      summary_results: [
+        {
+          file_uuid: 'uuid-2',
+          file_id: 2,
+          title: 'Kickoff',
+          matches: [{ key_path: 'bluf', snippet: 'Ship it Friday.' }],
+        },
+      ],
+      summary_total: 1,
+    };
+
+    searchStore.setResults(summaryResponse);
+
+    const state = get(searchStore);
+    expect(state.summaryResults).toEqual(summaryResponse.summary_results);
+    expect(state.summaryTotal).toBe(1);
+  });
+
+  it('resets a stale summaryResults page when a later response omits summaries', () => {
+    searchStore.setResults({
+      ...response,
+      summary_results: [{ file_uuid: 'uuid-2', file_id: 2, title: 'Kickoff', matches: [] }],
+      summary_total: 1,
+    });
+    expect(get(searchStore).summaryTotal).toBe(1);
+
+    searchStore.setResults(response);
+
+    const state = get(searchStore);
+    expect(state.summaryResults).toEqual([]);
+    expect(state.summaryTotal).toBe(0);
   });
 });
 

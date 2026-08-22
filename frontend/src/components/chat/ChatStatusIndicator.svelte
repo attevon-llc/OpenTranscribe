@@ -12,11 +12,13 @@
   export let status: StreamStatus = 'idle';
 
   $: label =
-    status === 'retrieving'
-      ? $t('chat.status.retrieving')
-      : status === 'thinking' || status === 'submitting'
-        ? $t('chat.status.thinking')
-        : '';
+    status === 'planning'
+      ? $t('chat.status.planning')
+      : status === 'retrieving'
+        ? $t('chat.status.retrieving')
+        : status === 'thinking' || status === 'submitting'
+          ? $t('chat.status.thinking')
+          : '';
 
   $: announcement =
     status === 'done'

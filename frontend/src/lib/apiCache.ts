@@ -180,7 +180,14 @@ export const apiCache = new ApiCache();
 /** Cache key builders */
 export const cacheKey = {
   tags: () => 'tags:all',
-  speakers: () => 'speakers:filter',
+  /**
+   * `q` is the server-side type-to-search term (`GET /speakers?for_filter=true&q=...`).
+   * Keying on it keeps a query-scoped result from colliding with the unfiltered
+   * default list under one cache entry — but the key still starts with
+   * `speakers:`, so `apiCache.invalidateByScope('speakers')` (the WebSocket push
+   * path) drops every query variant along with the default one.
+   */
+  speakers: (q?: string) => (q ? `speakers:filter:q:${q}` : 'speakers:filter'),
   metadataFilters: () => 'metadata:filters',
   files: (page: number, filterHash: string) => `files:page:${page}:${filterHash}`,
   collections: () => 'collections:all',

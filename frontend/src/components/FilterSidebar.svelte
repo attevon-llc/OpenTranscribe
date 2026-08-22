@@ -231,16 +231,26 @@
     }
   }
 
-  // Fetch all speakers for filtering (cached with TTL, invalidated via WebSocket push)
-  async function fetchSpeakers() {
+  // Fetch speakers for filtering (cached with TTL, invalidated via WebSocket push).
+  //
+  // Server-side type-to-search (`GET /speakers?for_filter=true&q=...`), the same
+  // upgrade `PickerSpeakersTab.svelte` (the chat file-scope picker) already made:
+  // this endpoint no longer expects the caller to fetch every filterable speaker
+  // once and narrow client-side — the backend declines to build that full list
+  // past ~500 distinct names for the same reason
+  // (`services/chat/speaker_resolver.py`). `q` is optional, so calling this with
+  // no argument (initial load, WebSocket-pushed re-fetch) is unchanged.
+  async function fetchSpeakers(q = '') {
     loadingSpeakers = true;
     errorSpeakers = null;
 
     try {
       allSpeakers = await apiCache.getOrFetch(
-        cacheKey.speakers(),
+        cacheKey.speakers(q || undefined),
         async () => {
-          const response = await axiosInstance.get('/speakers?for_filter=true');
+          const response = await axiosInstance.get('/speakers', {
+            params: { for_filter: true, q: q.trim() || undefined }
+          });
           return response.data;
         },
         CacheTTL.SPEAKERS
@@ -252,6 +262,23 @@
       loadingSpeakers = false;
     }
   }
+
+  /** Debounced so typing a speaker name doesn't fire one request per keystroke. */
+  const SPEAKER_SEARCH_DEBOUNCE_MS = 300;
+  let speakerSearchQuery = '';
+  let searchingSpeakers = false;
+  let speakerSearchTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function scheduleSpeakerSearch() {
+    clearTimeout(speakerSearchTimer);
+    searchingSpeakers = true;
+    speakerSearchTimer = setTimeout(async () => {
+      await fetchSpeakers(speakerSearchQuery);
+      searchingSpeakers = false;
+    }, SPEAKER_SEARCH_DEBOUNCE_MS);
+  }
+
+  onDestroy(() => clearTimeout(speakerSearchTimer));
 
   /**
    * Handle tag selection
@@ -542,7 +569,10 @@
   function handleCacheInvalidation(event: Event) {
     const scope = (event as CustomEvent).detail?.scope;
     if (scope === 'tags' || scope === 'all') fetchTags();
-    if (scope === 'speakers' || scope === 'all') fetchSpeakers();
+    // Re-fetch under whatever the user is currently typing, not the unfiltered
+    // default — otherwise a push-invalidation while searching would silently
+    // discard the in-progress search and repopulate the full list underneath it.
+    if (scope === 'speakers' || scope === 'all') fetchSpeakers(speakerSearchQuery);
     if (scope === 'metadata' || scope === 'files' || scope === 'all') fetchMediaMetadata();
   }
 
@@ -660,12 +690,28 @@
 
   <div class="filter-section">
     <h3>{$t('filter.speakers')}</h3>
-    {#if loadingSpeakers}
+    <div class="speaker-search-row">
+      <input
+        type="search"
+        bind:value={speakerSearchQuery}
+        on:input={scheduleSpeakerSearch}
+        placeholder={$t('filter.searchSpeakersPlaceholder')}
+        aria-label={$t('filter.searchSpeakersPlaceholder')}
+        class="filter-input"
+        data-testid="speaker-search-input"
+      />
+      {#if searchingSpeakers}
+        <span class="speaker-search-spinner" aria-hidden="true"></span>
+      {/if}
+    </div>
+    {#if loadingSpeakers && !searchingSpeakers}
       <p class="loading-text">{$t('filter.loadingSpeakers')}</p>
     {:else if errorSpeakers}
       <p class="empty-text">{$t('filter.noSpeakersAvailable')}</p>
     {:else if allSpeakers.length === 0}
-      <p class="empty-text">{$t('filter.noSpeakersDetected')}</p>
+      <p class="empty-text">
+        {speakerSearchQuery.trim() ? $t('filter.noSpeakersMatchSearch') : $t('filter.noSpeakersDetected')}
+      </p>
     {:else}
       <div class="speakers-list">
         {#each allSpeakers.slice(0, 4) as speaker}
@@ -1213,6 +1259,34 @@
   /* Pointer cursor on the track too */
   .slider-wrapper :global(.rangeSlider) {
     cursor: pointer !important;
+  }
+
+  .speaker-search-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
+  }
+
+  .speaker-search-row .filter-input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .speaker-search-spinner {
+    flex-shrink: 0;
+    width: 0.9rem;
+    height: 0.9rem;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: speaker-search-spin 0.7s linear infinite;
+  }
+
+  @keyframes speaker-search-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   /* Tag and Speaker button styles */

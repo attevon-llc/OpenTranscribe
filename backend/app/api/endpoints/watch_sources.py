@@ -38,15 +38,21 @@ from app.schemas.email_notification import EmailConfigResponse
 from app.schemas.email_notification import EmailConfigsList
 from app.schemas.email_notification import EmailConfigUpdate
 from app.schemas.email_notification import EmailTestResponse
+from app.schemas.watch_source import RETRYABLE_FILE_STATUSES
 from app.schemas.watch_source import CapabilitiesResponse
 from app.schemas.watch_source import ConnectionTestResponse
 from app.schemas.watch_source import DirectoryListResponse
+from app.schemas.watch_source import EmailConfigOption
 from app.schemas.watch_source import EmailLinkCreate
+from app.schemas.watch_source import EmailLinkResponse
 from app.schemas.watch_source import FsEventsStatus
 from app.schemas.watch_source import MultipartRegexTestRequest
 from app.schemas.watch_source import MultipartRegexTestResponse
 from app.schemas.watch_source import ScanResponse
 from app.schemas.watch_source import WatchSourceCreate
+from app.schemas.watch_source import WatchSourceFileActionRequest
+from app.schemas.watch_source import WatchSourceFileActionResponse
+from app.schemas.watch_source import WatchSourceFileActionResult
 from app.schemas.watch_source import WatchSourceFilesList
 from app.schemas.watch_source import WatchSourceResponse
 from app.schemas.watch_source import WatchSourcesList
@@ -765,6 +771,7 @@ def list_source_files(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     status_filter: str | None = Query(None, alias="status"),
+    q: str | None = Query(None, max_length=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> dict:
@@ -773,7 +780,9 @@ def list_source_files(
     Consumed by the settings page's history table and by scripts auditing what a
     source did or did not import. ``?status=`` filters on the raw tracking status
     (``imported``, ``pending``, ``importing``, ``downloading``, ``error``,
-    ``waiting_for_parts``, or a ``skipped*`` variant carrying ``skip_reason``).
+    ``waiting_for_parts``, or a ``skipped*`` variant carrying ``skip_reason``);
+    ``?q=`` is a case-insensitive substring match on the filename, for a source
+    tracking more files than anyone can page through looking for one.
 
     Rows are the tracking records, not gallery files: ``media_file_uuid`` is null for
     anything skipped, errored or still in flight, and stays populated for an imported
@@ -789,6 +798,11 @@ def list_source_files(
     )
     if status_filter:
         query = query.filter(WatchSourceFile.status == status_filter)
+    if q and q.strip():
+        # ``ilike`` with the wildcards escaped, so a filename containing % or _ is
+        # searched for literally rather than turning into a match-everything pattern.
+        needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        query = query.filter(WatchSourceFile.filename.ilike(f"%{needle}%", escape="\\"))
     total = query.count()
     rows = (
         query.order_by(WatchSourceFile.created_at.desc())
@@ -883,9 +897,228 @@ def delete_source_file(
     return {"success": True}
 
 
+def _rows_for_action(
+    db: Session, source: WatchSource, file_uuids: list[str]
+) -> tuple[dict[str, WatchSourceFile], list[WatchSourceFileActionResult]]:
+    """Resolve requested uuids to rows of this source, reporting misses per row.
+
+    An unknown or foreign uuid is one row's problem, not the batch's — the caller is
+    usually acting on a page of results that another scan may have changed underneath
+    them, and failing the whole request would discard the work for every valid row.
+    """
+    rows = (
+        db.query(WatchSourceFile)
+        .filter(
+            WatchSourceFile.watch_source_id == source.id,
+            WatchSourceFile.uuid.in_(file_uuids),
+        )
+        .all()
+    )
+    by_uuid = {str(r.uuid): r for r in rows}
+    missing = [
+        WatchSourceFileActionResult(
+            file_uuid=requested, success=False, error="Tracked file not found"
+        )
+        for requested in file_uuids
+        if requested not in by_uuid
+    ]
+    return by_uuid, missing
+
+
+@router.post("/{source_uuid}/files/retry", response_model=WatchSourceFileActionResponse)
+def retry_source_files(
+    source_uuid: str,
+    data: WatchSourceFileActionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> WatchSourceFileActionResponse:
+    """Re-queue tracked files for import, then dispatch ONE scan (owner or admin).
+
+    Consumed by the settings page's file table (its per-row Retry is a batch of one)
+    and by scripts clearing a backlog of failures. Resets each eligible row to
+    ``pending`` and clears its ``skip_reason``/``error_message``, which is what makes
+    a *terminal* row importable again: ``_get_or_create_tracking_row`` refuses to
+    reuse a row in a terminal state, so before this there was no way to retry a
+    skipped file at all. An ``error`` row was already retried by the next scan; this
+    just stops the wait.
+
+    **Batch by design.** ``scan_single`` holds a Redis lock per source, so a per-file
+    endpoint would dispatch one scan per file and every one after the first would
+    silently no-op. One reset pass plus one dispatch is both correct and what the
+    table's "retry all failed" needs.
+
+    ``retry_count`` is deliberately NOT incremented: ``_record_error`` already counts
+    each failed attempt, and bumping it here would double-count one.
+
+    **The rows are queued, not retried.** The dispatched scan may find a scan already
+    running (the lock), or may not reach this file within ``max_imports_per_scan``, and
+    it only re-imports files still present at their ``remote_path``. Callers should
+    report "queued" and watch the row's status, not assume the import happened.
+    """
+    source = _get_source_or_404(db, source_uuid, current_user)
+    if not source.is_enabled:
+        # 409 rather than the /scan endpoint's 400: this is a conflict with the
+        # source's STATE, not a malformed request, and resetting rows for a scan that
+        # `_load_scan_plan` will refuse to run would be a lie dressed as success.
+        raise HTTPException(status_code=409, detail="Enable the source before retrying its files")
+
+    by_uuid, results = _rows_for_action(db, source, data.file_uuids)
+    reset_any = False
+    for requested in data.file_uuids:
+        row = by_uuid.get(requested)
+        if row is None:
+            continue
+        status_value = str(row.status)
+        if status_value not in RETRYABLE_FILE_STATUSES:
+            results.append(
+                WatchSourceFileActionResult(
+                    file_uuid=requested,
+                    success=False,
+                    status=status_value,
+                    error=f"A file in state {status_value!r} cannot be retried",
+                )
+            )
+            continue
+        warning = None
+        if row.skip_reason == "too_old" and source.skip_files_older_than_days is not None:
+            warning = (
+                "This file was skipped for age and the source still limits imports to the "
+                f"last {source.skip_files_older_than_days} days, so the next scan will skip "
+                "it again. Clear that limit first."
+            )
+        row.status = "pending"
+        row.skip_reason = None
+        row.error_message = None
+        reset_any = True
+        results.append(
+            WatchSourceFileActionResult(
+                file_uuid=requested, success=True, status="pending", warning=warning
+            )
+        )
+
+    if reset_any:
+        db.commit()
+        from app.tasks.watch_source_tasks import scan_single
+
+        scan_single.delay(source.id)
+
+    return WatchSourceFileActionResponse(results=results, scan_dispatched=reset_any)
+
+
+@router.post("/{source_uuid}/files/bulk-delete", response_model=WatchSourceFileActionResponse)
+def bulk_delete_source_files(
+    source_uuid: str,
+    data: WatchSourceFileActionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> WatchSourceFileActionResponse:
+    """Remove many tracking rows at once (owner or admin).
+
+    Same semantics as the single-row ``DELETE`` beside it — the tracking record goes,
+    the file stays in the source and in the library — but clearing a few hundred
+    skipped records one confirmation at a time is not a usable admin surface.
+
+    Dispatches no scan: deleting a row is not a request to re-import it. (An untracked
+    path does become a candidate again on the next scheduled scan, where content dedup
+    decides what happens to it.)
+    """
+    source = _get_source_or_404(db, source_uuid, current_user)
+    by_uuid, results = _rows_for_action(db, source, data.file_uuids)
+    for requested in data.file_uuids:
+        row = by_uuid.get(requested)
+        if row is None:
+            continue
+        db.delete(row)
+        results.append(WatchSourceFileActionResult(file_uuid=requested, success=True))
+    db.commit()
+    return WatchSourceFileActionResponse(results=results, scan_dispatched=False)
+
+
 # --------------------------------------------------------------------------- #
 # Email links
 # --------------------------------------------------------------------------- #
+@router.get("/{source_uuid}/emails", response_model=list[EmailLinkResponse])
+def list_email_links(
+    source_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> list[EmailLinkResponse]:
+    """The email configs this source notifies, with each link's own options.
+
+    Consumed by the settings page's per-source notification panel. Owner or admin —
+    the same tier as the link/unlink routes below, deliberately NOT the super_admin
+    tier that governs the configs themselves: subscribing your own source to an
+    existing mailer is not the same right as holding its credentials.
+
+    ``notify_on_success``/``notify_on_error`` are evaluated **per scan**, not per
+    file: ``send_notification`` classifies a whole scan by whether it recorded any
+    error, so ``notify_on_error`` means "a scan in which at least one file failed".
+    """
+    source = _get_source_or_404(db, source_uuid, current_user)
+    links = (
+        db.query(WatchSourceEmail)
+        .options(selectinload(WatchSourceEmail.email_config))
+        .filter(WatchSourceEmail.watch_source_id == source.id)
+        .all()
+    )
+    return [
+        EmailLinkResponse(
+            email_config_uuid=str(link.email_config.uuid),
+            email_config_name=link.email_config.name,
+            additional_recipients=link.additional_recipients,
+            notify_on_success=link.notify_on_success,
+            notify_on_error=link.notify_on_error,
+        )
+        for link in links
+        if link.email_config is not None
+    ]
+
+
+@router.get("/{source_uuid}/emails/available", response_model=list[EmailConfigOption])
+def list_available_email_configs(
+    source_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+) -> list[EmailConfigOption]:
+    """Configs this source could still be linked to (owner or admin).
+
+    Consumed by the notification panel's picker. It exists because of an asymmetry
+    that otherwise makes that panel unbuildable: any source owner may link a config,
+    but ``GET /email-configs`` is **super_admin** — so an ordinary owner had the right
+    to subscribe and no way to discover what to subscribe to.
+
+    Deliberately source-scoped rather than a second listing under ``/email-configs``:
+    that prefix is in ``SUPER_ADMIN_PREFIXES``
+    (``tests/unit/test_route_privilege_tiers.py``), and a non-super_admin route beneath
+    it would fail that gate — correctly, since the gate exists to stop exactly this
+    kind of quiet tier drift. Scoping it here also lets the server exclude what is
+    already linked instead of making the client subtract two lists.
+
+    The projection is minimal on purpose — see ``EmailConfigOption``. Do not widen it
+    to ``EmailConfigResponse``: that carries the deployment's mail hostnames and
+    usernames, and every authenticated user can read this.
+    """
+    source = _get_source_or_404(db, source_uuid, current_user)
+    linked_ids = {
+        link.email_config_id
+        for link in db.query(WatchSourceEmail)
+        .filter(WatchSourceEmail.watch_source_id == source.id)
+        .all()
+    }
+    configs = db.query(EmailNotificationConfig).order_by(EmailNotificationConfig.name).all()
+    return [
+        EmailConfigOption(
+            uuid=str(cfg.uuid),
+            name=cfg.name,
+            provider=cfg.provider,
+            is_enabled=cfg.is_enabled,
+            has_default_recipients=bool(cfg.default_recipients and cfg.default_recipients.strip()),
+        )
+        for cfg in configs
+        if cfg.id not in linked_ids
+    ]
+
+
 @router.post("/{source_uuid}/emails")
 def link_email_config(
     source_uuid: str,

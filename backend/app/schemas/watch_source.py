@@ -305,6 +305,68 @@ class WatchSourceFilesList(BaseModel):
     page_size: int = 50
 
 
+#: Statuses a tracked file may be re-queued from.
+#:
+#: ``error`` and every ``skipped_*`` variant. The exclusions are each a different
+#: kind of wrong rather than an oversight:
+#:
+#: * ``imported`` already succeeded — re-importing would duplicate it, so the caller
+#:   wants the delete-record action instead;
+#: * ``importing``/``downloading`` are in flight and resetting them races
+#:   ``_claim_import``;
+#: * ``waiting_for_parts`` carries the multipart WAIT counter in ``retry_count``, not
+#:   an attempt count, so resetting it corrupts the group's stitch decision;
+#: * ``stitched_part`` was consumed into a stitched recording — re-importing it would
+#:   add the raw part alongside the whole.
+#:
+#: Only the ``skipped_*`` half is new capability: ``error`` rows are not terminal and
+#: are already retried by the next scan. The skipped ones are terminal, so before this
+#: there was no way to retry them at all.
+#:
+#: Derived from the enum rather than listed, so a ``skipped_*`` member added later is
+#: retryable without a second place to remember. (``skipped_too_large`` is written by
+#: the document ingest path but is not yet an enum member — see #547; it becomes
+#: retryable automatically when that lands.)
+RETRYABLE_FILE_STATUSES: frozenset[str] = frozenset(
+    {WatchFileStatus.ERROR.value}
+    | {s.value for s in WatchFileStatus if s.value.startswith("skipped_")}
+)
+
+
+class WatchSourceFileActionRequest(BaseModel):
+    """The tracked files a batch retry or batch delete applies to.
+
+    Batch-shaped even for a single row, because ``scan_single`` holds a Redis lock
+    per source: a per-file retry endpoint would dispatch one scan per file and all
+    but the first would silently no-op. One reset pass plus one dispatch is both
+    correct and what "retry all failed" needs.
+    """
+
+    file_uuids: list[str] = Field(..., min_length=1, max_length=500)
+
+
+class WatchSourceFileActionResult(BaseModel):
+    """What happened to one row in a batch. A refusal is not an exception."""
+
+    file_uuid: str
+    success: bool
+    status: str | None = None
+    #: Set when the action was applied but is unlikely to achieve anything — e.g. a
+    #: file skipped for age on a source that still has the age cutoff set, which the
+    #: next scan will skip again for the same reason.
+    warning: str | None = None
+    error: str | None = None
+
+
+class WatchSourceFileActionResponse(BaseModel):
+    """Per-row outcomes, so a partial batch reports honestly instead of failing whole."""
+
+    results: list[WatchSourceFileActionResult] = []
+    #: False when no row was eligible — the caller should not be told a scan is coming
+    #: when nothing was queued.
+    scan_dispatched: bool = False
+
+
 class WatchSourceStats(BaseModel):
     """Aggregated per-status counts for a source's tracked files."""
 
@@ -418,6 +480,34 @@ class EmailLinkCreate(BaseModel):
                     "give a comma-separated list like 'ops@example.com,oncall@example.com'"
                 )
         return value
+
+
+class EmailConfigOption(BaseModel):
+    """An email config a source owner may link, as a MINIMAL projection.
+
+    Deliberately not ``EmailConfigResponse``. Managing the configs themselves is
+    super_admin work because they hold mailbox credentials, but any source owner may
+    subscribe their own source to one that already exists — so the picker has to be
+    readable a tier below the config list, and it must therefore carry nothing an
+    ordinary user has no business seeing. No ``from_address``, no ``smtp_host``, no
+    ``*_username``, no ``has_*`` secret flags.
+
+    Adding a field here widens what every authenticated user can read about the
+    deployment's mail setup; ``test_watch_source_email_routes`` pins the key set
+    exactly so that cannot happen by accident.
+    """
+
+    uuid: str
+    name: str
+    provider: str
+    #: A disabled config is skipped at send time, so a link to one delivers nothing.
+    #: Surfaced so the UI can say that at the moment of linking.
+    is_enabled: bool = True
+    #: Whether the config carries default recipients — NOT the addresses themselves.
+    #: A link whose config has none and which adds none of its own resolves to an
+    #: empty recipient list and is silently skipped; the boolean is what lets the UI
+    #: warn about that without leaking who the deployment mails.
+    has_default_recipients: bool = False
 
 
 class EmailLinkResponse(BaseModel):

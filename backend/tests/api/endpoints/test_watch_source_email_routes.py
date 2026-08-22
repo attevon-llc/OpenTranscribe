@@ -365,3 +365,174 @@ def test_testing_a_config_is_refused_below_super_admin(
 def test_testing_a_config_requires_authentication(client):
     response = client.post(f"{BASE}/email-configs/{ABSENT_UUID}/test")
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# ---------------------------------------------------------------------------
+# GET /{source_uuid}/emails — read the links back
+# ---------------------------------------------------------------------------
+def test_listing_links_returns_each_links_own_options(
+    client, db_session, user_token_headers, normal_user
+):
+    """The per-link options are the whole point of per-source linkage.
+
+    ``EmailLinkResponse`` existed as a schema with no endpoint returning it, so there
+    was no way to read back what a link was configured to do — which made the
+    notification panel unbuildable, not merely unbuilt.
+    """
+    source = _make_source(db_session, normal_user)
+    config = _make_email_config(db_session)
+    client.post(
+        f"{BASE}/{source.uuid}/emails",
+        json={
+            "email_config_uuid": str(config.uuid),
+            "additional_recipients": "oncall@example.com",
+            "notify_on_success": False,
+            "notify_on_error": True,
+        },
+        headers=user_token_headers,
+    )
+
+    response = client.get(f"{BASE}/{source.uuid}/emails", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert len(body) == 1
+    assert body[0]["email_config_uuid"] == str(config.uuid)
+    assert body[0]["email_config_name"] == config.name
+    assert body[0]["additional_recipients"] == "oncall@example.com"
+    assert body[0]["notify_on_success"] is False
+    assert body[0]["notify_on_error"] is True
+
+
+def test_listing_links_on_an_unlinked_source_is_an_empty_list(
+    client, db_session, user_token_headers, normal_user
+):
+    """Empty is a valid answer, not a 404 — the source exists and has no links."""
+    source = _make_source(db_session, normal_user)
+
+    response = client.get(f"{BASE}/{source.uuid}/emails", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == []
+
+
+def test_listing_links_on_someone_elses_source_is_403(
+    client, db_session, other_user_auth_headers, normal_user
+):
+    source = _make_source(db_session, normal_user)
+
+    response = client.get(f"{BASE}/{source.uuid}/emails", headers=other_user_auth_headers)
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_listing_links_requires_authentication(client, db_session, normal_user):
+    source = _make_source(db_session, normal_user)
+
+    response = client.get(f"{BASE}/{source.uuid}/emails")
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# ---------------------------------------------------------------------------
+# GET /{source_uuid}/emails/available — the owner-readable picker
+# ---------------------------------------------------------------------------
+def test_available_configs_are_readable_by_an_ordinary_source_owner(
+    client, db_session, user_token_headers, normal_user
+):
+    """The reason this route exists at all.
+
+    Linking is owner-level but ``GET /email-configs`` is super_admin, so an ordinary
+    owner had the right to subscribe their source and no way to discover what to
+    subscribe it to. A 403 here means that asymmetry is back.
+    """
+    source = _make_source(db_session, normal_user)
+    config = _make_email_config(db_session)
+
+    response = client.get(f"{BASE}/{source.uuid}/emails/available", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert str(config.uuid) in [c["uuid"] for c in response.json()]
+
+
+def test_available_configs_exclude_what_is_already_linked(
+    client, db_session, user_token_headers, normal_user
+):
+    """Server-side, so the client does not subtract two lists to render one picker."""
+    source = _make_source(db_session, normal_user)
+    linked = _make_email_config(db_session)
+    unlinked = _make_email_config(db_session)
+    client.post(
+        f"{BASE}/{source.uuid}/emails",
+        json={"email_config_uuid": str(linked.uuid)},
+        headers=user_token_headers,
+    )
+
+    response = client.get(f"{BASE}/{source.uuid}/emails/available", headers=user_token_headers)
+
+    uuids = [c["uuid"] for c in response.json()]
+    assert str(unlinked.uuid) in uuids
+    assert str(linked.uuid) not in uuids
+
+
+def test_available_configs_expose_exactly_the_minimal_projection(
+    client, db_session, user_token_headers, normal_user
+):
+    """The security assertion for this route, and the reason it is exact.
+
+    Every authenticated user can read this. ``EmailConfigResponse`` — the shape the
+    super_admin list returns — carries ``from_address``, ``smtp_host`` and
+    ``smtp_username``; if this route is ever "simplified" to reuse it, or a field is
+    added to the option schema without thinking, the deployment's mail configuration
+    starts leaking to everyone. An equality check on the key set is what makes that
+    impossible to do by accident; a subset check would not.
+    """
+    source = _make_source(db_session, normal_user)
+    _make_email_config(db_session)
+
+    response = client.get(f"{BASE}/{source.uuid}/emails/available", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert set(response.json()[0]) == {
+        "uuid",
+        "name",
+        "provider",
+        "is_enabled",
+        "has_default_recipients",
+    }
+
+
+def test_available_configs_report_whether_recipients_exist_without_naming_them(
+    client, db_session, user_token_headers, normal_user
+):
+    """A link with no recipients anywhere is silently skipped at send time.
+
+    The boolean is what lets the UI warn about that; the addresses themselves are not
+    the owner's business, which is why it is a flag and not the value.
+    """
+    source = _make_source(db_session, normal_user)
+    _make_email_config(db_session)
+
+    response = client.get(f"{BASE}/{source.uuid}/emails/available", headers=user_token_headers)
+
+    option = response.json()[0]
+    assert option["has_default_recipients"] is False
+    assert "default_recipients" not in option
+
+
+def test_available_configs_on_someone_elses_source_is_403(
+    client, db_session, other_user_auth_headers, normal_user
+):
+    source = _make_source(db_session, normal_user)
+
+    response = client.get(f"{BASE}/{source.uuid}/emails/available", headers=other_user_auth_headers)
+
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_available_configs_requires_authentication(client, db_session, normal_user):
+    source = _make_source(db_session, normal_user)
+
+    response = client.get(f"{BASE}/{source.uuid}/emails/available")
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED

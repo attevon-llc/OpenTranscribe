@@ -132,7 +132,7 @@ export type WatchSourceUpdate = Partial<
   Omit<WatchSourceCreate, 'source_type' | 'assign_to_user_uuid'>
 >;
 
-interface WatchSourceFile {
+export interface WatchSourceFile {
   uuid: string;
   remote_path: string;
   filename: string;
@@ -145,16 +145,71 @@ interface WatchSourceFile {
   part_group?: string | null;
   part_number?: number | null;
   error_message?: string | null;
+  /**
+   * Two meanings, keyed by `status`: failed import ATTEMPTS on an ordinary row
+   * (`_record_error` increments it), and SCANS WAITED on a `waiting_for_parts` row
+   * (the multipart group's stitch timer). Label it per row — one heading for both
+   * misreports one of them.
+   */
   retry_count: number;
   processed_at?: string | null;
   created_at?: string | null;
 }
 
-interface WatchSourceFilesList {
+export interface WatchSourceFilesList {
   files: WatchSourceFile[];
   total: number;
   page: number;
   page_size: number;
+}
+
+/**
+ * Every tracking status the backend's `WatchFileStatus` defines, for the filter
+ * dropdown. A row may still carry a value absent from this list (`skipped_too_large`
+ * is written by the document ingest path and not yet an enum member — see #547), so
+ * anything rendering a status must fall back to the raw string rather than blank.
+ */
+export const WATCH_FILE_STATUSES = [
+  'pending',
+  'downloading',
+  'importing',
+  'imported',
+  'skipped_duplicate',
+  'skipped_old',
+  'skipped_invalid',
+  'processing',
+  'error',
+  'stitched_part',
+  'waiting_for_parts',
+] as const;
+
+/**
+ * Statuses the retry endpoint accepts, mirroring `RETRYABLE_FILE_STATUSES` in
+ * `schemas/watch_source.py`. The UI hides Retry for anything else so it never offers
+ * a button the API will refuse — the exclusions are each a distinct harm (duplicating
+ * an imported file, racing an in-flight claim, corrupting a multipart wait counter,
+ * re-importing a part already folded into a stitched recording).
+ */
+export const RETRYABLE_FILE_STATUSES: ReadonlySet<string> = new Set([
+  'error',
+  'skipped_duplicate',
+  'skipped_old',
+  'skipped_invalid',
+]);
+
+/** Per-row outcome of a batch retry or batch delete. */
+export interface WatchSourceFileActionResult {
+  file_uuid: string;
+  success: boolean;
+  status?: string | null;
+  /** Set when the action applied but is unlikely to achieve anything. */
+  warning?: string | null;
+  error?: string | null;
+}
+
+export interface WatchSourceFileActionResponse {
+  results: WatchSourceFileActionResult[];
+  scan_dispatched: boolean;
 }
 
 export interface WatchSourceStats {
@@ -238,6 +293,12 @@ export interface EmailConfig {
   last_tested_at?: string | null;
   test_status?: string | null;
   test_message?: string | null;
+  /**
+   * How many watch sources subscribe to this config. Deleting it cascades the links
+   * away, so those sources stop being notified with no warning and no way to restore
+   * them — this is what makes that consequence visible before the decision.
+   */
+  linked_source_count?: number;
 }
 
 export interface EmailConfigCreate {
@@ -262,11 +323,42 @@ export interface EmailConfigCreate {
 
 export type EmailConfigUpdate = Partial<Omit<EmailConfigCreate, 'provider'>>;
 
-interface EmailLinkCreate {
+export interface EmailLinkCreate {
   email_config_uuid: string;
   additional_recipients?: string | null;
   notify_on_success?: boolean;
   notify_on_error?: boolean;
+}
+
+/** An email config linked to one source, with that link's own options. */
+export interface EmailLink {
+  email_config_uuid: string;
+  email_config_name: string;
+  additional_recipients?: string | null;
+  notify_on_success: boolean;
+  notify_on_error: boolean;
+}
+
+/**
+ * A config a source owner may link, as the backend's MINIMAL projection.
+ *
+ * Deliberately not `EmailConfig`: managing configs is super_admin work because they
+ * hold mailbox credentials, but any source owner may subscribe their own source to
+ * one — so this carries nothing an ordinary user has no business seeing. No
+ * `from_address`, no `smtp_host`, no usernames.
+ */
+export interface EmailConfigOption {
+  uuid: string;
+  name: string;
+  /** A disabled config is skipped at send time, so a link to one delivers nothing. */
+  is_enabled: boolean;
+  provider: EmailProvider;
+  /**
+   * Whether the config has default recipients — NOT who they are. A link whose config
+   * has none and which adds none of its own resolves to an empty recipient list and is
+   * silently skipped.
+   */
+  has_default_recipients: boolean;
 }
 
 const BASE = '/watch-sources';
@@ -319,10 +411,40 @@ export async function getWatchSourceFiles(
   uuid: string,
   page = 1,
   pageSize = 50,
-  status?: string
+  status?: string,
+  q?: string
 ): Promise<WatchSourceFilesList> {
   const { data } = await axiosInstance.get(`${BASE}/${uuid}/files`, {
-    params: { page, page_size: pageSize, status },
+    params: { page, page_size: pageSize, status, q },
+  });
+  return data;
+}
+
+/**
+ * Re-queue tracked files, then let the backend dispatch ONE scan for the batch.
+ *
+ * Batch even for a single row: `scan_single` holds a Redis lock per source, so a
+ * per-file call would dispatch one scan per file and every one after the first would
+ * silently no-op. The rows come back `pending` — they are *queued*, not imported, and
+ * the caller should say so and watch for the real outcome rather than claim success.
+ */
+export async function retryWatchSourceFiles(
+  uuid: string,
+  fileUuids: string[]
+): Promise<WatchSourceFileActionResponse> {
+  const { data } = await axiosInstance.post(`${BASE}/${uuid}/files/retry`, {
+    file_uuids: fileUuids,
+  });
+  return data;
+}
+
+/** Remove many tracking rows at once. Deletes records only, never library files. */
+export async function bulkDeleteWatchSourceFiles(
+  uuid: string,
+  fileUuids: string[]
+): Promise<WatchSourceFileActionResponse> {
+  const { data } = await axiosInstance.post(`${BASE}/${uuid}/files/bulk-delete`, {
+    file_uuids: fileUuids,
   });
   return data;
 }
@@ -394,6 +516,24 @@ export async function testEmailConfig(
 }
 
 // ----- email links -----
+/** The configs this source notifies, with each link's own options. */
+export async function getEmailLinks(uuid: string): Promise<EmailLink[]> {
+  const { data } = await axiosInstance.get(`${BASE}/${uuid}/emails`);
+  return data ?? [];
+}
+
+/**
+ * Configs this source could still be linked to, already excluding the linked ones.
+ *
+ * Source-scoped rather than a second `/email-configs` listing: that prefix is
+ * super_admin, and this has to be readable by the source owner — who may link a
+ * config but may not manage one.
+ */
+export async function getAvailableEmailConfigs(uuid: string): Promise<EmailConfigOption[]> {
+  const { data } = await axiosInstance.get(`${BASE}/${uuid}/emails/available`);
+  return data ?? [];
+}
+
 export async function linkEmailConfig(uuid: string, payload: EmailLinkCreate): Promise<void> {
   await axiosInstance.post(`${BASE}/${uuid}/emails`, payload);
 }

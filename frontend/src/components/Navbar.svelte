@@ -834,13 +834,13 @@
 
   /* Reduce gap, hide username, keep nav labels.
      MEASURED, not guessed: at full spacing with the username shown the navbar
-     needs 1435px, so this tier must start above that with real headroom — it
-     used to start at 1200px and the bar simply overflowed the viewport from
-     1201px to 1434px, clipping the user menu off-screen (issue #452).
+     needs 1621px now that the nav carries Documents too (issue #452 was
+     measured at 1435px with one fewer item) — this tier must start above that
+     with real headroom, so 1500 -> 1700.
      ⚠️ This threshold is coordinated with the identical one in
      navbar/UserDropdown.svelte, which hides `.username`. Both must move
      together, and both must move UP whenever a nav item is added. */
-  @media (max-width: 1500px) {
+  @media (max-width: 1700px) {
     .navbar-container {
       gap: 1.5rem;
       padding: 0.5rem 1rem;
@@ -848,10 +848,11 @@
   }
 
   /* Icon-only nav links, tighter layout.
-     Reduced spacing with full text labels needs 1227px, so this tier starts at
-     1280 rather than the old 1024 — between 1025 and 1226 the bar overflowed
-     here too, which is why raising only the tier above would not have fixed it. */
-  @media (max-width: 1280px) {
+     Reduced spacing with full text labels needs 1403px now (was 1227px before
+     Documents), so this tier starts at 1450 rather than 1280 — between 1281
+     and 1402 the bar overflowed here too, which is why raising only the tier
+     above would not have fixed it. */
+  @media (max-width: 1450px) {
     .navbar-container {
       gap: 1rem;
     }
@@ -877,6 +878,31 @@
 
     .gallery-tabs {
       gap: 0.375rem;
+    }
+  }
+
+  /* Extra-compact icon-only nav, just above the hamburger breakpoint.
+     Adding Documents made even the plain icon-only tier above too wide down
+     near 768px: measured, it needed 820px and clipped by as much as 51px at
+     769px. Rather than raise the 768px hamburger breakpoint itself (a much
+     bigger, unrelated block of mobile-menu rules), tighten spacing further in
+     this narrow band only. Not coordinated with UserDropdown.svelte — nothing
+     there changes here, the username is already hidden by the 1700px tier. */
+  @media (max-width: 900px) {
+    .navbar-container {
+      gap: 0.5rem;
+    }
+
+    .nav-links {
+      gap: 0.375rem;
+    }
+
+    .nav-link {
+      padding: 0.35rem 0.4rem;
+    }
+
+    .theme-toggle-container {
+      margin: 0 4px;
     }
   }
 

@@ -141,6 +141,10 @@ def _discover_fixtures() -> list[Path]:
     "fixture_path",
     _discover_fixtures()
     or [pytest.param(None, marks=pytest.mark.skip(reason="no fixtures committed"))],
+    # Name each case after its fixture. Since #520 there is more than one backend
+    # under test, and a bare `fixture_path1 FAILED` does not say whether PyAnnote or
+    # speakrs regressed — which is the first thing you need to know.
+    ids=lambda p: p.name.removesuffix(".rawinfer.json") if p is not None else "none",
 )
 def test_fixture_regression(fixture_path: Path | None) -> None:
     """Replay a frozen GPU fixture through CPU finalize + smoothing; assert no regression.

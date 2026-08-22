@@ -246,6 +246,13 @@ if $RUN_GPU; then
     run_phase "GPU-marked tests" \
         "$VENV_PY" -m pytest tests/ -o addopts="" -m gpu -q --tb=short \
         --timeout="${GPU_TEST_TIMEOUT:-1800}"
+
+    # The diar-native sidecar is a separate container running a Rust binary, so no
+    # pytest module can inspect it — its execution provider is only observable from
+    # outside, via device-memory residency (issue #520). Exits 4 when the sidecar is
+    # not running, which run_phase reports as NOT MEASURED rather than as a pass.
+    run_phase "diar-native CUDA execution provider" \
+        bash "$PROJECT_ROOT/scripts/diar-native-smoke.sh"
 else
     echo -e "${YELLOW}Skipping GPU-marked tests (--skip-gpu).${NC}"
 fi

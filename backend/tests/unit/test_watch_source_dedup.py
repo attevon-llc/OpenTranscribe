@@ -9,23 +9,21 @@ being extracted to its own branch, so nothing here may depend on it.
 ``test_watch_source_document_ingest.py`` uses. What is asserted is the DB side effect
 of the dedup logic, not the scan scheduling or transfer machinery around it.
 
-**No MinIO gate, on purpose.** Every assertion here is about a path that returns at
-the dedup step, *before* any storage write. A test that skipped without the dev stack
-would not guard the fix in CI, which is where the regression would otherwise land.
-The ``finally`` cleanup exists for the pre-fix (red) run only: before the fix, the
-same-source case falls through to a real import, which is precisely the bug.
+**No MinIO gate, and no storage dependency, on purpose.** These must guard the fix in
+CI — which has no MinIO — so nothing here may reach a real upload. The two duplicate
+cases return at the dedup step by construction, and the negative control replaces
+``_finalize_media_ingest`` rather than letting it run. An earlier draft let that one
+through and passed locally against the dev stack while failing in CI: a test whose
+dependencies are undeclared is only ever green by accident.
 """
 
 from __future__ import annotations
 
-import contextlib
 import shutil
 import uuid as uuid_pkg
 from pathlib import Path
+from unittest.mock import patch
 
-import pytest
-
-from app.models.media import MediaFile
 from app.models.watch_source import WatchSource
 from app.models.watch_source import WatchSourceFile
 from app.services.imohash_service import compute_from_path
@@ -80,33 +78,7 @@ def _stage_audio(tmp_path: Path, name: str = "recording.wav") -> Path:
     return dest
 
 
-@pytest.fixture
-def _cleanup_media(db_session):
-    """Remove any MediaFile the pre-fix code path imports for real.
-
-    After the fix nothing is created and this is a no-op. Before it, the
-    same-source case runs a full import — deleting it keeps a red run from
-    leaving a stray library entry behind.
-    """
-    created: list[int] = []
-    yield created
-    for imohash in created:
-        for mf in db_session.query(MediaFile).filter(MediaFile.imohash == imohash).all():
-            if mf.storage_path:
-                with contextlib.suppress(Exception):
-                    from app.core.config import settings
-                    from app.services.minio_service import minio_client
-
-                    minio_client.remove_object(settings.MEDIA_BUCKET_NAME, mf.storage_path)
-            with contextlib.suppress(Exception):
-                db_session.delete(mf)
-    with contextlib.suppress(Exception):
-        db_session.commit()
-
-
-def test_identical_content_at_two_paths_in_one_source_is_deduped(
-    db_session, normal_user, tmp_path, _cleanup_media
-):
+def test_identical_content_at_two_paths_in_one_source_is_deduped(db_session, normal_user, tmp_path):
     """Two different paths, same bytes, ONE source — the second must be skipped.
 
     Layers 1-2 filtered ``watch_source_id != source.id``, which excludes the source
@@ -120,7 +92,6 @@ def test_identical_content_at_two_paths_in_one_source_is_deduped(
     audio = _stage_audio(tmp_path)
     imohash = compute_from_path(str(audio))
     assert imohash, "fixture must produce a fingerprint or the test proves nothing"
-    _cleanup_media.append(imohash)
 
     # The first copy, already imported under a different path in THIS source.
     _make_row(
@@ -154,7 +125,7 @@ def test_identical_content_at_two_paths_in_one_source_is_deduped(
 
 
 def test_identical_content_in_a_different_source_still_reports_other_source(
-    db_session, normal_user, tmp_path, _cleanup_media
+    db_session, normal_user, tmp_path
 ):
     """The cross-source reason must survive the same-source fix.
 
@@ -168,7 +139,6 @@ def test_identical_content_in_a_different_source_still_reports_other_source(
     audio = _stage_audio(tmp_path)
     imohash = compute_from_path(str(audio))
     assert imohash
-    _cleanup_media.append(imohash)
 
     _make_row(
         db_session,
@@ -192,9 +162,7 @@ def test_identical_content_in_a_different_source_still_reports_other_source(
     assert result.skip_reason == "duplicate_other_source"
 
 
-def test_a_non_imported_sibling_row_does_not_block_the_import(
-    db_session, normal_user, tmp_path, _cleanup_media
-):
+def test_a_non_imported_sibling_row_does_not_block_the_import(db_session, normal_user, tmp_path):
     """Only an ``imported`` sibling counts as a duplicate.
 
     The negative control for the fix above. Widening the query to include the source
@@ -202,12 +170,18 @@ def test_a_non_imported_sibling_row_does_not_block_the_import(
     guard is now load-bearing in a way it was not before: without it, a failed or
     still-in-flight attempt at the same content would permanently block the retry
     that #489's Retry button exists to trigger.
+
+    ``_finalize_media_ingest`` is replaced rather than allowed to run. Unlike its two
+    siblings this case is meant NOT to short-circuit at dedup, so the real function
+    would carry on into a MinIO upload — an undeclared storage dependency that passes
+    on a machine with the dev stack up and fails in CI, which is exactly what it did.
+    Asserting the finalize was *reached* also states the property more directly than
+    inspecting a skip reason that was never set.
     """
     source = _make_source(db_session, normal_user)
     audio = _stage_audio(tmp_path)
     imohash = compute_from_path(str(audio))
     assert imohash
-    _cleanup_media.append(imohash)
 
     _make_row(
         db_session,
@@ -219,13 +193,18 @@ def test_a_non_imported_sibling_row_does_not_block_the_import(
     )
     row = _make_row(db_session, source, remote_path="/watch/second-attempt.wav")
 
-    result = processing.ingest_prepared_file(
-        db_session,
-        source,
-        str(audio),
-        filename="second-attempt.wav",
-        row=row,
-        size=audio.stat().st_size,
-    )
+    with patch.object(processing, "_finalize_media_ingest", return_value=row) as finalize:
+        result = processing.ingest_prepared_file(
+            db_session,
+            source,
+            str(audio),
+            filename="second-attempt.wav",
+            row=row,
+            size=audio.stat().st_size,
+        )
 
-    assert result.skip_reason != "duplicate_same_source"
+    # Positive assertions, not `!= "skipped_duplicate"`: reaching the finalize IS the
+    # property, and a null skip_reason says no dedup verdict was recorded at all —
+    # where a negated comparison would also be satisfied by some other skip.
+    finalize.assert_called_once()
+    assert result.skip_reason is None

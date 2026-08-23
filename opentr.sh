@@ -887,6 +887,64 @@ fresh_port_in_use() {
   return 1
 }
 
+# Resolve the host ports a NON-fresh stack will publish and refuse to start when
+# one is already taken by something that is not us.
+#
+# `--fresh` has had this check since #347 (see the block in the fresh branch
+# below); the ordinary `start` path never had one, and the failure mode is bad
+# out of proportion to the cause: `docker compose up` aborts PART WAY THROUGH on
+# the bind error, leaving every service it had not reached yet in `Created` --
+# frontend, all eight celery workers, flower, docs -- while postgres/redis/minio/
+# backend are up, so the stack looks half-alive rather than failed. E2E then
+# errors at fixture setup and every celery-backed test fails, which reads as
+# application breakage. Observed with an unrelated project holding 5183
+# (DOCS_PORT); it cost a full debugging cycle on a branch that was fine.
+#
+# `--wait` does not cover this, despite the comment at the `up` call: the bind
+# fails before any health check runs.
+#
+# Re-upping the SAME project is not a conflict -- `compose up -d` recreating
+# changed services is the normal way to apply a .env edit -- so a port held by
+# our own compose project is allowed through, matching the fresh path's rule.
+preflight_ports_or_die() {
+  local entry var base port busy="" holder
+  local project="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")}"
+  local ours
+  ours="$(docker ps --filter "label=com.docker.compose.project=${project}" --format '{{.Names}}' 2>/dev/null | head -1)"
+  for entry in "$@"; do
+    var="${entry%%=*}"
+    base="${entry#*=}"
+    port="${!var:-$base}"
+    [[ "$port" =~ ^[0-9]+$ ]] || port="$base"
+    if fresh_port_in_use "$port"; then
+      busy="$busy $port"
+    fi
+  done
+  [ -z "$busy" ] && return 0
+  if [ -n "$ours" ]; then
+    # Our own stack already holds them -- this is a re-up in place.
+    return 0
+  fi
+  echo ""
+  echo "❌ Cannot start: these host ports are already bound:${busy}"
+  for port in $busy; do
+    holder="$(docker ps --format '{{.Names}}\t{{.Ports}}' 2>/dev/null | grep -E "[:.]${port}->" | cut -f1 | head -1)"
+    if [ -n "$holder" ]; then
+      echo "   ${port}  held by container '${holder}'"
+    else
+      echo "   ${port}  held by a non-Docker process on the host"
+      echo "        find it with:  lsof -iTCP:${port} -sTCP:LISTEN -P -n"
+    fi
+  done
+  echo ""
+  echo "   Free the port, or run an isolated stack beside it:"
+  echo "     ./opentr.sh start dev --fresh <name> --port-offset 100"
+  echo ""
+  echo "   Refusing rather than letting 'compose up' abort part way through and"
+  echo "   leave half the services in 'Created' (issue #553)."
+  exit 1
+}
+
 # Compute the resolved live data paths (NAS overlay active or not) and print
 # them. Shared by the `data-paths` subcommand and the guardrail marker writer.
 # Sets globals: DP_NAS_ACTIVE, DP_NAS_PATH, DP_PG_PATH, DP_OS_PATH.
@@ -1908,10 +1966,27 @@ start_app() {
     write_live_data_markers
   fi
 
+  # Refuse to start when a host port we are about to publish is already taken by
+  # something that is not us (issue #553). The fresh path has had this since #347;
+  # without it here, a collision makes `compose up` abort PART WAY THROUGH and
+  # strand every service it had not reached in `Created`. Skipped in fresh mode,
+  # which ran its own offset-aware check earlier.
+  if [ -z "$FRESH_FLAG" ]; then
+    _pf_ports=("${FRESH_PORT_VARS[@]}")
+    [ -n "$WITH_LDAP_TEST_FLAG" ] && _pf_ports+=("${FRESH_LDAP_PORT_VARS[@]}")
+    [ -n "$WITH_MOCK_LLM_FLAG" ] && _pf_ports+=("${FRESH_MOCK_LLM_PORT_VARS[@]}")
+    [ -n "$WITH_SMB_TEST_FLAG" ] && _pf_ports+=("${FRESH_SMB_PORT_VARS[@]}")
+    [ -n "$WITH_MONITORING_FLAG" ] && _pf_ports+=("${FRESH_MONITORING_PORT_VARS[@]}")
+    [ -n "$WITH_LLM_TEST_FLAG" ] && _pf_ports+=("${FRESH_LLM_TEST_PORT_VARS[@]}")
+    preflight_ports_or_die "${_pf_ports[@]}"
+  fi
+
   # Start services with appropriate compose files.
   # --wait blocks until every service is healthy (or the timeout elapses) so a
   # "created-but-never-started" container surfaces as a non-zero exit instead of
-  # a silent failure. --wait-timeout 700 covers the backend's 600s start_period.
+  # a silent failure. NOTE --wait does NOT cover a port-bind failure: that aborts
+  # before any health check runs, which is what preflight_ports_or_die above is
+  # for. --wait-timeout 700 covers the backend's 600s start_period.
   # shellcheck disable=SC2086
   if ! docker compose $COMPOSE_FILES up -d --wait --wait-timeout 700 $BUILD_CMD $RECREATE_CMD; then
     echo ""

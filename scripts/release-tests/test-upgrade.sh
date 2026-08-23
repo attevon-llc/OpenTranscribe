@@ -146,6 +146,8 @@ source "$LIB_DIR/api-client.sh"
 source "$LIB_DIR/assertions.sh"
 # shellcheck source=lib/versions.sh
 source "$LIB_DIR/versions.sh"
+# shellcheck source=lib/model-cache.sh
+source "$LIB_DIR/model-cache.sh"
 
 if (( DO_CLEANUP == 1 )); then
     gr_log "cleanup requested"
@@ -363,21 +365,18 @@ phase_03_prepare_v033_compose() {
 
     # One-time seed from live production cache if we haven't already. Check
     # for the sentinel file ".seeded-from-live" to avoid re-copying on every
-    # run. Uses rsync --link-dest for hardlinks so the copy is cheap (no
-    # actual data duplication) if source and dest are on the same filesystem.
+    # run. mc_seed_cache hardlinks the big trees (cheap, no data duplication)
+    # but makes a REAL copy of nltk_data — nltk >=3.10 pathsec refuses
+    # multiply-linked files, and a hardlinked nltk_data fails every
+    # transcription in the run. See lib/model-cache.sh.
     if [[ ! -f "$model_cache/.seeded-from-live" ]]; then
         local live_cache="/mnt/nvm/repos/transcribe-app/models"
         if [[ -d "$live_cache/huggingface" ]]; then
             gr_log "seeding shared model cache from live cache (one-time)"
-            # Copy only the subdirs that HF/PyAnnote/Whisper actually need.
+            # Only the subdirs HF/PyAnnote/Whisper actually need.
             # Skip opensearch-ml (container-specific) and onnx (newer releases only).
-            for sub in huggingface torch nltk_data sentence-transformers pyannote; do
-                if [[ -d "$live_cache/$sub" ]]; then
-                    rsync -a --link-dest="$live_cache/$sub/" \
-                        "$live_cache/$sub/" "$model_cache/$sub/" 2>/dev/null || \
-                        cp -rL "$live_cache/$sub/." "$model_cache/$sub/" 2>/dev/null || true
-                fi
-            done
+            mc_seed_cache "$live_cache" "$model_cache" \
+                huggingface torch nltk_data sentence-transformers pyannote
             touch "$model_cache/.seeded-from-live"
             gr_ok "shared model cache seeded from live cache"
         else
@@ -386,7 +385,16 @@ phase_03_prepare_v033_compose() {
         fi
     else
         gr_ok "reusing persistent shared model cache at $shared_cache"
+        # A cache seeded by an OLDER revision of this script may still be
+        # hardlinked. The sentinel means "seeded", not "seeded correctly", so
+        # re-assert the invariant on every reuse rather than trusting it.
+        mc_break_hardlinks "$model_cache/nltk_data"
     fi
+
+    # Gate: whichever branch ran above, the pathsec invariant must hold before
+    # a single container starts, so a regression fails here rather than as an
+    # opaque transcription error ten minutes later.
+    mc_assert_no_hardlinks "$model_cache/nltk_data" "shared model cache"
 
     docker run --rm -v "$model_cache:/models" busybox:latest \
         sh -c "chown -R 1000:1000 /models && chmod -R 755 /models" >/dev/null 2>&1 \

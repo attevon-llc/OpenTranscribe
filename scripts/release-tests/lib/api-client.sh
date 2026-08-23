@@ -135,6 +135,57 @@ sys.exit("could not extract file uuid: " + json.dumps(d)[:200])
 # Backward-compat alias for any callers still using the old name
 ac_upload_from_url() { ac_upload_file "$@"; }
 
+# Dump everything needed to diagnose a failed pipeline run BEFORE the caller
+# dies and the harness tears the stack down.
+#
+# This exists because it was missing. A rehearsal failed with nothing in the
+# report but "file <uuid> ended in status=error"; the actual cause — an nltk
+# pathsec violation on a hardlinked model cache — lived only in a database
+# column and a worker log, both destroyed by the cleanup that followed. A
+# failure you cannot diagnose after the fact costs a full re-run to learn
+# anything at all, so the diagnosis is captured at the moment of failure.
+ac_dump_failure_diagnostics() {
+    local file_uuid="$1"
+
+    ac_warn "──────── failure diagnostics for $file_uuid ────────"
+
+    # 1. The API's own view of the record. Print every field whose name hints
+    #    at an error rather than guessing one key: the column has been renamed
+    #    before (error_message -> last_error_message).
+    local body
+    body=$(ac_curl "$API_BASE/files/$file_uuid" 2>/dev/null || echo "")
+    if [[ -n "$body" ]]; then
+        echo "$body" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception as exc:  # noqa: BLE001 - diagnostics must never mask the real failure
+    print("  (could not parse file record: %s)" % exc); sys.exit(0)
+if isinstance(d, dict) and "file" in d and isinstance(d["file"], dict):
+    d = d["file"]
+interesting = [k for k in d if any(t in k.lower() for t in ("error", "status", "message", "detail"))]
+for k in sorted(interesting):
+    v = d.get(k)
+    if v not in (None, "", []):
+        print("  %-26s %s" % (k, str(v)[:700]))
+' 2>/dev/null || ac_warn "  (could not read file record)"
+    else
+        ac_warn "  (API did not return the file record)"
+    fi
+
+    # 2. Worker logs. The pipeline spans several queues, so tail each worker
+    #    that exists rather than assuming which one owns the failing step.
+    local c
+    for c in opentranscribe-celery-worker opentranscribe-celery-cpu-worker \
+             opentranscribe-celery-nlp-worker opentranscribe-backend; do
+        if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$c"; then
+            ac_warn "  ── last 40 log lines: $c"
+            docker logs --tail 40 "$c" 2>&1 | sed 's/^/    /' || true
+        fi
+    done
+    ac_warn "──────── end diagnostics ────────"
+}
+
 ac_wait_for_file_status() {
     # Poll /api/files/<uuid> until status == completed (or error/timeout).
     local file_uuid="$1"
@@ -150,12 +201,14 @@ ac_wait_for_file_status() {
                 return 0
                 ;;
             error|failed)
+                ac_dump_failure_diagnostics "$file_uuid"
                 ac_die "file $file_uuid ended in status=$status"
                 ;;
         esac
         ac_log "  file $file_uuid status=${status:-<unknown>} (waiting)"
         sleep 10
     done
+    ac_dump_failure_diagnostics "$file_uuid"
     ac_die "file $file_uuid never reached completed status within ${timeout}s"
 }
 

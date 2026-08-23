@@ -128,6 +128,8 @@ source "$LIB_DIR/api-client.sh"
 source "$LIB_DIR/assertions.sh"
 # shellcheck source=lib/versions.sh
 source "$LIB_DIR/versions.sh"
+# shellcheck source=lib/model-cache.sh
+source "$LIB_DIR/model-cache.sh"
 
 # Resolve the version under test now that versions.sh is available.
 if [[ -z "$LOCAL_IMAGE_TAG" ]]; then
@@ -323,10 +325,13 @@ phase_03_pin_local_image() {
         fi
         gr_log "hub mode: model cache is empty — models will download from HuggingFace on first start (fresh-user path)"
     elif [[ -d "$shared_cache" && -f "$shared_cache/.seeded-from-live" ]]; then
-        gr_log "seeding model cache from shared cache (rsync --link-dest) …"
-        rsync -a --link-dest="$shared_cache/" "$shared_cache/" "$model_cache_dir/" 2>/dev/null || \
-            gr_warn "rsync seed failed — models will download from HuggingFace on first start"
-        gr_ok "model cache seeded from $shared_cache (hard-linked, no disk copy)"
+        gr_log "seeding model cache from shared cache …"
+        # Hardlinks for the big trees, a real copy for nltk_data: nltk >=3.10
+        # pathsec refuses multiply-linked files and every transcription fails.
+        # See lib/model-cache.sh for the full story.
+        mc_seed_cache "$shared_cache" "$model_cache_dir" \
+            huggingface torch nltk_data sentence-transformers pyannote opensearch-ml
+        gr_ok "model cache seeded from $shared_cache"
     else
         gr_warn "shared model cache not found at $shared_cache — first start will download models"
     fi

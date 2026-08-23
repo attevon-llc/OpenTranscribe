@@ -63,6 +63,11 @@ def _render_citation(citation: dict) -> list[str]:
       speaker, and a deep link to the file's summary view rather than a
       player position — the same distinction ``ChatSources.svelte`` draws for
       the live-stream rendering of the same citation shape.
+    * ``document`` (a later lane's kind, #362/#403 Stage 6 — handled here so
+      that lane needs no follow-up edit to this file): a chunk index and page
+      under ``/documents/``, never a fabricated ``t=0`` — a document has no
+      timeline, and an audio-style timestamp link would look like it works
+      and land nowhere meaningful.
     * everything else (``chunk``, ``digest``, and an absent ``kind`` for
       messages persisted before the field existed): the original rendering,
       unchanged.
@@ -83,6 +88,14 @@ def _render_citation(citation: dict) -> list[str]:
             # Italicized, never blockquoted: a blockquote reads as "these were
             # the words", which is exactly what a summary citation is not.
             lines.append(f"  *{snippet}*")
+        return lines
+
+    if kind == "document":
+        chunk_index = citation.get("chunk_index") or 0
+        link = f"/documents/{file_uuid}?chunk={chunk_index}"
+        lines = [f"- `[{cid}]` **{title}** — document excerpt", f"  {link}"]
+        if snippet:
+            lines.append(f"  > {snippet}")
         return lines
 
     speaker = citation.get("speaker") or "Unknown speaker"

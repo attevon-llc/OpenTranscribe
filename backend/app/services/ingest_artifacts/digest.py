@@ -162,10 +162,13 @@ def candidate_sentences(
 class _RankableSentence(Protocol):
     """The structural shape :func:`_partition`/:func:`_select` actually need.
 
-    Satisfied by :class:`SourceSentence`. Expressed as a ``Protocol`` bound on a
-    ``TypeVar`` (rather than naming the concrete class) so a caller with its own
-    candidate-sentence type can reuse one partition/select implementation instead
-    of copying the algorithm, and still gets its own type back out unerased.
+    Satisfied by :class:`SourceSentence` here and, from
+    ``document_digest.DocumentSourceSentence``, by the document plane's own candidate
+    sentence — a real generalisation (a ``Protocol`` bound on a ``TypeVar``, not a
+    ``cast``/``type: ignore``) so both callers reuse one partition/select
+    implementation instead of a second copy of the same algorithm, and each still gets
+    its own concrete type back out unerased (``document_digest.py`` reads
+    ``.char_start``/``.page`` on what :func:`_select` returns).
     """
 
     # Read-only properties, not plain attributes: both concrete types are frozen

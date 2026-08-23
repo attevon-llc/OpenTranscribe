@@ -26,6 +26,7 @@ def _chunk(
     start: float = 100.0,
     end: float = 101.0,
     file_id: int = 5,
+    source_kind: str = "media",
     digest_section: int | None = None,
 ) -> ChunkHit:
     return ChunkHit(
@@ -37,6 +38,7 @@ def _chunk(
         speaker="Marketing",
         start_time=start,
         end_time=end,
+        source_kind=source_kind,
         digest_section=digest_section,
     )
 
@@ -68,6 +70,12 @@ def test_digest_hit_never_needs_expansion():
     digest = _chunk("Y", digest_section=0)
     assert digest.is_digest is True
     assert ce.needs_expansion(digest) is False
+
+
+def test_document_hit_never_needs_expansion():
+    doc = _chunk("Y", source_kind="document")
+    assert doc.is_document is True
+    assert ce.needs_expansion(doc) is False
 
 
 # --------------------------------------------------------------------------- #
@@ -266,16 +274,17 @@ def test_expand_chunks_preserves_list_length_and_order():
     assert expanded == [a, b]
 
 
-def test_expand_chunks_skips_digests_without_querying():
-    """A digest hit must never trigger a TranscriptSegment read — there is no
-    time-range concept for one that this module can widen."""
+def test_expand_chunks_skips_digests_and_documents_without_querying():
+    """A digest or document hit must never trigger a TranscriptSegment read —
+    there is no time-range concept for either that this module can widen."""
 
     class _ExplodingDB:
         def query(self, *a, **k):
-            raise AssertionError("expand_chunks queried a digest hit")
+            raise AssertionError("expand_chunks queried a digest/document hit")
 
     digest = _chunk("Y", digest_section=0)
+    doc = _chunk("Y", source_kind="document")
 
-    expanded = ce.expand_chunks(cast(Session, _ExplodingDB()), [digest])
+    expanded = ce.expand_chunks(cast(Session, _ExplodingDB()), [digest, doc])
 
-    assert expanded == [digest]
+    assert expanded == [digest, doc]

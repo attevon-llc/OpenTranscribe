@@ -146,8 +146,10 @@ def test_the_discriminator_is_doc_type_and_the_value_set_covers_documents():
     assert set(target.DOC_TYPES) == {
         "chunk",
         "digest",
+        "document_chunk",
+        "document_digest",
     }
-    assert set(target.VERBATIM_DOC_TYPES) == {"chunk"}
+    assert set(target.VERBATIM_DOC_TYPES) == {"chunk", "document_chunk"}
 
 
 def test_the_chunk_plane_clause_still_matches_legacy_documents():

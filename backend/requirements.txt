@@ -256,6 +256,45 @@ smbprotocol==1.17.0
 # the tenant has SMTP basic-auth disabled. (boto3 already listed above for S3.)
 msal==1.37.0
 
+# =============================================================================
+# Document ingestion — the in-worker "slim" parsing tier (issue #362)
+# =============================================================================
+# `docling-slim` is the SLIM distribution deliberately: `docling` proper pulls
+# torch + torchvision + docling-ibm-models (the layout/TableFormer stack), and this
+# image is shared by ten worker containers plus the API. Layout, table structure and
+# OCR live in the `docling-serve` SIDECAR instead (pinned by digest in
+# docker-compose.yml), which is what keeps ~2 GB of models out of here.
+#
+# ⚠️ NEVER add the `[standard]`, `[all]`, `[models-local]` or `[models-onnxruntime]`
+# extras. `models-local` re-adds the torch stack this split exists to avoid, and
+# `models-onnxruntime` resolves `onnxruntime-gpu<1.24` against our `==1.28.0` pin —
+# see the onnxruntime namespace-collision comment above. Same reason
+# `docling-jobkit` is reference code and not a dependency: its base is
+# `docling-slim[standard]`.
+#
+# Measured cost of the extras below: 22 packages, ~180 MB, no change to any existing
+# pin (verified with `pip install --dry-run`).
+#
+# Extra-by-extra, and why each is REQUIRED rather than nice to have:
+#   format-office   docx/xlsx/pptx  (python-docx, python-pptx, openpyxl)
+#   format-html     HTML            (beautifulsoup4)
+#   format-markdown MD              (marko)
+#   format-pdf      ⚠️ NOT optional even though the slim tier extracts PDF text with
+#                   pypdfium2 directly: `docling.backend.docling_parse_backend` is
+#                   imported by module bodies the office backends transitively touch,
+#                   and without `docling-parse` the import fails outright.
+#   format-latex    ⚠️ NOT optional either: without `pylatexenc`, a DOCX containing an
+#                   equation raises a bare `NameError: UnicodeToLatexEncoder` from
+#                   inside docling's Word backend. 5 of the 32 docling-fixtures DOCX
+#                   files hit it; installing this took DOCX coverage 27/32 → 32/32.
+#   convert-core    rtree/scipy/numpy/pillow, needed by the shared document model.
+docling-slim[format-office,format-html,format-markdown,format-pdf,format-latex,convert-core]==2.120.3
+# lxml: already an incidental transitive pin (python-docx/python-pptx/doclang all require
+# it unconditionally), but `docling_slim.py`'s HTML repair step (issue #69) now imports it
+# directly — pin it explicitly rather than depending on another package's transitive graph
+# to keep providing it. Torch-free (pure libxml2/libxslt), so the slim tier stays clean.
+lxml==6.1.1
+
 # -----------------------------------------------------------------------------
 # Transitive pins — measured drift, not housekeeping
 # -----------------------------------------------------------------------------
@@ -276,6 +315,8 @@ msal==1.37.0
 # finds it is a `pip freeze` diff of a fresh venv against a fresh image.
 cuda-pathfinder==1.6.1     # via cuda-bindings
 botocore==1.43.75          # via boto3 — drifted 1.43.74 (venv) vs 1.43.75 (image), 2026-08-20
+docling-core==2.92.0       # via docling-slim — drifted 2.91.0 (venv) vs 2.92.0 (image), 2026-08-20
+docling-parse==7.14.0      # via docling (document parsing sidecar tier)
 httpcore2==2.12.0          # via httpx2
 httpx2==2.12.0             # via openai
 idna==3.19                 # via requests, httpx, anyio, yarl, tldextract

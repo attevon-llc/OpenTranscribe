@@ -134,8 +134,13 @@ export function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
-/** Kinds `citationHref` routes on. */
-export type CitationLinkKind = ChatSourceKind;
+/**
+ * Kinds `citationHref` routes on — a strict superset of `ChatSourceKind`.
+ * `document` is not yet a value `ChatSource.kind` can hold (that is the next
+ * lane's own widening of the type, alongside its retrieval-side wiring); the
+ * branch below is written now so landing it needs no `citationHref` edit.
+ */
+export type CitationLinkKind = ChatSourceKind | 'document';
 
 /** The subset of `ChatSource` a citation link needs to decide its shape. */
 export interface CitationLinkSource {
@@ -163,6 +168,11 @@ export interface CitationLinkSource {
  *   no `t=`/`view=` — "go look at one of the recordings this recurred in" is
  *   honest; a fabricated timestamp or view into one file would imply the
  *   whole group lives there.
+ * - `document` (a later lane's kind, handled here so THAT lane needs no
+ *   `citationHref` edit): `/documents/{uuid}?chunk=N`, **never**
+ *   `start_time=0` — a document chunk has no timestamp, and a fabricated
+ *   `t=0` would look like a working "jump to the start" link that lands
+ *   nowhere meaningful in a player that isn't even showing.
  * - everything else (`chunk`, `digest`, and an absent `kind` for messages
  *   persisted before #403 Stage 4): unchanged — `/files/{uuid}?t={seconds}`.
  */
@@ -181,6 +191,10 @@ export function citationHref(source: CitationLinkSource): string {
       source.file_uuids && source.file_uuids.length > 0 ? source.file_uuids[0] : source.file_uuid;
     return `/files/${encodeURIComponent(first)}`;
   }
+  if (kind === 'document') {
+    return `/documents/${uuid}?chunk=${source.chunk_index ?? 0}`;
+  }
+
   const seconds = Math.max(0, Math.floor(source.start_time || 0));
   return `/files/${uuid}?t=${seconds}`;
 }

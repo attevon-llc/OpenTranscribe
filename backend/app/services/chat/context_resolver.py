@@ -82,6 +82,45 @@ def _visible_files_query(db: Session, ctx: RequestContext):
     return query
 
 
+def _resolve_explicit_document(db: Session, ctx: RequestContext, document_uuid: str) -> str | None:
+    """Resolve one uuid as a Document chat may retrieve from, else ``None``.
+
+    v400 (#362 lane C3-remainder). The picker's ``PickerDocumentsTab.svelte`` writes
+    selected document uuids into the SAME ``ChatScope.file_uuids`` array
+    ``PickerFilesTab.svelte`` uses — deliberately, because ``index_document_chunks``
+    stamps a document's chunks with the ``file_uuid`` field exactly like a media
+    file's, so one resolved uuid list already means "search these file_uuids" to
+    every downstream retrieval call. This is the "try Document when MediaFile lookup
+    misses" extension that component's own docstring names as the missing half.
+
+    Same rule :func:`_resolve_explicit_files` applies to a media file: no admin
+    bypass (``PermissionService.get_document_permission`` has none — an admin-only
+    bypass here would resolve a document into scope that retrieval's
+    ``accessible_user_ids`` OpenSearch filter then serves nothing for, the exact
+    "two access rules disagree" shape that function's docstring argues against),
+    completed only, and a quarantined document is excluded for every caller
+    (``_visible_files_query``'s media-file quarantine exclusion has no exception
+    either — chat is a retrieval surface, not the admin review one).
+    """
+    from app.models.document import Document
+    from app.services.permission_service import PermissionService
+
+    doc = db.query(Document).filter(Document.uuid == document_uuid).first()
+    if doc is None:
+        return None
+    if bool(doc.is_quarantined):
+        return None
+    status_value = doc.status.value if hasattr(doc.status, "value") else str(doc.status)
+    if status_value != "completed":
+        return None
+    permission = PermissionService.get_document_permission(
+        db, doc.id, ctx.user.id, organization_id=ctx.org_id
+    )
+    if permission is None:
+        return None
+    return str(doc.uuid)
+
+
 def _resolve_explicit_files(db: Session, ctx: RequestContext, file_uuids: list[str]) -> set[str]:
     """Permission-check each explicitly selected file, skipping inaccessible ones.
 
@@ -98,6 +137,10 @@ def _resolve_explicit_files(db: Session, ctx: RequestContext, file_uuids: list[s
     Resolving as an ordinary user makes this axis agree with what retrieval
     can actually serve. Admins keep the ordinary review path (the admin UI)
     for quarantined content; chat is a retrieval surface, not a review one.
+
+    A uuid that misses against ``MediaFile`` is tried against ``Document``
+    (:func:`_resolve_explicit_document`) before being counted as inaccessible —
+    see that function's docstring for why one array can hold both kinds.
     """
     resolved: set[str] = set()
     for file_uuid in file_uuids:
@@ -110,7 +153,11 @@ def _resolve_explicit_files(db: Session, ctx: RequestContext, file_uuids: list[s
                 organization_id=ctx.org_id,
             )
         except HTTPException:
-            logger.info("Chat scope: skipping inaccessible file %s", file_uuid)
+            document_uuid = _resolve_explicit_document(db, ctx, file_uuid)
+            if document_uuid is not None:
+                resolved.add(document_uuid)
+            else:
+                logger.info("Chat scope: skipping inaccessible file %s", file_uuid)
             continue
         if media_file.status != "completed":
             continue

@@ -120,6 +120,7 @@ celery_app = Celery(
         "app.tasks.thumbnail_migration",
         "app.tasks.embedding_migration_v4",
         "app.tasks.imohash_recompute",
+        "app.tasks.file_hash_recompute",
         "app.tasks.watch_source_tasks",
         "app.tasks.speaker_embedding_migration",
         "app.tasks.baseline_export",
@@ -133,6 +134,8 @@ celery_app = Celery(
         "app.tasks.recovery_tasks",
         "app.tasks.backup_tasks",
         "app.tasks.directory_sync_task",
+        "app.tasks.document_tasks",
+        "app.tasks.document_indexing_task",
     ],
 )
 
@@ -278,11 +281,25 @@ celery_app.conf.update(
         # rides the nlp pool because that is the CPU-only enrichment pool, not because
         # it calls a provider. It must still run when none is configured (#403 D6).
         "artifacts.generate_file_facts": {"queue": CeleryQueues.NLP},
+        # Document ingestion (#362 Stage 6b). CPU queue: no GPU, and the pipeline the
+        # user is watching, same reasoning as the transcription pipeline's own tasks.
+        "documents.parse": {"queue": CeleryQueues.CPU},
+        # Deterministic document artifacts (#403 Stage 6) — the document-plane twin of
+        # `artifacts.generate_file_facts` above, on the same nlp pool for the same
+        # reason: CPU-only TextRank/NLTK enrichment, no LLM and no model load. It
+        # chunks sentences, so its queue must be served by a worker with the
+        # `nltk_data` mount (#436); `tests/unit/test_compose_sentence_splitter_mounts.py`
+        # derives task -> queue -> service -> mount from this entry and fails without it.
+        "documents.generate_artifacts": {"queue": CeleryQueues.NLP},
         # Redaction Queue - Content moderation detection (dedicated CPU service)
         "redaction.detect": {"queue": CeleryQueues.REDACTION},
+        "redaction.detect_document": {"queue": CeleryQueues.REDACTION},
         "redaction.reindex_all": {"queue": CeleryQueues.REDACTION},
         # Embedding Queue - Search indexing with embedding model (concurrency=1)
         "index_transcript_search": {"queue": CeleryQueues.EMBEDDING},
+        # Document plane of the same index (#362 Stage 6c) — same queue as the
+        # transcript indexing task above, same reason (server-side embedding pipeline).
+        "documents.index": {"queue": CeleryQueues.EMBEDDING},
         # Access/tag index updates are lightweight OpenSearch writes (no GPU/embedding needed)
         "update_file_access_index": {"queue": CeleryQueues.UTILITY},
         "update_file_tags_index": {"queue": CeleryQueues.UTILITY},
@@ -305,6 +322,7 @@ celery_app.conf.update(
         "export_transcript_baseline": {"queue": CeleryQueues.UTILITY},
         "compare_transcript_baseline": {"queue": CeleryQueues.UTILITY},
         "imohash_recompute.recompute_all": {"queue": CeleryQueues.UTILITY},
+        "file_hash_recompute.backfill_document_file_hashes": {"queue": CeleryQueues.UTILITY},
         # Watch Sources (issue #26)
         "watch_source.scan_all": {"queue": CeleryQueues.UTILITY},
         "watch_source.scan_single": {"queue": CeleryQueues.DOWNLOAD},

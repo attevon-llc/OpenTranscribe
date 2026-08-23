@@ -1,11 +1,12 @@
-"""``file_facts`` — the deterministic ingest artifacts (#383 Phase 2, #403 Stage 2).
+"""``file_facts`` — the deterministic ingest artifacts (#383 Phase 2, #403 Stage 2/6).
 
-One row per ``media_file``: exact statistics, an extractive digest with per-sentence
-provenance, and keyphrases. All three are produced by ``services/ingest_artifacts`` with
-**no LLM** (#403 **D6**), so a deployment with ``LLM_PROVIDER`` empty still has a summary
-tier to search, aggregate over, and compose an overview from.
+One row per **owner** — a ``media_file`` or a ``document``, never both: exact statistics,
+an extractive digest with per-sentence provenance, and keyphrases. All three are produced
+by ``services/ingest_artifacts`` with **no LLM** (#403 **D6**), so a deployment with
+``LLM_PROVIDER`` empty still has a summary tier to search, aggregate over, and compose an
+overview from.
 
-**Why a sidecar table and not columns on ``media_file``.** The #383 plan text says
+**Why a sidecar table and not columns on the owning table.** The #383 plan text says
 ``MediaFile.file_facts`` / ``MediaFile.extractive_digest``, and this deviates:
 
 - ``media_file`` is ~70 columns and is loaded as a whole entity by every gallery page and
@@ -16,6 +17,17 @@ tier to search, aggregate over, and compose an overview from.
   against ``media_file`` it is a scan of the widest table in the schema.
 - ``generator_version`` and ``source_fingerprint`` are lifecycle state that would be three
   more columns on that same hot row.
+
+**Documents are NOT ``media_file`` rows.** An earlier draft of this docstring said #362
+made a document a ``media_file`` row with ``kind='document'`` — that was never what #362
+built. ``document`` (v394) is its own first-class table with its own upload/list/detail/
+delete lifecycle (see ``app/models/document.py``'s docstring for why). What *is* true, and
+survives that correction, is #403 comment 1's Nuance 3: this sidecar is the document analog
+too — v398 widened it (nullable ``media_file_id`` + nullable ``document_id``, exactly one
+set) rather than adding a parallel ``document_facts`` table, so there stays **one artifact
+code path**, with ``char_range`` provenance (:mod:`app.services.ingest_artifacts.provenance`)
+standing in for ``segment_ids`` on the document side — a document has no timeline to address
+text by.
 
 Every constraint the database enforces is declared here. The repo carries 24 DDL-only
 constraints invisible to the ORM (``.rag-403/ddl-orm-divergence.md``); this table does not
@@ -34,7 +46,7 @@ from sqlalchemy import ForeignKey
 from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
@@ -44,11 +56,18 @@ from sqlalchemy.sql import func
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.document import Document
     from app.models.media import MediaFile
 
 
 class FileFacts(Base):
-    """Deterministic per-file artifacts: statistics, extractive digest, keyphrases."""
+    """Deterministic per-owner artifacts: statistics, extractive digest, keyphrases.
+
+    Exactly one of ``media_file_id`` / ``document_id`` is set on every row — enforced by
+    ``ck_file_facts_exactly_one_owner`` (v398), not by convention. See the module
+    docstring and v398's own docstring for why this is a widened sidecar rather than a
+    second ``document_facts`` table.
+    """
 
     __tablename__ = "file_facts"
 
@@ -67,10 +86,22 @@ class FileFacts(Base):
     #: the database actually enforces, which is the 24-divergence pattern this table is
     #: explicitly not repeating. Caught by
     #: ``test_v389_migration_consistency.test_the_orm_declares_every_constraint_the_database_enforces``.
-    media_file_id: Mapped[int] = mapped_column(
+    #: **Nullable since v398** — a document-owned row leaves this NULL; the CHECK is what
+    #: actually enforces "exactly one owner", not this column's own nullability.
+    media_file_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("media_file.id", ondelete="CASCADE", name="file_facts_media_file_id_fkey"),
-        nullable=False,
+        nullable=True,
+    )
+
+    #: The document-owned counterpart of ``media_file_id`` (v398). Same ``ON DELETE
+    #: CASCADE`` reasoning: a document's artifacts are a pure function of its
+    #: ``document_chunk`` rows and are meaningless — and cheaply regenerable — once the
+    #: document is gone.
+    document_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("document.id", ondelete="CASCADE", name="file_facts_document_id_fkey"),
+        nullable=True,
     )
 
     #: ``"{facts}.{digest}.{keyphrases}"`` schema versions, e.g. ``"1.1.1"``. Stage 3
@@ -107,13 +138,41 @@ class FileFacts(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    media_file: Mapped[MediaFile] = relationship("MediaFile", back_populates="facts_row")
+    media_file: Mapped[MediaFile | None] = relationship("MediaFile", back_populates="facts_row")
+    #: The document-owned counterpart. ``back_populates="facts_row"`` on ``Document``
+    #: mirrors ``MediaFile.facts_row`` exactly (``app/models/document.py``).
+    document: Mapped[Document | None] = relationship("Document", back_populates="facts_row")
 
     __table_args__ = (
-        # One row per file. Also what makes the upsert in
-        # `services/ingest_artifacts/service.py` an ON CONFLICT rather than a read-modify-
-        # write race between the pipeline and a manual regeneration.
-        UniqueConstraint("media_file_id", name="uq_file_facts_media_file"),
+        # v398: replaces the single `UNIQUE (media_file_id)` v390 shipped. A plain
+        # composite `UNIQUE (media_file_id, document_id)` would NOT catch two
+        # document-owned rows sharing a `document_id` — Postgres treats NULLs as
+        # distinct, and `media_file_id` is NULL on every document-owned row — so this
+        # is two PARTIAL unique indexes, one per owner column, each scoped to the rows
+        # where that column is actually set. Same shape `v374`'s per-owner `tag`
+        # uniqueness uses for the identical reason. Also what makes the upsert in
+        # `services/ingest_artifacts/service.py` / `document_service.py` an ON CONFLICT
+        # rather than a read-modify-write race between the pipeline and a manual
+        # regeneration.
+        Index(
+            "uq_file_facts_media_file_id",
+            "media_file_id",
+            unique=True,
+            postgresql_where=text("media_file_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_file_facts_document_id",
+            "document_id",
+            unique=True,
+            postgresql_where=text("document_id IS NOT NULL"),
+        ),
+        # v398: exactly one owner, enforced by the database rather than by every
+        # reader defending against a row that names both or neither.
+        CheckConstraint(
+            "(CASE WHEN media_file_id IS NOT NULL THEN 1 ELSE 0 END) "
+            "+ (CASE WHEN document_id IS NOT NULL THEN 1 ELSE 0 END) = 1",
+            name="ck_file_facts_exactly_one_owner",
+        ),
         CheckConstraint("digest_word_count >= 0", name="ck_file_facts_digest_word_count"),
         CheckConstraint("section_count >= 0", name="ck_file_facts_section_count"),
         CheckConstraint("generation_ms IS NULL OR generation_ms >= 0", name="ck_file_facts_ms"),
@@ -122,7 +181,9 @@ class FileFacts(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<FileFacts media_file_id={self.media_file_id} "
-            f"v={self.generator_version} sections={self.section_count}>"
+        owner = (
+            f"media_file_id={self.media_file_id}"
+            if self.media_file_id
+            else f"document_id={self.document_id}"
         )
+        return f"<FileFacts {owner} v={self.generator_version} sections={self.section_count}>"

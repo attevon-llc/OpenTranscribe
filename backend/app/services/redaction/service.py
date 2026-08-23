@@ -362,6 +362,158 @@ class RedactionService:
         }
 
     @staticmethod
+    def detect_and_store_document(db: Session, document_id: int) -> dict:
+        """Detect + cache redaction spans for every chunk of a document. Idempotent.
+
+        Mirrors ``detect_and_store`` exactly, with two structural differences:
+
+        - **Cache granularity is the chunk, not a rebuilt-from-segments unit.** A
+          ``document_chunk`` row already **is** the retrieval unit indexed into
+          OpenSearch (1:1) — unlike a transcript chunk, which ``chat/redactor.py``
+          rebuilds from multiple overlapping ``TranscriptSegment`` rows, there is
+          nothing to rebuild here. Spans cache directly on ``document_chunk.redactions``/
+          ``.toxicity``.
+        - **Toxicity always runs when the language supports it.** Documents have no
+          inline-fallback path the way transcripts do (``chat/redactor._mask_inline``
+          skips toxicity deliberately, because it is a *fallback*) — this detection
+          pass IS the only path for a document, so it gets the same category set a
+          transcript's real (non-fallback) pass gets.
+        """
+        from app.models.document import Document
+        from app.models.document import DocumentChunk
+
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if doc is None:
+            return {"status": "skipped", "reason": "file_not_found"}
+
+        doc.redaction_status = C.REDACTION_STATUS_PROCESSING  # type: ignore[assignment]
+        db.commit()
+
+        det_cfg = detection_config_for_all()
+        det_cfg["language"] = doc.language
+        try:
+            from app.services.system_settings_service import get_setting_bool
+
+            det_cfg["pii_use_gliner"] = get_setting_bool(
+                db, "redaction.pii_use_gliner", C.REDACTION_PII_USE_GLINER
+            )
+        except Exception:  # noqa: BLE001
+            det_cfg["pii_use_gliner"] = C.REDACTION_PII_USE_GLINER
+
+        supported, skipped = detector_language_support(doc.language)
+        run_profanity = "profanity" in supported
+        run_pii = "pii" in supported
+        run_toxicity = "toxicity" in supported
+        if skipped:
+            logger.info(
+                "Redaction: skipping detectors %s for document %s (language=%s not supported)",
+                sorted(skipped),
+                document_id,
+                doc.language,
+            )
+
+        chunks = (
+            db.query(DocumentChunk)
+            .filter(DocumentChunk.document_id == document_id)
+            .order_by(DocumentChunk.chunk_index)
+            .all()
+        )
+
+        # Same three-outcome sink discipline as detect_and_store: "found nothing" and
+        # "could not look" must never collapse to the same cached value (issue #324).
+        detector_failures: list[str] = []
+        detector_unavailable: list[str] = []
+
+        from app.services.redaction.device import inference_guard
+
+        pii_count = 0
+        try:
+            with inference_guard():
+                tox_scores: list[dict | None] = [None] * len(chunks)
+                if run_toxicity:
+                    try:
+                        from app.services.redaction.detectors import toxicity as tox
+
+                        tox_scores = tox.score_texts(
+                            [str(c.text or "") for c in chunks], doc.language
+                        )
+                    except DetectorUnavailableError as exc:
+                        logger.warning(
+                            "Toxicity detector unavailable for document %s: %s", document_id, exc
+                        )
+                        detector_failures.append("toxicity")
+                        detector_unavailable.append("toxicity")
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "Batch toxicity failed for document %s: %s", document_id, exc
+                        )
+                        detector_failures.append("toxicity")
+
+                for idx, chunk in enumerate(chunks):
+                    span_dicts, _ = RedactionService.detect_segment_spans(
+                        str(chunk.text),
+                        None,  # documents have no word-level timing
+                        det_cfg,
+                        run_profanity=run_profanity,
+                        run_pii=run_pii,
+                        run_toxicity=False,
+                        failures=detector_failures,
+                        unavailable=detector_unavailable,
+                    )
+                    pii_count += sum(1 for s in span_dicts if s.get("category") == "pii")
+                    chunk.redactions = span_dicts or None  # type: ignore[assignment]
+                    chunk.toxicity = tox_scores[idx]  # type: ignore[assignment]
+
+            unavailable = sorted(set(detector_unavailable))
+            if unavailable:
+                for name in unavailable:
+                    skipped[name] = "unavailable"
+                logger.warning(
+                    "Redaction detection for document %s ran without detectors %s "
+                    "(unavailable on this deployment); their categories were NOT "
+                    "examined and the cached spans do not cover them.",
+                    document_id,
+                    unavailable,
+                )
+
+            hard_failures = sorted(set(detector_failures) - set(unavailable))
+            if hard_failures:
+                failed = hard_failures
+                doc.redaction_status = C.REDACTION_STATUS_FAILED  # type: ignore[assignment]
+                db.commit()
+                logger.error(
+                    "Redaction detection for document %s completed with failed detectors %s; "
+                    "marking FAILED so it is re-run rather than caching an incomplete result "
+                    "as clean. Partial spans found so far were kept.",
+                    document_id,
+                    failed,
+                )
+                return {"status": "failed", "reason": "detector_failure", "detectors": failed}
+
+            ran = [
+                d for d in ("profanity", "pii", "toxicity") if d in supported and d not in skipped
+            ]
+            doc.redaction_status = C.REDACTION_STATUS_DONE  # type: ignore[assignment]
+            doc.redaction_model_version = C.REDACTION_MODEL_VERSION  # type: ignore[assignment]
+            doc.redaction_coverage = ran  # type: ignore[assignment]
+            db.commit()
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            doc.redaction_status = C.REDACTION_STATUS_FAILED  # type: ignore[assignment]
+            db.commit()
+            logger.error("Redaction detection failed for document %s: %s", document_id, exc)
+            return {"status": "failed", "error": str(exc)}
+
+        return {
+            "status": "done",
+            "chunks": len(chunks),
+            "pii_entities_found": pii_count,
+            "detectors": ",".join(ran),
+            "language": normalize_language(doc.language),
+            "skipped_detectors": sorted(skipped),
+        }
+
+    @staticmethod
     def redetect_edited_segment(
         db: Session, media_file: MediaFile, segment: TranscriptSegment
     ) -> str:

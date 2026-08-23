@@ -452,6 +452,113 @@ def _select_expired_files(
     return expired
 
 
+def _select_expired_documents(
+    db,
+    config: dict,
+    cutoff: datetime,
+    query_cutoff: datetime,
+    resolve_retention_days,
+) -> list[tuple[int, str, str]]:
+    """Document counterpart of :func:`_select_expired_files` (v399, #362 lane C4).
+
+    Documents were exempt from retention entirely until now — this table simply was
+    not queried, so a document never expired no matter how old or how the deployment's
+    retention window was configured. ``legal_hold`` documents are excluded here
+    (unlike ``MediaFile``, whose retention pass does not check it at all — a
+    pre-existing gap this deliberately does not repeat for the new table). Returns
+    ``(document_id, document_uuid, storage_path)`` — plain data, same reasoning as the
+    media selector: the deletion phase runs with no session open.
+    """
+    from app.models.document import Document
+    from app.models.media import FileStatus
+
+    eligible_statuses = [FileStatus.COMPLETED.value]
+    if config["delete_error_files"]:
+        eligible_statuses.append(FileStatus.ERROR.value)
+
+    candidates = (
+        db.query(
+            Document.id,
+            Document.uuid,
+            Document.storage_path,
+            Document.organization_id,
+            Document.parsed_at,
+            Document.created_at,
+        )
+        .filter(
+            Document.status.in_(eligible_statuses),
+            Document.legal_hold.is_(False),
+            ((Document.parsed_at.isnot(None)) & (Document.parsed_at < query_cutoff))
+            | ((Document.parsed_at.is_(None)) & (Document.created_at < query_cutoff)),
+        )
+        .all()
+    )
+    logger.info(f"cleanup_expired_files: found {len(candidates)} candidate document(s)")
+
+    expired: list[tuple[int, str, str]] = []
+    for doc_id, doc_uuid, storage_path, organization_id, parsed_at, created_at in candidates:
+        override = resolve_retention_days(organization_id)
+        doc_cutoff = cutoff if override is None else datetime.now(UTC) - timedelta(days=override)
+        ref = parsed_at or created_at
+        if ref is not None and ref < doc_cutoff:
+            expired.append((int(doc_id), str(doc_uuid), str(storage_path or "")))
+    return expired
+
+
+def _purge_expired_documents(expired: list[tuple[int, str, str]]) -> tuple[int, int]:
+    """Delete each expired document in its own short session. Returns (deleted, failed).
+
+    Same shape/reasoning as :func:`_purge_expired_files`: one short transaction per
+    document, not one held across the whole pass. The destroy sequence mirrors
+    ``documents.py::delete_document`` exactly (OpenSearch chunks, then storage object,
+    then the row) so retention is not a second, drifting copy of that logic.
+    """
+    from app.models.document import Document
+
+    deleted = 0
+    failed = 0
+    for doc_id, doc_uuid, storage_path in expired:
+        try:
+            with session_scope() as db:
+                document = db.query(Document).filter(Document.id == doc_id).first()
+                if document is None:
+                    continue
+
+                try:
+                    from app.services.search.indexing_service import TranscriptIndexingService
+
+                    TranscriptIndexingService().delete_transcript_chunks(doc_uuid)
+                except Exception as exc:  # noqa: BLE001 — best-effort, row delete still proceeds
+                    logger.warning(
+                        f"cleanup_expired_files: chunk removal failed for document "
+                        f"{doc_id} ({doc_uuid}): {exc}"
+                    )
+
+                if storage_path:
+                    try:
+                        from app.services.minio_service import delete_file
+
+                        delete_file(storage_path)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            f"cleanup_expired_files: storage removal failed for document "
+                            f"{doc_id} ({doc_uuid}): {exc}"
+                        )
+
+                db.delete(document)
+                db.commit()
+        except Exception as e:  # noqa: BLE001 - one bad document must not abort the pass
+            failed += 1
+            logger.error(
+                f"cleanup_expired_files: failed to delete document id={doc_id} uuid={doc_uuid}: {e}"
+            )
+            continue
+
+        deleted += 1
+        logger.info(f"cleanup_expired_files: deleted document id={doc_id} uuid={doc_uuid}")
+    return deleted, failed
+
+
 def _purge_expired_files(expired: list[tuple[int, str]]) -> tuple[int, int]:
     """Delete each expired file in its **own short session**. Returns (deleted, failed).
 
@@ -503,12 +610,14 @@ def _purge_expired_files(expired: list[tuple[int, str]]) -> tuple[int, int]:
 @celery_app.task(name="cleanup_expired_files", priority=UtilityPriority.ROUTINE)
 def cleanup_expired_files(force: bool = False):
     """
-    Delete media files that have exceeded the configured retention window.
+    Delete media files AND documents that have exceeded the configured retention window.
 
     Reads retention configuration from system settings, checks whether the
     task is scheduled to run in the current hour (unless force=True), and
-    deletes all eligible completed (and optionally error-status) files whose
-    age exceeds the configured retention_days threshold.
+    deletes all eligible completed (and optionally error-status) files/documents
+    whose age exceeds the configured retention_days threshold. Documents under an
+    active legal hold are excluded (v399, #362 lane C4) — the same exemption
+    ``gdpr_erasure_service`` already gives a held row, applied here for the first time.
 
     Args:
         force: When True, skip the enabled/hour/already-ran-today guards and
@@ -601,16 +710,27 @@ def cleanup_expired_files(force: bool = False):
             expired = _select_expired_files(
                 db, config, cutoff, query_cutoff, resolve_retention_days
             )
+            # v399, #362 lane C4: documents join the same retention window. Previously
+            # this table was never queried by this task, so a document never expired
+            # regardless of the configured window — an unintentional permanent
+            # exemption, not a design decision.
+            expired_documents = _select_expired_documents(
+                db, config, cutoff, query_cutoff, resolve_retention_days
+            )
 
         logger.info(
-            f"cleanup_expired_files: {len(expired)} file(s) past their effective retention "
+            f"cleanup_expired_files: {len(expired)} file(s), {len(expired_documents)} "
+            f"document(s) past their effective retention "
             f"(query_cutoff={query_cutoff.isoformat()}, global_days={global_retention_days})"
         )
 
-        # Phase 2 — delete. One SHORT session PER FILE, so a pass over hundreds
-        # of files no longer holds a single transaction across hundreds of MinIO
-        # and OpenSearch round trips.
+        # Phase 2 — delete. One SHORT session PER FILE/DOCUMENT, so a pass over
+        # hundreds of rows no longer holds a single transaction across hundreds of
+        # MinIO and OpenSearch round trips.
         deleted, failed = _purge_expired_files(expired)
+        docs_deleted, docs_failed = _purge_expired_documents(expired_documents)
+        deleted += docs_deleted
+        failed += docs_failed
 
         # Phase 3 — write (short session, Postgres only).
         # Persist run metadata to system settings — store with explicit UTC offset
@@ -635,7 +755,10 @@ def cleanup_expired_files(force: bool = False):
                 "Number of files deleted in the most recent retention cleanup run",
             )
 
-        logger.info(f"cleanup_expired_files: completed — deleted={deleted}, failed={failed}")
+        logger.info(
+            f"cleanup_expired_files: completed — deleted={deleted}, failed={failed} "
+            f"(of which {docs_deleted} deleted / {docs_failed} failed were documents)"
+        )
         return {"status": "completed", "deleted": deleted, "failed": failed}
 
     except Exception as exc:

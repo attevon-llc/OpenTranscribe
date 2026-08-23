@@ -31,7 +31,7 @@ pipeline described in [RAG Chat](./rag-chat.md) — everything else on this page
 | 3 | Index v6 — one reindex, digests in the index | Not started |
 | 4 | Query router, map-reduce, aggregation | Not started |
 | 5 | Retrieval tuning bake-off (fusion, reranker, synonyms) | Not started |
-| 6 | Documents | Deferred past v0.5.0 — the document-ingestion lane lives on the `feat/doc-ingestion` branch and targets v0.6.0 (#362) |
+| 6 | [Documents](../features/documents.md) | In progress — upload/parse/index/view shipped; redaction, document-aware chat citations, and cross-linking to recordings not yet built |
 | 7 | Opt-in enrichment | Not started |
 | 8 | Whitepaper | Not started |
 
@@ -395,6 +395,7 @@ nobody re-implements a solved problem and everyone can tell which parts are deli
 |---|---|
 | local LLM serving | **vLLM**, OpenAI-compatible (Gemma 4 E4B AWQ 4-bit in testing) |
 | LLM-free testing | `scripts/mock-llm-server.py` — real OpenAI-compatible server, canned tokens only |
+| document parsing *(Stage 6)* | **Docling** (MIT) + **RapidOCR**, optional **Apache Tika** for the OLE2/RTF tail |
 
 ### What we wrote ourselves, and why
 
@@ -421,5 +422,6 @@ assumed settled.
 - [RAG Evaluation Methodology](./rag-evaluation.md) — corpora, metric definitions, and how to
   reproduce every number here
 - [RAG Chat (Internals)](./rag-chat.md) — the pipeline as it exists today
+- [Documents](../features/documents.md) — Stage 6
 - [Working Without an AI Model](../user-guide/without-an-ai-model.md) — the D6 deployment these
   decisions protect

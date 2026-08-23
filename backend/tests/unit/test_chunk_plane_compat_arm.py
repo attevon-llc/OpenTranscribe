@@ -56,6 +56,13 @@ _ALLOWED: dict[str, str] = {
         "G5, same shape: tags are denormalised onto every document of the file, "
         "digests included, or a tag-scoped chat query silently skips them."
     ),
+    "tasks/search_indexing_task.py::update_document_access_index": (
+        "#T10: the document-plane sibling of update_file_access_index. Uses "
+        "_document_plane_clause (a document's own chunks only), which is not one of "
+        "the DECIDED markers above because it lives in this module, not "
+        "indexing_service.py — same reasoning as update_file_access_index just above, "
+        "mirrored for the other plane."
+    ),
     "tasks/tenant_backfill_task.py::_backfill_transcript_chunks": (
         "G5: the tenant stamp keys on file_uuid and must reach every plane, or a "
         "digest stays personal-scope inside an organization."
@@ -81,9 +88,9 @@ _ALLOWED: dict[str, str] = {
         "Not a reader — the HTTP endpoint. It builds no OpenSearch body: the sweep "
         "matches `HybridSearchService.search(...)` on the `.search` call name and "
         '`"query"` on the empty-response PAYLOAD dict it constructs for a '
-        "`summaries`-only request. The real query is built in `_build_filters`, "
-        "which carries the arm — same shape as the two hybrid_search_service "
-        "entries just below."
+        "`summaries`/`documents`-only request. The real query is built in "
+        "`_build_filters`, which carries the arm — same shape as the two "
+        "hybrid_search_service entries just below."
     ),
     "services/search/hybrid_search_service.py::count_matches": (
         "Takes its filter list as a parameter from _build_filters, which carries "

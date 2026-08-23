@@ -103,16 +103,21 @@ ADDITIVE_MAPPING_STEPS: tuple[AdditiveMappingStep, ...] = (
     AdditiveMappingStep(
         version=2,
         description=(
-            "page / section_path / char_start / char_end. RETIRED but RETAINED: nothing "
-            "writes these today. The step must not be deleted and version 2 must never "
-            "be reused — a deployed index already stamped `additive_version: 2` would "
-            "then disagree with a freshly created one, and _apply_pending_additive_steps "
-            "only ever moves the stamp forward, so the divergence would be permanent and "
-            "silent. Four unused mapped fields cost nothing; a reused version number does."
+            "page / section_path / char_start / char_end for document-chunk citations "
+            "(#463 write-side). The read side (ChunkHit, the _source allowlist, the cache "
+            "round-trip) landed first; this is what index_document_chunks actually writes."
         ),
         properties={
+            # 1-based page a document chunk falls on. Integer, not analyzed — a citation
+            # reads it back verbatim, never searches "page 3".
             "page": {"type": "integer"},
+            # Heading breadcrumb (["Chapter 2", "2.1 Scope"]). `keyword`, not `text`: this
+            # is a citation label to render, not prose to rank documents on, and a keyword
+            # array lets a future feature filter by section without an analyzer decision
+            # nobody has asked for yet.
             "section_path": {"type": "keyword"},
+            # Character offsets into the parsed document's full text — citation-only,
+            # never queried.
             "char_start": {"type": "integer"},
             "char_end": {"type": "integer"},
         },
@@ -414,6 +419,39 @@ def file_plane_query(file_uuid: str) -> dict[str, Any]:
         An OpenSearch query body fragment.
     """
     return {"bool": {"filter": [{"term": {"file_uuid": file_uuid}}]}}
+
+
+def document_chunk_plane_query(
+    document_uuid: str,
+    *,
+    from_chunk_index: int | None = None,
+) -> dict[str, Any]:
+    """The document-chunk-plane sibling of :func:`chunk_plane_query` (#362 Stage 6c).
+
+    Documents reuse the ``file_uuid`` field name for their own uuid — a distinct UUID
+    space from media files, so no collision, and it is what lets
+    :meth:`TranscriptIndexingService._bulk_index_chunks` and
+    :meth:`TranscriptIndexingService._orphaned_document_ids` serve a second entity type
+    with no change: only the plane predicate differs. No compat arm, for the same reason
+    as :func:`digest_plane_query` — every document_chunk document postdates v6, so there
+    is no legacy population with a missing ``doc_type``.
+
+    Args:
+        document_uuid: UUID of the document whose chunks are selected.
+        from_chunk_index: When set, restrict to chunks at or above this index — the stale
+            tail a shorter re-parse leaves behind, the same shape chunk_plane_query prunes
+            for transcripts (#400).
+
+    Returns:
+        An OpenSearch query body fragment.
+    """
+    filters: list[dict[str, Any]] = [
+        {"term": {"file_uuid": document_uuid}},
+        digest_mapping.document_chunk_plane_clause(),
+    ]
+    if from_chunk_index is not None:
+        filters.append({"range": {"chunk_index": {"gte": from_chunk_index}}})
+    return {"bool": {"filter": filters}}
 
 
 def _build_hybrid_search_pipeline() -> dict[str, Any]:
@@ -1365,6 +1403,138 @@ class TranscriptIndexingService:
             logger.exception(f"Bulk indexing failed for file {file_uuid}")
             raise
 
+    def index_document_chunks(
+        self,
+        document_id: int,
+        document_uuid: str,
+        user_id: int,
+        chunks: list[dict[str, Any]],
+        title: str,
+        upload_time: str | None = None,
+        language: str | None = None,
+        content_type: str = "",
+        file_size: int | None = None,
+        organization_id: int | None = None,
+    ) -> dict[str, Any] | int:
+        """Index a parsed document's chunks into the document plane of v6 (#362 Stage 6c).
+
+        The same index the transcript plane already uses (``services/search/CLAUDE.md``
+        "Index v6"), not a third one — a separate index would fork retrieval and break the
+        router. Chunks carry ``doc_type: document_chunk`` and the ``{uuid}_{chunk_index}``
+        id scheme transcript chunks already use, with the document's uuid standing in for
+        ``file_uuid``: that is what lets :meth:`_bulk_index_chunks` and
+        :meth:`_orphaned_document_ids` serve this second entity type with no change to
+        either — only the plane predicate (:func:`document_chunk_plane_query`) differs.
+
+        No speaker roster, no digest plane: a document has no speakers, and whether
+        documents get a digest tier is still an open question (state-of-the-code doc) left
+        for later.
+
+        Args:
+            document_id: ``Document.id``.
+            document_uuid: ``Document.uuid`` (str).
+            user_id: Owner.
+            chunks: ``DocumentChunk.to_row()``-shaped dicts (``chunk_index``, ``text``,
+                ``char_start``, ``char_end``, ``page``, …) — durable storage read back from
+                Postgres, not re-parsed.
+            title: Document filename, for the ``embedding_text`` header (same
+                contextualization ``build_embedding_text`` gives a transcript chunk).
+            upload_time: ISO string (defaults to now).
+            language: Language code, or ``None`` when undetected.
+            content_type: Detected mime.
+            file_size: Bytes.
+            organization_id: Tenant scope (``None`` = personal), same convention as the
+                transcript plane.
+
+        Returns:
+            Dict with indexing stats, or ``0`` when OpenSearch is unavailable or there is
+            nothing to index.
+        """
+        client = get_opensearch_client()
+        if not client:
+            logger.warning("OpenSearch client not initialized, skipping document chunk indexing")
+            return 0
+
+        if not chunks:
+            logger.warning(f"No chunks to index for document {document_uuid}")
+            return 0
+
+        ensure_chunks_index_exists()
+        ensure_search_pipeline_exists()
+
+        if upload_time is None:
+            upload_time = datetime.datetime.now(datetime.UTC).isoformat()
+        now = datetime.datetime.now(datetime.UTC).isoformat()
+
+        index_docs: list[dict[str, Any]] = []
+        for chunk in chunks:
+            body = str(chunk.get("text") or "")
+            doc: dict[str, Any] = {
+                "file_id": document_id,
+                "file_uuid": document_uuid,
+                "user_id": user_id,
+                "chunk_index": chunk["chunk_index"],
+                "content": body,
+                "title": title,
+                # No sharing/collections for documents yet (v1 scope) — owner-only access,
+                # the same shape a media file with no shares carries.
+                "accessible_user_ids": [user_id],
+                "upload_time": upload_time,
+                "language": language,
+                "content_type": content_type,
+                "file_size": file_size,
+                "indexed_at": now,
+                digest_mapping.DOC_TYPE_FIELD: digest_mapping.DOC_TYPE_DOCUMENT_CHUNK,
+                # Citation fields (#463 write-side gap). Read from the real parsed
+                # document structure (`DocumentChunk.to_row()`-shaped dicts) — NEVER
+                # folded into `embedding_text` below: a page number or a character
+                # offset changing the embedded text would mean every existing vector
+                # implicitly needs a re-embed, which this write-side fix must not imply.
+                "page": chunk.get("page"),
+                "section_path": list(chunk.get("section_path") or []),
+                "char_start": chunk.get("char_start"),
+                "char_end": chunk.get("char_end"),
+                # The pipeline embeds this field, not `content` — see
+                # `_build_neural_ingest_pipeline`. BM25 still scores `content`. No roster:
+                # a document has no speakers.
+                "embedding_text": digest_mapping.build_embedding_text(
+                    title=title, recorded_at=upload_time, roster=[], body=body
+                ),
+            }
+            if organization_id is not None:
+                doc["organization_id"] = organization_id
+            index_docs.append(doc)
+
+        t_index_start = time.time()
+        try:
+            use_neural = is_neural_pipeline_available()
+            provenance = active_embedding_model()
+            for doc in index_docs:
+                doc["embedding_model"] = provenance if use_neural else None
+
+            indexed = self._bulk_index_chunks(index_docs, use_neural_pipeline=use_neural)
+            stale_removed = self._prune_stale_document_chunks(
+                document_uuid, keep_count=len(index_docs)
+            )
+
+            index_ms = round((time.time() - t_index_start) * 1000)
+            mode_str = "neural" if use_neural else "text-only"
+            logger.info(
+                f"Indexed {indexed} document chunks for document {document_uuid} "
+                f"(mode: {mode_str}, index={index_ms}ms)"
+            )
+            _invalidate_chat_retrieval_cache()
+            return {
+                "chunk_count": indexed,
+                "index_ms": index_ms,
+                "mode": mode_str,
+                "neural": use_neural,
+                "stale_removed": stale_removed,
+            }
+        except Exception as e:
+            logger.error(f"Bulk indexing failed for document {document_uuid}: {e}")
+            return 0
+
     def delete_transcript_chunks(self, file_uuid: str) -> int:
         """Delete **every** indexed document for a file — both planes.
 
@@ -1689,6 +1859,59 @@ class TranscriptIndexingService:
         except Exception as e:
             logger.error(
                 f"Could not prune stale chunks for file {file_uuid} "
+                f"(chunks >= {keep_count} may still be searchable): {e}"
+            )
+            return 0
+
+    def _prune_stale_document_chunks(self, document_uuid: str, *, keep_count: int) -> int:
+        """The document-chunk-plane sibling of :meth:`_prune_stale_chunks` (#362 Stage 6c).
+
+        Same #435 realtime-probe gate, same reason: a re-parse that shrank the chunk count
+        must not leave a searchable stale tail, and a ``count``/``search`` gate would miss
+        it inside the refresh window for exactly the reason ``_prune_stale_chunks``'s
+        docstring measures. Uses :func:`document_chunk_plane_query` rather than
+        :func:`chunk_plane_query` — the transcript predicate's compat arm would also match
+        (or exclude) the wrong population here, since document chunks and transcript chunks
+        share no ``doc_type`` value.
+        """
+        if not opensearch_client:
+            return 0
+
+        index_name = settings.OPENSEARCH_CHUNKS_INDEX
+        try:
+            stale_ids = self._orphaned_document_ids(
+                index_name=index_name,
+                document_id=lambda n: f"{document_uuid}_{n}",
+                first_orphan=keep_count,
+                plane_query=document_chunk_plane_query(document_uuid),
+                counter_field="chunk_index",
+            )
+            if not stale_ids:
+                return 0
+
+            opensearch_client.indices.refresh(index=index_name)
+            response = opensearch_client.delete_by_query(
+                index=index_name,
+                body={
+                    "query": document_chunk_plane_query(document_uuid, from_chunk_index=keep_count)
+                },
+                refresh=True,
+                conflicts="proceed",
+            )
+            deleted = int(response.get("deleted", 0))
+            logger.info(
+                f"Pruned {deleted} stale document chunk(s) for document {document_uuid} "
+                f"(re-parse shrank to {keep_count} chunks)"
+            )
+            if deleted != len(stale_ids):
+                logger.warning(
+                    f"Stale document-chunk prune for {document_uuid} found {len(stale_ids)} "
+                    f"orphan id(s) but the document-chunk-plane predicate deleted {deleted}"
+                )
+            return deleted
+        except Exception as e:
+            logger.error(
+                f"Could not prune stale document chunks for {document_uuid} "
                 f"(chunks >= {keep_count} may still be searchable): {e}"
             )
             return 0

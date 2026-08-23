@@ -16,10 +16,25 @@
   export let fileId = "";
   /** @type {number} */
   export let currentTime = 0;
-  $: targetId = fileId;
-  $: commentsEndpoint = `/comments/files/${targetId}/comments`;
+  /**
+   * v400 (#362 lane C5) — notes on a document, the document analogue of a media
+   * comment. When `mode === 'document'` this component talks to
+   * `/comments/documents/{documentId}/comments` instead of the media nested route,
+   * and hides the timestamp/"mark current time" affordance (a document has no
+   * playback axis). `documentId` is the document's public uuid.
+   * @type {'media' | 'document'}
+   */
+  export let mode = 'media';
+  /** @type {string} */
+  export let documentId = "";
 
-  /** @type {Array<{uuid: string, text: string, timestamp: number | null, user: {uuid: string, email?: string, full_name?: string, username?: string}, created_at: string}>} */
+  $: isDocument = mode === 'document';
+  $: targetId = isDocument ? documentId : fileId;
+  $: commentsEndpoint = isDocument
+    ? `/comments/documents/${targetId}/comments`
+    : `/comments/files/${targetId}/comments`;
+
+  /** @type {Array<{uuid: string, text: string, timestamp: number | null, document_chunk_index?: number | null, user: {uuid: string, email?: string, full_name?: string, username?: string}, created_at: string}>} */
   let comments = [];
   /** @type {boolean} */
   let loading = true;
@@ -59,9 +74,28 @@
     try {
       // Validate the target id
       if (!targetId) {
-        console.error('Invalid target ID for comments:', targetId);
+        console.error('Invalid target ID for comments:', mode, targetId);
         toastStore.error($t('comments.invalidFileId'));
         loading = false;
+        return;
+      }
+
+      // Document mode has no legacy history to fall back to — the nested route
+      // is the only route it has ever had.
+      if (isDocument) {
+        try {
+          const response = await axiosInstance.get(commentsEndpoint);
+          comments = Array.isArray(response.data) ? response.data : [];
+          comments.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+        } catch (/** @type {any} */ error) {
+          if (error.response?.status === 401) {
+            toastStore.error($t('comments.loginRequired'));
+          } else {
+            toastStore.error($t('comments.loadFailed', { error: error.message }));
+          }
+        } finally {
+          loading = false;
+        }
         return;
       }
 
@@ -165,6 +199,31 @@
 
     // Use the timestamp input if it was explicitly set, otherwise use null
     const timestamp = timestampInput !== null ? timestampInput : null;
+
+    if (isDocument) {
+      const currentUser = $authStore.user;
+      try {
+        const response = await axiosInstance.post(commentsEndpoint, { text: newComment });
+        const commentWithUser = {
+          ...response.data,
+          user: response.data.user || {
+            uuid: response.data.user_id || currentUser?.uuid || '',
+            email: currentUser?.email,
+            full_name: currentUser?.full_name || currentUser?.email || 'User ' + response.data.user_id
+          }
+        };
+        comments = [...comments, commentWithUser];
+        newComment = '';
+        dispatch('commentAdded', commentWithUser);
+      } catch (/** @type {any} */ err) {
+        if (err.response?.status === 401) {
+          toastStore.error($t('comments.loginRequiredToAdd'));
+        } else {
+          toastStore.error($t('comments.addFailed', { error: err.message }));
+        }
+      }
+      return;
+    }
 
     // Store locally for optimistic UI updates
     try {
@@ -460,7 +519,8 @@
         title={$t('comments.enterCommentHint')}
       ></textarea>
       <div class="form-actions">
-        <div class="timestamp-actions">
+        {#if !isDocument}
+          <div class="timestamp-actions">
             {#if timestampInput === null}
               <button
                 type="button"
@@ -489,14 +549,24 @@
                 </button>
               </div>
             {/if}
-        </div>
+          </div>
+        {:else}
+          <!-- Documents have no playback timeline, so there is nothing to mark — the
+               spacer keeps the submit button right-aligned the same way the media
+               form does. -->
+          <div class="timestamp-actions"></div>
+        {/if}
         <button
           type="submit"
           class="submit-button"
-          disabled={!newComment.trim() || timestampInput === null}
-          title={!newComment.trim() || timestampInput === null
+          disabled={!newComment.trim() || (!isDocument && timestampInput === null)}
+          title={!newComment.trim()
             ? $t('comments.mustAddTextAndTime')
-            : $t('comments.addCommentAtTime', { time: formatTimestamp(timestampInput) })}
+            : (!isDocument && timestampInput === null)
+              ? $t('comments.mustAddTextAndTime')
+              : isDocument
+                ? $t('comments.addComment')
+                : $t('comments.addCommentAtTime', { time: formatTimestamp(timestampInput) })}
         >
           {$t('comments.addComment')}
         </button>

@@ -62,7 +62,7 @@ class RunDoc:
     ``doc_id`` is what the evaluator sees; the other three fields are what the
     *harness* orders by, so the evaluator's id-based tie-break can never reach a
     result. ``doc_type`` is the Stage 3 discriminator (D1): ``chunk`` today,
-    ``digest`` later.
+    ``digest`` / ``document_chunk`` later.
     """
 
     doc_id: str

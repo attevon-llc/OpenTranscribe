@@ -19,6 +19,7 @@ def _masked(
     *,
     expanded: bool = False,
     digest_section: int | None = None,
+    source_kind: str = "media",
 ) -> MaskedChunk:
     return MaskedChunk(
         source=ChunkHit(
@@ -32,6 +33,7 @@ def _masked(
             end_time=float(index * 60 + 30),
             expanded=expanded,
             digest_section=digest_section,
+            source_kind=source_kind,
         ),
         content=content,
     )
@@ -97,7 +99,7 @@ def test_expanded_citation_is_marked_and_not_truncated_at_the_ordinary_limit():
 
 def test_digest_citation_never_reports_expanded_even_if_the_source_says_so():
     """Defensive: ``context_expansion`` never touches a digest hit (it excludes
-    digests by construction — see ``needs_expansion``), so
+    both digests and documents by construction — see ``needs_expansion``), so
     a digest citation must report ``expanded: False`` regardless of whatever
     the underlying ``ChunkHit.expanded`` happens to hold, rather than trusting
     a field that should never be set for this kind."""

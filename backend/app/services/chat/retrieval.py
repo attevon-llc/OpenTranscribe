@@ -11,6 +11,13 @@ Stages, in order:
 
 Over-fetching then narrowing is the point: recall-oriented retrieval finds the
 candidates, precision-oriented reranking picks which ones are worth prompt space.
+
+**Document chunks (issue #463) join the chunk-plane retrieval in step 2** — see
+``chunk_retrieval.retrieve_chunks``'s ``_widen_to_document_plane``. They are
+never a second, separately-ranked query: one OpenSearch call, one relevance
+order, transcript and document hits interleaved by score. Speaker-filtered
+turns are the one exception (documents have no ``speaker`` field) and that
+exclusion is enforced inside ``retrieve_chunks`` itself, not here.
 """
 
 from __future__ import annotations

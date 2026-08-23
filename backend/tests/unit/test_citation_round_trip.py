@@ -14,8 +14,10 @@ read back after a page refresh — with no error anywhere, because Pydantic
 dropping an unknown key is not a validation failure.
 
 The fix is to widen the schema to the FULL union up front — chunk, digest,
-summary (#464) — so growing the union again never has to re-migrate an
-already-persisted message a second time.
+summary (#464), and the document-plane fields (``page``/``section_path``/
+``char_start``/``char_end``) a later lane is expected to add citations for —
+so growing the union again never has to re-migrate an already-persisted
+message a second time.
 """
 
 from __future__ import annotations
@@ -108,7 +110,7 @@ def test_a_summary_citation_survives_a_reload_labelled_as_a_summary():
 
 
 # --------------------------------------------------------------------------- #
-# Every kind round-trips through persistence and reload
+# Every kind round-trips, including forward-compat document-plane fields
 # --------------------------------------------------------------------------- #
 
 
@@ -119,6 +121,18 @@ def test_a_summary_citation_survives_a_reload_labelled_as_a_summary():
         ("chunk", {"speaker": "Dana Whitfield"}),
         ("digest", {"digest_section": 0, "speaker": None}),
         ("summary", {"digest_section": 3, "speaker": None, "start_time": None}),
+        # Forward-compat: a later lane's kind, exercised here so THAT lane's
+        # persisted messages already round-trip against this schema.
+        (
+            "document",
+            {
+                "page": 5,
+                "section_path": "3.2 Risk Register",
+                "char_start": 1200,
+                "char_end": 1450,
+                "start_time": None,
+            },
+        ),
     ],
 )
 def test_every_kind_round_trips_through_persistence_and_reload(kind, extra):
@@ -142,6 +156,29 @@ def test_every_kind_round_trips_through_persistence_and_reload(kind, extra):
     assert citation.kind == (kind or "chunk"), "an absent kind must read as chunk (pre-#403 data)"
     for field, value in extra.items():
         assert getattr(citation, field) == value, field
+
+
+def test_document_plane_fields_default_to_none_for_every_kind_this_lane_emits():
+    """Nothing this lane ships ever sets page/section_path/char_start/char_end
+    — pinned so a later lane's addition is the first thing to populate them."""
+    for kind in (None, "chunk", "digest", "summary"):
+        raw = {
+            "id": 1,
+            "file_uuid": "dddddddd-0000-0000-0000-000000000000",
+            "title": "R",
+            "chunk_index": 0,
+            "start_time": 1.0,
+            "end_time": 2.0,
+            "speaker": None,
+            "snippet": "s",
+        }
+        if kind is not None:
+            raw["kind"] = kind
+        citation = Citation(**raw)
+        assert citation.page is None
+        assert citation.section_path is None
+        assert citation.char_start is None
+        assert citation.char_end is None
 
 
 def test_start_time_none_is_a_first_class_case_not_a_zero_sentinel():

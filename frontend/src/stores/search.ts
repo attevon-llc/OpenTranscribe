@@ -102,6 +102,7 @@ export interface SearchState {
   lastSearchParams: string;
   scrollPosition: number;
   // Issue #462: which result group(s) the last/next `GET /search` requested.
+  // `documents` isn't offered here yet — see `backend/app/schemas/search.py:SEARCH_RESULT_TYPES`.
   resultType: SearchResultType;
   summaryResults: SummaryHit[];
   summaryTotal: number;

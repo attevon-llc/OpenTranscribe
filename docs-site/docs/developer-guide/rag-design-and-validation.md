@@ -354,7 +354,14 @@ pass without the feature working?" rather than by a test failing.
   that fix; it owes a regeneration before Stage 2 or 3 reports a delta.
 - **No answer-quality number exists anywhere.** Everything above measures retrieval. Nothing yet
   scores whether an answer is faithful to what it cites.
-- **No reranker latency has been measured**, despite the reranker being on by default.
+- **Reranker latency is now observed, but not yet benchmarked.** GH #514's query trace reports
+  a per-stage `ms` on every node, and the first real turn it ran against put the cross-encoder at
+  **7,120 ms of an 8,194 ms turn — 87% of the wall clock** (48 candidates, `rerank_max_pairs=50`,
+  CPU, cold). That is one turn on one machine, so it is an observation rather than a benchmark:
+  it does not separate model load from scoring, and a warm process would look different. What it
+  does establish is that the reranker is the dominant cost of a turn, which nothing previously
+  showed — and the instrument to measure it properly now exists on every turn rather than needing
+  a bespoke harness. #363's open question (does reranking help on English?) still needs #463.
 - **Publishable retrieval quality rests on QMSum.** The other permissively-licensed corpora
   contribute realism, multilingual coverage or long-context — not additional English
   meeting-retrieval judgements.

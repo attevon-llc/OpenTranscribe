@@ -48,20 +48,39 @@ class QueryStage(StrEnum):
     """The pipeline stages a user can watch advance.
 
     Ordered as they normally occur, but the trace is a TREE, not a list: a
-    fan-out produces several ``RETRIEVE_*`` stages as siblings under one
+    fan-out produces several ``FANNED_*`` stages as siblings under one
     ``PLANNED``, and they complete out of order. Do not assume this ordering
     when rendering.
+
+    **Render in EMISSION order, not this order.** This sequence exists so a
+    consumer can tell whether a node has advanced (a leg reports ``FANNED_*``
+    then ``FOUND`` under one node id); sorting a rendered tree by it would hide
+    a stage running out of sequence, which is exactly what is worth seeing.
+
+    ⚠️ **Widening this enum is a deliberate contract change**, pinned by
+    ``tests/unit/test_chat_trace_seam.py::test_every_stage_in_the_documented_workflow_exists``.
+    The five stages beyond the original eleven (``REWRITTEN``, ``CACHE_LOOKUP``,
+    ``SAMPLED``, ``EXPANDED``, ``BUDGETED``) name work the pipeline **already
+    did** and never reported: a cache miss was invisible, and "48 candidates
+    became 12" — the single most useful fact about where a turn's evidence went
+    — had no node at all. The document plane deliberately gets no member of its
+    own; it is ``FANNED_VECTOR`` with ``plane="document"``.
     """
 
     SUBMITTED = "submitted"
     VALIDATED = "validated"
     PARSED_NAMES = "parsed_names"  # speaker-mention resolution
+    REWRITTEN = "rewritten"  # follow-up -> standalone query (an LLM round trip)
+    CACHE_LOOKUP = "cache_lookup"  # Redis exact/semantic retrieval cache
     PLANNED = "planned"  # rules route, or the LLM planner fanned out
     FANNED_RELATIONAL = "fanned_relational"  # Postgres: scope, facts, aggregates
     FANNED_VECTOR = "fanned_vector"  # OpenSearch: chunk / digest / document plane
     FOUND = "found"  # N candidates, per leg
-    FILTERED = "filtered"  # permissions, quarantine, masking
     RERANKED = "reranked"
+    SAMPLED = "sampled"  # diversity sampling: N -> M, capped per file
+    EXPANDED = "expanded"  # read-time context expansion of short chunks
+    FILTERED = "filtered"  # permissions, quarantine, masking
+    BUDGETED = "budgeted"  # what the excerpt budget actually fit
     REVIEWED = "reviewed"  # enrichment / synthesis, when enabled
     PRESENTED = "presented"  # prompt assembled, answer streaming
 
@@ -98,6 +117,7 @@ SAFE_DETAIL_KEYS = frozenset(
         "legs",  # how many legs were dispatched
         "reason",  # short machine code, never free text
         "ms",  # duration
+        "limit",  # a CONFIGURED bound (max per file, budget chars) — never content
     }
 )
 

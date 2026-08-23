@@ -543,6 +543,22 @@ FRESH_MOCK_LLM_SERVICES=(mock-llm)
 FRESH_DIAR_NATIVE_SERVICES=(diar-native)
 FRESH_SMB_SERVICES=(smb-test)
 FRESH_MONITORING_SERVICES=(prometheus grafana)
+# Real GPU-backed LLM (--with-llm-test). This was the ONE aux overlay #347 never
+# covered, and it is the worst one to leave out: both services hard-code a
+# container_name AND publish a loopback port, so a fresh stack silently collided
+# with the main one on `opentranscribe-llm-test-vllm` / 5195 — and because the
+# services were never recorded in the deployment's `.aux` file, `fresh-destroy`
+# walked straight past them and left a multi-GB vLLM holding a GPU.
+#
+# `llm-test-ollama` sits behind a compose profile and is not started by the flag
+# alone, but it is listed anyway: the overlay re-pins names for services that
+# exist in the compose files, and omitting it would leave the profile route
+# un-isolated for anyone who does opt in.
+#
+# ⚠️ LLM_TEST_GPU_DEVICE_ID is deliberately NOT offset — see the port-offset
+# banner. A fresh stack gets its own container and port, but the operator still
+# chooses the card.
+FRESH_LLM_TEST_SERVICES=(llm-test-vllm llm-test-ollama)
 
 # Generate (idempotently) the container_name override overlay for a fresh
 # deployment and echo its path. Re-pins every hard-coded container_name to
@@ -772,6 +788,10 @@ FRESH_SMB_PORT_VARS=(
 FRESH_MONITORING_PORT_VARS=(
   "GRAFANA_PORT=5185"           # grafana    → :3000
   "PROMETHEUS_PORT=5186"        # prometheus → :9090
+)
+FRESH_LLM_TEST_PORT_VARS=(
+  "LLM_TEST_PORT=5195"          # vLLM   → :8000
+  "LLM_TEST_OLLAMA_PORT=5196"   # ollama → :11434
 )
 
 # Resolve and export the host ports a fresh stack publishes, offset by $1.
@@ -1318,6 +1338,11 @@ start_app() {
       _port_vars+=("${FRESH_MONITORING_PORT_VARS[@]}")
       _aux_services+=("${FRESH_MONITORING_SERVICES[@]}")
       _aux_files+=("docker-compose.monitoring.yml")
+    fi
+    if [ -n "$WITH_LLM_TEST_FLAG" ]; then
+      _port_vars+=("${FRESH_LLM_TEST_PORT_VARS[@]}")
+      _aux_services+=("${FRESH_LLM_TEST_SERVICES[@]}")
+      _aux_files+=("docker-compose.llm-test.yml")
     fi
     fresh_apply_port_offset "$_offset" "${_port_vars[@]}"
 

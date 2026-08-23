@@ -1126,7 +1126,21 @@ DEFAULT_CHAT_RAG_SEMANTIC_CACHE_THRESHOLD = 0.97  # chat.rag.semantic_cache_thre
 # Conversation shape and abuse controls.
 DEFAULT_CHAT_HISTORY_MAX_TURNS = 10  # chat.history_max_turns
 DEFAULT_CHAT_MESSAGES_PER_HOUR = 120  # chat.limits.messages_per_hour
-DEFAULT_CHAT_MAX_CONCURRENT_STREAMS = 2  # chat.limits.max_concurrent_streams
+# Raised 2 -> 6 after a cap of 2 was measured starving ordinary use. A slot is
+# held for `_ACTIVE_TTL_SECONDS` (300) when a stream dies without releasing —
+# a cancelled generation, a closed tab — so at 2 a user who stops one answer and
+# immediately asks two more is refused with "Too many chats streaming at once"
+# until a slot ages out. The whole `-m chat` E2E suite, which is SERIAL and
+# therefore never genuinely concurrent, failed a different random test on every
+# run for exactly this reason; at 6 it is green and 2.5x faster.
+#
+# Still enforced for local providers, unlike the hourly quota next to it: that
+# one is a SPEND control with nothing to control on your own GPU, while this
+# bounds GPU contention, which is just as real for a self-hosted model. 6 is a
+# starting point, not a policy — admins tune it live in Settings -> Chat & RAG
+# (`chat-concurrent`), no restart and no env var, because it is a DB-backed
+# SystemSettings row like every other knob in this block.
+DEFAULT_CHAT_MAX_CONCURRENT_STREAMS = 6  # chat.limits.max_concurrent_streams
 DEFAULT_CHAT_RETENTION_DAYS = 0  # chat.retention_days (0 = keep forever)
 
 # W2.4: the aggregation tier's speaker-facet/speaker-stats fixes. Both default
@@ -1204,6 +1218,24 @@ DEFAULT_CHAT_PLANNER_MAX_PARALLEL_LEGS = 4  # chat.planner.max_parallel_legs
 # INDEPENDENT of `chat.planner_enabled` — a deployment can run the fan-out
 # without ever paying for the extra reconciliation call.
 DEFAULT_CHAT_ENRICHMENT_ENABLED = False  # chat.enrichment_enabled
+
+# GH #514: stream a per-stage query-execution trace to the chat client.
+#
+# ON by default, and the default is MEASURED rather than assumed. Against the
+# mock LLM on an isolated stack, cache-warmed, 45 samples per arm:
+#
+#   median  573.3ms -> 576.3ms   (+3.0ms, +0.5%)
+#   p95     659.3ms -> 688.9ms   (+29.6ms, +4.5%)
+#
+# The median cost sits inside this host's own run-to-run noise (the untraced
+# arm's median ranged 544-573ms across four runs), so a typical turn pays
+# nothing distinguishable. The p95 cost is real and small: ~15 extra SSE frames
+# reach the socket before the first answer token.
+#
+# ⚠️ An EARLIER shape of this failed the same gate at +206ms p95 (+35%) because
+# the drain loop polled every 50ms. If this number regresses, look there first —
+# `_keepalive_until_done` must wait on events, never on an interval.
+DEFAULT_CHAT_TRACE_ENABLED = True  # chat.trace_enabled
 
 # Issue #523: read-time "small-to-big" context expansion. A short retrieved
 # chunk (`services/chat/context_expansion.py`'s `SHORT_CHUNK_WORD_THRESHOLD`)

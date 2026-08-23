@@ -76,6 +76,20 @@
  * scrolling, without removing the animations themselves (so end states still
  * apply). Applies app-wide.
  */
+/* GH #514 — a trace node ARRIVES rather than appears. Fade plus a small rise on
+   a decelerating curve; 6px is deliberately restrained, since more reads as
+   bouncy. Shared here because both the node and its connector rail use it. */
+@keyframes trace-node-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

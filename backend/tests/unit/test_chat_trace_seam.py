@@ -8,10 +8,14 @@ than groundwork.
 
 from __future__ import annotations
 
+import ast
+from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from app.services import chat as chat_pkg
 from app.services.chat.trace import NULL_RECORDER
 from app.services.chat.trace import ListTraceRecorder
 from app.services.chat.trace import Outcome
@@ -136,13 +140,99 @@ def test_every_stage_in_the_documented_workflow_exists():
         "submitted",
         "validated",
         "parsed_names",
+        "rewritten",
+        "cache_lookup",
         "planned",
         "fanned_relational",
         "fanned_vector",
         "found",
-        "filtered",
         "reranked",
+        "sampled",
+        "expanded",
+        "filtered",
+        "budgeted",
         "reviewed",
         "presented",
     }
     assert {s.value for s in QueryStage} == expected
+
+
+def _scan_emitted(sources: Iterable[tuple[str, str]]) -> set[str]:
+    """``QueryStage`` members passed positionally to an ``emit``/``emit_trace``.
+
+    Takes (filename, source) pairs rather than reading the package itself, so
+    the control below can feed it a module it fully controls. A scanner tested
+    only against the real tree cannot be shown to detect anything.
+    """
+    emitters = {"emit", "emit_trace"}
+    found: set[str] = set()
+    for filename, source in sources:
+        tree = ast.parse(source, filename=filename)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+            if name not in emitters:
+                continue
+            for arg in node.args:
+                if (
+                    isinstance(arg, ast.Attribute)
+                    and isinstance(arg.value, ast.Name)
+                    and arg.value.id == "QueryStage"
+                ):
+                    found.add(arg.attr)
+    return found
+
+
+def _chat_package_sources() -> list[tuple[str, str]]:
+    package = Path(chat_pkg.__file__).parent
+    return [(str(p), p.read_text(encoding="utf-8")) for p in sorted(package.glob("*.py"))]
+
+
+def test_every_stage_in_the_vocabulary_has_an_emitter():
+    """A stage nothing ever emits is a row the panel can never render.
+
+    ``QueryStage`` is a promise about what a turn reports. ``EXPANDED`` was
+    defined, documented, given a label in all twelve locales, and emitted by
+    NOTHING — so read-time context expansion was silently absent from every
+    trace while the whole suite stayed green. Only a screenshot caught it,
+    because counting rendered rows is the one check that notices an omission
+    rather than a mistake.
+
+    Static rather than "drive a turn and look": a behavioural test cannot see a
+    stage that only fires on a flag it did not set, which is the exact shape of
+    the defect.
+    """
+    missing = {s.name for s in QueryStage} - _scan_emitted(_chat_package_sources())
+    assert not missing, f"stages defined but never emitted: {sorted(missing)}"
+
+
+def test_the_emit_scanner_reports_a_stage_that_nothing_emits():
+    """Must-fire control: the scanner detects absence, rather than never firing.
+
+    A detector that matches nothing reports a clean sweep, which is
+    indistinguishable from full coverage — the failure mode the repo's own
+    auditors exist to prevent. Two synthetic modules, identical but for one
+    emit, must produce different answers.
+    """
+    covered = "emit(rec, QueryStage.SUBMITTED)\nemit_trace(r, QueryStage.EXPANDED, count=1)\n"
+    uncovered = "emit(rec, QueryStage.SUBMITTED)\n"
+
+    assert _scan_emitted([("covered.py", covered)]) == {"SUBMITTED", "EXPANDED"}
+    assert _scan_emitted([("uncovered.py", uncovered)]) == {"SUBMITTED"}
+
+
+def test_a_configured_limit_is_carryable_but_content_still_is_not():
+    """``limit`` carries a CONFIGURED bound, never anything derived from content.
+
+    It exists so "48 -> 12, max 4 per file" and "9 of 12 excerpts fit" are
+    reportable. The paired negative is the point: widening the allowlist for a
+    number must not widen it for a string that happens to sit beside one.
+    """
+    rec = ListTraceRecorder()
+    emit(rec, QueryStage.SAMPLED, kept=12, dropped=36, limit=4, title="Q3 Board Review")
+
+    recorded = rec.events[0].detail
+    assert recorded == {"kept": 12, "dropped": 36, "limit": 4}
+    assert "title" not in recorded, "an identifying key must still be scrubbed"

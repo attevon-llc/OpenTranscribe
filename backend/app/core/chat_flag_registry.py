@@ -261,6 +261,13 @@ CHAT_FLAG_REGISTRY: tuple[ChatFlagSpec, ...] = (
         default=C.DEFAULT_CHAT_ENRICHMENT_ENABLED,
     ),
     ChatFlagSpec(
+        field="trace_enabled",
+        setting_key="chat.trace_enabled",
+        description="Stream a live query-execution trace for each answer (GH #514)",
+        value_type=bool,
+        default=C.DEFAULT_CHAT_TRACE_ENABLED,
+    ),
+    ChatFlagSpec(
         field="context_expansion_enabled",
         setting_key="chat.rag.context_expansion_enabled",
         description="Widen a short retrieved chunk to its surrounding exchange before masking",

@@ -16,7 +16,6 @@
   import { estimateContext } from '$lib/api/chatApi';
   import { emptyScope, type ChatScope, type ContextEstimate } from '$lib/types/chat';
   import PickerCollectionsTab from './picker/PickerCollectionsTab.svelte';
-  import PickerDocumentsTab from './picker/PickerDocumentsTab.svelte';
   import PickerFilesTab from './picker/PickerFilesTab.svelte';
   import PickerSpeakersTab from './picker/PickerSpeakersTab.svelte';
   import PickerTagsTab from './picker/PickerTagsTab.svelte';
@@ -47,10 +46,6 @@
     draft.tag_names.length +
     draft.speakers.length;
 
-  // `file_uuids` mixes media-file AND document uuids (see PickerDocumentsTab.svelte's
-  // docstring for why there is no separate `document_uuids` field) — the combined tab
-  // badge below is deliberately on `tabFiles`, not split, since neither tab's own list
-  // knows the OTHER type's uuids without an extra fetch.
   $: tabs = [
     { id: 'files', label: $t('chat.picker.tabFiles'), badge: draft.file_uuids.length || null },
     {
@@ -58,7 +53,6 @@
       label: $t('chat.picker.tabCollections'),
       badge: draft.collection_uuids.length || null,
     },
-    { id: 'documents', label: $t('chat.picker.tabDocuments'), badge: null },
     { id: 'tags', label: $t('chat.picker.tabTags'), badge: draft.tag_names.length || null },
     {
       id: 'speakers',
@@ -128,11 +122,6 @@
         <PickerCollectionsTab
           selected={draft.collection_uuids}
           on:change={(e) => updateCollections(e.detail)}
-        />
-      {:else if activeTab === 'documents'}
-        <PickerDocumentsTab
-          selected={draft.file_uuids}
-          on:change={(e) => updateFiles(e.detail)}
         />
       {:else if activeTab === 'tags'}
         <PickerTagsTab selected={draft.tag_names} on:change={(e) => updateTags(e.detail)} />

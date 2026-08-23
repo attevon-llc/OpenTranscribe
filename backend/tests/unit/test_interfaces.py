@@ -4,7 +4,7 @@
 ``SearchService``, ``CacheService``, ``NotificationService``) that existing
 concrete implementations satisfy purely by matching method signatures -- no
 inheritance, no decorator. None of the four is ``@runtime_checkable`` (unlike
-``app/services/documents/protocol.py::DocumentParser``), so ``isinstance``
+a structural ``Protocol``), so ``isinstance``
 cannot be used to check conformance here. Instead these tests compare
 ``inspect.signature`` of each protocol method against the real implementation
 it documents itself as mirroring, the same thing a human reviewer would check

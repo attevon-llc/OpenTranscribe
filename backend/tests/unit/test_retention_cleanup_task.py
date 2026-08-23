@@ -10,15 +10,11 @@ Every test drives the task FUNCTION BODY (``.run``) against the savepoint-rolled
 """
 
 import contextlib
-import uuid as uuid_pkg
 from datetime import UTC
 from datetime import datetime
-from datetime import timedelta
-from unittest.mock import patch
 
 import pytest
 
-from app.models.document import Document
 from app.services import system_settings_service
 from app.tasks import cleanup
 
@@ -177,100 +173,3 @@ def test_retention_disabled_short_circuits(retention_env):
     result = cleanup.cleanup_expired_files.run()
 
     assert result["status"] == "disabled"
-
-
-# --------------------------------------------------------------------------- #
-# Documents join retention (v399, #362 lane C4) — previously this table was     #
-# never queried by this task, so a document never expired at all.              #
-# --------------------------------------------------------------------------- #
-def _mk_document(db, user, *, age_days: int, legal_hold: bool = False) -> Document:
-    # Relative to the FROZEN "now" the task itself reads (`_FrozenDatetime`), not real
-    # wall-clock time — the retention cutoff cleanup.py computes is frozen, so a
-    # document's age must be measured against the same clock or the two can disagree
-    # depending on what day this test happens to run.
-    old = _FIXED_NOW - timedelta(days=age_days)
-    duuid = uuid_pkg.uuid4()
-    doc = Document(
-        uuid=duuid,
-        user_id=user.id,
-        filename=f"retain_{duuid.hex[:8]}.pdf",
-        storage_path=f"documents/test/{duuid}.pdf",
-        content_type="application/pdf",
-        file_size=100,
-        status="completed",
-        legal_hold=legal_hold,
-        created_at=old,
-        parsed_at=old,
-    )
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
-    return doc
-
-
-#: ⚠️ SAFETY: these tests must NEVER call the whole `cleanup_expired_files` task with a
-#: short/finite `retention_days`. That sweeps `_select_expired_files`/`_purge_expired_files`
-#: over the WHOLE `media_file` table too — not just rows this test created — and on a
-#: shared dev database that is real, irreversible data loss: it happened once while this
-#: suite was being written (a `retention_days=1` run here permanently deleted the MinIO
-#: objects for 16 real media files; the Postgres rows and OpenSearch index were fine
-#: because `db_session` rolls the DB back, but `delete_file`/`delete_by_query` are real
-#: network calls with no such rollback). `_UNREACHABLE_RETENTION_DAYS` above exists
-#: for exactly this reason and every MediaFile-touching test in this file already uses
-#: it. The two document-selection/purge functions below are therefore exercised DIRECTLY
-#: — never through `cleanup_expired_files.run()` — so they cannot touch `media_file` at
-#: all, regardless of what window is configured.
-def _resolve_none(_organization_id):
-    """Community-edition ``resolve_retention_days`` stand-in: no per-org override."""
-    return None
-
-
-def test_an_expired_document_is_selected_and_purged(db_session, normal_user):
-    """Documents past the retention window are found and swept — the gap this guards
-    (this table was never queried by this task at all before v399).
-    """
-    doc = _mk_document(db_session, normal_user, age_days=10)
-    doc_id = doc.id
-    cutoff = _FIXED_NOW - timedelta(days=1)
-    config = _config(delete_error_files=False)
-
-    selected = cleanup._select_expired_documents(db_session, config, cutoff, cutoff, _resolve_none)
-    assert (doc_id, str(doc.uuid), doc.storage_path) in selected
-
-    with (
-        patch.object(cleanup, "session_scope", lambda: contextlib.nullcontext(db_session)),
-        patch(
-            "app.services.search.indexing_service.TranscriptIndexingService.delete_transcript_chunks",
-            return_value=None,
-        ),
-        patch("app.services.minio_service.delete_file", return_value=None),
-    ):
-        deleted, failed = cleanup._purge_expired_documents(selected)
-
-    assert deleted == 1
-    assert failed == 0
-    assert db_session.query(Document).filter(Document.id == doc_id).first() is None
-
-
-def test_a_fresh_document_is_not_selected(db_session, normal_user):
-    """Control: a document younger than the window is left out of the candidate set."""
-    doc = _mk_document(db_session, normal_user, age_days=1)
-    cutoff = _FIXED_NOW - timedelta(days=365)
-    config = _config(delete_error_files=False)
-
-    selected = cleanup._select_expired_documents(db_session, config, cutoff, cutoff, _resolve_none)
-
-    assert doc.id not in {d[0] for d in selected}
-
-
-def test_a_legal_hold_document_is_not_selected(db_session, normal_user):
-    """A held document is excluded from the candidate set (Art. 17(3)(e) reasoning
-    applied here for the same protection ``gdpr_erasure_service`` already gives it).
-    """
-    doc = _mk_document(db_session, normal_user, age_days=10, legal_hold=True)
-    cutoff = _FIXED_NOW - timedelta(days=1)
-    config = _config(delete_error_files=False)
-
-    selected = cleanup._select_expired_documents(db_session, config, cutoff, cutoff, _resolve_none)
-
-    assert doc.id not in {d[0] for d in selected}

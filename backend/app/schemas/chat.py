@@ -177,9 +177,8 @@ class Citation(BaseModel):
     frame — but neither field existed here, so both were silently gone the
     moment the SAME message was read back after a reload: a digest citation the
     user saw correctly labelled mid-stream rendered as an ordinary quote after
-    a refresh, with no error anywhere. A later lane's document-plane citations
-    (``page``/``section_path``/``char_start``/``char_end``, #362/#403 Stage 6)
-    reuse this union rather than re-triggering the same silent-drop bug and
+    a refresh, with no error anywhere. Any later citation kind should reuse
+    this union rather than re-triggering the same silent-drop bug and
     re-migrating every already-persisted message a second time.
 
     ``kind`` values in play: ``"chunk"`` (a transcript speech turn — the
@@ -189,8 +188,7 @@ class Citation(BaseModel):
     LABELLED INTERPRETATION, never a quote, and never attributed to a
     speaker), ``"recurrence"`` (W2.5 — a group of items judged the same thing
     recurring across MULTIPLE recordings; the UI seam is built ahead of the
-    emitter, same as ``"document"`` was). A later lane is expected to add
-    ``"document"`` onto this same field.
+    emitter).
 
     ``snippet`` is stored/returned post-masking, matching what was sent to the LLM.
     """
@@ -219,12 +217,6 @@ class Citation(BaseModel):
     #: for a summary citation, the sentinel index ``chat/mapreduce.
     #: scope_digest_hits`` uses) the citation draws from. ``None`` for a chunk.
     digest_section: int | None = None
-    #: Document-plane fields (a later lane, #362/#403 Stage 6). ``None`` for
-    #: every kind this lane emits.
-    page: int | None = None
-    section_path: str | None = None
-    char_start: int | None = None
-    char_end: int | None = None
     #: W2.5, ``kind == "recurrence"`` ONLY. Every recording the recurring
     #: group spans (``RecurrenceGroup.file_uuids``) — ``None`` for every other
     #: kind. A recurrence group is not one person's words in one place, so it

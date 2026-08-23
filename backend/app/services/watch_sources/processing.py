@@ -1,22 +1,12 @@
 """Core watch-source import pipeline.
 
 ``import_single_file`` takes a discovered ``RemoteFileInfo`` and runs it through
-the same ingest path a manual upload uses: validate → fingerprint → dedup →
-MinIO upload → a ``MediaFile`` **or** ``Document`` row (owned by the source's
-user), whichever the file turned out to be. A file that fails
-``guess_media_mime`` falls through to document detection
-(``services/documents/detect.py``) before being skipped — the media tail then
-continues into collections/tags + the transcription pipeline
-(``dispatch_upload_pipeline``); the document tail dispatches
-``documents.parse`` (``document_ingest.py``). Idempotent on
+the same ingest path a manual upload uses: validate → fingerprint → 3-layer
+dedup → MinIO upload → ``MediaFile`` row (owned by the source's user) →
+collections/tags → transcription pipeline (thumbnail + waveform + transcribe via
+the shared ``dispatch_upload_pipeline`` tail). Idempotent on
 ``(watch_source_id, remote_path)``; originals on remote sources are never
 deleted, local originals only when ``delete_after_import`` is set.
-
-Cross-pipeline dedup (layer 3: a fingerprint match against files already in the
-main pipeline) only runs for media — ``Document`` has no ``imohash`` column, so
-a document watch-imported here cannot be deduped against one uploaded through
-``POST /api/documents``. Within- and cross-source dedup (layers 1-2, both keyed
-on ``WatchSourceFile.imohash``) apply to both.
 """
 
 from __future__ import annotations
@@ -58,7 +48,6 @@ _TERMINAL_STATUSES = {
     "skipped_duplicate",
     "skipped_old",
     "skipped_invalid",
-    "skipped_too_large",
     "stitched_part",
 }
 
@@ -121,13 +110,7 @@ def _get_or_create_tracking_row(
     return row
 
 
-def _mark_skipped(
-    db: Session,
-    row: WatchSourceFile,
-    reason: str,
-    media_file_id: int | None = None,
-    document_id: int | None = None,
-):
+def _mark_skipped(db: Session, row: WatchSourceFile, reason: str, media_file_id: int | None = None):
     row.status = "skipped_duplicate" if reason.startswith("duplicate") else f"skipped_{reason}"
     # Normalize: too_old → skipped_old, invalid → skipped_invalid
     if reason == "too_old":
@@ -137,8 +120,6 @@ def _mark_skipped(
     row.skip_reason = reason
     if media_file_id:
         row.media_file_id = media_file_id
-    if document_id:
-        row.document_id = document_id
     row.processed_at = datetime.now(UTC)
     db.flush()
 
@@ -152,59 +133,45 @@ def ingest_prepared_file(
     row: WatchSourceFile,
     size: int | None = None,
 ) -> WatchSourceFile:
-    """Run a materialized local file through detect → dedup → MinIO → MediaFile/Document.
+    """Run a materialized local file through validate → dedup → MinIO → MediaFile.
 
     Shared by both the single-file importer (after download) and the multi-part
-    stitcher (after concat, media only — documents are never multipart). Commits
-    on skip/success; raises on hard failure so the caller can roll back and
-    record the error. ``row`` is the tracking row to finalize (status
-    ``importing``/``downloading``).
+    stitcher (after concat). Commits on skip/success; raises on hard failure so
+    the caller can roll back and record the error. ``row`` is the tracking row
+    to finalize (status ``importing``/``downloading``).
 
     ⚠️ **Known residual session hold** (``app/tasks/CLAUDE.md``, the
-    session-lifetime rule): the MinIO upload in each finalize step below runs
-    while the caller's session is open, because the object key is derived from
-    the created row's primary key and therefore cannot be computed before the
-    row exists. Callers keep that window to ONE file (see
-    :func:`import_single_file`), never a whole scan. Closing it properly means
-    giving this function the phased plain-data signature the rule asks for,
-    which changes its public contract — tracked as a follow-up, not fixed here.
+    session-lifetime rule): step 5 below runs a MinIO upload while the caller's
+    session is open, because the object key is derived from the ``MediaFile``
+    primary key and therefore cannot be computed before the row exists. Callers
+    keep that window to ONE file (see :func:`import_single_file`), never a whole
+    scan. Closing it properly means giving this function the phased
+    plain-data signature the rule asks for, which changes its public contract —
+    tracked as a follow-up, not fixed here.
     """
+    owner_id = int(source.user_id)
     file_size = int(size) if size is not None else os.path.getsize(local_path)
 
-    # 1. Type detection + magic-byte validation. Media is tried first (the
-    # common case); a file that isn't audio/video falls through to document
-    # detection before being rejected outright.
-    is_document = False
-    content_type: str | None
+    # 1. Magic-byte validation.
     declared_mime = guess_media_mime(filename)
-    if declared_mime:
-        with open(local_path, "rb") as fp:
-            is_valid, detected = validate_uploaded_file(fp, declared_mime, filename)
-        if not is_valid:
-            logger.info("Watch import rejected %s: %s", filename, detected)
-            _mark_skipped(db, row, "validation_failed")
-            db.commit()
-            return row
-        content_type = detected
-    else:
-        from app.services.watch_sources import document_ingest
-
-        content_type = document_ingest.guess_document_mime(local_path, filename)
-        if not content_type:
-            _mark_skipped(db, row, "invalid_type")
-            db.commit()
-            return row
-        is_document = True
+    if not declared_mime:
+        _mark_skipped(db, row, "invalid_type")
+        db.commit()
+        return row
+    with open(local_path, "rb") as fp:
+        is_valid, detected = validate_uploaded_file(fp, declared_mime, filename)
+    if not is_valid:
+        logger.info("Watch import rejected %s: %s", filename, detected)
+        _mark_skipped(db, row, "validation_failed")
+        db.commit()
+        return row
+    content_type = detected
 
     # 2. Fingerprint.
     imohash = compute_from_path(local_path)
     row.imohash = imohash
 
-    # 3. Dedup. Layers 1-2 (within- and cross-source, both keyed on
-    # WatchSourceFile.imohash) apply to either type. Layer 3 (cross-pipeline,
-    # against media_file.imohash) is media-only — Document has no imohash
-    # column, so a watch-imported document cannot be deduped against one
-    # uploaded through POST /api/documents. See the module docstring.
+    # 3. Three-layer dedup (other-source + cross-pipeline).
     if imohash:
         other = (
             db.query(WatchSourceFile)
@@ -216,60 +183,14 @@ def ingest_prepared_file(
             .first()
         )
         if other:
-            _mark_skipped(
-                db,
-                row,
-                "duplicate_other_source",
-                media_file_id=other.media_file_id,
-                document_id=other.document_id,
-            )
+            _mark_skipped(db, row, "duplicate_other_source", other.media_file_id)
             db.commit()
             return row
-        if not is_document:
-            existing_media = check_duplicate_by_imohash(db, imohash)
-            if existing_media:
-                _mark_skipped(db, row, "duplicate_existing", media_file_id=existing_media.id)
-                db.commit()
-                return row
-
-    if is_document:
-        from app.services.watch_sources import document_ingest
-
-        return document_ingest.finalize_document_ingest(
-            db,
-            source,
-            row,
-            local_path,
-            filename=filename,
-            file_size=file_size,
-            content_type=content_type,
-        )
-    return _finalize_media_ingest(
-        db,
-        source,
-        row,
-        local_path,
-        filename=filename,
-        file_size=file_size,
-        content_type=content_type,
-    )
-
-
-def _finalize_media_ingest(
-    db: Session,
-    source: WatchSource,
-    row: WatchSourceFile,
-    local_path: str,
-    *,
-    filename: str,
-    file_size: int,
-    content_type: str,
-) -> WatchSourceFile:
-    """Steps 4-8 of the media path: MediaFile row, MinIO upload, collections/tags,
-    finalize tracking row, notify + dispatch the transcription pipeline.
-    """
-    owner_id = int(source.user_id)
-    imohash = row.imohash
+        existing_media = check_duplicate_by_imohash(db, imohash)
+        if existing_media:
+            _mark_skipped(db, row, "duplicate_existing", existing_media.id)
+            db.commit()
+            return row
 
     # 4. Create the MediaFile row (owned by the source user). Tenant scope was
     # captured on the source at CREATION time from the creating request's
@@ -298,13 +219,12 @@ def _finalize_media_ingest(
     #
     # Suspend the server-side idle-in-transaction backstop
     # (DB_IDLE_IN_TRANSACTION_TIMEOUT_MS, default 5 min) for THIS transaction
-    # only. The upload below is the known residual session hold documented on
-    # ``ingest_prepared_file``, and it is the one place where holding the
-    # transaction idle for minutes is expected rather than a bug: a 15 GB
-    # import over a slow link exceeds the default, and having Postgres
-    # terminate the connection would abort a legitimate ingest. SET LOCAL
-    # reverts at commit/rollback, so the exemption cannot leak to the next
-    # transaction on this pooled connection.
+    # only. The upload below is the known residual session hold documented in
+    # the docstring, and it is the one place where holding the transaction idle
+    # for minutes is expected rather than a bug: a 15 GB import over a slow link
+    # exceeds the default, and having Postgres terminate the connection would
+    # abort a legitimate ingest. SET LOCAL reverts at commit/rollback, so the
+    # exemption cannot leak to the next transaction on this pooled connection.
     #
     # This is scoped narrowly ON PURPOSE. Do not widen it, and delete it when
     # the phased plain-data signature closes the residual — at that point the

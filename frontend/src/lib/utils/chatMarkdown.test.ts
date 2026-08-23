@@ -186,18 +186,6 @@ describe('citationHref', () => {
     expect(href).not.toContain('t=999');
     expect(href).toBe('/files/abc-123?view=summary');
   });
-
-  // ---------------------------------------------------- #464: forward-looking document kind
-  it('deep-links a document citation under /documents, never with start_time=0', () => {
-    const href = citationHref({
-      file_uuid: 'doc-1',
-      kind: 'document',
-      start_time: 0,
-      chunk_index: 7,
-    });
-    expect(href).toBe('/documents/doc-1?chunk=7');
-    expect(href).not.toContain('t=0');
-  });
 });
 
 describe('formatClock', () => {

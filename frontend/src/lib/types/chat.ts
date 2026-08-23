@@ -65,8 +65,7 @@ export function isScopeUnfiltered(scope: ChatScope | null | undefined): boolean 
  * way `summary` is. It carries `file_uuids` (every recording the group
  * spans) instead of relying on `file_uuid` alone.
  *
- * A later lane is expected to add `document` onto this same union — this
- * mirrors `backend/app/schemas/chat.py`'s `Citation.kind`, widened
+ * This mirrors `backend/app/schemas/chat.py`'s `Citation.kind`, widened
  * deliberately at the same time for the same reason (see that schema's
  * docstring): growing it kind-by-kind risks a persisted message losing an
  * already-shipped field the next time this union grows.
@@ -105,12 +104,6 @@ export interface ChatSource {
    * the correct read for them: none of them were ever expanded.
    */
   expanded?: boolean;
-  /** Document-plane fields (#362/#403 Stage 6, a later lane). Undefined for
-   * every kind this app emits today. */
-  page?: number | null;
-  section_path?: string | null;
-  char_start?: number | null;
-  char_end?: number | null;
   /**
    * `kind === 'recurrence'` ONLY: every recording the recurring group spans.
    * `undefined`/`null` for every other kind. `file_uuid` still carries the

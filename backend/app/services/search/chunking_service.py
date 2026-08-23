@@ -221,7 +221,7 @@ def _punkt_can_read(text: str, language: str | None) -> bool:
     not failed; it had merely been wrong.
 
     ``language=None`` (unknown — no caller should ever coerce this to ``"en"``
-    just because English is the default; see ``services/documents/chunking.py``'s
+    just because English is the default; see this module's
     #448 fix) falls straight through to the text-based disqualifiers below, the
     same as any other unmapped code.
     """
@@ -238,7 +238,7 @@ def split_into_sentences(text: str, language: str | None = "en") -> list[str]:
     """Split text into sentences using NLTK punkt with regex fallback.
 
     **Public, and it has to be.** ``services/ingest_artifacts/digest.py`` and
-    ``services/documents/chunking.py`` split the same transcript text the same way,
+    the transcript chunker split text the same way,
     so the digest's sentence boundaries and the index's chunk boundaries stay the
     SAME boundaries — a second implementation would drift and the digest would cite
     spans the chunks do not contain. ``test_compose_sentence_splitter_mounts`` also

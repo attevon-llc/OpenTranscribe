@@ -142,11 +142,8 @@ def search_transcripts(
     result_type: str = Query(
         "transcripts",
         description=(
-            "Which result group(s) to return: transcripts, summaries, documents, or all. "
-            "Defaults to transcripts for byte-identical behavior against existing callers. "
-            "'documents' (issue #463) searches the document-chunk plane and returns "
-            "document_results/document_total, alongside the transcript/summary shapes "
-            "when combined via 'all'."
+            "Which result group(s) to return: transcripts, summaries, or all. "
+            "Defaults to transcripts for byte-identical behavior against existing callers."
         ),
     ),
     db: Session = Depends(get_db),
@@ -206,7 +203,6 @@ def search_transcripts(
         )
     want_transcripts = result_type in ("transcripts", "all")
     want_summaries = result_type in ("summaries", "all")
-    want_documents = result_type in ("documents", "all")
 
     if want_transcripts:
         from app.services.search.hybrid_search_service import HybridSearchService
@@ -263,22 +259,16 @@ def search_transcripts(
     if want_summaries:
         payload.update(_summary_search_payload(db, ctx, q, page, page_size))
 
-    if want_documents:
-        payload.update(_document_search_payload(db, ctx, q, page, page_size, search_mode))
-
     if not want_transcripts:
-        # The transcript leg is what fills `total_pages` above; a `summaries`- or
-        # `documents`-only request never runs it, so the placeholder built earlier
-        # left it hardcoded at 0 regardless of how many summary/document hits were
-        # actually found, and real pagination never reached the client. `total_results`/
-        # `total_files` stay as built — they describe the (absent) transcript leg, same
-        # as `results == []`, and `summary_total`/`document_total` are each leg's own
-        # counter. `result_type` is validated to a single value earlier in this
-        # function, so exactly one of want_summaries/want_documents is true here —
-        # page over that leg's own total.
-        total_for_paging = (
-            payload.get("summary_total", 0) if want_summaries else payload.get("document_total", 0)
-        )
+        # The transcript leg is what fills `total_pages` above; a `summaries`-only
+        # request never runs it, so the placeholder built earlier left it hardcoded
+        # at 0 regardless of how many summary hits were actually found, and real
+        # pagination never reached the client. `total_results`/`total_files` stay as
+        # built — they describe the (absent) transcript leg, same as `results == []`,
+        # and `summary_total` is that leg's own counter. `result_type` is validated
+        # to a single value earlier in this function, so `want_summaries` is
+        # necessarily true here — page over that leg's own total.
+        total_for_paging = payload.get("summary_total", 0)
         payload["total_pages"] = math.ceil(total_for_paging / page_size) if total_for_paging else 0
 
     return payload
@@ -406,83 +396,6 @@ def _summary_search_payload(
             for hit in hits
         ],
         "summary_total": max(0, result.total - removed),
-    }
-
-
-def _document_search_payload(
-    db: Session, ctx: RequestContext, q: str, page: int, page_size: int, search_mode: str
-) -> dict[str, Any]:
-    """Build the ``document_results``/``document_total`` pair (issue #463).
-
-    Access control is the ``accessible_user_ids`` term
-    ``chunk_retrieval.search_document_chunks`` applies inside the OpenSearch
-    query itself — the same authority every other plane of this index uses.
-    Documents have no sharing model yet, so today that is always
-    ``[owner_id]`` (``services/search/indexing_service.index_document_chunks``);
-    ``update_document_access_index`` is the rewrite path a future
-    document-sharing lane will drive, and nothing here needs to change when
-    it lands.
-
-    Masking follows the same read-time-snippet pattern the transcript leg
-    uses (``HybridSearchService._redact_snippets`` /
-    ``services/search/snippet_redaction.py``) rather than a third masking
-    implementation: a parsed document is exactly as capable of containing PII
-    as a transcript, and ``Document.redaction_status`` exists for the same
-    reason ``MediaFile``'s does. Fails CLOSED, like the summary leg: a
-    detector outage feeding one of the caller's enabled categories withholds
-    these results with a 503 rather than serving unmasked document text.
-    """
-    from app.services.redaction.config import resolve_effective_config
-    from app.services.search.chunk_retrieval import search_document_chunks
-    from app.services.search.snippet_redaction import SnippetMaskingUnavailableError
-    from app.services.search.snippet_redaction import mask_snippets
-
-    result = search_document_chunks(
-        q,
-        user_id=ctx.user.id,
-        organization_id=ctx.org_id,
-        page=page,
-        page_size=page_size,
-        search_mode=search_mode,
-    )
-
-    flat_snippets = [match.snippet for hit in result.results for match in hit.matches]
-    if flat_snippets:
-        cfg = resolve_effective_config(db, ctx.user.id)
-        try:
-            masked_snippets = mask_snippets(flat_snippets, cfg)
-        except SnippetMaskingUnavailableError as e:
-            raise HTTPException(status_code=503, detail=str(e)) from e
-    else:
-        masked_snippets = []
-
-    document_results = []
-    cursor = 0
-    for hit in result.results:
-        matches = []
-        for match in hit.matches:
-            matches.append(
-                {
-                    "chunk_index": match.chunk_index,
-                    "page": match.page,
-                    "section_path": match.section_path,
-                    "snippet": masked_snippets[cursor],
-                    "score": match.score,
-                }
-            )
-            cursor += 1
-        document_results.append(
-            {
-                "file_uuid": hit.file_uuid,
-                "file_id": hit.file_id,
-                "title": hit.title,
-                "matches": matches,
-            }
-        )
-
-    return {
-        "document_results": document_results,
-        "document_total": result.total_files,
     }
 
 

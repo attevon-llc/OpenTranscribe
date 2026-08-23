@@ -1,7 +1,7 @@
 # fastapi capped <0.137: 0.137+ stops flattening include_router prefixes into
 # scope["route"].path — breaks route-templated metrics labels (see requirements.txt)
-fastapi==0.136.3
-uvicorn[standard]==0.52.3
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
 websockets==17.0.1
 sqlalchemy==2.0.52
 alembic==1.19.1
@@ -62,7 +62,7 @@ ffmpeg-python==0.2.0
 sentencepiece==0.2.2
 psutil==7.2.2
 pyexiftool==0.5.6
-yt-dlp==2026.7.4
+yt-dlp==2026.8.19
 
 # Semantic search and NLP
 sentence-transformers==6.0.0  # For semantic search embeddings (all-MiniLM-L6-v2)
@@ -75,13 +75,13 @@ sentence-transformers==6.0.0  # For semantic search embeddings (all-MiniLM-L6-v2
 deepgram-sdk==7.7.0
 assemblyai==1.0.0
 google-cloud-speech==2.40.0
-azure-cognitiveservices-speech==1.51.1
+azure-cognitiveservices-speech==1.51.2
 # speechmatics-python is deprecated and drops speaker labels — the app uses
 # the async speechmatics-batch client (matches requirements.txt)
 speechmatics-batch==0.5.0
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
-boto3==1.43.74
+boto3==1.43.75
 # openai must be listed explicitly — no package in this requirements pulls it in
-openai==3.3.0
+openai==3.3.1
 # requests is pulled in transitively by many packages above, but list explicitly for clarity
 requests==2.34.2

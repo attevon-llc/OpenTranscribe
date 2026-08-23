@@ -276,6 +276,17 @@ msal==1.37.0
 # finds it is a `pip freeze` diff of a fresh venv against a fresh image.
 cuda-pathfinder==1.6.1     # via cuda-bindings
 botocore==1.43.75          # via boto3 — drifted 1.43.74 (venv) vs 1.43.75 (image), 2026-08-20
+# The four below all predate documents and remain pulled in by packages that have
+# nothing to do with them (see each line). They are here because #551 removed
+# docling-slim, whose own constraints had been holding them at fixed versions as a
+# side effect; lxml was additionally pinned outright for docling's HTML repair
+# step and went with it. With nothing pinning them they resolved freely on the
+# next rebuild and immediately drifted venv vs image. Pinned at the versions the
+# rebuilt IMAGE resolved -- forward only, never back to docling's older set.
+cloudpathlib==0.25.0       # via weasel — drifted 0.24.0 (venv) vs 0.25.0 (image), 2026-08-23
+cython==3.3.0              # via meeteval — drifted 3.2.9 (venv) vs 3.3.0 (image), 2026-08-23
+lxml==6.1.2                # via python3-saml, xmlsec — drifted 6.1.1 (venv) vs 6.1.2 (image), 2026-08-23
+typer==0.27.1              # via spacy, weasel — drifted 0.26.8 (venv) vs 0.27.1 (image), 2026-08-23
 httpcore2==2.12.0          # via httpx2
 httpx2==2.12.0             # via openai
 idna==3.19                 # via requests, httpx, anyio, yarl, tldextract

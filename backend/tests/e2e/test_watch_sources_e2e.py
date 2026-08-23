@@ -111,7 +111,12 @@ def watch_source_names(backend_url: str):
         headers = {"Authorization": f"Bearer {token}"}
         listing = requests.get(f"{backend_url}/api/watch-sources", headers=headers, timeout=15)
         payload = listing.json() if listing.status_code == 200 else {}
-        sources = payload if isinstance(payload, list) else payload.get("items", [])
+        # The envelope key is ``sources`` (``WatchSourcesList``). This read ``items``,
+        # which is never present — so the sweep this fixture exists for iterated an
+        # empty list every run and reaped nothing, while its docstring promised it
+        # reaped rows from aborted runs. A cleanup that silently cleans nothing is
+        # worse than none: it is believed.
+        sources = payload if isinstance(payload, list) else payload.get("sources", [])
         for source in sources:
             if str(source.get("name", "")).startswith(SOURCE_PREFIX):
                 requests.delete(
@@ -283,3 +288,208 @@ class TestWatchSourcesPanel:
         card.first.get_by_role("button", name="Delete").click()
         app_page.locator(".modal-container").get_by_role("button", name="Delete").click()
         expect(app_page.locator(".source-card", has_text=name)).to_have_count(0, timeout=8000)
+
+
+@pytest.fixture
+def api_source(backend_url: str):
+    """Create a throwaway watch source over the API and delete it afterwards.
+
+    The modal tests below are about the Files and Notifications screens, not about
+    source creation — and driving the create stepper made them depend on the
+    local-watch capability they never actually needed (the S3 branch of the form
+    wants a bucket and keys the walkthrough does not type). That gate meant they
+    skipped on every stack started without ``--with-watch``, so they had never run
+    at all. Creating the row directly removes a dependency the subject under test
+    does not have.
+
+    Fixture teardown deletes by uuid and runs even when the test fails, which is
+    what the E2E hygiene rule requires; the ``SOURCE_PREFIX`` name additionally lets
+    ``watch_source_names``' sweep reap it if this process dies outright.
+    """
+    token = requests.post(
+        f"{backend_url}/api/auth/token",
+        data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
+        timeout=15,
+    ).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    name = _unique_source_name()
+    created = requests.post(
+        f"{backend_url}/api/watch-sources",
+        headers=headers,
+        json={
+            "name": name,
+            "source_type": "s3",
+            "s3_endpoint_url": "https://s3.invalid.example.com",
+            "s3_bucket_name": "e2e",
+            "s3_access_key_id": "AKIAE2ETESTONLY",
+            "s3_secret_key": "e2e-not-a-real-secret",
+        },
+        timeout=20,
+    )
+    assert created.status_code == 200, created.text
+    source_uuid = created.json()["uuid"]
+    try:
+        yield name
+    finally:
+        requests.delete(
+            f"{backend_url}/api/watch-sources/{source_uuid}", headers=headers, timeout=15
+        )
+
+
+def _open_files_modal(page: Page, source_name: str):
+    """Open one source's Files modal and return the dialog locator."""
+    _open_watch_sources(page)
+    card = page.locator(".source-card", has_text=source_name).first
+    expect(card).to_be_visible(timeout=10000)
+    card.get_by_role("button", name="Files").click()
+    dialog = page.locator(".modal-container")
+    expect(dialog.get_by_text("No files tracked yet")).to_be_visible(timeout=8000)
+    return dialog
+
+
+class TestPerFileManagement:
+    """The #489 Files modal, driven through the real UI."""
+
+    def test_files_modal_opens_and_reports_an_empty_history(
+        self, app_page: Page, api_source: str
+    ) -> None:
+        """A brand-new source has imported nothing, and must say so.
+
+        The empty state is the case a table most often gets wrong — an unstyled blank
+        area reads as a failed request rather than as "nothing here yet".
+        """
+        dialog = _open_files_modal(app_page, api_source)
+        # The controls render even with nothing to filter — a source that has just
+        # been created is exactly when an operator goes looking.
+        expect(dialog.get_by_placeholder("Search by file name…")).to_be_visible()
+        dialog.get_by_role("button", name="Close", exact=True).click()
+
+    def test_status_filter_requeries_the_server(self, app_page: Page, api_source: str) -> None:
+        """Choosing a status issues a new request rather than filtering in the browser.
+
+        Asserted on the wire, not on the rendered rows: with an empty history both
+        behaviours look identical on screen, so only the request distinguishes them.
+        """
+        dialog = _open_files_modal(app_page, api_source)
+        with app_page.expect_request(
+            lambda r: "/files?" in r.url and "status=error" in r.url, timeout=8000
+        ) as caught:
+            dialog.locator("select").first.select_option("error")
+
+        # Paging must reset with the filter: leaving `page` where it was can land the
+        # user on an empty page of a now-shorter result set.
+        assert "status=error" in caught.value.url
+        assert "page=1" in caught.value.url
+        dialog.get_by_role("button", name="Close", exact=True).click()
+
+    def test_search_box_requeries_the_server(self, app_page: Page, api_source: str) -> None:
+        """Typing a name issues a debounced ``q=`` request — the filter is server-side."""
+        dialog = _open_files_modal(app_page, api_source)
+        with app_page.expect_request(
+            lambda r: "/files?" in r.url and "q=board" in r.url, timeout=8000
+        ) as caught:
+            dialog.get_by_placeholder("Search by file name…").fill("board")
+
+        assert "q=board" in caught.value.url
+        assert "page=1" in caught.value.url
+        dialog.get_by_role("button", name="Close", exact=True).click()
+
+
+class TestPerSourceEmailLinks:
+    """The #490 Notifications panel."""
+
+    def test_notifications_panel_explains_the_per_scan_rule(
+        self, app_page: Page, api_source: str
+    ) -> None:
+        """The panel must state that the flags are per scan, not per file.
+
+        Without it an admin reasonably reads "notify on error" as per-file and then
+        concludes notifications are broken when one mail arrives for a scan in which
+        three files failed.
+        """
+        _open_watch_sources(app_page)
+        card = app_page.locator(".source-card", has_text=api_source).first
+        expect(card).to_be_visible(timeout=10000)
+        card.get_by_role("button", name="Notifications").click()
+        dialog = app_page.locator(".modal-container")
+        expect(dialog.get_by_text("per scan, not per file", exact=False)).to_be_visible(
+            timeout=8000
+        )
+        expect(dialog.get_by_text("No email notifications for this source")).to_be_visible(
+            timeout=8000
+        )
+        dialog.get_by_role("button", name="Close", exact=True).click()
+
+    def test_owner_can_attach_and_detach_a_configuration(
+        self, app_page: Page, api_source: str, backend_url: str
+    ) -> None:
+        """#490 end to end: attach a configuration to one source, then detach it.
+
+        The configuration is created **disabled** on purpose. A completed scan on a
+        source carrying a live link dispatches ``send_notification``, which would open
+        a real SMTP session against whatever host the config names; a disabled one is
+        skipped by design. It doubles as the warning path — the panel must say that a
+        disabled configuration delivers nothing, rather than accepting it silently.
+        """
+        token = requests.post(
+            f"{backend_url}/api/auth/token",
+            data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
+            timeout=15,
+        ).json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        # Both suffixes inline: `test_e2e_data_hygiene` reads the AST and looks for a
+        # uuid4 call in the value itself, so hoisting it into a local first hides it
+        # and the guard reports a fixed identity. They need not match each other.
+        cfg_name = f"{SOURCE_PREFIX}mailer-{uuid.uuid4().hex[:8]}"
+        cfg = requests.post(
+            f"{backend_url}/api/watch-sources/email-configs",
+            headers=headers,
+            json={
+                "name": cfg_name,
+                "provider": "smtp",
+                "smtp_host": "smtp.invalid.example.com",
+                "smtp_port": 587,
+                # Suffixed too. Nothing reads this address — the config is created
+                # disabled so no mail is ever sent — but a fixed identity on a persisted
+                # row is what the hygiene guard refuses, and it is right to: a run that
+                # dies before teardown leaves a row the next run cannot tell from its own.
+                "from_address": f"noreply+{uuid.uuid4().hex[:8]}@example.com",
+                "is_enabled": False,
+            },
+            timeout=20,
+        )
+        # Asserted, not skipped-on-403. The E2E account is super_admin (verified
+        # against /auth/me), so a 403 here means the tier or the route's gate changed —
+        # which this test should report, not quietly stop running for.
+        assert cfg.status_code == 200, cfg.text
+        cfg_uuid = cfg.json()["uuid"]
+
+        try:
+            _open_watch_sources(app_page)
+            card = app_page.locator(".source-card", has_text=api_source).first
+            expect(card).to_be_visible(timeout=10000)
+            card.get_by_role("button", name="Notifications").click()
+            dialog = app_page.locator(".modal-container")
+            expect(dialog.get_by_text("No email notifications for this source")).to_be_visible(
+                timeout=8000
+            )
+
+            dialog.locator("select").first.select_option(label=cfg_name)
+            dialog.get_by_role("button", name="Attach").click()
+
+            expect(dialog.get_by_text(cfg_name)).to_be_visible(timeout=8000)
+            expect(
+                dialog.get_by_text("This email configuration is disabled", exact=False)
+            ).to_be_visible(timeout=8000)
+
+            dialog.get_by_role("button", name="Unlink").click()
+            expect(dialog.get_by_text("No email notifications for this source")).to_be_visible(
+                timeout=8000
+            )
+            dialog.get_by_role("button", name="Close", exact=True).click()
+        finally:
+            requests.delete(
+                f"{backend_url}/api/watch-sources/email-configs/{cfg_uuid}",
+                headers=headers,
+                timeout=15,
+            )

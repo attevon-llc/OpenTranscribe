@@ -259,6 +259,15 @@ export interface ChatMessage {
    * undefined for messages loaded from history — there is no live timing to
    * replay, only the persisted text.
    */
+  /**
+   * GH #514. The query-execution trace for this turn, folded from `trace`
+   * frames. CLIENT-ONLY and deliberately not persisted: a typical trace is
+   * 1.5-2.5 KB against a whole message row of ~1.5 KB, so storing it would
+   * roughly double every conversation-load payload for diagnostics shown one
+   * turn at a time. A message loaded from history therefore has none, which is
+   * exactly the "traces are not stored" state the panel renders.
+   */
+  trace?: TraceState;
   reasoningStreaming?: boolean;
   reasoningStartedAt?: number;
   reasoningDurationMs?: number;
@@ -414,6 +423,66 @@ export type ChatWarningCode =
   | 'plan_failed'
   | 'router_language_unmatched';
 
+/**
+ * GH #514 — the query-execution trace vocabulary, mirroring
+ * `backend/app/services/chat/trace.py`'s `QueryStage` exactly. A value missing
+ * from this union is a stage the SPA cannot place, the same trap
+ * `ChatWarningCode` above documents.
+ *
+ * NOTE retrieval runs a SINGLE chunk-plane query rather than several legs, so a
+ * node for a plane that never ran would misreport what actually happened.
+ */
+// `TraceState` is owned by `$lib/chat/traceTree`, which owns the fold logic.
+// A type-only import is erased at compile time, so the mutual reference between
+// these two modules is not a runtime cycle — and one definition cannot drift
+// from a copy.
+import type { TraceState } from '$lib/chat/traceTree';
+export type { TraceState };
+
+export type TraceStage =
+  | 'submitted'
+  | 'validated'
+  | 'parsed_names'
+  | 'rewritten'
+  | 'cache_lookup'
+  | 'planned'
+  | 'fanned_relational'
+  | 'fanned_vector'
+  | 'found'
+  | 'reranked'
+  | 'sampled'
+  | 'expanded'
+  | 'filtered'
+  | 'budgeted'
+  | 'reviewed'
+  | 'presented';
+
+/**
+ * How a stage ended. `empty` and `skipped` are the pair this whole feature
+ * exists to separate — "we looked and found nothing" versus "we never looked" —
+ * so they must never be collapsed or rendered alike.
+ */
+export type TraceOutcome = 'ok' | 'empty' | 'skipped' | 'cached' | 'declined' | 'failed';
+
+/**
+ * Mirrors `trace.py`'s `SAFE_DETAIL_KEYS`. Deliberately NON-identifying: no file
+ * title, speaker name, uuid or query text ever reaches a trace node, so no
+ * rendering mistake here can leak one.
+ */
+export interface TraceDetail {
+  plane?: 'chunk' | 'digest';
+  source?: 'postgres' | 'opensearch' | 'cache' | 'llm';
+  count?: number;
+  kept?: number;
+  dropped?: number;
+  leg?: string;
+  legs?: number;
+  reason?: string;
+  ms?: number;
+  /** A CONFIGURED bound (max-per-file, budget chars) — never derived from content. */
+  limit?: number;
+}
+
 export type ChatErrorCode =
   | 'llm_unconfigured'
   | 'quota_exceeded'
@@ -446,6 +515,21 @@ export type ChatStreamEvent =
       /** `unsupported_language` only: the languages seen and how many files. */
       context_languages?: ChatMessageMetadata['context_languages'];
     }
+  /**
+   * GH #514. One node's state at one moment. A leg reports itself TWICE under
+   * one `node_id` — a `fanned_*` when it starts and a `found` when it finishes
+   * — and the client folds those into a single node that advances, never two
+   * rows. `seq` is a delivery stamp; a gap means the recorder hit its cap.
+   */
+  | {
+      type: 'trace';
+      seq: number;
+      stage: TraceStage;
+      outcome: TraceOutcome;
+      parent: string | null;
+      node_id: string | null;
+      detail: TraceDetail;
+    }
   | { type: 'delta'; text: string }
   /**
    * A chunk of the model's separately-streamed reasoning/"thinking" text.
@@ -460,7 +544,17 @@ export type ChatStreamEvent =
       total_tokens: number;
       estimated: boolean;
     }
-  | { type: 'done'; finish_reason: string; title?: string }
+  | {
+      type: 'done';
+      finish_reason: string;
+      title?: string;
+      /**
+       * GH #514. The recorder dropped events. Carried here rather than as a
+       * stage because truncation describes the WHOLE trace, and inventing a
+       * stage for it would make the vocabulary describe the transport.
+       */
+      trace_truncated?: boolean;
+    }
   | { type: 'error'; code: ChatErrorCode; message: string };
 
 /** Where the composer/thread is in the send lifecycle. */

@@ -72,6 +72,11 @@ from app.services.chat.trace import Outcome as TraceOutcome
 from app.services.chat.trace import QueryStage
 from app.services.chat.trace import TraceRecorder
 from app.services.chat.trace import emit as emit_trace
+from app.services.chat.trace_stream import DEFAULT_QUEUE_MAXSIZE
+from app.services.chat.trace_stream import StreamingTraceRecorder
+from app.services.chat.trace_stream import WireEvent
+from app.services.chat.trace_stream import drain_available
+from app.services.chat.trace_stream import trace_payload
 from app.services.search.chunk_retrieval import ChunkHit
 
 logger = logging.getLogger(__name__)
@@ -438,6 +443,7 @@ def _apply_speaker_resolution(
     session_scope,
     meta: dict[str, Any],
     file_uuids: list[str] | None = None,
+    recorder: TraceRecorder | None = None,
 ) -> list[str]:
     """Resolve a mentioned speaker and fold it into ``meta`` (W2.2, wired W2.3).
 
@@ -454,6 +460,13 @@ def _apply_speaker_resolution(
         treats "flag off" and "nothing resolved" identically.
     """
     if not settings.speaker_resolver_enabled:
+        emit_trace(
+            recorder,
+            QueryStage.PARSED_NAMES,
+            TraceOutcome.SKIPPED,
+            node_id="names",
+            reason="disabled",
+        )
         return []
     resolution = _resolve_speaker_focus(
         question=question,
@@ -465,7 +478,30 @@ def _apply_speaker_resolution(
     resolution_meta = resolution.as_meta()
     if resolution_meta:
         meta["speaker_resolution"] = resolution_meta
-    return list(resolution.matched) if resolution.speaker_focus else []
+    matched = list(resolution.matched) if resolution.speaker_focus else []
+    # ⚠️ COUNTS ONLY. `resolution.matched` and `as_meta()["ambiguous"]` hold REAL
+    # SPEAKER NAMES, which are permission-scoped. Never `**resolution_meta`.
+    #
+    # Three outcomes, not two: a mention that matched several roster entries
+    # resolves to NO filter on purpose (never a guess), and reporting that as
+    # "found nothing" would hide a deliberate refusal behind an empty result.
+    ambiguous = (resolution_meta or {}).get("ambiguous") or []
+    if ambiguous:
+        outcome, count = TraceOutcome.DECLINED, len(ambiguous)
+    elif matched:
+        outcome, count = TraceOutcome.OK, len(matched)
+    else:
+        outcome, count = TraceOutcome.EMPTY, 0
+    emit_trace(
+        recorder,
+        QueryStage.PARSED_NAMES,
+        outcome,
+        node_id="names",
+        source="postgres",
+        count=count,
+        **({"reason": "ambiguous"} if ambiguous else {}),
+    )
+    return matched
 
 
 def _validate_plan_speakers(
@@ -536,6 +572,7 @@ def _maybe_rewrite(
     rewrite_enabled: bool,
     settings: ChatSettings,
     meta: dict[str, Any],
+    recorder: TraceRecorder | None = None,
 ):
     """Phase 1 of `_prepare_context`: the query-rewrite LLM round trip.
 
@@ -550,6 +587,13 @@ def _maybe_rewrite(
         `_resolve_plan` for a follow-up turn's piggybacked `PLAN:` line.
     """
     if not (rewrite_enabled and history):
+        emit_trace(
+            recorder,
+            QueryStage.REWRITTEN,
+            TraceOutcome.SKIPPED,
+            node_id="rewrite",
+            reason="disabled" if not rewrite_enabled else "not_applicable",
+        )
         return question, None, None, 0
 
     from app.services.chat.query_rewriter import rewrite_query
@@ -565,6 +609,17 @@ def _maybe_rewrite(
     if effective_query != question:
         meta["rewritten_query"] = effective_query
     meta.setdefault("timings_ms", {})["rewrite"] = int((time.monotonic() - rewrite_started) * 1000)
+    # ⚠️ `ms` ONLY. The obvious thing to show on this node is the rewritten
+    # query, which is the USER'S OWN TEXT. `_scrub` would drop a `query` key,
+    # but the call site must never construct one.
+    emit_trace(
+        recorder,
+        QueryStage.REWRITTEN,
+        TraceOutcome.OK if effective_query != question else TraceOutcome.EMPTY,
+        node_id="rewrite",
+        source="llm",
+        ms=meta["timings_ms"]["rewrite"],
+    )
     return effective_query, rewrite.intent, rewrite, 1
 
 
@@ -951,13 +1006,25 @@ def _maybe_run_enrichment(
         enrichment actually fired and produced text.
     """
     if not (settings.enrichment_enabled and llm is not None):
-        emit_trace(recorder, QueryStage.REVIEWED, TraceOutcome.SKIPPED, reason="disabled")
+        emit_trace(
+            recorder,
+            QueryStage.REVIEWED,
+            TraceOutcome.SKIPPED,
+            node_id="review",
+            reason="disabled",
+        )
         return "", 0
 
     recurrence_groups = len(getattr(recurrence_result, "groups", ()) or ())
     subq_with_evidence = int(meta.get("subquestion_legs_with_evidence", 0))
     if not (recurrence_groups >= 3 or subq_with_evidence >= 2):
-        emit_trace(recorder, QueryStage.REVIEWED, TraceOutcome.SKIPPED, reason="not_applicable")
+        emit_trace(
+            recorder,
+            QueryStage.REVIEWED,
+            TraceOutcome.SKIPPED,
+            node_id="review",
+            reason="not_applicable",
+        )
         return "", 0
 
     _check_cancelled(assistant_message_uuid)
@@ -970,6 +1037,7 @@ def _maybe_run_enrichment(
         recorder,
         QueryStage.REVIEWED,
         TraceOutcome.OK if block else TraceOutcome.EMPTY,
+        node_id="review",
         count=1 if block else 0,
     )
     return block, calls
@@ -990,6 +1058,7 @@ def _run_serial_pipeline(
     session_scope,
     settings_config,
     meta: dict[str, Any],
+    recorder: TraceRecorder | None = None,
 ):
     """Phases 2+3 of `_prepare_context`: the pre-#403 W2.6 counted-then-retrieve
     pipeline, unchanged — this is the path every turn takes with the planner
@@ -1018,6 +1087,12 @@ def _run_serial_pipeline(
         from app.services.opensearch_service import get_opensearch_client
 
         counted_started = time.monotonic()
+        emit_trace(
+            recorder,
+            QueryStage.FANNED_RELATIONAL,
+            node_id="counted",
+            source="postgres",
+        )
         counted = answer_aggregation(
             question,
             decision,
@@ -1035,6 +1110,36 @@ def _run_serial_pipeline(
         # declined" is a different fact from "it was never an aggregation", and
         # only the metadata can tell them apart after the fact.
         meta["aggregation"] = counted.as_metadata() if counted is not None else {"declined": True}
+        # Three outcomes, and collapsing any two loses the point. A shape the
+        # mechanism REFUSED (an unbounded scope, a truncated bucket list) is not
+        # the same as one that counted zero, and neither is the same as a tier
+        # that never ran. Every shape here declines rather than guessing,
+        # because a number from the wrong mechanism is indistinguishable from a
+        # number from the right one.
+        #
+        # ⚠️ `coverage["declined"]` is free ENGLISH PROSE ("talk-time stats need
+        # a bounded set of recordings"). It must never be forwarded as `reason`,
+        # which is a closed vocabulary of machine codes.
+        _declined = bool((getattr(counted, "coverage", None) or {}).get("declined"))
+        _count = int(getattr(counted, "count", 0) or 0) if counted is not None else 0
+        if counted is None or _declined:
+            _counted_outcome = TraceOutcome.DECLINED
+        elif _count:
+            _counted_outcome = TraceOutcome.OK
+        else:
+            _counted_outcome = TraceOutcome.EMPTY
+        emit_trace(
+            recorder,
+            QueryStage.FOUND,
+            _counted_outcome,
+            node_id="counted",
+            source="postgres",
+            count=_count,
+            ms=meta["timings_ms"]["aggregate"],
+            **(
+                {"reason": "unsupported_shape"} if _counted_outcome is TraceOutcome.DECLINED else {}
+            ),
+        )
 
     # A counted turn still retrieves — a reduced leg, so a misroute always has
     # evidence and every `[n]` marker still resolves to a clickable timestamp.
@@ -1061,6 +1166,7 @@ def _run_serial_pipeline(
         search_mode=search_mode,
         wants_digest=decision.wants_digest,
         speaker_focus_names=speaker_focus_names or None,
+        recorder=recorder,
     )
     return result, counted
 
@@ -1124,6 +1230,7 @@ def _retrieve_or_fanout(
             session_scope=session_scope,
             settings_config=settings_config,
             meta=meta,
+            recorder=recorder,
         )
         return result, counted, None
 
@@ -1228,6 +1335,40 @@ def _build_mask_kwargs(llm: Any, settings: Any) -> dict[str, bool]:
     return kwargs
 
 
+def _emit_expansion(recorder, masked: list, *, enabled: bool) -> None:
+    """Report read-time context expansion (#523) on the trace.
+
+    It runs INSIDE ``mask_chunks``, so the count is only knowable after masking
+    returns — hence a helper called from there rather than an emit beside the
+    other narrowing stages.
+
+    ``chat.context_expansion_enabled`` is default-OFF, and a stage that did not
+    run still reports ``SKIPPED`` rather than vanishing: an absent row reads as
+    "not part of this pipeline", which is precisely the ambiguity the panel
+    exists to remove. ``chunk.expanded`` counts chunks whose own time range was
+    widened; the rest were already long enough to keep as they were.
+    """
+    if not enabled:
+        emit_trace(
+            recorder,
+            QueryStage.EXPANDED,
+            TraceOutcome.SKIPPED,
+            node_id="expansion",
+            reason="disabled",
+        )
+        return
+
+    widened = sum(1 for chunk in masked if chunk.expanded)
+    emit_trace(
+        recorder,
+        QueryStage.EXPANDED,
+        TraceOutcome.OK if widened else TraceOutcome.EMPTY,
+        node_id="expansion",
+        count=widened,
+        kept=len(masked),
+    )
+
+
 def _overview_citation_start(settings, digest_masked: list, masked: list) -> int | None:
     """#532 arm (a): the id base for citable overview entries, or ``None`` (off).
 
@@ -1267,6 +1408,7 @@ def _prepare_context(
     llm,
     rewrite_enabled: bool,
     assistant_message_uuid: str = "",
+    recorder: TraceRecorder | None = None,
 ) -> tuple[list[MaskedChunk], dict[str, Any], Any, Any, str, str]:
     """Run the blocking RAG stages: rewrite → route → count → retrieve → mask.
 
@@ -1327,6 +1469,7 @@ def _prepare_context(
         rewrite_enabled=rewrite_enabled,
         settings=settings,
         meta=meta,
+        recorder=recorder,
     )
     llm_calls += rewrite_calls
 
@@ -1344,6 +1487,7 @@ def _prepare_context(
         session_scope=session_scope,
         meta=meta,
         file_uuids=file_uuids,
+        recorder=recorder,
     )
 
     from app.services.chat.router import route
@@ -1391,6 +1535,7 @@ def _prepare_context(
         settings_config=settings_config,
         assistant_message_uuid=assistant_message_uuid,
         meta=meta,
+        recorder=recorder,
     )
 
     # --- Phase 3.5: drop quarantined hits before anything downstream sees
@@ -1412,6 +1557,14 @@ def _prepare_context(
     # the drop still has its own named counter so a quarantine cause is never
     # read as a bare "search returned less".
     chunks_dropped_quarantined = chunks_before - len(result.chunks)
+    emit_trace(
+        recorder,
+        QueryStage.FILTERED,
+        node_id="quarantine",
+        source="postgres",
+        kept=len(result.chunks),
+        dropped=chunks_dropped_quarantined,
+    )
     if chunks_dropped_quarantined:
         result.retrieved = max(0, result.retrieved - chunks_dropped_quarantined)
         meta["chunks_dropped_quarantined"] = chunks_dropped_quarantined
@@ -1457,6 +1610,8 @@ def _prepare_context(
     digest_masked: list[MaskedChunk] = []
     summaries: list[Any] = []
     masked = mask_chunks(session_scope, result.chunks, user_id, **_mask_kwargs)
+
+    _emit_expansion(recorder, masked, enabled="expand_short_chunks" in _mask_kwargs)
 
     if result.digests:
         # A SEPARATE masking call, not an overload. A digest is
@@ -1565,6 +1720,17 @@ def _prepare_context(
     # nothing. Without this counter that is indistinguishable from retrieval
     # returning less, which is a different defect with a different fix.
     meta["chunks_dropped_empty_after_masking"] = len(masked) - len(kept)
+    # The headline case this panel exists for: retrieval worked, masking failed
+    # closed on EVERY chunk, and the model answered anyway. `EMPTY` rather than
+    # `OK` when nothing survived, so it cannot read as a filter that passed.
+    emit_trace(
+        recorder,
+        QueryStage.FILTERED,
+        TraceOutcome.OK if kept else TraceOutcome.EMPTY,
+        node_id="masking",
+        kept=len(kept),
+        dropped=len(masked) - len(kept),
+    )
     masked = kept
 
     # RAG is English-only (see services/chat/language.py). Recording what the turn
@@ -1607,6 +1773,7 @@ def _prepare_context(
         recurrence_result=recurrence_result,
         assistant_message_uuid=assistant_message_uuid,
         meta=meta,
+        recorder=recorder,
     )
     llm_calls += enrichment_calls
 
@@ -1635,20 +1802,97 @@ _KEEPALIVE = ": keepalive\n\n"
 _KEEPALIVE_INTERVAL_S = 15
 
 
-async def _with_keepalive(awaitable, queue: asyncio.Queue):
-    """Await ``awaitable``, pushing a keepalive frame into ``queue`` every 15s."""
+class _Awaited:
+    """Carries a result out of :func:`_keepalive_until_done`.
+
+    An async generator cannot ``return`` a value, and the caller needs both the
+    frames *and* what the awaited work produced.
+    """
+
+    __slots__ = ("value",)
+
+    def __init__(self) -> None:
+        self.value: Any = None
+
+
+async def _keepalive_until_done(awaitable, holder: _Awaited, trace_q=None):
+    """Await ``awaitable``, YIELDING frames while it runs.
+
+    ⚠️ **Yielding is the entire point, and buffering is the bug this replaces.**
+    The previous shape pushed keepalives into a queue that the caller drained
+    *after* awaiting — but ``stream_reply`` is an async generator, and an async
+    generator cannot yield from inside an ``await``. So every keepalive produced
+    during retrieval reached the client only once retrieval had finished, in one
+    burst, at exactly the moment it was no longer needed. Measured on the old
+    code: 11 keepalives, all bearing the same timestamp as the end of the phase
+    they were supposed to span.
+
+    The result lands on ``holder`` because an async generator cannot return one.
+
+    The awaited task is deliberately **not cancelled** when this generator is torn
+    down (a client disconnect or Stop). That matches the pre-existing contract:
+    the work runs in a threadpool and stops at its own next cancellation check,
+    not because the socket went away.
+
+    GH #514 rides the same loop. Trace events are produced on the SAME worker
+    thread this is awaiting (and on ``legs.py``'s fan-out threads), so this is
+    the only place that can put them on the wire while the phase is still
+    running — which is the entire point of a *live* trace rather than a summary
+    delivered once the work is already over.
+
+    ⚠️ **It waits on EVENTS, never on a poll interval, and that is a measured
+    decision.** A 50 ms poll cost +206 ms at p95 (592 -> 799 ms) because the loop
+    only noticed ``_prep`` finishing on its next tick, and every tick paid a
+    wake-up whether or not anything had happened. Racing the work against the
+    queue instead wakes exactly when there is something to do: re-measured, p95
+    went to within noise of the untraced arm. Do not reintroduce a poll here.
+
+    Args:
+        awaitable: The work to await — typically a ``run_in_threadpool`` call.
+        holder: Receives the awaited result on completion.
+        trace_q: GH #514's event queue, or ``None`` when the flag is off. ``None``
+            keeps the original keepalive-only shape exactly.
+
+    Yields:
+        ``_KEEPALIVE`` SSE comment frames, plus ``trace`` frames when tracing.
+    """
     task = asyncio.ensure_future(awaitable)
-    while True:
-        done, _ = await asyncio.wait({task}, timeout=_KEEPALIVE_INTERVAL_S)
-        if done:
-            return task.result()
-        queue.put_nowait(_KEEPALIVE)
+    getter: asyncio.Task | None = None
+    last_beat = time.monotonic()
+    try:
+        while True:
+            # One pending read of the queue, recreated only after it resolves —
+            # a fresh `get()` per iteration would leak a waiter each time round.
+            if trace_q is not None and getter is None:
+                getter = asyncio.ensure_future(trace_q.get())
 
+            waiting = {task} | ({getter} if getter is not None else set())
+            elapsed = time.monotonic() - last_beat
+            done, _ = await asyncio.wait(
+                waiting,
+                timeout=max(0.0, _KEEPALIVE_INTERVAL_S - elapsed),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
 
-async def _drain(queue: asyncio.Queue):
-    """Yield everything buffered in ``queue`` without blocking."""
-    while not queue.empty():
-        yield queue.get_nowait()
+            if getter is not None and getter in done:
+                yield sse("trace", trace_payload(getter.result()))
+                getter = None
+                # Deliver this event before re-checking `task`: the work
+                # finishing must not swallow an event already in hand.
+                continue
+
+            if task in done:
+                holder.value = task.result()
+                return
+
+            if time.monotonic() - last_beat >= _KEEPALIVE_INTERVAL_S:
+                last_beat = time.monotonic()
+                yield _KEEPALIVE
+    finally:
+        # The pending read holds a reference to the queue and would otherwise
+        # be reported as a task destroyed while pending on teardown.
+        if getter is not None and not getter.done():
+            getter.cancel()
 
 
 def _resolve_output_policy(user_id: int):
@@ -1910,9 +2154,24 @@ class ChatService:
         turn = ChatTurn()
         if scope_files_dropped:
             turn.metadata["scope_files_dropped"] = scope_files_dropped
-        keepalive_q: asyncio.Queue = asyncio.Queue()
         cancel_event = threading.Event()
         started = time.monotonic()
+
+        # GH #514. `trace_q is None` is the flag-off path and stays a hard
+        # branch, not a fast path through shared code, so "free when off" is
+        # structural rather than a hope.
+        trace_q: asyncio.Queue[WireEvent] | None = None
+        recorder: TraceRecorder | None = None
+        if settings.trace_enabled:
+            trace_q = asyncio.Queue(maxsize=DEFAULT_QUEUE_MAXSIZE)
+            recorder = StreamingTraceRecorder(asyncio.get_running_loop(), trace_q)
+            emit_trace(recorder, QueryStage.SUBMITTED, node_id="submitted")
+            emit_trace(
+                recorder,
+                QueryStage.VALIDATED,
+                node_id="validated",
+                dropped=scope_files_dropped or 0,
+            )
 
         yield sse(
             "start",
@@ -1990,8 +2249,14 @@ class ChatService:
                         llm=llm,
                         rewrite_enabled=settings.query_rewrite_enabled,
                         assistant_message_uuid=assistant_message_uuid,
+                        recorder=recorder,
                     )
 
+                prepared = _Awaited()
+                async for frame in _keepalive_until_done(
+                    run_in_threadpool(_prep), prepared, trace_q=trace_q
+                ):
+                    yield frame
                 (
                     masked,
                     meta,
@@ -1999,9 +2264,7 @@ class ChatService:
                     overview,
                     synthesis_block,
                     recurrence_block,
-                ) = await _with_keepalive(run_in_threadpool(_prep), keepalive_q)
-                async for frame in _drain(keepalive_q):
-                    yield frame
+                ) = prepared.value
                 turn.metadata.update(meta)
                 counted_block = format_counted_block(counted)
                 overview_block = overview.block if overview is not None else ""
@@ -2066,6 +2329,32 @@ class ChatService:
             chunks_used = len(excerpt_ids)
             turn.metadata["chunks_used"] = chunks_used
             turn.metadata.update(prompt_diagnostics)
+
+            # GH #514. BUDGETED and PRESENTED fire AFTER the retrieval drain has
+            # already returned, so without a flush here they would sit in the
+            # queue forever and the last two stages would never reach the client
+            # at all — and a live-only trace has no persistence to cover it.
+            # ⚠️ INTS ONLY: `excerpt_ids` resolve to real chunks and
+            # `turn.offered_citations` carries titles and timestamps.
+            emit_trace(
+                recorder,
+                QueryStage.BUDGETED,
+                TraceOutcome.OK if chunks_used else TraceOutcome.EMPTY,
+                node_id="budget",
+                kept=chunks_used,
+                dropped=int(prompt_diagnostics.get("chunks_dropped_for_budget") or 0),
+                limit=int(prompt_diagnostics.get("budget_chars") or 0),
+            )
+            emit_trace(
+                recorder,
+                QueryStage.PRESENTED,
+                TraceOutcome.OK if chunks_used else TraceOutcome.EMPTY,
+                node_id="answer",
+                count=chunks_used,
+                ms=int((time.monotonic() - started) * 1000),
+            )
+            for _payload in await drain_available(trace_q):
+                yield sse("trace", _payload)
 
             if use_context:
                 turn.offered_citations = citations_mod.build_offered_citations(masked, excerpt_ids)

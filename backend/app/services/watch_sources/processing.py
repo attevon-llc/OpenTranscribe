@@ -206,20 +206,38 @@ def ingest_prepared_file(
     # column, so a watch-imported document cannot be deduped against one
     # uploaded through POST /api/documents. See the module docstring.
     if imohash:
+        # Layers 1-2 span EVERY source, including this one. They used to filter
+        # ``watch_source_id != source.id``, which excluded the source being scanned —
+        # so one source holding the same recording under two names imported it twice
+        # and reported both as fresh. ``id != row.id`` keeps the widened query from
+        # matching the row being processed; ``status == "imported"`` already implies
+        # that (the caller sets ``importing``/``downloading``), but the guard is what
+        # makes the query self-safe rather than dependent on the caller's discipline.
+        # Oldest-first so the match is deterministic and names the ORIGINAL import.
         other = (
             db.query(WatchSourceFile)
             .filter(
                 WatchSourceFile.imohash == imohash,
-                WatchSourceFile.watch_source_id != source.id,
+                WatchSourceFile.id != row.id,
                 WatchSourceFile.status == "imported",
             )
+            .order_by(WatchSourceFile.id)
             .first()
         )
         if other:
+            # Same-source and cross-source duplicates need different operator action
+            # ("this folder has it twice" vs "another source already brought it in"),
+            # so they stay distinct reasons. ``duplicate_same_source`` is defined in
+            # ``SkipReason`` and, before this, was produced by no code path at all.
+            reason = (
+                "duplicate_same_source"
+                if other.watch_source_id == source.id
+                else "duplicate_other_source"
+            )
             _mark_skipped(
                 db,
                 row,
-                "duplicate_other_source",
+                reason,
                 media_file_id=other.media_file_id,
                 document_id=other.document_id,
             )
@@ -265,8 +283,21 @@ def _finalize_media_ingest(
     file_size: int,
     content_type: str,
 ) -> WatchSourceFile:
-    """Steps 4-8 of the media path: MediaFile row, MinIO upload, collections/tags,
-    finalize tracking row, notify + dispatch the transcription pipeline.
+    """Steps 4-8: create the ``MediaFile`` row, upload to MinIO, apply
+    collections/tags, finalize the tracking row, then notify and dispatch the
+    transcription pipeline.
+
+    A separate function, not an inline tail, because "did dedup let this import
+    THROUGH?" is a property a caller can only observe by watching execution reach
+    this point. Running the real body to find out drags in a MinIO upload — an
+    undeclared storage dependency that passes wherever a dev stack happens to be
+    up and fails in CI. ``tests/unit/test_watch_source_dedup.py`` documents that
+    exact failure and patches this seam rather than the upload, so the whole tail
+    stops rather than half of it running against no object store.
+
+    Behaviour is unchanged by the extraction: ``owner_id`` and ``imohash`` are
+    re-derived here from ``source`` and ``row`` exactly as the inline code read
+    them from its enclosing scope.
     """
     owner_id = int(source.user_id)
     imohash = row.imohash

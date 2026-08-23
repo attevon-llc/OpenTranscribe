@@ -112,4 +112,13 @@ a second one in a component. (`AudioExtractionService` is also exported as a cla
   multi-GB video), like `$lib/export/`. Don't extend the precedent to business logic.
 - `uploadService.formatTimeRemaining` is a compact `Xh Ym` ETA that returns `''` — it is on the explicit
   do-NOT-migrate list in `$lib/utils/CLAUDE.md`. Leave it alone.
-- Tests here cover `fileFingerprint` and `stallWatchdog` only; the queue itself is untested.
+- Tests cover `fileFingerprint`, `stallWatchdog`, `multipartUploader` and — since `uploadService.test.ts`
+  landed — the queue's orchestration decisions (fallback eligibility, multipart session survival,
+  abandoned-upload release, duplicate handling). This line used to say the queue was untested.
+- **A duplicate 409 from `POST /files` is a SUCCESSFUL dedup, not an upload failure.** The
+  presigned `prepare` catches most duplicates before a body is sent (`is_duplicate`), but the
+  backend re-checks and answers `409 {detail: {message, duplicate_file_uuid}}` for the two cases
+  it cannot: the same content uploaded between prepare and POST, and a fingerprint skipped for
+  the pre-check that still reached the form data. `duplicateFromConflict` routes that into the
+  existing duplicate path; a 409 _without_ the uuid is some other conflict and must still fail,
+  or a real error gets reported as a file safely stored.

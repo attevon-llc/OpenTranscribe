@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from pydantic import Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import StaleDataError
 from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import RequestContext
@@ -274,7 +275,28 @@ def _prepare_turn(
         )
         db.add(user_message)
         conversation.last_message_at = datetime.now(UTC)
-        db.commit()
+        # The conversation can be deleted between the read above and this write —
+        # another tab, another device, the retention sweep. SQLAlchemy answers a
+        # zero-row UPDATE with `StaleDataError`, which reached the client as a
+        # **500** ("expected to update 1 row(s); 0 were matched"). A 500 says the
+        # server is broken; the truth is that the thing being written to is gone,
+        # which is a 404, and the client already knows how to handle that.
+        #
+        # Raised INSIDE the outer try on purpose — the `except` below releases the
+        # concurrency slot, so this cannot leak one. The rollback is what lets that
+        # release run against a usable session.
+        try:
+            db.commit()
+        except StaleDataError:
+            # No explicit `db.rollback()` here on purpose. `get_db` closes the
+            # session in a `finally`, and `Session.close()` already discards the
+            # failed transaction — so a rollback would be redundant in
+            # production while being actively harmful under the test suite's
+            # savepoint harness, where it unwinds to the fixture savepoint and
+            # deletes the very user the request is authenticated as.
+            raise HTTPException(
+                status_code=404, detail="That conversation no longer exists."
+            ) from None
         db.refresh(user_message)
 
         system_prompt = build_system_prompt(

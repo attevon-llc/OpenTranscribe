@@ -417,6 +417,33 @@ class UploadService {
   }
 
   /**
+   * Read a server-side duplicate rejection out of a failed `POST /files`.
+   *
+   * `prepare` normally catches a duplicate before any body is sent (`is_duplicate`),
+   * but it cannot catch every one: the same content can be uploaded between prepare
+   * and the POST, and a file whose fingerprint was skipped for the pre-check still
+   * carries one in the form data. For those, the backend re-checks and answers
+   * `409 {detail: {message, duplicate_file_uuid}}` (`api/endpoints/files/upload.py`) —
+   * a correct, deliberate refusal that pointed at the file the user already has.
+   * Left unhandled it reached the generic error path and was reported as a failed
+   * upload, which describes the opposite of what happened.
+   *
+   * @returns The duplicate result, or `null` if this is not a duplicate rejection —
+   *   a 409 without the uuid is some other conflict and must still fail, or a real
+   *   error would be reported as a file safely stored.
+   */
+  private duplicateFromConflict(err: unknown): UploadResult | null {
+    const response = (
+      err as {
+        response?: { status?: number; data?: { detail?: { duplicate_file_uuid?: string } } };
+      }
+    )?.response;
+    if (response?.status !== 409) return null;
+    const uuid = response.data?.detail?.duplicate_file_uuid;
+    return uuid ? { uuid, isDuplicate: true } : null;
+  }
+
+  /**
    * Build the axios progress callback for one upload: updates percentage + ETA
    * and keeps the stall watchdog fed.
    */
@@ -750,16 +777,22 @@ class UploadService {
       headers['X-Num-Speakers'] = upload.numSpeakers.toString();
     }
 
-    await this.sendBody((watchdog) =>
-      axiosInstance.post('/files', formData, {
-        headers,
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-        cancelToken: cancelToken.token,
-        signal: watchdog.signal,
-        onUploadProgress: progressHandler(watchdog),
-      })
-    );
+    try {
+      await this.sendBody((watchdog) =>
+        axiosInstance.post('/files', formData, {
+          headers,
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+          cancelToken: cancelToken.token,
+          signal: watchdog.signal,
+          onUploadProgress: progressHandler(watchdog),
+        })
+      );
+    } catch (err: unknown) {
+      const duplicate = this.duplicateFromConflict(err);
+      if (duplicate) return duplicate;
+      throw err;
+    }
 
     return { uuid: fileId, isDuplicate: false };
   }
@@ -888,20 +921,26 @@ class UploadService {
     const formData = new FormData();
     formData.append('file', audioBlob, upload.name);
 
-    await this.sendBody((watchdog) =>
-      axiosInstance.post('/files', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          'X-File-ID': fileId,
-          'X-File-Hash': sourceFingerprint || '',
-        },
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-        cancelToken: cancelToken.token,
-        signal: watchdog.signal,
-        onUploadProgress: progressHandler(watchdog),
-      })
-    );
+    try {
+      await this.sendBody((watchdog) =>
+        axiosInstance.post('/files', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            'X-File-ID': fileId,
+            'X-File-Hash': sourceFingerprint || '',
+          },
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+          cancelToken: cancelToken.token,
+          signal: watchdog.signal,
+          onUploadProgress: progressHandler(watchdog),
+        })
+      );
+    } catch (err: unknown) {
+      const duplicate = this.duplicateFromConflict(err);
+      if (duplicate) return duplicate;
+      throw err;
+    }
 
     return { uuid: fileId, isDuplicate: false };
   }

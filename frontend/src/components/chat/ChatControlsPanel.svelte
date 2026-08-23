@@ -302,9 +302,30 @@
     border-radius: 12px;
     background-color: var(--card-background);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+    /* ⚠️ Without these the panel had NO bound at all — `max-height: none`,
+       `overflow-y: visible`. Expanding "Advanced" takes it from ~610px to
+       875px, and measured at 1440x{900,800,700} it ran past the viewport
+       bottom by 87 / 187 / 247px with no scrollbar, so the last controls were
+       simply unreachable. It is anchored 112px below the viewport top
+       (navbar + the 3.25rem offset above), hence the subtraction.
+       `overscroll-behavior` stops a scroll that reaches the end of the panel
+       from chaining into the transcript thread behind it. */
+    max-height: calc(100vh - var(--navbar-height, 60px) - 5rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
+  /* Sticky rather than a scrolling body wrapper: it pins the close button and
+     the unsaved-changes dot with no markup change at all. `top` cancels the
+     panel's own padding so the header sits flush against the top edge while
+     stuck, and the background is opaque so content cannot show through it. */
   .panel-header {
+    position: sticky;
+    top: -1rem;
+    z-index: 1;
+    margin: -1rem -1rem 0;
+    padding: 1rem 1rem 0.6rem;
+    background-color: var(--card-background);
     display: flex;
     align-items: center;
     gap: 0.4rem;

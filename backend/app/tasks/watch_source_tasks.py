@@ -385,6 +385,17 @@ def _handle_group(source_id: int, group, wait_scans: int) -> bool:
             elif row.status in _TERMINAL:
                 continue
             else:
+                # ``retry_count`` means two different things by status: failed import
+                # ATTEMPTS while the row is standalone (``_record_error`` increments
+                # it), and SCANS WAITED once the row is part of a group. A row joining
+                # the group carrying prior failures used to inherit them as waiting,
+                # so a part that had errored twice made ``(waited + 1) >= wait_scans``
+                # true on the very first grouping scan and an incomplete recording was
+                # stitched — silently truncated, then transcribed as if whole. Reset on
+                # ENTRY only; a row already waiting must keep ageing or the
+                # missing-parts timeout would never fire.
+                if row.status != "waiting_for_parts":
+                    row.retry_count = 0
                 row.status = "waiting_for_parts"
                 row.part_group = group.base_name
                 row.part_number = part_num
@@ -571,7 +582,25 @@ def send_notification(self, source_id: int, summary: dict) -> dict:
         deliveries: list[tuple[EmailNotificationConfig, list[str]]] = []
         for link in source.email_links:
             cfg = link.email_config
-            if not cfg or not cfg.is_enabled:
+            # A link can be present, enabled and flagged, and still deliver nothing.
+            # Both skips below used to be silent, so an admin who never received mail
+            # had no signal anywhere — not in the UI, not in the API, not in the log.
+            # WARNING (not DEBUG): the operator asked for this notification, and not
+            # sending it is a departure from what they configured.
+            if not cfg:
+                logger.warning(
+                    "Watch source %r: an email link points at a config that no longer "
+                    "exists; nothing sent for this link.",
+                    source_name,
+                )
+                continue
+            if not cfg.is_enabled:
+                logger.warning(
+                    "Watch source %r: email config %r is disabled, so no notification "
+                    "was sent through it. Enable the config to resume delivery.",
+                    source_name,
+                    cfg.name,
+                )
                 continue
             if had_error and not link.notify_on_error:
                 continue
@@ -579,6 +608,13 @@ def send_notification(self, source_id: int, summary: dict) -> dict:
                 continue
             recipients = _merge_recipients(cfg.default_recipients, link.additional_recipients)
             if not recipients:
+                logger.warning(
+                    "Watch source %r: email config %r resolved to no recipients "
+                    "(the config has no default recipients and the link adds none), "
+                    "so nothing was sent.",
+                    source_name,
+                    cfg.name,
+                )
                 continue
             # ``send_email`` needs the config OBJECT (it reads ~10 columns and
             # decrypts a stored secret). Expunge detaches it with its column

@@ -64,10 +64,26 @@ Adding a new source type is purely additive: implement the interface and extend 
 
 Dedup is three layers, all on the imohash content fingerprint:
 
-1. **Within source** — the `(watch_source_id, remote_path)` unique constraint.
-2. **Across sources** — match `watch_source_file.imohash` in other sources.
+1. **Same path** — the `(watch_source_id, remote_path)` unique constraint.
+2. **Same content, any source** — match `watch_source_file.imohash` against every imported
+   tracking row, recording `duplicate_same_source` or `duplicate_other_source` by where the
+   match landed.
 3. **Cross-pipeline** — `utils/file_hash.check_duplicate_by_imohash` against `media_file.imohash`
    (manual uploads, URL imports, prior watch imports).
+
+:::warning Fixed in v0.6.0
+Layer 2 filtered `watch_source_id != source.id`, excluding the source being scanned — so one
+source holding the same recording under two names imported it twice, and
+`SkipReason.DUPLICATE_SAME_SOURCE` was defined but produced by no code path. Regression:
+`backend/tests/unit/test_watch_source_dedup.py`.
+:::
+
+:::note Documents are not covered by layer 3
+`Document` carries a `file_hash` (an imohash, written by both ingest paths) that nothing reads,
+so a watch-imported document is deduplicated against nothing outside its own source. Tracked in
+[#546](https://github.com/attevon-llc/OpenTranscribe/issues/546) for the document-ingestion
+branch — the column exists, so no migration is needed.
+:::
 
 `services/imohash_service.py` wraps the real **`imohash`** package (`hashfile` / `hashfileobject`)
 plus a seekable MinIO ranged-read shim, so a fingerprint is computed from ~3 small windows
@@ -108,6 +124,19 @@ deliberate — watch imports and manual uploads share one ingest path.
 Multi-part detection (`services/watch_sources/multipart.py`) groups files by a configurable
 regex (default `^(.+?)_P(\d{3})(\.[^.]+)$`) within a time window; incomplete groups wait a
 bounded number of scans before stitching what arrived.
+
+:::warning `retry_count` means two things — fixed in v0.6.0
+`_handle_group` uses `retry_count` as the **wait-scan counter**, while `_record_error`
+increments the same column as a **failure count**. A file that had failed twice as a standalone
+import and later joined a group therefore entered the wait already "aged": with the default
+`multipart_wait_scans=3` it made `(waited + 1) >= wait_scans` true on the *first* grouping scan,
+and an incomplete recording was stitched — silently truncated, then transcribed as if whole.
+
+The counter now resets on entry into `waiting_for_parts` only, so an established wait still ages
+and the missing-parts timeout still fires. Regression:
+`backend/tests/unit/test_watch_multipart_wait_counter.py`. Any UI showing this column must label
+it per row; `WatchSourceFilesTable` does.
+:::
 
 ## Filesystem events (issue #294)
 
@@ -184,14 +213,57 @@ Graph `sendMail` for M365. **Delivery is experimental** — verify against a rea
 
 ## API & frontend
 
-- API: `api/endpoints/watch_sources.py` (CRUD, test, scan, paginated file history, folder
-  browse, capabilities, multipart-regex tester, email-config CRUD + test, admin global
-  settings), registered in `api/router.py` under `/watch-sources`.
-- Frontend: `lib/api/watchSourcesApi.ts` and
-  `components/settings/{WatchSourcesSettings,WatchSourceModal,EmailConfigModal}.svelte`. The
-  editor is a stepper; tags/collections use `svelte-multiselect`. Registered in
+- API: `api/endpoints/watch_sources.py` (CRUD, test, scan, paginated file history with status +
+  filename filters, batch retry, batch delete, folder browse, capabilities, multipart-regex
+  tester, email-config CRUD + test, per-source email links, admin global settings), registered
+  in `api/router.py` under `/watch-sources`.
+- Frontend: `lib/api/watchSourcesApi.ts`,
+  `components/settings/{WatchSourcesSettings,WatchSourceModal,EmailConfigModal}.svelte`, and the
+  children in `components/settings/watchSources/` (card, email-config list, global-settings
+  form, files modal + table, email-links modal — see that folder's `CLAUDE.md`). The editor is a
+  stepper; tags/collections use `svelte-multiselect`. Registered in
   `stores/settingsModalStore.ts` + `SettingsModal.svelte`; live scan refresh via a
   `watch_source_scan` WebSocket event.
+
+### Retry is batch-shaped, and that is load-bearing
+
+`POST /{uuid}/files/retry` takes a list of uuids even for one row. `scan_single` holds a Redis
+lock per source, so a per-file endpoint would dispatch one scan per file and **every one after
+the first would silently no-op**. One reset pass plus one dispatch is both correct and what
+"retry all failed" needs.
+
+The handler resets each eligible row to `pending` and clears `skip_reason`/`error_message` —
+that is what makes a *terminal* row importable again, since `_get_or_create_tracking_row`
+refuses to reuse a terminal row. It does **not** touch `retry_count`: `_record_error` already
+counts attempts, and incrementing here would double-count one.
+
+Refused states, each preventing a different concrete harm: `imported` (would duplicate),
+`importing`/`downloading` (races `_claim_import`), `waiting_for_parts` (`retry_count` there is
+the multipart wait counter, not an attempt count), `stitched_part` (already folded into a
+stitched recording). A disabled source is a 409 for the whole request, since `_load_scan_plan`
+would refuse the scan anyway.
+
+The set lives in `schemas/watch_source.RETRYABLE_FILE_STATUSES` and is mirrored in
+`lib/api/watchSourcesApi.RETRYABLE_FILE_STATUSES`, so the UI hides a button the API would
+refuse.
+
+### The email-link tiers are asymmetric on purpose
+
+Creating and editing an `EmailNotificationConfig` is **super_admin** — it holds mailbox
+credentials. Linking an existing config to a source is **owner-level**. That asymmetry made the
+per-source panel unbuildable until v0.6.0: an owner could `POST /{uuid}/emails` but
+`GET /email-configs` is super_admin, so there was no way to discover what to link.
+
+`GET /{uuid}/emails/available` closes it, source-scoped rather than as a second listing under
+`/email-configs` — that prefix is in `SUPER_ADMIN_PREFIXES`, and a non-super_admin route beneath
+it fails `tests/unit/test_route_privilege_tiers.py`, correctly. `EmailConfigOption` is a minimal
+projection (`uuid`, `name`, `provider`, `is_enabled`, `has_default_recipients`) and its key set
+is asserted **exactly**, so widening it cannot quietly expose the deployment's mail hostnames to
+every authenticated user.
+
+`EmailLinkResponse` carries `config_is_enabled` / `config_has_default_recipients` for the same
+reason the picker cannot supply them: the picker excludes configs already linked, so those two
+facts would be unavailable for exactly the rows whose warnings need them.
 
 ## Testing
 

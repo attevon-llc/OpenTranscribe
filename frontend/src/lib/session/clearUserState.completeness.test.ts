@@ -51,6 +51,13 @@ const EXEMPT: Record<string, string> = {
     'goes through axiosInstance without its own signal, so abortAllRequests() cancels them ' +
     'before clearUserState() runs. No response body is retained here.',
 
+  'lib/chat/revealPacer':
+    'RevealPacer is a CLASS with instance state only — there is no module-level ' +
+    'instance. Each ChatTracePanel constructs its own and it is discarded with the ' +
+    'component, so no previous user’s data can survive here. The detector matched ' +
+    'on the `reset()` method name, not on real module state. It also holds only ' +
+    'node keys and reveal timings, never trace content.',
+
   // ── Covered transitively by a registered module ──
   'lib/services/uploadService':
     'uploadService.reset() is called by uploadsStore.reset(), which IS registered.',

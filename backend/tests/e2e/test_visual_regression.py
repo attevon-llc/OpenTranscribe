@@ -51,6 +51,9 @@ from __future__ import annotations
 
 import io
 import os
+import socket
+import uuid as uuid_pkg
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -206,6 +209,156 @@ def transcribed_file_uuid(api_token: str, backend_url: str) -> str:
     return ""  # unreachable, satisfies typing
 
 
+#: HOST-side probe port — see the same constant in `test_chat_trace_panel.py`.
+#: `--port-offset N` moves it, and a hardcoded 5199 silently SKIPS this surface
+#: on an offset stack while appearing to pass.
+MOCK_LLM_PORT = int(os.environ.get("MOCK_LLM_PORT", "5199"))
+#: CONTAINER-side port, which the offset never moves.
+MOCK_LLM_URL_FOR_BACKEND = "http://mock-llm:5199/v1"
+ROOMY_CONTEXT_WINDOW = 32_000
+TRACE_PANEL = '[data-testid="chat-trace-panel"]'
+TRACE_NODE = '[data-testid="trace-node"]'
+#: Asked identically by the warm-up turn and the captured turn — the retrieval
+#: cache is keyed on user + org + query + scope + settings revision, so they
+#: must match exactly or the capture is a miss.
+TRACE_QUESTION = "Which risks did the speakers highlight?"
+
+
+def _mock_llm_running() -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.3)
+        return sock.connect_ex(("127.0.0.1", MOCK_LLM_PORT)) == 0
+
+
+def _warm_retrieval_cache(backend_url: str, auth: dict[str, str], provider_uuid: str) -> None:
+    """Ask ``TRACE_QUESTION`` once in a THROWAWAY conversation, then delete it.
+
+    A throwaway one rather than the conversation about to be captured: a second
+    turn in the same thread has history, so the query rewriter runs and rewrites
+    the question — which changes the cache key and misses the very cache this
+    call exists to populate, while also flipping the ``Rewritten`` row.
+
+    Best-effort. A stack without Redis simply captures a cache miss, and the
+    baseline written from it is still internally consistent; failing the whole
+    visual suite over a warm-up would be worse than the noise it prevents.
+    """
+    conversation = requests.post(
+        f"{backend_url}/api/chat/conversations",
+        headers=auth,
+        json={
+            "llm_config_uuid": provider_uuid,
+            "scope": {"file_uuids": [], "collection_uuids": [], "tag_names": [], "speakers": []},
+            "settings": {"use_context": True},
+        },
+        timeout=30,
+    )
+    if not conversation.ok:
+        return
+    warmup_uuid = str(conversation.json()["uuid"])
+    try:
+        with requests.post(
+            f"{backend_url}/api/chat/conversations/{warmup_uuid}/messages",
+            headers={**auth, "Accept": "text/event-stream"},
+            json={"content": TRACE_QUESTION},
+            stream=True,
+            timeout=180,
+        ) as response:
+            # Drain to completion: the cache is written when retrieval finishes,
+            # and abandoning the stream early would race it.
+            for _ in response.iter_lines(decode_unicode=True):
+                pass
+    except requests.RequestException:
+        return
+    finally:
+        try:
+            requests.delete(
+                f"{backend_url}/api/chat/conversations/{warmup_uuid}", headers=auth, timeout=30
+            )
+        except requests.RequestException:
+            pass
+
+
+@pytest.fixture
+def trace_conversation_uuid(api_token: str, backend_url: str) -> Iterator[str]:
+    """A FRESH conversation pinned to the mock LLM, for the ``chat_trace`` surface.
+
+    ⚠️ Function-scoped, and that is what makes the baselines reproducible. A
+    module-scoped conversation was shared by both themes, so the light capture
+    was turn 1 (no history, ``Rewritten`` reports SKIPPED) and the dark capture
+    was turn 2 (history exists, the rewriter runs and reports DONE, and the
+    rewritten query's length moves the excerpt budget). Both images were
+    correct; neither could survive the themes running in a different order or
+    in isolation. One conversation per capture makes every capture turn 1.
+
+    ⚠️ It also WARMS THE RETRIEVAL CACHE before yielding, which is not an
+    optimisation. Whether the captured turn is a cache hit or a miss changes
+    four rows — ``Cache`` reads CACHED or EMPTY, and search/rerank/sample read
+    SKIPPED or DONE — so leaving it to chance means the baseline depends on
+    whether anything asked the same question inside ``cache_ttl_seconds``. The
+    first run of a fresh stack would record a miss and every later run would
+    fail against it. Warming it makes the hit deliberate and time-independent,
+    and a hit is the more interesting image anyway: it is the state that shows
+    skipped work being reported rather than omitted.
+
+    Torn down in a ``finally`` — the assertion most likely to fail is the one
+    AFTER these were created.
+    """
+    if not _mock_llm_running():
+        pytest.skip("chat_trace needs the mock LLM: ./opentr.sh start dev --with-mock-llm")
+
+    auth = {"Authorization": f"Bearer {api_token}"}
+    provider = requests.post(
+        f"{backend_url}/api/llm-settings",
+        headers=auth,
+        json={
+            "name": f"gh514-visual-{uuid_pkg.uuid4().hex[:8]}",
+            "provider": "custom",
+            "model_name": "mock-gpt",
+            "base_url": MOCK_LLM_URL_FOR_BACKEND,
+            "api_key": "not-needed",
+            "max_tokens": ROOMY_CONTEXT_WINDOW,
+        },
+        timeout=30,
+    )
+    assert provider.ok, f"Could not create provider: {provider.status_code} {provider.text}"
+    provider_uuid = str(provider.json()["uuid"])
+
+    conversation_uuid = ""
+    try:
+        conversation = requests.post(
+            f"{backend_url}/api/chat/conversations",
+            headers=auth,
+            json={
+                "llm_config_uuid": provider_uuid,
+                "scope": {
+                    "file_uuids": [],
+                    "collection_uuids": [],
+                    "tag_names": [],
+                    "speakers": [],
+                },
+                "settings": {"use_context": True},
+            },
+            timeout=30,
+        )
+        assert conversation.ok, f"Could not create conversation: {conversation.status_code}"
+        conversation_uuid = str(conversation.json()["uuid"])
+        _warm_retrieval_cache(backend_url, auth, provider_uuid)
+        yield conversation_uuid
+    finally:
+        for url in (
+            f"{backend_url}/api/chat/conversations/{conversation_uuid}"
+            if conversation_uuid
+            else "",
+            f"{backend_url}/api/llm-settings/config/{provider_uuid}",
+        ):
+            if not url:
+                continue
+            try:
+                requests.delete(url, headers=auth, timeout=30)
+            except requests.RequestException:
+                pass
+
+
 # ---------------------------------------------------------------------------
 # Per-theme authenticated context. Theme is forced via localStorage in an init
 # script BEFORE first paint (matches static/theme.js, which reads it on load).
@@ -255,7 +408,7 @@ def _stabilize(page: Page) -> None:
 
 
 # Surfaces parametrized over both themes. Each entry: (surface, theme).
-SURFACES = ["gallery", "file_detail", "speakers", "settings"]
+SURFACES = ["gallery", "file_detail", "speakers", "settings", "chat_trace"]
 THEMES = ["light", "dark"]
 
 
@@ -302,7 +455,46 @@ _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
     # Users/files/tasks/throughput/queue/model/CPU/mem/disk/GPU cards — live
     # telemetry and DB totals, all inside one wrapper (see comment above).
     "settings": (".settings-modal .stats-grid",),
+    # Every trace node renders the real wall-clock cost of its stage (GH #514).
+    # Those milliseconds differ on EVERY run by construction — that is the whole
+    # point of measuring them — so a baseline containing them would be
+    # un-reproducible from the very first commit. Masking them leaves the part
+    # worth comparing: row order, marker shapes, labels, counts, and the
+    # skipped-row de-emphasis.
+    "chat_trace": (".trace-ms",),
 }
+
+
+def _run_traced_turn(page: Page, base_url: str, conversation_uuid: str) -> None:
+    """Ask one question and leave the finished trace panel on screen.
+
+    ⚠️ **Capture must happen in the same page session as the turn.** Traces are
+    live-only by design, so a reload — the obvious way to reach a known state —
+    replaces the tree with the "not stored" notice and the baseline would record
+    an empty panel that looks perfectly plausible.
+
+    The context is built with ``reduced_motion="reduce"``, which is what makes
+    this deterministic rather than merely slow: it bypasses the reveal pacer
+    entirely, so every node is on screen the moment its frame lands instead of
+    cascading on a 55 ms ticker that the capture could race.
+    """
+    page.goto(f"{base_url}/chat/{conversation_uuid}")
+    composer = page.locator('[data-testid="chat-composer-input"]')
+    expect(composer).to_be_visible(timeout=30000)
+    composer.fill(TRACE_QUESTION)
+    page.locator('[data-testid="chat-send"]').click()
+    # Completion is read from the assistant bubble, NOT from Send returning:
+    # Send is visible before the click flips it to Stop, so that assertion would
+    # pass against the pre-click state and capture a half-drawn tree.
+    expect(
+        page.locator('[data-testid="chat-message-assistant"][data-status="complete"]').last
+    ).to_be_visible(timeout=90000)
+
+    if page.locator(TRACE_PANEL).count() == 0:
+        page.locator('[data-testid="chat-trace-toggle"]').click()
+    expect(page.locator(TRACE_PANEL)).to_be_visible(timeout=15000)
+    expect(page.locator(TRACE_NODE).first).to_be_visible(timeout=15000)
+    _stabilize(page)
 
 
 def _volatile_regions(page: Page, surface: str) -> list[Any]:
@@ -333,6 +525,7 @@ def test_visual_regression(
     surface: str,
     transcribed_file_uuid: str,
     base_url: str,
+    request: pytest.FixtureRequest,
 ) -> None:
     """Capture and compare a full-page screenshot for each surface and theme."""
     context = _make_context(browser, theme)
@@ -390,18 +583,52 @@ def test_visual_regression(
                 "modal, so this capture masks nothing and its baseline will "
                 "absorb live CPU/disk/GPU gauges and DB totals."
             )
+        elif surface == "chat_trace":
+            # Resolved lazily, NOT as a test parameter: the fixture skips without
+            # the mock LLM, and a declared parameter would take the other four
+            # surfaces down with it on a stack that simply has no LLM running.
+            _run_traced_turn(page, base_url, request.getfixturevalue("trace_conversation_uuid"))
+            # See the speakers branch: a masked surface must actually mask
+            # something. Every row's `ms` is genuinely different each run, so an
+            # unmatched selector here does not merely add noise — it guarantees
+            # the baseline can never pass a second time.
+            assert _volatile_regions(page, "chat_trace"), (
+                "_VOLATILE_SELECTORS['chat_trace'] matched nothing, so this capture "
+                "bakes live per-stage timings into the baseline and can never match again."
+            )
+            # The warm-up is only useful if it took effect. A miss here still
+            # produces a plausible-looking image, and the image is the only
+            # thing a reviewer sees — so the precondition is asserted rather
+            # than hoped for.
+            cached = page.locator(f'{TRACE_NODE}[data-outcome="cached"]')
+            assert cached.count() == 1, (
+                "expected exactly one cached node — the fixture's warm-up turn did not "
+                f"populate the retrieval cache (saw {cached.count()}), so this baseline "
+                "records a cache MISS and will not reproduce once the cache is warm."
+            )
         else:  # pragma: no cover - defensive
             pytest.fail(f"Unknown surface: {surface}")
 
-        # The settings modal is an overlay; capture the viewport (not full page)
-        # so a long scrolled background doesn't add nondeterministic height.
-        full_page = surface != "settings"
-        png_bytes = page.screenshot(
-            full_page=full_page,
-            animations="disabled",
-            mask=_volatile_regions(page, surface),
-            mask_color="#ff00ff",
-        )
+        if surface == "chat_trace":
+            # Capture the PANEL, not the page. The thread beside it carries the
+            # model's answer and a relative timestamp, neither of which this
+            # baseline is about; an element capture makes the image exactly the
+            # feature under test.
+            png_bytes = page.locator(TRACE_PANEL).screenshot(
+                animations="disabled",
+                mask=_volatile_regions(page, surface),
+                mask_color="#ff00ff",
+            )
+        else:
+            # The settings modal is an overlay; capture the viewport (not full page)
+            # so a long scrolled background doesn't add nondeterministic height.
+            full_page = surface != "settings"
+            png_bytes = page.screenshot(
+                full_page=full_page,
+                animations="disabled",
+                mask=_volatile_regions(page, surface),
+                mask_color="#ff00ff",
+            )
         _compare_or_write(f"{surface}-{theme}", png_bytes)
     finally:
         page.close()

@@ -29,6 +29,10 @@ from dataclasses import field
 from typing import Any
 
 from app.services.chat.settings import ChatSettings
+from app.services.chat.trace import Outcome
+from app.services.chat.trace import QueryStage
+from app.services.chat.trace import TraceRecorder
+from app.services.chat.trace import emit
 from app.services.search.chunk_retrieval import ChunkHit
 from app.services.search.chunk_retrieval import diversity_sample
 from app.services.search.chunk_retrieval import retrieve_chunks
@@ -62,6 +66,41 @@ class RetrievalResult:
     timings_ms: dict[str, int] = field(default_factory=dict)
 
 
+def _emit_narrowing_skipped(
+    recorder: TraceRecorder | None, parent: str | None, *, reason: str
+) -> None:
+    """Mark rerank and diversity sampling as never having run.
+
+    Rendering them as SKIPPED rather than simply omitting them is the honesty
+    rule this trace exists for: an absent node reads as "not part of this
+    pipeline", while a skipped one says "we did not need to, and here is why".
+    """
+    for stage, node_id in ((QueryStage.RERANKED, "rerank"), (QueryStage.SAMPLED, "sample")):
+        emit(recorder, stage, Outcome.SKIPPED, parent=parent, node_id=node_id, reason=reason)
+
+
+def _emit_search_skipped(
+    recorder: TraceRecorder | None, parent: str | None, *, reason: str
+) -> None:
+    """Mark the search itself, and everything downstream of it, as never run.
+
+    Only correct where the search genuinely did not happen — a cache hit. Do NOT
+    use it when the search ran and returned nothing: that leg's ``FOUND`` is
+    ``EMPTY``, and relabelling it ``SKIPPED`` would erase the exact distinction
+    ("we looked and found nothing" vs "we never looked") this trace is for.
+    """
+    emit(
+        recorder,
+        QueryStage.FANNED_VECTOR,
+        Outcome.SKIPPED,
+        parent=parent,
+        node_id="main",
+        plane="chunk",
+        reason=reason,
+    )
+    _emit_narrowing_skipped(recorder, parent, reason=reason)
+
+
 def retrieve_context(
     *,
     query: str,
@@ -74,6 +113,8 @@ def retrieve_context(
     wants_digest: bool = False,
     digest_size: int = 6,
     speaker_focus_names: list[str] | None = None,
+    recorder: TraceRecorder | None = None,
+    parent: str | None = None,
 ) -> RetrievalResult:
     """Run the retrieval pipeline for one question.
 
@@ -136,6 +177,14 @@ def retrieve_context(
         from app.services.search.chunk_retrieval import retrieve_digests
 
         digest_started = time.monotonic()
+        emit(
+            recorder,
+            QueryStage.FANNED_VECTOR,
+            parent=parent,
+            node_id="digest",
+            plane="digest",
+            source="opensearch",
+        )
         result.digests = retrieve_digests(
             query,
             user_id=user_id,
@@ -145,6 +194,26 @@ def retrieve_context(
             search_mode=search_mode,
         )
         result.timings_ms["digest"] = int((time.monotonic() - digest_started) * 1000)
+        emit(
+            recorder,
+            QueryStage.FOUND,
+            Outcome.OK if result.digests else Outcome.EMPTY,
+            parent=parent,
+            node_id="digest",
+            plane="digest",
+            count=len(result.digests),
+            ms=result.timings_ms["digest"],
+        )
+    else:
+        emit(
+            recorder,
+            QueryStage.FANNED_VECTOR,
+            Outcome.SKIPPED,
+            parent=parent,
+            node_id="digest",
+            plane="digest",
+            reason="not_applicable",
+        )
 
     cached = retrieval_cache.get_cached(key)
     if cached is not None:
@@ -153,6 +222,17 @@ def retrieve_context(
         result.cache_hit = True
         result.timings_ms["total"] = int((time.monotonic() - started) * 1000)
         logger.info("Chat retrieval cache hit (%d chunks)", len(result.chunks))
+        emit(
+            recorder,
+            QueryStage.CACHE_LOOKUP,
+            Outcome.CACHED,
+            parent=parent,
+            node_id="cache",
+            source="cache",
+            count=len(cached),
+            ms=result.timings_ms["total"],
+        )
+        _emit_search_skipped(recorder, parent, reason="cached")
         return result
 
     # Tier 2: a rephrasing of a recent question retrieves the same passages.
@@ -173,11 +253,48 @@ def retrieve_context(
             result.retrieved = len(hits)
             result.cache_hit = True
             result.timings_ms["total"] = int((time.monotonic() - started) * 1000)
+            emit(
+                recorder,
+                QueryStage.CACHE_LOOKUP,
+                Outcome.CACHED,
+                parent=parent,
+                node_id="cache",
+                source="cache",
+                count=len(hits),
+                reason="semantic",
+                ms=result.timings_ms["total"],
+            )
+            _emit_search_skipped(recorder, parent, reason="cached")
             return result
+
+    # Neither cache tier answered. A MISS is worth its own node: it is invisible
+    # today, and "we looked in the cache and it was not there" is a different
+    # fact from "this deployment has no cache".
+    emit(
+        recorder,
+        QueryStage.CACHE_LOOKUP,
+        Outcome.EMPTY,
+        parent=parent,
+        node_id="cache",
+        source="cache",
+        count=0,
+    )
 
     # Over-fetch: the pool feeds diversity sampling and reranking, not the prompt.
     retrieve_started = time.monotonic()
     chunk_diagnostics: dict[str, Any] = {}
+    # ⚠️ ONE node, not two. `retrieve_chunks` runs a single chunk-plane query,
+    # so there is no second leg to report — and inventing a sibling node for one
+    # would misdescribe what actually ran.
+    emit(
+        recorder,
+        QueryStage.FANNED_VECTOR,
+        parent=parent,
+        node_id="main",
+        plane="chunk",
+        source="opensearch",
+        limit=settings.candidate_pool,
+    )
     hits = retrieve_chunks(
         query,
         user_id=user_id,
@@ -191,12 +308,40 @@ def retrieve_context(
     result.retrieved = len(hits)
     result.retrieval_failed = bool(chunk_diagnostics.get("retrieval_failed"))
     result.timings_ms["retrieve"] = int((time.monotonic() - retrieve_started) * 1000)
+    # `retrieve_chunks` degrades to [] on ANY failure, so an empty list alone
+    # cannot tell "found nothing" from "the search broke" — which is the whole
+    # reason `diagnostics` exists (issue #438). The trace must not collapse them.
+    if result.retrieval_failed:
+        found_outcome = Outcome.FAILED
+    elif hits:
+        found_outcome = Outcome.OK
+    else:
+        found_outcome = Outcome.EMPTY
+    emit(
+        recorder,
+        QueryStage.FOUND,
+        found_outcome,
+        parent=parent,
+        node_id="main",
+        plane="chunk",
+        count=len(hits),
+        ms=result.timings_ms["retrieve"],
+        **({"reason": "search_failed"} if result.retrieval_failed else {}),
+    )
 
     # W2.2: the parallel speaker-focus leg. Additive only — see the
     # `speaker_focus_names` docstring above for why this never narrows the
     # main leg and never touches the explicit `speakers` scope.
     if speaker_focus_names:
         focus_started = time.monotonic()
+        emit(
+            recorder,
+            QueryStage.FANNED_VECTOR,
+            parent=parent,
+            node_id="speaker_focus",
+            plane="chunk",
+            source="opensearch",
+        )
         focus_hits = retrieve_chunks(
             query,
             user_id=user_id,
@@ -219,9 +364,25 @@ def retrieve_context(
                     ", ".join(speaker_focus_names),
                     len(added),
                 )
+        # `count` is what this leg CONTRIBUTED after dedup, not what it matched:
+        # a leg that returned 20 chunks the main leg already had added nothing,
+        # and reporting 20 would overstate the evidence it brought.
+        emit(
+            recorder,
+            QueryStage.FOUND,
+            Outcome.OK if result.speaker_focus_added else Outcome.EMPTY,
+            parent=parent,
+            node_id="speaker_focus",
+            plane="chunk",
+            count=result.speaker_focus_added,
+            ms=result.timings_ms["speaker_focus"],
+        )
 
     if not hits:
         result.timings_ms["total"] = int((time.monotonic() - started) * 1000)
+        # The search RAN and returned nothing — its FOUND is already EMPTY above.
+        # Only the narrowing stages never happened.
+        _emit_narrowing_skipped(recorder, parent, reason="no_candidates")
         return result
 
     # Rerank BEFORE narrowing: the cross-encoder is what decides relevance, so it
@@ -233,7 +394,26 @@ def retrieve_context(
         hits = rerank(query, hits, max_pairs=settings.rerank_max_pairs)
         result.reranked = min(len(hits), settings.rerank_max_pairs)
         result.timings_ms["rerank"] = int((time.monotonic() - rerank_started) * 1000)
+        emit(
+            recorder,
+            QueryStage.RERANKED,
+            parent=parent,
+            node_id="rerank",
+            count=result.reranked,
+            limit=settings.rerank_max_pairs,
+            ms=result.timings_ms["rerank"],
+        )
+    else:
+        emit(
+            recorder,
+            QueryStage.RERANKED,
+            Outcome.SKIPPED,
+            parent=parent,
+            node_id="rerank",
+            reason="disabled",
+        )
 
+    pool_size = len(hits)
     selected = diversity_sample(
         hits,
         max_per_file=settings.max_chunks_per_file,
@@ -241,6 +421,19 @@ def retrieve_context(
     )
     result.chunks = selected
     result.timings_ms["total"] = int((time.monotonic() - started) * 1000)
+    # The "48 -> 12, max 4 per file" node. This is where most of a turn's
+    # candidate evidence is discarded, and until now nothing reported it —
+    # the answer simply arrived grounded in a quarter of what was found.
+    emit(
+        recorder,
+        QueryStage.SAMPLED,
+        Outcome.OK if selected else Outcome.EMPTY,
+        parent=parent,
+        node_id="sample",
+        kept=len(selected),
+        dropped=max(0, pool_size - len(selected)),
+        limit=settings.max_chunks_per_file,
+    )
 
     retrieval_cache.set_cached(key, selected, settings.cache_ttl_seconds)
     if settings.semantic_cache_enabled:

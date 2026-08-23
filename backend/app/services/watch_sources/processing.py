@@ -149,7 +149,6 @@ def ingest_prepared_file(
     plain-data signature the rule asks for, which changes its public contract —
     tracked as a follow-up, not fixed here.
     """
-    owner_id = int(source.user_id)
     file_size = int(size) if size is not None else os.path.getsize(local_path)
 
     # 1. Magic-byte validation.
@@ -209,6 +208,46 @@ def ingest_prepared_file(
             _mark_skipped(db, row, "duplicate_existing", existing_media.id)
             db.commit()
             return row
+
+    return _finalize_media_ingest(
+        db,
+        source,
+        row,
+        local_path,
+        filename=filename,
+        file_size=file_size,
+        content_type=content_type,
+    )
+
+
+def _finalize_media_ingest(
+    db: Session,
+    source: WatchSource,
+    row: WatchSourceFile,
+    local_path: str,
+    *,
+    filename: str,
+    file_size: int,
+    content_type: str,
+) -> WatchSourceFile:
+    """Steps 4-8: create the ``MediaFile`` row, upload to MinIO, apply
+    collections/tags, finalize the tracking row, then notify and dispatch the
+    transcription pipeline.
+
+    A separate function, not an inline tail, because "did dedup let this import
+    THROUGH?" is a property a caller can only observe by watching execution reach
+    this point. Running the real body to find out drags in a MinIO upload — an
+    undeclared storage dependency that passes wherever a dev stack happens to be
+    up and fails in CI. ``tests/unit/test_watch_source_dedup.py`` documents that
+    exact failure and patches this seam rather than the upload, so the whole tail
+    stops rather than half of it running against no object store.
+
+    Behaviour is unchanged by the extraction: ``owner_id`` and ``imohash`` are
+    re-derived here from ``source`` and ``row`` exactly as the inline code read
+    them from its enclosing scope.
+    """
+    owner_id = int(source.user_id)
+    imohash = row.imohash
 
     # 4. Create the MediaFile row (owned by the source user). Tenant scope was
     # captured on the source at CREATION time from the creating request's

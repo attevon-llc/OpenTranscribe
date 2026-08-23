@@ -422,9 +422,8 @@ export type ChatWarningCode =
  * from this union is a stage the SPA cannot place, the same trap
  * `ChatWarningCode` above documents.
  *
- * NOTE there is deliberately no `document` plane: `_widen_to_document_plane`
- * ORs the document plane into the SAME chunk query rather than running a second
- * leg, so a separate node would misreport what actually ran.
+ * NOTE retrieval runs a SINGLE chunk-plane query rather than several legs, so a
+ * node for a plane that never ran would misreport what actually happened.
  */
 // `TraceState` is owned by `$lib/chat/traceTree`, which owns the fold logic.
 // A type-only import is erased at compile time, so the mutual reference between

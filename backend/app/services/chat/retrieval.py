@@ -276,10 +276,9 @@ def retrieve_context(
     # Over-fetch: the pool feeds diversity sampling and reranking, not the prompt.
     retrieve_started = time.monotonic()
     chunk_diagnostics: dict[str, Any] = {}
-    # ⚠️ ONE node, not two. `retrieve_chunks` ORs the document plane into this
-    # same query (`_widen_to_document_plane`) rather than running a second leg,
-    # so there is no separate document-plane count to report — and inventing a
-    # sibling node for it would misdescribe what actually ran.
+    # ⚠️ ONE node, not two. `retrieve_chunks` runs a single chunk-plane query,
+    # so there is no second leg to report — and inventing a sibling node for one
+    # would misdescribe what actually ran.
     emit(
         recorder,
         QueryStage.FANNED_VECTOR,

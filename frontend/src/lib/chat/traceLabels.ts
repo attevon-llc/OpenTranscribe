@@ -22,9 +22,9 @@ export const reasonLabelKey = (reason: string): string => `chat.trace.reason.${r
  * query went, so `plane` (which index) wins over `source` (which system) when
  * both are present.
  *
- * There is deliberately no `document` plane: `_widen_to_document_plane` ORs the
- * document plane into the same chunk query rather than running a separate leg,
- * so labelling one would misreport what ran.
+ * There is deliberately one plane per label: retrieval runs a single chunk-plane
+ * query rather than several legs, so labelling a plane that never ran would
+ * misreport what happened.
  */
 export function sourceLabelKey(detail: TraceDetail): string | null {
   if (detail.plane) return `chat.trace.plane.${detail.plane}`;

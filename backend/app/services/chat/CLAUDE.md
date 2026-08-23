@@ -79,9 +79,9 @@ already sees the cache branches, the rerank and `diversity_sample`, so the
 recorder never has to reach into `chunk_retrieval.py` — which `/search` and the
 eval harness also use.
 
-**No document-plane node.** `_widen_to_document_plane` ORs that plane into the
-SAME chunk query rather than running a second leg, so there is no separate count
-and a sibling node would misdescribe what ran.
+**One node per plane that actually ran.** Retrieval issues a single chunk-plane
+query rather than several legs, so there is no separate count to report and a
+sibling node would misdescribe what ran.
 
 **A cache hit marks search/rerank/sample `SKIPPED`, not absent** — an omitted
 node reads as "not part of this pipeline". `_emit_search_skipped` vs

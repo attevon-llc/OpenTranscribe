@@ -74,8 +74,7 @@ counts (imported / skipped / errors).
 ## Running scans
 
 Sources scan automatically on their interval. To import right away, click **Scan Now** on a
-source card. Expand a source to see its per-file history, including skip reasons (duplicate,
-too old, invalid type) and stitched parts.
+source card.
 
 ### Near-instant pickup (local folders)
 
@@ -96,6 +95,53 @@ The source card shows which method is actually in use, so this is never a silent
 The scheduled scan keeps running in every case, so imports still happen even if watching is
 unavailable.
 
+## Per-file history: what a source imported, skipped, or failed on
+
+:::note New in v0.6.0
+Previously the source card showed only aggregate counts, so there was no way to see *which*
+file failed or why. Earlier versions of this page described expanding a source for its
+per-file history; that screen did not exist until now.
+:::
+
+Click **Files** on a source card to open its import history. Each row is a *tracking record* —
+what the scanner observed at a path — not a library file:
+
+| Column | What it tells you |
+| --- | --- |
+| **File** | The file name; hover for its full path in the source. An imported row links straight to the library entry it produced. |
+| **Status** | `Imported`, `Error`, a `Skipped — …` variant, or a multipart state. |
+| **Reason** | The error message, or a plain-language skip reason (already in your library, too old, unsupported type…). |
+| **Attempts** | How many import attempts failed. On a row waiting for multi-part siblings this column reads **scans waited** instead — it is a different counter, not a failure count. |
+| **First seen** | When the scanner first observed the file. |
+
+Use the search box to find a file by name and the status dropdown to narrow the list; both
+filter on the server, so they work on a source tracking thousands of files.
+
+### Retrying a file
+
+**Retry** re-queues a file for import. It is available on failed and skipped rows, and is the
+only way to bring back a file that was skipped — a skipped record is otherwise final, so
+fixing the underlying problem alone would never re-import it. Retry is deliberately not
+offered on a file that already imported (that would duplicate it), on one currently in flight,
+or on a part already folded into a stitched recording.
+
+:::info Retry queues; it does not import immediately
+The row moves to **Pending** and a scan is requested. That scan may wait behind one already
+running, may not reach your file if a lot is queued ahead of it (see **Max imports per scan**),
+and can only re-import a file still present in the source. The list refreshes itself as soon as
+a scan finishes, so the real outcome replaces **Pending** on its own — you do not need to
+reload.
+:::
+
+Select several rows to **Retry selected** or **Delete selected** in one go. A batch reports per
+file, so if one row is refused the rest still proceed.
+
+### Deleting a record
+
+**Delete record** removes only the tracking row. The file stays in the source and anything
+already imported stays in your library; the next scan simply re-checks the file. Use it to
+clear noise, not to delete media.
+
 ## Email notifications (experimental)
 
 :::warning Experimental
@@ -115,6 +161,30 @@ Notifications**, then link them to a source. Click the info (ⓘ) icon for setup
   (authenticated SMTP submission).
 
 Use **Test** on a saved email config to validate the connection.
+
+### Choosing which sources a config notifies
+
+:::note New in v0.6.0
+Configurations could be created but not attached to a particular source, so "email me only when
+*this* source has a problem" could not be expressed.
+:::
+
+Click **Notifications** on a source card. You do **not** need to be a super admin — creating a
+configuration holds mailbox credentials and stays super-admin work, but attaching an existing
+one to a source you own is yours to do. Pick a configuration, attach it, and set per link:
+
+- **Notify on a successful scan** and **Notify when a scan has errors** — these are evaluated
+  **per scan, not per file**: a scan counts as an error if any file in it failed.
+- **Additional recipients** — a comma-separated list, sent *in addition to* the configuration's
+  own default recipients. A malformed address is rejected as you save rather than silently
+  dropped at send time.
+
+The panel warns you when a link is configured but would send nothing — both options switched
+off, a disabled configuration, or no recipients on either side. Each of those looks complete on
+its own, and only the combination is empty.
+
+Deleting a configuration detaches it from every source using it, so those sources stop being
+notified. The count of sources using a configuration is shown next to it before you delete.
 
 ## Admin: global settings
 
@@ -145,8 +215,19 @@ All of these are stored in the database and take effect on the next scan — no 
 - **No "Local Folder" option** — start the stack with `--with-watch` and set `WATCH_HOST_PATH`.
 - **A just-copied file wasn't imported** — it's within the file-stability window; it will be
   picked up on the next scan.
-- **A file shows "skipped (duplicate)"** — the same content already exists in your library or
-  another source; the row links to the existing file.
+- **A file shows "skipped (duplicate)"** — the same content already exists in your library, in
+  another source, or under a different name in **this** source. Open **Files** on the card to
+  see which. If it really is content you want, **Retry** it after removing the copy that is
+  shadowing it.
+- **I retried a file and nothing happened** — retry queues the file; the scan it requests may be
+  waiting behind one already running, or the file may be beyond **Max imports per scan** for
+  this pass. Leave the Files list open: it refreshes when a scan completes.
+- **A retried file goes straight back to "skipped — too old"** — the source still limits imports
+  by age. Clear **Skip files older than** on the source, then retry again; the Files list warns
+  about this on the row.
+- **I attached an email configuration but receive nothing** — check the warnings in the
+  **Notifications** panel: both notify options may be off, the configuration may be disabled, or
+  neither the configuration nor the link may name a recipient.
 - **A source shows "FS polling" instead of "FS events"** — expected on network shares and on
   Docker Desktop for macOS/Windows: the host does not forward change notifications into the
   container, so the folder is re-checked on a short interval instead. Hover the badge for the

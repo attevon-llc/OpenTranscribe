@@ -107,5 +107,13 @@ picker and the content router all read it, so a nav entry cannot disagree with t
   `.section-title`. Renaming them breaks Playwright tests — keep them stable.
 - The modal closes itself on route change (`$page.url.pathname`) — don't re-add navigation logic.
 - Watch Sources is a **user** feature whose email-config and global-settings blocks are
-  super_admin; gate those on `isSuperAdmin`, not `isAdmin`, or a plain admin gets two swallowed
+  super*admin; gate those on `isSuperAdmin`, not `isAdmin`, or a plain admin gets two swallowed
   403s and a panel that looks empty rather than forbidden.
+  ⚠️ **That gate does NOT extend to the per-source notification modal.** Managing an email
+  \_config* is super*admin (it holds mailbox credentials); \_linking* one to your own source is
+  owner-level on the backend, and `WatchSourceEmailLinksModal` must stay ungated or the
+  capability is unreachable for the people it exists for. Its picker reads the source-scoped
+  `GET /{uuid}/emails/available`, not the super_admin `GET /email-configs`.
+- `WatchSourcesSettings.svelte` is a **coordinator over `watchSources/`** (see that folder's
+  CLAUDE.md) — it was 767 lines. It stays here rather than moving into the subfolder, matching
+  `UserFileStatus.svelte` + `fileStatus/`; only the children moved.

@@ -47,8 +47,12 @@ delete-after-import if you ask it to).
   notifications into the container (network shares, Docker Desktop for macOS/Windows).
 - **Auto-organize.** Apply tags and collections to every imported file — pick from existing
   ones or create new.
+- **Per-file history you can act on.** See exactly what each source imported, skipped, or failed
+  on, with the reason; search and filter it; retry a file the scanner rejected; clear records you
+  no longer want — individually or in bulk.
 - **Email notifications (experimental).** Optionally send a scan-summary email via SMTP,
-  Microsoft 365 (Graph), or on-prem Exchange.
+  Microsoft 365 (Graph), or on-prem Exchange — attached per source, so one address can be told
+  only about the source it cares about, and only about failures if that is all you want.
 
 :::warning Email notifications are experimental
 Email delivery has not yet been verified against a live mail provider. The configuration and
@@ -75,4 +79,11 @@ see the [Watch Sources user guide](../user-guide/watch-sources.md) to get starte
 An imported file is a normal media file in your library — it appears in the gallery owned by
 the source's user, transcribes automatically (unless you turn that off), and supports every
 feature any other file does (search, speakers, summaries, export). The watch source keeps a
-per-file history showing what was imported, skipped (and why), stitched, or errored.
+per-file history showing what was imported, skipped (and why), stitched, or errored — open it
+with **Files** on the source card.
+
+:::note New in v0.6.0
+The per-file history and per-source email links are now reachable from the UI. The backend kept
+this data all along, but there was no screen for it, so a failed import could only be seen as a
+number in an error count.
+:::

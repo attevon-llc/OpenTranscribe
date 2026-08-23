@@ -31,7 +31,7 @@ pipeline described in [RAG Chat](./rag-chat.md) — everything else on this page
 | 3 | Index v6 — one reindex, digests in the index | Not started |
 | 4 | Query router, map-reduce, aggregation | Not started |
 | 5 | Retrieval tuning bake-off (fusion, reranker, synonyms) | Not started |
-| 6 | [Documents](../features/documents.md) | In progress — upload/parse/index/view shipped; redaction, document-aware chat citations, and cross-linking to recordings not yet built |
+| 6 | Documents | Deferred past v0.5.0 — the document-ingestion lane lives on the `feat/doc-ingestion` branch and targets v0.6.0 (#362) |
 | 7 | Opt-in enrichment | Not started |
 | 8 | Whitepaper | Not started |
 
@@ -354,7 +354,14 @@ pass without the feature working?" rather than by a test failing.
   that fix; it owes a regeneration before Stage 2 or 3 reports a delta.
 - **No answer-quality number exists anywhere.** Everything above measures retrieval. Nothing yet
   scores whether an answer is faithful to what it cites.
-- **No reranker latency has been measured**, despite the reranker being on by default.
+- **Reranker latency is now observed, but not yet benchmarked.** GH #514's query trace reports
+  a per-stage `ms` on every node, and the first real turn it ran against put the cross-encoder at
+  **7,120 ms of an 8,194 ms turn — 87% of the wall clock** (48 candidates, `rerank_max_pairs=50`,
+  CPU, cold). That is one turn on one machine, so it is an observation rather than a benchmark:
+  it does not separate model load from scoring, and a warm process would look different. What it
+  does establish is that the reranker is the dominant cost of a turn, which nothing previously
+  showed — and the instrument to measure it properly now exists on every turn rather than needing
+  a bespoke harness. #363's open question (does reranking help on English?) still needs #463.
 - **Publishable retrieval quality rests on QMSum.** The other permissively-licensed corpora
   contribute realism, multilingual coverage or long-context — not additional English
   meeting-retrieval judgements.
@@ -395,7 +402,6 @@ nobody re-implements a solved problem and everyone can tell which parts are deli
 |---|---|
 | local LLM serving | **vLLM**, OpenAI-compatible (Gemma 4 E4B AWQ 4-bit in testing) |
 | LLM-free testing | `scripts/mock-llm-server.py` — real OpenAI-compatible server, canned tokens only |
-| document parsing *(Stage 6)* | **Docling** (MIT) + **RapidOCR**, optional **Apache Tika** for the OLE2/RTF tail |
 
 ### What we wrote ourselves, and why
 
@@ -422,6 +428,5 @@ assumed settled.
 - [RAG Evaluation Methodology](./rag-evaluation.md) — corpora, metric definitions, and how to
   reproduce every number here
 - [RAG Chat (Internals)](./rag-chat.md) — the pipeline as it exists today
-- [Documents](../features/documents.md) — Stage 6
 - [Working Without an AI Model](../user-guide/without-an-ai-model.md) — the D6 deployment these
   decisions protect

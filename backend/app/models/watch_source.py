@@ -5,8 +5,7 @@ A ``WatchSource`` is a unified configuration row discriminated by
 connection details and credentials (secrets AES-256-GCM encrypted, mirroring
 ``user_media_source``/``user_asr_settings``). Each tracked file the scanner has
 seen is a ``WatchSourceFile`` row, which records the dedup fingerprint, import
-status, skip reason, and (on success) a link to the created ``MediaFile`` or
-``Document`` — whichever the scanned file turned out to be.
+status, skip reason, and (on success) a link to the created ``MediaFile``.
 """
 
 import uuid as uuid_pkg
@@ -35,7 +34,6 @@ from app.db.base import Base
 from app.utils.uuid7 import uuid7
 
 if TYPE_CHECKING:
-    from app.models.document import Document
     from app.models.email_notification_config import WatchSourceEmail
     from app.models.media import MediaFile
     from app.models.user import User
@@ -225,9 +223,6 @@ class WatchSourceFile(Base):
     media_file_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("media_file.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    document_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("document.id", ondelete="SET NULL"), nullable=True, index=True
-    )
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending")
     skip_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
     part_group: Mapped[str | None] = mapped_column(
@@ -243,7 +238,6 @@ class WatchSourceFile(Base):
 
     watch_source: Mapped["WatchSource"] = relationship("WatchSource", back_populates="files")
     media_file: Mapped["MediaFile | None"] = relationship("MediaFile", foreign_keys=[media_file_id])
-    document: Mapped["Document | None"] = relationship("Document", foreign_keys=[document_id])
 
     # A unique INDEX, not a UniqueConstraint: ``v366`` created it with
     # ``CREATE UNIQUE INDEX``, so ``pg_constraint`` holds nothing by this name.

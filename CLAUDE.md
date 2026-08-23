@@ -95,7 +95,7 @@ Run `./opentr.sh` with no arguments for full usage. The ones you'll reach for:
 ./opentr.sh start dev --dry-run              # print compose files + command, start nothing
 ```
 
-`--fresh` refuses to start when any port it needs is already bound (it offers `--port-offset N`) and generates a gitignored `.fresh/<name>.yml` overlay that re-pins every service to `otfresh-<name>-*`. `--port-offset` works by exporting the `*_PORT` vars the compose files already read — never by overlaying a second `ports:` list, which compose would append (issue #343). The offset is remembered in `.fresh/<name>.offset`. The `--with-ldap-test` / `--with-smb-test` / `--with-monitoring` / `--with-keycloak-test` / `--with-authentik-test` overlays are isolated too (issue #347) — names, ports, and volumes all move — and the overlays used are recorded in `.fresh/<name>.aux`. `--with-watch` / `--with-backup` are **not**: they bind live host directories, and `opentr.sh` warns. Details: `scripts/CLAUDE.md`.
+`--fresh` refuses to start when any port it needs is already bound (it offers `--port-offset N`) and generates a gitignored `.fresh/<name>.yml` overlay that re-pins every service to `otfresh-<name>-*`. `--port-offset` works by exporting the `*_PORT` vars the compose files already read — never by overlaying a second `ports:` list, which compose would append (issue #343). The offset is remembered in `.fresh/<name>.offset`. **Every** `--with-*` overlay is isolated too (issue #347) — names, ports, and volumes all move — and the overlays used are recorded in `.fresh/<name>.aux`. Do not maintain the list here by hand: it was stale for four overlays at once, and `--with-llm-test` was missing from `opentr.sh`'s dispatch itself, so a fresh stack collided with the main one on `opentranscribe-llm-test-vllm`/5195 and `fresh-destroy` left a multi-GB vLLM holding a GPU. `backend/tests/unit/test_opentr_fresh_aux_isolation.py` now enumerates the flags and fails on any that is neither isolated nor **explicitly exempt with a written reason**. The three exemptions are `--with-watch` / `--with-backup` (they bind live host directories and declare no `container_name` or ports, so there is nothing project-scoped to re-pin — `opentr.sh` warns instead) and `--with-pki` (a prod/nginx overlay that layers onto existing services). ⚠️ `LLM_TEST_GPU_DEVICE_ID` is deliberately **not** offset: a port offset must never renumber a physical card. Details: `scripts/CLAUDE.md`.
 
 **NAS overlay** (non-fresh `start`): auto-detected from `.env`, announced with a `💾 NAS overlay AUTO-LOADED` banner; `--no-nas` suppresses, `--nas` opts in explicitly. When active it writes a `.opentranscribe-live-data` marker into each bind dir — **if you see that marker, you are looking at live data; do not delete.** Full map: `docs-site/docs/operations/fresh-deployments.md`.
 
@@ -131,43 +131,6 @@ bare host process: it binds 5199 and then blocks the container. Fixtures and the
 full table: `backend/tests/CLAUDE.md`.
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.
 Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`.
-
-### Document parsing sidecars (`--with-documents`)
-
-```bash
-./opentr.sh start dev --with-documents       # docling-serve :5197 + Apache Tika :5198
-```
-
-The document plane is **three tiers and only two are containers** (#362 / #403 Stage 6):
-
-| Tier | Where | Formats | Started by |
-|---|---|---|---|
-| slim | **in-process**, in the existing Celery workers | PDF text layer (pypdfium2), OOXML, md/csv/html/txt | always |
-| docling-serve | sidecar, **CPU only** | OCR + layout + table structure, for sources with no text layer | `--with-documents` |
-| tika | sidecar (JVM) | legacy OLE2 `.doc`/`.ppt`/`.xls` + RTF — nothing else | `--with-documents` |
-
-- **The slim tier must stay torch-free.** It runs inside the CPU worker and
-  `celery-redaction`; one convenience `from docling.document_converter import ...` drags the
-  CUDA stack into both. `tests/unit/test_document_slim_tier_is_torch_free.py` enforces it in a
-  **subprocess** with a `sys.meta_path` ban (in-process is unenforceable — another test may
-  already have imported torch). It parses as well as imports, because Docling resolves its
-  backends lazily.
-- **Never wire docling-serve to a GPU.** OCR is latency-tolerant batch work and GPU 1 is the
-  ASR worker's only GPU.
-- **Both publish on 127.0.0.1 only** — each converts arbitrary user bytes with no auth. They
-  are published at all so host-side pytest can drive the real tiers; the corpus suites
-  auto-enable by TCP probe (`DOCLING_SERVE_PORT` 5197 / `TIKA_PORT` 5198), so the flag alone is
-  enough and no env plumbing is needed. Requiring `DOCUMENT_PARSER_URL` in the host env was a
-  silent-skip trap: the overlay sets it inside the *containers*.
-- **Images are pinned by digest.** Coverage numbers in `tests/unit/test_document_tika_tier.py`
-  are per-version claims; a floating tag lets them start describing a different program.
-- **Never send our internal mime as a request `Content-Type` to Tika.** Tika treats it as a
-  detection *override*, and `application/x-ole-storage` selects `EmptyParser` — HTTP 200, empty
-  body, no error. That shipped once and lost 100% of the text of every `.doc`/`.ppt`/`.xls`
-  while reporting success. Bytes go out untyped; the filename travels in `Content-Disposition`.
-- **Assert characters extracted, never "n/N did not raise."** The sketch above scored
-  `.doc 14/14 ok, 0 exceptions` at 2 characters per file. Measured floors and the full
-  1,916-file AMI distribution live in that test module's docstring.
 
 ### Multi-GPU worker scaling (optional)
 

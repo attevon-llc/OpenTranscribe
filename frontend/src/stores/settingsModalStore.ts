@@ -35,7 +35,6 @@ export type SettingsSection =
   | 'admin-users'
   | 'admin-task-health'
   | 'chat-admin'
-  | 'document-quarantine'
   | 'redaction-policy'
   | 'embedding-migration'
   | 'data-integrity'
@@ -81,7 +80,6 @@ const initialState: SettingsModalState = {
     team: false,
     'admin-users': false,
     'admin-task-health': false,
-    'document-quarantine': false,
     'redaction-policy': false,
     'embedding-migration': false,
     'data-integrity': false,

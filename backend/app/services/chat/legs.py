@@ -44,6 +44,7 @@ from collections.abc import Callable
 from concurrent.futures import Future
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
+from concurrent.futures import as_completed
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
@@ -291,52 +292,70 @@ def run_legs(
         futures[executor.submit(_run_leg, leg)] = leg
 
     chunk_hits: list[ChunkHit] = []
-    for future, leg in futures.items():
-        try:
-            outcome = future.result(timeout=timeout_seconds)
-        except FutureTimeoutError:
-            logger.warning(
-                "Chat leg %r (%s) timed out after %.0fs", leg.name, leg.kind, timeout_seconds
-            )
-            result.failed.append(leg.name)
+    # `as_completed` yields each future the moment IT finishes, so a leg that
+    # returns in 200ms reports immediately instead of queueing behind a slower
+    # leg that merely happened to be submitted first. Collecting in submission
+    # order produced identical RESULTS — every leg is awaited either way — but
+    # reported an order the pipeline never ran in, which GH #514's panel would
+    # then animate as fact.
+    #
+    # It also makes `timeout_seconds` mean what DEFAULT_LEG_TIMEOUT_SECONDS
+    # already documented: a ceiling on the WHOLE fan-out. `future.result(timeout=)`
+    # per future let N wedged legs wait N x the bound (measured: 4 legs at a 0.3s
+    # bound took 1.20s). `as_completed(timeout=)` is one deadline across the set.
+    pending: dict[Future, Leg] = dict(futures)
+    try:
+        for future in as_completed(futures, timeout=timeout_seconds):
+            leg = pending.pop(future)
+            outcome = future.result()
+            result.timings_ms[leg.name] = outcome.duration_ms
+            if not outcome.ok:
+                result.failed.append(leg.name)
+                emit(
+                    recorder,
+                    QueryStage.FOUND,
+                    Outcome.FAILED,
+                    parent=parent,
+                    node_id=leg.name,
+                    reason="error",
+                    ms=outcome.duration_ms,
+                )
+                continue
+            if leg.kind in CHUNK_LEG_KINDS:
+                count = len(outcome.result or [])
+                result.chunk_counts_by_leg[leg.name] = count
+                if outcome.result:
+                    chunk_hits.extend(outcome.result)
+            else:
+                result.other[leg.name] = outcome
+                count = 1 if outcome.result else 0
             emit(
                 recorder,
                 QueryStage.FOUND,
-                Outcome.FAILED,
+                Outcome.OK if count else Outcome.EMPTY,
                 parent=parent,
                 node_id=leg.name,
-                reason="timeout",
-            )
-            continue
-        result.timings_ms[leg.name] = outcome.duration_ms
-        if not outcome.ok:
-            result.failed.append(leg.name)
-            emit(
-                recorder,
-                QueryStage.FOUND,
-                Outcome.FAILED,
-                parent=parent,
-                node_id=leg.name,
-                reason="error",
+                count=count,
                 ms=outcome.duration_ms,
             )
-            continue
-        if leg.kind in CHUNK_LEG_KINDS:
-            count = len(outcome.result or [])
-            result.chunk_counts_by_leg[leg.name] = count
-            if outcome.result:
-                chunk_hits.extend(outcome.result)
-        else:
-            result.other[leg.name] = outcome
-            count = 1 if outcome.result else 0
+    except FutureTimeoutError:
+        # The fan-out deadline passed. `as_completed` stops yielding and tells us
+        # nothing about which futures are outstanding — `pending` does, because
+        # every leg that DID complete was popped from it above.
+        pass
+
+    for leg in pending.values():
+        logger.warning(
+            "Chat leg %r (%s) timed out after %.0fs", leg.name, leg.kind, timeout_seconds
+        )
+        result.failed.append(leg.name)
         emit(
             recorder,
             QueryStage.FOUND,
-            Outcome.OK if count else Outcome.EMPTY,
+            Outcome.FAILED,
             parent=parent,
             node_id=leg.name,
-            count=count,
-            ms=outcome.duration_ms,
+            reason="timeout",
         )
 
     result.chunk_hits = _dedup_chunks(chunk_hits)

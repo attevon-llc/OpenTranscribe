@@ -32,6 +32,7 @@
   import ChatContextBar from '$components/chat/ChatContextBar.svelte';
   import ChatEmptyState from '$components/chat/ChatEmptyState.svelte';
   import ChatControlsPanel from '$components/chat/ChatControlsPanel.svelte';
+  import ChatTracePanel from '$components/chat/ChatTracePanel.svelte';
   import FilePickerModal from '$components/chat/FilePickerModal.svelte';
   import TokenUsagePanel from '$components/chat/TokenUsagePanel.svelte';
   import LargeSelectionWarningModal from '$components/chat/LargeSelectionWarningModal.svelte';
@@ -44,6 +45,30 @@
   let composerValue = '';
   let pickerOpen = false;
   let controlsOpen = false;
+
+  // GH #514. Collapsed by default — an inspector, not a distraction — and the
+  // choice persists. Same inline try/catch shape as `RetrievalQualityNotice`,
+  // and like it this is a UI preference, so `clearUserState` deliberately does
+  // not clear it.
+  const TRACE_OPEN_KEY = 'opentr:chat:tracePanelOpen';
+  let traceOpen = false;
+  let traceReady = false;
+
+  function readTraceOpen(): boolean {
+    try {
+      return localStorage.getItem(TRACE_OPEN_KEY) === 'open';
+    } catch {
+      return false;
+    }
+  }
+
+  function persistTraceOpen(value: boolean): void {
+    try {
+      localStorage.setItem(TRACE_OPEN_KEY, value ? 'open' : 'closed');
+    } catch {
+      // Private browsing / quota. A lost preference is not worth an error.
+    }
+  }
   let sidebarOpen = false;
   let lastLoadedId: string | null = null;
   let gearEl: HTMLButtonElement;
@@ -56,7 +81,18 @@
   $: llmAvailable = $llmStatusStore.available;
   $: state = $chatStore;
   $: hasMessages = state.messages.length > 0;
+
+  // The panel always tracks the LATEST assistant turn, matching every other live
+  // indicator on this page. Keyed on the message id rather than recomputed from
+  // the array on every store update: during a stream that runs once per delta
+  // frame, i.e. hundreds of O(n) scans per answer.
+  $: latestAssistant = [...state.messages].reverse().find((m) => m.role === 'assistant');
+  $: latestTrace = latestAssistant?.trace;
+  $: latestTurnId = latestAssistant?.uuid ?? null;
+  $: traceFailedEarly = latestAssistant?.status === 'error' && !latestTrace;
   $: settings = state.activeConversation?.settings ?? state.draftSettings;
+  $: if (traceReady) persistTraceOpen(traceOpen);
+
   $: isStreaming = ['submitting', 'retrieving', 'thinking', 'streaming'].includes(
     state.streamStatus
   );
@@ -83,6 +119,10 @@
   onMount(() => {
     chatStore.loadConversations(true);
     loadProjects();
+    // Read BEFORE enabling persistence, or mounting writes the default back
+    // over whatever the user chose last time.
+    traceOpen = readTraceOpen();
+    traceReady = true;
 
     // Mirror the 900px breakpoint the layout uses. Below it the sidebar is an
     // off-screen drawer; above it, a normal column that must stay reachable.
@@ -317,7 +357,7 @@
     <p>{$t('chat.errors.unavailable')}</p>
   </div>
 {:else}
-  <div class="chat-page" class:sidebar-open={sidebarOpen}>
+  <div class="chat-page" class:sidebar-open={sidebarOpen} class:trace-open={traceOpen}>
     <div class="sidebar-pane" inert={isNarrow && !sidebarOpen ? true : undefined}>
       <ChatSidebar
         conversations={state.conversations}
@@ -413,6 +453,41 @@
           </button>
         {/if}
 
+        <!-- NOT gated on `hasMessages`, unlike the export button beside it.
+             The panel's whole claim is that you can watch retrieval happen, and
+             gating the toggle on an existing turn meant the FIRST question of a
+             conversation could only ever be inspected after its answer had
+             finished — the one turn a new user actually watches. Opening it on
+             an empty thread shows "ask a question to see how it is answered". -->
+        <button
+          type="button"
+          class="gear trace-toggle"
+          on:click={() => (traceOpen = !traceOpen)}
+          aria-label={$t('chat.trace.toggleLabel')}
+          aria-expanded={traceOpen}
+          title={$t('chat.trace.toggleLabel')}
+          data-testid="chat-trace-toggle"
+        >
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
+            <circle cx="6" cy="5" r="2" />
+            <circle cx="18" cy="12" r="2" />
+            <circle cx="6" cy="19" r="2" />
+            <path d="M6 7v10" />
+            <path d="M6 12h10" />
+          </svg>
+          {#if isStreaming && latestTrace}
+            <span class="trace-live-dot" aria-hidden="true"></span>
+          {/if}
+        </button>
+
         <button
           type="button"
           class="gear"
@@ -447,6 +522,19 @@
           on:change={handleControlsChange}
           on:model={(e) => handleModelChange(e.detail)}
           on:close={() => (controlsOpen = false)}
+        />
+
+        <!-- Rendered from the header, but `position: fixed` takes it out of the
+             grid entirely so opening it cannot reflow the answer column. -->
+        <ChatTracePanel
+          open={traceOpen}
+          trace={latestTrace}
+          streaming={isStreaming}
+          turnId={latestTurnId}
+          failedEarly={traceFailedEarly}
+          contextOff={!state.useContext}
+          hasTurn={hasMessages}
+          on:close={() => (traceOpen = false)}
         />
       </header>
 
@@ -549,6 +637,34 @@
     min-width: 0;
     min-height: 0;
     padding: 0 1.25rem;
+    transition: padding-right 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* ⚠️ The open trace panel MUST reserve its own width, and the earlier
+     "it never reflows the answer" rule was wrong about the cost of not doing
+     so. The panel is `position: fixed; right: 0; width: min(24rem, 92vw)`, and
+     the message column is centred at 52rem inside `1fr` — so measured at a
+     1280px viewport the panel's left edge lands at x=896 while the send button
+     ends at x=1183. The panel covered the composer by 287px (207px at 1440px),
+     and Playwright refused to click Send with
+     "<div class="trace-body"> ... intercepts pointer events". Opening the
+     inspector made the chat unusable on any laptop-class screen.
+
+     Reserving the width shifts the answer column left, which is exactly what
+     Chrome DevTools docked right, VS Code's panels and Linear's detail pane all
+     do. A transition keeps it from being a jump. Below the mobile breakpoint
+     the panel is a full-width overlay and `.chat-main` is `inert`, so no
+     reservation applies — there is nothing behind it to click. */
+  @media (min-width: 900px) {
+    .chat-page.trace-open .chat-main {
+      padding-right: calc(min(24rem, 92vw) + 1.25rem);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chat-main {
+      transition: none;
+    }
   }
 
   .chat-header {
@@ -667,6 +783,23 @@
     justify-content: center;
     height: 60vh;
     color: var(--text-secondary);
+  }
+
+  /* Scoped to this button rather than added to `.gear`: `ChatControlsPanel`
+     positions itself against the HEADER, and making every gear a containing
+     block would move it. */
+  .trace-toggle {
+    position: relative;
+  }
+
+  .trace-live-dot {
+    position: absolute;
+    top: 0.28rem;
+    right: 0.28rem;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--primary-color);
   }
 
   .sidebar-scrim {

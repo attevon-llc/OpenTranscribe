@@ -13,9 +13,6 @@ import, a dependency, or a compose service nobody meant to make mandatory:
   already say so in prose; this file makes it an AST-checked invariant.
 - The reranker (``chat/reranker.py``) is CPU-only by construction -- pinned by checking the
   literal ``device="cpu"`` argument the code passes to ``CrossEncoder(...)``.
-- Document sidecars (docling-serve, Tika) are opt-in (``--with-documents``,
-  ``docker-compose.documents.yml``), never part of the default compose chain
-  (``docker-compose.yml`` + the dev override) a laptop starts with.
 - No CJK/Thai segmenter dependency (jieba, sudachipy, pythainlp, ...) has been added to any
   pinned requirements file -- ``chat/speaker_resolver.py`` documents this as a deliberate
   scope boundary (script-aware candidate extraction via maximal same-script runs + a
@@ -32,8 +29,6 @@ import inspect
 import re
 from pathlib import Path
 
-import yaml
-
 from app.services.chat import aggregation as aggregation_module
 from app.services.chat import aggregation_service as aggregation_service_module
 from app.services.chat import recurrence as recurrence_module
@@ -41,7 +36,6 @@ from app.services.chat import reranker as reranker_module
 from app.services.chat import speaker_resolver as speaker_resolver_module
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
-_REPO_ROOT = _BACKEND_ROOT.parent
 
 
 # --------------------------------------------------------------------------------------- #
@@ -245,34 +239,3 @@ def test_no_cjk_segmenter_dependency_in_any_pinned_requirements_file():
         "speaker_resolver.py's module docstring); if one is ever justified by measurement "
         "it must ship opt-in, not required"
     )
-
-
-# --------------------------------------------------------------------------------------- #
-# Document sidecars (docling-serve, Tika) are opt-in, not part of the default compose chain.
-# --------------------------------------------------------------------------------------- #
-
-_DOCUMENT_SIDECAR_SERVICES = frozenset({"docling-serve", "tika"})
-
-
-def _compose_service_names(path: Path) -> set[str]:
-    with path.open() as fh:
-        parsed = yaml.safe_load(fh)
-    return set((parsed or {}).get("services", {}) or {})
-
-
-def test_document_sidecars_are_absent_from_the_default_compose_chain():
-    """A laptop starts with ``docker-compose.yml`` (+ the auto-loaded dev override). Neither
-    file may define docling-serve or tika directly -- they belong to the opt-in
-    ``docker-compose.documents.yml`` overlay (``--with-documents``) only."""
-    for filename in ("docker-compose.yml", "docker-compose.override.yml"):
-        services = _compose_service_names(_REPO_ROOT / filename)
-        present = services & _DOCUMENT_SIDECAR_SERVICES
-        assert not present, f"{filename} defines opt-in document sidecar(s): {sorted(present)}"
-
-
-def test_document_sidecars_do_exist_in_the_opt_in_overlay():
-    """Sanity control for the test above: prove the sidecars are DEFINED somewhere (the
-    opt-in overlay), so "absent from the default chain" cannot pass by the services having
-    been deleted outright."""
-    services = _compose_service_names(_REPO_ROOT / "docker-compose.documents.yml")
-    assert services >= _DOCUMENT_SIDECAR_SERVICES

@@ -362,69 +362,6 @@ def index_transcript_search_task(  # noqa: C901
         return {"status": "failed", "file_id": file_id, "error": str(exc)}
 
 
-def _document_plane_exclusion_clause() -> dict[str, Any]:
-    """The MEDIA-plane predicate: everything in the chunks index EXCEPT a document's
-    own chunks (#T10 — the `file_id` collision).
-
-    ``Document.id`` and ``MediaFile.id`` are independent integer sequences, so a bare
-    ``{"term": {"file_id": file_id}}`` in an ACL/tag rewrite also matches a document
-    whose id happens to equal this media file's id — sharing media file #42 would then
-    silently overwrite document #42's chunk ACL, possibly with a DIFFERENT user's grant
-    list. This is deliberately NOT :func:`~app.services.search.indexing_service.
-    chunk_plane_clause` (chunk-plane-only): the digest plane must stay reachable here
-    (addendum G5, ``services/search/CLAUDE.md``) — a share revocation that stopped
-    reaching digests would leave a readable summary of a de-shared recording. So this
-    excludes only the document planes, leaving both transcript chunks and digests in
-    scope, exactly as before the fix for every id that does NOT collide.
-    """
-    from app.services.ingest_artifacts import index_mapping as digest_mapping
-
-    return {
-        "bool": {
-            "must_not": [
-                {"term": {digest_mapping.DOC_TYPE_FIELD: digest_mapping.DOC_TYPE_DOCUMENT_CHUNK}},
-                {"term": {digest_mapping.DOC_TYPE_FIELD: digest_mapping.DOC_TYPE_DOCUMENT_DIGEST}},
-            ]
-        }
-    }
-
-
-def _document_accessible_user_ids(db: Any, document_id: int, owner_id: int) -> list[int]:
-    """The full grant list for one document's chunks.
-
-    v400 (#362 lane C3-remainder) is the grant source this seam was written to be
-    extended by: ``PermissionService.get_users_with_document_access`` reads
-    ``DocumentShare`` (direct + group grants), the same role
-    ``PermissionService.get_users_with_file_access`` already plays for media files.
-    Falls back to ``[owner_id]`` when the service reports nothing at all — it always
-    seeds the set with the owner unless the ``Document`` row itself could not be
-    resolved, which :func:`update_document_access_index`'s caller has already
-    handled by this point (``owners`` is read from a live ``Document`` row), so this
-    is a defensive floor, not the expected path. Kept as its own function (rather
-    than inlined in :func:`update_document_access_index`'s loop) so a test can
-    monkeypatch exactly this and prove the REST of the rewrite mechanism — the
-    plane-scoped ``update_by_query`` — already produces a sharee-visible chunk.
-    """
-    from app.services.permission_service import PermissionService
-
-    accessible = PermissionService.get_users_with_document_access(db, document_id)
-    return accessible or [owner_id]
-
-
-def _document_plane_clause() -> dict[str, Any]:
-    """The DOCUMENT-plane predicate: only a document's own chunks.
-
-    No compat arm needed — every ``document_chunk`` document postdates v6 and always
-    carries ``doc_type`` (matches
-    :func:`~app.services.search.indexing_service.document_chunk_plane_clause`, which
-    this re-derives rather than imports only to keep this module's OpenSearch-query
-    surface self-contained the way its media sibling above is).
-    """
-    from app.services.ingest_artifacts import index_mapping as digest_mapping
-
-    return {"term": {digest_mapping.DOC_TYPE_FIELD: digest_mapping.DOC_TYPE_DOCUMENT_CHUNK}}
-
-
 @celery_app.task(
     name="update_file_access_index",
     priority=UtilityPriority.ROUTINE,
@@ -440,10 +377,7 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
     - File is added to/removed from a collection
 
     Computes the full set of user IDs with access to each file and
-    performs a bulk partial update on the OpenSearch index. Scoped to the
-    media plane (transcript chunks + digests, never a document's chunks) by
-    :func:`_document_plane_exclusion_clause` — see its docstring for why a
-    same-integer-id document must not be touched here.
+    performs a bulk partial update on the OpenSearch index.
 
     Args:
         file_ids: List of media file integer IDs to update.
@@ -474,7 +408,6 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
     updated = 0
     errors = 0
     missing_file_ids: list[int] = []
-    plane_filter = _document_plane_exclusion_clause()
 
     for file_id in file_ids:
         try:
@@ -496,13 +429,10 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
                 )
                 continue
 
-            # Plane-parameterised (#T10's shared-visibility half): the ONLY
-            # difference from update_document_access_index's identical body below
-            # is which plane_filter was computed above the loop.
             response = client.update_by_query(
                 index=index_name,
                 body={
-                    "query": {"bool": {"filter": [{"term": {"file_id": file_id}}, plane_filter]}},
+                    "query": {"term": {"file_id": file_id}},
                     "script": {
                         "source": "ctx._source.accessible_user_ids = params.ids",
                         "lang": "painless",
@@ -539,119 +469,6 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
 
 
 @celery_app.task(
-    name="update_document_access_index",
-    priority=UtilityPriority.ROUTINE,
-    max_retries=3,
-    default_retry_delay=10,
-)
-def update_document_access_index(document_ids: list[int]) -> dict[str, Any]:
-    """Reindex accessible_user_ids for specified DOCUMENTS — the document-plane
-    sibling of :func:`update_file_access_index` (#T10's shared-visibility half).
-
-    ``services/search/indexing_service.py``'s ``index_document_chunks`` hard-codes
-    ``accessible_user_ids: [user_id]`` at index time; this task is the rewrite path
-    a document share change dispatches to — the same gap
-    :func:`update_file_access_index` already closes for media files. v400 (#362 lane
-    C3-remainder) is the real grant source: ``documents.py``'s share endpoints call
-    this after every create/revoke, and ``_document_accessible_user_ids`` reads
-    ``PermissionService.get_users_with_document_access`` (owner + direct/group
-    ``DocumentShare`` grants) rather than returning ``[owner_id]`` unconditionally.
-
-    One shape with :func:`update_file_access_index`: the ``update_by_query`` body is
-    identical in both; only the plane predicate differs (:func:`_document_plane_clause`
-    here vs :func:`_document_plane_exclusion_clause` there). The body is not factored
-    into a shared helper on purpose — see ``tests/unit/test_chunk_plane_compat_arm.py``,
-    which requires each reader of this index to build its own predicate inline so the
-    AST sweep over every caller can see it.
-
-    Args:
-        document_ids: ``Document.id`` values to update.
-
-    Returns:
-        Dict with update stats, same shape as :func:`update_file_access_index`.
-    """
-    from app.core.config import settings
-    from app.db.session_utils import session_scope
-    from app.models.document import Document
-    from app.services.opensearch_service import get_opensearch_client
-
-    if not document_ids:
-        return {"status": "skipped", "reason": "no_document_ids"}
-
-    client = get_opensearch_client()
-    if not client:
-        logger.warning("OpenSearch client not available, skipping document access index update")
-        return {"status": "skipped", "reason": "no_opensearch"}
-
-    index_name = settings.OPENSEARCH_CHUNKS_INDEX
-    updated = 0
-    errors = 0
-    missing_document_ids: list[int] = []
-    plane_filter = _document_plane_clause()
-
-    # Read phase: owners AND accessible-id sets computed for the whole batch inside
-    # one short session — no OpenSearch call runs while it is open (the session-
-    # lifetime rule, app/tasks/CLAUDE.md). PermissionService reads are plain DB
-    # queries, so bundling them into this pass costs nothing further from the
-    # single-owner query update_file_tags_index's tags_by_file lookup already pays.
-    with session_scope() as db:
-        owners = dict(
-            db.query(Document.id, Document.user_id).filter(Document.id.in_(document_ids)).all()
-        )
-        accessible_by_document = {
-            document_id: _document_accessible_user_ids(db, document_id, int(owner_id))
-            for document_id, owner_id in owners.items()
-        }
-
-    for document_id in document_ids:
-        owner_id = owners.get(document_id)
-        if owner_id is None:
-            errors += 1
-            missing_document_ids.append(document_id)
-            logger.warning(
-                f"Document {document_id} could not be resolved while computing access; "
-                "access index NOT updated for it"
-            )
-            continue
-
-        accessible_ids = accessible_by_document[document_id]
-        try:
-            response = client.update_by_query(
-                index=index_name,
-                body={
-                    "query": {
-                        "bool": {"filter": [{"term": {"file_id": document_id}}, plane_filter]}
-                    },
-                    "script": {
-                        "source": "ctx._source.accessible_user_ids = params.ids",
-                        "lang": "painless",
-                        "params": {"ids": accessible_ids},
-                    },
-                },
-                refresh=True,
-                conflicts="proceed",
-            )
-            updated += response.get("updated", 0)
-        except Exception as e:
-            errors += 1
-            logger.error(f"Failed to update access index for document {document_id}: {e}")
-
-    logger.info(
-        f"Document access index update complete: {updated} chunks updated across "
-        f"{len(document_ids)} documents, {errors} errors"
-    )
-    result: dict[str, Any] = {
-        "status": "success",
-        "updated": updated,
-        "documents": len(document_ids),
-        "errors": errors,
-    }
-    if missing_document_ids:
-        result["missing_document_ids"] = missing_document_ids
-    return result
-
-
-@celery_app.task(
     name="update_file_tags_index",
     priority=UtilityPriority.ROUTINE,
     max_retries=3,
@@ -670,12 +487,7 @@ def update_file_tags_index(file_ids: list[int]) -> dict[str, Any]:
     (a per-user coordinator holding ``reindex_lock:{user_id}``, which would
     no-op on exactly the large multi-file merges this matters for). This is a
     lightweight ``update_by_query`` on the utility queue, same shape as
-    :func:`update_file_access_index` — including its plane scoping: MEDIA
-    files only, via :func:`_document_plane_exclusion_clause`, for the same
-    ``file_id``-collision reason (#T10) documented there. Tags are file
-    metadata, not document metadata, so there is no document-plane sibling
-    task for this one the way :func:`update_document_access_index` mirrors
-    the ACL rewrite.
+    :func:`update_file_access_index`.
 
     An empty tag list is written as an empty array rather than skipped —
     detaching a file's last tag has to clear the indexed value.
@@ -703,7 +515,6 @@ def update_file_tags_index(file_ids: list[int]) -> dict[str, Any]:
     index_name = settings.OPENSEARCH_CHUNKS_INDEX
     updated = 0
     errors = 0
-    plane_filter = _document_plane_exclusion_clause()
 
     # One grouped query for the whole batch: a 500-file merge used to open 500
     # sessions and issue 500 round trips for what is a single join.
@@ -734,7 +545,7 @@ def update_file_tags_index(file_ids: list[int]) -> dict[str, Any]:
             response = client.update_by_query(
                 index=index_name,
                 body={
-                    "query": {"bool": {"filter": [{"term": {"file_id": file_id}}, plane_filter]}},
+                    "query": {"term": {"file_id": file_id}},
                     "script": {
                         "source": "ctx._source.tags = params.tags",
                         "lang": "painless",

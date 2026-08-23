@@ -143,6 +143,7 @@ def test_the_table_its_constraints_and_its_index_all_exist(db_session):
         assert required in columns, f"file_facts is missing {required}"
 
     for name in (
+        "uq_file_facts_media_file",
         "ck_file_facts_digest_word_count",
         "ck_file_facts_section_count",
         "ck_file_facts_ms",
@@ -151,28 +152,6 @@ def test_the_table_its_constraints_and_its_index_all_exist(db_session):
         assert conn.execute(
             text("SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = :n)"), {"n": name}
         ).scalar(), f"missing constraint {name}"
-
-    # `uq_file_facts_media_file` (this revision's own UNIQUE constraint) was DROPPED by
-    # v398, which widened this table to also hold document-owned rows and replaced the
-    # single-column UNIQUE with two partial unique indexes (a plain composite UNIQUE
-    # would not catch two document-owned rows sharing a `document_id`, since Postgres
-    # treats NULLs as distinct). This assertion checks the LIVE, fully-migrated schema
-    # rather than v390's SQL in isolation, so it must track what a later revision
-    # legitimately changed — the same "widen the predecessor's assertion" rule this
-    # suite's own module docstring documents for a superseded detection arm, extended
-    # here to a constraint a later revision actually removes.
-    assert conn.execute(
-        text(
-            "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'uq_file_facts_media_file_id')"
-        )
-    ).scalar(), "v398's replacement partial unique index is missing"
-    assert not conn.execute(
-        text(
-            "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'uq_file_facts_media_file')"
-        )
-    ).scalar(), (
-        "the pre-v398 UNIQUE constraint should have been dropped, not left alongside its replacement"
-    )
 
     assert conn.execute(
         text(
@@ -346,12 +325,7 @@ def test_rerunning_the_upgrade_is_a_no_op(db_session):
         conn.execute(text(module.UPGRADE_SQL))
 
         assert "file_facts" in inspect(conn).get_table_names()
-        # `uq_file_facts_media_file` is excluded here: v398 replaced it with two
-        # partial unique indexes (see `test_the_table_its_constraints_and_its_index_
-        # all_exist` above), and replaying v390's `CREATE TABLE IF NOT EXISTS` against
-        # a table that already exists never recreates it — so on the live, fully-
-        # migrated schema its count is legitimately 0, not 1.
-        for name in ("file_facts_media_file_id_fkey",):
+        for name in ("file_facts_media_file_id_fkey", "uq_file_facts_media_file"):
             assert (
                 conn.execute(
                     text("SELECT count(*) FROM pg_constraint WHERE conname = :n"), {"n": name}

@@ -95,6 +95,10 @@ class ChatSettings:
     #: W2.6. One bounded non-streaming call reconciling merged fan-out
     #: evidence into a `<synthesis>` block. Independent of `planner_enabled`.
     enrichment_enabled: bool = C.DEFAULT_CHAT_ENRICHMENT_ENABLED
+    #: GH #514. Emit a per-stage execution trace over SSE for the query panel.
+    #: Purely observational: nothing in the pipeline reads it back, and a trace
+    #: failure can never fail a turn.
+    trace_enabled: bool = C.DEFAULT_CHAT_TRACE_ENABLED
     #: Issue #523. Widen a short retrieved chunk to its surrounding exchange,
     #: by timestamp, before masking — see `chat/context_expansion.py`. Off by
     #: default: a new, unmeasured retrieval shape, same posture as every
@@ -132,19 +136,66 @@ class ChatSettings:
         return asdict(self)
 
 
+#: DERIVED from `CHAT_FLAG_REGISTRY`, same reasoning as `SETTING_KEYS` above.
+#: Only fields that declare a bound appear.
+BOUNDS: dict[str, tuple[float | None, float | None]] = {
+    spec.field: (spec.ge, spec.le)
+    for spec in CHAT_FLAG_REGISTRY
+    if spec.ge is not None or spec.le is not None
+}
+
+
 def _coerce(field: str, raw: str | None) -> int | bool | float:
+    """One stored string -> the typed value this field takes.
+
+    Handles two different kinds of bad value, and the second one is not
+    hypothetical: a value can be the right TYPE and still be outside the range
+    the field declares.
+
+    ⚠️ **An out-of-range stored value used to take the whole admin panel down.**
+    `GET /admin/chat-settings` validates its response against the same bounds,
+    so a row holding `messages_per_hour=100000` against `le=10000` returned a
+    500 — not for that one field, for the entire settings payload. The API
+    validates on write, so the obvious reading is "only reachable by editing the
+    database by hand". The real one is an UPGRADE hazard: **tightening a bound
+    in a later release instantly puts every deployment whose stored value
+    exceeds the new bound into that 500**, with no way to fix it from the UI
+    that the 500 just broke.
+
+    So an out-of-range value is CLAMPED rather than replaced by the default.
+    Clamping keeps the operator's intent — they asked for "more", they get the
+    most the field allows — where falling back to the default would silently
+    invert a deliberate raise into a lower number than they ever chose.
+    """
     default = DEFAULTS[field]
     if raw is None:
         return default
     try:
         if isinstance(default, bool):
             return raw.strip().lower() in ("true", "1", "yes", "on")
-        if isinstance(default, int):
-            return int(raw)
-        return float(raw)
+        value: int | float = int(raw) if isinstance(default, int) else float(raw)
     except (ValueError, TypeError):
         logger.warning("Invalid value %r for %s; using default", raw, SETTING_KEYS[field])
         return default
+
+    low, high = BOUNDS.get(field, (None, None))
+    clamped = value
+    if low is not None and clamped < low:
+        clamped = low
+    if high is not None and clamped > high:
+        clamped = high
+    if clamped != value:
+        logger.warning(
+            "Value %r for %s is outside [%s, %s]; clamping to %r",
+            value,
+            SETTING_KEYS[field],
+            low,
+            high,
+            clamped,
+        )
+        # `low`/`high` come off the spec as floats; an int field must stay int.
+        return int(clamped) if isinstance(default, int) else float(clamped)
+    return value
 
 
 def get_chat_settings(db: Session) -> ChatSettings:

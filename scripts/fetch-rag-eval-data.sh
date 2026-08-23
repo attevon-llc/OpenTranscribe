@@ -64,39 +64,6 @@
 #                          summarisation. Usable locally; NEVER publish a number
 #                          derived from it. Needs --accept-noncommercial.
 #
-# DOCUMENT CORPORA (issue #362, land under <root>/documents/):
-#
-#   qasper        QASPER, CC BY 4.0 — 1,585 NLP papers, 5,049 questions, each answer
-#                 carrying VERBATIM gold evidence paragraphs. The document plane's
-#                 answer to QMSum's relevant_text_span: paragraph-level qrels.
-#   contractnli   ContractNLI, CC BY 4.0 — 607 NDAs, 17 hypotheses each, evidence
-#                 spans identified, and raw/ ships the ORIGINAL PDFs.
-#   cuad          CUAD v1, CC BY 4.0 — 510 real commercial contract PDFs, 13k
-#                 expert clause spans. The "sales calls + the contracts" use case.
-#   multidoc2dial Apache-2.0 — 4,796 grounded multi-turn dialogues over 488 US
-#                 government documents. Closest public analogue of our chat.
-#   docling-fixtures  MIT — the PARSER'S OWN test corpus: docx/pptx/xlsx/odt/md/
-#                 html/csv/epub/latex/tiff/eml + password-protected PDFs, each with
-#                 its expected-output JSON. Format coverage and typed-error tests.
-#   olmocr-bench  ODC-BY — 1,403 PDFs foldered by failure mode (multi_column,
-#                 headers_footers, tables, old_scans, long_tiny_text) plus 7,018
-#                 pass/fail assertions. Parse quality as a score, not an eyeball.
-#   bnl-newspapers  CC0 + PDM — multi-page SCANNED newspaper issues with per-page
-#                 TIFF masters and word-level ALTO OCR ground truth. The ONLY Tier A
-#                 scanned corpus found; every classic one is research-use-only.
-#   doclaynet     CDLA-Permissive-1.0 — test split only. Footnote / page-header /
-#                 page-footer as first-class labels, plus pdf_cells reading order.
-#   pmc-oa        CC BY / CC0 (per article) — 300 biomedical PDFs WITH their JATS
-#                 XML, i.e. structural ground truth for what the parser should
-#                 have produced. Deliberately the oa_comm tier, not all of OA.
-#   govdocs1      CC0 — 991 random real-world .gov files, 20 formats, no
-#                 annotations. Measures crash / hang / garbage rate on messy input.
-#   omnidocbench  TIER B, research-use-only — LaTeX AND HTML table ground truth
-#                 plus explicit reading order over 9 document types.
-#   ucsf-idl      TIER B, no licence granted (fair-use disclaimer only) — 137
-#                 SCANNED PDFs of 20–60 pages. The only corpus that exercises the
-#                 20-page OCR chord; RVL-CDIP and olmOCR-bench are single-page.
-#
 # GENERAL-IR SLICE (BEIR, issue #403, land under <root>/beir/):
 #
 #   Exactly TWO tasks, both Tier A, both verified against the ORIGINAL corpus's own
@@ -582,262 +549,11 @@ declare -A MLMETA=(
 # separate array so each agent's generated MANIFEST.tsv stays its own file.
 RB_DATASETS=(locov1 longembed)
 
-# --- Document corpora (issue #362, Stage 6 of #403) ---------------------------
-#
-# Land under <root>/documents/. Same multi-file mechanism as the multilingual and
-# retrieval-benchmark arms — MLMETA entries, one pinned manifest per key under
-# scripts/rag-eval-manifests/<key>.tsv — because that machinery already does
-# exactly what these need. Third array purely so the generated manifest is its own
-# file (documents/MANIFEST.tsv) and three agents never rewrite one shared table.
-#
-# Two things differ from the arms above and are handled after the shared loop:
-#
-#   1. ARCHIVE keys. Several of these are a single .zip/.tar.gz that must be
-#      unpacked before anything can read them. The multi-file loop deliberately
-#      does not extract, so doc_extract() runs afterwards over keys carrying
-#      EXTRACTS (space-separated "<archive>:<marker-dir>" pairs; the marker is
-#      what makes re-extraction idempotent).
-#   2. SOURCE=pinned:<url> — the manifest was pinned by hand from a source with no
-#      machine-readable file listing (an S3 per-article layout, a Solr query, an
-#      Apache directory index). --refresh-manifest cannot rebuild these and will
-#      say so; that is correct, not a gap. Re-pin by re-running the documented
-#      selection in .rag-403/document-corpus-plan.md.
-#
-# TIER means the same thing here as everywhere else in this file: A = a metric
-# derived from it may be published; B = local development and internal validation
-# only, and --accept-noncommercial is required to fetch it at all.
-DOC_DATASETS=(qasper contractnli cuad multidoc2dial docling-fixtures
-              olmocr-bench bnl-newspapers doclaynet pmc-oa govdocs1
-              omnidocbench ucsf-idl ami-documents)
-
-MLMETA+=(
-    # -- Tier A, gold evidence spans: the only things an nDCG@10 claim can rest on
-    [qasper.TIER]="A"
-    [qasper.NAME]="QASPER — QA over NLP papers, with paragraph-level gold evidence"
-    [qasper.LICENSE]="Creative Commons Attribution 4.0 International (CC BY 4.0)"
-    [qasper.LICENSE_URL]="https://huggingface.co/datasets/allenai/qasper"
-    [qasper.HOMEPAGE]="https://allenai.org/data/qasper"
-    [qasper.SOURCE]="url:https://qasper-dataset.s3.us-west-2.amazonaws.com/"
-    [qasper.FILES]="qasper-train-dev-v0.3.tgz qasper-test-and-evaluator-v0.3.tgz"
-    [qasper.SUBDIR]="documents/qasper"
-    [qasper.EXTRACTS]="qasper-train-dev-v0.3.tgz:qasper-train-v0.3.json qasper-test-and-evaluator-v0.3.tgz:qasper-test-v0.3.json"
-    [qasper.NOTE]="1,585 arXiv NLP papers, 5,049 questions. Each answer carries an 'evidence'
-              list of VERBATIM PARAGRAPH STRINGS drawn from the same paper's full_text —
-              i.e. paragraph-level qrels, the document-plane analogue of QMSum's
-              relevant_text_span. Text only: the arXiv PDFs are NOT part of this
-              download (see the plan for why)."
-
-    [contractnli.TIER]="A"
-    [contractnli.NAME]="ContractNLI — 607 NDAs with span-level evidence, source PDFs included"
-    [contractnli.LICENSE]="Creative Commons Attribution 4.0 International (CC BY 4.0)"
-    [contractnli.LICENSE_URL]="https://stanfordnlp.github.io/contract-nli/"
-    [contractnli.HOMEPAGE]="https://stanfordnlp.github.io/contract-nli/"
-    [contractnli.SOURCE]="url:https://stanfordnlp.github.io/contract-nli/resources/"
-    [contractnli.FILES]="contract-nli.zip"
-    [contractnli.SUBDIR]="documents/contractnli"
-    [contractnli.EXTRACTS]="contract-nli.zip:contract-nli"
-    [contractnli.NOTE]="The strongest document-evidence signal in this tier: 17 fixed hypotheses
-              scored against EVERY one of 607 NDAs, with the evidence spans identified.
-              raw/ carries the ORIGINAL source documents (PDF and HTM), so the same
-              qrels score both a text corpus and a parsed-PDF corpus. Offsets index
-              their extraction, not ours — align before scoring (see plan §Caveats)."
-
-    [cuad.TIER]="A"
-    [cuad.NAME]="CUAD v1 — 510 real commercial contracts as PDFs, 13k clause spans"
-    [cuad.LICENSE]="Creative Commons Attribution 4.0 International (CC BY 4.0)"
-    [cuad.LICENSE_URL]="https://www.atticusprojectai.org/cuad"
-    [cuad.HOMEPAGE]="https://zenodo.org/records/4595826"
-    [cuad.SOURCE]="url:https://zenodo.org/records/4595826/files/"
-    [cuad.FILES]="CUAD_v1.zip"
-    [cuad.SUBDIR]="documents/cuad"
-    [cuad.EXTRACTS]="CUAD_v1.zip:CUAD_v1"
-    [cuad.NOTE]="The small-business motivating use case, as data: real signed commercial
-              contracts (born-digital and scanned-then-OCR'd), 41 clause types,
-              13,000+ expert-annotated spans, with full_contract_pdf/ AND
-              full_contract_txt/ side by side. Note 199 files are .pdf and 311 .PDF —
-              a case-sensitive glob silently loses 61 % of the corpus."
-
-    [multidoc2dial.TIER]="A"
-    [multidoc2dial.NAME]="MultiDoc2Dial — grounded dialogue over 488 US government documents"
-    [multidoc2dial.LICENSE]="Apache License 2.0"
-    [multidoc2dial.LICENSE_URL]="https://huggingface.co/datasets/IBM/multidoc2dial"
-    [multidoc2dial.HOMEPAGE]="https://doc2dial.github.io/multidoc2dial/"
-    [multidoc2dial.SOURCE]="url:https://doc2dial.github.io/multidoc2dial/file/"
-    [multidoc2dial.FILES]="multidoc2dial.zip"
-    [multidoc2dial.SUBDIR]="documents/multidoc2dial"
-    [multidoc2dial.EXTRACTS]="multidoc2dial.zip:multidoc2dial"
-    [multidoc2dial.NOTE]="4,796 CONVERSATIONS grounded in 488 documents across 4 domains, each turn
-              carrying the grounding span. The closest public analogue of our chat
-              feature: multi-turn, multi-document, span-grounded. The HF card is
-              apache-2.0 while the card body also cites CC BY 3.0 for the underlying
-              US-government source text; both are Tier A."
-
-    [docling-fixtures.TIER]="A"
-    [docling-fixtures.NAME]="Docling v2.119.0 tests/data — the parser's own fixture corpus"
-    [docling-fixtures.LICENSE]="MIT License"
-    [docling-fixtures.LICENSE_URL]="https://github.com/docling-project/docling/blob/main/LICENSE"
-    [docling-fixtures.HOMEPAGE]="https://github.com/docling-project/docling"
-    [docling-fixtures.SOURCE]="url:https://codeload.github.com/docling-project/docling/tar.gz/refs/tags/"
-    [docling-fixtures.FILES]="v2.119.0"
-    [docling-fixtures.SUBDIR]="documents/docling-fixtures"
-    [docling-fixtures.EXTRACTS]="docling-v2.119.0.tar.gz:tests/data"
-    [docling-fixtures.NOTE]="Format coverage for every input #362 lists, from the people who wrote the
-              parser: 32 docx, 10 xlsx, 8 pptx, 74 pdf, 223 md, 70 txt, 43 html,
-              3 odt, plus csv/epub/latex/jats/tiff/webp/eml/asciidoc/ebcdic/xbrl and
-              a pdf_password/ directory for the typed-error tests. 259 expected-output
-              .json files make it a PARSE REGRESSION set, not just sample input.
-              Pinned to a release tag: the fixture corpus changes between versions, so
-              an unpinned fetch would silently move the baseline. NOTE the manifest
-              relpath is docling-v2.119.0.tar.gz while the URL ends in the bare tag —
-              codeload names the tarball after the repo, not the tag."
-
-    # -- Tier A, parser and OCR stress
-    [olmocr-bench.TIER]="A"
-    [olmocr-bench.NAME]="olmOCR-bench (AI2) — 1,403 real PDFs, 7,018 unit-test assertions"
-    [olmocr-bench.LICENSE]="Open Data Commons Attribution License (ODC-BY 1.0)"
-    [olmocr-bench.LICENSE_URL]="https://huggingface.co/datasets/allenai/olmOCR-bench"
-    [olmocr-bench.HOMEPAGE]="https://huggingface.co/datasets/allenai/olmOCR-bench"
-    [olmocr-bench.SOURCE]="hf:allenai/olmOCR-bench@54a96a6fb6a2bd3b297e59869491db4d3625b711"
-    [olmocr-bench.INCLUDE]="."
-    [olmocr-bench.EXCLUDE]="^\\.git"
-    [olmocr-bench.SUBDIR]="documents/olmocr-bench/repo"
-    [olmocr-bench.NOTE]="Directly shaped like the Phase 0 bake-off: the PDFs are foldered by the
-              exact failure modes #362 must survive — multi_column (231),
-              headers_footers (266), tables (188), old_scans (98), old_scans_math (36),
-              long_tiny_text (62), arxiv_math (522) — and each .jsonl carries
-              pass/fail assertions, so parse quality is a score, not an eyeball.
-              Single-page PDFs, so it does NOT exercise the 20-page OCR chord."
-
-    [bnl-newspapers.TIER]="A"
-    [bnl-newspapers.NAME]="BnL Historical Newspapers — CC0 multi-page SCANNED newspaper issues"
-    [bnl-newspapers.LICENSE]="CC0 1.0 (digitised files) + Public Domain Mark 1.0 (originals)"
-    [bnl-newspapers.LICENSE_URL]="https://data.bnl.lu/data/historical-newspapers/"
-    [bnl-newspapers.HOMEPAGE]="https://data.bnl.lu/data/historical-newspapers/"
-    [bnl-newspapers.SOURCE]="url:https://data.bnl.lu/open-data/digitization/newspapers/"
-    [bnl-newspapers.FILES]="set04-5days.zip set03-1month.zip"
-    [bnl-newspapers.SUBDIR]="documents/bnl-newspapers"
-    [bnl-newspapers.EXTRACTS]="set04-5days.zip:extract/set04-5days set03-1month.zip:extract/set03-1month"
-    [bnl-newspapers.NOTE]="THE Tier A OCR corpus, and the reason an OCR number can be published at
-              all: every classic scanned-document benchmark (RVL-CDIP, IIT-CDIP,
-              FUNSD, IAM, Tobacco3482) is research-use-only or has no licence.
-              COPYRIGHT_NOTICE.txt ships INSIDE the archive and says verbatim: 'You
-              can copy, modify, distribute and perform the work, even for commercial
-              purposes, all without asking permission.' Each issue is a multi-page
-              PDF plus per-page TIFF masters, per-page PDFs, and METS/ALTO XML —
-              the ALTO is word-level OCR ground truth with coordinates."
-
-    [doclaynet.TIER]="A"
-    [doclaynet.NAME]="DocLayNet v1.2 (IBM) — human layout annotations, test split"
-    [doclaynet.LICENSE]="Community Data License Agreement – Permissive, Version 1.0 (CDLA-Permissive-1.0)"
-    [doclaynet.LICENSE_URL]="https://github.com/DS4SD/DocLayNet/blob/main/LICENSE"
-    [doclaynet.HOMEPAGE]="https://huggingface.co/datasets/docling-project/DocLayNet-v1.2"
-    [doclaynet.SOURCE]="hf:docling-project/DocLayNet-v1.2@0daf93102e2efce76c3e11a274a5e0d0969391d3"
-    [doclaynet.INCLUDE]="^(README\\.md|data/test-)"
-    [doclaynet.EXCLUDE]="^\\.git"
-    [doclaynet.SUBDIR]="documents/doclaynet/repo"
-    [doclaynet.NOTE]="TEST SPLIT ONLY (4,999 pages, 2.3 GB) — train is 35.6 GB and adds nothing
-              to an evaluation. The only corpus here that annotates Footnote,
-              Page-header and Page-footer as first-class labels, across finance /
-              science / patents / tenders / law / manuals. Carries the embedded PDF
-              and pdf_cells (text + coords + font), so reading order is scoreable."
-
-    [pmc-oa.TIER]="A"
-    [pmc-oa.NAME]="PubMed Central OA commercial-use subset — 300 article PDFs + JATS XML"
-    [pmc-oa.LICENSE]="CC BY 4.0 (299 articles) / CC0 (1) — per-article, from the PMC file list"
-    [pmc-oa.LICENSE_URL]="https://pmc.ncbi.nlm.nih.gov/tools/openftlist/"
-    [pmc-oa.HOMEPAGE]="https://pmc.ncbi.nlm.nih.gov/tools/openftlist/"
-    [pmc-oa.SOURCE]="pinned:https://pmc-oa-opendata.s3.amazonaws.com/"
-    [pmc-oa.SUBDIR]="documents/pmc-oa"
-    [pmc-oa.NOTE]="Deliberately the COMMERCIAL-USE tier (oa_comm), not the whole OA subset:
-              PMC splits OA into commercial / non-commercial / other and only the
-              first is Tier A. Selection is reproducible — every 10th row of
-              oa_comm_xml.PMC000xxxxxx.baseline.2026-06-18.filelist.csv sorted by
-              accession, first 300. Each article ships BOTH the publisher PDF and the
-              JATS XML, so the XML is structural ground truth for what our parser
-              should have produced from the PDF (sections, tables, captions, refs).
-              ⚠ NCBI is deleting the legacy FTP layout in August 2026; the S3 keys
-              pinned in the manifest are the new per-PMCID layout and still resolve."
-
-    [ami-documents.TIER]="A"
-    [ami-documents.NAME]="AMI shared-doc — the documents produced in and for 67 AMI meetings"
-    [ami-documents.LICENSE]="Creative Commons Attribution 4.0 International (CC BY 4.0)"
-    [ami-documents.LICENSE_URL]="https://groups.inf.ed.ac.uk/ami/corpus/license.shtml"
-    [ami-documents.HOMEPAGE]="https://groups.inf.ed.ac.uk/ami/corpus/"
-    [ami-documents.SOURCE]="pinned:https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/"
-    [ami-documents.SUBDIR]="documents/ami-documents"
-    [ami-documents.NOTE]="The ONLY corpus found that pairs recordings with the documents the same
-              participants actually produced — 987 .ppt, 842 .doc, 524 .txt, 87 .xls,
-              28 .eml, plus slidesBackUp JPGs, across 67 meetings that ALSO have
-              transcripts and audio in the ami/ arm. That is what makes #362's
-              mixed-corpus gate a found scenario rather than an authored one: a
-              question answerable from both a recording and a document, with a
-              time-anchored media citation and a page-anchored document citation.
-              Same CC BY 4.0 as the AMI signals, so Tier A throughout.
-              It deliberately keeps the .ini/.lnk/INFO2 junk a real shared folder
-              carries — parser robustness is part of what this exercises.
-              Manifest pinning was validated against the mirror's own directory
-              listings for all 67 meetings (71 listings, 0 mismatches) rather than
-              pinned from whatever landed on disk — see negative result #7."
-
-    [govdocs1.TIER]="A"
-    [govdocs1.NAME]="GovDocs1 / Digital Corpora — 991 real-world .gov files, thread0"
-    [govdocs1.LICENSE]="CC0 1.0 (site materials); files are US-government web documents"
-    [govdocs1.LICENSE_URL]="https://digitalcorpora.org/about-digitalcorpora/terms-of-use/"
-    [govdocs1.HOMEPAGE]="https://digitalcorpora.org/corpora/file-corpora/files/"
-    [govdocs1.SOURCE]="url:https://downloads.digitalcorpora.org/corpora/files/govdocs1/threads/"
-    [govdocs1.FILES]="thread0.zip"
-    [govdocs1.SUBDIR]="documents/govdocs1"
-    [govdocs1.EXTRACTS]="thread0.zip:thread0"
-    [govdocs1.NOTE]="thread0, not 000.zip: the threads are RANDOM samples across the million-file
-              corpus while the numbered shards are contiguous and unrepresentative.
-              991 files — 257 pdf, 227 html, 104 jpg, 84 txt, 67 doc, 60 xls, 54 ppt,
-              22 ps, 7 unknown. NO layout ground truth: this measures crash rate,
-              hang rate and garbage-extraction rate on genuinely messy input, which
-              is the thing every curated benchmark hides. Upstream hedges the
-              redistribution claim ('to the best of our knowledge')."
-
-    # -- Tier B: better data than anything Tier A offers for these two jobs, but no
-    #    number derived from them may reach the paper.
-    [omnidocbench.TIER]="B"
-    [omnidocbench.NAME]="OmniDocBench (OpenDataLab) — 1,651 diverse pages, table + reading-order GT"
-    [omnidocbench.LICENSE]="Data: research only, NOT for commercial use (harness code is Apache-2.0)"
-    [omnidocbench.LICENSE_URL]="https://huggingface.co/datasets/opendatalab/OmniDocBench"
-    [omnidocbench.HOMEPAGE]="https://github.com/opendatalab/OmniDocBench"
-    [omnidocbench.SOURCE]="hf:opendatalab/OmniDocBench@aa1ee96d106dbe53d0ae59474d75c6e6d9b53fec"
-    [omnidocbench.INCLUDE]="."
-    [omnidocbench.EXCLUDE]="^\\.git"
-    [omnidocbench.SUBDIR]="documents/omnidocbench/repo"
-    [omnidocbench.NOTE]="TIER B — the licence is NOT in the HF metadata (the license field is
-              empty); it is prose in the 'Copyright Statement' section: 'The dataset
-              is for research purposes only and not for commercial use.' A
-              grep for 'licen' misses it entirely. Kept because it is the only source
-              with BOTH LaTeX and HTML table ground truth AND explicit reading-order
-              annotation across 9 document types — the two things #362's table
-              chunking and IR block ordering most need to be scored on."
-
-    [ucsf-idl.TIER]="B"
-    [ucsf-idl.NAME]="UCSF Industry Documents Library — 137 multi-page SCANNED PDFs (20–60 pp)"
-    [ucsf-idl.LICENSE]="No licence granted — UCSF publishes a fair-use disclaimer only"
-    [ucsf-idl.LICENSE_URL]="https://www.industrydocuments.ucsf.edu/help/copyright/"
-    [ucsf-idl.HOMEPAGE]="https://www.industrydocuments.ucsf.edu/"
-    [ucsf-idl.SOURCE]="pinned:https://download.industrydocuments.ucsf.edu/"
-    [ucsf-idl.SUBDIR]="documents/ucsf-idl"
-    [ucsf-idl.NOTE]="TIER B, and the tier is a floor not a ceiling: there is no licence at all
-              here, only an absence of enforcement, so treat it as strictly local.
-              Fetched anyway because it is the ONLY corpus that exercises the
-              20-page OCR chord on realistic input — 137 documents, 20–60 pages each,
-              ~4,500 scanned pages of litigation discovery. RVL-CDIP cannot do this
-              (single page, downsampled to 1000 px) and neither can olmOCR-bench
-              (single page). Selection: Solr q=pages:[20 TO 60],
-              fq=availability:'no restrictions', sort=id asc, first 150 (137 resolved;
-              13 answered 403). The query response is pinned alongside the PDFs."
-)
-
 # --- General-IR slice: BEIR (issue #403) --------------------------------------
 #
 # Land under <root>/beir/. Fourth array, fourth generated manifest, same reason as
 # the previous three: separate agents, no shared generated file, no merge conflict.
-# Mechanically these are `url:` single-zip arms exactly like cuad or contractnli,
+# Mechanically these are `url:` single-zip arms,
 # so they ride the shared multi-file loop; only the extract pass differs (see
 # beir_extract below — a BEIR zip already contains its own <task>/ top level, so it
 # unpacks into the PARENT of SUBDIR, not into SUBDIR).
@@ -953,11 +669,11 @@ done
 
 if [[ -n "$ONLY" ]]; then
     known=false
-    for k in "${DATASETS[@]}" "${ML_DATASETS[@]}" "${RB_DATASETS[@]}" "${DOC_DATASETS[@]}" "${BEIR_DATASETS[@]}"; do
+    for k in "${DATASETS[@]}" "${ML_DATASETS[@]}" "${RB_DATASETS[@]}" "${BEIR_DATASETS[@]}"; do
         [[ "$k" == "$ONLY" ]] && known=true
     done
     if ! $known; then
-        echo -e "${RED}Unknown dataset '${ONLY}' — known keys: ${DATASETS[*]} ${ML_DATASETS[*]} ${RB_DATASETS[*]} ${DOC_DATASETS[*]} ${BEIR_DATASETS[*]}${NC}"
+        echo -e "${RED}Unknown dataset '${ONLY}' — known keys: ${DATASETS[*]} ${ML_DATASETS[*]} ${RB_DATASETS[*]} ${BEIR_DATASETS[*]}${NC}"
         exit 2
     fi
 fi
@@ -1002,18 +718,6 @@ rb_any_selected() {
     return 1
 }
 
-# ...and for the document corpora (issue #362). Same reason again: --only qasper
-# must not rewrite the top-level MANIFEST.tsv that describes the archive corpora.
-doc_only() {
-    [[ -z "$ONLY" ]] && return 1
-    for k in "${DOC_DATASETS[@]}"; do [[ "$k" == "$ONLY" ]] && return 0; done
-    return 1
-}
-doc_any_selected() {
-    for k in "${DOC_DATASETS[@]}"; do selected "$k" && return 0; done
-    return 1
-}
-
 # ...and for the BEIR general-IR slice (issue #403). Fourth time, same reason:
 # --only beir-scifact must not rewrite a manifest it did not touch.
 beir_only() {
@@ -1050,7 +754,7 @@ print_licenses() {
         echo -e "    Note    : $(field "$key" NOTE)"
         echo ""
     done
-    for key in "${ML_DATASETS[@]}" "${RB_DATASETS[@]}" "${DOC_DATASETS[@]}" "${BEIR_DATASETS[@]}"; do
+    for key in "${ML_DATASETS[@]}" "${RB_DATASETS[@]}" "${BEIR_DATASETS[@]}"; do
         selected "$key" || continue
         tier="$(mlfield "$key" TIER)"
         if [[ "$tier" == "A" ]]; then tcol="${GREEN}Tier A — publishable${NC}"
@@ -1338,14 +1042,14 @@ MLUA="$UA"
 export MLUA
 export -f ml_fetch_one
 
-if ml_any_selected || rb_any_selected || doc_any_selected || beir_any_selected; then
+if ml_any_selected || rb_any_selected || beir_any_selected; then
     echo -e "${BLUE}================================================================${NC}"
-    echo -e "${BLUE}  Multi-file corpora: multilingual + retrieval + documents + BEIR (#403/#362)${NC}"
+    echo -e "${BLUE}  Multi-file corpora: multilingual + retrieval + BEIR (#403)${NC}"
     echo -e "${BLUE}================================================================${NC}\n"
 fi
 
-# One loop, four groups: identical fetch mechanics, separate generated manifests.
-for key in "${ML_DATASETS[@]}" "${RB_DATASETS[@]}" "${DOC_DATASETS[@]}" "${BEIR_DATASETS[@]}"; do
+# One loop, three groups: identical fetch mechanics, separate generated manifests.
+for key in "${ML_DATASETS[@]}" "${RB_DATASETS[@]}" "${BEIR_DATASETS[@]}"; do
     selected "$key" || continue
 
     tier="$(mlfield "$key" TIER)"
@@ -1477,89 +1181,8 @@ if ! $VERIFY_ONLY && rb_any_selected && [[ ${#FAILURES[@]} -eq 0 ]]; then
     fi
 fi
 
-# --- Document corpora: extract pass (issue #362) ------------------------------
-# The multi-file loop above fetches but never unpacks, which is right for the
-# multilingual arms (already-flat JSONL) and wrong for these: half of them are one
-# archive. EXTRACTS is "<archive>:<marker>" pairs, and the marker existing is what
-# makes a re-run a no-op — the same idempotence rule the archive loop uses, just
-# expressed per archive because some keys ship two.
-doc_extract() {
-    local key="$1" sub spec archive marker
-    sub="$DATA_DIR/$(mlfield "$key" SUBDIR)"
-    for spec in $(mlfield "$key" EXTRACTS); do
-        archive="$sub/${spec%%:*}"
-        marker="$sub/${spec#*:}"
-        [[ -f "$archive" ]] || continue
-        if [[ -e "$marker" ]] && ! $FORCE; then
-            echo -e "  ${GREEN}✓ already extracted${NC} → ${marker#"$DATA_DIR"/}"
-            continue
-        fi
-        echo -e "  ${YELLOW}⇱ extracting${NC} ${spec%%:*}"
-        case "$archive" in
-            *.zip)
-                # -o so --force genuinely re-extracts instead of prompting forever.
-                unzip -q -o "$archive" -d "$(dirname "$marker")" \
-                    || { FAILURES+=("$key: extract failed"); continue; } ;;
-            *.tar.gz|*.tgz)
-                # docling ships its whole source tree; we want tests/data + LICENCE
-                # only, hence the member filter. Everything else extracts whole.
-                if [[ "$key" == "docling-fixtures" ]]; then
-                    tar -xzf "$archive" -C "$sub" --strip-components=1 \
-                        --wildcards '*/tests/data' '*/LICENSE' \
-                        || { FAILURES+=("$key: extract failed"); continue; }
-                else
-                    tar -xzf "$archive" -C "$sub" \
-                        || { FAILURES+=("$key: extract failed"); continue; }
-                fi ;;
-            *) echo -e "  ${RED}✗ don't know how to extract ${archive}${NC}"
-               FAILURES+=("$key: unknown archive type") ;;
-        esac
-    done
-    # Mac zip artefacts. Harmless, but they make a "how many documents are there"
-    # count wrong by ~5 files and land AppleDouble junk in the ingest fixtures.
-    rm -rf "$sub/__MACOSX"
-}
-
-if ! $VERIFY_ONLY && doc_any_selected && [[ ${#FAILURES[@]} -eq 0 ]]; then
-    for key in "${DOC_DATASETS[@]}"; do
-        selected "$key" || continue
-        [[ -n "$(mlfield "$key" EXTRACTS)" ]] || continue
-        tier_blocked "$(mlfield "$key" TIER)" && continue
-        echo -e "${BLUE}--- ${key}: extract ---${NC}"
-        doc_extract "$key"
-        echo ""
-    done
-fi
-
-# --- Document manifest (issue #362) -------------------------------------------
-# Third generated table, third separate file, same reason as the other two.
-if ! $VERIFY_ONLY && doc_any_selected && [[ ${#FAILURES[@]} -eq 0 ]]; then
-    docdir="$DATA_DIR/documents"
-    if [[ -d "$docdir" ]]; then
-        docmanifest="$docdir/MANIFEST.tsv"
-        {
-            printf 'dataset\ttier\tfiles\tbytes\tmanifest_sha256\tlicense\tsource_url\tfetched_utc\n'
-            for key in "${DOC_DATASETS[@]}"; do
-                sub="$DATA_DIR/$(mlfield "$key" SUBDIR)"
-                [[ -d "$sub" ]] || continue
-                man="$(ml_manifest_path "$key")"
-                printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-                    "$key" "$(mlfield "$key" TIER)" \
-                    "$(find "$sub" -type f | wc -l)" \
-                    "$(du -sb "$sub" | cut -f1)" \
-                    "$([[ -f "$man" ]] && sha_of "$man" || echo "-")" \
-                    "$(mlfield "$key" LICENSE)" \
-                    "$(mlfield "$key" HOMEPAGE)" \
-                    "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            done
-        } > "$docmanifest"
-        echo -e "${BLUE}Document manifest written:${NC} $docmanifest"
-    fi
-fi
-
 # --- BEIR: extract pass (issue #403) ------------------------------------------
-# Deliberately NOT doc_extract(). A BEIR zip already contains its own <task>/ top
-# level (verified: scifact.zip unpacks to scifact/corpus.jsonl, scifact/queries.jsonl,
+# A BEIR zip already contains its own <task>/ top level (verified: scifact.zip unpacks to scifact/corpus.jsonl, scifact/queries.jsonl,
 # scifact/qrels/{train,test}.tsv), so unzipping into SUBDIR would give
 # beir/scifact/scifact/corpus.jsonl. Unzipping into SUBDIR's PARENT makes the zip's
 # own directory land exactly on SUBDIR, next to the archive it came from.
@@ -1629,7 +1252,7 @@ fi
 # Skipped when --only named a multilingual, retrieval-benchmark, document or BEIR
 # key: that run touched nothing this manifest describes, and it is shared with the
 # other arms.
-if ! $VERIFY_ONLY && ! ml_only && ! rb_only && ! doc_only && ! beir_only && [[ ${#FAILURES[@]} -eq 0 ]]; then
+if ! $VERIFY_ONLY && ! ml_only && ! rb_only && ! beir_only && [[ ${#FAILURES[@]} -eq 0 ]]; then
     manifest="$DATA_DIR/MANIFEST.tsv"
     {
         printf 'dataset\ttier\tarchive\tsha256\tbytes\tlicense\tsource_url\tfetched_utc\n'

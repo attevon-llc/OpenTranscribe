@@ -7,7 +7,7 @@ ChatGPT chat session is one single large chat session — it's multiple small fa
 quick calls combined into one master result."*
 
 This is the industry-standard **map-reduce / `tree_summarize`** pattern, and the
-digest plane it maps over is a **DocumentSummaryIndex**. Named here so the names
+digest plane it maps over is a **summary index**. Named here so the names
 travel with the code.
 
 ## Two levels, and the first one is already paid for
@@ -85,7 +85,6 @@ guideline) into four seams, none of which changed behaviour:
 |---|---|
 | `overview.py` | Sizing constants, `Overview`, `sections_budget`, `_clock` |
 | `file_summaries.py` | The per-recording MAP: `FileSummary`, `scope_digest_hits`, `build_file_summaries` |
-| `document_scope.py` | The document arm of the #403 Stage-6 mixed-collection gate |
 | `speaker_map.py` | The per-speaker MAP (W2.3): `scope_speaker_digest_hits` |
 | `reducers.py` | The REDUCE half: `CodeComposer`, `BatchReducer`, `build_overview` |
 | `coverage.py` | Issue #63: `check_scope_coverage`/`assert_full_coverage` — does the map's output equal the resolved scope, or name every gap? Added, not part of the original split |
@@ -104,8 +103,6 @@ from app.services.chat.mapreduce.coverage import ScopeCoverage
 from app.services.chat.mapreduce.coverage import ScopeCoverageError
 from app.services.chat.mapreduce.coverage import assert_full_coverage
 from app.services.chat.mapreduce.coverage import check_scope_coverage
-from app.services.chat.mapreduce.document_scope import _document_scope_hits
-from app.services.chat.mapreduce.document_scope import document_scope_hits
 from app.services.chat.mapreduce.file_summaries import MAP_TIER_SPEAKER_SUMMARIES_SETTING_KEY
 from app.services.chat.mapreduce.file_summaries import MAP_TIER_SUMMARIES_SETTING_KEY
 from app.services.chat.mapreduce.file_summaries import DigestScopeHits
@@ -157,14 +154,12 @@ __all__ = [
     "check_scope_coverage",
     "build_file_summaries",
     "build_overview",
-    "document_scope_hits",
     "scope_digest_hits",
     "scope_speaker_digest_hits",
     "sections_budget",
     "_BATCH_SYSTEM",
     "_clock",
     "_corpus_header",
-    "_document_scope_hits",
     "_empty_speaker_focus_overview",
     "_load_facts",
     "_owner_matched_action_items",

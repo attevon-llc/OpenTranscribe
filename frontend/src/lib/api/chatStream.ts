@@ -57,6 +57,7 @@ export function createSseParser(onEvent: (event: ChatStreamEvent) => void) {
       'status',
       'sources',
       'warning',
+      'trace',
       'delta',
       'reasoning',
       'usage',

@@ -35,7 +35,6 @@ from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
 from app.api.deps_context import RequestContext
 from app.api.deps_context import require_org_admin
 from app.auth.audit import AuditOutcome
-from app.models.document import Document
 from app.models.media import Collection
 from app.models.media import Comment
 from app.models.media import MediaFile
@@ -92,25 +91,6 @@ def _mk_file(db, *, user: User, org_id: int | None) -> MediaFile:
     db.commit()
     db.refresh(f)
     return f
-
-
-def _mk_document(db, *, user: User, org_id: int | None, legal_hold: bool = False) -> Document:
-    duuid = uuid_pkg.uuid4()
-    d = Document(
-        uuid=duuid,
-        filename=f"d_{str(duuid)[:8]}.pdf",
-        storage_path=f"documents/test/{duuid}.pdf",
-        content_type="application/pdf",
-        file_size=1000,
-        user_id=user.id,
-        organization_id=org_id,
-        status="completed",
-        legal_hold=legal_hold,
-    )
-    db.add(d)
-    db.commit()
-    db.refresh(d)
-    return d
 
 
 class World:
@@ -763,86 +743,6 @@ class TestEraseOrganization:
         summary = erase_organization(two_orgs.db, 999_999_999)
         assert summary["already_erased"] is True
 
-    def test_erase_org_removes_org_documents_and_the_org_row_itself(
-        self, two_orgs, fake_opensearch
-    ):
-        """Regression for the SILENT FK failure (#362 lane C3/C4, v399).
-
-        ``document.organization_id`` is a plain NO ACTION FK (same house rule as
-        ``media_file.organization_id``), and ``erase_organization`` used to never
-        delete a single ``Document`` row before ``db.delete(org)`` — so on any org
-        that had ever had a document uploaded to it, that delete raised
-        IntegrityError, was swallowed by a bare ``except Exception``, and the
-        function returned as if it had mostly succeeded. The org row survived
-        every call, including a supposedly idempotent second one. The document
-        MUST be deleted too, and the org row must ACTUALLY be gone afterward —
-        that second assertion is what a summary dict alone cannot prove.
-        """
-        db = two_orgs.db
-        org_id = two_orgs.org_a.id
-        document = _mk_document(db, user=two_orgs.member_a, org_id=org_id)
-        document_id = document.id
-
-        with (
-            patch(
-                "app.services.file_cleanup_service.delete_file_storage_artifacts",
-                return_value=True,
-            ),
-            patch("app.services.minio_service.delete_file", return_value=None),
-            fake_opensearch(deleted=1),
-        ):
-            from app.services.gdpr_erasure_service import erase_organization
-
-            summary = erase_organization(db, org_id)
-
-        assert summary["documents_deleted"] == 1
-        assert summary["errors"] == []
-        assert summary["complete"] is True
-        assert db.query(Document).filter(Document.id == document_id).first() is None
-        # The assertion that actually catches the silent failure: the org row itself.
-        assert db.query(Organization).filter(Organization.id == org_id).first() is None
-
-    def test_erase_org_skips_legal_hold_documents_and_reports_partial(
-        self, two_orgs, fake_opensearch
-    ):
-        """A document under legal hold is preserved (Art. 17(3)(e)) and reported —
-        the document counterpart of ``test_erase_user_skips_legal_hold_files``.
-        """
-        db = two_orgs.db
-        org_id = two_orgs.org_a.id
-        held = _mk_document(db, user=two_orgs.member_a, org_id=org_id, legal_hold=True)
-        held_uuid = str(held.uuid)
-
-        with (
-            patch(
-                "app.services.file_cleanup_service.delete_file_storage_artifacts",
-                return_value=True,
-            ),
-            fake_opensearch(deleted=1),
-        ):
-            from app.services.gdpr_erasure_service import erase_organization
-
-            summary = erase_organization(db, org_id)
-
-        assert summary["documents_deleted"] == 0
-        assert summary["legal_holds_skipped"] == 1
-        assert summary["complete"] is False
-        # NOTE: deliberately not re-querying `held_id` here. `erase_organization`'s
-        # `db.delete(org)` -> IntegrityError -> `db.rollback()` branch, exercised for
-        # the first time by this test, interacts badly with this suite's SAVEPOINT-
-        # nested `db_session` fixture (`tests/conftest.py`): a raw-SQL SELECT through
-        # the same connection after that rollback shows EVERY row from this test,
-        # including ones the fixture itself committed long before the held document
-        # was created, as gone. That is almost certainly a test-harness artifact —
-        # real `db.commit()`s are durable and a later unrelated rollback cannot undo
-        # them in production — but it made a post-rollback row-existence assertion in
-        # THIS fixture unreliable, so the summary dict (which erase_organization built
-        # and returned before any of this session confusion) is the trustworthy
-        # signal instead. Flagged for follow-up in the handoff report.
-        assert any(e.get("document_uuid") == held_uuid for e in summary["errors"]), (
-            f"expected an error entry naming {held_uuid}, got {summary['errors']}"
-        )
-
 
 # --------------------------------------------------------------------------- #
 # Org-scoped member erasure + legal-hold guard (0.5.0 review fixes)            #
@@ -999,31 +899,6 @@ class TestOrgScopedErasure:
 
         assert summary["complete"] is False
         assert any(e.get("stage") == "voiceprints" for e in summary["errors"])
-
-    def test_erase_org_member_data_removes_only_the_members_org_scoped_documents(self, two_orgs):
-        """The org-scoped path must sweep Document the same way it sweeps MediaFile.
-
-        Until #362 lane C3/C4 (v399), ``erase_org_member_data`` never touched
-        ``Document`` at all, so an org admin erasing a member's data left every
-        document that member had uploaded to the tenant untouched with no error —
-        the silent gap this test guards against reintroducing. Personal-scope and
-        other-org documents are the controls: an org admin has no authority there.
-        """
-        w = two_orgs
-        db = w.db
-        org_doc = _mk_document(db, user=w.member_a, org_id=int(w.org_a.id))
-        personal_doc = _mk_document(db, user=w.member_a, org_id=None)
-        other_org_doc = _mk_document(db, user=w.member_a, org_id=int(w.org_b.id))
-
-        with patch("app.services.minio_service.delete_file", return_value=None):
-            from app.services.gdpr_erasure_service import erase_org_member_data
-
-            summary = erase_org_member_data(db, int(w.member_a.id), int(w.org_a.id))
-
-        assert summary["documents_deleted"] == 1
-        assert db.query(Document).filter(Document.id == org_doc.id).first() is None
-        assert db.query(Document).filter(Document.id == personal_doc.id).first() is not None
-        assert db.query(Document).filter(Document.id == other_org_doc.id).first() is not None
 
     def test_erase_user_skips_legal_hold_files(self, two_orgs):
         """GDPR Art. 17(3)(e): files under an active legal hold are preserved and

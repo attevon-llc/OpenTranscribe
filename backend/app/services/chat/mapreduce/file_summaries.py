@@ -1,4 +1,4 @@
-"""The MAP step: one recording (or document) becomes one :class:`FileSummary`.
+"""The MAP step: one recording becomes one :class:`FileSummary`.
 
 Split out of the former single-file ``mapreduce.py``. This module owns the
 per-file read — ``file_facts``, the LLM-summary freshness test, and the
@@ -323,9 +323,13 @@ def scope_digest_hits(
     files_without_artifacts = 0
     files_no_content = 0
     summary_hits = 0
-    # #403 Stage-6 gate: which uuids the MEDIA query above actually matched — a
-    # document's uuid never appears in `media_file`, so anything left over
-    # after this loop is either a document or genuinely gone.
+    #: Which scope uuids the query actually matched. The query outer-joins
+    #: ``file_facts`` onto ``media_file`` filtered by ``MediaFile.uuid.in_(...)``,
+    #: so a scope uuid with no accessible ``media_file`` row produces NO row at
+    #: all and the loop below can never see it. Counting those after the loop is
+    #: what keeps ``files_without_artifacts`` a complete account of the scope —
+    #: without it a caller reconciling coverage sees an unexplained gap, which is
+    #: exactly the failure this coverage dict exists to prevent.
     matched_uuids: set[str] = set()
     for row in rows:
         if use_summaries:
@@ -386,31 +390,8 @@ def scope_digest_hits(
             # tell the two apart rather than seeing one unexplained gap.
             files_no_content += 1
 
-    # The DOCUMENT half of a mixed collection (#403 Stage-6 gate). Only for
-    # uuids the media query did not match — the two tables share no uuid
-    # namespace, so this can never double-count a recording, and it also keeps
-    # every EXISTING media-only caller (and every test mocking the media query
-    # chain above) byte-identical: this second query only ever runs when the
-    # scope actually contains a non-media uuid.
-    remaining = [u for u in file_uuids if str(u) not in matched_uuids]
-    if remaining:
-        # Resolved through the PACKAGE, not a direct submodule import, and
-        # re-looked-up on every call (never bound to a module-level name) —
-        # `tests/unit/test_chat_mapreduce_documents.py` patches
-        # ``app.services.chat.mapreduce._document_scope_hits``, and only an
-        # attribute lookup on the package object at call time observes that
-        # patch. A top-of-file `from .document_scope import document_scope_hits`
-        # would bind the ORIGINAL function into this module's namespace at
-        # import time, silently unpatchable — exactly the trap a "pure move"
-        # split must not introduce.
-        from app.services.chat import mapreduce as _mapreduce_pkg
-
-        doc_hits, doc_without_artifacts, doc_no_content = _mapreduce_pkg._document_scope_hits(
-            db, remaining, sections_per_file
-        )
-        hits.extend(doc_hits)
-        files_without_artifacts += doc_without_artifacts
-        files_no_content += doc_no_content
+    # Scope uuids the query never matched — see ``matched_uuids`` above.
+    files_without_artifacts += sum(1 for u in file_uuids if str(u) not in matched_uuids)
 
     coverage = {
         "files_without_artifacts": files_without_artifacts,

@@ -1,8 +1,8 @@
-"""``GET /api/search``'s ``total_pages`` for the summaries/documents-only legs.
+"""``GET /api/search``'s ``total_pages`` for the summaries-only leg.
 
-A ``result_type=summaries`` (or ``documents``) request never runs the transcript
-leg, so the placeholder response built for that case used to leave `total_pages`
-hardcoded at 0 no matter how many summary/document hits were actually found —
+A ``result_type=summaries`` request never runs the transcript leg, so the
+placeholder response built for that case used to leave `total_pages`
+hardcoded at 0 no matter how many summary hits were actually found —
 real pagination never reached the client, and the frontend had to work around it.
 Kept as its own small file (rather than folded into the larger
 ``test_search_result_type.py``) so it stays a narrow, obviously-scoped pin on the
@@ -61,27 +61,6 @@ def test_summaries_only_total_pages_reflects_the_summary_total(
     assert body["total_pages"] == 3
 
 
-def test_documents_only_total_pages_reflects_the_document_total(
-    client, user_token_headers, monkeypatch
-):
-    from app.services.search.chunk_retrieval import DocumentSearchResult
-
-    monkeypatch.setattr(HybridSearchService, "search", _explode)
-    monkeypatch.setattr(
-        "app.services.search.chunk_retrieval.search_document_chunks",
-        lambda *a, **k: DocumentSearchResult(results=[], total_results=7, total_files=7),
-    )
-
-    body = client.get(
-        SEARCH_PATH,
-        params={"q": "revenue", "result_type": "documents", "page_size": 4},
-        headers=user_token_headers,
-    ).json()
-
-    assert body["document_total"] == 7
-    assert body["total_pages"] == 2  # ceil(7 / 4)
-
-
 def test_summaries_only_total_pages_is_zero_when_nothing_matched(
     client, user_token_headers, monkeypatch
 ):
@@ -108,7 +87,7 @@ def test_summaries_only_total_pages_is_zero_when_nothing_matched(
 def test_transcripts_result_type_total_pages_is_the_transcript_legs_own_value(
     client, user_token_headers, monkeypatch
 ):
-    """The summaries/documents pagination fix must not fire for an ordinary
+    """The summaries pagination fix must not fire for an ordinary
     transcript search — its own `total_pages` (computed by `HybridSearchService`)
     must reach the client unrecomputed.
     """
@@ -138,4 +117,3 @@ def test_transcripts_result_type_total_pages_is_the_transcript_legs_own_value(
 
     assert body["total_pages"] == 99
     assert "summary_total" not in body
-    assert "document_total" not in body

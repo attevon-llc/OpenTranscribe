@@ -31,7 +31,6 @@
  * - All Svelte stores holding user data (files, searches, shares, etc.)
  * - WebSocket connection & notifications
  * - Upload queue (in-flight + persisted)
- * - Document upload queue (in-flight)
  * - API response cache (apiCache: file pages, tags, speakers, collections, groups)
  * - Thumbnail cache (blob URLs)
  * - Presigned media URL cache
@@ -48,9 +47,6 @@ export async function clearUserState(): Promise<void> {
     import('$stores/toast').then(({ toastStore }) => toastStore.clear()),
     import('$stores/websocket').then(({ websocketStore }) => websocketStore.clearAll()),
     import('$stores/uploads').then(({ uploadsStore }) => uploadsStore.reset()),
-    import('$lib/services/documentUploadService').then(({ documentUploadService }) =>
-      documentUploadService.reset()
-    ),
     import('$stores/gallery').then(({ galleryStore }) => galleryStore.resetFilters()),
     import('$stores/search').then(({ searchStore }) => searchStore.reset()),
     import('$stores/sharing').then(({ sharingStore }) => sharingStore.reset()),

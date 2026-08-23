@@ -430,10 +430,8 @@
      ⚠️ Coordinated with the identical threshold in ../Navbar.svelte, which
      drops the navbar gap to 1.5rem. Both must move together: raising only the
      Navbar one left the username visible from 1281-1500px, where the bar still
-     needed 1355px and still overflowed. Measured while fixing issue #452, then
-     raised again 1500 -> 1700 when the Documents nav item pushed the measured
-     minimum (with username shown) to 1621px. */
-  @media (max-width: 1700px) {
+     needed 1355px and still overflowed. Measured while fixing issue #452. */
+  @media (max-width: 1500px) {
     .username {
       display: none;
     }

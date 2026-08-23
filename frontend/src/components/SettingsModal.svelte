@@ -40,7 +40,6 @@
   import CustomVocabularySettings from '$components/settings/CustomVocabularySettings.svelte';
   import SystemStatisticsPanel from '$components/settings/SystemStatisticsPanel.svelte';
   import AdminTaskHealthPanel, { type ConfirmRequest } from '$components/settings/AdminTaskHealthPanel.svelte';
-  import DocumentQuarantinePanel from '$components/settings/DocumentQuarantinePanel.svelte';
   import UserProfileSettings from '$components/settings/UserProfileSettings.svelte';
   // Managed-edition org-admin panels (only rendered when edition=cloud + org_admin;
   // community builds get inert stubs from the $lib/cloud seam)
@@ -286,10 +285,7 @@
           { id: 'backup' as SettingsSection, label: $t('settings.backup.title'), icon: 'database', cap: 'admin.backup' },
           { id: 'search-indexing' as SettingsSection, label: $t('settings.searchIndexing.title'), icon: 'search', cap: 'admin.search_indexing' },
           { id: 'embedding-migration' as SettingsSection, label: $t('settings.embeddingMigration.title'), icon: 'database', cap: 'admin.embedding_migration' },
-          { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health', cap: 'admin.task_health' },
-          // v400 (#362 lane C3-remainder) — GET /documents/admin/quarantined +
-          // POST /documents/{uuid}/release existed since v399 with no consumer.
-          { id: 'document-quarantine' as SettingsSection, label: $t('documents.adminQuarantineTitle'), icon: 'shield' }
+          { id: 'admin-task-health' as SettingsSection, label: $t('settings.taskHealth.title'), icon: 'health', cap: 'admin.task_health' }
         ]
       }
     ] : []),
@@ -1143,13 +1139,6 @@
           <!-- Admin Task Health Section -->
           {#if activeSection === 'admin-task-health'}
             <AdminTaskHealthPanel on:requestConfirm={handleTaskHealthConfirm} />
-          {/if}
-
-          <!-- Document quarantine review (v400, #362 lane C3-remainder) -->
-          {#if activeSection === 'document-quarantine' && isAdmin}
-            <div class="content-section">
-              <DocumentQuarantinePanel />
-            </div>
           {/if}
 
           <!-- Cloud edition — Billing (org admins only) -->

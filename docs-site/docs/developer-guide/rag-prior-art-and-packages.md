@@ -102,10 +102,8 @@ The test we apply, in order:
 | Lexical ranking (BM25) | **OpenSearch** | Native; not reimplemented |
 | Dense vectors | **OpenSearch ML Commons** + `all-MiniLM-L6-v2` (384-dim) | Embeddings run **in the cluster**, not in Python |
 | Hybrid fusion | **OpenSearch `score-ranker-processor`** (RRF, `rank_constant` 30) | Native Reciprocal Rank Fusion |
-| Sentence splitting | **nltk punkt** | One splitter shared by the transcript chunker, digests, and the document chunker — see the note below |
+| Sentence splitting | **nltk punkt** | One splitter shared by the transcript chunker and digests — see the note below |
 | Retrieval metrics | **`pytrec_eval_terrier`** (NIST trec_eval C code) | nDCG@10 / recall@k / MRR |
-| Document parsing | **Docling** (tiered) + **pypdfium2** | See [Documents](../features/documents.md) |
-| Legacy OLE2 parsing | **Apache Tika** | `.doc` / `.ppt` / `.xls` — Docling handles OOXML only |
 | LLM serving | **vLLM** | Gemma 4 E4B |
 | Reranking seam | `reranker.get_reranker()` | Deliberately a seam; the model is Stage 5's bake-off |
 

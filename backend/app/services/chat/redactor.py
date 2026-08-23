@@ -400,24 +400,11 @@ def _gather_chunk_plans(
     plans: list[_ChunkPlan] = []
     for chunk in chunks:
         try:
-            # ⚠️ Document-origin chunks NEVER take the MediaFile lookup below.
-            # ``Document.id`` and ``MediaFile.id`` are independent SERIAL sequences that
-            # collide in any real deployment — a document chunk querying `MediaFile.id ==
-            # chunk.file_id` can silently match an UNRELATED media file and, if their time
-            # ranges happen to overlap, serve that file's transcript content as if it were
-            # this document's masked text. Route by ``source_kind`` before any query runs;
-            # never infer the source from "the lookup returned None".
-            #
-            # Both branches return ``_SegmentSpans`` (plain data), so the masking phase in
-            # :func:`_apply_chunk_plan` is shared and holds no session either way.
-            if chunk.is_document:
-                segments, effective = _gather_document_chunk_spans(
-                    db, chunk, requester_user_id, requester_cfg, owner_cache
-                )
-            else:
-                segments, effective = _gather_chunk_segments(
-                    db, chunk, requester_user_id, requester_cfg, owner_cache
-                )
+            # Returns ``_SegmentSpans`` (plain data), so the masking phase in
+            # :func:`_apply_chunk_plan` holds no session.
+            segments, effective = _gather_chunk_segments(
+                db, chunk, requester_user_id, requester_cfg, owner_cache
+            )
         except Exception:  # noqa: BLE001
             logger.exception("Cached-span lookup failed for chunk; withholding content")
             # Fail CLOSED — an unmaskable chunk contributes nothing. The effective
@@ -550,15 +537,7 @@ def _digest_sentences(db: Session, chunk: ChunkHit) -> list[dict] | None:
     directly, to avoid the N+1 this function's per-hit query would otherwise
     reproduce inside a loop. This form remains for any caller that genuinely
     has one hit and no batch to amortize the query over.
-
-    ``None`` for a document-origin ``chunk`` (:attr:`ChunkHit.is_document`),
-    defensively, even though nothing on today's call path reaches this
-    function with one: ``FileFacts.media_file_id`` is never a document's id,
-    and querying it that way risks the same id-collision hazard
-    :func:`_gather_digest_plans` routes document-origin hits around entirely.
     """
-    if chunk.is_document:
-        return None
     from app.models.file_facts import FileFacts
 
     row = db.query(FileFacts.digest).filter(FileFacts.media_file_id == chunk.file_id).first()
@@ -603,75 +582,20 @@ def _gather_digest_plans(
 
     owner_cache: dict[Any, Any] = {}
 
-    # ONE query for every MEDIA digest hit's `file_facts.digest`, not one per
-    # hit — see `_load_digest_rows`'s docstring for the N+1 this replaces. A
-    # failure here degrades every media hit to "no digest row read", which the
-    # per-hit `.get()` below already treats as None — the same fail-closed
-    # outcome a per-hit query failure produced before batching, just via one
-    # failure point instead of N independent ones. Document-origin hits are
-    # deliberately excluded from this query's `file_id` list — see the
-    # `is_document` branch below for why.
+    # ONE query for every digest hit's `file_facts.digest`, not one per hit —
+    # see `_load_digest_rows`'s docstring for the N+1 this replaces. A failure
+    # here degrades every hit to "no digest row read", which the per-hit
+    # `.get()` below already treats as None — the same fail-closed outcome a
+    # per-hit query failure produced before batching, just via one failure
+    # point instead of N independent ones.
     try:
-        digest_rows = _load_digest_rows(db, [d.file_id for d in digests if not d.is_document])
+        digest_rows = _load_digest_rows(db, [d.file_id for d in digests])
     except Exception:  # noqa: BLE001
         logger.exception("Batched digest read failed; every hit falls through to unresolvable")
         digest_rows = {}
 
     plans: list[_DigestPlan] = []
     for digest in digests:
-        if digest.is_document:
-            # ⚠️ Document-origin digest hits (`mapreduce._document_scope_hits`,
-            # #403 Stage-6 mixed-collection coverage) NEVER take the MediaFile
-            # lookup below. `Document.id` and `MediaFile.id` are independent
-            # SERIAL sequences that collide in any real deployment — the same
-            # hazard `_gather_chunk_plans` already routes around for the chunk
-            # plane. A collision here would silently mask (and serve) an
-            # UNRELATED media file's cached spans as if they belonged to this
-            # document: `_load_digest_rows`/`_digest_sentences_from_row` would
-            # be handed that other file's real digest JSON, and its section
-            # matching the same `digest_section` index would return a
-            # different file's REAL sentences with REAL provenance — not a
-            # missing-lookup failure, an actively wrong answer.
-            #
-            # The document analog of per-sentence provenance masking exists
-            # (`ingest_artifacts.document_digest_masking.mask_char_range_provenance`)
-            # but is deliberately NOT wired in here — every document-origin
-            # digest hit therefore falls straight through to the inline
-            # masker below (`_mask_inline(digest.content, effective)`), which
-            # detects directly over the hit's own content (already correctly
-            # scoped by `_document_scope_hits`) and touches no `file_id`
-            # lookup at all, so it cannot cross a file boundary either way.
-            # See `services/chat/CLAUDE.md` for the follow-on work this
-            # leaves open.
-            #
-            # The OWNER lookup below is a Document-only query (never MediaFile,
-            # for the same collision reason) — task #40 still needs it: a
-            # document-origin digest hit is masked inline unconditionally, but
-            # WHICH categories that inline pass masks must still be the
-            # strictest-wins union of the document's own owner and the
-            # requester, not the requester alone.
-            from app.models.document import Document
-
-            try:
-                owner_id = db.query(Document.user_id).filter(Document.id == digest.file_id).scalar()
-            except Exception:  # noqa: BLE001
-                logger.exception(
-                    "Could not read the document owner for chat egress masking; "
-                    "failing closed to the most restrictive policy"
-                )
-                owner_id = None
-            effective = _effective_cfg_for_owner(
-                db, owner_id, requester_user_id, requester_cfg, owner_cache
-            )
-            applies = bool(
-                getattr(effective, "enabled", False)
-                and getattr(effective, "redact_before_llm", False)
-            )
-            plans.append(
-                _DigestPlan(sentences=None, unresolvable=True, cfg=effective, applies=applies)
-            )
-            continue
-
         sentences = None
         try:
             scan = (
@@ -782,82 +706,6 @@ def _gather(
         return inputs
 
 
-def _gather_document_chunk_spans(
-    db: Session,
-    chunk: ChunkHit,
-    requester_user_id: int,
-    requester_cfg,
-    owner_cache: dict[Any, Any],
-) -> tuple[list[_SegmentSpans] | None, Any]:
-    """The document analog of :func:`_gather_chunk_segments`. Phase A — reads only.
-
-    Simpler than the transcript case by construction: a ``document_chunk`` row
-    already **is** the retrieval unit indexed into OpenSearch (1:1) — there is no
-    "rebuild from several overlapping rows" step, just a direct lookup by
-    ``(document_id, chunk_index)`` and a read of that row's own cached spans.
-
-    Returns ``(segments_or_None, effective_cfg)`` — see
-    :func:`_gather_chunk_segments`'s docstring for what the pairing means.
-    ``segments`` is ``None`` whenever the cached-span path cannot be trusted
-    (mirrors :func:`_gather_chunk_segments` exactly: unscanned, or scanned with
-    a coverage gap against this policy), so the masking phase falls back to
-    inline detection. Returns plain ``_SegmentSpans``, never an ORM row — the
-    first attribute read on a detached row would re-open a transaction in the
-    masking phase, which is the whole point of the split.
-    """
-    from app.models.document import Document
-    from app.models.document import DocumentChunk
-    from app.services.redaction.coverage import uncovered_detectors
-
-    scan = (
-        db.query(
-            Document.id,
-            Document.redaction_status,
-            Document.redaction_coverage,
-            Document.language,
-            Document.user_id,
-        )
-        .filter(Document.id == chunk.file_id)
-        .first()
-    )
-    effective = _effective_cfg_for_owner(
-        db, getattr(scan, "user_id", None), requester_user_id, requester_cfg, owner_cache
-    )
-    if scan is None or scan.redaction_status != C.REDACTION_STATUS_DONE:
-        return None, effective
-
-    gap = uncovered_detectors(scan, effective)
-    if gap:
-        logger.warning(
-            "Cached spans do not cover %s for document %s; masking inline instead",
-            sorted(gap),
-            chunk.file_id,
-        )
-        return None, effective
-
-    row = (
-        db.query(DocumentChunk.text, DocumentChunk.redactions)
-        .filter(
-            DocumentChunk.document_id == chunk.file_id,
-            DocumentChunk.chunk_index == chunk.chunk_index,
-        )
-        .first()
-    )
-    if row is None or not row.text:
-        return None, effective
-
-    # One row, not a rebuild: a ``document_chunk`` IS the indexed retrieval unit (1:1).
-    # ``words=None`` — a document has no word timings; ``mask_segment`` takes that.
-    return [
-        _SegmentSpans(text=row.text, redactions=list(row.redactions or []), words=None)
-    ], effective
-
-
-# --------------------------------------------------------------------------- #
-# Phase B — CPU. Nothing below may touch the database.
-# --------------------------------------------------------------------------- #
-
-
 def _egress_style(cfg: Any) -> Any:
     """Force a non-revealing masking style for provider-bound text.
 
@@ -904,36 +752,6 @@ def _egress_style(cfg: Any) -> Any:
     clone = copy.copy(cfg)
     clone.style = "label"
     return clone
-
-
-def mask_document_chunks(
-    session_factory: SessionFactory,
-    chunks: list[ChunkHit],
-    user_id: int,
-    *,
-    unmask_for_local: bool = False,
-) -> list[MaskedChunk]:
-    """Apply the STRICTEST-WINS redact-before-LLM policy to document chunks.
-
-    The document counterpart of :func:`mask_chunks`, addressed by
-    ``(document_id, chunk_index)`` rather than a transcript's time range — a document
-    has no timeline, so ``chunk.char_start``/``char_end`` (stamped on every
-    ``DocumentChunk`` by the chunker) is the addressing scheme, exactly as
-    anticipated in this module's own history: "expect a new
-    ``mask_document_chunks``-style function keyed on char offsets, following the
-    same fail-closed contract." Same fail-closed contract as ``mask_chunks``:
-    unresolvable policy or unmaskable content becomes ``""``, never raw text.
-
-    Callers that already know they only have document-origin chunks can call this
-    directly; ``mask_chunks`` also routes to the same logic internally for a mixed
-    list, so calling the wrong one on a document chunk is not a safety hole — it is
-    redundant, not incorrect.
-
-    Two-phase like :func:`mask_chunks` (issue #83): one short session gathers, the
-    session closes, and the masking — which may pay a cold Presidio build on the
-    inline fallback — runs with nothing held.
-    """
-    return mask_chunks(session_factory, chunks, user_id, unmask_for_local=unmask_for_local)
 
 
 def _mask_inline(text: str, cfg) -> str:

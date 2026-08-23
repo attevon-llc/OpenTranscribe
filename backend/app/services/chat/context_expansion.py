@@ -93,11 +93,10 @@ class _SegmentLike(Protocol):
 def needs_expansion(chunk: ChunkHit) -> bool:
     """Whether ``chunk`` is a candidate for expansion.
 
-    Transcript chunks only — a digest section is already a summary (no
-    single time range to widen meaningfully) and a document chunk has no
-    timeline at all (``char_start``/``char_end`` addressing instead).
+    Transcript chunks only — a digest section is already a summary, with no
+    single time range to widen meaningfully.
     """
-    if chunk.is_digest or chunk.is_document:
+    if chunk.is_digest:
         return False
     return count_words(chunk.content) < SHORT_CHUNK_WORD_THRESHOLD
 
@@ -248,8 +247,8 @@ def expand_chunks(db: Session, chunks: list[ChunkHit]) -> list[ChunkHit]:
 
     Returns:
         A new list, same length and order as ``chunks``. Each entry is
-        either the original :class:`ChunkHit` (long chunk, digest, document,
-        or an expansion that found nothing/failed) or a widened copy.
+        either the original :class:`ChunkHit` (long chunk, digest, or an
+        expansion that found nothing/failed) or a widened copy.
     """
     return [expand_one(db, chunk) if needs_expansion(chunk) else chunk for chunk in chunks]
 

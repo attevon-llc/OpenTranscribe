@@ -13,53 +13,19 @@ from app.api.endpoints.auth import get_current_active_user
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
-from app.models.document import Document
-from app.models.document import DocumentChunk
 from app.models.media import Comment
 from app.models.media import MediaFile
 from app.models.user import User
-from app.schemas.document import DocumentCommentCreate
 from app.schemas.media import Comment as CommentSchema
 from app.schemas.media import CommentCreate
 from app.schemas.media import CommentCreateStandalone
 from app.schemas.media import CommentUpdate
-from app.services.permission_service import PERMISSION_LEVELS
 from app.services.permission_service import PermissionService
-from app.utils.uuid_helpers import get_by_uuid
 from app.utils.uuid_helpers import get_comment_by_uuid
 from app.utils.uuid_helpers import get_file_by_uuid_with_permission
 from app.utils.uuid_helpers import require_resource_owner
 
 router = APIRouter()
-
-
-def _check_document_access(
-    db: Session,
-    document_uuid: str,
-    current_user: User,
-    organization_id: OrgScope = UNSCOPED,
-    min_permission: str = "viewer",
-) -> Document:
-    """Get a document after verifying the user has at least *min_permission*.
-
-    v400 (#362 lane C3-remainder/C5) — the document counterpart of
-    ``_check_file_access``, using ``PermissionService.get_document_permission``
-    (owner + direct/group ``DocumentShare`` grants) rather than the collection-sharing
-    rule that method reads for media files. **404, not 403**, on a document the caller
-    cannot reach — matching ``documents.py:_get_owned_document``'s convention rather
-    than this module's own 403-for-media convention: a document that exists but is out
-    of reach must not be distinguishable from one that does not exist, the same
-    404-not-403 reasoning `app/api/CLAUDE.md`'s tag plane gives.
-    """
-    doc = get_by_uuid(db, Document, document_uuid, error_message="Document not found")
-    if current_user.is_admin:
-        return doc
-    permission = PermissionService.get_document_permission(
-        db, doc.id, current_user.id, organization_id=organization_id
-    )
-    if permission is None or PERMISSION_LEVELS[permission] < PERMISSION_LEVELS[min_permission]:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
-    return doc
 
 
 def _check_file_access(
@@ -137,87 +103,6 @@ def create_comment_for_file_nested(
     db_comment_reloaded = (
         db.query(Comment)
         .options(joinedload(Comment.user), joinedload(Comment.media_file))
-        .filter(Comment.id == db_comment.id)
-        .first()
-    )
-
-    return CommentSchema.model_validate(db_comment_reloaded)
-
-
-@router.get("/documents/{document_uuid}/comments", response_model=list[CommentSchema])
-def get_comments_for_document_nested(
-    document_uuid: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    ctx: RequestContext = Depends(get_current_context),
-):
-    """Get all notes for a specific document (v400, #362 lane C5) — the document
-    analogue of :func:`get_comments_for_file_nested`. Requires viewer+ permission.
-    """
-    doc = _check_document_access(db, document_uuid, current_user, organization_id=ctx.org_id)
-    comments = (
-        db.query(Comment)
-        .options(
-            joinedload(Comment.user),
-            joinedload(Comment.document),
-            joinedload(Comment.document_chunk),
-        )
-        .filter(Comment.document_id == doc.id)
-        .order_by(Comment.created_at)
-        .all()
-    )
-    return comments
-
-
-@router.post("/documents/{document_uuid}/comments", response_model=CommentSchema)
-def create_comment_for_document_nested(
-    document_uuid: str,
-    comment: DocumentCommentCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    ctx: RequestContext = Depends(get_current_context),
-):
-    """Add a note to a document, optionally anchored to a chunk (v400, #362 lane C5).
-
-    Requires viewer+ permission on the document (commenting is collaborative, same
-    rule the media-file nested route applies).
-    """
-    doc = _check_document_access(db, document_uuid, current_user, organization_id=ctx.org_id)
-
-    document_chunk_id = None
-    if comment.document_chunk_index is not None:
-        chunk = (
-            db.query(DocumentChunk)
-            .filter(
-                DocumentChunk.document_id == doc.id,
-                DocumentChunk.chunk_index == comment.document_chunk_index,
-            )
-            .first()
-        )
-        if chunk is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Document has no chunk at index {comment.document_chunk_index}",
-            )
-        document_chunk_id = chunk.id
-
-    db_comment = Comment(
-        text=comment.text,
-        document_id=doc.id,
-        document_chunk_id=document_chunk_id,
-        user_id=current_user.id,
-    )
-    db.add(db_comment)
-    db.commit()
-    db.refresh(db_comment)
-
-    db_comment_reloaded = (
-        db.query(Comment)
-        .options(
-            joinedload(Comment.user),
-            joinedload(Comment.document),
-            joinedload(Comment.document_chunk),
-        )
         .filter(Comment.id == db_comment.id)
         .first()
     )
@@ -309,7 +194,7 @@ def _assert_comment_file_in_scope(
     *,
     forbidden_detail: str,
 ) -> None:
-    """Refuse a comment whose file/document is outside the caller's tenant scope.
+    """Refuse a comment whose file is outside the caller's tenant scope.
 
     Authorship is NOT a tenant. Every mutation below also applies its own
     ownership rule, but ownership alone let a caller edit and delete a comment on
@@ -320,26 +205,12 @@ def _assert_comment_file_in_scope(
 
     Admins bypass, matching ``get_comment`` and ``_check_file_access`` — one rule
     for the whole module rather than a second, divergent one.
-
-    v400 (#362 lane C3-remainder/C5): branches on which owner column is set
-    (exactly one is, per ``ck_comment_exactly_one_owner``) and reads the matching
-    ``PermissionService`` rule — ``get_file_permission`` for a media comment,
-    ``get_document_permission`` for a document one.
     """
     if current_user.is_admin:
         return
-    if comment.document_id is not None:
-        permission = PermissionService.get_document_permission(
-            db, int(comment.document_id), current_user.id, organization_id=ctx.org_id
-        )
-    else:
-        # ck_comment_exactly_one_owner guarantees media_file_id is set here (the
-        # `if` above took the document_id branch when it was); mypy cannot see a
-        # database CHECK, so this narrows explicitly rather than widening the type.
-        assert comment.media_file_id is not None
-        permission = PermissionService.get_file_permission(
-            db, comment.media_file_id, current_user.id, organization_id=ctx.org_id
-        )
+    permission = PermissionService.get_file_permission(
+        db, int(comment.media_file_id), current_user.id, organization_id=ctx.org_id
+    )
     if permission is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -425,12 +296,11 @@ def delete_comment(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Delete a comment. Admin, comment author, or file/document owner — within
-    their tenant.
+    """Delete a comment. Admin, comment author, or file owner — within their tenant.
 
-    The scope gate runs before all three branches on purpose: author and
-    file/document owner are both properties that survive the caller moving
-    organizations, so either one alone would re-open the asymmetry this gate closes.
+    The scope gate runs before all three branches on purpose: author and file
+    owner are both properties that survive the caller moving organizations, so
+    either one alone would re-open the asymmetry this gate closes.
     """
     comment = get_comment_by_uuid(db, comment_uuid)
 
@@ -454,15 +324,8 @@ def delete_comment(
         db.commit()
         return None
 
-    # Allow deletion by the owner of the file/document the comment is on
-    # (project only user_id, not full ORM object). v400: branches on which owner
-    # column is set, same as _assert_comment_file_in_scope above.
-    if comment.document_id is not None:
-        owner_row = db.query(Document.user_id).filter(Document.id == comment.document_id).first()
-    else:
-        owner_row = (
-            db.query(MediaFile.user_id).filter(MediaFile.id == comment.media_file_id).first()
-        )
+    # Allow deletion by file owner (project only user_id, not full ORM object)
+    owner_row = db.query(MediaFile.user_id).filter(MediaFile.id == comment.media_file_id).first()
     if owner_row and owner_row[0] == current_user.id:
         db.delete(comment)
         db.commit()

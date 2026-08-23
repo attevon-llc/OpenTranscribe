@@ -1,12 +1,8 @@
 /**
- * CommentSection — the document arm (v400, #362 lane C5).
+ * CommentSection — the media comment path.
  *
- * Extended to also anchor notes to a `Document` (`mode="document"`), talking to
- * `/comments/documents/{documentId}/comments` instead of the media nested route,
- * and to only what genuinely diverges for that mode: no timestamp/"mark current
- * time" affordance (a document has no playback axis), so submit must enable on
- * text alone rather than requiring a marked timestamp the media form still does.
- * These pin the divergence without re-testing the whole (pre-existing) media path.
+ * Pins the two invariants the form depends on: a marked timestamp is required
+ * before submit enables, and comments are fetched from the media nested route.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
@@ -42,59 +38,7 @@ vi.mock('../stores/locale', () => ({
 import axiosInstance from '../lib/axios';
 import CommentSection from './CommentSection.svelte';
 
-describe('CommentSection — document mode', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.mocked(axiosInstance.get).mockResolvedValue({ data: [] } as never);
-  });
-
-  it('fetches from the document nested route, not the media one', async () => {
-    render(CommentSection, { props: { mode: 'document', documentId: 'doc-uuid-1' } });
-
-    await waitFor(() => {
-      expect(axiosInstance.get).toHaveBeenCalledWith('/comments/documents/doc-uuid-1/comments');
-    });
-  });
-
-  it('enables submit on text alone — no marked timestamp required', async () => {
-    render(CommentSection, { props: { mode: 'document', documentId: 'doc-uuid-1' } });
-    await waitFor(() => expect(axiosInstance.get).toHaveBeenCalled());
-
-    const textarea = screen.getByPlaceholderText('comments.placeholder');
-    await fireEvent.input(textarea, { target: { value: 'a note' } });
-
-    const submit = screen.getByText('comments.addComment').closest('button') as HTMLButtonElement;
-    expect(submit.disabled).toBe(false);
-  });
-
-  it('never renders the "mark current time" affordance', async () => {
-    render(CommentSection, { props: { mode: 'document', documentId: 'doc-uuid-1' } });
-    await waitFor(() => expect(axiosInstance.get).toHaveBeenCalled());
-
-    expect(screen.queryByText('comments.markCurrentTime')).toBeNull();
-  });
-
-  it('posts to the document route without a timestamp field on submit', async () => {
-    vi.mocked(axiosInstance.post).mockResolvedValue({
-      data: { uuid: 'c-1', text: 'a note', document_id: 'doc-uuid-1', user_id: 'user-1' },
-    } as never);
-    render(CommentSection, { props: { mode: 'document', documentId: 'doc-uuid-1' } });
-    await waitFor(() => expect(axiosInstance.get).toHaveBeenCalled());
-
-    const textarea = screen.getByPlaceholderText('comments.placeholder');
-    await fireEvent.input(textarea, { target: { value: 'a note' } });
-    const submit = screen.getByText('comments.addComment').closest('button') as HTMLButtonElement;
-    await fireEvent.click(submit);
-
-    await waitFor(() => {
-      expect(axiosInstance.post).toHaveBeenCalledWith('/comments/documents/doc-uuid-1/comments', {
-        text: 'a note',
-      });
-    });
-  });
-});
-
-describe('CommentSection — media mode (unaffected by the document arm)', () => {
+describe('CommentSection — media mode', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(axiosInstance.get).mockResolvedValue({ data: [] } as never);

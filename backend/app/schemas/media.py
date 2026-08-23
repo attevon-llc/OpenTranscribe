@@ -998,21 +998,9 @@ class CommentUser(BaseModel):
 
 
 class Comment(CommentBase, UUIDBaseSchema):
-    """Comment with UUID as public identifier.
+    """Comment with UUID as public identifier"""
 
-    ``media_file_id`` / ``document_id`` (v400, #362 lane C3-remainder/C5): exactly one
-    is set, mirroring the database's ``ck_comment_exactly_one_owner`` XOR — both
-    Optional here because a Pydantic field has no way to express "exactly one of these
-    two" the way the database's CHECK does; the constraint is the enforcement, this is
-    just the wire shape. ``document_chunk_index`` is only ever set on a document
-    comment (see ``base.py``'s ``_map_foreign_key_uuids``, which derives it from the
-    ``document_chunk`` relationship rather than exposing the internal
-    ``document_chunk_id``).
-    """
-
-    media_file_id: UUID | None = None
-    document_id: UUID | None = None
-    document_chunk_index: int | None = None
+    media_file_id: UUID
     user_id: UUID
     user: CommentUser | None = None
     created_at: datetime

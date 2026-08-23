@@ -68,22 +68,15 @@ DOC_TYPE_CHUNK = "chunk"
 #: A digest section of a transcript (this stage's output).
 DOC_TYPE_DIGEST = "digest"
 
-#: Stage 6 (#362) values, declared now so the value set is complete and a reader written
-#: in Stage 3 does not have to be revisited to recognise them.
-DOC_TYPE_DOCUMENT_CHUNK = "document_chunk"
-DOC_TYPE_DOCUMENT_DIGEST = "document_digest"
-
 DOC_TYPES: tuple[str, ...] = (
     DOC_TYPE_CHUNK,
     DOC_TYPE_DIGEST,
-    DOC_TYPE_DOCUMENT_CHUNK,
-    DOC_TYPE_DOCUMENT_DIGEST,
 )
 
 #: The doc_types that are *someone's own words*, i.e. what the search UI and the chunk
 #: plane mean by a result. Digests are derived text and must not surface as if a speaker
 #: had said them.
-VERBATIM_DOC_TYPES: tuple[str, ...] = (DOC_TYPE_CHUNK, DOC_TYPE_DOCUMENT_CHUNK)
+VERBATIM_DOC_TYPES: tuple[str, ...] = (DOC_TYPE_CHUNK,)
 
 #: Mapping entries Stage 3 adds to the chunks index.
 #:
@@ -127,16 +120,6 @@ def chunk_plane_clause() -> dict[str, Any]:
 def digest_plane_clause() -> dict[str, Any]:
     """The inverse: match only digest documents. No compat arm — digests are all new."""
     return {"term": {DOC_TYPE_FIELD: DOC_TYPE_DIGEST}}
-
-
-def document_chunk_plane_clause() -> dict[str, Any]:
-    """Match only document-chunk documents (#362 Stage 6c). No compat arm, for the same
-    reason as :func:`digest_plane_clause`: ``document_chunk`` is a Stage 6 value declared
-    alongside the v6 mapping bump, so every document indexed under it already carries
-    ``doc_type`` — there is no pre-v6 document population with a missing field to fall
-    back for.
-    """
-    return {"term": {DOC_TYPE_FIELD: DOC_TYPE_DOCUMENT_CHUNK}}
 
 
 def digest_document_id(file_uuid: str, section_index: int) -> str:

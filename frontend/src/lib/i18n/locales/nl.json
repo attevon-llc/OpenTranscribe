@@ -5113,6 +5113,8 @@
   "chat.trace.toggleLabel": "Querytracering tonen",
   "chat.trace.close": "Querytracering sluiten",
   "chat.trace.live": "Live",
+  "chat.trace.beta": "Bèta",
+  "chat.trace.betaTitle": "Deze weergave is in actieve ontwikkeling, net als de retrieval-pijplijn die zij toont. Fasen en cijfers kunnen per release wijzigen en incidentele onnauwkeurigheden zijn mogelijk.",
   "chat.trace.truncated": "Tracering ingekort — eerdere stappen worden niet getoond.",
   "chat.trace.empty.notStored": "Traceringen worden niet bewaard. Stel de vraag opnieuw om de tracering te zien.",
   "chat.trace.empty.noTurnYet": "Stel een vraag om te zien hoe de assistent die beantwoordt.",

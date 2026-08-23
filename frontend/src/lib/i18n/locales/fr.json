@@ -5113,6 +5113,8 @@
   "chat.trace.toggleLabel": "Afficher la trace de requête",
   "chat.trace.close": "Fermer la trace de requête",
   "chat.trace.live": "En direct",
+  "chat.trace.beta": "Bêta",
+  "chat.trace.betaTitle": "Cette vue est en cours de développement, tout comme le pipeline de recherche qu'elle présente. Les étapes et les valeurs peuvent évoluer d'une version à l'autre et des imprécisions occasionnelles sont possibles.",
   "chat.trace.truncated": "Trace tronquée — les étapes antérieures ne sont pas affichées.",
   "chat.trace.empty.notStored": "Les traces ne sont pas conservées. Reposez la question pour voir la trace.",
   "chat.trace.empty.noTurnYet": "Posez une question pour voir comment l'assistant y répond.",

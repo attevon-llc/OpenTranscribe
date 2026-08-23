@@ -135,6 +135,18 @@
   >
     <header class="trace-header">
       <h2 class="trace-title">{$t('chat.trace.title')}</h2>
+      <!-- Sets expectations before a defect does. This panel reports on a
+           retrieval pipeline that is itself under active development (#461), so
+           a stage can legitimately read oddly while the thing it describes is
+           being changed. The `title` carries the detail rather than spending
+           header width on it. -->
+      <span
+        class="trace-beta"
+        title={$t('chat.trace.betaTitle')}
+        data-testid="chat-trace-beta"
+      >
+        {$t('chat.trace.beta')}
+      </span>
       {#if streaming}
         <span class="trace-live" data-testid="chat-trace-live">{$t('chat.trace.live')}</span>
       {/if}
@@ -197,6 +209,23 @@
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-color);
+  }
+
+  /* Deliberately quieter than `.trace-live`: an outlined neutral chip, not a
+     coloured one. It is a standing caveat, and a permanent badge competing with
+     the live indicator would train people to stop reading both. `help` cursor
+     is what advertises that the title carries more. */
+  .trace-beta {
+    padding: 0.05rem 0.35rem;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    color: var(--text-secondary);
+    font-size: 0.6rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: help;
+    white-space: nowrap;
   }
 
   .trace-live {

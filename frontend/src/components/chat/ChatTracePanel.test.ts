@@ -110,6 +110,24 @@ describe('ChatTracePanel', () => {
     expect(screen.queryByTestId('chat-trace-truncated')).not.toBeInTheDocument();
   });
 
+  it('always carries a beta chip with an explanatory title', () => {
+    // A standing caveat, not a state: it must be there on a quiet panel too,
+    // because the whole point is to set expectations BEFORE a defect does.
+    open({ trace: traceWith(), streaming: false });
+
+    const chip = screen.getByTestId('chat-trace-beta');
+    expect(chip).toHaveTextContent('chat.trace.beta');
+    // The hover text is the substance; a bare "Beta" chip explains nothing.
+    expect(chip).toHaveAttribute('title', 'chat.trace.betaTitle');
+  });
+
+  it('shows the beta chip even with no trace at all', () => {
+    // The control for the case above — an empty panel is exactly where someone
+    // is most likely to think the feature is broken rather than young.
+    open({ trace: undefined, streaming: false });
+    expect(screen.getByTestId('chat-trace-beta')).toBeInTheDocument();
+  });
+
   it('marks itself live only while the turn is streaming', () => {
     const { unmount } = open({ trace: traceWith(), streaming: true });
     expect(screen.getByTestId('chat-trace-live')).toBeInTheDocument();

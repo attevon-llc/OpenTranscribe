@@ -5113,6 +5113,8 @@
   "chat.trace.toggleLabel": "クエリトレースを表示",
   "chat.trace.close": "クエリトレースを閉じる",
   "chat.trace.live": "ライブ",
+  "chat.trace.beta": "ベータ",
+  "chat.trace.betaTitle": "この画面は、対象となる検索パイプラインとともに現在開発中です。段階や数値はリリースごとに変わる場合があり、まれに不正確な表示が生じることがあります。",
   "chat.trace.truncated": "トレースは切り詰められました — 以前の手順は表示されません。",
   "chat.trace.empty.notStored": "トレースは保存されません。もう一度質問すると表示されます。",
   "chat.trace.empty.noTurnYet": "質問すると、アシスタントがどう回答するかを確認できます。",

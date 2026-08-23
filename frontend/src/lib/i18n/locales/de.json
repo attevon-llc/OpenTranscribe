@@ -5113,6 +5113,8 @@
   "chat.trace.toggleLabel": "Abfrageverlauf anzeigen",
   "chat.trace.close": "Abfrageverlauf schließen",
   "chat.trace.live": "Live",
+  "chat.trace.beta": "Beta",
+  "chat.trace.betaTitle": "Diese Ansicht wird aktiv weiterentwickelt, ebenso die Retrieval-Pipeline, die sie darstellt. Phasen und Werte können sich zwischen Versionen ändern; gelegentliche Ungenauigkeiten sind möglich.",
   "chat.trace.truncated": "Verlauf gekürzt — frühere Schritte werden nicht angezeigt.",
   "chat.trace.empty.notStored": "Verläufe werden nicht gespeichert. Frage erneut, um den Verlauf zu sehen.",
   "chat.trace.empty.noTurnYet": "Stellen Sie eine Frage, um zu sehen, wie sie beantwortet wird.",

@@ -18,6 +18,7 @@ the design, and would otherwise be reported as a bug.
 
 from __future__ import annotations
 
+import os
 import socket
 import uuid as uuid_pkg
 from collections.abc import Iterator
@@ -32,8 +33,18 @@ from playwright.sync_api import expect
 pytestmark = pytest.mark.chat
 
 STREAM_TIMEOUT_MS = 90_000
-MOCK_LLM_PORT = 5199
-MOCK_LLM_URL_FOR_BACKEND = f"http://mock-llm:{MOCK_LLM_PORT}/v1"
+#: HOST-side probe port. ``--port-offset N`` moves the published port (the
+#: isolated stack used here publishes on 5399), and a hardcoded 5199 made this
+#: whole module SKIP there — silently, which reads as a pass.
+#:
+#: It was worse than a skip for a while: 5199 was answered by the SHARED dev
+#: stack's mock-llm, so the precondition passed on a container these tests never
+#: touched. Same trap `conftest` documents for MINIO_PORT/OPENSEARCH_PORT —
+#: probe and use must agree.
+MOCK_LLM_PORT = int(os.environ.get("MOCK_LLM_PORT", "5199"))
+#: CONTAINER-side port, which never moves: the offset republishes the host port,
+#: it does not change what the process listens on inside the network.
+MOCK_LLM_URL_FOR_BACKEND = "http://mock-llm:5199/v1"
 ROOMY_CONTEXT_WINDOW = 32_000
 
 TRACE_PANEL = '[data-testid="chat-trace-panel"]'

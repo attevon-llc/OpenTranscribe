@@ -5113,6 +5113,8 @@
   "chat.trace.toggleLabel": "쿼리 추적 보기",
   "chat.trace.close": "쿼리 추적 닫기",
   "chat.trace.live": "실시간",
+  "chat.trace.beta": "베타",
+  "chat.trace.betaTitle": "이 화면은 여기에 표시되는 검색 파이프라인과 함께 활발히 개발 중입니다. 단계와 수치는 릴리스마다 달라질 수 있으며 간혹 부정확한 값이 표시될 수 있습니다.",
   "chat.trace.truncated": "추적이 잘렸습니다 — 이전 단계는 표시되지 않습니다.",
   "chat.trace.empty.notStored": "추적은 저장되지 않습니다. 다시 질문하면 볼 수 있습니다.",
   "chat.trace.empty.noTurnYet": "질문하면 어시스턴트가 어떻게 답하는지 볼 수 있습니다.",

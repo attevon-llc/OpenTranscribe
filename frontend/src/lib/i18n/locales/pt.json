@@ -5113,6 +5113,8 @@
   "chat.trace.toggleLabel": "Ver o rastro da consulta",
   "chat.trace.close": "Fechar o rastro da consulta",
   "chat.trace.live": "Ao vivo",
+  "chat.trace.beta": "Beta",
+  "chat.trace.betaTitle": "Esta visualização está em desenvolvimento ativo, assim como o pipeline de recuperação que apresenta. As etapas e os valores podem mudar entre versões e imprecisões ocasionais são esperadas.",
   "chat.trace.truncated": "Rastro truncado — as etapas anteriores não são exibidas.",
   "chat.trace.empty.notStored": "Os rastros não são armazenados. Pergunte novamente para ver o rastro.",
   "chat.trace.empty.noTurnYet": "Faça uma pergunta para ver como o assistente a responde.",

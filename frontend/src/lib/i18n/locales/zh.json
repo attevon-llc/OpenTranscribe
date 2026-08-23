@@ -5113,6 +5113,8 @@
   "chat.trace.toggleLabel": "查看查询轨迹",
   "chat.trace.close": "关闭查询轨迹",
   "chat.trace.live": "实时",
+  "chat.trace.beta": "测试版",
+  "chat.trace.betaTitle": "此视图与其所展示的检索流程均在积极开发中。各阶段与数值可能随版本变化，偶尔可能出现不准确的情况。",
   "chat.trace.truncated": "轨迹已截断 — 未显示较早的步骤。",
   "chat.trace.empty.notStored": "轨迹不会被保存。重新提问即可查看本轮轨迹。",
   "chat.trace.empty.noTurnYet": "提出一个问题，即可查看助手如何作答。",

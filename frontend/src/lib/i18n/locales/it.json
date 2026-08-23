@@ -5113,6 +5113,8 @@
   "chat.trace.toggleLabel": "Mostra la traccia della query",
   "chat.trace.close": "Chiudi la traccia della query",
   "chat.trace.live": "In diretta",
+  "chat.trace.beta": "Beta",
+  "chat.trace.betaTitle": "Questa vista è in fase di sviluppo attivo, così come la pipeline di recupero che rappresenta. Le fasi e i valori possono cambiare tra le versioni e sono possibili imprecisioni occasionali.",
   "chat.trace.truncated": "Traccia troncata: i passaggi precedenti non sono mostrati.",
   "chat.trace.empty.notStored": "Le tracce non vengono salvate. Chiedi di nuovo per vedere la traccia.",
   "chat.trace.empty.noTurnYet": "Fai una domanda per vedere come l'assistente vi risponde.",

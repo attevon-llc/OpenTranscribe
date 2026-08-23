@@ -209,8 +209,12 @@ def transcribed_file_uuid(api_token: str, backend_url: str) -> str:
     return ""  # unreachable, satisfies typing
 
 
-MOCK_LLM_PORT = 5199
-MOCK_LLM_URL_FOR_BACKEND = f"http://mock-llm:{MOCK_LLM_PORT}/v1"
+#: HOST-side probe port — see the same constant in `test_chat_trace_panel.py`.
+#: `--port-offset N` moves it, and a hardcoded 5199 silently SKIPS this surface
+#: on an offset stack while appearing to pass.
+MOCK_LLM_PORT = int(os.environ.get("MOCK_LLM_PORT", "5199"))
+#: CONTAINER-side port, which the offset never moves.
+MOCK_LLM_URL_FOR_BACKEND = "http://mock-llm:5199/v1"
 ROOMY_CONTEXT_WINDOW = 32_000
 TRACE_PANEL = '[data-testid="chat-trace-panel"]'
 TRACE_NODE = '[data-testid="trace-node"]'

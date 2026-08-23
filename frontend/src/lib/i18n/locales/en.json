@@ -5113,6 +5113,8 @@
   "chat.trace.toggleLabel": "View query trace",
   "chat.trace.close": "Close query trace",
   "chat.trace.live": "Live",
+  "chat.trace.beta": "Beta",
+  "chat.trace.betaTitle": "This view is in active development, alongside the retrieval pipeline it reports on. Stages and figures may change between releases, and occasional inaccuracies are expected.",
   "chat.trace.truncated": "Trace truncated — earlier steps are not shown.",
   "chat.trace.empty.notStored": "Traces are not stored. Ask again to see this turn's trace.",
   "chat.trace.empty.noTurnYet": "Ask a question to see how the assistant answers it.",

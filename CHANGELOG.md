@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Watch sources: per-file management, reachable at last** (#489). Each source card gets a
+  **Files** button opening its full import history — what was imported, skipped, or failed, with
+  the actual reason rather than a count. Server-side status filter and filename search (so it
+  works on a source tracking thousands of files), pagination, and per-row or bulk **Retry** and
+  **Delete record**. Retry is the only way to bring back a *skipped* file: a skipped record is
+  terminal, so fixing the underlying problem alone would never re-import it. It is honest about
+  what it does — the row moves to **Pending** and a scan is requested, which may queue behind a
+  running scan or fall beyond `max_imports_per_scan`, so the copy says "queued" and the list
+  refreshes itself when a scan lands rather than claiming success. Retry is not offered on files
+  the API would refuse (already imported, in flight, or a part folded into a stitched recording).
+- **Watch sources: email notifications can be attached to a specific source** (#490). "Notify me
+  only when *this* source fails" was modelled in the backend and unreachable from the UI. A
+  **Notifications** panel on each source card lets the source **owner** — not just a super admin,
+  since holding a mailer's credentials and subscribing your own source to one are different
+  rights — attach configurations with per-link notify-on-success / notify-on-error flags and
+  extra recipients. It warns when a link is configured but would send nothing: both flags off, a
+  disabled configuration, or no recipients on either side. Deleting a configuration now shows how
+  many sources it would stop notifying.
+
 - **Multilingual search and chat is a one-click switch, and it is measured** (#453). The
   Settings → Search picker now badges each embedding model *Multilingual* / *English only*,
   shows whether it is downloaded, and offers **Download & deploy** for one that is not — a
@@ -27,6 +46,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enabling it needs no resource change.
 
 ### Fixed
+
+- **A watch source importing the same recording twice under two names** (#489). Content dedup
+  filtered out the source being scanned, so a folder holding `meeting.mp4` and a renamed copy
+  imported both and reported each as fresh. The `duplicate_same_source` skip reason existed in
+  the schema and was produced by no code path at all.
+- **An incomplete multi-part recording could be stitched early and transcribed as if whole**
+  (#489). `retry_count` doubles as the multipart wait-scan counter, but failed standalone
+  imports increment the same column — so a part that had failed twice entered the group already
+  "aged" and, at the default wait of three scans, tripped the stitch on its very first grouping
+  scan. The result was a silently truncated recording. The counter now resets on entry into the
+  wait, so an established wait still ages and the missing-parts timeout still fires.
+- **A deduplicated upload was reported as a failed upload** (#489). `POST /files` answers a
+  content match with a structured 409 naming the file you already have, precisely so the UI can
+  say so; nothing in the frontend consumed it, so a correct refusal surfaced as an upload error.
+- **Watch-source email notifications could be dropped with no trace** (#490). A disabled
+  configuration, or a link resolving to no recipients, was skipped silently — an admin who never
+  received mail had nothing to diagnose. Both now log a warning naming the configuration.
+  `additional_recipients` was also unvalidated free text, so a typo'd address was accepted and
+  quietly discarded at send time; it is now rejected on save.
 
 - **A model switch's re-embed could be silently skipped, leaving search ranking two
   incomparable vector spaces against each other** (#453, the #437 failure class). The reindex

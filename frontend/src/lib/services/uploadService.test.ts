@@ -152,6 +152,54 @@ describe('duplicate short-circuit', () => {
     expect(mockAxiosDefault.put).not.toHaveBeenCalled();
     expect(mockToast.warning).toHaveBeenCalled();
   });
+
+  it('treats the legacy POST 409 as a duplicate, not an upload failure', async () => {
+    // The pre-check above is the usual way a duplicate is caught, but it is not the
+    // only one: `POST /files` re-checks server-side and answers 409 with the uuid of
+    // the file that already holds this content (files/upload.py). That is the backstop
+    // for the two cases the pre-check cannot cover — the same content uploaded between
+    // prepare and POST, and a fingerprint that was skipped for the pre-check but still
+    // reached the form data. Reporting it as a failed upload tells the user something
+    // went wrong when in fact the server did exactly the right thing.
+    mockFingerprintFile.mockResolvedValue('deadbeef');
+    mockAxiosInstance.post
+      .mockResolvedValueOnce(prepared({ upload_url: null, upload_method: null }))
+      .mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: {
+            detail: {
+              message: 'A file with this content already exists.',
+              duplicate_file_uuid: 'the-file-you-already-have',
+            },
+          },
+        },
+      });
+
+    const id = uploadService.addUpload('file', new File(['a'], 'a.mp3'));
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('completed'));
+
+    expect(uploadService.getUpload(id)?.isDuplicate).toBe(true);
+    expect(mockToast.warning).toHaveBeenCalled();
+    expect(mockToast.error).not.toHaveBeenCalled();
+  });
+
+  it('still fails a 409 that carries no duplicate uuid', async () => {
+    // The negative control. 409 means "conflict", not "duplicate" — reading every
+    // conflict as a successful dedup would silently swallow a genuine failure and
+    // report a file as safely stored when nothing was written.
+    mockFingerprintFile.mockResolvedValue('deadbeef');
+    mockAxiosInstance.post
+      .mockResolvedValueOnce(prepared({ upload_url: null, upload_method: null }))
+      .mockRejectedValueOnce({
+        response: { status: 409, data: { detail: 'Upload session already finalized' } },
+      });
+
+    const id = uploadService.addUpload('file', new File(['a'], 'a.mp3'));
+    await vi.waitFor(() => expect(uploadService.getUpload(id)?.status).toBe('failed'));
+
+    expect(uploadService.getUpload(id)?.isDuplicate).not.toBe(true);
+  });
 });
 
 describe('presigned PUT flow', () => {

@@ -107,6 +107,11 @@ class EmailConfigResponse(BaseModel):
     test_message: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    #: How many watch sources subscribe to this config. Deleting the config cascades
+    #: (``EmailNotificationConfig.links`` is ``all, delete-orphan``), so those sources
+    #: stop being notified with no warning and no way to restore the links — this is
+    #: what lets the caller see that blast radius *before* deciding.
+    linked_source_count: int = 0
 
     model_config = {"from_attributes": True}
 

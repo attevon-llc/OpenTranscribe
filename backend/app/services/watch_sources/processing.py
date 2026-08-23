@@ -149,7 +149,6 @@ def ingest_prepared_file(
     plain-data signature the rule asks for, which changes its public contract —
     tracked as a follow-up, not fixed here.
     """
-    owner_id = int(source.user_id)
     file_size = int(size) if size is not None else os.path.getsize(local_path)
 
     # 1. Magic-byte validation.
@@ -173,17 +172,35 @@ def ingest_prepared_file(
 
     # 3. Three-layer dedup (other-source + cross-pipeline).
     if imohash:
+        # Layers 1-2 span EVERY source, including this one. They used to filter
+        # ``watch_source_id != source.id``, which excluded the source being scanned —
+        # so one source holding the same recording under two names imported it twice
+        # and reported both as fresh. ``id != row.id`` keeps the widened query from
+        # matching the row being processed; ``status == "imported"`` already implies
+        # that (the caller sets ``importing``/``downloading``), but the guard is what
+        # makes the query self-safe rather than dependent on the caller's discipline.
+        # Oldest-first so the match is deterministic and names the ORIGINAL import.
         other = (
             db.query(WatchSourceFile)
             .filter(
                 WatchSourceFile.imohash == imohash,
-                WatchSourceFile.watch_source_id != source.id,
+                WatchSourceFile.id != row.id,
                 WatchSourceFile.status == "imported",
             )
+            .order_by(WatchSourceFile.id)
             .first()
         )
         if other:
-            _mark_skipped(db, row, "duplicate_other_source", other.media_file_id)
+            # Same-source and cross-source duplicates need different operator action
+            # ("this folder has it twice" vs "another source already brought it in"),
+            # so they stay distinct reasons. ``duplicate_same_source`` is defined in
+            # ``SkipReason`` and, before this, was produced by no code path at all.
+            reason = (
+                "duplicate_same_source"
+                if other.watch_source_id == source.id
+                else "duplicate_other_source"
+            )
+            _mark_skipped(db, row, reason, other.media_file_id)
             db.commit()
             return row
         existing_media = check_duplicate_by_imohash(db, imohash)
@@ -191,6 +208,46 @@ def ingest_prepared_file(
             _mark_skipped(db, row, "duplicate_existing", existing_media.id)
             db.commit()
             return row
+
+    return _finalize_media_ingest(
+        db,
+        source,
+        row,
+        local_path,
+        filename=filename,
+        file_size=file_size,
+        content_type=content_type,
+    )
+
+
+def _finalize_media_ingest(
+    db: Session,
+    source: WatchSource,
+    row: WatchSourceFile,
+    local_path: str,
+    *,
+    filename: str,
+    file_size: int,
+    content_type: str,
+) -> WatchSourceFile:
+    """Steps 4-8: create the ``MediaFile`` row, upload to MinIO, apply
+    collections/tags, finalize the tracking row, then notify and dispatch the
+    transcription pipeline.
+
+    A separate function, not an inline tail, because "did dedup let this import
+    THROUGH?" is a property a caller can only observe by watching execution reach
+    this point. Running the real body to find out drags in a MinIO upload — an
+    undeclared storage dependency that passes wherever a dev stack happens to be
+    up and fails in CI. ``tests/unit/test_watch_source_dedup.py`` documents that
+    exact failure and patches this seam rather than the upload, so the whole tail
+    stops rather than half of it running against no object store.
+
+    Behaviour is unchanged by the extraction: ``owner_id`` and ``imohash`` are
+    re-derived here from ``source`` and ``row`` exactly as the inline code read
+    them from its enclosing scope.
+    """
+    owner_id = int(source.user_id)
+    imohash = row.imohash
 
     # 4. Create the MediaFile row (owned by the source user). Tenant scope was
     # captured on the source at CREATION time from the creating request's

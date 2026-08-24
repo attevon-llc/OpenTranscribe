@@ -435,12 +435,16 @@ class TestLastLoginIsStamped:
 
     def test_session_issue_stamps_it(self, token_env):
         user = _user()
+        before = datetime.now(UTC)
 
         login_module._generate_login_tokens(
             cast(Any, _FakeDB()), user, USER_UUID, "user", "pytest", "10.0.0.1", auth_method="local"
         )
 
-        assert user.last_login_at is not None
+        # The column exists to drive the inactive-account control (AC-2(3)), so the
+        # value has to be THIS login. A stamp of any other instant — a fixture default,
+        # a carried-over value — reads as "not None" and disables the control silently.
+        assert before <= user.last_login_at <= datetime.now(UTC)
 
     def test_a_write_failure_never_costs_the_session(self, token_env):
         """Bookkeeping is not allowed to 500 a login that already succeeded."""

@@ -153,11 +153,20 @@ def test_erasure_does_not_touch_another_users_conversations(db_session):
     _conversation(db_session, subject, title="Subject's")
     theirs = _conversation(db_session, bystander, title="Bystander's")
 
-    erase_user(db_session, subject.id)
+    summary = erase_user(db_session, subject.id)
 
+    # The control: the erasure has to have DONE something, or "the bystander's row
+    # survived" is satisfied by an `erase_user` that deleted nothing at all.
+    assert summary["chat_conversations_deleted"] == 1
+
+    survivor = db_session.query(ChatConversation).filter(ChatConversation.id == theirs.id).first()
+    assert survivor is not None
+    assert survivor.user_id == bystander.id
+    assert survivor.title == "Bystander's"
+    # And the content, which is what erasure is about — a cascade that took the
+    # messages while leaving the parent row would still pass an `is not None` check.
     assert (
-        db_session.query(ChatConversation).filter(ChatConversation.id == theirs.id).first()
-        is not None
+        db_session.query(ChatMessage).filter(ChatMessage.conversation_id == theirs.id).count() == 2
     )
 
 
@@ -211,8 +220,19 @@ def test_org_member_erasure_leaves_the_user_row(db_session):
     """Tenant data only — the person's account is not the admin's to delete."""
     org = _org(db_session, "tenant")
     member = _user(db_session, "keepme")
+    email_before = member.email
     _conversation(db_session, member, org_id=org.id)
 
-    erase_org_member_data(db_session, member.id, org.id)
+    summary = erase_org_member_data(db_session, member.id, org.id)
 
-    assert db_session.query(User).filter(User.id == member.id).first() is not None
+    # The control: the tenant data really was erased, so "the account survived" is not
+    # just the outcome of a no-op.
+    assert summary["chat_conversations_deleted"] == 1
+
+    survivor = db_session.query(User).filter(User.id == member.id).first()
+    assert survivor is not None
+    # Intact, not tombstoned. An org admin anonymising the row in place — blanking the
+    # email, flipping is_active — deletes the account in every sense that matters to
+    # the person, and reads as `is not None`.
+    assert survivor.email == email_before
+    assert survivor.is_active is True

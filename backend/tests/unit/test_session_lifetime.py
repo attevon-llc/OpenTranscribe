@@ -298,6 +298,7 @@ class TestLegacyRowsSurviveTheUpgrade:
         """The grandfathering is bounded: the successor row carries real caps."""
         monkeypatch.setattr(service, "revoke_token", lambda *a, **k: True)
         legacy = _session_row(last_activity_at=None, absolute_expires_at=None)
+        before = datetime.now(UTC)
 
         _token, new_row = service.rotate_refresh_token(
             db=_FakeDB(),
@@ -308,8 +309,12 @@ class TestLegacyRowsSurviveTheUpgrade:
             role="user",
         )
 
-        assert new_row.absolute_expires_at is not None
-        assert new_row.last_activity_at is not None
+        # "Not None" would also be satisfied by a ceiling of 1970 or of ten years out.
+        # The bound is what makes the grandfathering *bounded*: the successor carries
+        # the deployment's real 8-hour cap, computed from now.
+        assert new_row.absolute_expires_at >= before + timedelta(minutes=479)
+        assert new_row.absolute_expires_at <= datetime.now(UTC) + timedelta(minutes=480)
+        assert datetime.now(UTC) - new_row.last_activity_at < timedelta(seconds=5)
 
 
 # ── the deleted implementation stays deleted ─────────────────────────────────────

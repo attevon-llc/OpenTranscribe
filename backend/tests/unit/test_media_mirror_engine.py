@@ -226,16 +226,22 @@ def test_throttle_sleeps_between_objects():
     dest = FakeDestination()
     source = [SourceObject(f"user_1/f/{i}.mp4", 1) for i in range(3)]
     with mock.patch("app.services.media_mirror_engine.time.sleep") as sleep:
-        eng.execute_mirror(source, dest, throttle_ms=250)
+        result = eng.execute_mirror(source, dest, throttle_ms=250)
     assert sleep.call_count == 3
     sleep.assert_called_with(0.25)
+    # The counter dict, as every other test in this file asserts on: three sleeps are
+    # equally produced by a run that throttled correctly while copying nothing, which
+    # is a throttle that works and a mirror that does not.
+    assert result["objects_copied"] == 3
 
 
 def test_no_throttle_means_no_sleep():
     dest = FakeDestination()
     with mock.patch("app.services.media_mirror_engine.time.sleep") as sleep:
-        eng.execute_mirror([SourceObject("user_1/f/a.mp4", 1)], dest, throttle_ms=0)
+        result = eng.execute_mirror([SourceObject("user_1/f/a.mp4", 1)], dest, throttle_ms=0)
     sleep.assert_not_called()
+    # Zero sleeps is also what an empty run produces. The copy is the control.
+    assert result["objects_copied"] == 1
 
 
 # =============================================================================

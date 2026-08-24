@@ -221,9 +221,12 @@ class TestLocalLogin:
         # Wait for gallery content to load (gallery container or file cards)
         page.wait_for_load_state("networkidle", timeout=10000)
 
-        # Verify we have a main content area
-        body_text = page.text_content("body")
-        assert body_text is not None
+        # `page.text_content("body")` is not None on ANY document, including a blank
+        # one and a crash page, so the test's only assertion could not fail. The gallery
+        # is the thing named in the test id: assert the toolbar it renders, and the user
+        # menu that only appears once the session is real.
+        expect(page.locator(".gallery-action-buttons")).to_be_visible(timeout=15000)
+        expect(page.locator(".user-button").first).to_be_visible(timeout=15000)
 
     def test_local_login_invalid_password(self, page: Page, base_url: str):
         """Bad local credentials are rejected.

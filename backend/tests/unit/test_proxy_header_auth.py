@@ -144,7 +144,10 @@ class TestExtractingAnAssertion:
 
     def test_a_correct_shared_secret_authenticates(self):
         request = _Request({"X-Forwarded-Email": "ada@example.com", SHARED_SECRET_HEADER: "right"})
-        assert extract_proxy_assertion(request, _cfg(shared_secret="right")) is not None
+        assertion = extract_proxy_assertion(request, _cfg(shared_secret="right"))
+        assert assertion is not None
+        assert assertion.email == "ada@example.com"
+        assert assertion.role is None, "the shared secret alone must not grant a role"
 
     def test_a_value_that_is_not_an_address_is_refused(self):
         request = _Request({"X-Forwarded-Email": "ada"})

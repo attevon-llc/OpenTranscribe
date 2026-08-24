@@ -216,7 +216,9 @@ def test_incomplete_detection_status_forces_the_inline_path():
             ),
         ):
             mask_chunks(_factory(db), [_chunk()], user_id=1)
-        assert detect.called, f"status={status!r} should force inline detection"
+        # Exactly once, for the one segment in the span: `.called` is also true if the
+        # code fell into a retry loop, or detected some other segment entirely.
+        assert detect.call_count == 1, f"status={status!r} should force inline detection"
 
 
 def test_masking_error_on_the_cached_path_fails_closed():

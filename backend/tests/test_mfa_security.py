@@ -385,8 +385,13 @@ class TestBackupCodeExhaustion:
 
         # Lowercase should also work
         lowercase = original.lower()
-        is_valid, _ = MFAService.verify_backup_code(lowercase, hashed_codes)
-        assert is_valid
+        is_valid, matched_hash = MFAService.verify_backup_code(lowercase, hashed_codes)
+        assert is_valid is True
+        # The matched hash is what the caller REMOVES from the user's remaining codes.
+        # Returning True with no hash would leave a single-use code usable forever, and
+        # the sibling refusal tests above already assert `matched_hash is None` — so
+        # without this the pair proves nothing about the accepted case.
+        assert matched_hash == hashed_codes[0]
 
     def test_backup_code_ignores_formatting(self):
         """Backup code verification should ignore dashes and spaces."""
@@ -398,13 +403,18 @@ class TestBackupCodeExhaustion:
 
         # Without dash
         no_dash = original.replace("-", "")
-        is_valid, _ = MFAService.verify_backup_code(no_dash, hashed_codes)
-        assert is_valid
+        is_valid, matched_hash = MFAService.verify_backup_code(no_dash, hashed_codes)
+        assert is_valid is True
+        assert matched_hash == hashed_codes[0]
 
         # With spaces
         with_spaces = f"{no_dash[:4]} {no_dash[4:]}"
-        is_valid, _ = MFAService.verify_backup_code(with_spaces, list(hashed_codes))
-        assert is_valid
+        is_valid, matched_hash = MFAService.verify_backup_code(with_spaces, list(hashed_codes))
+        assert is_valid is True
+        # Same code, so the SAME stored hash must come back — a normaliser that
+        # accepted the spaced form but matched a different entry would burn the wrong
+        # single-use code and leave this one live.
+        assert matched_hash == hashed_codes[0]
 
 
 class TestTOTPWindowConfiguration:
@@ -466,16 +476,24 @@ class TestTOTPWindowConfiguration:
         assert not MFAService.verify_totp("", "123456")
 
     def test_totp_window_zero_only_accepts_current(self):
-        """With valid_window=0, only the exact current code should work."""
+        """With valid_window=0, only the exact current code should work.
+
+        The ONLY half is the point, and it was the half that was missing: this used to
+        assert nothing but that the current code verifies, which is equally true of
+        ``valid_window=10``. A replay of the previous 30-second step is the attack the
+        narrow window exists to refuse, so the refusal is asserted here too.
+        """
         secret = MFAService.generate_totp_secret()
         totp = pyotp.TOTP(secret, interval=30, digits=6)
 
-        # Get current code
-        current_code = totp.now()
+        now = datetime.now(UTC)
+        current_code = totp.at(now)
+        previous_step_code = totp.at(now - timedelta(seconds=30))
+        next_step_code = totp.at(now + timedelta(seconds=30))
 
-        # With window=0, verify manually using pyotp
-        is_valid = totp.verify(current_code, valid_window=0)
-        assert is_valid
+        assert totp.verify(current_code, for_time=now, valid_window=0) is True
+        assert totp.verify(previous_step_code, for_time=now, valid_window=0) is False
+        assert totp.verify(next_step_code, for_time=now, valid_window=0) is False
 
     def test_totp_verification_code_format_normalization(self):
         """TOTP codes should be normalized (remove spaces/dashes)."""

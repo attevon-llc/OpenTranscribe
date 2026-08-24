@@ -145,8 +145,14 @@ class TestLoginFailure:
         # rather than guess 3 s, settle the page and then assert. Was
         # `wait_for_timeout(3000)` + the same assert (issue #431).
         page.wait_for_load_state("networkidle")
-        still_on_login = "/login" in page.url or page.locator("#email").is_visible()
-        assert still_on_login, "Should not login with wrong password"
+        # BOTH halves, not an `or` chain over them. `"/login" in page.url or #email is
+        # visible` is true on a page that never navigated AND on one that crashed to a
+        # blank document, so the only assertion in this test could not fail for the
+        # reason it is named for. The third line is the real negative: the gallery
+        # toolbar `test_login_redirects_to_gallery` waits for must NOT be there.
+        expect(page).to_have_url(re.compile(r"/login"))
+        expect(page.locator("#email")).to_be_visible()
+        expect(page.locator(".gallery-action-buttons")).to_have_count(0)
 
     def test_nonexistent_user(self, page: Page, base_url: str):
         """Test login fails for non-existent user."""
@@ -159,8 +165,10 @@ class TestLoginFailure:
 
         page.wait_for_load_state("networkidle")
 
-        still_on_login = "/login" in page.url or page.locator("#email").is_visible()
-        assert still_on_login, "Should not login with non-existent user"
+        # See test_wrong_password for why the `or` chain could not fail.
+        expect(page).to_have_url(re.compile(r"/login"))
+        expect(page.locator("#email")).to_be_visible()
+        expect(page.locator(".gallery-action-buttons")).to_have_count(0)
 
     def test_case_sensitive_email(self, page: Page, base_url: str):
         """Test email is case-insensitive for login."""

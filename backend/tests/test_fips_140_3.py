@@ -910,9 +910,18 @@ class TestFIPS140_3Migration:
         new_hash = get_password_hash(password)
 
         is_valid, upgraded_hash = verify_and_update_password(password, new_hash)
-        assert is_valid
-        # If already using current algorithm, no upgrade needed
-        # upgraded_hash would be None or the new hash
+        assert is_valid is True
+        # A hash this deployment just MINTED is by definition on the current scheme, so
+        # the upgrade slot must be None. It used to be commented as "None or the new
+        # hash" and asserted as neither: a passlib context that re-hashed on every
+        # login — a bcrypt round per request, and a new salt each time — read as green.
+        assert upgraded_hash is None, "a freshly minted hash must not need upgrading"
+
+        # The control. Without it `is_valid` proves only that the function returns a
+        # truthy first element, which a `return True, None` stub also does.
+        wrong_valid, wrong_upgrade = verify_and_update_password("NotThePassword1!", new_hash)
+        assert wrong_valid is False
+        assert wrong_upgrade is None
 
     def test_fips_migration_mode_config(self):
         """Verify FIPS migration mode configuration."""

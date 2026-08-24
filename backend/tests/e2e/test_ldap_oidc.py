@@ -646,9 +646,15 @@ class TestLDAPLogin:
         # navigate, which no locator can auto-wait for (issue #431).
         page.wait_for_load_state("networkidle")
 
-        # Should still be on login page or show error
-        still_on_login = "/login" in page.url or page.locator("#password").is_visible()
-        assert still_on_login, "Wrong LDAP password should not grant access"
+        # BOTH halves, not an `or` chain over them. `"/login" in page.url or #password
+        # is visible` is true on a page that never navigated AND on one that crashed to
+        # a blank document, so the only assertion in this test could not fail for the
+        # reason it is named for. The third line is the real negative: the gallery
+        # toolbar a SUCCESSFUL login renders must not be there.
+        # (Same repair as `test_login.py::test_wrong_password`, against the same page.)
+        expect(page).to_have_url(re.compile(r"/login"))
+        expect(page.locator("#password")).to_be_visible()
+        expect(page.locator(".gallery-action-buttons")).to_have_count(0)
         page.close()
 
     def test_ldap_login_with_email(self, browser_context, base_url: str):

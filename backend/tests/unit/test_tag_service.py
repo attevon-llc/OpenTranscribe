@@ -259,10 +259,17 @@ def test_collision_leaves_callers_pending_writes_intact(db_session, normal_user)
     _make_tag(db_session, pending_name, user_id=normal_user.id)
 
     with _competing_writer(db_session, contested) as racer_id:
-        resolve_or_create_tag(db_session, contested, user_id=racer_id)
+        resolved = resolve_or_create_tag(db_session, contested, user_id=racer_id)
+
+        # The collision has to have actually happened, or "the pending write survived"
+        # is true for the boring reason that nothing was ever rolled back.
+        assert _count_tags(db_session, normalize_tag_name(contested)) == 1
+        assert resolved.name == contested
 
         survivor = db_session.query(Tag).filter(Tag.name == pending_name).first()
         assert survivor is not None, "the caller's pending write was discarded"
+        assert survivor.user_id == normal_user.id
+        assert survivor.name == pending_name
 
 
 def test_long_name_truncated_identically_across_paths(db_session, normal_user):

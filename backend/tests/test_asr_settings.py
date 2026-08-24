@@ -310,9 +310,13 @@ class TestASRActivation:
     """Tests for auto-activation, set-active, and delete-promotes behaviour."""
 
     def test_first_config_auto_activates(self, client, user_token_headers):
-        _create_config(client, user_token_headers, name="First Config")
+        created = _create_config(client, user_token_headers, name="First Config").json()
         data = _list_configs(client, user_token_headers)
-        assert data["active_config_id"] is not None
+        # THE first config, not merely some id: `is not None` is equally satisfied by
+        # a stale pointer at a config belonging to another account, which is the shape
+        # `test_second_config_does_not_auto_activate` below relies on being wrong.
+        assert data["active_config_id"] == created["id"]
+        assert data["active_config_uuid"] == created["uuid"]
 
     def test_second_config_does_not_auto_activate(self, client, user_token_headers):
         first = _create_config(client, user_token_headers, name="First").json()

@@ -742,13 +742,22 @@ def test_a_refused_send_releases_the_stream_slot(client, auth_headers):
         patch("app.services.chat.limits.acquire_stream_slot", return_value="slot-test"),
         patch("app.services.chat.limits.release_stream_slot") as release,
     ):
-        client.post(
+        response = client.post(
             f"/api/chat/conversations/{conversation['uuid']}/messages",
             json={"content": "hi"},
             headers=auth_headers,
         )
 
-    release.assert_called_once()
+    # The refusal has to have happened where the test thinks it did. Without this the
+    # send could 404 (wrong uuid) or 422 (payload drift) and never reach the LLM-config
+    # branch at all, while `release` still fires from the outer `finally` — a pass that
+    # proves nothing about the path the test is named for.
+    assert response.status_code == 400
+    assert "No LLM is configured" in response.json()["detail"]
+    assert release.call_count == 1
+    # The slot that was ACQUIRED. Releasing by user alone would free whichever stream
+    # that user happens to have in flight (see `test_release_removes_only_its_own_slot`).
+    assert release.call_args.args[1] == "slot-test"
 
 
 # ---------------------------------------------------------------------------

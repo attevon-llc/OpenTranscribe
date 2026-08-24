@@ -442,22 +442,23 @@ class TestMFAStatusDisplay:
         _wait_for_gallery(page)
         _open_security_settings(page)
 
-        settings_text = page.text_content(".security-settings")
-        assert settings_text is not None
-        has_mfa_info = any(
-            kw in settings_text.lower()
-            for kw in [
-                "two-factor",
-                "mfa",
-                "multi-factor",
-                "authenticator",
-                "enabled",
-                "disabled",
-                "not available",
-            ]
+        settings_text = page.text_content(".security-settings") or ""
+
+        # The three headings SecuritySettings.svelte can render, verbatim from
+        # `settings.security.mfa{NotAvailable,Enabled,Disabled}` in en.json. The check
+        # this replaces was `any(kw in text)` over a list that included "enabled",
+        # "disabled" and "not available" — words any settings panel in this app
+        # contains — so it passed on a panel that never mentioned MFA at all, and would
+        # keep passing if the status card stopped rendering entirely.
+        headings = (
+            "MFA Not Available",
+            "Two-Factor Authentication Enabled",
+            "Two-Factor Authentication Not Set Up",
         )
-        assert has_mfa_info, (
-            f"Security settings should show MFA status. Content: {settings_text[:200]}"
+        shown = [h for h in headings if h in settings_text]
+        assert len(shown) == 1, (
+            f"expected exactly one MFA status heading, found {shown}. "
+            f"Content: {settings_text[:300]}"
         )
 
     def test_mfa_api_status_accessible(self, page: Page, base_url: str):

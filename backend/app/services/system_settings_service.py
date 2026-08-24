@@ -233,6 +233,32 @@ def should_retry_file(db: Session, retry_count: int) -> bool:
     return bool(retry_count < max_retries)
 
 
+def retry_ceiling_message(db: Session, retry_count: int) -> str | None:
+    """Return the "max retries reached" detail for *retry_count*, or None if retries remain.
+
+    Single source for the message AND the ceiling determination, shared by the two retry
+    endpoints (``api/endpoints/user_files.py``'s ``POST /my-files/{uuid}/retry`` — the one the
+    SPA calls — and ``api/endpoints/files/management.py``'s ``POST /files/{uuid}/retry``,
+    which it does not). ``backend/app/api/CLAUDE.md`` already flags these two routes as "a
+    known confusion pair": an earlier fix added a ceiling check to only one of them, so the
+    admin-tunable retry limit stayed fully bypassable through the route the product actually
+    uses. This function does not raise — service code doesn't raise ``fastapi.HTTPException``
+    (that's an endpoint-layer concern, see ``backend/app/api/CLAUDE.md``) — callers turn a
+    non-``None`` result into their own 400.
+
+    Args:
+        db: Database session.
+        retry_count: The file's current ``retry_count`` (NULL-normalized by the caller).
+
+    Returns:
+        A user-facing detail string if the ceiling is reached, else None.
+    """
+    if should_retry_file(db, retry_count):
+        return None
+    config = get_retry_config(db)
+    return f"File has reached maximum retry attempts ({config['max_retries']}). Contact admin for help."
+
+
 def update_retry_config(
     db: Session, max_retries: int | None = None, retry_limit_enabled: bool | None = None
 ) -> dict:

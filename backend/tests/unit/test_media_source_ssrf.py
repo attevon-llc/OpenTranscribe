@@ -31,7 +31,10 @@ from pydantic import ValidationError
 from app.schemas.media_source import UserMediaSourceCreate
 from app.schemas.media_source import UserMediaSourceUpdate
 from app.services.protected_media_plugins.mediacms import MediacmsProvider
+from tests.helpers import stub_pinned_session
 from tests.helpers import stub_public_dns
+
+_MEDIACMS_MODULE = "app.services.protected_media_plugins.mediacms"
 
 # ---------------------------------------------------------------------------
 # Schema-level guard
@@ -146,8 +149,8 @@ _BENIGN_ROW = {
 }
 
 
-def _mocked_login_and_info() -> MagicMock:
-    """A ``requests`` double whose login + media-info calls both succeed."""
+def _mocked_login_and_info_session() -> MagicMock:
+    """A ``pinned_requests_session`` double whose login + media-info calls both succeed."""
     login_resp = MagicMock()
     login_resp.json.return_value = {"token": "auth-tok-123"}
     login_resp.raise_for_status = MagicMock()
@@ -156,15 +159,13 @@ def _mocked_login_and_info() -> MagicMock:
     info_resp.json.return_value = {"title": "A Video", "duration": 42}
     info_resp.raise_for_status = MagicMock()
 
-    mock_requests = MagicMock()
-    mock_requests.post.return_value = login_resp
-    mock_requests.get.return_value = info_resp
-    # The provider catches this class by name, so the double must expose the real one.
-    mock_requests.exceptions.RequestException = Exception
-    return mock_requests
+    mock_session = MagicMock()
+    mock_session.post.return_value = login_resp
+    mock_session.get.return_value = info_resp
+    return mock_session
 
 
-def test_mediacms_refuses_a_private_target_at_request_time():
+def test_mediacms_refuses_a_private_target_at_request_time(monkeypatch):
     """A hostile row that predates the schema fix must never be dialled.
 
     The schema guard cannot help here: the row is already in the database, and a
@@ -174,18 +175,18 @@ def test_mediacms_refuses_a_private_target_at_request_time():
     provider that fetched the metadata endpoint and then complained.
     """
     provider = MediacmsProvider()
-    mock_requests = _mocked_login_and_info()
+    mock_session = _mocked_login_and_info_session()
+    stub_pinned_session(monkeypatch, _MEDIACMS_MODULE, mock_session)
 
     with (
         patch.object(provider, "_get_all_sources", return_value=[_HOSTILE_ROW]),
-        patch("app.services.protected_media_plugins.mediacms.requests", mock_requests),
         pytest.raises(HTTPException) as exc,
     ):
         provider._login_and_get_info("https://169.254.169.254/view?m=tok", user_id=7)
 
     assert exc.value.status_code == 400
-    mock_requests.post.assert_not_called()
-    mock_requests.get.assert_not_called()
+    mock_session.post.assert_not_called()
+    mock_session.get.assert_not_called()
 
     detail = str(exc.value.detail).lower()
     for leak in ("169.254", "link-local", "metadata", "private", "loopback"):
@@ -200,12 +201,10 @@ def test_mediacms_reaches_a_public_target_at_request_time(monkeypatch):
     """
     stub_public_dns(monkeypatch)
     provider = MediacmsProvider()
-    mock_requests = _mocked_login_and_info()
+    mock_session = _mocked_login_and_info_session()
+    stub_pinned_session(monkeypatch, _MEDIACMS_MODULE, mock_session)
 
-    with (
-        patch.object(provider, "_get_all_sources", return_value=[_BENIGN_ROW]),
-        patch("app.services.protected_media_plugins.mediacms.requests", mock_requests),
-    ):
+    with patch.object(provider, "_get_all_sources", return_value=[_BENIGN_ROW]):
         token, base_url, info, auth_token = provider._login_and_get_info(
             "https://media.example.com/view?m=vid123", user_id=7
         )
@@ -214,11 +213,18 @@ def test_mediacms_reaches_a_public_target_at_request_time(monkeypatch):
     assert base_url == "https://media.example.com"
     assert info["title"] == "A Video"
     assert auth_token == "auth-tok-123"
-    mock_requests.post.assert_called_once()
-    assert mock_requests.post.call_args.kwargs["url"] == "https://media.example.com/api/v1/login"
+    mock_session.post.assert_called_once()
+    # The request is pinned: the URL dialled carries the *validated* address, not the
+    # hostname (that is the whole point — see `resolve_pinned_target`), while the
+    # `Host` header preserves the original name for virtual hosting.
+    dialled_url = mock_session.post.call_args.args[0]
+    assert dialled_url.startswith("https://")
+    assert dialled_url.endswith("/api/v1/login")
+    assert "media.example.com" not in dialled_url
+    assert mock_session.post.call_args.kwargs["headers"]["Host"] == "media.example.com"
 
 
-def test_mediacms_refuses_a_private_download_target(tmp_path):
+def test_mediacms_refuses_a_private_download_target(tmp_path, monkeypatch):
     """The download leg is a third outbound call and needs its own guard.
 
     ``download`` builds its URL from the MediaCMS response rather than from the request,
@@ -226,13 +232,46 @@ def test_mediacms_refuses_a_private_download_target(tmp_path):
     rebound. Here the whole source is hostile and the download must never start.
     """
     provider = MediacmsProvider()
-    mock_requests = _mocked_login_and_info()
+    mock_session = _mocked_login_and_info_session()
+    stub_pinned_session(monkeypatch, _MEDIACMS_MODULE, mock_session)
 
     with (
         patch.object(provider, "_get_all_sources", return_value=[_HOSTILE_ROW]),
-        patch("app.services.protected_media_plugins.mediacms.requests", mock_requests),
         pytest.raises(HTTPException),
     ):
         provider.download("https://169.254.169.254/view?m=tok", str(tmp_path), user_id=7)
 
-    mock_requests.get.assert_not_called()
+    mock_session.get.assert_not_called()
+
+
+def test_mediacms_media_info_redirect_is_not_followed(monkeypatch):
+    """The exact exploit in finding A1: a benign login followed by a redirecting
+    media-info response must not be chased to a private/link-local target.
+
+    Before this fix, none of the three outbound calls in ``mediacms.py`` passed
+    ``allow_redirects=False``, so a MediaCMS host that validated fine on the login leg
+    (this test's ``_BENIGN_ROW``) could answer the media-info leg with a 302 to
+    ``169.254.169.254`` and ``requests`` would follow it with no check on the redirect
+    target at all. The response body — here the metadata endpoint's JSON — would then
+    land in ``media_info["mediacms_raw"]`` and be returned to the caller. A test double
+    cannot make a real client chase a Location header, so the falsifiable claim here is
+    the one that actually stops it: the media-info request is issued with
+    ``allow_redirects=False``. Watched red against ``git archive HEAD``: the call carried
+    no such kwarg at all.
+    """
+    stub_public_dns(monkeypatch)
+    provider = MediacmsProvider()
+    mock_session = _mocked_login_and_info_session()
+    # Simulate a compromised host: the media-info leg answers with a redirect to cloud
+    # instance metadata rather than JSON. `raise_for_status()` does not raise on a 3xx.
+    mock_session.get.return_value.status_code = 302
+    mock_session.get.return_value.headers = {
+        "Location": "http://169.254.169.254/latest/meta-data/iam/security-credentials/"
+    }
+    stub_pinned_session(monkeypatch, _MEDIACMS_MODULE, mock_session)
+
+    with patch.object(provider, "_get_all_sources", return_value=[_BENIGN_ROW]):
+        provider._login_and_get_info("https://media.example.com/view?m=vid123", user_id=7)
+
+    info_call = mock_session.get.call_args
+    assert info_call.kwargs.get("allow_redirects") is False

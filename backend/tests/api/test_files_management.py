@@ -109,6 +109,47 @@ def test_status_detail_nonexistent_404(client, user_token_headers):
     assert response.json()["detail"] == "File not found"
 
 
+def test_status_detail_max_retries_reflects_the_admin_ceiling(
+    client, user_token_headers, normal_user, db_session
+):
+    """`max_retries` (and `is_retryable`/`can_retry` derived from it) must report the
+    admin-tunable SystemSettings ceiling, not `MediaFile.max_retries` — a column
+    nothing ever writes, so it always read back the ORM default of 3 regardless of
+    what an admin configured. That made this endpoint disagree with what
+    `/retry` (both of them) actually enforces.
+    """
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=1)
+    media_file = _make_file(db_session, normal_user, file_status="error", retry_count=1)
+
+    response = client.get(f"/api/files/{media_file.uuid}/status-detail", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["max_retries"] == 1
+    # retry_count (1) has reached the lowered ceiling (1): the file must NOT be
+    # reported as retryable, even though `can_retry` (status-only) says "retry" is a
+    # legal action to attempt.
+    assert "This file has reached maximum retry attempts" in " ".join(body["recommendations"])
+    assert "This file can be retried for processing." not in body["recommendations"]
+
+
+def test_status_detail_max_retries_below_ceiling_is_retryable(
+    client, user_token_headers, normal_user, db_session
+):
+    """Control: below the (raised) admin ceiling, status-detail reports retryable."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=5)
+    media_file = _make_file(db_session, normal_user, file_status="error", retry_count=1)
+
+    response = client.get(f"/api/files/{media_file.uuid}/status-detail", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["max_retries"] == 5
+    assert "This file can be retried for processing." in body["recommendations"]
+
+
 # ---------------------------------------------------------------------------
 # POST /api/files/{uuid}/cancel  (cancel ACTIVE PROCESSING)
 # ---------------------------------------------------------------------------

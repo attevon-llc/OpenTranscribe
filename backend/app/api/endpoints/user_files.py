@@ -28,6 +28,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task as TaskModel
 from app.models.user import User
+from app.services import system_settings_service
 from app.services.formatting_service import FormattingService
 from app.services.task_recovery_service import task_recovery_service
 from app.utils.task_utils import get_task_summary_for_media_file
@@ -391,6 +392,21 @@ def retry_file_processing(
                 detail="Please wait at least 5 minutes between retry attempts",
             )
 
+        # Check retry limits against the same admin-tunable ceiling
+        # `files/management.py`'s `/files/{uuid}/retry` enforces — this is the route the
+        # SPA actually calls (`UserFileStatus.svelte`), so this check, not that one, is
+        # what makes an admin-lowered ceiling actually stop a runaway retry loop. Shares
+        # its message + determination with that endpoint via `retry_ceiling_message` so
+        # the two routes can't drift apart again (see that function's docstring).
+        ceiling_message = system_settings_service.retry_ceiling_message(
+            db, int(media_file.retry_count or 0)
+        )
+        if ceiling_message:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=ceiling_message,
+            )
+
         # Use recovery service to handle the retry
         success = task_recovery_service.schedule_file_retry(file_id)
 
@@ -399,6 +415,12 @@ def retry_file_processing(
             from app.utils.task_utils import update_media_file_status
 
             update_media_file_status(db, file_id, FileStatus.PENDING)
+
+            # Count this dispatch against the ceiling just checked above. `retry_count`
+            # is nullable with a Python-side default of 0 (a row written before that
+            # default applied, or by raw SQL, holds NULL), so a bare `+= 1` would raise —
+            # normalize first, matching `task_utils.reset_file_for_retry`'s same guard.
+            media_file.retry_count = int(media_file.retry_count or 0) + 1
 
             # Mark old tasks as failed
             old_tasks = (

@@ -110,6 +110,12 @@ def get_file_status_detail(
         )
         file_id = db_file.id  # Get internal ID for task operations
 
+        # The effective ceiling is the admin-tunable SystemSettings value, never
+        # `MediaFile.max_retries` — nothing writes that column (see the retry-endpoint
+        # comment below), so reading it here reported a ceiling this file's own retry
+        # button did not enforce.
+        retry_config = system_settings_service.get_retry_config(db)
+
         # Check if file is safe to delete
         is_safe, delete_reason = is_file_safe_to_delete(db, file_id)
 
@@ -132,7 +138,7 @@ def get_file_status_detail(
             FileStatus.ORPHANED,
         ]:
             actions.append("retry")
-            if (db_file.retry_count or 0) < (db_file.max_retries or 3):
+            if system_settings_service.should_retry_file(db, int(db_file.retry_count or 0)):
                 recommendations.append("This file can be retried for processing.")
             else:
                 recommendations.append(
@@ -160,7 +166,7 @@ def get_file_status_detail(
             ),
             is_stuck=is_stuck,
             retry_count=int(db_file.retry_count or 0),
-            max_retries=int(db_file.max_retries or 3),
+            max_retries=int(retry_config["max_retries"]),
             active_task_id=str(db_file.active_task_id) if db_file.active_task_id else None,
             task_started_at=db_file.task_started_at.isoformat()
             if db_file.task_started_at
@@ -271,17 +277,18 @@ def retry_file_processing(
         # Check retry limits against the same admin-tunable ceiling /reprocess honours
         # (A3: this used to read MediaFile.max_retries, a column nothing ever writes,
         # so it always compared against the ORM default of 3 regardless of the admin
-        # setting).
-        if (
-            not reset_retry_count
-            and not is_admin
-            and not system_settings_service.should_retry_file(db, int(db_file.retry_count or 0))
-        ):
-            config = system_settings_service.get_retry_config(db)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File has reached maximum retry attempts ({config['max_retries']}). Contact admin for help.",
+        # setting). Message + ceiling determination are shared with
+        # `user_files.py`'s `/my-files/{uuid}/retry` via `retry_ceiling_message` — see
+        # its docstring for why these two routes must not drift again.
+        if not reset_retry_count and not is_admin:
+            ceiling_message = system_settings_service.retry_ceiling_message(
+                db, int(db_file.retry_count or 0)
             )
+            if ceiling_message:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=ceiling_message,
+                )
 
         # Reset file for retry
         success = reset_file_for_retry(db, file_id, reset_retry_count)

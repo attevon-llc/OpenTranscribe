@@ -57,6 +57,54 @@ so keep heavy imports lazy.
 - Best-effort side paths (cache invalidation, WS publish, metrics) log and swallow — they must
   never break the write they accompany.
 
+## NLTK is NOT in the transcription critical path — never let it fail a job
+
+**Catch `NLTK_CORPUS_UNAVAILABLE` (`utils/nltk_offline.py`), never `LookupError`.**
+
+NLTK powers sentence splitting, RAG chunking and topic extraction. ASR and diarization do
+not use it at all. Every one of those three has a working degraded mode — coarser segments,
+regex splitting, regex tokens — so an unusable corpus is a reason to produce a slightly worse
+transcript, never a reason to produce none.
+
+That principle is issue #491's, and its guards caught **`LookupError` only**, which is the
+resource-MISSING case. The resource-PRESENT-but-UNREADABLE case raises **`OSError`**: wrong
+ownership on the model cache (exactly what `scripts/fix-model-permissions.sh` repairs), a
+truncated pickle, a full volume — and since nltk 3.10, its **pathsec** CWE-59 hardening, which
+raises `PermissionError` for any corpus file with `st_nlink > 1`. A hardlinked model cache
+therefore failed **every transcription** with a `Security Violation [pathsec.open]` naming
+nothing an operator could act on. Same class of failure as #491, second route in.
+
+```python
+from app.utils.nltk_offline import NLTK_CORPUS_UNAVAILABLE   # (LookupError, OSError)
+```
+
+- Deliberately **not** `Exception` — a `TypeError`/`AttributeError` from our own code is a
+  defect and must keep propagating.
+- **`KeyError` and `IndexError` are subclasses of `LookupError`**, so any guard catching a
+  missing NLTK resource necessarily catches them too. Pre-existing, unavoidable while NLTK
+  raises `LookupError`, and pinned in `test_nltk_corpus_unavailable_degrades.py` so nobody
+  later concludes the `OSError` widening introduced it.
+- **Always log `type(exc).__name__` and the message.** The old warnings said only "NLTK punkt
+  unavailable", which is what made a security refusal indistinguishable from a missing download.
+
+### ⚠️ Repairing the corpus on disk needs a WORKER RESTART
+
+Two of the three sites cache their verdict for the life of the process, so fixing permissions
+or breaking hardlinks does **not** take effect until the worker restarts. "I fixed it and
+nothing changed" is the expected symptom, not a second bug:
+
+| site | on failure | picks up a repaired corpus? |
+|---|---|---|
+| `segment_dedup.split_sentences_nltk` | returns segments unsplit | **yes** — retried per call |
+| `text_preprocessing._get_stopwords` | empty stopword set | **no** — `@lru_cache(maxsize=1)` |
+| `search/chunking_service` | regex splitter | **no** — `_nltk_load_failed` latches (#449) |
+
+The chunking latch is **deliberate and must not be removed**: a retry lets one re-index chunk
+its early files with the regex and its later files with punkt, which disagree on abbreviations
+— one corpus chunked two ways in a single pass. `reset_sentence_splitter_state()` is for tests
+only. Restart with `./opentr.sh restart-backend` (Celery workers do **not** hot-reload the way
+the dev API does).
+
 ## Gotchas
 
 - **Both dedup columns now hold the same *kind* of value, and neither is collision-resistant.**

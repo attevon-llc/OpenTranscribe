@@ -197,7 +197,29 @@ this file is for.
 - **Fixtures** — `seed-fresh-deployment.sh`, `setup-watch-source-test-data.sh`, `test-watch-e2e.sh`.
 - **Release rehearsals** — `release-tests/`: `test-fresh-install.sh`, `test-upgrade.sh`
   (both auto-detect FROM/TO — see `lib/versions.sh`), with `lib/guardrails.sh` as the
-  safety firewall and `lib/{compose-patch,api-client,assertions,versions}.sh`.
+  safety firewall and `lib/{compose-patch,api-client,assertions,versions,model-cache}.sh`.
+
+  ⚠️ **NEVER hardlink `nltk_data` when seeding the model cache — seed through
+  `lib/model-cache.sh`.** Both scenarios used `rsync -a --link-dest=<src> <src> <dst>`, which
+  hardlinks every file. That is correct and free for the HuggingFace/torch/sentence-transformers
+  trees and **fatal** for `nltk_data`: nltk >=3.10's pathsec hardening (CWE-59) refuses any
+  corpus file with `st_nlink > 1`, so all 130 files were poisoned — the shared cache plus one
+  link per test run — and **every transcription in both scenarios failed**. It is why the ledger
+  read `rehearse=failed`, which was mistaken for staleness. `mc_seed_cache` hardlinks the big
+  trees, real-copies the pathsec-sensitive one, and `mc_assert_no_hardlinks` fails at SEED time
+  naming the cause; `MC_PATHSEC_SUBDIRS` is a list so a second hardened library joins nltk there
+  rather than forking the code. `.seeded-from-live` means "seeded", not "seeded correctly", so a
+  cache built by an older revision is repaired on reuse. Verified by
+  `backend/tests/unit/test_release_model_cache_pathsec.py`, which builds real hardlinked trees —
+  a grep would pass against a helper that does nothing. The app-side half of this (an unreadable
+  corpus must degrade, not fail the job) is in `backend/app/utils/CLAUDE.md`.
+
+  ⚠️ **A pipeline failure must dump diagnostics BEFORE teardown.** The report used to say only
+  `file <uuid> ended in status=error`; the real cause lived in `media_file.last_error_message`
+  and the worker logs, both destroyed by the cleanup that followed. That cost a full re-run to
+  learn anything, and made a harness bug look like a product bug. `ac_dump_failure_diagnostics`
+  (`lib/api-client.sh`) prints every error-ish field of the file record — located **by name**,
+  since that column has been renamed once already — and tails each pipeline worker.
 - **Cutting a release** — `release.sh` is the ONLY entry point; never hand-run
   `git tag` / `docker push` / `gh release`. 12 stages in `release/NN-<stage>.sh`,
   each independently runnable (`--skip`, `--only`, `--from`, `--dry-run`), with a

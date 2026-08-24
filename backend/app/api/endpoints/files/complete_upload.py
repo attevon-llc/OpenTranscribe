@@ -170,6 +170,8 @@ def complete_upload(
     transaction open. All of it used to sit inside the request's read
     transaction — multipart assembly of a 15 GB upload included.
     """
+    from minio.error import S3Error
+
     from app.api.endpoints.files.upload import _update_file_hash
     from app.api.endpoints.files.upload import dispatch_upload_pipeline
     from app.services.minio_service import object_exists_and_size
@@ -203,15 +205,26 @@ def complete_upload(
     organization_id = db_file.organization_id
     db.commit()
 
-    # Verify the object actually landed in MinIO — trust but verify.
-    minio_size = object_exists_and_size(storage_path)
-
-    # A multipart upload has no object until its parts are assembled. Doing this
-    # only when the object is absent makes a retried /complete idempotent: the
-    # second call sees the finished object and skips straight to verification.
-    if minio_size is None and request.upload_id:
-        _assemble_multipart(request, storage_path)
+    # Verify the object actually landed in MinIO — trust but verify. A confirmed
+    # NoSuchKey (None) means the presigned PUT never completed; anything else
+    # (MinIO restart, network hiccup) must NOT be treated the same way (B1) — a
+    # transient storage outage is not proof the bytes are missing, and the row
+    # must survive for the documented idempotent retry of /complete.
+    try:
         minio_size = object_exists_and_size(storage_path)
+
+        # A multipart upload has no object until its parts are assembled. Doing this
+        # only when the object is absent makes a retried /complete idempotent: the
+        # second call sees the finished object and skips straight to verification.
+        if minio_size is None and request.upload_id:
+            _assemble_multipart(request, storage_path)
+            minio_size = object_exists_and_size(storage_path)
+    except S3Error as e:
+        logger.error(f"Storage outage verifying upload {storage_path}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not verify the upload against storage. Please retry.",
+        ) from e
     if minio_size is None:
         # The presigned PUT never completed, so the prepared row is an orphan.
         # Drop it (parity with the legacy path's failure cleanup) so it doesn't

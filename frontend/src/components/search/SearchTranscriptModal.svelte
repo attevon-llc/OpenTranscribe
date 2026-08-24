@@ -6,6 +6,7 @@
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { toastStore } from '$stores/toast';
   import Spinner from '../ui/Spinner.svelte';
   import BaseModal from '../ui/BaseModal.svelte';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
@@ -576,7 +577,12 @@
         }
       }
     } catch (e: unknown) {
+      // G1: a rejected page request must not leave hasMoreSegments true — the
+      // navigateToMatch loop below re-issues the identical request forever
+      // otherwise, with no visible error (this was a bare console.error).
       console.error('Failed to load more segments:', e);
+      hasMoreSegments = false;
+      toastStore.error(getErrorMessage(e, $t('searchTranscript.error')));
     }
     loadingMoreSegments = false;
   }

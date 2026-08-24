@@ -206,6 +206,14 @@ export class RecordingManager {
           isRecording: false,
           isPaused: false,
         }));
+        // G2: release the mic tracks, close the AudioContext and cancel the
+        // level-meter rAF now that the blob is built — not only when the user
+        // later clicks Upload/Delete. This used to be reachable only from
+        // clearRecording()/the start-error path, so record -> stop -> navigate
+        // away left the browser's mic indicator lit for the rest of the SPA
+        // session. Ordered after the blob update above: cleanupRecording()
+        // clears `recordedChunks`, which this handler has already consumed.
+        this.cleanupRecording();
       };
 
       this.mediaRecorder.start();
@@ -259,7 +267,15 @@ export class RecordingManager {
 
   public stopRecording(): void {
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      // Hardware release (G2) happens in `onstop` below, not here — `stop()`
+      // returns before the 'stop' event fires, and `onstop` is what builds
+      // `recordedBlob` from `recordedChunks`. Clearing that array synchronously
+      // here would race the async event and could empty the blob.
       this.mediaRecorder.stop();
+    } else {
+      // Already inactive (e.g. stopped twice, or never started): no 'stop'
+      // event is coming to trigger cleanup, so do it directly.
+      this.cleanupRecording();
     }
 
     if (this.durationInterval) {
@@ -384,3 +400,18 @@ export class RecordingManager {
 
 // Export singleton instance
 export const recordingManager = RecordingManager.getInstance();
+
+// G2 failsafe: `recordingManager` is a module-level singleton that outlives every
+// SPA route change (Navbar, where the recorder popup lives, is never destroyed by
+// client-side navigation), so there is no component `onDestroy` that reliably runs
+// when a recording is left active. A real tab close/reload is the one case a route
+// change can't cover — release the hardware best-effort rather than trust nothing
+// runs.
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    const state = get(recordingStore);
+    if (state.isRecording) {
+      recordingManager.stopRecording();
+    }
+  });
+}

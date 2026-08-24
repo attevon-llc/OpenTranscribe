@@ -50,6 +50,7 @@ from app.schemas.media import TranscriptSegment
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 from app.utils.speaker_labels import canonical_speaker_label
+from app.utils.time_format import format_timestamp_simple
 
 logger = logging.getLogger(__name__)
 
@@ -60,20 +61,18 @@ class FormattingService:
     @staticmethod
     def format_duration(seconds: float | None) -> str | None:
         """
-        Format duration in seconds to MM:SS format.
+        Format duration in seconds to MM:SS (or H:MM:SS past one hour).
 
         Args:
             seconds: Duration in seconds
 
         Returns:
-            Formatted duration string (e.g., "5:23") or None
+            Formatted duration string (e.g., "5:23" or "2:05:00") or None
         """
         if seconds is None or seconds <= 0:
             return None
 
-        minutes = int(seconds // 60)
-        remaining_seconds = int(seconds % 60)
-        return f"{minutes}:{remaining_seconds:02d}"
+        return format_timestamp_simple(seconds)
 
     @staticmethod
     def format_duration_with_millis(seconds: float | None) -> str | None:

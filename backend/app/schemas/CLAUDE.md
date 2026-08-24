@@ -14,8 +14,15 @@ Request/response shaping and validation only; logic lives in `app/services`. 25 
   Analytics, Collection + 3 local enums. `validate_whisper_model` gates on `VALID_LOCAL_WHISPER_MODELS`
   (L18); the whisper-model / `min<=max` / positive-speaker validator trio is duplicated verbatim on
   `ReprocessRequest` (L92+) and `PrepareUploadRequest` (L198+).
-- `media_source.py:13` — `_RESERVED_HOSTNAMES` is an **SSRF blocklist** of internal Docker service
-  names. `admin.py:147-210` re-declares the same four schemas *without* it.
+- `media_source.py:22` — `_validated_hostname` is an **SSRF gate**, not a format check: the value
+  becomes an allowed host that `protected_media_plugins/mediacms.py` fetches server-side. It
+  delegates to `app/utils/url_validation.is_safe_url`, which resolves the name and rejects on
+  address class. It used to be a regex + a "must contain a dot" rule + a hardcoded first-label
+  blocklist that resolved nothing and accepted `169.254.169.254`, `127.0.0.1` and `0.0.0.0`
+  (audit A1). **Never reintroduce a local host-safety check here** — `url_validation` is the one
+  implementation. ⚠️ `admin.py:158-205` still re-declares the same shapes with a **regex only**;
+  that path is admin-only and is covered at request time by `mediacms.py`'s
+  `assert_safe_outbound_url` calls, but the schema itself is unguarded.
 - `__init__.py` — a **partial, drifting** re-export; 11 modules are absent (`base`, `admin`, `search`,
   `watch_source`, `speaker_cluster`, `topic`, `redaction_settings`, …). Import from the submodule.
   `UserSchema` / `GroupSchema` are aliases that exist only here.

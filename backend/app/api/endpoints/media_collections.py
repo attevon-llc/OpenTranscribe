@@ -984,7 +984,7 @@ def get_collection_media(
     # Non-admin users without shared access can only see their own files
     # For shared collections, show all files in the collection
     is_shared = collection.user_id != current_user.id
-    if current_user.role != "admin" and not is_shared:
+    if not current_user.is_admin and not is_shared:
         base_query = base_query.filter(MediaFile.user_id == current_user.id)
 
     # Abuse/DMCA: quarantined files are hidden from every read surface for
@@ -1006,7 +1006,7 @@ def get_collection_media(
         "file_type": file_type,
         "status": status,
         "transcript_search": transcript_search,
-        "user_id": current_user.id if current_user.role != "admin" and not is_shared else None,
+        "user_id": current_user.id if not current_user.is_admin and not is_shared else None,
     }
 
     # Apply all filters

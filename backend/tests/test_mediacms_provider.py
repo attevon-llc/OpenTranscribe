@@ -14,10 +14,26 @@ import pytest
 from fastapi import HTTPException
 
 from app.services.protected_media_plugins.mediacms import MediacmsProvider
+from tests.helpers import stub_public_dns
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _public_media_host_dns(monkeypatch):
+    """Let ``*.example.com`` resolve to a public address for this module.
+
+    Every outbound request the provider makes is now re-checked against
+    ``utils/url_validation`` immediately before it is issued (audit finding A1), so the
+    ``m.example.com`` hosts these tests use must resolve to something public or the
+    guard refuses them for a reason unrelated to what is being tested.
+
+    The guard's own behaviour is covered in ``unit/test_media_source_ssrf.py``, which
+    does **not** stub DNS for its hostile hosts.
+    """
+    stub_public_dns(monkeypatch)
 
 
 @pytest.fixture

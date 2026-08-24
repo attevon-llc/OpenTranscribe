@@ -169,6 +169,67 @@ def test_retry_other_user_forbidden(client, other_user_auth_headers, normal_user
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
+def test_retry_honours_admin_ceiling_even_reading_the_stale_column(
+    client, user_token_headers, normal_user, db_session
+):
+    """A3: /retry used to read MediaFile.max_retries (never written anywhere, so
+    always the ORM default of 3) instead of the admin-tunable system setting that
+    /reprocess honours. Set the admin ceiling to 1 and a file already at 2
+    retries must be refused, even though the stale column would still say "3"."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=1)
+    media_file = _make_file(db_session, normal_user, file_status="error", retry_count=2)
+    response = client.post(f"/api/files/{media_file.uuid}/retry", headers=user_token_headers)
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "maximum retry attempts" in response.json()["detail"]
+
+
+def test_retry_below_admin_ceiling_still_succeeds(
+    client, user_token_headers, normal_user, db_session
+):
+    """Control: below the (lowered) ceiling, retry still works."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=5)
+    media_file = _make_file(db_session, normal_user, file_status="error", retry_count=1)
+    response = client.post(f"/api/files/{media_file.uuid}/retry", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+
+
+def test_retry_reset_retry_count_requires_admin(
+    client, user_token_headers, normal_user, db_session
+):
+    """A3: reset_retry_count used to skip the ceiling check entirely for ANY
+    caller, including a non-admin file owner. It must now require admin."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=1)
+    media_file = _make_file(db_session, normal_user, file_status="error", retry_count=5)
+    response = client.post(
+        f"/api/files/{media_file.uuid}/retry",
+        headers=user_token_headers,
+        params={"reset_retry_count": "true"},
+    )
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_retry_reset_retry_count_by_admin_succeeds(
+    client, admin_token_headers, admin_user, db_session
+):
+    """Control: an admin resetting the retry count is still allowed."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=1)
+    media_file = _make_file(db_session, admin_user, file_status="error", retry_count=5)
+    response = client.post(
+        f"/api/files/{media_file.uuid}/retry",
+        headers=admin_token_headers,
+        params={"reset_retry_count": "true"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+
+
 # ---------------------------------------------------------------------------
 # DELETE /api/files/{uuid}/force  (admin only)
 # ---------------------------------------------------------------------------

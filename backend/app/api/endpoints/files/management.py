@@ -24,6 +24,7 @@ from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.media import Tag
 from app.models.user import User
+from app.services import system_settings_service
 from app.services.tag_bulk import CHANGED_OUTCOMES
 from app.services.tag_bulk import TAG_ACTIONS
 from app.services.tag_bulk import BulkTagOutcome
@@ -259,15 +260,27 @@ def retry_file_processing(
                 detail=f"File cannot be retried in current status: {db_file.status}",
             )
 
-        # Check retry limits
+        # Resetting the retry count bypasses the admin-tunable ceiling entirely,
+        # so only an admin may request it (A3: was accepted from any file owner).
+        if reset_retry_count and not is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only an admin may reset the retry count.",
+            )
+
+        # Check retry limits against the same admin-tunable ceiling /reprocess honours
+        # (A3: this used to read MediaFile.max_retries, a column nothing ever writes,
+        # so it always compared against the ORM default of 3 regardless of the admin
+        # setting).
         if (
-            (db_file.retry_count or 0) >= (db_file.max_retries or 3)
-            and not reset_retry_count
+            not reset_retry_count
             and not is_admin
+            and not system_settings_service.should_retry_file(db, int(db_file.retry_count or 0))
         ):
+            config = system_settings_service.get_retry_config(db)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"File has reached maximum retry attempts ({db_file.max_retries}). Contact admin for help.",
+                detail=f"File has reached maximum retry attempts ({config['max_retries']}). Contact admin for help.",
             )
 
         # Reset file for retry

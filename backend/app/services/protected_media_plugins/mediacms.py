@@ -20,6 +20,7 @@ import requests
 from fastapi import HTTPException
 
 from app.services.protected_media_providers import ProtectedMediaProvider
+from app.utils.url_validation import assert_safe_outbound_url
 
 logger = logging.getLogger(__name__)
 
@@ -270,9 +271,17 @@ class MediacmsProvider(ProtectedMediaProvider):
         host_verify_ssl = self._get_verify_ssl_for_host(parsed.netloc, user_id=user_id)
         auth_payload = {"username": media_user, "password": media_pass}
 
+        login_url = f"{base_url}/api/v1/login"
+        info_url = f"{base_url}/api/v1/media/{friendly_token}"
+
         try:
+            # Defence in depth over the schema guard on the stored hostname
+            # (`schemas/media_source.py`): rows configured before that guard existed are
+            # still in the database, and a hostname that resolved publicly at write time
+            # can resolve to 169.254.169.254 by the time it is fetched.
+            assert_safe_outbound_url(login_url, purpose="MediaCMS login")
             login_resp = requests.post(
-                url=f"{base_url}/api/v1/login",
+                url=login_url,
                 data=auth_payload,
                 timeout=30,
                 verify=host_verify_ssl,
@@ -290,8 +299,9 @@ class MediacmsProvider(ProtectedMediaProvider):
                 "authorization": f"Token {auth_token}",
                 "accept": "application/json",
             }
+            assert_safe_outbound_url(info_url, purpose="MediaCMS media info")
             info_resp = requests.get(
-                url=f"{base_url}/api/v1/media/{friendly_token}",
+                url=info_url,
                 headers=headers,
                 timeout=30,
                 verify=host_verify_ssl,
@@ -434,6 +444,9 @@ class MediacmsProvider(ProtectedMediaProvider):
             if progress_callback:
                 progress_callback(20, "Downloading media from authenticated source...")
 
+            # Re-checked rather than trusted from the login leg: `download_url` is built
+            # from a path the MediaCMS server chose, and the host is resolved again here.
+            assert_safe_outbound_url(download_url, purpose="MediaCMS media download")
             with requests.get(
                 download_url,
                 stream=True,

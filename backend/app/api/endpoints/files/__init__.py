@@ -397,7 +397,13 @@ def get_metadata_filters_endpoint(
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ):
     """Get available metadata filters like formats, codecs, etc."""
-    return get_metadata_filters(db, ctx.user.id, ownership=ownership, organization_id=ctx.org_id)
+    return get_metadata_filters(
+        db,
+        ctx.user.id,
+        ownership=ownership,
+        organization_id=ctx.org_id,
+        is_admin=ctx.user.is_admin,
+    )
 
 
 # =============================================================================

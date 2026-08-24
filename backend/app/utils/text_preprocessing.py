@@ -17,6 +17,7 @@ import logging
 import re
 from functools import lru_cache
 
+from app.utils.nltk_offline import NLTK_CORPUS_UNAVAILABLE
 from app.utils.nltk_offline import nltk_downloads_permitted
 
 logger = logging.getLogger(__name__)
@@ -116,7 +117,11 @@ def _get_stopwords() -> frozenset[str]:
         from nltk.corpus import stopwords
 
         words = set(stopwords.words("english"))
-    except LookupError:
+    except NLTK_CORPUS_UNAVAILABLE:
+        # NLTK_CORPUS_UNAVAILABLE, not LookupError — an unreadable corpus raises
+        # OSError. ⚠️ This function is @lru_cache(maxsize=1), so whichever answer
+        # it produces is FROZEN for the life of the process: repairing the corpus
+        # on disk needs a worker restart to take effect.
         try:
             if nltk_downloads_permitted(corpus="the stopwords corpus"):
                 logger.info("Downloading NLTK stopwords corpus (one-time)")
@@ -124,11 +129,15 @@ def _get_stopwords() -> frozenset[str]:
             from nltk.corpus import stopwords
 
             words = set(stopwords.words("english"))
-        except Exception:
+        except Exception as exc:
             logger.warning(
-                "NLTK stopwords unavailable; keyword extraction will keep common words. "
-                "Run scripts/download-models.sh (or ./opentr.sh start) to provision the "
-                "NLTK corpora — see docs-site/docs/installation/offline-installation.md."
+                "NLTK stopwords unavailable (%s: %s); keyword extraction will keep "
+                "common words, and this verdict is cached for the life of this "
+                "process — restart the worker after provisioning. Run "
+                "scripts/download-models.sh (or ./opentr.sh start) to provision the "
+                "NLTK corpora — see docs-site/docs/installation/offline-installation.md.",
+                type(exc).__name__,
+                exc,
             )
             words = set()
 
@@ -146,15 +155,24 @@ def _tokenize(text: str) -> list[str]:
 
     try:
         return list(nltk.word_tokenize(text))
-    except LookupError:
+    except NLTK_CORPUS_UNAVAILABLE:
+        # NLTK_CORPUS_UNAVAILABLE, not LookupError: an unreadable corpus (bad
+        # ownership on the model cache, or nltk >=3.10 pathsec refusing a
+        # multiply-linked file) raises OSError, which the narrower guard let
+        # escape into the topic-extraction task. The regex fallback below is a
+        # perfectly good answer for both.
         try:
             if nltk_downloads_permitted(corpus="the punkt_tab tokenizer"):
                 logger.info("Downloading NLTK punkt_tab tokenizer (one-time)")
                 nltk.download("punkt_tab", quiet=True)
             return list(nltk.word_tokenize(text))
-        except Exception:
+        except Exception as exc:
             # Fallback: simple regex tokenizer if NLTK data unavailable
-            logger.warning("NLTK tokenizer unavailable, using regex fallback")
+            logger.warning(
+                "NLTK tokenizer unavailable (%s: %s), using regex fallback",
+                type(exc).__name__,
+                exc,
+            )
             return list(re.findall(r"\b\w+(?:'\w+)?\b", text))
 
 

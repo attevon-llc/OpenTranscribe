@@ -15,6 +15,7 @@ import time
 
 import numpy as np
 
+from app.utils.nltk_offline import NLTK_CORPUS_UNAVAILABLE
 from app.utils.nltk_offline import nltk_downloads_permitted
 
 logger = logging.getLogger(__name__)
@@ -410,13 +411,22 @@ def split_sentences_nltk(segments: list[dict]) -> list[dict]:
 
     try:
         sentence_splitter = nltk_load("tokenizers/punkt/english.pickle")
-    except LookupError:
+    except NLTK_CORPUS_UNAVAILABLE:
         # ⚠️ The retry needs its own guard, and had none (issue #491). `nltk.download`
         # swallows its own network errors and returns falsy, so on an airgapped or
         # firewalled deployment the reload raised `LookupError` straight out of here
         # — and NOTHING up the stack catches it: `clean_segments` calls this
         # unguarded, so a missing corpus failed the whole TRANSCRIPTION rather than
         # producing coarser segments.
+        #
+        # ⚠️ That guard caught `LookupError` only, which was too narrow and let the
+        # same class of failure through again. nltk >=3.10's pathsec hardening
+        # raises `PermissionError` for a corpus file with `st_nlink > 1`, so a
+        # hardlinked model cache failed every transcription with a "Security
+        # Violation" that named nothing the operator could act on. "Corpus absent"
+        # and "corpus unreadable" are one event to this caller;
+        # NLTK_CORPUS_UNAVAILABLE is both, and its definition explains why it is
+        # not simply `Exception`.
         #
         # Sentence splitting is an enhancement: without it a segment simply stays
         # multi-sentence, which is what every pre-splitting transcript looked like.
@@ -425,12 +435,15 @@ def split_sentences_nltk(segments: list[dict]) -> list[dict]:
             if nltk_downloads_permitted(corpus="the punkt sentence tokenizer"):
                 nltk.download("punkt_tab", quiet=True)
             sentence_splitter = nltk_load("tokenizers/punkt/english.pickle")
-        except Exception:
+        except Exception as exc:
             logger.warning(
-                "NLTK punkt unavailable; leaving segments unsplit. Multi-sentence "
-                "segments will not be divided. Run scripts/download-models.sh (or "
-                "./opentr.sh start) to provision the NLTK corpora — see "
-                "docs-site/docs/installation/offline-installation.md."
+                "NLTK punkt unavailable (%s: %s); leaving segments unsplit. "
+                "Multi-sentence segments will not be divided. Run "
+                "scripts/download-models.sh (or ./opentr.sh start) to provision the "
+                "NLTK corpora — see "
+                "docs-site/docs/installation/offline-installation.md.",
+                type(exc).__name__,
+                exc,
             )
             return segments
 

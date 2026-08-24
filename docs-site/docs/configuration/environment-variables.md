@@ -886,47 +886,94 @@ Every variable below is the **deployment-wide fallback**. A user who configures 
 provider in **Settings → Transcription** overrides all of it, and their API key is
 stored encrypted rather than in a file.
 
-| Variable | Default | What it does |
-|---|---|---|
-| `ASR_PROVIDER` | `local` | Which engine transcribes when a user has chosen nothing. `local` uses the bundled WhisperX and needs a GPU. |
-| `DEEPGRAM_API_KEY` | *(empty)* | Deepgram credential. Empty disables the provider. |
-| `DEEPGRAM_MODEL` | `nova-3` | Deepgram model id. `nova-3` is their current general model; older accounts may need `nova-2`. |
-| `ASSEMBLYAI_API_KEY` | *(empty)* | AssemblyAI credential. |
-| `ASSEMBLYAI_MODEL` | `universal` | AssemblyAI model tier. `universal` is the default multilingual model. |
-| `OPENAI_ASR_MODEL` | `gpt-4o-transcribe` | OpenAI speech model. Uses `OPENAI_API_KEY` — there is no separate ASR key. |
-| `GOOGLE_CLOUD_CREDENTIALS` | *(empty)* | **Path to a service-account JSON file**, not a key string. The file must be readable inside the container. |
-| `GOOGLE_ASR_MODEL` | `chirp-3` | Google Speech model. `chirp-3` is their current multilingual model. |
-| `AZURE_SPEECH_KEY` | *(empty)* | Azure Speech subscription key. |
-| `AZURE_SPEECH_REGION` | `eastus` | Azure region — **must match the region the key was issued for**, or every request 401s. |
-| `AZURE_ASR_MODEL` | `whisper` | Azure model. `whisper` or `conversation`. |
-| `AWS_ASR_MODEL` | `standard` | Amazon Transcribe tier. |
-| `AWS_TRANSCRIBE_BUCKET` | *(empty)* | S3 bucket Transcribe writes intermediate output to. **Must already exist and be in `AWS_REGION`.** |
-| `SPEECHMATICS_API_KEY` | *(empty)* | Speechmatics credential. |
-| `SPEECHMATICS_MODEL` | `standard` | Speechmatics operating point. `standard` or `enhanced` (slower, more accurate). |
-| `GLADIA_API_KEY` | *(empty)* | Gladia credential. |
-| `GLADIA_MODEL` | `standard` | Gladia model tier. |
+| Variable | Valid values / limits | Default | Description |
+|---|---|---|---|
+| `ASR_PROVIDER` | `local` \| `deepgram` \| `assemblyai` \| `openai` \| `google` \| `azure` \| `aws` \| `speechmatics` \| `gladia` | `local` | Engine used when a user has chosen nothing. `local` uses the bundled WhisperX and requires a GPU. |
+| `DEEPGRAM_API_KEY` | string | *(empty)* | Deepgram credential. Empty disables the provider. |
+| `DEEPGRAM_MODEL` | `nova-3`, `nova-2`, `enhanced`, `base` | `nova-3` | Deepgram model id. Older accounts may not have `nova-3`. |
+| `ASSEMBLYAI_API_KEY` | string | *(empty)* | AssemblyAI credential. |
+| `ASSEMBLYAI_MODEL` | `universal`, `best`, `nano` | `universal` | Model tier. `nano` is cheapest, `best` most accurate. |
+| `OPENAI_ASR_MODEL` | `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, `whisper-1` | `gpt-4o-transcribe` | OpenAI speech model. Uses `OPENAI_API_KEY` — there is no separate ASR key. |
+| `GOOGLE_CLOUD_CREDENTIALS` | absolute path | *(empty)* | **Path to a service-account JSON file**, not a key string. Must be readable inside the container. |
+| `GOOGLE_ASR_MODEL` | `chirp-3`, `chirp-2`, `latest_long`, `latest_short` | `chirp-3` | Google Speech model. |
+| `AZURE_SPEECH_KEY` | string | *(empty)* | Azure Speech subscription key. |
+| `AZURE_SPEECH_REGION` | any Azure region id | `eastus` | **Must match the region the key was issued for**, or every request returns 401. |
+| `AZURE_ASR_MODEL` | `whisper`, `conversation` | `whisper` | Azure recognition model. |
+| `AWS_ASR_MODEL` | `standard`, `medical` | `standard` | Amazon Transcribe tier. |
+| `AWS_TRANSCRIBE_BUCKET` | S3 bucket name | *(empty)* | Bucket Transcribe writes intermediate output to. **Must already exist and be in `AWS_REGION`.** |
+| `SPEECHMATICS_API_KEY` | string | *(empty)* | Speechmatics credential. |
+| `SPEECHMATICS_MODEL` | `standard`, `enhanced` | `standard` | Operating point. `enhanced` is slower and more accurate. |
+| `GLADIA_API_KEY` | string | *(empty)* | Gladia credential. |
+| `GLADIA_MODEL` | `standard`, `accurate` | `standard` | Gladia model tier. |
+
+#### Example — Deepgram as the deployment default
+
+```bash
+# .env
+ASR_PROVIDER=deepgram
+DEEPGRAM_API_KEY=your-deepgram-key
+DEEPGRAM_MODEL=nova-3
+```
+
+#### Example — Amazon Transcribe with an instance role
+
+```bash
+# .env — no static keys; the EC2/ECS role supplies credentials
+ASR_PROVIDER=aws
+AWS_REGION=us-east-1
+AWS_TRANSCRIBE_BUCKET=my-transcribe-scratch   # must exist, same region
+AWS_ASR_MODEL=standard
+```
 
 ### Per-variable reference — LLM providers
 
-| Variable | Default | What it does |
-|---|---|---|
-| `LLM_PROVIDER` | *(empty)* | Deployment-wide fallback provider. **Empty means transcription-only** — no summaries, no speaker suggestions, no chat. Also the provider background tasks use, since they have no user. |
-| `LLM_ALLOW_PRIVATE_ENDPOINTS` | `false` | SSRF guard. **Must be `true` for a local vLLM/Ollama**, or calls to `localhost`/private IPs are refused with `Health check blocked … Private IP address`. Keep `false` anywhere untrusted users can register. |
-| `VLLM_BASE_URL` | `http://localhost:8012/v1` | vLLM OpenAI-compatible endpoint. This exact default is treated as *"not configured"*, so an untouched value is ignored rather than dialled. |
-| `VLLM_MODEL_NAME` | *(empty)* | The model name your vLLM server serves. Must match what the server reports. |
-| `VLLM_API_KEY` | *(empty)* | Only if your vLLM is started with `--api-key`. Usually blank for a local server. |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama endpoint. ⚠️ Unlike vLLM, this has **no** "not configured" sentinel — an untouched default is treated as real and will hit the SSRF refusal unless `LLM_ALLOW_PRIVATE_ENDPOINTS=true`. |
-| `OLLAMA_MODEL_NAME` | `llama2:7b-chat` | Ollama model tag. ⚠️ The coded default is **stale** (Llama 2, 2023); use a current tag such as `llama3.1:8b`. The model must already be pulled: `ollama pull <tag>`. |
-| `OPENAI_API_KEY` | *(empty)* | OpenAI credential, shared with the OpenAI ASR provider. |
-| `OPENAI_MODEL_NAME` | `gpt-4o-mini` | OpenAI chat model used for summaries and speaker suggestions. |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Override for an OpenAI-compatible gateway. |
-| `ANTHROPIC_API_KEY` | *(empty)* | Anthropic credential. |
-| `ANTHROPIC_MODEL_NAME` | `claude-haiku-4-5` | Anthropic model id. |
-| `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Override for a proxy or gateway. |
-| `OPENROUTER_API_KEY` | *(empty)* | OpenRouter credential. |
-| `OPENROUTER_MODEL_NAME` | `anthropic/claude-haiku-4.5` | OpenRouter model slug — note the `vendor/model` form. |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter endpoint. |
-| `BEDROCK_REGION` | *(empty)* | AWS region for Bedrock. Falls back to `AWS_REGION` / `AWS_DEFAULT_REGION`. **No API key exists** — boto3 uses the standard credential chain. The Bedrock *model* is chosen per user in the UI only. |
+**Where to set** column legend:
+
+| Marker | Meaning |
+|---|---|
+| 🖥️ **UI** | Configurable in the admin/user UI. The UI value **wins** — you do not need to set it in `.env` at all. The env var is only a fallback for users who have configured nothing, and for background tasks (which have no user). |
+| 📄 **env** | No UI equivalent exists. `.env` is the only way to set it. |
+
+| Variable | Where to set | Valid values / limits | Default | Description |
+|---|---|---|---|---|
+| `LLM_PROVIDER` | 🖥️ UI | `vllm` \| `openai` \| `ollama` \| `anthropic` \| `bedrock` \| `openrouter` \| `custom` \| *(empty)* | *(empty)* | Fallback provider. **Empty = transcription-only**: no summaries, speaker suggestions or chat. `custom` is user-config only and is never resolved from env. |
+| `LLM_ALLOW_PRIVATE_ENDPOINTS` | 📄 env | `true` \| `false` | `false` | SSRF guard. **Must be `true` for a local vLLM/Ollama**, or calls are refused with `Health check blocked … Private IP address`. Keep `false` anywhere untrusted users can register. |
+| `VLLM_BASE_URL` | 🖥️ UI | URL ending `/v1` | `http://localhost:8012/v1` | vLLM OpenAI-compatible endpoint. This exact default is treated as *"not configured"*, so an untouched value is ignored rather than dialled. |
+| `VLLM_MODEL_NAME` | 🖥️ UI | model name your server reports | *(empty)* | Must match what vLLM serves. `gpt-oss` is treated as a placeholder, not a real model. |
+| `VLLM_API_KEY` | 🖥️ UI | string | *(empty)* | Only needed if vLLM was started with `--api-key`. Usually blank locally. |
+| `OLLAMA_BASE_URL` | 🖥️ UI | URL | `http://localhost:11434` | ⚠️ Unlike vLLM this has **no** "not configured" sentinel — an untouched default is treated as real and hits the SSRF refusal unless `LLM_ALLOW_PRIVATE_ENDPOINTS=true`. |
+| `OLLAMA_MODEL_NAME` | 🖥️ UI | any pulled Ollama tag | `llama2:7b-chat` | ⚠️ The coded default is **stale** (Llama 2, 2023). Use a current tag such as `llama3.1:8b`, and pull it first: `ollama pull llama3.1:8b`. |
+| `OPENAI_API_KEY` | 🖥️ UI | `sk-…` | *(empty)* | OpenAI credential, shared with the OpenAI ASR provider. |
+| `OPENAI_MODEL_NAME` | 🖥️ UI | any OpenAI chat model | `gpt-4o-mini` | Model used for summaries and speaker suggestions. |
+| `OPENAI_BASE_URL` | 🖥️ UI | URL | `https://api.openai.com/v1` | Override for an OpenAI-compatible gateway. |
+| `ANTHROPIC_API_KEY` | 🖥️ UI | `sk-ant-…` | *(empty)* | Anthropic credential. |
+| `ANTHROPIC_MODEL_NAME` | 🖥️ UI | any Claude model id | `claude-haiku-4-5` | Anthropic model. |
+| `ANTHROPIC_BASE_URL` | 🖥️ UI | URL | `https://api.anthropic.com` | Override for a proxy or gateway. |
+| `OPENROUTER_API_KEY` | 🖥️ UI | `sk-or-…` | *(empty)* | OpenRouter credential. |
+| `OPENROUTER_MODEL_NAME` | 🖥️ UI | `vendor/model` slug | `anthropic/claude-haiku-4.5` | Note the `vendor/model` form — a bare model name will not resolve. |
+| `OPENROUTER_BASE_URL` | 🖥️ UI | URL | `https://openrouter.ai/api/v1` | OpenRouter endpoint. |
+| `BEDROCK_REGION` | 📄 env | AWS region id | *(empty)* | Falls back to `AWS_REGION` / `AWS_DEFAULT_REGION`. **No API key exists** — boto3 uses the standard credential chain. The Bedrock *model* is chosen per user in the UI only, so there is no env var for it. |
+| *max tokens / context window* | 🖥️ **UI only** | 512 – 2,000,000 | 8192 | **There is no env var.** Set it at Settings → LLM Provider → Max Tokens. Leaving it at 8192 silently truncates long transcripts. |
+
+#### Example — local Ollama on the same host
+
+```bash
+# .env
+LLM_PROVIDER=ollama
+LLM_ALLOW_PRIVATE_ENDPOINTS=true      # REQUIRED, or every call is refused
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+OLLAMA_MODEL_NAME=llama3.1:8b         # run: ollama pull llama3.1:8b
+```
+
+#### Example — cloud provider for a hosted deployment
+
+```bash
+# .env
+LLM_PROVIDER=anthropic
+LLM_ALLOW_PRIVATE_ENDPOINTS=false     # keep the SSRF guard on
+ANTHROPIC_API_KEY=sk-ant-your-key
+ANTHROPIC_MODEL_NAME=claude-haiku-4-5
+```
 
 :::note Setting these is optional
 None of the above is required. A deployment with `LLM_PROVIDER` empty and

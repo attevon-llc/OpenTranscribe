@@ -214,6 +214,18 @@ export function mapFFmpegMetadata(probeData: FFmpegProbeData, file: File): Video
 }
 
 /**
+ * Rough heuristic for a video's duration before its real metadata is available,
+ * based on a typical size-to-duration ratio. Shared by the upload wizard and the
+ * bulk extraction modal so both size estimates are derived the same way.
+ *
+ * @param fileSizeBytes - Video file size in bytes
+ * @returns Estimated duration in seconds
+ */
+export function estimateDurationFromFileSize(fileSizeBytes: number): number {
+  return (fileSizeBytes / (1024 * 1024)) * 60;
+}
+
+/**
  * Estimate compressed audio size based on video duration
  *
  * @param duration - Video duration in seconds

@@ -277,6 +277,9 @@
 
   // Open SSE streams keyed by fileId so we can clean them up on completion/unmount.
   const downloadStreams = new Map<string, EventSource>();
+  // Watchdog timers for the streams above, keyed the same way, so onDestroy can
+  // clear a still-pending one rather than letting it fire after unmount.
+  const downloadTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
   const DOWNLOAD_STREAM_TIMEOUT_MS = 5 * 60 * 1000;
 
   async function downloadMedia(mode: DownloadMode) {
@@ -338,6 +341,7 @@
       closeDownloadStream(fileId);
       downloadStore.updateStatus(fileId, 'error', undefined, $t('transcript.downloadFailed'));
     }, DOWNLOAD_STREAM_TIMEOUT_MS);
+    downloadTimeouts.set(fileId, timeout);
 
     es.addEventListener('progress', (e: MessageEvent) => {
       try {
@@ -379,11 +383,18 @@
       es.close();
       downloadStreams.delete(fileId);
     }
+    const timeout = downloadTimeouts.get(fileId);
+    if (timeout) {
+      clearTimeout(timeout);
+      downloadTimeouts.delete(fileId);
+    }
   }
 
   onDestroy(() => {
     downloadStreams.forEach((es) => es.close());
     downloadStreams.clear();
+    downloadTimeouts.forEach((timeout) => clearTimeout(timeout));
+    downloadTimeouts.clear();
   });
 
   function triggerAnchorDownload(href: string, filename: string) {

@@ -391,11 +391,6 @@ export async function getWatchSources(scope: 'own' | 'all' = 'own'): Promise<Wat
   return data.sources ?? [];
 }
 
-export async function getWatchSource(uuid: string): Promise<WatchSource> {
-  const { data } = await axiosInstance.get(`${BASE}/${uuid}`);
-  return data;
-}
-
 export async function createWatchSource(payload: WatchSourceCreate): Promise<WatchSource> {
   const { data } = await axiosInstance.post(`${BASE}`, payload);
   return data;

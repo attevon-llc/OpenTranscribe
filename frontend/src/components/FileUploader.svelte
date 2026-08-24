@@ -26,7 +26,7 @@
     DEFAULT_TRANSCRIPTION_SETTINGS
   } from '$lib/api/transcriptionSettings';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
-  import { MAX_UPLOAD_BYTES, exceedsUploadLimit, warrantsLargeUploadWarning } from '$lib/utils/uploadLimits';
+  import { getMaxUploadBytes, exceedsUploadLimit, warrantsLargeUploadWarning } from '$lib/utils/uploadLimits';
   import { listTags } from '$lib/api/tags';
 
   // Step components
@@ -436,7 +436,9 @@
     }
 
     if (exceedsUploadLimit(selectedFile.size)) {
-      error = $t('uploader.fileTooLargeError', { fileSize: formatFileSize(selectedFile.size), maxSize: formatFileSize(MAX_UPLOAD_BYTES) });
+      // Only reachable when the live limit is a real ceiling (exceedsUploadLimit is
+      // false whenever getMaxUploadBytes() is null, i.e. the admin disabled it).
+      error = $t('uploader.fileTooLargeError', { fileSize: formatFileSize(selectedFile.size), maxSize: formatFileSize(getMaxUploadBytes() ?? 0) });
       file = null;
       return;
     }

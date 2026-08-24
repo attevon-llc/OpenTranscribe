@@ -23,6 +23,7 @@
 
   onDestroy(() => {
     debouncedFetch.cleanup();
+    abortController?.abort();
   });
 
   async function fetchSuggestions(query: string) {

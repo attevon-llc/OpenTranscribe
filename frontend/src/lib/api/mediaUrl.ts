@@ -230,15 +230,3 @@ export function createUrlRefresher(
     },
   };
 }
-
-/**
- * Preload URLs for visible files (e.g., gallery viewport).
- *
- * Call this when new files become visible in the gallery to ensure
- * smooth thumbnail loading.
- *
- * @param fileIds - Array of file UUIDs to preload
- */
-export async function preloadThumbnailUrls(fileIds: string[]): Promise<void> {
-  await getMediaStreamUrlsBatch(fileIds, 'thumbnail');
-}

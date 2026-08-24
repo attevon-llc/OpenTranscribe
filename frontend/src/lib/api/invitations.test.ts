@@ -15,6 +15,7 @@ vi.mock('$lib/axios', () => {
 });
 
 import axiosInstance from '$lib/axios';
+import { getErrorMessage } from '$lib/utils/apiError';
 import {
   lookupInvitation,
   acceptInvitation,
@@ -23,7 +24,6 @@ import {
   revokeInvitation,
   verifyEmail,
   resendEmailVerification,
-  invitationErrorMessage,
   INVITE_EXPIRY_DEFAULT_HOURS,
 } from './invitations';
 
@@ -74,6 +74,10 @@ describe('invitation token transport', () => {
   });
 });
 
+// Message extraction itself now lives in the canonical `$lib/utils/apiError`
+// (`getErrorMessage`) — see apiError.test.ts for its own unit coverage. These
+// tests pin that the invitation/verification flows funnel their real rejections
+// through it and never re-derive a classification from the token error text.
 describe('invitation errors are rendered, not classified', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -86,7 +90,7 @@ describe('invitation errors are rendered, not classified', () => {
           await lookupInvitation('whatever');
           throw new Error('expected a rejection');
         } catch (err) {
-          return invitationErrorMessage(err, 'fallback');
+          return getErrorMessage(err, 'fallback');
         }
       })
     );
@@ -110,28 +114,14 @@ describe('invitation errors are rendered, not classified', () => {
     } catch (err) {
       caught = err;
     }
-    expect(invitationErrorMessage(caught, 'fallback')).toBe(
+    expect(getErrorMessage(caught, 'fallback')).toBe(
       'Password does not meet policy requirements: …'
     );
   });
 
-  it('falls back only when the server sent no usable detail', () => {
-    expect(invitationErrorMessage({ response: { status: 400, data: {} } }, 'fallback')).toBe(
-      'fallback'
-    );
-    expect(invitationErrorMessage(new Error('Network Error'), 'fallback')).toBe('fallback');
-    expect(invitationErrorMessage({ response: { data: { detail: '  ' } } }, 'fallback')).toBe(
-      'fallback'
-    );
-  });
-
-  it('flattens a validation-array detail without inventing a classification', () => {
-    expect(
-      invitationErrorMessage(
-        { response: { status: 422, data: { detail: [{ msg: 'not an email' }] } } },
-        'fallback'
-      )
-    ).toBe('not an email');
+  it('falls back only when the server sent no usable detail and no error message', () => {
+    expect(getErrorMessage({ response: { status: 400, data: {} } }, 'fallback')).toBe('fallback');
+    expect(getErrorMessage({ response: { data: { detail: '  ' } } }, 'fallback')).toBe('fallback');
   });
 });
 

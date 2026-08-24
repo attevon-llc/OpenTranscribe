@@ -13,12 +13,21 @@
   import SummaryModal from '$components/SummaryModal.svelte';
   import FilterSidebar from '$components/FilterSidebar.svelte';
   import SearchAutocomplete from '$components/search/SearchAutocomplete.svelte';
-  import SearchSortDropdown from '$components/search/SearchSortDropdown.svelte';
+  import SortDropdown, { type SortOption } from '$components/ui/SortDropdown.svelte';
   import FloatingPreviewPlayer from '$components/FloatingPreviewPlayer.svelte';
   import RetrievalQualityNotice from '$components/RetrievalQualityNotice.svelte';
   import { getMediaStreamUrl, getCachedUrlInfo, createUrlRefresher, clearMediaUrlCache } from '$lib/api/mediaUrl';
   import { prefetchNextSearchPage } from '$lib/prefetch';
   import CardGridSkeleton from '../../components/ui/CardGridSkeleton.svelte';
+
+  const searchSortOptions: SortOption[] = [
+    { value: 'relevance', label: 'search.sort.relevance', noDirection: true },
+    { value: 'upload_time', label: 'gallery.sort.uploadDate' },
+    { value: 'completed_at', label: 'gallery.sort.completedDate' },
+    { value: 'filename', label: 'gallery.sort.filename' },
+    { value: 'duration', label: 'gallery.sort.duration' },
+    { value: 'file_size', label: 'gallery.sort.fileSize' },
+  ];
 
   let searchInput = '';
   let previewMediaUrl = '';
@@ -675,9 +684,12 @@
                   {$t('search.exactMode')}
                 </button>
               </div>
-              <SearchSortDropdown
+              <SortDropdown
+                sortOptions={searchSortOptions}
                 sortBy={$searchStore.sortBy}
                 sortOrder={$searchStore.sortOrder}
+                ariaLabelKey="search.sort.label"
+                align="right"
                 on:change={handleSortChange}
               />
             </div>

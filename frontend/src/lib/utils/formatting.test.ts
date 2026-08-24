@@ -66,6 +66,14 @@ describe('formatClock (unpadded minutes)', () => {
     expect(formatClock(-1)).toBe('0:00');
     expect(formatClock(Number.NaN)).toBe('0:00');
   });
+
+  // Moved from chatMarkdown.test.ts when chatMarkdown.ts's duplicate
+  // formatClock (which used `seconds ?? 0` and so did NOT catch NaN) was
+  // deleted in favor of re-exporting this implementation.
+  it('clamps null and undefined input to 0:00', () => {
+    expect(formatClock(null)).toBe('0:00');
+    expect(formatClock(undefined)).toBe('0:00');
+  });
 });
 
 describe('formatTimeWithMillis (decimal ms)', () => {

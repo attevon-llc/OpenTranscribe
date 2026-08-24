@@ -13,8 +13,9 @@ and domain formatting belong in the backend (thin-frontend rule).
 - `clipboard.ts` — `copyToClipboard(text, onSuccess?, onError?)` with non-secure-context fallback.
 - `debounce.ts` — `createDebouncedHandler` (used by search inputs).
 - `backoff.ts` — `reconnectDelayMs(attempt)`: exponential backoff **with equal jitter**, capped
-  at 30 s. The only retry-delay source; `$stores/websocket` uses it so a backend restart doesn't
-  bring every client back in lockstep. Pass a deterministic `random` in tests.
+  at 30 s. The retry-delay source for WebSocket reconnects (`$stores/websocket`) AND upload
+  retries (`$lib/services/uploadService`, `$lib/services/multipartUploader`, H4a) — so a backend
+  restart doesn't bring every client back in lockstep. Pass a deterministic `random` in tests.
 - `sanitizeHtml.ts` — DOMPurify allowlist wrappers (`sanitizeHighlightHtml`, `sanitizeToPlainText`); every `{@html}` must go through this.
 - `speakerColors.ts` — deterministic speaker color assignment (`getSpeakerColor*`).
 - `searchHighlight.ts`, `metadataMapper.ts`, `scrollbarCalculations.ts`, `url.ts`, `ids.ts`.

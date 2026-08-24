@@ -220,7 +220,9 @@
       if (!el) return;
       el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
       el.classList.add('search-current-match');
-      setTimeout(() => el.classList.remove('search-current-match'), 2000);
+      // Matches the `search-pulse 1s` animation on `.search-current-match`
+      // (src/styles/search.css) — was 2000ms, double the actual animation length.
+      setTimeout(() => el.classList.remove('search-current-match'), 1000);
     });
   }
 

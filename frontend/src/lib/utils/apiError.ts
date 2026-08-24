@@ -50,6 +50,16 @@ export function getErrorMessage(
   const e = error as AxiosLikeError;
   const detail = e?.response?.data?.detail;
   if (typeof detail === 'string' && detail.trim()) return detail;
+  // FastAPI's default 422 shape is an ARRAY of validation-error objects
+  // (`detail: [{msg: "field required", ...}, ...]`). Without this the chain fell
+  // through to the generic fallback and dropped the actual field error.
+  if (Array.isArray(detail)) {
+    const joined = detail
+      .map((d) => (d as { msg?: unknown })?.msg)
+      .filter((msg): msg is string => typeof msg === 'string' && msg.trim() !== '')
+      .join('. ');
+    if (joined) return joined;
+  }
   // An account-lifecycle refusal carries an OBJECT detail (`{code, message}`).
   // Without this the chain fell through to `error.message` and surfaced the raw,
   // untranslated "Request failed with status code 403" instead of the reason.

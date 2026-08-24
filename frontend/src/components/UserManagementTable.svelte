@@ -17,6 +17,7 @@
   import LinkIdentityModal from './LinkIdentityModal.svelte';
   import { t } from '$stores/locale';
   import EmptyState from './ui/EmptyState.svelte';
+  import { getErrorMessage } from '$lib/utils/apiError';
 
   /**
    * @typedef {Object} User
@@ -197,24 +198,6 @@
   }
 
   /**
-   * Pull the backend's `detail` out of an axios error.
-   *
-   * `err.message` is the axios string ("Request failed with status code 403"),
-   * which hides the reason the API actually gave.
-   * @param {any} err
-   * @param {string} fallback
-   * @returns {string}
-   */
-  function extractErrorMessage(err, fallback) {
-    const detail = err?.response?.data?.detail;
-    if (!detail) return fallback;
-    if (Array.isArray(detail)) {
-      return detail.map(d => d.msg || d).join('; ');
-    }
-    return String(detail);
-  }
-
-  /**
    * Create a new user
    */
   async function createUser() {
@@ -271,7 +254,7 @@
       onRefresh();
     } catch (err) {
       console.error('Error creating user:', err);
-      toastStore.error(extractErrorMessage(err, $t('userManagement.createUserFailed')));
+      toastStore.error(getErrorMessage(err, $t('userManagement.createUserFailed')));
     }
   }
 
@@ -346,7 +329,7 @@
       await refreshInvitations();
     } catch (err) {
       console.error('Error creating invitation:', err);
-      toastStore.error(extractErrorMessage(err, $t('userManagement.inviteFailed')));
+      toastStore.error(getErrorMessage(err, $t('userManagement.inviteFailed')));
     } finally {
       inviteSubmitting = false;
     }
@@ -376,7 +359,7 @@
       await refreshInvitations();
     } catch (err) {
       console.error('Error revoking invitation:', err);
-      toastStore.error(extractErrorMessage(err, $t('userManagement.revokeInviteFailed')));
+      toastStore.error(getErrorMessage(err, $t('userManagement.revokeInviteFailed')));
     } finally {
       pendingInviteUuid = null;
     }
@@ -463,7 +446,7 @@
       onRefresh();
     } catch (err) {
       console.error('Error deleting user:', err);
-      toastStore.error(extractErrorMessage(err, $t('userManagement.deleteUserFailed')));
+      toastStore.error(getErrorMessage(err, $t('userManagement.deleteUserFailed')));
     }
   }
 
@@ -485,7 +468,7 @@
       onRefresh();
     } catch (err) {
       console.error('Error updating user role:', err);
-      toastStore.error(extractErrorMessage(err, $t('userManagement.updateRoleFailed')));
+      toastStore.error(getErrorMessage(err, $t('userManagement.updateRoleFailed')));
 
       // Unlike the sibling handlers below, this one refreshes on error too:
       // the role <select> is one-way bound (`value={currentUser.role}`, not
@@ -587,7 +570,7 @@
       closePasswordResetModal();
     } catch (err) {
       console.error('Error resetting password:', err);
-      toastStore.error(extractErrorMessage(err, $t('userManagement.passwordResetFailed')));
+      toastStore.error(getErrorMessage(err, $t('userManagement.passwordResetFailed')));
     } finally {
       passwordResetLoading = false;
     }
@@ -612,7 +595,7 @@
       onRefresh();
     } catch (err) {
       console.error('Error toggling local fallback:', err);
-      toastStore.error(extractErrorMessage(err, $t('userManagement.localFallbackFailed')));
+      toastStore.error(getErrorMessage(err, $t('userManagement.localFallbackFailed')));
     }
   }
 
@@ -671,7 +654,7 @@
       onRefresh();
     } catch (err) {
       console.error('Error setting account expiration:', err);
-      toastStore.error(extractErrorMessage(err, $t('userManagement.expirationFailed')));
+      toastStore.error(getErrorMessage(err, $t('userManagement.expirationFailed')));
     } finally {
       pendingActionUuid = null;
     }
@@ -714,7 +697,7 @@
       if (refresh) onRefresh();
     } catch (err) {
       console.error('Account action failed:', err);
-      toastStore.error(extractErrorMessage(err, failureMessage));
+      toastStore.error(getErrorMessage(err, failureMessage));
     } finally {
       pendingActionUuid = null;
     }
@@ -2029,7 +2012,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1300;
+    z-index: var(--z-modal);
     animation: fadeIn 0.2s ease-out;
     overflow: hidden;
     overscroll-behavior: none;

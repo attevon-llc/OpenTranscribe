@@ -573,4 +573,3 @@ export const allFilesSelected = derived(
 );
 export const hasMoreFiles = derived(galleryStore, ($store) => $store.hasMoreFiles);
 export const isLoadingMore = derived(galleryStore, ($store) => $store.isLoadingMore);
-export const galleryTotalCount = derived(galleryStore, ($store) => $store.totalFiles);

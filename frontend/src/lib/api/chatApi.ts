@@ -196,15 +196,3 @@ export async function updateProject(
 export async function deleteProject(uuid: string): Promise<void> {
   await axiosInstance.delete(`/chat/projects/${uuid}`);
 }
-
-/** Move a conversation between projects. Pass "" to move it out to ungrouped. */
-export async function setConversationProject(
-  conversationUuid: string,
-  projectUuid: string
-): Promise<Conversation> {
-  const { data } = await axiosInstance.patch<Conversation>(
-    `/chat/conversations/${conversationUuid}`,
-    { project_uuid: projectUuid }
-  );
-  return data;
-}

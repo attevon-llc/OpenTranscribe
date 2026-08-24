@@ -11,7 +11,7 @@
   export let disabled = false;
   export let showCounts = false; // Show usage counts in dropdown
 
-  $: placeholder = placeholder || $t('select.placeholder');
+  $: resolvedPlaceholder = placeholder || $t('select.placeholder');
 
   const dispatch = createEventDispatcher<{
     select: { id: string | number };
@@ -72,7 +72,7 @@
       {#if selectedIds.length > 0}
         {$t('select.selected', { count: selectedIds.length })}
       {:else}
-        {placeholder}
+        {resolvedPlaceholder}
       {/if}
     </span>
     <svg

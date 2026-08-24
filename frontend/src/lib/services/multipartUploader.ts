@@ -1,5 +1,6 @@
 import axios from 'axios';
 import axiosInstance from '$lib/axios';
+import { reconnectDelayMs } from '$lib/utils/backoff';
 
 /**
  * Executes a presigned multipart upload planned by the backend (issue #327).
@@ -64,8 +65,6 @@ const PART_CONCURRENCY = 3;
 
 /** Attempts per part before the whole upload fails and the queue retries it. */
 const PART_MAX_ATTEMPTS = 3;
-
-const PART_RETRY_BASE_DELAY_MS = 500;
 
 /**
  * Treat a signed URL as spent this long before it actually lapses, so a part is
@@ -220,7 +219,10 @@ export async function uploadInParts(
         // link will stall the retry too, and the queue owns that decision.
         if (isTerminal(error)) throw error;
         if (attempt < PART_MAX_ATTEMPTS - 1) {
-          await delay(PART_RETRY_BASE_DELAY_MS * Math.pow(2, attempt));
+          // Shared backoff policy (H4a): was a locally-reimplemented 500ms-base,
+          // uncapped, unjittered delay — now the same capped/jittered policy as
+          // uploadService and the WebSocket reconnector (behavior change, see report).
+          await delay(reconnectDelayMs(attempt + 1));
         }
       }
     }

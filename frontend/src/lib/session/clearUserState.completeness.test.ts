@@ -72,9 +72,6 @@ const EXEMPT: Record<string, string> = {
     'resetTranscriptionSettings() is an HTTP DELETE, not module state.',
 
   // ── Per-instance state created by a factory, not module-level ──
-  'lib/search/findInText':
-    'occurrences/current live inside the controller each caller constructs; they die with the ' +
-    'component, not with the module.',
   'lib/api/chatStream':
     'resetWatchdog() is a local closure inside a single stream call; the stream itself is ' +
     'aborted by chatStore.reset(), which IS registered.',

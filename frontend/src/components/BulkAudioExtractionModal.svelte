@@ -1,6 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { formatFileSize, calculateCompressionRatio, estimateAudioSize } from '$lib/utils/metadataMapper';
+  import {
+    formatFileSize,
+    calculateCompressionRatio,
+    estimateAudioSize,
+    estimateDurationFromFileSize,
+  } from '$lib/utils/metadataMapper';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import { t } from '$stores/locale';
   import BaseModal from './ui/BaseModal.svelte';
@@ -18,7 +23,7 @@
   // Calculate total sizes
   $: totalVideoSize = videoFiles.reduce((sum, file) => sum + file.size, 0);
   $: estimatedTotalAudioSize = videoFiles.reduce((sum, file) => {
-    const estimatedDuration = (file.size / (1024 * 1024)) * 60;
+    const estimatedDuration = estimateDurationFromFileSize(file.size);
     return sum + estimateAudioSize(estimatedDuration, 64);
   }, 0);
   $: compressionRatio = calculateCompressionRatio(totalVideoSize, estimatedTotalAudioSize);

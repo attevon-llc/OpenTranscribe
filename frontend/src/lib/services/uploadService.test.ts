@@ -363,8 +363,10 @@ describe('multipart delegation', () => {
   });
 });
 
-// RETRY_BASE_DELAY_MS * 2^0 from the module under test.
-const RETRY_DELAY_FOR_FIRST_ATTEMPT = 1000;
+// Upper bound for the first retry's delay from the shared `reconnectDelayMs(1)`
+// backoff (H4a): equal jitter over [1000, 2000). Advancing by the max keeps this
+// deterministic regardless of the jittered draw.
+const RETRY_DELAY_FOR_FIRST_ATTEMPT = 2000;
 
 describe('retry and give-up', () => {
   it('schedules a retry with an incremented retryCount after a transient failure', async () => {

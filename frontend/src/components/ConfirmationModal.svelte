@@ -12,10 +12,10 @@
   export let cancelButtonClass = 'cancel-button';
 
   // Apply defaults from translations if not provided
-  $: title = title || $t('modal.confirmAction');
-  $: message = message || $t('modal.confirmMessage');
-  $: confirmText = confirmText || $t('modal.confirm');
-  $: cancelText = cancelText || $t('modal.cancel');
+  $: resolvedTitle = title || $t('modal.confirmAction');
+  $: resolvedMessage = message || $t('modal.confirmMessage');
+  $: resolvedConfirmText = confirmText || $t('modal.confirm');
+  $: resolvedCancelText = cancelText || $t('modal.cancel');
 
   const dispatch = createEventDispatcher();
 
@@ -48,17 +48,17 @@
 
 <svelte:window on:keydown={handleKeydown} />
 
-<BaseModal {isOpen} {title} onClose={handleClose} maxWidth="500px" zIndex={1300}>
-  <p id="modal-message" class="modal-message">{message}</p>
+<BaseModal {isOpen} title={resolvedTitle} onClose={handleClose} maxWidth="500px" zIndex={1300}>
+  <p id="modal-message" class="modal-message">{resolvedMessage}</p>
 
   <svelte:fragment slot="footer">
-    {#if cancelText}
+    {#if resolvedCancelText}
       <button
         class="modal-button {cancelButtonClass}"
         on:click={handleCancel}
         type="button"
       >
-        {cancelText}
+        {resolvedCancelText}
       </button>
     {/if}
     <button
@@ -66,7 +66,7 @@
       on:click={handleConfirm}
       type="button"
     >
-      {confirmText}
+      {resolvedConfirmText}
     </button>
   </svelte:fragment>
 </BaseModal>

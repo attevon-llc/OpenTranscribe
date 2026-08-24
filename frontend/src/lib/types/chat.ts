@@ -42,11 +42,6 @@ export function isScopeEmpty(scope: ChatScope | null | undefined): boolean {
   );
 }
 
-/** Whether the scope narrows nothing at all — no recordings AND no speakers. */
-export function isScopeUnfiltered(scope: ChatScope | null | undefined): boolean {
-  return isScopeEmpty(scope) && !(scope?.speakers?.length ?? 0);
-}
-
 /**
  * What a citation points at (#403 Stage 4, widened #464).
  *

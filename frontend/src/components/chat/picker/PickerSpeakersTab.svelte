@@ -11,10 +11,11 @@
   combined, and speakers alone is valid ("everything Dana said, anywhere").
 -->
 <script lang="ts">
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
+  import { createDebouncedHandler } from '$lib/utils/debounce';
 
   export let selected: string[] = [];
 
@@ -37,7 +38,10 @@
   let loading = true;
   let searching = false;
   let filter = '';
-  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  const debouncedSearch = createDebouncedHandler(async () => {
+    await fetchSpeakers(filter);
+    searching = false;
+  }, SEARCH_DEBOUNCE_MS);
 
   $: selectedSet = new Set(selected);
 
@@ -65,13 +69,13 @@
     loading = false;
   });
 
+  onDestroy(() => {
+    debouncedSearch.cleanup();
+  });
+
   function scheduleSearch(): void {
-    clearTimeout(searchTimer);
     searching = true;
-    searchTimer = setTimeout(async () => {
-      await fetchSpeakers(filter);
-      searching = false;
-    }, SEARCH_DEBOUNCE_MS);
+    debouncedSearch.trigger();
   }
 
   function toggle(name: string): void {

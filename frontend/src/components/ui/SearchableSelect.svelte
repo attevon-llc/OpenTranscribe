@@ -1,5 +1,5 @@
 <script lang="ts" generics="T">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
   import { clickOutside } from '$lib/actions/clickOutside';
   import { t } from '$stores/locale';
 
@@ -37,6 +37,10 @@
     if (timer) clearTimeout(timer);
     timer = setTimeout(runSearch, debounceMs);
   }
+
+  onDestroy(() => {
+    if (timer) clearTimeout(timer);
+  });
 
   async function runSearch() {
     const q = value.trim();

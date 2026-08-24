@@ -69,8 +69,10 @@
   /** @type {boolean} */
   export let diarizationDisabled = false;
 
-  // Merge provided analytics with defaults
-  const safeAnalytics = {
+  // Merge provided analytics with defaults. Reactive ($:), not const — this must
+  // recompute whenever the `analytics` prop changes, or `normalizedAnalytics`
+  // below latches to whatever was passed on the FIRST render.
+  $: safeAnalytics = {
     ...DEFAULT_METRICS,
     ...analytics,
     talk_time: {

@@ -56,7 +56,7 @@ export const audioLevel = derived(recordingStore, ($store) => $store.audioLevel)
 export const recordingStartTime = derived(recordingStore, ($store) => $store.recordingStartTime);
 
 // Global recording manager class
-export class RecordingManager {
+class RecordingManager {
   private static instance: RecordingManager;
   private mediaRecorder: MediaRecorder | null = null;
   private audioStream: MediaStream | null = null;

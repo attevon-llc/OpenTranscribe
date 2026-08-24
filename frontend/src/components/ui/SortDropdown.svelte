@@ -1,11 +1,28 @@
+<script context="module" lang="ts">
+  export interface SortOption {
+    /** Value sent in the `change` event / used as the sort query param. */
+    value: string;
+    /** i18n key for the option's display label. */
+    label: string;
+    /** True for options with a fixed order (e.g. "relevance") — no toggle-direction affordance. */
+    noDirection?: boolean;
+  }
+</script>
+
 <script lang="ts">
   import { t } from '$stores/locale';
   import { createEventDispatcher } from 'svelte';
-  import { fade, scale } from 'svelte/transition';
+  import { scale } from 'svelte/transition';
   import { clickOutside } from '$lib/actions/clickOutside';
 
-  export let sortBy: string = 'upload_time';
+  /** Available sort fields, in display order. */
+  export let sortOptions: SortOption[];
+  export let sortBy: string;
   export let sortOrder: 'asc' | 'desc' = 'desc';
+  /** i18n key for the trigger button's accessible label. */
+  export let ariaLabelKey: string;
+  /** Menu alignment relative to the trigger. */
+  export let align: 'left' | 'right' = 'left';
 
   const dispatch = createEventDispatcher<{
     change: { sortBy: string; sortOrder: 'asc' | 'desc' };
@@ -13,33 +30,30 @@
 
   let isOpen = false;
 
-  const sortOptions = [
-    { value: 'upload_time', label: 'gallery.sort.uploadDate' },
-    { value: 'completed_at', label: 'gallery.sort.completedDate' },
-    { value: 'filename', label: 'gallery.sort.filename' },
-    { value: 'duration', label: 'gallery.sort.duration' },
-    { value: 'file_size', label: 'gallery.sort.fileSize' },
-  ];
-
   $: currentOption = sortOptions.find(opt => opt.value === sortBy) || sortOptions[0];
 
   function toggleDropdown() {
     isOpen = !isOpen;
   }
 
-  function selectSort(value: string) {
-    if (value === sortBy) {
+  function selectSort(option: SortOption) {
+    if (option.noDirection) {
+      // Fixed-order option (e.g. relevance): always desc, no toggle.
+      sortBy = option.value;
+      sortOrder = 'desc';
+      dispatch('change', { sortBy: option.value, sortOrder: 'desc' });
+    } else if (option.value === sortBy) {
       // Toggle direction if same field
       const newOrder = sortOrder === 'asc' ? 'desc' : 'asc';
       sortOrder = newOrder;
       dispatch('change', { sortBy, sortOrder: newOrder });
     } else {
       // Select new field with appropriate default direction
-      sortBy = value;
+      sortBy = option.value;
       // Filename defaults to asc (A-Z), others default to desc (newest/longest first)
-      const newOrder = value === 'filename' ? 'asc' : 'desc';
+      const newOrder = option.value === 'filename' ? 'asc' : 'desc';
       sortOrder = newOrder;
-      dispatch('change', { sortBy: value, sortOrder: newOrder });
+      dispatch('change', { sortBy: option.value, sortOrder: newOrder });
     }
     isOpen = false;
   }
@@ -54,7 +68,7 @@
     type="button"
     class="sort-button"
     on:click={toggleDropdown}
-    aria-label={$t('gallery.sort.label')}
+    aria-label={$t(ariaLabelKey)}
     aria-expanded={isOpen}
   >
     <!-- Sort icon -->
@@ -77,7 +91,7 @@
 
     <span class="sort-label">{$t(currentOption.label)}</span>
 
-    <!-- Direction arrow -->
+    <!-- Direction arrow (fixed-order options always show desc, others show current direction) -->
     <svg
       xmlns="http://www.w3.org/2000/svg"
       width="14"
@@ -89,20 +103,24 @@
       stroke-linecap="round"
       stroke-linejoin="round"
       class="direction-arrow"
-      class:asc={sortOrder === 'asc'}
+      class:asc={!currentOption.noDirection && sortOrder === 'asc'}
     >
       <polyline points="18 15 12 9 6 15"></polyline>
     </svg>
   </button>
 
   {#if isOpen}
-    <div class="dropdown-menu" transition:scale={{ duration: 150, start: 0.95 }}>
+    <div
+      class="dropdown-menu"
+      class:align-right={align === 'right'}
+      transition:scale={{ duration: 150, start: 0.95 }}
+    >
       {#each sortOptions as option}
         <button
           type="button"
           class="dropdown-item"
           class:active={option.value === sortBy}
-          on:click={() => selectSort(option.value)}
+          on:click={() => selectSort(option)}
         >
           <span class="option-label">{$t(option.label)}</span>
           {#if option.value === sortBy}
@@ -117,7 +135,7 @@
               stroke-linecap="round"
               stroke-linejoin="round"
               class="option-arrow"
-              class:asc={sortOrder === 'asc'}
+              class:asc={!option.noDirection && sortOrder === 'asc'}
             >
               <polyline points="18 15 12 9 6 15"></polyline>
             </svg>
@@ -202,6 +220,11 @@
     padding: 0.5rem;
     z-index: 50;
     backdrop-filter: blur(12px);
+  }
+
+  .dropdown-menu.align-right {
+    left: auto;
+    right: 0;
   }
 
   :global([data-theme='light']) .dropdown-menu,

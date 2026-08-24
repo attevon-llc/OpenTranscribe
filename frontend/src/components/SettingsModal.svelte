@@ -1270,7 +1270,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1300;
+    z-index: var(--z-modal);
     animation: fadeIn 0.2s ease-out;
     overflow: hidden;
     overscroll-behavior: none;

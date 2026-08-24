@@ -13,32 +13,6 @@ const cache = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
 
 /**
- * Get a cached blob URL for a thumbnail, fetching and caching if needed.
- * Returns the presigned URL immediately as fallback while the blob loads.
- */
-export function getCachedThumbnailUrl(uuid: string, presignedUrl: string): string {
-  const cached = cache.get(uuid);
-  if (cached) return cached;
-
-  // Start background fetch if not already in-flight
-  if (!inflight.has(uuid)) {
-    const promise = fetchAndCache(uuid, presignedUrl);
-    inflight.set(uuid, promise);
-    promise.finally(() => inflight.delete(uuid));
-  }
-
-  // Return presigned URL for immediate display while blob loads
-  return presignedUrl;
-}
-
-/**
- * Check if a thumbnail is already cached (synchronous).
- */
-export function hasCachedThumbnail(uuid: string): boolean {
-  return cache.has(uuid);
-}
-
-/**
  * Svelte action for thumbnail img elements.
  * Loads from cache or fetches and caches the thumbnail.
  */

@@ -44,6 +44,39 @@ def test_capabilities_with_auth_ok(client, user_token_headers):
     assert "capabilities" in body
 
 
+def test_capabilities_exposes_the_configured_upload_ceiling(client):
+    """`max_upload_bytes` mirrors the live `settings.MAX_UPLOAD_BYTES` value.
+
+    The frontend hardcoded this (15 GB) instead of reading it from the server,
+    so an admin-configured `MAX_UPLOAD_BYTES` env override silently went stale
+    in the UI (issue G10). This pins that the value served here is the SAME
+    object the upload-size gate (`files/upload.py::validate_file_size_for_tenant`)
+    actually enforces against, not a second hardcoded copy.
+    """
+    from app.core.config import settings
+
+    response = client.get("/api/system/capabilities")
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert "max_upload_bytes" in body
+    assert body["max_upload_bytes"] == settings.MAX_UPLOAD_BYTES
+
+
+def test_capabilities_upload_ceiling_reflects_a_runtime_override(client, monkeypatch):
+    """A changed `settings.MAX_UPLOAD_BYTES` is served immediately, not a stale default.
+
+    Control for the test above: proves the endpoint reads the live setting on
+    every request rather than a value captured once at import time.
+    """
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "MAX_UPLOAD_BYTES", 5 * 1024 * 1024 * 1024)
+
+    response = client.get("/api/system/capabilities")
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["max_upload_bytes"] == 5 * 1024 * 1024 * 1024
+
+
 # ---------------------------------------------------------------------------
 # GET /api/system/stats  (authenticated)
 # ---------------------------------------------------------------------------

@@ -22,6 +22,16 @@ export interface CapabilitiesState {
   loaded: boolean;
   capabilities: Record<string, boolean>;
   audience: Record<string, CapabilityAudience>;
+  /**
+   * The live, admin-configurable upload ceiling (`settings.MAX_UPLOAD_BYTES`) from a
+   * successful `/system/capabilities` fetch: a byte count, or `null` when the admin
+   * explicitly disabled it (`MAX_UPLOAD_BYTES=0`). `undefined` until we actually know —
+   * before the first fetch resolves, or if it failed. Deliberately NOT defaulted to a
+   * number here: `$lib/utils/uploadLimits` (the owner of the upload-limit fallback
+   * constant) treats `undefined` as "fall back to the coded default", so a fetch that
+   * hasn't resolved yet never reads as "no limit".
+   */
+  maxUploadBytes: number | null | undefined;
 }
 
 const COMMUNITY_DEFAULTS: CapabilitiesState = {
@@ -29,6 +39,7 @@ const COMMUNITY_DEFAULTS: CapabilitiesState = {
   loaded: false,
   capabilities: {},
   audience: {},
+  maxUploadBytes: undefined,
 };
 
 export const capabilities = writable<CapabilitiesState>(COMMUNITY_DEFAULTS);
@@ -71,14 +82,22 @@ export function resetCapabilities(): void {
 export async function loadCapabilities(): Promise<void> {
   try {
     const response = await axiosInstance.get('/system/capabilities');
+    const rawMaxUpload: unknown = response.data?.max_upload_bytes;
     capabilities.set({
       edition: response.data?.edition === 'cloud' ? 'cloud' : 'community',
       loaded: true,
       capabilities: response.data?.capabilities ?? {},
       audience: response.data?.audience ?? {},
+      // Explicit `null` (admin disabled the limit) must survive as `null`, not fall
+      // into the "unknown" bucket — only an actually missing/malformed field does.
+      maxUploadBytes:
+        rawMaxUpload === null ? null : typeof rawMaxUpload === 'number' ? rawMaxUpload : undefined,
     });
   } catch {
-    // Fail-open: keep community defaults (everything visible).
+    // Fail-open for feature visibility (community defaults, everything shown), but NOT
+    // for the upload ceiling: `maxUploadBytes` stays `undefined` so
+    // `$lib/utils/uploadLimits` falls back to its own coded default rather than reading
+    // a failed fetch as "no limit".
     capabilities.set({ ...COMMUNITY_DEFAULTS, loaded: true });
   }
 }

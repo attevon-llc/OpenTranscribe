@@ -13,6 +13,17 @@ import type {
   SpeakerProfile,
 } from '$lib/types/speakerCluster';
 
+/**
+ * How long a UI shows "propagating" after a speaker rename before giving up on
+ * ever seeing the `speaker_rename_propagation` WebSocket completion event
+ * (`$stores/websocket`) — e.g. a stopped worker must not leave the indicator
+ * stuck forever. Shared by `routes/speakers/+page.svelte` and
+ * `components/transcript/SpeakerEditorPanel.svelte`, the two surfaces that
+ * trigger a rename (cluster label edit, promote-to-profile, accept inbox
+ * suggestion, transcript speaker edit) — see issue W2.3a.
+ */
+export const RENAME_PROPAGATION_TIMEOUT_MS = 20000;
+
 export async function listClusters(
   page = 1,
   perPage = 20,

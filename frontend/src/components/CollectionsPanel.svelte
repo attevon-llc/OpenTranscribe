@@ -60,10 +60,15 @@
     selection_size: number;
   }> = [];
   let currentLoading = false;
+  // Guards against an earlier (slower) loadCurrentCollections() call resolving
+  // AFTER a later (faster) one and overwriting the chips with stale data for a
+  // previous selection — same pattern as TagManagerModal's fileRequestId.
+  let currentCollectionsRequestId = 0;
 
   $: isSingleFile = selectedMediaIds.length === 1;
 
   async function loadCurrentCollections() {
+    const requestId = ++currentCollectionsRequestId;
     if (viewMode !== 'add' || selectedMediaIds.length === 0) {
       currentCollections = [];
       return;
@@ -73,12 +78,14 @@
       const params = new URLSearchParams();
       for (const uuid of selectedMediaIds) params.append('file_uuids', uuid);
       const response = await axiosInstance.get('/collections/for-files', { params });
+      if (requestId !== currentCollectionsRequestId) return;
       currentCollections = response.data;
     } catch {
+      if (requestId !== currentCollectionsRequestId) return;
       // Non-fatal: adding still works without the chips.
       currentCollections = [];
     } finally {
-      currentLoading = false;
+      if (requestId === currentCollectionsRequestId) currentLoading = false;
     }
   }
 

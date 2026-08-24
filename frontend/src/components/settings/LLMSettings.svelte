@@ -60,6 +60,10 @@
 
   onDestroy(() => {
     if (_llmModalWasOpen) unlockScroll();
+    if (keydownHandler) {
+      document.removeEventListener('keydown', keydownHandler);
+      keydownHandler = null;
+    }
   });
 
   async function loadData() {

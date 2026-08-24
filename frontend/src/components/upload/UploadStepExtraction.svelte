@@ -1,8 +1,14 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
-  import { formatFileSize, calculateCompressionRatio, estimateAudioSize } from '$lib/utils/metadataMapper';
+  import {
+    formatFileSize,
+    calculateCompressionRatio,
+    estimateAudioSize,
+    estimateDurationFromFileSize,
+  } from '$lib/utils/metadataMapper';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
+  import { DEFAULT_EXTRACTION_CONFIG } from '$lib/types/audioExtraction';
 
   export let file: File | null = null;
   export let choice: 'extract' | 'full' = 'extract';
@@ -15,8 +21,8 @@
   let compressionRatio = 0;
 
   $: if (file) {
-    const estimatedDuration = (file.size / (1024 * 1024)) * 60;
-    estimatedAudioSize = estimateAudioSize(estimatedDuration, 32);
+    const estimatedDuration = estimateDurationFromFileSize(file.size);
+    estimatedAudioSize = estimateAudioSize(estimatedDuration, DEFAULT_EXTRACTION_CONFIG.bitrate);
     compressionRatio = calculateCompressionRatio(file.size, estimatedAudioSize);
   }
 

@@ -19,6 +19,12 @@ from sqlalchemy.orm import Session
 
 from app.core import constants as C  # noqa: N812
 
+# Re-imported, NOT redefined (issue #545). The copy that used to live here returned "en" for
+# every sentinel and echoed everything else verbatim, which is what made `detector_language_
+# support` below fail OPEN. The name stays exported because `redaction/service.py` imports it
+# from this module; what must not exist twice is the implementation.
+from app.utils.language import normalize_language
+
 logger = logging.getLogger(__name__)
 
 # Detector → the categories whose MASKING depends on it. The ONE copy of this
@@ -509,20 +515,32 @@ def blocking_detector_failures(
     return {name for name in failures if _DETECTOR_CATEGORIES.get(name, {name}) & enabled}
 
 
-def normalize_language(language: str | None) -> str:
-    """Normalize a transcript language to a 2-letter code; '' / 'auto' / None → 'en'."""
-    if not language or language.lower() in ("auto", "und", "unknown"):
-        return "en"
-    return language.lower().split("-")[0].split("_")[0]
-
-
 def detector_language_support(language: str | None) -> tuple[set[str], dict[str, str]]:
     """Which detectors support ``language``. Returns (supported_detectors, skipped{detector: reason}).
 
     ``profanity``/``custom`` ride the profanity wordlist's language support. The ``llm``
     detector is provider-dependent and never language-gated here.
+
+    ⚠️ **An undeterminable language fails CLOSED — every detector stays required.** A language
+    skip is not a coverage gap (``coverage.uncovered_detectors`` subtracts it first, and
+    ``redaction/CLAUDE.md`` argues why: profanity and PII are English-only *by design*,
+    identically on every future scan and unfixable by any operator action). That argument is
+    only sound for a language we actually identified. Before #545 the normalizer never
+    stripped and never validated, so ``"eng"``, ``"English"`` and ``"en "`` were compared
+    verbatim against ``REDACTION_PII_LANGUAGES`` (``{"en"}``), found absent, and **dropped the
+    detector** — after which coverage subtracted the skip and reported clean. The control
+    turned itself off and then reported itself healthy.
+
+    The fix is emphatically **not** "fall back to English": that maps ``"fra"`` onto ``"en"``,
+    runs the English PII detector over French text and records full coverage, which is a *new*
+    fail-open. ``normalize_language`` returns ``None`` for anything it cannot identify and
+    ``None`` is treated as "no detector may excuse itself", so whatever the scan did not run
+    surfaces as a real gap in ``coverage.py``. A *recognised* language that genuinely lacks a
+    detector (``fr`` has no PII detector) keeps today's behaviour: a legitimate, reported skip.
     """
     lang = normalize_language(language)
+    if lang is None:
+        return set(_DETECTOR_CATEGORIES), {}
     supported: set[str] = {"llm"}
     skipped: dict[str, str] = {}
     if lang in C.REDACTION_PROFANITY_LANGUAGES:

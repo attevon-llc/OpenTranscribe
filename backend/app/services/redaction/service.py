@@ -230,6 +230,12 @@ class RedactionService:
         # distinction is load-bearing rather than cosmetic.
         detector_unavailable: list[str] = []
 
+        # Did the LLM detector actually EXAMINE the text? `detect_with_llm` returns `{}` both
+        # when a working model found nothing and when the provider raised, so this sink is the
+        # only thing that separates them — the same ambiguity, and the same remedy, as the
+        # PII/toxicity sinks above (issue #324). Without it, `ran.append("llm")` below recorded
+        # a misconfigured provider as full coverage with zero findings.
+        llm_failures: list[str] = []
         llm_spans_by_idx: dict[int, list] = {}
         if run_llm:
             try:
@@ -238,11 +244,24 @@ class RedactionService:
                 seg_dicts = [{"text": s.text, "words": s.words} for s in segments]
                 llm_spans_by_idx = {
                     idx: [sp.model_dump() for sp in spans]
-                    for idx, spans in llm.detect_with_llm(seg_dicts, int(media.user_id)).items()
+                    for idx, spans in llm.detect_with_llm(
+                        seg_dicts, int(media.user_id), failures=llm_failures
+                    ).items()
                 }
             except Exception as exc:  # noqa: BLE001
                 logger.warning("LLM redaction detection failed for file %s: %s", file_id, exc)
+                llm_failures.append("llm")
+            if llm_failures:
+                # Reported and recorded as a GAP, never FAILED. `failed` is not an inert label
+                # — `llm_guard` turns it into a permanent, NON-retryable refusal that would
+                # break summarization, speaker-ID and topic extraction for this file for good.
+                # An LLM detector fault is the `DetectorUnavailableError` shape: the provider is
+                # absent or misconfigured, and re-running the scan configures nothing. The
+                # coverage gap is the fail-closed record, and it is enough — `llm` maps to all
+                # four categories, so `uncovered_detectors` reports it for any masking policy
+                # and every egress path falls through to inline, fail-closed masking.
                 detector_failures.append("llm")
+                detector_unavailable.append("llm")
 
         # Serialize GPU inference (no-op on CPU) so concurrent files never stack model
         # activations on one GPU — peak VRAM stays bounded to a single inference.
@@ -339,7 +358,9 @@ class RedactionService:
             ran: list[str] = [
                 d for d in ("profanity", "pii", "toxicity") if d in supported and d not in skipped
             ]
-            if run_llm:
+            # Only when it actually RETURNED. `run_llm` says the owner asked for it, which is a
+            # different question from whether it examined one segment.
+            if run_llm and not llm_failures:
                 ran.append("llm")
             media.redaction_status = C.REDACTION_STATUS_DONE  # type: ignore[assignment]
             media.redaction_model_version = C.REDACTION_MODEL_VERSION  # type: ignore[assignment]

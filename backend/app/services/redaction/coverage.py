@@ -50,6 +50,16 @@ def uncovered_detectors(media_file, cfg: EffectiveRedactionConfig) -> set[str]:
       opposite on every count: it is a deployment fault, the same file would have been
       examined on a properly provisioned box, and installing the dependency plus a
       re-scan fixes it.
+
+      ⚠️ **It only excuses a detector for a language it could identify** (issue #545). Its
+      normalizer used to echo anything it did not understand, so ``"eng"`` / ``"English"``
+      / ``"en "`` were compared against ``REDACTION_PII_LANGUAGES`` (``{"en"}``), found
+      absent, and subtracted here as a "language skip" — a permanent product limit that was
+      nothing of the sort. It now returns every detector for an undeterminable language, so
+      ``relied_on`` below stays full and whatever the scan did not run is reported as a real
+      gap rather than excused. That is deliberately the *widest* of the three inputs to this
+      function: over-reporting a gap costs an inline re-detection, under-reporting it sends
+      an unexamined transcript to a provider.
     * :func:`~app.services.redaction.config.blocking_detector_failures` says which of
       the remaining gaps this policy actually cares about. That narrowness is the whole
       reason the control is safe to turn on: ``pii`` is not a default category, so a

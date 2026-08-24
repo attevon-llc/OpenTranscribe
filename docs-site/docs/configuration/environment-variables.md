@@ -692,3 +692,244 @@ LOGIN_BANNER_TEXT=This is a restricted system...
 - [GPU Setup](../installation/gpu-setup.md)
 - [Multi-GPU Scaling](./multi-gpu-scaling.md)
 - [LLM Integration](../features/llm-integration.md)
+
+## Cloud ASR Providers
+
+:::tip Configure these in the UI
+Each user sets their own ASR provider and API key in **Settings → Transcription**,
+stored encrypted in the database. The variables below are only the
+**deployment-wide fallback** for users who have set nothing, and for a zero-touch
+provisioned install. They were removed from `.env.example` for that reason.
+:::
+
+`ASR_PROVIDER` selects the default engine: `local` (the bundled WhisperX, needs a
+GPU) or one of the cloud providers below.
+
+| Provider | `ASR_PROVIDER` | Variables |
+|---|---|---|
+| Deepgram | `deepgram` | `DEEPGRAM_API_KEY`, `DEEPGRAM_MODEL` (default `nova-3`) |
+| AssemblyAI | `assemblyai` | `ASSEMBLYAI_API_KEY`, `ASSEMBLYAI_MODEL` (`universal`) |
+| OpenAI | `openai` | reuses `OPENAI_API_KEY`; `OPENAI_ASR_MODEL` (`gpt-4o-transcribe`) |
+| Google Cloud Speech | `google` | `GOOGLE_CLOUD_CREDENTIALS` (path to the service-account JSON), `GOOGLE_ASR_MODEL` (`chirp-3`) |
+| Azure Speech | `azure` | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` (`eastus`), `AZURE_ASR_MODEL` (`whisper`) |
+| Amazon Transcribe | `aws` | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `AWS_ASR_MODEL`, `AWS_TRANSCRIBE_BUCKET` |
+| Speechmatics | `speechmatics` | `SPEECHMATICS_API_KEY`, `SPEECHMATICS_MODEL` |
+| Gladia | `gladia` | `GLADIA_API_KEY`, `GLADIA_MODEL` |
+
+:::warning AWS variables are shared
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_REGION` are **not
+ASR-specific**. The native S3 storage backend uses them when
+`S3_USE_IAM_ROLE=false`, and `BEDROCK_REGION` falls back to `AWS_REGION`.
+Changing them affects storage and Bedrock too. They remain in `.env.example` for
+that reason.
+:::
+
+Amazon Transcribe additionally needs `AWS_TRANSCRIBE_BUCKET` to already exist —
+Transcribe writes intermediate output there, and the bucket must be in
+`AWS_REGION`.
+
+Worker concurrency for cloud providers is `CLOUD_ASR_CONCURRENCY` (compose
+default **16**), not a per-provider setting.
+
+## LLM Providers
+
+:::tip Configure these in the UI
+Each user configures their own LLM provider, model and API key in
+**Settings → LLM Provider**, encrypted at rest. `LLMService` resolves per-user
+settings first and only falls back to the variables below when a user has none —
+which is also the path background tasks take. Leave `LLM_PROVIDER` empty for
+transcription-only mode with no AI features at all.
+:::
+
+| Provider | `LLM_PROVIDER` | Variables |
+|---|---|---|
+| vLLM (self-hosted) | `vllm` | `VLLM_BASE_URL`, `VLLM_MODEL_NAME`, `VLLM_API_KEY` |
+| Ollama (self-hosted) | `ollama` | `OLLAMA_BASE_URL`, `OLLAMA_MODEL_NAME` |
+| OpenAI | `openai` | `OPENAI_API_KEY`, `OPENAI_MODEL_NAME`, `OPENAI_BASE_URL` |
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL_NAME`, `ANTHROPIC_BASE_URL` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL_NAME`, `OPENROUTER_BASE_URL` |
+| Amazon Bedrock | `bedrock` | `BEDROCK_REGION` only — no API key |
+| Custom (OpenAI-compatible) | `custom` | user-config only; never resolved from env |
+
+### Self-hosted models need the SSRF guard opened
+
+`LLM_ALLOW_PRIVATE_ENDPOINTS` defaults to **`false`**, which makes the backend
+refuse to call private, loopback, link-local or cloud-metadata addresses. That is
+correct for a cloud deployment and **blocks a local vLLM or Ollama entirely** —
+the symptom is an opaque `Health check blocked … Private IP address`.
+
+```bash
+LLM_ALLOW_PRIVATE_ENDPOINTS=true   # required for local vLLM / Ollama
+```
+
+:::danger Keep it false on multi-tenant deployments
+With it on, any user can point a "test connection" at internal services or cloud
+instance metadata. Only enable it where you control who can register.
+:::
+
+### Bedrock uses the AWS credential chain
+
+There is deliberately no Bedrock API key. boto3 resolves credentials from the
+standard chain (instance role, task role, shared profile, environment), so a
+deployment on EC2/ECS/EKS provisions no secret at all. Required IAM actions:
+`bedrock:InvokeModelWithResponseStream` (chat) and `bedrock:InvokeModel`
+(summaries). `BEDROCK_REGION` falls back to `AWS_REGION` / `AWS_DEFAULT_REGION`.
+
+### Context window
+
+`max_tokens` is a **UI setting**, not an environment variable
+(**Settings → LLM Provider → Max Tokens**). It defaults to **8192**; leaving it
+there silently truncates long transcripts, so raise it to your model's real
+capability.
+
+## Worker Concurrency and PostgreSQL Tuning
+
+Advanced knobs for bulk-processing workloads. All are **optional** — the compose
+defaults suit a 4–8 GB server with SSD storage, so a normal deployment sets none
+of them. They were removed from `.env.example` to keep it to what an install
+actually needs.
+
+### Celery worker concurrency
+
+| Variable | Default | Worker |
+|---|---|---|
+| `DOWNLOAD_CONCURRENCY` | 5 | parallel video/URL downloads — raise for bulk imports |
+| `DOWNLOAD_MAX_TASKS` | 10 | restart the download worker after N tasks |
+| `CPU_WORKER_CONCURRENCY` | 8 | preprocessing, postprocessing, waveforms |
+| `CLOUD_ASR_CONCURRENCY` | **16** | concurrent cloud-provider transcriptions |
+| `REDACTION_MAX_TASKS` | **200** | restart the redaction worker after N tasks |
+| `REDACTION_WORKER_POOL` | `threads` | Celery pool for the redaction worker |
+| `NLP_CONCURRENCY` | 4 | summarization, speaker ID, topic extraction |
+| `NLP_MAX_TASKS` | 50 | restart the NLP worker after N tasks |
+| `WORKER_DB_POOL_SIZE` | 2 | worker SQLAlchemy pool (workers fork their own engines) |
+| `WORKER_DB_MAX_OVERFLOW` | 3 | worker pool overflow |
+
+GPU worker settings are documented separately under **GPU Configuration** above —
+note in particular that `GPU_MAX_TASKS` is **ignored** on the default `threads`
+pool, because `--max-tasks-per-child` is a prefork-only feature.
+
+### PostgreSQL
+
+These override the values compose passes to the Postgres container.
+
+| Variable | Default | Guidance |
+|---|---|---|
+| `PG_SHARED_BUFFERS` | `256MB` | ~25% of available RAM |
+| `PG_EFFECTIVE_CACHE_SIZE` | `1GB` | ~75% of RAM, as an OS-cache estimate |
+| `PG_WORK_MEM` | `16MB` | per sort/hash operation |
+| `PG_MAINTENANCE_WORK_MEM` | `128MB` | `VACUUM`, `CREATE INDEX` |
+| `PG_RANDOM_PAGE_COST` | `1.1` | `1.1` for SSD, `4.0` for spinning disk |
+| `PG_EFFECTIVE_IO_CONCURRENCY` | `200` | `200` for SSD, `2` for HDD |
+| `PG_MAX_CONNECTIONS` | `200` | maximum client connections |
+
+### Auto-constructed values — do not set these
+
+Some variables are **derived** and setting them by hand has no effect or breaks
+the deployment:
+
+- `DATABASE_URL` — built by the backend from the individual `POSTGRES_*` settings.
+- `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` — built from `REDIS_HOST`,
+  `REDIS_PORT` and `REDIS_PASSWORD`.
+- `POSTGRES_HOST`, `MINIO_HOST`, `REDIS_HOST`, `OPENSEARCH_HOST` inside
+  containers — compose hardcodes the service DNS names. The values in `.env` only
+  affect host-side tools such as pytest.
+
+## Search and Indexing Tuning
+
+Optional knobs for the OpenSearch transcript index. Defaults are correct for a
+laptop or single home server; none of these need setting for a normal install.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SEARCH_CHUNK_TARGET_WORDS` | 200 | target words per transcript chunk |
+| `SEARCH_CHUNK_OVERLAP_WORDS` | 40 | sliding-window overlap between chunks |
+| `SEARCH_BULK_BATCH_SIZE` | 100 | chunks per OpenSearch bulk request |
+| `SEARCH_NEURAL_BATCH_SIZE` | 5 | documents per embedding call |
+| `SEARCH_REINDEX_REFRESH_INTERVAL` | 100 | flush a Lucene segment every N files |
+| `SEARCH_LARGE_TRANSCRIPT_CHUNKS` | — | bulk loads this large disable refresh for the load |
+| `REINDEX_PARALLEL_WORKERS` | — | parallel reindex workers |
+| `SEARCH_COLLAPSE_MAX_CONCURRENT` | 20 | concurrent inner_hits searches; 0 = sequential |
+| `SEARCH_MAX_OVERFETCH` | — | over-fetch ceiling before collapse |
+| `SEARCH_HYBRID_MIN_SCORE` | — | minimum hybrid score to return a hit |
+| `SEARCH_SEMANTIC_HIGH_CONFIDENCE` | 0.010 | semantic-confidence threshold |
+| `SEARCH_SEMANTIC_SUPPRESS_RATIO` | 0.20 | suppression ratio for weak semantic hits |
+| `OPENSEARCH_CHUNKS_INDEX_SHARDS` | 1 | applied **only at index creation** |
+| `OPENSEARCH_CHUNKS_INDEX_REPLICAS` | 0 | see the warning below |
+
+:::warning Changing chunk size requires a full reindex
+Chunk boundaries are baked into the index at write time. Changing
+`SEARCH_CHUNK_TARGET_WORDS` or `SEARCH_CHUNK_OVERLAP_WORDS` affects only
+newly-indexed content until you reindex everything, which leaves a corpus chunked
+two different ways in the meantime.
+:::
+
+:::warning Replicas on a single node
+`OPENSEARCH_CHUNKS_INDEX_REPLICAS > 0` on a single-node cluster leaves every
+replica shard permanently `UNASSIGNED` and the index status yellow — there is no
+second node to place them on. Set it `>= 1` only on a multi-node domain.
+:::
+
+### Fusion strategy — measurement knobs, deliberately env-only
+
+`SEARCH_FUSION_STRATEGY`, `SEARCH_RRF_RANK_CONSTANT`, `SEARCH_RRF_WINDOW_SIZE`,
+`SEARCH_NORMALIZATION_TECHNIQUE`, `SEARCH_COMBINATION_TECHNIQUE` and
+`SEARCH_COMBINATION_WEIGHTS` select how keyword and vector results are fused.
+
+These are **not** DB-backed on purpose: they exist to run A/B measurements, and a
+per-request argument is the supported way to use them. RRF remains the default
+because a ten-arm sweep over 1,651 queries found no arm that won on both corpora.
+See `backend/app/services/search/CLAUDE.md` before changing any of them.
+
+### Per-variable reference — cloud ASR
+
+Every variable below is the **deployment-wide fallback**. A user who configures a
+provider in **Settings → Transcription** overrides all of it, and their API key is
+stored encrypted rather than in a file.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `ASR_PROVIDER` | `local` | Which engine transcribes when a user has chosen nothing. `local` uses the bundled WhisperX and needs a GPU. |
+| `DEEPGRAM_API_KEY` | *(empty)* | Deepgram credential. Empty disables the provider. |
+| `DEEPGRAM_MODEL` | `nova-3` | Deepgram model id. `nova-3` is their current general model; older accounts may need `nova-2`. |
+| `ASSEMBLYAI_API_KEY` | *(empty)* | AssemblyAI credential. |
+| `ASSEMBLYAI_MODEL` | `universal` | AssemblyAI model tier. `universal` is the default multilingual model. |
+| `OPENAI_ASR_MODEL` | `gpt-4o-transcribe` | OpenAI speech model. Uses `OPENAI_API_KEY` — there is no separate ASR key. |
+| `GOOGLE_CLOUD_CREDENTIALS` | *(empty)* | **Path to a service-account JSON file**, not a key string. The file must be readable inside the container. |
+| `GOOGLE_ASR_MODEL` | `chirp-3` | Google Speech model. `chirp-3` is their current multilingual model. |
+| `AZURE_SPEECH_KEY` | *(empty)* | Azure Speech subscription key. |
+| `AZURE_SPEECH_REGION` | `eastus` | Azure region — **must match the region the key was issued for**, or every request 401s. |
+| `AZURE_ASR_MODEL` | `whisper` | Azure model. `whisper` or `conversation`. |
+| `AWS_ASR_MODEL` | `standard` | Amazon Transcribe tier. |
+| `AWS_TRANSCRIBE_BUCKET` | *(empty)* | S3 bucket Transcribe writes intermediate output to. **Must already exist and be in `AWS_REGION`.** |
+| `SPEECHMATICS_API_KEY` | *(empty)* | Speechmatics credential. |
+| `SPEECHMATICS_MODEL` | `standard` | Speechmatics operating point. `standard` or `enhanced` (slower, more accurate). |
+| `GLADIA_API_KEY` | *(empty)* | Gladia credential. |
+| `GLADIA_MODEL` | `standard` | Gladia model tier. |
+
+### Per-variable reference — LLM providers
+
+| Variable | Default | What it does |
+|---|---|---|
+| `LLM_PROVIDER` | *(empty)* | Deployment-wide fallback provider. **Empty means transcription-only** — no summaries, no speaker suggestions, no chat. Also the provider background tasks use, since they have no user. |
+| `LLM_ALLOW_PRIVATE_ENDPOINTS` | `false` | SSRF guard. **Must be `true` for a local vLLM/Ollama**, or calls to `localhost`/private IPs are refused with `Health check blocked … Private IP address`. Keep `false` anywhere untrusted users can register. |
+| `VLLM_BASE_URL` | `http://localhost:8012/v1` | vLLM OpenAI-compatible endpoint. This exact default is treated as *"not configured"*, so an untouched value is ignored rather than dialled. |
+| `VLLM_MODEL_NAME` | *(empty)* | The model name your vLLM server serves. Must match what the server reports. |
+| `VLLM_API_KEY` | *(empty)* | Only if your vLLM is started with `--api-key`. Usually blank for a local server. |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama endpoint. ⚠️ Unlike vLLM, this has **no** "not configured" sentinel — an untouched default is treated as real and will hit the SSRF refusal unless `LLM_ALLOW_PRIVATE_ENDPOINTS=true`. |
+| `OLLAMA_MODEL_NAME` | `llama2:7b-chat` | Ollama model tag. ⚠️ The coded default is **stale** (Llama 2, 2023); use a current tag such as `llama3.1:8b`. The model must already be pulled: `ollama pull <tag>`. |
+| `OPENAI_API_KEY` | *(empty)* | OpenAI credential, shared with the OpenAI ASR provider. |
+| `OPENAI_MODEL_NAME` | `gpt-4o-mini` | OpenAI chat model used for summaries and speaker suggestions. |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Override for an OpenAI-compatible gateway. |
+| `ANTHROPIC_API_KEY` | *(empty)* | Anthropic credential. |
+| `ANTHROPIC_MODEL_NAME` | `claude-haiku-4-5` | Anthropic model id. |
+| `ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Override for a proxy or gateway. |
+| `OPENROUTER_API_KEY` | *(empty)* | OpenRouter credential. |
+| `OPENROUTER_MODEL_NAME` | `anthropic/claude-haiku-4.5` | OpenRouter model slug — note the `vendor/model` form. |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter endpoint. |
+| `BEDROCK_REGION` | *(empty)* | AWS region for Bedrock. Falls back to `AWS_REGION` / `AWS_DEFAULT_REGION`. **No API key exists** — boto3 uses the standard credential chain. The Bedrock *model* is chosen per user in the UI only. |
+
+:::note Setting these is optional
+None of the above is required. A deployment with `LLM_PROVIDER` empty and
+`ASR_PROVIDER=local` transcribes normally with no cloud account at all — which is
+the default self-hosted configuration.
+:::

@@ -2,7 +2,13 @@
 
 **Status:** first pass complete and pushed (5 commits, `9ed68984` → `dbfc3b7b`).
 **For:** an agent doing a deeper independent audit.
-**Written:** 2026-08-24.
+**Written:** 2026-08-24. **Amended 2026-08-24** after a full codebase audit reconciled against it —
+two conclusions below are marked AMENDED with measured evidence.
+
+> **This file is the "do not redo" record. The work list is
+> `/home/superdave/.claude/plans/checkout-the-master-branch-async-mccarthy.md`**, which folds these
+> findings in as tasks C1–C12 and cross-references #566/#567. Read the plan's
+> **"⚠️ STATUS UPDATE — 2026-08-24"** section for the reconciliation.
 
 Read this before re-deriving anything. Several conclusions here cost real
 verification effort, and at least four "obvious" cleanups turned out to be wrong.
@@ -78,8 +84,22 @@ Two new gates:
 - **`PROXY_*` flagged as ORPHANED by `env-audit`** — false. They resolve
   dynamically through `CATEGORY_SCHEMAS` / `env_var_for()`. Run the audit with
   `--exclude-prefix PROXY_` as well as OIDC_/SAML_/LDAP_/PKI_.
-- **`UPLOAD_DIR` flagged as DERIVED-STALE** — false. Tested empirically: set
-  `DATA_DIR=/tmp/x` and `UPLOAD_DIR` resolves to `/tmp/x/uploads`. It follows.
+- **`UPLOAD_DIR` flagged as DERIVED-STALE** — ⚠️ **AMENDED 2026-08-24: half true. Both tests were
+  right about different paths.** Re-measured against current master:
+
+  | How `DATA_DIR` is set | `UPLOAD_DIR` resolves to | Follows? |
+  |---|---|---|
+  | a real **environment variable** | `/tmp/x/uploads` | **YES** ← the original test |
+  | the **`.env` file** only | `/app/data/uploads` (the OLD default) | **NO** |
+
+  Both class-body defaults call `os.getenv` at import, so an env var feeds **both** fields; a `.env`
+  entry is applied by pydantic to **only the field it names**. The stated mechanism — *"Pydantic
+  BaseSettings resolves the parent field before the child default is used"* — is **not** what
+  happens. And the `.env` file is the documented operator mechanism, so this is the path that
+  matters.
+
+  **It is still not worth a DERIVED-STALE fix**, because nothing reads `UPLOAD_DIR` at all — the
+  divergence is unreachable. Delete the field (plan task **C1**) and it disappears either way.
 - **4 COMPOSE-BARE findings** — all in gitignored `reference_repos/open-webui/`,
   vendored code, not ours.
 - **A "commented examples must be quoted" detector was written and deleted.** It
@@ -112,6 +132,29 @@ Two new gates:
   defects found by the audit, including a documented multi-GPU clustering feature
   that has never worked (`speaker_clustering_service.py:979` hardcodes `cuda:0`)
   and a FedRAMP AC-2 control documented but not implemented.
+
+  ⚠️ **AMENDED 2026-08-24 — the setting IS non-functional (confirmed), but "clustering always lands
+  on GPU 0, a reserved card" is REFUTED.** Verified on current master:
+
+  ```
+  speaker_clustering_service.py:979  torch.device("cuda:0")
+    ← :486 _compute_similarity_groups ← batch_recluster ← speaker.recluster_all
+  core/celery.py:225  "speaker.recluster_all":    {"queue": CeleryQueues.GPU}   ← device-ISOLATED
+  core/celery.py:226  "speaker.cluster_for_file": {"queue": CeleryQueues.CPU}   ← never reaches cuda:0
+  docker-compose.gpu.yml:37  celery-worker      device_ids: ['${GPU_DEVICE_ID:-0}']
+  docker-compose.gpu.yml:52  celery-cpu-worker  count: all
+  ```
+
+  Clustering runs on the **GPU queue**, whose container is pinned to `GPU_DEVICE_ID` and renumbers it
+  to index 0 — so `cuda:0` **is** the intended card. It does not touch a reserved GPU. The setting
+  should still be fixed or deleted (plan task **C2**); it just is not a live GPU-safety incident.
+
+  **The real latent hazard is the compose comment.** `docker-compose.gpu.yml:44` justifies
+  `celery-cpu-worker`'s `count: all` with *"Speaker clustering uses GPU_CLUSTERING_DEVICE…"* — stale,
+  since clustering is on the GPU queue. That worker **can** see every GPU including reserved ones, so
+  if anything ever routes clustering to the CPU queue the hazard becomes real. Fix the comment
+  alongside C2 (plan task **L3**). The other half of the `count: all` justification (nvidia-smi
+  stats) is live and correct.
 
 ### Not yet filed — verify before acting
 

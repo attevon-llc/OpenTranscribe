@@ -49,11 +49,6 @@ GPU_DEVICE_ID_FROM_ENV="${GPU_DEVICE_ID}"
 # through start/reset first aborted before it could print anything. `dev` matches the
 # default those functions use, so defaulting here cannot change a real invocation.
 : "${ENVIRONMENT:=dev}"
-# Same reason as GPU_DEVICE_ID above: it is read to warn that clustering cannot be
-# moved off its pinned device, and that warning path runs on checkouts whose .env
-# never set it. Line 406 guards its own read with `:-`; line 409 does not, and a
-# static guard cannot know the `-n` test above it already proved it non-empty.
-: "${GPU_CLUSTERING_DEVICE:=}"
 
 # Export APP_VERSION so docker compose can pass it through to containers
 # (used instead of ./VERSION file bind-mount to avoid OCI stub creation in dev mode)
@@ -116,10 +111,9 @@ show_help() {
   echo "                         Does NOT move LLM_TEST_GPU_DEVICE_ID (--with-llm-test keeps its own"
   echo "                         card on purpose — co-locating a multi-GB LLM with transcription is"
   echo "                         what that separation prevents); use LLM_TEST_GPU_DEVICE_ID=N ./opentr.sh"
-  echo "                         Does NOT move GPU_CLUSTERING_DEVICE, nor the in-container copy of"
-  echo "                         GPU_DEVICE_ID: both come from 'env_file: .env', which no shell export"
-  echo "                         can reach. The in-container copy only labels the admin GPU-stats"
-  echo "                         panel; placement is the reservation this flag sets."
+  echo "                         Does NOT move the in-container copy of GPU_DEVICE_ID: it comes from"
+  echo "                         'env_file: .env', which no shell export can reach. It only labels the"
+  echo "                         admin GPU-stats panel; placement is the reservation this flag sets."
   echo "  --nas                - Use custom storage paths (NAS for media, NVMe for DB/search)"
   echo "  --no-nas             - Suppress the auto-loaded NAS overlay (use Docker named volumes)"
   echo "  --no-diar-native     - Suppress the auto-loaded native diarization sidecar"
@@ -390,9 +384,9 @@ GPU_DEVICE_VARS=(
 #     Folding it in would co-locate them — the exact OOM that separation avoids.
 #     Move it explicitly with `LLM_TEST_GPU_DEVICE_ID=N ./opentr.sh ...` (it is
 #     absent from .env.example, so a pre-export survives unless your .env sets it).
-#   * GPU_CLUSTERING_DEVICE, and the container-side copy of GPU_DEVICE_ID, are read
-#     INSIDE the container from `env_file: .env` rather than interpolated by
-#     compose, so no shell export can reach them. Both are warned about below.
+#   * The container-side copy of GPU_DEVICE_ID is read INSIDE the container from
+#     `env_file: .env` rather than interpolated by compose, so no shell export can
+#     reach it. Warned about below.
 apply_gpu_device_override() {
   local requested="$1"
   local var
@@ -432,11 +426,6 @@ apply_gpu_device_override() {
     echo "      only labels the admin GPU-stats panel; the reserved card is $requested."
   fi
 
-  if [ -n "${GPU_CLUSTERING_DEVICE:-}" ] && [ "${GPU_CLUSTERING_DEVICE}" != "$requested" ]; then
-    echo "   ⚠️  GPU_CLUSTERING_DEVICE=${GPU_CLUSTERING_DEVICE} in .env: speaker clustering runs on the"
-    echo "      cpu-worker (which sees ALL GPUs) and reads that value from env_file — --gpu-device"
-    echo "      cannot move it. Unset it in .env, or expect clustering on GPU ${GPU_CLUSTERING_DEVICE}."
-  fi
 }
 
 # Flag combinations that make --gpu-device mean less than it looks like it means.

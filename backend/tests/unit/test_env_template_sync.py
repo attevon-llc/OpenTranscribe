@@ -67,10 +67,6 @@ _ALLOWLIST: dict[str, str] = {
         "Managed-edition seam value ('community'|'cloud'), set only by the private cloud "
         "build. A self-hosted .env never needs it — see backend/app/core/CLAUDE.md."
     ),
-    "JWT_REFRESH_TOKEN_EXPIRE_MINUTES": (
-        "Unwired field, own comment says 'future implementation'. The live FedRAMP AC-12 "
-        "setting is the already-documented JWT_REFRESH_TOKEN_EXPIRE_DAYS."
-    ),
     "MODELS_DIR": (
         "Internal container path default (/app/models). Base compose sets a differently-"
         "named MODELS_DIRECTORY instead, which nothing reads — not wired to any override."

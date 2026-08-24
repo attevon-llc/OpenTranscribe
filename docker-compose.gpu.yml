@@ -37,12 +37,12 @@ services:
               device_ids: ['${GPU_DEVICE_ID:-0}']
 
   celery-cpu-worker:
-    # GPU access for nvidia-smi stats collection and CUDA-accelerated clustering.
-    # Uses 'count: all' so it can query ANY GPU device — this is needed because:
-    # 1. In --gpu-scale mode the active AI GPU is GPU_SCALE_DEVICE_ID (e.g. 2)
-    #    which differs from GPU_DEVICE_ID (e.g. 0)
-    # 2. Speaker clustering uses GPU_CLUSTERING_DEVICE (falls back to GPU_DEVICE_ID)
-    #    for PyTorch fp16 similarity matrix computation + AHC clustering
+    # GPU access for nvidia-smi stats collection. Uses 'count: all' so it can query
+    # ANY GPU device — needed because in --gpu-scale mode the active AI GPU is
+    # GPU_SCALE_DEVICE_ID (e.g. 2), which differs from GPU_DEVICE_ID (e.g. 0), and
+    # this worker's stats collector has to see whichever card is actually in use.
+    # (Speaker clustering itself runs on the celery-worker GPU queue, not here —
+    # device_ids: ['${GPU_DEVICE_ID:-0}'] above already isolates it to one card.)
     deploy:
       resources:
         reservations:

@@ -274,7 +274,8 @@ For enterprise deployments:
 
 1. Set up NAS with 10GbE connection
 2. Mount NAS storage on Docker host
-3. Update `UPLOAD_DIR` and `MODEL_CACHE_DIR` in `.env`
+3. Configure the NAS overlay (`docker-compose.nas.yml`, auto-loaded from `.env` —
+   see [Fresh Deployments](../operations/fresh-deployments.md)) and set `MODEL_CACHE_DIR`
 4. Migrate existing data
 
 **Benefits**: Centralized storage, easier backups, unlimited expansion

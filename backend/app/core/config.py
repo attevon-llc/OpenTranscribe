@@ -236,8 +236,6 @@ class Settings(BaseSettings):
     # Access token expiration: 60 minutes (NIST recommended for moderate assurance)
     # Can be reduced to 15-30 minutes for high-security environments
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = _int_env("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 60)
-    # Refresh token expiration: 7 days (for token refresh flow, future implementation)
-    JWT_REFRESH_TOKEN_EXPIRE_MINUTES: int = _int_env("JWT_REFRESH_TOKEN_EXPIRE_MINUTES", 10080)
     # Session idle timeout: 15 minutes (NIST moderate assurance, DoD STIG compliant)
     SESSION_IDLE_TIMEOUT_MINUTES: int = _int_env("SESSION_IDLE_TIMEOUT_MINUTES", 15)
     # Session absolute timeout: 8 hours (force re-authentication)
@@ -489,8 +487,6 @@ class Settings(BaseSettings):
     OPENSEARCH_TRANSCRIPT_INDEX: str = "transcripts"
     OPENSEARCH_SPEAKER_INDEX: str = "speakers"
     OPENSEARCH_SUMMARY_INDEX: str = "transcript_summaries"
-    OPENSEARCH_TOPIC_SUGGESTIONS_INDEX: str = "topic_suggestions"
-    OPENSEARCH_TOPIC_VECTORS_INDEX: str = "topic_vectors"
 
     # Search & RAG settings
     OPENSEARCH_CHUNKS_INDEX: str = "transcript_chunks"
@@ -739,11 +735,6 @@ class Settings(BaseSettings):
     COMPUTE_TYPE: str = os.getenv("COMPUTE_TYPE", "auto")  # auto, float16, float32, int8
     USE_GPU: str = os.getenv("USE_GPU", "auto")  # auto, true, false
     GPU_DEVICE_ID: int = _int_env("GPU_DEVICE_ID", 0)  # Host GPU index (Docker maps to device 0)
-    GPU_CLUSTERING_DEVICE: int | None = (
-        int(os.environ["GPU_CLUSTERING_DEVICE"])
-        if os.environ.get("GPU_CLUSTERING_DEVICE")
-        else None
-    )  # Dedicated GPU for speaker clustering (falls back to GPU_DEVICE_ID)
     BATCH_SIZE: str = os.getenv("BATCH_SIZE", "auto")  # auto or integer
 
     # AI Models settings
@@ -1055,21 +1046,15 @@ class Settings(BaseSettings):
     DEEPGRAM_MODEL: str = os.getenv("DEEPGRAM_MODEL", "nova-3")
     ASSEMBLYAI_API_KEY: str = os.getenv("ASSEMBLYAI_API_KEY", "")
     ASSEMBLYAI_MODEL: str = os.getenv("ASSEMBLYAI_MODEL", "universal")
-    # OpenAI ASR — reuses OPENAI_API_KEY defined above under LLM settings
-    OPENAI_ASR_API_KEY: str = os.getenv("OPENAI_ASR_API_KEY", os.getenv("OPENAI_API_KEY", ""))
     OPENAI_ASR_MODEL: str = os.getenv("OPENAI_ASR_MODEL", "gpt-4o-transcribe")
     # Google Cloud Speech — credentials file path (service account JSON)
-    GOOGLE_ASR_API_KEY: str = os.getenv(
-        "GOOGLE_ASR_API_KEY", ""
-    )  # alias; prefer GOOGLE_CLOUD_CREDENTIALS
     GOOGLE_CLOUD_CREDENTIALS: str = os.getenv("GOOGLE_CLOUD_CREDENTIALS", "")
     GOOGLE_ASR_MODEL: str = os.getenv("GOOGLE_ASR_MODEL", "chirp-3")
     AZURE_SPEECH_KEY: str = os.getenv("AZURE_SPEECH_KEY", "")
     AZURE_SPEECH_REGION: str = os.getenv("AZURE_SPEECH_REGION", "eastus")
-    # AZURE_SPEECH_MODEL is the canonical name; AZURE_ASR_MODEL is the alias kept for env compat
-    AZURE_SPEECH_MODEL: str = os.getenv(
-        "AZURE_SPEECH_MODEL", os.getenv("AZURE_ASR_MODEL", "whisper")
-    )
+    # `services/asr/factory.py` reads this env var directly via `os.getenv`, bypassing
+    # this Settings field entirely — declared here only so it is discoverable, not
+    # because anything reads `settings.AZURE_ASR_MODEL` (C3).
     AZURE_ASR_MODEL: str = os.getenv("AZURE_ASR_MODEL", "whisper")
     # AWS Transcribe — credentials (can also use IAM role / instance profile)
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
@@ -1081,9 +1066,6 @@ class Settings(BaseSettings):
     SPEECHMATICS_MODEL: str = os.getenv("SPEECHMATICS_MODEL", "standard")
     GLADIA_API_KEY: str = os.getenv("GLADIA_API_KEY", "")
     GLADIA_MODEL: str = os.getenv("GLADIA_MODEL", "standard")
-    CLOUD_ASR_EXTRACT_EMBEDDINGS: bool = (
-        os.getenv("CLOUD_ASR_EXTRACT_EMBEDDINGS", "true").lower() == "true"
-    )
     DEPLOYMENT_MODE: str = os.getenv("DEPLOYMENT_MODE", "full")  # full or lite
 
     # ===== OpenSearch Toggle =====
@@ -1199,7 +1181,6 @@ class Settings(BaseSettings):
 
     # Storage paths (container paths, mounted from host via docker-compose volumes)
     DATA_DIR: Path = Path(os.getenv("DATA_DIR", "/app/data"))
-    UPLOAD_DIR: Path = DATA_DIR / "uploads"
     MODEL_BASE_DIR: Path = Path(os.getenv("MODELS_DIR", "/app/models"))
     TEMP_DIR: Path = Path(os.getenv("TEMP_DIR", "/app/temp"))
 
@@ -1224,7 +1205,6 @@ class Settings(BaseSettings):
     def __init__(self, **data):
         super().__init__(**data)
         # Ensure directories exist
-        self.UPLOAD_DIR.mkdir(exist_ok=True, parents=True)
         self.TEMP_DIR.mkdir(exist_ok=True, parents=True)
 
     class Config:

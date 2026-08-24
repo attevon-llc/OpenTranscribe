@@ -338,7 +338,6 @@ PYANNOTE_API_KEY=
 PYANNOTE_MODEL=parakeet  # or: whisper-large-v3-turbo
 
 # Cloud ASR Options
-CLOUD_ASR_EXTRACT_EMBEDDINGS=true  # Extract speaker embeddings locally for cross-file matching
 CLOUD_ASR_CONCURRENCY=4            # Concurrency for cloud-asr worker
 ```
 

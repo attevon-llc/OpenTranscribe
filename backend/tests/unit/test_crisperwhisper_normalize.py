@@ -56,6 +56,7 @@ class TestSurfaceNormalization:
     def test_words_have_leading_space_convention(self):
         """Each normalized word carries exactly one leading space (whisper standard)."""
         out = normalize_crisperwhisper([_crisper_segment()])
+        assert out[0]["words"], "normalizer produced no words to check"
         for w in out[0]["words"]:
             assert w["word"].startswith(" ")
             # No comma prefix, no double space.
@@ -118,12 +119,14 @@ class TestTimestampRepair:
 
     def test_no_start_after_end_anywhere(self):
         out = normalize_crisperwhisper([_crisper_segment()])
+        assert out[0]["words"], "normalizer produced no words to check"
         for w in out[0]["words"]:
             assert w["end"] >= w["start"]
 
     def test_monotonic_non_overlapping(self):
         out = normalize_crisperwhisper([_crisper_segment()])
         words = out[0]["words"]
+        assert len(words) >= 2, "need at least 2 words to check monotonic ordering"
         for i in range(1, len(words)):
             assert words[i]["start"] >= words[i - 1]["end"] - 1e-9
 
@@ -138,6 +141,7 @@ class TestTimestampRepair:
             ],
         }
         out = normalize_crisperwhisper([seg])
+        assert out[0]["words"], "normalizer produced no words to check"
         for w in out[0]["words"]:
             assert w["start"] >= 1.0 - 1e-9
             assert w["end"] <= 2.0 + 1e-9

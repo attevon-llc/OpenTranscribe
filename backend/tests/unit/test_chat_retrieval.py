@@ -634,7 +634,47 @@ def test_cache_key_changes_when_corpus_changes():
 
 
 def test_cache_key_is_stable_within_one_corpus_version():
-    assert _key_with_corpus("7") == _key_with_corpus("7")
+    """The key agrees for two scopes that are the same SET, built in a different order.
+
+    ``_key_with_corpus("7") == _key_with_corpus("7")`` (the literal this replaced) is
+    true whether or not the key incorporates the corpus version at all — exactly the
+    defect its sibling ``test_cache_key_changes_when_corpus_changes`` above exists to
+    forbid, since both sides were the same call with the same literal arguments.
+
+    This instead builds ``scope_digest`` via the real ``scope_hash()`` helper for two
+    differently-ORDERED but identical file lists — ``scope_hash`` sorts internally, so a
+    caller assembling the scope in a different order must still land in the same cache
+    bucket — and asserts the two resulting ``cache_key()`` calls, sharing one corpus
+    version, agree. A regression in either ``scope_hash``'s ordering or ``cache_key``'s
+    determinism would fail this for real, unlike the literal it replaced.
+    """
+    from app.services.chat import retrieval_cache
+
+    digest_a = retrieval_cache.scope_hash(["file-a", "file-b", "file-c"])
+    digest_b = retrieval_cache.scope_hash(["file-c", "file-a", "file-b"])
+    assert digest_a == digest_b, "scope_hash must be order-independent for the same file set"
+
+    key_a = retrieval_cache.cache_key(
+        scope_digest=digest_a,
+        user_id=1,
+        organization_id=None,
+        query="what was decided",
+        settings_rev="r",
+        search_mode="hybrid",
+        corpus_rev="7",
+    )
+    key_b = retrieval_cache.cache_key(
+        scope_digest=digest_b,
+        user_id=1,
+        organization_id=None,
+        query="what was decided",
+        settings_rev="r",
+        search_mode="hybrid",
+        corpus_rev="7",
+    )
+    assert key_a == key_b, (
+        "cache_key must be stable across differently-ordered but identical scopes"
+    )
 
 
 def test_indexing_bumps_the_corpus_version():

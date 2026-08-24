@@ -319,7 +319,9 @@ class TestSelectionModeButtons:
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
         items = menu.locator(".dropdown-item")
-        for i in range(items.count()):
+        item_count = items.count()
+        assert item_count > 0, "no Process dropdown items found to check tooltips on"
+        for i in range(item_count):
             title = items.nth(i).get_attribute("title")
             assert title is not None and len(title) > 10, f"Dropdown item {i} missing tooltip"
 
@@ -331,7 +333,9 @@ class TestSelectionModeButtons:
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
         items = menu.locator(".dropdown-item")
-        for i in range(items.count()):
+        item_count = items.count()
+        assert item_count > 0, "no Process dropdown items found to check disabled state on"
+        for i in range(item_count):
             assert items.nth(i).is_disabled(), f"Item {i} should be disabled with no files selected"
 
     def test_organize_dropdown_visible_and_has_tooltip(self) -> None:
@@ -363,7 +367,9 @@ class TestSelectionModeButtons:
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
         items = menu.locator(".dropdown-item")
-        for i in range(items.count()):
+        item_count = items.count()
+        assert item_count > 0, "no Organize dropdown items found to check tooltips on"
+        for i in range(item_count):
             title = items.nth(i).get_attribute("title")
             assert title is not None and len(title) > 10, f"Organize item {i} missing tooltip"
 
@@ -427,10 +433,12 @@ class TestSelectionModeButtons:
         left_box = left_section.bounding_box()
         right_box = right_section.bounding_box()
 
-        if left_box and right_box:
-            assert left_box["x"] + left_box["width"] <= right_box["x"] + 5, (
-                "Action buttons overflow into sort/view controls"
-            )
+        assert left_box and right_box, (
+            "gallery header left/right sections not found (or not rendered) to check overflow on"
+        )
+        assert left_box["x"] + left_box["width"] <= right_box["x"] + 5, (
+            "Action buttons overflow into sort/view controls"
+        )
 
 
 # ---------------------------------------------------------------------------

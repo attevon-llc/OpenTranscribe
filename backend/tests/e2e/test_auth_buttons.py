@@ -485,10 +485,14 @@ class TestPKIButton:
         with page.expect_response("**/api/auth/pki/authenticate") as response_info:
             pki_button.click()
 
-        # Without a real client cert, this will fail with 401
-        # But the API call should happen
+        # Without a real client cert, this will fail with 401 — but the API call must
+        # happen. Was `in (200, 401)`, which is the test's own docstring's contract
+        # asserting BOTH the outcome it names ("fail with 401") and its opposite; pin
+        # the one the docstring actually claims.
         response = response_info.value
-        assert response.status in (200, 401), f"Expected 200 or 401, got {response.status}"
+        assert response.status == 401, (
+            f"Expected 401 (no client cert presented), got {response.status}"
+        )
 
     def test_pki_api_responds(self, page: Page, base_url: str):
         """PKI API endpoint is reachable from the browser."""

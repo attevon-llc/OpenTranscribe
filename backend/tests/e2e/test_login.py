@@ -105,10 +105,10 @@ class TestLoginSuccess:
         page.fill("#password", "password")
         page.click("button[type=submit]")
 
-        # The gallery/dashboard is the SPA root — wait for the navigation off
-        # /login, then for the gallery toolbar to render.
-        page.wait_for_url(lambda url: "/login" not in url, timeout=15000)
-        page.wait_for_selector(".gallery-action-buttons", timeout=15000)
+        # The gallery/dashboard is the SPA root — assert the navigation actually left
+        # /login, then assert the gallery toolbar rendered.
+        expect(page).not_to_have_url(re.compile(r"/login"), timeout=15000)
+        expect(page.locator(".gallery-action-buttons")).to_be_visible(timeout=15000)
 
     def test_login_shows_user_info(self, page: Page, base_url: str):
         """Test logged in state shows user information."""
@@ -249,7 +249,17 @@ class TestLoginSecurity:
 
     @pytest.mark.slow
     def test_rate_limiting(self, page: Page, base_url: str):
-        """Test rate limiting after multiple failed attempts."""
+        """Test repeated failed logins never authenticate the browser.
+
+        Dev relaxes ``RATE_LIMIT_AUTH_PER_MINUTE`` to 120 (docker-compose.override.yml,
+        `DEV_RATE_LIMIT_AUTH_PER_MINUTE`), and this E2E suite always runs against the dev
+        stack, so 6 attempts in a tight loop do not reliably cross the rate-limit threshold —
+        asserting "the rate-limit UI appeared" would be flaky against the very settings this
+        suite runs under. The invariant that holds regardless of whether the limiter actually
+        fired: none of 6 wrong-password attempts against a nonexistent account ever logs the
+        browser in. If the limiter DOES fire on a given run, the 429 response implies the same
+        thing (a blocked request cannot authenticate), so this assertion covers both outcomes.
+        """
         page.goto(f"{base_url}/login")
         page.wait_for_selector("#email", timeout=10000)
 
@@ -262,16 +272,10 @@ class TestLoginSecurity:
             page.click("button[type=submit]")
             page.wait_for_load_state("networkidle")
 
-        # Should show rate limit message or block further attempts
-        page.wait_for_load_state("networkidle")
-
-        rate_limited = (
-            page.locator("text=too many").first.is_visible()
-            or page.locator("text=rate limit").first.is_visible()
-            or page.locator("text=try again").first.is_visible()
-            or page.locator("text=locked").first.is_visible()
+        # Never authenticated, whichever rejection path the backend took.
+        assert "/login" in page.url or page.locator("#email").is_visible(), (
+            "Repeated failed login attempts must never authenticate the browser"
         )
-        # Rate limiting may or may not be visible depending on implementation
 
 
 class TestLoginSession:

@@ -11,6 +11,7 @@ Run with visible browser:
     pytest backend/tests/e2e/test_auth_flow.py -v --headed
 """
 
+import re
 import uuid
 from collections.abc import Iterator
 
@@ -222,7 +223,8 @@ class TestRegistrationFlow:
             # Wait for the navigation itself — the navbar button can render
             # a beat before goto("/") completes.
             page.wait_for_url(lambda url: "register" not in url.lower(), timeout=15000)
-            page.wait_for_selector(".user-button", timeout=15000)
+            expect(page).not_to_have_url(re.compile(r"/register"))
+            expect(page.locator(".user-button")).to_be_visible(timeout=15000)
         finally:
             _delete_user_by_email(api_helper, email)
 

@@ -606,6 +606,7 @@ class TestFIPS140_3MFA:
 
         codes = ["ABCD-1234", "EFGH-5678"]
         hashed = MFAService.hash_backup_codes(codes)
+        assert len(hashed) == len(codes), "expected one hash per backup code"
 
         if settings.FIPS_MODE and settings.FIPS_VERSION == "140-3":
             # PBKDF2-SHA256 hashes start with $pbkdf2-sha256$

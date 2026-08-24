@@ -350,9 +350,21 @@ class TestApiReadSurfacesPersonalScope:
         headers = _login(client, w.user_a)
         pid = str(personal.uuid)
 
-        assert client.get(f"/api/files/{pid}/subtitles", headers=headers).status_code != 403
-        assert client.get(f"/api/files/{pid}/stream-url", headers=headers).status_code != 403
-        assert client.get(f"/api/files/{pid}/segments", headers=headers).status_code != 403
+        # `!= 403` alone also passes on a 500 — there is genuinely no single correct
+        # status here (the request may legitimately 404/422 for content reasons), but a
+        # server error is never one of the acceptable outcomes either, so `< 500` is
+        # asserted alongside rather than pinning one exact status.
+        subtitles_resp = client.get(f"/api/files/{pid}/subtitles", headers=headers)
+        assert subtitles_resp.status_code != 403
+        assert subtitles_resp.status_code < 500, subtitles_resp.text
+
+        stream_resp = client.get(f"/api/files/{pid}/stream-url", headers=headers)
+        assert stream_resp.status_code != 403
+        assert stream_resp.status_code < 500, stream_resp.text
+
+        segments_resp = client.get(f"/api/files/{pid}/segments", headers=headers)
+        assert segments_resp.status_code != 403
+        assert segments_resp.status_code < 500, segments_resp.text
 
 
 # --------------------------------------------------------------------------- #

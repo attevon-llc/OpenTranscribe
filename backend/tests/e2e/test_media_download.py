@@ -82,14 +82,16 @@ class TestPresignedPlayback:
         assert "/s3/" in url or url.startswith("http")
 
         # Range request straight to the presigned URL must yield 206 (enables seek).
+        # Was `in (206, 200)` with the content-range check gated behind `if == 206` — a
+        # wrong status (or a 200 that silently dropped Range support) skipped the only
+        # check that mattered. The docstring's own contract is 206; pin it unconditionally.
         ranged = requests.get(
             _resolve(url, base_url, backend_url),
             headers={"Range": "bytes=0-1023"},
             timeout=30,
         )
-        assert ranged.status_code in (206, 200)
-        if ranged.status_code == 206:
-            assert "content-range" in {k.lower() for k in ranged.headers}
+        assert ranged.status_code == 206, ranged.text[:300]
+        assert "content-range" in {k.lower() for k in ranged.headers}
 
 
 class TestRemovedLegacyEndpoints:
@@ -130,10 +132,14 @@ class TestDownloadDropdown:
                 f"{backend_url}/api/files/{f['uuid']}/download-stream?mode=audio_mp3", token
             )
         assert url
+        # A Range request against MinIO's presigned URL reliably yields 206 (verified
+        # against the live dev stack) — same contract as the stream-url test above.
+        # Was `in (200, 206)`, which also accepted a 200 that silently dropped Range
+        # support and, being an `in` on two 2xx values, never actually excluded a 500.
         head = requests.get(
             _resolve(url, base_url, backend_url), headers={"Range": "bytes=0-1"}, timeout=60
         )
-        assert head.status_code in (200, 206)
+        assert head.status_code == 206, head.text[:300]
 
 
 class TestBulkExport:

@@ -181,8 +181,3 @@ def test_occurrences_endpoint(logged_in_page: Page):
     if result.get("skip"):
         pytest.skip("No profiles exist")
     assert result["status"] in (200, 404)
-
-
-def test_final_screenshot(logged_in_page: Page):
-    """Capture final screenshot for visual review."""
-    logged_in_page.screenshot(path=os.path.join(SCREENSHOT_DIR, "04-final.png"), full_page=True)

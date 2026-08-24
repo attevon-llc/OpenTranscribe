@@ -440,7 +440,8 @@ class TestRegistrationSuccess:
             # Wait for the NAVIGATION (the navbar user-button can render a
             # beat before goto("/") completes — asserting on it races).
             page.wait_for_url(lambda url: "register" not in url.lower(), timeout=15000)
-            page.wait_for_selector(".user-button", timeout=15000)
+            expect(page).not_to_have_url(re.compile(r"/register"))
+            expect(page.locator(".user-button")).to_be_visible(timeout=15000)
         finally:
             _delete_user_by_email(api_helper, email)
 
@@ -468,7 +469,7 @@ class TestRegistrationSuccess:
             # Wait for the navigation itself — the navbar button can render
             # a beat before goto("/") completes.
             page.wait_for_url(lambda url: "register" not in url.lower(), timeout=15000)
-            page.wait_for_selector(".user-button", timeout=15000)
+            expect(page.locator(".user-button")).to_be_visible(timeout=15000)
 
             # Drop the session cookies, then log in fresh with the new creds
             page.context.clear_cookies()
@@ -481,7 +482,8 @@ class TestRegistrationSuccess:
             # Wait for the post-login NAVIGATION (the navbar can render before
             # the SPA finishes goto("/") — asserting on page.url races).
             page.wait_for_url(lambda url: "/login" not in url, timeout=15000)
-            page.wait_for_selector(".user-button", timeout=15000)
+            expect(page).not_to_have_url(re.compile(r"/login"))
+            expect(page.locator(".user-button")).to_be_visible(timeout=15000)
         finally:
             _delete_user_by_email(api_helper, email)
 

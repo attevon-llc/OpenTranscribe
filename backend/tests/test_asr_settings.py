@@ -138,7 +138,9 @@ class TestASRProviderCatalog:
 
     def test_catalog_required_fields(self, client, user_token_headers):
         resp = client.get("/api/asr-settings/providers", headers=user_token_headers)
-        for p in resp.json()["providers"]:
+        providers = resp.json()["providers"]
+        assert providers, "no ASR providers in the catalog to check required fields on"
+        for p in providers:
             assert "id" in p
             assert "display_name" in p
             assert "requires_api_key" in p

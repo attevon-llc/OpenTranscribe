@@ -220,6 +220,8 @@ class TestSemanticSuppression:
     def test_china_suppresses_airships_from_keyword(self, headers):
         """'china' must NOT return Secret Airships as a keyword match."""
         data = search(headers, "china")
+        # Filtered invariant; an empty result list would make it vacuous (issue #431).
+        assert data["results"], "no results for 'china' — is the pinned corpus indexed?"
         kw_titles = [r["title"] for r in data["results"] if not r["semantic_only"]]
         for t in kw_titles:
             assert "Airship" not in t, f"Airships wrongly in keyword results: {t}"
@@ -238,6 +240,8 @@ class TestSemanticSuppression:
     def test_fight_suppresses_irrelevant(self, headers):
         """'fight' must NOT return Bridge to Space."""
         data = search(headers, "fight")
+        # Filtered invariant; an empty result list would make it vacuous (issue #431).
+        assert data["results"], "no results for 'fight' — is the pinned corpus indexed?"
         sem_titles = [r["title"] for r in data["results"] if r["semantic_only"]]
         for t in sem_titles:
             assert "Bridge" not in t, f"Irrelevant semantic result for 'fight': {t}"
@@ -260,6 +264,8 @@ class TestExactMode:
     def test_fight_no_stem_highlights(self, headers):
         """'fight' exact must only highlight fight/fights/fighting, not right/might/eight."""
         data = search(headers, "fight", mode="keyword")
+        # Filtered invariant; an empty result list would make it vacuous (issue #431).
+        assert data["results"], "no results for 'fight' (keyword) — is the pinned corpus indexed?"
         for r in data["results"]:
             for occ in r["occurrences"]:
                 marks = re.findall(r"<mark>(.*?)</mark>", occ["snippet"])
@@ -269,6 +275,8 @@ class TestExactMode:
     def test_spy_exact_precision(self, headers):
         """'spy' exact must match only spy-related content."""
         data = search(headers, "spy", mode="keyword")
+        # Filtered invariant; an empty result list would make it vacuous (issue #431).
+        assert data["results"], "no results for 'spy' (keyword) — is the pinned corpus indexed?"
         for r in data["results"]:
             assert r["keyword_occurrences"] > 0
 
@@ -276,6 +284,10 @@ class TestExactMode:
         """Keyword mode must never return semantic-only results."""
         for q in ["fight", "china", "NASA", "Trump", "fraud"]:
             data = search(headers, q, mode="keyword")
+            # Filtered invariant; an empty result list would make it vacuous (issue #431).
+            assert data["results"], (
+                f"no results for {q!r} (keyword) — is the pinned corpus indexed?"
+            )
             for r in data["results"]:
                 assert not r["semantic_only"], (
                     f"'{q}' keyword mode returned semantic result: {r['title']}"
@@ -511,6 +523,10 @@ class TestSpeakerScopedSearch:
     def test_speaker_operator_basic(self, headers):
         """'speaker:"Joe Rogan" china' should only return Joe Rogan's chunks."""
         data = search(headers, 'speaker:"Joe Rogan" china')
+        # Filtered invariant; an empty result list would make it vacuous (issue #431).
+        assert data["results"], (
+            "no results for speaker:'Joe Rogan' china — is the pinned corpus indexed?"
+        )
         for r in data["results"]:
             for occ in r["occurrences"]:
                 assert occ["speaker"] == "Joe Rogan", (
@@ -520,6 +536,10 @@ class TestSpeakerScopedSearch:
     def test_speaker_operator_filters_occurrences(self, headers):
         """Speaker-scoped search must only return occurrences from that speaker."""
         scoped = search(headers, 'speaker:"Joe Rogan" china')
+        # Filtered invariant; an empty result list would make it vacuous (issue #431).
+        assert scoped["results"], (
+            "no results for speaker:'Joe Rogan' china — is the pinned corpus indexed?"
+        )
         for r in scoped["results"]:
             for occ in r["occurrences"]:
                 assert occ["speaker"] == "Joe Rogan", (

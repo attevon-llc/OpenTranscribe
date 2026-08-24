@@ -113,7 +113,8 @@ if json_start > 0:
 
 ### 3. Enhanced System Prompts ✅
 
-**File:** `database/prompt_improvements.sql`
+**File:** `database/prompt_improvements.sql` (never actually created — see the note in
+"How to Apply Updates" below; prompts now live in `backend/app/core/default_prompts.py`)
 
 #### Key Improvements:
 
@@ -233,7 +234,14 @@ Explicit instructions for different content types:
 
 ## How to Apply Updates
 
-### For Development Environment
+> **Note:** `database/prompt_improvements.sql` described below was never actually created in
+> the repo — this section is a historical (Jan 2025) implementation snapshot. Default prompts
+> are defined in code at `backend/app/core/default_prompts.py`; per-user/shared prompts are
+> DB-backed (`backend/app/models/prompt.py`, see issue #78 "prompt sharing"). To change a
+> default prompt today, edit `default_prompts.py` and rebuild/restart the backend — there is
+> no SQL seed file to apply.
+
+### For Development Environment (historical — see note above)
 
 1. **Update Database Prompts:**
    ```bash
@@ -253,7 +261,7 @@ Explicit instructions for different content types:
    - Check BLUF quality
    - Review action items
 
-### For Production Environment
+### For Production Environment (historical — see note above)
 
 1. **Backup Database:**
    ```bash
@@ -408,7 +416,7 @@ If issues arise:
 
 ### Modified Files
 - `backend/app/services/llm_service.py` - LLM service enhancements
-- `database/prompt_improvements.sql` - Enhanced system prompts
+- `database/prompt_improvements.sql` - Enhanced system prompts (never actually created — see note above; prompts now live in `backend/app/core/default_prompts.py`)
 - `PROMPT_ENGINEERING_GUIDE.md` - Best practices documentation
 
 ### Research Citations

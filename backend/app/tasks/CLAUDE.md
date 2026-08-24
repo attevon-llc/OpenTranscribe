@@ -149,12 +149,12 @@ A structural "does it call session_scope" test is not enough.
 
 ## Gotchas
 
-- **`visibility_timeout` is NOT configured anywhere in this repo.** `broker_transport_options`
-  only sets `priority_steps` / `queue_order_strategy`, so the Redis broker keeps its **3600 s
-  default**. The transcription tasks are `acks_late=True` (`core.py`, `preprocess.py`,
-  `postprocess.py`), meaning a run exceeding one hour is **redelivered to another worker →
-  duplicate transcription of the same file.** This is real and unfixed; raise
-  `visibility_timeout` past your longest task before increasing file-length limits.
+- **`visibility_timeout` is set in `core/celery.py`'s `broker_transport_options`** —
+  `CELERY_VISIBILITY_TIMEOUT` (default `21600`, 6h), not the Redis broker's 3600s default. This
+  used to be unset, so `acks_late=True` transcription tasks (`core.py`, `preprocess.py`,
+  `postprocess.py`) running past one hour were redelivered to another worker and transcribed
+  twice — fixed, single source of truth is `core/celery.py`. Raising a file-length limit still
+  needs this value to stay above the longest job it enables.
 - **Model loading is per-worker and must not leak across queues.** `PRELOAD_GPU_MODELS=true`
   only on the GPU workers; `PRELOAD_REDACTION_MODELS=true` only on `celery-redaction`
   (dedicated CPU service owning the `redaction` queue, run under `nice`). Importing a

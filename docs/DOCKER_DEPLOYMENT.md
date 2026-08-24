@@ -23,7 +23,7 @@ This guide explains how Docker images are built and published for OpenTranscribe
 
 ### Manual (Local Script)
 **Location:** `./scripts/docker-build-push.sh`
-**Documentation:** [scripts/README.md](scripts/README.md)
+**Documentation:** [scripts/README.md](../scripts/README.md)
 
 **What it builds:**
 - ✅ Frontend: AMD64 + ARM64
@@ -216,9 +216,9 @@ DEEPGRAM_API_KEY=your-key   # configure at least one cloud ASR provider
 
 ## Related Files
 
-- [scripts/docker-build-push.sh](scripts/docker-build-push.sh) - Local build script
-- [scripts/README.md](scripts/README.md) - Detailed script documentation
-- [.github/workflows/docker-publish.yml](.github/workflows/docker-publish.yml) - GitHub Actions workflow
-- [backend/Dockerfile.prod](backend/Dockerfile.prod) - Backend production Dockerfile
-- [backend/Dockerfile.blackwell](backend/Dockerfile.blackwell) - Blackwell GPU Dockerfile
-- [frontend/Dockerfile.prod](frontend/Dockerfile.prod) - Frontend production Dockerfile
+- [scripts/docker-build-push.sh](../scripts/docker-build-push.sh) - Local build script
+- [scripts/README.md](../scripts/README.md) - Detailed script documentation
+- [.github/workflows/docker-publish.yml](../.github/workflows/docker-publish.yml) - GitHub Actions workflow
+- [backend/Dockerfile.prod](../backend/Dockerfile.prod) - Backend production Dockerfile
+- [backend/Dockerfile.blackwell](../backend/Dockerfile.blackwell) - Blackwell GPU Dockerfile
+- [frontend/Dockerfile.prod](../frontend/Dockerfile.prod) - Frontend production Dockerfile

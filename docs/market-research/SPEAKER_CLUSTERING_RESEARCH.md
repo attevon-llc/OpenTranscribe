@@ -90,7 +90,7 @@ Tier 3: No match found
 | ProfileEmbeddingService | `backend/app/services/profile_embedding_service.py` | Profile-level embedding consolidation |
 | SmartSpeakerSuggestionService | `backend/app/services/smart_speaker_suggestion_service.py` | LLM + Profile + Voice suggestion consolidation |
 | SpeakerStatusService | `backend/app/services/speaker_status_service.py` | Computed status (verified/suggested/unverified) |
-| OpenSearchService | `backend/app/services/opensearch_service.py` | kNN search, bulk operations, index management |
+| OpenSearchService | `backend/app/services/opensearch_service/` | kNN search, bulk operations, index management |
 
 ### Data Model
 

@@ -47,9 +47,9 @@ When adding new backend code, follow these module patterns:
 
 ### Frontend Component Conventions
 
-- Shared UI components go in `src/components/ui/` (BaseModal, Spinner, ProgressBar, SkeletonLoader, ActionBox)
+- Shared UI components go in `src/components/ui/` (BaseModal, Spinner, ProgressBar, SkeletonLoader)
 - Use the shared components instead of creating ad-hoc implementations
-- Component IDs are centralized in `src/components/ui/ids.ts`
+- Component IDs are centralized in `src/lib/utils/ids.ts`
 
 ### Database Changes
 

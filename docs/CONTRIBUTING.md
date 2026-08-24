@@ -135,7 +135,7 @@ npm run test
 
 # Code style
 npm run lint
-npm run format
+npm run lint:fix
 
 # Type checking
 npm run check
@@ -503,10 +503,10 @@ Any other context, mockups, or examples
 - **Office Hours**: Virtual office hours every Friday 2-4 PM UTC
 
 ### Resources
-- [Development Environment Setup Guide](backend/README.md)
-- [Frontend Development Guide](frontend/README.md)
+- [Development Environment Setup Guide](../backend/README.md)
+- [Frontend Development Guide](../frontend/README.md)
 - [API Documentation](http://localhost:5174/api/docs)
-- [Architecture Overview](backend/app/README.md)
+- [Architecture Overview](../backend/app/README.md)
 
 ---
 

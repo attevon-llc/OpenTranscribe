@@ -263,11 +263,6 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   so `/unused` may list a tag `/cleanup` declines to delete. System tags are exempt in both
   scopes. Still gated by an **inline** `is_admin` check rather than a dependency, so a
   dependency-based authz audit does not see it.
-- **`endpoints/tags_pkg/` is dead code — do not edit it.** A leftover pre-split copy of the tag
-  endpoints (no `__init__.py`, its own local `APIRouter`, zero importers; `router.py` mounts
-  `endpoints.tags`). None of its routes are served. It still receives accidental maintenance from
-  repo-wide sweeps, and grepping a tag path literal matches both copies — always confirm you are
-  in `endpoints/tags/`.
 - `GET /api/auth/session` must **never 401** (200 for anonymous); it is the SPA's session probe.
 - **`GET /tasks` and `GET /tasks/{task_id}` read the `task` table (fixed in #431) — and accept
   TWO id forms.** #76 had repointed both at `MediaFile` while every writer stayed on `task`, so

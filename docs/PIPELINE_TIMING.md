@@ -25,7 +25,7 @@ ENABLE_VRAM_PROFILING=true   # optional — adds per-GPU-stage VRAM deltas
 Restart the services that touch the pipeline:
 
 ```bash
-./opentr.sh restart backend celery-worker-gpu celery-cpu-worker celery-embedding-worker
+./opentr.sh restart-backend
 ```
 
 No other config is needed. The helper in `backend/app/utils/benchmark_timing.py` caches the env-flag read per process, so there is no per-marker env-read cost.

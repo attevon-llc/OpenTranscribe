@@ -130,7 +130,7 @@ TORCH_DEVICE=cuda
 GPU_DEVICE_ID=0
 
 # Restart services
-./opentr.sh restart
+./opentr.sh restart-all
 ```
 
 See [GPU Setup](./gpu-setup.md) for complete installation guide.
@@ -230,7 +230,7 @@ nvidia-smi | grep "CUDA Version"
    - Visit [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
    - Create new read token
    - Update `.env`
-   - Restart: `./opentr.sh restart`
+   - Restart: `./opentr.sh restart-all`
 
 See [HuggingFace Setup](./huggingface-setup.md) for detailed guide.
 
@@ -253,7 +253,7 @@ ls -la models/
 sudo chown -R 1000:1000 models/
 
 # 3. Restart services
-./opentr.sh restart
+./opentr.sh restart-all
 ```
 
 ## Transcription Issues
@@ -293,7 +293,7 @@ docker restart celery-worker
 
 **5. Full restart**:
 ```bash
-./opentr.sh restart
+./opentr.sh restart-all
 ```
 
 ### Incorrect Transcription Results

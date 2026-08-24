@@ -99,9 +99,29 @@ value falls back to. They were dead code while the write path accepted a bare `d
   `frontend/src/lib/api/authConfig.ts:7`); `admin.py:271-275` `QuarantinedFile` exposes `user_id`,
   `organization_id`, `quarantined_by` as ints. Don't copy either. `Task.id` is a *string* Celery id by
   design; `TranscriptSegmentUpdate.id` is request-only.
-- **Some schemas are dead documentation** — the endpoint hand-builds a dict instead: all of `search.py`
-  bar `SetEmbeddingModelSchema` (`api/endpoints/search.py` declares no `response_model` at all),
-  `CustomVocabularyResponse`, `UserASRSettingsResponse`, `ASRSettingsList`, `SpeakerClusterResponse`.
+- **Some schemas were dead documentation and have been deleted (issue #567 / E8, 2026-08-24).**
+  `api/endpoints/search.py` declares no `response_model` at all — it hand-builds a dict instead —
+  so most of `search.py`'s response schemas were never actually wired to anything. E8 enumerated
+  the whole package mechanically (a class is dead iff it has ≤1 whole-repo reference AND is not a
+  base class of anything else in `schemas/` AND is not in `__init__.py`'s imports/`__all__`) and
+  deleted exactly 30 classes across 7 files, 8 of them in `search.py`
+  (`SuggestionItemSchema`, `FilterOptionsSchema`, `ReindexRequestSchema`, `ReindexStatusSchema`,
+  `EmbeddingModelsResponseSchema`, `NeuralModelsResponseSchema`, `NeuralModelStatusSchema`,
+  `SetActiveNeuralModelSchema`). The rest of `search.py` (`SetEmbeddingModelSchema`,
+  `SearchOccurrenceSchema`, `SearchHitSchema`, `SearchResponseSchema`, `EmbeddingModelSchema`,
+  `NeuralModelInfoSchema`, `SummarySectionMatchSchema`, `SummaryHitSchema`) legitimately
+  survives the same method — each is referenced as a nested field type by a sibling class in the
+  same file, which is real usage even though the endpoint itself never puts any of them behind a
+  `response_model`. ⚠️ **A prior version of this note also named `CustomVocabularyResponse`,
+  `UserASRSettingsResponse`, `ASRSettingsList`, and `SpeakerClusterResponse` as dead — that was
+  wrong.** All four are re-exported through `schemas/__init__.py`'s `__all__` (E8's method
+  excludes anything re-exported for exactly this reason — a re-export is a real, if indirect,
+  consumer), and `UserASRSettingsResponse`/`SpeakerClusterResponse` are also referenced as
+  nested field types by other classes in their own files. Re-running E8's enumerator after the
+  30 deletions surfaces a fresh crop of second-order orphans (schemas whose only remaining
+  reference was inside a class the 30 already removed) — deliberately not chased in the same
+  pass; check the audit-remediation branch's Phase B re-audit notes before assuming this list is
+  now exhaustive.
 - **There is exactly one tag shape (#326).** `media.py:Tag` (`uuid`/`name`/`source`) is what
   `/api/tags` (as `TagWithCount`), `POST /api/tags`, `POST /api/tags/files/{uuid}/tags` **and**
   `MediaFileDetail.tags` all serve. `MediaFileDetail.tags` was `list[str]` until #326 — don't

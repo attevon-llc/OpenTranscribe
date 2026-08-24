@@ -214,9 +214,10 @@ All data remains accessible; the system simply stops creating new FIPS 140-3 art
 
 ### Verification Script
 
-Run the compliance verification script:
+Run the FIPS 140-3 test suite (gated behind `RUN_FIPS_TESTS`, part of the full
+pre-merge gate — see `./scripts/run-integration-tests.sh`):
 ```bash
-./scripts/verify-fips-140-3.sh
+cd backend && RUN_FIPS_TESTS=true pytest tests/test_fips_140_3.py -v
 ```
 
 This checks:

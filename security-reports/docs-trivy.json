@@ -1,15 +1,15 @@
 {
   "SchemaVersion": 2,
-  "CreatedAt": "2026-08-10T22:00:13.572415048-04:00",
+  "CreatedAt": "2026-08-23T19:01:44.185242637-04:00",
   "ArtifactName": "davidamacey/opentranscribe-docs:v0.5.0",
   "ArtifactType": "container_image",
   "Metadata": {
-    "Size": 176517120,
+    "Size": 179388416,
     "OS": {
       "Family": "alpine",
       "Name": "3.23.5"
     },
-    "ImageID": "sha256:1987853b09cb92e11296f0c6d55ccc1f9a44c5c28f1a4f0642914f68bc35954f",
+    "ImageID": "sha256:aa56b82e1b72494ebf255b2a64fa10292b378879c25d3db00a65866b03a00e61",
     "DiffIDs": [
       "sha256:31ad4a471c6852bfec14d757cc75a566c82a9769f12c3918cf6bf52cc0eeb3d0",
       "sha256:c91b7a48dd9f6fce74f14b5d0920e59c09773787293e3749fb2a07c068f17a46",
@@ -19,17 +19,17 @@
       "sha256:1876c8091457c6f55a9542d29f3549ef9f96ef9c8085bdbbf4ced393948a8753",
       "sha256:4979493d808a77835f23fb742b89b125901b9ec9af28e104555adca56fa854ca",
       "sha256:afbf6a2e4dc808fd59c8694426ca7e1ede0f87d699f3e5f24c506e3aff3cba2a",
-      "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445",
-      "sha256:970dab412d6345d8feecbd024939672a1a30087c4a908ce8686cb7dcdfae63a2",
-      "sha256:0bbebabfed01c415f00f7946ca7c8614e3fe6dd8be164e6be5f3893b9087f0a0",
-      "sha256:2f1a8aceac0f2bec091d0a31247696291f0d227cce5e871f4f8e8629aa962fef"
+      "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f",
+      "sha256:db3156bc090e40eb343eda51fdf2797e414aafa8986c33140c7c885877137bb3",
+      "sha256:a68d58e9e5b5e9ea339dc2f90105b747fb89e2f11469170f8e96e23d13305711",
+      "sha256:702bfb4754eb66a76feb9d7d594ec195808abf66b1f6079470c038e648967569"
     ],
     "RepoTags": [
       "davidamacey/opentranscribe-docs:v0.5.0"
     ],
     "ImageConfig": {
       "architecture": "amd64",
-      "created": "2026-08-10T21:59:36.498678247-04:00",
+      "created": "2026-08-23T12:14:56.129545773Z",
       "history": [
         {
           "created": "2026-06-22T19:20:09Z",
@@ -144,40 +144,40 @@
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-08-11T01:57:21Z",
+          "created": "2026-08-23T12:09:14Z",
           "created_by": "RUN /bin/sh -c apk upgrade --no-cache \u0026\u0026 apk del curl # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-08-11T01:59:16Z",
+          "created": "2026-08-23T12:14:37Z",
           "created_by": "COPY /app/build /usr/share/nginx/html # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-08-11T01:59:17Z",
+          "created": "2026-08-23T12:14:38Z",
           "created_by": "COPY nginx.conf /etc/nginx/conf.d/default.conf # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-08-11T01:59:36Z",
+          "created": "2026-08-23T12:14:56Z",
           "created_by": "RUN /bin/sh -c chown -R nginx:nginx /usr/share/nginx/html \u0026\u0026     chown -R nginx:nginx /var/cache/nginx \u0026\u0026     mkdir -p /var/log/nginx \u0026\u0026     chown -R nginx:nginx /var/log/nginx \u0026\u0026     touch /var/run/nginx.pid \u0026\u0026     chown nginx:nginx /var/run/nginx.pid # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-08-11T01:59:36Z",
+          "created": "2026-08-23T12:14:56Z",
           "created_by": "USER nginx",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-08-11T01:59:36Z",
-          "created_by": "EXPOSE map[8080/tcp:{}]",
+          "created": "2026-08-23T12:14:56Z",
+          "created_by": "EXPOSE [8080/tcp]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-08-11T01:59:36Z",
-          "created_by": "HEALTHCHECK \u0026{[\"CMD-SHELL\" \"wget --quiet --tries=1 --spider http://127.0.0.1:8080/ || exit 1\"] \"30s\" \"3s\" \"5s\" \"0s\" '\\x03'}",
+          "created": "2026-08-23T12:14:56Z",
+          "created_by": "HEALTHCHECK {Test:[CMD-SHELL wget --quiet --tries=1 --spider http://127.0.0.1:8080/ || exit 1] Interval:30s Timeout:3s StartPeriod:5s StartInterval:0s Retries:3}",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         }
@@ -194,10 +194,10 @@
           "sha256:1876c8091457c6f55a9542d29f3549ef9f96ef9c8085bdbbf4ced393948a8753",
           "sha256:4979493d808a77835f23fb742b89b125901b9ec9af28e104555adca56fa854ca",
           "sha256:afbf6a2e4dc808fd59c8694426ca7e1ede0f87d699f3e5f24c506e3aff3cba2a",
-          "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445",
-          "sha256:970dab412d6345d8feecbd024939672a1a30087c4a908ce8686cb7dcdfae63a2",
-          "sha256:0bbebabfed01c415f00f7946ca7c8614e3fe6dd8be164e6be5f3893b9087f0a0",
-          "sha256:2f1a8aceac0f2bec091d0a31247696291f0d227cce5e871f4f8e8629aa962fef"
+          "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f",
+          "sha256:db3156bc090e40eb343eda51fdf2797e414aafa8986c33140c7c885877137bb3",
+          "sha256:a68d58e9e5b5e9ea339dc2f90105b747fb89e2f11469170f8e96e23d13305711",
+          "sha256:702bfb4754eb66a76feb9d7d594ec195808abf66b1f6079470c038e648967569"
         ]
       },
       "config": {
@@ -229,7 +229,10 @@
           "ACME_VERSION=0.4.1"
         ],
         "Labels": {
-          "maintainer": "NGINX Docker Maintainers \u003cdocker-maint@nginx.com\u003e"
+          "maintainer": "NGINX Docker Maintainers \u003cdocker-maint@nginx.com\u003e",
+          "org.opencontainers.image.created": "2026-08-23T11:45:46Z",
+          "org.opencontainers.image.revision": "8fbb71a99bfb0ff73d72ecc037ce7cbff26fa3c8",
+          "org.opencontainers.image.version": "v0.5.0"
         },
         "User": "nginx",
         "WorkingDir": "/",
@@ -274,20 +277,20 @@
         "DiffID": "sha256:afbf6a2e4dc808fd59c8694426ca7e1ede0f87d699f3e5f24c506e3aff3cba2a"
       },
       {
-        "Size": 2201088,
-        "DiffID": "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445"
+        "Size": 2200576,
+        "DiffID": "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f"
       },
       {
-        "Size": 55370240,
-        "DiffID": "sha256:970dab412d6345d8feecbd024939672a1a30087c4a908ce8686cb7dcdfae63a2"
+        "Size": 56806400,
+        "DiffID": "sha256:db3156bc090e40eb343eda51fdf2797e414aafa8986c33140c7c885877137bb3"
       },
       {
         "Size": 5120,
-        "DiffID": "sha256:0bbebabfed01c415f00f7946ca7c8614e3fe6dd8be164e6be5f3893b9087f0a0"
+        "DiffID": "sha256:a68d58e9e5b5e9ea339dc2f90105b747fb89e2f11469170f8e96e23d13305711"
       },
       {
-        "Size": 55376384,
-        "DiffID": "sha256:2f1a8aceac0f2bec091d0a31247696291f0d227cce5e871f4f8e8629aa962fef"
+        "Size": 56812032,
+        "DiffID": "sha256:702bfb4754eb66a76feb9d7d594ec195808abf66b1f6079470c038e648967569"
       }
     ]
   },
@@ -517,7 +520,7 @@
             "zlib@1.3.2-r0"
           ],
           "Layer": {
-            "DiffID": "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445"
+            "DiffID": "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f"
           },
           "Digest": "sha1:f74e88a991c70829597463bf8f0aa680619f899e",
           "InstalledFiles": [
@@ -797,7 +800,7 @@
           "Name": "fontconfig",
           "Identifier": {
             "PURL": "pkg:apk/alpine/fontconfig@2.17.1-r0?arch=x86_64\u0026distro=3.23.5",
-            "UID": "2fe1213ee843c470"
+            "UID": "7dfa1a943788ae4"
           },
           "Version": "2.17.1-r0",
           "Arch": "x86_64",
@@ -810,7 +813,7 @@
           "DependsOn": [
             "busybox-binsh@1.37.0-r30",
             "freetype@2.14.3-r0",
-            "libexpat@2.8.2-r0",
+            "libexpat@2.8.3-r0",
             "musl@1.2.5-r23"
           ],
           "Layer": {
@@ -924,7 +927,7 @@
             "zlib@1.3.2-r0"
           ],
           "Layer": {
-            "DiffID": "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445"
+            "DiffID": "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f"
           },
           "Digest": "sha1:830add7bff72b4656dbe08b5b5704ddbc162660a",
           "InstalledFiles": [
@@ -1012,7 +1015,7 @@
             "zlib@1.3.2-r0"
           ],
           "Layer": {
-            "DiffID": "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445"
+            "DiffID": "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f"
           },
           "Digest": "sha1:9ed5c8f9cad03e5af6c10e1332a88b9c372ea84c",
           "InstalledFiles": [
@@ -1195,16 +1198,16 @@
           ]
         },
         {
-          "ID": "libexpat@2.8.2-r0",
+          "ID": "libexpat@2.8.3-r0",
           "Name": "libexpat",
           "Identifier": {
-            "PURL": "pkg:apk/alpine/libexpat@2.8.2-r0?arch=x86_64\u0026distro=3.23.5",
-            "UID": "586cf394bdbe0eb5"
+            "PURL": "pkg:apk/alpine/libexpat@2.8.3-r0?arch=x86_64\u0026distro=3.23.5",
+            "UID": "9a942159db4b95aa"
           },
-          "Version": "2.8.2-r0",
+          "Version": "2.8.3-r0",
           "Arch": "x86_64",
           "SrcName": "expat",
-          "SrcVersion": "2.8.2-r0",
+          "SrcVersion": "2.8.3-r0",
           "Licenses": [
             "MIT"
           ],
@@ -1213,12 +1216,12 @@
             "musl@1.2.5-r23"
           ],
           "Layer": {
-            "DiffID": "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445"
+            "DiffID": "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f"
           },
-          "Digest": "sha1:85a2beba0ffd79c6d33a62172e7badd2719903e1",
+          "Digest": "sha1:c5c511312b0b99eac9e8f216561fc3b5eeb92c5b",
           "InstalledFiles": [
             "usr/lib/libexpat.so.1",
-            "usr/lib/libexpat.so.1.12.2"
+            "usr/lib/libexpat.so.1.12.3"
           ]
         },
         {
@@ -2630,7 +2633,7 @@
           ],
           "Maintainer": "Natanael Copa \u003cncopa@alpinelinux.org\u003e",
           "Layer": {
-            "DiffID": "sha256:88f87bb9546a8848893d15bc838a1e354b5214b227a82bfee0b137171547c445"
+            "DiffID": "sha256:0ce4aff1f8d6920bdf9ba1f202a45b9abe5db39ca17646e7ef4f67786806878f"
           },
           "Digest": "sha1:5449aeb87c78a380a49320e1f98f67b13b1828a7",
           "InstalledFiles": [

@@ -196,24 +196,6 @@ def _set_settings_batch(db: Session, updates: dict[str, tuple[Any, str | None]])
         settings_cache.invalidate(key)
 
 
-def get_all_settings(db: Session) -> dict[str, dict]:
-    """
-    Get all system settings.
-
-    Returns:
-        Dictionary of all settings with their values and descriptions
-    """
-    settings = db.query(SystemSettings).all()
-    return {
-        str(s.key): {
-            "value": s.value,
-            "description": s.description,
-            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
-        }
-        for s in settings
-    }
-
-
 def get_retry_config(db: Session) -> dict:
     """
     Get retry configuration as a structured dict.
@@ -472,16 +454,3 @@ def set_media_sources(db: Session, sources: list[dict]) -> list[dict]:
         "Protected media sources configuration (hosts, credentials, providers)",
     )
     return sources
-
-
-def get_media_source_hosts(db: Session) -> set[str]:
-    """Return set of configured hostnames from DB media sources."""
-    return {s["hostname"] for s in get_media_sources(db) if s.get("hostname")}
-
-
-def get_media_source_for_host(db: Session, hostname: str) -> dict | None:
-    """Look up media source config for a specific hostname."""
-    for source in get_media_sources(db):
-        if source.get("hostname") == hostname:
-            return source
-    return None

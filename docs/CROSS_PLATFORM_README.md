@@ -355,7 +355,6 @@ print(config.get_summary())
 
 # Get optimized settings
 whisperx_config = config.get_whisperx_config()
-docker_config = config.get_docker_runtime_config()
 ```
 
 ### Adding New Platforms

@@ -4054,7 +4054,6 @@
   "exportOptions.diarizationDisabledHint": "No speaker data available",
   "settings.engineSettings.title": "Engine Configuration",
   "settings.engineSettings.description": "Advanced configuration for transcription and diarization engine backends. Changes take effect on the next processing task.",
-  "settings.engineSettings.transcriberBackend": "Transcriber Backend",
   "settings.engineSettings.diarizerBackend": "Diarizer Backend",
   "settings.engineSettings.boundarySmoothing": "Boundary Smoothing",
   "settings.engineSettings.boundarySmoothingHelp": "Collapse 1–3 word wrong-speaker islands at speaker turn boundaries (issue #193). Validated to reduce errors; safe to leave on.",

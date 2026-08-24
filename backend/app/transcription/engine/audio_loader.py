@@ -17,20 +17,6 @@ logger = logging.getLogger(__name__)
 SAMPLE_RATE = 16000
 
 
-def load_audio_from_path(file_path: str) -> np.ndarray:
-    """Load audio as 16kHz mono float32 numpy array.
-
-    Args:
-        file_path: Path to the audio file (any format FFmpeg supports).
-
-    Returns:
-        Audio waveform as numpy array, shape (samples,).
-    """
-    from app.transcription.audio import load_audio
-
-    return load_audio(file_path)
-
-
 def write_wav_to_shared_volume(
     audio: np.ndarray,
     shared_volume_path: str,

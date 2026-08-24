@@ -4054,7 +4054,6 @@
   "exportOptions.diarizationDisabledHint": "Geen sprekergegevens beschikbaar",
   "settings.engineSettings.title": "Engineconfiguratie",
   "settings.engineSettings.description": "Geavanceerde configuratie voor de backends van de transcriptie- en diarisatie-engine. Wijzigingen worden van kracht bij de volgende verwerkingstaak.",
-  "settings.engineSettings.transcriberBackend": "Transcriptie-backend",
   "settings.engineSettings.diarizerBackend": "Diarisatie-backend",
   "settings.engineSettings.boundarySmoothing": "Grensafvlakking",
   "settings.engineSettings.boundarySmoothingHelp": "Vouwt 1–3 woorden lange eilandjes met een verkeerde spreker samen bij sprekerovergangen (issue #193). Bewezen effectief in het verminderen van fouten; veilig om aan te laten staan.",

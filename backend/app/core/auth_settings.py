@@ -666,36 +666,6 @@ def get_auth_settings(db: Session) -> DynamicAuthSettings:
     return DynamicAuthSettings(db)
 
 
-# Global instance for cases where database is not available
-# Uses only environment variables
-_static_auth_settings: DynamicAuthSettings | None = None
-
-
-def get_static_auth_settings() -> DynamicAuthSettings:
-    """Get static auth settings instance without database.
-
-    Returns a singleton instance that only uses environment variables.
-    Useful for startup scenarios where database is not yet available.
-
-    Returns:
-        DynamicAuthSettings instance using only .env values
-    """
-    global _static_auth_settings
-    if _static_auth_settings is None:
-        _static_auth_settings = DynamicAuthSettings(db=None, enable_cache=True)
-    return _static_auth_settings
-
-
-def clear_static_auth_settings_cache() -> None:
-    """Clear the static auth settings cache.
-
-    Call this when configuration changes to ensure fresh values.
-    """
-    global _static_auth_settings
-    if _static_auth_settings is not None:
-        _static_auth_settings.clear_cache()
-
-
 #: How long a process-level read stays cached. Matches ``SETTINGS_CACHE_TTL``'s
 #: default and accepts the same cross-process staleness: a write in the API
 #: process is instant there (``AuthConfigService.set_config`` primes this cache)

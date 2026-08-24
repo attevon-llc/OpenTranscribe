@@ -4054,7 +4054,6 @@
   "exportOptions.diarizationDisabledHint": "사용 가능한 화자 데이터가 없습니다",
   "settings.engineSettings.title": "엔진 구성",
   "settings.engineSettings.description": "전사 및 화자 분리 엔진 백엔드에 대한 고급 구성입니다. 변경 사항은 다음 처리 작업부터 적용됩니다.",
-  "settings.engineSettings.transcriberBackend": "전사 엔진 백엔드",
   "settings.engineSettings.diarizerBackend": "화자 분리 백엔드",
   "settings.engineSettings.boundarySmoothing": "경계 스무딩",
   "settings.engineSettings.boundarySmoothingHelp": "화자 전환 경계에서 1~3단어 길이의 오배정된 화자 구간을 병합합니다(이슈 #193). 오류 감소가 검증되었으며 켜 두어도 안전합니다.",

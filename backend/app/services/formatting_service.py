@@ -369,30 +369,6 @@ class FormattingService:
             segment_dict["toxicity"] = None
 
     @staticmethod
-    def format_file_size(file_size: int | None) -> str | None:
-        """
-        Format file size in bytes to human-readable format.
-
-        Args:
-            file_size: File size in bytes
-
-        Returns:
-            Formatted file size string (e.g., "2.5 MB") or None
-        """
-        if file_size is None or file_size <= 0:
-            return None
-
-        # Convert to appropriate unit
-        if file_size < 1024:
-            return f"{file_size} B"
-        elif file_size < 1024 * 1024:
-            return f"{file_size / 1024:.1f} KB"
-        elif file_size < 1024 * 1024 * 1024:
-            return f"{file_size / (1024 * 1024):.1f} MB"
-        else:
-            return f"{file_size / (1024 * 1024 * 1024):.1f} GB"
-
-    @staticmethod
     def format_speaker_name(speaker: Speaker) -> str:
         """
         Get the best display name for a speaker.

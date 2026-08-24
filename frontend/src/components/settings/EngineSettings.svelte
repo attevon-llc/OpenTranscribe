@@ -14,7 +14,6 @@
   }
 
   interface EngineSettingsResponse {
-    transcriber_backend: EngineSettingValue<string>;
     diarizer_backend: EngineSettingValue<string>;
     boundary_smoothing_enabled: EngineSettingValue<boolean>;
     boundary_acoustic_recheck_enabled: EngineSettingValue<boolean>;
@@ -32,7 +31,6 @@
   let settings: EngineSettingsResponse | null = null;
 
   // Draft values (bound to form controls)
-  let draftTranscriberBackend = 'faster_whisper';
   let draftDiarizerBackend = 'native';
   let draftBoundarySmoothing = false;
   let draftAcousticRecheck = false;
@@ -48,7 +46,6 @@
     try {
       const res = await axiosInstance.get<EngineSettingsResponse>('/admin/engine-settings');
       settings = res.data;
-      draftTranscriberBackend = settings.transcriber_backend.value;
       draftDiarizerBackend = settings.diarizer_backend.value;
       draftBoundarySmoothing = settings.boundary_smoothing_enabled.value;
       draftAcousticRecheck = settings.boundary_acoustic_recheck_enabled.value;
@@ -67,7 +64,6 @@
 
     // Only send keys where the draft differs from the current server value
     const payload: Partial<{
-      transcriber_backend: string;
       diarizer_backend: string;
       boundary_smoothing_enabled: boolean;
       boundary_acoustic_recheck_enabled: boolean;
@@ -75,9 +71,6 @@
       boundary_acoustic_max_word_dur: number;
     }> = {};
 
-    if (draftTranscriberBackend !== settings.transcriber_backend.value) {
-      payload.transcriber_backend = draftTranscriberBackend;
-    }
     if (draftDiarizerBackend !== settings.diarizer_backend.value) {
       payload.diarizer_backend = draftDiarizerBackend;
     }
@@ -137,7 +130,6 @@
   }
 
   $: isDirty = settings !== null && (
-    draftTranscriberBackend !== settings.transcriber_backend.value ||
     draftDiarizerBackend !== settings.diarizer_backend.value ||
     draftBoundarySmoothing !== settings.boundary_smoothing_enabled.value ||
     draftAcousticRecheck !== settings.boundary_acoustic_recheck_enabled.value ||
@@ -163,42 +155,6 @@
     </div>
 
     <div class="settings-form">
-
-      <!-- Transcriber Backend -->
-      <div class="form-row">
-        <div class="form-field">
-          <div class="field-label-row">
-            <label for="transcriber-backend">{$t('settings.engineSettings.transcriberBackend')}</label>
-            <span class="source-badge {sourceClass(settings.transcriber_backend.source)}">
-              {sourceLabel(settings.transcriber_backend.source)}
-            </span>
-            {#if settings.transcriber_backend.source !== 'default'}
-              <button
-                class="reset-btn"
-                on:click={() => resetKey('transcriber_backend')}
-                disabled={resetInProgress === 'transcriber_backend' || saving}
-                title={$t('settings.engineSettings.resetKey')}
-              >
-                {#if resetInProgress === 'transcriber_backend'}
-                  <Spinner size="small" />
-                {:else}
-                  {$t('settings.engineSettings.resetKey')}
-                {/if}
-              </button>
-            {/if}
-          </div>
-          <select
-            id="transcriber-backend"
-            bind:value={draftTranscriberBackend}
-            class="form-select"
-            disabled={saving || resetInProgress !== null}
-          >
-            <option value="faster_whisper">faster_whisper</option>
-            <option value="whisperx">whisperx</option>
-            <option value="cloud">cloud</option>
-          </select>
-        </div>
-      </div>
 
       <!-- Diarizer Backend -->
       <div class="form-row">

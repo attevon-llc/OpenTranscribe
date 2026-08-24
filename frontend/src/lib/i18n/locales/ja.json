@@ -4054,7 +4054,6 @@
   "settings.transcription.diarizationPyannoteConfigHint": "クラウド話者分離を使用するには、ASR設定タブでpyannote.ai APIキーを設定してください。",
   "settings.engineSettings.title": "エンジン設定",
   "settings.engineSettings.description": "文字起こしと話者分離エンジンのバックエンドに関する詳細設定。変更は次の処理タスクから有効になります。",
-  "settings.engineSettings.transcriberBackend": "文字起こしバックエンド",
   "settings.engineSettings.diarizerBackend": "話者分離バックエンド",
   "settings.engineSettings.resetKey": "リセット",
   "settings.engineSettings.save": "保存",

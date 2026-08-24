@@ -4054,7 +4054,6 @@
   "settings.transcription.diarizationPyannoteConfigHint": "在 ASR 设置选项卡中配置您的 pyannote.ai API 密钥以使用云端说话人分离。",
   "settings.engineSettings.title": "引擎配置",
   "settings.engineSettings.description": "转录和说话人分离引擎后端的高级配置。更改将在下一个处理任务中生效。",
-  "settings.engineSettings.transcriberBackend": "转录后端",
   "settings.engineSettings.diarizerBackend": "说话人分离后端",
   "settings.engineSettings.resetKey": "重置",
   "settings.engineSettings.save": "保存",

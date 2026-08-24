@@ -4054,7 +4054,6 @@
   "exportOptions.diarizationDisabledHint": "Nessun dato sui parlanti disponibile",
   "settings.engineSettings.title": "Configurazione del motore",
   "settings.engineSettings.description": "Configurazione avanzata dei backend del motore di trascrizione e diarizzazione. Le modifiche hanno effetto sul prossimo task di elaborazione.",
-  "settings.engineSettings.transcriberBackend": "Backend del trascrittore",
   "settings.engineSettings.diarizerBackend": "Backend del diarizzatore",
   "settings.engineSettings.boundarySmoothing": "Smussamento dei confini",
   "settings.engineSettings.boundarySmoothingHelp": "Comprime le isole di 1-3 parole con parlante errato ai confini dei turni tra parlanti (issue #193). Verificato per ridurre gli errori; sicuro da lasciare attivo.",

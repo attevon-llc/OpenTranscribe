@@ -40,6 +40,7 @@ from app.models.media import Speaker
 from app.models.media import Task
 from app.models.media import TranscriptSegment
 from app.models.user import User
+from app.utils.stats_helpers import format_bytes
 from app.utils.stats_helpers import get_file_stats
 from app.utils.stats_helpers import get_file_timing_stats
 from app.utils.stats_helpers import get_models_info
@@ -769,3 +770,35 @@ class TestGetModelsInfo:
         result = get_models_info()
 
         assert "llm" not in result
+
+
+class TestFormatBytes:
+    """``format_bytes`` used to be duplicated (byte-for-byte identical behavior)
+    in ``api/endpoints/admin.py`` and ``tasks/utility.py``; both now import this
+    one implementation. These pin the output for representative values AND that
+    both former call sites really do import the same function object, so a
+    future re-duplication would be caught here rather than by drift.
+    """
+
+    @pytest.mark.parametrize(
+        ("byte_count", "expected"),
+        [
+            (0, "0.00 B"),
+            (1023, "1023.00 B"),
+            (1024, "1.00 KB"),
+            (1024 * 1024, "1.00 MB"),
+            (5 * 1024**3, "5.00 GB"),
+        ],
+    )
+    def test_representative_values(self, byte_count, expected):
+        assert format_bytes(byte_count) == expected
+
+    def test_admin_endpoint_module_imports_the_same_function(self):
+        from app.api.endpoints import admin as admin_module
+
+        assert admin_module.format_bytes is format_bytes
+
+    def test_tasks_utility_module_imports_the_same_function(self):
+        from app.tasks import utility as utility_module
+
+        assert utility_module.format_bytes is format_bytes

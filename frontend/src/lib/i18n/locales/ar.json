@@ -4054,7 +4054,6 @@
   "exportOptions.diarizationDisabledHint": "لا تتوفر بيانات عن المتحدثين",
   "settings.engineSettings.title": "إعداد المحرك",
   "settings.engineSettings.description": "إعداد متقدم لواجهات محركات التفريغ وفصل المتحدثين الخلفية. تسري التغييرات على مهمة المعالجة التالية.",
-  "settings.engineSettings.transcriberBackend": "محرك التفريغ الخلفي",
   "settings.engineSettings.diarizerBackend": "محرك فصل المتحدثين الخلفي",
   "settings.engineSettings.boundarySmoothing": "تنعيم حدود المتحدثين",
   "settings.engineSettings.boundarySmoothingHelp": "دمج الجزر الخاطئة من كلمة إلى ثلاث كلمات عند نقاط تبدّل المتحدثين (المشكلة #193). ثبتت فعاليته في تقليل الأخطاء؛ يُنصح بإبقائه مفعّلًا.",

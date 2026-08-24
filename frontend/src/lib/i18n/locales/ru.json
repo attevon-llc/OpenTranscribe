@@ -4054,7 +4054,6 @@
   "settings.transcription.diarizationSource": "Диаризация говорящих",
   "settings.engineSettings.title": "Конфигурация движка",
   "settings.engineSettings.description": "Расширенная настройка бэкендов движка транскрипции и диаризации. Изменения вступают в силу при следующей задаче обработки.",
-  "settings.engineSettings.transcriberBackend": "Бэкенд транскрипции",
   "settings.engineSettings.diarizerBackend": "Бэкенд диаризации",
   "settings.engineSettings.resetKey": "Сбросить",
   "settings.engineSettings.save": "Сохранить",

@@ -4054,7 +4054,6 @@
   "settings.transcription.diarizationPyannoteConfigHint": "Configurez votre clé API pyannote.ai dans l'onglet Paramètres ASR pour utiliser la diarisation cloud.",
   "settings.engineSettings.title": "Configuration du moteur",
   "settings.engineSettings.description": "Configuration avancée des backends du moteur de transcription et de diarisation. Les modifications prennent effet lors de la prochaine tâche de traitement.",
-  "settings.engineSettings.transcriberBackend": "Backend de transcription",
   "settings.engineSettings.diarizerBackend": "Backend de diarisation",
   "settings.engineSettings.resetKey": "Réinitialiser",
   "settings.engineSettings.save": "Enregistrer",

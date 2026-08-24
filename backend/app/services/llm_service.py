@@ -2212,32 +2212,6 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
             return None
 
 
-# Context manager for proper cleanup
-class LLMServiceContext:
-    """Context manager for LLM service with proper cleanup"""
-
-    def __init__(self, service: LLMService | None = None, user_id: int | None = None):
-        self.service = service
-        self.user_id = user_id
-        self._created_service = service is None
-
-    def __enter__(self) -> Optional["LLMService"]:
-        if self.service is None:
-            self.service = (
-                LLMService.create_from_user_settings(self.user_id)
-                if self.user_id
-                else LLMService.create_from_system_settings()
-            )
-            if self.service is None:
-                logger.info("LLM service is not available - no provider configured")
-                return None
-        return self.service
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.service and self._created_service:
-            self.service.close()
-
-
 # Utility function for quick LLM availability check
 async def is_llm_available(user_id: int | None = None) -> bool:
     """Quick check to see if any LLM provider is available.

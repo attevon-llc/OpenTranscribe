@@ -98,13 +98,6 @@ def resolve_device() -> str:
         return "cpu"
 
 
-def torch_device(dev: str):
-    """Return a torch.device for a resolved device string."""
-    import torch
-
-    return torch.device(dev)
-
-
 def inference_guard():
     """Context manager: serialize on GPU (bounded VRAM), no-op on CPU."""
     if resolve_device().startswith("cuda"):

@@ -16,10 +16,6 @@ class SpeakerClusterBase(BaseModel):
     description: str | None = None
 
 
-class SpeakerClusterCreate(SpeakerClusterBase):
-    """Schema for creating a speaker cluster."""
-
-
 class SpeakerClusterUpdate(BaseModel):
     """Schema for updating a speaker cluster."""
 
@@ -80,12 +76,6 @@ class SpeakerClusterResponse(SpeakerClusterBase):
     model_config = {"from_attributes": True}
 
 
-class SpeakerClusterDetailResponse(SpeakerClusterResponse):
-    """Detailed response schema with members."""
-
-    members: list[SpeakerClusterMemberResponse] = []
-
-
 # --- Speaker Inbox ---
 
 
@@ -144,13 +134,6 @@ class ClusterUnassignRequest(BaseModel):
     blacklist: bool = Field(
         default=True, description="Prevent speakers from rejoining this cluster"
     )
-
-
-class ClusterUnassignResponse(BaseModel):
-    """Response for cluster unassign operation."""
-
-    unassigned_count: int
-    message: str
 
 
 class BatchVerifyRequest(BaseModel):
@@ -221,13 +204,3 @@ class PaginatedClusterResponse(BaseModel):
     per_page: int = 20
     pages: int = 0
     last_clustered_at: datetime | None = None
-
-
-class PaginatedInboxResponse(BaseModel):
-    """Paginated list of inbox items."""
-
-    items: list[SpeakerInboxItem] = []
-    total: int = 0
-    page: int = 1
-    per_page: int = 20
-    pages: int = 0

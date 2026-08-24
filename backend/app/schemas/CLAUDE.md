@@ -117,11 +117,27 @@ value falls back to. They were dead code while the write path accepted a bare `d
   wrong.** All four are re-exported through `schemas/__init__.py`'s `__all__` (E8's method
   excludes anything re-exported for exactly this reason — a re-export is a real, if indirect,
   consumer), and `UserASRSettingsResponse`/`SpeakerClusterResponse` are also referenced as
-  nested field types by other classes in their own files. Re-running E8's enumerator after the
-  30 deletions surfaces a fresh crop of second-order orphans (schemas whose only remaining
-  reference was inside a class the 30 already removed) — deliberately not chased in the same
-  pass; check the audit-remediation branch's Phase B re-audit notes before assuming this list is
-  now exhaustive.
+  nested field types by other classes in their own files.
+
+  **Phase B (2026-08-24) found and deleted 6 more**, all backend-only:
+  `speaker_cluster.py`'s `OutlierAnalysisResponse`/`BatchVerifyResponse`/`ReclusterResponse`
+  and `summary.py`'s `SpeakerInfo`/`ContentSection`/`SummaryMetadata` (the last three carried a
+  stale `# Legacy schemas kept for backward compatibility` comment — nothing actually read
+  them). **E8's original pass missed these because its `rg` hit-count wasn't scoped to
+  `backend/`**: `frontend/src/lib/types/speakerCluster.ts` and `.../types/summary.ts` declare
+  hand-authored TypeScript mirrors of the identical names, which pushed the whole-repo hit
+  count above E8's ≤1 threshold and hid genuinely dead Python classes behind an unrelated
+  same-named TS type. **Re-running this enumeration must scope the reference count to
+  `backend/`, or count only Python-file hits** — a same-named frontend type is not a Python
+  consumer. Deleting `OutlierAnalysisResponse` leaves `MinorityAnalysisItem` (same file) as a
+  fresh second-order orphan — its only remaining reference was the field type usage inside the
+  now-deleted class — deliberately left alone per the same "don't chase in the same pass"
+  discipline as the first round.
+
+  Re-running the (corrected) enumerator after these 6 deletions surfaces further second-order
+  orphans on top of the original 5 — deliberately not chased in the same pass; check the
+  audit-remediation branch's Phase B re-audit notes before assuming this list is now
+  exhaustive.
 - **There is exactly one tag shape (#326).** `media.py:Tag` (`uuid`/`name`/`source`) is what
   `/api/tags` (as `TagWithCount`), `POST /api/tags`, `POST /api/tags/files/{uuid}/tags` **and**
   `MediaFileDetail.tags` all serve. `MediaFileDetail.tags` was `list[str]` until #326 — don't

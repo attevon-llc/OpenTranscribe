@@ -118,15 +118,6 @@ class MinorityAnalysisItem(BaseModel):
     recommendation: str  # likely_outlier, borderline, likely_valid
 
 
-class OutlierAnalysisResponse(BaseModel):
-    """Response for cluster outlier analysis."""
-
-    cluster_uuid: UUID
-    majority_gender: str
-    minority_gender: str
-    minority_analysis: list[MinorityAnalysisItem] = []
-
-
 class ClusterUnassignRequest(BaseModel):
     """Request to unassign speakers from a cluster."""
 
@@ -148,14 +139,6 @@ class BatchVerifyRequest(BaseModel):
     )
 
 
-class BatchVerifyResponse(BaseModel):
-    """Response schema for batch verification."""
-
-    updated_count: int
-    failed_count: int = 0
-    errors: list[str] = []
-
-
 class ReclusterRequest(BaseModel):
     """Request schema for triggering re-clustering."""
 
@@ -165,14 +148,6 @@ class ReclusterRequest(BaseModel):
     threshold: float | None = Field(
         None, ge=0.0, le=1.0, description="Clustering threshold (default 0.75)"
     )
-
-
-class ReclusterResponse(BaseModel):
-    """Response schema for re-clustering operation."""
-
-    status: str
-    task_id: str | None = None
-    message: str
 
 
 class ClusterSplitRequest(BaseModel):

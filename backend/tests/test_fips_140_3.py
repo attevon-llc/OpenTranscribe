@@ -14,7 +14,9 @@ Set RUN_FIPS_TESTS=true to run these tests.
 """
 
 import ast
+import base64
 import hashlib
+import os
 from pathlib import Path
 
 import pytest
@@ -29,7 +31,9 @@ import pytest
 #
 # The pre-merge gate still runs these; the difference is they now also run by default,
 # so a regression surfaces on the commit that causes it rather than at merge time.
+from app.core import entropy
 from app.core.config import settings
+from tests.helpers import does_not_raise
 from tests.jwt_compat import jwt
 
 #: Published explicitly rather than read from the ambient environment, so each case
@@ -46,6 +50,47 @@ FIPS_MODE_MATRIX = [
 HS512_SECRET = "fips-suite-hs512-secret-padded-to-sixty-four-bytes-exactly-01234"
 
 SUBJECT = "019ec90a-1b2c-7def-8000-00000000fa17"
+
+
+def _random_secret() -> str:
+    """CSPRNG-derived key material, in the shape ``generate_encryption_key()`` emits."""
+    return base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
+
+
+def _generated_encryption_key() -> str:
+    """A key from the app's own generator — the documented way to produce ENCRYPTION_KEY."""
+    from app.utils.encryption import generate_encryption_key
+
+    return generate_encryption_key()
+
+
+@pytest.fixture
+def fips_boot_settings(monkeypatch):
+    """A FIPS 140-3 deployment whose boot gate passes, so each test moves exactly one thing.
+
+    ``ENVIRONMENT`` is set to a *relaxed* value deliberately. The FIPS block in
+    ``_validate_production_secrets`` gates on ``settings.fips_140_3_active``, not on
+    ``is_hardened``: turning FIPS on is an explicit claim to a cryptographic profile, and a
+    relaxed ENVIRONMENT must not wave a violation of it through. Setting it here both pins
+    that decision and isolates these tests from the production-only checks in the same
+    function, so a ``match="ENCRYPTION_KEY"`` can only have come from the FIPS block.
+
+    Every FIPS field is published explicitly rather than inherited from the ambient process
+    — ``run-integration-tests.sh`` runs this file twice, once with ``FIPS_MODE=true``, and a
+    test whose verdict depends on which pass it is in measures the launcher, not the code.
+    """
+    monkeypatch.setattr(settings, "ENVIRONMENT", "development")
+    monkeypatch.setattr(settings, "FIPS_MODE", True)
+    monkeypatch.setattr(settings, "FIPS_VERSION", "140-3")
+    monkeypatch.setattr(settings, "FIPS_MIGRATION_MODE", "compatible")
+    monkeypatch.setattr(settings, "FIPS_VALIDATE_ENTROPY", True)
+    monkeypatch.setattr(settings, "ENCRYPTION_ALGORITHM_V3", "AES-256-GCM")
+    monkeypatch.setattr(settings, "ENCRYPTION_KEY", _random_secret())
+    monkeypatch.setattr(settings, "JWT_SECRET_KEY", _random_secret())
+    monkeypatch.setattr(settings, "OIDC_ENABLED", False)
+    monkeypatch.setattr(settings, "PKI_ENABLED", False)
+    monkeypatch.setattr(settings, "PROXY_ENABLED", False)
+    return monkeypatch
 
 
 class TestTheFipsGateIsFipsMode:
@@ -872,9 +917,12 @@ class TestFIPS140_3Migration:
         """Verify FIPS migration mode configuration."""
         assert settings.FIPS_MIGRATION_MODE in ["compatible", "strict"]
 
-    def test_fips_validate_entropy_config(self):
-        """Verify FIPS entropy validation configuration."""
-        assert isinstance(settings.FIPS_VALIDATE_ENTROPY, bool)
+    # ``test_fips_validate_entropy_config`` was deleted here. It asserted
+    # ``isinstance(settings.FIPS_VALIDATE_ENTROPY, bool)`` — a bool is a bool, so it could
+    # not fail, and it was the ONLY reader of the setting anywhere in the repo: the
+    # documented "entropy validation" control validated nothing. The behaviour it should
+    # have been asserting now lives in ``TestFIPSEntropyValidationAtBoot`` below, including
+    # the control that pins the setting itself is what does the work.
 
 
 class TestFIPSSafeNonSecurityHashes:
@@ -980,9 +1028,209 @@ class TestFIPS140_3Constants:
         """Verify FIPS version configuration."""
         assert settings.FIPS_VERSION in ["140-2", "140-3"]
 
-    def test_encryption_algorithm_v3(self):
-        """Verify encryption algorithm configuration."""
-        assert settings.ENCRYPTION_ALGORITHM_V3 == "AES-256-GCM"
+    # ``test_encryption_algorithm_v3`` was deleted here. It asserted
+    # ``settings.ENCRYPTION_ALGORITHM_V3 == "AES-256-GCM"`` — the setting's own default,
+    # read from the ambient process — so it could not fail, and it was the only reader of
+    # the setting in the repo. The algorithm was hardcoded ``AESGCM(derived_key)`` in
+    # ``utils/encryption.py``, meaning the documented control configured nothing.
+    # ``TestEncryptionAlgorithmEnforcedAtBoot`` below asserts the enforcement instead.
+
+
+class TestEncryptionAlgorithmEnforcedAtBoot:
+    """``ENCRYPTION_ALGORITHM_V3`` must be honoured by REFUSING what it cannot deliver.
+
+    The algorithm is not, and must not become, runtime-dispatchable: the v3 envelope
+    (``v3:salt:nonce:ciphertext``) carries no algorithm field, so switching algorithms to
+    obey the setting would orphan every ciphertext already in the database. The honest
+    implementation of a compliance control the code cannot vary is to fail closed when the
+    operator asks for something this build does not implement — never to quietly encrypt
+    with a different algorithm than the one the deployment's FIPS documentation claims.
+    """
+
+    def test_unimplemented_algorithm_refuses_to_boot_under_fips(self, fips_boot_settings):
+        """Red case: an algorithm this build does not implement must stop startup."""
+        from app.main import _validate_production_secrets
+
+        fips_boot_settings.setattr(settings, "ENCRYPTION_ALGORITHM_V3", "AES-128-CBC")
+
+        with pytest.raises(ValueError, match="ENCRYPTION_ALGORITHM_V3"):
+            _validate_production_secrets()
+
+    @pytest.mark.parametrize(
+        "configured",
+        [
+            pytest.param("AES-256-GCM", id="documented-spelling"),
+            pytest.param("aes-256-gcm", id="lowercase"),
+            pytest.param("  AES-256-GCM  ", id="surrounding-whitespace"),
+        ],
+    )
+    def test_implemented_algorithm_boots_under_fips(self, fips_boot_settings, configured):
+        """Control: the algorithm the code actually implements starts normally.
+
+        Case and surrounding whitespace are normalised. Refusing to boot over ``aes-256-gcm``
+        would be a false refusal — the operator asked for exactly what this build does.
+        """
+        from app.main import _validate_production_secrets
+
+        fips_boot_settings.setattr(settings, "ENCRYPTION_ALGORITHM_V3", configured)
+
+        with does_not_raise("AES-256-GCM is what utils/encryption.py implements"):
+            _validate_production_secrets()
+
+    def test_the_gate_is_keyed_on_fips_being_active(self, fips_boot_settings):
+        """Control: the refusal comes from the FIPS profile, not from an unconditional check.
+
+        Without this, a gate that rejected the value in every deployment would pass the red
+        case too — and would brick every non-FIPS install that ever typed the setting.
+        """
+        from app.main import _validate_production_secrets
+
+        fips_boot_settings.setattr(settings, "FIPS_MODE", False)
+        fips_boot_settings.setattr(settings, "ENCRYPTION_ALGORITHM_V3", "AES-128-CBC")
+
+        with does_not_raise(
+            "a non-FIPS deployment claims no algorithm profile, so the setting is inert"
+        ):
+            _validate_production_secrets()
+
+    def test_the_allowlist_names_only_algorithms_the_code_implements(self):
+        """The allowlist is keyed on the implementation, not on the FIPS-approved list.
+
+        AES-256-CCM is equally FIPS-approved; adding it here without writing the code would
+        be a data-loss bug. This pins the set to the one algorithm ``_encrypt_v3`` builds.
+        """
+        from app.core.config import IMPLEMENTED_ENCRYPTION_ALGORITHMS
+
+        assert set(IMPLEMENTED_ENCRYPTION_ALGORITHMS) == {"AES-256-GCM"}
+
+
+class TestFIPSEntropyValidationAtBoot:
+    """``FIPS_VALIDATE_ENTROPY`` must actually validate entropy.
+
+    Before this the setting had zero readers outside a test asserting a bool is a bool, and
+    ``rg -n entropy backend/app`` matched only unrelated docstrings. The existing boot gate
+    rejected *known* placeholders (a blocklist), which by construction misses
+    ``ENCRYPTION_KEY=AAAA...`` — a value that is 32 characters long, matches no placeholder
+    pattern, and has no entropy at all.
+    """
+
+    def test_low_entropy_encryption_key_refuses_to_boot(self, fips_boot_settings):
+        """Red case: 32 bytes of one repeated character must stop startup."""
+        from app.main import _validate_production_secrets
+
+        fips_boot_settings.setattr(settings, "ENCRYPTION_KEY", "A" * 32)
+
+        with pytest.raises(ValueError, match="ENCRYPTION_KEY"):
+            _validate_production_secrets()
+
+    def test_the_refusal_names_the_failing_secret(self, fips_boot_settings):
+        """A boot failure saying only "a secret failed" costs an operator a support cycle.
+
+        The distinguishing assertion is that JWT_SECRET_KEY is named while ENCRYPTION_KEY —
+        which is fine in this scenario — is not.
+        """
+        from app.main import _validate_production_secrets
+
+        fips_boot_settings.setattr(settings, "JWT_SECRET_KEY", "B" * 40)
+
+        with pytest.raises(ValueError, match="JWT_SECRET_KEY") as excinfo:
+            _validate_production_secrets()
+
+        assert "ENCRYPTION_KEY" not in str(excinfo.value)
+
+    def test_csprng_derived_keys_boot(self, fips_boot_settings):
+        """Control A: real key material from ``os.urandom`` must be accepted."""
+        from app.main import _validate_production_secrets
+
+        fips_boot_settings.setattr(settings, "ENCRYPTION_KEY", _random_secret())
+        fips_boot_settings.setattr(settings, "JWT_SECRET_KEY", _random_secret())
+
+        with does_not_raise("a CSPRNG-derived key is exactly what the control asks for"):
+            _validate_production_secrets()
+
+    def test_validation_off_accepts_what_validation_on_rejects(self, fips_boot_settings):
+        """Control B: the SETTING is what does the work.
+
+        This is the assertion the deleted ``isinstance(..., bool)`` test failed to make. A
+        validator that rejected every key unconditionally — ignoring ``FIPS_VALIDATE_ENTROPY``
+        entirely — would pass the red case above and be indistinguishable from a working
+        control. Same key, same FIPS profile, opposite verdict, driven only by the flag.
+        """
+        from app.main import _validate_production_secrets
+
+        fips_boot_settings.setattr(settings, "ENCRYPTION_KEY", "A" * 32)
+        fips_boot_settings.setattr(settings, "FIPS_VALIDATE_ENTROPY", True)
+        with pytest.raises(ValueError, match="ENCRYPTION_KEY"):
+            _validate_production_secrets()
+
+        fips_boot_settings.setattr(settings, "FIPS_VALIDATE_ENTROPY", False)
+        with does_not_raise("with entropy validation off the same key must be accepted"):
+            _validate_production_secrets()
+
+    def test_an_unusable_csprng_refuses_to_boot(self, fips_boot_settings, monkeypatch):
+        """A GCM nonce drawn from a broken entropy source repeats, which breaks AES-GCM.
+
+        ``utils/encryption.py`` draws every salt and nonce from ``os.urandom``; a nonce
+        reused under one key destroys both confidentiality and integrity. Simulated, since
+        no host here has a broken CSPRNG to test against.
+        """
+        from app.main import _validate_production_secrets
+
+        def _refuse(_n):
+            raise OSError("entropy source unavailable")
+
+        monkeypatch.setattr(entropy.os, "urandom", _refuse)
+
+        with pytest.raises(ValueError, match="os.urandom"):
+            _validate_production_secrets()
+
+
+class TestEntropyFloorsAgainstRealKeyShapes:
+    """The thresholds must reject degenerate values WITHOUT rejecting real ones.
+
+    A validator tuned only against ``"A" * 32`` can be arbitrarily strict and still pass its
+    red test — and then refuses to boot a deployment whose key is a perfectly good 32-hex
+    128-bit value. These pin both directions of the threshold, which is the half a red/green
+    pair alone cannot cover.
+    """
+
+    #: ``hex-16`` is the tightest legitimate case — a 128-bit key rendered in 32 hex
+    #: characters draws from only 16 symbols. Measuring it is what showed the original
+    #: 3.0 bits/byte floor false-rejected it once per ~10,000 boots.
+    LEGITIMATE_KEY_SHAPES = [
+        pytest.param(lambda: base64.urlsafe_b64encode(os.urandom(32)).decode(), id="base64-32"),
+        pytest.param(lambda: os.urandom(32).hex(), id="hex-32"),
+        pytest.param(lambda: os.urandom(16).hex(), id="hex-16"),
+        pytest.param(_generated_encryption_key, id="generate_encryption_key"),
+    ]
+
+    DEGENERATE_VALUES = [
+        pytest.param("A" * 32, id="single-repeated-character"),
+        pytest.param("ab" * 20, id="two-character-alternation"),
+        pytest.param("changeme", id="short-passphrase"),
+        pytest.param("changeme" * 4, id="repeated-word"),
+        pytest.param("password123!" * 3, id="repeated-password"),
+        pytest.param("0123456789" * 4, id="repeated-digits"),
+        pytest.param("opentranscribe_" + "b" * 64, id="padded-prefix"),
+        pytest.param("", id="empty"),
+    ]
+
+    @pytest.mark.parametrize("make_key", LEGITIMATE_KEY_SHAPES)
+    def test_generated_keys_pass_every_floor(self, make_key):
+        """No floor may reject real CSPRNG output. Repeated, because the risk is tail-rate.
+
+        A single draw would miss a 1-in-10,000 false rejection, which is exactly the defect
+        the first version of these thresholds had. 200 draws per shape turns a rate that
+        high into a near-certain failure here rather than a rare failed boot in production.
+        """
+        for _ in range(200):
+            with does_not_raise("CSPRNG-derived key material must always be accepted"):
+                entropy.validate_secret_entropy("ENCRYPTION_KEY", make_key())
+
+    @pytest.mark.parametrize("value", DEGENERATE_VALUES)
+    def test_degenerate_values_are_rejected_by_name(self, value):
+        with pytest.raises(ValueError, match="ENCRYPTION_KEY"):
+            entropy.validate_secret_entropy("ENCRYPTION_KEY", value)
 
 
 # Run with: pytest tests/test_fips_140_3.py -v

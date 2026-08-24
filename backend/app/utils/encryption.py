@@ -10,6 +10,14 @@ Version 3 (FIPS 140-3 compliant):
 Backward compatibility:
 - Legacy Fernet (AES-128-CBC) data is auto-detected and decrypted
 - Re-encryption with AES-256-GCM on access is supported
+
+⚠️ ``settings.ENCRYPTION_ALGORITHM_V3`` is NOT read here, and must not be. The v3 envelope
+is ``v3:salt:nonce:ciphertext`` — it records no algorithm field — so decrypt has to use
+exactly the algorithm encrypt used. Dispatching on a mutable setting would make every
+ciphertext written before an operator changed it undecryptable. The setting is instead
+validated at boot against ``core.config.IMPLEMENTED_ENCRYPTION_ALGORITHMS``
+(``app.main._validate_production_secrets``), which refuses to start a FIPS 140-3
+deployment configured for an algorithm this module does not implement.
 """
 
 import base64
@@ -31,6 +39,12 @@ logger = logging.getLogger(__name__)
 
 # V3 encryption constants (FIPS 140-3 compliant)
 ENCRYPTION_V3_PREFIX = "v3:"
+# Deliberately a module constant, NOT settings.PBKDF2_ITERATIONS_V3 (C8), even though they
+# share a name and a default today. The v3 envelope (v3:salt:nonce:ciphertext) records no
+# iteration count, so decrypt has to re-derive the key with exactly the count encrypt used.
+# Reading the mutable setting here would silently orphan every ciphertext already written
+# under the old count the moment an operator raised it in .env. settings.PBKDF2_ITERATIONS_V3
+# governs password hashing (core/security.py) only.
 PBKDF2_ITERATIONS_V3 = 600000
 SALT_SIZE = 16  # 128-bit salt
 NONCE_SIZE = 12  # 96-bit nonce (recommended for GCM)

@@ -58,6 +58,23 @@ def is_relaxed_environment(environment: str) -> bool:
     return environment.strip().lower() in RELAXED_ENVIRONMENTS
 
 
+# The symmetric encryption algorithms ``app/utils/encryption.py`` actually IMPLEMENTS.
+#
+# ⚠️ This is keyed on the code, NOT on what FIPS approves. AES-256-CCM is equally
+# FIPS-approved and adding its name here without writing the code would be a data-loss
+# bug, not a compliance win: the v3 envelope is ``v3:salt:nonce:ciphertext`` and records
+# no algorithm field, so decrypt has to use exactly the algorithm encrypt used. Every
+# ciphertext already in the database — LLM/ASR provider keys, MFA TOTP secrets, SMB/SMTP
+# credentials, backup secrets — would become undecryptable.
+#
+# ``ENCRYPTION_ALGORITHM_V3`` is therefore validated against this set at boot
+# (``app.main._validate_production_secrets``) rather than dispatched on at runtime: a
+# FIPS deployment configured for an algorithm this build does not implement refuses to
+# start instead of silently encrypting with a different one than its compliance
+# documentation claims.
+IMPLEMENTED_ENCRYPTION_ALGORITHMS = frozenset({"AES-256-GCM"})
+
+
 def _validate_ldap_settings(settings: "Settings") -> None:
     """Validate LDAP configuration when LDAP authentication is enabled.
 
@@ -249,6 +266,11 @@ class Settings(BaseSettings):
 
     # ===== FIPS 140-3 Configuration (upgraded from FIPS 140-2) =====
     FIPS_VERSION: str = os.getenv("FIPS_VERSION", "140-3")  # "140-2" or "140-3"
+    # Governs PASSWORD HASHING ONLY (core/security.py) -- NOT the utils/encryption.py data
+    # encryption envelope, which hardcodes its own module constant of the same value and
+    # default (C8). That envelope records no iteration count, so decrypt must reproduce
+    # exactly what encrypt used; if this setting ever governed it too, raising it in .env
+    # would silently orphan every ciphertext encrypted under the old count.
     PBKDF2_ITERATIONS_V3: int = _int_env("PBKDF2_ITERATIONS_V3", 600000)  # NIST SP 800-132 2024
     JWT_ALGORITHM_V3: str = os.getenv("JWT_ALGORITHM_V3", "HS512")
     ENCRYPTION_ALGORITHM_V3: str = os.getenv("ENCRYPTION_ALGORITHM_V3", "AES-256-GCM")

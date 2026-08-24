@@ -13,7 +13,10 @@ from starlette.responses import JSONResponse
 from app.api.router import api_router
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
+from app.core.config import IMPLEMENTED_ENCRYPTION_ALGORITHMS
 from app.core.config import settings
+from app.core.entropy import assert_csprng_available
+from app.core.entropy import validate_secret_entropy
 from app.core.exceptions import AuthenticationError
 from app.core.exceptions import EmailDeliveryError
 from app.core.exceptions import LLMServiceError
@@ -32,6 +35,67 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 
+def _validate_fips_cryptographic_configuration() -> None:
+    """Enforce the FIPS 140-3 settings this build has to be able to honour.
+
+    A private step of :func:`_validate_production_secrets`, extracted only because that
+    function is at its complexity ceiling — **not** a second boot gate. It has exactly one
+    caller and must keep exactly one.
+
+    Gated on ``settings.fips_140_3_active`` rather than ``is_hardened``: ``FIPS_MODE``
+    defaults to false, so an ordinary dev/CI boot returns immediately, but a deployment
+    that has explicitly claimed the FIPS profile must satisfy it whatever its ENVIRONMENT
+    says. Both settings below were documented as compliance controls in
+    ``docs/FIPS_140_3_COMPLIANCE.md``, ``docs/ENV_VARIABLES_FIPS_140_3.md`` and the
+    operations security-hardening guide while being read by nothing outside a test that
+    asserted a constant equals its own default. This is what makes that documentation true.
+
+    Raises:
+        ValueError: If ``ENCRYPTION_ALGORITHM_V3`` names an algorithm this build does not
+            implement, or if ``FIPS_VALIDATE_ENTROPY`` is on and the CSPRNG or the
+            configured key material fails validation.
+    """
+    if not settings.fips_140_3_active:
+        return
+
+    # Normalised before comparison: refusing to boot over `aes-256-gcm` vs `AES-256-GCM`
+    # would be a false refusal, and a fail-closed control that rejects a correct
+    # configuration is a bug rather than extra safety.
+    configured_algorithm = settings.ENCRYPTION_ALGORITHM_V3.strip().upper()
+    if configured_algorithm not in IMPLEMENTED_ENCRYPTION_ALGORITHMS:
+        # Refuse rather than fall back. Silently encrypting with AES-256-GCM while the
+        # operator configured something else would make the compliance documentation a
+        # lie; switching algorithm to obey the setting would orphan every existing
+        # ciphertext, because the v3 envelope records no algorithm field (see
+        # IMPLEMENTED_ENCRYPTION_ALGORITHMS in core/config.py).
+        implemented = ", ".join(sorted(IMPLEMENTED_ENCRYPTION_ALGORITHMS))
+        logger.critical(
+            "ENCRYPTION_ALGORITHM_V3=%r is not implemented by this build. "
+            "Implemented: %s. Refusing to start.",
+            settings.ENCRYPTION_ALGORITHM_V3,
+            implemented,
+        )
+        raise ValueError(
+            f"ENCRYPTION_ALGORITHM_V3={settings.ENCRYPTION_ALGORITHM_V3!r} is not "
+            f"implemented by this build (implemented: {implemented}). FIPS 140-3 mode "
+            "refuses to start rather than encrypt with an algorithm other than the one "
+            "configured."
+        )
+
+    if not settings.FIPS_VALIDATE_ENTROPY:
+        return
+
+    # REDIS_PASSWORD is deliberately not in this list: it is a service credential checked
+    # for presence by the caller, not cryptographic key material anything derives from.
+    try:
+        assert_csprng_available()
+        for secret_name in ("ENCRYPTION_KEY", "JWT_SECRET_KEY"):
+            validate_secret_entropy(secret_name, getattr(settings, secret_name))
+    except ValueError as exc:
+        logger.critical("%s Refusing to start.", exc)
+        raise
+
+
 def _validate_production_secrets():
     """Validate that production secrets are properly configured.
 
@@ -39,6 +103,9 @@ def _validate_production_secrets():
     ENVIRONMENT explicitly names a relaxed environment. The previous
     ``ENVIRONMENT in ("production", "prod")`` test was never true in practice — nothing
     passes ENVIRONMENT into the containers — so none of these ran anywhere (#284 A0.3).
+
+    The one exception is :func:`_validate_fips_cryptographic_configuration`, which gates on
+    ``settings.fips_140_3_active`` instead — see its docstring.
     """
     is_production = settings.is_hardened
 
@@ -69,6 +136,8 @@ def _validate_production_secrets():
             "Set a strong, unique encryption key via the ENCRYPTION_KEY environment variable."
         )
         raise ValueError("Insecure ENCRYPTION_KEY in production environment")
+
+    _validate_fips_cryptographic_configuration()
 
     # Warn about OIDC audience validation disabled in production
     if is_production and settings.OIDC_ENABLED and not settings.OIDC_VERIFY_AUDIENCE:

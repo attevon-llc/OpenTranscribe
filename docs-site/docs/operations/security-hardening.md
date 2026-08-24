@@ -483,6 +483,22 @@ alone can never be false. Every gate in the codebase therefore goes through one 
 `FIPS_VERSION` directly. Set `FIPS_MODE=true`.
 :::
 
+:::caution `ENCRYPTION_ALGORITHM_V3` is validated, not dispatched on
+`AES-256-GCM` is the only value this build implements, and it is not selectable. The v3
+ciphertext envelope (`v3:salt:nonce:ciphertext`) records **no algorithm field**, so decrypt
+has to use exactly the algorithm encrypt used — switching would make every stored provider
+key, TOTP secret and credential undecryptable. Naming any other algorithm therefore makes a
+FIPS deployment **refuse to start**, rather than silently encrypt with something other than
+what you configured.
+
+`FIPS_VALIDATE_ENTROPY=true` (the default) makes that same startup check verify the OS
+CSPRNG is usable and that `ENCRYPTION_KEY` and `JWT_SECRET_KEY` are plausibly random —
+minimum length, distinct bytes, no repeated block or run, and a Shannon-entropy floor. A
+failure names the offending variable and refuses the boot. Both checks are inert unless
+`FIPS_MODE=true`. Generate keys with the installer or
+`generate_encryption_key()`; a hand-typed passphrase will be rejected.
+:::
+
 ### Algorithm Requirements
 
 | Component | Non-FIPS default | FIPS 140-3 (`FIPS_MODE=true`) | Migration |

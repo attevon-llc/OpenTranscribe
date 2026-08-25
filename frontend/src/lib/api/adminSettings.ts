@@ -14,15 +14,6 @@ export interface RetryConfigUpdate {
   retry_limit_enabled?: boolean;
 }
 
-export interface ResetRetriesResponse {
-  message: string;
-  file_uuid: string;
-  filename: string;
-  old_retry_count: number;
-  new_retry_count: number;
-  max_retries: number;
-}
-
 export interface GarbageCleanupConfig {
   garbage_cleanup_enabled: boolean;
   max_word_length: number;
@@ -49,14 +40,6 @@ export class AdminSettingsApi {
    */
   static async updateRetryConfig(config: RetryConfigUpdate): Promise<RetryConfig> {
     const response = await axiosInstance.put(`${this.BASE_PATH}/settings/retry-config`, config);
-    return response.data;
-  }
-
-  /**
-   * Reset retry count for a specific file (admin only)
-   */
-  static async resetFileRetries(fileUuid: string): Promise<ResetRetriesResponse> {
-    const response = await axiosInstance.post(`/files/${fileUuid}/reset-retries`);
     return response.data;
   }
 

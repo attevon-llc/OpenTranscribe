@@ -82,8 +82,6 @@
   let isTagsExpanded = false;
   let isCollectionsExpanded = false;
   let isAnalyticsExpanded = false;
-  let isEditingTranscript = false;
-  let editedTranscript = '';
   let savingTranscript = false;
   let savingSpeakers = false;
   let editingSegmentId: string | number | null = null;
@@ -549,11 +547,6 @@
 
       // Update the file with sorted data
       file.transcript_segments = transcriptData;
-
-      // Update transcript text for editing
-      editedTranscript = transcriptData.map((seg: Segment) =>
-        `${seg.display_timestamp || seg.formatted_timestamp || formatDuration(seg.start_time)} [${seg.speaker_label || seg.speaker?.name || 'Speaker'}]: ${seg.text}`
-      ).join('\n');
 
       // Load speakers and update store after they're loaded
       loadSpeakers();
@@ -1195,32 +1188,6 @@
   function handleCancelEditSegment() {
     editingSegmentId = null;
     editingSegmentText = '';
-  }
-
-  async function handleSaveTranscript() {
-    if (!editedTranscript || !file) return;
-
-    try {
-      savingTranscript = true;
-      const response = await axiosInstance.put(`/files/${fileId}/transcript`, {
-        transcript: editedTranscript
-      });
-
-      if (response.data) {
-        // Refresh file data to get updated segments
-        await fetchFileDetails(fileId);
-
-        // The fetchFileDetails will reload the transcript store via processTranscriptData() and loadSpeakers()
-        // so the transcript modal will automatically update
-
-        isEditingTranscript = false;
-      }
-    } catch (error) {
-      console.error('Error saving transcript:', error);
-      toastStore.error($t('fileDetail.failedToSaveTranscript'));
-    } finally {
-      savingTranscript = false;
-    }
   }
 
 
@@ -2198,8 +2165,6 @@
           <TranscriptDisplay
           bind:file
           {currentTime}
-          {isEditingTranscript}
-          {editedTranscript}
           {savingTranscript}
           {savingSpeakers}
           {speakerNamesChanged}
@@ -2216,7 +2181,6 @@
           on:editSegment={handleEditSegment}
           on:saveSegment={handleSaveSegment}
           on:cancelEditSegment={handleCancelEditSegment}
-          on:saveTranscript={handleSaveTranscript}
           on:exportTranscript={handleExportTranscript}
           on:saveSpeakerNames={handleSaveSpeakerNames}
           on:speakerUpdate={handleSpeakerUpdate}

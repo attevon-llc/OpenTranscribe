@@ -32,24 +32,6 @@ describe('retry config', () => {
   });
 });
 
-describe('resetFileRetries', () => {
-  it('posts against the FILE endpoint, not the admin settings path', async () => {
-    mockInstance.post.mockResolvedValue({
-      data: {
-        message: 'reset',
-        file_uuid: 'f1',
-        filename: 'a.mp3',
-        old_retry_count: 3,
-        new_retry_count: 0,
-        max_retries: 3,
-      },
-    });
-    const result = await AdminSettingsApi.resetFileRetries('f1');
-    expect(mockInstance.post).toHaveBeenCalledWith('/files/f1/reset-retries');
-    expect(result.new_retry_count).toBe(0);
-  });
-});
-
 describe('garbage cleanup config', () => {
   it('gets and updates the garbage cleanup configuration', async () => {
     mockInstance.get.mockResolvedValue({

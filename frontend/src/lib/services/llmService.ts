@@ -15,12 +15,6 @@ export interface LLMStatus {
   message: string;
 }
 
-interface LLMProviders {
-  providers: string[];
-  total: number;
-  message: string;
-}
-
 interface LLMConnectionTest {
   success: boolean;
   message: string;
@@ -148,19 +142,6 @@ class LLMService {
     }
 
     return fetchPromise;
-  }
-
-  /**
-   * Get list of supported LLM providers
-   */
-  async getProviders(): Promise<LLMProviders> {
-    try {
-      const response = await axiosInstance.get('/llm/providers');
-      return response.data;
-    } catch (error: unknown) {
-      console.error('Error getting LLM providers:', error);
-      throw new Error(getErrorMessage(error, get(t)('llm.providersLoadFailed')), { cause: error });
-    }
   }
 
   /**

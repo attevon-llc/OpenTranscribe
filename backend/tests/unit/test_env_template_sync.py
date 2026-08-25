@@ -367,6 +367,14 @@ def test_consumption_scanner_finds_names_and_the_corpus_is_real():
 
 @pytest.mark.unit
 def test_reader_and_documented_scans_are_nonempty_on_the_real_repo():
-    """Guard against a path typo silently making every check above pass vacuously."""
+    """Guard against a path typo silently making every check above pass vacuously.
+
+    The floor is a sanity check that the scan isn't vacuous, not a target count: it
+    was 200 back when .env.example was ~1900 lines. `8ca346a2` and later commits cut
+    it to secrets/system-config only (currently ~165-170 documented keys) — most of
+    what it used to list is now UI-configurable `SystemSettings`, not `.env`. Lower
+    this again only if a future trim drops the real count below it for the same
+    legitimate reason; don't raise it back to chase a stale historical number.
+    """
     assert len(_reader_names()) > 50
-    assert len(_documented_keys(ENV_EXAMPLE.read_text(encoding="utf-8"))) > 200
+    assert len(_documented_keys(ENV_EXAMPLE.read_text(encoding="utf-8"))) > 100

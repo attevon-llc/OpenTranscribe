@@ -213,8 +213,17 @@ class TestAuthConfigServiceSetConfig:
             assert config.is_sensitive is True
 
     def test_set_config_bool_conversion(self, mock_db):
-        """Test boolean value conversion."""
-        AuthConfigService.set_config(
+        """A bool value is stored as the string "true"/"false", not Python's str(bool).
+
+        Mirrors ``test_set_config_creates_new``'s shape: assert on the returned
+        ``AuthConfig``'s actual stored value, not just that ``db.add`` was called
+        with *something*. Proven via mutation (see this module's CLAUDE.md
+        conventions): changing ``set_config``'s
+        ``str_value = "true" if value else "false"`` to a wrong constant left the
+        previous version of this test green, because ``len(call_args_list) >= 1``
+        is true regardless of what value was stored.
+        """
+        result = AuthConfigService.set_config(
             db=mock_db,
             key="bool_key",
             value=True,
@@ -223,10 +232,18 @@ class TestAuthConfigServiceSetConfig:
             user_id=1,
         )
 
-        # Check that the add call includes a properly converted value
-        call_args = mock_db.add.call_args_list
-        # At least one call should have been made with an AuthConfig
-        assert len(call_args) >= 1
+        assert result.config_value == "true"
+        mock_db.add.assert_called()
+
+        result_false = AuthConfigService.set_config(
+            db=mock_db,
+            key="bool_key_false",
+            value=False,
+            is_sensitive=False,
+            category="test",
+            user_id=1,
+        )
+        assert result_false.config_value == "false"
 
     def test_set_config_with_request(self, mock_db):
         """Test setting config with request for audit logging."""

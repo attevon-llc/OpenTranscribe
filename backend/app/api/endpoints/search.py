@@ -459,13 +459,19 @@ def get_available_filters(
     """
     Return available filter options (speakers, tags, date range).
 
+    Quarantined (DMCA/abuse takedown) files are excluded from every facet for
+    non-admins, including the file's own owner — same admin bypass as the
+    results page's ``_drop_quarantined_search_hits``.
+
     Returns:
         Dict with speakers, tags, and date_range filter options.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
 
     search_service = HybridSearchService()
-    return search_service.get_available_filters(user_id=ctx.user.id, organization_id=ctx.org_id)
+    return search_service.get_available_filters(
+        user_id=ctx.user.id, organization_id=ctx.org_id, is_admin=ctx.user.is_admin
+    )
 
 
 @router.post("/reindex")

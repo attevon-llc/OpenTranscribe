@@ -206,19 +206,40 @@ def test_a_recognised_language_without_a_detector_still_skips_legitimately() -> 
 
 
 def test_an_undeterminable_language_reports_a_real_coverage_gap(
-    db_session, pii_masking_user
+    db_session, pii_masking_user, quiet_detectors
 ) -> None:
-    """The consequence, at the surface that was reporting clean.
+    """The consequence, at the surface that was reporting clean — driven end to end.
 
-    A scan that ran without PII on a file whose language nobody could parse used to be
-    subtracted from the report and read as fully covered.
+    This used to hand-write ``media.redaction_coverage = ["profanity", "toxicity"]`` — a
+    state the real pipeline could not produce for an unresolvable language. Before the
+    fix, ``detect_and_store`` read ``detector_language_support(None)``'s "every detector
+    supported" answer as permission to actually RUN the English-hardcoded profanity/PII/
+    toxicity detectors on this file's unidentifiable text, and since none of them raised,
+    all three were credited: ``redaction_coverage`` landed on
+    ``["profanity", "pii", "toxicity"]`` — full coverage — every single time, so this test
+    could never have observed the gap it claimed to prove existed. Driving the real
+    ``detect_and_store``, like its sibling below does for a recognised spelling, is what
+    makes this a test of the pipeline's actual output rather than an unreachable one.
     """
     media = _seed_unscanned_file(db_session, pii_masking_user, language="Klingon")
-    media.redaction_coverage = ["profanity", "toxicity"]
-    db_session.flush()
-    cfg = resolve_effective_config(db_session, pii_masking_user.id)
 
-    assert "pii" in uncovered_detectors(media, cfg)
+    result = RedactionService.detect_and_store(db_session, media.id)
+
+    db_session.refresh(media)
+    assert result["status"] == "done", result
+    assert media.redaction_coverage == [], (
+        "an unresolvable language must not be credited with ANY of the "
+        f"language-gated detectors: {media.redaction_coverage}"
+    )
+    cfg = resolve_effective_config(db_session, pii_masking_user.id)
+    gap = uncovered_detectors(media, cfg)
+    assert "pii" in gap
+    assert "profanity" in gap
+    # NOT "toxicity" here: `_DETECTOR_CATEGORIES` maps it to no category at all (it
+    # emits a score, never a span — see config.py and this package's CLAUDE.md), so
+    # `blocking_detector_failures` can never surface it through `uncovered_detectors`
+    # regardless of whether it ran. Its absence from `redaction_coverage` above is
+    # still asserted; this is only about which gaps this function reports.
 
 
 def test_a_recognised_unsupported_language_reports_no_gap(db_session, pii_masking_user) -> None:

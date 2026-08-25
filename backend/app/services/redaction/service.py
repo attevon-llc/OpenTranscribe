@@ -172,6 +172,46 @@ class RedactionService:
         return [s.model_dump() for s in spans], toxicity
 
     @staticmethod
+    def _decline_for_unresolvable_language(
+        language: str | None, supported: set[str], skipped: dict[str, str]
+    ) -> tuple[bool, bool, bool]:
+        """Whether to actually RUN profanity/pii/toxicity, and the coverage-honest reason not to.
+
+        ``detector_language_support(None)`` deliberately returns every detector as
+        "supported" — that is what keeps ``coverage.py``'s ``relied_on`` computation
+        from excusing them (a genuine language skip is a permanent product limit; an
+        unresolvable one is not, and must stay a real, reported gap; see that
+        function's docstring). But "supported" must NOT be read as "safe to run":
+        ``pii_presidio`` hardcodes ``language="en"``, so actually running these
+        detectors here would silently analyze text of unknown language as English
+        and then credit it as covered — the exact "fall back to English and record
+        full coverage" fail-open ``detector_language_support``'s own docstring warns
+        against, one call site removed. So an unresolvable language is marked
+        skipped HERE, mutating the caller's ``skipped`` dict with a reason distinct
+        from a known-unsupported language, purely so the caller's ``ran``/
+        ``redaction_coverage`` stay honest. ``supported`` itself is never touched —
+        ``coverage.py`` reads ``detector_language_support`` again, independently, so
+        this function's decision cannot leak into whether the gap is excused there.
+
+        Args:
+            language: The file's stored (unnormalized) language value.
+            supported: ``detector_language_support``'s first return value.
+            skipped: ``detector_language_support``'s second return value, mutated in
+                place with ``"language_unresolvable"`` entries when applicable.
+
+        Returns:
+            ``(run_profanity, run_pii, run_toxicity)``.
+        """
+        if normalize_language(language) is None:
+            for name in ("profanity", "pii", "toxicity"):
+                skipped[name] = "language_unresolvable"
+        return (
+            "profanity" in supported and "profanity" not in skipped,
+            "pii" in supported and "pii" not in skipped,
+            "toxicity" in supported and "toxicity" not in skipped,
+        )
+
+    @staticmethod
     def detect_and_store(db: Session, file_id: int) -> dict:
         """Detect + cache redaction spans for every segment of a file. Idempotent."""
         media = db.query(MediaFile).filter(MediaFile.id == file_id).first()
@@ -194,9 +234,9 @@ class RedactionService:
             det_cfg["pii_use_gliner"] = C.REDACTION_PII_USE_GLINER
         # Language gating: skip detectors that don't support this transcript's language.
         supported, skipped = detector_language_support(media.language)
-        run_profanity = "profanity" in supported
-        run_pii = "pii" in supported
-        run_toxicity = "toxicity" in supported
+        run_profanity, run_pii, run_toxicity = RedactionService._decline_for_unresolvable_language(
+            media.language, supported, skipped
+        )
         # Run LLM detector only if the owner enabled it (it needs their provider).
         run_llm = RedactionService._owner_wants_llm(db, int(media.user_id))
         if skipped:

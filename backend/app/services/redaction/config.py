@@ -537,6 +537,19 @@ def detector_language_support(language: str | None) -> tuple[set[str], dict[str,
     ``None`` is treated as "no detector may excuse itself", so whatever the scan did not run
     surfaces as a real gap in ``coverage.py``. A *recognised* language that genuinely lacks a
     detector (``fr`` has no PII detector) keeps today's behaviour: a legitimate, reported skip.
+
+    ⚠️ **This function's "supported" alone is not the fail-closed mechanism — it is only
+    half of it, and returning every detector here for ``None`` is deliberately the WRONG
+    answer for "should this actually run".** ``detect_and_store`` used to read this return
+    value as both "may run" and "counts as covered", so an unresolvable language ran the
+    (English-hardcoded, see ``detectors/pii_presidio.py``) detectors anyway and — since they
+    did not raise — credited them in ``redaction_coverage``, i.e. exactly the "fall back to
+    English and record full coverage" fail-open described above, one call site removed. Never
+    read this function's ``supported`` as "safe to invoke a detector with" on its own;
+    ``detect_and_store`` layers its own ``normalize_language(media.language) is None`` check
+    on top, locally marks profanity/pii/toxicity skipped for that call only (reason
+    ``"language_unresolvable"``), and leaves THIS function's return value untouched so
+    ``coverage.py``'s ``relied_on`` still treats the gap as real rather than excused.
     """
     lang = normalize_language(language)
     if lang is None:

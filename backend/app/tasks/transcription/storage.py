@@ -165,8 +165,12 @@ def update_media_file_transcription_status(
     # boundary before the column every redaction/chat/search reader keys on (issue #545).
     # `ASRResult` already normalizes the cloud providers' output; this also covers the local
     # WhisperX path, which reaches here as a bare string, and `finalize.py`'s `.get(..., "en")`
-    # default. An unidentifiable value becomes NULL — never "en", which would run the English
-    # PII detector over text of unknown language and record full coverage.
+    # default. An unidentifiable value becomes NULL — never "en" — which is necessary but was
+    # not, by itself, sufficient: storing NULL only stops this boundary from lying about the
+    # language. `redaction/service.py::detect_and_store` still had to be taught to decline
+    # running its English-hardcoded detectors when it reads that NULL back, and to record the
+    # decline as an uncovered gap rather than credit itself — see that function's
+    # `normalize_language(media.language) is None` branch for the other, load-bearing half.
     media_file.language = normalize_language(language)
     media_file.status = FileStatus.COMPLETED
     media_file.completed_at = datetime.datetime.now(datetime.UTC)

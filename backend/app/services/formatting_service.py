@@ -51,6 +51,7 @@ from app.services.error_categorization_service import ErrorCategorizationService
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.time_format import format_timestamp_simple
+from app.utils.time_format import format_timestamp_with_tenths
 
 logger = logging.getLogger(__name__)
 
@@ -77,20 +78,19 @@ class FormattingService:
     @staticmethod
     def format_duration_with_millis(seconds: float | None) -> str | None:
         """
-        Format duration with milliseconds for timestamps.
+        Format duration with milliseconds for timestamps (MM:SS.f, or H:MM:SS.f
+        past one hour — matching ``format_duration``'s hour-carrying).
 
         Args:
             seconds: Duration in seconds
 
         Returns:
-            Formatted duration string (e.g., "0:45.2") or None
+            Formatted duration string (e.g., "0:45.2" or "1:05:30.0") or None
         """
         if seconds is None or seconds < 0:
             return None
 
-        minutes = int(seconds // 60)
-        remaining_seconds = seconds % 60
-        return f"{minutes}:{remaining_seconds:04.1f}"
+        return format_timestamp_with_tenths(seconds)
 
     @staticmethod
     def format_upload_date(upload_time: datetime | None) -> str | None:

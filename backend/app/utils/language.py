@@ -27,6 +27,17 @@ coverage — a new fail-open, against a contract that says PII support is Englis
 handle honestly: chat counts it as ``unknown_files`` and warns about nothing, redaction fails
 CLOSED and reports a real coverage gap.
 
+⚠️ **"Redaction fails CLOSED" describes two cooperating pieces, not one function returning
+``None``.** ``redaction/config.py::detector_language_support`` deliberately keeps every
+detector in its "supported" set for a ``None`` language, so ``coverage.py`` never excuses
+them — but reading that same "supported" as "safe to run" is exactly the fail-open this
+module exists to prevent, one call removed: it would run the English-hardcoded PII/profanity
+detectors over unidentifiable text and, since a pass that does not raise gets credited,
+report full coverage anyway. The actual decline-to-run happens in
+``redaction/service.py::detect_and_store``, gated on this function returning ``None``, kept
+deliberately separate from `detector_language_support`'s return value so the two concerns —
+"may a detector run" and "is a detector excused from coverage" — cannot be conflated again.
+
 The recognised vocabulary is the app's own — ``constants.WHISPER_LANGUAGES``, which is
 cross-checked against ``faster_whisper``'s code list at import — plus the ISO 639-2 three-letter
 forms (both the terminological ``/T`` and bibliographic ``/B`` spellings, which differ for about

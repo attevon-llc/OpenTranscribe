@@ -561,6 +561,47 @@ def _redaction_policy_fingerprint(cfg: "EffectiveRedactionConfig | None") -> str
     return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()
 
 
+# A single OpenSearch `terms` clause is bounded by `index.max_terms_count`
+# (65536 by default); quarantine is expected to be rare, so this cap is a
+# defensive ceiling, not a normal operating limit. Exceeding it degrades to
+# excluding only the oldest-quarantined files rather than failing the whole
+# facet request.
+_QUARANTINED_UUID_CAP = 10_000
+
+
+def _quarantined_file_uuids() -> list[str]:
+    """Every currently-quarantined file's uuid, for excluding facets built from it.
+
+    Quarantine (``takedown_service.quarantine_file``) is Postgres-only — it never
+    writes to OpenSearch — so a facet-aggregation query has no field of its own to
+    filter on and must resolve the exclusion set here first. Not scoped to a
+    caller: it feeds a ``must_not`` against a query already scoped to what that
+    caller can see (``accessible_user_ids``), so a global list only ever narrows
+    that intersection, never widens what a caller could learn.
+
+    Returns:
+        Quarantined file uuids as strings, capped at ``_QUARANTINED_UUID_CAP``.
+        Empty (never raises) if the DB is unreachable — an aggregation request
+        must not break because this best-effort exclusion could not run.
+    """
+    from app.db.session_utils import session_scope
+    from app.models.media import MediaFile
+
+    try:
+        with session_scope() as db:
+            rows = (
+                db.query(MediaFile.uuid)
+                .filter(MediaFile.is_quarantined.is_(True))
+                .order_by(MediaFile.quarantined_at.desc().nullslast())
+                .limit(_QUARANTINED_UUID_CAP)
+                .all()
+            )
+            return [str(row[0]) for row in rows]
+    except Exception:  # noqa: BLE001 — best-effort; see docstring
+        logger.exception("Could not resolve quarantined file uuids for facet exclusion")
+        return []
+
+
 def _get_cached_response(cache_key: str) -> SearchResponse | None:
     """Get a cached response if it exists and hasn't expired."""
     with _search_cache_lock:
@@ -1309,13 +1350,16 @@ class HybridSearchService:
         return suggestions[:limit]
 
     def get_available_filters(
-        self, user_id: int, organization_id: int | None = None
+        self, user_id: int, organization_id: int | None = None, is_admin: bool = False
     ) -> dict[str, Any]:
         """Return available filter options for the current user.
 
         Args:
             user_id: Current user ID.
             organization_id: Active org id (None = personal) — tenant gate.
+            is_admin: When True, skip the quarantine exclusion — matches the
+                admin review bypass ``search.py``'s ``_drop_quarantined_search_hits``
+                already applies on the results page beside this endpoint.
 
         Returns:
             Dict with speakers, tags, and date_range.
@@ -1336,6 +1380,32 @@ class HybridSearchService:
 
         from app.services.search.tenant_scope import org_filter_clauses
 
+        query_filter: list[dict[str, Any]] = [
+            {"terms": {"accessible_user_ids": [user_id]}},
+            *org_filter_clauses(organization_id),
+            # Addendum G3: facet counts are per-document, so
+            # digest sections would inflate every speaker and
+            # tag bucket by a file-shaped amount.
+            chunk_plane_clause(),
+        ]
+        query_must_not: list[dict[str, Any]] = []
+
+        # A quarantine (takedown) is Postgres-only — takedown_service.quarantine_file
+        # never touches OpenSearch — so without this, a quarantined file's speaker
+        # names, tag names and upload-time date range keep appearing in these facets
+        # for everyone who had access before the takedown, including the file's own
+        # owner (who takedown_service.is_hidden_for says must not see it at all).
+        # search.py's search_summaries already post-filters quarantined HITS off a
+        # results page; there is no equivalent hit list here to post-filter, since
+        # this endpoint returns aggregated buckets, not documents — so the exclusion
+        # has to be built into the aggregation query itself. Quarantine is rare and
+        # the OpenSearch `terms` clause is naturally bounded, unlike the general
+        # accessible-file set, so excluding by quarantined uuid (rather than trying
+        # to enumerate every accessible-and-non-quarantined uuid) keeps this cheap.
+        quarantined_uuids = [] if is_admin else _quarantined_file_uuids()
+        if quarantined_uuids:
+            query_must_not.append({"terms": {"file_uuid": quarantined_uuids}})
+
         try:
             response = opensearch_client.search(
                 index=index_name,
@@ -1343,14 +1413,8 @@ class HybridSearchService:
                     "size": 0,
                     "query": {
                         "bool": {
-                            "filter": [
-                                {"terms": {"accessible_user_ids": [user_id]}},
-                                *org_filter_clauses(organization_id),
-                                # Addendum G3: facet counts are per-document, so
-                                # digest sections would inflate every speaker and
-                                # tag bucket by a file-shaped amount.
-                                chunk_plane_clause(),
-                            ]
+                            "filter": query_filter,
+                            **({"must_not": query_must_not} if query_must_not else {}),
                         }
                     },
                     "aggs": {

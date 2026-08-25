@@ -340,3 +340,44 @@ def test_a_task_already_reset_twice_is_permanently_failed_instead(service, db_se
     assert stats == {"tasks_reset": 0}
     assert task.status == "failed"
     assert task.error_message == "Permanently failed after 2 recovery attempts"
+
+
+# =============================================================================
+# recover_oom_error_files — the ceiling it logs must be the ceiling it enforces
+# =============================================================================
+def test_oom_exhaustion_log_reports_the_configured_ceiling_not_the_orm_default(
+    service, db_session, normal_user, caplog
+):
+    """The "exhausted" log line must name the admin-configured ceiling.
+
+    ``MediaFile.max_retries`` is a column nothing ever writes (A3) — it always
+    reads the ORM default of 3 regardless of what an admin has actually
+    configured via SystemSettings. ``should_retry_file`` (the gate itself)
+    already reads the real setting; this pins that the *log message* an
+    operator reads to diagnose an exhausted retry loop agrees with it, instead
+    of silently reporting "max_retries: 3" no matter what the admin set.
+    """
+    import logging
+
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=9)
+
+    # retry_count 9 >= configured ceiling 9 -> exhausted. MediaFile.max_retries
+    # keeps its ORM default of 3, which is exactly the stale value this test
+    # must not see quoted back.
+    media_file = _file(
+        db_session,
+        normal_user,
+        status=FileStatus.ERROR,
+        retry_count=9,
+    )
+    assert media_file.max_retries == 3
+
+    with caplog.at_level(logging.WARNING):
+        stats = service.recover_oom_error_files(db_session, [media_file])
+
+    assert stats["files_exhausted"] == 1
+    warning_messages = [r.message for r in caplog.records if r.levelname == "WARNING"]
+    assert any("max_retries: 9" in msg for msg in warning_messages)
+    assert not any("max_retries: 3" in msg for msg in warning_messages)

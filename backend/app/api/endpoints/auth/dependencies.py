@@ -167,7 +167,11 @@ def _enforce_account_expiry(user: User, request: Request | None) -> None:
         user,
         request,
         error_code="ACCOUNT_EXPIRED",
-        details={"expired_at": expires_at.isoformat(), "path": _route_path(request)},
+        details={
+            "trigger": "fixed_date",
+            "expired_at": expires_at.isoformat(),
+            "path": _route_path(request),
+        },
     )
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

@@ -226,7 +226,15 @@ def test_the_last_active_super_admin_is_skipped_not_deactivated(
     assert result["deactivated"] == 0
     db_session.refresh(lone_super_admin)
     assert lone_super_admin.is_active is True
-    assert audit_events == []
+
+    # The skip itself must be audited (F4) -- a FedRAMP control declining to apply
+    # to a privileged account belongs in the trail, not just a worker log line.
+    assert len(audit_events) == 1
+    event = audit_events[0]
+    assert event["event_type"] == AuditEventType.AUTH_ACCOUNT_EXPIRED
+    assert event["user_id"] is None, "the sweep has no human actor"
+    assert event["target_user_id"] == lone_super_admin.id
+    assert event["details"]["trigger"] == "inactivity_skipped_super_admin"
 
 
 def test_an_inactive_super_admin_is_deactivated_when_another_stays_active(

@@ -41,6 +41,7 @@ from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core.config import settings
+from app.core.constants import ACCOUNT_INACTIVITY_MAX_DISABLES_PER_RUN
 from app.models.user import User
 from app.services.account_security_service import revoke_all_sessions
 
@@ -107,8 +108,11 @@ def _disable_inactive_user(db: Session, user: User, *, last_login_at: datetime) 
 def run_inactivity_sweep(db: Session) -> dict:
     """Run one AC-2 inactivity-expiration pass and return a report dict.
 
-    Never raises — a bad row must not abort the batch (matches
-    `directory_sync_service`'s per-row try/except convention).
+    A bad CANDIDATE row must not abort the batch, and doesn't — that per-row work is
+    wrapped in try/except (matches `directory_sync_service`'s convention). This does NOT
+    mean the function never raises: the candidate query, the super-admin protection
+    check, and the report construction all run outside that per-row guard, and a DB
+    error there propagates out through `session_scope` and fails the Celery task.
 
     **Transaction contract:** *db* must own its transaction — the flat, one-real-
     transaction session `db/session_utils.session_scope()` hands the Celery task. Each
@@ -123,21 +127,48 @@ def run_inactivity_sweep(db: Session) -> dict:
 
     Returns:
         A JSON-serializable report: `status`, `candidates_checked`, `deactivated`,
-        `skipped_super_admin` (protected, not touched), `errors`.
+        `skipped_super_admin` (protected, not touched), `errors`, `capped` (more
+        genuine candidates existed than `ACCOUNT_INACTIVITY_MAX_DISABLES_PER_RUN`
+        allowed this pass to touch).
     """
     if not settings.ACCOUNT_EXPIRATION_ENABLED:
         return {"status": "disabled", "reason": "not_enabled"}
 
-    cutoff = datetime.now(UTC) - timedelta(days=settings.ACCOUNT_INACTIVE_DAYS)
-    candidates = (
-        db.query(User)
-        .filter(
-            User.is_active.is_(True),
-            User.last_login_at.isnot(None),
-            User.last_login_at < cutoff,
+    # `_int_env` applies no range check, so a misconfigured 0/negative value would
+    # make `cutoff >= now` and turn every account with any recorded login into a
+    # candidate on the very next tick. Fail safe (skip the pass, log loudly) rather
+    # than crash the whole worker on a bad env var.
+    if settings.ACCOUNT_INACTIVE_DAYS < 1:
+        logger.error(
+            "Account inactivity sweep: ACCOUNT_INACTIVE_DAYS=%d is not a valid "
+            "threshold (must be >= 1) — refusing to run this pass",
+            settings.ACCOUNT_INACTIVE_DAYS,
         )
+        return {"status": "disabled", "reason": "invalid_inactive_days"}
+
+    cutoff = datetime.now(UTC) - timedelta(days=settings.ACCOUNT_INACTIVE_DAYS)
+    base_query = db.query(User).filter(
+        User.is_active.is_(True),
+        User.last_login_at.isnot(None),
+        User.last_login_at < cutoff,
+    )
+    total_candidates = base_query.count()
+    # Oldest last_login_at first: if a pass is capped, the accounts left for next
+    # time are the ones closest to the threshold, not the most overdue.
+    candidates = (
+        base_query.order_by(User.last_login_at.asc())
+        .limit(ACCOUNT_INACTIVITY_MAX_DISABLES_PER_RUN)
         .all()
     )
+    capped = total_candidates > len(candidates)
+    if capped:
+        logger.warning(
+            "Account inactivity sweep: %d candidates found, capped to %d this pass "
+            "(ACCOUNT_INACTIVITY_MAX_DISABLES_PER_RUN) — the rest will be picked up "
+            "by a later pass",
+            total_candidates,
+            len(candidates),
+        )
 
     if not candidates:
         return {
@@ -146,6 +177,7 @@ def run_inactivity_sweep(db: Session) -> dict:
             "deactivated": 0,
             "skipped_super_admin": 0,
             "errors": 0,
+            "capped": False,
         }
 
     candidate_ids = {int(u.id) for u in candidates}
@@ -161,16 +193,24 @@ def run_inactivity_sweep(db: Session) -> dict:
     deactivated = 0
     skipped_super_admin = 0
     errors = 0
-    for user_id, last_login_at, user_email in [
-        # `last_login_at` is `datetime | None` on the model, but the candidates
-        # query above already filters `isnot(None)` — the guard makes that
-        # invariant visible to mypy instead of a `type: ignore` at the call site.
-        (int(u.id), u.last_login_at, str(u.email))
-        for u in candidates
-        if u.last_login_at is not None
-    ]:
+    for user_id, user_email in [(int(u.id), str(u.email)) for u in candidates]:
         if protect_super_admins and user_id in super_admin_ids:
             skipped_super_admin += 1
+            # For a FedRAMP control, "declined to apply to this privileged account"
+            # belongs in the audit trail, not only in the worker log -- an assessor
+            # needs to see the exemption, not just infer it from an absence.
+            audit_logger.log(
+                event_type=AuditEventType.AUTH_ACCOUNT_EXPIRED,
+                outcome=AuditOutcome.SUCCESS,
+                user_id=None,
+                target_user_id=user_id,
+                target_username=user_email,
+                details={
+                    "actor": "account_inactivity_sweep",
+                    "trigger": "inactivity_skipped_super_admin",
+                    "reason": "deactivating this account would leave no active super_admin",
+                },
+            )
             continue
         # Re-fetched fresh, not reused from `candidates`: an earlier iteration's
         # rollback (below) expires every object the session is tracking, so a
@@ -178,14 +218,34 @@ def run_inactivity_sweep(db: Session) -> dict:
         user = db.query(User).filter(User.id == user_id).first()
         if user is None:
             continue
+        # Re-check the invariant on the FRESH row, not the pre-loop snapshot: a
+        # multi-minute sweep can straddle a real login or an admin reactivation
+        # between the candidate query and this iteration. Disabling anyway would
+        # both act on a no-longer-inactive account and record a stale
+        # `last_login_at` in the audit trail as if it were still true.
+        if not bool(user.is_active) or user.last_login_at is None or user.last_login_at >= cutoff:
+            logger.info(
+                "Account inactivity sweep: %s (id=%s) is no longer a candidate "
+                "(reactivated or logged in during this sweep) — skipping",
+                user_email,
+                user_id,
+            )
+            continue
         try:
-            _disable_inactive_user(db, user, last_login_at=last_login_at)
+            _disable_inactive_user(db, user, last_login_at=user.last_login_at)
             deactivated += 1
         except Exception:
             db.rollback()
+            # "Will be retried" is only true for a failure BEFORE `_disable_inactive_user`'s
+            # own `db.commit()` — its audit-log call reads `user.id`/`user.email` after that
+            # commit, so a failure there (e.g. an expired-instance refresh) leaves the account
+            # already disabled; `db.rollback()` cannot undo a commit, and the disabled row is
+            # then permanently excluded from the next pass's candidate query. Don't claim a
+            # retry that may not happen — direct the operator to check instead.
             logger.exception(
-                "Account inactivity sweep failed to disable user %s (id=%s) — "
-                "skipping, will be retried next pass",
+                "Account inactivity sweep failed to disable user %s (id=%s) — the account "
+                "may or may not have actually been disabled (failure could be before or "
+                "after commit); verify its state manually",
                 user_email,
                 user_id,
             )
@@ -197,4 +257,5 @@ def run_inactivity_sweep(db: Session) -> dict:
         "deactivated": deactivated,
         "skipped_super_admin": skipped_super_admin,
         "errors": errors,
+        "capped": capped,
     }

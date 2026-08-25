@@ -65,6 +65,11 @@ indexing → WebSocket notification.
   `directory_sync.last_run_at` *before* dispatch, and the run itself takes a Redis lock, so a
   double tick cannot start two passes. Policy and safety rules live in
   `services/directory_sync_service.py`; this module is only the scheduling shell.
+- `account_lifecycle.py` — FedRAMP AC-2 account-inactivity expiration, **utility** queue.
+  `account.inactivity_sweep` runs from beat daily (04:25), locked, no due-check split (unlike
+  `directory_sync_task`'s admin-configurable interval, this sweep's cadence is fixed and it
+  either runs or is a no-op via `ACCOUNT_EXPIRATION_ENABLED`). Policy and safety rules live in
+  `services/account_lifecycle_service.py`; this module is only the scheduling shell.
 
 ## Conventions / patterns
 

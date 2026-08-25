@@ -7,9 +7,11 @@ schedule, this sweep has no interval to make configurable; it is either on
 itself no-ops immediately when it's off. A locked single task is simpler than a
 due-check/dispatch pair and there is nothing here that needs the extra split.
 
-Cheap and DB-only; must never land on the GPU queue. Runs under a Redis lock so a
-manual "Run now" landing on the scheduled window cannot produce two concurrent
-passes racing on the same deactivation set.
+Cheap and DB-only; must never land on the GPU queue. Runs under a Redis lock so an
+overlapping beat tick (a slow pass still running when the next one is due) cannot
+produce two concurrent passes racing on the same deactivation set. There is no
+admin "Run now" trigger for this task today — the lock is still worth having for
+that reason alone.
 """
 
 from __future__ import annotations

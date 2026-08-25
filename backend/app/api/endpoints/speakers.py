@@ -1809,38 +1809,6 @@ def _get_media_file_uuid(speaker: Speaker, db: Session) -> str | None:
     return None
 
 
-def _send_websocket_notification(speaker: Speaker, current_user: User, db: Session) -> None:
-    """Send WebSocket notification for speaker update (best-effort)."""
-    try:
-        import asyncio
-
-        from app.api.websockets import publish_notification
-
-        notification_data = {
-            "speaker_id": str(speaker.uuid),
-            "media_file_id": _get_media_file_uuid(speaker, db),
-            "display_name": speaker.display_name,
-            "verified": speaker.verified,
-            "profile_id": _get_profile_uuid(speaker, db),
-        }
-
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(
-                publish_notification(
-                    user_id=current_user.id,
-                    notification_type="speaker_updated",
-                    data=notification_data,
-                )
-            )
-        except RuntimeError:
-            logger.debug(
-                f"Skipped WebSocket notification for speaker {speaker.uuid} (no event loop)"
-            )
-    except Exception as e:
-        logger.debug(f"WebSocket notification skipped for speaker update: {e}")
-
-
 def _set_no_cache_headers(response: Response) -> None:
     """Set cache-busting headers on response."""
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"

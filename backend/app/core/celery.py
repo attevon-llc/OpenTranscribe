@@ -133,6 +133,7 @@ celery_app = Celery(
         "app.tasks.recovery_tasks",
         "app.tasks.backup_tasks",
         "app.tasks.directory_sync_task",
+        "app.tasks.account_lifecycle",
     ],
 )
 
@@ -325,6 +326,9 @@ celery_app.conf.update(
         # GDPR Art. 17 reconciliation (issue #442): small DB reads plus, when there is
         # deferred work, object-storage and OpenSearch deletes. Utility — never gpu.
         "gdpr.erasure_reconcile": {"queue": CeleryQueues.UTILITY},
+        # FedRAMP AC-2 account-inactivity expiration: small DB reads/writes only.
+        # Utility — never gpu.
+        "account.inactivity_sweep": {"queue": CeleryQueues.UTILITY},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
@@ -397,6 +401,16 @@ celery_app.conf.update(
             # above 0, so this costs one cheap settings read a day by default.
             "schedule": crontab(minute=10, hour=4),
             "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
+        },
+        "account-inactivity-sweep": {
+            "task": "account.inactivity_sweep",
+            # Daily at 04:25, offset from the chat retention (04:10) / GDPR erasure
+            # (04:40) sweeps so none contend on the same tick. FedRAMP AC-2: a no-op
+            # unless an admin sets ACCOUNT_EXPIRATION_ENABLED (default off), so this
+            # costs one indexed query a day by default on a deployment that hasn't
+            # opted in.
+            "schedule": crontab(minute=25, hour=4),
+            "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
         },
         "gdpr-erasure-reconcile": {
             "task": "gdpr.erasure_reconcile",

@@ -52,6 +52,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`AUTH_ACCOUNT_EXPIRED`), never touches an account that has never logged in (`NULL` stays
   exempt), and refuses to leave zero active `super_admin` accounts.
 
+- **A native diarization engine is now the default, replacing PyAnnote for the on-box pipeline**
+  (#538). A from-scratch `diar-server` sidecar (`docker-compose.diar-native.yml`, wired through
+  `./opentr.sh start dev --with-diar-native`) now runs behind `DIARIZER_ENGINE`, selectable
+  independently of the ASR engine, and `local_provider.py`/`factory.py` consolidate diarization
+  onto one seam regardless of which backend serves it. The sidecar also classifies speaker
+  gender while it already holds the decoded audio, so the enrichment tail's separate ~87–90s CPU
+  wav2vec2 pass is skipped whenever `DIAR_NATIVE_GENDER` is on — verified end to end producing
+  the same labels as the CPU path at higher confidence (male 0.999/female 0.989 vs. 0.999/0.593).
+
+- **Chat gained a live query-execution trace panel** (#514). Every chat turn can stream its
+  retrieval pipeline stages — routing, planning, legs, reranking, synthesis — live over SSE as
+  they happen, rendered as a paced, collapsible tree rather than only after the answer lands.
+  It is diagnostic only — never stored, never changes the answer — and exists specifically so a
+  user can tell whether an answer came from the transcript they expected or from unrelated
+  material that happened to rank.
+
+- **Corpus-scale RAG chat: digests, map-reduce, and a query planner replace the single-pass
+  retrieval-only pipeline for large libraries** (#403). The retrieval-only design silently gave
+  wrong or partial answers once a library grew past what a single retrieval pass could cover;
+  this adds a genuine map-reduce leg over per-recording digests for "across many transcripts"
+  questions, a rules-based query router (measured at 0.104% lookup leakage) that decides which
+  leg(s) a question needs, a query planner that runs legs in parallel, recurrence detection so a
+  recurring meeting series is treated as one entity across sessions, and per-speaker summary
+  digests with rename propagation. Deterministic, LLM-free ingest artifacts (facts, an
+  extractive digest, keyphrases) feed all of it. Supporting changes: a digest citation renders
+  as a labeled **summary**, never as something someone actually said; an answer built from zero
+  excerpts is now flagged rather than presented as confident; recording date/time provenance is
+  now tracked and surfaced; a selectable hybrid search fusion strategy (#363) was added as the
+  underlying plumbing; and search gained a digest plane and `doc_type` discriminator. Output
+  redaction (masking what the model *writes*, not just what it was given) also landed here.
+
+- **The chat LLM's context window is now discovered from the provider instead of trusting a
+  hardcoded 8192 default** (#533). A silently-truncating default previously capped every long
+  transcript regardless of what the configured model actually supports; the app now probes and
+  records the real value.
+
+- **Reasoning ("thinking") support is now a measured per-model capability, not an assumed one**
+  (#64). Whether a configured LLM exposes a separate reasoning/thinking phase used to be
+  guessed; it is now determined and recorded per model, which is what lets the chat UI correctly
+  show or hide the collapsible reasoning display and correctly separate thinking from the answer
+  only when a request actually asked for it.
+
+- **Chat and search now show an honest retrieval-quality notice** instead of presenting every
+  answer with equal confidence. Surfaced when the underlying retrieval is weak (e.g. sparse
+  corpus, low-confidence matches), telling the user the answer may be incomplete rather than
+  letting a thin result set look as authoritative as a well-covered one.
+
+- **GDPR compliance hardening: an erasure ledger, legal-hold re-erasure, and restore
+  reconciliation** (#442). Erasure previously left no durable record that an Art. 17 request was
+  ever made or fulfilled. A new erasure-ledger service now records that erasure was requested
+  (deliberately with **no free-text column**, so the ledger itself can never become a copy of
+  the PII it documents), a legal hold can be lifted and the file re-erased, and a reconciliation
+  task finishes erasures that could not complete in one pass.
+
+- **Audit events now cover resource sharing and group membership changes, and separate the
+  acting user from the affected one** (#443). Collection sharing, tag sharing, and group
+  membership changes previously emitted zero audit events. Five new event types
+  (`RESOURCE_SHARE`/`RESOURCE_UNSHARE`, `GROUP_MEMBER_ADD`/`_REMOVE`/`_ROLE_CHANGE`) are now
+  wired at all seven mutation points. Audit rows also now carry the actor (`user_id`) and the
+  subject as distinct first-class target fields, rather than only recording who did something
+  with the affected user buried in an unqueryable `details` blob.
+
+- **Postgres now enforces a server-side backstop against transactions left open during slow
+  work** (#440). 35 known "open a session, do slow non-DB work, commit later" leaks were already
+  fixed in application code, with `scripts/audit-session-lifetime.py` guarding against
+  regressions; this adds the missing layer underneath — `idle_in_transaction_session_timeout`,
+  tunable via `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` (default 5 minutes, `0` disables it), which
+  can only terminate a connection sitting idle inside an open transaction and never interrupts a
+  legitimately slow running query.
+
+- **The transcript view now renders as soon as the transcript is durable, not at pipeline
+  completion.** Segments are committed and readable at ~78% progress, but the client previously
+  waited for the full completion event plus an extra second before fetching. Progress keeps
+  running after the transcript appears, and speaker labels attach in place afterward via the
+  existing `speaker_updated` events.
+
+- **A community-contributed Q&A panel extractor is now a selectable system summarization
+  prompt** (#136). Produces a clickable index of question → answer → the timestamp range where
+  the answer was given, useful for recurring panels that field audience-submitted questions.
+
+- **Four new locales — Italian, Arabic, Korean, and Dutch — bring the UI to 12 supported
+  languages.**
+
+- **`./opentr.sh` gained `--gpu-device N` and `--no-bindmount`.** `--gpu-device N` retargets the
+  running stack's GPU without hand-editing `.env`. `--no-bindmount` forces a
+  measurement/benchmark stack to run fully baked container code instead of the dev bind-mount,
+  so a benchmark run can't silently pick up an uncommitted local change.
+
 ### Fixed
 
 - **A watch source importing the same recording twice under two names** (#489). Content dedup
@@ -351,6 +439,184 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   extractor's metadata for the submitted page, not the page URL itself — both bypassed the
   `resolve_pinned_target`/pinned-session pattern already used for the primary URL. Both now go
   through it, refusing private/link-local targets before any request is made.
+- **security:** A configured MediaCMS media-source hostname bypassed SSRF protection via DNS
+  rebinding. The hostname validator never resolved DNS, so `169.254.169.254`, `127.0.0.1`,
+  private IPs, and `metadata.google.internal` all passed as a valid host for any authenticated
+  non-admin user. It now routes through the canonical `is_safe_url`, plus a defense-in-depth
+  check at every outbound request. A separate defect in the same integration let its three
+  outbound requests (login, media-info, download) follow an HTTP redirect after that validation
+  passed, so a registered media source could 302 the real request to an internal target; it now
+  uses the same `resolve_pinned_target` + pinned session + `allow_redirects=False` pattern the
+  LLM service already used correctly.
+- **security:** Two more SSRF gaps survived the original outbound-URL hardening. The guard
+  validated a URL's resolved address but then let the actual outbound request follow redirects
+  unpinned, so a public URL that redirected to `169.254.169.254` still reached cloud instance
+  metadata; and RFC 6598 carrier-grade-NAT addresses (`100.64.0.0/10`) were classified as
+  neither private nor global, so they passed the check either way. Outbound requests are now
+  pinned end-to-end using the already-validated address, and the CGNAT range is now correctly
+  treated as private.
+- **security:** `allow_private=True` silently disabled the SSRF guard's cloud-metadata block
+  entirely, rather than only widening the allowed address range as documented. Reachable at
+  login time: OIDC discovery-document/JWKS fetching sets this flag, so an OIDC provider (or an
+  admin's "Test connection") pointed at `169.254.169.254/latest/meta-data/` would dial instance
+  metadata and wait out a 10-second timeout instead of being refused outright.
+- **security:** A quarantined (DMCA/legal-hold) file's data kept leaking through surfaces the
+  original quarantine work missed, even though the file itself 404s everywhere else:
+  `GET /files/metadata-filters` and `/search/filters` facet aggregations both returned
+  language/format/codec/date/size values drawn from quarantined files to any user (including,
+  for search facets, the file's own owner); comments on a quarantined file were fully readable
+  and editable; the speaker listing and cross-media-occurrences view leaked a quarantined file's
+  speakers even to its own owner; and a tag whose only file was quarantined stayed visible. All
+  six gaps are now closed through the app's existing `is_hidden_for`/`is_quarantined` pattern,
+  with an explicit, default-excluded admin bypass on the two read-only facet endpoints.
+- **security:** A `super_admin` account could be scoped down to only their own files when
+  listing collection media, while a plain `admin` was not — `get_collection_media` hand-rolled a
+  `role != "admin"` check instead of the canonical `User.is_admin` property six lines away.
+- **security:** An admin lowering the configured retry ceiling to stop a runaway (e.g. metered
+  cloud ASR) cost loop could still be silently ignored on the single-file retry route, and
+  `reset_retry_count=true` bypassed the ceiling entirely for any file owner, not just admins — a
+  second, separate gap from the three-more-routes retry-ceiling fix above. `POST
+  /files/{uuid}/retry` read `MediaFile.max_retries`, a column nothing ever writes (always its
+  ORM default of 3), instead of the admin-tunable system setting; both paths now route through
+  the same ceiling check and require admin for a reset.
+- **security:** Content redaction could silently disable itself for text in a language its
+  matcher didn't recognize, while reporting a clean scan. A language-support check compared a
+  raw language string (`"eng"`, `"English"`, `"en "`, …) verbatim against `{"en"}` and, on any
+  mismatch, quietly dropped the PII/profanity/toxicity detectors rather than treating an
+  unrecognized language as "run every detector" — so the coverage report subtracted the skip as
+  legitimate, and an unresolvable language read as "covered, clean." The LLM detector had the
+  same fail-open: it was credited as covered whenever enabled, even when the provider call
+  failed and returned nothing. Two disagreeing `normalize_language` implementations (13 of 21
+  test inputs differed) are unified into one function that never guesses a fallback language.
+- **security:** A chat/summary/search read could show a person's name unmasked whenever the
+  redaction model tagged it `ORGANIZATION` instead of `PERSON`. The default masked-entity list
+  excluded `ORGANIZATION`, and every masking surface (transcript segments, search snippets, chat
+  masking, summary masking) shares one detector and one default entity set. Measured against
+  `en_core_web_sm`: a real surname like "Blackwell" scored `ORGANIZATION @ 0.85` — identical to
+  an actual company name — and no confidence threshold can separate the two. `ORGANIZATION` is
+  now masked by default.
+- **security:** `GET /api/files/{uuid}/summary` returned the AI-generated summary completely
+  unmasked (#465) — no redaction, no fail-closed branch — so a user whose policy masks PII in
+  the transcript view could still see that same PII restated in the summary's own words. The
+  admin redaction floor was bypassed identically. Summary masking now runs live and walks the
+  summary's free-form JSON tree rather than assuming fixed field names.
+- **security:** Chat egress masking used the wrong party's policy, and `blur` leaked plaintext
+  outright. The design called for masking by the file *owner's* redaction policy; the shipped
+  code used the *requester's* — letting a sharee with a permissive policy read PII the owner
+  meant hidden. Egress masking is now "strictest wins": masked if either party's policy says to,
+  resolved per file so one strict owner in a multi-owner chat scope doesn't over-mask everyone
+  else's files. A related defect found only after fixing the first: the `blur` masking style
+  leaked the original plaintext.
+- **security:** FIPS 140-3 boot validation checked that secrets existed but not that they were
+  the right algorithm or actually random. A FIPS-mode deployment with `ENCRYPTION_ALGORITHM_V3`
+  set to anything other than the approved AES-256-GCM, or a padded/low-entropy `ENCRYPTION_KEY`,
+  booted without complaint. Boot now validates the configured algorithm against an explicit
+  allow-list and checks secret entropy before allowing FIPS mode to start. Three more FIPS
+  defects fixed alongside it: JWT signing was documented as HS512 under FIPS but every real
+  login path signed with the hardcoded HS256 (a dead code path, corrected in documentation, not
+  a compliance violation since HMAC-SHA-256 is itself FIPS-approved); enabling FIPS mode
+  silently invalidated every user's existing MFA backup codes; and an MD5 usage remained
+  reachable under FIPS mode.
+- **security:** The five PKI certificate-revocation settings (verify-revocation, soft-fail, CA
+  cert path, OCSP timeout, CRL cache) were configurable in the admin UI and persisted to the
+  database, but read by nothing (#498) — PKI auth read straight from `.env`, so an administrator
+  hardening a deployment by disabling soft-fail in Settings saw no behavior change at all. All
+  five now resolve through the same DB > `.env` > coded-default chain as every other setting,
+  with a new cross-field rule refusing revocation verification enabled with no CA bundle
+  configured.
+- **security:** Comment edit and delete had no tenant check (#497) — the only two handlers in
+  the comments module without the tenant-scoping gate every sibling handler applies, so a user
+  could edit or delete comments on a file belonging to an organization they had since left,
+  since authorship (unlike tenant membership) survives an org change.
+- **security:** GDPR Article 17 erasure could report SUCCESS while transcript text and RAG
+  chunks remained fully indexed and searchable. Every OpenSearch step in the erasure path was
+  wrapped in a blanket exception-suppressor, so a transient OpenSearch outage during an erasure
+  silently left the transcript document, chunks, and summaries in place while the response,
+  audit log, and API all reported a completed erasure. Failures on this path are now recorded,
+  matching the pattern voiceprint erasure already used.
+- **security:** `DELETE /api/admin/users/{uuid}` performed an irreversible account/file/
+  transcript deletion with no audit record at all, while its functionally identical twin
+  `DELETE /api/users/{uuid}` audited the same deletion correctly (FedRAMP AU-2/AU-12, GDPR
+  Art. 30(2)(d)). Now emits the same audit event as its twin. Separately, an install could be
+  left with zero `super_admin` accounts through two unguarded routes: that same admin-delete
+  route allowed deleting the last `super_admin` (already refused on its `/api/users/{uuid}`
+  twin), and the GDPR user-erasure route carried neither a last-admin guard nor a self-erasure
+  guard. Both routes now carry both guards.
+- **security:** A group in one organization could gain a member from a different organization,
+  and from there reach that organization's shared collections. `user_group` was the only
+  user-owned table with no organization stamp, so nothing constrained group membership to one
+  tenant, and adding a member resolved its target purely by UUID with no tenant check.
+- **security:** Switching accounts in the same browser session (signing in as a different user
+  without a full page reload) could serve the previous user's cached data to the next one.
+  Several per-user caches — the tier-scoped feature-flag store, the stored-protected-media-
+  credentials cache, and `apiCache`'s module-level cache (tag lists, file listings, status
+  summaries, gallery/speaker/collection data, and prefetched file-detail payloads) — were
+  "fetch once" latches whose only call site ran at initial app mount, which an SPA login
+  transition never re-runs. `clearUserState.ts` now clears all of them on logout/login.
+- A transient storage hiccup during upload completion could delete a just-uploaded file's
+  database row and tell the user their upload failed, while the bytes sat safely in the bucket.
+  The storage-existence check folded every failure (MinIO restart, network blip) into the same
+  result a genuinely absent object returns. Only a confirmed absent object now returns that
+  result; any other storage error returns a 503 and leaves the row `PENDING` for the existing
+  idempotent retry. The content-hash dedup fingerprinting path had the identical bug. Separately,
+  the background orphan-upload sweeper could delete an upload that was still genuinely in flight
+  if a storage outage outlasted one 15-minute sweep window — it now confirms the object is truly
+  absent before deleting anything.
+- A scheduled OpenSearch cleanup sweep (running four times daily) could wipe an entire index if
+  its Postgres reference query ever returned empty, treating "no valid IDs found" as "every
+  document is an orphan," with no floor or ratio guard — the same failure shape behind this
+  project's June 2026 data-loss incident. This sweep and four sibling scheduled sweeps now
+  verify before deleting instead of deleting first.
+- **Recordings over one hour displayed the wrong duration** (e.g. "125:00" instead of "2:05:00"
+  for a 7500-second file) on gallery cards and other duration-derived views. The formatting
+  helper never carried minutes into hours; a second, millisecond-precision copy of the same
+  logic had the identical bug.
+- **The browser's microphone indicator stayed lit after clicking "Stop Recording."** Hardware
+  cleanup (mic tracks, `AudioContext`, the level-meter loop) was only reachable from the
+  explicit "clear" action or a start-time error path, not from a normal stop.
+- **Loading more results inside the in-transcript search modal could either spin forever or
+  silently give up after one hiccup.** It now retries with the same jittered backoff the upload
+  path already uses, and shows an error only once retries are exhausted.
+- A FastAPI validation error's structured detail rendered as a generic, unhelpful message
+  everywhere in the app — the shared error-message helper (206 call sites) silently dropped the
+  422 array-detail shape FastAPI returns for validation failures.
+- The client-side upload size limit could silently disagree with what the admin actually
+  configured on the server; it now reads the value the backend exposes on
+  `GET /api/system/capabilities` and no longer falls open to "unbounded" while that value hasn't
+  loaded yet.
+- Search-term highlighting inside the transcript, summary, and topics panels was illegible in
+  dark mode — three components each defined their own conflicting highlight style with no
+  dark-mode variant at all.
+- A modal opened from within another modal, or on a narrow/mobile viewport, could render behind
+  it instead of on top. No shared z-index scale existed; one is now the single source of truth.
+- **Deleting a user account failed with a 500 for any account that had ever had a file
+  transcribed** — effectively every real account. Speakers were bulk-deleted before the
+  transcript segments referencing them, and that foreign key has no cascade, so the delete
+  always failed with a constraint violation the generic exception handler reported as an
+  unhelpful, unnamed error.
+- A media download could hang for up to 15 minutes waiting on a server-sent-events stream that
+  would never publish. The per-file "prepare in progress" guard was set before dispatching the
+  prepare task, but nothing released it on completion.
+- The admin audit log for auth-configuration changes could throw when the change's author was a
+  since-deleted user — the ORM model still declared the author column non-nullable after a
+  migration made it nullable in the database.
+- Three `db_helpers`-adjacent chat query functions held a Postgres session open while waiting on
+  OpenSearch or an LLM response (session-open wall time 1473–1672ms → 255–520ms; idle-in-
+  transaction time 355–400ms → 0–5ms) — the same session-hold pattern that had already wedged
+  the dev database twice in one day by queuing a migration behind an idle-in-transaction
+  session.
+- **Two unquoted `.env.example` values broke bash on a fresh install.**
+  `OIDC_SCOPES=openid email profile` (unquoted spaces made every `opentr.sh` invocation try to
+  run `email` as a shell command, printing `.env: line NNN: email: command not found`) and
+  `LDAP_USER_SEARCH_FILTER=(sAMAccountName={username})` (unquoted parentheses are bash array
+  syntax, silently turning the value into a one-element array instead of a string). Both are now
+  quoted.
+
+### Performance
+
+- **On the native diarization engine, transcription and diarization now run concurrently
+  instead of back-to-back** (`max(transcribe, diarize)` instead of the sum) — measured
+  87.8s → 50.3s (43% faster) on a 66.5-minute test clip, byte-identical output verified.
 
 ## [0.5.0] - 2026-08-10
 
@@ -386,6 +652,37 @@ A tag was either yours alone or published to the whole deployment, so giving one
 - **Tags travel with shared media**, computed from the file rather than copied — so unsharing removes them again with no cleanup step, and a second person tagging a shared file reuses the existing tag rather than adding the same word twice.
 - **Tag management is a modal** beside Collections, with search, sort, a create field, the files each tag touches, and bulk chips shared with the collections modal. AI tag review was removed: it asked users to judge a tag with no media on screen, which is the file detail page's job.
 
+#### Release engineering (`scripts/release.sh`)
+
+- **The release process is now a staged, resumable, agent-drivable command sequence instead of
+  a prose checklist.** `scripts/release.sh` is a thin dispatcher over `scripts/release/NN-<stage>.sh`
+  stage scripts (`preflight → bump → verify → test → build → scan → rehearse → tag → publish →
+  smoke → promote → finish`), each independently runnable via `status | explain <stage> |
+  <stage> | run <version> [--skip|--only|--from] [--dry-run] [--json] [--yes]`. A release ledger
+  under `.release/<version>/steps/` records status, operator, SHA and any override per stage, so
+  a release that dies partway through resumes rather than restarting from zero. `tag`, `publish`,
+  `promote` and `finish` are the only stages that reach outside the repo — they refuse without
+  `--yes` and each carries an `ask` rule in `.claude/settings.json`.
+- **Derived version facts replace hand-maintained tables that rot.** The Alembic head is now
+  derived from the `down_revision` graph (previously `grep '^revision' | tail -1`, which sorted
+  by filename and only worked by luck once the id chain became non-contiguous); FROM/TO versions
+  for the upgrade-rehearsal scenario are self-derived from the `VERSION` file and the newest git
+  tag that also has published Docker Hub images.
+- **Runtime version verification**: a new public, DB-free `GET /api/version`
+  (`{version, git_sha, build_time, api_version}`) and `/health/ready` now always report
+  `schema`/`schema_revision`/`schema_head`, so the harness can assert "a container started"
+  really means "the new code, at the new schema, is running" rather than trusting a tag.
+- **Schema-drift gate**, scoped to categories that actually raise at runtime rather than a
+  hand-maintained allowlist.
+- **Reproducible installs**: `setup-opentranscribe.sh --version vX.Y.Z` / `--branch <ref>` pins
+  every download call to that ref; the default resolves to the latest **published GitHub
+  Release** (not the newest tag, since images are promoted after the tag lands) and never
+  silently falls back to `master` on a resolution failure.
+- **Real-speech release-test fixtures**: both release scenarios derive two 45-second speech
+  clips from an existing repo test asset and gate on them in `preflight`, closing a gap where a
+  rehearsal would have failed at the upload step (synthetic tone audio transcribes to empty
+  segments).
+
 ### Fixed
 
 #### Search by tag never worked (PR #381)
@@ -410,8 +707,14 @@ Redis pattern deletes now use `SCAN` rather than `KEYS`, which is O(keyspace) *a
 - **Projects** (issue #360, migration `v376`): group conversations by client, recurring meeting or case. A project pins a **default transcript scope** every chat inside it inherits — so a project pinned to a client's collection searches that client's recordings without re-picking context — and a **project-level instruction layer** carrying standing background. Deleting a project **keeps its conversations** (`ON DELETE SET NULL`); they become ungrouped. `chat_conversation.project_id` is nullable, so every existing conversation is unaffected.
 - **Per-conversation answer length and focus** (issue #359): `max_tokens` and `top_p` alongside the existing creativity and model controls, behind an *Advanced* disclosure. The reply budget is resolved **before** the prompt is built, since prompt assembly reserves context for the answer; it is clamped to the model's window and any plan cap rather than failing the request. `top_p` is omitted entirely when unset, because some models reject sampling parameters outright.
 - **Per-user RAG preferences**: users can lower *Excerpts per answer* and turn *Rerank excerpts* off for their own chats. Both are **ceilings, never overrides** — applied after the tenant limit so a preference can only tighten what the administrator allows. Reranking is one-way: it can be switched off, never on when the admin has it off.
-- **Mock LLM provider for development and testing**: `./opentr.sh start dev --with-mock-llm` runs an OpenAI-compatible server on the app network so chat and AI features work without a GPU, an API key, or an internet connection. Scenario models (`mock-echo` returns the prompt it was given, `mock-error`, `mock-empty`, `mock-slow`) drive the app's real error paths, and the pytest fixtures fall back to a subprocess so CI needs no setup.
+- **Mock LLM provider for development and testing**: `./opentr.sh start dev --with-mock-llm` runs an OpenAI-compatible server on the app network so chat and AI features work without a GPU, an API key, or an internet connection. Scenario models (`mock-echo` returns the prompt it was given, `mock-error`, `mock-empty`, `mock-slow`) drive the app's real error paths, and the pytest fixtures fall back to a subprocess so CI needs no setup. `./opentr.sh start dev --with-llm-test` is its GPU-backed sibling — a real, lightweight model (vLLM by default, an Ollama profile as an alternative) on an isolated GPU, for testing chat against genuine model output.
 - **LLM streaming** is new across the board: `LLMService.chat_completion_stream()` with parsers for OpenAI-style SSE, Anthropic events, and Ollama NDJSON, plus stop-generation, a first-token watchdog, and token accounting (estimated where a provider does not report usage).
+- **Collapsible reasoning/thinking display**, collapsed by default (Open WebUI-style), for
+  providers that stream their reasoning separately from the final answer — vLLM/OpenRouter
+  `reasoning_content`/`reasoning`, Anthropic extended-thinking `thinking_delta` blocks, and
+  Ollama's `message.thinking`. Providers with no dedicated reasoning field are handled by an
+  incremental `<think>...</think>` extractor that correctly reassembles a tag split across
+  stream chunks, so the answer never leaks unparsed thinking text.
 - **Optional retention**: `chat.retention_days` (default 0 = keep forever) with a daily beat sweep. Conversations join GDPR erasure in both the account and org-member paths.
 
 #### Amazon Bedrock provider
@@ -434,6 +737,23 @@ Redis pattern deletes now use `SCAN` rather than `KEYS`, which is O(keyspace) *a
 - A tenant limit can only ever **tighten** an operator's setting, never widen it. The model allowlist is enforced server-side, because the per-conversation model comes from a user-supplied setting.
 - New `chat.ungrounded` capability gates the *"use my transcripts: off"* toggle. Enabled everywhere by default — it has legitimate uses — and when disabled it **degrades to a grounded answer rather than rejecting the request**.
 - Migration `v374`; new capability key `chat.rag` (community default: on); 141 new i18n keys across all 8 locales.
+
+#### Unified in-app search foundation (PR #282)
+
+- **One search primitive, one behaviour, everywhere.** A new shared search bar component
+  (counter, prev/next, two-phase loading spinner, i18n labels) and shared fuzzy-match utilities
+  (fuse.js-backed, diacritic/case folding) replace ad hoc find-in-page logic duplicated across
+  the transcript viewer and summary panel.
+- **The transcript find bar now sees matches beyond the loaded page.** It instantly highlights
+  the currently-loaded window, then resolves a debounced, file-scoped `GET /search/count` (a
+  lightweight `size=0` OpenSearch query, ~20ms vs ~85ms for a full search) to show an `N of M+`
+  indicator and drive progressive load-more when matches exist outside what's rendered. The
+  summary panel's find bar is a thin wrapper (the whole summary is already in memory, so its
+  find stays complete).
+- **macOS-style search over Settings**: a search box above the sidebar tabs replaces the grouped
+  nav with ranked, highlighted results as you type; selecting one jumps to the section and
+  flashes the matched control. Built from the i18n key tree, so it works in all supported
+  locales, respects capability/edition gating, and required no edits to any settings panel.
 
 #### Open-core cloud seams & strict edition separation (PR #250)
 
@@ -475,6 +795,21 @@ Redis pattern deletes now use `SCAN` rather than `KEYS`, which is O(keyspace) *a
   allow-list, each carrying a written reason. `docs/KEYCLOAK_SETUP.md` → `docs/OIDC_SETUP.md`
   (the old path is a redirect stub), and `docs-site/docs/authentication/keycloak.md` →
   `oidc.md` likewise.
+- **OIDC provider presets**: a "Provider preset" dropdown (Keycloak, Authentik, Entra ID, Okta,
+  Google Workspace, Generic) at the top of the OIDC settings panel fills the roles claim,
+  scopes, and (where applicable) discovery URL to the known shape for that provider — addressing
+  the most common silent-failure class (wrong claim path → login succeeds → groups/roles come
+  back empty → nobody notices until permissions are wrong). Authentik, Entra and Okta presets
+  surface their known caveats (Authentik's hardcoded `email_verified: false`, Entra's
+  GUID-shaped groups claim, Okta's opt-in groups claim) at configuration time. OIDC Test
+  Connection now also reads the provider's discovery document `claims_supported` and reports
+  whether the configured roles-claim path is advertised (yes/no/unknown), rendered as a claims
+  panel in the settings UI.
+- **Guided first-run setup wizard (#28)**: shown once to the bootstrap `super_admin`, surfacing
+  the three settings a first-time operator actually needs (password change, SSO/LDAP setup, and
+  the MFA-required/login-banner/approval-on-signup security defaults) instead of leaving them to
+  discover dozens of auth-related env vars and several admin tabs unassisted. It presents
+  existing settings screens rather than duplicating them.
 - **The identity-source model (issue #354)** — `local_enabled`, `allow_registration`, per-user
   `auth_type` + `allow_local_fallback`, and `pki_allow_password_fallback` as a deployment ceiling
   over the per-user flag. Previously `/token` always accepted a local password, so an
@@ -743,6 +1078,56 @@ Redis pattern deletes now use `SCAN` rather than `KEYS`, which is O(keyspace) *a
 - **Backend tests in CI + a canonical local test gate (issues #21/#123)**: GitHub Actions now runs the backend unit/API suite on every PR (fresh PostgreSQL service, CPU-only requirements) alongside the frontend vitest job; `./scripts/run-integration-tests.sh` is the canonical local pre-merge gate (the ungated suite plus every gated security suite in both FIPS modes plus integration-marked tests); MinIO/OpenSearch-backed tests auto-enable when the live dev stack is reachable and skip cleanly otherwise; and the Playwright E2E suite gained upload, search, settings, and transcript-editing coverage with a shared one-login-per-session auth state.
 - **Engine benchmark suite (`./opentr.sh bench`)**: a durable end-to-end benchmark orchestrator that exercises the real stack in an isolated `otbench` compose project (frozen image code, fresh volumes — physically separate from live data), with single-file and queue-throughput phases plus a collate step, a fixed mixed benchmark corpus (`--corpus-file`, `--profile`, `--shuffle`), a resumable checkpointed GPU soak orchestrator with a watchdog for unattended auto-resume, dual-GPU phases, and a latency/contention collator view. An opt-in `FFMPEG_THREADS` cap protects low-core deployments from ffmpeg oversubscription. Collated results live in `docs/BENCHMARK_RESULTS.md`.
 
+#### Pre-ship functional fixes
+
+- **The Certificate Info panel in Settings never showed anything, for every PKI-authenticated
+  user** (#397, #398). It read a user-store field nothing ever populated — the metadata lives
+  behind a dedicated endpoint no call site used. The component now fetches its own data, gated
+  to PKI logins so non-PKI sessions pay nothing.
+- **A watch source's "skip files older than N days" setting couldn't be turned off.** The
+  age-skip column had a database default that silently overrode an explicit "no limit" value
+  from the UI, so a deployment intending to import everything kept silently skipping old files.
+- **Four defects in the install/upgrade/model-download path.** The model downloader hardcoded
+  the `:latest` backend image, silently defeating version pinning; its "models already exist?"
+  prompt had no unattended guard, hanging an automated install indefinitely; its exists-check
+  threshold contradicted the script's own definition of a partial download, so an interrupted
+  download was reported complete and the user hit missing weights at first transcription
+  instead of at install time; and the advertised model list had drifted, silently omitting the
+  chat reranker and redaction models from the printed summary.
+- **A quarantined (DMCA/abuse-takedown) file displayed the literal text
+  "FileStatus.QUARANTINED"** in the gallery and file-detail UI instead of a real status (#301).
+- **A WebSocket connection held a pooled Postgres connection, in an idle uncommitted
+  transaction, for the connection's entire lifetime** — hours, for a normal browser tab. DB
+  access was only needed for the few-millisecond auth check at the top of the handler; the idle
+  transaction held whatever locks its snapshot acquired, which is what stalled a pending schema
+  migration for roughly 15 minutes during development.
+- **Uploading a file over 2 GB was accepted alone but rejected as "too large" when dropped
+  alongside a second file** (#298). Two different maximums existed for the two code paths; both
+  now read one 15 GB ceiling from a single source of truth.
+- **A truncated SMB watch-source download was silently accepted as a complete file, transcribed,
+  and stored with no trace above debug level** (#293). The byte-count mismatch was raised inside
+  a `try` whose broad `except` (there to tolerate servers where `stat()` is unavailable)
+  swallowed it. Because content-hash fingerprinting hashes the truncated bytes, a later
+  re-import of the complete file wasn't recognized as a dedup case either.
+- **Duplicate detection silently stopped working for uploads above ~4 GB**, with no error shown
+  anywhere, on a UI advertising a 15 GB limit. The browser-side fingerprint worker hashed via
+  `file.arrayBuffer()`, which Chrome throws `NotReadableError` on above roughly 4 GB; because
+  hashing is optional and the failure was swallowed, the upload still succeeded and just skipped
+  dedup — for exactly the largest files, where re-transcribing a duplicate is most expensive.
+- **Cloud (pyannote.ai) and local diarization speaker-label normalization crashed with an
+  unguarded `TypeError`, and AWS Transcribe access keys were not forwarded** (#299, #300).
+- **Every PostgreSQL-backed panel on the Product & Usage Grafana dashboard rendered "No data"**,
+  while the Prometheus ops dashboard worked. Grafana 12 renamed the built-in PostgreSQL
+  datasource plugin id; the provisioning file and all 14 panel datasource references still used
+  the old id, so panel query routing failed even though the datasource itself resolved.
+- **The first-run setup wizard could block a user from changing their own password.** Clicking
+  "Change my password" inside the wizard navigated to the Profile & Security page but left the
+  wizard modal open on top of it, covering the form it had just navigated to.
+- **A bulk-export could appear to hang forever with the ZIP already sitting ready in object
+  storage.** A check→subscribe race let a worker publish its "completed" pub/sub event before
+  any subscriber existed for it — the bulk-export twin of the already-documented download SSE
+  lost-wakeup race, fixed the same way (re-check after subscribing).
+
 ### Changed
 
 - **Removed the write-only `reactiveFile` store from the file-detail page (issue #338)**: `frontend/src/routes/files/[id]/+page.svelte` declared `const reactiveFile = writable(null)` — a page-local `const`, never exported — and wrote to it 13 times. Nothing subscribed: no `$reactiveFile`, no `.subscribe()`, no importer. A store with no subscribers does nothing on `.set()`, so all 13 calls were inert, and they actively misled review (a reader sees `reactiveFile.set(file)` after a mutation and concludes the UI will refresh). The real update path is the page's own `file` assignment/invalidation propagating to its children — which is what `frontend/src/components/fileDetail/CLAUDE.md` already documented as the pattern. The store, its 13 writes, the `setReactiveFile` member of `FileNotificationContext`, its 3 call sites in `$lib/fileDetail/notificationHandler.ts`, and the doc comment that described it as the websocket integration point are all gone. `setFile` is untouched — it performs the real `file = ...` assignment and is load-bearing.
@@ -814,6 +1199,32 @@ Redis pattern deletes now use `SCAN` rather than `KEYS`, which is O(keyspace) *a
 - **Media-file formatting validates once**: `FormattingService.format_media_file` ran two full Pydantic passes plus a dump per row (~200 validations for a 100-item gallery page); it now validates once and applies the pre-formatted display fields with `model_copy(update=...)`. Measured **7.02 ms → 4.92 ms median per 100-row page (−30%)** with byte-identical JSON output. `format_transcript_segment` was measured too and deliberately left alone — the same change there was inside the noise (44.6 → 44.2 ms per 1000 segments).
 - **Upload prep batches its lookups**: `add_file_to_collections` and `add_tags_to_file` issued two queries per named collection/tag. Both now resolve with `IN (...)`: **6 collections 12 → 2 SELECTs**, **5 tags 10 → 3**, and 20 tags still costs 3. The same helpers back yt-dlp playlist ingestion and watch-source auto-import, which call them once per imported file.
 
+#### Frontend request-path & bundle hardening (issue #284 Phase 2 — A2.1-A2.3)
+
+- **Locale bundle no longer ships all 8 languages to every visitor**: locale data was
+  static-imported into one ~2.1 MB (527 KB gzip) chunk sitting in the entry graph, so every
+  visitor downloaded every language to read one. Locales now load per-language, fetched on
+  demand and merged in before rendering starts (no flash of unstyled content, since rendering is
+  already gated behind locale initialization). Measured first-paint JS (entry + layout + home
+  route): **4,283,527 B → 2,089,254 B raw (−51%), 1,120,007 B → 591,848 B gzip (−47%)**, plus one
+  lazily-fetched ~242 KB locale chunk.
+- **Transcript reading-progress no longer re-queries the DOM on every scroll event**: an
+  unthrottled scroll handler ran a full-list DOM query plus a forced-layout read on every event.
+  Replaced with an `IntersectionObserver` over the same rows (no scroll listener, no DOM query,
+  no forced layout); both segment lists are now keyed, fixing a second latent bug where unkeyed
+  pagination re-patched every row instead of appending and could attach edit/highlight state to
+  the wrong segment.
+- **The FFmpeg client-side wrapper no longer loads on every gallery visit**: it was
+  static-imported into the home-route bundle for an opt-in, rarely-used video→audio extraction
+  path. Now a dynamic import behind first use, in its own 13 KB chunk.
+- **Video-file hashing during audio extraction moved off the main thread**: extraction had its
+  own hashing call on the whole file buffer — on the largest files the app accepts (up to 15 GB
+  video), risking an allocation failure and freezing the tab for the hash duration with no
+  progress indication. Now reuses the existing worker-based hashing path uploads already use.
+- **Long transcripts skip layout/paint for off-screen rows**: `content-visibility: auto` on
+  transcript segments, chosen deliberately over JS windowing so infinite-scroll, search-scroll-to,
+  seek-to-playhead and highlight-flash keep working unchanged.
+
 #### Other
 
 - **Backend read-path query reduction (measured)**: the new `db_queries_per_request` instrumentation surfaced duplicate queries on hot paths, which were then eliminated — file detail **18 → 11** queries (−39%) and the segments endpoint **13 → 6** (−54%). The dominant win was the content-redaction admin policy load going from 8 sequential `get_setting` SELECTs to a single batched `get_settings_map` SELECT (it runs on every transcript read), plus `selectinload`/`joinedload` on the speaker-and-profile relationships. `EXPLAIN` confirmed every hot lookup is already indexed, so no new index was warranted.
@@ -873,6 +1284,29 @@ Also fixed: the E2E API session never sent a CSRF token, so every mutation retur
 
 - The Anthropic default fell through to `claude-3-haiku-20240307` (deprecated) because no values file pins a model; it is now `claude-haiku-4-5`. `OPENROUTER_MODEL_NAME` likewise moves from `anthropic/claude-3-haiku` to `anthropic/claude-haiku-4.5` — note OpenRouter's slug uses a **dot** where the first-party ID uses dashes.
 
+#### Chat: additional pre-ship defects
+
+- **An answer with excerpts trimmed to zero by the token budget rendered as an ordinary,
+  unqualified answer** (#384), with no indication it was ungrounded.
+- **Citations could be shown for excerpts the model was never actually given.** The excerpt
+  budget was computed *after* the citation list was already built, so when the budget resolved
+  to 0 the prompt fell through to a bare question while numbered citations were already on the
+  wire — reachable in ordinary use on small local models with a modest context window.
+- **Scoping a chat conversation by tag silently dropped shared recordings that matched it.**
+  Tag scoping filtered on the caller's own ownership, unlike collection scoping (which already
+  resolved through the accessible-files permission check), so a tag spanning files shared with
+  the caller was silently truncated to only their own.
+- **Chat could keep citing a file after it was deleted or quarantined**, for up to the
+  retrieval cache's 5-minute lifetime. A corpus-version marker mixed into the cache key now
+  invalidates on every index write/delete.
+- **Sending a chat message threw an unhandled error and did nothing, on any deployment served
+  over plain HTTP that isn't `localhost`** — a non-secure browser context, where
+  `crypto.randomUUID` doesn't exist. Also fixed: an invisible chat send-icon, and the same
+  secure-context gap in three other components' clipboard calls.
+- **Chat showed "Connect an AI provider to start chatting" even with a fully working, verified
+  LLM configured**, whenever the user logged in without a full page reload (the normal path) —
+  the status store only initialized once per browser session, before any login.
+
 #### Transcript and speaker curation now render a single source of segment data (issue #352, PR #356)
 
 - **Renaming a speaker saved to the database and then did nothing on screen** — only a full page reload showed the new name. Editing a segment's text and reassigning a segment's speaker were broken the same way, and both failed silently. The page rendered from `file.grouped_segments`, whose `GroupedTranscriptSegment` schema **embedded a full copy of every segment it grouped**, while every optimistic update patched `file.transcript_segments` — a different set of objects. Groups now carry `segment_uuids` and `TranscriptDisplay` resolves them against the flat list, so there is one segment object per segment and a patch cannot miss it. The payload shrinks rather than doubling, and the client-side grouping fallback is deleted (a second implementation of the grouping rule is what let the two representations diverge unnoticed). Measured on the dev stack with the write stubbed at the network boundary: before, **0 of 28 labels repainted, ever**; after, **28 of 28 in ~31 ms** (37 ms dark) after the PUT resolves. All segment mutations now go through `$lib/fileDetail/segmentSync`.
@@ -897,6 +1331,30 @@ Also fixed: the E2E API session never sent a CSRF token, so every mutation retur
 - **Out-of-range LLM temperature reported the wrong error**: the range check sat inside the float-conversion `try`, so its message was swallowed and re-raised as "must be a valid number".
 - **Production images report their real version**: `/health` and the admin About panel showed `"unknown"` for Docker Hub images because the `VERSION` file was never inside the image build contexts. `Dockerfile.prod`/`Dockerfile.lite`/`Dockerfile.blackwell` now accept an `APP_VERSION` build arg (baked as env), and `scripts/docker-build-push.sh` passes the release version to every backend build.
 - **Frontend prod-image healthcheck probes `127.0.0.1`**: under `read_only` container deployments nginx can't enable its IPv6 listener, so the healthcheck's `localhost → ::1` resolution was refused and the container reported permanently unhealthy while serving fine on IPv4.
+
+#### Frontend hardening — issue #284 Phase 3 (A3.x)
+
+- **security:** Closed the last unsanitized `{@html}` interpolation and a `window.open`
+  opener-leak class (A3.2). An audit of every `{@html}` call site found one that bypassed the
+  existing DOMPurify allowlist, safe only by coincidence (the interpolated value happened to be
+  a formatted byte count); i18next's `escapeValue: false` means nothing else was escaping it.
+  Also closes reverse-tabnabbing exposure from `window.open` calls missing `noopener`.
+- **70 CSS custom properties were referenced across the app but never declared anywhere**
+  (A3.x). `var(--x)` with no fallback is invalid at computed-value time, so the whole
+  declaration silently drops — 15 sites painted no background at all, plus two more properties
+  missing at 11/11 and 13/14 of their reference sites, across both light and dark themes. A
+  sweep of every reference against actual declarations found and fixed all 70.
+- **WebSocket reconnects synchronized into a thundering herd after any backend restart, and
+  stale search responses could clobber a newer query's results** (A3.7). Reconnect backoff was
+  un-jittered, so every client dropped by a restart retried on the same grid and hit the server
+  as a synchronized burst on each tick; a jittered backoff now decorrelates clients. A second,
+  related race let an in-flight search response for an earlier query overwrite the results of a
+  newer one the user had already typed.
+- **Every production page load ate an unnecessary 404** (A3.8). The app registered a service
+  worker that never existed in the production build — the plugin that wrote it during the
+  bundle step ran before the static-adapter's final output, which discarded it. Removed rather
+  than repaired. The same pass also fixed an unhashed `theme.js` and a version-skew issue
+  between built assets.
 
 ### Security
 
@@ -930,6 +1388,70 @@ A production user reported that LDAP was enabled yet users could still self-regi
 that turned up a set of defects across the authentication surface, listed here by class and
 impact. Everything below is fixed in this release.
 
+- **PKI certificate revocation checks could be defeated by a malformed or forged OCSP
+  response.** OCSP signature verification "soft-failed" to *verified* from its catch-all
+  handler, so a forged GOOD response — or any malformed one that made verification raise — was
+  accepted as proof of non-revocation and skipped the CRL cross-check entirely, defeating
+  `PKI_REVOCATION_SOFT_FAIL=false`. **A revoked client certificate could authenticate.** An
+  unrecognised signature algorithm, an unsupported key type, and a downloaded CRL with no loaded
+  issuer certificate (trusted with no signature check at all) had the same class of bug. All
+  four now fail closed, falling through to CRL and then the configured soft-fail policy.
+- **OIDC group sync could silently demote an admin or bypass allow/block lists when the
+  provider withholds groups.** Entra ID omits the groups claim entirely above 200 memberships;
+  Google never emits one on any token. Both looked identical to "this identity has no groups,"
+  which silently demoted a group-derived admin and silently bypassed the allowed/blocked group
+  lists. The claims parser now detects both provider signatures and fails loudly instead of
+  resolving to an empty group list.
+- **A forced password-change could permanently lock a user out on a deployment with no mail
+  transport** (the shipped default). Three paths set the force-change flag but only one cleared
+  it — an emailed reset link — so the route the forced-change screen itself calls updated the
+  password but never cleared the flag, holding the user on the same screen after every
+  successful change until their password-reuse-history budget was exhausted with no way back in.
+- **Content redaction could fail open on four paths beyond LLM egress** — display and export,
+  not the LLM-masking gap fixed elsewhere in this list: a formatting helper wrote raw DB text
+  before applying the mask; a redaction-config resolution failure returned "redaction is off" to
+  every downstream reader with no compliance audit event; the same failure on the subtitle-export
+  path skipped the admin force-export-redacted floor entirely, so SRT/VTT/TXT exports could ship
+  fully unredacted; and an in-place subtitle-masking failure silently left raw text in place
+  under a swallowed exception. All four now fail closed.
+- **A failed GDPR erasure of biometric voiceprint data was recorded as a completed erasure.**
+  Voiceprint erasure logged an OpenSearch failure and returned without touching the caller's
+  error list, so an Art. 17 erasure whose OpenSearch step failed — including simply "OpenSearch
+  unavailable" — was recorded as SUCCESS while the speaker's voiceprint embeddings remained
+  indexed. Failures now propagate into the audit outcome as PARTIAL. A snippet-redaction config
+  failure in hybrid search had the same shape: it returned unmasked snippet text instead of
+  withholding it (profanity/custom-wordlist scope only, not PII).
+- **An unreachable OpenSearch cluster could be indistinguishable from "the index doesn't
+  exist" — and that ambiguity drove index deletion.** Several index-introspection helpers caught
+  every exception and returned a default empty/absent result, so a genuine connection, auth, or
+  config failure looked identical to "empty index." The alias-migration path used exactly that
+  signal to decide which of two speaker indices to delete when reconciling — a live index could
+  be deleted believing it was empty. Every destructive branch now requires a confirmed count and
+  aborts rather than assuming absence.
+- **There was no server-side ceiling on upload size on the presigned upload path.** The
+  advertised 15 GB limit lived only in the browser; the presigned flow PUTs bytes browser→MinIO
+  directly, bypassing the API entirely. A server-side ceiling is now enforced twice — against
+  the client-declared size at prepare time, and against the size MinIO actually observed at
+  completion (the authoritative check) — with the object and DB row cleaned up on rejection.
+- **A crafted watch-source filename could inject arbitrary extra inputs into an ffmpeg
+  multi-part stitch.** The concat-list builder escaped single quotes, but the concat demuxer's
+  list format has no escape for a newline — a filename containing one terminates its directive
+  early and the remainder parses as attacker-chosen further directives. Watch-source filenames
+  originate from untrusted remote SMB/S3 listings; such paths are now refused outright. In the
+  same pass: `super_admin` was excluded from watch-source authorization checks (a raw
+  `role == "admin"` comparison instead of the canonical admin check), so a super_admin could not
+  view, list, or reassign another user's watch source.
+- **`python-jose` replaced with `joserfc` across the entire JWT spine.** `python-jose` has had
+  algorithm-confusion CVEs and is effectively unmaintained. The token-purpose-claim binding that
+  closes the MFA half-token bypass above, both FIPS 140-2/140-3 algorithm branches, and the
+  per-user revocation-epoch comparison were all preserved and verified by cross-library interop
+  tests.
+- **The `TESTING`-mode mock-user shortcut could swallow an explicit auth denial.** In a relaxed
+  test environment, the broad exception handler around credential resolution caught the
+  exceptions raised for "no such user" and "inactive user" and replaced them with a fabricated
+  authenticated user — so a **deactivated account** with an otherwise-valid token still got a
+  working session under `TESTING=true`, exactly where the test suite runs. Narrowed to only
+  cover what it was written for: an unavailable database.
 - **MFA could be bypassed with the token the login endpoint hands out before the second factor.**
   Access, refresh and MFA tokens are all signed with the same key, and the request-authentication
   path verified the subject, the JTI and the revocation list but never *what kind of token it

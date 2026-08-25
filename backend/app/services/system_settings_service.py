@@ -228,8 +228,14 @@ def should_retry_file(db: Session, retry_count: int) -> bool:
     if not config["retry_limit_enabled"]:
         return True
 
-    # Check against the system-wide max retries
+    # 0 means unlimited retries -- documented here, in admin.py's settings
+    # response, and in schemas/admin.py's validator message ("0 = unlimited").
+    # `retry_count < 0` is never true, so without this branch an admin setting
+    # 0 meaning "never give up" got the opposite: zero retries, immediately.
     max_retries = config["max_retries"]
+    if max_retries == 0:
+        return True
+
     return bool(retry_count < max_retries)
 
 

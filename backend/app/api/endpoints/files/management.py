@@ -478,10 +478,58 @@ def _handle_delete_action(
 
 
 def _handle_retry_action(
-    db: Session, file_uuid: str, file_id: int, reset_retry_count: bool
+    db: Session, file_uuid: str, file_id: int, reset_retry_count: bool, is_admin: bool
 ) -> BulkActionResult:
-    """Handle retry action for bulk operations."""
+    """Handle retry action for bulk operations.
+
+    Mirrors the single-file `POST /{file_uuid}/retry` above: same status gate (a bulk
+    "retry" on a COMPLETED file used to sail through and `reset_file_for_retry` would
+    delete its transcript segments), same admin-only `reset_retry_count`, and the same
+    ceiling check via `retry_ceiling_message`. This handler used to skip all three, so
+    the ceiling stayed fully bypassable through the gallery's bulk-retry button even
+    after the single-file route was hardened (issue #545-adjacent — a fix landed on
+    fewer than every route reachable for the same action).
+    """
     import os
+
+    from app.models.media import MediaFile
+
+    db_file = db.query(MediaFile).filter_by(id=file_id).first()
+    if not db_file:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="File not found",
+            error="NOT_FOUND",
+        )
+
+    if db_file.status not in [FileStatus.ERROR, FileStatus.CANCELLED, FileStatus.ORPHANED]:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message=f"File cannot be retried in current status: {db_file.status}",
+            error="INVALID_STATUS",
+        )
+
+    if reset_retry_count and not is_admin:
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message="Only an admin may reset the retry count.",
+            error="FORBIDDEN",
+        )
+
+    if not reset_retry_count and not is_admin:
+        ceiling_message = system_settings_service.retry_ceiling_message(
+            db, int(db_file.retry_count or 0)
+        )
+        if ceiling_message:
+            return BulkActionResult(
+                file_uuid=file_uuid,
+                success=False,
+                message=ceiling_message,
+                error="RETRY_CEILING_REACHED",
+            )
 
     success = reset_file_for_retry(db, file_id, reset_retry_count)
     if not success:
@@ -527,12 +575,23 @@ def _handle_reprocess_action(
     db: Session,
     file_uuid: str,
     file_id: int,
+    is_admin: bool,
     stages: list[str] | None = None,
     min_speakers: int | None = None,
     max_speakers: int | None = None,
     num_speakers: int | None = None,
 ) -> BulkActionResult:
-    """Handle reprocess action for bulk operations."""
+    """Handle reprocess action for bulk operations.
+
+    Ceiling check + `reset_retry_count` mirror the single-file
+    `files/reprocess.py::reprocess_file` exactly: a non-admin is blocked once the
+    ceiling is reached (`retry_ceiling_message`), and `reset_file_for_retry` is always
+    called with `reset_retry_count=False` — reprocessing increments the counter like a
+    normal attempt, it never zeroes it, admin or not. This handler used to hardcode
+    `True` for every caller, which zeroed the counter unconditionally and defeated the
+    ceiling on every future retry of the file too, including through the routes that
+    do enforce it.
+    """
     import os
 
     from app.models.media import MediaFile
@@ -555,13 +614,25 @@ def _handle_reprocess_action(
             error="INVALID_STATUS",
         )
 
+    if not is_admin:
+        ceiling_message = system_settings_service.retry_ceiling_message(
+            db, int(db_file.retry_count or 0)
+        )
+        if ceiling_message:
+            return BulkActionResult(
+                file_uuid=file_uuid,
+                success=False,
+                message=ceiling_message,
+                error="RETRY_CEILING_REACHED",
+            )
+
     if stages:
         # Selective reprocessing
         from app.api.endpoints.files.reprocess import clear_selective_data
         from app.api.endpoints.files.reprocess import dispatch_selective_tasks
 
         if "transcription" in stages:
-            success = reset_file_for_retry(db, file_id, True)
+            success = reset_file_for_retry(db, file_id, False)
             if not success:
                 return BulkActionResult(
                     file_uuid=file_uuid,
@@ -584,7 +655,7 @@ def _handle_reprocess_action(
         return BulkActionResult(file_uuid=file_uuid, success=True, message=message)
 
     # Full reprocess (backward compatible)
-    success = reset_file_for_retry(db, file_id, True)
+    success = reset_file_for_retry(db, file_id, False)
     if not success:
         return BulkActionResult(
             file_uuid=file_uuid,
@@ -816,11 +887,11 @@ def _process_single_file_action(
         "delete": lambda: _handle_delete_action(
             db, file_uuid, current_user, force, organization_id
         ),
-        "retry": lambda: _handle_retry_action(db, file_uuid, file_id, reset_retry_count),
+        "retry": lambda: _handle_retry_action(db, file_uuid, file_id, reset_retry_count, is_admin),
         "cancel": lambda: _handle_cancel_action(db, file_uuid, file_id),
         "recover": lambda: _handle_recover_action(db, file_uuid, file_id),
         "reprocess": lambda: _handle_reprocess_action(
-            db, file_uuid, file_id, stages, min_speakers, max_speakers, num_speakers
+            db, file_uuid, file_id, is_admin, stages, min_speakers, max_speakers, num_speakers
         ),
         "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id, current_user.id),
         "redact": lambda: _handle_redact_action(db, file_uuid, file_id),

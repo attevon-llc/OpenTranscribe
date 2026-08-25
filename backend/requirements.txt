@@ -106,6 +106,10 @@ tqdm==4.70.0
 # is also --no-deps below and no longer has pip enforcing that constraint for us.
 transformers==4.57.6
 huggingface-hub==0.36.2
+# Transitive (huggingface_hub, pyannote-pipeline, tldextract, torch, transformers,
+# virtualenv) — pinned after the dependency-parity gate caught the venv and the
+# image resolving different patch releases (issue #492's exact failure mode).
+filelock==3.32.4
 # pandas removed: only used by diarizer/speaker_assigner/reprocess, replaced with
 # DiarizeResult numpy dataclass. Saves ~72 MB. See app/transcription/diarize_result.py.
 # triton removed: openai/triton only needed for torch.compile(backend="inductor") JIT,

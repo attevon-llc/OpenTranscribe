@@ -232,12 +232,13 @@ def test_coexistence_under_simulated_cap(
         gc.collect()
         torch.cuda.empty_cache()
 
-    # Diarization with budget matching the simulated cap headroom.
-    # cap_gb*1024 - 500(cuda) - 750(whisper reserve) = budget_mb
-    budget_mb = max(800, int(cap_gb * 1024 - 500 - 750))
-    os.environ["DIARIZATION_VRAM_BUDGET_MB"] = str(budget_mb)
-
-    with does_not_raise(f"diarization must fit in its {budget_mb} MB share of the cap"):
+    # Diarization must fit in whatever headroom is left under the simulated cap
+    # after Whisper. There is no budget knob to hand it a share explicitly —
+    # DIARIZATION_VRAM_BUDGET_MB was removed in 7ed7456e once Phase-A measurement
+    # showed the fixed EMBEDDING_BATCH_SIZE = 16 pipeline (diarizer.py) already
+    # holds a predictable ~1 GB footprint on its own, so the only real enforcement
+    # left is `set_per_process_memory_fraction` above, applied process-wide.
+    with does_not_raise(f"diarization must fit under the remaining {cap_gb} GB cap"):
         d = SpeakerDiarizer(cfg)
         d.load_model()
         d.unload_model()

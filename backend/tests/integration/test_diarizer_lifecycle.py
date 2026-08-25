@@ -9,8 +9,12 @@ Asserts three invariants:
    Measured floor is 300 MB on (torch 2.8.0+cu128, driver 580.126, A6000);
    tolerance = 350 MB. Any regression above this means new unreleased
    state was introduced in Transcriber.unload_model or its callees.
-3. DIARIZATION_VRAM_BUDGET_MB env var propagates through settings ->
-   _apply_vram_policy -> fork pipeline.vram_budget_mb.
+3. SpeakerDiarizer's embedding batch size is pinned at EMBEDDING_BATCH_SIZE = 16
+   (superseding the earlier DIARIZATION_VRAM_BUDGET_MB budget-aware auto-scaler,
+   removed in 7ed7456e once Phase-A measurement showed bs=16 matches larger
+   batches on throughput/DER at a fraction of the VRAM — see
+   docs/diarization-vram-profile/README.md). PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE
+   is set to match, so pyannote's own batching agrees with ours.
 
 Run (in-container):
 

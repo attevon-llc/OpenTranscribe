@@ -379,8 +379,6 @@ OPENSEARCH_EMBEDDING_MODELS = {
 # Default OpenSearch neural model for new installations
 OPENSEARCH_DEFAULT_MODEL = "huggingface/sentence-transformers/all-MiniLM-L6-v2"
 
-# Neural ingest pipeline name
-OPENSEARCH_NEURAL_PIPELINE = "transcript-neural-ingest"
 
 # WebSocket notification types for search
 NOTIFICATION_TYPE_REINDEX_PROGRESS = "reindex_progress"

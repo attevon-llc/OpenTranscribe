@@ -235,6 +235,22 @@ rather than guess.
 
 ![Chat conversation with numbered citations, source list, and expandable Details](/img/screenshots/chat/02-chat-conversation-with-citations.png)
 
+## Reasoning / thinking display
+
+Some models stream their reasoning separately from the final answer. When the configured
+model supports that, its reasoning appears above the answer in a **collapsed-by-default**
+panel (Open WebUI-style) — expand it to see the model's intermediate thinking, or leave it
+collapsed and read only the answer.
+
+Whether a model exposes reasoning at all is a **measured, per-model capability**, not a guess:
+OpenTranscribe determines and records it rather than assuming every model of a given provider
+behaves the same way. Where a provider streams reasoning through a dedicated field, that field
+is what drives the display — vLLM/OpenRouter's `reasoning_content`/`reasoning`, Anthropic's
+extended-thinking `thinking_delta` blocks, and Ollama's `message.thinking`. Providers with no
+dedicated reasoning field are handled by an incremental `<think>...</think>` tag extractor that
+reassembles a tag even when it is split across stream chunks, so unparsed thinking text never
+leaks into the visible answer.
+
 ## Working with a conversation
 
 | Action | Where |

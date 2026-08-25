@@ -423,6 +423,25 @@ OpenTranscribe includes features that map to NIST 800-53 controls:
 
 Classification banners are configurable in **Admin > Settings > System > Classification Banner**.
 
+### GDPR Compliance
+
+Erasure (Art. 17) previously destroyed data but left no durable record that a request had ever
+been made or fulfilled — which made Art. 30(1)'s demonstrability requirement and Art. 12(3)'s
+one-month deadline both impossible to prove against. An **erasure-ledger** now records that an
+erasure was requested, one row per request, with the SLA clock on it.
+
+- **No free-text column, by design.** Every column is a short, `CHECK`-constrained enum
+  (subject type, status, actor kind, deferred reason) — there is nowhere to put an email or any
+  other personal data even by accident, so the ledger itself can never become a copy of the PII
+  it is documenting. The subject is identified only by surrogate database keys, which are
+  meaningless once the row they point at is destroyed.
+- **Legal-hold re-erasure.** A file under a legal hold (Art. 17(3)(e)) is deferred rather than
+  erased immediately; once the hold is lifted, the deferred entry is re-erased rather than
+  silently forgotten.
+- **Restore reconciliation.** Restoring a database backup taken before an erasure can resurrect
+  the erased subject. A reconciliation task re-checks every completed ledger entry against the
+  live schema after a restore and re-erases any subject it finds has come back.
+
 ## Secrets Management
 
 ### Protecting the .env File

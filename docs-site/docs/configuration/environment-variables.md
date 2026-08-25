@@ -777,9 +777,19 @@ deployment on EC2/ECS/EKS provisions no secret at all. Required IAM actions:
 ### Context window
 
 `max_tokens` is a **UI setting**, not an environment variable
-(**Settings → LLM Provider → Max Tokens**). It defaults to **8192**; leaving it
-there silently truncates long transcripts, so raise it to your model's real
-capability.
+(**Settings → LLM Provider → Max Tokens**). It still defaults to **8192**, but a
+**Discover context window** probe (beside Test Connection) now measures the
+model's real maximum instead of making you trust that default: for **vLLM** it
+reads `max_model_len` off `GET /v1/models`, for **Ollama** it reads the model's
+`context_length` off `POST /api/show`. Both are metadata-only calls — no
+generation, no user content — and run only when you click the button, never on
+a schedule. Every other provider (Anthropic, OpenRouter, Bedrock, `custom`)
+reports as unsupported and your configured value stands unchanged. The probe
+never guesses upward — a stale or wrong measurement fails closed to "unknown"
+rather than raising your configured limit for you — so `max_tokens` still needs
+to be raised by hand to match what the probe reports; leaving it at 8192 still
+truncates long transcripts, the probe just makes that visible instead of
+silent.
 
 ## Worker Concurrency and PostgreSQL Tuning
 
@@ -952,7 +962,7 @@ AWS_ASR_MODEL=standard
 | `OPENROUTER_MODEL_NAME` | 🖥️ UI | `vendor/model` slug | `anthropic/claude-haiku-4.5` | Note the `vendor/model` form — a bare model name will not resolve. |
 | `OPENROUTER_BASE_URL` | 🖥️ UI | URL | `https://openrouter.ai/api/v1` | OpenRouter endpoint. |
 | `BEDROCK_REGION` | 📄 env | AWS region id | *(empty)* | Falls back to `AWS_REGION` / `AWS_DEFAULT_REGION`. **No API key exists** — boto3 uses the standard credential chain. The Bedrock *model* is chosen per user in the UI only, so there is no env var for it. |
-| *max tokens / context window* | 🖥️ **UI only** | 512 – 2,000,000 | 8192 | **There is no env var.** Set it at Settings → LLM Provider → Max Tokens. Leaving it at 8192 silently truncates long transcripts. |
+| *max tokens / context window* | 🖥️ **UI only** | 512 – 2,000,000 | 8192 | **There is no env var.** Set it at Settings → LLM Provider → Max Tokens. A **Discover context window** probe (vLLM/Ollama only) can measure the model's real maximum for comparison, but never raises this value for you — leaving it at 8192 still silently truncates long transcripts. |
 
 #### Example — local Ollama on the same host
 

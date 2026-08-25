@@ -111,6 +111,17 @@ instead of logging in".
 
 ## Per-provider settings
 
+:::tip Provider preset
+A **Provider preset** dropdown at the top of the OIDC settings panel (Keycloak, Authentik,
+Entra ID, Okta, Google Workspace, Generic) fills the roles claim, scopes, and — where
+applicable — discovery URL to the known-good shape for that provider in one step, instead of
+copying values out of the table below by hand. This targets the most common silent-failure
+class here: a wrong claim path lets login succeed while groups/roles come back empty, and
+nobody notices until permissions are wrong. The Authentik, Entra and Okta presets also surface
+that provider's known caveat at configuration time — Authentik's hardcoded
+`email_verified: false`, Entra's GUID-shaped groups claim, and Okta's opt-in groups claim.
+:::
+
 **Roles Claim** is the dotted path to the claim carrying group or role names. The default
 `realm_access.roles` is realm-provider–specific; leaving it unchanged elsewhere means the admin
 role never matches and every user lands as a plain `user`.
@@ -270,6 +281,9 @@ discovery could not be fetched and the backend fell back — check the log for
 - **Admin Role** must match the group/role name exactly, case-sensitively.
 - Confirm the claim is actually issued: add the group scope to the provider *and* list it in
   **Scopes**.
+- **Test Connection** now reads the provider's discovery document `claims_supported` and reports
+  whether your configured Roles Claim path is advertised (yes / no / unknown) in a claims panel
+  — check that before assuming the claim itself is the problem.
 
 **Login fails with "Invalid access token" for a user who already has a local account**
 The email-match link was refused. See [Account linking](#account-linking).

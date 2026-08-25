@@ -81,6 +81,21 @@ When you first access OpenTranscribe, you'll see the registration page:
 2. Click "Sign Up"
 3. You're automatically logged in
 
+### Guided First-Run Setup Wizard
+
+The very first account created on a fresh install becomes the bootstrap `super_admin`, and that
+account sees a one-time guided setup wizard on first login instead of the empty gallery. Rather
+than leaving you to discover dozens of auth-related environment variables and several admin
+tabs on your own, it surfaces the three things a first-time operator actually needs:
+
+- **Change your password** from whatever was used during account creation
+- **SSO / LDAP setup**, if you're connecting an identity provider
+- **Security defaults** — MFA-required, login banner, and approval-on-signup
+
+The wizard presents OpenTranscribe's real settings screens rather than a separate duplicate
+flow, so anything you configure here is the same configuration you'd reach from **Settings →
+Authentication** later. It's shown once; closing or completing it won't bring it back.
+
 ### 2. Upload a Media File
 
 1. Click the **"Upload Files"** button in the navbar

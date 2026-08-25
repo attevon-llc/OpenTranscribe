@@ -518,9 +518,22 @@ def is_file_safe_to_delete(db: Session, file_id: int) -> tuple[bool, str]:
     if not media_file:
         return False, "File not found"
 
-    # Check if file has an active task
+    # Check if file has an active task. Deliberately NOT gated on
+    # `media_file.status == FileStatus.PROCESSING` — a selective reprocess of an
+    # already-completed file (search_indexing/analytics/speaker_llm/summarization/
+    # topic_extraction/speaker_clustering) sets `active_task_id` via
+    # `create_task_record`, but that function only flips status to PROCESSING when
+    # the file was previously PENDING, so an in-flight downstream stage on a
+    # completed file leaves status="completed" with a genuinely live task. Requiring
+    # both conditions let `purge_media_file` run concurrently with that task, which
+    # could delete the file (and its OpenSearch chunks, via a delete-by-query that
+    # finds nothing yet) moments before the task's own async write landed — leaving
+    # a permanently orphaned chunk with no MediaFile or Speaker row left to clean it
+    # up. `active_task_id` alone is enough to warrant the Celery check below; the
+    # check itself is what actually confirms liveness, so this only adds coverage,
+    # it never skips a check that used to run.
     active_task_id = media_file.active_task_id
-    if active_task_id and media_file.status == FileStatus.PROCESSING:
+    if active_task_id:
         # Double-check with Celery
         try:
             task_result = AsyncResult(str(active_task_id))

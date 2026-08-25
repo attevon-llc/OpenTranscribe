@@ -85,15 +85,28 @@ def cluster_speakers_for_file(self, file_uuid: str, user_id: int):
         file_uuid: UUID of the media file.
         user_id: Owner user ID.
     """
+    task_id = self.request.id
+
     with session_scope() as db:
         try:
             from app.models.media import MediaFile
             from app.services.speaker_clustering_service import SpeakerClusteringService
+            from app.utils.task_utils import create_task_record
+            from app.utils.task_utils import update_task_status
 
             media_file = db.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
             if not media_file:
                 logger.warning(f"Media file {file_uuid} not found for clustering")
                 return {"status": "skipped", "reason": "file_not_found"}
+
+            # Tracked via active_task_id so `is_file_safe_to_delete` (task_utils.py)
+            # can see this task is live and refuse a concurrent delete — clustering
+            # writes to the same speaker-embedding OpenSearch plane a file delete
+            # cleans up, so an unguarded delete mid-cluster can leave orphaned
+            # embeddings the same way an untracked search_indexing run left orphaned
+            # transcript chunks.
+            create_task_record(db, task_id, user_id, int(media_file.id), "speaker_clustering")
+            update_task_status(db, task_id, "in_progress", progress=0.1)
 
             service = SpeakerClusteringService(db)
             clusters = service.cluster_speakers_for_file(int(media_file.id), user_id)
@@ -106,6 +119,8 @@ def cluster_speakers_for_file(self, file_uuid: str, user_id: int):
             logger.info(
                 f"Clustered speakers for file {file_uuid}: {len(clusters)} cluster assignments"
             )
+
+            update_task_status(db, task_id, "completed", progress=1.0, completed=True)
 
             _send_clustering_file_complete(user_id, file_uuid, len(clusters))
 
@@ -120,6 +135,12 @@ def cluster_speakers_for_file(self, file_uuid: str, user_id: int):
 
         except Exception as e:
             logger.error(f"Error clustering speakers for file {file_uuid}: {e}")
+            try:
+                from app.utils.task_utils import update_task_status
+
+                update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
+            except Exception as status_err:  # noqa: BLE001
+                logger.debug(f"Could not record clustering failure status: {status_err}")
             raise self.retry(exc=e) from e
 
 

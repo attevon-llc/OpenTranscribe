@@ -64,21 +64,34 @@ def send_topic_extraction_notification(
     )
 
 
-def _load_file_context(file_uuid: str) -> dict[str, Any]:
+def _load_file_context(file_uuid: str, task_id: str) -> dict[str, Any]:
     """Phase 1a — identity read (short session, Postgres only).
 
     Returns **plain data only**; no ORM instance escapes. An escaping instance
     would lazy-load during the provider call and silently reopen a transaction.
+
+    Also records the task via ``create_task_record``, which sets
+    ``MediaFile.active_task_id`` — this task previously ran with no such tracking
+    at all, so ``is_file_safe_to_delete`` (task_utils.py) could not see it as live
+    and a concurrent delete could run while topic/tag extraction was mid-write.
+    Postgres-only, inside the same short session already open here — no change to
+    the session-lifetime shape this module is built around.
     """
+    from app.utils.task_utils import create_task_record
+    from app.utils.task_utils import update_task_status
     from app.utils.uuid_helpers import get_file_by_uuid
 
     with session_scope() as db:
         media_file = get_file_by_uuid(db, file_uuid)
         if not media_file:
             raise ValueError(f"Media file with UUID {file_uuid} not found")
+        file_id = int(media_file.id)
+        user_id = int(media_file.user_id)
+        create_task_record(db, task_id, user_id, file_id, "topic_extraction")
+        update_task_status(db, task_id, "in_progress", progress=0.1)
         return {
-            "file_id": int(media_file.id),
-            "user_id": int(media_file.user_id),
+            "file_id": file_id,
+            "user_id": user_id,
             "upload_batch_id": media_file.upload_batch_id,
         }
 
@@ -153,6 +166,31 @@ def _trigger_batch_grouping(user_id: int, upload_batch_id: int | None) -> None:
         logger.warning(f"Batch grouping check failed: {e}")
 
 
+def _mark_task_status(
+    task_id: str, status: str, *, progress: float | None = None, error_message: str | None = None
+) -> None:
+    """Record the task's terminal status, opening its **own** short session.
+
+    Best-effort and must never mask the caller's real outcome: a status-recording
+    failure logs and is swallowed rather than raised, matching every other
+    best-effort side path in this module (notifications, batch grouping).
+    """
+    try:
+        from app.utils.task_utils import update_task_status
+
+        with session_scope() as db:
+            update_task_status(
+                db,
+                task_id,
+                status,
+                progress=progress,
+                error_message=error_message,
+                completed=status in ("completed", "failed"),
+            )
+    except Exception as status_err:  # noqa: BLE001
+        logger.debug(f"Could not record topic-extraction task status: {status_err}")
+
+
 def _handle_task_error(e: Exception, file_uuid: str) -> dict[str, Any]:
     """Report a task-level failure, opening its **own** short session.
 
@@ -207,9 +245,10 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
     Returns:
         dict: Contains status, suggestion_id, tag_count, and collection_count
     """
+    task_id = self.request.id
     try:
         # Phase 1a — read (DB session open, Postgres only).
-        context = _load_file_context(file_uuid)
+        context = _load_file_context(file_uuid, task_id)
         file_id = context["file_id"]
         user_id = context["user_id"]
 
@@ -283,6 +322,8 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
             error_msg = "Failed to extract topics from transcript"
             logger.error(f"{error_msg} for file {file_id}")
 
+            _mark_task_status(task_id, "failed", error_message=error_msg)
+
             # Send failure notification
             send_topic_extraction_notification(
                 user_id=user_id,
@@ -316,6 +357,8 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
             f"for file {file_id}"
         )
 
+        _mark_task_status(task_id, "completed", progress=1.0)
+
         return {
             "status": "completed",
             "suggestion_id": result.suggestion_uuid,
@@ -328,6 +371,7 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
         # so the handler below would otherwise report it as a failure.
         raise
     except Exception as e:
+        _mark_task_status(task_id, "failed", error_message=str(e))
         return _handle_task_error(e, file_uuid)
 
 

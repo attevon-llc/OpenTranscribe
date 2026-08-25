@@ -192,8 +192,7 @@ admin-only dependency.
 Real UI features whose call site the scan missed or which have no panel yet:
 `/files/{uuid}/thumbnail` (server-provided URL, above) · `/files/{uuid}/{apply,auto-label}` ·
 `/speaker-profiles/profiles/{uuid}/occurrences`, `.../assign-profile`, `.../suggestions` ·
-`/speakers/{uuid}/verify` · `/user-settings/ai-summary` (**the SPA calls the wrong path** — see
-Gotchas) · `/files/{uuid}/waveform/peaks` (redundant with `/waveform`).
+`/speakers/{uuid}/verify` · `/files/{uuid}/waveform/peaks` (redundant with `/waveform`).
 
 ## How it connects
 
@@ -309,12 +308,6 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   which is now exactly `stuck_files_found` · `recovered` · `errors` · `dry_run` (#431). It had no
   consumer in `frontend/src` or the tests. Don't re-add an orphan counter to this handler; nothing
   in it marks a file orphaned.
-- **`/api/user-settings/ai-summary` is unreachable from the SPA.** `LLMSettings.svelte` calls
-  `/settings/ai-summary` (lines 129 and 139), and no router is mounted at `/settings` — the GET 404
-  is swallowed by a `console.warn` and the PUT surfaces a toast error. The backend route is
-  correct; the **frontend** path is wrong and the fix is `/settings/` → `/user-settings/` in those
-  two lines. The admin twin in the same file (`/admin/system/ai-summary`) is right, which is why
-  only the per-user toggle is dead.
 - **`GET /admin/stats`: `system.version` is `core.version.APP_VERSION` and `system.gpu` is always
   a LIST.** The version was a hardcoded `"1.0.0"` that no release moved, so the admin panel
   disagreed with `/health` and the About dialog about the running build; and the

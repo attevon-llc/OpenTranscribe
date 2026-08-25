@@ -418,13 +418,17 @@ subsystem, and put new subsystem detail **there**, not in this file.
 > still gets masked text (sending unredacted PII to a third party is a data-egress event). Key that
 > off the **provider**, never a global setting.
 >
-> ⚠️ **The provider keying is DECIDED, NOT BUILT.** No code branches on the provider — only the
-> CLAUDE.md files were amended — so **input masking applies to every provider today** and a local
-> deployment is *not* currently less protected than before the decision. **Output redaction landed
-> first, deliberately**: `services/chat/output_redactor.py` masks what the model *writes*,
-> sentence-buffered, gated on `cfg.enabled and cfg.enabled_categories` (the **display** policy, not
-> the `redact_before_llm` **egress** policy). Land the provider keying before it and the gap is
-> real, between two commits, on a deployment that believes it is protected.
+> ✅ **The provider keying is BUILT and shipped**, not just decided. `chat/service.py._prepare_context`
+> resolves `redaction.llm_guard.is_local_provider(llm.config)` once per turn and threads it as
+> `unmask_for_local` to all three masking call sites (`mask_chunks`, and both `mask_digests` calls).
+> A **local** model (vLLM/Ollama on our own GPU, or a `custom` endpoint resolving to
+> loopback/RFC1918/link-local/a docker-compose hostname) receives excerpt text unmasked; a
+> **remote/cloud provider** still gets masked text. The classification **fails closed** — any
+> ambiguity reads as remote. An admin's `redaction.force_redact_before_llm` lock always wins the
+> local exemption. Full detail: `backend/app/services/chat/CLAUDE.md`. **Output redaction**
+> (`services/chat/output_redactor.py`, masks what the model *writes*, gated on
+> `cfg.enabled and cfg.enabled_categories`) is a separate, independent layer — the **display**
+> policy, not the `redact_before_llm` **egress** policy this section describes.
 >
 > ⚠️ **Two maskers, not interchangeable.** `redactor.mask_chunks()` addresses text by **time
 > range**; `redactor.mask_digests()` by **provenance** (`segment_ids`). A digest through the chunk

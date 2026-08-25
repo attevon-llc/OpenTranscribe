@@ -216,8 +216,8 @@ ssl_session_tickets off;
 # HSTS -- force HTTPS for one year
 add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-# Large file uploads (audio/video up to 10 GB)
-client_max_body_size 10G;
+# Large file uploads (audio/video up to 15 GB, matching MAX_UPLOAD_BYTES's default)
+client_max_body_size 15G;
 client_body_timeout 600s;
 ```
 

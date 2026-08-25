@@ -153,11 +153,6 @@ UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024  # 10MB chunks for file uploads
 MAX_FILENAME_LENGTH = 255
 DEFAULT_FILE_NAME = "unnamed_file"
 
-# Video processing constants (legacy - kept for backward compatibility)
-THUMBNAIL_MAX_WIDTH = 320
-THUMBNAIL_MAX_HEIGHT = 240
-THUMBNAIL_QUALITY = 85
-
 # Thumbnail settings (WebP optimized, preserves aspect ratio)
 THUMBNAIL_MAX_DIMENSION = 1280  # Longest edge - Full HD for crisp display on any screen
 THUMBNAIL_QUALITY_WEBP = 75  # WebP quality (replaces JPEG 85)
@@ -438,13 +433,6 @@ NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED = "collection_share_updated"
 NOTIFICATION_TYPE_GROUP_MEMBER_ADDED = "group_member_added"
 NOTIFICATION_TYPE_GROUP_MEMBER_REMOVED = "group_member_removed"
 
-# Task statuses
-TASK_STATUS_PENDING = "pending"
-TASK_STATUS_PROCESSING = "processing"
-TASK_STATUS_COMPLETED = "completed"
-TASK_STATUS_FAILED = "failed"
-TASK_STATUS_ERROR = "error"
-
 # Embedding dimensions
 SENTENCE_TRANSFORMER_DIMENSION = 384  # sentence-transformers/all-MiniLM-L6-v2
 PYANNOTE_EMBEDDING_DIMENSION = 512  # Legacy v3 dimension (pyannote/embedding)
@@ -600,6 +588,15 @@ DEFAULT_DIRECTORY_SYNC_DRY_RUN = True  # report what WOULD be disabled, change n
 # search_base, wrong group DN) is indistinguishable from mass offboarding, so the
 # cap is what stops one bad config from disabling the deployment in a single run.
 DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN = 10
+
+# Same reasoning as DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN, for the AC-2
+# inactivity sweep (account_lifecycle_service.py): ACCOUNT_INACTIVE_DAYS has no
+# range validation at the env layer, so a misconfigured 0/negative value would
+# otherwise make every account with a recorded login a candidate on the first
+# tick. Higher than directory sync's 10 because this is a deployment-wide DAILY
+# pass, not a 15-minute LDAP reconciliation tick -- a legitimate first enable on
+# an established deployment can easily have more than 10 genuinely stale accounts.
+ACCOUNT_INACTIVITY_MAX_DISABLES_PER_RUN = 500
 
 # Silero VAD defaults — used by faster-whisper BatchedInferencePipeline
 DEFAULT_VAD_THRESHOLD = 0.5  # Speech detection sensitivity (0.1-0.95)

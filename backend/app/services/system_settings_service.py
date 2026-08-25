@@ -242,15 +242,17 @@ def should_retry_file(db: Session, retry_count: int) -> bool:
 def retry_ceiling_message(db: Session, retry_count: int) -> str | None:
     """Return the "max retries reached" detail for *retry_count*, or None if retries remain.
 
-    Single source for the message AND the ceiling determination, shared by the two retry
-    endpoints (``api/endpoints/user_files.py``'s ``POST /my-files/{uuid}/retry`` — the one the
-    SPA calls — and ``api/endpoints/files/management.py``'s ``POST /files/{uuid}/retry``,
-    which it does not). ``backend/app/api/CLAUDE.md`` already flags these two routes as "a
-    known confusion pair": an earlier fix added a ceiling check to only one of them, so the
-    admin-tunable retry limit stayed fully bypassable through the route the product actually
-    uses. This function does not raise — service code doesn't raise ``fastapi.HTTPException``
-    (that's an endpoint-layer concern, see ``backend/app/api/CLAUDE.md``) — callers turn a
-    non-``None`` result into their own 400.
+    Single source for the message AND the ceiling determination, shared by every retry entry
+    point: ``api/endpoints/user_files.py``'s ``POST /my-files/{uuid}/retry`` (the one the SPA
+    calls), ``api/endpoints/files/management.py``'s ``POST /files/{uuid}/retry``, the same
+    module's ``POST /management/bulk-action`` for both its ``retry`` and ``reprocess`` actions
+    (``_handle_retry_action`` / ``_handle_reprocess_action``), and
+    ``api/endpoints/tasks.py``'s ``POST /tasks/retry/{uuid}``. An earlier fix added a ceiling
+    check to only the first two of these; the admin-tunable retry limit stayed fully
+    bypassable through bulk retry/reprocess and the tasks-router retry route until a later
+    audit pass closed all three. This function does not raise — service code doesn't raise
+    ``fastapi.HTTPException`` (that's an endpoint-layer concern, see
+    ``backend/app/api/CLAUDE.md``) — callers turn a non-``None`` result into their own 400.
 
     Args:
         db: Database session.

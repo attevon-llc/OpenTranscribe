@@ -59,6 +59,14 @@ _ALLOWLIST: dict[str, str] = {
         "Standard AWS SDK convention var, read only as BEDROCK_REGION's secondary fallback "
         "behind the already-documented AWS_REGION. Not OpenTranscribe-specific."
     ),
+    "BEDROCK_MODEL_NAME": (
+        "Declared in config.py with a full explanatory comment as a system-fallback "
+        "'quick access default' parallel to VLLM_MODEL_NAME/OPENAI_MODEL_NAME/etc., but "
+        "llm_service.py._get_provider_config's provider_settings dict has no LLMProvider."
+        "BEDROCK entry, so create_from_system_settings() never reads it for that provider — "
+        "genuinely unconsumed (verified by grep), unlike BEDROCK_REGION beside it, which IS "
+        "read directly in the boto3 Converse call path and is documented."
+    ),
     "DATA_DIR": (
         "Hardcoded container path default (/app/data). No compose service sets it and no "
         "volume exists for another value, so a .env override breaks upload persistence."
@@ -66,6 +74,14 @@ _ALLOWLIST: dict[str, str] = {
     "DEPLOYMENT_EDITION": (
         "Managed-edition seam value ('community'|'cloud'), set only by the private cloud "
         "build. A self-hosted .env never needs it — see backend/app/core/CLAUDE.md."
+    ),
+    "ENCRYPTION_ALGORITHM_V3": (
+        "Validated at boot against IMPLEMENTED_ENCRYPTION_ALGORITHMS = {'AES-256-GCM'}, the "
+        "only algorithm utils/encryption.py's v3 envelope actually implements — setting it to "
+        "anything else refuses production startup, and setting it to the only valid value is a "
+        "no-op versus the default. Not a real operator knob; see config.py's IMPLEMENTED_"
+        "ENCRYPTION_ALGORITHMS comment for why adding a second algorithm here without writing "
+        "the decrypt code would silently orphan every existing ciphertext."
     ),
     "MODELS_DIR": (
         "Internal container path default (/app/models). Base compose sets a differently-"
@@ -83,6 +99,13 @@ _ALLOWLIST: dict[str, str] = {
     "TESTING": (
         "Test-harness-only flag (config.py's own pydantic Config class) that decides "
         "whether Settings loads a .env file AT ALL — never itself a .env setting."
+    ),
+    "USE_GPU": (
+        "Dead config.py field: only consumer is the effective_use_gpu property, and nothing "
+        "in backend/app calls effective_use_gpu, effective_torch_device, effective_compute_"
+        "type, or effective_batch_size (verified by grep) — real hardware detection reads "
+        "TORCH_DEVICE/COMPUTE_TYPE/BATCH_SIZE directly via os.getenv in hardware_detection.py "
+        "and transcription/config.py instead, bypassing these Settings fields entirely."
     ),
     "WATCH_FOLDER_PATH": (
         "Internal container path, set unconditionally to /watch by docker-compose.watch.yml. "

@@ -45,6 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   corpora is unmeasured — but it runs on the same 1 GB heap floor as the default, so
   enabling it needs no resource change.
 
+- **FedRAMP AC-2 account-inactivity expiration is now enforced, not just documented** (#567).
+  `ACCOUNT_EXPIRATION_ENABLED` / `ACCOUNT_INACTIVE_DAYS` (off by default) previously existed
+  only as unread `Settings` fields. A daily Celery sweep now deactivates accounts whose
+  `last_login_at` is older than the threshold, audit-logs each deactivation
+  (`AUTH_ACCOUNT_EXPIRED`), never touches an account that has never logged in (`NULL` stays
+  exempt), and refuses to leave zero active `super_admin` accounts.
+
 ### Fixed
 
 - **A watch source importing the same recording twice under two names** (#489). Content dedup
@@ -331,6 +338,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The AI-summary panel rendered a blank area with no explanation in two reachable states:
   pending with no LLM configured, and failed with no retry available. Both now show an
   explanatory message instead of nothing.
+- **The admin-tunable retry ceiling was bypassable through three routes.** It was enforced on
+  the two `POST .../retry` endpoints but not on bulk retry, bulk reprocess, or the tasks
+  router's direct retry route, so a file past the configured limit could still be resubmitted
+  through those. All five entry points now share one ceiling check
+  (`system_settings_service.retry_ceiling_message`). Separately, `max_retries=0` — documented
+  everywhere as "unlimited retries" — was inverted: `retry_count < 0` is never true, so setting
+  it actually blocked every retry immediately.
+- **SSRF: two outbound fetches driven by untrusted input skipped the existing SSRF guard.**
+  The LLM context-window probe dialed an admin-entered endpoint directly with `requests`/
+  `aiohttp`, and the yt-dlp media importer fetched a thumbnail URL that comes from the
+  extractor's metadata for the submitted page, not the page URL itself — both bypassed the
+  `resolve_pinned_target`/pinned-session pattern already used for the primary URL. Both now go
+  through it, refusing private/link-local targets before any request is made.
 
 ## [0.5.0] - 2026-08-10
 

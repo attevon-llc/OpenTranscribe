@@ -49,6 +49,33 @@ EXTERNALLY_CONSUMED: set[str] = {
     # and is >= 90, which documents intended future enforcement rather than a stray
     # env var — deleting it would silently regress that control's groundwork.
     "AUDIT_LOG_RETENTION_DAYS",
+    # ---------------------------------------------------------------------------
+    # The next 14 ARE genuinely read in production, but only via
+    # AuthConfigService.ENV_TO_CONFIG_MAPPING (app/services/auth_config_service.py):
+    # `getattr(settings, AuthConfigService.env_var_for(key), None)` resolves the attribute
+    # name from a MAPPING VALUE at runtime, not a literal string constant, so this
+    # scanner's AST walk (which requires a literal string argument) cannot see the read.
+    # Each name is a live key in ENV_TO_CONFIG_MAPPING (verified by grep).
+    "ACCOUNT_LOCKOUT_ENABLED",
+    "ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES",
+    "ACCOUNT_LOCKOUT_PROGRESSIVE",
+    "CONCURRENT_SESSION_POLICY",
+    "MAX_CONCURRENT_SESSIONS",
+    "MFA_BACKUP_CODE_COUNT",
+    "MFA_ISSUER_NAME",
+    "PASSWORD_HISTORY_COUNT",
+    "PASSWORD_MAX_AGE_DAYS",
+    "PASSWORD_MIN_LENGTH",
+    "PASSWORD_REQUIRE_DIGIT",
+    "PASSWORD_REQUIRE_LOWERCASE",
+    "PASSWORD_REQUIRE_SPECIAL",
+    "PASSWORD_REQUIRE_UPPERCASE",
+    # Read via `settings.watch_temp_dir` (services/watch_sources/processing.py,
+    # tasks/watch_source_tasks.py) — a lowercase config.py PROPERTY that internally reads
+    # `self.WATCH_TEMP_DIR`. The scanner records the attribute name it sees on the call
+    # site ("watch_temp_dir"), which never matches the uppercase field name documented
+    # in .env.example, so a real read is invisible to it.
+    "WATCH_TEMP_DIR",
 }
 
 # Files that make up the deployment surface. A documented key is "consumed" if it

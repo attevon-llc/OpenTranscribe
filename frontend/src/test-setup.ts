@@ -38,3 +38,12 @@ if (typeof Element !== 'undefined' && !Element.prototype.animate) {
     } as unknown as Animation;
   };
 }
+
+// jsdom doesn't implement Element.scrollIntoView (it has no real layout/scroll
+// engine). SearchTranscriptModal's jump-to-match calls it directly, which
+// throws `TypeError: ... is not a function` and previously only escaped
+// notice because no test drove a paging retry far enough to actually resolve
+// a match under fake timers.
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function scrollIntoView() {};
+}

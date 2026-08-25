@@ -114,10 +114,16 @@ value falls back to. They were dead code while the write path accepted a bare `d
   same file, which is real usage even though the endpoint itself never puts any of them behind a
   `response_model`. ⚠️ **A prior version of this note also named `CustomVocabularyResponse`,
   `UserASRSettingsResponse`, `ASRSettingsList`, and `SpeakerClusterResponse` as dead — that was
-  wrong.** All four are re-exported through `schemas/__init__.py`'s `__all__` (E8's method
-  excludes anything re-exported for exactly this reason — a re-export is a real, if indirect,
-  consumer), and `UserASRSettingsResponse`/`SpeakerClusterResponse` are also referenced as
-  nested field types by other classes in their own files.
+  wrong.** `CustomVocabularyResponse`, `UserASRSettingsResponse`, and `ASRSettingsList` are all
+  re-exported through `schemas/__init__.py`'s `__all__` (E8's method excludes anything
+  re-exported for exactly this reason — a re-export is a real, if indirect, consumer), and
+  `UserASRSettingsResponse` is additionally referenced as a nested field type by
+  `ASRSettingsList`/`ASRStatusResponse` in its own file (`asr_settings.py`).
+  `SpeakerClusterResponse` is the odd one out: it is **not** re-exported via `__init__.py` at
+  all (`rg SpeakerClusterResponse --type py` finds only `speaker_cluster.py` itself) — its sole
+  surviving reference is `PaginatedClusterResponse` using it as a nested field type
+  (`items: list[SpeakerClusterResponse]`) in that same file. It survives on the nested-field-type
+  rule alone, not the re-export rule.
 
   **Phase B (2026-08-24) found and deleted 6 more**, all backend-only:
   `speaker_cluster.py`'s `OutlierAnalysisResponse`/`BatchVerifyResponse`/`ReclusterResponse`

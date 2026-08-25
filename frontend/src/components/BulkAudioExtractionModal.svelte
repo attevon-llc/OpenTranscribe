@@ -7,6 +7,7 @@
     estimateDurationFromFileSize,
   } from '$lib/utils/metadataMapper';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
+  import { DEFAULT_EXTRACTION_CONFIG } from '$lib/types/audioExtraction';
   import { t } from '$stores/locale';
   import BaseModal from './ui/BaseModal.svelte';
 
@@ -24,7 +25,7 @@
   $: totalVideoSize = videoFiles.reduce((sum, file) => sum + file.size, 0);
   $: estimatedTotalAudioSize = videoFiles.reduce((sum, file) => {
     const estimatedDuration = estimateDurationFromFileSize(file.size);
-    return sum + estimateAudioSize(estimatedDuration, 64);
+    return sum + estimateAudioSize(estimatedDuration, DEFAULT_EXTRACTION_CONFIG.bitrate);
   }, 0);
   $: compressionRatio = calculateCompressionRatio(totalVideoSize, estimatedTotalAudioSize);
 

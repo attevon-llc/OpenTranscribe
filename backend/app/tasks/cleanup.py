@@ -241,6 +241,17 @@ def orphan_upload_sweeper(self, max_age_minutes: int = 30) -> dict[str, int]:
       from the declared ``file_size`` — see :func:`_upload_grace_minutes`. A
       fixed 30 minutes deleted the row, and the object, out from under a
       running upload.
+    - **requires POSITIVE confirmation from storage that the object is absent
+      before touching the row at all.** ``status == PENDING`` and old is not,
+      by itself, proof the upload never completed: an extended MinIO/DB outage
+      can hold ``/files/complete``'s own verification (B1) hostage for far
+      longer than one sweep interval, so a row can sit PENDING long past its
+      grace window even though the browser's PUT already landed the bytes.
+      Only :func:`~app.services.minio_service.object_exists_and_size` returning
+      ``None`` (a confirmed ``NoSuchKey``) counts as "the object is gone" — a
+      real object (upload landed, ``/complete`` just never ran) or a storage
+      error (can't tell either way) both leave the row untouched this pass, the
+      same confirmed-absence contract B1 gave that function's other callers.
     - **deletes the DB row FIRST, re-checking that it is still PENDING**, and
       only then the MinIO object. The old order deleted the object first, so a
       row that completed between the scan and the delete — or a row whose own
@@ -256,18 +267,20 @@ def orphan_upload_sweeper(self, max_age_minutes: int = 30) -> dict[str, int]:
             environments; lower for tight dedup requirements.
 
     Returns:
-        ``deleted_rows``, ``deleted_objects``, ``skipped_in_progress`` and
-        ``errors``.
+        ``deleted_rows``, ``deleted_objects``, ``skipped_in_progress``,
+        ``skipped_uncertain`` and ``errors``.
     """
     from app.models.media import FileStatus
     from app.models.media import MediaFile
     from app.services.minio_service import delete_file
+    from app.services.minio_service import object_exists_and_size
 
     base_minutes = max(1, int(max_age_minutes))
     cutoff = datetime.now(UTC) - timedelta(minutes=base_minutes)
     deleted_rows = 0
     deleted_objects = 0
     skipped_in_progress = 0
+    skipped_uncertain = 0
     errors = 0
 
     try:
@@ -293,6 +306,27 @@ def orphan_upload_sweeper(self, max_age_minutes: int = 30) -> dict[str, int]:
                         f"size allows {grace} min — could still be uploading, skipping"
                     )
                     continue
+
+                if storage_path:
+                    try:
+                        minio_size = object_exists_and_size(storage_path)
+                    except Exception as stat_err:
+                        skipped_uncertain += 1
+                        logger.warning(
+                            f"orphan_upload_sweeper: could not confirm object absence for "
+                            f"file {file_id} at {storage_path} ({stat_err}); leaving it for "
+                            "the next sweep rather than risk deleting a completed upload"
+                        )
+                        continue
+                    if minio_size is not None:
+                        skipped_uncertain += 1
+                        logger.warning(
+                            f"orphan_upload_sweeper: file {file_id} is PENDING and past its "
+                            f"grace window, but {storage_path} exists in storage "
+                            f"({minio_size} bytes) — /complete likely never ran to finish; "
+                            "leaving the row alone rather than deleting a real upload"
+                        )
+                        continue
 
                 try:
                     # Re-read under a row lock and confirm the row is STILL pending;
@@ -338,16 +372,17 @@ def orphan_upload_sweeper(self, max_age_minutes: int = 30) -> dict[str, int]:
         logger.error(f"orphan_upload_sweeper error: {e}")
         errors += 1
 
-    if deleted_rows or deleted_objects or errors or skipped_in_progress:
+    if deleted_rows or deleted_objects or errors or skipped_in_progress or skipped_uncertain:
         logger.info(
             f"orphan_upload_sweeper: removed {deleted_rows} row(s), "
             f"{deleted_objects} object(s), skipped {skipped_in_progress} in-progress, "
-            f"{errors} error(s) (cutoff={cutoff.isoformat()})"
+            f"{skipped_uncertain} uncertain, {errors} error(s) (cutoff={cutoff.isoformat()})"
         )
     return {
         "deleted_rows": deleted_rows,
         "deleted_objects": deleted_objects,
         "skipped_in_progress": skipped_in_progress,
+        "skipped_uncertain": skipped_uncertain,
         "errors": errors,
     }
 

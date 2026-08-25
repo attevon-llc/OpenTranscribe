@@ -291,6 +291,50 @@ def test_cross_media_excludes_another_users_speaker_of_the_same_name(
     assert [entry["media_file_id"] for entry in response.json()] == [str(mine.uuid)]
 
 
+def test_cross_media_on_a_quarantined_speakers_own_file_is_404(
+    client, db_session, user_token_headers, normal_user
+):
+    """Adversarial-review follow-up (A2's leak class): the anchor speaker's own
+    file is quarantined. ``PermissionService.get_file_permission`` has no
+    notion of quarantine (ownership/sharing only) and would have returned
+    ``"owner"`` here, so without an explicit ``is_hidden_for`` check the
+    caller's own quarantined file's speaker data — filenames, titles, upload
+    times of every occurrence — stayed fully reachable through this endpoint
+    even though the file itself 404s everywhere else, for its own owner."""
+    media_file = make_media_file(db_session, int(normal_user.id))
+    media_file.is_quarantined = True
+    db_session.commit()
+    speaker = _make_speaker(
+        db_session, normal_user, media_file, name="SPEAKER_00", display_name="Dana Scully"
+    )
+
+    response = client.get(f"{SPEAKERS}/{speaker.uuid}/cross-media", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_cross_media_excludes_a_quarantined_same_named_occurrence(
+    client, db_session, user_token_headers, normal_user
+):
+    """The anchor file is fine; a SECOND same-named-speaker file the caller owns
+    gets quarantined afterward. That occurrence's filename/title/upload_time
+    must drop out of the result — the endpoint must not surface a quarantined
+    file's metadata just because it also holds a matching speaker name."""
+    visible = make_media_file(db_session, int(normal_user.id))
+    hidden = make_media_file(db_session, int(normal_user.id))
+    hidden.is_quarantined = True
+    db_session.commit()
+    speaker = _make_speaker(
+        db_session, normal_user, visible, name="SPEAKER_00", display_name="Dana Scully"
+    )
+    _make_speaker(db_session, normal_user, hidden, name="SPEAKER_03", display_name="Dana Scully")
+
+    response = client.get(f"{SPEAKERS}/{speaker.uuid}/cross-media", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert [entry["media_file_id"] for entry in response.json()] == [str(visible.uuid)]
+
+
 def test_cross_media_on_someone_elses_speaker_is_403(
     client, db_session, other_user_auth_headers, normal_user
 ):

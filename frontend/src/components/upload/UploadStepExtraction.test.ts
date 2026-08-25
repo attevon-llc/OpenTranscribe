@@ -4,10 +4,18 @@
  * 64 kbps (`DEFAULT_EXTRACTION_CONFIG.bitrate`, the value real extraction
  * uses). The upload wizard therefore showed a size estimate half of what
  * extraction would actually produce — and half of what
- * `BulkAudioExtractionModal` (which hardcoded the correct 64) showed for the
- * identical file. This test renders the component and asserts its displayed
- * estimate matches the formula `BulkAudioExtractionModal` uses for the same
- * duration, so the two wizards never disagree again.
+ * `BulkAudioExtractionModal` (which ALSO hardcoded its own copy of 64, rather
+ * than reading the config) showed for the identical file.
+ *
+ * FOLLOW-UP (adversarial-review, same G3 defect class): the original fix left
+ * a "bug factory" in place — `BulkAudioExtractionModal` still hardcoded a
+ * bare `64` (correct only by coincidence with `DEFAULT_EXTRACTION_CONFIG.bitrate`,
+ * not derived from it) and `estimateAudioSize`'s own default parameter was
+ * still the WRONG `32`. Either literal drifting from the real config
+ * reproduces this exact bug. Both call sites now read
+ * `DEFAULT_EXTRACTION_CONFIG.bitrate` directly and this test asserts against
+ * that same config value rather than a copied literal, so a future change to
+ * the configured bitrate cannot silently desync the two wizards again.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -17,6 +25,7 @@ import {
   estimateDurationFromFileSize,
   formatFileSize,
 } from '$lib/utils/metadataMapper';
+import { DEFAULT_EXTRACTION_CONFIG } from '$lib/types/audioExtraction';
 
 vi.mock('$stores/locale', async () => {
   const { readable } = await import('svelte/store');
@@ -33,12 +42,16 @@ function videoFile(sizeBytes: number): File {
 }
 
 describe('UploadStepExtraction size estimate', () => {
-  it("matches BulkAudioExtractionModal's estimate for the same file size (64 kbps)", () => {
+  it("matches BulkAudioExtractionModal's estimate for the same file size (DEFAULT_EXTRACTION_CONFIG.bitrate)", () => {
     const file = videoFile(200 * 1024 * 1024); // 200MB
 
-    // This is exactly the formula BulkAudioExtractionModal.svelte uses.
+    // This is exactly the formula BulkAudioExtractionModal.svelte uses — both
+    // read the bitrate from the shared config, never a copied literal.
     const expectedDuration = estimateDurationFromFileSize(file.size);
-    const expectedAudioSize = estimateAudioSize(expectedDuration, 64);
+    const expectedAudioSize = estimateAudioSize(
+      expectedDuration,
+      DEFAULT_EXTRACTION_CONFIG.bitrate
+    );
 
     const { container } = render(UploadStepExtraction, { props: { file, choice: 'extract' } });
 

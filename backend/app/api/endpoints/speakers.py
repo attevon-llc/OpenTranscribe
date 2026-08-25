@@ -762,13 +762,22 @@ def list_speakers(
             joinedload(Speaker.profile), joinedload(Speaker.media_file)
         )
         # Admins see all speakers; when file_id is provided, permission was
-        # already checked by _resolve_file_uuid_to_id; otherwise scope to owner.
+        # already checked by _resolve_file_uuid_to_id (which applies the
+        # takedown gate via get_file_by_uuid_with_permission); otherwise scope
+        # to owner AND drop speakers whose file is quarantined (A2's class —
+        # the general listing has no per-file permission check to catch it,
+        # so a caller's OWN quarantined file's speakers would otherwise leak
+        # here even though the file itself 404s for them).
         if current_user.is_admin:
             pass  # Admins see all speakers
         elif file_id is not None:
             pass  # Viewing specific file — permission already checked
         else:
+            from sqlalchemy import select
+
             query = query.filter(Speaker.user_id == current_user.id)
+            quarantined_ids = select(MediaFile.id).where(MediaFile.is_quarantined.is_(True))
+            query = query.filter(~Speaker.media_file_id.in_(quarantined_ids))
         query = _filter_speakers_query(query, verified_only, False, file_id)
         speakers = query.all()
         speakers = _sort_speakers(speakers)
@@ -1194,7 +1203,18 @@ def get_speaker_cross_media_occurrences(
     Get all media files where this speaker (or their profile) appears.
     """
     try:
+        from app.services.takedown_service import is_hidden_for
+
         speaker = get_speaker_by_uuid(db, speaker_uuid)
+        # A quarantined file is hidden from its own owner (A2's class) — the
+        # ownership/sharing check below has no notion of quarantine at all, so
+        # without this a non-admin whose OWN file got taken down could still
+        # reach its speaker's cross-media data through this endpoint even
+        # though the file itself 404s.
+        if speaker.media_file is not None and is_hidden_for(
+            speaker.media_file, is_admin=current_user.is_admin
+        ):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
         file_perm = (
             "owner"
             if current_user.is_admin
@@ -2429,6 +2449,7 @@ def _get_profile_based_occurrences(
     )
     if not current_user.is_admin:
         query = query.filter(Speaker.user_id == current_user.id)
+        query = query.filter(MediaFile.is_quarantined.is_(False))
     profile_speakers = query.all()
 
     result: list[dict[str, Any]] = []
@@ -2469,6 +2490,7 @@ def _get_display_name_based_occurrences(
     )
     if not current_user.is_admin:
         similar_q = similar_q.filter(Speaker.user_id == current_user.id)
+        similar_q = similar_q.filter(MediaFile.is_quarantined.is_(False))
     similar_speakers = similar_q.all()
 
     for similar_speaker in similar_speakers:

@@ -205,7 +205,19 @@ def _assert_comment_file_in_scope(
 
     Admins bypass, matching ``get_comment`` and ``_check_file_access`` — one rule
     for the whole module rather than a second, divergent one.
+
+    ``PermissionService.get_file_permission`` has no notion of quarantine at
+    all (ownership/sharing only), unlike ``_check_file_access`` (used by the
+    file-scoped GET/POST routes above), which resolves through
+    ``get_file_by_uuid_with_permission`` and so already 404s a quarantined
+    file. Without this check, reaching a comment directly by its own UUID
+    (``GET``/``PUT``/``DELETE /{comment_uuid}``) bypassed that gate entirely —
+    A2's leak class, and it reached even the file's own owner: a comment on
+    your own quarantined file stayed fully readable/editable/deletable here
+    while the file itself 404s everywhere else.
     """
+    from app.services.takedown_service import is_hidden_for
+
     if current_user.is_admin:
         return
     permission = PermissionService.get_file_permission(
@@ -216,6 +228,9 @@ def _assert_comment_file_in_scope(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=forbidden_detail,
         )
+    media_file = db.query(MediaFile).filter(MediaFile.id == comment.media_file_id).first()
+    if media_file is not None and is_hidden_for(media_file, is_admin=False):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
 
 
 @router.get("/{comment_uuid}", response_model=CommentSchema)

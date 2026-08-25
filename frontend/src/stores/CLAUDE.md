@@ -22,7 +22,7 @@ caches of API responses.
 - `websocket.ts` — real-time file/task status updates (large; split candidate).
 - `toast.ts` — `toastStore.success/error(...)` notifications.
 - `transcriptStore.ts` — transcript segments + processed cache (used by transcript views/analytics).
-- `notifications.ts`, `downloads.ts`, `uploads.ts`, `recording.ts`, `gallery.ts`, `search.ts`,
+- `notificationsPanel.ts`, `downloads.ts`, `uploads.ts`, `recording.ts`, `gallery.ts`, `search.ts`,
   `sharing.ts`, `groups.ts`, `llmStatus.ts`, `network.ts`, `locale.ts`, `theme.js`,
   `speakerColors.ts`, `audioPlaybackStore.ts`, `settingsModalStore.ts`.
 

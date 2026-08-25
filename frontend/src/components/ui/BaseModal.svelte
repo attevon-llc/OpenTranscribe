@@ -63,7 +63,7 @@
 {#if isOpen}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-backdrop" style="z-index: {zIndex}" on:click={handleBackdropClick} on:wheel|preventDefault|self on:touchmove|preventDefault|self>
+  <div class="modal-backdrop" style="z-index: {zIndex}; --modal-instance-z-index: {zIndex};" on:click={handleBackdropClick} on:wheel|preventDefault|self on:touchmove|preventDefault|self>
     <div
       class="modal-container"
       style="max-width: {maxWidth}"
@@ -215,11 +215,23 @@
      button is not hidden behind it. `!important` is required here: this must
      win over the inline `style="z-index: {zIndex}"` when a caller passed a
      LOWER explicit zIndex, and `!important` on a normal CSS property beats an
-     inline style — a plain declaration would not. References the same
-     `--z-modal` token as the prop default, not an independent literal. */
+     inline style — a plain declaration would not.
+
+     ⚠️ Adversarial-review follow-up (H5): an unconditional
+     `z-index: var(--z-modal) !important` here defeated the documented `zIndex`
+     prop contract on every viewport ≤1200px — a caller passing a HIGHER value
+     on purpose (e.g. `SelectiveReprocessModal` passes `--z-toast`, 9999, so it
+     layers above another modal it can be opened from) got silently clobbered
+     back down to `--z-modal` (1300) the moment the viewport narrowed, with no
+     visual regression on desktop to catch it. `--modal-instance-z-index`
+     mirrors the same inline `zIndex` value into a CSS custom property so this
+     rule can take the GREATER of the two instead of unconditionally
+     overwriting: a caller's default (`--z-modal`) is unaffected, a
+     legitimately higher value survives, and the floor this rule exists for
+     (never render below the navbar) still holds. */
   @media (max-width: 1200px) {
     .modal-backdrop {
-      z-index: var(--z-modal) !important;
+      z-index: max(var(--z-modal), var(--modal-instance-z-index, var(--z-modal))) !important;
     }
   }
 

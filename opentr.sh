@@ -2061,6 +2061,10 @@ reset_and_init() {
   PULL_FLAG=""
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
+  WITH_MOCK_LLM_FLAG=""
+  WITH_DIAR_NATIVE_FLAG=""
+  NO_DIAR_NATIVE_FLAG=""
+  WITH_LLM_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
   WITH_AUTHENTIK_TEST_FLAG=""
   WITH_WATCH_FLAG=""
@@ -2070,6 +2074,7 @@ reset_and_init() {
   LITE_FLAG=""
   CPU_FLAG=""
   NO_NAS_FLAG=""
+  FRESH_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in

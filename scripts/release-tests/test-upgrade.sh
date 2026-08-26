@@ -609,6 +609,18 @@ phase_07_swap_to_new() {
         cp -r "$REPO_ROOT/database" "$stage_after/database"
     fi
 
+    # docker-compose.prod.yml declares `build: context: ./docs-site` for the
+    # docs service even though it normally just pulls a published image. With
+    # pull_policy forced to 'never' below, an absent local docs image falls
+    # back to that build context — a real user always has docs-site/ in their
+    # checkout, but this staged "after" tree didn't, so the docs container's
+    # own upgrade was silently skipped ("unable to prepare context") instead
+    # of actually being exercised.
+    if [[ -d "$REPO_ROOT/docs-site" ]]; then
+        rm -rf "$stage_after/docs-site"
+        cp -r "$REPO_ROOT/docs-site" "$stage_after/docs-site"
+    fi
+
     cp_inject_labels "$stage_after/docker-compose.yml" "$TEST_LABEL"
     cp_inject_labels "$stage_after/docker-compose.prod.yml" "$TEST_LABEL"
     cp_force_pull_policy "$stage_after/docker-compose.prod.yml" never

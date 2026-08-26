@@ -266,7 +266,12 @@ celery_app.conf.update(
         # 'celery' queue silently — see `_validate_task_routes` below.
         "regenerate_rename_digests": {"queue": CeleryQueues.CPU},
         "process_speaker_merge_background": {"queue": CeleryQueues.CPU},
-        "extract_speaker_embeddings": {"queue": CeleryQueues.GPU},
+        # CPU, not GPU: this task only extracts embeddings from already-known
+        # segments (no diarization model pass) — SpeakerEmbeddingService resolves
+        # its device via hardware_detection.py, so it runs fine on CPU. Lite mode
+        # (docker-compose.lite.yml) scales the GPU worker to zero replicas, so
+        # pinning this to 'gpu' left it queued forever there (issue #584).
+        "extract_speaker_embeddings": {"queue": CeleryQueues.CPU},
         # NLP Queue - LLM API calls (concurrency=4, no GPU needed)
         "ai.generate_summary": {"queue": CeleryQueues.NLP},
         "ai.identify_speakers": {"queue": CeleryQueues.NLP},

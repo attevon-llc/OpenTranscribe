@@ -298,6 +298,8 @@ google-auth==2.57.0        # via google-api-core, google-cloud-speech — drifte
 spacy==3.8.16              # via presidio_analyzer — drifted 3.8.15 (venv) vs 3.8.16 (image), 2026-08-25
 googleapis-common-protos==1.75.2  # via google-api-core — drifted 1.75.1 (venv) vs 1.75.2 (image), 2026-08-26
 proto-plus==1.28.4         # via google-cloud-speech — drifted 1.28.3 (venv) vs 1.28.4 (image), 2026-08-26
+mmh3==5.3.0                # via imohash — drifted 5.2.1 (venv) vs 5.3.0 (image), 2026-08-26
+pyspnego==0.12.2           # via smbprotocol — drifted 0.12.1 (venv) vs 0.12.2 (image), 2026-08-26
 idna==3.19                 # via requests, httpx, anyio, yarl, tldextract
 argon2-cffi-bindings==26.1.0  # via argon2-cffi — drifted 25.1.0 (venv) vs 26.1.0 (image), 2026-08-21
 protobuf==7.36.0           # via grpcio-status, onnx, opensearch-protobufs — drifted 7.35.1 (venv) vs 7.36.0 (image), 2026-08-21

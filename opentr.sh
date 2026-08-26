@@ -2077,6 +2077,8 @@ reset_and_init() {
   CPU_FLAG=""
   NO_NAS_FLAG=""
   FRESH_FLAG=""
+  DRY_RUN_FLAG=""
+  NO_BINDMOUNT_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -2132,12 +2134,40 @@ reset_and_init() {
         CPU_FLAG="--cpu"
         shift
         ;;
+      --dry-run)
+        DRY_RUN_FLAG="--dry-run"
+        shift
+        ;;
+      --no-bindmount)
+        # Only meaningful under --fresh, which reset refuses outright (see the
+        # --fresh|--port-offset|--seed-benchmark branch above) -- parsed so it is
+        # a recognized no-op rather than an "Unknown flag" warning, matching how
+        # start_app() itself already ignores it outside fresh mode.
+        NO_BINDMOUNT_FLAG="--no-bindmount"
+        shift
+        ;;
       --with-pki)
         WITH_PKI_FLAG="--with-pki"
         shift
         ;;
       --with-ldap-test)
         WITH_LDAP_TEST_FLAG="--with-ldap-test"
+        shift
+        ;;
+      --with-mock-llm)
+        WITH_MOCK_LLM_FLAG="--with-mock-llm"
+        shift
+        ;;
+      --with-diar-native)
+        WITH_DIAR_NATIVE_FLAG="--with-diar-native"
+        shift
+        ;;
+      --no-diar-native)
+        NO_DIAR_NATIVE_FLAG="--no-diar-native"
+        shift
+        ;;
+      --with-llm-test)
+        WITH_LLM_TEST_FLAG="--with-llm-test"
         shift
         ;;
       --with-keycloak-test)
@@ -2545,6 +2575,25 @@ reset_and_init() {
     else
       echo "⚠️  --with-backup specified but docker-compose.backup.yml not found"
     fi
+  fi
+
+  # Dry-run: print exactly what WOULD run and exit before touching Docker — most
+  # important here of anywhere in this script, since the next step is `down -v`,
+  # which destroys the current stack's data. A --dry-run that silently proceeded
+  # to a real reset would be the opposite of what it promises.
+  if [ -n "$DRY_RUN_FLAG" ]; then
+    echo ""
+    echo "🔎 DRY RUN — no containers stopped, no volumes removed."
+    echo "   COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-opentranscribe (default)}"
+    echo "   Compose files:"
+    # shellcheck disable=SC2086
+    for _f in $COMPOSE_FILES; do
+      [ "$_f" = "-f" ] && continue
+      echo "     - $_f"
+    done
+    echo "   Would run: docker compose \$COMPOSE_FILES down -v"
+    echo "   ...then rebuild and start all services (--build)."
+    return 0
   fi
 
   echo "🛑 Stopping all containers and removing volumes..."

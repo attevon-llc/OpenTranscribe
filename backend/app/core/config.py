@@ -1,8 +1,8 @@
 import logging
 import os
 from pathlib import Path
+from typing import ClassVar
 
-from pydantic import ValidationInfo
 from pydantic import field_validator
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
@@ -35,6 +35,29 @@ def _int_env(key: str, default: int) -> int:
         return int(val)
     except (ValueError, TypeError):
         _config_logger.warning(f"Invalid integer for {key}='{val}', using default {default}")
+        return default
+
+
+def _float_env(key: str, default: float) -> float:
+    """Read an environment variable and convert to float with validation.
+
+    Same fallback shape as ``_int_env`` — an unset OR malformed value (e.g. an
+    inline ``#`` comment on the same .env line, which docker compose's
+    ``env_file`` loading does not strip) degrades to ``default`` with a
+    warning instead of crashing the whole process at import time.
+
+    Args:
+        key: Environment variable name.
+        default: Default value if the variable is not set or is invalid.
+
+    Returns:
+        The float value, or the default if conversion fails.
+    """
+    val = os.getenv(key, str(default))
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        _config_logger.warning(f"Invalid float for {key}='{val}', using default {default}")
         return default
 
 
@@ -185,7 +208,9 @@ class Settings(BaseSettings):
     # could skip the UI and PUT an arbitrarily large object to the presigned URL.
     # Enforced at prepare (declared size) AND complete (the size MinIO observed).
     # Set 0 to disable — only sensible on a trusted single-user install.
-    MAX_UPLOAD_BYTES: int | None = _int_env("MAX_UPLOAD_BYTES", 15 * 1024 * 1024 * 1024) or None
+    MAX_UPLOAD_BYTES: ClassVar[int | None] = (
+        _int_env("MAX_UPLOAD_BYTES", 15 * 1024 * 1024 * 1024) or None
+    )
 
     # Whether anyone can create their own account via POST /api/auth/register.
     # New users are immediately active and GPU-capable, so on a public deployment this
@@ -252,17 +277,19 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     # Access token expiration: 60 minutes (NIST recommended for moderate assurance)
     # Can be reduced to 15-30 minutes for high-security environments
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = _int_env("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 60)
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ClassVar[int] = _int_env("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 60)
     # Session idle timeout: 15 minutes (NIST moderate assurance, DoD STIG compliant)
-    SESSION_IDLE_TIMEOUT_MINUTES: int = _int_env("SESSION_IDLE_TIMEOUT_MINUTES", 15)
+    SESSION_IDLE_TIMEOUT_MINUTES: ClassVar[int] = _int_env("SESSION_IDLE_TIMEOUT_MINUTES", 15)
     # Session absolute timeout: 8 hours (force re-authentication)
-    SESSION_ABSOLUTE_TIMEOUT_MINUTES: int = _int_env("SESSION_ABSOLUTE_TIMEOUT_MINUTES", 480)
+    SESSION_ABSOLUTE_TIMEOUT_MINUTES: ClassVar[int] = _int_env(
+        "SESSION_ABSOLUTE_TIMEOUT_MINUTES", 480
+    )
 
     # ===== FIPS 140-2 Password Hashing =====
     # Enable FIPS mode to use only FIPS-approved algorithms (PBKDF2-SHA256)
     FIPS_MODE: bool = os.getenv("FIPS_MODE", "false").lower() == "true"
     # PBKDF2 iterations (OWASP 2023 recommendation: 210,000 for SHA-256)
-    PBKDF2_ITERATIONS: int = _int_env("PBKDF2_ITERATIONS", 210000)
+    PBKDF2_ITERATIONS: ClassVar[int] = _int_env("PBKDF2_ITERATIONS", 210000)
 
     # ===== FIPS 140-3 Configuration (upgraded from FIPS 140-2) =====
     FIPS_VERSION: str = os.getenv("FIPS_VERSION", "140-3")  # "140-2" or "140-3"
@@ -271,7 +298,9 @@ class Settings(BaseSettings):
     # default (C8). That envelope records no iteration count, so decrypt must reproduce
     # exactly what encrypt used; if this setting ever governed it too, raising it in .env
     # would silently orphan every ciphertext encrypted under the old count.
-    PBKDF2_ITERATIONS_V3: int = _int_env("PBKDF2_ITERATIONS_V3", 600000)  # NIST SP 800-132 2024
+    PBKDF2_ITERATIONS_V3: ClassVar[int] = _int_env(
+        "PBKDF2_ITERATIONS_V3", 600000
+    )  # NIST SP 800-132 2024
     JWT_ALGORITHM_V3: str = os.getenv("JWT_ALGORITHM_V3", "HS512")
     ENCRYPTION_ALGORITHM_V3: str = os.getenv("ENCRYPTION_ALGORITHM_V3", "AES-256-GCM")
     FIPS_MIGRATION_MODE: str = os.getenv(
@@ -286,7 +315,7 @@ class Settings(BaseSettings):
     # Enable password policy enforcement (disable for testing or non-FedRAMP environments)
     PASSWORD_POLICY_ENABLED: bool = os.getenv("PASSWORD_POLICY_ENABLED", "true").lower() == "true"
     # Minimum password length (NIST SP 800-63B recommends 8+, FedRAMP typically requires 12+)
-    PASSWORD_MIN_LENGTH: int = _int_env("PASSWORD_MIN_LENGTH", 12)
+    PASSWORD_MIN_LENGTH: ClassVar[int] = _int_env("PASSWORD_MIN_LENGTH", 12)
     # Require at least one uppercase letter
     PASSWORD_REQUIRE_UPPERCASE: bool = (
         os.getenv("PASSWORD_REQUIRE_UPPERCASE", "true").lower() == "true"
@@ -300,15 +329,15 @@ class Settings(BaseSettings):
     # Require at least one special character
     PASSWORD_REQUIRE_SPECIAL: bool = os.getenv("PASSWORD_REQUIRE_SPECIAL", "true").lower() == "true"
     # Number of previous passwords to prevent reuse (FedRAMP requires 24)
-    PASSWORD_HISTORY_COUNT: int = _int_env("PASSWORD_HISTORY_COUNT", 24)
+    PASSWORD_HISTORY_COUNT: ClassVar[int] = _int_env("PASSWORD_HISTORY_COUNT", 24)
     # Maximum password age in days before forced reset (FedRAMP requires 60)
-    PASSWORD_MAX_AGE_DAYS: int = _int_env("PASSWORD_MAX_AGE_DAYS", 60)
+    PASSWORD_MAX_AGE_DAYS: ClassVar[int] = _int_env("PASSWORD_MAX_AGE_DAYS", 60)
 
     # ===== Rate Limiting Settings (OWASP recommended) =====
     # Rate limit authentication endpoints per IP address
-    RATE_LIMIT_AUTH_PER_MINUTE: int = _int_env("RATE_LIMIT_AUTH_PER_MINUTE", 10)
+    RATE_LIMIT_AUTH_PER_MINUTE: ClassVar[int] = _int_env("RATE_LIMIT_AUTH_PER_MINUTE", 10)
     # Rate limit for general API endpoints
-    RATE_LIMIT_API_PER_MINUTE: int = _int_env("RATE_LIMIT_API_PER_MINUTE", 100)
+    RATE_LIMIT_API_PER_MINUTE: ClassVar[int] = _int_env("RATE_LIMIT_API_PER_MINUTE", 100)
     # Enable rate limiting (disable for testing)
     RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
     # Trusted proxy IPs for rate limiting (comma-separated)
@@ -318,21 +347,23 @@ class Settings(BaseSettings):
 
     # ===== Token Management (FedRAMP AC-12) =====
     # Refresh token expiration in days (7 days default for refresh token flow)
-    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = _int_env("JWT_REFRESH_TOKEN_EXPIRE_DAYS", 7)
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: ClassVar[int] = _int_env("JWT_REFRESH_TOKEN_EXPIRE_DAYS", 7)
     # Enable token revocation checking via Redis blacklist
     TOKEN_REVOCATION_ENABLED: bool = os.getenv("TOKEN_REVOCATION_ENABLED", "true").lower() == "true"
 
     # ===== Account Lockout Settings (NIST AC-7 compliant) =====
     # Number of failed login attempts before lockout
-    ACCOUNT_LOCKOUT_THRESHOLD: int = _int_env("ACCOUNT_LOCKOUT_THRESHOLD", 5)
+    ACCOUNT_LOCKOUT_THRESHOLD: ClassVar[int] = _int_env("ACCOUNT_LOCKOUT_THRESHOLD", 5)
     # Initial lockout duration in minutes (progressive: 15 -> 30 -> 60 -> 1440)
-    ACCOUNT_LOCKOUT_DURATION_MINUTES: int = _int_env("ACCOUNT_LOCKOUT_DURATION_MINUTES", 15)
+    ACCOUNT_LOCKOUT_DURATION_MINUTES: ClassVar[int] = _int_env(
+        "ACCOUNT_LOCKOUT_DURATION_MINUTES", 15
+    )
     # Enable progressive lockout (doubles duration for each subsequent lockout)
     ACCOUNT_LOCKOUT_PROGRESSIVE: bool = (
         os.getenv("ACCOUNT_LOCKOUT_PROGRESSIVE", "true").lower() == "true"
     )
     # Maximum lockout duration in minutes (24 hours)
-    ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES: int = _int_env(
+    ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES: ClassVar[int] = _int_env(
         "ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES", 1440
     )
     # Enable account lockout (disable for testing)
@@ -342,7 +373,7 @@ class Settings(BaseSettings):
     AUDIT_LOG_ENABLED: bool = os.getenv("AUDIT_LOG_ENABLED", "true").lower() == "true"
     AUDIT_LOG_FORMAT: str = os.getenv("AUDIT_LOG_FORMAT", "json")  # json or cef
     AUDIT_LOG_TO_OPENSEARCH: bool = os.getenv("AUDIT_LOG_TO_OPENSEARCH", "true").lower() == "true"
-    AUDIT_LOG_RETENTION_DAYS: int = _int_env("AUDIT_LOG_RETENTION_DAYS", 365)
+    AUDIT_LOG_RETENTION_DAYS: ClassVar[int] = _int_env("AUDIT_LOG_RETENTION_DAYS", 365)
     # Fallback to file-based logging when OpenSearch is unavailable (FedRAMP AU-9)
     AUDIT_LOG_FALLBACK_ENABLED: bool = (
         os.getenv("AUDIT_LOG_FALLBACK_ENABLED", "true").lower() == "true"
@@ -357,20 +388,20 @@ class Settings(BaseSettings):
     LOGIN_BANNER_CLASSIFICATION: str = os.getenv("LOGIN_BANNER_CLASSIFICATION", "UNCLASSIFIED")
 
     # ===== Account Expiration (FedRAMP AC-2) =====
-    ACCOUNT_INACTIVE_DAYS: int = _int_env("ACCOUNT_INACTIVE_DAYS", 90)
+    ACCOUNT_INACTIVE_DAYS: ClassVar[int] = _int_env("ACCOUNT_INACTIVE_DAYS", 90)
     ACCOUNT_EXPIRATION_ENABLED: bool = (
         os.getenv("ACCOUNT_EXPIRATION_ENABLED", "false").lower() == "true"
     )
 
     # ===== Concurrent Session Limits (FedRAMP AC-10) =====
-    MAX_CONCURRENT_SESSIONS: int = _int_env("MAX_CONCURRENT_SESSIONS", 5)  # 0 = unlimited
+    MAX_CONCURRENT_SESSIONS: ClassVar[int] = _int_env("MAX_CONCURRENT_SESSIONS", 5)  # 0 = unlimited
     CONCURRENT_SESSION_POLICY: str = os.getenv(
         "CONCURRENT_SESSION_POLICY", "terminate_oldest"
     )  # or "reject"
 
     # ===== SMTP Settings (for password reset emails) =====
     SMTP_HOST: str = os.getenv("SMTP_HOST", "")
-    SMTP_PORT: int = _int_env("SMTP_PORT", 587)
+    SMTP_PORT: ClassVar[int] = _int_env("SMTP_PORT", 587)
     SMTP_USER: str = os.getenv("SMTP_USER", "")
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     SMTP_FROM: str = os.getenv("SMTP_FROM", "noreply@example.com")
@@ -444,16 +475,16 @@ class Settings(BaseSettings):
     # viewing/labeling session of a multi-hour file (a 5-minute URL 403s mid-playback when
     # the player issues a byte-range request after expiry — the <video> element keeps the
     # stale URL even though the frontend refresher updates its variable). Override via env.
-    MEDIA_URL_EXPIRE_SECONDS: int = _int_env("MEDIA_URL_EXPIRE_SECONDS", 21600)
+    MEDIA_URL_EXPIRE_SECONDS: ClassVar[int] = _int_env("MEDIA_URL_EXPIRE_SECONDS", 21600)
     # Thumbnail URLs: 15 minutes default - longer since they're static images
-    THUMBNAIL_URL_EXPIRE_SECONDS: int = _int_env("THUMBNAIL_URL_EXPIRE_SECONDS", 900)
+    THUMBNAIL_URL_EXPIRE_SECONDS: ClassVar[int] = _int_env("THUMBNAIL_URL_EXPIRE_SECONDS", 900)
     # Derived-asset cache retention (subtitle-embedded videos + extracted audio in the
     # processed-videos/derived/ prefix). These are a regenerable cache, not storage —
     # they are duplicates of the originals and re-created on demand in seconds. A MinIO
     # lifecycle rule auto-expires them after this many days to bound disk/cloud usage.
     # Baseline default for headless/cloud deployments; the admin UI (DB) overrides it.
     # 0 disables auto-expiry (keep forever). Tune low on laptops, high on big-disk servers.
-    DERIVED_CACHE_RETENTION_DAYS: int = _int_env("DERIVED_CACHE_RETENTION_DAYS", 7)
+    DERIVED_CACHE_RETENTION_DAYS: ClassVar[int] = _int_env("DERIVED_CACHE_RETENTION_DAYS", 7)
     # Public URL for presigned URLs (how browsers access MinIO)
     # Dev: http://localhost:5178 | Prod/nginx: https://yourdomain.com/minio or https://minio.yourdomain.com
     MINIO_PUBLIC_URL: str = os.getenv("MINIO_PUBLIC_URL", "")
@@ -468,14 +499,14 @@ class Settings(BaseSettings):
     # signed it, and STS session credentials (IMDS/IRSA/ECS) top out at 1–12 h with 6 h a
     # safe common denominator — so a 24 h URL would 403 long before it "expires".
     # Requests above the ceiling are clamped and logged, never rejected.
-    PRESIGNED_URL_MAX_SECONDS: int = _int_env("PRESIGNED_URL_MAX_SECONDS", 21600)
+    PRESIGNED_URL_MAX_SECONDS: ClassVar[int] = _int_env("PRESIGNED_URL_MAX_SECONDS", 21600)
     # Object size (MB) at or above which the browser uploads via presigned multipart
     # instead of one presigned PUT (issue #327). Above the backend's single-PUT ceiling
     # multipart is mandatory — 5 GiB on native S3 — and this knob cannot raise the
     # threshold past it. Below the ceiling multipart is what makes an interrupted upload
     # resumable, so the default sits far under it. Raise it to keep more uploads on the
     # single-PUT path; it can never disable multipart for objects that need it.
-    MULTIPART_THRESHOLD_MB: int = _int_env("MULTIPART_THRESHOLD_MB", 512)
+    MULTIPART_THRESHOLD_MB: ClassVar[int] = _int_env("MULTIPART_THRESHOLD_MB", 512)
 
     # Redis settings (for Celery)
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
@@ -519,32 +550,28 @@ class Settings(BaseSettings):
     # to mean anything; on a single-node box (laptop/home-server) they leave every replica
     # shard permanently UNASSIGNED and the index status yellow. See
     # docs-site/docs/operations/deployment-configuration.md's AWS profile section.
-    OPENSEARCH_CHUNKS_INDEX_SHARDS: int = max(_int_env("OPENSEARCH_CHUNKS_INDEX_SHARDS", 1), 1)
-    OPENSEARCH_CHUNKS_INDEX_REPLICAS: int = max(_int_env("OPENSEARCH_CHUNKS_INDEX_REPLICAS", 0), 0)
-
-    @field_validator("OPENSEARCH_CHUNKS_INDEX_SHARDS", "OPENSEARCH_CHUNKS_INDEX_REPLICAS")
-    @classmethod
-    def _clamp_chunks_index_topology(cls, v: int, info: ValidationInfo) -> int:
-        """Floor each field again, AFTER pydantic-settings has resolved it.
-
-        The ``max(_int_env(...), N)`` in the field default above only runs once, at class
-        BODY execution time, to compute the field's *default* — but ``Settings`` is a
-        ``BaseSettings`` subclass, so pydantic-settings separately re-reads the matching env
-        var at every ``Settings()`` construction and casts it straight to ``int``, bypassing
-        that default (and its clamp) entirely whenever the var is actually set. A negative
-        ``OPENSEARCH_CHUNKS_INDEX_SHARDS`` env var reached ``settings.OPENSEARCH_CHUNKS_INDEX_
-        SHARDS`` unclamped until this validator was added — caught by
-        ``tests/unit/test_index_topology.py::test_negative_values_are_clamped_to_the_topology_floor``
-        failing against the ``max()``-only version of this field.
-        """
-        floor = 1 if info.field_name == "OPENSEARCH_CHUNKS_INDEX_SHARDS" else 0
-        return max(v, floor)
+    # ClassVar (not a pydantic field): OPENSEARCH_CHUNKS_INDEX_SHARDS/REPLICAS used to be
+    # plain fields with a `max(_int_env(...), N)` default, guarded by the
+    # `_clamp_chunks_index_topology` validator below — that validator existed ONLY because
+    # pydantic-settings re-reads a declared field's matching env var at every `Settings()`
+    # construction and bypasses the class-body default (and its clamp) entirely. ClassVar
+    # is excluded from pydantic-settings' field detection, so the value is computed purely
+    # by this class-body expression, once, and never re-sourced/re-validated — the same fix
+    # applied repo-wide for the ``_int_env``/``_float_env`` crash class. The validator is
+    # therefore removed entirely rather than kept as a no-op: it decorated a field name
+    # that no longer exists as a pydantic field, which pydantic refuses at class definition.
+    OPENSEARCH_CHUNKS_INDEX_SHARDS: ClassVar[int] = max(
+        _int_env("OPENSEARCH_CHUNKS_INDEX_SHARDS", 1), 1
+    )
+    OPENSEARCH_CHUNKS_INDEX_REPLICAS: ClassVar[int] = max(
+        _int_env("OPENSEARCH_CHUNKS_INDEX_REPLICAS", 0), 0
+    )
 
     OPENSEARCH_SEARCH_PIPELINE: str = "transcript-hybrid-search"
-    SEARCH_CHUNK_TARGET_WORDS: int = _int_env("SEARCH_CHUNK_TARGET_WORDS", 200)
-    SEARCH_CHUNK_OVERLAP_WORDS: int = _int_env("SEARCH_CHUNK_OVERLAP_WORDS", 40)
-    SEARCH_RRF_RANK_CONSTANT: int = _int_env("SEARCH_RRF_RANK_CONSTANT", 30)
-    SEARCH_RRF_WINDOW_SIZE: int = _int_env("SEARCH_RRF_WINDOW_SIZE", 500)
+    SEARCH_CHUNK_TARGET_WORDS: ClassVar[int] = _int_env("SEARCH_CHUNK_TARGET_WORDS", 200)
+    SEARCH_CHUNK_OVERLAP_WORDS: ClassVar[int] = _int_env("SEARCH_CHUNK_OVERLAP_WORDS", 40)
+    SEARCH_RRF_RANK_CONSTANT: ClassVar[int] = _int_env("SEARCH_RRF_RANK_CONSTANT", 30)
+    SEARCH_RRF_WINDOW_SIZE: ClassVar[int] = _int_env("SEARCH_RRF_WINDOW_SIZE", 500)
     # Hybrid fusion strategy (issue #363). "rrf" is the shipped default;
     # "normalization" selects OpenSearch's normalization-processor instead.
     # Env-only and deliberately NOT DB-backed, like SEARCH_RRF_RANK_CONSTANT above:
@@ -555,37 +582,39 @@ class Settings(BaseSettings):
     SEARCH_COMBINATION_TECHNIQUE: str = os.getenv("SEARCH_COMBINATION_TECHNIQUE", "arithmetic_mean")
     # Comma-separated per-leg weights, e.g. "0.7,0.3" (BM25, neural). Empty = equal.
     SEARCH_COMBINATION_WEIGHTS: str = os.getenv("SEARCH_COMBINATION_WEIGHTS", "")
-    SEARCH_BULK_BATCH_SIZE: int = max(_int_env("SEARCH_BULK_BATCH_SIZE", 100), 1)
-    SEARCH_NEURAL_BATCH_SIZE: int = _int_env("SEARCH_NEURAL_BATCH_SIZE", 5)
-    SEARCH_REINDEX_REFRESH_INTERVAL: int = _int_env("SEARCH_REINDEX_REFRESH_INTERVAL", 100)
-    REINDEX_PARALLEL_WORKERS: int = _int_env("REINDEX_PARALLEL_WORKERS", 4)
-    SEARCH_HYBRID_MIN_SCORE: float = float(os.getenv("SEARCH_HYBRID_MIN_SCORE", "0.005"))
-    SEARCH_SEMANTIC_HIGH_CONFIDENCE: float = float(
-        os.getenv("SEARCH_SEMANTIC_HIGH_CONFIDENCE", "0.010")
+    SEARCH_BULK_BATCH_SIZE: ClassVar[int] = max(_int_env("SEARCH_BULK_BATCH_SIZE", 100), 1)
+    SEARCH_NEURAL_BATCH_SIZE: ClassVar[int] = _int_env("SEARCH_NEURAL_BATCH_SIZE", 5)
+    SEARCH_REINDEX_REFRESH_INTERVAL: ClassVar[int] = _int_env(
+        "SEARCH_REINDEX_REFRESH_INTERVAL", 100
+    )
+    REINDEX_PARALLEL_WORKERS: ClassVar[int] = _int_env("REINDEX_PARALLEL_WORKERS", 4)
+    SEARCH_HYBRID_MIN_SCORE: ClassVar[float] = _float_env("SEARCH_HYBRID_MIN_SCORE", 0.005)
+    SEARCH_SEMANTIC_HIGH_CONFIDENCE: ClassVar[float] = _float_env(
+        "SEARCH_SEMANTIC_HIGH_CONFIDENCE", 0.010
     )
     # Intra-semantic suppression: filter semantic-only results whose score falls
     # below this fraction of the semantic score range. 0.5 = keep top half.
-    SEARCH_SEMANTIC_SUPPRESS_RATIO: float = float(
-        os.getenv("SEARCH_SEMANTIC_SUPPRESS_RATIO", "0.20")
+    SEARCH_SEMANTIC_SUPPRESS_RATIO: ClassVar[float] = _float_env(
+        "SEARCH_SEMANTIC_SUPPRESS_RATIO", 0.20
     )
 
     # Max concurrent group searches for collapse inner_hits (OpenSearch default: 0 = sequential)
-    SEARCH_COLLAPSE_MAX_CONCURRENT: int = _int_env("SEARCH_COLLAPSE_MAX_CONCURRENT", 20)
+    SEARCH_COLLAPSE_MAX_CONCURRENT: ClassVar[int] = _int_env("SEARCH_COLLAPSE_MAX_CONCURRENT", 20)
 
     # Maximum number of collapsed file groups to over-fetch for client-side sorting.
     # Higher values improve recall for large collections at the cost of memory.
-    SEARCH_MAX_OVERFETCH: int = _int_env("SEARCH_MAX_OVERFETCH", 1000)
+    SEARCH_MAX_OVERFETCH: ClassVar[int] = _int_env("SEARCH_MAX_OVERFETCH", 1000)
 
     # Chunk threshold above which bulk indexing temporarily disables OpenSearch
     # refresh (sets refresh_interval=-1) for the target index to avoid one
     # segment-refresh per bulk batch. The interval is restored afterwards so
     # normal search latency is unaffected. Tuned for 6+ hour transcripts.
-    SEARCH_LARGE_TRANSCRIPT_CHUNKS: int = _int_env("SEARCH_LARGE_TRANSCRIPT_CHUNKS", 500)
+    SEARCH_LARGE_TRANSCRIPT_CHUNKS: ClassVar[int] = _int_env("SEARCH_LARGE_TRANSCRIPT_CHUNKS", 500)
 
     # SQLAlchemy connection pool for the FastAPI backend. Celery workers build
     # their own engines, so these sizes mainly control API concurrency.
-    DB_POOL_SIZE: int = max(_int_env("DB_POOL_SIZE", 20), 1)
-    DB_MAX_OVERFLOW: int = max(_int_env("DB_MAX_OVERFLOW", 40), 0)
+    DB_POOL_SIZE: ClassVar[int] = max(_int_env("DB_POOL_SIZE", 20), 1)
+    DB_MAX_OVERFLOW: ClassVar[int] = max(_int_env("DB_MAX_OVERFLOW", 40), 0)
 
     # Server-side backstop for the "transaction held open across slow work"
     # bug class (issue #440). Postgres terminates a backend that has an OPEN
@@ -603,37 +632,13 @@ class Settings(BaseSettings):
     # Applies to the shared app engine only. `db/migrations.py` builds its own
     # engines, so a long `ALTER TABLE` and the advisory-lock holder are outside
     # this timeout by construction.
-    DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: int = max(
+    # ClassVar for the same reason as DB_POOL_SIZE/DB_MAX_OVERFLOW/SEARCH_BULK_BATCH_SIZE
+    # above: this used to need `_clamp_pool_and_batch_floors` below to re-apply its floor
+    # after pydantic-settings re-sourced the env var and bypassed the class-body `max()`.
+    # ClassVar is never re-sourced, so the validator (and the field it decorated) is gone.
+    DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: ClassVar[int] = max(
         _int_env("DB_IDLE_IN_TRANSACTION_TIMEOUT_MS", DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS), 0
     )
-
-    @field_validator(
-        "DB_POOL_SIZE",
-        "DB_MAX_OVERFLOW",
-        "SEARCH_BULK_BATCH_SIZE",
-        "DB_IDLE_IN_TRANSACTION_TIMEOUT_MS",
-    )
-    @classmethod
-    def _clamp_pool_and_batch_floors(cls, v: int, info: ValidationInfo) -> int:
-        """Floor each field again, AFTER pydantic-settings has resolved it.
-
-        Same bug class as ``_clamp_chunks_index_topology`` above: the ``max(_int_env(...),
-        N)`` written on each field default only runs once, at class BODY execution time, to
-        compute the field's *default* — but ``Settings`` is a ``BaseSettings`` subclass, so
-        pydantic-settings separately re-reads the matching env var at every ``Settings()``
-        construction and casts it straight to ``int``, bypassing that default (and its
-        clamp) entirely whenever the var is actually set. A ``DB_POOL_SIZE`` env var reached
-        ``settings.DB_POOL_SIZE`` unclamped until this validator was added — a measured +3
-        discrepancy versus the intended floor.
-        """
-        floors = {
-            "DB_POOL_SIZE": 1,
-            "DB_MAX_OVERFLOW": 0,
-            "SEARCH_BULK_BATCH_SIZE": 1,
-            "DB_IDLE_IN_TRANSACTION_TIMEOUT_MS": 0,
-        }
-        assert info.field_name is not None  # always set for a field_validator
-        return max(v, floors[info.field_name])
 
     # Observability. LOG_FORMAT="json" switches the root logger to structured
     # JSON lines (Loki/CloudWatch-ready); "text" keeps the human-readable format.
@@ -756,7 +761,9 @@ class Settings(BaseSettings):
     TORCH_DEVICE: str = os.getenv("TORCH_DEVICE", "auto")  # auto, cuda, mps, cpu
     COMPUTE_TYPE: str = os.getenv("COMPUTE_TYPE", "auto")  # auto, float16, float32, int8
     USE_GPU: str = os.getenv("USE_GPU", "auto")  # auto, true, false
-    GPU_DEVICE_ID: int = _int_env("GPU_DEVICE_ID", 0)  # Host GPU index (Docker maps to device 0)
+    GPU_DEVICE_ID: ClassVar[int] = _int_env(
+        "GPU_DEVICE_ID", 0
+    )  # Host GPU index (Docker maps to device 0)
     BATCH_SIZE: str = os.getenv("BATCH_SIZE", "auto")  # auto or integer
 
     # AI Models settings
@@ -769,11 +776,32 @@ class Settings(BaseSettings):
     HUGGINGFACE_TOKEN: str | None = os.getenv("HUGGINGFACE_TOKEN", None)
 
     # Speaker diarization settings
-    MIN_SPEAKERS: int = _int_env("MIN_SPEAKERS", 1)
-    MAX_SPEAKERS: int = _int_env("MAX_SPEAKERS", 20)
-    # NUM_SPEAKERS forces exact speaker count (overrides min/max if set)
+    MIN_SPEAKERS: ClassVar[int] = _int_env("MIN_SPEAKERS", 1)
+    MAX_SPEAKERS: ClassVar[int] = _int_env("MAX_SPEAKERS", 20)
+    # NUM_SPEAKERS forces exact speaker count (overrides min/max if set). Unlike
+    # MIN/MAX_SPEAKERS above, a raw int(...) with no fallback used to crash the
+    # whole backend at import time on any malformed value -- e.g. an inline `#`
+    # comment on the same .env line, which docker compose's env_file loading
+    # does NOT strip (unlike a shell sourcing the file). None is genuinely valid
+    # here (falls back to the MIN/MAX range), so this can't reuse _int_env's
+    # default-int signature; it duplicates its try/except instead.
     _NUM_SPEAKERS_STR: str | None = os.getenv("NUM_SPEAKERS")
-    NUM_SPEAKERS: int | None = int(_NUM_SPEAKERS_STR) if _NUM_SPEAKERS_STR else None
+    # ClassVar, not a plain field: see the _int_env/_float_env fields above. A plain
+    # `int | None` field is still re-sourced from NUM_SPEAKERS by pydantic-settings at
+    # Settings() construction, straight past this try/except, and crashes on a malformed
+    # value exactly like the ones that motivated this whole fix.
+    NUM_SPEAKERS: ClassVar[int | None]
+    if _NUM_SPEAKERS_STR:
+        try:
+            NUM_SPEAKERS = int(_NUM_SPEAKERS_STR)
+        except ValueError:
+            _config_logger.warning(
+                f"Invalid integer for NUM_SPEAKERS={_NUM_SPEAKERS_STR!r}, "
+                "falling back to the MIN/MAX_SPEAKERS range"
+            )
+            NUM_SPEAKERS = None
+    else:
+        NUM_SPEAKERS = None
 
     # Diarization embedding batch size is pinned at 16 in
     # backend/app/transcription/diarizer.py. See
@@ -789,7 +817,7 @@ class Settings(BaseSettings):
     # LDAP/Active Directory Configuration
     LDAP_ENABLED: bool = os.getenv("LDAP_ENABLED", "false").lower() == "true"
     LDAP_SERVER: str = os.getenv("LDAP_SERVER", "")
-    LDAP_PORT: int = _int_env("LDAP_PORT", 636)
+    LDAP_PORT: ClassVar[int] = _int_env("LDAP_PORT", 636)
     LDAP_USE_SSL: bool = os.getenv("LDAP_USE_SSL", "true").lower() == "true"
     # LDAP_USE_TLS enables StartTLS on non-SSL connections (port 389)
     # Use LDAP_USE_SSL=true for LDAPS (port 636) - they are mutually exclusive
@@ -803,7 +831,7 @@ class Settings(BaseSettings):
     ).replace("{username_attr}", os.getenv("LDAP_USERNAME_ATTR", "sAMAccountName"))
     LDAP_EMAIL_ATTR: str = os.getenv("LDAP_EMAIL_ATTR", "mail")
     LDAP_NAME_ATTR: str = os.getenv("LDAP_NAME_ATTR", "cn")
-    LDAP_TIMEOUT: int = _int_env("LDAP_TIMEOUT", 10)
+    LDAP_TIMEOUT: ClassVar[int] = _int_env("LDAP_TIMEOUT", 10)
     LDAP_ADMIN_USERS: str = os.getenv("LDAP_ADMIN_USERS", "")
     # LDAP Group-based RBAC (alternative to LDAP_ADMIN_USERS)
     # Comma-separated list of group DNs that grant admin role
@@ -831,7 +859,7 @@ class Settings(BaseSettings):
     OIDC_CALLBACK_URL: str = oidc_env("OIDC_CALLBACK_URL")
     # Role/group value in the token that grants admin access.
     OIDC_ADMIN_ROLE: str = oidc_env("OIDC_ADMIN_ROLE", "admin")
-    OIDC_TIMEOUT: int = oidc_int_env("OIDC_TIMEOUT", 30)
+    OIDC_TIMEOUT: ClassVar[int] = oidc_int_env("OIDC_TIMEOUT", 30)
     # OIDC Security: Enable audience (aud) claim validation (OWASP recommended)
     # Default to True for security - validates tokens are intended for this client
     OIDC_VERIFY_AUDIENCE: bool = oidc_bool_env("OIDC_VERIFY_AUDIENCE", True)
@@ -930,12 +958,12 @@ class Settings(BaseSettings):
     # Issuer name shown in authenticator apps
     MFA_ISSUER_NAME: str = os.getenv("MFA_ISSUER_NAME", "OpenTranscribe")
     # Number of backup codes to generate (one-time use)
-    MFA_BACKUP_CODE_COUNT: int = _int_env("MFA_BACKUP_CODE_COUNT", 10)
+    MFA_BACKUP_CODE_COUNT: ClassVar[int] = _int_env("MFA_BACKUP_CODE_COUNT", 10)
     # MFA token expiry in minutes (short-lived token for MFA verification step)
-    MFA_TOKEN_EXPIRE_MINUTES: int = _int_env("MFA_TOKEN_EXPIRE_MINUTES", 5)
+    MFA_TOKEN_EXPIRE_MINUTES: ClassVar[int] = _int_env("MFA_TOKEN_EXPIRE_MINUTES", 5)
     # TOTP verification window (number of time steps before/after to accept)
     # 1 = allow 1 step before/after for clock drift (±30 seconds)
-    TOTP_VALID_WINDOW: int = _int_env("TOTP_VALID_WINDOW", 1)
+    TOTP_VALID_WINDOW: ClassVar[int] = _int_env("TOTP_VALID_WINDOW", 1)
     # Require Redis for MFA replay protection (fail-secure mode).
     # Redis is the only place the "this TOTP code / this MFA half-token was already
     # used" claim lives. With this off, a Redis outage silently downgrades MFA to
@@ -972,8 +1000,10 @@ class Settings(BaseSettings):
         "PKI_ADMIN_DNS", ""
     )  # Comma-separated list of admin certificate DNs
     # OCSP/CRL revocation checking settings
-    PKI_OCSP_TIMEOUT_SECONDS: int = _int_env("PKI_OCSP_TIMEOUT_SECONDS", 5)
-    PKI_CRL_CACHE_SECONDS: int = _int_env("PKI_CRL_CACHE_SECONDS", 3600)  # Cache CRL for 1 hour
+    PKI_OCSP_TIMEOUT_SECONDS: ClassVar[int] = _int_env("PKI_OCSP_TIMEOUT_SECONDS", 5)
+    PKI_CRL_CACHE_SECONDS: ClassVar[int] = _int_env(
+        "PKI_CRL_CACHE_SECONDS", 3600
+    )  # Cache CRL for 1 hour
     # Soft-fail allows authentication if revocation check fails (network issues)
     # Defaults to false in production (strict revocation checking)
     PKI_REVOCATION_SOFT_FAIL: bool = (
@@ -984,9 +1014,9 @@ class Settings(BaseSettings):
         == "true"
     )
     # Maximum cache size for OCSP responses (LRU eviction when exceeded)
-    PKI_OCSP_CACHE_MAX_SIZE: int = _int_env("PKI_OCSP_CACHE_MAX_SIZE", 1000)
+    PKI_OCSP_CACHE_MAX_SIZE: ClassVar[int] = _int_env("PKI_OCSP_CACHE_MAX_SIZE", 1000)
     # Maximum cache size for CRLs (LRU eviction when exceeded)
-    PKI_CRL_CACHE_MAX_SIZE: int = _int_env("PKI_CRL_CACHE_MAX_SIZE", 1000)
+    PKI_CRL_CACHE_MAX_SIZE: ClassVar[int] = _int_env("PKI_CRL_CACHE_MAX_SIZE", 1000)
     # Trusted proxy IPs for PKI certificate headers (comma-separated)
     # Only accept PKI certificate headers from these IPs
     # Example: "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
@@ -1106,18 +1136,24 @@ class Settings(BaseSettings):
     YOUTUBE_PLAYLIST_STAGGER_ENABLED: bool = (
         os.getenv("YOUTUBE_PLAYLIST_STAGGER_ENABLED", "true").lower() == "true"
     )
-    YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS: int = _int_env("YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS", 5)
-    YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS: int = _int_env("YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS", 30)
-    YOUTUBE_PLAYLIST_STAGGER_INCREMENT: int = _int_env("YOUTUBE_PLAYLIST_STAGGER_INCREMENT", 5)
+    YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS: ClassVar[int] = _int_env(
+        "YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS", 5
+    )
+    YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS: ClassVar[int] = _int_env(
+        "YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS", 30
+    )
+    YOUTUBE_PLAYLIST_STAGGER_INCREMENT: ClassVar[int] = _int_env(
+        "YOUTUBE_PLAYLIST_STAGGER_INCREMENT", 5
+    )
 
     # Pre-Download Jitter (random delay before each download starts)
     YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED: bool = (
         os.getenv("YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED", "true").lower() == "true"
     )
-    YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS: int = _int_env(
+    YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS: ClassVar[int] = _int_env(
         "YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS", 2
     )
-    YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS: int = _int_env(
+    YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS: ClassVar[int] = _int_env(
         "YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS", 15
     )
 
@@ -1125,13 +1161,17 @@ class Settings(BaseSettings):
     YOUTUBE_USER_RATE_LIMIT_ENABLED: bool = (
         os.getenv("YOUTUBE_USER_RATE_LIMIT_ENABLED", "true").lower() == "true"
     )
-    YOUTUBE_USER_RATE_LIMIT_PER_HOUR: int = _int_env("YOUTUBE_USER_RATE_LIMIT_PER_HOUR", 50)
-    YOUTUBE_USER_RATE_LIMIT_PER_DAY: int = _int_env("YOUTUBE_USER_RATE_LIMIT_PER_DAY", 500)
+    YOUTUBE_USER_RATE_LIMIT_PER_HOUR: ClassVar[int] = _int_env(
+        "YOUTUBE_USER_RATE_LIMIT_PER_HOUR", 50
+    )
+    YOUTUBE_USER_RATE_LIMIT_PER_DAY: ClassVar[int] = _int_env(
+        "YOUTUBE_USER_RATE_LIMIT_PER_DAY", 500
+    )
 
     # Recovery throttle: max YouTube downloads re-queued per health-check cycle
     # (every 10 min).  Keep this well below YOUTUBE_USER_RATE_LIMIT_PER_HOUR / 6
     # to leave headroom for user-initiated downloads.
-    YOUTUBE_RECOVERY_BATCH_SIZE: int = _int_env("YOUTUBE_RECOVERY_BATCH_SIZE", 3)
+    YOUTUBE_RECOVERY_BATCH_SIZE: ClassVar[int] = _int_env("YOUTUBE_RECOVERY_BATCH_SIZE", 3)
 
     # Master switch for automatic YouTube download retries.
     # Set to false to stop all automatic re-attempts (both Celery task retries

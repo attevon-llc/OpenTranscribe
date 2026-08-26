@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Repair ownership of the pipeline's shared volumes.
 #
-# The backend image reserves /scratch/opentranscribe and /tmp/transcription so a freshly
-# created named volume inherits appuser (uid 1000). Volumes created by an older image
-# predate that and are root-owned 0755, which the non-root workers cannot write: the
+# The backend image reserves /scratch/opentranscribe, /tmp/transcription and /tmp/diar-native
+# so a freshly created named volume inherits appuser (uid 1000). Volumes created by an older
+# image predate that and are root-owned 0755, which the non-root workers cannot write: the
 # engine's WAV handoff between the GPU and CPU stages then silently degrades to a
 # re-decode, and the diar-native sidecar cannot be handed audio at all.
 #
@@ -15,7 +15,7 @@ set -euo pipefail
 
 PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)")}"
 UID_GID="${SHARED_VOLUME_OWNER:-1000:1000}"
-VOLUMES=(pipeline_scratch transcription-temp)
+VOLUMES=(pipeline_scratch transcription-temp diar-native-tmp)
 
 echo "project: $PROJECT   owner: $UID_GID"
 fixed=0

@@ -298,6 +298,32 @@ def test_force_delete_admin_200(client, admin_token_headers, normal_user, db_ses
     assert response.json()["file_uuid"] == str(media_file.uuid)
 
 
+def test_force_delete_admin_cancels_a_live_active_task_200(
+    client, admin_token_headers, normal_user, db_session
+):
+    """``/force`` is the documented escape hatch for exactly the case a plain
+    DELETE refuses: a file with a genuinely live ``active_task_id`` (see
+    ``test_files_crud.py::test_delete_file_with_live_active_task_409``). An admin
+    must still be able to force through it — revoking the task, not leaving it
+    orphaned pointing at a deleted file.
+    """
+    media_file = _make_file(
+        db_session,
+        normal_user,
+        file_status="completed",
+        active_task_id="33333333-3333-3333-3333-333333333333",
+    )
+    with (
+        patch("app.utils.task_utils.AsyncResult") as mock_async_result,
+        patch("app.utils.task_utils.celery_app.control.revoke") as mock_revoke,
+    ):
+        mock_async_result.return_value.state = "STARTED"
+        response = client.delete(f"/api/files/{media_file.uuid}/force", headers=admin_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["file_uuid"] == str(media_file.uuid)
+    mock_revoke.assert_called_once_with("33333333-3333-3333-3333-333333333333", terminate=True)
+
+
 # ---------------------------------------------------------------------------
 # GET /api/files/management/stuck
 # ---------------------------------------------------------------------------

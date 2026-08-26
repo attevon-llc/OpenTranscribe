@@ -492,13 +492,54 @@ def wait_for_stable_completion(
     return status
 
 
+def wait_until_safe_to_delete(
+    backend_url: str, token: str, file_uuid: str, timeout_secs: int = 90
+) -> bool:
+    """Poll until *file_uuid* has no live ``active_task_id``, not merely ``completed``.
+
+    ``is_file_safe_to_delete`` (``app/utils/task_utils.py``) is deliberately NOT gated
+    on ``status == PROCESSING``: a selective follow-on stage on an already-completed
+    file (search_indexing/analytics/speaker_llm/summarization/topic_extraction/
+    speaker_clustering) sets ``active_task_id`` via ``create_task_record`` without ever
+    flipping ``status`` away from ``completed``. So two consecutive ``completed`` polls
+    from ``wait_for_stable_completion`` do not guarantee the file is actually safe to
+    delete — a real run hit exactly this: DELETE 409'd twice right after completion,
+    each time against a *different* ``active_task_id``, and needed ``/force`` to clean
+    up (found running the full pipeline verification against a fresh dev stack).
+    Waiting on this directly lets the owning test's teardown delete on the first real
+    attempt instead of quietly falling back to ``/force`` every time.
+
+    Args:
+        backend_url: Base URL of the API under test.
+        token: Bearer token.
+        file_uuid: File to poll.
+        timeout_secs: Upper bound on the wait — short, because this only covers the
+            tail of already-``completed`` follow-on stages, not the main pipeline.
+
+    Returns:
+        True once ``active_task_id`` is observed clear; False if the deadline passed
+        first (the caller still has ``delete_media_file``'s own 409-retry + force
+        fallback as a backstop).
+    """
+    headers = {"Authorization": f"Bearer {token}"}
+    deadline = time.time() + timeout_secs
+    while time.time() < deadline:
+        resp = requests.get(f"{backend_url}/api/files/{file_uuid}", headers=headers, timeout=30)
+        if resp.status_code == 200 and resp.json().get("active_task_id") is None:
+            return True
+        time.sleep(3)
+    return False
+
+
 def delete_media_file(backend_url: str, token: str, file_uuid: str) -> None:
     """Remove a test-created file, retrying past the window where it is still busy.
 
-    A file mid-pipeline answers 409, so a single DELETE is not enough. Falls back to
+    A file mid-pipeline answers 409, so a single DELETE is not enough. Waits out any
+    live follow-on task first (see ``wait_until_safe_to_delete``), then falls back to
     ``/force`` so a failed test can never leave its upload in the dev library.
     """
     headers = {"Authorization": f"Bearer {token}"}
+    wait_until_safe_to_delete(backend_url, token, file_uuid)
     deadline = time.time() + 90
     while time.time() < deadline:
         try:

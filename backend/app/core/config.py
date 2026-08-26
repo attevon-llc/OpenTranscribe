@@ -381,10 +381,20 @@ class Settings(BaseSettings):
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "transcribe_app")
     POSTGRES_SSLMODE: str = os.getenv("POSTGRES_SSLMODE", "prefer")
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL",
-        f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}",
-    )
+    # Plain "" default (not a class-body `os.getenv("DATABASE_URL", <computed>)`
+    # expression) resolved in `validate_auth_settings` below. `os.getenv` only
+    # substitutes its fallback when the key is ABSENT from the environment, not
+    # when it's present-but-empty -- and `.env.example` ships `DATABASE_URL=`
+    # (deliberately blank, meaning "assemble it from the POSTGRES_* components").
+    # A real `.env` file with that blank line sets `DATABASE_URL=""` in the
+    # process environment, so the old class-body form returned "" instead of
+    # the computed postgres URL -- crashing `create_engine()` with
+    # `Could not parse SQLAlchemy URL from given URL string`. Same bug class as
+    # MFA_REQUIRE_REDIS/PKI_REVOCATION_SOFT_FAIL above, just for a str field
+    # instead of a bool. `env_ignore_empty=True` cannot fix this: it only
+    # affects pydantic-settings' own post-hoc re-sourcing of a field from the
+    # environment, not a Python expression that already ran in the class body.
+    DATABASE_URL: str = ""
 
     # MinIO / S3 settings
     MINIO_ROOT_USER: str = os.getenv("MINIO_ROOT_USER", "minioadmin")
@@ -408,7 +418,14 @@ class Settings(BaseSettings):
     S3_ENDPOINT_URL: str = os.getenv("S3_ENDPOINT_URL", "")
     # SigV4 signing region. Wrong region = every request 400s with AuthorizationHeaderMalformed.
     # Falls back to AWS_REGION so a container that already sets the standard AWS var works.
-    S3_REGION: str = os.getenv("S3_REGION", os.getenv("AWS_REGION", "us-east-1"))
+    # Plain "" default; the nested-getenv chain (fall through to AWS_REGION,
+    # then "us-east-1") is resolved in `validate_auth_settings` below -- the
+    # same self-referential-default bug as DATABASE_URL: an explicit
+    # `S3_REGION=` (present-but-empty) made the old `os.getenv("S3_REGION",
+    # os.getenv("AWS_REGION", "us-east-1"))` return "" instead of consulting
+    # AWS_REGION, since `os.getenv` only substitutes its fallback when the key
+    # is absent, not when it's empty.
+    S3_REGION: str = ""
     # True (default) resolves credentials through the AWS provider chain — env vars,
     # EKS/IRSA web-identity token, ECS task role, EC2 instance metadata — so no static
     # keys are needed and rotation is automatic. Set false to sign with the static
@@ -469,10 +486,12 @@ class Settings(BaseSettings):
     _REDIS_SCHEME: str = (
         "rediss" if os.getenv("REDIS_USE_TLS", "false").lower() == "true" else "redis"
     )
-    REDIS_URL: str = os.getenv(
-        "REDIS_URL",
-        f"{_REDIS_SCHEME}://{':' + REDIS_PASSWORD + '@' if REDIS_PASSWORD else ''}{REDIS_HOST}:{REDIS_PORT}/0",
-    )
+    # Plain "" default resolved in `validate_auth_settings` below -- same bug
+    # class as DATABASE_URL: `.env.example` ships `REDIS_URL=` (blank, meaning
+    # "assemble it from REDIS_USE_TLS/HOST/PORT/PASSWORD"), and the old
+    # class-body `os.getenv("REDIS_URL", <computed>)` returned "" instead of
+    # the computed value whenever the key was present-but-empty.
+    REDIS_URL: str = ""
 
     # OpenSearch settings
     OPENSEARCH_HOST: str = os.getenv("OPENSEARCH_HOST", "localhost")
@@ -644,9 +663,11 @@ class Settings(BaseSettings):
     # Pre-registered ML Commons model id, used when OPENSEARCH_EMBEDDING_MODE=managed.
     OPENSEARCH_NEURAL_MODEL_ID: str = os.getenv("OPENSEARCH_NEURAL_MODEL_ID", "")
 
-    # Celery settings
-    CELERY_BROKER_URL: str = REDIS_URL
-    CELERY_RESULT_BACKEND: str = REDIS_URL
+    # Celery settings. Plain "" defaults (not `= REDIS_URL`, which at class-body
+    # execution time would bind to REDIS_URL's own pre-validator "" placeholder,
+    # not its resolved value) resolved in `validate_auth_settings` below.
+    CELERY_BROKER_URL: str = ""
+    CELERY_RESULT_BACKEND: str = ""
 
     @property
     def is_hardened(self) -> bool:
@@ -714,6 +735,32 @@ class Settings(BaseSettings):
             self.MFA_REQUIRE_REDIS = not is_relaxed_environment(self.ENVIRONMENT)
         if not os.environ.get("PKI_REVOCATION_SOFT_FAIL"):
             self.PKI_REVOCATION_SOFT_FAIL = is_relaxed_environment(self.ENVIRONMENT)
+
+        # Same bug class, for str fields whose default is assembled from other
+        # already-resolved fields instead of a bool computed from ENVIRONMENT.
+        # `self.POSTGRES_*`/`self.REDIS_*`/etc. are themselves plain `str`
+        # fields with LITERAL `os.getenv` defaults, so they are already
+        # correctly resolved on `self` by this point regardless of whether
+        # this validator runs before or after them.
+        if not self.DATABASE_URL:
+            self.DATABASE_URL = (
+                f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+                f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+            )
+        if not self.REDIS_URL:
+            scheme = "rediss" if self.REDIS_USE_TLS else "redis"
+            auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
+            self.REDIS_URL = f"{scheme}://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/0"
+        if not self.CELERY_BROKER_URL:
+            self.CELERY_BROKER_URL = self.REDIS_URL
+        if not self.CELERY_RESULT_BACKEND:
+            self.CELERY_RESULT_BACKEND = self.REDIS_URL
+        if not self.S3_REGION:
+            self.S3_REGION = os.environ.get("AWS_REGION") or "us-east-1"
+        if not self.BEDROCK_REGION:
+            self.BEDROCK_REGION = (
+                os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or ""
+            )
 
         _validate_ldap_settings(self)
         _validate_oidc_settings(self)
@@ -1049,9 +1096,11 @@ class Settings(BaseSettings):
     # provisioned at all — which is most of the operational appeal over a raw API key.
     # Region falls back to the AWS SDK's own variables so an already-configured host
     # needs nothing extra.
-    BEDROCK_REGION: str = os.getenv(
-        "BEDROCK_REGION", os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", ""))
-    )
+    # Plain "" default; the nested-getenv chain (AWS_REGION, then
+    # AWS_DEFAULT_REGION, then "") is resolved in `validate_auth_settings`
+    # below -- same self-referential-default bug as DATABASE_URL/S3_REGION.
+    # `.env.example` ships `BEDROCK_REGION=` blank.
+    BEDROCK_REGION: str = ""
     # Bare foundation-model ID; a geography prefix is applied at call time to select the
     # cross-region inference profile (see llm_bedrock.resolve_model_id). Set a fully
     # prefixed ID or a profile ARN here to bypass that and pin an exact profile.

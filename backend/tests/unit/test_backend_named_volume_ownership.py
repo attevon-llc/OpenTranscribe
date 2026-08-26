@@ -28,16 +28,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DOCKERFILE_PROD = REPO_ROOT / "backend" / "Dockerfile.prod"
 DOCKERFILE_LITE = REPO_ROOT / "backend" / "Dockerfile.lite"
 
-#: Every compose file that can mount a volume onto a service built from
-#: Dockerfile.prod/.lite. `docker-compose.diar-native.yml` is an aux overlay
-#: (--with-diar-native) and is not merged into the base file's own volume list.
+#: Every compose file that can mount a volume onto a backend-image service.
+#: `docker-compose.diar-native.yml` is an aux overlay (--with-diar-native) and is
+#: not merged into the base file's own volume list.
 COMPOSE_FILES = ("docker-compose.yml", "docker-compose.diar-native.yml")
-
-#: Backend-image services identified by the image name their build resolves to.
-#: `diar-native` sets `image: opentranscribe-backend:latest` directly rather than
-#: building — matched on either form.
-BACKEND_IMAGE_NAMES = {"opentranscribe-backend", "opentranscribe-backend:latest"}
-BACKEND_DOCKERFILES = {"Dockerfile.prod", "Dockerfile.lite"}
 
 _INTERPOLATION = re.compile(r"\$\{[^}]*\}")
 
@@ -48,25 +42,33 @@ def _compose_services(path: Path) -> dict[str, dict]:
     return dict(document.get("services") or {})
 
 
+#: The compose-declared volume names this test cares about — the pipeline's own
+#: cross-worker scratch volumes, same set `scripts/fix-shared-volume-perms.sh`
+#: retrofits. Deliberately NOT every named volume in the compose files: those
+#: also declare `postgres_data`/`opensearch_data`/`minio_data`/etc, which are
+#: owned by their OWN image's entrypoint (postgres/opensearch/minio all run
+#: their own uid, unrelated to `appuser`) and are out of scope here.
+PIPELINE_SCRATCH_VOLUMES = {"pipeline_scratch", "transcription-temp", "diar-native-tmp"}
+
+
 def _compose_named_volumes(path: Path) -> set[str]:
     yaml = pytest.importorskip("yaml", reason="PyYAML parses the compose file")
     document = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return set((document.get("volumes") or {}).keys())
-
-
-def _is_backend_image_service(service: dict) -> bool:
-    image = service.get("image")
-    if isinstance(image, str) and image in BACKEND_IMAGE_NAMES:
-        return True
-    build = service.get("build")
-    if isinstance(build, dict):
-        dockerfile = Path(str(build.get("dockerfile", ""))).name
-        return dockerfile in BACKEND_DOCKERFILES
-    return False
+    return set((document.get("volumes") or {}).keys()) & PIPELINE_SCRATCH_VOLUMES
 
 
 def _named_volume_mount_targets(service: dict, named_volumes: set[str]) -> set[str]:
-    """Mount targets on *service* whose source is a compose-declared named volume."""
+    """Mount targets on *service* whose source is a compose-declared named volume.
+
+    Not filtered by which image the service builds from: the base
+    `docker-compose.yml` sets neither `image:` nor `build:` on `backend` at all
+    (an overlay supplies it — dev's `docker-compose.override.yml`, prod's
+    `docker-compose.prod.yml`), so resolving "is this a backend-image service"
+    from the base file alone is unreliable. These three volumes
+    (`pipeline_scratch`/`transcription-temp`/`diar-native-tmp`) exist for
+    exactly one purpose — the pipeline's cross-worker WAV handoff — and only a
+    backend-image service ever has a reason to mount one.
+    """
     targets: set[str] = set()
     for volume in service.get("volumes") or []:
         if not isinstance(volume, str):
@@ -89,8 +91,6 @@ def _all_backend_named_volume_targets() -> set[str]:
             continue
         named_volumes = _compose_named_volumes(path)
         for service in _compose_services(path).values():
-            if not _is_backend_image_service(service):
-                continue
             targets |= _named_volume_mount_targets(service, named_volumes)
     return targets
 

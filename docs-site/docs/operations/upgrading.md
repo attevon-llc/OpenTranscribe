@@ -151,6 +151,32 @@ The migration chain progresses through these versions:
 | `v352` | Requested Whisper model per-transcription |
 | `v353` | Segment unique index fix |
 | `v355` | Independent diarization provider settings |
+| `v360-v362` | Pipeline timing instrumentation (durable wall-clock metrics, imohash fingerprinting) |
+| `v363` | AWS Transcribe dual-credential support (access key ID column) |
+| `v364` | Content redaction columns (PII / profanity / toxicity) |
+| `v365` | Prompt sharing attribution |
+| `v366` | Watch Sources auto-import tables (issue #26) |
+| `v367`, `v371` | Cloud-edition multitenancy seams + a schema-shape repair for pre-release deployments |
+| `v368` | Defensive guard: native `uuid` column type on every identifier |
+| `v369`, `v377` | Superuser/role invariant hardening — see [Breaking Changes (v0.5.0)](#breaking-changes-v050) |
+| `v370` | Media file quarantine / takedown columns |
+| `v372-v373` | Organization-scoped audit events and speaker clusters (issue #262) |
+| `v374` | Per-user tag ownership (security fix for cross-user tag-name disclosure) |
+| `v375-v376` | RAG chat tables and chat projects (issues #52, #360) |
+| `v378` | Directory (LDAP/OIDC) group-to-in-app-group mapping |
+| `v379-v380` | OIDC config/identity rename — see [The OIDC surface is renamed](#the-oidc-surface-is-renamed--configuration-keys-routes-and-the-admin-tab) |
+| `v381` | Administrator approval state for newly provisioned accounts |
+| `v382` | SCIM 2.0 bearer tokens |
+| `v383` | SAML auth type and identity column (issue #35) |
+| `v384` | Chat reasoning-content column (collapsible "thinking" display) |
+| `v385` | Drop orphaned tables left by removed features (issue #398) |
+| `v386-v387` | Tag sharing with users/groups, plus actor-FK and CHECK-constraint repairs |
+| `v388` | Tenant scope for `user_group` (issue #262) |
+| `v389` | Erasure ledger — durable record of GDPR Art. 17 erasure requests (#442) |
+| `v390` | Deterministic ingest artifacts for the no-LLM summary tier (#383/#403) |
+| `v391` | `media_file.recorded_date` and its provenance (#403) |
+| `v392` | `media_file.redaction_coverage` — which detectors a scan actually ran (#403) |
+| `v393` | Timing columns for transcribe-diarize overlap and progressive presentation |
 
 ### What to Do if Migrations Fail
 
@@ -432,12 +458,13 @@ curl -X POST http://localhost:5174/api/admin/reindex -H "Authorization: Bearer <
 
 ### Permission Errors on Model Cache
 
-After upgrading, the container user (UID 1000) may not have access to cached models:
+After upgrading, the container user (UID 1000, GID 999 — `appuser` is created with
+`useradd -u 1000` but `groupadd -r`, issue #580) may not have access to cached models:
 
 ```bash
 # Fix permissions
 ./scripts/fix-model-permissions.sh
 
 # Or manually
-sudo chown -R 1000:1000 ${MODEL_CACHE_DIR:-./models}/
+sudo chown -R 1000:999 ${MODEL_CACHE_DIR:-./models}/
 ```

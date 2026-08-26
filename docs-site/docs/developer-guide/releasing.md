@@ -147,6 +147,10 @@ accepted CVE with no reachable path — never to turn a red run green.
 
 ## The two rehearsal scenarios
 
+These rehearse the same `./opentranscribe.sh update` path a real operator runs; see
+[Upgrading](../operations/upgrading.md) for the operator-facing failure-recovery guidance this
+rehearsal is meant to keep accurate.
+
 ```bash
 ./opentr.sh stop            # required — see below
 ./scripts/release-tests/test-fresh-install.sh

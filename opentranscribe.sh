@@ -550,7 +550,12 @@ case "${1:-help}" in
         compose_down_for_upgrade "$compose_files" || exit 1
         docker compose $compose_files pull
 
-        perform_phased_restart "$compose_files" || exit 1
+        if ! perform_phased_restart "$compose_files"; then
+            echo -e "${RED}❌ Upgrade did not complete successfully.${NC}"
+            echo -e "${YELLOW}   See https://docs.opentranscribe.app/docs/operations/upgrading#common-upgrade-issues${NC}"
+            echo -e "${YELLOW}   for recovery steps, or run './opentranscribe.sh logs backend' for details.${NC}"
+            exit 1
+        fi
 
         echo -e "${GREEN}✅ OpenTranscribe containers updated!${NC}"
         echo ""
@@ -666,7 +671,12 @@ case "${1:-help}" in
         # backend's health wait and SIGTERM it mid-Alembic — and update-full is
         # the MORE likely of the two to run a long migration chain, since it is
         # what people run when moving across releases.
-        perform_phased_restart "$compose_files" || exit 1
+        if ! perform_phased_restart "$compose_files"; then
+            echo -e "${RED}❌ Upgrade did not complete successfully.${NC}"
+            echo -e "${YELLOW}   See https://docs.opentranscribe.app/docs/operations/upgrading#common-upgrade-issues${NC}"
+            echo -e "${YELLOW}   for recovery steps, or run './opentranscribe.sh logs backend' for details.${NC}"
+            exit 1
+        fi
 
         # A release can introduce a NEW model (v0.5.0 adds the chat reranker and
         # the content-redaction weights). Nothing in the upgrade path fetches it:

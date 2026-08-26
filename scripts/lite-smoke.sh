@@ -40,17 +40,26 @@ if [[ "$HEALTH_STATUS" != "healthy" && "$HEALTH_STATUS" != "none" ]]; then
     fail "$BACKEND_CONTAINER healthcheck reports '$HEALTH_STATUS', expected healthy"
 fi
 
-GPU_WORKER="$(docker ps --filter "name=celery-worker-gpu" --format '{{.Names}}')"
+# Derived from BACKEND_CONTAINER (e.g. "opentranscribe-backend" ->
+# "opentranscribe", or "otfresh-litecheck-backend" -> "otfresh-litecheck")
+# so the checks below only ever look at THIS stack's containers.
+STACK_PREFIX="${BACKEND_CONTAINER%-backend}"
+
+GPU_WORKER="$(docker ps --filter "name=${STACK_PREFIX}-celery-worker-gpu" --format '{{.Names}}')"
 [[ -z "$GPU_WORKER" ]] || fail "a GPU worker container is running ($GPU_WORKER) — this is not a lite/cpu-only topology"
 
 if command -v nvidia-smi >/dev/null 2>&1; then
-    # Any stack process holding device memory is a real failure for a "cpu-only" claim.
-    # Match by container name prefix rather than a hardcoded project name.
+    # Any stack process holding device memory is a real failure for a "cpu-only" claim
+    # — but `docker ps -q` on a shared host lists EVERY running container, not just
+    # this stack's. An unrelated GPU workload from a different compose project
+    # (e.g. another docker-compose.yml entirely) would false-positive this check
+    # if matched against the whole host's containers; scope to STACK_PREFIX so only
+    # a process belonging to the deployment under test can fail it.
     RESIDENT_PIDS="$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null || true)"
     if [[ -n "$RESIDENT_PIDS" ]]; then
         while IFS= read -r pid; do
             [[ -n "$pid" ]] || continue
-            CONTAINER_FOR_PID="$(docker ps -q | xargs -r -I{} sh -c \
+            CONTAINER_FOR_PID="$(docker ps -q --filter "name=${STACK_PREFIX}-" | xargs -r -I{} sh -c \
                 'docker inspect --format "{{.State.Pid}} {{.Name}}" {} 2>/dev/null' \
                 | awk -v p="$pid" '$1 == p {print $2}')"
             [[ -z "$CONTAINER_FOR_PID" ]] || fail "stack process $CONTAINER_FOR_PID (pid $pid) holds GPU memory in a lite/cpu deployment"

@@ -330,6 +330,9 @@ test-results/
 # Release orchestrator ledger (scripts/release.sh) — per-release stage state
 .release/
 
+# Local test matrix ledger (scripts/test-matrix.sh) — per-run leg state
+.test-matrix/
+
 # Legal/licensing planning — internal, not for public repo
 .legal/
 

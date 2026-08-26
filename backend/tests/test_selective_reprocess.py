@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # `backend/tests/CLAUDE.md`'s documented rule for exactly this shape.
 pytestmark = [pytest.mark.integration, pytest.mark.xdist_group("selective_reprocess")]
 
-BASE_URL = "http://localhost:5174/api"
+BASE_URL = f"http://localhost:{os.environ.get('BACKEND_PORT', '5174')}/api"
 LOGIN_EMAIL = "admin@example.com"
 LOGIN_PASSWORD = "password"
 

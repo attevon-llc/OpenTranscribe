@@ -1,0 +1,214 @@
+---
+title: Full Application Test Matrix
+---
+
+# Full Application Test Matrix
+
+See also: [Releasing](releasing.md), [Testing](testing.md).
+
+This is the **local** test matrix: everything worth running against a real stack before you
+trust a change, staged so the cheap, CI-safe checks run first and the expensive, GPU-hungry ones
+run last. [`scripts/release.sh`](releasing.md) is the **release** pipeline — its 12 stages exist
+to cut and publish a version, not to re-derive test coverage. The two compose rather than
+duplicate: Stage 1 here is what `release.sh preflight <v>` and `verify <v>` already run, Stage 3's
+fresh-install/upgrade legs *are* `release.sh rehearse <v>`, and Stage 4 here is nothing more than
+"confirm `scan`/`build`/`publish`/`promote` are wired" — it does not reimplement them. Run this
+matrix on a branch before opening a PR; run `release.sh` when you are actually cutting a version.
+
+Every leg here wraps an existing script. This doc does not introduce new test logic — it
+sequences `scripts/validate-deployments.sh`, `scripts/run-integration-tests.sh`,
+`scripts/run-auth-e2e.sh`, `scripts/diar-native-smoke.sh`,
+`scripts/release-tests/{test-fresh-install,test-upgrade}.sh`, and `scripts/release.sh` itself.
+`scripts/test-matrix.sh` is a thin dispatcher over exactly this table — see
+["Anti-staleness"](#anti-staleness) below.
+
+## Stage 1 — Static / no live stack
+
+**~6-9 min. CI-safe: needs no GPU and no running stack.**
+
+| # | Command | Pass criterion |
+|---|---|---|
+| 1 | `scripts/safe-precommit.sh run --all-files` | Exit 0, no `files were modified by this hook` |
+| 2 | `./scripts/run-backend-tests.sh --summary` | Exit 0, 0 failures |
+| 3 | `python3 scripts/audit-tests.py backend/tests` + `python3 scripts/audit-tests.py --selftest`; `cd frontend && npm run test:audit && npm run test:audit:selftest` | Exit 0, no `SELF-TEST BROKEN`, DEFERRED (backlog) count not increased vs the prior run |
+| 4 | `./scripts/frontend-check.sh --no-claude --check-only` | Exit 0 |
+| 5 | `cd docs-site && npm run build` | Exit 0 |
+| 6 | `./scripts/validate-deployments.sh --json` | Every permutation `ok`, no "documented flag with no matrix entry" |
+| 7 | `python3 scripts/release/check-version-consistency.py` | All version sources agree, single Alembic head |
+| 8 | `backend/venv/bin/python3 scripts/audit-route-coverage.py --json` | Uncovered-route count not increased vs the prior run |
+
+This is exactly what `./scripts/release.sh preflight <v>` and `verify <v>` already run as part of
+cutting a release. Run this stage standalone when you are **not** cutting a release; the release
+pipeline runs the equivalent automatically as part of its own gates.
+
+## Stage 2 — Dev-mode integration
+
+**~2.5-4h total across four stack cycles.** Each cycle is a separate `./opentr.sh start dev ...`
+invocation because the overlay combinations genuinely conflict (see 2B) or because isolating them
+keeps a failure attributable to one leg.
+
+### Cycle 2A — baseline + LLM + auth (one stack start, ~90-120 min)
+
+```
+./opentr.sh start dev --with-mock-llm --with-llm-test --with-ldap-test --with-keycloak-test --with-authentik-test
+```
+
+These five overlays safely co-run on one stack: each binds a distinct loopback port (mock-llm
+`5199`, `--with-llm-test`'s vLLM `5195`, lldap `3890`/`17170`, Keycloak `8180`, Authentik `9022`),
+none of them touches Celery worker scaling or `COMPOSE_PROFILES` (that's Cycle 2B's job), and only
+`--with-llm-test` takes a GPU — pinned via `LLM_TEST_GPU_DEVICE_ID`. On a single-usable-GPU host,
+set `LLM_TEST_GPU_DEVICE_ID` to that GPU and keep `LLM_TEST_VLLM_GPU_UTIL <= 0.45` so vLLM leaves
+headroom for a concurrent transcription, or sequence the LLM legs (3-4 below) after the
+transcription-heavy legs (1-2) finish.
+
+Run these legs serially against that one stack. LLM provider and auth method are both
+single-valued DB-backed `SystemSettings`, so concurrent legs would race each other's config —
+each leg restores its own configuration on exit.
+
+| # | Command | Pass criterion |
+|---|---|---|
+| 1 | `./scripts/run-integration-tests.sh --coverage --search-quality --cleanup` | Exit 0; the search-quality phase reports a non-zero collected-test count |
+| 2 | `./scripts/e2e/run-e2e.sh` | 0 failed. Visual-regression baseline failures must be explicitly triaged before release — never ignored as "known flaky" |
+| 3 | `pytest backend/tests/e2e/test_chat.py test_chat_grounding.py test_chat_trace_panel.py` against `mock-gpt`/`mock-echo`/`mock-error`/`mock-reasoning` | Citations resolve, redaction masks apply, SSE completes, each error model surfaces the error it models |
+| 4 | Same three files, provider repointed at `http://llm-test-vllm:8000/v1` | Real citations resolve to real segment ids; the local-provider redaction exemption fires (no masking of local-model input) |
+| 5 | `./scripts/run-auth-e2e.sh --cleanup --skip-pki` (PKI is Stage 3 only — no dev-mode PKI variant exists) | Per-method summary green; `GET /api/auth/session` returns 200 anonymous afterward, proving config was restored |
+| 6 | — | The `RUN_*`-gated security suites (both FIPS modes) already run inside leg 1's `run-integration-tests.sh` — do not re-run them separately here |
+
+### Cycle 2B — GPU scaling (separate stack cycle, mandatory, ~30-45 min)
+
+```
+./opentr.sh stop
+./opentr.sh start dev --gpu-scale
+```
+
+This is a genuine conflict with 2A, not a convenience separation: `--gpu-scale` sets
+`COMPOSE_PROFILES=gpu-scale` and swaps in `docker-compose.gpu-scale.yml`'s worker topology (N
+parallel Celery workers pinned to `GPU_SCALE_DEVICE_ID`), which is additive with none of 2A's
+overlays. On a single-GPU host, set `GPU_SCALE_DEVICE_ID` to that GPU and stop `--with-llm-test`'s
+vLLM first — both want VRAM.
+
+Run via `scripts/gpu-scale-smoke.sh`. Pass: N workers register in Flower (`GPU_SCALE_WORKERS`,
++1 if `GPU_SCALE_DEFAULT_WORKER=1`), at least 3 concurrent uploads all reach `completed`, no CUDA
+OOM string in `celery-worker-gpu-scaled` logs during the run, and batch wall-clock is less than
+N times a single-file baseline.
+
+### Cycle 2C — diarization providers (~20 min, can fold into 2A if VRAM allows)
+
+diar-native loads by **default** — `--no-diar-native` is what suppresses it — so Cycle 2A already
+exercises it; this is not a separate opt-in overlay. Add:
+
+```
+./scripts/diar-native-smoke.sh
+```
+
+Pass: the diar-native container holds non-zero device memory and shows no restart loop. Then run
+one transcription with `--no-diar-native` to prove the PyAnnote fallback still works. Pass:
+completes, speakers assigned.
+
+### Cycle 2D — lite / CPU-only (~20 min)
+
+```
+./opentr.sh stop
+./opentr.sh start dev --lite --fresh litecheck --port-offset 200
+```
+
+Run via `scripts/lite-smoke.sh`. Pass: stack healthy, no `celery-worker-gpu*` container in
+`docker ps`, no stack process holding memory on any GPU (`nvidia-smi`). A transcription pass needs
+a cloud ASR key — if one isn't configured, record `⊘ NOT MEASURED`, never a pass. Cover `--cpu`
+mode with the same script and the same criteria.
+
+## Stage 3 — Deployment mode (prod)
+
+**~3-5h. Requires the dev stack STOPPED.**
+
+```
+./opentr.sh stop
+BUILD_MODE=local PUSH_LATEST=false ./scripts/docker-build-push.sh all
+./scripts/release-tests/test-fresh-install.sh --yes
+REQUIRE_PREVIOUS=1 ./scripts/release-tests/test-upgrade.sh --yes
+```
+
+Pass: every assertion in each scenario's `REPORT.md` is `PASS`. This sequence is exactly what
+`./scripts/release.sh rehearse <v>` runs — **that is the preferred invocation**, since it owns the
+ledger and records the run against a real version. Use the raw commands above only when
+rehearsing outside a release cut.
+
+**PKI/mTLS is prod+nginx ONLY.** There is no dev-mode variant and none should be invented — Vite
+cannot terminate mTLS.
+
+```
+./scripts/pki/setup-test-pki.sh
+./opentr.sh start prod --build --with-pki
+RUN_PKI_E2E=true pytest backend/tests/e2e/test_pki.py -v
+```
+
+Pass: a client cert from `scripts/pki/test-certs/clients/*.p12` authenticates at
+`https://localhost:5182`; a request with no cert is rejected at the TLS layer (nginx), not served
+as an anonymous 200.
+
+**Scope decisions, stated explicitly:**
+
+- No separate prod pass is run for `--lite`/`--gpu-scale`. Compose validity is checked in Stage
+  1.6, runtime behavior in 2B/2D, and prod images behave identically to dev images for those
+  flags. This is a deliberate scope decision, not an oversight.
+- Offline/air-gapped deployment is **config-validated only** (Stage 1.6). A real
+  network-namespaced offline install pass is a known, currently uncovered gap — do not read
+  Stage 1.6 as proving offline mode works end to end.
+
+## Stage 4 — Image/release gates
+
+**~45-90 min. Mostly already automated — this stage is "confirm existing automation covers it,"
+not new work.**
+
+```
+./scripts/release.sh scan <v>
+./scripts/release.sh build <v>       # multi-arch; needs USE_REMOTE_BUILDER=true, else 2-3h under QEMU
+./scripts/release.sh publish <v>
+./scripts/release.sh promote <v>
+```
+
+`scan`'s security-tooling check is a **warn**-severity preflight, not a blocking one — a missing
+`trivy`, `grype`, or `syft` on `PATH` silently reduces scan coverage rather than failing the
+stage. Verify all three are installed before starting Stage 4.
+
+## Time budget
+
+| Stage | Time |
+|---|---|
+| Stage 1 | 6-9 min |
+| Cycle 2A | 90-120 min |
+| Cycle 2B | 30-45 min |
+| Cycle 2C | 20 min |
+| Cycle 2D | 20 min |
+| Stage 3 | 3-5 h |
+| Stage 4 | 45-90 min (2-3 h if the remote builder is unavailable) |
+| **Full matrix** | **~7-9 h — realistically one working day with triage** |
+
+Sequencing: Stage 1 + Cycle 2A fit in one day. Cycles 2B/2C/2D plus Stage 3 fit in a second day.
+Stage 4 happens naturally as part of an actual `release.sh run` — don't schedule it separately.
+
+## Anti-staleness
+
+`scripts/test-matrix.sh` parses this document's leg tables and fails loudly if a documented leg
+has no matching implementation in the script, or vice versa — the same technique
+`scripts/validate-deployments.sh` uses to keep its deployment matrix from drifting out of sync
+with `opentr.sh`. Don't add a row here without adding its leg to the dispatcher in the same
+change, and don't add a leg to the dispatcher without a row here.
+
+## CI/CD readiness
+
+- Every leg is non-interactive (`--yes` bypasses confirmation prompts).
+- Exit codes follow `release.sh`'s stable contract: `0` pass, `1` gate failed, `2` misuse, `3`
+  precondition unmet, `4` operator abort.
+- `--json` output matches `release.sh`'s shape: `{stage, leg, status, criteria[], next[]}`.
+- State is held in a gitignored per-run ledger; nothing persists across invocations except that.
+- Stage 1 needs no GPU and is the CI-safe subset. Stages 2-4 need a GPU runner and a stack that
+  only one job touches at a time — serialize, never fan out in parallel.
+- **No AWS-specific logic, credentials, registry names, or pipeline definitions belong in this
+  repo.** The core is vendor-clean (see `backend/CLAUDE.md`'s note on the absence of
+  `app/services/cloud`). A future consumer — the private `opentranscribe-cloud` repo, or a CI job
+  — shells out to `scripts/test-matrix.sh <stage> --json --yes` and reads the exit code. That's
+  the entire contract surface this repo owns, in the same spirit
+  `scripts/release/release-criteria.yaml` states for its own gates: "If a second consumer ever
+  appears (a CI job, an AWS promotion job), add its stage here and wire it the same way —
+  bidirectionally, or not at all."

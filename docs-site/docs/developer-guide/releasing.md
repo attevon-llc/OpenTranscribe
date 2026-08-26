@@ -280,6 +280,11 @@ hour QEMU emulation into roughly 20 minutes of native build.
 
 ## Before you start
 
+Cutting a release is not the place to discover a regression. Run the
+[full local test matrix](full-test-matrix.md) on the branch first — its Stage 1 is what
+`preflight`/`verify` run automatically, and its Stage 3 rehearsal legs are exactly what
+`rehearse` runs below; this page does not re-derive those steps.
+
 `preflight` checks all of this, but knowing it saves a cycle:
 
 - **Clean worktree** — a release must be reproducible from its tag.
@@ -299,6 +304,8 @@ hour QEMU emulation into roughly 20 minutes of native build.
 - [Deployment configuration](../operations/deployment-configuration.md) — the
   permutations the matrix validates
 - [Testing](./testing.md) — the suites the `test` stage runs
+- [Full application test matrix](./full-test-matrix.md) — the staged local matrix this
+  pipeline's stages implement pieces of
 
 ### In the repository
 

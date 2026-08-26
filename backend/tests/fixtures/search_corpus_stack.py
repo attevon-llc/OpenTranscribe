@@ -10,13 +10,14 @@ freshly indexed chunks are never orphaned.
 
 from __future__ import annotations
 
+import os
 import time
 import uuid
 
 import pytest
 import requests
 
-BASE = "http://localhost:5174/api"
+BASE = f"http://localhost:{os.environ.get('BACKEND_PORT', '5174')}/api"
 SEARCH_CORPUS_PASSWORD = "search-quality-fixture-pw-1"  # noqa: S105 — throwaway test user only
 
 

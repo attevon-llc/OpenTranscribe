@@ -172,19 +172,6 @@ test_external_llm.py::test_user_has_external_vllm_server::error-swallowed  # BAC
 test_external_llm.py::test_openai_with_custom_base_url_for_vllm::error-swallowed  # BACKLOG(#431): `except ...: pass`/return/log inside a test body — the assertions in the `try` silently stop running and nobody is told. Needs the exception to propagate or be asserted on. UNTRIAGED.
 unit/test_multipart_upload.py::test_multipart_round_trip_against_real_storage::error-swallowed  # BACKLOG(#431): `except ...: pass`/return/log inside a test body — the assertions in the `try` silently stop running and nobody is told. Needs the exception to propagate or be asserted on. UNTRIAGED.
 
-# --- readiness-probe-target (3)
-# All three are real instances of the class the detector was written for (issue #431, from the
-# #403 RAG work: `wait_for_bench_backend_health` polled the DEV stack's container name, so the
-# bench stack's readiness wait reported healthy whenever dev was up). Each probes a port that
-# `opentr.sh --fresh --port-offset N` MOVES — BACKEND_PORT is in FRESH_PORT_VARS and
-# MOCK_LLM_PORT is in FRESH_MOCK_LLM_PORT_VARS — so against an isolated stack these ask about
-# whichever stack happens to own the base port. The fix is the shape the root conftest already
-# uses for Postgres/MinIO/OpenSearch (`os.environ.get("<SVC>_PORT", "<default>")`), but these
-# files are outside the scope of the change that added the detector.
-fixtures/mock_llm.py::mock_llm_url::readiness-probe-target  # BACKLOG(#431): `_reachable("127.0.0.1", CONTAINER_PORT)` with CONTAINER_PORT hardcoded to 5199. Under `--fresh --port-offset N --with-mock-llm` the container is on 5199+N, so this probe misses it and silently falls back to a host subprocess — degraded but not wrong. Fix: read MOCK_LLM_PORT from the environment. UNTRIAGED.
-fixtures/mock_llm.py::mock_llm_base_url_for_backend::readiness-probe-target  # BACKLOG(#431): same hardcoded 5199. Worse than its sibling: this one SKIPS when the probe fails, so every test needing the backend to reach the mock silently disappears against an offset stack. Fix: read MOCK_LLM_PORT from the environment. UNTRIAGED.
-test_selective_reprocess.py::auth_token::readiness-probe-target  # BACKLOG(#431): `BASE_URL = "http://localhost:5174/api"` hardcodes the dev stack's published backend port, and the ConnectionError handler turns "wrong stack" into a skip. Against `--fresh --port-offset N` the whole module skips, or — worse — passes against the DEV stack while claiming to test the isolated one. Fix: derive BASE_URL from BACKEND_PORT. UNTRIAGED.
-
 # --- broad-raises (5)
 # `pytest.raises(Exception)` asserts that the block raised, not that the code refused. The
 # block contains the CALL SETUP too, so a renamed keyword argument, a fixture that stopped

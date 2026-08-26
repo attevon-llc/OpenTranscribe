@@ -407,6 +407,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Test suite: markers, gates, E2E fixtures | `backend/tests/CLAUDE.md` |
 | Repo scripts + destructive-op warnings | `scripts/CLAUDE.md` |
 | Release pipeline (12 stages, ledger, gates) | `docs-site/docs/developer-guide/releasing.md` |
+| Full local test matrix (4 stages, overlay sub-matrix) | `docs-site/docs/developer-guide/full-test-matrix.md` |
 | Frontend SPA (+ 24 folder-level files) | `frontend/CLAUDE.md` |
 
 > **Cosine score conversion (repo-wide trap):** OpenSearch `cosinesimil` returns `(1 + cosine) / 2`, NOT raw cosine. Every kNN score read must do `raw_cosine = 2.0 * hit["_score"] - 1.0`. All 11 read sites live in the speaker/voiceprint plane under `backend/app/services/` (none in `api/`, and transcript search ranks by RRF, never raw cosine) — all 11 currently correct. Full table: `backend/app/services/search/CLAUDE.md`.

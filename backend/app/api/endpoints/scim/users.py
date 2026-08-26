@@ -174,17 +174,28 @@ def replace_user(
     db: Session = Depends(get_db),
     token: SCIMToken = Depends(require_scim_token),
 ):
-    """Replace a user's mutable attributes."""
+    """Replace a user's mutable attributes — a genuine RFC 7644 §3.5.1 full replace.
+
+    ``userName`` is required, matching ``POST /Users``: it is the account's SCIM
+    identifier and there is no default it could fall back to. Every other
+    attribute the request omits is cleared/defaulted rather than left as the
+    resource's current value — see ``scim_service.update_user``'s ``full_replace``
+    docstring for the exact default each field gets.
+    """
     user = _load_user(db, user_id)
+    email = payload.resolved_email()
+    if not email:
+        raise bad_request("userName must be an email address, or emails must contain one")
     try:
         updated = scim_service.update_user(
             db,
             user,
-            email=payload.resolved_email(),
-            display_name=payload.resolved_display_name(),
+            email=email,
+            display_name=payload.resolved_display_name() or email.split("@")[0],
             external_id=payload.externalId,
             active=payload.active,
             actor=str(token.name),
+            full_replace=True,
         )
     except (scim_service.SCIMConflictError, scim_service.SCIMForbiddenError) as exc:
         raise _translate(exc) from exc

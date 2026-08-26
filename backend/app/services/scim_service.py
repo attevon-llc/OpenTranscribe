@@ -153,12 +153,27 @@ def update_user(
     external_id: str | None = None,
     active: bool | None = None,
     actor: str,
+    full_replace: bool = False,
 ) -> User:
     """Apply a SCIM update to *user*, revoking sessions if it deactivates.
 
-    Only attributes the caller actually supplied are written, so ``PUT`` and
-    ``PATCH`` share one implementation and neither can blank a field it did not
-    mention.
+    Two distinct wire semantics share this function, selected by *full_replace*:
+
+    * ``full_replace=False`` (the default, used by ``PATCH``) is a **merge**: only
+      attributes the caller actually supplied are written, and ``None`` means "not
+      mentioned" for every field. This is the historical behavior and is what
+      ``PATCH`` — which is inherently an incremental operation — must keep doing.
+    * ``full_replace=True`` (used by ``PUT``) is RFC 7644 §3.5.1's genuine resource
+      replacement: every attribute is set to exactly what the caller supplied, and
+      an attribute the request omitted is **cleared to its default**, not left as
+      whatever the resource already held. Concretely: ``external_id`` omitted means
+      ``None`` (cleared), ``display_name`` omitted falls back to the email's local
+      part (the same default ``create_user`` applies), and ``active`` omitted means
+      ``True`` ("absent means active", the same default RFC 7643 §4.1.1 and
+      ``create_user``'s docstring already apply on create). ``email`` has no
+      "cleared" value — it is the account's SCIM identifier and a NOT NULL, unique
+      column — so the caller (``replace_user``) must resolve and pass a real
+      address before calling this; there is nothing here to fall back to.
 
     Raises:
         SCIMForbiddenError: The target is a ``super_admin`` and the write would disable
@@ -171,19 +186,30 @@ def update_user(
         _assert_not_super_admin(user, "change the userName of")
         changed["email"] = email
         user.email = email  # type: ignore[assignment]
-    if display_name is not None and display_name != str(user.full_name or ""):
-        changed["full_name"] = display_name
-        user.full_name = display_name  # type: ignore[assignment]
-    if external_id is not None and external_id != user.external_id:
-        changed["external_id"] = external_id
-        user.external_id = external_id  # type: ignore[assignment]
 
-    deactivating = active is not None and bool(active) != bool(user.is_active)
+    if full_replace:
+        if display_name != str(user.full_name or ""):
+            changed["full_name"] = display_name
+            user.full_name = display_name  # type: ignore[assignment]
+        if external_id != user.external_id:
+            changed["external_id"] = external_id
+            user.external_id = external_id  # type: ignore[assignment]
+        active_value: bool | None = True if active is None else bool(active)
+    else:
+        if display_name is not None and display_name != str(user.full_name or ""):
+            changed["full_name"] = display_name
+            user.full_name = display_name  # type: ignore[assignment]
+        if external_id is not None and external_id != user.external_id:
+            changed["external_id"] = external_id
+            user.external_id = external_id  # type: ignore[assignment]
+        active_value = active  # None means "not mentioned" under a merge
+
+    deactivating = active_value is not None and bool(active_value) != bool(user.is_active)
     if deactivating:
-        if not active:
+        if not active_value:
             _assert_not_super_admin(user, "deactivate")
-        changed["is_active"] = bool(active)
-        user.is_active = bool(active)  # type: ignore[assignment]
+        changed["is_active"] = bool(active_value)
+        user.is_active = bool(active_value)  # type: ignore[assignment]
 
     if not changed:
         return user

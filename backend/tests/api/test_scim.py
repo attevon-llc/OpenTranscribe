@@ -188,23 +188,12 @@ class TestUsers:
     def test_a_malformed_id_is_a_clean_404(self, client, scim_headers):
         assert client.get(f"{BASE}/Users/not-a-uuid", headers=scim_headers).status_code == 404
 
-    def test_put_replace_user_is_actually_a_merge_not_a_full_replace(
-        self, client, scim_headers, existing_user
-    ):
-        """RFC 7644 defines ``PUT`` as a full resource replacement, and this is
-        NOT one — confirmed by reading ``scim_service.update_user``, whose own
-        docstring says so: "Only attributes the caller actually supplied are
-        written... neither can blank a field it did not mention." ``users.py``'s
-        ``replace_user`` hands ``payload.resolved_email()`` /
-        ``resolved_display_name()`` / ``externalId`` straight through with no
-        translation, so a ``PUT`` body that omits ``externalId`` leaves the
-        stored one untouched rather than clearing it.
-
-        This is a genuine bug relative to the SCIM spec (a connector that PUTs
-        a user record expecting stale attributes to be wiped will not see
-        that happen), asserted here as the ACTUAL behavior — not silently
-        "fixed" by loosening the assertion, and the route/service code is left
-        untouched.
+    def test_put_replace_user_is_a_genuine_full_replace(self, client, scim_headers, existing_user):
+        """RFC 7644 defines ``PUT`` as a full resource replacement: an attribute
+        the request omits must be cleared, not left as whatever the resource
+        already held. ``scim_service.update_user(..., full_replace=True)`` now
+        implements exactly that (issue #582) — a ``PUT`` body that omits
+        ``externalId`` clears it rather than leaving the previously-set value.
         """
         set_external_id = client.put(
             f"{BASE}/Users/{existing_user.uuid}",
@@ -219,17 +208,17 @@ class TestUsers:
         assert set_external_id.status_code == 200, set_external_id.text
         assert set_external_id.json()["externalId"] == "external-123"
 
-        # A second PUT that omits externalId entirely should, under a REAL full
-        # replace, blank it. It does not.
+        # A second PUT that omits externalId entirely blanks it under a REAL
+        # full replace.
         omitted = client.put(
             f"{BASE}/Users/{existing_user.uuid}",
             headers=scim_headers,
             json={"schemas": [], "userName": str(existing_user.email), "active": True},
         )
         assert omitted.status_code == 200, omitted.text
-        assert omitted.json()["externalId"] == "external-123", (
-            "documented finding: PUT merges rather than replaces — externalId "
-            "survived a PUT that did not mention it"
+        assert omitted.json()["externalId"] is None, (
+            "PUT is a full replace — externalId omitted from the body must be "
+            "cleared, not left as the value set by the previous PUT"
         )
 
     def test_put_replace_user_updates_display_name(self, client, scim_headers, existing_user):
@@ -521,28 +510,20 @@ class TestGroups:
         assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
         assert body["status"] == "404"
 
-    def test_put_replaces_membership_fully_but_a_blank_display_name_is_left_alone(
+    def test_put_replaces_membership_fully_and_requires_display_name(
         self, client, scim_headers, group, existing_user
     ):
-        """Real behavior, read from ``groups.py::replace_group``, is a SPLIT
-        contract rather than one uniform ``PUT`` semantic:
+        """``PUT /Groups/{id}`` is a genuine RFC 7644 full replace on both
+        attributes (issue #582):
 
         * ``members`` IS a full replace — ``_resolve_member_ids`` is built from
           exactly the ``members`` the request body carries, so omitting it (an
           empty list, the schema default) clears the group down to zero members.
-        * ``displayName`` is NOT — the handler only writes it when the payload's
-          ``displayName`` is truthy (``if payload.displayName and ...``), so a
-          request that omits it (or sends an empty string) leaves the existing
-          name untouched instead of RFC 7644's "PUT is a full resource
-          replacement."
-
-        This inconsistency is a real finding, not a test-design choice: one
-        field on the same endpoint obeys REST PUT semantics and the other
-        silently merges. Asserted here as the ACTUAL behavior, not "fixed" by
-        loosening the assertion.
+        * ``displayName`` is REQUIRED, exactly as it is on ``POST /Groups`` —
+          ``user_group.name`` is ``NOT NULL``, so there is no value a full
+          replace could clear it *to*. A blank/omitted ``displayName`` is
+          therefore a 400, not a silent no-op that leaves the old name in place.
         """
-        original_name = str(group.name)
-
         # Seed a member first so the PUT below has something to clear.
         client.patch(
             f"{BASE}/Groups/{group.uuid}",
@@ -555,19 +536,26 @@ class TestGroups:
             },
         )
 
-        response = client.put(
+        blank_name = client.put(
             f"{BASE}/Groups/{group.uuid}",
             headers=scim_headers,
             json={"schemas": [], "displayName": "", "members": []},
+        )
+        assert blank_name.status_code == 400, blank_name.text
+
+        new_name = f"{group.name}-replaced"
+        response = client.put(
+            f"{BASE}/Groups/{group.uuid}",
+            headers=scim_headers,
+            json={"schemas": [], "displayName": new_name, "members": []},
         )
 
         assert response.status_code == 200, response.text
         body = response.json()
         # members: full replace — cleared, because the PUT body named none.
         assert body["members"] == []
-        # displayName: NOT cleared — the blank/omitted value is ignored, and the
-        # prior name survives. This is the merge-like half of the finding.
-        assert body["displayName"] == original_name
+        # displayName: full replace — set to exactly what the request carried.
+        assert body["displayName"] == new_name
 
     def test_delete_group_is_a_real_deletion(self, client, scim_headers, db_session, group):
         response = client.delete(f"{BASE}/Groups/{group.uuid}", headers=scim_headers)

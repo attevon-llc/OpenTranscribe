@@ -5,10 +5,33 @@ from __future__ import annotations
 import logging
 import os
 
+from app.core.exceptions import ASRConfigurationError
+
 from .base import ASRProvider
 from .local_provider import LocalASRProvider
 
 logger = logging.getLogger(__name__)
+
+
+def _guard_local_allowed() -> None:
+    """Raise if resolving to ``LocalASRProvider`` is not viable under this deployment.
+
+    Lite deployments (``DEPLOYMENT_MODE=lite``, set by ``docker-compose.lite.yml``) ship
+    from ``requirements-lite.txt``, which has no whisperx/faster-whisper — that image is
+    cloud-ASR-only by design. Without this guard, resolution silently returns
+    ``LocalASRProvider()`` and the failure only surfaces much later, deep in a Celery GPU
+    task, as a raw ``ModuleNotFoundError`` instead of a clear configuration error.
+    """
+    from app.core.config import settings
+
+    if settings.DEPLOYMENT_MODE.lower() == "lite":
+        raise ASRConfigurationError(
+            "Lite deployments require a cloud ASR provider to be configured — local "
+            "WhisperX transcription is not available in this image (DEPLOYMENT_MODE=lite). "
+            "Configure a cloud ASR provider in Settings, or set ASR_PROVIDER to a cloud "
+            "provider."
+        )
+
 
 # Providers that require a non-empty API key from env vars.
 _KEY_REQUIRED: dict[str, str] = {
@@ -478,6 +501,7 @@ class ASRProviderFactory:
         if cfg.provider == "local":
             # Explicit "local" in DB config — honour it without trying to decrypt
             # a (nonexistent) API key.
+            _guard_local_allowed()
             return LocalASRProvider()
 
         api_key: str | None = None
@@ -562,6 +586,10 @@ class ASRProviderFactory:
                         setting.setting_value,
                         user_id,
                     )
+            except ASRConfigurationError:
+                # Not a config-loading failure — a deliberate refusal to silently fall
+                # back to a local provider this deployment cannot run. Let it propagate.
+                raise
             except Exception as exc:
                 logger.warning(
                     "Failed to load ASR config for user %d: %s — falling back to env/local",
@@ -577,6 +605,7 @@ class ASRProviderFactory:
             return ASRProviderFactory._from_env(env_provider)
 
         logger.debug("ASR provider for user %d: local (default)", user_id)
+        _guard_local_allowed()
         return LocalASRProvider()
 
     @staticmethod
@@ -599,6 +628,7 @@ class ASRProviderFactory:
                     env_var,
                     provider,
                 )
+                _guard_local_allowed()
                 return LocalASRProvider()
 
         if provider == "deepgram":
@@ -662,6 +692,7 @@ class ASRProviderFactory:
                 os.getenv("PYANNOTE_API_KEY", ""), os.getenv("PYANNOTE_MODEL", "parakeet")
             )
         logger.warning("Unknown ASR provider '%s', falling back to local", provider)
+        _guard_local_allowed()
         return LocalASRProvider()
 
     @staticmethod
@@ -678,6 +709,7 @@ class ASRProviderFactory:
         ``access_key_id`` is AWS-only (the Secret Access Key arrives via ``api_key``).
         """
         if provider == "local":
+            _guard_local_allowed()
             return LocalASRProvider()
         if provider == "deepgram":
             from .deepgram_provider import DeepgramProvider
@@ -725,6 +757,7 @@ class ASRProviderFactory:
 
             return PyAnnoteProvider(api_key or "", model or "parakeet")
         logger.warning("Unknown provider '%s', falling back to local", provider)
+        _guard_local_allowed()
         return LocalASRProvider()
 
     @staticmethod

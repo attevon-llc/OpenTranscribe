@@ -34,6 +34,8 @@ from typing import cast
 import pytest
 
 from app import models
+from app.core.config import settings
+from app.core.exceptions import ASRConfigurationError
 from app.services.asr.deepgram_provider import DeepgramProvider
 from app.services.asr.factory import ASR_PROVIDER_CATALOG
 from app.services.asr.factory import ASRProviderFactory
@@ -251,3 +253,59 @@ def test_access_key_id_is_decrypted_but_discarded_for_a_non_aws_provider():
     assert isinstance(provider, DeepgramProvider)
     assert provider.provider_name == "deepgram"
     assert provider._api_key == "real-deepgram-key"
+
+
+# --------------------------------------------------------------------------
+# 5. Lite deployments (DEPLOYMENT_MODE=lite) must never silently resolve to
+#    LocalASRProvider — requirements-lite.txt ships no whisperx/faster-whisper,
+#    so that fallback used to crash later with ModuleNotFoundError deep inside a
+#    Celery GPU task instead of failing clearly at resolution time.
+# --------------------------------------------------------------------------
+
+
+def test_create_for_user_raises_clear_error_under_lite_deployment_with_no_cloud_provider(
+    monkeypatch,
+):
+    """With DEPLOYMENT_MODE=lite, no DB config, and no ASR_PROVIDER env var, resolution
+    would otherwise default to LocalASRProvider(). It must instead raise
+    ASRConfigurationError — not silently succeed, and not surface as a raw
+    ModuleNotFoundError from deep inside the transcription pipeline."""
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
+    monkeypatch.delenv("ASR_PROVIDER", raising=False)
+    db = _FakeDB(setting=None, asr_query=_FakeQuery(None))
+
+    with pytest.raises(ASRConfigurationError, match="[Ll]ite"):
+        ASRProviderFactory.create_for_user(user_id=1, db=db)
+
+
+def test_create_from_db_config_explicit_local_raises_under_lite_deployment(monkeypatch):
+    """A DB config with an explicit ``provider == "local"`` must also be refused under
+    DEPLOYMENT_MODE=lite — an explicit choice is no safer than the implicit default when
+    the image has no whisperx/faster-whisper installed."""
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "lite")
+    cfg = SimpleNamespace(
+        id=11,
+        provider="local",
+        model_name="large-v3-turbo",
+        base_url=None,
+        region=None,
+        api_key=None,
+        access_key_id=None,
+    )
+
+    with pytest.raises(ASRConfigurationError, match="[Ll]ite"):
+        ASRProviderFactory.create_from_db_config(cfg)
+
+
+def test_create_for_user_still_resolves_local_by_default_full_deployment(monkeypatch):
+    """Non-regression: a full deployment (the default, DEPLOYMENT_MODE unset/"full") with
+    no DB config and no ASR_PROVIDER must still resolve LocalASRProvider exactly as
+    before the lite guard was added."""
+    monkeypatch.setattr(settings, "DEPLOYMENT_MODE", "full")
+    monkeypatch.delenv("ASR_PROVIDER", raising=False)
+    db = _FakeDB(setting=None, asr_query=_FakeQuery(None))
+
+    provider = ASRProviderFactory.create_for_user(user_id=1, db=db)
+
+    assert isinstance(provider, LocalASRProvider)
+    assert provider.provider_name == "local"

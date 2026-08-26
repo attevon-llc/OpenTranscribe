@@ -19,6 +19,7 @@ import time
 
 from app.core.celery import celery_app
 from app.core.constants import GPUPriority
+from app.core.exceptions import ASRConfigurationError
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
@@ -65,6 +66,29 @@ __all__ = [
     "transcribe_gpu_task",
     "trigger_automatic_summarization",
 ]
+
+
+def _resolve_asr_provider_or_none(user_id: int):
+    """Resolve the user's ASR provider, or ``None`` on a config-loading failure.
+
+    ``None`` signals the caller to fall through to the local WhisperX pipeline — the
+    documented "asymmetric failure" behaviour (errors *constructing* a provider fall back
+    to local; errors from ``transcribe()`` itself propagate and fail the file).
+
+    ``ASRConfigurationError`` is different: it is a deliberate refusal to silently resolve
+    to a local provider this deployment (e.g. ``DEPLOYMENT_MODE=lite``) cannot run, so it
+    is re-raised rather than swallowed — falling through here would still hit the local
+    pipeline and fail later with a confusing ``ModuleNotFoundError``.
+    """
+    from app.services.asr.factory import ASRProviderFactory
+
+    try:
+        with session_scope() as db:
+            return ASRProviderFactory.create_for_user(user_id, db)
+    except ASRConfigurationError:
+        raise
+    except Exception:
+        return None
 
 
 @celery_app.task(
@@ -115,13 +139,7 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             update_task_status(db, task_id, "in_progress", progress=0.22)
 
         # ── Check for cloud ASR provider (needed in both code paths) ──────────
-        try:
-            from app.services.asr.factory import ASRProviderFactory
-
-            with session_scope() as db:
-                provider = ASRProviderFactory.create_for_user(user_id, db)
-        except Exception:
-            provider = None
+        provider = _resolve_asr_provider_or_none(user_id)
 
         # Read diarization settings (needed in both code paths)
         diarization_source = preprocess_context.get("diarization_source", "provider")

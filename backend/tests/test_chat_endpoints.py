@@ -13,11 +13,15 @@ from __future__ import annotations
 
 import uuid as uuid_pkg
 from contextlib import contextmanager
+from datetime import UTC
+from datetime import datetime
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
+from app.models.chat import ChatConversation
 from app.services.llm_stream import LLMStreamEvent
 
 # ---------------------------------------------------------------------------
@@ -169,6 +173,51 @@ def test_list_can_search_by_title(client, auth_headers):
     ).json()
 
     assert [c["title"] for c in body["conversations"]] == ["Budget planning call"]
+
+
+def test_list_sorts_a_never_messaged_conversation_ahead_of_an_old_one(
+    client, auth_headers, db_session
+):
+    """A conversation with no last_message_at must not be sorted to the end.
+
+    Regression for the sidebar bug: a brand-new conversation (last_message_at
+    NULL) was sorted with nullslast() -- always after every messaged
+    conversation, no matter how stale -- so it never landed within the first
+    page the sidebar loads.
+    """
+    old = _create(client, auth_headers, title="Old")
+    old_row = db_session.query(ChatConversation).filter_by(uuid=old["uuid"]).one()
+    old_row.last_message_at = datetime.now(UTC) - timedelta(days=30)
+    db_session.commit()
+
+    new = _create(client, auth_headers, title="Brand new")
+
+    body = client.get("/api/chat/conversations", headers=auth_headers).json()
+    uuids = [c["uuid"] for c in body["conversations"]]
+
+    assert uuids[0] == new["uuid"]
+    assert old["uuid"] in uuids
+
+
+def test_list_paging_includes_a_never_messaged_conversation_on_page_one(
+    client, auth_headers, db_session
+):
+    """limit=1 must return the never-messaged conversation, not just the sort order.
+
+    This is what the sidebar actually trips over: the comparator can be
+    correct in isolation while the offset/limit page it feeds still excludes
+    the new conversation if the underlying query disagrees.
+    """
+    old = _create(client, auth_headers, title="Old")
+    old_row = db_session.query(ChatConversation).filter_by(uuid=old["uuid"]).one()
+    old_row.last_message_at = datetime.now(UTC) - timedelta(days=30)
+    db_session.commit()
+
+    new = _create(client, auth_headers, title="Brand new")
+
+    body = client.get("/api/chat/conversations", params={"limit": 1}, headers=auth_headers).json()
+
+    assert [c["uuid"] for c in body["conversations"]] == [new["uuid"]]
 
 
 def test_archived_conversations_are_a_separate_list(client, auth_headers):

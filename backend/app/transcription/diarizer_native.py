@@ -168,15 +168,22 @@ class NativeSpeakerDiarizer:
         os.makedirs(_SHARED_DIR, exist_ok=True)
         wav_path = os.path.join(_SHARED_DIR, f"diar_{uuid.uuid4().hex}.wav")
         try:
-            clip = np.clip(np.asarray(audio, dtype=np.float32), -1.0, 1.0)
-            pcm = (clip * 32767.0).astype("<i2")
-            with wave.open(wav_path, "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(16000)
-                wf.writeframes(pcm.tobytes())
-
+            # The WAV write shares the sidecar-loss fallback, not just the HTTP call:
+            # a permission or disk-space failure on the shared scratch volume (e.g.
+            # the volume landing root-owned on first creation, see PR history) is exactly
+            # as recoverable as an unreachable sidecar — both mean "this job cannot
+            # use diar-native right now" — and previously only the HTTP call was
+            # covered, so a write failure propagated out of diarize() uncaught and
+            # hard-failed the whole transcription instead of degrading to PyAnnote.
             try:
+                clip = np.clip(np.asarray(audio, dtype=np.float32), -1.0, 1.0)
+                pcm = (clip * 32767.0).astype("<i2")
+                with wave.open(wav_path, "wb") as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(16000)
+                    wf.writeframes(pcm.tobytes())
+
                 out = _post_json(
                     f"{self.base_url}/diarize",
                     # Gender rides this call: the sidecar has the decoded audio and the
@@ -184,7 +191,7 @@ class NativeSpeakerDiarizer:
                     {"wav_path": wav_path, "file_id": "job", "gender": _GENDER_ENABLED},
                     timeout=_TIMEOUT_S,
                 )
-            except Exception as exc:  # noqa: BLE001 — a sidecar loss must not fail the job
+            except Exception as exc:  # noqa: BLE001 — a sidecar/scratch-volume loss must not fail the job
                 logger.warning(
                     "diar-native /diarize failed mid-job (%s); falling back to PyAnnote", exc
                 )

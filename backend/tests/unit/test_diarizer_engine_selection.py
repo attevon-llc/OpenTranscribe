@@ -350,3 +350,53 @@ class TestRealFailover:
         # same outcome.
         result2, _, _ = native.diarize(audio)
         assert isinstance(result2, DiarizeResult)
+
+    def test_midjob_fallback_engages_when_the_scratch_volume_is_unwritable(
+        self,
+        healthz_server,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        tmp_path,
+    ):
+        """NativeSpeakerDiarizer.diarize(): the shared scratch dir cannot be written to.
+
+        A genuine `PermissionError` from a real unwritable directory (chmod 0o555), not
+        a patched exception — the same failure shape the `/tmp/diar-native` named-volume
+        ownership bug produced in production (the volume landed root-owned on first
+        creation, so the non-root worker's WAV write failed). Before this fix, only the
+        `/diarize` HTTP call was wrapped in the fallback handler; a write failure
+        propagated out of `diarize()` uncaught and hard-failed the whole transcription
+        instead of degrading to PyAnnote the way an unreachable sidecar does.
+        """
+        port, httpd = healthz_server
+        monkeypatch.setattr("app.transcription.diarizer.SpeakerDiarizer", FakeSpeakerDiarizer)
+
+        unwritable_dir = tmp_path / "readonly-scratch"
+        unwritable_dir.mkdir(mode=0o555)
+        monkeypatch.setattr("app.transcription.diarizer_native._SHARED_DIR", str(unwritable_dir))
+
+        config = TranscriptionConfig(diarizer_backend="native")
+        native = NativeSpeakerDiarizer(config, base_url=f"http://127.0.0.1:{port}")
+        native.load_model()
+        assert native.is_loaded
+
+        try:
+            audio = np.zeros(16000, dtype=np.float32)
+            caplog.set_level(logging.WARNING)
+            result, overlap_info, embeddings = native.diarize(audio)
+
+            assert isinstance(result, DiarizeResult)
+            assert len(result) == 1
+            assert isinstance(native._fallback, FakeSpeakerDiarizer), (
+                "an unwritable scratch volume must fall back to the same PyAnnote-shaped "
+                "engine the caller already understands, exactly like a sidecar loss"
+            )
+            assert any("falling back to PyAnnote" in r.message for r in caplog.records), (
+                "a silent failover on a permission error means the slow path runs for "
+                "weeks with no signal, same as a silent sidecar failover"
+            )
+        finally:
+            # tmp_path's own cleanup needs write access to remove the directory.
+            unwritable_dir.chmod(0o755)
+            httpd.shutdown()
+            httpd.server_close()

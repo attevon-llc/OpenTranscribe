@@ -14,7 +14,12 @@
 set -euo pipefail
 
 PROJECT="${COMPOSE_PROJECT_NAME:-$(basename "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)")}"
-UID_GID="${SHARED_VOLUME_OWNER:-1000:1000}"
+# appuser is `useradd -u 1000` (explicit) but `groupadd -r appuser` (a system group with
+# no explicit GID pin) — it lands at 999, not 1000, verified live via `id appuser` in the
+# built image. A volume the Dockerfile chowns at build time is 1000:999; this script's
+# default used to be 1000:1000, which doesn't exist in the image, so a volume repaired by
+# this script diverged from one created fresh by the image itself (issue #580).
+UID_GID="${SHARED_VOLUME_OWNER:-1000:999}"
 VOLUMES=(pipeline_scratch transcription-temp diar-native-tmp)
 
 echo "project: $PROJECT   owner: $UID_GID"

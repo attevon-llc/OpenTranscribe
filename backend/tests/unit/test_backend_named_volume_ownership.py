@@ -97,13 +97,22 @@ def _all_backend_named_volume_targets() -> set[str]:
 def _dockerfile_reserved_paths(dockerfile: Path) -> set[str]:
     """Paths covered by a `RUN mkdir -p <paths> && chown appuser:appuser <paths>` block."""
     text = dockerfile.read_text(encoding="utf-8")
-    match = re.search(r"RUN mkdir -p ([^\n]+?) && \\\s*\n\s*chown appuser:appuser ([^\n]+)", text)
-    if not match:
-        return set()
-    mkdir_paths = set(match.group(1).split())
-    chown_paths = set(match.group(2).split())
-    # Only a path both created AND chowned is actually reserved.
-    return mkdir_paths & chown_paths
+    # Union across every match, not just the first: a second such block earlier in
+    # the file would otherwise silently shadow this one. The regex requires the
+    # exact single-line `mkdir -p ... && \` + `chown appuser:appuser ...` shape this
+    # repo's Dockerfiles currently use — a reformat onto per-path continuation
+    # lines fails closed (reports the path as unreserved rather than silently
+    # passing), but with a misleading "does not chown" message, so that
+    # possibility is called out here and in the assertion text below.
+    reserved: set[str] = set()
+    for match in re.finditer(
+        r"RUN mkdir -p ([^\n]+?) && \\\s*\n\s*chown appuser:appuser ([^\n]+)", text
+    ):
+        mkdir_paths = set(match.group(1).split())
+        chown_paths = set(match.group(2).split())
+        # Only a path both created AND chowned is actually reserved.
+        reserved |= mkdir_paths & chown_paths
+    return reserved
 
 
 def test_the_compose_walk_finds_the_known_volumes() -> None:

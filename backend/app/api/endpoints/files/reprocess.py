@@ -420,6 +420,7 @@ def process_file_reprocess(
                 current_user.id,
                 is_admin=current_user.is_admin,
                 organization_id=organization_id,
+                min_permission="editor",
             )
 
         file_id = media_file.id  # Get internal ID for task operations

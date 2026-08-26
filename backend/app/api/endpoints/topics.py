@@ -82,6 +82,7 @@ def batch_extract_topics(
                 current_user.id,
                 is_admin=current_user.is_admin,
                 organization_id=ctx.org_id,
+                min_permission="editor",
             )
             if media_file.transcript_segments:
                 verified_uuids.append(file_uuid)
@@ -238,7 +239,12 @@ def auto_label_single_file(
 ) -> dict:
     """Apply auto-labeling to a single file's pending suggestions."""
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
+        min_permission="editor",
     )
 
     from app.services.auto_label_service import AutoLabelService
@@ -377,7 +383,12 @@ def extract_topics(
     """
     # Get file and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
+        min_permission="editor",
     )
 
     # Check if file has transcript
@@ -447,7 +458,12 @@ def apply_topic_suggestions(
     """
     # Get file and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
+        min_permission="editor",
     )
     file_id = media_file.id
 
@@ -501,7 +517,12 @@ def dismiss_topic_suggestions(
     """
     # Get file and verify permission (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, is_admin=current_user.is_admin, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=current_user.is_admin,
+        organization_id=ctx.org_id,
+        min_permission="editor",
     )
     file_id = media_file.id
 

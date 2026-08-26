@@ -254,6 +254,7 @@ def get_file_by_uuid_with_permission(
     is_admin: bool = False,
     *,
     organization_id: OrgScope = UNSCOPED,
+    min_permission: str = "viewer",
 ) -> MediaFile:
     """
     Get media file by UUID with permission check.
@@ -270,6 +271,12 @@ def get_file_by_uuid_with_permission(
         organization_id: Active org id, None for personal, or UNSCOPED (default,
             legacy = no gate). When an org id (or explicit None) is passed,
             cross-scope files are rejected even via the sharing path (default-deny).
+        min_permission: Minimum sharing permission level required on the sharing
+            path ("viewer", "editor", or "owner"; see
+            ``PermissionService.PERMISSION_LEVELS``). Defaults to "viewer",
+            preserving prior behavior for read-only call sites. Mutating
+            endpoints should pass ``min_permission="editor"``. Does not affect
+            the admin bypass or direct-ownership fast path.
 
     Returns:
         MediaFile instance
@@ -277,6 +284,7 @@ def get_file_by_uuid_with_permission(
     Raises:
         HTTPException: 404 if not found, 403 if no permission
     """
+    from app.services.permission_service import PERMISSION_LEVELS
     from app.services.permission_service import PermissionService
     from app.services.takedown_service import is_hidden_for
 
@@ -315,6 +323,11 @@ def get_file_by_uuid_with_permission(
     # Check shared access via PermissionService (already in tenant scope above)
     permission = PermissionService.get_file_permission(db, file.id, user_id)
     if permission is not None:
+        if PERMISSION_LEVELS[permission] < PERMISSION_LEVELS[min_permission]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Requires {min_permission} permission on this file",
+            )
         return file
 
     raise HTTPException(

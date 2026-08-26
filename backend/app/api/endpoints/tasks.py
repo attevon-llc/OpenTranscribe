@@ -772,6 +772,7 @@ def retry_file_processing(
                 current_user.id,
                 is_admin=current_user.is_admin,
                 organization_id=ctx.org_id,
+                min_permission="editor",
             )
 
         file_id = media_file.id

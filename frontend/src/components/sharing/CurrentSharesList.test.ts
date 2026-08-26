@@ -5,18 +5,14 @@
  * + a revoke button per share; when false it renders a read-only permission
  * label instead — no select, no revoke button.
  *
- * IMPORTANT FINDING (see `components/sharing/CLAUDE.md` "Gotchas" + confirmed
- * by reading `ShareCollectionModal.svelte` line 240): the only caller of this
- * component, `ShareCollectionModal.svelte`, passes `canManage={true}`
- * unconditionally — the frontend never actually computes whether the current
- * user owns the collection. So while this component's OWN `canManage` gate is
- * real and tested below, the assumption in the task description ("the control
- * is not rendered when the current user is not the resource owner") does NOT
- * hold anywhere in the app today: every viewer of this modal sees `canManage`
- * management UI regardless of ownership. The security boundary is enforced
- * only by the backend (`_require_collection_owner`), which 403s the mutating
- * calls this component fires. This is a real, pre-existing gap, not a new one
- * introduced here.
+ * FIXED (issue #583, see `components/sharing/CLAUDE.md` "Gotchas" and
+ * `ShareCollectionModal.test.ts`): the caller, `ShareCollectionModal.svelte`,
+ * used to pass `canManage={true}` unconditionally. It now takes `canManage` as
+ * a required-in-practice prop supplied by `CollectionsPanel.openShareModal`,
+ * derived from `collection.my_permission === 'owner'` (the same ownership
+ * signal the backend already sends on `CollectionWithCount`). The backend
+ * (`_require_collection_owner`) remains the actual security boundary — this
+ * only fixes the UX of showing controls that would 403 when used.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';

@@ -29,6 +29,7 @@
   let showShareModal = false;
   let shareModalCollectionUuid = '';
   let shareModalCollectionName = '';
+  let shareModalCanManage = false;
   let loading = false;
   let showCreateModal = false;
   let showEditModal = false;
@@ -187,6 +188,10 @@
   function openShareModal(collection: Collection) {
     shareModalCollectionUuid = collection.uuid;
     shareModalCollectionName = collection.name;
+    // Backend already computes ownership per collection (`my_permission`,
+    // default 'owner' when absent). Only the owner may manage shares
+    // (`_require_collection_owner`) — mirror that here instead of assuming true.
+    shareModalCanManage = (collection.my_permission ?? 'owner') === 'owner';
     showShareModal = true;
   }
 
@@ -546,6 +551,7 @@
   <ShareCollectionModal
     collectionUuid={shareModalCollectionUuid}
     collectionName={shareModalCollectionName}
+    canManage={shareModalCanManage}
     on:shared={handleShared}
     on:close={() => showShareModal = false}
   />

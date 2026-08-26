@@ -124,6 +124,20 @@ def llm_config(api_session: requests.Session, backend_url: str) -> Iterator[str]
     )
     assert response.ok, f"Could not create provider: {response.status_code} {response.text}"
     uuid = str(response.json()["uuid"])
+
+    # The backend only auto-activates a config when it is the user's FIRST one
+    # ever; the shared e2e account accumulates configs across runs, so this is
+    # essentially never true here. ChatComposer's disabled state is driven by
+    # that global "active" pointer (GET /api/llm-settings/status), not by the
+    # conversation's own pinned llm_config_uuid — without this the composer
+    # stays disabled with "Chat needs a language model" for the whole test.
+    activate = api_session.post(
+        f"{backend_url}/api/llm-settings/set-active",
+        json={"configuration_id": uuid},
+        timeout=30,
+    )
+    assert activate.ok, f"Could not activate provider: {activate.status_code} {activate.text}"
+
     try:
         yield uuid
     finally:

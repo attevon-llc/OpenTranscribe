@@ -145,6 +145,25 @@ def llm_config_factory(api_session: requests.Session, backend_url: str) -> Itera
         )
         uuid = str(response.json()["uuid"])
         created.append(uuid)
+
+        # The backend only auto-activates a config when it is the user's FIRST one
+        # ever (`create_user_llm_configuration`). The shared e2e account accumulates
+        # configs across runs, so this is essentially never true here, and the
+        # ChatComposer's disabled state is driven by that global "active" pointer
+        # (`llmStatusStore` -> GET /api/llm-settings/status), not by the
+        # conversation's own pinned `llm_config_uuid`. Without this, the composer
+        # stays disabled with "Chat needs a language model" even though the
+        # conversation this config is about to be pinned to is fully usable —
+        # exactly what the real Settings UI does after a save
+        # (LLMSettings.svelte calls the same set-active endpoint).
+        activate = api_session.post(
+            f"{backend_url}/api/llm-settings/set-active",
+            json={"configuration_id": uuid},
+            timeout=30,
+        )
+        assert activate.ok, (
+            f"Could not activate LLM config {unique_name!r}: {activate.status_code} {activate.text}"
+        )
         return uuid
 
     yield _make

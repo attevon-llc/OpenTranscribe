@@ -645,6 +645,72 @@ class TestBulkActions:
         dialog = self.page.locator("[role=dialog], .modal-backdrop")
         expect(dialog.first).to_be_visible(timeout=5000)
 
+    def test_bulk_delete_removes_selected_files(
+        self, owned_media_factory: Any, api_token: str, backend_url: str
+    ) -> None:
+        """Selecting two owned files, confirming Delete, removes both from the
+        gallery DOM and from the backend.
+
+        Uses ``owned_media_factory`` directly (not the shared ``owned_media_file``
+        fixture used by ``TestEndToEndProcessing``) so two files can be uploaded and
+        bulk-deleted together. The autouse ``setup_selection`` fixture already
+        entered selection mode before these files existed, so the page is reloaded
+        to pick them up and selection mode is re-entered. Deleting them here is not
+        a data-hygiene violation of the ``owned_media_factory`` contract: its
+        teardown calls ``delete_media_file``, which treats a 404 from an
+        already-deleted file as success (see ``e2e/conftest.py``), so there is no
+        double-delete error either way.
+        """
+        file1 = owned_media_factory(api_token)
+        file2 = owned_media_factory(api_token)
+        name1 = file1["filename"]
+        name2 = file2["filename"]
+
+        self.page.reload()
+        self.page.wait_for_selector(".gallery-action-buttons", timeout=15000)
+        self.page.click(".select-btn")
+        self.page.wait_for_selector(".select-all-btn", timeout=5000)
+
+        card1 = self.page.locator(".file-card", has_text=name1)
+        card2 = self.page.locator(".file-card", has_text=name2)
+        expect(card1).to_be_visible(timeout=15000)
+        expect(card2).to_be_visible(timeout=15000)
+
+        # The checkbox is visually replaced by a `.checkmark` overlay (custom styled
+        # checkbox), which intercepts pointer events on the input itself — click the
+        # `.file-selector` label instead, exactly as a real user would.
+        card1.locator(".file-selector").click()
+        card2.locator(".file-selector").click()
+
+        delete_btn = self.page.locator(".delete-btn")
+        delete_text = delete_btn.text_content() or ""
+        numbers = re.findall(r"\d+", delete_text)
+        assert numbers and int(numbers[0]) == 2, (
+            f"Expected 2 files selected before delete, got: {delete_text}"
+        )
+
+        delete_btn.click()
+
+        # ConfirmationModal (routes/+page.svelte) renders a BaseModal `role=dialog`
+        # whose confirm button carries the `confirmButtonClass` passed for the
+        # delete flow: `.modal-delete-button`.
+        dialog = self.page.locator("[role=dialog]")
+        expect(dialog).to_be_visible(timeout=5000)
+        dialog.locator(".modal-delete-button").click()
+
+        expect(card1).to_have_count(0, timeout=15000)
+        expect(card2).to_have_count(0, timeout=15000)
+
+        for file_uuid in (file1["uuid"], file2["uuid"]):
+            resp = requests.get(
+                f"{backend_url}/api/files/{file_uuid}",
+                headers={"Authorization": f"Bearer {api_token}"},
+                timeout=30,
+            )
+            assert resp.status_code == 404, (
+                f"Expected file {file_uuid} gone after bulk delete, got {resp.status_code}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # API-Level Bulk Action Tests (no browser needed)

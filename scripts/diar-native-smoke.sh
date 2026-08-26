@@ -82,7 +82,9 @@ read -r RESTARTING RESTART_COUNT PID < <(
 ENV_FILE="$REPO_ROOT/.env"
 read_env() {
     [[ -f "$ENV_FILE" ]] || return 0
-    grep -E "^${1}=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'"' \r'
+    # Strip a trailing ` # comment` before the quote/whitespace cleanup — see
+    # gpu-scale-smoke.sh's read_env for why (a comment survives tr -d otherwise).
+    grep -E "^${1}=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | sed -E 's/[[:space:]]+#.*$//' | tr -d '"'"'"' \r'
 }
 EXPECTED_GPU="${DIAR_NATIVE_GPU:-$(read_env DIAR_NATIVE_GPU)}"
 [[ -n "$EXPECTED_GPU" ]] || EXPECTED_GPU="${GPU_DEVICE_ID:-$(read_env GPU_DEVICE_ID)}"

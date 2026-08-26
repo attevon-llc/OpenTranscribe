@@ -47,7 +47,10 @@ fail() {
 
 read_env() {
     [[ -f "$REPO_ROOT/.env" ]] || return 0
-    grep -E "^${1}=" "$REPO_ROOT/.env" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'"' \r'
+    # Strip a trailing ` # comment` before the quote/whitespace cleanup — .env lines
+    # like `FLOWER_PORT=5175  # Celery Task Monitor` otherwise corrupt the value
+    # (the comment text survives tr -d's space-stripping and gets glued onto it).
+    grep -E "^${1}=" "$REPO_ROOT/.env" 2>/dev/null | tail -1 | cut -d= -f2- | sed -E 's/[[:space:]]+#.*$//' | tr -d '"'"'"' \r'
 }
 
 GPU_SCALE_WORKERS="${GPU_SCALE_WORKERS:-$(read_env GPU_SCALE_WORKERS)}"
@@ -72,28 +75,34 @@ command -v python3 >/dev/null 2>&1 || fail "python3 not available" 4
 WORKERS_JSON="$(curl -fsS -u "${FLOWER_USER}:${FLOWER_PASSWORD}" "${FLOWER_BASE}/api/workers" 2>/dev/null || true)"
 [[ -n "$WORKERS_JSON" ]] || fail "Flower not reachable at $FLOWER_BASE — start the stack with ./opentr.sh start dev --gpu-scale" 4
 
+# WORKERS_JSON can exceed ARG_MAX with a full worker roster's stats blob
+# (observed with 8 registered workers) — pipe via stdin, never sys.argv.
 GPU_WORKER_CONCURRENCY="$(python3 -c '
 import json, sys
-data = json.loads(sys.argv[1])
+data = json.loads(sys.stdin.read())
 for name, info in data.items():
     if name.startswith("gpu-scaled@"):
         stats = info.get("stats", {}) if isinstance(info, dict) else {}
         pool = stats.get("pool", {})
         print(pool.get("max-concurrency", ""))
         break
-' "$WORKERS_JSON")"
+' <<<"$WORKERS_JSON")"
 
 [[ -n "$GPU_WORKER_CONCURRENCY" ]] || fail "no gpu-scaled@* worker registered in Flower"
 [[ "$GPU_WORKER_CONCURRENCY" == "$GPU_SCALE_WORKERS" ]] || fail \
     "gpu-scaled worker pool concurrency is $GPU_WORKER_CONCURRENCY, expected GPU_SCALE_WORKERS=$GPU_SCALE_WORKERS"
 
 if [[ "$GPU_SCALE_DEFAULT_WORKER" == "1" ]]; then
+    # The default single-GPU worker's real Celery hostname is gpu-transcription@%h
+    # (docker-compose.yml's celery-worker service, --hostname gpu-transcription@%h)
+    # — it has never been "celery@%h"; that stale assumption made this check fail
+    # unconditionally in dual-GPU mode even against a correctly running deployment.
     DEFAULT_PRESENT="$(python3 -c '
 import json, sys
-data = json.loads(sys.argv[1])
-print("yes" if any(n.startswith("celery@") for n in data) else "no")
-' "$WORKERS_JSON")"
-    [[ "$DEFAULT_PRESENT" == "yes" ]] || fail "GPU_SCALE_DEFAULT_WORKER=1 (dual-GPU mode) but no celery@* default worker is registered"
+data = json.loads(sys.stdin.read())
+print("yes" if any(n.startswith("gpu-transcription@") for n in data) else "no")
+' <<<"$WORKERS_JSON")"
+    [[ "$DEFAULT_PRESENT" == "yes" ]] || fail "GPU_SCALE_DEFAULT_WORKER=1 (dual-GPU mode) but no gpu-transcription@* default worker is registered"
 fi
 
 if [[ $CHECK_ONLY -eq 1 ]]; then
@@ -130,14 +139,39 @@ TOKEN="$(curl -fsS -X POST "$BASE_URL/auth/login" \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])' 2>/dev/null || true)"
 [[ -n "$TOKEN" ]] || fail "could not authenticate against $BASE_URL — is the dev stack up?" 4
 
-SAMPLE_AUDIO="$REPO_ROOT/backend/tests/e2e/fixtures/sample_audio.wav"
-[[ -f "$SAMPLE_AUDIO" ]] || fail "no sample audio fixture at $SAMPLE_AUDIO — generate one per backend/tests/e2e/conftest.py" 4
+# NOT e2e/fixtures/sample_audio.wav — that fixture is a deliberately silent
+# 440 Hz sine tone ("passes magic-byte validation", per its own docstring in
+# conftest.py), built for UI/upload-flow tests that never touch ASR. Fed
+# through this script's real transcription pipeline it produces zero segments
+# and every file lands in status=error, not completed — this script needs
+# real speech content to prove the GPU pipeline actually completes work.
+SAMPLE_AUDIO="$REPO_ROOT/backend/tests/fixtures/media/sample_short.wav"
+[[ -f "$SAMPLE_AUDIO" ]] || fail "no sample audio fixture at $SAMPLE_AUDIO — see backend/tests/fixtures/media/README.md" 4
 
 FILE_UUIDS=()
+
+# Cleanup must fire on ANY exit (success, fail(), or an unhandled error under
+# set -e) — this script must never leave test files behind in dev data, same
+# rule as backend/tests/CLAUDE.md's E2E hygiene requirement. A prior manual
+# run left 8 orphaned files that had to be found and deleted by hand; this
+# trap is what makes that a one-time fix instead of a recurring chore.
+cleanup_uploaded_files() {
+    [[ ${#FILE_UUIDS[@]} -gt 0 ]] || return 0
+    echo "Cleaning up ${#FILE_UUIDS[@]} smoke-test file(s)..." >&2
+    for uuid in "${FILE_UUIDS[@]}"; do
+        curl -fsS -X DELETE "$BASE_URL/files/$uuid" -H "Authorization: Bearer $TOKEN" >/dev/null 2>&1 || true
+    done
+}
+trap cleanup_uploaded_files EXIT
+
 for i in $(seq 1 "$N_UPLOADS"); do
+    # `;type=audio/wav` is required, not decorative: curl's own MIME-type guess
+    # for -F "file=@path" (mime.types-derived) can fall back to
+    # application/octet-stream on hosts with no .wav mapping, and the backend's
+    # validate_file_type() rejects anything not starting audio/ or video/.
     RESP="$(curl -fsS -X POST "$BASE_URL/files" \
         -H "Authorization: Bearer $TOKEN" \
-        -F "file=@${SAMPLE_AUDIO}" \
+        -F "file=@${SAMPLE_AUDIO};type=audio/wav" \
         -F "title=gpu-scale-smoke-${i}-$$" || true)"
     UUID="$(echo "$RESP" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("uuid",""))' 2>/dev/null || true)"
     [[ -n "$UUID" ]] && FILE_UUIDS+=("$UUID")
@@ -154,10 +188,6 @@ while [[ $SECONDS -lt $DEADLINE && $COMPLETED -lt ${#FILE_UUIDS[@]} ]]; do
         [[ "$STATUS" == "completed" ]] && COMPLETED=$((COMPLETED + 1))
     done
     [[ $COMPLETED -eq ${#FILE_UUIDS[@]} ]] || sleep 10
-done
-
-for uuid in "${FILE_UUIDS[@]}"; do
-    curl -fsS -X DELETE "$BASE_URL/files/$uuid" -H "Authorization: Bearer $TOKEN" >/dev/null 2>&1 || true
 done
 
 [[ $COMPLETED -eq ${#FILE_UUIDS[@]} ]] || fail "$COMPLETED of ${#FILE_UUIDS[@]} concurrent uploads reached completed within 15 min"

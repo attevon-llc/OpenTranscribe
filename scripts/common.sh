@@ -14,6 +14,17 @@
 # every checkout with no .env (a fresh clone, and every git worktree — .env is
 # gitignored, so it never comes along).
 
+# Ownership the backend/worker images actually run as. `backend/Dockerfile.prod` pins the
+# UID explicitly (`useradd -u 1000`) but creates the group with `groupadd -r appuser`, a
+# system group with no GID pin — it lands at 999, not 1000 (verified live:
+# `id appuser` -> uid=1000(appuser) gid=999(appuser)). Every chown of a path the containers
+# own must use this, not a hardcoded 1000:1000, so a host directory or volume repaired by a
+# script matches one created by the image itself (issue #580).
+# NOTE: only the owner bits are load-bearing today — nothing here relies on group access —
+# so a stale 1000:1000 was cosmetically wrong rather than broken. Keep it correct anyway:
+# the moment a path needs group-write between two identities, the wrong GID becomes a bug.
+CONTAINER_UID_GID="${CONTAINER_UID_GID:-1000:999}"
+
 #######################
 # UTILITY FUNCTIONS
 #######################
@@ -111,14 +122,14 @@ fix_model_cache_permissions() {
 
     # Try using Docker to fix permissions (works without sudo)
     if command -v docker &> /dev/null; then
-      if docker run --rm -v "$MODEL_CACHE_DIR:/models" busybox:latest sh -c "chown -R 1000:1000 /models && chmod -R 755 /models" > /dev/null 2>&1; then
+      if docker run --rm -v "$MODEL_CACHE_DIR:/models" busybox:latest sh -c "chown -R $CONTAINER_UID_GID /models && chmod -R 755 /models" > /dev/null 2>&1; then
         echo "✅ Model cache permissions fixed using Docker"
         return 0
       fi
     fi
 
     # Fallback: try direct chown if user has permissions
-    if chown -R 1000:1000 "$MODEL_CACHE_DIR" > /dev/null 2>&1 && chmod -R 755 "$MODEL_CACHE_DIR" > /dev/null 2>&1; then
+    if chown -R "$CONTAINER_UID_GID" "$MODEL_CACHE_DIR" > /dev/null 2>&1 && chmod -R 755 "$MODEL_CACHE_DIR" > /dev/null 2>&1; then
       echo "✅ Model cache permissions fixed"
       return 0
     fi
@@ -229,7 +240,7 @@ fix_pipeline_scratch_permissions() {
 
   echo "🔧 Fixing pipeline_scratch volume permissions for non-root container (UID 1000)..."
   if docker run --rm -v "$vol:/scratch" busybox:latest \
-      sh -c "chown -R 1000:1000 /scratch && chmod 775 /scratch" > /dev/null 2>&1; then
+      sh -c "chown -R $CONTAINER_UID_GID /scratch && chmod 775 /scratch" > /dev/null 2>&1; then
     echo "✅ pipeline_scratch permissions fixed"
     return 0
   fi
@@ -237,7 +248,7 @@ fix_pipeline_scratch_permissions() {
   echo "⚠️  Warning: Could not fix pipeline_scratch permissions."
   echo "   Scratch-volume handoff will fall back to MinIO until this is resolved."
   echo "   Manual fix:"
-  echo "     docker run --rm -v $vol:/scratch busybox chown -R 1000:1000 /scratch"
+  echo "     docker run --rm -v $vol:/scratch busybox chown -R $CONTAINER_UID_GID /scratch"
   return 1
 }
 

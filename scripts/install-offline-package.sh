@@ -345,9 +345,10 @@ install_models() {
 
     # Set proper permissions for non-root container user (UID 1000)
     print_info "Setting model cache permissions for container compatibility..."
-    chown -R 1000:1000 "$INSTALL_DIR/models" 2>/dev/null || {
+    # appuser is uid 1000 / gid 999 in the backend image (issue #580).
+    chown -R 1000:999 "$INSTALL_DIR/models" 2>/dev/null || {
         print_warning "Could not set ownership to UID 1000 - you may need to run:"
-        echo "  sudo chown -R 1000:1000 $INSTALL_DIR/models"
+        echo "  sudo chown -R 1000:999 $INSTALL_DIR/models"
         echo "  Or use: $INSTALL_DIR/scripts/fix-model-permissions.sh"
     }
     chmod -R 755 "$INSTALL_DIR/models"

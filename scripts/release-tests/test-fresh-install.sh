@@ -337,8 +337,8 @@ phase_03_pin_local_image() {
     fi
 
     docker run --rm -v "$model_cache_dir:/m" busybox sh -c \
-        "chown -R 1000:1000 /m && chmod -R u+w /m" >/dev/null 2>&1 || \
-        gr_warn "could not chown $model_cache_dir to 1000:1000 (model downloads may fail)"
+        "chown -R 1000:999 /m && chmod -R u+w /m" >/dev/null 2>&1 || \
+        gr_warn "could not chown $model_cache_dir to 1000:999 (model downloads may fail)"
     gr_ok "model cache pre-created at $model_cache_dir with UID 1000 ownership"
 
     # Override GPU_DEVICE_ID in the .env if a non-default was requested

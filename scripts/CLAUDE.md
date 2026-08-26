@@ -193,7 +193,9 @@ this file is for.
 - **Publish images** — `docker-build-push.sh`; prefer the skill at `.claude/skills/docker-build-push/SKILL.md`.
 - **Models** — `download-models.sh <cache-dir>` is a host wrapper that runs `download-models.py` inside
   the backend image (`DOWNLOAD_ALL_OPENSEARCH_MODELS`, `OPENSEARCH_MODELS`, `WHISPER_MODEL`).
-  `fix-model-permissions.sh` chowns the cache to **1000:1000** (the container's non-root `appuser`).
+  `fix-model-permissions.sh` chowns the cache to **`$CONTAINER_UID_GID`** (`scripts/common.sh`,
+  default **1000:999**) — `appuser` is `useradd -u 1000` but `groupadd -r`, so its GID is 999,
+  not 1000 (issue #580). Never hardcode `1000:1000` in a new chown.
 - **Fixtures** — `seed-fresh-deployment.sh`, `setup-watch-source-test-data.sh`, `test-watch-e2e.sh`.
 - **Release rehearsals** — `release-tests/`: `test-fresh-install.sh`, `test-upgrade.sh`
   (both auto-detect FROM/TO — see `lib/versions.sh`), with `lib/guardrails.sh` as the

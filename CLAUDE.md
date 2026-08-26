@@ -373,7 +373,7 @@ System tool at `~/bin/browser-tools/browse.js` — opens URL, runs actions (`fil
 
 Configured via `MODEL_CACHE_DIR` in `.env` (default `./models`). Volumes mount each cache (`huggingface`, `torch`, `nltk_data`, `sentence-transformers`, `opensearch-ml`) into the container's `~/.cache/...`. `opensearch-ml` is also mounted read-only at `/ml-models` in the OpenSearch container.
 
-Models persist across rebuilds (~2.5 GB total). Permissions auto-fixed by `./opentr.sh` startup; manual fix: `./scripts/fix-model-permissions.sh` (chowns to UID/GID 1000:1000 — the non-root container user).
+Models persist across rebuilds (~2.5 GB total). Permissions auto-fixed by `./opentr.sh` startup; manual fix: `./scripts/fix-model-permissions.sh` (chowns to `$CONTAINER_UID_GID`, default **1000:999** — the non-root `appuser`, whose GID is 999 because the Dockerfile uses `groupadd -r`; issue #580).
 
 ## Where subsystem detail lives
 

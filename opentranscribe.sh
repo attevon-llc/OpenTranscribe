@@ -7,6 +7,13 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Container user ownership. appuser in the backend image is `useradd -u 1000` (UID pinned)
+# but `groupadd -r appuser` (system group, no GID pin) — it lands at gid 999, so a chown to
+# 1000:1000 sets a group that does not exist in the image (issue #580). Kept in sync with
+# CONTAINER_UID_GID in scripts/common.sh; this script ships standalone to end users, so it
+# defines its own.
+CONTAINER_UID_GID="${CONTAINER_UID_GID:-1000:999}"
+
 function show_help {
     echo -e "${BLUE}OpenTranscribe Management Script${NC}"
     echo ""
@@ -77,14 +84,14 @@ fix_model_cache_permissions() {
 
         # Try using Docker to fix permissions (works without sudo)
         if command -v docker &> /dev/null; then
-            if docker run --rm -v "$MODEL_CACHE_DIR:/models" busybox:latest sh -c "chown -R 1000:1000 /models && chmod -R 755 /models" > /dev/null 2>&1; then
+            if docker run --rm -v "$MODEL_CACHE_DIR:/models" busybox:latest sh -c "chown -R $CONTAINER_UID_GID /models && chmod -R 755 /models" > /dev/null 2>&1; then
                 echo -e "${GREEN}✅ Model cache permissions fixed using Docker${NC}"
                 return 0
             fi
         fi
 
         # Fallback: try direct chown if user has permissions
-        if chown -R 1000:1000 "$MODEL_CACHE_DIR" > /dev/null 2>&1 && chmod -R 755 "$MODEL_CACHE_DIR" > /dev/null 2>&1; then
+        if chown -R "$CONTAINER_UID_GID" "$MODEL_CACHE_DIR" > /dev/null 2>&1 && chmod -R 755 "$MODEL_CACHE_DIR" > /dev/null 2>&1; then
             echo -e "${GREEN}✅ Model cache permissions fixed${NC}"
             return 0
         fi

@@ -397,7 +397,7 @@ phase_03_prepare_v033_compose() {
     mc_assert_no_hardlinks "$model_cache/nltk_data" "shared model cache"
 
     docker run --rm -v "$model_cache:/models" busybox:latest \
-        sh -c "chown -R 1000:1000 /models && chmod -R 755 /models" >/dev/null 2>&1 \
+        sh -c "chown -R 1000:999 /models && chmod -R 755 /models" >/dev/null 2>&1 \
         || gr_warn "could not chown model cache (may need sudo)"
 
     # Generate a .env for the FROM stack with isolated credentials.

@@ -117,7 +117,7 @@ and offline overlays.
 
 :::warning Scratch volume permissions
 The `pipeline_scratch` volume is root-owned when first created, but workers run as
-UID 1000. `./opentr.sh` chowns it to `1000:1000` on startup; if you create the
+UID 1000. `./opentr.sh` chowns it to `1000:999` (the container `appuser`) on startup; if you create the
 stack by other means, the handoff will fall back to MinIO until the volume is
 writable by the worker user.
 :::

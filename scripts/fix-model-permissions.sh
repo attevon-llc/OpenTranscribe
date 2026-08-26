@@ -9,7 +9,8 @@
 #   ./scripts/fix-model-permissions.sh
 #
 # WHAT IT DOES:
-#   - Changes ownership of model cache directories to UID:GID 1000:1000
+#   - Changes ownership of model cache directories to the container user
+#     (UID:GID 1000:999 — appuser; see CONTAINER_UID_GID in scripts/common.sh)
 #   - Ensures proper permissions (755 for directories, 644 for files)
 #   - Works with both host-mounted volumes and Docker volumes
 #
@@ -20,6 +21,12 @@
 # =============================================================================
 
 set -e  # Exit on error
+
+# Container user ownership. appuser in the backend image is `useradd -u 1000` (UID pinned)
+# but `groupadd -r appuser` (system group, no GID pin) — it lands at gid 999, so a chown to
+# 1000:1000 sets a group that does not exist in the image (issue #580). Kept in sync with
+# CONTAINER_UID_GID in scripts/common.sh; this script is standalone, so it defines its own.
+CONTAINER_UID_GID="${CONTAINER_UID_GID:-1000:999}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -64,7 +71,7 @@ fix_permissions_docker() {
     if docker run --rm \
         -v "$MODEL_CACHE_DIR:/models" \
         busybox:latest \
-        sh -c "chown -R 1000:1000 /models && find /models -type d -exec chmod 755 {} \; && find /models -type f -exec chmod 644 {} \;"; then
+        sh -c "chown -R $CONTAINER_UID_GID /models && find /models -type d -exec chmod 755 {} \; && find /models -type f -exec chmod 644 {} \;"; then
         echo -e "${GREEN}✓ Permissions fixed successfully!${NC}"
         return 0
     else
@@ -82,7 +89,7 @@ fix_permissions_sudo() {
         return 1
     fi
 
-    if sudo chown -R 1000:1000 "$MODEL_CACHE_DIR" && \
+    if sudo chown -R "$CONTAINER_UID_GID" "$MODEL_CACHE_DIR" && \
        sudo find "$MODEL_CACHE_DIR" -type d -exec chmod 755 {} \; && \
        sudo find "$MODEL_CACHE_DIR" -type f -exec chmod 644 {} \;; then
         echo -e "${GREEN}✓ Permissions fixed successfully using sudo!${NC}"
@@ -119,8 +126,8 @@ echo -e "${RED}Failed to fix permissions!${NC}"
 echo ""
 echo "Manual steps:"
 echo "1. Run the following command:"
-echo "   sudo chown -R 1000:1000 $MODEL_CACHE_DIR"
+echo "   sudo chown -R $CONTAINER_UID_GID $MODEL_CACHE_DIR"
 echo "2. Or use Docker:"
-echo "   docker run --rm -v $MODEL_CACHE_DIR:/models busybox chown -R 1000:1000 /models"
+echo "   docker run --rm -v $MODEL_CACHE_DIR:/models busybox chown -R $CONTAINER_UID_GID /models"
 echo ""
 exit 1

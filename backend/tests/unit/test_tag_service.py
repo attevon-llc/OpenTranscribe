@@ -55,6 +55,13 @@ def _make_tag(db_session, name: str, *, source: str = "manual", user_id=None) ->
     return tag
 
 
+def _make_collection(db_session, name: str, owner, source: str = "manual") -> Collection:
+    collection = Collection(name=name, user_id=owner.id, source=source)
+    db_session.add(collection)
+    db_session.flush()
+    return collection
+
+
 def _make_file(db_session, owner) -> MediaFile:
     file_uuid = str(uuid.uuid4())
     media_file = MediaFile(
@@ -666,3 +673,155 @@ def test_batch_resolver_owns_what_it_creates(db_session, normal_user):
 
     assert len(created) == 2
     assert all(tag.user_id == normal_user.id for tag in created)
+
+
+# ---------------------------------------------------------------------------
+# Auto-label tenancy scoping (issue #587)
+#
+# AutoLabelService is already correctly scoped (per-instance, per-user-id-keyed
+# caches; _owned_or_system unions the acting user's rows with the system tier).
+# These are regression guards for PR #488's leak shape: tag list endpoints once
+# had no user filter, so one user's unattached tags leaked into another's view.
+# ---------------------------------------------------------------------------
+
+
+def test_auto_label_tag_lookup_does_not_cross_to_another_users_same_named_tag(
+    db_session, normal_user, other_user
+):
+    """A same-named tag owned by another account must not resolve as a match."""
+    name = f"Budget {_suffix()}"
+    _make_tag(db_session, name, user_id=other_user.id)
+
+    assert AutoLabelService(db_session).find_existing_similar_tag(name, normal_user.id) is None
+
+
+def test_auto_label_creates_its_own_row_rather_than_reusing_another_users(
+    db_session, normal_user, other_user
+):
+    """Failing to find a match, the service must create A's own row, not reuse B's."""
+    name = f"Budget {_suffix()}"
+    other_tag = _make_tag(db_session, name, user_id=other_user.id)
+
+    svc = AutoLabelService(db_session)
+    tag = svc._get_or_create_tag_with_dedup(name, normal_user.id)
+
+    assert tag.user_id == normal_user.id
+    assert tag.id != other_tag.id
+
+
+def test_auto_label_tag_cache_is_not_shared_between_users(db_session, normal_user, other_user):
+    """The per-instance tag cache must be keyed per user, never a flat shared list."""
+    name = f"Budget {_suffix()}"
+    other_tag = _make_tag(db_session, name, user_id=other_user.id)
+
+    svc = AutoLabelService(db_session)
+    b_tags = svc._get_all_tags_cached(other_user.id)
+    a_tags = svc._get_all_tags_cached(normal_user.id)
+
+    assert other_tag.id in {t.id for t in b_tags}
+    assert other_tag.id not in {t.id for t in a_tags}
+    assert set(svc._tag_cache.keys()) == {other_user.id, normal_user.id}
+
+
+def test_auto_label_system_tags_are_visible_to_every_user(db_session, normal_user, other_user):
+    """A system (ownerless) tag is shared vocabulary — every user sees it."""
+    name = f"System-{_suffix()}"
+    system_tag = _make_tag(db_session, name, user_id=None)
+
+    svc = AutoLabelService(db_session)
+    a_tags = svc._get_all_tags_cached(normal_user.id)
+    b_tags = svc._get_all_tags_cached(other_user.id)
+
+    assert system_tag.id in {t.id for t in a_tags}
+    assert system_tag.id in {t.id for t in b_tags}
+
+    found = svc.find_existing_similar_tag(name, normal_user.id)
+    assert found is not None
+    assert found.id == system_tag.id
+    assert found.user_id is None
+
+
+def test_own_tag_wins_over_a_same_named_system_tag_on_the_auto_label_path(db_session, normal_user):
+    """Pins the ORDER BY user_id NULLS-LAST fast path in find_existing_similar_tag."""
+    name = f"Meeting-{_suffix()}"
+    _make_tag(db_session, name, user_id=None)
+    owned = _make_tag(db_session, name, user_id=normal_user.id)
+
+    found = AutoLabelService(db_session).find_existing_similar_tag(name, normal_user.id)
+
+    assert found is not None
+    assert found.id == owned.id
+
+
+def test_auto_label_collection_lookup_does_not_cross_accounts(db_session, normal_user, other_user):
+    """A collection owned by another account must not resolve, or be reused, as a match."""
+    name = f"Quarterly Reviews {_suffix()}"
+    other_collection = _make_collection(db_session, name, other_user)
+
+    svc = AutoLabelService(db_session)
+    assert svc.find_existing_similar_collection(normal_user.id, name) is None
+
+    created = svc._get_or_create_collection_with_dedup(name, normal_user.id)
+    assert created.user_id == normal_user.id
+    assert created.id != other_collection.id
+
+
+def test_auto_label_collection_cache_is_not_shared_between_users(
+    db_session, normal_user, other_user
+):
+    """The per-instance collection cache must be keyed per user, never a flat shared list."""
+    name = f"Quarterly Reviews {_suffix()}"
+    other_collection = _make_collection(db_session, name, other_user)
+
+    svc = AutoLabelService(db_session)
+    b_collections = svc._get_user_collections_cached(other_user.id)
+    a_collections = svc._get_user_collections_cached(normal_user.id)
+
+    assert other_collection.id in {c.id for c in b_collections}
+    assert other_collection.id not in {c.id for c in a_collections}
+    assert set(svc._collection_cache.keys()) == {other_user.id, normal_user.id}
+
+
+def test_fuzzy_match_does_not_reach_another_users_near_miss(db_session, normal_user, other_user):
+    """The fuzzy leg bypasses the normalized-exact index — the likeliest regression point."""
+    suffix = _suffix()
+    other_tag = _make_tag(db_session, f"Quarterly Planning {suffix}", user_id=other_user.id)
+
+    svc = AutoLabelService(db_session)
+    created = svc._get_or_create_tag_with_dedup(f"Quarterly Plannning {suffix}", normal_user.id)
+
+    assert created.user_id == normal_user.id
+    assert created.id != other_tag.id
+
+
+def test_auto_apply_never_applies_another_users_tag_row(db_session, normal_user, other_user):
+    """End-to-end via auto_apply_suggestions: never attach another user's tag row."""
+    name = f"Budget {_suffix()}"
+    other_tag = _make_tag(db_session, name, user_id=other_user.id)
+    media_file = _make_file(db_session, normal_user)
+
+    suggestion = TopicSuggestion(
+        media_file_id=media_file.id,
+        user_id=normal_user.id,
+        suggested_tags=[{"name": name, "confidence": 0.95}],
+        suggested_collections=[],
+    )
+    db_session.add(suggestion)
+    db_session.flush()
+
+    AutoLabelService(db_session).auto_apply_suggestions(
+        media_file=media_file,
+        suggestion=suggestion,
+        user_id=normal_user.id,
+    )
+
+    file_tag = (
+        db_session.query(FileTag)
+        .filter(FileTag.media_file_id == media_file.id)
+        .join(Tag, Tag.id == FileTag.tag_id)
+        .filter(Tag.name == name)
+        .first()
+    )
+    assert file_tag is not None
+    assert file_tag.tag.user_id == normal_user.id
+    assert file_tag.tag_id != other_tag.id

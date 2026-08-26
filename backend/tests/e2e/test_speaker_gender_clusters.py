@@ -511,3 +511,111 @@ class TestSpeakerClustersAPI:
         # A freshly created profile has no members, so the bulk UPDATE must touch
         # nothing. On an ambient profile this number was never checked at all.
         assert result["updated_count"] == 0
+
+
+class TestSpeakerRenamePropagationAcrossFiles:
+    """A rename that updates a shared profile must repaint EVERY linked file (issue #432).
+
+    ``_handle_update_profile_action`` (``app/api/endpoints/speakers.py``) rewrites
+    ``display_name`` for every ``Speaker`` row linked to a profile, synchronously, in
+    the same request that renames one of them — see
+    ``tests/api/test_rename_propagation_dispatch.py`` for the dispatch-side coverage
+    and ``tests/api/test_speaker_rename_service_sites.py`` for the six service-layer
+    writers. Nothing in this repo previously drove that path through the real UI
+    across two distinct files: this uploads two owned clips, forces their diarized
+    speakers onto one owned profile (real voice-similarity matching is not needed —
+    ``assign-profile`` is the same explicit linking action the Suggestions UI drives),
+    renames one speaker from File A's transcript editor with the "Update Profile
+    Globally" decision, and asserts the new name repaints on File B's transcript
+    **after a fresh page load** — proving the propagation reached Postgres, not just
+    File A's in-memory optimistic state.
+    """
+
+    def test_rename_via_transcript_editor_propagates_to_other_file(
+        self,
+        authenticated_page: Page,
+        base_url: str,
+        backend_url: str,
+        api_session: requests.Session,
+        api_token: str,
+        owned_media_factory,
+        owned_profile: str,
+    ) -> None:
+        # Two independently uploaded clips -> two independently diarized speakers.
+        media_a = owned_media_factory(api_token)
+        media_b = owned_media_factory(api_token)
+
+        def _first_speaker(file_uuid: str) -> dict:
+            resp = api_session.get(
+                f"{backend_url}/api/speakers", params={"file_uuid": file_uuid}, timeout=30
+            )
+            assert resp.status_code == 200, f"list speakers failed: {resp.text[:300]}"
+            payload = resp.json()
+            speakers = payload if isinstance(payload, list) else payload.get("items", [])
+            assert speakers, f"diarization produced no speakers for {file_uuid}"
+            return dict(speakers[0])
+
+        speaker_a = _first_speaker(media_a["uuid"])
+        speaker_b = _first_speaker(media_b["uuid"])
+
+        # Explicitly link both speakers to the one owned profile — the same action
+        # the Suggestions UI performs, without depending on real cross-file voice
+        # matching to land two clips of the same fixture on the same profile.
+        for speaker in (speaker_a, speaker_b):
+            assign_resp = api_session.post(
+                f"{backend_url}/api/speaker-profiles/speakers/{speaker['uuid']}/assign-profile",
+                params={"profile_uuid": owned_profile},
+                timeout=15,
+            )
+            assert assign_resp.status_code == 200, (
+                f"assign-profile failed for {speaker['uuid']}: {assign_resp.text[:300]}"
+            )
+
+        new_name = f"E2E Propagated {uuid.uuid4().hex[:8]}"
+
+        # Rename speaker_a via File A's real transcript editor, choosing the
+        # "Update Profile Globally" decision so the propagation actually fires.
+        authenticated_page.goto(f"{base_url}/files/{media_a['uuid']}")
+        authenticated_page.wait_for_load_state("networkidle")
+        authenticated_page.wait_for_selector(".transcript-segment", timeout=25000)
+
+        edit_btn = authenticated_page.locator(".edit-speakers-button")
+        if edit_btn.count() == 0:
+            pytest.skip("File has no diarization (no Edit Speakers affordance)")
+        edit_btn.click()
+        expect(authenticated_page.locator(".speaker-editor-container")).to_be_visible(timeout=10000)
+
+        name_input = authenticated_page.locator(f'input[data-speaker-id="{speaker_a["uuid"]}"]')
+        expect(name_input).to_be_visible(timeout=10000)
+        name_input.fill(new_name)
+
+        save_btn = authenticated_page.locator(".save-speakers-button")
+        expect(save_btn).to_be_enabled(timeout=5000)
+        save_btn.click()
+
+        # speaker_a is linked to owned_profile, so the confirmation dialog must
+        # appear; picking anything else (or letting it time out) would silently
+        # test the wrong path.
+        update_globally_btn = authenticated_page.locator(
+            '.modal-overlay button:has-text("Update Profile Globally")'
+        )
+        expect(update_globally_btn).to_be_visible(timeout=10000)
+        update_globally_btn.click()
+
+        # Confirms the write reached Postgres for File A itself before checking
+        # propagation to File B.
+        expect(
+            authenticated_page.locator(".transcript-display").get_by_text(new_name).first
+        ).to_be_visible(timeout=10000)
+
+        # The proof: a FRESH load of the OTHER file must show the new name too.
+        # No stub, no optimistic client state carries across this navigation — the
+        # only way `new_name` can appear here is a real Postgres write to
+        # speaker_b's `display_name` in the same request that renamed speaker_a.
+        authenticated_page.goto(f"{base_url}/files/{media_b['uuid']}")
+        authenticated_page.wait_for_load_state("networkidle")
+        authenticated_page.wait_for_selector(".transcript-segment", timeout=25000)
+
+        expect(
+            authenticated_page.locator(".segment-speaker").filter(has_text=new_name).first
+        ).to_be_visible(timeout=15000)

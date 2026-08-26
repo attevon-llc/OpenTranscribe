@@ -36,3 +36,4 @@ backend/tests/test_auth_config_integration.py:hashicorp-tf-password:273
 scripts/run-auth-e2e.sh:hashicorp-tf-password:35
 backend/tests/test_selective_reprocess.py:hashicorp-tf-password:25
 scripts/benchmark_transcription.sh:hashicorp-tf-password:19
+backend/tests/e2e/test_collection_management.py:hashicorp-tf-password:39

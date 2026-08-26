@@ -54,6 +54,29 @@ _backend_dir = str(_REPO_ROOT / "backend")
 if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
+# ``search_corpus_stack.py`` is the first e2e fixture to import ``app.*`` in-process (real
+# ``SessionLocal``/``settings``/OpenSearch client, to inject the corpus via the production
+# corpus-injection tool) rather than only talking to the backend over HTTP like every other
+# e2e fixture. That import crashes immediately from a bare host process: ``Settings.__init__``
+# ``mkdir()``s ``DATA_DIR``/``MODELS_DIR``/``TEMP_DIR``, which default to ``/app/...`` (only
+# valid inside the Docker image), and ``POSTGRES_HOST`` defaults to the "postgres" Docker
+# service name, unresolvable from the host. ``tests/conftest.py`` already solves exactly this
+# for the main suite (throwaway temp dirs + localhost DB/MinIO/OpenSearch port autodetection,
+# same env vars this dev stack exposes) — imported here for its **module-level side effects
+# only** (setting `os.environ` before any `app.*` import happens), not registered as a plugin,
+# so its own fixtures / its own `pytest_plugins` entries don't leak into this rootdir.
+import tests.conftest  # noqa: F401,E402 — side effects only, see above
+
+# ``tests/conftest.py`` registers ``search_corpus``/``search_corpus_token``/``neural_available``
+# etc. (the self-seeding 6-file search-quality corpus, ``tests/fixtures/search_corpus_stack.py``)
+# via its own ``pytest_plugins = ["fixtures.search_corpus_stack", ...]`` — but that conftest is
+# cut off from this directory by the same confcutdir boundary explained above, so those fixtures
+# are otherwise invisible here. Registered again, explicitly, for this rootdir; the dotted form
+# (vs. root conftest's bare ``fixtures.search_corpus_stack``) is required because root conftest's
+# own sys.path entry point is ``backend/tests``, while this file put ``backend/`` on sys.path
+# instead (see above), so the module lives at ``tests.fixtures.search_corpus_stack`` from here.
+pytest_plugins = ["tests.fixtures.search_corpus_stack"]
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Add ``--backend-url`` to pair with pytest-base-url's ``--base-url``.

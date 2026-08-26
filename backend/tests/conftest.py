@@ -159,7 +159,11 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 # conftest's fixtures vanish from a mixed file selection (issue #454). Read its
 # docstring before touching it; `unit/test_conftest_fixture_visibility.py` pins
 # both the workaround and the fact that pytest still needs it.
-pytest_plugins = ["fixtures.mock_llm", "fixtures.dir_collector_memo"]
+pytest_plugins = [
+    "fixtures.mock_llm",
+    "fixtures.dir_collector_memo",
+    "fixtures.search_corpus_stack",
+]
 
 
 @pytest.fixture(autouse=True, scope="session")

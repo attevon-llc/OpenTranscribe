@@ -63,8 +63,10 @@ what it appears to. A green one from the wrong schema is worse.
   `test_mfa_security`, `RUN_LLM_TESTS`→`test_llm_settings`, `RUN_FEDRAMP_TESTS`→
   `test_fedramp_compliance`+`_controls`, `RUN_FIPS_TESTS`→`test_fips_140_3`,
   `RUN_AUTH_CONFIG_TESTS`→`test_auth_config_service`, `RUN_ADVANCED_ADMIN_TESTS`→
-  `test_admin_security`, `RUN_SEARCH_QUALITY_TESTS`→`test_search_quality` (corpus-dependent,
-  deliberately never in CI), `RUN_SCHEMA_DRIFT_TESTS`→`unit/test_schema_drift` (needs the live
+  `test_admin_security`, `RUN_SEARCH_QUALITY_TESTS`→`test_search_quality` (self-seeding — injects
+  its own 6-meeting corpus via `app/scripts/corpus_injection` through a throwaway `searchqual-`
+  user, see `tests/fixtures/search_corpus.py`; still deliberately never in CI, since CI forces
+  `SKIP_OPENSEARCH=True`), `RUN_SCHEMA_DRIFT_TESTS`→`unit/test_schema_drift` (needs the live
   migrated DB; now its own phase in `run-integration-tests.sh` — it was previously set only by
   the release pipeline's `warn`-severity `schema-drift` criterion, so it never ran pre-merge),
   `RUN_AUTH_E2E`→`e2e/test_ldap_oidc` + LDAP half of

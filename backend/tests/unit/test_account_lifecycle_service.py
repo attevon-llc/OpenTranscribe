@@ -51,7 +51,7 @@ def _user(db_session, *, last_login_at, role="user", is_active=True):
 @pytest.fixture
 def expiration_enabled(monkeypatch):
     monkeypatch.setattr(settings, "ACCOUNT_EXPIRATION_ENABLED", True)
-    monkeypatch.setattr(settings, "ACCOUNT_INACTIVE_DAYS", 90)
+    monkeypatch.setattr(type(settings), "ACCOUNT_INACTIVE_DAYS", 90)
 
 
 @pytest.fixture

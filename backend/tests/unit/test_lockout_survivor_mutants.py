@@ -67,9 +67,9 @@ def lockout_settings(monkeypatch):
     Mirrors ``test_lockout_atomicity.py``'s fixture of the same name/shape.
     """
     monkeypatch.setattr(settings, "ACCOUNT_LOCKOUT_ENABLED", True)
-    monkeypatch.setattr(settings, "ACCOUNT_LOCKOUT_THRESHOLD", 3)
-    monkeypatch.setattr(settings, "ACCOUNT_LOCKOUT_DURATION_MINUTES", 15)
-    monkeypatch.setattr(settings, "ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES", 1440)
+    monkeypatch.setattr(type(settings), "ACCOUNT_LOCKOUT_THRESHOLD", 3)
+    monkeypatch.setattr(type(settings), "ACCOUNT_LOCKOUT_DURATION_MINUTES", 15)
+    monkeypatch.setattr(type(settings), "ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES", 1440)
     monkeypatch.setattr(settings, "ACCOUNT_LOCKOUT_PROGRESSIVE", True)
 
 

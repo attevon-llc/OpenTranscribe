@@ -103,8 +103,8 @@ class TestAuditQuotesTheEnforcedLockoutPolicy:
         captured: dict = {}
 
         with (
-            patch.object(login_module.settings, "ACCOUNT_LOCKOUT_THRESHOLD", 99),
-            patch.object(login_module.settings, "ACCOUNT_LOCKOUT_DURATION_MINUTES", 1),
+            patch.object(type(login_module.settings), "ACCOUNT_LOCKOUT_THRESHOLD", 99),
+            patch.object(type(login_module.settings), "ACCOUNT_LOCKOUT_DURATION_MINUTES", 1),
             patch.object(
                 login_module, "check_and_record_attempt", return_value=(True, _in_an_hour())
             ),
@@ -139,7 +139,7 @@ class TestAuditQuotesTheEnforcedLockoutPolicy:
         calls = []
 
         with (
-            patch.object(login_module.settings, "ACCOUNT_LOCKOUT_THRESHOLD", 99),
+            patch.object(type(login_module.settings), "ACCOUNT_LOCKOUT_THRESHOLD", 99),
             patch.object(
                 login_module, "check_and_record_attempt", return_value=(True, _in_an_hour())
             ),
@@ -181,7 +181,7 @@ class TestPasswordExpiryReportsTheEnforcedMaxAge:
         captured: dict = {}
 
         with (
-            patch.object(login_module.settings, "PASSWORD_MAX_AGE_DAYS", 365),
+            patch.object(type(login_module.settings), "PASSWORD_MAX_AGE_DAYS", 365),
             patch.object(login_module, "is_password_expired", return_value=True),
             patch.object(login_module, "get_days_until_expiration", return_value=-370),
             patch.object(login_module, "local_password_allowed", return_value=(True, "")),

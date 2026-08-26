@@ -70,7 +70,7 @@ def test_capabilities_upload_ceiling_reflects_a_runtime_override(client, monkeyp
     """
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "MAX_UPLOAD_BYTES", 5 * 1024 * 1024 * 1024)
+    monkeypatch.setattr(type(settings), "MAX_UPLOAD_BYTES", 5 * 1024 * 1024 * 1024)
 
     response = client.get("/api/system/capabilities")
     assert response.status_code == status.HTTP_200_OK

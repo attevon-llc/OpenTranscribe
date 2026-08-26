@@ -40,13 +40,13 @@ GIB = 1024**3
 @pytest.fixture
 def minio_backend(monkeypatch):
     monkeypatch.setattr(settings, "STORAGE_BACKEND", "minio")
-    monkeypatch.setattr(settings, "MULTIPART_THRESHOLD_MB", 512)
+    monkeypatch.setattr(type(settings), "MULTIPART_THRESHOLD_MB", 512)
 
 
 @pytest.fixture
 def s3_backend(monkeypatch):
     monkeypatch.setattr(settings, "STORAGE_BACKEND", "s3")
-    monkeypatch.setattr(settings, "MULTIPART_THRESHOLD_MB", 512)
+    monkeypatch.setattr(type(settings), "MULTIPART_THRESHOLD_MB", 512)
 
 
 # --------------------------------------------------------------------------
@@ -71,21 +71,21 @@ def test_threshold_switches_to_multipart(minio_backend):
 
 
 def test_threshold_is_configurable(minio_backend, monkeypatch):
-    monkeypatch.setattr(settings, "MULTIPART_THRESHOLD_MB", 2048)
+    monkeypatch.setattr(type(settings), "MULTIPART_THRESHOLD_MB", 2048)
     assert sb.use_multipart_upload(1 * GIB) is False
     assert sb.use_multipart_upload(2 * GIB) is True
 
 
 def test_threshold_cannot_be_raised_past_the_s3_single_put_ceiling(s3_backend, monkeypatch):
     """The 5 GiB case is not optional: a single PUT above it is simply rejected."""
-    monkeypatch.setattr(settings, "MULTIPART_THRESHOLD_MB", 1024 * 1024)  # 1 TiB
+    monkeypatch.setattr(type(settings), "MULTIPART_THRESHOLD_MB", 1024 * 1024)  # 1 TiB
     assert sb.multipart_threshold_bytes() == sb.S3_SINGLE_PUT_MAX_BYTES
     assert sb.use_multipart_upload(6 * GIB) is True
     assert sb.supports_single_put(6 * GIB) is False
 
 
 def test_minio_ceiling_is_still_5_tib(minio_backend, monkeypatch):
-    monkeypatch.setattr(settings, "MULTIPART_THRESHOLD_MB", 1024 * 1024)
+    monkeypatch.setattr(type(settings), "MULTIPART_THRESHOLD_MB", 1024 * 1024)
     assert sb.multipart_threshold_bytes() == 1024 * 1024 * MIB
     assert sb.supports_single_put(6 * GIB) is True
 

@@ -231,7 +231,7 @@ def test_clamp_enforces_a_usable_floor():
 
 
 def test_clamp_ceiling_is_configurable(monkeypatch):
-    monkeypatch.setattr(settings, "PRESIGNED_URL_MAX_SECONDS", 900)
+    monkeypatch.setattr(type(settings), "PRESIGNED_URL_MAX_SECONDS", 900)
     assert sb.clamp_presigned_expiry(3600) == 900
 
 

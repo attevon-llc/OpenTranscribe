@@ -92,7 +92,7 @@ def test_ceiling_can_be_disabled(monkeypatch):
     """0 disables it — only sensible on a trusted single-user install."""
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "MAX_UPLOAD_BYTES", None)
+    monkeypatch.setattr(type(settings), "MAX_UPLOAD_BYTES", None)
     with does_not_raise("MAX_UPLOAD_BYTES=None disables the ceiling entirely"):
         validate_file_size_for_tenant(500 * GB, None)
 

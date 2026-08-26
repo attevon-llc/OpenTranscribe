@@ -236,7 +236,7 @@ class TestEnrollmentIsEnforcedAtLogin:
         )
         monkeypatch.setattr(login_module, "check_and_record_attempt", lambda *a, **k: (False, None))
         monkeypatch.setattr(login_module, "_get_user_role", lambda db, uuid_str, data: "user")
-        monkeypatch.setattr(settings, "MAX_CONCURRENT_SESSIONS", 0)
+        monkeypatch.setattr(type(settings), "MAX_CONCURRENT_SESSIONS", 0)
 
         response = _unwrap(login_module.login_for_access_token)(
             response=Response(),
@@ -428,7 +428,7 @@ class TestForcedEnrollmentFlow:
         monkeypatch.setattr(mfa_module, "_is_mfa_enabled", lambda db: True)
         monkeypatch.setattr(mfa_module, "_get_client_info", lambda request: ("10.0.0.1", "pytest"))
         monkeypatch.setattr(mfa_module.audit_logger, "log_mfa_event", lambda **kwargs: None)
-        monkeypatch.setattr(settings, "MFA_BACKUP_CODE_COUNT", 2)
+        monkeypatch.setattr(type(settings), "MFA_BACKUP_CODE_COUNT", 2)
         monkeypatch.setattr(
             mfa_enrollment_module.token_service,
             "create_refresh_token",

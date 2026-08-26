@@ -111,8 +111,8 @@ def timeouts(monkeypatch):
     ``auth_config``, so ``DynamicAuthSettings`` falls through to the environment —
     which is the same precedence chain the real read uses.
     """
-    monkeypatch.setattr(settings, "SESSION_IDLE_TIMEOUT_MINUTES", 15)
-    monkeypatch.setattr(settings, "SESSION_ABSOLUTE_TIMEOUT_MINUTES", 480)
+    monkeypatch.setattr(type(settings), "SESSION_IDLE_TIMEOUT_MINUTES", 15)
+    monkeypatch.setattr(type(settings), "SESSION_ABSOLUTE_TIMEOUT_MINUTES", 480)
 
 
 # ── the absolute ceiling is fixed at first issue ─────────────────────────────────
@@ -223,7 +223,7 @@ class TestLifetimeIsEnforced:
     def test_zero_disables_the_idle_cap(self, service, monkeypatch):
         """Reachable via .env, which is unbounded; without the guard, `> 0 minutes`
         idle would refuse every session on sight."""
-        monkeypatch.setattr(settings, "SESSION_IDLE_TIMEOUT_MINUTES", 0)
+        monkeypatch.setattr(type(settings), "SESSION_IDLE_TIMEOUT_MINUTES", 0)
         row = _session_row(last_activity_at=datetime.now(UTC) - timedelta(days=30))
 
         assert service._session_within_lifetime(_FakeDB(), row) is True
@@ -354,8 +354,8 @@ class TestSessionManagerIsGone:
 class TestTimeoutsAreDatabaseBacked:
     def test_a_stored_value_wins_over_the_environment(self, monkeypatch):
         """The admin Session tab was inert; these two keys now drive the check."""
-        monkeypatch.setattr(settings, "SESSION_IDLE_TIMEOUT_MINUTES", 15)
-        monkeypatch.setattr(settings, "SESSION_ABSOLUTE_TIMEOUT_MINUTES", 480)
+        monkeypatch.setattr(type(settings), "SESSION_IDLE_TIMEOUT_MINUTES", 15)
+        monkeypatch.setattr(type(settings), "SESSION_ABSOLUTE_TIMEOUT_MINUTES", 480)
 
         stored = {"session_idle_timeout_minutes": 5, "session_absolute_timeout_minutes": 60}
         monkeypatch.setattr(
@@ -367,8 +367,8 @@ class TestTimeoutsAreDatabaseBacked:
 
     def test_an_unreadable_configuration_degrades_to_the_environment(self, monkeypatch):
         """A config read must not be able to break token issue or verification."""
-        monkeypatch.setattr(settings, "SESSION_IDLE_TIMEOUT_MINUTES", 15)
-        monkeypatch.setattr(settings, "SESSION_ABSOLUTE_TIMEOUT_MINUTES", 480)
+        monkeypatch.setattr(type(settings), "SESSION_IDLE_TIMEOUT_MINUTES", 15)
+        monkeypatch.setattr(type(settings), "SESSION_ABSOLUTE_TIMEOUT_MINUTES", 480)
 
         broken = SimpleNamespace()  # no .query at all
 

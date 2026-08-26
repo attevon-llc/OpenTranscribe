@@ -122,9 +122,14 @@
   let aiTagSuggestions: TagSuggestion[] = [];
   let aiCollectionSuggestions: CollectionSuggestion[] = [];
 
-  // Permission level for shared files (null = owner/full access)
-  let myPermission: string | null = null;
-  $: canEdit = !myPermission || myPermission === 'editor' || myPermission === 'owner';
+  // Caller's permission on this file. Backend convention (files/crud.py:778):
+  // `null` = you are the owner. `undefined` = not fetched yet / fetch failed —
+  // never treated as owner, so every gate below fails closed until load.
+  let myPermission: string | null | undefined = undefined;
+  $: permissionLoaded = myPermission !== undefined;
+  $: canEdit =
+    permissionLoaded &&
+    (myPermission === null || myPermission === 'editor' || myPermission === 'owner');
 
   // Content redaction: owner/admin can reveal the original (non-admin-forced categories).
   let showOriginal = false;
@@ -132,7 +137,7 @@
   // When redaction is enabled but detection hasn't finished, the transcript is withheld.
   let redactionPending = false;
   let redactionStatus = ''; // pending | processing | done | failed
-  $: canViewOriginal = myPermission === null || myPermission === 'owner';
+  $: canViewOriginal = permissionLoaded && (myPermission === null || myPermission === 'owner');
   $: showRedactionToggle = canViewOriginal && (redactionActive || showOriginal);
 
   // LLM availability for summary functionality
@@ -283,7 +288,7 @@
       if (response.data && typeof response.data === 'object') {
         file = response.data;
         collections = response.data.collections || [];
-        myPermission = response.data.my_permission || null;
+        myPermission = response.data.my_permission ?? null;
         // Content-redaction state: pending (transcript withheld) + whether masking applied.
         redactionPending = response.data.redaction_pending || false;
         redactionStatus = response.data.redaction_status || '';
@@ -2065,7 +2070,7 @@
       <FileHeader
         {file}
         {currentProcessingStep}
-        sharedPermission={myPermission}
+        sharedPermission={myPermission ?? null}
         on:titleUpdated={(e) => { if (file) file.title = e.detail.title; }}
       />
 

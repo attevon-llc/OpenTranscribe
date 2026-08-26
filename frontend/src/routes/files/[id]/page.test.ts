@@ -78,7 +78,10 @@ vi.mock('$components/TranscriptModal.svelte', () => ({ default: noopComponent() 
 vi.mock('$components/fileDetail/TxtExportOptionsModal.svelte', () => ({
   default: noopComponent(),
 }));
-vi.mock('$components/fileDetail/FileActionButtons.svelte', () => ({ default: noopComponent() }));
+// FileActionButtons is deliberately NOT stubbed: it's the component under test
+// for the edit-permission gating suite below. It's purely presentational
+// (only depends on `$t`, already mocked, and `Spinner`, mocked just below),
+// so it's safe to render for real.
 vi.mock('$components/fileDetail/RedactionControls.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/fileDetail/RedactionPendingPanel.svelte', () => ({
   default: noopComponent(),
@@ -91,6 +94,8 @@ vi.mock('../../../components/ui/Spinner.svelte', () => ({ default: noopComponent
 // already-mocked `$t`), and it doubles as the "still loading" DOM signal.
 
 import Page from './+page.svelte';
+import FileActionButtons from '$components/fileDetail/FileActionButtons.svelte';
+import type { MediaFileDetail } from '$lib/types/media';
 
 function completeFileResponse(overrides: Record<string, unknown> = {}) {
   return {
@@ -177,5 +182,108 @@ describe('files/[id]/+page — fetch/loading/error state machine', () => {
     // No filename, transcript, or any file-derived content ever reached the DOM.
     expect(container.textContent).not.toContain('someone-elses-file');
     expect(document.title).not.toBe('meeting-notes.mp4');
+  });
+});
+
+describe('files/[id]/+page — edit-permission gating', () => {
+  it('owner (my_permission: null) sees the reprocess and generate-summary buttons', async () => {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/files/file-1') {
+        return Promise.resolve(completeFileResponse({ my_permission: null }));
+      }
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: {} });
+    });
+
+    const { container } = render(Page, { props: { data: { id: 'file-1' } } });
+
+    await waitFor(() => {
+      expect(document.title).toBe('meeting-notes.mp4');
+    });
+
+    expect(container.querySelector('.reprocess-button-header')).not.toBeNull();
+    expect(container.querySelector('.generate-summary-btn')).not.toBeNull();
+  });
+
+  it('editor (my_permission: "editor") sees the reprocess and generate-summary buttons', async () => {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/files/file-1') {
+        return Promise.resolve(completeFileResponse({ my_permission: 'editor' }));
+      }
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: {} });
+    });
+
+    const { container } = render(Page, { props: { data: { id: 'file-1' } } });
+
+    await waitFor(() => {
+      expect(document.title).toBe('meeting-notes.mp4');
+    });
+
+    expect(container.querySelector('.reprocess-button-header')).not.toBeNull();
+    expect(container.querySelector('.generate-summary-btn')).not.toBeNull();
+  });
+
+  it('viewer (my_permission: "viewer") never sees the reprocess or generate-summary buttons', async () => {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/files/file-1') {
+        return Promise.resolve(completeFileResponse({ my_permission: 'viewer' }));
+      }
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: {} });
+    });
+
+    const { container } = render(Page, { props: { data: { id: 'file-1' } } });
+
+    // Confirm the page actually loaded (not just that nothing rendered).
+    await waitFor(() => {
+      expect(document.title).toBe('meeting-notes.mp4');
+    });
+
+    expect(container.querySelector('.reprocess-button-header')).toBeNull();
+    expect(container.querySelector('.generate-summary-btn')).toBeNull();
+  });
+
+  it('pins the sentinel: an absent my_permission field is treated as owner', async () => {
+    // FastAPI always emits the key in practice (MediaFileDetail.my_permission
+    // defaults to None, not "missing"), so "absent" is indistinguishable on
+    // the wire from `null` = owner, and is correctly treated as such.
+    const response = completeFileResponse();
+    delete (response.data as { my_permission?: string | null }).my_permission;
+
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/files/file-1') return Promise.resolve(response);
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: {} });
+    });
+
+    const { container } = render(Page, { props: { data: { id: 'file-1' } } });
+
+    await waitFor(() => {
+      expect(document.title).toBe('meeting-notes.mp4');
+    });
+
+    expect(container.querySelector('.reprocess-button-header')).not.toBeNull();
+    expect(container.querySelector('.generate-summary-btn')).not.toBeNull();
+  });
+
+  it('FileActionButtons with no canEdit prop passed shows neither gated button (pins the default-deny)', () => {
+    // Component-level test: the page always computes and passes canEdit
+    // explicitly, so this default is unreachable through the page today —
+    // it exists as defense-in-depth. This is the one case in this suite that
+    // actually differs between old and new code (old default was `true`).
+    const { container } = render(FileActionButtons, {
+      props: {
+        file: {
+          uuid: 'file-1',
+          filename: 'meeting-notes.mp4',
+          status: 'completed',
+          transcript_segments: [],
+        } as unknown as MediaFileDetail,
+      },
+    });
+
+    expect(container.querySelector('.reprocess-button-header')).toBeNull();
+    expect(container.querySelector('.generate-summary-btn')).toBeNull();
   });
 });

@@ -327,14 +327,14 @@ class TestNeedsRehashForFipsV3OwnLogic:
         self, monkeypatch
     ):
         monkeypatch.setattr(security, "pwd_context", _NeverNeedsUpdate())
-        monkeypatch.setattr(type(security.settings), "PBKDF2_ITERATIONS_V3", 600000)
+        monkeypatch.setattr(security.settings, "PBKDF2_ITERATIONS_V3", 600000)
 
         assert security.needs_rehash_for_fips_v3("$pbkdf2-sha256$210000$salt$digest") is True
 
     def test_a_hash_at_exactly_the_fips_threshold_does_not_need_rehash(self, monkeypatch):
         """``rounds < ...``, not ``<=``: equality already satisfies the requirement."""
         monkeypatch.setattr(security, "pwd_context", _NeverNeedsUpdate())
-        monkeypatch.setattr(type(security.settings), "PBKDF2_ITERATIONS_V3", 600000)
+        monkeypatch.setattr(security.settings, "PBKDF2_ITERATIONS_V3", 600000)
 
         assert security.needs_rehash_for_fips_v3("$pbkdf2-sha256$600000$salt$digest") is False
 
@@ -343,7 +343,7 @@ class TestNeedsRehashForFipsV3OwnLogic:
         fields (3 elements after splitting on ``$``) sits exactly on that boundary.
         """
         monkeypatch.setattr(security, "pwd_context", _NeverNeedsUpdate())
-        monkeypatch.setattr(type(security.settings), "PBKDF2_ITERATIONS_V3", 600000)
+        monkeypatch.setattr(security.settings, "PBKDF2_ITERATIONS_V3", 600000)
 
         assert security.needs_rehash_for_fips_v3("$pbkdf2-sha256$100000") is True
 

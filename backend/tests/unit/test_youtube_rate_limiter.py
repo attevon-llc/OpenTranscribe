@@ -80,9 +80,9 @@ class TestCalculatePlaylistDelays:
         """Pin the exact schedule so a change to the formula shows up as a diff,
         not just "still increasing"."""
         monkeypatch.setattr(settings, "YOUTUBE_PLAYLIST_STAGGER_ENABLED", True)
-        monkeypatch.setattr(type(settings), "YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS", 5)
-        monkeypatch.setattr(type(settings), "YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS", 30)
-        monkeypatch.setattr(type(settings), "YOUTUBE_PLAYLIST_STAGGER_INCREMENT", 5)
+        monkeypatch.setattr(settings, "YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS", 5)
+        monkeypatch.setattr(settings, "YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS", 30)
+        monkeypatch.setattr(settings, "YOUTUBE_PLAYLIST_STAGGER_INCREMENT", 5)
         monkeypatch.setattr(yrl.random, "randint", lambda _a, _b: 0)
 
         delays = yrl.calculate_playlist_delays(6)
@@ -93,9 +93,9 @@ class TestCalculatePlaylistDelays:
 
     def test_the_per_video_delay_is_capped_at_the_configured_maximum(self, monkeypatch):
         monkeypatch.setattr(settings, "YOUTUBE_PLAYLIST_STAGGER_ENABLED", True)
-        monkeypatch.setattr(type(settings), "YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS", 5)
-        monkeypatch.setattr(type(settings), "YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS", 10)
-        monkeypatch.setattr(type(settings), "YOUTUBE_PLAYLIST_STAGGER_INCREMENT", 5)
+        monkeypatch.setattr(settings, "YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS", 5)
+        monkeypatch.setattr(settings, "YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS", 10)
+        monkeypatch.setattr(settings, "YOUTUBE_PLAYLIST_STAGGER_INCREMENT", 5)
         monkeypatch.setattr(yrl.random, "randint", lambda _a, _b: 0)
 
         delays = yrl.calculate_playlist_delays(4)
@@ -109,9 +109,9 @@ class TestCalculatePlaylistDelays:
         """Negative control for the two pinned tests above: with real randomness
         (no jitter patch) the schedule must still never go backwards or repeat."""
         monkeypatch.setattr(settings, "YOUTUBE_PLAYLIST_STAGGER_ENABLED", True)
-        monkeypatch.setattr(type(settings), "YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS", 5)
-        monkeypatch.setattr(type(settings), "YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS", 40)
-        monkeypatch.setattr(type(settings), "YOUTUBE_PLAYLIST_STAGGER_INCREMENT", 5)
+        monkeypatch.setattr(settings, "YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS", 5)
+        monkeypatch.setattr(settings, "YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS", 40)
+        monkeypatch.setattr(settings, "YOUTUBE_PLAYLIST_STAGGER_INCREMENT", 5)
 
         delays = yrl.calculate_playlist_delays(10)
 
@@ -183,8 +183,8 @@ class TestSlidingWindowAgainstRealRedis:
         monkeypatch.setattr(settings, "REDIS_PORT", str(_REDIS_PORT))
         monkeypatch.setattr(settings, "REDIS_PASSWORD", _REDIS_PASSWORD or "")
         monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_ENABLED", True)
-        monkeypatch.setattr(type(settings), "YOUTUBE_USER_RATE_LIMIT_PER_HOUR", 3)
-        monkeypatch.setattr(type(settings), "YOUTUBE_USER_RATE_LIMIT_PER_DAY", 5)
+        monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_PER_HOUR", 3)
+        monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_PER_DAY", 5)
 
         limiter = yrl.YouTubeRateLimiter()
         # A synthetic NEGATIVE user id: real user ids are positive auto-increment
@@ -220,7 +220,7 @@ class TestSlidingWindowAgainstRealRedis:
 
     def test_daily_limit_blocks_even_with_hourly_headroom(self, limiter_env, monkeypatch):
         limiter, user_id = limiter_env
-        monkeypatch.setattr(type(settings), "YOUTUBE_USER_RATE_LIMIT_PER_HOUR", 1000)
+        monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_PER_HOUR", 1000)
         for _ in range(5):  # the configured daily limit
             limiter.record_download(user_id)
 

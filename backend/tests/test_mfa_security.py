@@ -451,10 +451,10 @@ class TestTOTPWindowConfiguration:
         now = datetime.now(UTC)
         previous_step_code = totp.at(now - timedelta(seconds=30))
 
-        monkeypatch.setattr(type(settings), "TOTP_VALID_WINDOW", 0)
+        monkeypatch.setattr(settings, "TOTP_VALID_WINDOW", 0)
         assert MFAService.verify_totp(secret, previous_step_code) is False
 
-        monkeypatch.setattr(type(settings), "TOTP_VALID_WINDOW", 1)
+        monkeypatch.setattr(settings, "TOTP_VALID_WINDOW", 1)
         assert MFAService.verify_totp(secret, previous_step_code) is True
 
     def test_totp_verification_accepts_within_window(self, monkeypatch):
@@ -470,7 +470,7 @@ class TestTOTPWindowConfiguration:
         totp = pyotp.TOTP(secret, interval=30, digits=6)
         now = datetime.now(UTC)
 
-        monkeypatch.setattr(type(settings), "TOTP_VALID_WINDOW", 1)
+        monkeypatch.setattr(settings, "TOTP_VALID_WINDOW", 1)
         previous_step_code = totp.at(now - timedelta(seconds=30))
         two_steps_back_code = totp.at(now - timedelta(seconds=60))
 
@@ -490,10 +490,10 @@ class TestTOTPWindowConfiguration:
         now = datetime.now(UTC)
         two_steps_back_code = totp.at(now - timedelta(seconds=60))
 
-        monkeypatch.setattr(type(settings), "TOTP_VALID_WINDOW", 1)
+        monkeypatch.setattr(settings, "TOTP_VALID_WINDOW", 1)
         assert MFAService.verify_totp(secret, two_steps_back_code) is False
 
-        monkeypatch.setattr(type(settings), "TOTP_VALID_WINDOW", 2)
+        monkeypatch.setattr(settings, "TOTP_VALID_WINDOW", 2)
         assert MFAService.verify_totp(secret, two_steps_back_code) is True
 
     def test_totp_invalid_code_rejected_regardless_of_window(self):
@@ -533,7 +533,7 @@ class TestTOTPWindowConfiguration:
         secret = MFAService.generate_totp_secret()
         totp = pyotp.TOTP(secret, interval=30, digits=6)
 
-        monkeypatch.setattr(type(settings), "TOTP_VALID_WINDOW", 0)
+        monkeypatch.setattr(settings, "TOTP_VALID_WINDOW", 0)
 
         now = datetime.now(UTC)
         current_code = totp.at(now)

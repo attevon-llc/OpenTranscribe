@@ -66,7 +66,7 @@ def test_ttl_covers_the_full_acceptance_window(fake_redis, monkeypatch):
     """The claim must outlive the drift window, or a code becomes replayable inside it."""
     from app.core.config import settings
 
-    monkeypatch.setattr(type(settings), "TOTP_VALID_WINDOW", 1)
+    monkeypatch.setattr(settings, "TOTP_VALID_WINDOW", 1)
     captured = {}
 
     def capture(key, value, nx=False, ex=None):

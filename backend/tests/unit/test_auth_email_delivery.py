@@ -114,7 +114,7 @@ def no_env_smtp(monkeypatch):
 @pytest.fixture
 def env_smtp(monkeypatch):
     monkeypatch.setattr(mod.settings, "SMTP_HOST", "mail.example.org")
-    monkeypatch.setattr(type(mod.settings), "SMTP_PORT", 587)
+    monkeypatch.setattr(mod.settings, "SMTP_PORT", 587)
     monkeypatch.setattr(mod.settings, "SMTP_USER", "")
     monkeypatch.setattr(mod.settings, "SMTP_PASSWORD", "")
     monkeypatch.setattr(mod.settings, "SMTP_FROM", "noreply@example.org")
@@ -243,7 +243,7 @@ class TestTransportLayerSelection:
     """Port 465 is implicit SSL; everything else is STARTTLS or plaintext."""
 
     def test_port_465_uses_implicit_ssl(self, env_smtp, monkeypatch):
-        monkeypatch.setattr(type(mod.settings), "SMTP_PORT", 465)
+        monkeypatch.setattr(mod.settings, "SMTP_PORT", 465)
         calls: dict[str, object] = {}
         monkeypatch.setattr(
             smtplib,

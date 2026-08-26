@@ -110,9 +110,9 @@ class _BrokenRedis(_FakeRedis):
 def lockout_settings(monkeypatch):
     """Pin lockout tunables so dev/CI env overrides cannot change the expectations."""
     monkeypatch.setattr(settings, "ACCOUNT_LOCKOUT_ENABLED", True)
-    monkeypatch.setattr(type(settings), "ACCOUNT_LOCKOUT_THRESHOLD", 3)
-    monkeypatch.setattr(type(settings), "ACCOUNT_LOCKOUT_DURATION_MINUTES", 15)
-    monkeypatch.setattr(type(settings), "ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES", 1440)
+    monkeypatch.setattr(settings, "ACCOUNT_LOCKOUT_THRESHOLD", 3)
+    monkeypatch.setattr(settings, "ACCOUNT_LOCKOUT_DURATION_MINUTES", 15)
+    monkeypatch.setattr(settings, "ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES", 1440)
     monkeypatch.setattr(settings, "ACCOUNT_LOCKOUT_PROGRESSIVE", True)
 
 

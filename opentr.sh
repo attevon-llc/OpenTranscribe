@@ -1819,7 +1819,7 @@ start_app() {
       # Match the non-root container user so imports can read/write. appuser is
       # uid 1000 / gid 999 (see CONTAINER_UID_GID in scripts/common.sh) — the owner
       # bit is what the import path needs, but keep the GID honest.
-      chown -R "$CONTAINER_UID_GID" "$WATCH_HOST_PATH" 2>/dev/null || true
+      chown -R "${CONTAINER_UID_GID:-1000:999}" "$WATCH_HOST_PATH" 2>/dev/null || true
       export WATCH_HOST_PATH
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.watch.yml"
       echo "👁️  Adding Watch Sources overlay (docker-compose.watch.yml)"
@@ -2496,7 +2496,7 @@ reset_and_init() {
       # Match the non-root container user so imports can read/write. appuser is
       # uid 1000 / gid 999 (see CONTAINER_UID_GID in scripts/common.sh) — the owner
       # bit is what the import path needs, but keep the GID honest.
-      chown -R "$CONTAINER_UID_GID" "$WATCH_HOST_PATH" 2>/dev/null || true
+      chown -R "${CONTAINER_UID_GID:-1000:999}" "$WATCH_HOST_PATH" 2>/dev/null || true
       export WATCH_HOST_PATH
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.watch.yml"
       echo "👁️  Adding Watch Sources overlay (docker-compose.watch.yml)"

@@ -94,10 +94,25 @@ EOF
         -out "clients/${name}.crt" \
         -extfile "clients/${name}.ext"
 
-    # Create PKCS12 bundle (for browser import)
-    # Use -legacy flag for macOS Keychain compatibility
+    # Create PKCS12 bundle with OpenSSL 3.x's modern default encryption
+    # (AES-256/PBKDF2). This is the one Playwright/Node and any automated
+    # test tooling must use — Node's bundled OpenSSL 3.x cannot load a
+    # -legacy (RC2-40-CBC) bundle without the legacy provider enabled, which
+    # it does not have. Confirmed failure mode: "Browser.new_context: Failed
+    # to load client certificate: Unsupported TLS certificate."
     openssl pkcs12 -export \
         -out "clients/${name}.p12" \
+        -inkey "clients/${name}.key" \
+        -in "clients/${name}.crt" \
+        -certfile ca/ca.crt \
+        -passout pass:changeit \
+        -name "${cn}"
+
+    # Separate -legacy bundle for manual macOS Keychain import only (macOS's
+    # Keychain/Security framework rejects the modern PBES2 bundle above).
+    # Never used by automated tests.
+    openssl pkcs12 -export \
+        -out "clients/${name}-macos.p12" \
         -inkey "clients/${name}.key" \
         -in "clients/${name}.crt" \
         -certfile ca/ca.crt \

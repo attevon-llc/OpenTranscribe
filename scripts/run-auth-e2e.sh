@@ -501,8 +501,8 @@ phase_3_pki() {
         -v "${PROJECT_ROOT}/scripts/pki/test-certs/nginx/server.key:/etc/nginx/certs/server.key:ro" \
         -v "${PROJECT_ROOT}/scripts/pki/test-certs/ca/ca.crt:/etc/nginx/certs/ca.crt:ro" \
         -p 5182:8443 \
-        -p 5183:8080 \
-        "${PKI_IMAGE_TAG}" 2>/dev/null; then
+        -p "${PKI_HTTP_PORT:-5187}:8080" \
+        "${PKI_IMAGE_TAG}"; then
         log_err "Failed to start PKI frontend container"
         RESULT_pki=1
         return 1

@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -7,6 +8,7 @@ from typing import Any
 from celery.result import AsyncResult
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.celery import celery_app
@@ -566,6 +568,15 @@ def is_file_safe_to_delete(db: Session, file_id: int) -> tuple[bool, str]:
     return False, f"File status is {media_file.status}"
 
 
+#: SQLSTATE 40P01 (deadlock_detected) — the standard Postgres code, checked instead of a
+#: driver-specific exception class so this survives a DB-driver swap. A deadlock is a
+#: transient, order-of-execution artifact (Postgres picks a victim transaction to abort so
+#: the others can proceed) — retrying it is the correct response, not a workaround.
+_DEADLOCK_SQLSTATE = "40P01"
+_DEADLOCK_RETRY_ATTEMPTS = 3
+_DEADLOCK_RETRY_DELAY_S = 0.5
+
+
 def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = False) -> bool:
     """Reset a file for retry processing.
 
@@ -577,60 +588,76 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
     Returns:
         True if reset was successful, False otherwise
     """
-    media_file = get_refreshed_object(db, MediaFile, file_id)
-    if not media_file:
-        return False
+    for attempt in range(1, _DEADLOCK_RETRY_ATTEMPTS + 1):
+        media_file = get_refreshed_object(db, MediaFile, file_id)
+        if not media_file:
+            return False
 
-    try:
-        # Cancel any active task first
-        if media_file.active_task_id:
-            cancel_active_task(db, file_id)
+        try:
+            # Cancel any active task first
+            if media_file.active_task_id:
+                cancel_active_task(db, file_id)
 
-        # Reset retry count if requested. `retry_count` is nullable with a Python-side
-        # default of 0, so a NULL row must be normalized rather than incremented in place —
-        # this is the manual-retry entry point (POST /my-files/{uuid}/retry), and a bare
-        # `+= 1` here turns a NULL row into a 500 the user cannot get past.
-        if reset_retry_count:
-            media_file.retry_count = 0
-        else:
-            media_file.retry_count = int(media_file.retry_count or 0) + 1
+            # Reset retry count if requested. `retry_count` is nullable with a Python-side
+            # default of 0, so a NULL row must be normalized rather than incremented in
+            # place — this is the manual-retry entry point (POST /my-files/{uuid}/retry),
+            # and a bare `+= 1` here turns a NULL row into a 500 the user cannot get past.
+            if reset_retry_count:
+                media_file.retry_count = 0
+            else:
+                media_file.retry_count = int(media_file.retry_count or 0) + 1
 
-        # Reset file state
-        media_file.status = FileStatus.PENDING
-        media_file.active_task_id = None
-        media_file.task_started_at = None
-        media_file.task_last_update = None
-        media_file.cancellation_requested = False
-        media_file.last_error_message = None
-        media_file.force_delete_eligible = False
+            # Reset file state
+            media_file.status = FileStatus.PENDING
+            media_file.active_task_id = None
+            media_file.task_started_at = None
+            media_file.task_last_update = None
+            media_file.cancellation_requested = False
+            media_file.last_error_message = None
+            media_file.force_delete_eligible = False
 
-        # Clear existing transcript data for clean retry
-        from app.models.media import Analytics
-        from app.models.media import Speaker
-        from app.models.media import TranscriptSegment
+            # Clear existing transcript data for clean retry
+            from app.models.media import Analytics
+            from app.models.media import Speaker
+            from app.models.media import TranscriptSegment
 
-        # Delete existing transcript segments
-        db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).delete()
+            # Delete existing transcript segments
+            db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).delete()
 
-        # Delete existing speakers
-        db.query(Speaker).filter(Speaker.media_file_id == file_id).delete()
+            # Delete existing speakers
+            db.query(Speaker).filter(Speaker.media_file_id == file_id).delete()
 
-        # Delete existing analytics
-        db.query(Analytics).filter(Analytics.media_file_id == file_id).delete()
+            # Delete existing analytics
+            db.query(Analytics).filter(Analytics.media_file_id == file_id).delete()
 
-        # Clear related task records for clean slate
-        db.query(Task).filter(Task.media_file_id == file_id).delete()
+            # Clear related task records for clean slate
+            db.query(Task).filter(Task.media_file_id == file_id).delete()
 
-        # Reset summary fields so auto-summary triggers correctly after transcription retry
-        media_file.summary_data = None
-        media_file.summary_opensearch_id = None
-        media_file.summary_status = "pending"
+            # Reset summary fields so auto-summary triggers correctly after transcription retry
+            media_file.summary_data = None
+            media_file.summary_opensearch_id = None
+            media_file.summary_status = "pending"
 
-        db.commit()
-        logger.info(f"Reset file {file_id} for retry (attempt {media_file.retry_count})")
-        return True
+            db.commit()
+            logger.info(f"Reset file {file_id} for retry (attempt {media_file.retry_count})")
+            return True
 
-    except Exception as e:
-        logger.error(f"Failed to reset file {file_id} for retry: {e}")
-        db.rollback()
-        return False
+        except OperationalError as e:
+            db.rollback()
+            is_deadlock = getattr(getattr(e, "orig", None), "pgcode", None) == _DEADLOCK_SQLSTATE
+            if is_deadlock and attempt < _DEADLOCK_RETRY_ATTEMPTS:
+                logger.warning(
+                    f"Deadlock resetting file {file_id} for retry "
+                    f"(attempt {attempt}/{_DEADLOCK_RETRY_ATTEMPTS}); retrying"
+                )
+                time.sleep(_DEADLOCK_RETRY_DELAY_S)
+                continue
+            logger.error(f"Failed to reset file {file_id} for retry: {e}")
+            return False
+
+        except Exception as e:
+            logger.error(f"Failed to reset file {file_id} for retry: {e}")
+            db.rollback()
+            return False
+
+    return False

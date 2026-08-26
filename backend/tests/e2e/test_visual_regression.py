@@ -323,6 +323,28 @@ def trace_conversation_uuid(api_token: str, backend_url: str) -> Iterator[str]:
     assert provider.ok, f"Could not create provider: {provider.status_code} {provider.text}"
     provider_uuid = str(provider.json()["uuid"])
 
+    # The backend only auto-activates a config when it is the user's FIRST one
+    # ever; the shared e2e account accumulates configs across runs, so this is
+    # essentially never true here. ChatComposer's disabled state is driven by
+    # that global "active" pointer (GET /api/llm-settings/status), not by the
+    # conversation's own pinned llm_config_uuid — without this the composer
+    # stays disabled with "Chat needs a language model" and the traced turn
+    # below never sends. This mutates the SHARED e2e account's active-config
+    # pointer, which the dev-data-hygiene rule covers just as much as a
+    # created row does — captured before activating, restored in the finally.
+    status = requests.get(f"{backend_url}/api/llm-settings/status", headers=auth, timeout=30)
+    assert status.ok, f"Could not read prior LLM status: {status.status_code} {status.text}"
+    prior_active = status.json().get("active_configuration")
+    prior_active_uuid = prior_active["uuid"] if prior_active else None
+
+    activate = requests.post(
+        f"{backend_url}/api/llm-settings/set-active",
+        headers=auth,
+        json={"configuration_id": provider_uuid},
+        timeout=30,
+    )
+    assert activate.ok, f"Could not activate provider: {activate.status_code} {activate.text}"
+
     conversation_uuid = ""
     try:
         conversation = requests.post(
@@ -355,6 +377,16 @@ def trace_conversation_uuid(api_token: str, backend_url: str) -> Iterator[str]:
                 continue
             try:
                 requests.delete(url, headers=auth, timeout=30)
+            except requests.RequestException:
+                pass
+        if prior_active_uuid:
+            try:
+                requests.post(
+                    f"{backend_url}/api/llm-settings/set-active",
+                    headers=auth,
+                    json={"configuration_id": prior_active_uuid},
+                    timeout=30,
+                )
             except requests.RequestException:
                 pass
 

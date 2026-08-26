@@ -466,10 +466,21 @@ def _handle_delete_action(
     file_uuid: str,
     current_user: User,
     force: bool,
+    is_admin: bool,
     organization_id: OrgScope = UNSCOPED,
 ) -> BulkActionResult:
-    """Handle delete action for bulk operations."""
-    delete_media_file(db, file_uuid, current_user, force=force, organization_id=organization_id)
+    """Handle delete action for bulk operations.
+
+    `force` mirrors the single-file `DELETE /{file_uuid}/force` route, which is
+    admin-only (`force_delete_file` above checks `current_user.is_admin` before
+    ever calling `delete_media_file`). This handler used to forward the request
+    body's `force` flag straight through with no such check, so any owner could
+    set `force=true` on a bulk delete and cancel a live task + purge a file mid
+    processing -- exactly what `/force` exists to restrict to admins.
+    """
+    delete_media_file(
+        db, file_uuid, current_user, force=force and is_admin, organization_id=organization_id
+    )
     return BulkActionResult(
         file_uuid=file_uuid,
         success=True,
@@ -885,7 +896,7 @@ def _process_single_file_action(
 
     action_handlers = {
         "delete": lambda: _handle_delete_action(
-            db, file_uuid, current_user, force, organization_id
+            db, file_uuid, current_user, force, is_admin, organization_id
         ),
         "retry": lambda: _handle_retry_action(db, file_uuid, file_id, reset_retry_count, is_admin),
         "cancel": lambda: _handle_cancel_action(db, file_uuid, file_id),

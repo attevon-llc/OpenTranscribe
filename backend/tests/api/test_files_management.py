@@ -371,6 +371,69 @@ def test_bulk_delete_owner_success(client, user_token_headers, normal_user, db_s
     assert results[0]["success"] is True
 
 
+def test_bulk_delete_force_by_non_admin_is_not_honoured(
+    client, user_token_headers, normal_user, db_session
+):
+    """A non-admin owner cannot use bulk-action's ``force`` to bypass the
+    admin-only ``/force`` gate on a file with a genuinely live active task.
+
+    ``DELETE /{uuid}/force`` refuses non-admins outright
+    (``test_force_delete_non_admin_403``); this pins that bulk-action's
+    ``force=true`` must not be a second, ungated path to the same operation.
+    Before the fix, ``_handle_delete_action`` forwarded the request body's
+    ``force`` straight through with no admin check at all.
+    """
+    from unittest.mock import patch
+
+    media_file = _make_file(
+        db_session,
+        normal_user,
+        file_status="completed",
+        active_task_id="44444444-4444-4444-4444-444444444444",
+    )
+    with patch("app.utils.task_utils.AsyncResult") as mock_async_result:
+        mock_async_result.return_value.state = "STARTED"
+        response = client.post(
+            "/api/files/management/bulk-action",
+            headers=user_token_headers,
+            json={"file_uuids": [str(media_file.uuid)], "action": "delete", "force": True},
+        )
+    assert response.status_code == status.HTTP_200_OK
+    results = response.json()
+    assert results[0]["success"] is False
+    # The file must survive: force was silently downgraded to a normal delete,
+    # which the live active task correctly refuses (409-shaped soft failure).
+    follow_up = client.get(f"/api/files/{media_file.uuid}", headers=user_token_headers)
+    assert follow_up.status_code == status.HTTP_200_OK
+
+
+def test_bulk_delete_force_by_admin_is_honoured(
+    client, admin_token_headers, normal_user, db_session
+):
+    """Control: an admin's bulk-action ``force=true`` still works as designed."""
+    from unittest.mock import patch
+
+    media_file = _make_file(
+        db_session,
+        normal_user,
+        file_status="completed",
+        active_task_id="55555555-5555-5555-5555-555555555555",
+    )
+    with (
+        patch("app.utils.task_utils.AsyncResult") as mock_async_result,
+        patch("app.utils.task_utils.celery_app.control.revoke"),
+    ):
+        mock_async_result.return_value.state = "STARTED"
+        response = client.post(
+            "/api/files/management/bulk-action",
+            headers=admin_token_headers,
+            json={"file_uuids": [str(media_file.uuid)], "action": "delete", "force": True},
+        )
+    assert response.status_code == status.HTTP_200_OK
+    results = response.json()
+    assert results[0]["success"] is True
+
+
 def test_bulk_action_other_user_file_is_soft_failure(
     client, other_user_auth_headers, normal_user, db_session
 ):

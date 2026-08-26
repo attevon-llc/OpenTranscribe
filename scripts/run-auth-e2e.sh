@@ -416,7 +416,7 @@ phase_1_auth_buttons() {
         RESULT_auth_buttons=$?
         COUNT_auth_buttons=$(extract_test_counts "$output")
         log_err "Auth buttons tests failed"
-        if [ "$VERBOSE" = true ]; then echo "$output"; fi
+        echo "$output" | tail -60
     fi
 }
 
@@ -459,7 +459,7 @@ phase_2_ldap_keycloak() {
         RESULT_ldap_keycloak=$?
         COUNT_ldap_keycloak=$(extract_test_counts "$output")
         log_err "LDAP/Keycloak tests failed"
-        if [ "$VERBOSE" = true ]; then echo "$output"; fi
+        echo "$output" | tail -60
     fi
 }
 
@@ -536,7 +536,7 @@ phase_3_pki() {
         RESULT_pki=$?
         COUNT_pki=$(extract_test_counts "$output")
         log_err "PKI tests failed"
-        if [ "$VERBOSE" = true ]; then echo "$output"; fi
+        echo "$output" | tail -60
     fi
 
     # Step 7: Restore — PKI container cleanup and frontend restart happen in cleanup_on_exit
@@ -595,7 +595,7 @@ phase_4_mfa() {
         RESULT_mfa=$?
         COUNT_mfa=$(extract_test_counts "$output")
         log_err "MFA tests failed"
-        if [ "$VERBOSE" = true ]; then echo "$output"; fi
+        echo "$output" | tail -60
     fi
 
     # Step 4: Cleanup — disable MFA and reset admin state

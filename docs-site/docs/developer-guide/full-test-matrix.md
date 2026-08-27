@@ -22,6 +22,35 @@ sequences `scripts/validate-deployments.sh`, `scripts/run-integration-tests.sh`,
 `scripts/test-matrix.sh` is a thin dispatcher over exactly this table — see
 ["Anti-staleness"](#anti-staleness) below.
 
+## Coverage stance at a glance
+
+Read this table before assuming a mode is covered — several gaps below were only found because
+someone assumed "the matrix covers it" without checking which stage actually asserts what. Each
+gap-hunt pass on this repo has found new ones; treat this table as a living record, not a
+finished checklist. "Real" means the leg drives the actual application path (upload, restore,
+login) and asserts on outcome, not just that a command exited 0.
+
+| Mode | Stage / leg | Coverage | Known gaps |
+|---|---|---|---|
+| Dev — baseline | Stage 2A | Real: upload, e2e, chat vs mock + real vLLM, all 3 auth IdPs | — |
+| Dev — GPU scaling | Stage 2B | Real: N-worker topology, concurrent uploads, OOM check | — |
+| Dev — diarization | Stage 2C | Real: diar-native default path + PyAnnote fallback | — |
+| Dev — lite/CPU | Stage 2D | **Topology-only** — proves no GPU worker/memory, uploads nothing | The pipeline itself (ASR/search/chat) is NOT exercised here — see the lite-mode rehearsal row below |
+| Prod — fresh install | Stage 3 | Real: full install against a built image | — |
+| Prod — upgrade | Stage 3 | Real: version upgrade path | — |
+| Prod — backup/restore/rollback | Stage 3 (`test-upgrade.sh` phases 06b, 12–17, [#598](https://github.com/attevon-llc/OpenTranscribe/issues/598)) | Real: `opentr.sh backup`/`restore` and `update --rollback`, damage injected via the real API, restore asserted by content digest (not row count) | `backup --encrypt` (unattended gpg needs a passphrase file the CLI doesn't support); the in-app scheduled-backup system (`backup_service.py`) has real unit/API coverage but no end-to-end restore proof — see [#604](https://github.com/attevon-llc/OpenTranscribe/issues/604) for its one known remaining defect (gnupg missing from the backend image); MinIO/OpenSearch restore is not touched by the DB restore path |
+| Prod — lite-mode pipeline | Stage 3 (`test-lite-mode.sh`) | Real: full upload→ASR→search→chat against mocked cloud ASR + mocked LLM, no GPU/vendor key needed | Mock's per-request `?scenario=` override isn't reachable from `GladiaProvider` — the negative-path check restarts the mock container instead of driving it per-request |
+| Prod — PKI/mTLS | Stage 3 | Real: client-cert auth, cert-less request rejected at the TLS layer | Prod+nginx only by design — no dev-mode variant exists (Vite can't terminate mTLS) |
+| Prod — lite/gpu-scale as deployment modes | — | Compose-validated only (Stage 1.6) | No separate prod runtime pass — deliberate scope decision, since prod images behave identically to dev images for these flags and Stage 2 already proves the runtime behavior |
+| Offline / air-gapped | Stage 1.6 | Config-validated only | No real network-namespaced offline install pass exists — do not read Stage 1.6 as proving offline mode works end to end |
+| Image/release gates | Stage 4 | Real: scan/build/publish/promote wiring | `scan`'s security-tooling check is warn-severity, not blocking — verify trivy/grype/syft are on `PATH` before relying on it |
+
+**Pattern to watch for**: nearly every gap this repo has found (#598–#604) was a script or
+feature that looked covered because *something* referenced it — a doc section, a `RUN_*` env var,
+a constant — but nothing exercised the actual failure path. When adding a new script or rehearsal
+leg, ask "what does this look like when it silently does nothing, or does the wrong thing and
+still exits 0?" and write that test first.
+
 ## Stage 1 — Static / no live stack
 
 **~6-9 min. CI-safe: needs no GPU and no running stack.**

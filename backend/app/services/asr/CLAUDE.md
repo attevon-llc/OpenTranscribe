@@ -77,3 +77,16 @@ changing `provider` **clears** it.
   speaker labels. **pyannote.ai**'s poll timeout is only **300 s** (vs 1800–7200 s elsewhere), so long
   files fail there first. **azure** and **google** `validate_connection()` make **no network call** — a
   bad credential still "validates".
+- **`UserASRSettings.base_url` reaches the real request for `gladia` only** (issue #594).
+  `create_from_config` takes a `base_url` parameter but only the Gladia branch forwards it to its
+  constructor; every other provider still silently drops a configured `base_url` exactly as before.
+  `GladiaProvider._resolve_base_url` applies an SSRF guard (`ASR_ALLOW_PRIVATE_ENDPOINTS`, a
+  deliberately separate flag from `LLM_ALLOW_PRIVATE_ENDPOINTS` — mirrors `app/utils/url_validation.py`,
+  same as the LLM path) and raises `ASRConfigurationError` — a **deliberate refusal**, propagated by
+  `create_for_user` rather than silently degraded to local — for a private/loopback/RFC1918/link-local/
+  metadata/docker-compose-hostname target unless explicitly allowed. The shipped default
+  (`https://api.gladia.io`) and any value equal to it are exempt from the guard, so an unconfigured
+  deployment pays no DNS lookup at construction. All ten providers' catalog entries still say
+  `supports_custom_url: False` (`ASR_PROVIDER_CATALOG`), so the admin UI does not surface the field for
+  any provider today — a config can still be set directly via the API (as
+  `register_mock_gladia_asr_config`'s test fixture does), just not through Settings → AI ASR.

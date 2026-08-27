@@ -28,9 +28,18 @@ poll-loop tests run in milliseconds instead of minutes. What is pinned here, in 
 8. **API key never leaks from the job-submission failure path** (upload failure and poll
    failure are covered by (2) and (6) respectively).
 9. **``GLADIA_API_BASE_URL`` env override** is resolved once per instance at construction
-   time, and the default is unchanged when the var is unset.
+   time, and the default is unchanged when the var is unset. The shipped default
+   (``https://api.gladia.io``) is exempt from the SSRF guard below (10-12) — resolving it
+   would mean every test in this module pays a live DNS lookup.
 10. **Poll loop has no consecutive-failure cap** — current behavior, pinned as a
     characterization test, not a target to enforce.
+11. **``base_url`` (``UserASRSettings.base_url``, issue #594) is threaded into the real
+    request** — a configured base URL is what ``requests.post``/``.get`` are actually
+    called against, not just recorded and ignored.
+12. **SSRF guard on a non-default base URL.** A private/loopback target is refused at
+    construction (``ASRConfigurationError``) unless ``ASR_ALLOW_PRIVATE_ENDPOINTS`` is
+    set — mirroring ``LLM_ALLOW_PRIVATE_ENDPOINTS`` — and the same target is accepted
+    once the flag is on. The env-var override (9) goes through the identical guard.
 
 Following the characterization-test convention of ``tests/unit/test_chunking_service.py`` /
 ``tests/unit/test_transcription_storage.py``, and the network-free provider-test pattern of
@@ -46,6 +55,8 @@ from unittest.mock import patch
 import pytest
 import requests
 
+from app.core.config import settings
+from app.core.exceptions import ASRConfigurationError
 from app.services.asr.base import normalize_speaker_label
 from app.services.asr.gladia_provider import GladiaProvider
 from app.services.asr.types import ASRConfig
@@ -352,15 +363,72 @@ def test_api_key_never_leaks_on_job_submission_failure(tmp_path):
 
 
 def test_base_url_env_override_is_honored(monkeypatch):
-    monkeypatch.setenv("GLADIA_API_BASE_URL", "http://mock-asr:5198")
+    monkeypatch.setattr(settings, "ASR_ALLOW_PRIVATE_ENDPOINTS", True, raising=False)
+    monkeypatch.setenv("GLADIA_API_BASE_URL", "http://127.0.0.1:5198")
     provider = _make_provider()
-    assert provider._base == "http://mock-asr:5198"
+    assert provider._base == "http://127.0.0.1:5198"
 
 
 def test_base_url_default_is_unchanged_when_env_unset(monkeypatch):
     monkeypatch.delenv("GLADIA_API_BASE_URL", raising=False)
     provider = _make_provider()
     assert provider._base == "https://api.gladia.io"
+
+
+# ── 11/12. base_url wiring + SSRF guard (issue #594) ────────────────────────────────────
+
+
+def test_configured_base_url_is_used_in_the_outbound_request(monkeypatch, tmp_path):
+    """A configured base_url is what the real HTTP calls are made against — not just
+    recorded on the instance and ignored, which was the entire bug in #594.
+    """
+    monkeypatch.setattr(settings, "ASR_ALLOW_PRIVATE_ENDPOINTS", True, raising=False)
+    provider = GladiaProvider(
+        api_key="test-key", model_name="standard", base_url="http://127.0.0.1:5198"
+    )
+    assert provider._base == "http://127.0.0.1:5198"
+
+    called_urls: list[str] = []
+
+    def _get(url, **_kwargs):
+        called_urls.append(url)
+        return _FakeResponse({"status": "ok"})
+
+    with patch("requests.get", side_effect=_get):
+        provider.validate_connection()
+
+    assert called_urls == ["http://127.0.0.1:5198/v2/live"]
+
+
+def test_private_base_url_is_refused_by_default(monkeypatch):
+    """Fail closed (issue #594): a private/loopback base_url is refused at
+    construction, before any request is attempted, unless explicitly allowed.
+    """
+    monkeypatch.setattr(settings, "ASR_ALLOW_PRIVATE_ENDPOINTS", False, raising=False)
+
+    with pytest.raises(ASRConfigurationError, match="not a permitted outbound target"):
+        GladiaProvider(api_key="test-key", base_url="http://127.0.0.1:5198")
+
+
+def test_private_base_url_is_allowed_when_the_override_is_set(monkeypatch):
+    """The same private base_url that #594's default-off guard refuses is accepted
+    once ASR_ALLOW_PRIVATE_ENDPOINTS is on — mirrors LLM_ALLOW_PRIVATE_ENDPOINTS.
+    """
+    monkeypatch.setattr(settings, "ASR_ALLOW_PRIVATE_ENDPOINTS", True, raising=False)
+
+    provider = GladiaProvider(api_key="test-key", base_url="http://127.0.0.1:5198")
+
+    assert provider._base == "http://127.0.0.1:5198"
+
+
+def test_metadata_base_url_is_refused_even_with_the_override_set(monkeypatch):
+    """allow_private loosens the address RANGE, never the cloud-metadata carve-out —
+    same invariant the LLM guard enforces (app/utils/url_validation.py).
+    """
+    monkeypatch.setattr(settings, "ASR_ALLOW_PRIVATE_ENDPOINTS", True, raising=False)
+
+    with pytest.raises(ASRConfigurationError, match="not a permitted outbound target"):
+        GladiaProvider(api_key="test-key", base_url="http://169.254.169.254")
 
 
 # ── 10. Poll loop has no consecutive-failure cap (current behavior, not a target) ───────

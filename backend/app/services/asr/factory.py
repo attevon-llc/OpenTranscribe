@@ -418,7 +418,12 @@ ASR_PROVIDER_CATALOG: dict = {
         "display_name": "Gladia",
         "requires_api_key": True,
         "requires_region": False,
-        "supports_custom_url": False,
+        # True since issue #594 wired UserASRSettings.base_url into the real request
+        # path (GladiaProvider._resolve_base_url, guarded by
+        # ASR_ALLOW_PRIVATE_ENDPOINTS). Every other provider below still drops a
+        # configured base_url silently, so their entries stay False — flipping one
+        # without wiring the field would resurface #594 under a different vendor.
+        "supports_custom_url": True,
         "supports_diarization": True,
         "supports_vocabulary": True,
         "supports_translation": False,
@@ -751,7 +756,10 @@ class ASRProviderFactory:
         if provider == "gladia":
             from .gladia_provider import GladiaProvider
 
-            return GladiaProvider(api_key or "", model or "standard")
+            # base_url (issue #594): GladiaProvider._resolve_base_url applies the
+            # ASR_ALLOW_PRIVATE_ENDPOINTS SSRF guard, so passing it through here is safe
+            # even though it is user-supplied — the same guard the LLM path applies.
+            return GladiaProvider(api_key or "", model or "standard", base_url=base_url)
         if provider == "pyannote":
             from .pyannote_provider import PyAnnoteProvider
 

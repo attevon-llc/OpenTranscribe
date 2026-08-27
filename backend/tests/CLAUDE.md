@@ -550,11 +550,15 @@ role `mock_llm_completion` plays for the LLM mock.
 ./opentr.sh start dev --with-mock-asr     # http://mock-asr:5198 in-network
 ```
 
-⚠️ `GladiaProvider._base` (`backend/app/services/asr/gladia_provider.py`) resolves
-`GLADIA_API_BASE_URL` once, at construction — **never** a config's `base_url`
-field (issue #594). `docker-compose.mock-asr.yml` sets that env var directly
-on `backend` and `celery-cloud-asr-worker`; without it `--with-mock-asr`
-doesn't route ASR traffic anywhere.
+✅ `GladiaProvider._resolve_base_url` (`backend/app/services/asr/gladia_provider.py`)
+now honours a per-config `base_url` — fixed by issue #594, which also added an SSRF
+guard (`ASR_ALLOW_PRIVATE_ENDPOINTS`, mirroring `LLM_ALLOW_PRIVATE_ENDPOINTS`) that
+refuses a private-network base URL, env-var- or config-supplied, unless allowed.
+`GLADIA_API_BASE_URL` is still read as a fallback for flows that never save a
+config; `docker-compose.mock-asr.yml` sets it (plus `ASR_ALLOW_PRIVATE_ENDPOINTS=true`,
+since `mock-asr` is a private compose hostname) on `backend` and
+`celery-cloud-asr-worker` — without both, `--with-mock-asr` doesn't route ASR
+traffic anywhere.
 
 Fixtures live in `tests/fixtures/mock_asr.py`:
 

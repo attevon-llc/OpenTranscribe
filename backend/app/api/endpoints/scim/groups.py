@@ -23,6 +23,7 @@ from fastapi import Depends
 from fastapi import Query
 from fastapi import status
 from fastapi.responses import Response
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.scim.auth import require_scim_token
@@ -194,15 +195,21 @@ def replace_group(
     if not payload.displayName or not payload.displayName.strip():
         raise bad_request("displayName is required")
     new_name = payload.displayName.strip()
+
+    # Resolve membership BEFORE touching the name: an unknown member id must
+    # fail (400) without any part of the replace having landed, so a bogus
+    # id in the request never leaves the group renamed but not re-membered.
+    member_ids = _resolve_member_ids(db, {m.value for m in payload.members if m.value})
+
     if new_name != str(group.name):
         group.name = new_name  # type: ignore[assignment]
-        db.commit()
-    scim_group_service.set_group_members(
-        db,
-        group,
-        _resolve_member_ids(db, {m.value for m in payload.members if m.value}),
-        actor=str(token.name),
-    )
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            raise conflict(f"A group named {new_name!r} already exists") from exc
+
+    scim_group_service.set_group_members(db, group, member_ids, actor=str(token.name))
     db.refresh(group)
     return _scim_json(group_resource(group, members=_members(db, group)))
 

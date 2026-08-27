@@ -37,5 +37,20 @@ for vol in "${VOLUMES[@]}"; do
   fixed=$((fixed + 1))
 done
 
+# A run that repairs zero volumes because every one of them is genuinely absent (a
+# never-started stack) looks identical, from this script's own output, to one where
+# $PROJECT resolved to the wrong compose project (this checkout's directory name is NOT
+# necessarily the compose project the volumes were created under — a git worktree is the
+# common case) and every `docker volume inspect` missed for that reason instead. Fail
+# loudly rather than silently reporting success either way (issue #602) — a caller that
+# genuinely expects "nothing to repair yet" can check for this exact message.
+if [ "$fixed" -eq 0 ]; then
+  echo "❌ repaired 0 volume(s) for project '$PROJECT' -- every volume was absent." >&2
+  echo "   If this project has never been started, that's expected -- ignore this." >&2
+  echo "   Otherwise \$PROJECT likely resolved wrong. Pass the real one explicitly:" >&2
+  echo "     COMPOSE_PROJECT_NAME=<actual-project> $0" >&2
+  exit 1
+fi
+
 echo "repaired $fixed volume(s); restart the workers to pick it up:"
 echo "  docker compose restart celery-worker celery-cpu-worker"

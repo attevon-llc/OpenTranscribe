@@ -26,6 +26,7 @@ from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
+from app.core.config import resolve_ldap_search_filter
 from app.core.config import settings as env_settings
 
 logger = logging.getLogger(__name__)
@@ -129,6 +130,20 @@ class LdapConfig:
             except (ValueError, TypeError):
                 return default
 
+        username_attr = str(_get("ldap_username_attr", env_settings.LDAP_USERNAME_ATTR) or "uid")
+        # Resolve the `{username_attr}` placeholder the same way the .env-backed
+        # Settings validator does (app/core/config.py). Without this, a DB-configured
+        # search filter containing the literal placeholder never matches any real
+        # LDAP attribute name and every DB-configured LDAP login fails to find the
+        # user (or matches nothing/everything, depending on the server's parsing).
+        user_search_filter = resolve_ldap_search_filter(
+            str(
+                _get("ldap_user_search_filter", env_settings.LDAP_USER_SEARCH_FILTER)
+                or "(uid={username})"
+            ),
+            username_attr,
+        )
+
         return cls(
             enabled=_get_bool("ldap_enabled", env_settings.LDAP_ENABLED),
             server=str(_get("ldap_server", env_settings.LDAP_SERVER) or ""),
@@ -138,14 +153,11 @@ class LdapConfig:
             bind_dn=str(_get("ldap_bind_dn", env_settings.LDAP_BIND_DN) or ""),
             bind_password=str(_get("ldap_bind_password", env_settings.LDAP_BIND_PASSWORD) or ""),
             search_base=str(_get("ldap_search_base", env_settings.LDAP_SEARCH_BASE) or ""),
-            username_attr=str(_get("ldap_username_attr", env_settings.LDAP_USERNAME_ATTR) or "uid"),
+            username_attr=username_attr,
             email_attr=str(_get("ldap_email_attr", env_settings.LDAP_EMAIL_ATTR) or "mail"),
             name_attr=str(_get("ldap_name_attr", env_settings.LDAP_NAME_ATTR) or "cn"),
             group_attr=str(_get("ldap_group_attr", env_settings.LDAP_GROUP_ATTR) or ""),
-            user_search_filter=str(
-                _get("ldap_user_search_filter", env_settings.LDAP_USER_SEARCH_FILTER)
-                or "(uid={username})"
-            ),
+            user_search_filter=user_search_filter,
             admin_users=str(_get("ldap_admin_users", env_settings.LDAP_ADMIN_USERS) or ""),
             admin_groups=str(_get("ldap_admin_groups", env_settings.LDAP_ADMIN_GROUPS) or ""),
             user_groups=str(_get("ldap_user_groups", env_settings.LDAP_USER_GROUPS) or ""),

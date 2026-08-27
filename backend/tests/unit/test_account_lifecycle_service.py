@@ -231,10 +231,75 @@ def test_the_last_active_super_admin_is_skipped_not_deactivated(
     # to a privileged account belongs in the trail, not just a worker log line.
     assert len(audit_events) == 1
     event = audit_events[0]
-    assert event["event_type"] == AuditEventType.AUTH_ACCOUNT_EXPIRED
+    # A distinct event type from an actual deactivation (AUTH_ACCOUNT_EXPIRED) --
+    # an assessor must not need to string-match `details.trigger` to tell an
+    # exemption apart from a real expiry.
+    assert event["event_type"] == AuditEventType.AUTH_ACCOUNT_EXPIRATION_SKIPPED
+    assert event["event_type"] != AuditEventType.AUTH_ACCOUNT_EXPIRED
     assert event["user_id"] is None, "the sweep has no human actor"
     assert event["target_user_id"] == lone_super_admin.id
     assert event["details"]["trigger"] == "inactivity_skipped_super_admin"
+
+
+def test_two_eligible_super_admins_in_one_sweep_deactivates_at_most_one(
+    db_session, expiration_enabled
+):
+    """TOCTOU regression: the super_admin guard used to be computed ONCE from a
+    pre-loop snapshot. With two inactivity-eligible super_admins in the same
+    sweep, that snapshot saw both as "not the last one" (each excluded the other
+    from its own count) and would deactivate both -- leaving the deployment with
+    zero active super_admins. The guard must be re-checked per candidate against
+    CURRENT state, accounting for anyone the sweep has already deactivated
+    earlier in the same pass.
+    """
+    stale_login = datetime.now(UTC) - timedelta(days=999)
+    first = _user(db_session, last_login_at=stale_login, role="super_admin")
+    # Neutralize any other pre-existing (e.g. seeded bootstrap) super_admins BEFORE
+    # creating `second` -- `_neutralize_other_super_admins` demotes every active
+    # super_admin except the one it's told to keep, and `second` must survive it.
+    _neutralize_other_super_admins(db_session, keep=first)
+    second = _user(db_session, last_login_at=stale_login, role="super_admin")
+
+    result = run_inactivity_sweep(db_session)
+
+    assert result["deactivated"] <= 1
+    assert result["deactivated"] + result["skipped_super_admin"] == 2
+
+    db_session.refresh(first)
+    db_session.refresh(second)
+    active_count = sum(1 for u in (first, second) if u.is_active)
+    assert active_count == 1, "at least one super_admin must remain active"
+
+
+def test_exempted_super_admin_audit_row_has_no_expiry_event_for_that_run(
+    db_session, expiration_enabled, audit_events
+):
+    """The exempted super_admin's audit row must carry the distinct SKIPPED event
+    type, and no AUTH_ACCOUNT_EXPIRED row for that same user/run -- otherwise the
+    only way to tell an exemption from a real deactivation is string-matching
+    `details.trigger`, which is exactly what issue asked to stop doing.
+    """
+    stale_login = datetime.now(UTC) - timedelta(days=999)
+    lone_super_admin = _user(db_session, last_login_at=stale_login, role="super_admin")
+    _neutralize_other_super_admins(db_session, keep=lone_super_admin)
+
+    result = run_inactivity_sweep(db_session)
+
+    assert result["skipped_super_admin"] == 1
+    db_session.refresh(lone_super_admin)
+    assert lone_super_admin.is_active is True
+
+    events_for_user = [e for e in audit_events if e["target_user_id"] == lone_super_admin.id]
+    assert len(events_for_user) == 1
+    assert events_for_user[0]["event_type"] == AuditEventType.AUTH_ACCOUNT_EXPIRATION_SKIPPED
+
+    expired_rows_for_user = [
+        e
+        for e in audit_events
+        if e["target_user_id"] == lone_super_admin.id
+        and e["event_type"] == AuditEventType.AUTH_ACCOUNT_EXPIRED
+    ]
+    assert expired_rows_for_user == []
 
 
 def test_an_inactive_super_admin_is_deactivated_when_another_stays_active(

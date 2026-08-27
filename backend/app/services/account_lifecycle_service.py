@@ -6,8 +6,10 @@ at request time. This module is the other one — a periodic sweep that deactiva
 an account nobody has used in `settings.ACCOUNT_INACTIVE_DAYS` days, gated on
 `settings.ACCOUNT_EXPIRATION_ENABLED` (both default: disabled). Distinct triggers,
 same downstream effect (`is_active = False`, already enforced everywhere a login is
-checked), and the same audit event type — `AUTH_ACCOUNT_EXPIRED` — with `details`
-distinguishing which one fired.
+checked). Both emit `AUTH_ACCOUNT_EXPIRED` for an actual deactivation; a super_admin
+candidate this sweep declined to touch (see safety rule 2 below) emits the distinct
+`AUTH_ACCOUNT_EXPIRATION_SKIPPED` instead — no account state changed, and an assessor
+must not have to string-match `details.trigger` to tell the two apart.
 
 Follows `directory_sync_service`'s shape for a no-human-actor deactivation: disable,
 revoke sessions, audit with `user_id=None` (no actor) / `target_user_id` (the
@@ -48,17 +50,22 @@ from app.services.account_security_service import revoke_all_sessions
 logger = logging.getLogger(__name__)
 
 
-def _would_leave_no_super_admin(db: Session, candidate_ids: set[int]) -> bool:
-    """True if deactivating every id in *candidate_ids* would zero active super_admins.
+def _would_leave_no_super_admin(db: Session, excluded_ids: set[int]) -> bool:
+    """True if deactivating every id in *excluded_ids* would zero active super_admins.
 
-    One query against the whole candidate set rather than per-row, matching this
-    codebase's "one query, not N" convention for bulk sweeps.
+    Called **per candidate, immediately before deactivating them** (not once from a
+    pre-loop snapshot) — a TOCTOU gap otherwise: if two super_admins are both
+    inactivity-eligible in the same sweep, a snapshot computed before the loop starts
+    would see both as "not the last one" and let both be deactivated. The caller
+    passes `{this_candidate_id} | deactivated_this_sweep`, so a super_admin already
+    disabled earlier in the same pass is treated as gone even if, for any reason, its
+    committed `is_active=False` were not yet visible to this query.
     """
     remaining = (
         db.query(User)
         .filter(
             User.role == ROLE_SUPER_ADMIN,
-            User.id.notin_(candidate_ids),
+            User.id.notin_(excluded_ids),
             User.is_active.is_(True),
         )
         .count()
@@ -180,38 +187,16 @@ def run_inactivity_sweep(db: Session) -> dict:
             "capped": False,
         }
 
-    candidate_ids = {int(u.id) for u in candidates}
     super_admin_ids = {int(u.id) for u in candidates if str(u.role) == ROLE_SUPER_ADMIN}
-    protect_super_admins = bool(super_admin_ids) and _would_leave_no_super_admin(db, candidate_ids)
-    if protect_super_admins:
-        logger.warning(
-            "Account inactivity sweep: deactivating %d inactive super_admin(s) would "
-            "leave the deployment with none — skipping them this pass",
-            len(super_admin_ids),
-        )
 
     deactivated = 0
     skipped_super_admin = 0
     errors = 0
+    # Tracks who this pass has ALREADY deactivated, so the super_admin protection
+    # check below is re-evaluated against current state per candidate rather than a
+    # single pre-loop snapshot -- see `_would_leave_no_super_admin`'s docstring.
+    deactivated_this_sweep: set[int] = set()
     for user_id, user_email in [(int(u.id), str(u.email)) for u in candidates]:
-        if protect_super_admins and user_id in super_admin_ids:
-            skipped_super_admin += 1
-            # For a FedRAMP control, "declined to apply to this privileged account"
-            # belongs in the audit trail, not only in the worker log -- an assessor
-            # needs to see the exemption, not just infer it from an absence.
-            audit_logger.log(
-                event_type=AuditEventType.AUTH_ACCOUNT_EXPIRED,
-                outcome=AuditOutcome.SUCCESS,
-                user_id=None,
-                target_user_id=user_id,
-                target_username=user_email,
-                details={
-                    "actor": "account_inactivity_sweep",
-                    "trigger": "inactivity_skipped_super_admin",
-                    "reason": "deactivating this account would leave no active super_admin",
-                },
-            )
-            continue
         # Re-fetched fresh, not reused from `candidates`: an earlier iteration's
         # rollback (below) expires every object the session is tracking, so a
         # pre-rollback reference from the initial query is no longer trustworthy.
@@ -231,9 +216,40 @@ def run_inactivity_sweep(db: Session) -> dict:
                 user_id,
             )
             continue
+
+        if user_id in super_admin_ids and _would_leave_no_super_admin(
+            db, {user_id} | deactivated_this_sweep
+        ):
+            skipped_super_admin += 1
+            logger.warning(
+                "Account inactivity sweep: deactivating super_admin %s (id=%s) would "
+                "leave the deployment with no active super_admin — skipping",
+                user_email,
+                user_id,
+            )
+            # For a FedRAMP control, "declined to apply to this privileged account"
+            # belongs in the audit trail, not only in the worker log -- an assessor
+            # needs to see the exemption, not just infer it from an absence. Uses a
+            # DISTINCT event type from an actual deactivation (AUTH_ACCOUNT_EXPIRED)
+            # so the two are never conflated by anything short of reading `details`.
+            audit_logger.log(
+                event_type=AuditEventType.AUTH_ACCOUNT_EXPIRATION_SKIPPED,
+                outcome=AuditOutcome.SUCCESS,
+                user_id=None,
+                target_user_id=user_id,
+                target_username=user_email,
+                details={
+                    "actor": "account_inactivity_sweep",
+                    "trigger": "inactivity_skipped_super_admin",
+                    "reason": "deactivating this account would leave no active super_admin",
+                },
+            )
+            continue
+
         try:
             _disable_inactive_user(db, user, last_login_at=user.last_login_at)
             deactivated += 1
+            deactivated_this_sweep.add(user_id)
         except Exception:
             db.rollback()
             # "Will be retried" is only true for a failure BEFORE `_disable_inactive_user`'s

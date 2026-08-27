@@ -185,6 +185,78 @@ def test_metadata_blocked_reason_is_masked():
         assert is_local_provider(cfg) is False
 
 
+# --------------------------------------------------------------------------- #
+# IP literals, both families — `_is_local_address`'s ipv4_mapped unwrap and its
+# is_loopback/is_link_local/is_private disjunction, previously covered only by
+# one IPv4-private case. All IP literals below need no DNS patching.
+# --------------------------------------------------------------------------- #
+
+
+def test_ipv4_loopback_literal_is_unmasked():
+    cfg = _Config(provider="custom", base_url="http://127.0.0.1:8000/v1")
+    assert is_local_provider(cfg) is True
+
+
+def test_ipv6_loopback_literal_is_unmasked():
+    cfg = _Config(provider="custom", base_url="http://[::1]:8000/v1")
+    assert is_local_provider(cfg) is True
+
+
+def test_ipv6_unique_local_address_is_unmasked():
+    """`fd00::/8` — the IPv6 ULA range, read by `is_private`."""
+    cfg = _Config(provider="custom", base_url="http://[fd00::1]/v1")
+    assert is_local_provider(cfg) is True
+
+
+def test_ipv6_link_local_is_unmasked():
+    cfg = _Config(provider="custom", base_url="http://[fe80::1]/v1")
+    assert is_local_provider(cfg) is True
+
+
+def test_ipv4_link_local_literal_is_unmasked():
+    """`169.254.169.254` — the AWS/GCP/Azure metadata address, as a URL
+
+    LITERAL rather than a resolved DNS answer. This never reaches the
+    cloud-metadata-refusal path in `url_validation` (that only fires on a
+    resolved lookup) — deliberately inert here, since a literal IP is
+    classified straight from the address, not from a metadata probe.
+    """
+    cfg = _Config(provider="custom", base_url="http://169.254.169.254/v1")
+    assert is_local_provider(cfg) is True
+
+
+def test_ipv4_mapped_ipv6_loopback_is_unmasked():
+    """`::ffff:127.0.0.1` unwraps to the IPv4 loopback it maps."""
+    cfg = _Config(provider="custom", base_url="http://[::ffff:127.0.0.1]/v1")
+    assert is_local_provider(cfg) is True
+
+
+def test_ipv4_mapped_ipv6_public_address_is_masked():
+    """Must-fire: proves the ipv4_mapped unwrap DISCRIMINATES rather than
+
+    blanket-approving every `::ffff:*` address.
+    """
+    cfg = _Config(provider="custom", base_url="http://[::ffff:8.8.8.8]/v1")
+    assert is_local_provider(cfg) is False
+
+
+def test_public_ipv6_literal_is_masked():
+    cfg = _Config(provider="custom", base_url="http://[2001:4860:4860::8888]/v1")
+    assert is_local_provider(cfg) is False
+
+
+def test_public_ipv4_literal_is_masked():
+    cfg = _Config(provider="custom", base_url="http://8.8.8.8/v1")
+    assert is_local_provider(cfg) is False
+
+
+# Note: `203.0.113.x` (RFC 5737 documentation range) is NOT a good "public"
+# fixture here — Python's `ipaddress.is_private` classifies the entire RFC 5737
+# range as private (see `test_mixed_public_and_private_addresses_is_masked`'s
+# docstring above), so it would misleadingly read as local. Use a real routed
+# address like `8.8.8.8` for anything meant to prove "this is public".
+
+
 def test_unknown_provider_is_masked():
     assert is_local_provider(_Config(provider="bedrock")) is False
     assert is_local_provider(_Config(provider="totally-unknown")) is False

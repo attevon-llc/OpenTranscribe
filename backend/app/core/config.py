@@ -58,6 +58,26 @@ def is_relaxed_environment(environment: str) -> bool:
 IMPLEMENTED_ENCRYPTION_ALGORITHMS = frozenset({"AES-256-GCM"})
 
 
+def resolve_ldap_search_filter(search_filter: str, username_attr: str) -> str:
+    """Substitute the ``{username_attr}`` placeholder in an LDAP search filter.
+
+    Shared by the ``.env``-backed :class:`Settings` validator (below) and
+    ``LdapConfig.from_db`` (``app/auth/ldap_auth.py``) so this bug class — a search
+    filter loaded with the literal placeholder still in it, matching no real LDAP
+    attribute — cannot recur in only one of the two config-loading paths again. See
+    ``LDAP_USER_SEARCH_FILTER``'s declaration for why the placeholder exists at all.
+
+    Args:
+        search_filter: The raw filter, e.g. ``"({username_attr}={username})"``.
+        username_attr: The resolved LDAP username attribute, e.g. ``"uid"``.
+
+    Returns:
+        The filter with ``{username_attr}`` substituted. ``{username}`` is left
+        untouched — it is filled in per-login with the escaped username.
+    """
+    return search_filter.replace("{username_attr}", username_attr)
+
+
 def _validate_ldap_settings(settings: "Settings") -> None:
     """Validate LDAP configuration when LDAP authentication is enabled.
 
@@ -771,8 +791,8 @@ class Settings(BaseSettings):
         # resolved LDAP_USERNAME_ATTR field — same bug class as MFA_REQUIRE_REDIS
         # above, a plain-field default instead of a class-body expression computed
         # from another env var. See LDAP_USER_SEARCH_FILTER's declaration.
-        self.LDAP_USER_SEARCH_FILTER = self.LDAP_USER_SEARCH_FILTER.replace(
-            "{username_attr}", self.LDAP_USERNAME_ATTR
+        self.LDAP_USER_SEARCH_FILTER = resolve_ldap_search_filter(
+            self.LDAP_USER_SEARCH_FILTER, self.LDAP_USERNAME_ATTR
         )
 
         _validate_ldap_settings(self)

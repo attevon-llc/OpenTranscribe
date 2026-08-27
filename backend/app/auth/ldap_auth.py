@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from typing import TypedDict
 
 from ldap3 import ALL
-from ldap3 import AUTO_BIND_TLS_BEFORE_BIND
 from ldap3 import Connection
 from ldap3 import Server
 from ldap3.core.exceptions import LDAPBindError
@@ -28,6 +27,7 @@ from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
+from app.core.config import resolve_ldap_search_filter
 from app.core.config import settings as env_settings
 
 logger = logging.getLogger(__name__)
@@ -131,6 +131,20 @@ class LdapConfig:
             except (ValueError, TypeError):
                 return default
 
+        username_attr = str(_get("ldap_username_attr", env_settings.LDAP_USERNAME_ATTR) or "uid")
+        # Resolve the `{username_attr}` placeholder the same way the .env-backed
+        # Settings validator does (app/core/config.py). Without this, a DB-configured
+        # search filter containing the literal placeholder never matches any real
+        # LDAP attribute name and every DB-configured LDAP login fails to find the
+        # user (or matches nothing/everything, depending on the server's parsing).
+        user_search_filter = resolve_ldap_search_filter(
+            str(
+                _get("ldap_user_search_filter", env_settings.LDAP_USER_SEARCH_FILTER)
+                or "(uid={username})"
+            ),
+            username_attr,
+        )
+
         return cls(
             enabled=_get_bool("ldap_enabled", env_settings.LDAP_ENABLED),
             server=str(_get("ldap_server", env_settings.LDAP_SERVER) or ""),
@@ -140,14 +154,11 @@ class LdapConfig:
             bind_dn=str(_get("ldap_bind_dn", env_settings.LDAP_BIND_DN) or ""),
             bind_password=str(_get("ldap_bind_password", env_settings.LDAP_BIND_PASSWORD) or ""),
             search_base=str(_get("ldap_search_base", env_settings.LDAP_SEARCH_BASE) or ""),
-            username_attr=str(_get("ldap_username_attr", env_settings.LDAP_USERNAME_ATTR) or "uid"),
+            username_attr=username_attr,
             email_attr=str(_get("ldap_email_attr", env_settings.LDAP_EMAIL_ATTR) or "mail"),
             name_attr=str(_get("ldap_name_attr", env_settings.LDAP_NAME_ATTR) or "cn"),
             group_attr=str(_get("ldap_group_attr", env_settings.LDAP_GROUP_ATTR) or ""),
-            user_search_filter=str(
-                _get("ldap_user_search_filter", env_settings.LDAP_USER_SEARCH_FILTER)
-                or "(uid={username})"
-            ),
+            user_search_filter=user_search_filter,
             admin_users=str(_get("ldap_admin_users", env_settings.LDAP_ADMIN_USERS) or ""),
             admin_groups=str(_get("ldap_admin_groups", env_settings.LDAP_ADMIN_GROUPS) or ""),
             user_groups=str(_get("ldap_user_groups", env_settings.LDAP_USER_GROUPS) or ""),
@@ -207,23 +218,50 @@ def _close_connection(conn: Connection | None, name: str) -> None:
         logger.debug(f"Error closing {name} connection (ignored)")
 
 
-def _bind_service_account(cfg: LdapConfig, server: Server) -> Connection | None:
-    """Bind to LDAP server using service account."""
+def _connect_and_bind(
+    cfg: LdapConfig, server: Server, user: str, password: str
+) -> Connection | None:
+    """Open a connection, negotiate encryption per ``cfg``, and bind.
+
+    - ``use_ssl=True``: ``server`` already wraps the socket in TLS (``ldaps://``,
+      handled by :func:`_get_ldap_server`) — bind directly.
+    - ``use_tls=True`` (StartTLS over a plaintext ``ldap://`` connection): negotiate
+      StartTLS explicitly and FAIL CLOSED if negotiation does not succeed, rather
+      than silently falling through to a cleartext bind. ``cfg.use_tls`` used to be
+      read into ``LdapConfig`` and then never consulted by the bind code — every
+      StartTLS deployment was binding in cleartext regardless of the setting.
+    - Neither: plain cleartext bind, unchanged.
+
+    Returns:
+        A bound ``Connection``, or ``None`` if TLS negotiation or the bind failed.
+    """
+    conn = Connection(server, user=user, password=password, auto_bind=False)
     try:
-        conn = Connection(
-            server,
-            user=cfg.bind_dn,
-            password=cfg.bind_password,
-            auto_bind=AUTO_BIND_TLS_BEFORE_BIND if cfg.use_ssl else True,
-        )
-        logger.debug("LDAP service account bind successful")
+        if cfg.use_tls and not cfg.use_ssl and (not conn.open() or not conn.start_tls()):
+            logger.error(
+                "LDAP StartTLS negotiation failed; refusing to fall back to a "
+                "cleartext bind (ldap_use_tls is enabled)"
+            )
+            _close_connection(conn, "failed-starttls")
+            return None
+        if not conn.bind():
+            return None
         return conn
     except LDAPBindError:
+        return None
+
+
+def _bind_service_account(cfg: LdapConfig, server: Server) -> Connection | None:
+    """Bind to LDAP server using service account."""
+    conn = _connect_and_bind(cfg, server, cfg.bind_dn, cfg.bind_password)
+    if conn is None:
         logger.error(
             "Failed to bind to LDAP server with service account. "
-            "Check LDAP bind DN and password configuration."
+            "Check LDAP bind DN and password configuration, or LDAP TLS negotiation."
         )
         return None
+    logger.debug("LDAP service account bind successful")
+    return conn
 
 
 def _search_ldap_user(
@@ -277,14 +315,36 @@ def _search_ldap_user(
                 return bool(bind_conn.entries)
             raise
 
+    def _single_entry(search_filter: str, label: str):
+        """Return the one matching entry, or None — never an arbitrary pick.
+
+        A search filter that is too loose (or genuine directory duplicates) can
+        return more than one entry. Silently binding as ``entries[0]`` in that case
+        would authenticate the caller as whichever account the directory happened
+        to list first — an authentication-ambiguity bug, and a deliberate one if an
+        attacker with any directory write access can create a colliding entry. Fail
+        closed instead: an ambiguous search is treated as "not found".
+        """
+        entries = bind_conn.entries
+        if len(entries) > 1:
+            logger.error(
+                f"LDAP search by {label} ({search_filter!r}) matched {len(entries)} entries; "
+                "refusing to authenticate against an ambiguous match"
+            )
+            return None
+        return entries[0]
+
     if _do_search(search_filter, attributes):
-        return bind_conn.entries[0]
+        entry = _single_entry(search_filter, cfg.username_attr)
+        if entry is not None:
+            return entry
+        return None
 
     # Fallback: search by email
     logger.debug(f"User not found by {cfg.username_attr}={ldap_username}, trying email search")
     email_filter = f"({cfg.email_attr}={_escape_ldap_filter(username)})"
     if _do_search(email_filter, attributes):
-        return bind_conn.entries[0]
+        return _single_entry(email_filter, cfg.email_attr)
 
     return None
 
@@ -464,16 +524,7 @@ def _verify_user_credentials(
     cfg: LdapConfig, server: Server, user_dn: str, password: str
 ) -> Connection | None:
     """Verify user credentials by binding as the user."""
-    try:
-        conn = Connection(
-            server,
-            user=user_dn,
-            password=password,
-            auto_bind=AUTO_BIND_TLS_BEFORE_BIND if cfg.use_ssl else True,
-        )
-        return conn
-    except LDAPBindError:
-        return None
+    return _connect_and_bind(cfg, server, user_dn, password)
 
 
 def _is_ldap_admin(

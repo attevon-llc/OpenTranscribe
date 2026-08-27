@@ -275,14 +275,6 @@ def test_failed_job_error_message_is_not_sanitized_current_behavior(tmp_path):
     assert "sk-super-secret-abc123" in str(excinfo.value)
 
 
-def test_failed_job_no_empty_result_returned(tmp_path):
-    failed_resp = _FakeResponse(json_data={"status": "failed", "output": {"error": "boom"}})
-    with pytest.raises(RuntimeError):
-        result, _ = _run_diarize(tmp_path, get_return_value=failed_resp)
-        # Should never reach here — if it did, assert it's not an empty success result.
-        assert result.segments == []
-
-
 # ── 7. Canceled job ──────────────────────────────────────────────────────────────────
 
 
@@ -462,10 +454,14 @@ def test_validate_connection_no_key():
 
 def test_validate_connection_success():
     provider = _provider()
-    with patch("httpx.get", return_value=_FakeResponse(status_code=200)):
+    with (
+        patch("httpx.get", return_value=_FakeResponse(status_code=200)),
+        patch("time.time", side_effect=[0.0, 0.125]),
+    ):
         ok, message, ms = provider.validate_connection()
     assert ok is True
-    assert ms > 0 or ms >= 0
+    assert message == "Connected to pyannote.ai"
+    assert ms == pytest.approx(125.0)
 
 
 def test_validate_connection_401():
@@ -497,10 +493,13 @@ def test_validate_connection_exception_is_sanitized():
 
 def test_validate_connection_response_time_positive():
     provider = _provider()
-    with patch("httpx.get", return_value=_FakeResponse(status_code=200)):
+    with (
+        patch("httpx.get", return_value=_FakeResponse(status_code=200)),
+        patch("time.time", side_effect=[0.0, 0.125]),
+    ):
         _, _, ms = provider.validate_connection()
     assert isinstance(ms, float)
-    assert ms >= 0
+    assert ms == pytest.approx(125.0)
 
 
 # ── 13. Delegation to shared helpers ─────────────────────────────────────────────────

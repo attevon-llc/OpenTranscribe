@@ -4,6 +4,18 @@ Covers `_resolve_concurrent_requests()` (env parsing, "auto" routing, invalid-va
 fallback) and `_auto_concurrent()` (VRAM-based concurrency calculation, capped at 12,
 floored at 1). `_auto_concurrent` imports torch inside the function, so tests stub
 `sys.modules["torch"]` rather than requiring a real GPU.
+
+Note (#369): the expected concurrency values asserted here follow directly from the
+VRAM-budget constants in `TranscriptionConfig._auto_concurrent`
+(`backend/app/transcription/config.py`, formula `(total_vram_mb - 7000) // 4000` at
+line ~402) and the `16_000` MB co-residency threshold in
+`_make_room_for_local_diarizer` (`backend/app/transcription/engine/stages.py`, line
+~67). Issue #369's whole-stack measurements contradict those constants: real
+co-resident VRAM usage was measured at ~4.0 GB, well under what the `7000`/`4000`
+budget assumes. If those constants are corrected to match measured behavior, the
+concurrency values this file asserts will legitimately change — that would NOT be a
+regression, and these tests should be updated to match the corrected constants rather
+than treated as a contradiction to preserve.
 """
 
 from __future__ import annotations

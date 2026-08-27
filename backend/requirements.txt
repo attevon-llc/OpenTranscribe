@@ -305,3 +305,4 @@ argon2-cffi-bindings==26.1.0  # via argon2-cffi — drifted 25.1.0 (venv) vs 26.
 protobuf==7.36.0           # via grpcio-status, onnx, opensearch-protobufs — drifted 7.35.1 (venv) vs 7.36.0 (image), 2026-08-21
 narwhals==2.25.0           # via altair/plotly family — drifted 2.24.0 (venv) vs 2.25.0 (image), 2026-08-21
 scipy==1.18.1              # via scikit-learn, librosa — drifted 1.18.0 (venv) vs 1.18.1 (image), 2026-08-21
+click==8.5.0                # via uvicorn/celery — drifted 8.4.2 (venv) vs 8.5.0 (image), 2026-08-27

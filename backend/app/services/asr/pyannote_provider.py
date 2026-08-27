@@ -297,9 +297,13 @@ class PyAnnoteProvider(ASRProvider):
                     headers={"Authorization": f"Bearer {self._api_key}"},
                     timeout=30.0,
                 )
-                poll_resp.raise_for_status()
-                result_data = poll_resp.json()
             except Exception as exc:
+                # Transport failure (DNS, connection reset, timeout, ...) — transient,
+                # keep polling. raise_for_status() is deliberately NOT called inside this
+                # try: a 401 must be distinguished from a transport error (see below), and
+                # calling it here would fold both into this same generic branch, which is
+                # exactly the bug this rewrite fixes (a 401 used to be retried for the
+                # full 300s timeout and reported as "timed out" instead of "invalid key").
                 sanitized = self._sanitize_error(str(exc), self._api_key)
                 logger.warning(
                     "pyannote.ai poll error (elapsed=%.0fs) for file=%s job_id=%s: %s",
@@ -310,24 +314,51 @@ class PyAnnoteProvider(ASRProvider):
                 )
                 continue
 
+            if poll_resp.status_code == 401:
+                # Terminal: an invalid/revoked key will never succeed on retry. Fail
+                # immediately rather than exhausting the 300s poll timeout and reporting
+                # a misleading "timed out" error for what is actually an auth failure.
+                raise RuntimeError("pyannote.ai: invalid API key (401 Unauthorized)")
+
+            if poll_resp.status_code != 200:
+                # Any other non-200 (5xx, 429, ...) is transient — including a 429, which
+                # must stay transient here: the loop's own retry-and-continue is correct
+                # for a rate limit seen mid-poll, and widening this branch to raise
+                # ASRRateLimitedError would abort a job that may still succeed on its own.
+                logger.warning(
+                    "pyannote.ai poll (elapsed=%.0fs) for file=%s job_id=%s returned HTTP %d",
+                    elapsed,
+                    filename,
+                    job_id,
+                    poll_resp.status_code,
+                )
+                continue
+
+            result_data = poll_resp.json()
             status = result_data.get("status", "")
 
             if status == "succeeded":
                 break
 
-            if status == "failed":
-                error_msg = (
-                    result_data.get("output", {}).get("error")
-                    or result_data.get("output", {}).get("warning")
-                    or "unknown error"
-                )
+            if status in ("failed", "canceled"):
+                if status == "canceled":
+                    error_msg = f"pyannote.ai transcription job {job_id} was canceled"
+                else:
+                    error_msg = (
+                        result_data.get("output", {}).get("error")
+                        or result_data.get("output", {}).get("warning")
+                        or "unknown error"
+                    )
                 sanitized = self._sanitize_error(str(error_msg), self._api_key)
                 logger.error(
-                    "pyannote.ai job failed for file=%s job_id=%s: %s",
+                    "pyannote.ai job %s for file=%s job_id=%s: %s",
+                    status,
                     filename,
                     job_id,
                     sanitized,
                 )
+                if status == "canceled":
+                    raise RuntimeError(sanitized)
                 raise RuntimeError(f"pyannote.ai transcription failed: {sanitized}")
 
             # Update progress during polling (0.3 → 0.85 range).

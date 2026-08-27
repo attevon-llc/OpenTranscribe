@@ -31,6 +31,20 @@ logger = logging.getLogger(__name__)
 _MAX_DUR = 30.0  # seconds — max segment duration before a forced split
 _MIN_GAP = 0.5  # seconds — silence gap that triggers a new segment
 
+# botocore ClientError codes that represent a transient throttle rather than a permanent
+# failure. LimitExceededException is Transcribe's concurrent-job cap — genuinely transient,
+# not a permanent misconfiguration — so it is included alongside the more obvious
+# throttling codes.
+_AWS_THROTTLE_CODES = frozenset(
+    {
+        "ThrottlingException",
+        "ThrottledException",
+        "TooManyRequestsException",
+        "LimitExceededException",
+        "RequestLimitExceeded",
+    }
+)
+
 # AWS Transcribe LanguageCode is BCP-47 (e.g. "en-US"), NOT a bare ISO-639 code ("en").
 # Map common ISO codes to a sensible AWS default; pass through codes already BCP-47.
 _AWS_LANGUAGE_MAP = {
@@ -126,6 +140,7 @@ class AWSTranscribeProvider(ASRProvider):
     ) -> ASRResult:
         try:
             import boto3  # noqa: F401
+            from botocore.exceptions import ClientError
         except ImportError as err:
             raise RuntimeError("boto3 not installed. Run: pip install boto3") from err
 
@@ -258,6 +273,24 @@ class AWSTranscribeProvider(ASRProvider):
 
             data = json.loads(s3.get_object(Bucket=bucket, Key=result_key)["Body"].read())
 
+        except ClientError as exc:
+            # Everything in the try block above (S3 upload, job start, polling, result
+            # fetch) can throttle. Unlike the head_bucket check above, nothing here
+            # previously converted a botocore ClientError into a sanitized RuntimeError —
+            # a throttle would have propagated as a raw ClientError. Classify only the
+            # throttle codes; every other ClientError propagates unchanged, same as before
+            # this clause existed (fail-closed — see app/services/asr/errors.py).
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            if code in _AWS_THROTTLE_CODES:
+                from .errors import ASRRateLimitedError
+
+                sanitized = self._sanitize_error(str(exc))
+                logger.warning("AWS Transcribe rate-limited for file=%s: %s", filename, sanitized)
+                raise ASRRateLimitedError(
+                    f"AWS Transcribe rate limited: {sanitized}",
+                    provider="aws",
+                ) from exc
+            raise
         finally:
             # Always clean up S3 objects, even on failure.
             for key in [s3_key, result_key]:

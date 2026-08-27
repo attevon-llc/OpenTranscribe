@@ -14,6 +14,10 @@ import time
 from collections.abc import Callable
 
 from .base import ASRProvider
+from .errors import ASRRateLimitedError
+from .errors import http_status_of
+from .errors import is_rate_limit_status
+from .errors import retry_after_of
 from .types import ASRConfig
 from .types import ASRResult
 from .types import ASRSegment
@@ -68,6 +72,26 @@ class PyAnnoteProvider(ASRProvider):
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
+
+    def _raise_if_rate_limited(self, exc: Exception, context: str) -> None:
+        """Re-raise *exc* as ASRRateLimitedError when it is an HTTP 429, else no-op.
+
+        Used only at the three PRE-poll HTTP call sites (upload-URL request, audio PUT,
+        job submission). Deliberately NOT used inside the poll loop: a 429 seen while
+        polling an already-submitted job must stay transient (the loop's own retry-and-
+        continue is correct there — see the poll loop's ``except`` block and Item 2's
+        401/canceled fail-fast rewrite, which this module also carries).
+        """
+        status = http_status_of(exc)
+        if not is_rate_limit_status(status):
+            return
+        sanitized = self._sanitize_error(str(exc), self._api_key)
+        logger.warning("pyannote.ai %s rate-limited: %s", context, sanitized)
+        raise ASRRateLimitedError(
+            f"pyannote.ai {context} rate limited: {sanitized}",
+            provider="pyannote",
+            retry_after=retry_after_of(exc),
+        ) from exc
 
     def _err_detail(self, exc: Exception) -> str:
         """Sanitized error string, including the API response body for HTTP errors."""
@@ -177,6 +201,7 @@ class PyAnnoteProvider(ASRProvider):
             resp.raise_for_status()
             upload_url = resp.json()["url"]
         except Exception as exc:
+            self._raise_if_rate_limited(exc, "upload URL request")
             sanitized = self._sanitize_error(str(exc), self._api_key)
             logger.error(
                 "pyannote.ai upload URL request failed for file=%s: %s", filename, sanitized
@@ -198,6 +223,7 @@ class PyAnnoteProvider(ASRProvider):
             )
             put_resp.raise_for_status()
         except Exception as exc:
+            self._raise_if_rate_limited(exc, "audio upload")
             sanitized = self._sanitize_error(str(exc), self._api_key)
             logger.error("pyannote.ai audio upload failed for file=%s: %s", filename, sanitized)
             raise RuntimeError(f"pyannote.ai audio upload failed: {sanitized}") from exc
@@ -236,6 +262,7 @@ class PyAnnoteProvider(ASRProvider):
             job_data = resp.json()
             job_id = job_data["jobId"]
         except Exception as exc:
+            self._raise_if_rate_limited(exc, "job submission")
             sanitized = self._err_detail(exc)
             logger.error("pyannote.ai job submission failed for file=%s: %s", filename, sanitized)
             raise RuntimeError(f"pyannote.ai job submission failed: {sanitized}") from exc

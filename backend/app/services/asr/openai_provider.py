@@ -89,6 +89,7 @@ class OpenAIASRProvider(ASRProvider):
     ) -> ASRResult:
         try:
             from openai import OpenAI
+            from openai import RateLimitError
         except ImportError as err:
             raise RuntimeError("openai not installed. Run: pip install openai") from err
 
@@ -154,6 +155,17 @@ class OpenAIASRProvider(ASRProvider):
                         language=lang,
                         response_format="json",
                     )
+        except RateLimitError as exc:
+            sanitized = self._sanitize_error(str(exc), self._api_key)
+            from .errors import ASRRateLimitedError
+            from .errors import retry_after_of
+
+            logger.warning("OpenAI rate-limited for file=%s: %s", filename, sanitized)
+            raise ASRRateLimitedError(
+                f"OpenAI rate limited: {sanitized}",
+                provider="openai",
+                retry_after=retry_after_of(exc),
+            ) from exc
         except Exception as exc:
             sanitized = self._sanitize_error(str(exc), self._api_key)
             logger.error("OpenAI transcription failed for file=%s: %s", filename, sanitized)

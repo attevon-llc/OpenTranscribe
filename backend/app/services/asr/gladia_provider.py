@@ -13,6 +13,8 @@ import time
 from collections.abc import Callable
 
 from .base import ASRProvider
+from .errors import ASRRateLimitedError
+from .errors import retry_after_from_headers
 from .types import ASRConfig
 from .types import ASRResult
 from .types import ASRSegment
@@ -63,6 +65,29 @@ class GladiaProvider(ASRProvider):
             if body:
                 detail = f"{detail} — {body[:500]}"
         return self._sanitize_error(detail, self._api_key)
+
+    def _raise_if_rate_limited(self, resp, context: str) -> None:
+        """Raise ASRRateLimitedError when *resp* is a 429, else no-op.
+
+        Gladia's responses have no dedicated exception type (this provider uses plain
+        ``requests``, checking ``resp.status_code`` directly), so this is checked before
+        ``raise_for_status()`` at each of the three HTTP call sites (upload, job submission,
+        poll) rather than caught from an exception.
+        """
+        if resp.status_code != 429:
+            return
+        detail = self._sanitize_error(resp.text.strip()[:500] if resp.text else "", self._api_key)
+        message = (
+            f"Gladia {context} rate limited: {detail}"
+            if detail
+            else f"Gladia {context} rate limited"
+        )
+        logger.warning("Gladia %s rate-limited: %s", context, detail)
+        raise ASRRateLimitedError(
+            message,
+            provider="gladia",
+            retry_after=retry_after_from_headers(getattr(resp, "headers", None)),
+        )
 
     def validate_connection(self) -> tuple[bool, str, float]:
         """Test API key by hitting the /v2/live endpoint (lightweight, no audio needed)."""
@@ -118,7 +143,10 @@ class GladiaProvider(ASRProvider):
                     files={"audio": (filename, f, content_type)},
                     timeout=300,
                 )
+            self._raise_if_rate_limited(up, "upload")
             up.raise_for_status()
+        except ASRRateLimitedError:
+            raise
         except Exception as exc:
             sanitized = self._err_detail(exc)
             logger.error("Gladia upload failed for file=%s: %s", filename, sanitized)
@@ -152,7 +180,10 @@ class GladiaProvider(ASRProvider):
             job_r = requests.post(
                 f"{self._base}/v2/transcription", headers=self._hdr(), json=body, timeout=30
             )
+            self._raise_if_rate_limited(job_r, "job submission")
             job_r.raise_for_status()
+        except ASRRateLimitedError:
+            raise
         except Exception as exc:
             sanitized = self._sanitize_error(str(exc), self._api_key)
             logger.error("Gladia job submission failed for file=%s: %s", filename, sanitized)
@@ -171,8 +202,11 @@ class GladiaProvider(ASRProvider):
             time.sleep(10)
             try:
                 poll = requests.get(result_url, headers=self._hdr(), timeout=30)
+                self._raise_if_rate_limited(poll, "poll")
                 poll.raise_for_status()
                 data = poll.json()
+            except ASRRateLimitedError:
+                raise
             except Exception as exc:
                 sanitized = self._sanitize_error(str(exc), self._api_key)
                 logger.warning(

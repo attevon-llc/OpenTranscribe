@@ -300,3 +300,57 @@ def test_transcribe_without_diarization_has_no_speakers_and_uses_word_grouping(t
     assert [w.word for w in result.segments[0].words] == ["no", "speakers"]
     # detected_language was None on the channel -> falls back to config.language.
     assert result.language == "fr"
+
+
+# ── Rate-limit taxonomy (issue Lane 5) ────────────────────────────────────────
+
+
+class _FakeSDKError(Exception):
+    """Stand-in for a real vendor SDK exception carrying a `.status_code`.
+
+    Real SDK exception classes declare this attribute themselves; plain ``Exception``
+    does not, so it is declared here purely so the assignment below type-checks.
+    """
+
+    status_code: int
+
+
+def test_429_status_code_is_classified_as_asr_rate_limited(tmp_path):
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"some audio bytes")
+
+    with patch("deepgram.DeepgramClient") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        rate_limit_exc = _FakeSDKError("too many requests")
+        rate_limit_exc.status_code = 429  # matches the SDK's exception shape
+        mock_client.listen.v1.media.transcribe_file.side_effect = rate_limit_exc
+
+        provider = DeepgramProvider(api_key="dg_key")
+        with pytest.raises(ASRRateLimitedError) as excinfo:
+            provider.transcribe(str(audio_path), ASRConfig())
+
+    assert excinfo.value.provider == "deepgram"
+
+
+def test_non_429_error_stays_a_plain_runtime_error(tmp_path):
+    """Negative control: an error with no rate-limit status must NOT be classified as
+    retryable.
+    """
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"some audio bytes")
+
+    with patch("deepgram.DeepgramClient") as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        server_error = _FakeSDKError("internal error")
+        server_error.status_code = 500
+        mock_client.listen.v1.media.transcribe_file.side_effect = server_error
+
+        provider = DeepgramProvider(api_key="dg_key")
+        with pytest.raises(RuntimeError, match="Deepgram transcription failed") as excinfo:
+            provider.transcribe(str(audio_path), ASRConfig())
+
+    assert not isinstance(excinfo.value, ASRRateLimitedError)

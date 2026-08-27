@@ -290,3 +290,57 @@ def test_transcribe_failure_reraises_and_still_closes_client(
     assert len(created) == 1
     # Positive regression guard: close() still ran even though wait_for_completion raised.
     assert created[0].closed is True
+
+
+# ── Rate-limit taxonomy (issue Lane 5) ────────────────────────────────────────
+
+
+class _FakeSDKError(Exception):
+    """Stand-in for a real vendor SDK exception carrying a `.status_code`.
+
+    Real SDK exception classes declare this attribute themselves; plain ``Exception``
+    does not, so it is declared here purely so the assignment below type-checks.
+    """
+
+    status_code: int
+
+
+def test_429_status_code_is_classified_as_asr_rate_limited(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+):
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"fake-audio-bytes")
+    rate_limit_exc = _FakeSDKError("too many requests")
+    rate_limit_exc.status_code = 429  # matches the SDK's exception shape
+    fake_cls, created = _make_fake_async_client(fail_with=rate_limit_exc)
+    monkeypatch.setattr("speechmatics.batch.AsyncClient", fake_cls)
+
+    provider = _provider()
+    with pytest.raises(ASRRateLimitedError) as excinfo:
+        provider.transcribe(str(audio_path), ASRConfig(language="en"))
+
+    assert excinfo.value.provider == "speechmatics"
+    # Positive regression guard: close() still ran even though wait_for_completion raised.
+    assert created[0].closed is True
+
+
+def test_non_429_error_stays_a_plain_runtime_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Any):
+    """Negative control: an error with no rate-limit status must NOT be classified as
+    retryable.
+    """
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"fake-audio-bytes")
+    server_error = _FakeSDKError("internal error")
+    server_error.status_code = 500
+    fake_cls, created = _make_fake_async_client(fail_with=server_error)
+    monkeypatch.setattr("speechmatics.batch.AsyncClient", fake_cls)
+
+    provider = _provider()
+    with pytest.raises(RuntimeError, match="Speechmatics transcription failed") as excinfo:
+        provider.transcribe(str(audio_path), ASRConfig(language="en"))
+
+    assert not isinstance(excinfo.value, ASRRateLimitedError)

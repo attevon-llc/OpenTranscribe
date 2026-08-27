@@ -161,6 +161,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 # both the workaround and the fact that pytest still needs it.
 pytest_plugins = [
     "fixtures.mock_llm",
+    "fixtures.mock_asr",
     "fixtures.dir_collector_memo",
     "fixtures.search_corpus_stack",
 ]

@@ -253,6 +253,16 @@ this file is for.
   `test-pki-auth.sh`.
 - `common.sh` is sourced **only by `opentr.sh`** (docker checks, model-cache chown, OpenSearch model
   bootstrap). `offline-common.sh` is sourced only by the two offline/Windows builders.
+- `common.sh`'s **database restore helpers** (issues #599/#600) back `opentr.sh restore`'s two
+  replay backends: `pg_drop_and_recreate_database` / `pg_replay_dump` / `pg_verify_restore` for
+  plain-SQL dumps, `pg_replay_custom_dump` / `pg_custom_dump_expected_head` /
+  `pg_verify_custom_restore` for `pg_dump -Fc` (custom-format — what the scheduled/S3 backup
+  feature produces) dumps, sharing one comparison routine (`_pg_verify_against`) so the two
+  verifiers cannot independently drift. Every function's first argument is an **exec prefix**
+  (`"docker compose exec -T postgres"` in production, `"docker exec -i <throwaway-container>"`
+  in the integration tests) — that contract now covers both dump formats, not just plain SQL.
+  `pg_replay_custom_dump` deliberately never passes `-j`/`--jobs`: it is mutually exclusive with
+  `--single-transaction` (measured), so the safe path forfeits parallel restore for atomicity.
 - ⚠️ **Every `$VAR` in `opentr.sh` + `common.sh` must be defaulted — enforced by
   `backend/tests/unit/test_shell_expansion_guards.py`** (static, fast unit suite, no execution).
   Both run under `set -uo pipefail`, so an unguarded optional `.env` variable is a hard abort,

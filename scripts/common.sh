@@ -523,26 +523,37 @@ wait_for_backend_health() {
 }
 
 #######################
-# DATABASE RESTORE HELPERS (issue #599)
+# DATABASE RESTORE HELPERS (issue #599, extended for #600)
 #######################
 #
-# Pure helpers factored out of opentr.sh's restore_database so the integration test
-# (backend/tests/integration/test_opentr_restore_roundtrip.py) drives the exact code
+# Pure helpers factored out of opentr.sh's restore_database so the integration tests
+# (backend/tests/integration/test_opentr_restore_roundtrip.py,
+# backend/tests/integration/test_scheduled_backup_restore_roundtrip.py) drive the exact code
 # the CLI ships, not a re-implementation that could silently diverge from it.
 #
-# Each takes an *exec prefix* — a command that runs a psql/pg_dump client with stdin
-# attached — so production passes "docker compose exec -T postgres" and a test passes
+# Each takes an *exec prefix* — a command that runs a psql/pg_dump/pg_restore client with
+# stdin attached — so production passes "docker compose exec -T postgres" and a test passes
 # "docker exec -i <throwaway-container>". Word-splitting the prefix is intentional,
 # the same pattern $COMPOSE_FILES uses elsewhere in this repo.
 #
-# Background: a plain `pg_dump` file has no DROP/--clean statements, so replaying it
-# into an already-populated database makes every statement fail — and without
-# `ON_ERROR_STOP`, `psql` exits 0 anyway. Worse, the dump's `alembic_version` INSERT
-# does NOT collide on primary key with a drifted row already there, so it succeeds
-# while every other statement fails — leaving TWO rows in `alembic_version`, which
-# Alembic can no longer migrate from. The fix is to guarantee an empty target: drop
-# and recreate the database, then replay inside a single transaction so any failure
-# rolls back to nothing rather than a hybrid schema.
+# Two dump formats reach this file, with two independent helper families:
+#
+# - Plain-SQL (`./opentr.sh backup`, and the mandatory pre-restore safety dump) — replayed
+#   with `psql`. Background: a plain `pg_dump` file has no DROP/--clean statements, so
+#   replaying it into an already-populated database makes every statement fail — and without
+#   `ON_ERROR_STOP`, `psql` exits 0 anyway. Worse, the dump's `alembic_version` INSERT does
+#   NOT collide on primary key with a drifted row already there, so it succeeds while every
+#   other statement fails — leaving TWO rows in `alembic_version`, which Alembic can no longer
+#   migrate from. The fix is to guarantee an empty target: drop and recreate the database,
+#   then replay inside a single transaction so any failure rolls back to nothing rather than a
+#   hybrid schema.
+# - Custom-format `-Fc` (the scheduled/S3 backup feature, `backup_service.run_pg_dump`) —
+#   replayed with `pg_restore` (issue #600). Same guarantee, different tool: `pg_restore`
+#   also needs a guaranteed-empty target and a single-transaction replay, but its own
+#   quirks — `-j`/`--single-transaction` are mutually exclusive, and it can exit 1 while
+#   having ALREADY committed partial damage — are documented beside `pg_replay_custom_dump`
+#   below. Both formats share one comparison routine, `_pg_verify_against`, so "does the
+#   restored database match the backup" cannot drift into two different definitions.
 
 # Drop and recreate a database so a restore always lands in a guaranteed-empty
 # target, regardless of schema drift between backup time and restore time.
@@ -583,6 +594,60 @@ pg_replay_dump() {
   $exec_prefix psql -v ON_ERROR_STOP=1 --single-transaction -U "$user" "$db" < "$sql_file"
 }
 
+# Shared comparison routine behind both pg_verify_restore (plain-SQL) and
+# pg_verify_custom_restore (-Fc). The two public functions differ ONLY in how they obtain
+# expected_head/expected_tables from their respective archive format — everything here (the
+# alembic-head match, the exactly-one-row check, the public BASE TABLE count comparison, the
+# "no head found -> warn and skip, don't fail" allowance) is format-independent. Keeping this
+# as one function is deliberate: two verifiers with independently drifting comparison logic
+# is exactly the "two paths doing the same job" this repo's conventions forbid.
+#
+# $1 exec_prefix
+# $2 user
+# $3 db
+# $4 expected_head    (may be empty — see above)
+# $5 expected_tables
+# $6 caller_name       (for error-message prefixes only, e.g. "pg_verify_restore")
+# Returns 0 on pass, 1 on failure (mismatch detail printed to stdout).
+_pg_verify_against() {
+  local exec_prefix="$1"
+  local user="$2"
+  local db="$3"
+  local expected_head="$4"
+  local expected_tables="$5"
+  local caller_name="$6"
+
+  local ok=1
+
+  if [ -z "$expected_head" ]; then
+    echo "⚠️  $caller_name: no alembic_version head found in the backup — skipping head check (fine for a hand-trimmed dump)."
+  else
+    local actual_head
+    actual_head="$($exec_prefix psql -tA -U "$user" "$db" -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
+    if [ "$actual_head" != "$expected_head" ]; then
+      echo "❌ $caller_name: alembic_version mismatch — expected '$expected_head', got '$actual_head'"
+      ok=0
+    fi
+
+    local head_count
+    head_count="$($exec_prefix psql -tA -U "$user" "$db" -c "SELECT count(*) FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
+    if [ "$head_count" != "1" ]; then
+      echo "❌ $caller_name: alembic_version has $head_count row(s), expected exactly 1"
+      ok=0
+    fi
+  fi
+
+  local actual_tables
+  actual_tables="$($exec_prefix psql -tA -U "$user" "$db" -c \
+    "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | tr -d '[:space:]')"
+  if [ "$actual_tables" != "$expected_tables" ]; then
+    echo "❌ $caller_name: public table count mismatch — expected $expected_tables, got $actual_tables"
+    ok=0
+  fi
+
+  [ "$ok" -eq 1 ]
+}
+
 # Verify a restore actually reproduced the dump's content — the regression
 # detector for issue #599's exact failure mode (a restore that reports success
 # while leaving TWO conflicting `alembic_version` rows and every data table
@@ -614,35 +679,91 @@ pg_verify_restore() {
   local expected_tables
   expected_tables="$(grep -c '^CREATE TABLE ' "$sql_file")"
 
-  local ok=1
+  _pg_verify_against "$exec_prefix" "$user" "$db" "$expected_head" "$expected_tables" "pg_verify_restore"
+}
 
-  if [ -z "$expected_head" ]; then
-    echo "⚠️  pg_verify_restore: no alembic_version COPY block found in the dump — skipping head check (fine for a hand-trimmed dump)."
-  else
-    local actual_head
-    actual_head="$($exec_prefix psql -tA -U "$user" "$db" -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
-    if [ "$actual_head" != "$expected_head" ]; then
-      echo "❌ pg_verify_restore: alembic_version mismatch — expected '$expected_head', got '$actual_head'"
-      ok=0
-    fi
+# Replay a custom-format (`pg_dump --format=custom`, i.e. `-Fc`) dump into what must
+# already be an empty database — the `-Fc` sibling of pg_replay_dump, for the scheduled/S3
+# backup feature's artifacts (issue #600).
+#
+# `--single-transaction` implies `--exit-on-error`, but both are passed explicitly so that
+# dropping one later is a visible edit rather than a silent loss of atomicity.
+# `--no-owner --no-privileges` is belt-and-braces given the dump was taken with `pg_dump
+# --no-owner --no-acl` (backup_service.run_pg_dump) — and is what makes a dump taken
+# *without* those flags still restorable here.
+# `-j`/`--jobs` (parallel restore) is DELIBERATELY ABSENT: measured, it is mutually
+# exclusive with `--single-transaction` (`pg_restore: error: cannot specify both
+# --single-transaction and multiple jobs`). This is an accepted, documented cost of the
+# safe path, not a bug — an operator who knowingly needs `-j` can run pg_restore by hand.
+#
+# ⚠️ pg_restore's exit code is NOT a safety property the way psql's would be here: a
+# corrupted/truncated archive can exit 1 having already committed partial work within the
+# transaction before failing (measured, issue #600). --single-transaction still guarantees
+# the *whole* thing rolls back on failure — verify that with pg_verify_custom_restore /
+# the public table count, never by trusting the exit code alone.
+#
+# $1 exec_prefix
+# $2 user
+# $3 db
+# $4 dump_file
+pg_replay_custom_dump() {
+  local exec_prefix="$1"
+  local user="$2"
+  local db="$3"
+  local dump_file="$4"
+  # shellcheck disable=SC2086
+  $exec_prefix pg_restore -U "$user" -d "$db" --exit-on-error --single-transaction --no-owner --no-privileges < "$dump_file"
+}
 
-    local head_count
-    head_count="$($exec_prefix psql -tA -U "$user" "$db" -c "SELECT count(*) FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
-    if [ "$head_count" != "1" ]; then
-      echo "❌ pg_verify_restore: alembic_version has $head_count row(s), expected exactly 1"
-      ok=0
-    fi
-  fi
+# Echo a custom-format dump's own alembic head, the -Fc sibling of pg_verify_restore's
+# `awk` extraction over a plain-SQL file. `pg_restore --data-only --table=alembic_version
+# -f -` emits a plain-SQL fragment containing a literal `COPY public.alembic_version
+# (version_num) FROM stdin;` block, so the SAME awk line reads it — one convention for
+# "read the head out of a backup", two producers.
+#
+# $1 exec_prefix
+# $2 user
+# $3 dump_file
+pg_custom_dump_expected_head() {
+  local exec_prefix="$1"
+  local user="$2"
+  local dump_file="$3"
+  # shellcheck disable=SC2086
+  $exec_prefix pg_restore -U "$user" --data-only --table=alembic_version -f - < "$dump_file" \
+    | awk '/^COPY public\.alembic_version /{getline; print; exit}'
+}
 
-  local actual_tables
-  actual_tables="$($exec_prefix psql -tA -U "$user" "$db" -c \
-    "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | tr -d '[:space:]')"
-  if [ "$actual_tables" != "$expected_tables" ]; then
-    echo "❌ pg_verify_restore: public table count mismatch — expected $expected_tables, got $actual_tables"
-    ok=0
-  fi
+# Verify a custom-format restore — the -Fc sibling of pg_verify_restore, sharing the same
+# comparison logic via _pg_verify_against. The one real difference is HOW the expected facts
+# are read out of the archive:
+#   - expected_head: pg_custom_dump_expected_head (above).
+#   - expected_tables: the archive's own TOC (`pg_restore --list`), filtered on the type
+#     field. ⚠️ Measured gotcha: the naive `grep -c ' TABLE '` OVERCOUNTS, because `TABLE
+#     DATA` entries also match ' TABLE ' (4 vs the correct 2, on a two-table archive) — a
+#     verifier built on that filter fails on every correct restore. The type field is
+#     column 4 of the TOC line and `TABLE DATA` sets column 5 to `DATA`, so `$4 == "TABLE"
+#     && $5 != "DATA"` counts only the real CREATE TABLE entries.
+#
+# $1 exec_prefix
+# $2 user
+# $3 db
+# $4 dump_file
+# Returns 0 on pass, 1 on failure (mismatch detail printed to stdout).
+pg_verify_custom_restore() {
+  local exec_prefix="$1"
+  local user="$2"
+  local db="$3"
+  local dump_file="$4"
 
-  [ "$ok" -eq 1 ]
+  local expected_head
+  expected_head="$(pg_custom_dump_expected_head "$exec_prefix" "$user" "$dump_file")"
+
+  local expected_tables
+  # shellcheck disable=SC2086
+  expected_tables="$($exec_prefix pg_restore --list < "$dump_file" \
+    | awk '$4 == "TABLE" && $5 != "DATA"' | wc -l | tr -d '[:space:]')"
+
+  _pg_verify_against "$exec_prefix" "$user" "$db" "$expected_head" "$expected_tables" "pg_verify_custom_restore"
 }
 
 # Display quick reference commands

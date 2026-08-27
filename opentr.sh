@@ -162,7 +162,8 @@ show_help() {
   echo "  reset [dev|prod] [options]             - Reset and reinitialize (deletes all data!)"
   echo "                                           (Accepts same options as 'start' command)"
   echo "  backup [--encrypt]  - Create a database backup (--encrypt: GPG AES-256, no plaintext on disk)"
-  echo "  restore [--yes] [--no-safety-dump] <file>  - REPLACE the database from a backup (.sql or .gpg) — destructive"
+  echo "  restore [--yes] [--no-safety-dump] [--from-s3] <file>  - REPLACE the database from a backup"
+  echo "                  (.sql, .dump, .sql.gpg, or .dump.gpg; --from-s3 fetches by name first) — destructive"
   echo ""
   echo "Development Commands:"
   echo "  restart-backend     - Restart backend, all celery workers, celery-beat & flower without database reset"
@@ -2766,10 +2767,11 @@ backup_database() {
 # inside a single transaction (so a mid-dump failure rolls back to nothing rather
 # than a hybrid schema), and verifying the result before ever reporting success.
 #
-# Usage: restore_database [--yes|-y] [--no-safety-dump] <file>
+# Usage: restore_database [--yes|-y] [--no-safety-dump] [--from-s3] <file-or-object-name>
 restore_database() {
   local skip_confirm=false
   local skip_safety_dump=false
+  local from_s3=false
   local backup_file=""
 
   while [ $# -gt 0 ]; do
@@ -2782,9 +2784,13 @@ restore_database() {
         skip_safety_dump=true
         shift
         ;;
+      --from-s3)
+        from_s3=true
+        shift
+        ;;
       -*)
         echo "❌ Error: unknown restore option: $1"
-        echo "Usage: ./opentr.sh restore [--yes] [--no-safety-dump] <backup_file>"
+        echo "Usage: ./opentr.sh restore [--yes] [--no-safety-dump] [--from-s3] <backup_file>"
         exit 1
         ;;
       *)
@@ -2796,8 +2802,38 @@ restore_database() {
 
   if [ -z "$backup_file" ]; then
     echo "❌ Error: Backup file not specified."
-    echo "Usage: ./opentr.sh restore [--yes] [--no-safety-dump] <backup_file>"
+    echo "Usage: ./opentr.sh restore [--yes] [--no-safety-dump] [--from-s3] <backup_file>"
     exit 1
+  fi
+
+  # --from-s3: fetch the artifact out of the configured S3 destination FIRST — before
+  # anything below touches the database. The S3 credentials are AES-256-GCM-encrypted in
+  # SystemSettings, decryptable only inside the backend container (issue #600) — a host
+  # shell script cannot reach them, and the database holding them is exactly what a
+  # restore is about to drop. Fail closed, naming the manual two-step, if the backend
+  # isn't up to do that decryption.
+  if [ "$from_s3" = true ]; then
+    if ! docker compose ps backend 2>/dev/null | grep -q "Up"; then
+      echo "❌ Error: --from-s3 needs the backend container running (it holds the only"
+      echo "   decryption key for the S3 credentials). Start it with './opentr.sh start dev'"
+      echo "   (or 'start prod'), or fetch manually:"
+      echo "     docker compose exec -T backend python -m app.scripts.fetch_backup $backup_file"
+      echo "     ./opentr.sh restore --yes \"\${BACKUP_HOST_PATH:-./backups}/$backup_file\""
+      exit 1
+    fi
+    local s3_name="$backup_file"
+    echo "☁️  Fetching $s3_name from the configured S3 backup destination (before anything destructive)..."
+    if ! docker compose exec -T backend python -m app.scripts.fetch_backup "$s3_name"; then
+      echo "❌ Error: fetch of $s3_name failed — see the error above. Nothing was touched."
+      exit 1
+    fi
+    # fetch_backup.py writes into cfg["destination"], which docker-compose.backup.yml
+    # mounts at /backups <- BACKUP_HOST_PATH on the host — the same default the
+    # --with-backup overlay documents. If backup.destination was reconfigured in the
+    # admin UI to something other than the default /backups, this guess can miss; the
+    # file-exists check right below reports that clearly rather than silently guessing wrong.
+    backup_file="${BACKUP_HOST_PATH:-./backups}/$(basename "$s3_name")"
+    echo "✅ Fetched to $backup_file"
   fi
 
   if [ ! -f "$backup_file" ]; then
@@ -2829,22 +2865,25 @@ restore_database() {
   local db_name="${POSTGRES_DB:-opentranscribe}"
   local exec_prefix="docker compose exec -T postgres"
 
-  # A custom-format (`pg_dump -Fc`) or directory-format dump starts with the "PGDMP"
-  # magic bytes — psql already fails loudly on one of these (not a silent no-op), but
-  # give the operator the right tool instead of a raw psql parse error.
+  # A custom-format (`pg_dump --format=custom`, i.e. `-Fc` — what the scheduled/S3 backup
+  # feature produces, backup_service.run_pg_dump) or directory-format dump starts with the
+  # "PGDMP" magic bytes. Dispatch the whole rest of this function on that: everything below
+  # — confirmation, safety dump, drop/recreate, service stop/start — is shared; only the
+  # expected-head read, the replay, and the verify step differ (issue #600).
+  local dump_format="plain"
   if [ "$(head -c 5 "$restore_source" 2>/dev/null)" = "PGDMP" ]; then
-    echo "❌ Error: $backup_file is a custom-format (pg_restore) dump, not a plain-SQL dump."
-    echo "   Restore it with pg_restore instead, e.g.:"
-    echo "     docker compose exec -T postgres pg_restore -U $db_user -d $db_name - < $backup_file"
-    [ -n "$temp_sql" ] && rm -f "$temp_sql"
-    exit 1
+    dump_format="custom"
   fi
 
   # Read the dump's own alembic head BEFORE anything destructive so it survives the
-  # drop — pg_verify_restore needs the file, but the confirmation prompt below wants
-  # to show it to the operator too.
+  # drop — the verify step needs the file, but the confirmation prompt below wants to
+  # show it to the operator too.
   local expected_head
-  expected_head="$(awk '/^COPY public\.alembic_version /{getline; print; exit}' "$restore_source")"
+  if [ "$dump_format" = "custom" ]; then
+    expected_head="$(pg_custom_dump_expected_head "$exec_prefix" "$db_user" "$restore_source")"
+  else
+    expected_head="$(awk '/^COPY public\.alembic_version /{getline; print; exit}' "$restore_source")"
+  fi
 
   echo "🔄 Restoring database from ${backup_file}..."
 
@@ -2930,7 +2969,13 @@ restore_database() {
   fi
 
   echo "📥 Replaying backup into \"$db_name\"..."
-  if ! pg_replay_dump "$exec_prefix" "$db_user" "$db_name" "$restore_source"; then
+  local replay_ok=true
+  if [ "$dump_format" = "custom" ]; then
+    pg_replay_custom_dump "$exec_prefix" "$db_user" "$db_name" "$restore_source" || replay_ok=false
+  else
+    pg_replay_dump "$exec_prefix" "$db_user" "$db_name" "$restore_source" || replay_ok=false
+  fi
+  if [ "$replay_ok" != true ]; then
     echo "❌ Database restore failed — the database is now empty (the failed replay rolled back)."
     if [ -n "$safety_dump_file" ]; then
       echo "   Recover the previous state with:"
@@ -2944,7 +2989,13 @@ restore_database() {
   fi
 
   echo "🔍 Verifying restore..."
-  if ! pg_verify_restore "$exec_prefix" "$db_user" "$db_name" "$restore_source"; then
+  local verify_ok=true
+  if [ "$dump_format" = "custom" ]; then
+    pg_verify_custom_restore "$exec_prefix" "$db_user" "$db_name" "$restore_source" || verify_ok=false
+  else
+    pg_verify_restore "$exec_prefix" "$db_user" "$db_name" "$restore_source" || verify_ok=false
+  fi
+  if [ "$verify_ok" != true ]; then
     echo "❌ Restore verification failed — the database does not match the backup. See the mismatch(es) above."
     [ -n "$safety_dump_file" ] && echo "   The current (unverified) database's pre-restore safety dump is at: $safety_dump_file"
     "${restart_services[@]}"

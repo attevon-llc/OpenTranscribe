@@ -215,6 +215,14 @@ an_already_shared_tag` passed throughout, because a broken store produces absenc
   Before #297 `gpu` was unregistered and silenced by a `PytestUnknownMarkWarning` filter, so
   those 17 tests ran in the fast suite *and* CPU-only CI, passing only on their own runtime skip
   guards, while the gate selected none of them.
+- **`tests/integration/test_scheduled_backup_restore_roundtrip.py` needs the backend image
+  built** (`./opentr.sh build` or `./opentr.sh start dev --build`) — its Tier-1 "trustworthy
+  evidence" test runs the real `backup_service.run_pg_dump` inside a throwaway container from
+  `opentranscribe-backend:latest`, because `pg_dump`/`pg_restore` are not installed on the host
+  (`backend/venv` has no PostgreSQL client tools; only `gpg` is present there). Named skip, not
+  silent, if the image is missing. Its `encrypt=True` variant additionally skips citing issue
+  #604 — the *published* image has no `gpg` on PATH either (`Dockerfile.prod` installs
+  `postgresql-client` but never `gnupg`), so `backup.encrypt` fails in production today.
 - `db_session` rolls back the DB, **not MinIO or OpenSearch**. Hence `upload_test_file`'s API
   delete and the forced `AUDIT_LOG_TO_OPENSEARCH=false` — savepoints can't undo index writes
   into the live dev cluster.

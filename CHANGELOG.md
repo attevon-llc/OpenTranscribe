@@ -142,6 +142,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The in-app scheduled/S3 backup feature's `pg_dump -Fc` output had no restore path at
+  all** (#600, P0). `pg_restore` — the only tool that reads custom-format output — appeared
+  nowhere in the repo; `./opentr.sh restore` sniffed the file's `PGDMP` magic bytes and
+  printed a hint command (`docker compose exec -T postgres pg_restore -U $db_user -d
+  $db_name - < $backup_file`) that was itself broken (wrong redirect placement) and, fixed
+  naively, reproduces #599's exact silent-corruption bug: drifted data survives, and
+  `alembic_version` ends with two conflicting rows — `pg_restore` exits 1 there (unlike
+  `psql`'s 0), but only after already committing the partial damage, so the nonzero exit is
+  not the safety net it looks like. Two of the operations guide's own documented restore
+  recipes had the same defect. `./opentr.sh restore` now dispatches on the magic bytes into
+  a real `pg_restore --exit-on-error --single-transaction --no-owner --no-privileges` replay
+  branch, reusing #599's confirm / mandatory safety-dump / drop-recreate / verify sequence
+  unchanged — one user-facing command, two internal replay backends. The safe path
+  deliberately does **not** pass `-j`/`--jobs`: measured, it is mutually exclusive with
+  `--single-transaction`, so parallel restore is a documented, accepted cost of the
+  atomicity guarantee (an operator who needs it can still run `pg_restore -j` by hand). The
+  verifier's expected-table-count now reads the archive's own `pg_restore --list` TOC,
+  filtered on the type field (`$4 == "TABLE" && $5 != "DATA"`) rather than the naive
+  `grep -c ' TABLE '`, which overcounts by matching `TABLE DATA` entries too (measured: 4 vs
+  the correct 2 on a two-table archive) — a verifier built on that filter would fail every
+  correct restore. For an S3-destination backup, whose local artifact is deleted right after
+  upload, `./opentr.sh restore --from-s3 <name>` fetches it first via a new
+  `python -m app.scripts.fetch_backup` (run inside the backend container, the only place the
+  AES-256-GCM-encrypted S3 credentials can be decrypted) — fetching after the database is
+  dropped would leave an operator holding an unreachable bucket and no way to authenticate
+  to it, so the fetch is ordered strictly before anything destructive and the fetched
+  artifact's size and magic bytes are verified before it is trusted. Proven end to end by a
+  new integration suite that runs the real `run_pg_dump` inside a container built from
+  `opentranscribe-backend:latest` against a throwaway, network-isolated Postgres — not a
+  hand-fabricated `-Fc` file — plus a fast static suite pinning `pg_dump --format=custom` so
+  a future format change fails loudly in the unit suite instead of only in an integration
+  test somebody skipped.
 - **`./opentr.sh restore` silently failed to restore data into a populated database and
   reported success anyway — and left `alembic_version` with two conflicting rows** (#599,
   P0). A plain `pg_dump` file carries no `DROP`/`--clean` statements, so replaying it into

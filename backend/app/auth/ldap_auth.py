@@ -21,6 +21,7 @@ from ldap3.core.exceptions import LDAPException
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.account_linking import assert_email_link_permitted
+from app.auth.account_linking import assert_provider_id_link_permitted
 from app.auth.constants import AUTH_TYPE_LDAP
 from app.auth.constants import AUTH_TYPE_LOCAL
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
@@ -745,10 +746,21 @@ def sync_ldap_user_to_db(db, ldap_data: LdapUserData):
     groups = ldap_data.get("groups") or []
 
     user = db.query(User).filter(User.ldap_uid == username).first()
+    if user:
+        # A stored ldap_uid is not necessarily a deliberate admin link — JIT
+        # provisioning stamps it on ordinary first logins too, so a stale or
+        # reassigned uid still needs the corroboration/super_admin guard.
+        assert_provider_id_link_permitted(
+            user,
+            provider=AUTH_TYPE_LDAP,
+            source_identifier=username,
+            asserted_email=email,
+            failure_detail="Incorrect username or password",
+            failure_headers={"WWW-Authenticate": "Bearer"},
+        )
     if not user:
         # The email fallback links a directory identity to a PRE-EXISTING account,
-        # so it is gated. An account already carrying this ``ldap_uid`` was linked
-        # deliberately at some earlier point and is not re-litigated.
+        # so it is gated too.
         user = db.query(User).filter(User.email == email).first()
         if user:
             assert_email_link_permitted(

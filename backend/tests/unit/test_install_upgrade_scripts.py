@@ -346,16 +346,89 @@ def test_both_scenarios_export_the_tag_under_test():
 
 
 def test_upgrade_repins_the_env_for_the_new_stack():
-    """The swap copies the FROM .env; OT_IMAGE_TAG must be moved to TO.
+    """The .env's OT_IMAGE_TAG must move to TO before the scenario is done.
 
-    Copying it verbatim would leave the "upgraded" stack running the old images
-    for every service outside the hardcoded pin list — an upgrade test that
-    partly did not upgrade.
+    Copying it verbatim (and leaving it there) would leave the "upgraded" stack
+    running the old images for every service outside cp_pin_image_tag's
+    hardcoded pin list — an upgrade test that partly did not upgrade.
+
+    This used to be a hand-rolled `sed` in phase 07. Issue #598 found that the
+    hand-rolled rewrite never recorded `# OT_PREVIOUS_IMAGE_TAG`, so
+    `opentranscribe.sh update --rollback` invoked at the end of the scenario
+    exited 1 with "no previous version recorded" — the rollback tail could not
+    even be attempted. Phase 08 now runs the REAL
+    `./opentranscribe.sh update --version` instead, which performs the same
+    move AND records the rollback bookkeeping test_upgrade_scenario_records_a_
+    rollback_target and phase 12 depend on.
     """
     source = UPGRADE_SCENARIO.read_text()
-    assert 'sed -i "s|^OT_IMAGE_TAG=' in source, (
-        "the after-stack .env is not re-pinned to the version being upgraded to"
+    assert 'sed -i "s|^OT_IMAGE_TAG=' not in source, (
+        "a hand-rolled OT_IMAGE_TAG sed is back — it does not record "
+        "# OT_PREVIOUS_IMAGE_TAG, so a rollback rehearsed against it has no target"
     )
+    assert './opentranscribe.sh update --version "$LOCAL_IMAGE_TAG"' in source, (
+        "phase 08 must invoke the real 'update --version' path, not a bare "
+        "'update' (which does not move OT_IMAGE_TAG once phase 07 stopped seding it)"
+    )
+
+
+def test_upgrade_scenario_records_a_rollback_target():
+    """`update --version` is what writes `# OT_PREVIOUS_IMAGE_TAG` (issue #598 §2.4).
+
+    A bare `update` never writes it, so a `--rollback` invoked at the end of the
+    scenario used to exit 1 with "no previous version recorded" — the rollback
+    tail (phases 13-17) could not even be attempted. Phase 12 asserts the
+    precondition is actually recorded in the staged .env, not merely that the
+    scenario invokes the right subcommand — this test is the cheap static half.
+    """
+    source = UPGRADE_SCENARIO.read_text()
+    assert "update --version" in source
+    assert "phase_12_assert_rollback_precondition" in source
+    assert "OT_PREVIOUS_IMAGE_TAG" in source
+
+
+def _extract_case_block(script: Path, start_label: str, end_label: str) -> str:
+    """Pull one `case` arm out of a script, from its label through the NEXT
+    label's line (exclusive) — sed can't stop at a bare `;;`, since the block
+    itself contains a nested `case ... esac` with its own `;;` terminators.
+    """
+    out = subprocess.run(
+        ["sed", "-n", f"/^{start_label}/,/^{end_label}/p", str(script)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert out.strip(), f"{start_label} not found in {script.name}"
+    body = out.split(start_label, 1)[1]
+    body = body.rsplit(end_label, 1)[0]
+    return body
+
+
+def test_rollback_refuses_without_a_recorded_target(tmp_path: Path):
+    """Behavioral: `update --rollback` against a .env with no recorded target.
+
+    Runs the REAL `update)` case body (extracted, not re-typed) with
+    `check_environment`/`fix_model_cache_permissions` stubbed — the real
+    versions require a live `.env`/`docker-compose.yml` and can shell out to
+    Docker to fix cache ownership, neither of which this fast unit test should
+    do. It is still exercising the real do_rollback branch: with `set --
+    update --rollback` and no `# OT_PREVIOUS_IMAGE_TAG` in .env, execution
+    must reach `exit 1` before ever calling `compose_down_for_upgrade` (not
+    stubbed here — an uncaught call to it would itself fail the snippet).
+    """
+    (tmp_path / ".env").write_text("OT_IMAGE_TAG=v0.5.0\n")
+    body = _extract_case_block(MANAGER, r"    update)", r"    update-full)")
+    snippet = f"""
+YELLOW='\\033[1;33m'; GREEN='\\033[0;32m'; RED='\\033[0;31m'; BLUE='\\033[0;34m'; NC='\\033[0m'
+cd {tmp_path}
+check_environment() {{ :; }}
+fix_model_cache_permissions() {{ :; }}
+set -- update --rollback
+{body}
+"""
+    out = _run_shell(snippet)
+    assert "No previous version recorded" in out
+    assert "update --version vX.Y.Z" in out
 
 
 def test_installer_reads_optional_env_keys_safely():

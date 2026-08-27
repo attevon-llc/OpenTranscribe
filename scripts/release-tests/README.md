@@ -160,8 +160,32 @@ See the dedicated section in the planning doc and the `Edge Cases & Mitigations`
 - **Disk space**: each scenario needs ~20 GB free under `$TEST_ROOT` and ~10 GB on the docker root.
 - **Docker Hub rate limits**: an unauthenticated pull is limited to 100/6h per IP. Login (`docker login`) if you're iterating.
 - **Public test URLs may decay**: edit `fixtures/test-urls.txt` if archive.org links 404.
-- **Rollback is not supported** — the migration chain is one-way, and the scenario
-  refuses to run when FROM is not strictly older than TO.
+- **The Alembic migration chain is one-way, and the scenario refuses to run
+  when FROM is not strictly older than TO** — that constraint is real and
+  still holds. It used to be phrased as "Rollback is not supported", which
+  conflated the migration chain with the separate backup/restore MECHANISM
+  (`opentr.sh backup`/`restore`, `opentranscribe.sh update --rollback`) — that
+  mechanism **is** rehearsed, by `test-upgrade.sh`'s phases 13-17 (issue
+  #598). What those phases prove: `opentr.sh backup` and the shipped
+  `pg_dump` recipe both restore an exact point-in-time database state
+  (content digests, not just row counts), `update --rollback` puts the FROM
+  image back and the FROM image serves the restored FROM database through
+  its real API, and the documented recovery loop (roll back -> re-upgrade)
+  completes cleanly. What it deliberately does NOT cover: backup
+  `--encrypt` (unattended `gpg` needs a passphrase file the CLI does not
+  support — filed as a follow-up), the in-app scheduled-backup system
+  (`app/services/backup_service.py` — a separate implementation, its own
+  end-to-end restore rehearsal is a follow-up), and MinIO/OpenSearch restore
+  (the DB restore does not touch either — asserted, not merely unclaimed).
+  Flags: `--no-rollback` (or `ROLLBACK_REHEARSAL=0`) skips phases 13-17;
+  `--only-rollback` resumes at phase 12 against an already-completed
+  `TEST_ROOT` (run the full scenario first — it does not fabricate that
+  state); `ROLLBACK_INJECT_FAULT=truncate|no-damage|stale-oracle`
+  deliberately breaks one input of the tail so its own failure detection is
+  exercised for real — see `test-upgrade.sh --help` and
+  `selftest-rollback-fault-injection.sh` (a ~1-minute self-test against a
+  throwaway isolated Postgres container, run it after any change to
+  `lib/db-snapshot.sh`).
 - **The Alembic head is derived, never recorded.** `expected-schemas.tsv` used to
   claim that role but was read by no script and never got its `v0.4.1` row.
   `lib/alembic-head.py` computes the single head from the `down_revision` graph —

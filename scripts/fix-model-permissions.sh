@@ -42,16 +42,30 @@ echo -e "${GREEN}OpenTranscribe Model Cache Permission Fixer${NC}"
 echo "=============================================="
 echo ""
 
-# Read MODEL_CACHE_DIR from .env file if it exists
+# Read MODEL_CACHE_DIR from .env file if it exists. An already-exported MODEL_CACHE_DIR
+# wins over .env -- the `${VAR:-...}` pattern every other script in this repo uses for a
+# .env read. This used to be a bare assignment that clobbered a caller's exported value
+# (issue #602).
 if [ -f "$PROJECT_ROOT/.env" ]; then
-    # Source the .env file to get MODEL_CACHE_DIR
-    # Filter out comments (both full-line and inline) and empty lines
-    MODEL_CACHE_DIR=$(grep 'MODEL_CACHE_DIR' "$PROJECT_ROOT/.env" | grep -v '^#' | cut -d'#' -f1 | cut -d'=' -f2 | tr -d ' "' | head -1)
+    # Anchored to the start of the variable name so this can't match a variable like
+    # EXTRA_MODEL_CACHE_DIR, and `-f2-` (not `-f2`) so a value containing '=' isn't
+    # truncated (issue #602). Still filters out comments (full-line and inline).
+    MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-$(grep -E '^[[:space:]]*MODEL_CACHE_DIR=' "$PROJECT_ROOT/.env" | grep -v '^#' | cut -d'#' -f1 | cut -d'=' -f2- | tr -d ' "' | head -1)}"
     export MODEL_CACHE_DIR
 fi
 
-# Use default if not set
+# Use default if not set.
 MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-$PROJECT_ROOT/models}"
+
+# Anchor a relative value (the shipped .env.example default, `./models`) to PROJECT_ROOT
+# rather than the caller's CWD. Unanchored, running this script from anywhere but the repo
+# root either silently no-ops (the CWD-relative path doesn't exist there, so the
+# "directory does not exist yet" branch below fires and skips) or, worse, chowns an
+# unrelated directory that happens to exist at that CWD-relative path (issue #602).
+case "$MODEL_CACHE_DIR" in
+    /*) ;;
+    *) MODEL_CACHE_DIR="$PROJECT_ROOT/$MODEL_CACHE_DIR" ;;
+esac
 
 echo -e "${YELLOW}Model cache directory: ${MODEL_CACHE_DIR}${NC}"
 echo ""

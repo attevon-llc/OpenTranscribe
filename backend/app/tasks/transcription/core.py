@@ -18,11 +18,15 @@ import tempfile
 import time
 
 from app.core.celery import celery_app
+from app.core.constants import CLOUD_ASR_MAX_RETRIES
+from app.core.constants import CLOUD_ASR_RETRY_BASE
+from app.core.constants import CLOUD_ASR_RETRY_MAX
 from app.core.constants import GPUPriority
 from app.core.exceptions import ASRConfigurationError
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
+from app.services.asr.errors import ASRRateLimitedError
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 
@@ -312,6 +316,27 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
 
             return gpu_result
 
+    except ASRRateLimitedError as exc:
+        # Vendor throttle/quota response — retry with the vendor's own Retry-After when
+        # given, else a bounded exponential backoff. Deliberately a SEPARATE policy from
+        # the task's autoretry_for=(ConnectionError, TimeoutError): that one's
+        # retry_backoff_max=30/max_retries=1 are tuned for a GPU-path connection blip, far
+        # too short for a vendor throttle, and autoretry_for cannot honor Retry-After.
+        # self.retry() raises celery.exceptions.Retry, which Celery's task machinery
+        # handles as a scheduled retry (not a task failure) — dispatch.py's on_pipeline_error
+        # link_error callback does not fire for it, so the file is not marked FAILED here.
+        countdown = exc.retry_after or min(
+            CLOUD_ASR_RETRY_BASE * 2**self.request.retries, CLOUD_ASR_RETRY_MAX
+        )
+        logger.warning(
+            "Cloud ASR rate-limited for file %s (attempt %d/%d), retrying in %.0fs: %s",
+            file_uuid,
+            self.request.retries + 1,
+            CLOUD_ASR_MAX_RETRIES,
+            countdown,
+            exc,
+        )
+        raise self.retry(exc=exc, countdown=countdown, max_retries=CLOUD_ASR_MAX_RETRIES) from exc
     except Exception as e:
         # Best-effort cleanup of shared-volume WAV on failure
         _wav = locals().get("local_wav_path", "")

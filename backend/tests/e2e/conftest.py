@@ -32,6 +32,8 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
+from collections.abc import Iterator
 from pathlib import Path
 from typing import cast
 
@@ -630,6 +632,237 @@ def owned_media_factory(backend_url: str):
     finally:
         for token, file_uuid in created:
             delete_media_file(backend_url, token, file_uuid)
+
+
+# ---------------------------------------------------------------------------
+# Second user / collection sharing: the one setup path that reaches every
+# non-owner permission journey (issues #583/#585/#588). PermissionService
+# resolves a non-owner's file permission ONLY through "file is in a
+# collection shared with the user" — there is no per-file share endpoint.
+# ---------------------------------------------------------------------------
+
+#: Prefix for every account the second-user fixture mints. Also listed in
+#: scripts/cleanup-test-users.py's ORPHAN_PATTERNS, the backstop for a run that
+#: dies before its teardown (the same contract OWNED_MEDIA_PREFIX has).
+SECOND_USER_PREFIX = "share-e2e-"
+
+#: Satisfies the DB-backed password policy (12+, upper/lower/digit/special, no
+#: fragment of the name or email). Same shape as test_mfa.py's.
+SECOND_USER_PASSWORD = "Xk9!pLm2@Wq7Rn"  # noqa: S105
+
+#: Prefix for every collection the sharing fixtures create.
+SHARED_COLLECTION_PREFIX = "e2e-shared-"
+
+
+@pytest.fixture(scope="session")
+def admin_token(backend_url: str) -> str:
+    """A bearer token for TEST_ADMIN_EMAIL, obtained once per session.
+
+    Retries through transient rate limiting the same way APIHelper.login does.
+    Skips (not fails) if login never succeeds, so a stack with auth misconfigured
+    doesn't masquerade every dependent test as a real failure.
+    """
+    result: dict = {}
+    for attempt in range(4):
+        response = requests.post(
+            f"{backend_url}/api/auth/token",
+            data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=30,
+        )
+        if response.status_code == 200:
+            result = response.json()
+            return str(result["access_token"])
+        time.sleep(5 * (attempt + 1))
+    pytest.skip(f"Could not obtain admin token from {backend_url} (last status not 200)")
+    raise AssertionError("unreachable — pytest.skip always raises")  # for mypy
+
+
+@pytest.fixture(scope="session")
+def second_user(backend_url: str, admin_token: str) -> Iterator[dict[str, str]]:
+    """A real, non-admin user account distinct from TEST_ADMIN_EMAIL.
+
+    Created via POST /api/admin/users (not /api/auth/register — registration is a
+    DB-backed toggle an admin can disable, and a disabled stack would make every
+    consumer skip for the wrong reason). ``role="user"`` is required: a plain admin
+    cannot grant an elevated role, and an admin second-user would see
+    ``my_permission == "owner"`` everywhere, defeating the point of this fixture.
+    """
+    email = f"{SECOND_USER_PREFIX}{uuid.uuid4().hex[:8]}@example.com"
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    # A throwaway creation password, deliberately DIFFERENT from SECOND_USER_PASSWORD —
+    # see the reset-password call below for why.
+    provisioning_password = f"Zq3!{uuid.uuid4().hex[:10]}Rv9#"  # noqa: S105
+    response = requests.post(
+        f"{backend_url}/api/admin/users",
+        headers=headers,
+        json={
+            "email": email,
+            "password": provisioning_password,
+            "full_name": "Rec Ipient",
+            "role": "user",
+        },
+        timeout=30,
+    )
+    if response.status_code not in (200, 201):
+        pytest.skip(
+            f"Could not create second-user fixture account (HTTP {response.status_code}): "
+            f"{response.text[:300]}"
+        )
+    body = response.json()
+    user_uuid = str(body["uuid"])
+
+    # Admin-created local accounts always come back with must_change_password=True
+    # (app/api/endpoints/users.py create_user) — the created-by-admin path assumes an
+    # admin knows the password and forces a change before the account is usable. A
+    # browser login for this fixture would otherwise land on the forced-change screen
+    # instead of the app, so clear the flag the same way an admin would from the UI.
+    # The reset must set a DIFFERENT password than the one just used to create the
+    # account, or the password-history/reuse check (FedRAMP IA-5) rejects it as a
+    # reused password — hence the separate throwaway creation password above.
+    reset_resp = requests.post(
+        f"{backend_url}/api/admin/users/{user_uuid}/reset-password",
+        headers=headers,
+        json={"new_password": SECOND_USER_PASSWORD, "force_change": False},
+        timeout=30,
+    )
+    if reset_resp.status_code != 200:
+        requests.delete(f"{backend_url}/api/admin/users/{user_uuid}", headers=headers, timeout=30)
+        pytest.skip(
+            f"Could not clear must_change_password on second-user fixture account "
+            f"(HTTP {reset_resp.status_code}): {reset_resp.text[:300]}"
+        )
+
+    try:
+        yield {
+            "email": email,
+            "password": SECOND_USER_PASSWORD,
+            "uuid": user_uuid,
+            "full_name": "Rec Ipient",
+        }
+    finally:
+        requests.delete(f"{backend_url}/api/admin/users/{user_uuid}", headers=headers, timeout=30)
+
+
+@pytest.fixture(scope="session")
+def second_user_auth_state(browser, base_url: str, second_user: dict[str, str]):
+    """Login as ``second_user`` ONCE per session and persist browser storage state.
+
+    Mirrors ``shared_auth_state`` except a brand-new user's gallery is empty, so
+    waiting on ``.gallery-action-buttons`` cannot be assumed — a freshly created
+    account may render an empty-state screen with none of those buttons. Falling
+    back to "left the login page" is the deterministic signal available either way.
+    """
+    import tempfile
+
+    context = browser.new_context(
+        viewport={"width": 1920, "height": 1080},
+        ignore_https_errors=True,
+    )
+    page = context.new_page()
+    page.goto(base_url)
+    page.wait_for_selector("#email", timeout=15000)
+    page.fill("#email", second_user["email"])
+    page.fill("#password", second_user["password"])
+    page.click("button[type=submit]")
+    try:
+        page.wait_for_selector(".gallery-action-buttons", timeout=10000)
+    except Exception:
+        page.wait_for_url(lambda url: "/login" not in url, timeout=30000)
+
+    fd, state_file = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    context.storage_state(path=state_file)
+    page.close()
+    context.close()
+
+    yield state_file
+
+    if os.path.exists(state_file):
+        os.unlink(state_file)
+
+
+@pytest.fixture
+def second_user_page(browser, second_user_auth_state, base_url: str):
+    """A fresh pre-authenticated page for ``second_user`` (no per-test login)."""
+    context = browser.new_context(
+        storage_state=second_user_auth_state,
+        viewport={"width": 1920, "height": 1080},
+        ignore_https_errors=True,
+    )
+    page = context.new_page()
+    page.goto(base_url)
+    page.wait_for_load_state("networkidle")
+    yield page
+    page.close()
+    context.close()
+
+
+@pytest.fixture
+def shared_collection_factory(
+    backend_url: str, admin_token: str, second_user: dict[str, str]
+) -> Iterator[Callable[..., dict]]:
+    """``share(*, member_file_uuids=(), permission="viewer") -> dict``: create a
+    collection owned by admin, optionally add files, and share it with ``second_user``.
+
+    Every collection created is deleted on teardown regardless of test outcome —
+    the sequence mirrors the one real setup path for every non-owner permission
+    journey in this app (there is no per-file share endpoint).
+    """
+    headers = {"Authorization": f"Bearer {admin_token}", "Content-Type": "application/json"}
+    created: list[str] = []
+
+    def _share(*, member_file_uuids: tuple[str, ...] = (), permission: str = "viewer") -> dict:
+        name = f"{SHARED_COLLECTION_PREFIX}{uuid.uuid4().hex[:8]}"
+        collection_resp = requests.post(
+            f"{backend_url}/api/collections",
+            headers=headers,
+            json={"name": name},
+            timeout=30,
+        )
+        assert collection_resp.status_code == 200, (
+            f"Collection creation failed: {collection_resp.status_code} {collection_resp.text[:300]}"
+        )
+        collection = cast(dict, collection_resp.json())
+        collection_uuid = collection["uuid"]
+        created.append(collection_uuid)
+
+        if member_file_uuids:
+            media_resp = requests.post(
+                f"{backend_url}/api/collections/{collection_uuid}/media",
+                headers=headers,
+                json={"media_file_ids": list(member_file_uuids)},
+                timeout=30,
+            )
+            assert media_resp.status_code == 200, (
+                f"Adding media to collection failed: {media_resp.status_code} "
+                f"{media_resp.text[:300]}"
+            )
+
+        share_resp = requests.post(
+            f"{backend_url}/api/collections/{collection_uuid}/shares",
+            headers=headers,
+            json={
+                "target_type": "user",
+                "target_uuid": second_user["uuid"],
+                "permission": permission,
+            },
+            timeout=30,
+        )
+        assert share_resp.status_code == 201, (
+            f"Sharing collection failed: {share_resp.status_code} {share_resp.text[:300]}"
+        )
+
+        collection["share"] = share_resp.json()
+        return collection
+
+    try:
+        yield _share
+    finally:
+        for collection_uuid in created:
+            requests.delete(
+                f"{backend_url}/api/collections/{collection_uuid}", headers=headers, timeout=30
+            )
 
 
 @pytest.fixture

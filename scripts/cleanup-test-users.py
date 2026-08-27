@@ -60,6 +60,7 @@ ORPHAN_PATTERNS = [
     'shortname-%@example.com',  # e2e display-name registration test
     'mfa-e2e-%@example.com',  # e2e MFA enrolment user (test_mfa.py session fixture)
     'searchqual-%@example.invalid',  # test_search_quality.py self-seeding corpus owner
+    'share-e2e-%@example.com',  # e2e second-user fixture (conftest.SECOND_USER_PREFIX)
 ]
 
 # Real dev-stack accounts that must never be touched, even if a pattern drifts.

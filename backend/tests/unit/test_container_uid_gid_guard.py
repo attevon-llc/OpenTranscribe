@@ -40,6 +40,12 @@ _EXPECTED = "1000:999"
 #: Lines that both mention ``1000:1000`` and perform (or print) an ownership change.
 _OWNERSHIP_RE = re.compile(r"\b(chown|chgrp|--chown)\b[^\n]*\b1000:1000\b")
 
+#: The shape issue #580 actually shipped: a variable DEFAULT, with no chown on the line.
+#: `_OWNERSHIP_RE` requires a chown/chgrp/--chown token, so it scored the real offending
+#: line -- `UID_GID="${SHARED_VOLUME_OWNER:-1000:1000}"` -- clean. Recovered from git:
+#:   git log -p --follow -- scripts/fix-shared-volume-perms.sh
+_ASSIGNMENT_RE = re.compile(r"^\s*(?:export\s+)?\w*(?:UID|GID|OWNER)\w*\s*=[^\n]*\b1000:1000\b")
+
 #: ``<relative path>:<line number>`` -> written reason. Empty on purpose: every offender was
 #: fixed rather than excused. An entry here needs a real reason, not "legacy".
 _ALLOWLIST: dict[str, str] = {}
@@ -66,7 +72,7 @@ def _scan_text(text: str) -> list[int]:
     for lineno, line in enumerate(text.splitlines(), start=1):
         if line.lstrip().startswith("#"):
             continue  # a comment explaining the pitfall is not the pitfall
-        if _OWNERSHIP_RE.search(line):
+        if _OWNERSHIP_RE.search(line) or _ASSIGNMENT_RE.search(line):
             offenders.append(lineno)
     return offenders
 
@@ -109,6 +115,16 @@ def test_allowlist_entries_carry_a_written_reason() -> None:
         ("inside docker run", 'docker run --rm busybox sh -c "chown -R 1000:1000 /scratch"'),
         ("printed instruction", 'echo "  sudo chown -R 1000:1000 $DIR"'),
         ("dockerfile-style flag", "COPY --chown=1000:1000 . ."),
+        (
+            "variable default, the #580 shape",
+            'UID_GID="${SHARED_VOLUME_OWNER:-1000:1000}"',
+        ),
+        (
+            "variable default with an already-suffixed name",
+            'CONTAINER_UID_GID="${CONTAINER_UID_GID:-1000:1000}"',
+        ),
+        ("bare assignment", "SHARED_VOLUME_OWNER=1000:1000"),
+        ("exported assignment", "export CONTAINER_UID_GID=1000:1000"),
     ],
 )
 def test_scanner_fires_on_offending_shapes(label: str, line: str) -> None:
@@ -123,10 +139,27 @@ def test_scanner_fires_on_offending_shapes(label: str, line: str) -> None:
         ("corrected ownership", 'chown -R "$CONTAINER_UID_GID" "$DIR"'),
         ("explicit correct pair", "chown -R 1000:999 /models"),
         ("unrelated 1000:1000", 'echo "port map 1000:1000"'),
+        ("unrelated assignment, not UID/GID/OWNER", "PORT_MAP=1000:1000"),
+        ("corrected variable default", 'UID_GID="${SHARED_VOLUME_OWNER:-1000:999}"'),
+        (
+            "comment mentioning the old default in an assignment shape",
+            "# default used to be 1000:1000 (issue #580)",
+        ),
     ],
 )
 def test_scanner_stays_silent_on_clean_shapes(label: str, line: str) -> None:
     assert _scan_text(line) == [], f"scanner false-positived on {label}"
+
+
+#: Every site that hardcodes the corrected default, and the exact string it must contain.
+#: Widened from a single common.sh check (issue #602) so a regression in any ONE of the
+#: four standalone-default sites can't hide behind the other three staying correct.
+_DEFAULT_SITES = {
+    "scripts/common.sh": 'CONTAINER_UID_GID="${CONTAINER_UID_GID:-1000:999}"',
+    "opentranscribe.sh": 'CONTAINER_UID_GID="${CONTAINER_UID_GID:-1000:999}"',
+    "scripts/fix-model-permissions.sh": 'CONTAINER_UID_GID="${CONTAINER_UID_GID:-1000:999}"',
+    "scripts/fix-shared-volume-perms.sh": 'UID_GID="${SHARED_VOLUME_OWNER:-1000:999}"',
+}
 
 
 def test_scanner_actually_reads_the_real_scripts() -> None:
@@ -134,6 +167,7 @@ def test_scanner_actually_reads_the_real_scripts() -> None:
     scripts = _shell_scripts()
     assert len(scripts) > 10, f"expected the repo's shell scripts, found {len(scripts)}"
     assert any(p.name == "common.sh" for p in scripts)
-    # And the corrected constant is actually present where the fix lives.
-    common = (_REPO_ROOT / "scripts" / "common.sh").read_text(encoding="utf-8")
-    assert f'CONTAINER_UID_GID="${{CONTAINER_UID_GID:-{_EXPECTED}}}"' in common
+    # And the corrected constant is actually present where the fix lives, at every site.
+    for rel, expected in _DEFAULT_SITES.items():
+        text = (_REPO_ROOT / rel).read_text(encoding="utf-8")
+        assert expected in text, f"{rel} is missing the corrected default: {expected!r}"

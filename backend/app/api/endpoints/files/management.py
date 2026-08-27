@@ -204,7 +204,12 @@ def cancel_file_processing(
     try:
         is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(
-            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+            db,
+            file_uuid,
+            current_user.id,
+            is_admin=is_admin,
+            organization_id=ctx.org_id,
+            min_permission="editor",
         )
         file_id = db_file.id  # Get internal ID for task operations
 
@@ -251,7 +256,12 @@ def retry_file_processing(
     try:
         is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(
-            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+            db,
+            file_uuid,
+            current_user.id,
+            is_admin=is_admin,
+            organization_id=ctx.org_id,
+            min_permission="editor",
         )
         file_id = db_file.id  # Get internal ID for task operations
 
@@ -344,7 +354,12 @@ def recover_file(
     try:
         is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(
-            db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+            db,
+            file_uuid,
+            current_user.id,
+            is_admin=is_admin,
+            organization_id=ctx.org_id,
+            min_permission="editor",
         )
         file_id = db_file.id  # Get internal ID for task operations
 
@@ -890,7 +905,12 @@ def _process_single_file_action(
 ) -> BulkActionResult:
     """Process a single file action, returning the result."""
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=is_admin,
+        organization_id=organization_id,
+        min_permission="editor",
     )
     file_id = db_file.id
 

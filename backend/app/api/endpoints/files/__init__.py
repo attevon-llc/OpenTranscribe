@@ -1129,7 +1129,12 @@ def clear_video_cache(
     # line and crashed a second time with NameError (issue #284 A0.6).
     is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=is_admin,
+        organization_id=ctx.org_id,
+        min_permission="editor",
     )
     file_id = int(db_file.id)  # Internal ID for cache operations
     filename = str(db_file.filename)  # Plain data: the cache keys derive from it
@@ -1191,7 +1196,12 @@ def refresh_analytics(
     # broad handler and re-wrapped, doubling the `from e` chain.
     is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=ctx.org_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=is_admin,
+        organization_id=ctx.org_id,
+        min_permission="editor",
     )
     file_id = db_file.id  # Internal ID for analytics refresh
 

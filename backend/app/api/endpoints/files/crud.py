@@ -46,6 +46,7 @@ def get_media_file_by_uuid(
     is_admin: bool = False,
     *,
     organization_id: OrgScope = UNSCOPED,
+    min_permission: str = "viewer",
 ) -> MediaFile:
     """
     Get a media file by UUID and user ID.
@@ -58,6 +59,12 @@ def get_media_file_by_uuid(
         organization_id: Active org id, None for personal, or UNSCOPED (default,
             legacy = no gate). Threaded from ``ctx.org_id`` by request handlers so
             cross-tenant files 404/403 (default-deny).
+        min_permission: Minimum sharing permission level required on the sharing
+            path ("viewer", "editor", or "owner"; see
+            ``PermissionService.PERMISSION_LEVELS``). Defaults to "viewer",
+            preserving prior behavior for read-only call sites. Mutating
+            endpoints should pass ``min_permission="editor"``. Does not affect
+            the admin bypass or direct-ownership fast path.
 
     Returns:
         MediaFile object
@@ -72,7 +79,12 @@ def get_media_file_by_uuid(
         return get_file_by_uuid(db, file_uuid)
     else:
         return get_file_by_uuid_with_permission(
-            db, file_uuid, user_id, is_admin=is_admin, organization_id=organization_id
+            db,
+            file_uuid,
+            user_id,
+            is_admin=is_admin,
+            organization_id=organization_id,
+            min_permission=min_permission,
         )
 
 
@@ -860,7 +872,12 @@ def update_media_file(
     """
     is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=is_admin,
+        organization_id=organization_id,
+        min_permission="editor",
     )
     file_id = db_file.id  # Get internal ID for OpenSearch update
 
@@ -946,7 +963,12 @@ def delete_media_file(
 
     is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=is_admin,
+        organization_id=organization_id,
+        min_permission="editor",
     )
     file_id = db_file.id  # Get internal ID for task operations
 
@@ -1016,7 +1038,12 @@ def update_single_transcript_segment(
     # Verify user owns the file or is admin
     is_admin = current_user.is_admin
     db_file = get_media_file_by_uuid(
-        db, file_uuid, current_user.id, is_admin=is_admin, organization_id=organization_id
+        db,
+        file_uuid,
+        current_user.id,
+        is_admin=is_admin,
+        organization_id=organization_id,
+        min_permission="editor",
     )
     file_id = db_file.id  # Get internal ID for segment query
 

@@ -43,6 +43,9 @@ test_tenant_isolation.py::test_personal_file_read_surfaces_unaffected::negated-s
 test_tenant_isolation.py::test_personal_file_read_surfaces_unaffected::negated-status  # same reasoning, /segments.
 api/test_file_mutation_permissions.py::test_editor_can_reprocess_shared_file::negated-status  # issue #588: proving the permission check specifically does NOT block an editor. The endpoint may still 400/503 on unrelated preconditions (missing storage, LLM unavailable) in the test environment, so there is no single correct success status to pin — `!= 403` isolates exactly the claim under test, permission is not what blocks it.
 api/test_file_mutation_permissions.py::test_owner_still_reprocesses::negated-status  # same reasoning as test_editor_can_reprocess_shared_file — the owner fast-path is unaffected by the new min_permission gate, and the endpoint's other preconditions are out of scope for this test.
+api/test_file_mutation_permissions.py::test_editor_can_recover_shared_file::negated-status  # issue #588: recover_stuck_file's outcome depends on retry-ceiling state, not a fixed status — same `!= 403` + `< 500` pairing as test_editor_can_cancel_processing_shared_file.
+api/test_file_mutation_permissions.py::test_editor_can_refresh_analytics::negated-status  # issue #588: AnalyticsService.refresh_analytics may legitimately fail in the test environment on a file with no real segments/media; the claim under test is only that permission is not the gate — paired with `< 500`.
+api/test_file_mutation_permissions.py::test_editor_can_generate_waveform::negated-status  # issue #588: real waveform extraction depends on ffmpeg/storage not present in the test environment; the claim under test is only that permission is not the gate — paired with `< 500`.
 
 # --- mock-only, where the OUTGOING CALL is the subject (issue #476 Group 10, J4)
 #

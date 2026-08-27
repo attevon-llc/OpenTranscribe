@@ -21,6 +21,16 @@ poll-loop tests run in milliseconds instead of minutes. What is pinned here, in 
    raises with a message stating that figure.
 5. **File handle safety.** The upload audio file is opened via ``with open(...)`` and is closed
    even when the upload request raises.
+6. **``status: "error"`` during polling** raises ``RuntimeError`` with the API key sanitized out
+   even when the upstream error message itself echoes the key.
+7. **Missing ``result_url``** in the job-submission response raises a specific
+   ``RuntimeError("Gladia did not return a result_url")`` before any polling starts.
+8. **API key never leaks from the job-submission failure path** (upload failure and poll
+   failure are covered by (2) and (6) respectively).
+9. **``GLADIA_API_BASE_URL`` env override** is resolved once per instance at construction
+   time, and the default is unchanged when the var is unset.
+10. **Poll loop has no consecutive-failure cap** — current behavior, pinned as a
+    characterization test, not a target to enforce.
 
 Following the characterization-test convention of ``tests/unit/test_chunking_service.py`` /
 ``tests/unit/test_transcription_storage.py``, and the network-free provider-test pattern of
@@ -40,7 +50,7 @@ from app.services.asr.base import normalize_speaker_label
 from app.services.asr.gladia_provider import GladiaProvider
 from app.services.asr.types import ASRConfig
 
-_BASE = GladiaProvider._BASE
+_BASE = "https://api.gladia.io"
 
 
 class _FakeResponse:
@@ -257,3 +267,125 @@ def test_audio_file_handle_is_closed_when_upload_raises(tmp_path):
 
     assert opened, "audio file was never opened via open()"
     assert opened[-1].closed, "audio file handle leaked on the upload exception path"
+
+
+# ── 6. status: "error" during polling ───────────────────────────────────────────────────
+
+
+def test_status_error_during_polling_raises_sanitized_runtime_error(tmp_path):
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider(api_key="super-secret-poll-key")
+    config = ASRConfig(enable_diarization=False, language="en")
+
+    upload_resp = _FakeResponse(json_data={"audio_url": "https://cdn.gladia.io/audio123"})
+    job_resp = _FakeResponse(json_data={"result_url": f"{_BASE}/v2/transcription/job1"})
+    error_resp = _FakeResponse(
+        json_data={
+            "status": "error",
+            "error_message": "auth rejected for key super-secret-poll-key",
+        }
+    )
+    job_capture: dict = {}
+
+    with (
+        patch("requests.post", side_effect=_dispatch_post(upload_resp, job_resp, job_capture)),
+        patch("requests.get", return_value=error_resp),
+        patch("time.sleep"),
+        pytest.raises(RuntimeError, match="Gladia error") as excinfo,
+    ):
+        provider.transcribe(audio_path, config)
+
+    assert "super-secret-poll-key" not in str(excinfo.value)
+
+
+# ── 7. Missing result_url in the submit response ────────────────────────────────────────
+
+
+def test_missing_result_url_raises_runtime_error(tmp_path):
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider()
+    config = ASRConfig(enable_diarization=False, language="en")
+
+    upload_resp = _FakeResponse(json_data={"audio_url": "https://cdn.gladia.io/audio123"})
+    job_resp_no_url = _FakeResponse(json_data={})
+    job_capture: dict = {}
+
+    with (
+        patch(
+            "requests.post",
+            side_effect=_dispatch_post(upload_resp, job_resp_no_url, job_capture),
+        ),
+        pytest.raises(RuntimeError, match="Gladia did not return a result_url"),
+    ):
+        provider.transcribe(audio_path, config)
+
+
+# ── 8. API key never leaks from the job-submission failure path ────────────────────────
+
+
+def test_api_key_never_leaks_on_job_submission_failure(tmp_path):
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider(api_key="super-secret-submit-key")
+    config = ASRConfig(enable_diarization=False, language="en")
+
+    upload_resp = _FakeResponse(json_data={"audio_url": "https://cdn.gladia.io/audio123"})
+
+    def _post(url, **kwargs):
+        if url.endswith("/v2/upload"):
+            return upload_resp
+        if url.endswith("/v2/transcription"):
+            raise requests.exceptions.ConnectionError(
+                "could not submit job for key super-secret-submit-key"
+            )
+        raise AssertionError(f"unexpected POST to {url}")
+
+    with (
+        patch("requests.post", side_effect=_post),
+        pytest.raises(RuntimeError) as excinfo,
+    ):
+        provider.transcribe(audio_path, config)
+
+    assert "super-secret-submit-key" not in str(excinfo.value)
+
+
+# ── 9. GLADIA_API_BASE_URL env override ─────────────────────────────────────────────────
+
+
+def test_base_url_env_override_is_honored(monkeypatch):
+    monkeypatch.setenv("GLADIA_API_BASE_URL", "http://mock-asr:5198")
+    provider = _make_provider()
+    assert provider._base == "http://mock-asr:5198"
+
+
+def test_base_url_default_is_unchanged_when_env_unset(monkeypatch):
+    monkeypatch.delenv("GLADIA_API_BASE_URL", raising=False)
+    provider = _make_provider()
+    assert provider._base == "https://api.gladia.io"
+
+
+# ── 10. Poll loop has no consecutive-failure cap (current behavior, not a target) ───────
+
+
+def test_poll_loop_never_caps_consecutive_failures_current_behavior(tmp_path):
+    """Documents a known gap, not a target for this test to enforce.
+
+    Every poll attempt raising an exception is logged and skipped (``continue``) with no
+    cap on consecutive failures — the loop only stops once its 720-iteration budget is
+    exhausted. Pinned so a future change adding a failure cap is a deliberate, visible
+    diff rather than an accidental one.
+    """
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider()
+    config = ASRConfig(enable_diarization=False, language="en")
+
+    upload_resp = _FakeResponse(json_data={"audio_url": "https://cdn.gladia.io/audio123"})
+    job_resp = _FakeResponse(json_data={"result_url": f"{_BASE}/v2/transcription/job1"})
+    job_capture: dict = {}
+
+    with (
+        patch("requests.post", side_effect=_dispatch_post(upload_resp, job_resp, job_capture)),
+        patch("requests.get", side_effect=requests.exceptions.ConnectionError("unreachable")),
+        patch("time.sleep"),
+        pytest.raises(RuntimeError, match="timed out"),
+    ):
+        provider.transcribe(audio_path, config)

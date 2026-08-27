@@ -22,11 +22,18 @@ logger = logging.getLogger(__name__)
 
 
 class GladiaProvider(ASRProvider):
-    _BASE = "https://api.gladia.io"
-
     def __init__(self, api_key: str, model_name: str = "standard"):
         self._api_key = api_key
         self._model_name = model_name
+        # Deployment-config override for testing against a stand-in (e.g. the mock
+        # ASR server in scripts/mock-asr-server.py). Resolved per-instance so tests
+        # can `monkeypatch.setenv` before construction. This is DELIBERATELY separate
+        # from `UserASRSettings.base_url`, which is validated and persisted but never
+        # consumed here — wiring a user-supplied base URL into a live outbound target
+        # needs an SSRF guard (the LLM path has LLM_ALLOW_PRIVATE_ENDPOINTS; the ASR
+        # path has nothing) and its own security-reviewed PR. See GH issue filed for
+        # this gap.
+        self._base = os.environ.get("GLADIA_API_BASE_URL") or "https://api.gladia.io"
 
     @property
     def provider_name(self) -> str:
@@ -65,7 +72,7 @@ class GladiaProvider(ASRProvider):
         except ImportError:
             return False, "requests not installed. Run: pip install requests", 0.0
         try:
-            r = requests.get(f"{self._BASE}/v2/live", headers=self._hdr(), timeout=10)
+            r = requests.get(f"{self._base}/v2/live", headers=self._hdr(), timeout=10)
             ms = (time.time() - start) * 1000
             if r.status_code == 401:
                 return False, "Invalid Gladia API key", ms
@@ -106,7 +113,7 @@ class GladiaProvider(ASRProvider):
                 # The multipart part MUST carry a filename + content-type, else Gladia
                 # rejects with 400 "Missing audio file".
                 up = requests.post(
-                    f"{self._BASE}/v2/upload",
+                    f"{self._base}/v2/upload",
                     headers={"x-gladia-key": self._api_key},
                     files={"audio": (filename, f, content_type)},
                     timeout=300,
@@ -143,7 +150,7 @@ class GladiaProvider(ASRProvider):
 
         try:
             job_r = requests.post(
-                f"{self._BASE}/v2/transcription", headers=self._hdr(), json=body, timeout=30
+                f"{self._base}/v2/transcription", headers=self._hdr(), json=body, timeout=30
             )
             job_r.raise_for_status()
         except Exception as exc:

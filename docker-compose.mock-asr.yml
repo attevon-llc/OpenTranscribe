@@ -41,6 +41,12 @@ services:
     working_dir: /app
     environment:
       MOCK_ASR_FIXTURE_PATH: /app/fixtures/sample_transcript.json
+      # Selects the canned response scenario (ok/error/malformed/upload-reject,
+      # see mock-asr-server.py). Must be listed here to actually reach the
+      # container -- MOCK_ASR_SCENARIO=... docker compose up only makes the
+      # var visible to compose's own ${...} interpolation, not the container,
+      # unless the service's environment block references it explicitly.
+      MOCK_ASR_SCENARIO: ${MOCK_ASR_SCENARIO:-ok}
     volumes:
       - ./scripts/mock-asr-server.py:/app/mock-asr-server.py:ro
       - ./backend/tests/fixtures/media/sample_transcript.json:/app/fixtures/sample_transcript.json:ro

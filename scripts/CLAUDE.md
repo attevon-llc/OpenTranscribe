@@ -202,7 +202,10 @@ this file is for.
   the backend image (`DOWNLOAD_ALL_OPENSEARCH_MODELS`, `OPENSEARCH_MODELS`, `WHISPER_MODEL`).
   `fix-model-permissions.sh` chowns the cache to **`$CONTAINER_UID_GID`** (`scripts/common.sh`,
   default **1000:999**) — `appuser` is `useradd -u 1000` but `groupadd -r`, so its GID is 999,
-  not 1000 (issue #580). Never hardcode `1000:1000` in a new chown.
+  not 1000 (issue #580). Never hardcode `1000:1000` in a new chown. `1000:999` has no static
+  source of truth — `Dockerfile.prod` uses `groupadd -r` with no GID pin, so the GID is
+  whatever the base image leaves free. `backend/tests/integration/test_chown_scripts_real_tree.py`
+  derives it from the built image; a base-image bump that moves it fails there.
 - **Fixtures** — `seed-fresh-deployment.sh`, `setup-watch-source-test-data.sh`, `test-watch-e2e.sh`.
 - **Release rehearsals** — `release-tests/`: `test-fresh-install.sh`, `test-upgrade.sh`
   (both auto-detect FROM/TO — see `lib/versions.sh`), and `test-lite-mode.sh` (no

@@ -525,7 +525,11 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
     local target="$TEST_ROOT/install/opentranscribe"
     [[ -d "$target" ]] || target="$TEST_ROOT/install"
     pushd "$target" >/dev/null
-    MOCK_ASR_SCENARIO=error docker compose -f docker-compose.mock-asr.yml up -d --force-recreate mock-asr
+    MOCK_ASR_SCENARIO=error docker compose \
+        -f docker-compose.yml -f docker-compose.prod.yml \
+        -f docker-compose.lite.yml \
+        -f docker-compose.mock-asr.yml -f docker-compose.mock-llm.yml \
+        up -d --force-recreate --no-deps mock-asr
     popd >/dev/null
     sleep 3
 
@@ -563,7 +567,11 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
     fi
 
     pushd "$target" >/dev/null
-    MOCK_ASR_SCENARIO=ok docker compose -f docker-compose.mock-asr.yml up -d --force-recreate mock-asr
+    MOCK_ASR_SCENARIO=ok docker compose \
+        -f docker-compose.yml -f docker-compose.prod.yml \
+        -f docker-compose.lite.yml \
+        -f docker-compose.mock-asr.yml -f docker-compose.mock-llm.yml \
+        up -d --force-recreate --no-deps mock-asr
     popd >/dev/null
 
     as_summary | tee -a "$TEST_REPORT_FILE"

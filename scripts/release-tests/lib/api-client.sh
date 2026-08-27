@@ -272,12 +272,13 @@ ac_search() {
 
 # ac_create_asr_config PROVIDER BASE_URL API_KEY [NAME]
 #
-# POST /api/... registers a cloud ASR provider config. Shape mirrors what
-# backend/tests/fixtures/mock_asr.py's register_mock_gladia_asr_config
-# validates against the real API (see backend/tests/integration/
-# test_lite_mode_mocked_providers.py, Phase 3) — provider=gladia, a
-# test-only base_url override, and any non-empty api_key. Echoes the new
-# config's uuid.
+# POST /api/... registers a cloud ASR provider config, then activates it via
+# POST /asr-settings/set-active (config_uuid) — mirrors the two-step sequence
+# backend/tests/fixtures/mock_asr.py's register_mock_gladia_asr_config uses
+# against the real API (see backend/tests/integration/
+# test_lite_mode_mocked_providers.py, Phase 3). model_name is a required
+# field on UserASRSettingsCreate (backend/app/schemas/asr_settings.py) —
+# omitting it 422s. Echoes the new config's uuid.
 ac_create_asr_config() {
     local provider="$1" base_url="$2" api_key="$3"
     local name="${4:-release-test-${provider}-$(date +%s)}"
@@ -288,23 +289,30 @@ import json, sys
 print(json.dumps({
     "name": sys.argv[1],
     "provider": sys.argv[2],
+    "model_name": "default",
     "base_url": sys.argv[3],
     "api_key": sys.argv[4],
 }))
 ' "$name" "$provider" "$base_url" "$api_key")
-    local body
+    local body config_uuid
     body=$(ac_curl -X POST "$API_BASE/asr-settings" \
         -H "Content-Type: application/json" \
         -d "$payload") || ac_die "ASR config creation failed"
-    echo "$body" | python3 -c 'import sys,json; print(json.load(sys.stdin)["uuid"])'
+    config_uuid=$(echo "$body" | python3 -c 'import sys,json; print(json.load(sys.stdin)["uuid"])')
+    ac_curl -X POST "$API_BASE/asr-settings/set-active" \
+        -H "Content-Type: application/json" \
+        -d "{\"config_uuid\": \"$config_uuid\"}" >/dev/null || ac_die "ASR config activation failed"
+    echo "$config_uuid"
 }
 
 # ac_create_llm_config PROVIDER MODEL_NAME BASE_URL API_KEY [NAME]
 #
 # Mirrors the POST /api/llm-settings payload validated in
 # test_lite_mode_mocked_providers.py's TestMockedAsrPlusMockedLlm — provider
-# "custom" pointed at the mock-llm OpenAI-compatible server. Echoes the new
-# config's uuid.
+# "custom" pointed at the mock-llm OpenAI-compatible server. Then activates
+# it via POST /llm-settings/set-active (configuration_id — this endpoint's
+# field name, per schemas/llm_settings.py's SetActiveConfigRequest, differs
+# from the ASR endpoint's config_uuid). Echoes the new config's uuid.
 ac_create_llm_config() {
     local provider="$1" model_name="$2" base_url="$3" api_key="$4"
     local name="${5:-release-test-${provider}-$(date +%s)}"
@@ -320,11 +328,15 @@ print(json.dumps({
     "api_key": sys.argv[5],
 }))
 ' "$name" "$provider" "$model_name" "$base_url" "$api_key")
-    local body
+    local body config_uuid
     body=$(ac_curl -X POST "$API_BASE/llm-settings" \
         -H "Content-Type: application/json" \
         -d "$payload") || ac_die "LLM config creation failed"
-    echo "$body" | python3 -c 'import sys,json; print(json.load(sys.stdin)["uuid"])'
+    config_uuid=$(echo "$body" | python3 -c 'import sys,json; print(json.load(sys.stdin)["uuid"])')
+    ac_curl -X POST "$API_BASE/llm-settings/set-active" \
+        -H "Content-Type: application/json" \
+        -d "{\"configuration_id\": \"$config_uuid\"}" >/dev/null || ac_die "LLM config activation failed"
+    echo "$config_uuid"
 }
 
 # ac_chat_completion LLM_CONFIG_UUID FILE_UUID QUESTION

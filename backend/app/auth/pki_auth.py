@@ -1761,6 +1761,7 @@ def sync_pki_user_to_db(db, pki_data: PKIUserData):
             so a refusal is not an oracle for "this address exists".
     """
     from app.auth.account_linking import assert_email_link_permitted
+    from app.auth.account_linking import assert_provider_id_link_permitted
     from app.auth.constants import AUTH_TYPE_LOCAL
     from app.models.user import User
 
@@ -1769,10 +1770,21 @@ def sync_pki_user_to_db(db, pki_data: PKIUserData):
 
     # Check if user exists by pki_subject_dn first (most specific)
     user = db.query(User).filter(User.pki_subject_dn == subject_dn).first()
+    if user:
+        # A stored pki_subject_dn is not necessarily a deliberate admin link — JIT
+        # provisioning stamps it on ordinary first logins too, so a reissued/
+        # reassigned DN still needs the corroboration/super_admin guard.
+        assert_provider_id_link_permitted(
+            user,
+            provider=AUTH_TYPE_PKI,
+            source_identifier=subject_dn,
+            asserted_email=email,
+            failure_detail="Invalid or missing client certificate",
+            failure_headers={"WWW-Authenticate": "Certificate"},
+        )
     if not user and email:
-        # The email fallback links this certificate to a PRE-EXISTING account, so it
-        # is gated. An account already carrying this subject DN was linked
-        # deliberately at some earlier point and is not re-litigated.
+        # The email fallback links this certificate to a PRE-EXISTING account,
+        # so it is gated too.
         user = db.query(User).filter(User.email == email).first()
         if user:
             assert_email_link_permitted(

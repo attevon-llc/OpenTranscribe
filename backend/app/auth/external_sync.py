@@ -60,11 +60,18 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
     the external provider (local password cleared), mirroring the OIDC
     conversion semantics — but ONLY when the IdP asserts the email is
     verified, and NEVER for super_admin accounts (platform-owner accounts
-    must be linked deliberately, not via self-serve IdP registration).
+    must be linked deliberately, not via self-serve IdP registration). The
+    provider-id-match branch is gated too, via the shared
+    ``account_linking.assert_provider_id_link_permitted`` rule: never
+    super_admin, and the identity's asserted email (when it asserts one) must
+    still agree with the account's stored address — a stored external_id is
+    not necessarily a deliberate link, since this same JIT path is what set it
+    on an ordinary first login.
 
     Raises:
-        PermissionError: when an email-matched link is refused (unverified
-            email or super_admin target). Callers treat this as 401.
+        PermissionError: when an email-matched or provider-id-matched link is
+            refused (unverified email, a corroboration mismatch, or a
+            super_admin target). Callers treat this as 401.
     """
     from sqlalchemy.exc import IntegrityError
 
@@ -73,6 +80,30 @@ def sync_external_user_to_db(db: Session, identity: ExternalIdentity) -> User:
     email = identity.email or f"{identity.external_id}@{identity.provider}.local"
 
     user = db.query(User).filter(getattr(User, id_col) == identity.external_id).first()
+    if user:
+        # A stored external_id is not necessarily a deliberate admin link — JIT
+        # provisioning stamps it on ordinary first logins too, so a reused or
+        # reassigned identifier still needs the corroboration/super_admin guard.
+        # Uses the shared account_linking rule rather than the inline checks
+        # below (which are this module's own pre-existing guard for the
+        # EMAIL-match branch only).
+        from fastapi import HTTPException
+
+        from app.auth.account_linking import assert_provider_id_link_permitted
+
+        try:
+            assert_provider_id_link_permitted(
+                user,
+                provider=identity.provider,
+                source_identifier=identity.external_id,
+                asserted_email=identity.email,
+                failure_detail="External identity could not be verified",
+            )
+        except HTTPException as exc:
+            # This module's callers expect PermissionError, not HTTPException —
+            # translate so both refusal paths raise the same exception type.
+            raise PermissionError(str(exc.detail)) from exc
+
     matched_by_email = False
     if not user and identity.email:
         user = db.query(User).filter(User.email == identity.email).first()

@@ -31,8 +31,8 @@ _PRINT_FIELD_TEMPLATE = "from app.core.config import Settings; print(Settings().
 # every case here) covering bool, int, float, and int | None field types.
 #
 # NOTE on the two bool cases: MFA_REQUIRE_REDIS and PKI_REVOCATION_SOFT_FAIL are the
-# only bool fields chosen here, deliberately -- both were rebuilt as `bool | None = None`
-# literals resolved post-construction (Group E). Every OTHER bool field in this file
+# only bool fields chosen here, deliberately -- both are `bool | None = None`
+# literals resolved post-construction in `validate_auth_settings`. Every OTHER bool field in this file
 # still computes its default as `os.getenv("FIELD", "true").lower() == "true"` in the
 # class body, evaluated ONCE at import time using the process's actual os.environ at
 # that moment. If such a field's env var is ALSO blank at import (not just at
@@ -43,8 +43,8 @@ _PRINT_FIELD_TEMPLATE = "from app.core.config import Settings; print(Settings().
 # test_every_env_example_blank_var_constructs below), so this is a latent, out-of-scope
 # landmine rather than a live bug -- flagged here rather than silently worked around.
 _REPRESENTATIVE_FIELDS = [
-    ("MFA_REQUIRE_REDIS", "True"),  # bool | None, resolved post-construction (Group E)
-    ("PKI_REVOCATION_SOFT_FAIL", "False"),  # bool | None, resolved post-construction (Group E)
+    ("MFA_REQUIRE_REDIS", "True"),  # bool | None, resolved post-construction
+    ("PKI_REVOCATION_SOFT_FAIL", "False"),  # bool | None, resolved post-construction
     ("SMTP_PORT", "587"),  # plain int
     ("PBKDF2_ITERATIONS", "210000"),  # plain int
     ("MAX_SPEAKERS", "20"),  # plain int
@@ -144,10 +144,12 @@ def test_computed_default_fields_resolve_to_non_empty_values(
     assert celery_broker.startswith(("redis://", "rediss://")), celery_broker
     assert celery_backend.startswith(("redis://", "rediss://")), celery_backend
     assert s3_region, "S3_REGION must not be empty"
-    # BEDROCK_REGION's own fallback chain legitimately ends in "" when neither
-    # AWS_REGION nor AWS_DEFAULT_REGION is set -- just prove it isn't crashing or
-    # silently discarding an AWS_REGION that WAS set (covered directly below).
-    assert bedrock_region == ""
+    # BEDROCK_REGION falls back to the RESOLVED AWS_REGION field (which itself
+    # defaults to "us-east-1"), not to a raw, possibly-blank os.environ read -- so
+    # with every .env.example blank shipped as intended, it resolves to that same
+    # default rather than landing on "". Covered directly below: an AWS_REGION that
+    # was explicitly SET still flows through correctly.
+    assert bedrock_region == "us-east-1"
 
 
 def test_blank_database_url_and_redis_url_genuinely_recompute(

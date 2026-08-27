@@ -415,7 +415,7 @@ class DynamicAuthSettings:
         Fail-open when True. This is the key whose inertness mattered most: an
         operator hardening a deployment by turning it off got no change at all.
         """
-        return self.get_bool("pki_revocation_soft_fail", settings.PKI_REVOCATION_SOFT_FAIL)
+        return self.get_bool("pki_revocation_soft_fail", bool(settings.PKI_REVOCATION_SOFT_FAIL))
 
     # Trusted-header (reverse-proxy) Settings Properties
     #

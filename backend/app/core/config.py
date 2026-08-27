@@ -507,6 +507,8 @@ class Settings(BaseSettings):
     OPENSEARCH_AUTH: str = os.getenv("OPENSEARCH_AUTH", "basic")  # basic | sigv4
     # Signing region and service for OPENSEARCH_AUTH=sigv4. "es" is a managed domain;
     # "aoss" is OpenSearch Serverless (a different signing service name).
+    # Plain "" default; resolved to AWS_REGION in `validate_auth_settings` below when
+    # empty — same self-referential-default bug as S3_REGION/BEDROCK_REGION.
     OPENSEARCH_AWS_REGION: str = os.getenv("OPENSEARCH_AWS_REGION", "")  # empty -> AWS_REGION
     OPENSEARCH_AWS_SERVICE: str = os.getenv("OPENSEARCH_AWS_SERVICE", "es")  # es | aoss
     OPENSEARCH_TRANSCRIPT_INDEX: str = "transcripts"
@@ -726,14 +728,17 @@ class Settings(BaseSettings):
 
         # Resolve the environment-conditional defaults that can't live in a plain
         # class-body `os.getenv(key, default)` expression — see MFA_REQUIRE_REDIS's
-        # declaration above for why. Recomputed whenever the RAW env var is absent
-        # or empty (checked directly on `os.environ`, not on the resolved field —
-        # by this point pydantic-settings has already collapsed "genuinely unset"
-        # and "explicitly false" onto the same `False`, so the field alone can't
-        # distinguish them). An explicit non-empty env value is left untouched.
-        if not os.environ.get("MFA_REQUIRE_REDIS"):
+        # declaration above for why. Both fields are `bool | None`, so pydantic-settings
+        # itself already distinguishes "genuinely unset" (`None`) from "explicitly set"
+        # (a real `True`/`False`, including an explicit `false`/`0` from a .env FILE —
+        # `env_ignore_empty` only skips a truly empty string, not a literal false value).
+        # Checking `self.<field> is None` here (instead of re-reading raw `os.environ`)
+        # is what makes this resolve correctly regardless of whether the value came from
+        # process env, a `.env` file, or Docker Compose's `env_file:` — all three are
+        # already merged onto `self` by pydantic-settings before this validator runs.
+        if self.MFA_REQUIRE_REDIS is None:
             self.MFA_REQUIRE_REDIS = not is_relaxed_environment(self.ENVIRONMENT)
-        if not os.environ.get("PKI_REVOCATION_SOFT_FAIL"):
+        if self.PKI_REVOCATION_SOFT_FAIL is None:
             self.PKI_REVOCATION_SOFT_FAIL = is_relaxed_environment(self.ENVIRONMENT)
 
         # Same bug class, for str fields whose default is assembled from other
@@ -756,11 +761,19 @@ class Settings(BaseSettings):
         if not self.CELERY_RESULT_BACKEND:
             self.CELERY_RESULT_BACKEND = self.REDIS_URL
         if not self.S3_REGION:
-            self.S3_REGION = os.environ.get("AWS_REGION") or "us-east-1"
+            self.S3_REGION = self.AWS_REGION or "us-east-1"
         if not self.BEDROCK_REGION:
-            self.BEDROCK_REGION = (
-                os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or ""
-            )
+            self.BEDROCK_REGION = self.AWS_REGION or os.environ.get("AWS_DEFAULT_REGION") or ""
+        if not self.OPENSEARCH_AWS_REGION:
+            self.OPENSEARCH_AWS_REGION = self.AWS_REGION
+
+        # Resolve the LDAP search filter's `{username_attr}` placeholder from the
+        # resolved LDAP_USERNAME_ATTR field — same bug class as MFA_REQUIRE_REDIS
+        # above, a plain-field default instead of a class-body expression computed
+        # from another env var. See LDAP_USER_SEARCH_FILTER's declaration.
+        self.LDAP_USER_SEARCH_FILTER = self.LDAP_USER_SEARCH_FILTER.replace(
+            "{username_attr}", self.LDAP_USERNAME_ATTR
+        )
 
         _validate_ldap_settings(self)
         _validate_oidc_settings(self)
@@ -837,9 +850,12 @@ class Settings(BaseSettings):
     LDAP_BIND_PASSWORD: str = os.getenv("LDAP_BIND_PASSWORD", "")
     LDAP_SEARCH_BASE: str = os.getenv("LDAP_SEARCH_BASE", "")
     LDAP_USERNAME_ATTR: str = os.getenv("LDAP_USERNAME_ATTR", "sAMAccountName")
-    LDAP_USER_SEARCH_FILTER: str = os.getenv(
-        "LDAP_USER_SEARCH_FILTER", "({username_attr}={username})"
-    ).replace("{username_attr}", os.getenv("LDAP_USERNAME_ATTR", "sAMAccountName"))
+    # Plain field default (not a class-body expression computed from another
+    # os.getenv call) resolved in `validate_auth_settings` below — same bug class
+    # as MFA_REQUIRE_REDIS/DATABASE_URL: the old class-body `.replace(...)` chain
+    # ran once at class-definition time against `os.getenv`, so it never saw a
+    # value that pydantic-settings later sourced from a real .env FILE.
+    LDAP_USER_SEARCH_FILTER: str = "({username_attr}={username})"
     LDAP_EMAIL_ATTR: str = os.getenv("LDAP_EMAIL_ATTR", "mail")
     LDAP_NAME_ATTR: str = os.getenv("LDAP_NAME_ATTR", "cn")
     LDAP_TIMEOUT: int = 10
@@ -993,13 +1009,12 @@ class Settings(BaseSettings):
     # form computed its conditional default via `os.getenv(key, computed_default)`,
     # but `os.getenv` only substitutes its default when the var is UNSET — a var
     # set to the EMPTY string ("" — `.env.example`'s "use the coded default"
-    # convention) still returns "" and skips the conditional default entirely,
-    # silently landing on False regardless of environment. The literal `False`
-    # default here is a placeholder only: `validate_auth_settings` unconditionally
-    # recomputes it whenever the raw env var is absent or empty, using
-    # `is_relaxed_environment(self.ENVIRONMENT)` — an explicit non-empty env value
-    # is left untouched (pydantic-settings already resolved it correctly).
-    MFA_REQUIRE_REDIS: bool = False
+    # convention) previously still returned "" and skipped the conditional default
+    # entirely, silently landing on False regardless of environment. Now `bool | None`:
+    # `None` unambiguously means "unset", so `validate_auth_settings` can distinguish
+    # that from an explicit `false` and only recompute the environment-conditional
+    # default when the field is still `None`, using `is_relaxed_environment(self.ENVIRONMENT)`.
+    MFA_REQUIRE_REDIS: bool | None = None
 
     # ===== PKI/X.509 Certificate Configuration =====
     PKI_ENABLED: bool = os.getenv("PKI_ENABLED", "false").lower() == "true"
@@ -1022,11 +1037,11 @@ class Settings(BaseSettings):
     PKI_OCSP_TIMEOUT_SECONDS: int = 5
     PKI_CRL_CACHE_SECONDS: int = 3600  # Cache CRL for 1 hour
     # Soft-fail allows authentication if revocation check fails (network issues)
-    # Defaults to false in production (strict revocation checking). Plain `bool`
+    # Defaults to false in production (strict revocation checking). `bool | None`
     # field, resolved in `validate_auth_settings` below — see MFA_REQUIRE_REDIS
     # above for why this can't be a class-body `os.getenv(key, computed_default)`
-    # expression, and why it isn't `bool | None` either.
-    PKI_REVOCATION_SOFT_FAIL: bool = False
+    # expression, and why `None` (not a literal `False`) is what marks it unset.
+    PKI_REVOCATION_SOFT_FAIL: bool | None = None
     # Maximum cache size for OCSP responses (LRU eviction when exceeded)
     PKI_OCSP_CACHE_MAX_SIZE: int = 1000
     # Maximum cache size for CRLs (LRU eviction when exceeded)

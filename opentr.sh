@@ -162,7 +162,7 @@ show_help() {
   echo "  reset [dev|prod] [options]             - Reset and reinitialize (deletes all data!)"
   echo "                                           (Accepts same options as 'start' command)"
   echo "  backup [--encrypt]  - Create a database backup (--encrypt: GPG AES-256, no plaintext on disk)"
-  echo "  restore [file]      - Restore database from backup (.sql or .gpg)"
+  echo "  restore [--yes] [--no-safety-dump] <file>  - REPLACE the database from a backup (.sql or .gpg) — destructive"
   echo ""
   echo "Development Commands:"
   echo "  restart-backend     - Restart backend, all celery workers, celery-beat & flower without database reset"
@@ -2724,10 +2724,16 @@ backup_database() {
   BACKUP_FILE="opentranscribe_backup_${TIMESTAMP}.sql"
   mkdir -p ./backups
 
+  # Respect a non-default DB name/user rather than hardcoding `postgres opentranscribe`
+  # (issue #599 correction 7) — harmless for backup on its own, but restore's DROP
+  # DATABASE must target the same names or it silently touches the wrong database.
+  local db_user="${POSTGRES_USER:-postgres}"
+  local db_name="${POSTGRES_DB:-opentranscribe}"
+
   if [[ "$ENCRYPT_BACKUP" == true ]]; then
     echo "📦 Creating encrypted database backup: ${BACKUP_FILE}.gpg..."
     # Subshell with pipefail so a pg_dump failure isn't masked by gpg succeeding
-    if (set -o pipefail; docker compose exec -T postgres pg_dump -U postgres opentranscribe \
+    if (set -o pipefail; docker compose exec -T postgres pg_dump -U "$db_user" "$db_name" \
         | gpg --symmetric --cipher-algo AES256 --output "./backups/${BACKUP_FILE}.gpg"); then
       echo "✅ Encrypted backup created successfully: ./backups/${BACKUP_FILE}.gpg"
       echo "   Restore with: ./opentr.sh restore ./backups/${BACKUP_FILE}.gpg"
@@ -2738,7 +2744,7 @@ backup_database() {
     fi
   else
     echo "📦 Creating database backup: ${BACKUP_FILE}..."
-    if docker compose exec -T postgres pg_dump -U postgres opentranscribe > "./backups/${BACKUP_FILE}"; then
+    if docker compose exec -T postgres pg_dump -U "$db_user" "$db_name" > "./backups/${BACKUP_FILE}"; then
       echo "✅ Backup created successfully: ./backups/${BACKUP_FILE}"
       echo "ℹ️  Tip: backups contain all user transcripts in plaintext - use './opentr.sh backup --encrypt' for off-box storage."
     else
@@ -2748,59 +2754,211 @@ backup_database() {
   fi
 }
 
-# Function to restore database from backup
+# Function to restore database from backup (issue #599)
+#
+# A plain `pg_dump` file carries no DROP/--clean statements, so replaying it into an
+# already-populated database makes every statement fail — and without ON_ERROR_STOP,
+# psql exits 0 anyway and prints "success" while nothing changed. Worse, the dump's
+# alembic_version INSERT does not collide on primary key with a drifted row already
+# present, so it succeeds while every data-table COPY fails — leaving TWO rows in
+# alembic_version, which Alembic can no longer migrate from. This restores by
+# guaranteeing an empty target (DROP DATABASE ... WITH (FORCE) + CREATE), replaying
+# inside a single transaction (so a mid-dump failure rolls back to nothing rather
+# than a hybrid schema), and verifying the result before ever reporting success.
+#
+# Usage: restore_database [--yes|-y] [--no-safety-dump] <file>
 restore_database() {
-  BACKUP_FILE=$1
+  local skip_confirm=false
+  local skip_safety_dump=false
+  local backup_file=""
 
-  if [ -z "$BACKUP_FILE" ]; then
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --yes|-y)
+        skip_confirm=true
+        shift
+        ;;
+      --no-safety-dump)
+        skip_safety_dump=true
+        shift
+        ;;
+      -*)
+        echo "❌ Error: unknown restore option: $1"
+        echo "Usage: ./opentr.sh restore [--yes] [--no-safety-dump] <backup_file>"
+        exit 1
+        ;;
+      *)
+        backup_file="$1"
+        shift
+        ;;
+    esac
+  done
+
+  if [ -z "$backup_file" ]; then
     echo "❌ Error: Backup file not specified."
-    echo "Usage: ./opentr.sh restore [backup_file]"
+    echo "Usage: ./opentr.sh restore [--yes] [--no-safety-dump] <backup_file>"
     exit 1
   fi
 
-  if [ ! -f "$BACKUP_FILE" ]; then
-    echo "❌ Error: Backup file not found: $BACKUP_FILE"
+  if [ ! -f "$backup_file" ]; then
+    echo "❌ Error: Backup file not found: $backup_file"
     exit 1
   fi
 
   # Transparently decrypt GPG-encrypted backups (created with './opentr.sh backup --encrypt')
-  RESTORE_SOURCE="$BACKUP_FILE"
-  TEMP_SQL=""
-  case "$BACKUP_FILE" in
+  local restore_source="$backup_file"
+  local temp_sql=""
+  case "$backup_file" in
     *.gpg|*.asc)
       if ! command -v gpg &> /dev/null; then
         echo "❌ Error: gpg is required to restore encrypted backups (e.g. 'apt install gnupg')."
         exit 1
       fi
       echo "🔓 Decrypting backup..."
-      TEMP_SQL=$(mktemp ./backups/.restore_XXXXXX)
-      if ! gpg --yes --output "$TEMP_SQL" --decrypt "$BACKUP_FILE"; then
-        rm -f "$TEMP_SQL"
+      temp_sql=$(mktemp ./backups/.restore_XXXXXX)
+      if ! gpg --yes --output "$temp_sql" --decrypt "$backup_file"; then
+        rm -f "$temp_sql"
         echo "❌ Decryption failed."
         exit 1
       fi
-      RESTORE_SOURCE="$TEMP_SQL"
+      restore_source="$temp_sql"
       ;;
   esac
 
-  echo "🔄 Restoring database from ${BACKUP_FILE}..."
+  local db_user="${POSTGRES_USER:-postgres}"
+  local db_name="${POSTGRES_DB:-opentranscribe}"
+  local exec_prefix="docker compose exec -T postgres"
+
+  # A custom-format (`pg_dump -Fc`) or directory-format dump starts with the "PGDMP"
+  # magic bytes — psql already fails loudly on one of these (not a silent no-op), but
+  # give the operator the right tool instead of a raw psql parse error.
+  if [ "$(head -c 5 "$restore_source" 2>/dev/null)" = "PGDMP" ]; then
+    echo "❌ Error: $backup_file is a custom-format (pg_restore) dump, not a plain-SQL dump."
+    echo "   Restore it with pg_restore instead, e.g.:"
+    echo "     docker compose exec -T postgres pg_restore -U $db_user -d $db_name - < $backup_file"
+    [ -n "$temp_sql" ] && rm -f "$temp_sql"
+    exit 1
+  fi
+
+  # Read the dump's own alembic head BEFORE anything destructive so it survives the
+  # drop — pg_verify_restore needs the file, but the confirmation prompt below wants
+  # to show it to the operator too.
+  local expected_head
+  expected_head="$(awk '/^COPY public\.alembic_version /{getline; print; exit}' "$restore_source")"
+
+  echo "🔄 Restoring database from ${backup_file}..."
+
+  if [ "$skip_confirm" != true ]; then
+    if [ ! -t 0 ]; then
+      echo "❌ Refusing to restore without confirmation on a non-interactive terminal."
+      echo "   Re-run with --yes to confirm non-interactively: ./opentr.sh restore --yes $backup_file"
+      [ -n "$temp_sql" ] && rm -f "$temp_sql"
+      exit 4
+    fi
+
+    local current_head current_media current_segments current_users backup_mtime
+    current_head="$($exec_prefix psql -tA -U "$db_user" "$db_name" -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
+    current_head="${current_head:-unknown}"
+    current_media="$($exec_prefix psql -tA -U "$db_user" "$db_name" -c "SELECT count(*) FROM media_file;" 2>/dev/null | tr -d '[:space:]')"
+    current_media="${current_media:-unknown}"
+    current_segments="$($exec_prefix psql -tA -U "$db_user" "$db_name" -c "SELECT count(*) FROM transcript_segment;" 2>/dev/null | tr -d '[:space:]')"
+    current_segments="${current_segments:-unknown}"
+    current_users="$($exec_prefix psql -tA -U "$db_user" "$db_name" -c 'SELECT count(*) FROM "user";' 2>/dev/null | tr -d '[:space:]')"
+    current_users="${current_users:-unknown}"
+    backup_mtime="$(stat -c '%y' "$backup_file" 2>/dev/null || stat -f '%Sm' "$backup_file" 2>/dev/null || echo "unknown")"
+
+    echo ""
+    echo "⚠️  About to REPLACE database \"$db_name\" from backup file dated: $backup_mtime"
+    echo ""
+    echo "   Current database:"
+    echo "     - alembic head:        $current_head"
+    echo "     - media_file rows:      $current_media"
+    echo "     - transcript_segment rows: $current_segments"
+    echo "     - user rows:            $current_users"
+    echo "   Backup file:"
+    echo "     - alembic head:        ${expected_head:-unknown}"
+    echo ""
+    echo "   This DROPS the current database and recreates it from the backup."
+    echo "   Everything written since that backup is destroyed."
+    if [ "$skip_safety_dump" != true ]; then
+      echo "   A safety dump of the CURRENT database will be written first, to ./backups/pre-restore_<timestamp>.sql"
+    else
+      echo "   ⚠️  --no-safety-dump: no safety dump will be taken. The current database is NOT recoverable after this."
+    fi
+    echo ""
+    echo "   ⚠️  MinIO (media files) and OpenSearch (search indices) are NOT rolled back with the"
+    echo "   database — restoring only PostgreSQL creates a time skew (media with no row, rows with"
+    echo "   no media, stale search hits). Reindex from Admin → Search afterwards."
+    echo ""
+    printf '   Type the database name ("%s") to confirm, anything else cancels: ' "$db_name"
+    local confirm_name
+    read -r confirm_name
+    if [ "$confirm_name" != "$db_name" ]; then
+      echo "❌ Restore cancelled."
+      [ -n "$temp_sql" ] && rm -f "$temp_sql"
+      exit 4
+    fi
+  fi
 
   # Stop services that use the database
   docker compose stop backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
 
-  # Restore the database
-  if docker compose exec -T postgres psql -U postgres opentranscribe < "$RESTORE_SOURCE"; then
-    [ -n "$TEMP_SQL" ] && rm -f "$TEMP_SQL"
-    echo "✅ Database restored successfully."
-    echo "🔄 Restarting services..."
-    docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
-  else
-    [ -n "$TEMP_SQL" ] && rm -f "$TEMP_SQL"
-    echo "❌ Database restore failed."
-    echo "🔄 Restarting services anyway..."
-    docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
+  local restart_services=(docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat)
+
+  # Pre-restore safety dump — fail CLOSED: if we can't dump the current database, we
+  # refuse to drop it. This is what makes the destructive step below reversible.
+  local safety_dump_file=""
+  if [ "$skip_safety_dump" != true ]; then
+    safety_dump_file="./backups/pre-restore_$(date +%Y%m%d_%H%M%S).sql"
+    echo "🛡️  Taking a safety dump of the current database: $safety_dump_file"
+    if ! $exec_prefix pg_dump -U "$db_user" "$db_name" > "$safety_dump_file"; then
+      rm -f "$safety_dump_file"
+      echo "❌ Could not dump the current database — refusing to drop it."
+      "${restart_services[@]}"
+      [ -n "$temp_sql" ] && rm -f "$temp_sql"
+      exit 1
+    fi
+  fi
+
+  echo "🗑️  Dropping and recreating database \"$db_name\"..."
+  if ! pg_drop_and_recreate_database "$exec_prefix" "$db_user" "$db_name"; then
+    echo "❌ Could not drop/recreate the database."
+    [ -n "$safety_dump_file" ] && echo "   The current database's safety dump is at: $safety_dump_file"
+    "${restart_services[@]}"
+    [ -n "$temp_sql" ] && rm -f "$temp_sql"
     exit 1
   fi
+
+  echo "📥 Replaying backup into \"$db_name\"..."
+  if ! pg_replay_dump "$exec_prefix" "$db_user" "$db_name" "$restore_source"; then
+    echo "❌ Database restore failed — the database is now empty (the failed replay rolled back)."
+    if [ -n "$safety_dump_file" ]; then
+      echo "   Recover the previous state with:"
+      echo "     ./opentr.sh restore --yes $safety_dump_file"
+    else
+      echo "   No safety dump was taken (--no-safety-dump) — the previous state is not recoverable here."
+    fi
+    "${restart_services[@]}"
+    [ -n "$temp_sql" ] && rm -f "$temp_sql"
+    exit 1
+  fi
+
+  echo "🔍 Verifying restore..."
+  if ! pg_verify_restore "$exec_prefix" "$db_user" "$db_name" "$restore_source"; then
+    echo "❌ Restore verification failed — the database does not match the backup. See the mismatch(es) above."
+    [ -n "$safety_dump_file" ] && echo "   The current (unverified) database's pre-restore safety dump is at: $safety_dump_file"
+    "${restart_services[@]}"
+    [ -n "$temp_sql" ] && rm -f "$temp_sql"
+    exit 1
+  fi
+
+  [ -n "$temp_sql" ] && rm -f "$temp_sql"
+  echo "🔄 Restarting services..."
+  "${restart_services[@]}"
+  echo "✅ Database restored successfully."
+  echo "ℹ️  MinIO and OpenSearch were NOT rolled back — reindex from Admin → Search if the"
+  echo "   restored database's file list differs from what MinIO/OpenSearch currently have."
+  [ -n "$safety_dump_file" ] && echo "   Pre-restore safety dump of the database this replaced: $safety_dump_file"
 }
 
 # Function to restart backend services (backend, all celery workers, flower) without database reset
@@ -3141,7 +3299,8 @@ case "$1" in
     ;;
 
   restore)
-    restore_database "${2:-}"
+    shift  # Remove 'restore' command
+    restore_database "$@"  # Pass all remaining arguments (flags + file)
     ;;
 
   restart-backend)

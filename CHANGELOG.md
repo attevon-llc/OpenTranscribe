@@ -142,6 +142,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`./opentr.sh restore` silently failed to restore data into a populated database and
+  reported success anyway — and left `alembic_version` with two conflicting rows** (#599,
+  P0). A plain `pg_dump` file carries no `DROP`/`--clean` statements, so replaying it into
+  an already-populated database made every statement fail; without `ON_ERROR_STOP`, `psql`
+  exited 0 regardless. Worse, the backup's `alembic_version` row did not collide on
+  primary key with a drifted row already present, so it inserted successfully while every
+  data-table `COPY` failed — leaving two rows in a table Alembic requires exactly one from,
+  un-migratable without manual repair. `restore` now guarantees an exact restore by
+  dropping and recreating the database (`DROP DATABASE ... WITH (FORCE)`, PG13+) and
+  replaying the dump inside a single transaction, so a failure rolls back to nothing rather
+  than a hybrid schema. It also: takes a mandatory pre-restore safety dump (fails closed if
+  that dump itself fails), requires typing the database name to confirm (not `y`/`n` — a
+  reflexive `y` was judged far more likely for a command whose name sounds recuperative),
+  verifies the restored row/table counts and `alembic_version` before ever printing success,
+  and now reads `POSTGRES_USER`/`POSTGRES_DB` from `.env` instead of hardcoding
+  `postgres`/`opentranscribe` (a non-default name previously meant `backup`/`restore` could
+  silently target the wrong database). `--yes` and `--no-safety-dump` support scripted use.
 - **A watch source importing the same recording twice under two names** (#489). Content dedup
   filtered out the source being scanned, so a folder holding `meeting.mp4` and a renamed copy
   imported both and reported each as fresh. The `duplicate_same_source` skip reason existed in

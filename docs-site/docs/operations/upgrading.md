@@ -188,12 +188,16 @@ If a migration fails on startup:
    ```
 2. **Restore your backup** if the migration left the database in a broken state:
    ```bash
-   docker compose stop backend celery-worker
-   docker compose exec -T postgres psql -U postgres -d opentranscribe \
-     < opentranscribe-backup-YYYYMMDD-HHMMSS.sql
-   docker compose start backend celery-worker
+   ./opentr.sh restore backups/opentranscribe-backup-YYYYMMDD-HHMMSS.sql
    ```
-   (In a git clone, `./opentr.sh restore backups/<file>.sql`.)
+   This replaces the database entirely (drop + recreate + replay + verify) rather than
+   layering the backup over the broken schema — a plain `psql < backup.sql` into an
+   already-populated database fails silently (see
+   [Restore Procedures](./backup-restore.md#restoring-the-database)). It stops the
+   backend/Celery services, prompts for confirmation (`--yes` to skip), takes a safety
+   dump of the current (broken) database first, then restarts services on success.
+   Note this restores **PostgreSQL only** — MinIO and OpenSearch are not rolled back in
+   lockstep, so reindex from Admin → Search afterwards if needed.
 3. **Report the issue** -- migration failures are bugs. File an issue with the error output.
 
 :::note
@@ -210,11 +214,10 @@ If an upgrade causes issues, you can roll back:
 # 1. Stop all services
 docker compose down
 
-# 2. Restore the database backup you made before upgrading
+# 2. Restore the database backup you made before upgrading (drops + recreates + replays +
+#    verifies — see Restore Procedures in Backup & Restore for what this does)
 docker compose up -d postgres
-# Wait for postgres to be ready
-until docker compose exec postgres pg_isready -U postgres; do sleep 2; done
-docker compose exec -T postgres psql -U postgres opentranscribe < backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql
+./opentr.sh restore backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql
 
 # 3. Pull the previous version images
 docker pull davidamacey/opentranscribe-frontend:vPREVIOUS

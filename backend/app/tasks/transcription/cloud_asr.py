@@ -143,6 +143,14 @@ def _run_parallel_cloud_asr_and_diarization(
 
     # ASR failure is fatal — can't proceed without transcript
     if asr_error:
+        # Re-raise a classified error (e.g. ASRRateLimitedError) UNCHANGED, not wrapped in a
+        # plain RuntimeError — wrapping would lose the type transcribe_gpu_task's except
+        # ASRRateLimitedError clause matches on, silently turning off the retry for every job
+        # that goes through this parallel ASR+diarization path (diarization_source="pyannote").
+        from app.services.asr.errors import ASRProviderError
+
+        if isinstance(asr_error, ASRProviderError):
+            raise asr_error
         raise RuntimeError(f"Cloud ASR transcription failed: {asr_error}") from asr_error
 
     # Diarization failure is non-fatal — return ASR result without speakers

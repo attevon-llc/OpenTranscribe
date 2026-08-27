@@ -131,6 +131,19 @@ class RedactionPriority:
 
 
 # =============================================================================
+# Cloud ASR rate-limit retry policy (transcribe_gpu_task's ASRRateLimitedError handler)
+# =============================================================================
+# Separate from the task's autoretry_for=(ConnectionError, TimeoutError) policy — that one's
+# retry_backoff_max=30/max_retries=1 are tuned for a GPU-path connection blip, not a vendor
+# throttle response, which needs a longer backoff ceiling and more attempts. See
+# app/services/asr/errors.py and app/tasks/transcription/core.py.
+
+CLOUD_ASR_RETRY_BASE = 15  # seconds — first retry delay when the vendor gave no Retry-After
+CLOUD_ASR_RETRY_MAX = 300  # seconds — backoff ceiling (5 min)
+CLOUD_ASR_MAX_RETRIES = 5  # attempts, distinct from the GPU path's max_retries=1
+
+
+# =============================================================================
 # Dynamic imports for language support
 # =============================================================================
 

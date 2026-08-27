@@ -14,9 +14,9 @@ polling GET) is mocked, following the network-free provider-test pattern of
    `None` rather than `0.0` or omitted.
 2. **`transcribe()`'s full 5-step orchestration**: the upload-URL request, the audio PUT to
    that URL, job-submission body construction (`numSpeakers`/`minSpeakers`/`maxSpeakers`
-   logic), job-submission error handling via `_err_detail`, the polling loop (poll-error
-   retry, `status == "failed"` handling, progress-callback sequencing), and final
-   `ASRResult`/`has_speakers` assembly.
+   logic), job-submission error handling via `_err_detail`, the polling loop (transport-error
+   retry, non-200/non-401 retry, `status == "failed"`/`"canceled"` handling, progress-callback
+   sequencing), and final `ASRResult`/`has_speakers` assembly.
 3. **The 300-second poll timeout — the SHORTEST of any provider in this codebase.**
    Contrast Gladia's 7200s (`gladia_provider.py`, 720 x 10s) and Azure's 7200s
    (`azure_provider.py`). A long file fails on pyannote.ai before any other cloud ASR
@@ -25,6 +25,13 @@ polling GET) is mocked, following the network-free provider-test pattern of
    unavailable), and the generic-exception-gets-sanitized path.
 5. **`_err_detail()`**: the `httpx.HTTPStatusError` body-extraction branch, its failure
    fallback, and the non-`HTTPStatusError` path that appends no body at all.
+6. **The poll loop's fail-fast rewrite (ported from the sibling diarization provider,
+   `app/services/diarization/pyannote_provider.py`)**: a `401` during polling raises
+   immediately instead of retrying until the 300s timeout and reporting a misleading
+   "timed out" error; a `canceled` status also raises immediately (it used to fall through
+   `status == "failed"`'s check entirely and time out too). Transport errors and every OTHER
+   non-200 status (crucially including `429`) stay transient and keep polling — a rate limit
+   seen mid-poll must not abort a job that may still succeed.
 """
 
 from __future__ import annotations
@@ -593,3 +600,232 @@ def test_transcribe_full_success_assembles_result_and_progress_sequence(tmp_path
     frac, _msg = processing_calls[0]
     assert 0.3 <= frac < 0.86
     assert len(calls) == 7
+
+
+# ── Rate-limit taxonomy (issue Lane 5) — pre-poll sites only ────────────────────────────
+#
+# Only the three PRE-poll HTTP call sites (upload-URL request, audio PUT, job submission)
+# classify 429 as ASRRateLimitedError. The poll loop deliberately does NOT — a 429 seen
+# while polling an already-submitted job must stay transient (see the fail-fast tests
+# below, which pin that only 401 and "canceled" become terminal there).
+
+
+def test_upload_url_request_429_is_classified_as_asr_rate_limited(tmp_path):
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = _make_audio_file(tmp_path)
+    provider = _provider()
+    config = ASRConfig(language="en")
+    rate_limited_resp = _FakeResponse(status_code=429, text="rate limited")
+
+    with (
+        patch("httpx.post", return_value=rate_limited_resp),
+        patch("httpx.put") as mock_put,
+        pytest.raises(ASRRateLimitedError) as excinfo,
+    ):
+        provider.transcribe(audio_path, config)
+
+    assert excinfo.value.provider == "pyannote"
+    mock_put.assert_not_called()
+
+
+def test_audio_upload_put_429_is_classified_as_asr_rate_limited(tmp_path):
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = _make_audio_file(tmp_path)
+    provider = _provider()
+    config = ASRConfig(language="en")
+    upload_url_resp = _FakeResponse(json_data={"url": "https://upload.example.com/put-url"})
+    rate_limited_resp = _FakeResponse(status_code=429, text="rate limited")
+
+    with (
+        patch("httpx.post", return_value=upload_url_resp),
+        patch("httpx.put", return_value=rate_limited_resp),
+        pytest.raises(ASRRateLimitedError) as excinfo,
+    ):
+        provider.transcribe(audio_path, config)
+
+    assert excinfo.value.provider == "pyannote"
+
+
+def test_job_submission_429_is_classified_as_asr_rate_limited(tmp_path):
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = _make_audio_file(tmp_path)
+    provider = _provider()
+    config = ASRConfig(language="en")
+    job_capture: dict[str, dict] = {}
+    upload_url_resp = _FakeResponse(json_data={"url": "https://upload.example.com/put-url"})
+    rate_limited_resp = _FakeResponse(status_code=429, text="rate limited")
+
+    with (
+        patch(
+            "httpx.post",
+            side_effect=_dispatch_post(upload_url_resp, rate_limited_resp, job_capture),
+        ),
+        patch("httpx.put", return_value=_FakeResponse()),
+        pytest.raises(ASRRateLimitedError) as excinfo,
+    ):
+        provider.transcribe(audio_path, config)
+
+    assert excinfo.value.provider == "pyannote"
+
+
+def test_poll_429_stays_transient_and_is_retried_not_raised(tmp_path):
+    """A 429 seen DURING polling must stay transient — the loop's own retry-and-continue
+    is correct there, unlike the three pre-poll sites above. This is the interaction the
+    Item 2 fail-fast rewrite (401/canceled only) depends on: widening the poll loop's
+    terminal set to include 429 would break a job that is still legitimately running.
+    """
+    audio_path = _make_audio_file(tmp_path)
+    provider = _provider()
+    config = ASRConfig(language="en")
+    job_capture: dict[str, dict] = {}
+    upload_url_resp = _FakeResponse(json_data={"url": "https://upload.example.com/put-url"})
+    job_resp = _FakeResponse(json_data={"jobId": "job-1"})
+    rate_limited_resp = _FakeResponse(status_code=429, text="rate limited")
+    succeeded_resp = _FakeResponse(
+        json_data={"status": "succeeded", "output": _quick_succeed_output()}
+    )
+
+    with (
+        patch("httpx.post", side_effect=_dispatch_post(upload_url_resp, job_resp, job_capture)),
+        patch("httpx.put", return_value=_FakeResponse()),
+        patch("httpx.get", side_effect=[rate_limited_resp, succeeded_resp]) as mock_get,
+        patch("time.sleep"),
+    ):
+        result = provider.transcribe(audio_path, config)
+
+    # The 429 during polling did not abort the job — it retried and completed.
+    assert mock_get.call_count == 2
+    assert result.segments[0].text == "hi"
+
+
+def test_upload_url_request_400_stays_a_plain_runtime_error(tmp_path):
+    """Negative control: a non-429 HTTP error must NOT be classified as retryable."""
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = _make_audio_file(tmp_path)
+    provider = _provider()
+    config = ASRConfig(language="en")
+    bad_request_resp = _FakeResponse(status_code=400, text="bad request")
+
+    with (
+        patch("httpx.post", return_value=bad_request_resp),
+        patch("httpx.put"),
+        pytest.raises(RuntimeError, match="pyannote.ai upload URL request failed") as excinfo,
+    ):
+        provider.transcribe(audio_path, config)
+
+    assert not isinstance(excinfo.value, ASRRateLimitedError)
+
+
+# ── Poll loop fail-fast rewrite (Item 2) ─────────────────────────────────────────────────
+
+
+def test_poll_401_raises_immediately_not_as_timeout(tmp_path):
+    """FIXED BUG: a 401 during polling used to be caught by the generic transport-error
+    handler (`raise_for_status()` was inside that try), so it retried silently until the
+    300s timeout and reported "timed out" — not "invalid API key". The mock_get call count
+    proves "immediately": without it this test would also pass on the old timeout path.
+    """
+    audio_path = _make_audio_file(tmp_path)
+    provider = _provider()
+    config = ASRConfig(language="en")
+    job_capture: dict[str, dict] = {}
+    upload_url_resp = _FakeResponse(json_data={"url": "https://upload.example.com/put-url"})
+    job_resp = _FakeResponse(json_data={"jobId": "job-1"})
+    unauthorized_resp = _FakeResponse(status_code=401)
+
+    with (
+        patch("httpx.post", side_effect=_dispatch_post(upload_url_resp, job_resp, job_capture)),
+        patch("httpx.put", return_value=_FakeResponse()),
+        patch("httpx.get", return_value=unauthorized_resp) as mock_get,
+        patch("time.sleep"),
+        pytest.raises(RuntimeError, match="invalid API key"),
+    ):
+        provider.transcribe(audio_path, config)
+
+    assert mock_get.call_count == 1
+
+
+def test_poll_canceled_status_raises_immediately(tmp_path):
+    """FIXED BUG: a "canceled" status used to fall through both the `succeeded` and
+    `failed` checks and loop until the 300s timeout — it never reached ANY terminal
+    handling before this fix.
+    """
+    audio_path = _make_audio_file(tmp_path)
+    provider = _provider()
+    config = ASRConfig(language="en")
+    job_capture: dict[str, dict] = {}
+    upload_url_resp = _FakeResponse(json_data={"url": "https://upload.example.com/put-url"})
+    job_resp = _FakeResponse(json_data={"jobId": "job-1"})
+    canceled_resp = _FakeResponse(json_data={"status": "canceled"})
+
+    with (
+        patch("httpx.post", side_effect=_dispatch_post(upload_url_resp, job_resp, job_capture)),
+        patch("httpx.put", return_value=_FakeResponse()),
+        patch("httpx.get", return_value=canceled_resp) as mock_get,
+        patch("time.sleep"),
+        pytest.raises(RuntimeError, match="was canceled"),
+    ):
+        provider.transcribe(audio_path, config)
+
+    assert mock_get.call_count == 1
+
+
+def test_poll_transport_error_still_retried_then_succeeds(tmp_path):
+    """Anti-over-fix guard, with a TYPED httpx error (unlike the existing generic-Exception
+    poll-retry test) — a transport failure must still be transient after the fail-fast
+    rewrite, not accidentally promoted to terminal.
+    """
+    import httpx
+
+    audio_path = _make_audio_file(tmp_path)
+    provider = _provider()
+    config = ASRConfig(language="en")
+    job_capture: dict[str, dict] = {}
+    upload_url_resp = _FakeResponse(json_data={"url": "https://upload.example.com/put-url"})
+    job_resp = _FakeResponse(json_data={"jobId": "job-1"})
+    succeeded_resp = _FakeResponse(
+        json_data={"status": "succeeded", "output": _quick_succeed_output()}
+    )
+
+    with (
+        patch("httpx.post", side_effect=_dispatch_post(upload_url_resp, job_resp, job_capture)),
+        patch("httpx.put", return_value=_FakeResponse()),
+        patch(
+            "httpx.get",
+            side_effect=[httpx.ConnectError("connection refused"), succeeded_resp],
+        ) as mock_get,
+        patch("time.sleep"),
+    ):
+        result = provider.transcribe(audio_path, config)
+
+    assert mock_get.call_count == 2
+    assert result.segments[0].text == "hi"
+
+
+def test_poll_http_500_retried_then_succeeds(tmp_path):
+    """A 500 must NOT become terminal — only 401 and canceled do."""
+    audio_path = _make_audio_file(tmp_path)
+    provider = _provider()
+    config = ASRConfig(language="en")
+    job_capture: dict[str, dict] = {}
+    upload_url_resp = _FakeResponse(json_data={"url": "https://upload.example.com/put-url"})
+    job_resp = _FakeResponse(json_data={"jobId": "job-1"})
+    server_error_resp = _FakeResponse(status_code=500)
+    succeeded_resp = _FakeResponse(
+        json_data={"status": "succeeded", "output": _quick_succeed_output()}
+    )
+
+    with (
+        patch("httpx.post", side_effect=_dispatch_post(upload_url_resp, job_resp, job_capture)),
+        patch("httpx.put", return_value=_FakeResponse()),
+        patch("httpx.get", side_effect=[server_error_resp, succeeded_resp]) as mock_get,
+        patch("time.sleep"),
+    ):
+        result = provider.transcribe(audio_path, config)
+
+    assert mock_get.call_count == 2
+    assert result.segments[0].text == "hi"

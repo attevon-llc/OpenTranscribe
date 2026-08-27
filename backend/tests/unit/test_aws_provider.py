@@ -279,3 +279,73 @@ def test_validate_connection_fails_and_sanitizes_credentials_on_a_bad_key(monkey
     assert access_key not in message
     assert secret_key not in message
     assert "***" in message
+
+
+# ── Rate-limit taxonomy (issue Lane 5) ────────────────────────────────────────
+
+
+def _client_error(code: str, message: str = "boom"):
+    from botocore.exceptions import ClientError
+
+    return ClientError({"Error": {"Code": code, "Message": message}}, "StartTranscriptionJob")
+
+
+def test_throttling_exception_on_job_start_is_classified_as_asr_rate_limited(
+    monkeypatch, audio_file
+):
+    from app.services.asr.errors import ASRRateLimitedError
+
+    provider = _provider()
+    s3 = MagicMock(name="s3")
+    tc = MagicMock(name="transcribe")
+    tc.start_transcription_job.side_effect = _client_error("ThrottlingException")
+    _wire_provider(provider, monkeypatch, s3, tc)
+
+    config = ASRConfig(language="en", enable_diarization=False)
+    with pytest.raises(ASRRateLimitedError) as excinfo:
+        provider.transcribe(audio_file, config)
+
+    assert excinfo.value.provider == "aws"
+    # Cleanup is still attempted even though the job never started.
+    assert s3.delete_object.call_count == 2
+
+
+def test_limit_exceeded_exception_on_job_start_is_classified_as_asr_rate_limited(
+    monkeypatch, audio_file
+):
+    """LimitExceededException is Transcribe's concurrent-job cap — transient, not a
+    permanent misconfiguration, so it must classify the same as ThrottlingException.
+    """
+    from app.services.asr.errors import ASRRateLimitedError
+
+    provider = _provider()
+    s3 = MagicMock(name="s3")
+    tc = MagicMock(name="transcribe")
+    tc.start_transcription_job.side_effect = _client_error("LimitExceededException")
+    _wire_provider(provider, monkeypatch, s3, tc)
+
+    config = ASRConfig(language="en", enable_diarization=False)
+    with pytest.raises(ASRRateLimitedError):
+        provider.transcribe(audio_file, config)
+
+
+def test_access_denied_exception_on_job_start_stays_a_plain_client_error(monkeypatch, audio_file):
+    """Negative control: a permissions failure must NOT be classified as retryable —
+    without this, classifying every ClientError as retryable would still pass the two
+    tests above.
+    """
+    from botocore.exceptions import ClientError
+
+    from app.services.asr.errors import ASRRateLimitedError
+
+    provider = _provider()
+    s3 = MagicMock(name="s3")
+    tc = MagicMock(name="transcribe")
+    tc.start_transcription_job.side_effect = _client_error("AccessDeniedException")
+    _wire_provider(provider, monkeypatch, s3, tc)
+
+    config = ASRConfig(language="en", enable_diarization=False)
+    with pytest.raises(ClientError) as excinfo:
+        provider.transcribe(audio_file, config)
+
+    assert not isinstance(excinfo.value, ASRRateLimitedError)

@@ -64,8 +64,11 @@ from types import SimpleNamespace
 from unittest.mock import mock_open
 from unittest.mock import patch
 
+import httpx
+import openai
 import pytest
 
+from app.services.asr.errors import ASRRateLimitedError
 from app.services.asr.openai_provider import OpenAIASRProvider
 from app.services.asr.types import ASRConfig
 
@@ -267,6 +270,55 @@ def test_audio_file_handle_is_closed_even_when_the_api_call_raises(tmp_path):
     handle = m_open.return_value
     handle.__enter__.assert_called_once()
     handle.__exit__.assert_called_once()
+
+
+# --- rate-limit taxonomy (issue Lane 5) --------------------------------------
+
+
+def _rate_limit_error(retry_after: str | None = "20") -> openai.RateLimitError:
+    req = httpx.Request("POST", "https://api.openai.com/v1/audio/transcriptions")
+    headers = {"Retry-After": retry_after} if retry_after else {}
+    resp = httpx.Response(429, request=req, headers=headers)
+    # openai's stub types `response` against its own vendored httpx re-export, which
+    # mypy sees as a distinct (structurally identical) type from the real httpx.Response
+    # constructed above — a real caller passes the SDK's own httpx.Response and never
+    # hits this mismatch.
+    return openai.RateLimitError("Rate limit reached", response=resp, body=None)  # type: ignore[arg-type]
+
+
+def test_rate_limit_error_is_classified_as_asr_rate_limited(tmp_path):
+    fake_client = _fake_client()
+    fake_client.audio.transcriptions.create.side_effect = _rate_limit_error()
+    provider = _provider("gpt-4o-transcribe")
+
+    with _patched_open(), _patched_openai(fake_client):
+        with pytest.raises(ASRRateLimitedError) as excinfo:
+            provider.transcribe(str(tmp_path / "fake-audio.wav"), ASRConfig(language="en"))
+
+    assert excinfo.value.provider == "openai"
+    assert excinfo.value.retry_after == 20.0
+
+
+def test_authentication_error_stays_a_plain_runtime_error(tmp_path):
+    """Negative control: a 401 must NOT be classified as retryable — otherwise a test
+    that only checked "some exception was rate-limit-typed" would pass even if this
+    provider classified everything as retryable.
+    """
+    fake_client = _fake_client()
+    req = httpx.Request("POST", "https://api.openai.com/v1/audio/transcriptions")
+    resp = httpx.Response(401, request=req)
+    fake_client.audio.transcriptions.create.side_effect = openai.AuthenticationError(
+        "Invalid API key",
+        response=resp,  # type: ignore[arg-type]  # see _rate_limit_error() above
+        body=None,
+    )
+    provider = _provider("gpt-4o-transcribe")
+
+    with _patched_open(), _patched_openai(fake_client):
+        with pytest.raises(RuntimeError, match="OpenAI transcription failed") as excinfo:
+            provider.transcribe(str(tmp_path / "fake-audio.wav"), ASRConfig(language="en"))
+
+    assert not isinstance(excinfo.value, ASRRateLimitedError)
 
 
 # --- shared helpers ----------------------------------------------------------

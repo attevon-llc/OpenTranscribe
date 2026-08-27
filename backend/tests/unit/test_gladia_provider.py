@@ -389,3 +389,88 @@ def test_poll_loop_never_caps_consecutive_failures_current_behavior(tmp_path):
         pytest.raises(RuntimeError, match="timed out"),
     ):
         provider.transcribe(audio_path, config)
+
+
+# ── Rate-limit taxonomy (issue Lane 5) ────────────────────────────────────────
+
+
+def test_upload_429_is_classified_as_asr_rate_limited(tmp_path):
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider()
+    config = ASRConfig(enable_diarization=False, language="en")
+    upload_resp = _FakeResponse(status_code=429, text="rate limited")
+
+    with (
+        patch("requests.post", return_value=upload_resp),
+        pytest.raises(ASRRateLimitedError) as excinfo,
+    ):
+        provider.transcribe(audio_path, config)
+
+    assert excinfo.value.provider == "gladia"
+
+
+def test_job_submission_429_is_classified_as_asr_rate_limited(tmp_path):
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider()
+    config = ASRConfig(enable_diarization=False, language="en")
+    upload_resp = _FakeResponse(json_data={"audio_url": "https://cdn.gladia.io/audio123"})
+    job_resp = _FakeResponse(status_code=429, text="rate limited")
+    job_capture: dict = {}
+
+    with (
+        patch("requests.post", side_effect=_dispatch_post(upload_resp, job_resp, job_capture)),
+        pytest.raises(ASRRateLimitedError) as excinfo,
+    ):
+        provider.transcribe(audio_path, config)
+
+    assert excinfo.value.provider == "gladia"
+
+
+def test_poll_429_is_classified_as_asr_rate_limited_not_retried_forever(tmp_path):
+    """Unlike a transport error (covered by the no-cap characterization test above), a
+    429 during polling is classified and raised immediately rather than looping — the
+    Celery task level owns the retry/backoff policy for a vendor throttle.
+    """
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider()
+    config = ASRConfig(enable_diarization=False, language="en")
+    upload_resp = _FakeResponse(json_data={"audio_url": "https://cdn.gladia.io/audio123"})
+    job_resp = _FakeResponse(json_data={"result_url": f"{_BASE}/v2/transcription/job1"})
+    job_capture: dict = {}
+    poll_resp = _FakeResponse(status_code=429, text="rate limited")
+
+    with (
+        patch("requests.post", side_effect=_dispatch_post(upload_resp, job_resp, job_capture)),
+        patch("requests.get", return_value=poll_resp) as mock_get,
+        patch("time.sleep"),
+        pytest.raises(ASRRateLimitedError) as excinfo,
+    ):
+        provider.transcribe(audio_path, config)
+
+    assert excinfo.value.provider == "gladia"
+    # Raised on the FIRST poll — proves it did not fall into the retry-and-continue path.
+    assert mock_get.call_count == 1
+
+
+def test_upload_400_stays_a_plain_runtime_error(tmp_path):
+    """Negative control: a non-429 HTTP error must NOT be classified as retryable."""
+    from app.services.asr.errors import ASRRateLimitedError
+
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider()
+    config = ASRConfig(enable_diarization=False, language="en")
+    upload_resp = _FakeResponse(status_code=400, text="bad request")
+
+    with (
+        patch("requests.post", return_value=upload_resp),
+        pytest.raises(RuntimeError, match="Gladia upload failed") as excinfo,
+    ):
+        provider.transcribe(audio_path, config)
+
+    assert not isinstance(excinfo.value, ASRRateLimitedError)

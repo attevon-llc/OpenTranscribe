@@ -584,6 +584,25 @@ class LLMService:
             logger.error(f"Failed to parse LLM response: {response.text}")
             raise Exception(f"Invalid JSON response: {e}") from e
 
+    def _resolve_endpoint(self) -> str:
+        """Return the HTTP endpoint for the configured provider, or raise.
+
+        A plain subscript (``self.endpoints[provider]``) raises ``KeyError`` for any
+        provider absent from the dict entirely — which is exactly what happened for
+        Bedrock (not a key in ``self.endpoints` at all, since it is reached through
+        boto3, not HTTP) before the SDK branch below existed to intercept it. This
+        converts that into the same ``ValueError`` every other missing-endpoint case
+        (``vllm``/``custom``/``openrouter`` with no ``base_url``, which ARE keys but
+        map to ``None``) already raised.
+
+        Raises:
+            ValueError: No endpoint is configured for ``self.config.provider``.
+        """
+        url = self.endpoints.get(self.config.provider)
+        if not url:
+            raise ValueError(f"No endpoint configured for provider {self.config.provider}")
+        return url
+
     def chat_completion_raw(
         self, messages: list[dict[str, str]], *, timeout: int = 300, **kwargs
     ) -> dict[str, Any]:
@@ -608,11 +627,18 @@ class LLMService:
 
         Raises:
             LLMEndpointBlockedError: The endpoint is not a permitted target.
+            ValueError: Bedrock has no "provider's parsed JSON" — it is an SDK call,
+                not an HTTP endpoint, so there is nothing unshaped to return. This
+                is a guard, not a regression: `llm_reasoning.PROBEABLE_PROVIDERS`
+                deliberately excludes Bedrock already.
             Exception: Any non-200 response or unparseable body.
         """
-        url = self.endpoints[self.config.provider]
-        if url is None:
-            raise ValueError(f"No endpoint configured for provider {self.config.provider}")
+        if self.config.provider == LLMProvider.BEDROCK:
+            raise ValueError(
+                "chat_completion_raw is not supported for the Bedrock provider: "
+                "there is no provider JSON body to return unshaped for an SDK call."
+            )
+        url = self._resolve_endpoint()
         payload = self._prepare_payload(messages, **kwargs)
         return self._send_llm_request(url, payload, self._get_headers(), timeout)
 
@@ -620,9 +646,10 @@ class LLMService:
         """
         Send chat completion request to LLM provider
         """
-        url = self.endpoints[self.config.provider]
-        if url is None:
-            raise ValueError(f"No endpoint configured for provider {self.config.provider}")
+        if self.config.provider == LLMProvider.BEDROCK:
+            return self._bedrock_chat_completion(messages, **kwargs)
+
+        url = self._resolve_endpoint()
         headers = self._get_headers()
         payload = self._prepare_payload(messages, **kwargs)
 
@@ -667,6 +694,50 @@ class LLMService:
                 f"Unexpected error in LLM request to {self.config.provider}: {type(e).__name__}: {e}"
             )
             raise
+
+    def _bedrock_chat_completion(self, messages: list[dict[str, str]], **kwargs) -> LLMResponse:
+        """Non-streaming completion via the Bedrock Converse SDK path.
+
+        Bedrock is an SDK call, not an HTTP endpoint (it has no entry in
+        ``self.endpoints`` at all — see ``SDK_PROVIDERS``), so it cannot go through
+        ``_send_llm_request``/``_extract_response_content`` like every other provider.
+        ``llm_bedrock.converse`` drains the existing ``stream_converse`` generator and
+        folds it into the same ``(content, usage_tokens, finish_reason)`` shape the
+        HTTP extractors return, so this method only has to build the ``LLMResponse``.
+
+        Raises:
+            Exception: The stream reported an error (``llm_bedrock.BedrockStreamError``)
+                or the response was empty, mirroring the HTTP path's behaviour.
+        """
+        from app.services.llm_bedrock import BedrockStreamError
+        from app.services.llm_bedrock import converse
+
+        try:
+            content, usage_tokens, finish_reason = converse(
+                model=self.config.model,
+                region=settings.BEDROCK_REGION,
+                messages=messages,
+                max_tokens=kwargs.get("max_tokens", self.config.response_tokens),
+                temperature=kwargs.get("temperature"),
+                top_p=kwargs.get("top_p"),
+                attribution=kwargs.get("attribution"),
+            )
+        except BedrockStreamError as e:
+            logger.error(f"Bedrock chat completion failed: {e}")
+            raise Exception(f"Bedrock error: {e}") from e
+
+        if not content:
+            raise Exception("Empty content in LLM response")
+
+        logger.info(f"LLM request successful, tokens: {usage_tokens}")
+
+        return LLMResponse(
+            content=content,
+            usage_tokens=usage_tokens,
+            finish_reason=finish_reason,
+            model=self.config.model,
+            provider=self.config.provider.value,
+        )
 
     def _iter_stream_lines(
         self, response: requests.Response, cancel_event: threading.Event | None

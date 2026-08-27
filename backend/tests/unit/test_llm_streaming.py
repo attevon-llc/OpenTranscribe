@@ -237,10 +237,64 @@ def test_ollama_stream_skips_blank_lines():
         ("anthropic", parse_anthropic_sse),
         ("claude", parse_anthropic_sse),
         ("ollama", parse_ollama_ndjson),
+        # Correct but INERT: Bedrock never reaches `get_stream_parser` at all.
+        # `LLMService.chat_completion_stream` branches to
+        # `llm_bedrock.stream_converse` ahead of the parser lookup (see the branch
+        # order test below), so this fallback is never exercised for "bedrock" in
+        # production — it is pinned here only so a future provider added without a
+        # parser entry doesn't silently fall through to the OpenAI dialect.
+        ("bedrock", parse_openai_sse),
     ],
 )
 def test_get_stream_parser_maps_every_provider(provider, expected):
     assert get_stream_parser(provider) is expected
+
+
+def test_get_stream_parser_parametrize_covers_every_llmprovider_member():
+    """A future provider added to `LLMProvider` without a matching parametrize entry
+    above must fail loudly here, not fall through untested to the OpenAI dialect.
+    """
+    from app.services.llm_service import LLMProvider
+
+    covered = {
+        "openai",
+        "vllm",
+        "openrouter",
+        "custom",
+        "anthropic",
+        "claude",
+        "ollama",
+        "bedrock",
+    }
+    assert {p.value for p in LLMProvider} == covered
+
+
+def test_bedrock_stream_never_reaches_get_stream_parser_or_session_post():
+    """Bedrock branches to `llm_bedrock.stream_converse` BEFORE the URL lookup and
+    parser selection (`llm_service.py`'s `chat_completion_stream`), so a
+    Bedrock-configured service must never call `get_stream_parser` or POST through the
+    HTTP session at all.
+    """
+    from unittest.mock import patch
+
+    from app.services.llm_service import LLMConfig
+    from app.services.llm_service import LLMProvider
+    from app.services.llm_service import LLMService
+
+    service = LLMService(LLMConfig(provider=LLMProvider.BEDROCK, model="test-model"))
+    session = _transport(service)
+
+    with patch(
+        "app.services.llm_bedrock.stream_converse",
+        return_value=iter([LLMStreamEvent(type="done", finish_reason="stop")]),
+    ) as mock_stream_converse:
+        with patch("app.services.llm_service.get_stream_parser") as mock_get_parser:
+            events = list(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
+
+    mock_stream_converse.assert_called_once()
+    mock_get_parser.assert_not_called()
+    session.post.assert_not_called()
+    assert events[-1].type == "done"
 
 
 def test_apply_stream_payload_requests_usage_only_where_supported():

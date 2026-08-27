@@ -36,6 +36,12 @@ _MODEL_SH = _REPO_ROOT / "scripts" / "fix-model-permissions.sh"
 _VOLUME_SH = _REPO_ROOT / "scripts" / "fix-shared-volume-perms.sh"
 _DOCKERFILE = _REPO_ROOT / "backend" / "Dockerfile.prod"
 
+#: The container user's actual ownership (appuser: `useradd -u 1000` but `groupadd -r`, which
+#: lands the GID at 999 in the built image -- issue #580). Exported so
+#: ``test_chown_scripts_real_tree.py`` verifies the BUILT IMAGE against this same value
+#: rather than a second, independently-spelled literal.
+EXPECTED_OWNER = "1000:999"
+
 #: The container mount points the image reserves for the pipeline's shared volumes
 #: (backend/Dockerfile.prod, the "Reserve the pipeline's shared-volume mount points" RUN).
 _RESERVED_PATHS_RE = re.compile(r"^RUN mkdir -p (/scratch\S*(?:\s+/\S+)*) &&", re.MULTILINE)

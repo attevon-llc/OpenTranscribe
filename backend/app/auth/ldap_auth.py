@@ -276,14 +276,36 @@ def _search_ldap_user(
                 return bool(bind_conn.entries)
             raise
 
+    def _single_entry(search_filter: str, label: str):
+        """Return the one matching entry, or None — never an arbitrary pick.
+
+        A search filter that is too loose (or genuine directory duplicates) can
+        return more than one entry. Silently binding as ``entries[0]`` in that case
+        would authenticate the caller as whichever account the directory happened
+        to list first — an authentication-ambiguity bug, and a deliberate one if an
+        attacker with any directory write access can create a colliding entry. Fail
+        closed instead: an ambiguous search is treated as "not found".
+        """
+        entries = bind_conn.entries
+        if len(entries) > 1:
+            logger.error(
+                f"LDAP search by {label} ({search_filter!r}) matched {len(entries)} entries; "
+                "refusing to authenticate against an ambiguous match"
+            )
+            return None
+        return entries[0]
+
     if _do_search(search_filter, attributes):
-        return bind_conn.entries[0]
+        entry = _single_entry(search_filter, cfg.username_attr)
+        if entry is not None:
+            return entry
+        return None
 
     # Fallback: search by email
     logger.debug(f"User not found by {cfg.username_attr}={ldap_username}, trying email search")
     email_filter = f"({cfg.email_attr}={_escape_ldap_filter(username)})"
     if _do_search(email_filter, attributes):
-        return bind_conn.entries[0]
+        return _single_entry(email_filter, cfg.email_attr)
 
     return None
 

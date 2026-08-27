@@ -116,14 +116,22 @@ Auth configuration is stored encrypted (AES-256-GCM) in the database and managed
 - **Configurable Enforcement**: Required for admins only, or for all users
 - **External IdP bypass**: PKI and Keycloak users bypass local MFA (their IdP handles it)
 
-### Password Security (FedRAMP IA-5 Compliant)
+### Password Security (configurable, maps to FedRAMP IA-5)
 
-**Password Policies:**
-- Minimum length (configurable, default 12 characters)
-- Complexity requirements (uppercase, lowercase, numbers, symbols)
-- Password history enforcement (prevents reuse of last N passwords)
-- Expiration policies (configurable, optional)
+**Password Policies** (all admin-configurable at runtime — Admin → Settings → Authentication —
+not hardcoded):
+- Minimum length (default 12 characters)
+- Complexity requirements (uppercase, lowercase, numbers, symbols) — default on
+- Password history enforcement (prevents reuse of last N passwords, default 24)
+- Expiration policies (default 60 days; 0 disables expiry)
 - Common password and pattern blacklist
+
+⚠️ **The shipped defaults above (mandatory composition, 60-day expiry) reflect NIST SP 800-63B
+Revision 3, which [Revision 4](https://pages.nist.gov/800-63-4/sp800-63b.html) (final,
+2025-07-31) superseded — the current guidance directs verifiers to *not* force periodic changes
+or impose composition rules. See
+[Security Hardening → Password Policy and Current NIST Guidance](https://github.com/attevon-llc/OpenTranscribe/blob/master/docs-site/docs/operations/security-hardening.md#password-policy-and-current-nist-guidance)
+for the full discussion and how to align an admin-configured deployment with current guidance.
 
 **Implementation:**
 - bcrypt_sha256 hashing (overcomes bcrypt's 72-byte limit)
@@ -199,11 +207,13 @@ OpenTranscribe includes features to support FedRAMP compliance requirements:
 - PKI/CAC support for government systems
 - Strong authentication for privileged users
 
-### IA-5: Authenticator Management (FedRAMP IA-5 Compliant)
-- Password complexity policies (uppercase, lowercase, number, symbol required)
-- Password history enforcement (configurable, default 5 previous passwords)
+### IA-5: Authenticator Management (configurable, maps to FedRAMP IA-5)
+- Password complexity policies (uppercase, lowercase, number, symbol required by default —
+  see the [Password Security](#password-security-configurable-maps-to-fedramp-ia-5) note above
+  on current NIST guidance)
+- Password history enforcement (configurable, default 24 previous passwords)
 - Authenticator feedback protection (no password hints)
-- Password expiration policies with advance warning
+- Password expiration policies with advance warning (default 60 days; configurable to 0/disabled)
 - bcrypt_sha256 default; PBKDF2-SHA256 in FIPS mode
 
 ### SC-13: Cryptographic Protection

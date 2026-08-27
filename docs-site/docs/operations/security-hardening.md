@@ -416,12 +416,57 @@ OpenTranscribe includes features that map to NIST 800-53 controls:
 | **AC-12** (Session Termination) | Configurable session timeouts, auto-logout on inactivity |
 | **AU-2/AU-3** (Audit Events) | Comprehensive audit logging with timestamps and source IPs |
 | **IA-2** (Identification and Authentication) | Multi-factor authentication, PKI/CAC support |
-| **IA-5** (Authenticator Management) | Password complexity, history, expiration policies |
+| **IA-5** (Authenticator Management) | Configurable password policy (complexity, history, expiration) — see [Password Policy and Current NIST Guidance](#password-policy-and-current-nist-guidance) below for how the shipped defaults relate to current guidance |
 | **SC-12** (Cryptographic Key Establishment) | PBKDF2 key derivation |
 | **SC-13** (Cryptographic Protection) | AES-256-GCM at rest, HMAC-SHA-256 (HS256) JWT signing -- both FIPS-approved; see [Algorithm Requirements](#algorithm-requirements) |
 | **SC-28** (Protection of Information at Rest) | Encrypted sensitive data fields |
 
 Classification banners are configurable in **Admin > Settings > System > Classification Banner**.
+
+### Password Policy and Current NIST Guidance
+
+OpenTranscribe's password policy is fully admin-configurable at runtime
+(**Admin → Settings → Authentication**, backed by `SystemSettings`, resolved DB > `.env` >
+coded default — no restart needed) rather than hardcoded:
+
+| Setting | Shipped default | Purpose |
+|---|---|---|
+| `password_min_length` | 12 | Minimum password length |
+| `password_require_uppercase` / `_lowercase` / `_digit` / `_special` | all `true` | Composition (character-class) requirements |
+| `password_max_age_days` | 60 | Forced expiration; **0 disables expiry entirely** |
+| `password_history_count` | 24 | Prevents reuse of recent passwords |
+
+**These defaults reflect NIST SP 800-63B Revision 3, not the current Revision 4.** NIST finalized
+[SP 800-63B Revision 4](https://pages.nist.gov/800-63-4/sp800-63b.html) on 2025-07-31
+(effective 2025-08-01), and it explicitly reverses the older composition/expiry guidance:
+
+> "Verifiers and CSPs **SHALL NOT** require subscribers to change passwords periodically.
+> However, verifiers **SHALL** force a change if there is evidence that the authenticator has
+> been compromised."
+>
+> "Verifiers and CSPs **SHALL NOT** impose other composition rules (e.g., requiring mixtures of
+> different character types) for passwords."
+
+The rationale (well-documented in the security community, not unique to this guidance): forced
+periodic rotation and mandatory character-class mixing empirically push users toward weaker,
+more predictable passwords (`Summer2024!` → `Summer2025!`), and current guidance instead favors
+length and breach-based rotation (checking new passwords against known-breach corpora — not yet
+implemented here; see [OWASP's Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#implement-proper-password-strength-controls)
+for the current recommended approach) over composition rules.
+
+**What this means for your deployment:**
+
+- If your own organization's policy — independent of NIST — still requires periodic rotation
+  or composition rules (some non-federal compliance frameworks do), the current defaults already
+  satisfy that; no action needed.
+- If you want to align with current NIST SP 800-63B Rev. 4 guidance, set
+  `password_max_age_days = 0` and relax the composition-requirement toggles in
+  **Admin → Settings → Authentication**. This does not retroactively affect existing users'
+  stored passwords — the policy is enforced only when a password is set or changed.
+- OpenTranscribe does not change its *shipped defaults* to Rev. 4's posture as of this writing;
+  they remain what they were. This section exists so operators can make an informed choice
+  rather than relying on a compliance-mapping table that overstated the currency of the
+  guidance it was mapped against.
 
 ### GDPR Compliance
 

@@ -425,7 +425,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
 > ✅ **The provider keying is BUILT and shipped**, not just decided. `chat/service.py._prepare_context`
 > resolves `redaction.llm_guard.is_local_provider(llm.config)` once per turn and threads it as
 > `unmask_for_local` to all three masking call sites (`mask_chunks`, and both `mask_digests` calls).
-> A **local** model (vLLM/Ollama on our own GPU, or a `custom` endpoint resolving to
+> A **local** model (a `vllm`/`ollama`/`custom` config whose `base_url` resolves to
 > loopback/RFC1918/link-local/a docker-compose hostname) receives excerpt text unmasked; a
 > **remote/cloud provider** still gets masked text. The classification **fails closed** — any
 > ambiguity reads as remote. An admin's `redaction.force_redact_before_llm` lock always wins the

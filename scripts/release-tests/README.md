@@ -1,11 +1,12 @@
 # OpenTranscribe Release-Test Harness
 
-End-to-end validation for every OpenTranscribe release. Two scenarios:
+End-to-end validation for every OpenTranscribe release. Three scenarios:
 
 | Script | What it proves |
 |---|---|
 | `test-fresh-install.sh` | A new user runs the documented `setup-opentranscribe.sh` one-liner and ends up with a working stack on the current release |
 | `test-upgrade.sh` | A user with real data on the previous release can run the documented upgrade path and find their data intact, migrations applied, new features available |
+| `test-lite-mode.sh` | The no-GPU lite deployment (`docker-compose.lite.yml`, cloud-only ASR) runs the real upload -> ASR -> segments/speakers -> search -> chat pipeline, against mocked cloud ASR (`scripts/mock-asr-server.py`, a Gladia stand-in) and a mocked LLM (`scripts/mock-llm-server.py`) — no GPU, vendor API key, or network egress required. Complements `scripts/lite-smoke.sh` (Stage 2, Cycle 2D), which only checks lite/cpu-only **topology**, not the pipeline. |
 
 ## ⚠️ Precondition: the live stack must be STOPPED
 
@@ -72,6 +73,9 @@ OPENAI_MODEL_NAME=
 # Scenario B — upgrade from the previous published release (auto-detected)
 ./scripts/release-tests/test-upgrade.sh
 
+# Scenario C — lite-mode full pipeline rehearsal (mocked cloud ASR + mocked LLM)
+./scripts/release-tests/test-lite-mode.sh
+
 # Skip the confirmation gate (for unattended re-runs)
 ./scripts/release-tests/test-fresh-install.sh --yes
 
@@ -81,6 +85,7 @@ OPENAI_MODEL_NAME=
 # Tear down (only resources labeled com.opentranscribe.release-test=*)
 ./scripts/release-tests/test-fresh-install.sh --cleanup
 ./scripts/release-tests/test-upgrade.sh --cleanup
+./scripts/release-tests/test-lite-mode.sh --cleanup
 ```
 
 Each scenario writes:

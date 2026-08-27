@@ -269,3 +269,144 @@ ac_search() {
         --data-urlencode "page=1" \
         --data-urlencode "page_size=10"
 }
+
+# ac_create_asr_config PROVIDER BASE_URL API_KEY [NAME]
+#
+# POST /api/... registers a cloud ASR provider config. Shape mirrors what
+# backend/tests/fixtures/mock_asr.py's register_mock_gladia_asr_config
+# validates against the real API (see backend/tests/integration/
+# test_lite_mode_mocked_providers.py, Phase 3) — provider=gladia, a
+# test-only base_url override, and any non-empty api_key. Echoes the new
+# config's uuid.
+ac_create_asr_config() {
+    local provider="$1" base_url="$2" api_key="$3"
+    local name="${4:-release-test-${provider}-$(date +%s)}"
+    ac_log "creating ASR config: provider=$provider base_url=$base_url"
+    local payload
+    payload=$(python3 -c '
+import json, sys
+print(json.dumps({
+    "name": sys.argv[1],
+    "provider": sys.argv[2],
+    "base_url": sys.argv[3],
+    "api_key": sys.argv[4],
+}))
+' "$name" "$provider" "$base_url" "$api_key")
+    local body
+    body=$(ac_curl -X POST "$API_BASE/asr-settings" \
+        -H "Content-Type: application/json" \
+        -d "$payload") || ac_die "ASR config creation failed"
+    echo "$body" | python3 -c 'import sys,json; print(json.load(sys.stdin)["uuid"])'
+}
+
+# ac_create_llm_config PROVIDER MODEL_NAME BASE_URL API_KEY [NAME]
+#
+# Mirrors the POST /api/llm-settings payload validated in
+# test_lite_mode_mocked_providers.py's TestMockedAsrPlusMockedLlm — provider
+# "custom" pointed at the mock-llm OpenAI-compatible server. Echoes the new
+# config's uuid.
+ac_create_llm_config() {
+    local provider="$1" model_name="$2" base_url="$3" api_key="$4"
+    local name="${5:-release-test-${provider}-$(date +%s)}"
+    ac_log "creating LLM config: provider=$provider model=$model_name base_url=$base_url"
+    local payload
+    payload=$(python3 -c '
+import json, sys
+print(json.dumps({
+    "name": sys.argv[1],
+    "provider": sys.argv[2],
+    "model_name": sys.argv[3],
+    "base_url": sys.argv[4],
+    "api_key": sys.argv[5],
+}))
+' "$name" "$provider" "$model_name" "$base_url" "$api_key")
+    local body
+    body=$(ac_curl -X POST "$API_BASE/llm-settings" \
+        -H "Content-Type: application/json" \
+        -d "$payload") || ac_die "LLM config creation failed"
+    echo "$body" | python3 -c 'import sys,json; print(json.load(sys.stdin)["uuid"])'
+}
+
+# ac_chat_completion LLM_CONFIG_UUID FILE_UUID QUESTION
+#
+# Creates a scoped conversation pinned to llm_config_uuid, sends one message,
+# and parses the SSE response stream. Mirrors the parsing done inline in
+# test_lite_mode_mocked_providers.py's test_chat_summary_has_non_empty_grounded_content:
+# `event: delta` frames carry {"content"|"text": ...} chunks concatenated into
+# the answer, `event: sources` carries {"citations": [...]}.
+#
+# Deletes the conversation on return (best-effort). Prints two lines to
+# stdout: the full answer text, then the citation count.
+ac_chat_completion() {
+    local llm_config_uuid="$1" file_uuid="$2" question="$3"
+    local csrf_token="${API_CSRF_TOKEN:-}"
+    [[ -n "$csrf_token" ]] || ac_die "ac_chat_completion requires API_CSRF_TOKEN (cookie-session CSRF header) to be set"
+
+    local conv_payload conv_body conversation_uuid
+    conv_payload=$(python3 -c '
+import json, sys
+print(json.dumps({
+    "title": "release-test chat",
+    "llm_config_uuid": sys.argv[1],
+    "scope": {"file_uuids": [sys.argv[2]], "collection_uuids": [], "tag_names": [], "speakers": []},
+}))
+' "$llm_config_uuid" "$file_uuid")
+    conv_body=$(ac_curl -X POST "$API_BASE/chat/conversations" \
+        -H "Content-Type: application/json" \
+        -H "X-CSRF-Token: $csrf_token" \
+        -d "$conv_payload") || ac_die "chat conversation creation failed"
+    conversation_uuid=$(echo "$conv_body" | python3 -c 'import sys,json; print(json.load(sys.stdin)["uuid"])')
+
+    local msg_payload
+    msg_payload=$(python3 -c 'import json,sys; print(json.dumps({"content": sys.argv[1]}))' "$question")
+
+    local answer citations
+    answer=$(mktemp)
+    citations=$(mktemp)
+    printf '' > "$answer"
+    printf '0' > "$citations"
+
+    # requests-style SSE parsing: `event:` lines set the frame type, `data:`
+    # lines carry its JSON payload, a blank line ends the frame.
+    curl -sS --no-buffer -X POST "$API_BASE/chat/conversations/$conversation_uuid/messages" \
+        -H "Content-Type: application/json" \
+        -H "X-CSRF-Token: $csrf_token" \
+        -H "Accept: text/event-stream" \
+        -H "Authorization: Bearer ${API_TOKEN:-}" \
+        -d "$msg_payload" \
+    | python3 -c '
+import sys, json
+
+event = None
+answer_parts = []
+citation_count = 0
+for raw in sys.stdin:
+    line = raw.rstrip("\r\n")
+    if line == "":
+        event = None
+        continue
+    if line.startswith("event:"):
+        event = line[len("event:"):].strip()
+        continue
+    if not line.startswith("data:"):
+        continue
+    data_str = line[len("data:"):].strip()
+    data = json.loads(data_str) if data_str else {}
+    if event == "delta":
+        answer_parts.append(data.get("content") or data.get("text") or "")
+    elif event == "sources":
+        citation_count = len(data.get("citations") or [])
+
+sys.stdout.write("".join(answer_parts))
+sys.stderr.write(str(citation_count))
+' > "$answer" 2> "$citations"
+
+    cat "$answer"
+    echo
+    cat "$citations"
+    echo
+    rm -f "$answer" "$citations"
+
+    ac_curl -X DELETE "$API_BASE/chat/conversations/$conversation_uuid" \
+        -H "X-CSRF-Token: $csrf_token" >/dev/null 2>&1 || true
+}

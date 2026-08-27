@@ -276,7 +276,7 @@ phase_03_pin_and_layer_overlays() {
     # GladiaProvider._base resolves it at construction time regardless of
     # source, so a duplicate .env entry would be redundant, not additive.
     # Verified by reading docker-compose.mock-asr.yml rather than assumed.
-    if ! grep -q '^GLADIA_API_BASE_URL' "$target/docker-compose.mock-asr.yml"; then
+    if ! grep -q 'GLADIA_API_BASE_URL:' "$target/docker-compose.mock-asr.yml"; then
         gr_die "docker-compose.mock-asr.yml no longer sets GLADIA_API_BASE_URL directly — .env now needs the override"
     fi
     gr_ok "GLADIA_API_BASE_URL is set by docker-compose.mock-asr.yml; no .env write needed"

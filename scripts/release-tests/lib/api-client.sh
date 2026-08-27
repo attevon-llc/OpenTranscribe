@@ -378,8 +378,18 @@ print(json.dumps({
 # `event: delta` frames carry {"content"|"text": ...} chunks concatenated into
 # the answer, `event: sources` carries {"citations": [...]}.
 #
-# Deletes the conversation on return (best-effort). Prints two lines to
-# stdout: the full answer text, then the citation count.
+# GH #595: an `event: error` frame (the LLM call was blocked — e.g. by the SSRF
+# guard refusing a private-network endpoint — or otherwise failed) used to be
+# silently dropped by this parser, so a *correctly refused* request and a
+# genuinely empty answer were indistinguishable: both printed an empty first
+# line, and the caller's "chat summary non-empty" assertion failed with no way
+# to tell which one happened. The parser now also captures `error` frames and
+# prints the caller a third line so a blocked call reads as "blocked", not
+# "empty".
+#
+# Deletes the conversation on return (best-effort). Prints three lines to
+# stdout: the full answer text, the citation count, then the error code from
+# an `event: error` frame (empty when none was sent).
 ac_chat_completion() {
     local llm_config_uuid="$1" file_uuid="$2" question="$3"
     local csrf_token="${API_CSRF_TOKEN:-}"
@@ -403,11 +413,13 @@ print(json.dumps({
     local msg_payload
     msg_payload=$(python3 -c 'import json,sys; print(json.dumps({"content": sys.argv[1]}))' "$question")
 
-    local answer citations
+    local answer citations error_info
     answer=$(mktemp)
     citations=$(mktemp)
+    error_info=$(mktemp)
     printf '' > "$answer"
     printf '0' > "$citations"
+    printf '' > "$error_info"
 
     # requests-style SSE parsing: `event:` lines set the frame type, `data:`
     # lines carry its JSON payload, a blank line ends the frame.
@@ -423,6 +435,7 @@ import sys, json
 event = None
 answer_parts = []
 citation_count = 0
+error_parts = []
 for raw in sys.stdin:
     line = raw.rstrip("\r\n")
     if line == "":
@@ -439,16 +452,24 @@ for raw in sys.stdin:
         answer_parts.append(data.get("content") or data.get("text") or "")
     elif event == "sources":
         citation_count = len(data.get("citations") or [])
+    elif event == "error":
+        code = data.get("code") or "unknown"
+        message = data.get("message") or ""
+        error_parts.append(f"{code}: {message}" if message else code)
 
 sys.stdout.write("".join(answer_parts))
 sys.stderr.write(str(citation_count))
-' > "$answer" 2> "$citations"
+with open(sys.argv[1], "w") as f:
+    f.write("; ".join(error_parts))
+' "$error_info" > "$answer" 2> "$citations"
 
     cat "$answer"
     echo
     cat "$citations"
     echo
-    rm -f "$answer" "$citations"
+    cat "$error_info"
+    echo
+    rm -f "$answer" "$citations" "$error_info"
 
     ac_curl -X DELETE "$API_BASE/chat/conversations/$conversation_uuid" \
         -H "X-CSRF-Token: $csrf_token" >/dev/null 2>&1 || true

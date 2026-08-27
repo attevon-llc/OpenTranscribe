@@ -6,8 +6,11 @@ handlers finish by issuing an HTTP redirect to the SPA with the session already
 established via httpOnly cookies, not by returning JSON for a `fetch()` caller.
 """
 
+import json
 import logging
 from datetime import timedelta
+from urllib.parse import urlencode
+from urllib.parse import urlparse
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -19,11 +22,13 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.auth.login import _check_mfa_requirement
 from app.api.endpoints.auth.login import record_successful_login
 from app.auth.audit import AuditEventType
 from app.auth.audit import AuditOutcome
 from app.auth.audit import audit_logger
 from app.auth.direct_auth import create_access_token as direct_create_token
+from app.auth.lockout import check_and_record_attempt
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.saml.assertion import extract_saml_user_data
@@ -46,6 +51,37 @@ AUTH_METHOD = "saml"
 #: other cookie-based login completes to. SAML has no equivalent of OIDC's
 #: SPA-owned `/login?code=...` callback route to redirect through instead.
 _POST_LOGIN_REDIRECT = "/"
+
+
+def _sanitize_relay_state(relay_state: str | None) -> str:
+    """Reduce an IdP-supplied ``RelayState`` to a safe same-origin redirect path.
+
+    RelayState is IdP-controlled input, echoed back to us at the end of the ACS
+    round trip. A bare ``.startswith("/")`` check is NOT enough: ``"//evil.com"``
+    and ``"/\\evil.com"`` both start with ``"/"`` yet a browser resolves either as
+    a protocol-relative / scheme-relative *absolute* URL (RFC 3986, and the
+    backslash-as-slash normalization every major browser applies per the WHATWG
+    URL spec) — so passing either straight into ``RedirectResponse`` carries the
+    browser off-site immediately AFTER the auth cookies are set, i.e. an
+    authenticated open redirect. Require an honest same-origin path: it must
+    start with a single ``/``, not the ``//`` or ``/\\`` spellings that resolve
+    to a host, and ``urlparse`` must find no scheme and no netloc.
+
+    Args:
+        relay_state: The raw ``RelayState`` value from the ACS POST body, or None.
+
+    Returns:
+        The relay state itself when it is a safe same-origin path, else
+        ``_POST_LOGIN_REDIRECT``.
+    """
+    if not relay_state:
+        return _POST_LOGIN_REDIRECT
+    if not relay_state.startswith("/") or relay_state.startswith(("//", "/\\")):
+        return _POST_LOGIN_REDIRECT
+    parsed = urlparse(relay_state)
+    if parsed.scheme or parsed.netloc:
+        return _POST_LOGIN_REDIRECT
+    return relay_state
 
 
 def _require_enabled_config(db: Session) -> SAMLConfig:
@@ -113,6 +149,11 @@ async def saml_acs(request: Request, response: Response, db: Session = Depends(g
     if errors or not auth.is_authenticated():
         reason = auth.get_last_error_reason()
         logger.warning("SAML assertion rejected: %s (%s)", errors, reason)
+        # No verified identity exists yet, so this shares the "unknown" bucket
+        # with every other pre-identity refusal below — mirrors proxy_login's
+        # unattributable-assertion bucket. Retries against a forged/expired
+        # assertion still throttle.
+        check_and_record_attempt("unknown", success=False)
         audit_logger.log_login_failure(
             username="unknown",
             source_ip=client_ip,
@@ -128,6 +169,7 @@ async def saml_acs(request: Request, response: Response, db: Session = Depends(g
     saml_data = extract_saml_user_data(auth, cfg)
     if not saml_data["saml_subject"]:
         logger.warning("SAML assertion carried no NameID")
+        check_and_record_attempt("unknown", success=False)
         audit_logger.log_login_failure(
             username="unknown",
             source_ip=client_ip,
@@ -146,6 +188,7 @@ async def saml_acs(request: Request, response: Response, db: Session = Depends(g
 
     if not user.is_active:
         logger.warning(f"SAML user account is inactive: {saml_data['saml_subject']}")
+        check_and_record_attempt(saml_data.get("email", "unknown"), success=False)
         audit_logger.log_login_failure(
             username=saml_data.get("email", "unknown"),
             source_ip=client_ip,
@@ -157,6 +200,32 @@ async def saml_acs(request: Request, response: Response, db: Session = Depends(g
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user account",
         )
+
+    # FedRAMP IA-2: an already-MFA-enrolled user must not get a full session
+    # through this path just because it skips the local-password form. Unlike
+    # PKI/OIDC (whose native factor IS the second factor, per
+    # _check_mfa_requirement's own exemption), a SAML-asserted identity is not
+    # exempt, so any TOTP the account has enrolled must still be verified —
+    # exactly as it would be on /token. This handler has no SPA JavaScript in
+    # this leg of the round trip, so there is no JSON response to hand back;
+    # redirect to the SPA's login page carrying the same half-token/flags the
+    # local flow returns in its JSON body, and issue no session cookies.
+    mfa_response = _check_mfa_requirement(
+        db, user, str(user.uuid), str(user.role), actual_auth_method=AUTH_METHOD
+    )
+    if mfa_response:
+        mfa_body = json.loads(bytes(mfa_response.body))
+        query = {"mfa_token": mfa_body["mfa_token"]}
+        if mfa_body.get("mfa_enrollment_required"):
+            query["mfa_enrollment_required"] = "true"
+        else:
+            query["mfa_required"] = "true"
+        redirect_url = "/login?" + urlencode(query)
+        return RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
+
+    # Clears whatever failure count this identifier had accrued — the same
+    # clear-on-success semantics /token gives a local password login.
+    check_and_record_attempt(user.email, success=True)
 
     access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     token_data = {"sub": str(user.uuid), "role": user.role}
@@ -183,12 +252,7 @@ async def saml_acs(request: Request, response: Response, db: Session = Depends(g
         ip_address=client_ip,
     )
 
-    relay_state = request_data["post_data"].get("RelayState") or _POST_LOGIN_REDIRECT
-    # RelayState is IdP-controlled input. Only ever treated as a same-origin path,
-    # never followed as an absolute URL — the same open-redirect guard OIDC's flow
-    # does not need (it never takes a redirect target from the provider) but SAML's
-    # RelayState convention does.
-    redirect_to = relay_state if relay_state.startswith("/") else _POST_LOGIN_REDIRECT
+    redirect_to = _sanitize_relay_state(request_data["post_data"].get("RelayState"))
 
     response = RedirectResponse(url=redirect_to, status_code=status.HTTP_302_FOUND)
     from app.auth.cookies import set_auth_cookies

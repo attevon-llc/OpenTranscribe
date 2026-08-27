@@ -21,14 +21,17 @@ routable peer address.
 from __future__ import annotations
 
 import uuid as uuid_pkg
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.core.security import get_password_hash
 from app.db.base import get_db
 from app.main import app
 from app.models.user import User
+from app.models.user_mfa import UserMFA
 from app.services.auth_config_service import AuthConfigService
 
 pytestmark = pytest.mark.xdist_group("proxy_auth")
@@ -186,6 +189,70 @@ class TestTheRoleHeaderIsCapped:
         created = db_session.query(User).filter(User.email == email).first()
         assert str(created.role) == "admin"
         assert bool(created.is_superuser) is False
+
+
+class TestProxyLoginRespectsEnrolledMfa:
+    """An MFA-enrolled user must not get a full session just by using the
+    proxy header instead of the local-password form. ``_check_mfa_requirement``
+    was only ever wired into ``/token`` — this pins that ``/proxy/authenticate``
+    now calls it too, mirroring the local handler exactly."""
+
+    @pytest.fixture
+    def mfa_enrolled_proxy_user(self, db_session) -> User:
+        user = User(
+            email=f"mfa-proxy-{uuid_pkg.uuid4().hex[:8]}@example.com",
+            full_name="MFA Proxy Person",
+            hashed_password=get_password_hash("irrelevant-Passphrase99!"),
+            role="user",
+            auth_type="proxy",
+            is_active=True,
+            is_superuser=False,
+        )
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+
+        user_mfa = UserMFA(
+            user_id=user.id,
+            totp_secret="encrypted-does-not-matter-for-this-gate",
+            totp_enabled=True,
+        )
+        db_session.add(user_mfa)
+        db_session.commit()
+        return user
+
+    def test_enrolled_user_is_challenged_not_sessioned(
+        self, proxy_client, db_session, mfa_enrolled_proxy_user, proxy_enabled
+    ):
+        with patch.object(settings, "MFA_ENABLED", True):
+            response = proxy_client.post(
+                ENDPOINT, headers={EMAIL_HEADER: str(mfa_enrolled_proxy_user.email)}
+            )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body.get("mfa_required") is True
+        assert body.get("mfa_token")
+        assert "access_token" not in body
+
+        from app.models.refresh_token import RefreshToken
+
+        sessions = (
+            db_session.query(RefreshToken)
+            .filter(RefreshToken.user_id == mfa_enrolled_proxy_user.id)
+            .count()
+        )
+        assert sessions == 0, "no session may be minted before the second factor is verified"
+
+    def test_unenrolled_user_is_unaffected(self, proxy_client, db_session, proxy_enabled):
+        """Same deployment-wide MFA_ENABLED=True, but this account never enrolled
+        TOTP — MFA_REQUIRED is off (the default), so it should still log in."""
+        email = f"mfa-off-{uuid_pkg.uuid4().hex[:8]}@example.com"
+        with patch.object(settings, "MFA_ENABLED", True):
+            response = proxy_client.post(ENDPOINT, headers={EMAIL_HEADER: email})
+
+        assert response.status_code == 200, response.text
+        assert response.json()["access_token"]
 
 
 class TestPerRequestConsistency:

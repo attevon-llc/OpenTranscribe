@@ -189,6 +189,73 @@ class TestSearchExecution:
                 )
 
 
+class TestSearchResultClickThrough:
+    """A result card's two ways to read more: navigate to the file, or preview in-place.
+
+    Read-only against the dev corpus: neither test creates or mutates anything, so no
+    data-hygiene cleanup is needed (mirrors `test_known_query_returns_result_cards`'s
+    skip pattern for a corpus that has no match in this environment).
+    """
+
+    def _first_result_card(self, page: Page):
+        # `.results-list`'s first child is sometimes a `.no-keyword-notice` banner
+        # ("No exact matches found. Showing related content."), not a card — scope to
+        # `.result-card` explicitly rather than `.results-list > *` (which the
+        # non-emptiness checks elsewhere in this module use for a different purpose:
+        # counting ANY rendered outcome, card or notice, not addressing a specific one).
+        card = page.locator(".results-list .result-card").first
+        expect(card).to_be_visible(timeout=15000)
+        return card
+
+    def test_clicking_a_result_title_navigates_to_the_file_detail_page(self, search_page: Page):
+        """`.result-title` is a real link to the file detail page, not a JS-only handler."""
+        _run_search(search_page, KNOWN_QUERY)
+        search_page.wait_for_timeout(2000)
+        if search_page.locator(".results-list").count() == 0:
+            pytest.skip(f"No indexed media matching '{KNOWN_QUERY}' in this environment")
+
+        card = self._first_result_card(search_page)
+        href = card.locator(".result-title").get_attribute("href")
+        assert href and href.startswith("/files/"), (
+            f"Result title has no /files/<uuid> link: {href!r}"
+        )
+
+        card.locator(".result-title").click()
+        search_page.wait_for_url(lambda url: "/search" not in url, timeout=15000)
+        assert href in search_page.url
+
+        # Not just a URL change — confirms the file detail page actually rendered
+        # (rules out a 500/blank page behind the right URL).
+        expect(search_page.locator(".transcript-segment").first).to_be_visible(timeout=15000)
+
+    def test_view_transcript_opens_the_modal_and_highlights_the_match(self, search_page: Page):
+        """`.view-transcript-btn` opens the in-place modal — no navigation, real highlights."""
+        _run_search(search_page, KNOWN_QUERY)
+        search_page.wait_for_timeout(2000)
+        if search_page.locator(".results-list").count() == 0:
+            pytest.skip(f"No indexed media matching '{KNOWN_QUERY}' in this environment")
+
+        card = self._first_result_card(search_page)
+        card.locator(".view-transcript-btn").click()
+
+        # `.search-transcript-modal-wrapper` is a plain, unsized wrapper div around the
+        # actual modal chrome — it renders in the DOM but never has visible dimensions of
+        # its own, so a visibility check must target the dialog inside it instead.
+        modal = search_page.locator(".search-transcript-modal-wrapper")
+        expect(modal.locator('[role="dialog"]')).to_be_visible(timeout=10000)
+        # Opening the modal must NOT navigate away from /search.
+        assert "/search" in search_page.url
+
+        expect(modal.locator(".nav-count")).to_be_visible(timeout=10000)
+        expect(modal.locator("button.nav-btn")).to_have_count(2)
+
+        # A stable highlight class (not the transient post-scroll pulse, which
+        # self-removes after 3.5s) proves the match was actually located and marked,
+        # not just that the modal opened.
+        highlights = modal.locator(".search-keyword-match, .search-semantic-segment")
+        expect(highlights.first).to_be_visible(timeout=10000)
+
+
 class TestSearchResultType:
     """Result-type toggle (issue #462: transcripts vs summaries)."""
 

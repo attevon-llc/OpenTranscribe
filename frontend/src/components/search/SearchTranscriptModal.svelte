@@ -404,8 +404,9 @@
   // place — no loading-state flip, no flicker.
   let showOriginal = false;
   let redactionActive = false;
-  let myPermission: string | null = null;
-  $: canViewOriginal = myPermission === null || myPermission === 'owner';
+  let myPermission: string | null | undefined = undefined;
+  $: permissionLoaded = myPermission !== undefined;
+  $: canViewOriginal = permissionLoaded && (myPermission === null || myPermission === 'owner');
   $: showRedactionToggle = canViewOriginal && (redactionActive || showOriginal);
 
   function redactParams(): Record<string, unknown> {
@@ -467,7 +468,7 @@
       });
 
       const segments = res.data.transcript_segments || [];
-      myPermission = res.data.my_permission || null;
+      myPermission = res.data.my_permission ?? null;
       if (!showOriginal && segments.some((s: Segment) => s?.redactions?.length)) {
         redactionActive = true;
       }

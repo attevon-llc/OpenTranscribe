@@ -495,12 +495,23 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
             rm -f "$cookie_jar"
             if [[ -n "$csrf_token" ]]; then
                 export API_CSRF_TOKEN="$csrf_token"
-                local chat_out answer citation_count
+                local chat_out answer citation_count chat_error
                 chat_out=$(ac_chat_completion "$llm_config_uuid" "$file_uuid" "What was discussed?" || true)
                 answer=$(echo "$chat_out" | sed -n '1p')
                 citation_count=$(echo "$chat_out" | sed -n '2p')
-                as_assert "chat summary non-empty" "[[ -n \"$answer\" ]]"
-                as_assert_ge "chat turn has at least one citation" "${citation_count:-0}" 1
+                chat_error=$(echo "$chat_out" | sed -n '3p')
+                if [[ -n "$chat_error" ]]; then
+                    # GH #595: an `event: error` frame means the turn ended for a
+                    # REASON, not that the model produced nothing — most commonly
+                    # the SSRF guard correctly refusing mock-llm's private-network
+                    # address (LLM_ALLOW_PRIVATE_ENDPOINTS=false is the default, and
+                    # correct, posture). Report the real cause instead of letting
+                    # the empty-answer assertion below stand in for it.
+                    as_record FAIL "chat completion" "LLM call ended in an error frame: $chat_error"
+                else
+                    as_assert "chat summary non-empty" "[[ -n \"$answer\" ]]"
+                    as_assert_ge "chat turn has at least one citation" "${citation_count:-0}" 1
+                fi
             else
                 as_record FAIL "chat completion" "could not obtain csrf_token cookie for chat session"
             fi

@@ -42,11 +42,63 @@ def test_a_remote_hosted_provider_is_masked():
 
 
 def test_vllm_is_unmasked():
-    assert is_local_provider(_Config(provider="vllm", base_url=None)) is True
+    """`base_url=None` on its own no longer classifies local. Pass the real
+
+    coded default (`config.py:1080`'s `VLLM_BASE_URL`) so this asserts the
+    common case a `vllm` deployment actually has, not a config that could
+    never reach a model.
+    """
+    cfg = _Config(provider="vllm", base_url="http://localhost:8012/v1")
+    assert is_local_provider(cfg) is True
 
 
 def test_ollama_is_unmasked():
-    assert is_local_provider(_Config(provider="ollama", base_url=None)) is True
+    """Same as above, `config.py:1088`'s `OLLAMA_BASE_URL` default."""
+    cfg = _Config(provider="ollama", base_url="http://localhost:11434")
+    assert is_local_provider(cfg) is True
+
+
+def test_a_hosted_vllm_endpoint_is_masked():
+    """A `vllm`-provider config whose `base_url` names a public SaaS host is
+
+    remote — the gap this lane closes. Must-fire: red against the
+    pre-fix code, which trusted `provider == "vllm"` alone.
+    """
+    with patch(
+        "app.utils.url_validation.resolve_public_addresses",
+        return_value=(["93.184.216.34"], ""),
+    ):
+        cfg = _Config(provider="vllm", base_url="https://vllm.some-saas.example/v1")
+        assert is_local_provider(cfg) is False
+
+
+def test_a_hosted_ollama_endpoint_is_masked():
+    with patch(
+        "app.utils.url_validation.resolve_public_addresses",
+        return_value=(["93.184.216.34"], ""),
+    ):
+        cfg = _Config(provider="ollama", base_url="https://ollama.some-saas.example/v1")
+        assert is_local_provider(cfg) is False
+
+
+def test_a_compose_hosted_vllm_is_still_local():
+    """A `vllm` config at a docker-compose service name stays local, and
+
+    without a DNS round trip — mirrors `test_dotless_docker_hostname_is_
+    unmasked_without_dns` for the `custom` provider.
+    """
+    with patch("app.utils.url_validation.resolve_public_addresses") as mocked:
+        cfg = _Config(provider="vllm", base_url="http://vllm:8000/v1")
+        assert is_local_provider(cfg) is True
+        mocked.assert_not_called()
+
+
+def test_vllm_with_no_base_url_fails_closed():
+    """A `vllm` config with no endpoint to reach reads remote — inert (it
+
+    cannot serve a model either way), but no longer a special-cased `True`.
+    """
+    assert is_local_provider(_Config(provider="vllm", base_url=None)) is False
 
 
 def test_custom_saas_host_is_masked():
@@ -84,7 +136,8 @@ def test_force_floor_locked_and_local_still_masks():
     admin-floor awareness and must not — that decision is `cfg.redact_before_llm_locked`,
     resolved elsewhere.
     """
-    assert is_local_provider(_Config(provider="vllm")) is True
+    cfg = _Config(provider="vllm", base_url="http://localhost:8012/v1")
+    assert is_local_provider(cfg) is True
 
 
 # --------------------------------------------------------------------------- #
@@ -182,4 +235,5 @@ def test_dotless_docker_hostname_is_unmasked_without_dns():
 
 
 def test_provider_is_case_and_whitespace_insensitive():
-    assert is_local_provider(_Config(provider=" VLLM ")) is True
+    cfg = _Config(provider=" VLLM ", base_url="http://localhost:8012/v1")
+    assert is_local_provider(cfg) is True

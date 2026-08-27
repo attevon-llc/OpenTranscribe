@@ -117,6 +117,13 @@ Run via `scripts/lite-smoke.sh`. Pass: stack healthy, no `celery-worker-gpu*` co
 a cloud ASR key — if one isn't configured, record `⊘ NOT MEASURED`, never a pass. Cover `--cpu`
 mode with the same script and the same criteria.
 
+⚠️ **This cycle is TOPOLOGY-only — it does not exercise the pipeline.** `lite-smoke.sh` proves the
+absence of a GPU worker and of resident GPU memory, and needs a real cloud ASR key to go further
+than that. It does **not** upload a file, run ASR, index it, search it, or chat over it. The actual
+upload -> ASR -> segments/speakers -> search -> chat pipeline for a lite deployment is covered
+separately, with no vendor key required, by the **"3-lite" leg** below
+(`scripts/release-tests/test-lite-mode.sh`) — see that section for what it asserts.
+
 ## Stage 3 — Deployment mode (prod)
 
 **~3-5h. Requires the dev stack STOPPED.**
@@ -132,6 +139,34 @@ Pass: every assertion in each scenario's `REPORT.md` is `PASS`. This sequence is
 `./scripts/release.sh rehearse <v>` runs — **that is the preferred invocation**, since it owns the
 ledger and records the run against a real version. Use the raw commands above only when
 rehearsing outside a release cut.
+
+### Stage 3 — lite-mode full rehearsal
+
+**~30-45 min. Requires the dev stack STOPPED** (same one-liner-defaults constraint as
+`test-fresh-install.sh`/`test-upgrade.sh` — see `scripts/release-tests/README.md`).
+
+```
+./opentr.sh stop
+./scripts/release-tests/test-lite-mode.sh --yes
+```
+
+Runs the real `docker-compose.lite.yml` (no-GPU, cloud-ASR-only) topology against a **mocked**
+cloud ASR provider (`scripts/mock-asr-server.py`, a Gladia stand-in) and a **mocked** LLM
+(`scripts/mock-llm-server.py`), so it needs no GPU, vendor API key, or network egress. Where Cycle
+2D's `lite-smoke.sh` only proves the no-GPU **topology**, this leg drives the real pipeline: ASR
+config creation, file upload, transcription completion against the canned mock transcript, segment
+count / speaker count / distinctive-token assertions, hybrid search, an OpenSearch ML
+deployed-model check, a chat turn against the mocked LLM with a real citation, the Alembic head,
+and a negative-path (`MOCK_ASR_SCENARIO=error`) upload reaching `error` status with no leaked
+credential in the error message.
+
+Pass: every assertion in `REPORT.md` is `PASS`. Known gap, deliberately deferred (see
+`backend/tests/CLAUDE.md`): the mock's per-request `?scenario=` override is not reachable from
+`GladiaProvider` itself (issue tracked in the "known deviation" note in
+`backend/tests/integration/test_lite_mode_mocked_providers.py`), so this leg's negative-path check
+restarts the `mock-asr` container with `MOCK_ASR_SCENARIO=error` mid-run rather than driving it
+per-request — safe here because, unlike the shared pytest module, this script owns its own compose
+lifecycle serially.
 
 **PKI/mTLS is prod+nginx ONLY.** There is no dev-mode variant and none should be invented — Vite
 cannot terminate mTLS.
@@ -180,7 +215,8 @@ stage. Verify all three are installed before starting Stage 4.
 | Cycle 2B | 30-45 min |
 | Cycle 2C | 20 min |
 | Cycle 2D | 20 min |
-| Stage 3 | 3-5 h |
+| Stage 3 (fresh-install + upgrade) | 3-5 h |
+| Stage 3 (lite-mode rehearsal) | 30-45 min |
 | Stage 4 | 45-90 min (2-3 h if the remote builder is unavailable) |
 | **Full matrix** | **~7-9 h — realistically one working day with triage** |
 

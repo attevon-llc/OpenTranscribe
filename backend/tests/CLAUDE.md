@@ -527,3 +527,57 @@ in CI rather than fail.
 **Each new migration breaks the previous suite's detection assertion.** `_detect_schema_version`
 returns the newest matching revision, so when you add vNNN, widen the vNNN-1 test to accept
 either value and pin the exact one in your own suite.
+
+## Mock cloud ASR provider (no GPU, no vendor account)
+
+`scripts/mock-asr-server.py` is a stdlib Gladia API v2 stand-in
+(`GET /v2/live`, `POST /v2/upload`, `POST /v2/transcription`,
+`GET /v2/transcription/<id>`). Only the returned transcript is canned — upload
+validates real RIFF/WAVE structure, and the submitted diarization/language/
+vocabulary fields are recorded verbatim and inspectable via
+`GET /_mock/last-request`, the same "prove the app's real request shape"
+role `mock_llm_completion` plays for the LLM mock.
+
+```bash
+./opentr.sh start dev --with-mock-asr     # http://mock-asr:5198 in-network
+```
+
+⚠️ `GladiaProvider._base` (`backend/app/services/asr/gladia_provider.py`) resolves
+`GLADIA_API_BASE_URL` once, at construction — **never** a config's `base_url`
+field (issue #594). `docker-compose.mock-asr.yml` sets that env var directly
+on `backend` and `celery-cloud-asr-worker`; without it `--with-mock-asr`
+doesn't route ASR traffic anywhere.
+
+Fixtures live in `tests/fixtures/mock_asr.py`:
+
+| Fixture | Use |
+|---|---|
+| `mock_asr_url` | URL the TEST process can reach (`http://127.0.0.1:5198`) |
+| `mock_asr_base_url_for_backend` | URL the BACKEND CONTAINER can reach (`http://mock-asr:5198`) |
+| `register_mock_gladia_asr_config` | Configure the app's `gladia` provider at the mock, deleted on teardown |
+
+Scenario selected via `?scenario=` on the transcription POST, **and** via the
+`MOCK_ASR_SCENARIO` env var as the server-start default (there is no per-job
+selection hook on the client side — see the gap note below):
+
+| Scenario | Behaviour |
+|---|---|
+| `ok` (default) | canned transcript from `sample_transcript.json`, reshaped with a distinctive `"Zylofenix"` token appended |
+| `error` | transcription job ends in a Gladia-shaped error payload |
+| `malformed` | response body doesn't match the expected schema |
+| `upload-reject` | `POST /v2/upload` itself rejects the file |
+
+**Known, documented gap**: `backend/tests/integration/test_lite_mode_mocked_providers.py`
+covers only the `ok` happy path end to end through the real pipeline. The 3
+negative-scenario tests (`error`/`malformed`/`upload-reject`) were **not**
+implemented there — the mock selects scenario via `?scenario=` on the request
+the *app* sends, and `GladiaProvider` has no per-job scenario-selection hook to
+drive that; only the server-start `MOCK_ASR_SCENARIO` default exists, which
+can't be changed mid-pytest-module without breaking that module's own `ok`
+happy-path tests (all tests in the module share one mock-asr container,
+serialized via `xdist_group`). The mock's own scenario contract IS covered at
+the unit level against `GladiaProvider` directly, in
+`backend/tests/unit/test_gladia_provider.py`. A bash-driven harness (unlike a
+shared pytest module) can restart the container between phases —
+`scripts/release-tests/test-lite-mode.sh`'s negative-path phase does exactly
+that. Fixing the live-pipeline pytest gap remains follow-on work.

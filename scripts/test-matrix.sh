@@ -73,6 +73,7 @@ LEGS=(
     "2c|2|diarization providers|scripts/diar-native-smoke.sh"
     "2d|2|lite/cpu-only|scripts/lite-smoke.sh"
     "3|3|deployment mode rehearsal (fresh-install + upgrade)|scripts/release-tests/test-fresh-install.sh"
+    "3-lite|3|lite-mode full pipeline rehearsal (mocked cloud ASR + mocked LLM)|scripts/release-tests/test-lite-mode.sh"
     "3-pki|3|PKI/mTLS (prod+nginx only)|pytest backend/tests/e2e/test_pki.py"
     "4|4|image/release gates confirmation|scripts/release.sh scan"
 )
@@ -136,11 +137,12 @@ check_doc_sync() {
     grep -q "Cycle 2C" "$DOC" || missing_in_doc+=("2c")
     grep -q "Cycle 2D" "$DOC" || missing_in_doc+=("2d")
     grep -q "## Stage 3" "$DOC" || missing_in_doc+=("3")
+    grep -q "### Stage 3 — lite-mode full rehearsal" "$DOC" || missing_in_doc+=("3-lite")
     grep -qi "PKI/mTLS is prod" "$DOC" || missing_in_doc+=("3-pki")
     grep -q "## Stage 4" "$DOC" || missing_in_doc+=("4")
 
     # Reverse direction: every doc leg id has a LEGS entry.
-    local doc_leg_ids=(1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 2a 2b 2c 2d 3 3-pki 4)
+    local doc_leg_ids=(1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 2a 2b 2c 2d 3 3-lite 3-pki 4)
     for id in "${doc_leg_ids[@]}"; do
         local found=false
         for entry in "${LEGS[@]}"; do

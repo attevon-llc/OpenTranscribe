@@ -182,12 +182,19 @@ this file is for.
     where `expect(x).toBeTruthy()` is not. `loop-only` also needs single-assignment resolution
     (`endpoints = [...]` then `for e in endpoints:` is as static as the literal) or 22
     table-driven tests are false positives.
-- **Fake LLM** — `mock-llm-server.py`: OpenAI-compatible server so chat/AI features work
+- **Fake providers** — `mock-llm-server.py`: OpenAI-compatible server so chat/AI features work
   without a GPU or API key. Run it via `./opentr.sh start dev --with-mock-llm` (compose
   service `mock-llm`, in-network `http://mock-llm:5199/v1`) rather than by hand — a bare
   host process binds 5199 and then blocks the container. Scenario models (`mock-echo`,
   `mock-empty`, `mock-error`, `mock-slow`) drive the app's real error paths; fixtures and
   the full table are in `backend/tests/CLAUDE.md`.
+  `mock-asr-server.py`: a stdlib Gladia API v2 stand-in so cloud-ASR features (and the whole
+  `--lite` deployment shape) work without a vendor account. Run via
+  `./opentr.sh start dev --with-mock-asr` (compose service `mock-asr`, in-network
+  `http://mock-asr:5198`) — never by hand, same bind-port hazard as the LLM mock. Scenario
+  models (`ok`/`error`/`malformed`/`upload-reject`) select via `?scenario=` on the request or
+  the `MOCK_ASR_SCENARIO` env var at server start; fixtures and the full table are in
+  `backend/tests/CLAUDE.md`.
 - **Frontend gate** — `frontend-check.sh`: `npm ci` → `svelte-kit sync` → ESLint → svelte-check → vite
   build. Also the pre-commit hook (`files: ^frontend/src/`) and the `/fix-frontend` command.
 - **Publish images** — `docker-build-push.sh`; prefer the skill at `.claude/skills/docker-build-push/SKILL.md`.
@@ -198,7 +205,9 @@ this file is for.
   not 1000 (issue #580). Never hardcode `1000:1000` in a new chown.
 - **Fixtures** — `seed-fresh-deployment.sh`, `setup-watch-source-test-data.sh`, `test-watch-e2e.sh`.
 - **Release rehearsals** — `release-tests/`: `test-fresh-install.sh`, `test-upgrade.sh`
-  (both auto-detect FROM/TO — see `lib/versions.sh`), with `lib/guardrails.sh` as the
+  (both auto-detect FROM/TO — see `lib/versions.sh`), and `test-lite-mode.sh` (no
+  FROM/TO to detect — always rehearses the CURRENT `VERSION`'s `--lite` deployment shape
+  against mocked cloud ASR + mocked LLM), with `lib/guardrails.sh` as the
   safety firewall and `lib/{compose-patch,api-client,assertions,versions,model-cache}.sh`.
 
   ⚠️ **NEVER hardlink `nltk_data` when seeding the model cache — seed through

@@ -129,6 +129,9 @@ app actually *sent*), `mock-empty`, `mock-error`, `mock-slow`, `mock-reasoning`
 testable). Never start it as a
 bare host process: it binds 5199 and then blocks the container. Fixtures and the
 full table: `backend/tests/CLAUDE.md`.
+`--with-mock-asr` is the sibling overlay — a mocked cloud ASR (Gladia stand-in) provider at
+`http://mock-asr:5198`, so `--lite`-mode ASR can be exercised with no vendor account either;
+same fixture/table location.
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.
 Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`.
 

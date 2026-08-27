@@ -189,15 +189,23 @@ as an anonymous 200.
 - Offline/air-gapped deployment is **config-validated only** (Stage 1.6). A real
   network-namespaced offline install pass is a known, currently uncovered gap — do not read
   Stage 1.6 as proving offline mode works end to end.
-- **`opentr.sh backup`/`restore` and `opentranscribe.sh update --rollback` have NO rehearsal
-  coverage anywhere in this matrix.** `test-upgrade.sh` proves the forward migration path (data
-  survives, new features work) but never exercises the backup-then-restore cycle
-  `--rollback` depends on (`docs-site/docs/operations/upgrading.md`: "rollback means restoring
-  the backup you took before upgrading"). This is distinct from the Alembic migration chain
-  being genuinely one-way (`scripts/release-tests/README.md`'s "Rollback is not supported" note
-  is about the DB migration direction, not the backup/restore mechanism). Tracked as
-  [#598](https://github.com/attevon-llc/OpenTranscribe/issues/598) — a real gap in a
-  safety-critical path, deliberately not blocking a release on its own.
+- **`opentr.sh backup`/`restore` and `opentranscribe.sh update --rollback` ARE rehearsed**,
+  by `test-upgrade.sh`'s phases 13-17 ([#598](https://github.com/attevon-llc/OpenTranscribe/issues/598)).
+  Phase 12 asserts the rollback precondition (`# OT_PREVIOUS_IMAGE_TAG`) a real
+  `update --version` records; phase 15 restores the phase-06b pre-upgrade backup over damage
+  inflicted through the real API and asserts content digests, not row counts, match exactly
+  (a delete+insert pair leaves counts unchanged); phase 16 runs the real
+  `update --rollback` and asserts the FROM image serves the restored FROM database through its
+  real API (login, file list, transcript text) — not merely that the command exited 0; phase 17
+  proves the documented recovery loop (roll back -> re-upgrade) completes cleanly. A
+  `ROLLBACK_INJECT_FAULT` self-check (`truncate`/`no-damage`/`stale-oracle`) deliberately breaks
+  the tail so its own failure detection is exercised for real — see
+  `scripts/release-tests/selftest-rollback-fault-injection.sh`. **Still NOT covered, deliberately**:
+  `backup --encrypt` (unattended `gpg` needs a passphrase file the CLI does not support), the
+  in-app scheduled-backup system (`app/services/backup_service.py` — a separate implementation
+  with its own real unit/API coverage but no end-to-end restore proof), and MinIO/OpenSearch
+  restore (the DB restore does not touch either — asserted as R-11, not merely unclaimed). Full
+  detail: `scripts/release-tests/README.md`.
 
 ## Test data & fixtures
 

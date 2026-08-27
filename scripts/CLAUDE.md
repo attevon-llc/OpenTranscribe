@@ -241,11 +241,25 @@ this file is for.
   `reset <version>` clears rehearsal history — do it before a real run, or the
   status table reports stale state as current.
   Full guide: `docs-site/docs/developer-guide/releasing.md`.
-- **Harness self-test** — `release-tests/selftest-cleanup.sh` (15 cases). Run it
+- **Harness self-test** — `release-tests/selftest-cleanup.sh` (25 cases). Run it
   after ANY change to `lib/guardrails.sh`: it exercises the code that deletes
   volumes, and caught the live-data marker check deleting a volume it should have
   refused (the marker was read from the host, where the root-owned mountpoint made
-  every volume look unmarked).
+  every volume look unmarked). Cases 8-10 (issue #598) cover the rollback tail's
+  additional guardrails (`gr_assert_target_is_test_database`,
+  `gr_fingerprint_repo_backups`/`gr_assert_repo_backups_untouched`,
+  `gr_assert_not_repo_cwd`) — the tail runs `DROP DATABASE`, which none of the
+  earlier cases needed to guard against.
+  `release-tests/selftest-rollback-fault-injection.sh` (6 cases, ~1 minute) is the
+  sibling for `lib/db-snapshot.sh`: it proves `test-upgrade.sh`'s rollback-tail
+  assertions can actually FAIL (a truncated dump, a stale comparison oracle, a
+  skipped damage step) against a throwaway isolated Postgres container, never the
+  4-hour scenario. Run it after any change to `lib/db-snapshot.sh` or to
+  `test-upgrade.sh`'s phases 13-17. It also pins a real, measured finding: a
+  plain-format `pg_dump` truncated mid-`COPY` replays with exit 0 and silently
+  wrong data — psql treats an unterminated `COPY ... FROM stdin` at EOF as simply
+  ending the copy, not a parse error — so that fault mode's rehearsal assertion
+  is a content digest, never `restore`'s exit code.
 - **Release gates** — `check-schema-drift.py` (model-vs-schema, report-first),
   `validate-deployments.sh` (~20 compose permutations in ~15 s),
   `release/check-version-consistency.py` (the six version sources + Alembic single head).

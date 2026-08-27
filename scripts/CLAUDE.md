@@ -367,7 +367,16 @@ aux-file record.
   no confirmation, no dry-run.**
 - `fix-database-issues.sql` / `fix-false-error-files.sql` — mass status UPDATEs; both are stale one-offs
   superseded by `backend/app/tasks/recovery.py`. (`comprehensive-database-review.sql` is read-only.)
-- `cleanup-test-users.py` — `DELETE FROM "user"`; dry-run unless `--execute`.
+- `cleanup-test-users.py` — `DELETE FROM "user"`; dry-run unless `--execute`. Targets
+  `POSTGRES_HOST`/`POSTGRES_PORT` (env var, or `.env` fallback for the port only — `POSTGRES_HOST`
+  is env-var-only, see the script's `_host_setting` docstring for why), never the orphaned
+  `POSTGRES_TEST_PORT` name that appeared nowhere else in the repo before issue #601 and always
+  silently resolved to the live dev stack's port (5176) regardless of what an operator intended
+  to target. Prints `Target: <user>@<host>:<port>/<db>` as the first line of every run — check it
+  before trusting `--execute`. A candidate blocked by a leftover child row (`tag`/`task`/
+  `comment`/`collection`/`speaker`/`speaker_profile`/`speaker_collection`.`user_id`, all
+  `ON DELETE NO ACTION`) is reported and skipped, not fatal to the batch — exit code 1 if
+  anything was blocked.
 - `uninstall-offline-package.sh` — `docker compose down -v`, `docker rmi`, `rm -rf /opt/opentranscribe`.
 - `release-tests/*` — `docker volume rm` on `opentranscribe_*` plus `rm -rf $TEST_ROOT`. They
   **require the live stack to be stopped**: they bind the standard 5173–5180 ports under the stock

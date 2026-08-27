@@ -92,7 +92,9 @@ docker compose exec -T postgres pg_dump -U postgres opentranscribe > backup.sql
 # Compressed backup (recommended for large databases)
 docker compose exec -T postgres pg_dump -U postgres opentranscribe | gzip > backup.sql.gz
 
-# Custom format (supports parallel restore)
+# Custom format (supports parallel restore for a manual pg_restore — but see the
+# --single-transaction/-j note under Restore Procedures: ./opentr.sh restore's safe path
+# deliberately does NOT use -j, so it does not get that parallelism)
 docker compose exec -T postgres pg_dump -U postgres -Fc opentranscribe > backup.dump
 ```
 
@@ -118,7 +120,11 @@ Then, in the admin UI:
   - **Local folder** — the mounted `/backups` path (set via `BACKUP_HOST_PATH`).
   - **S3-compatible bucket** — any AWS S3 / MinIO / Backblaze-style endpoint. Provide endpoint URL, region, bucket, prefix, and access/secret keys. The secret is encrypted at rest (AES-256-GCM) and never returned by the API; a **Test Connection** button validates it. This lets backups land **off the host machine** entirely.
 - Set **GFS retention** (grandfather-father-son: daily / weekly / monthly counts; default 7 / 4 / 12).
-- Optionally enable **gpg encryption** (provide a passphrase file path).
+- Optionally enable **gpg encryption** (provide a passphrase file path). ⚠️ Currently
+  broken on the published production image — `gpg` is not installed
+  (`Dockerfile.prod` installs `postgresql-client` but never `gnupg`), so an encrypted
+  scheduled/S3 backup fails on every run until [issue #604](https://github.com/attevon-llc/OpenTranscribe/issues/604) lands. Unencrypted
+  scheduled backups are unaffected.
 - Use **Run Now** to take an immediate backup and see the last result.
 
 Under the hood: a lightweight `backup.check_schedule` beat task fires every few
@@ -135,8 +141,10 @@ bucket on a different machine or provider** — a host failure then can't take
 your backups with it. The bucket can be your own MinIO on another box.
 :::
 
-Restore an in-app backup the same way as any custom-format dump — see
-[Restore Procedures](#restore-procedures) below (`pg_restore`).
+Restore an in-app backup with the same `./opentr.sh restore` command as any other backup —
+see [Restoring a custom-format (-Fc) or scheduled-backup dump](#restoring-a-custom-format--fc-or-scheduled-backup-dump)
+below. For an S3 destination, fetch the artifact first with `--from-s3` — see
+[Restoring an S3-destination backup](#restoring-an-s3-destination-backup).
 
 #### OpenSearch snapshots (optional)
 
@@ -575,25 +583,87 @@ media with no row, rows with no media, stale search hits. Reindex from **Admin �
 if the restored database's file list differs from what MinIO/OpenSearch currently have.
 :::
 
-Manual restore (for a custom-format dump, or when you need `pg_restore`'s parallel
-restore):
+### Restoring a custom-format (`-Fc`) or scheduled-backup dump
+
+`./opentr.sh restore` above handles **both** dump formats — it's the same command for
+either, not a separate procedure. It sniffs the file's `PGDMP` magic bytes and, for a
+custom-format `.dump`/`.dump.gpg` (what the in-app scheduled/S3 backup produces, and what
+`pg_dump -Fc` produces manually), replays it with `pg_restore --exit-on-error
+--single-transaction --no-owner --no-privileges` instead of `psql` — reusing the exact same
+confirm / safety-dump / drop-recreate / verify sequence described above (issue #600):
+
+```bash
+./opentr.sh restore backups/opentranscribe-20260827-030000.dump
+# or, encrypted:
+./opentr.sh restore backups/opentranscribe-20260827-030000.dump.gpg
+```
+
+:::danger Do not "fix" a missing stdin redirect by hand
+An earlier version of this page showed `docker compose exec -T postgres pg_restore -U
+postgres -d opentranscribe backup.dump` — that fails outright (`could not open input file`,
+the path resolves *inside* the postgres container). Adding `< backup.dump` to fix the
+redirect reproduces issue #599's exact silent-corruption bug for `pg_restore`: drifted data
+survives, and `alembic_version` ends with two conflicting rows. Unlike `psql`, `pg_restore`
+does exit nonzero here (`warning: errors ignored on restore: N`) — but it has **already
+committed the partial damage** by the time it prints that, so the nonzero exit is not the
+safety net it looks like. Use `./opentr.sh restore` above; it guarantees an empty target
+before replaying, exactly like the plain-SQL path.
+:::
+
+#### Restoring an S3-destination backup
+
+An S3-destination scheduled backup exists **only in the bucket** — the local artifact is
+deleted right after upload. The S3 credentials needed to fetch it back are encrypted in the
+database, so:
+
+☠️ **Fetch the artifact BEFORE anything destructive happens** — the credentials to reach
+your bucket live inside the very database a restore is about to drop.
+
+```bash
+./opentr.sh restore --from-s3 opentranscribe-20260827-030000.dump
+```
+
+This fetches the named object out of the configured S3 destination (via
+`app.scripts.fetch_backup` inside the backend container, the only place the decryption key
+is available) into `${BACKUP_HOST_PATH:-./backups}`, verifying its size and magic bytes,
+*then* runs the normal restore flow above. It refuses (naming the manual two-step below) if
+the backend container isn't running. Manual fallback:
+
+```bash
+docker compose exec -T backend python -m app.scripts.fetch_backup --list
+docker compose exec -T backend python -m app.scripts.fetch_backup opentranscribe-20260827-030000.dump
+./opentr.sh restore "${BACKUP_HOST_PATH:-./backups}/opentranscribe-20260827-030000.dump"
+```
+
+#### If you specifically need `pg_restore`'s parallel restore (`-j`)
+
+`./opentr.sh restore`'s safe path uses `--single-transaction`, which is **mutually
+exclusive** with `-j`/`--jobs` (measured: `pg_restore: error: cannot specify both
+--single-transaction and multiple jobs`) — so it deliberately forfeits parallel restore for
+the atomicity guarantee (a failure rolls back to nothing, not a hybrid schema). An operator
+who knowingly wants `-j` for a very large database can run it by hand, accepting that
+tradeoff explicitly:
 
 ```bash
 # Stop services that use the database
 docker compose stop backend celery-worker celery-download-worker \
   celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
 
-# Custom format
-docker compose exec -T postgres pg_restore -U postgres -d opentranscribe backup.dump
+# Guarantee an empty target first — pg_restore --clean is NOT enough (it only drops
+# objects the dump itself knows about, so a later migration's table would survive).
+docker compose exec -T postgres psql -U postgres -d postgres \
+  -c 'DROP DATABASE IF EXISTS "opentranscribe" WITH (FORCE);' \
+  -c 'CREATE DATABASE "opentranscribe" OWNER "postgres";'
+
+# Parallel restore — no atomicity guarantee: a failure partway through leaves a
+# hybrid schema, not a clean rollback.
+docker compose exec -T postgres pg_restore -U postgres -d opentranscribe -j 4 \
+  --no-owner --no-privileges < backup.dump
 
 # Restart services
 docker compose start backend celery-worker celery-download-worker \
   celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
 ```
-
-For a plain-SQL or compressed (`.sql.gz`) backup, prefer `./opentr.sh restore` above —
-a manual `psql < backup.sql` into a non-empty database is exactly the silent-failure
-mode issue #599 fixed.
 
 ### Restoring MinIO Data
 
@@ -708,6 +778,35 @@ docker compose exec postgres psql -U postgres opentranscribe_test -c "
 # 4. Clean up test database
 docker compose exec postgres dropdb -U postgres opentranscribe_test
 ```
+
+The same drill for a custom-format (`-Fc`) or scheduled-backup artifact, using
+`pg_restore` (issue #600):
+
+```bash
+# 1. Create a test database
+docker compose exec postgres createdb -U postgres opentranscribe_test
+
+# 2. Restore into it — --exit-on-error --single-transaction so a replay failure rolls
+#    back to nothing rather than a hybrid schema. No drop/--clean needed:
+#    opentranscribe_test is already empty.
+docker compose exec -T postgres pg_restore -U postgres -d opentranscribe_test \
+  --exit-on-error --single-transaction --no-owner --no-privileges < backups/opentranscribe-latest.dump
+
+# 3. Verify — same query as above
+docker compose exec postgres psql -U postgres opentranscribe_test -c "
+  SELECT 'users' as table_name, count(*) FROM \"user\"
+  UNION ALL
+  SELECT 'media_files', count(*) FROM media_file
+  UNION ALL
+  SELECT 'transcripts', count(*) FROM transcript_segment;
+"
+
+# 4. Clean up test database
+docker compose exec postgres dropdb -U postgres opentranscribe_test
+```
+
+Or skip both hand-rolled drills and just run the real thing against a throwaway copy —
+`./opentr.sh restore` handles both formats and does the drop/recreate + verify for you.
 
 :::tip
 Schedule a quarterly disaster recovery drill where you restore from backup onto a separate machine to validate the entire recovery process end-to-end.

@@ -137,6 +137,9 @@ show_help() {
   echo "  --with-mock-llm      - Start mock LLM provider (localhost:5199) so chat/AI features"
   echo "                         work without a GPU or API key. Models: mock-gpt, mock-echo,"
   echo "                         mock-empty, mock-error, mock-slow"
+  echo "  --with-mock-asr      - Start mock cloud ASR provider (Gladia stand-in, localhost:5198)"
+  echo "                         so cloud-ASR features work without a vendor account."
+  echo "                         Scenarios: ok, error, malformed, upload-reject"
   echo "  --with-llm-test      - Start a real GPU-backed LLM (vLLM, localhost:5195) for chat"
   echo "                         testing against actual model output, not canned tokens."
   echo "                         Default model: Gemma 4 E4B (AWQ), GPU 2. See"
@@ -219,6 +222,7 @@ show_help() {
   echo "  ./opentr.sh start dev --cpu                  # Local CPU-only (skip GPU overlay)"
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
   echo "  ./opentr.sh start dev --with-mock-llm        # Dev with a fake LLM for chat/AI testing"
+  echo "  ./opentr.sh start dev --with-mock-asr        # Dev with a fake cloud ASR provider for testing"
   echo "  ./opentr.sh start dev --with-llm-test        # Dev with a real GPU-backed LLM (vLLM) for chat testing"
   echo "  ./opentr.sh start dev --with-diar-native     # Dev with the native diarization sidecar"
   echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
@@ -527,6 +531,9 @@ FRESH_LDAP_SERVICES=(lldap)
 # Mock LLM provider (--with-mock-llm). Isolated like every other aux overlay so
 # a fresh stack cannot collide with the main one on port 5199.
 FRESH_MOCK_LLM_SERVICES=(mock-llm)
+# Mock cloud ASR provider (--with-mock-asr). Isolated like every other aux
+# overlay so a fresh stack cannot collide with the main one on port 5198.
+FRESH_MOCK_ASR_SERVICES=(mock-asr)
 # Native diarization sidecar (--with-diar-native). No published host port, but the
 # service still needs re-pinning into the fresh project so two stacks never share one.
 FRESH_DIAR_NATIVE_SERVICES=(diar-native)
@@ -770,6 +777,9 @@ FRESH_LDAP_PORT_VARS=(
 )
 FRESH_MOCK_LLM_PORT_VARS=(
   "MOCK_LLM_PORT=5199"          # mock LLM provider → :5199
+)
+FRESH_MOCK_ASR_PORT_VARS=(
+  "MOCK_ASR_PORT=5198"          # mock cloud ASR provider → :5198
 )
 FRESH_SMB_PORT_VARS=(
   "SMB_TEST_PORT=4450"          # samba → :445
@@ -1166,6 +1176,7 @@ start_app() {
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
   WITH_MOCK_LLM_FLAG=""
+  WITH_MOCK_ASR_FLAG=""
   WITH_DIAR_NATIVE_FLAG=""
   NO_DIAR_NATIVE_FLAG=""
   WITH_LLM_TEST_FLAG=""
@@ -1272,6 +1283,10 @@ start_app() {
         WITH_MOCK_LLM_FLAG="--with-mock-llm"
         shift
         ;;
+      --with-mock-asr)
+        WITH_MOCK_ASR_FLAG="--with-mock-asr"
+        shift
+        ;;
       --with-diar-native)
         WITH_DIAR_NATIVE_FLAG="--with-diar-native"
         shift
@@ -1371,6 +1386,11 @@ start_app() {
       _port_vars+=("${FRESH_MOCK_LLM_PORT_VARS[@]}")
       _aux_services+=("${FRESH_MOCK_LLM_SERVICES[@]}")
       _aux_files+=("docker-compose.mock-llm.yml")
+    fi
+    if [ -n "$WITH_MOCK_ASR_FLAG" ]; then
+      _port_vars+=("${FRESH_MOCK_ASR_PORT_VARS[@]}")
+      _aux_services+=("${FRESH_MOCK_ASR_SERVICES[@]}")
+      _aux_files+=("docker-compose.mock-asr.yml")
     fi
     if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
       _aux_services+=("${FRESH_DIAR_NATIVE_SERVICES[@]}")
@@ -1736,6 +1756,18 @@ start_app() {
     fi
   fi
 
+  # Add mock cloud ASR provider if requested
+  if [ -n "$WITH_MOCK_ASR_FLAG" ]; then
+    if [ -f "docker-compose.mock-asr.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.mock-asr.yml"
+      echo "🤖 Adding mock cloud ASR provider (docker-compose.mock-asr.yml)"
+      echo "   From containers: http://mock-asr:5198   From host: http://localhost:${MOCK_ASR_PORT:-5198}"
+      echo "   Scenarios: ok (default) error malformed upload-reject"
+    else
+      echo "⚠️  --with-mock-asr specified but docker-compose.mock-asr.yml not found"
+    fi
+  fi
+
   # Native diarization sidecar auto-load: `native` is the coded default engine, so a
   # stack without the sidecar silently serves every file from the in-process PyAnnote
   # fallback. Mirrors the NAS auto-detect: announced, and --no-diar-native suppresses.
@@ -1966,6 +1998,7 @@ start_app() {
     _pf_ports=("${FRESH_PORT_VARS[@]}")
     [ -n "$WITH_LDAP_TEST_FLAG" ] && _pf_ports+=("${FRESH_LDAP_PORT_VARS[@]}")
     [ -n "$WITH_MOCK_LLM_FLAG" ] && _pf_ports+=("${FRESH_MOCK_LLM_PORT_VARS[@]}")
+    [ -n "$WITH_MOCK_ASR_FLAG" ] && _pf_ports+=("${FRESH_MOCK_ASR_PORT_VARS[@]}")
     [ -n "$WITH_SMB_TEST_FLAG" ] && _pf_ports+=("${FRESH_SMB_PORT_VARS[@]}")
     [ -n "$WITH_MONITORING_FLAG" ] && _pf_ports+=("${FRESH_MONITORING_PORT_VARS[@]}")
     [ -n "$WITH_LLM_TEST_FLAG" ] && _pf_ports+=("${FRESH_LLM_TEST_PORT_VARS[@]}")
@@ -2064,6 +2097,7 @@ reset_and_init() {
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
   WITH_MOCK_LLM_FLAG=""
+  WITH_MOCK_ASR_FLAG=""
   WITH_DIAR_NATIVE_FLAG=""
   NO_DIAR_NATIVE_FLAG=""
   WITH_LLM_TEST_FLAG=""
@@ -2156,6 +2190,10 @@ reset_and_init() {
         ;;
       --with-mock-llm)
         WITH_MOCK_LLM_FLAG="--with-mock-llm"
+        shift
+        ;;
+      --with-mock-asr)
+        WITH_MOCK_ASR_FLAG="--with-mock-asr"
         shift
         ;;
       --with-diar-native)
@@ -2440,6 +2478,18 @@ reset_and_init() {
       echo "   Models: mock-gpt (normal) mock-echo mock-empty mock-error mock-slow"
     else
       echo "⚠️  --with-mock-llm specified but docker-compose.mock-llm.yml not found"
+    fi
+  fi
+
+  # Add mock cloud ASR provider if requested
+  if [ -n "$WITH_MOCK_ASR_FLAG" ]; then
+    if [ -f "docker-compose.mock-asr.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.mock-asr.yml"
+      echo "🤖 Adding mock cloud ASR provider (docker-compose.mock-asr.yml)"
+      echo "   From containers: http://mock-asr:5198   From host: http://localhost:${MOCK_ASR_PORT:-5198}"
+      echo "   Scenarios: ok (default) error malformed upload-reject"
+    else
+      echo "⚠️  --with-mock-asr specified but docker-compose.mock-asr.yml not found"
     fi
   fi
 

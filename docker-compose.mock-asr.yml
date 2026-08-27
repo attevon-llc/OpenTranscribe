@@ -1,0 +1,53 @@
+# Mock cloud ASR (Gladia stand-in) for development and testing.
+#
+# Runs scripts/mock-asr-server.py on the app network so the backend can reach it
+# at http://mock-asr:5198 without a vendor account, a GPU, or an internet
+# connection. Everything except transcription content stays real: upload
+# validates real WAV structure, the submitted diarization/language/vocabulary
+# fields are recorded verbatim for introspection, and the job goes through a
+# real processing → done poll cycle. Only the returned transcript is canned.
+#
+#   ./opentr.sh start dev --with-mock-asr
+#
+# Then in Settings → AI ASR, or the mock_asr_base_url_for_backend pytest fixture:
+#   Provider: Gladia
+#   Base URL (test-only override): http://mock-asr:5198   (GLADIA_API_BASE_URL)
+#   API key:  anything non-empty
+#
+# Bind-mounts the script rather than baking an image: editing a scenario is then
+# a container restart, not a rebuild. Uses the stock python image for the same
+# reason — the server is stdlib-only, so there is nothing to install.
+services:
+  mock-asr:
+    image: python:3.12-slim
+    container_name: ${MOCK_ASR_CONTAINER_NAME:-opentranscribe-mock-asr}
+    # --host 0.0.0.0 is required INSIDE the container (the backend reaches it
+    # by service name), and is safe here because the published port below is
+    # loopback-only. The script itself defaults to 127.0.0.1 so a bare host run
+    # cannot expose an unauthenticated ASR endpoint to the LAN.
+    command: python /app/mock-asr-server.py --host 0.0.0.0 --port 5198
+    working_dir: /app
+    environment:
+      MOCK_ASR_FIXTURE_PATH: /app/fixtures/sample_transcript.json
+    volumes:
+      - ./scripts/mock-asr-server.py:/app/mock-asr-server.py:ro
+      - ./backend/tests/fixtures/media/sample_transcript.json:/app/fixtures/sample_transcript.json:ro
+    ports:
+      # Loopback only: it accepts any audio with no authentication, so it must
+      # never be reachable off-host. Published at all only so host-side pytest
+      # / release-rehearsal scripts can drive it directly.
+      - "127.0.0.1:${MOCK_ASR_PORT:-5198}:5198"
+    healthcheck:
+      # Stdlib probe — the slim image has neither curl nor wget.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request;urllib.request.urlopen('http://localhost:5198/v2/live',timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped

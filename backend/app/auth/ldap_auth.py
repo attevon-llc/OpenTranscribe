@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from typing import TypedDict
 
 from ldap3 import ALL
-from ldap3 import AUTO_BIND_TLS_BEFORE_BIND
 from ldap3 import Connection
 from ldap3 import Server
 from ldap3.core.exceptions import LDAPBindError
@@ -206,23 +205,50 @@ def _close_connection(conn: Connection | None, name: str) -> None:
         logger.debug(f"Error closing {name} connection (ignored)")
 
 
-def _bind_service_account(cfg: LdapConfig, server: Server) -> Connection | None:
-    """Bind to LDAP server using service account."""
+def _connect_and_bind(
+    cfg: LdapConfig, server: Server, user: str, password: str
+) -> Connection | None:
+    """Open a connection, negotiate encryption per ``cfg``, and bind.
+
+    - ``use_ssl=True``: ``server`` already wraps the socket in TLS (``ldaps://``,
+      handled by :func:`_get_ldap_server`) — bind directly.
+    - ``use_tls=True`` (StartTLS over a plaintext ``ldap://`` connection): negotiate
+      StartTLS explicitly and FAIL CLOSED if negotiation does not succeed, rather
+      than silently falling through to a cleartext bind. ``cfg.use_tls`` used to be
+      read into ``LdapConfig`` and then never consulted by the bind code — every
+      StartTLS deployment was binding in cleartext regardless of the setting.
+    - Neither: plain cleartext bind, unchanged.
+
+    Returns:
+        A bound ``Connection``, or ``None`` if TLS negotiation or the bind failed.
+    """
+    conn = Connection(server, user=user, password=password, auto_bind=False)
     try:
-        conn = Connection(
-            server,
-            user=cfg.bind_dn,
-            password=cfg.bind_password,
-            auto_bind=AUTO_BIND_TLS_BEFORE_BIND if cfg.use_ssl else True,
-        )
-        logger.debug("LDAP service account bind successful")
+        if cfg.use_tls and not cfg.use_ssl and (not conn.open() or not conn.start_tls()):
+            logger.error(
+                "LDAP StartTLS negotiation failed; refusing to fall back to a "
+                "cleartext bind (ldap_use_tls is enabled)"
+            )
+            _close_connection(conn, "failed-starttls")
+            return None
+        if not conn.bind():
+            return None
         return conn
     except LDAPBindError:
+        return None
+
+
+def _bind_service_account(cfg: LdapConfig, server: Server) -> Connection | None:
+    """Bind to LDAP server using service account."""
+    conn = _connect_and_bind(cfg, server, cfg.bind_dn, cfg.bind_password)
+    if conn is None:
         logger.error(
             "Failed to bind to LDAP server with service account. "
-            "Check LDAP bind DN and password configuration."
+            "Check LDAP bind DN and password configuration, or LDAP TLS negotiation."
         )
         return None
+    logger.debug("LDAP service account bind successful")
+    return conn
 
 
 def _search_ldap_user(
@@ -485,16 +511,7 @@ def _verify_user_credentials(
     cfg: LdapConfig, server: Server, user_dn: str, password: str
 ) -> Connection | None:
     """Verify user credentials by binding as the user."""
-    try:
-        conn = Connection(
-            server,
-            user=user_dn,
-            password=password,
-            auto_bind=AUTO_BIND_TLS_BEFORE_BIND if cfg.use_ssl else True,
-        )
-        return conn
-    except LDAPBindError:
-        return None
+    return _connect_and_bind(cfg, server, user_dn, password)
 
 
 def _is_ldap_admin(

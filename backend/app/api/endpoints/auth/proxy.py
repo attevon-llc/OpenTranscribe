@@ -27,6 +27,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import _get_client_info
+from app.api.endpoints.auth.login import _check_mfa_requirement
 from app.api.endpoints.auth.login import record_successful_login
 from app.auth.audit import audit_logger
 from app.auth.cookies import set_auth_cookies
@@ -112,6 +113,18 @@ def proxy_login(request: Request, response: Response, db: Session = Depends(get_
             auth_method="proxy",
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user account")
+
+    # FedRAMP IA-2: an already-MFA-enrolled user must not get a full session
+    # through this path just because it skips the local-password form. The
+    # local handler's _check_mfa_requirement already exempts PKI/OIDC users
+    # authenticating natively; a proxy-asserted identity is not one of those
+    # exemptions, so any TOTP the account has enrolled must still be verified
+    # here, exactly as it would be on /token.
+    mfa_response = _check_mfa_requirement(
+        db, user, str(user.uuid), str(user.role), actual_auth_method="proxy"
+    )
+    if mfa_response:
+        return mfa_response
 
     access_token = create_access_token(
         data={"sub": str(user.uuid), "role": user.role},

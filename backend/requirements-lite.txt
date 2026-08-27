@@ -1,3 +1,8 @@
+# Fast constant-time file fingerprint (app/services/imohash_service.py), imported
+# unconditionally by app/tasks/imohash_recompute.py — every Celery worker's default
+# task-module import (including celery-cloud-asr-worker) fails without it.
+imohash==1.1.0
+mmh3==5.3.0  # via imohash — see requirements.txt for the version-drift note (issue #492)
 # fastapi capped <0.137: 0.137+ stops flattening include_router prefixes into
 # scope["route"].path — breaks route-templated metrics labels (see requirements.txt)
 fastapi==0.136.3

@@ -107,17 +107,19 @@ describe('SearchTranscriptModal — permission-gated redaction toggle', () => {
   it('shows the toggle once resolved for owner permission', async () => {
     get.mockResolvedValueOnce(redactedSegmentResponse('owner'));
 
-    const { queryByText } = renderModal();
+    const { findByText } = renderModal();
 
-    await waitFor(() => expect(queryByText('Show original')).not.toBeNull());
+    const toggle = await findByText('Show original');
+    expect(toggle).toBeVisible();
   });
 
   it('shows the toggle once resolved for legacy-unshared (null) permission', async () => {
     get.mockResolvedValueOnce(redactedSegmentResponse(null));
 
-    const { queryByText } = renderModal();
+    const { findByText } = renderModal();
 
-    await waitFor(() => expect(queryByText('Show original')).not.toBeNull());
+    const toggle = await findByText('Show original');
+    expect(toggle).toBeVisible();
   });
 
   it('keeps the toggle hidden once resolved for a real non-owner permission (viewer)', async () => {

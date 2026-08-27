@@ -19,6 +19,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from unittest.mock import patch
+from urllib.parse import urlparse
+
+import pytest
 
 from app.services.redaction.llm_guard import is_local_provider
 
@@ -150,7 +153,40 @@ def test_no_base_url_is_masked():
     assert is_local_provider(_Config(provider="custom", base_url="")) is False
 
 
-def test_unparseable_base_url_is_masked():
+def test_an_unterminated_ipv6_bracket_raises_from_urlparse_and_is_masked():
+    """`urlparse` genuinely raises `ValueError` on this input — confirmed by
+
+    direct execution: ``urlparse("http://[::1")`` -> ``ValueError: Invalid
+    IPv6 URL``. This is the one input in this file that reaches the
+    ``except ValueError`` arm around the ``urlparse`` call in
+    `_custom_endpoint_is_local`; `test_unparseable_base_url_is_masked`'s old
+    fixture (`"::not a url::"`) does NOT raise — it exits via the empty-
+    hostname guard instead (see `test_a_string_that_is_not_a_url_has_no_
+    hostname_and_is_masked` below), so this test used to claim coverage it
+    never exercised.
+    """
+    cfg = _Config(provider="custom", base_url="http://[::1")
+    assert is_local_provider(cfg) is False
+
+
+def test_the_unterminated_bracket_really_raises():
+    """Guard-on-the-guard: pins the raw `urlparse` behaviour so a future
+
+    Python version making this permissive fails loudly HERE, rather than the
+    `except ValueError` arm silently going untested again the way it did
+    before this file was corrected.
+    """
+    with pytest.raises(ValueError, match="Invalid IPv6 URL"):
+        urlparse("http://[::1")
+
+
+def test_a_string_that_is_not_a_url_has_no_hostname_and_is_masked():
+    """`urlparse("::not a url::")` does NOT raise — it parses cleanly to a
+
+    hostname-less result, so this exits via the empty-hostname guard
+    (`test_no_hostname_in_url_is_masked`'s branch), never the
+    `except ValueError` arm above.
+    """
     assert is_local_provider(_Config(provider="custom", base_url="::not a url::")) is False
 
 

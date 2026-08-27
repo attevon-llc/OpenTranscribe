@@ -7,6 +7,7 @@ here, where the savepoint fixture rolls everything back.
 """
 
 import uuid as uuid_mod
+from unittest.mock import patch
 
 from app.models.media import MediaFile
 from app.models.media import Speaker
@@ -68,6 +69,33 @@ class TestConfirmSpeakerGender:
 
         db_session.refresh(speaker)
         assert speaker.gender_confirmed_by_user is not True
+
+    def test_confirm_dispatches_speaker_updated_ws_event(
+        self, client, db_session, normal_user, user_token_headers
+    ):
+        """Issue #603: confirm-gender used to commit and return with no WS notification,
+        so other open tabs on the same file only saw the confirmed gender after a manual
+        reload. Assert the notification is actually dispatched, with a payload the
+        frontend's `handleSpeakerUpdatedEvent` can key off (`media_file_id` + the
+        `speaker_updated` type) — not just that the HTTP call succeeded.
+        """
+        speaker = _make_speaker(db_session, normal_user, gender="female")
+        media_file_uuid = str(speaker.media_file.uuid)
+        headers = {"Authorization": user_token_headers["Authorization"]}
+
+        with patch("app.utils.websocket_notify.send_ws_event") as mock_send_ws_event:
+            resp = client.post(
+                f"/api/speakers/{speaker.uuid}/confirm-gender?gender=male", headers=headers
+            )
+        assert resp.status_code == 200, resp.text
+
+        mock_send_ws_event.assert_called_once()
+        call_args = mock_send_ws_event.call_args
+        user_id, notification_type, data = call_args.args
+        assert user_id == normal_user.id
+        assert notification_type == "speaker_updated"
+        assert data["media_file_id"] == media_file_uuid
+        assert data["speaker_uuid"] == str(speaker.uuid)
 
     def test_confirm_requires_editor_permission(
         self, client, db_session, normal_user, admin_user, user_token_headers

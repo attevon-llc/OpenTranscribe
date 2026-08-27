@@ -446,6 +446,14 @@ def _send_bulk_update_notification(
     Takes the labeled speaker as plain data: the caller has committed by this point,
     and reading an attribute off an expired ORM instance would open a fresh
     transaction just to render a notification.
+
+    ``speakers_bulk_updated`` has no dedicated frontend handler (issue #603) — it is
+    absent from ``NotificationType`` in ``frontend/src/stores/websocket.ts``, so it
+    falls through the generic unmatched-type path and is stored in
+    ``$ws.notifications`` without a targeted UI reaction. Harmless (the per-speaker
+    ``speaker_processing_complete``/``speaker_updated`` events already drive the
+    file-detail page's live update), but intentionally unhandled rather than an
+    oversight — leave it emitting until a UI surface actually consumes it.
     """
     if auto_applied_count == 0:
         return

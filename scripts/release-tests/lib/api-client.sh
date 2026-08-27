@@ -283,6 +283,22 @@ ac_create_asr_config() {
     local provider="$1" base_url="$2" api_key="$3"
     local name="${4:-release-test-${provider}-$(date +%s)}"
     ac_log "creating ASR config: provider=$provider base_url=$base_url"
+    # Idempotent: a same-named config from a prior (interrupted or --force'd)
+    # run of this phase 409s on create otherwise, since name is unique per
+    # user. Delete-if-exists first so a re-run never needs manual cleanup.
+    local existing_uuid
+    existing_uuid=$(ac_curl "$API_BASE/asr-settings" 2>/dev/null \
+        | python3 -c "
+import sys, json
+name = sys.argv[1]
+for c in json.load(sys.stdin).get('configs', []):
+    if c.get('name') == name:
+        print(c['uuid']); break
+" "$name" 2>/dev/null || true)
+    if [[ -n "$existing_uuid" ]]; then
+        ac_log "deleting pre-existing ASR config '$name' ($existing_uuid) before recreating"
+        ac_curl -X DELETE "$API_BASE/asr-settings/config/$existing_uuid" >/dev/null 2>&1 || true
+    fi
     local payload
     payload=$(python3 -c '
 import json, sys
@@ -317,6 +333,21 @@ ac_create_llm_config() {
     local provider="$1" model_name="$2" base_url="$3" api_key="$4"
     local name="${5:-release-test-${provider}-$(date +%s)}"
     ac_log "creating LLM config: provider=$provider model=$model_name base_url=$base_url"
+    # Idempotent, same reason as ac_create_asr_config: a same-named config
+    # from a prior run 409s on create otherwise.
+    local existing_uuid
+    existing_uuid=$(ac_curl "$API_BASE/llm-settings" 2>/dev/null \
+        | python3 -c "
+import sys, json
+name = sys.argv[1]
+for c in json.load(sys.stdin).get('configurations', []):
+    if c.get('name') == name:
+        print(c['uuid']); break
+" "$name" 2>/dev/null || true)
+    if [[ -n "$existing_uuid" ]]; then
+        ac_log "deleting pre-existing LLM config '$name' ($existing_uuid) before recreating"
+        ac_curl -X DELETE "$API_BASE/llm-settings/config/$existing_uuid" >/dev/null 2>&1 || true
+    fi
     local payload
     payload=$(python3 -c '
 import json, sys

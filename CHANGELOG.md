@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Release-rehearsal coverage for `opentr.sh backup`/`restore` and `opentranscribe.sh
+  update --rollback`** (#598). `test-upgrade.sh` proved the forward upgrade path but never
+  exercised the documented recovery path — exactly what an operator reaches for in a real
+  emergency. Five new phases (13-17), landing on top of #599's restore fix: phase 12 asserts
+  the rollback precondition (`# OT_PREVIOUS_IMAGE_TAG`) a real `update --version` records —
+  phases 07/08 now invoke that command instead of a hand-rolled `.env` rewrite, since the old
+  rewrite never recorded it and a `--rollback` at the end of the scenario used to exit 1 with
+  "no previous version recorded". Phase 15 restores the phase-06b pre-upgrade backup over
+  damage inflicted through the real API and asserts **content digests**, not row counts (a
+  delete+insert pair leaves counts unchanged) — including that a table introduced by a
+  post-FROM migration does not survive the restore, derived from a table-list diff rather than
+  a hardcoded name. Phase 16 runs the real `update --rollback` and asserts the FROM image
+  actually **serves** the restored FROM database through its own API (login, file list,
+  transcript text) — not merely that the command exited 0. Phase 17 proves the documented
+  recovery loop (roll back → re-upgrade) completes cleanly. A `ROLLBACK_INJECT_FAULT`
+  self-check (`truncate`/`no-damage`/`stale-oracle`, wired into the new
+  `selftest-rollback-fault-injection.sh`, ~1 minute against a throwaway isolated Postgres
+  container) deliberately breaks the tail so its own failure detection is exercised for real —
+  a leg that silently asserts nothing looks exactly like a leg that passes. Along the way:
+  restoring a plain-format `pg_dump` truncated mid-`COPY` was measured to replay with exit 0
+  and silently wrong data (psql treats an unterminated `COPY ... FROM stdin` at EOF as simply
+  ending the copy, not a parse error) — the same "reports success, changed nothing" shape #599
+  fixed in the product, now pinned as a property of the rehearsal's own fault-injection design
+  rather than assumed. Three new guardrails in `lib/guardrails.sh`
+  (`gr_assert_target_is_test_database`, `gr_fingerprint_repo_backups`/
+  `gr_assert_repo_backups_untouched`, `gr_assert_not_repo_cwd`) protect against the tail's
+  `DROP DATABASE` touching anything but this run's own database, and against a staged
+  `opentr.sh` invocation (bare `docker compose`, no `-f` chain, `./backups` relative to CWD)
+  writing into the repo checkout. `--no-rollback` / `ROLLBACK_REHEARSAL=0` opts out;
+  `--only-rollback` resumes at phase 12 against an already-completed run. Deliberately out of
+  scope, each for a stated reason: `backup --encrypt` (unattended `gpg` has no
+  `--passphrase-file`), the in-app scheduled-backup system's own end-to-end restore proof, and
+  MinIO/OpenSearch restore (the DB restore does not touch either — asserted, not just
+  unclaimed).
 - **Watch sources: per-file management, reachable at last** (#489). Each source card gets a
   **Files** button opening its full import history — what was imported, skipped, or failed, with
   the actual reason rather than a count. Server-side status filter and filename search (so it

@@ -170,6 +170,24 @@ describe('renameSpeakersInFile', () => {
     expect(seg(next, 0).resolved_speaker_name).toBe('Joe Rogan');
   });
 
+  it('matches by uuid alone when label is undefined (issue #603 regression pin)', () => {
+    // `handleSpeakerProcessingCompleteEvent`'s websocket backstop
+    // (`routes/files/[id]/+page.svelte`) calls `applySpeakerRename(speakerUuid, speakerLabel,
+    // ...)` with `speakerLabel = speakerList.find(s => s.uuid === speakerUuid)?.name` — which
+    // is `undefined` whenever the renamed speaker isn't (yet) in the locally-loaded
+    // `speakerList`. `matchesRename` must still find the segment on `rename.uuid` alone; a
+    // regression here would silently break the already-working live-rename path (#578) while
+    // #603's confirm-gender/merge fixes are landing beside it.
+    const file = makeFile();
+    const next = renameSpeakersInFile(file, [
+      { uuid: 'spk-1', label: undefined, displayName: 'Joe Rogan' },
+    ]);
+
+    expect(seg(next, 0).resolved_speaker_name).toBe('Joe Rogan');
+    expect(seg(next, 0).speaker.display_name).toBe('Joe Rogan');
+    expect(seg(next, 1).resolved_speaker_name).toBe('SPEAKER_02');
+  });
+
   it('applies several renames in one pass', () => {
     const next = renameSpeakersInFile(makeFile(), [
       { uuid: 'spk-1', displayName: 'Joe' },

@@ -139,6 +139,12 @@ def process_speaker_merge_background(
         # 6. Tell the UI to reload speakers. Reuses the event the speaker-update
         # task already emits; the frontend treats it as a silent refresh and only
         # toasts when auto_applied_count / suggested_count are non-zero.
+        #
+        # `reason: "speaker_merged"` (issue #603) is what lets the frontend tell this
+        # apart from a plain rename: a merge deletes the SOURCE speaker's Postgres row,
+        # so segments still holding that dead uuid client-side can never be patched by
+        # `applySpeakerRename` (which only knows the surviving uuid) — the handler must
+        # instead refetch segments outright. The rename event carries no such field.
         send_ws_event(
             user_id,
             "speaker_processing_complete",
@@ -149,6 +155,7 @@ def process_speaker_merge_background(
                 "auto_applied_count": 0,
                 "suggested_count": 0,
                 "media_file_id": target["media_file_uuid"],
+                "reason": "speaker_merged",
             },
         )
 

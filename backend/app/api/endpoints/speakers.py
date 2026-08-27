@@ -1273,9 +1273,28 @@ def verify_speaker_identification(
 
         profile_id = _resolve_profile_uuid_to_id(profile_uuid, current_user, db)
 
-        return _dispatch_verify_action(
+        # Captured before dispatch commits: `expire_on_commit=True` means a post-commit
+        # attribute read re-queries rather than reusing the value already in hand.
+        speaker_uuid_str = str(speaker.uuid)
+        media_file_uuid = _get_media_file_uuid(speaker, db)
+
+        result = _dispatch_verify_action(
             action, speaker, speaker.id, profile_id, profile_name, current_user, db
         )
+
+        from app.utils.websocket_notify import send_ws_event
+
+        send_ws_event(
+            current_user.id,
+            "speaker_updated",
+            {
+                "media_file_id": media_file_uuid,
+                "speaker_uuid": speaker_uuid_str,
+                "reason": f"speaker_verification_{action}",
+            },
+        )
+
+        return result
 
     except HTTPException:
         raise
@@ -1311,10 +1330,29 @@ def confirm_speaker_gender(
 
     speaker.predicted_gender = gender  # type: ignore[assignment]
     speaker.gender_confirmed_by_user = True  # type: ignore[assignment]
+
+    # Captured before commit: the session default is `expire_on_commit=True`, so a
+    # post-commit read of a relationship/column re-queries instead of reusing the
+    # already-loaded value.
+    speaker_uuid_str = str(speaker.uuid)
+    media_file_uuid = _get_media_file_uuid(speaker, db)
+
     db.commit()
 
+    from app.utils.websocket_notify import send_ws_event
+
+    send_ws_event(
+        current_user.id,
+        "speaker_updated",
+        {
+            "media_file_id": media_file_uuid,
+            "speaker_uuid": speaker_uuid_str,
+            "reason": "gender_confirmed",
+        },
+    )
+
     return {
-        "speaker_uuid": str(speaker.uuid),
+        "speaker_uuid": speaker_uuid_str,
         "predicted_gender": gender,
         "gender_confirmed_by_user": True,
     }

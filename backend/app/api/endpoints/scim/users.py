@@ -191,7 +191,7 @@ def replace_user(
             db,
             user,
             email=email,
-            display_name=payload.resolved_display_name() or email.split("@")[0],
+            display_name=payload.resolved_display_name(),
             external_id=payload.externalId,
             active=payload.active,
             actor=str(token.name),

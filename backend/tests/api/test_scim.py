@@ -235,6 +235,52 @@ class TestUsers:
         assert response.status_code == 200, response.text
         assert response.json()["displayName"] == "Ada Byron"
 
+    def test_put_omitted_display_name_clears_it_not_fabricates_from_email(
+        self, client, scim_headers, db_session, existing_user
+    ):
+        """PUT is a full replace: an omitted ``displayName`` must clear
+        ``full_name`` to ``None``, not fabricate one from the email's local part
+        (issue #582) — that fallback belongs only to ``create_user``.
+        """
+        response = client.put(
+            f"{BASE}/Users/{existing_user.uuid}",
+            headers=scim_headers,
+            json={"schemas": [], "userName": str(existing_user.email), "active": True},
+        )
+        assert response.status_code == 200, response.text
+        db_session.refresh(existing_user)
+        assert existing_user.full_name is None
+
+    def test_put_omitting_active_does_not_reactivate_a_disabled_user(
+        self, client, scim_headers, db_session, existing_user
+    ):
+        """A PUT that never mentions ``active`` must not silently reactivate an
+        account disabled outside SCIM (the AC-2 inactivity sweep, or an admin) —
+        the IdP did not ask for that. Explicit ``active: true`` still works.
+        """
+        existing_user.is_active = False
+        db_session.commit()
+
+        omitted_active = client.put(
+            f"{BASE}/Users/{existing_user.uuid}",
+            headers=scim_headers,
+            json={"schemas": [], "userName": str(existing_user.email)},
+        )
+        assert omitted_active.status_code == 200, omitted_active.text
+        db_session.refresh(existing_user)
+        assert existing_user.is_active is False, (
+            "an omitted `active` on PUT must not reactivate an already-disabled user"
+        )
+
+        explicit_active = client.put(
+            f"{BASE}/Users/{existing_user.uuid}",
+            headers=scim_headers,
+            json={"schemas": [], "userName": str(existing_user.email), "active": True},
+        )
+        assert explicit_active.status_code == 200, explicit_active.text
+        db_session.refresh(existing_user)
+        assert existing_user.is_active is True, "explicit `active: true` must still reactivate"
+
 
 class TestDeactivation:
     def test_active_false_disables_and_revokes(
@@ -556,6 +602,55 @@ class TestGroups:
         assert body["members"] == []
         # displayName: full replace — set to exactly what the request carried.
         assert body["displayName"] == new_name
+
+    def test_put_with_a_bad_member_id_leaves_the_name_unchanged(
+        self, client, scim_headers, db_session, group
+    ):
+        """A PUT that renames AND adds a bogus member must not be half-applied.
+
+        The rename must not land before membership is validated — otherwise a
+        connector retrying a 400 (thinking nothing happened) would find the
+        group already renamed.
+        """
+        original_name = str(group.name)
+        response = client.put(
+            f"{BASE}/Groups/{group.uuid}",
+            headers=scim_headers,
+            json={
+                "schemas": [],
+                "displayName": f"{original_name}-renamed",
+                "members": [{"value": str(uuid_pkg.uuid4())}],
+            },
+        )
+
+        assert response.status_code == 400, response.text
+
+        db_session.expire_all()
+        reloaded = db_session.query(UserGroup).filter(UserGroup.id == group.id).first()
+        assert reloaded is not None
+        assert str(reloaded.name) == original_name
+
+    def test_put_renaming_a_group_onto_an_existing_name_is_409(
+        self, client, scim_headers, db_session, admin_user, group
+    ):
+        """Two groups owned by the same actor, same name: a collision, not a 500."""
+        other = UserGroup(
+            name=f"scim-group-{uuid_pkg.uuid4().hex[:8]}", owner_id=int(admin_user.id)
+        )
+        db_session.add(other)
+        db_session.commit()
+        db_session.refresh(other)
+
+        response = client.put(
+            f"{BASE}/Groups/{other.uuid}",
+            headers=scim_headers,
+            json={"schemas": [], "displayName": str(group.name), "members": []},
+        )
+
+        assert response.status_code == 409, response.text
+        body = response.json()
+        assert body["schemas"] == ["urn:ietf:params:scim:api:messages:2.0:Error"]
+        assert body["scimType"] == "uniqueness"
 
     def test_delete_group_is_a_real_deletion(self, client, scim_headers, db_session, group):
         response = client.delete(f"{BASE}/Groups/{group.uuid}", headers=scim_headers)

@@ -522,6 +522,129 @@ wait_for_backend_health() {
   return 1
 }
 
+#######################
+# DATABASE RESTORE HELPERS (issue #599)
+#######################
+#
+# Pure helpers factored out of opentr.sh's restore_database so the integration test
+# (backend/tests/integration/test_opentr_restore_roundtrip.py) drives the exact code
+# the CLI ships, not a re-implementation that could silently diverge from it.
+#
+# Each takes an *exec prefix* — a command that runs a psql/pg_dump client with stdin
+# attached — so production passes "docker compose exec -T postgres" and a test passes
+# "docker exec -i <throwaway-container>". Word-splitting the prefix is intentional,
+# the same pattern $COMPOSE_FILES uses elsewhere in this repo.
+#
+# Background: a plain `pg_dump` file has no DROP/--clean statements, so replaying it
+# into an already-populated database makes every statement fail — and without
+# `ON_ERROR_STOP`, `psql` exits 0 anyway. Worse, the dump's `alembic_version` INSERT
+# does NOT collide on primary key with a drifted row already there, so it succeeds
+# while every other statement fails — leaving TWO rows in `alembic_version`, which
+# Alembic can no longer migrate from. The fix is to guarantee an empty target: drop
+# and recreate the database, then replay inside a single transaction so any failure
+# rolls back to nothing rather than a hybrid schema.
+
+# Drop and recreate a database so a restore always lands in a guaranteed-empty
+# target, regardless of schema drift between backup time and restore time.
+# Must connect via `-d postgres` — you cannot drop the database you are connected
+# to. `WITH (FORCE)` (PostgreSQL 13+) also terminates any connection holders
+# (flower, the monitoring postgres-exporter, a stray psql session) that a
+# stop-list of services could miss.
+#
+# $1 exec_prefix  e.g. "docker compose exec -T postgres" or "docker exec -i <container>"
+# $2 user
+# $3 db
+pg_drop_and_recreate_database() {
+  local exec_prefix="$1"
+  local user="$2"
+  local db="$3"
+  # shellcheck disable=SC2086
+  $exec_prefix psql -v ON_ERROR_STOP=1 -U "$user" -d postgres \
+      -c "DROP DATABASE IF EXISTS \"$db\" WITH (FORCE);" \
+    && $exec_prefix psql -v ON_ERROR_STOP=1 -U "$user" -d postgres \
+      -c "CREATE DATABASE \"$db\" OWNER \"$user\";"
+}
+
+# Replay a plain-SQL pg_dump file into what must already be an empty database.
+# `--single-transaction` is what turns a mid-dump failure into a full rollback
+# rather than a hybrid schema — measured: a failure partway through the dump
+# leaves zero tables with this flag, versus however far the dump got without it.
+#
+# $1 exec_prefix
+# $2 user
+# $3 db
+# $4 sql_file
+pg_replay_dump() {
+  local exec_prefix="$1"
+  local user="$2"
+  local db="$3"
+  local sql_file="$4"
+  # shellcheck disable=SC2086
+  $exec_prefix psql -v ON_ERROR_STOP=1 --single-transaction -U "$user" "$db" < "$sql_file"
+}
+
+# Verify a restore actually reproduced the dump's content — the regression
+# detector for issue #599's exact failure mode (a restore that reports success
+# while leaving TWO conflicting `alembic_version` rows and every data table
+# untouched).
+#
+# Checks, against the live database:
+#   - exactly one `alembic_version` row, matching the dump's own head (if the
+#     dump's head can't be determined — e.g. a hand-trimmed dump with no
+#     alembic_version COPY block — this check is skipped with a warning, not
+#     treated as failure; a hand-trimmed dump is a legitimate input)
+#   - the public schema's BASE TABLE count matches the dump's `CREATE TABLE`
+#     count (assumes no partitioned tables — OpenTranscribe has none today;
+#     `CREATE TABLE ... PARTITION OF` would need a different count)
+#
+# $1 exec_prefix
+# $2 user
+# $3 db
+# $4 sql_file
+# Returns 0 on pass, 1 on failure (mismatch detail printed to stdout).
+pg_verify_restore() {
+  local exec_prefix="$1"
+  local user="$2"
+  local db="$3"
+  local sql_file="$4"
+
+  local expected_head
+  expected_head="$(awk '/^COPY public\.alembic_version /{getline; print; exit}' "$sql_file")"
+
+  local expected_tables
+  expected_tables="$(grep -c '^CREATE TABLE ' "$sql_file")"
+
+  local ok=1
+
+  if [ -z "$expected_head" ]; then
+    echo "⚠️  pg_verify_restore: no alembic_version COPY block found in the dump — skipping head check (fine for a hand-trimmed dump)."
+  else
+    local actual_head
+    actual_head="$($exec_prefix psql -tA -U "$user" "$db" -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
+    if [ "$actual_head" != "$expected_head" ]; then
+      echo "❌ pg_verify_restore: alembic_version mismatch — expected '$expected_head', got '$actual_head'"
+      ok=0
+    fi
+
+    local head_count
+    head_count="$($exec_prefix psql -tA -U "$user" "$db" -c "SELECT count(*) FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
+    if [ "$head_count" != "1" ]; then
+      echo "❌ pg_verify_restore: alembic_version has $head_count row(s), expected exactly 1"
+      ok=0
+    fi
+  fi
+
+  local actual_tables
+  actual_tables="$($exec_prefix psql -tA -U "$user" "$db" -c \
+    "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | tr -d '[:space:]')"
+  if [ "$actual_tables" != "$expected_tables" ]; then
+    echo "❌ pg_verify_restore: public table count mismatch — expected $expected_tables, got $actual_tables"
+    ok=0
+  fi
+
+  [ "$ok" -eq 1 ]
+}
+
 # Display quick reference commands
 print_help_commands() {
   echo "⚡ Quick Commands Reference:"

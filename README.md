@@ -518,7 +518,7 @@ If the database is ever lost but the MinIO media survives, [**Storage Recovery**
 # Backup and restore
 ./opentr.sh backup               # Create timestamped database backup
 ./opentr.sh backup --encrypt     # GPG-encrypted backup (AES-256, no plaintext on disk)
-./opentr.sh restore [file]       # Restore from backup file (.sql or .gpg)
+./opentr.sh restore [--yes] [--no-safety-dump] <file>  # REPLACE the database from a backup (.sql or .gpg) — destructive
 ```
 
 ### **System Administration**

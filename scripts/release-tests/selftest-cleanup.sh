@@ -13,6 +13,11 @@
 # Everything here operates on the throwaway project name `otselftest`, so no
 # real volume is ever in scope even if the logic is wrong.
 #
+# Cases 8-10 (issue #598) cover the three guardrails added for the rollback
+# tail: it runs `DROP DATABASE`, which none of the checks above needed to
+# guard against — the fresh-install and forward-upgrade scenarios never
+# destroy a database, only create or migrate one.
+#
 # Usage: ./scripts/release-tests/selftest-cleanup.sh
 # Exit:  0 all cases behaved · 1 a case failed
 
@@ -49,7 +54,10 @@ vol_exists() { docker volume inspect "$1" >/dev/null 2>&1; }
 cleanup_all() {
     docker volume rm "${GR_STOCK_PROJECT}_postgres_data" >/dev/null 2>&1
     docker volume rm "${GR_STOCK_PROJECT}_minio_data"    >/dev/null 2>&1
-    rm -f "$GR_OWNED_STAMP"
+    docker rm -f otselftest-pg-fake >/dev/null 2>&1
+    docker volume rm otselftest_pgdata >/dev/null 2>&1
+    rm -f "$GR_OWNED_STAMP" /tmp/ot-selftest-backups-env
+    rm -rf /tmp/ot-selftest-backups-probe "$TEST_ROOT/opentr-stage-selftest"
 }
 trap cleanup_all EXIT
 
@@ -186,6 +194,116 @@ else
     ok "test-created volume removed without being named anywhere"
 fi
 docker volume rm "${GR_STOCK_PROJECT}_preexisting_data" >/dev/null 2>&1
+
+
+# ── Case 8: gr_assert_target_is_test_database refuses on any of its four
+# independent conditions failing (issue #598) ───────────────────────────────
+echo "8. gr_assert_target_is_test_database"
+env_ok="/tmp/ot-selftest-backups-env"
+docker volume create otselftest_pgdata >/dev/null
+docker rm -f otselftest-pg-fake >/dev/null 2>&1
+printf 'POSTGRES_DB=opentranscribe\n' > "$env_ok"
+
+docker run -d --rm --name otselftest-pg-fake \
+    --label "com.opentranscribe.release-test=selftest" \
+    -v otselftest_pgdata:/var/lib/postgresql/data \
+    alpine sleep 60 >/dev/null
+if ( gr_assert_target_is_test_database otselftest-pg-fake opentranscribe "$env_ok" ) >/dev/null 2>&1; then
+    ok "a well-formed test container/volume/env is accepted"
+else
+    bad "a well-formed test container/volume/env was refused"
+fi
+docker rm -f otselftest-pg-fake >/dev/null 2>&1
+
+# (a) no release-test label
+docker run -d --rm --name otselftest-pg-fake \
+    -v otselftest_pgdata:/var/lib/postgresql/data \
+    alpine sleep 60 >/dev/null
+if ( gr_assert_target_is_test_database otselftest-pg-fake opentranscribe "$env_ok" ) >/dev/null 2>&1; then
+    bad "a container with NO release-test label was accepted"
+else
+    ok "a container with no release-test label is refused"
+fi
+docker rm -f otselftest-pg-fake >/dev/null 2>&1
+
+# (b) the volume is on the PRE-EXISTING list — someone else's database
+docker run -d --rm --name otselftest-pg-fake \
+    --label "com.opentranscribe.release-test=selftest" \
+    -v otselftest_pgdata:/var/lib/postgresql/data \
+    alpine sleep 60 >/dev/null
+printf 'preexisting=otselftest_pgdata\n' > "$GR_OWNED_STAMP"
+if ( gr_assert_target_is_test_database otselftest-pg-fake opentranscribe "$env_ok" ) >/dev/null 2>&1; then
+    bad "a volume on the PRE-EXISTING list was accepted as this run's own database"
+else
+    ok "a pre-existing volume is refused"
+fi
+rm -f "$GR_OWNED_STAMP"
+
+# (c) the volume carries the live-data marker
+docker run --rm -v otselftest_pgdata:/probe alpine \
+    touch /probe/.opentranscribe-live-data >/dev/null 2>&1
+if ( gr_assert_target_is_test_database otselftest-pg-fake opentranscribe "$env_ok" ) >/dev/null 2>&1; then
+    bad "a volume carrying the live-data marker was accepted"
+else
+    ok "a volume carrying the live-data marker is refused"
+fi
+docker run --rm -v otselftest_pgdata:/probe alpine \
+    rm -f /probe/.opentranscribe-live-data >/dev/null 2>&1
+
+# (d) the staged .env's POSTGRES_DB does not match what the caller expects
+printf 'POSTGRES_DB=someone_elses_db\n' > "$env_ok"
+if ( gr_assert_target_is_test_database otselftest-pg-fake opentranscribe "$env_ok" ) >/dev/null 2>&1; then
+    bad "a mismatched POSTGRES_DB in the staged .env was accepted"
+else
+    ok "a mismatched POSTGRES_DB in the staged .env is refused"
+fi
+
+docker rm -f otselftest-pg-fake >/dev/null 2>&1
+docker volume rm otselftest_pgdata >/dev/null 2>&1
+rm -f "$env_ok"
+
+# ── Case 9: the repo ./backups sentinel actually detects a change ─────────
+echo "9. repo ./backups sentinel"
+backups_probe="/tmp/ot-selftest-backups-probe"
+rm -rf "$backups_probe"
+mkdir -p "$backups_probe"
+printf 'x' > "$backups_probe/a.sql"
+export GR_REPO_BACKUPS_DIR="$backups_probe"
+gr_fingerprint_repo_backups >/dev/null 2>&1
+trap - EXIT; trap cleanup_all EXIT   # drop the sentinel's own EXIT-check registration
+if ( gr_assert_repo_backups_untouched ) >/dev/null 2>&1; then
+    ok "unchanged ./backups passes"
+else
+    bad "unchanged ./backups reported as modified"
+fi
+printf 'y' > "$backups_probe/b.sql"
+if ( gr_assert_repo_backups_untouched ) >/dev/null 2>&1; then
+    bad "MODIFIED ./backups passed — the sentinel does not work"
+else
+    ok "modified ./backups is caught"
+fi
+rm -rf "$backups_probe"
+
+# ── Case 10: gr_assert_not_repo_cwd refuses the repo root and anywhere
+# outside TEST_ROOT ─────────────────────────────────────────────────────────
+echo "10. gr_assert_not_repo_cwd"
+mkdir -p "$TEST_ROOT/opentr-stage-selftest"
+if ( gr_assert_not_repo_cwd "$TEST_ROOT/opentr-stage-selftest" ) >/dev/null 2>&1; then
+    ok "a directory inside TEST_ROOT passes"
+else
+    bad "a directory inside TEST_ROOT was refused"
+fi
+if ( gr_assert_not_repo_cwd "/mnt/nvm/repos/transcribe-app" ) >/dev/null 2>&1; then
+    bad "the repo root itself was accepted as a staged opentr.sh CWD"
+else
+    ok "the repo root is refused as a staged opentr.sh CWD"
+fi
+if ( gr_assert_not_repo_cwd "/tmp" ) >/dev/null 2>&1; then
+    bad "a directory outside TEST_ROOT (and not on the protected list) was still accepted"
+else
+    ok "a directory outside TEST_ROOT is refused even when not on the protected list"
+fi
+rm -rf "$TEST_ROOT/opentr-stage-selftest"
 
 echo
 echo "── $PASS passed, $FAIL failed ──"

@@ -544,31 +544,56 @@ Using `opentr.sh`:
 ./opentr.sh restore backups/opentranscribe_backup_20260310_020000.sql
 ```
 
-This command automatically:
-1. Stops backend and all Celery workers
-2. Restores the SQL dump into PostgreSQL
-3. Restarts all stopped services
+:::warning Destructive — full replace, not a merge
+This **replaces the database entirely**. A plain `pg_dump` file has no `DROP`/`--clean`
+statements, so replaying it into an already-populated database used to fail on every
+statement while `psql` still reported success (issue #599) — and worse, could leave the
+migration-tracking table with two conflicting rows. `restore` now guarantees an exact
+restore instead.
+:::
 
-Manual restore:
+This command automatically:
+1. **Confirms** — shows the current database's row counts and alembic head vs. the
+   backup's, and requires typing the database name to proceed (skip with `--yes` for
+   scripted use)
+2. **Takes a safety dump** of the *current* database first (`--no-safety-dump` to skip —
+   not recommended), so the pre-restore state is recoverable if anything goes wrong
+3. Stops backend and all Celery workers
+4. **Drops and recreates** the database (`DROP DATABASE ... WITH (FORCE)` + `CREATE
+   DATABASE`), guaranteeing an empty target regardless of schema drift since the backup
+5. **Replays** the dump inside a single transaction — a failure rolls back to nothing
+   rather than leaving a half-restored, hybrid schema
+6. **Verifies** the result (row/table counts, exactly one migration-version row matching
+   the backup) before reporting success, then restarts services
+
+`opentr.sh restore --help`-equivalent usage: `./opentr.sh restore [--yes] [--no-safety-dump] <file>`.
+
+:::note MinIO / OpenSearch are not rolled back
+`opentr.sh backup`/`restore` cover **PostgreSQL only**. After a restore, MinIO (media
+files) and OpenSearch (search indices) may be ahead of or behind the restored database —
+media with no row, rows with no media, stale search hits. Reindex from **Admin → Search**
+if the restored database's file list differs from what MinIO/OpenSearch currently have.
+:::
+
+Manual restore (for a custom-format dump, or when you need `pg_restore`'s parallel
+restore):
 
 ```bash
 # Stop services that use the database
 docker compose stop backend celery-worker celery-download-worker \
   celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
 
-# Restore from plain SQL
-docker compose exec -T postgres psql -U postgres opentranscribe < backup.sql
-
-# Or from compressed backup
-gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U postgres opentranscribe
-
-# Or from custom format
+# Custom format
 docker compose exec -T postgres pg_restore -U postgres -d opentranscribe backup.dump
 
 # Restart services
 docker compose start backend celery-worker celery-download-worker \
   celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
 ```
+
+For a plain-SQL or compressed (`.sql.gz`) backup, prefer `./opentr.sh restore` above —
+a manual `psql < backup.sql` into a non-empty database is exactly the silent-failure
+mode issue #599 fixed.
 
 ### Restoring MinIO Data
 
@@ -667,8 +692,9 @@ Untested backups are not backups. Verify your backups regularly:
 # 1. Create a test database
 docker compose exec postgres createdb -U postgres opentranscribe_test
 
-# 2. Restore backup into test database
-docker compose exec -T postgres psql -U postgres opentranscribe_test < backups/opentranscribe_backup_latest.sql
+# 2. Restore backup into test database (ON_ERROR_STOP so a replay failure is loud, not
+#    silent — see issue #599. No DROP needed: opentranscribe_test is already empty.)
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres opentranscribe_test < backups/opentranscribe_backup_latest.sql
 
 # 3. Verify row counts
 docker compose exec postgres psql -U postgres opentranscribe_test -c "

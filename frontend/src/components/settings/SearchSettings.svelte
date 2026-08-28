@@ -52,6 +52,14 @@
     error: string | null;
   }
 
+  interface BootstrapStatus {
+    state: 'ok' | 'degraded' | 'disabled';
+    attempts: number;
+    last_error: string | null;
+    retry_at: string | null;
+    text_only_chunk_files: number;
+  }
+
   let models: EmbeddingModel[] = [];
   let selectedModelId = '';
   let currentModelId = '';
@@ -62,6 +70,8 @@
   let isPreparingModel = false;
   let isStopping = false;
   let indexHealth: Record<string, IndexHealthEntry> | null = null;
+  let bootstrapStatus: BootstrapStatus | null = null;
+  let bootstrapPollHandle: ReturnType<typeof setInterval> | null = null;
 
   // Live reindex progress
   let reindexProgress: ReindexProgress | null = null;
@@ -102,7 +112,7 @@
   }
 
   onMount(async () => {
-    await Promise.all([loadModels(), loadStatus(), loadIndexHealth()]);
+    await Promise.all([loadModels(), loadStatus(), loadIndexHealth(), loadBootstrapStatus()]);
     isLoading = false;
 
     // Listen for WebSocket events
@@ -115,7 +125,36 @@
     window.removeEventListener('reindex-progress', handleReindexProgress as EventListener);
     window.removeEventListener('reindex-complete', handleReindexComplete as EventListener);
     window.removeEventListener('reindex-stopped', handleReindexStopped as EventListener);
+    if (bootstrapPollHandle) clearInterval(bootstrapPollHandle);
   });
+
+  // Neural search bootstrap self-heal (issue #625). The backend beat task retries every
+  // 10 minutes; polling every 30s here just keeps the banner from going stale while an
+  // admin has the page open watching it recover — it does not drive the recovery itself.
+  async function loadBootstrapStatus() {
+    try {
+      const res = await axiosInstance.get('/search/models/neural/status');
+      bootstrapStatus = res.data.bootstrap ?? null;
+    } catch (e) {
+      console.error('Failed to load neural bootstrap status:', e);
+      bootstrapStatus = null;
+    }
+    if (bootstrapStatus?.state === 'degraded' && !bootstrapPollHandle) {
+      bootstrapPollHandle = setInterval(loadBootstrapStatus, 30000);
+    } else if (bootstrapStatus?.state !== 'degraded' && bootstrapPollHandle) {
+      clearInterval(bootstrapPollHandle);
+      bootstrapPollHandle = null;
+    }
+  }
+
+  function formatRetryAt(iso: string | null): string {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleString();
+    } catch {
+      return iso;
+    }
+  }
 
   async function loadModels() {
     try {
@@ -397,6 +436,31 @@
       {#if lastReindexStats.failed_files > 0}
         <div class="stats-row error">
           <span>{$t('settings.search.failedCount', { count: lastReindexStats.failed_files })}</span>
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Neural search bootstrap self-heal warning (issue #625) -->
+  {#if bootstrapStatus?.state === 'degraded'}
+    <div class="banner banner-warning">
+      <div class="banner-title">{$t('settings.search.bootstrapDegradedTitle')}</div>
+      <div class="banner-body">
+        {$t('settings.search.bootstrapDegradedBody', { attempts: bootstrapStatus.attempts })}
+      </div>
+      {#if bootstrapStatus.last_error}
+        <div class="banner-detail">
+          {$t('settings.search.bootstrapLastError', { error: bootstrapStatus.last_error })}
+        </div>
+      {/if}
+      {#if bootstrapStatus.retry_at}
+        <div class="banner-detail">
+          {$t('settings.search.bootstrapRetryAt', { time: formatRetryAt(bootstrapStatus.retry_at) })}
+        </div>
+      {/if}
+      {#if bootstrapStatus.text_only_chunk_files > 0}
+        <div class="banner-detail">
+          {$t('settings.search.bootstrapTextOnlyFiles', { count: bootstrapStatus.text_only_chunk_files })}
         </div>
       {/if}
     </div>
@@ -718,6 +782,38 @@
   .section-divider {
     margin: 1.25rem 0;
     border-top: 1px solid var(--border-color);
+  }
+
+  /* Neural search bootstrap warning banner (#625). Colours come from theme vars so
+     light/dark parity is automatic, matching the .lang-badge pattern above. */
+  .banner {
+    border-radius: 6px;
+    padding: 0.625rem 0.75rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+  }
+
+  .banner-warning {
+    border: 1px solid var(--warning-color, #b45309);
+    background-color: var(--warning-bg, rgba(180, 83, 9, 0.08));
+    color: var(--text-color);
+  }
+
+  .banner-title {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    color: var(--warning-color, #b45309);
+  }
+
+  .banner-body {
+    margin-bottom: 0.125rem;
+  }
+
+  .banner-detail {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.125rem;
   }
 
   /* Live reindex progress styles */

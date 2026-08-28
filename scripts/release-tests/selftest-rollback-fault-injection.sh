@@ -170,6 +170,52 @@ else
     bad "the SAME unchanged database fingerprinted differently twice — dbs_fingerprint is non-deterministic"
 fi
 
+# ── Case 5/6 (issue #617): dbs_diff_fingerprints's own doc comment says its
+# non-zero return is "informational for the caller... not fatal" — but
+# test-upgrade.sh's two production call sites used to invoke it as a bare,
+# unguarded statement under `set -euo pipefail`, so a real digest mismatch
+# tripped `set -e` and killed the whole script on the spot, silently
+# truncating phases 15-18. The fix wraps both call sites the way this
+# selftest already calls the function (`if ... ; then ... fi`, see cases 1
+# and 3 above). Pin BOTH halves so this can't quietly regress: the bare form
+# must still crash (proving the hazard is real, not a story) and the
+# if/then/fi form actually used in test-upgrade.sh must survive it.
+echo "5. bare (unguarded) call to dbs_diff_fingerprints trips set -e on a mismatch — this IS issue #617's bug, reproduced as a control"
+cat > "$WORKDIR/bare-check.sh" <<EOF
+#!/bin/bash
+set -euo pipefail
+source "$SCRIPT_DIR/lib/db-snapshot.sh"
+source "$SCRIPT_DIR/lib/assertions.sh"
+dbs_diff_fingerprints "$WORKDIR/fp-before" "$WORKDIR/fp-damaged" "selftest" media_file >/dev/null 2>&1
+echo "REACHED_AFTER_BARE"
+EOF
+chmod +x "$WORKDIR/bare-check.sh"
+if bash "$WORKDIR/bare-check.sh" 2>/dev/null | grep -q "REACHED_AFTER_BARE"; then
+    bad "a bare (unguarded) call to dbs_diff_fingerprints did NOT trip set -e on a real mismatch — case 6 below would be a false positive if this ever stops crashing"
+else
+    ok "a bare (unguarded) call to dbs_diff_fingerprints correctly trips set -e on a mismatch and kills the script — reproduces issue #617's original failure mode as a control"
+fi
+
+echo "6. if/then/fi-guarded call (the pattern now used at both test-upgrade.sh call sites) survives the same mismatch and lets the script continue"
+cat > "$WORKDIR/guarded-check.sh" <<EOF
+#!/bin/bash
+set -euo pipefail
+source "$SCRIPT_DIR/lib/db-snapshot.sh"
+source "$SCRIPT_DIR/lib/assertions.sh"
+if dbs_diff_fingerprints "$WORKDIR/fp-before" "$WORKDIR/fp-damaged" "selftest" media_file >/dev/null 2>&1; then
+    :
+else
+    :
+fi
+echo "REACHED_AFTER_GUARD"
+EOF
+chmod +x "$WORKDIR/guarded-check.sh"
+if bash "$WORKDIR/guarded-check.sh" 2>/dev/null | grep -q "REACHED_AFTER_GUARD"; then
+    ok "the if/.../fi guard used at test-upgrade.sh's two production call sites survives set -e on a real digest mismatch and keeps running"
+else
+    bad "the guarded call still tripped set -e — the pattern test-upgrade.sh now uses would silently die exactly like the original bug"
+fi
+
 echo
 echo "── $PASS passed, $FAIL failed ──"
 [[ $FAIL -eq 0 ]]

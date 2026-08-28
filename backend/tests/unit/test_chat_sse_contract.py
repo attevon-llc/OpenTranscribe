@@ -33,6 +33,25 @@ Three frozen contracts, each with a documented failure mode if it silently drift
 All three are checked by parsing the REAL source files, not by hand-copying the
 expected sets here — a hand-copied set would drift exactly the way the two
 originals did.
+
+⚠️ **The error-code check (#3) originally "checked" only a hardcoded
+`{service.py, messages.py}` pair, not the tree.** A follow-up adversarial audit
+proved that was a bypass, not a scope decision: moving an `sse("error", ...)`
+emission to any third file was completely invisible to it, and two real,
+already-existing emitters — `api/endpoints/files/subtitles.py` and
+`api/endpoints/files/__init__.py` — had silently never been covered. The
+matcher also only recognised a bare-name call (`sse(...)`), so an
+attribute-access call (`chat_service.sse(...)`) was skipped too. Both are now
+fixed: `_backend_error_codes_by_file()` walks every `app/**/*.py` file, and
+`_is_sse_call_target` matches both call shapes. `test_every_backend_sse_frame_
+name_is_in_the_frontend_allowlist` (#1) deliberately does NOT get the same
+tree-wide widening — its `foo.sse(...)` case is a *documented* exclusion
+(`test_the_backend_scanner_ignores_a_differently_named_call`): an unrelated
+object with a coincidentally-named `.sse()` method must not be mistaken for
+the frame-emitting helper. The error-code guard accepts that same false-positive
+risk deliberately, because an attribute-access `sse("error", ...)` masquerading
+as unrelated is exactly the shape a refactor into a shared helper produces, and
+missing a real error-code emitter is the worse failure mode of the two.
 """
 
 from __future__ import annotations
@@ -65,6 +84,13 @@ def _string_literals(text: str) -> set[str]:
     return {a or b for a, b in _STRING_LITERAL_RE.findall(text)}
 
 
+def _iter_backend_python_files() -> list[Path]:
+    """Every backend source file under `app/` — the error-code guard's real detection
+    surface (see the module docstring's ⚠️ note on why this replaced a 2-file allowlist).
+    """
+    return sorted(_BACKEND_ROOT.rglob("*.py"))
+
+
 # ---------------------------------------------------------------------------
 # Extraction — pure functions over SOURCE TEXT, so the must-fire controls
 # below can feed them synthetic snippets instead of touching real files.
@@ -72,7 +98,16 @@ def _string_literals(text: str) -> set[str]:
 
 
 def backend_sse_event_names(source: str) -> set[str]:
-    """Every literal event name passed as the first arg to `sse(...)`."""
+    """Every literal event name passed as the first arg to `sse(...)`.
+
+    Deliberately bare-name-only (`isinstance(node.func, ast.Name)`), unlike
+    `backend_sse_error_codes`'s `_is_sse_call_target` above: an attribute-access
+    call like `foo.sse(...)` must NOT be mistaken for the module helper here — see
+    `test_the_backend_scanner_ignores_a_differently_named_call`. That test's own
+    scope is still just `service.py` (frame names are consumed by chatStream.ts's
+    parser specifically, unlike the error-code slug/subset invariant, which the
+    module docstring's ⚠️ note explains now applies tree-wide).
+    """
     tree = ast.parse(source)
     names: set[str] = set()
     for node in ast.walk(tree):
@@ -105,6 +140,25 @@ def frontend_warning_codes(source: str) -> set[str]:
 _NON_LITERAL_CODE = "<non-literal>"
 
 
+def _is_sse_call_target(func: ast.expr) -> bool:
+    """True for a call to something literally named `sse` — a bare name
+    (`sse(...)`) or an attribute access (`chat_service.sse(...)`, `self.sse(...)`).
+
+    The bare-name-only version of this check silently skipped the attribute
+    form, which is exactly the shape a refactor into a shared helper module
+    produces (`app/services/chat/error_frames.py` in the audit that found this).
+    Unlike `backend_sse_event_names` below — which deliberately stays bare-name-only,
+    see its module-docstring note — an attribute-access `sse("error", ...)` call
+    being mistaken for an unrelated same-named method is an acceptable
+    false-positive risk here: missing a real error-code emitter is worse.
+    """
+    if isinstance(func, ast.Name):
+        return func.id == "sse"
+    if isinstance(func, ast.Attribute):
+        return func.attr == "sse"
+    return False
+
+
 def backend_sse_error_codes(source: str) -> set[str]:
     """Every `code` value from an `sse("error", {...})` call in `source`.
 
@@ -123,8 +177,7 @@ def backend_sse_error_codes(source: str) -> set[str]:
     for node in ast.walk(tree):
         if not (
             isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "sse"
+            and _is_sse_call_target(node.func)
             and len(node.args) >= 2
             and isinstance(node.args[0], ast.Constant)
             and node.args[0].value == "error"
@@ -152,6 +205,20 @@ def frontend_error_codes(source: str) -> set[str]:
     match = re.search(r"export type ChatErrorCode\s*=([^;]*);", source, re.DOTALL)
     assert match is not None, "types/chat.ts's ChatErrorCode union was not found — did it move?"
     return _string_literals(match.group(1))
+
+
+def _backend_error_codes_by_file() -> dict[str, list[Path]]:
+    """Every `sse("error", ...)` `code` found across the real `app/` tree, with the
+    file(s) each one came from — so a finding names an offender, not just a token."""
+    by_file: dict[str, list[Path]] = {}
+    for path in _iter_backend_python_files():
+        for code in backend_sse_error_codes(path.read_text(encoding="utf-8")):
+            by_file.setdefault(code, []).append(path)
+    return by_file
+
+
+def _relative_offenders(paths: list[Path]) -> str:
+    return ", ".join(str(p.relative_to(_BACKEND_ROOT.parent)) for p in paths)
 
 
 # ---------------------------------------------------------------------------
@@ -192,27 +259,32 @@ def test_every_error_code_the_backend_emits_is_a_short_literal_slug():
     """GH #611's hypothesis, enforced structurally: an `event: error` frame's
     `code` must always be a fixed, short, lowercase slug — never a computed
     expression, and never prose (answer text has spaces, `**bold**`, `[1]`
-    markers, all of which fail the pattern below)."""
-    codes: set[str] = set()
-    codes |= backend_sse_error_codes(_SERVICE_PY.read_text(encoding="utf-8"))
-    codes |= backend_sse_error_codes(_MESSAGES_PY.read_text(encoding="utf-8"))
+    markers, all of which fail the pattern below). Scanned across the WHOLE
+    `app/` tree (see the module docstring's ⚠️ note), not just chat's own
+    modules — a hardcoded file pair is exactly the bypass a follow-up audit
+    found and this replaced."""
+    by_file = _backend_error_codes_by_file()
+    codes = set(by_file)
 
-    assert codes, "scanner found zero sse('error', ...) calls — check it still matches"
+    assert codes, (
+        "scanner found zero sse('error', ...) calls anywhere under app/ — check it still matches"
+    )
 
     for code in sorted(codes):
+        offenders = _relative_offenders(by_file[code])
         assert code != _NON_LITERAL_CODE, (
-            "found an sse('error', ...) call whose 'code' value is not a fixed "
-            "string literal (e.g. a computed expression, or a missing 'code' "
+            f"found an sse('error', ...) call in {offenders} whose 'code' value is not a "
+            "fixed string literal (e.g. a computed expression, or a missing 'code' "
             "key) — this is exactly the class of defect GH #611 hypothesised: "
             "arbitrary computed text landing in an error frame's code field. "
             "Use a short literal slug instead."
         )
         assert _ERROR_CODE_SLUG_RE.match(code), (
-            f"error code {code!r} is not a short lowercase slug matching "
+            f"error code {code!r} (in {offenders}) is not a short lowercase slug matching "
             f"{_ERROR_CODE_SLUG_RE.pattern!r}"
         )
         assert len(code) <= _MAX_ERROR_CODE_LEN, (
-            f"error code {code!r} is longer than {_MAX_ERROR_CODE_LEN} chars"
+            f"error code {code!r} (in {offenders}) is longer than {_MAX_ERROR_CODE_LEN} chars"
         )
 
 
@@ -222,20 +294,37 @@ def test_backend_error_codes_are_a_subset_of_the_frontend_union():
     synthesised CLIENT-side from HTTP status in `chatStream.ts`, and
     `cancelled` is a client-side message status, not a frame `code` the
     backend ever emits. Demanding two-way parity would fail on all four
-    permanently — do not "fix" this into an `==` test."""
-    backend_codes: set[str] = set()
-    backend_codes |= backend_sse_error_codes(_SERVICE_PY.read_text(encoding="utf-8"))
-    backend_codes |= backend_sse_error_codes(_MESSAGES_PY.read_text(encoding="utf-8"))
+    permanently — do not "fix" this into an `==` test. Scanned tree-wide, same
+    reasoning as the slug test above."""
+    by_file = _backend_error_codes_by_file()
+    backend_codes = set(by_file)
     frontend_codes = frontend_error_codes(_CHAT_TYPES_TS.read_text(encoding="utf-8"))
 
-    assert backend_codes, "scanner found zero sse('error', ...) calls — check it still matches"
+    assert backend_codes, (
+        "scanner found zero sse('error', ...) calls anywhere under app/ — check it still matches"
+    )
 
     missing = backend_codes - frontend_codes
+    offenders_by_code = {code: _relative_offenders(by_file[code]) for code in sorted(missing)}
     assert not missing, (
-        f"backend emits error code(s) {sorted(missing)} that frontend's "
+        f"backend emits error code(s) {offenders_by_code} that frontend's "
         "ChatErrorCode union (frontend/src/lib/types/chat.ts) does not "
         "declare — those errors have no matching UI copy on arrival."
     )
+
+
+def test_the_backend_python_file_walk_reaches_beyond_the_original_two_files():
+    """Regression guard for the actual bypass this closed: a hardcoded 2-file
+    list left a THIRD file's `sse("error", ...)` call completely invisible,
+    proven against two real, already-existing emitters that were never scanned
+    before this fix (`files/subtitles.py`, `files/__init__.py`)."""
+    paths = set(_iter_backend_python_files())
+    assert _SERVICE_PY in paths
+    assert _MESSAGES_PY in paths
+    subtitles_py = _BACKEND_ROOT / "api" / "endpoints" / "files" / "subtitles.py"
+    files_init_py = _BACKEND_ROOT / "api" / "endpoints" / "files" / "__init__.py"
+    assert subtitles_py in paths, "the tree walk no longer reaches files/subtitles.py"
+    assert files_init_py in paths, "the tree walk no longer reaches files/__init__.py"
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +413,27 @@ def stream_reply(exc):
     yield sse("error", {"code": str(exc), "message": "boom"})
 """
     assert backend_sse_error_codes(source) == {_NON_LITERAL_CODE}
+
+
+def test_the_backend_error_code_scanner_finds_an_attribute_access_sse_call():
+    """Must-fire for the attribute-call gap: `chat_service.sse("error", ...)` is
+    the exact shape a refactor into a shared helper module produces, and the
+    bare-name-only matcher used to skip it silently."""
+    source = """
+def stream_reply(chat_service, exc):
+    yield chat_service.sse("error", {"code": str(exc), "message": "boom"})
+"""
+    assert backend_sse_error_codes(source) == {_NON_LITERAL_CODE}
+
+
+def test_the_backend_error_code_scanner_ignores_an_unrelated_attribute_call():
+    """Must-stay-clean sibling: a call to some OTHER object's method that merely
+    happens not to be named `sse` is not swept up by the widened matcher."""
+    source = """
+def stream_reply(foo, exc):
+    yield foo.not_sse("error", {"code": str(exc)})
+"""
+    assert backend_sse_error_codes(source) == set()
 
 
 def test_the_backend_error_code_scanner_ignores_non_error_sse_calls():

@@ -471,13 +471,30 @@ export interface TraceDetail {
   limit?: number;
 }
 
+/**
+ * The closed catalog of `code` values a backend `event: error` SSE frame may carry
+ * — enforced structurally by `backend/tests/unit/test_chat_sse_contract.py` (GH #611),
+ * which scans every `sse("error", ...)` call under `backend/app/**` and asserts each
+ * literal `code` is a member here. `llm_unconfigured` / `quota_exceeded` / `rate_limited`
+ * are synthesised CLIENT-side from HTTP status (`chatStream.ts`'s `mapStatusToErrorCode`);
+ * `cancelled` is a client-side message status. Neither of those two groups is ever a
+ * literal the backend emits. `connection_interrupted` / `export_failed` /
+ * `transcript_not_ready` back the download/subtitle-export SSE streams
+ * (`GET /files/{uuid}/download-stream`, `GET /files/bulk-export-stream`) — a different
+ * consumer than `chatStream.ts` (their `EventSource` handlers read only `.message`
+ * today), kept in this union anyway so the backend has ONE catalog of SSE error codes,
+ * not one per stream.
+ */
 export type ChatErrorCode =
   | 'llm_unconfigured'
   | 'quota_exceeded'
   | 'rate_limited'
   | 'provider_error'
   | 'timeout'
-  | 'cancelled';
+  | 'cancelled'
+  | 'connection_interrupted'
+  | 'export_failed'
+  | 'transcript_not_ready';
 
 export type ChatStreamEvent =
   | {

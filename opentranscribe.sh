@@ -244,6 +244,22 @@ get_compose_files() {
         fi
     fi
 
+    # Add the scheduled-backup overlay when explicitly opted into. Deliberately keyed on a
+    # DEDICATED toggle, not on BACKUP_HOST_PATH being non-empty: .env.example ships
+    # BACKUP_HOST_PATH=./backups SET, so a non-empty test would enable this for every
+    # install by default — and this overlay also sets `path.repo` on the opensearch
+    # service, so that would force-recreate OpenSearch on every existing deployment's
+    # next `update`. Same trap .env.example already documents for MEDIA_NAS_PATH (#597).
+    # BACKUP_HOST_PATH stays what it has always been: WHERE the mount points, not WHETHER.
+    local backup_overlay_enabled=""
+    backup_overlay_enabled=$(read_env_value BACKUP_OVERLAY_ENABLED)
+    if [ "$backup_overlay_enabled" = "true" ] && [ -f docker-compose.backup.yml ]; then
+        compose_files="$compose_files -f docker-compose.backup.yml"
+        echo -e "${BLUE}💾 Scheduled-backup overlay enabled (BACKUP_OVERLAY_ENABLED=true)${NC}" >&2
+        echo -e "${BLUE}   Destination: ${BACKUP_HOST_PATH:-./backups} → /backups${NC}" >&2
+        echo -e "${YELLOW}   Note: this also sets path.repo on OpenSearch — the opensearch container will be recreated.${NC}" >&2
+    fi
+
     echo "$compose_files"
 }
 

@@ -226,6 +226,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`opentranscribe.sh` had no way to select the scheduled-backup overlay
+  (`docker-compose.backup.yml`) on a production install** (#616) — `--with-backup` is an
+  `opentr.sh`-only dev flag, and the production manager script's `get_compose_files()` never
+  considered the overlay at all. Fixed with a new `BACKUP_OVERLAY_ENABLED=true` in `.env`,
+  deliberately a DEDICATED toggle rather than keying selection off `BACKUP_HOST_PATH` being
+  non-empty — `.env.example` ships that var SET (`./backups`), so a non-empty check would have
+  auto-enabled the overlay for every existing install on its next update, and the overlay also
+  sets `path.repo` on the OpenSearch service, so that would force-recreate OpenSearch on every
+  such install. `.env.example` ships `BACKUP_OVERLAY_ENABLED` commented out, and
+  `docker-compose.backup.yml` is now listed in `release-manifest.txt` (`optional`) so a
+  self-hosted install actually downloads it.
 - **The release rehearsal's rollback phase could crash outright, and — once it stopped
   crashing — still fail for two further reasons** (#618). The same unguarded-command-under-
   `set -e` class of bug as #617, this time a bare `curl` against the frontend inside an

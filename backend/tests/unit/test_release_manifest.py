@@ -28,6 +28,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST = REPO_ROOT / "release-manifest.txt"
 MANAGER = REPO_ROOT / "opentranscribe.sh"
+ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 pytestmark = pytest.mark.skipif(
     not MANIFEST.exists(), reason="release-manifest.txt not present in this checkout"
@@ -143,3 +144,37 @@ def test_env_example_is_listed_for_new_key_reporting():
     rather than erroring — reporting it at upgrade time is the only signal.
     """
     assert ".env.example" in {path for path, _ in _entries()}
+
+
+def test_backup_overlay_is_opt_in_not_default():
+    """The backup overlay must not be selected by a value .env.example ships SET.
+
+    .env.example ships BACKUP_HOST_PATH=./backups, so keying selection off that being
+    non-empty would enable the overlay for every install — and it sets path.repo on the
+    opensearch service, force-recreating that container on every existing deployment's
+    next update. Keyed on a dedicated BACKUP_OVERLAY_ENABLED that .env.example leaves
+    COMMENTED OUT (issue #616).
+    """
+    manager_source = MANAGER.read_text(encoding="utf-8")
+    assert "BACKUP_OVERLAY_ENABLED" in manager_source, (
+        "opentranscribe.sh no longer references BACKUP_OVERLAY_ENABLED — did the backup "
+        "overlay selection get keyed back onto BACKUP_HOST_PATH?"
+    )
+    # The selection guard must not test BACKUP_HOST_PATH's presence/truthiness -- only
+    # its own dedicated toggle.
+    assert not re.search(r'\[\s*-n\s*"\$backup_host_path"\s*\]', manager_source), (
+        "opentranscribe.sh's backup overlay selection appears keyed on BACKUP_HOST_PATH "
+        "being non-empty -- .env.example ships that SET, so this would enable the "
+        "overlay (and its OpenSearch path.repo recreate) for every install by default"
+    )
+
+    assert ENV_EXAMPLE.exists(), ".env.example not present in this checkout"
+    env_example_source = ENV_EXAMPLE.read_text(encoding="utf-8")
+    assert "#BACKUP_OVERLAY_ENABLED=" in env_example_source, (
+        ".env.example does not ship BACKUP_OVERLAY_ENABLED commented out -- the backup "
+        "overlay must be opt-in, not enabled by a fresh `cp .env.example .env`"
+    )
+    assert not re.search(r"^BACKUP_OVERLAY_ENABLED=", env_example_source, re.MULTILINE), (
+        ".env.example ships an UNCOMMENTED BACKUP_OVERLAY_ENABLED -- this would enable "
+        "the backup overlay (and its OpenSearch path.repo recreate) for every fresh install"
+    )

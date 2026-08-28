@@ -44,6 +44,7 @@ docker-compose.gpu.yml
 docker-compose.gpu-scale.yml
 docker-compose.blackwell.yml	optional
 docker-compose.nginx.yml
+docker-compose.backup.yml	optional
 
 # --- Reverse proxy -------------------------------------------------------------
 nginx/site.conf.template

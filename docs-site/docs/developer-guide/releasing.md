@@ -186,6 +186,16 @@ For a stack that runs *beside* the live one, use
 `./opentr.sh start dev --fresh <name> --port-offset N` instead.
 :::
 
+:::tip Non-interactive or backgrounded runs need `--yes`
+The `I UNDERSTAND` confirmation above reads from a tty. Under a backgrounded or
+otherwise non-interactive invocation there is no tty to read from, and the prompt
+fails with `No such device or address` rather than hanging. Pass `--yes` to skip
+it (both scripts also accept `--cleanup`, `--force`, and `test-upgrade.sh` also
+takes `--no-rollback`/`--only-rollback` — see each script's own `--help`).
+`scripts/release/65-rehearse.sh` already passes `--yes` on both scenarios when
+driven through `./scripts/release.sh rehearse`.
+:::
+
 ### What the upgrade scenario proves
 
 An upgrade is not only a database check. The scenario asserts:

@@ -29,9 +29,13 @@
 #   13  stage the rollback tree (unpinned images); verify the TO-side backup too
 #   14  damage the database through the real API (delete a file, rename a speaker)
 #   15  restore the phase-06b backup; assert EXACT pre-backup state (content
-#       digests, not row counts) — R-1..R-12, gated by ROLLBACK_REHEARSAL
+#       digests, not row counts) — R-1..R-2, R-6..R-13, gated by ROLLBACK_REHEARSAL.
+#       Issue #610: restore now leaves the app STOPPED on a schema-head mismatch
+#       (R-13 asserts this directly), so R-3/R-4/R-5 — which need a running
+#       application to serve the restored data — moved to phase 16.
 #   16  './opentranscribe.sh update --rollback'; assert the FROM image serves
-#       the restored FROM database through its real API — B-1..B-8
+#       the restored FROM database through its real API — B-1..B-8, plus
+#       R-3/R-4/R-5 (moved from phase 15, issue #610)
 #   17  roll forward again — the documented recovery loop, end to end — F-1..F-5
 #   18  summary
 #
@@ -1416,6 +1420,18 @@ phase_15_restore_and_assert() {
     # 0 too. The corruption is caught below, by content (R-2/R-8), not here.
     as_assert_eq "R-1: restore command exits 0 on success" "0" "$restore_rc"
 
+    # R-13 (issue #610): the restore must NOT have restarted the application. This is
+    # THE direct regression assertion for #610 — a running backend here would
+    # immediately run `alembic upgrade head` over the dump we just installed, silently
+    # migrating the FROM-release backup forward before anyone (operator or this test)
+    # ever gets to see it in its original restored form. `restore --yes` against a
+    # schema-head mismatch (the FROM backup vs. the still-running TO image, exactly
+    # this scenario) now leaves services stopped by design — see opentr.sh's
+    # pg_restore_restart_decision / scripts/common.sh.
+    local backend_running
+    backend_running="$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-backend$' | head -1)"
+    as_assert_eq "R-13: restore left the application stopped (no auto-migration window)" "" "${backend_running:-}"
+
     as_record SKIP "R-12: no live writer at the moment of the drop" \
         "enforced inside opentr.sh's restore_database via DROP DATABASE ... WITH (FORCE) and its own client-stop sequence (#599) — not independently observable from outside that function without instrumenting it"
 
@@ -1468,52 +1484,15 @@ phase_15_restore_and_assert() {
     _capture_minio_etags "$minio_post"
     as_assert_diff_files "R-11: MinIO ETag list unchanged by the DB-only restore" "$minio_pre" "$minio_post"
 
-    # R-3/R-4/R-5 need the API back up.
-    API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
-    export API_BASE
-    ac_wait_for_health 300
-    if ! ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"; then
-        as_record FAIL "login to the restored stack for R-3/R-4/R-5"
-        return 0
-    fi
-
-    # R-3: the file deleted in phase 14 is back, addressable via the API.
-    local deleted_fid
-    deleted_fid="$(cat "$TEST_ROOT/damage-deleted-file-id.txt" 2>/dev/null || echo "")"
-    if [[ -n "$deleted_fid" ]]; then
-        local code
-        code="$(curl -o /dev/null -s -w '%{http_code}' -H "Authorization: Bearer ${API_TOKEN:-}" "$API_BASE/files/$deleted_fid")"
-        as_assert_http "R-3: file deleted in phase 14 is back, addressable via the API" 200 "$code"
-    else
-        as_record SKIP "R-3: deleted file restored" "no deleted-file id recorded (phase 14's damage step was skipped)"
-    fi
-
-    # R-4: the renamed speaker has its old name back.
-    if [[ -f "$TEST_ROOT/damage-speaker.txt" ]]; then
-        local sp_uuid sp_old sp_new current_name
-        { read -r sp_uuid; read -r sp_old; read -r sp_new; } < "$TEST_ROOT/damage-speaker.txt"
-        current_name="$(ac_curl "$API_BASE/speakers/$sp_uuid" 2>/dev/null | python3 -c '
-import sys, json
-d = json.load(sys.stdin)
-print(d.get("name") or (d.get("speaker") or {}).get("name", ""))
-' 2>/dev/null || echo "")"
-        as_assert_eq "R-4: renamed speaker has its pre-damage name" "$sp_old" "$current_name"
-        [[ "$current_name" == "$sp_new" ]] && gr_warn "speaker still carries the phase-14 damage name ($sp_new) — the restore left it in place"
-    else
-        as_record SKIP "R-4: speaker rename reverted" "no speaker was renamed in phase 14"
-    fi
-
-    # R-5: the phase-11 POST-backup upload is ABSENT — a restore that leaves
-    # it is a merge, not a replace. This is the assertion that fails under a
-    # `--clean`-only fix (issue #598 §3).
-    if [[ -f "$TEST_ROOT/post-upgrade-new-file-id.txt" ]]; then
-        local post_fid post_code
-        post_fid="$(cat "$TEST_ROOT/post-upgrade-new-file-id.txt")"
-        post_code="$(curl -o /dev/null -s -w '%{http_code}' -H "Authorization: Bearer ${API_TOKEN:-}" "$API_BASE/files/$post_fid")"
-        as_assert_http "R-5: post-backup upload (phase 11) is ABSENT after restore" 404 "$post_code"
-    else
-        as_record SKIP "R-5: post-backup upload absent" "phase 11 recorded no new-file id (skipped or no suitable media?)"
-    fi
+    # R-3/R-4/R-5 moved to phase 16 (issue #610): they assert that restored data is
+    # visible THROUGH THE APPLICATION, but per R-13 above, nothing is up here to serve
+    # it any more — restore now leaves the app stopped on purpose. Serving a
+    # FROM-schema database is the FROM image's job (this phase's subject is whatever
+    # was running before the restore, i.e. TO), so the checks belong in phase 16,
+    # after `update --rollback` has put the FROM image in front of it. Before this
+    # fix they ran here and passed only because the STILL-RUNNING TO image
+    # force-migrated the data into a shape it could read — i.e. they were green
+    # BECAUSE of the bug.
 }
 
 phase_16_rollback_and_assert() {
@@ -1522,6 +1501,12 @@ phase_16_rollback_and_assert() {
     if [[ "${ROLLBACK_INJECT_FAULT:-}" == "truncate" ]]; then
         as_record SKIP "B-1..B-8: update --rollback" \
             "ROLLBACK_INJECT_FAULT=truncate: phase 15 already proved the corruption is caught (R-2/R-8 FAILed); the database is NOT empty (the truncated dump replays with exit 0 and partial data — see phase 15's comment), so continuing to roll images back onto known-corrupt fixture data would only carry it forward without exercising anything --rollback-specific"
+        # R-3/R-4/R-5 (issue #610) now live in THIS phase, not phase 15 — without an
+        # explicit record here, this early return would silently drop three
+        # assertions from the fault-injection run instead of skipping them visibly.
+        as_record SKIP "R-3: deleted file restored" "ROLLBACK_INJECT_FAULT=truncate: phase 16 (which now runs R-3/R-4/R-5) was itself skipped, see above"
+        as_record SKIP "R-4: speaker rename reverted" "ROLLBACK_INJECT_FAULT=truncate: phase 16 (which now runs R-3/R-4/R-5) was itself skipped, see above"
+        as_record SKIP "R-5: post-backup upload absent" "ROLLBACK_INJECT_FAULT=truncate: phase 16 (which now runs R-3/R-4/R-5) was itself skipped, see above"
         return 0
     fi
 
@@ -1571,7 +1556,9 @@ phase_16_rollback_and_assert() {
         "$FROM_VERSION" "$(ver_normalize "${running_version:-none}" 2>/dev/null || echo "${running_version:-none}")"
     as_assert_ne "B-5: /api/version is not 'unknown' (build-arg contract)" "unknown" "${running_version:-none}"
 
+    local login_ok=false
     if ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"; then
+        login_ok=true
         as_record PASS "B-6: login succeeds — the FROM image serves the restored FROM database"
 
         local files_json file_count expected_count
@@ -1630,6 +1617,59 @@ PY
         done < "$TEST_ROOT/seeded-file-ids.txt"
     else
         as_record FAIL "B-6: login to the rolled-back stack"
+    fi
+
+    # R-3/R-4/R-5 (issue #610), relocated here from phase 15: these assert that data a
+    # restore brought back is visible THROUGH THE APPLICATION, and per phase 15's R-13,
+    # nothing was up there to serve it any more — restore now leaves the app stopped on
+    # purpose. The application that should serve a FROM-schema database is the FROM
+    # image, i.e. THIS phase, after `update --rollback` has put it in front of the
+    # restored database — not whatever was running when phase 15's restore ran. Before
+    # this fix these ran in phase 15 and passed only because the STILL-RUNNING TO image
+    # force-migrated the restored data into a shape it could read — green BECAUSE of
+    # the bug, not despite it. Reuses B-6's own login rather than logging in twice.
+    if [[ "$login_ok" == true ]]; then
+        # R-3: the file deleted in phase 14 is back, addressable via the API.
+        local deleted_fid
+        deleted_fid="$(cat "$TEST_ROOT/damage-deleted-file-id.txt" 2>/dev/null || echo "")"
+        if [[ -n "$deleted_fid" ]]; then
+            local code
+            code="$(curl -o /dev/null -s -w '%{http_code}' -H "Authorization: Bearer ${API_TOKEN:-}" "$API_BASE/files/$deleted_fid")"
+            as_assert_http "R-3: file deleted in phase 14 is back, addressable via the API" 200 "$code"
+        else
+            as_record SKIP "R-3: deleted file restored" "no deleted-file id recorded (phase 14's damage step was skipped)"
+        fi
+
+        # R-4: the renamed speaker has its old name back.
+        if [[ -f "$TEST_ROOT/damage-speaker.txt" ]]; then
+            local sp_uuid sp_old sp_new current_name
+            { read -r sp_uuid; read -r sp_old; read -r sp_new; } < "$TEST_ROOT/damage-speaker.txt"
+            current_name="$(ac_curl "$API_BASE/speakers/$sp_uuid" 2>/dev/null | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+print(d.get("name") or (d.get("speaker") or {}).get("name", ""))
+' 2>/dev/null || echo "")"
+            as_assert_eq "R-4: renamed speaker has its pre-damage name" "$sp_old" "$current_name"
+            [[ "$current_name" == "$sp_new" ]] && gr_warn "speaker still carries the phase-14 damage name ($sp_new) — the restore left it in place"
+        else
+            as_record SKIP "R-4: speaker rename reverted" "no speaker was renamed in phase 14"
+        fi
+
+        # R-5: the phase-11 POST-backup upload is ABSENT — a restore that leaves
+        # it is a merge, not a replace. This is the assertion that fails under a
+        # `--clean`-only fix (issue #598 §3).
+        if [[ -f "$TEST_ROOT/post-upgrade-new-file-id.txt" ]]; then
+            local post_fid post_code
+            post_fid="$(cat "$TEST_ROOT/post-upgrade-new-file-id.txt")"
+            post_code="$(curl -o /dev/null -s -w '%{http_code}' -H "Authorization: Bearer ${API_TOKEN:-}" "$API_BASE/files/$post_fid")"
+            as_assert_http "R-5: post-backup upload (phase 11) is ABSENT after restore" 404 "$post_code"
+        else
+            as_record SKIP "R-5: post-backup upload absent" "phase 11 recorded no new-file id (skipped or no suitable media?)"
+        fi
+    else
+        as_record SKIP "R-3: deleted file restored" "login to the rolled-back stack failed, see B-6"
+        as_record SKIP "R-4: speaker rename reverted" "login to the rolled-back stack failed, see B-6"
+        as_record SKIP "R-5: post-backup upload absent" "login to the rolled-back stack failed, see B-6"
     fi
 
     local frontend_code

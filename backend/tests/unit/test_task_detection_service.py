@@ -511,3 +511,66 @@ def test_false_positive_failures_match_the_exact_recovery_message(service, db_se
     assert recovered.id in ids
     assert genuine.id not in ids
     assert too_old.id not in ids
+
+
+# =============================================================================
+# Incomplete post-transcription detection: LLM speaker-ID existence proxy
+# =============================================================================
+def test_rejecting_every_suggestion_on_a_file_does_not_re_offer_speaker_id(
+    service, db_session, normal_user
+):
+    """Audit follow-up to issue #603: ``suggestion_source`` must survive rejection.
+
+    ``identify_incomplete_post_transcription_files`` treats
+    ``Speaker.suggestion_source == "llm_analysis"`` as its *sole* existence
+    proxy for "has LLM speaker ID already run on this file". A regression in
+    ``_reject_speaker_suggestion`` (``api/endpoints/speakers.py``) used to null
+    that column on rejection alongside ``suggested_name``/``confidence``, so a
+    file where the user rejected every suggested speaker looked
+    never-identified and was flagged ``missing_speaker_id`` again — re-offering
+    (and re-dispatching) the exact suggestion the user had just rejected, held
+    off only by the ~30 minute ``recently_attempted`` cooldown rather than
+    actually prevented.
+
+    This method's own module docstring above notes it is otherwise
+    ambient-data dependent (a shared dev database full of old COMPLETED files
+    can crowd this row out of the ``limit(batch_size * 3)`` window). Dating
+    ``completed_at`` to year 1000 — far earlier than any real data — sorts
+    this row first in the ``completed_at ASC`` candidate query regardless of
+    what else is in the table, the same technique this suite's ``ANCIENT``
+    constant uses elsewhere.
+    """
+    from unittest.mock import patch
+
+    from app.api.endpoints.speakers import _reject_speaker_suggestion
+    from app.models.media import Speaker
+
+    media_file = _file(
+        db_session,
+        normal_user,
+        status=FileStatus.COMPLETED,
+        completed_at=datetime(1000, 1, 1, tzinfo=UTC),
+    )
+    speaker = Speaker(
+        user_id=normal_user.id,
+        media_file_id=media_file.id,
+        name="SPEAKER_00",
+        suggested_name="Jane Doe",
+        suggestion_source="llm_analysis",
+        confidence=0.9,
+    )
+    db_session.add(speaker)
+    db_session.commit()
+    db_session.refresh(speaker)
+
+    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+        _reject_speaker_suggestion(speaker, speaker.id, db_session)
+
+        results = service.identify_incomplete_post_transcription_files(db_session)
+
+    ours = [r for r in results if r.media_file_id == media_file.id]
+    assert ours, "the file must still be reported (other post-transcription steps are missing)"
+    assert ours[0].missing_speaker_id is False, (
+        "a rejected-but-recorded LLM suggestion must not be re-offered as "
+        "missing speaker identification"
+    )

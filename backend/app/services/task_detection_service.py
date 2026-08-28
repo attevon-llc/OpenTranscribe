@@ -769,7 +769,15 @@ class TaskDetectionService:
             .all()
         )
 
-        # Batch-fetch existence: files with LLM speaker identifications
+        # Batch-fetch existence: files with LLM speaker identifications.
+        # ``suggestion_source`` is the existence proxy for "has LLM speaker ID
+        # already run on this file" — it must survive accept/reject, not just
+        # generation, or a file where the user resolved every suggestion looks
+        # never-identified and gets re-offered (and re-dispatched) the same
+        # suggestions it just rejected. Accept/reject in
+        # `api/endpoints/speakers.py` (`_apply_verification_on_display_name`,
+        # `_reject_speaker_suggestion`) deliberately leave this column set for
+        # exactly this reader; only `suggested_name`/`confidence` are cleared.
         files_with_speaker_id = set(
             row[0]
             for row in db.query(Speaker.media_file_id)

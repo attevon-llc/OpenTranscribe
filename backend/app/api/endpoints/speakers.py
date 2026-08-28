@@ -1856,11 +1856,23 @@ def _set_no_cache_headers(response: Response) -> None:
 
 
 def _apply_verification_on_display_name(speaker: Speaker, speaker_update: SpeakerUpdate) -> None:
-    """Mark speaker as verified when display name is set."""
+    """Mark speaker as verified when display name is set.
+
+    Clears ``suggested_name``/``confidence`` — the *active pending suggestion*
+    — so nothing reads a resolved speaker as still carrying one (issue #605).
+    ``suggestion_source`` is deliberately left alone: every reader of it
+    (``smart_speaker_suggestion_service``, ``speaker_profiles.py``, this
+    module's own display-flag builder) already gates on ``suggested_name``/
+    ``confidence`` being truthy too, so it never resurrects a "live"
+    suggestion — but ``task_detection_service`` reads it standalone as its
+    only signal for "has LLM speaker ID already run on this file", and
+    clearing it here caused every manually-confirmed speaker's file to look
+    unidentified again, re-offering (and re-dispatching) identification the
+    user had just finished with (issue #603 follow-up regression).
+    """
     if speaker_update.display_name is not None and speaker_update.display_name.strip():
         speaker.verified = True  # type: ignore[assignment]
         speaker.suggested_name = None  # type: ignore[assignment]
-        speaker.suggestion_source = None  # type: ignore[assignment]
         speaker.confidence = None  # type: ignore[assignment]
 
 
@@ -2149,17 +2161,29 @@ def _accept_speaker_profile_match(
 def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -> dict[str, Any]:
     """Handle rejection of a speaker identification suggestion.
 
-    Clears ``suggested_name``/``suggestion_source`` alongside ``confidence``
-    (issue #605) — nulling ``confidence`` alone left ``suggested_name``
-    populated, so any reader that checks ``suggested_name is not None`` without
-    also checking ``confidence`` (this module's own
-    ``was_auto_labeled = speaker.suggested_name is not None and not
-    speaker.verified``) kept surfacing a rejected suggestion as if it were
-    still live. Clearing both also means the canonical label can genuinely move
-    (a rejected suggestion falls back to the raw diarizer name), so the
-    rejection is propagated to the chunk plane exactly like every other write
-    that moves the canonical label — a suggestion the user rejected must not
-    keep appearing in search facets or chat's speaker scope.
+    Clears ``suggested_name`` alongside ``confidence`` (issue #605) — nulling
+    ``confidence`` alone left ``suggested_name`` populated, so any reader that
+    checks ``suggested_name is not None`` without also checking ``confidence``
+    (this module's own ``was_auto_labeled = speaker.suggested_name is not
+    None and not speaker.verified``) kept surfacing a rejected suggestion as
+    if it were still live. Clearing both also means the canonical label can
+    genuinely move (a rejected suggestion falls back to the raw diarizer
+    name), so the rejection is propagated to the chunk plane exactly like
+    every other write that moves the canonical label — a suggestion the user
+    rejected must not keep appearing in search facets or chat's speaker
+    scope.
+
+    ``suggestion_source`` is deliberately NOT cleared here. Every display
+    reader gates on ``suggested_name``/``confidence`` too (both nulled
+    above), so leaving it set never resurrects a "live" suggestion — but
+    ``task_detection_service.identify_incomplete_post_transcription_files``
+    reads ``suggestion_source == "llm_analysis"`` on its own as the sole
+    signal for "has LLM speaker ID already run on this file". Nulling it here
+    used to make a fully-rejected file look never-identified, so identify-
+    speakers got re-offered (and re-dispatched) and regenerated the exact
+    suggestions the user had just rejected, gated only by the ~30 minute
+    ``recently_attempted`` cooldown rather than actually prevented (audit
+    follow-up to issue #603).
     """
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
     before = canonical_speaker_label_for_row(speaker)
@@ -2168,7 +2192,6 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
     speaker.profile_id = None  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
     speaker.suggested_name = None  # type: ignore[assignment]
-    speaker.suggestion_source = None  # type: ignore[assignment]
     speaker.confidence = None  # type: ignore[assignment]
     after = canonical_speaker_label_for_row(speaker)
     db.commit()

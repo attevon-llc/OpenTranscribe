@@ -172,7 +172,9 @@ _NOT_YET_VERIFIED: dict[str, str] = {
     "/api/speakers/debug/cross-media-by-name": _MAINTENANCE_OPS_REASON,
     "/api/search/repair-indices": _MAINTENANCE_OPS_REASON,
     "/api/search/models/neural/active": _MAINTENANCE_OPS_REASON,
-    "/api/search/models/neural/status": _MAINTENANCE_OPS_REASON,
+    # "/api/search/models/neural/status" removed (issue #625): SearchSettings.svelte now
+    # calls it (~line 160), with vitest coverage in SearchSettings.bootstrap.test.ts and
+    # SearchSettings.reembed.test.ts asserting the exact call.
     "/api/search/models/neural/{model_name:path}/undeploy": _MAINTENANCE_OPS_REASON,
     "/api/files/management/stuck": _MAINTENANCE_OPS_REASON,
     "/api/files/management/cleanup-orphaned": _MAINTENANCE_OPS_REASON,

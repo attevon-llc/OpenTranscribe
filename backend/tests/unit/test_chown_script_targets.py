@@ -158,15 +158,24 @@ def test_model_script_env_var_wins_over_dotenv() -> None:
 
 
 def test_dotenv_parse_is_anchored() -> None:
-    """Bug C, now closed via python-dotenv (issue #590) rather than a hand-rolled
-    grep/cut/tr pipeline. `dotenv_values()` matches the exact key -- it can never match
-    a variable like `EXTRA_MODEL_CACHE_DIR` -- and never truncates a value containing
-    '=' the way a naive `cut -d'=' -f2` would, so both original failure modes are
-    structurally impossible rather than merely avoided by a careful regex."""
+    """Bug C. Originally closed via python-dotenv (issue #590), but env_reader.py is a
+    dev/CI-only helper never shipped to a standalone install (it is absent from
+    release-manifest.txt and setup-opentranscribe.sh's curl list), so a real end-user
+    install called a file that does not exist on disk -- issue #590/#581. Re-closed via
+    scripts/common.sh's read_env_value(), which IS shipped (release-manifest.txt) and is
+    the same helper opentranscribe.sh's shipped backup/restore arm already uses. It still
+    matches the exact key via `^KEY=` anchoring (can never match `EXTRA_MODEL_CACHE_DIR`)
+    and never truncates a value containing '=' (`cut -d= -f2-`, not `-f2`)."""
     text = _MODEL_SH.read_text(encoding="utf-8")
-    assert re.search(r"env_reader\.py\"\s+\"\$PROJECT_ROOT/\.env\"\s+MODEL_CACHE_DIR", text), (
+    assert re.search(r"read_env_value\s+MODEL_CACHE_DIR\s+\"\$PROJECT_ROOT/\.env\"", text), (
         "fix-model-permissions.sh must read MODEL_CACHE_DIR via "
-        "scripts/lib/env_reader.py (python-dotenv), not a hand-rolled grep/cut/tr pipeline"
+        "scripts/common.sh's read_env_value() (shipped), not scripts/lib/env_reader.py "
+        "(dev/CI-only, not in release-manifest.txt)"
+    )
+    assert not re.search(r"python3[^\n]*env_reader\.py", text), (
+        "fix-model-permissions.sh must not CALL scripts/lib/env_reader.py -- it ships to "
+        "end users and env_reader.py does not (issue #590/#581). (Explanatory comments "
+        "naming the file are fine; an actual `python3 ... env_reader.py` invocation is not.)"
     )
 
 

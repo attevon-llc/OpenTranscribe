@@ -38,6 +38,36 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# scripts/lib/env_reader.py is a dev/CI-only helper -- it lives in the repo checkout but
+# is NOT in release-manifest.txt, so it never reaches a standalone
+# `setup-opentranscribe.sh` install (issue #590/#581). Calling it there is a missing-file
+# failure under this script's `set -e`, which previously meant a customized
+# MODEL_CACHE_DIR silently fell through to the `$PROJECT_ROOT/models` default below and
+# this script chowned the WRONG directory. scripts/common.sh IS shipped
+# (release-manifest.txt) and its read_env_value() is the grep/cut equivalent already used
+# by opentranscribe.sh's shipped backup/restore arm, so use that here instead.
+# Conditional source + fallback definition, identical pattern to opentranscribe.sh
+# (~line 29): an install predating release-manifest.txt's common.sh entry still works,
+# and common.sh's definition wins when present (bash keeps the last definition).
+# Safe under this file's `set -e` (no `set -u`): read_env_value ends in `|| true`, and a
+# missing $env_file returns "" via its own explicit early return.
+if [ -f "$SCRIPT_DIR/common.sh" ]; then
+    # shellcheck source=scripts/common.sh
+    . "$SCRIPT_DIR/common.sh"
+fi
+if ! declare -F read_env_value >/dev/null 2>&1; then
+    read_env_value() {
+        local key="$1" env_file="${2:-.env}"
+        [ -f "$env_file" ] || { echo ""; return 0; }
+        grep -E "^${key}=" "$env_file" 2>/dev/null \
+            | head -1 \
+            | cut -d= -f2- \
+            | sed -E 's/[[:space:]]+#.*$//' \
+            | tr -d ' "' \
+            || true
+    }
+fi
+
 echo -e "${GREEN}OpenTranscribe Model Cache Permission Fixer${NC}"
 echo "=============================================="
 echo ""
@@ -47,11 +77,9 @@ echo ""
 # .env read. This used to be a bare assignment that clobbered a caller's exported value
 # (issue #602).
 if [ -f "$PROJECT_ROOT/.env" ]; then
-    # Real dotenv parsing (issue #590) via python-dotenv rather than a hand-rolled
-    # grep/cut chain -- the previous chain's `cut -d'#' -f1` truncated on ANY '#',
-    # including one legitimately inside a value, and every hand-rolled parser in this
-    # repo shared the same class of inline-comment bug (see gpu-scale-smoke.sh).
-    MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-$(python3 "$SCRIPT_DIR/lib/env_reader.py" "$PROJECT_ROOT/.env" MODEL_CACHE_DIR)}"
+    # read_env_value, not env_reader.py -- this script ships to end users and
+    # env_reader.py does not (see the sourcing block above).
+    MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-$(read_env_value MODEL_CACHE_DIR "$PROJECT_ROOT/.env")}"
     export MODEL_CACHE_DIR
 fi
 

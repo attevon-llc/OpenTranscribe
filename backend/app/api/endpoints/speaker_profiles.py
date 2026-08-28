@@ -24,7 +24,6 @@ from app.models.media import SpeakerProfile
 from app.models.user import User
 from app.services.opensearch_service import update_speaker_collections
 from app.services.permission_service import PermissionService
-from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.utils.error_handlers import ErrorHandler
@@ -355,9 +354,13 @@ def assign_speaker_to_profile(
             raise HTTPException(status_code=403, detail="Not authorized to access this profile")
         profile_id = profile.id
 
-        # Initialize services
-        embedding_service = SpeakerEmbeddingService()
-        matching_service = SpeakerMatchingService(db, embedding_service)
+        # assign_speaker_to_profile is a DB write (updates the speaker row, commits, then
+        # flushes the rename tracker) — never construct SpeakerEmbeddingService here: it
+        # imports pyannote and loads the embedding model, which the API/CI image doesn't
+        # ship (→ 500 on every call) and which would load a full GPU model per request even
+        # where it does, despite assign_speaker_to_profile never touching
+        # self.embedding_service at all. Same pattern as get_speaker_occurrences below.
+        matching_service = SpeakerMatchingService(db, None)
 
         # Assign speaker to profile
         updated_speaker = matching_service.assign_speaker_to_profile(

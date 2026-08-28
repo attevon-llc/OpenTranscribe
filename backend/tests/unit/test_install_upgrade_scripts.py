@@ -183,7 +183,10 @@ def test_downloader_uses_the_deployments_pinned_image():
 def test_downloader_reads_the_tag_from_a_deployment_env(tmp_path: Path):
     """An installed deployment keeps .env beside the compose files, not one level up."""
     (tmp_path / ".env").write_text("OT_IMAGE_TAG=v0.4.1\n")
-    script_dir_prelude = f'SCRIPT_DIR="{REPO_ROOT / "scripts"}"\n'
+    # resolve_downloader_image() now calls read_env_value() (scripts/common.sh), not
+    # scripts/lib/env_reader.py directly (issue #590/#581) -- source common.sh so the
+    # extracted function body has it, exactly as download-models.sh itself does.
+    script_dir_prelude = f'SCRIPT_DIR="{REPO_ROOT / "scripts"}"\nsource {COMMON}\n'
     out = _run_shell(
         script_dir_prelude
         + _extract_function(DOWNLOADER, "resolve_downloader_image")
@@ -913,6 +916,7 @@ def test_backup_arm_passes_the_resolved_compose_chain(tmp_path: Path):
     body = _backup_restore_arm()
     snippet = f"""
 YELLOW=''; GREEN=''; RED=''; BLUE=''; NC=''
+source {COMMON}
 cd {tmp_path}
 check_environment() {{ :; }}
 require_db_helpers() {{ :; }}
@@ -939,6 +943,7 @@ def test_restore_arm_forwards_every_flag_in_order(tmp_path: Path):
     body = _backup_restore_arm()
     snippet = f"""
 YELLOW=''; GREEN=''; RED=''; BLUE=''; NC=''
+source {COMMON}
 cd {tmp_path}
 check_environment() {{ :; }}
 require_db_helpers() {{ :; }}
@@ -1053,6 +1058,7 @@ def test_restore_arm_reads_a_custom_postgres_db_from_env(tmp_path: Path):
     body = _backup_restore_arm()
     snippet = f"""
 YELLOW=''; GREEN=''; RED=''; BLUE=''; NC=''
+source {COMMON}
 cd {tmp_path}
 check_environment() {{ :; }}
 require_db_helpers() {{ :; }}

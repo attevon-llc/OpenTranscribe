@@ -47,6 +47,34 @@ MODEL_CACHE_DIR="${1:-./models}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# scripts/lib/env_reader.py is a dev/CI-only helper: it lives in the repo checkout but is
+# NOT in release-manifest.txt, so it never reaches a standalone `setup-opentranscribe.sh`
+# install (issue #590/#581). Calling it there raised ModuleNotFoundError-adjacent failures
+# silently swallowed by this script's lack of `set -e`, which degraded every .env read below
+# to "" -- e.g. resolve_downloader_image() falling back to :latest, the exact regression its
+# own comment says it exists to prevent. scripts/common.sh IS shipped
+# (release-manifest.txt) and its read_env_value() is the grep/cut equivalent already used by
+# opentranscribe.sh's shipped backup/restore arm, so use that here instead. Conditional
+# source + fallback definition, identical pattern to opentranscribe.sh (~line 29): an
+# install predating release-manifest.txt's common.sh entry still works, and common.sh's
+# definition wins when present (bash keeps the last definition).
+if [ -f "$SCRIPT_DIR/common.sh" ]; then
+    # shellcheck source=scripts/common.sh
+    . "$SCRIPT_DIR/common.sh"
+fi
+if ! declare -F read_env_value >/dev/null 2>&1; then
+    read_env_value() {
+        local key="$1" env_file="${2:-.env}"
+        [ -f "$env_file" ] || { echo ""; return 0; }
+        grep -E "^${key}=" "$env_file" 2>/dev/null \
+            | head -1 \
+            | cut -d= -f2- \
+            | sed -E 's/[[:space:]]+#.*$//' \
+            | tr -d ' "' \
+            || true
+    }
+fi
+
 # The image that does the downloading MUST be the version this deployment runs.
 #
 # This was hardcoded to `:latest`, which quietly defeats the point of a pinned
@@ -61,14 +89,16 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 resolve_downloader_image() {
     local tag="${OT_IMAGE_TAG:-}"
     if [ -z "$tag" ] && [ -f "$REPO_ROOT/.env" ]; then
-        # python-dotenv, not grep/cut (issue #590).
-        tag=$(python3 "$SCRIPT_DIR/lib/env_reader.py" "$REPO_ROOT/.env" OT_IMAGE_TAG)
+        # read_env_value, not env_reader.py -- this script ships to end users and
+        # env_reader.py does not (see the sourcing block above).
+        tag=$(read_env_value OT_IMAGE_TAG "$REPO_ROOT/.env")
     fi
     # A deployment sitting in the install dir (not a git clone) keeps .env beside
     # the compose files rather than one level up.
     if [ -z "$tag" ] && [ -f "./.env" ]; then
-        # python-dotenv, not grep/cut (issue #590).
-        tag=$(python3 "$SCRIPT_DIR/lib/env_reader.py" ./.env OT_IMAGE_TAG)
+        # read_env_value, not env_reader.py -- this script ships to end users and
+        # env_reader.py does not (see the sourcing block above).
+        tag=$(read_env_value OT_IMAGE_TAG ./.env)
     fi
     echo "${DOCKERHUB_USERNAME:-davidamacey}/opentranscribe-backend:${tag:-latest}"
 }
@@ -188,8 +218,9 @@ check_huggingface_token() {
     # Check .env file
     if [ -f "$REPO_ROOT/.env" ]; then
         local token
-        # python-dotenv, not grep/cut (issue #590).
-        token=$(python3 "$SCRIPT_DIR/lib/env_reader.py" "$REPO_ROOT/.env" HUGGINGFACE_TOKEN)
+        # read_env_value, not env_reader.py -- this script ships to end users and
+        # env_reader.py does not (see the sourcing block above).
+        token=$(read_env_value HUGGINGFACE_TOKEN "$REPO_ROOT/.env")
         if [ -n "$token" ]; then
             export HUGGINGFACE_TOKEN="$token"
             print_success "HuggingFace token loaded from .env file"
@@ -266,8 +297,9 @@ download_models_docker() {
     local whisper_model="${WHISPER_MODEL:-}"
     if [ -z "$whisper_model" ] && [ -f "$REPO_ROOT/.env" ]; then
         local env_model
-        # python-dotenv, not grep/cut (issue #590).
-        env_model=$(python3 "$SCRIPT_DIR/lib/env_reader.py" "$REPO_ROOT/.env" WHISPER_MODEL)
+        # read_env_value, not env_reader.py -- this script ships to end users and
+        # env_reader.py does not (see the sourcing block above).
+        env_model=$(read_env_value WHISPER_MODEL "$REPO_ROOT/.env")
         if [ -n "$env_model" ]; then
             whisper_model="$env_model"
         fi

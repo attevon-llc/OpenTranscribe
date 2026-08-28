@@ -178,3 +178,37 @@ def test_backup_overlay_is_opt_in_not_default():
         ".env.example ships an UNCOMMENTED BACKUP_OVERLAY_ENABLED -- this would enable "
         "the backup overlay (and its OpenSearch path.repo recreate) for every fresh install"
     )
+
+
+def test_no_shipped_script_references_scripts_lib():
+    """No script listed in release-manifest.txt may reference scripts/lib/.
+
+    scripts/lib/ (env_reader.py and friends) is dev/CI-only tooling -- it is
+    deliberately NOT in this manifest, so it never reaches a standalone
+    setup-opentranscribe.sh install. issue #590 added scripts/lib/env_reader.py and a
+    caller in two SHIPPED scripts (download-models.sh, fix-model-permissions.sh)
+    without adding env_reader.py itself to the manifest -- every real end-user install
+    called a file that does not exist on disk (issue #590/#581), silently degrading
+    (download-models.sh fell back to :latest instead of the pinned image tag) or
+    crashing outright (fix-model-permissions.sh, which runs under `set -e`).
+
+    This is the invariant that would have caught that mistake, and the guard against
+    it recurring for any future script added to the manifest: a shipped script must
+    read its .env values via scripts/common.sh's read_env_value() (also shipped),
+    never scripts/lib/env_reader.py.
+    """
+    offenders = []
+    for path, _flags in _entries():
+        full = REPO_ROOT / path
+        if full.suffix != ".sh":
+            continue
+        # A real invocation, not an explanatory comment naming the file (both
+        # download-models.sh and fix-model-permissions.sh now carry comments
+        # documenting why they DON'T call it -- those must not trip this).
+        if re.search(r"python3[^\n]*lib/env_reader\.py", full.read_text(encoding="utf-8")):
+            offenders.append(path)
+    assert not offenders, (
+        f"shipped script(s) reference scripts/lib/, which is dev/CI-only and never "
+        f"reaches a standalone install: {offenders}. Use scripts/common.sh's "
+        f"read_env_value() instead (issue #590/#581)."
+    )

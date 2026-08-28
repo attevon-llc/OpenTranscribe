@@ -47,10 +47,11 @@ echo ""
 # .env read. This used to be a bare assignment that clobbered a caller's exported value
 # (issue #602).
 if [ -f "$PROJECT_ROOT/.env" ]; then
-    # Anchored to the start of the variable name so this can't match a variable like
-    # EXTRA_MODEL_CACHE_DIR, and `-f2-` (not `-f2`) so a value containing '=' isn't
-    # truncated (issue #602). Still filters out comments (full-line and inline).
-    MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-$(grep -E '^[[:space:]]*MODEL_CACHE_DIR=' "$PROJECT_ROOT/.env" | grep -v '^#' | cut -d'#' -f1 | cut -d'=' -f2- | tr -d ' "' | head -1)}"
+    # Real dotenv parsing (issue #590) via python-dotenv rather than a hand-rolled
+    # grep/cut chain -- the previous chain's `cut -d'#' -f1` truncated on ANY '#',
+    # including one legitimately inside a value, and every hand-rolled parser in this
+    # repo shared the same class of inline-comment bug (see gpu-scale-smoke.sh).
+    MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-$(python3 "$SCRIPT_DIR/lib/env_reader.py" "$PROJECT_ROOT/.env" MODEL_CACHE_DIR)}"
     export MODEL_CACHE_DIR
 fi
 

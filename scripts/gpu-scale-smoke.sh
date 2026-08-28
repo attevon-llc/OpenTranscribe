@@ -62,12 +62,13 @@ fail() {
     exit "${2:-1}"
 }
 
+# Real dotenv parsing (issue #590) via python-dotenv, not a hand-rolled grep/cut/tr
+# pipeline — this is the exact bug class that corrupted FLOWER_PORT here originally
+# (a trailing `  # comment` glued onto the value). This script already requires
+# python3 for its JSON handling, so there is no new dependency.
 read_env() {
     [[ -f "$REPO_ROOT/.env" ]] || return 0
-    # Strip a trailing ` # comment` before the quote/whitespace cleanup — .env lines
-    # like `FLOWER_PORT=5175  # Celery Task Monitor` otherwise corrupt the value
-    # (the comment text survives tr -d's space-stripping and gets glued onto it).
-    grep -E "^${1}=" "$REPO_ROOT/.env" 2>/dev/null | tail -1 | cut -d= -f2- | sed -E 's/[[:space:]]+#.*$//' | tr -d '"'"'"' \r'
+    python3 "$REPO_ROOT/scripts/lib/env_reader.py" "$REPO_ROOT/.env" "$1"
 }
 
 GPU_SCALE_WORKERS="${GPU_SCALE_WORKERS:-$(read_env GPU_SCALE_WORKERS)}"

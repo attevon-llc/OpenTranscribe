@@ -440,8 +440,10 @@ phase_06_api_smoke() {
     # Assert whichever the deployment is configured for, so the check keeps
     # meaning either way: exposed when opted in, hidden by default.
     local api_code docs_enabled
-    docs_enabled=$(grep -E '^ENABLE_API_DOCS=' "$TEST_ROOT/install/opentranscribe/.env" 2>/dev/null \
-        | cut -d= -f2 | tr -d ' "' | tr '[:upper:]' '[:lower:]' || true)
+    # python-dotenv, not grep/cut (issue #590).
+    docs_enabled=$(python3 "$SCRIPT_DIR/../lib/env_reader.py" \
+        "$TEST_ROOT/install/opentranscribe/.env" ENABLE_API_DOCS \
+        | tr '[:upper:]' '[:lower:]' || true)
     api_code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_BACKEND_PORT}/api/docs")
     if [[ "$docs_enabled" == "true" || "$docs_enabled" == "1" || "$docs_enabled" == "yes" ]]; then
         as_assert_http "backend GET /api/docs (ENABLE_API_DOCS opted in)" 200 "$api_code"

@@ -158,18 +158,15 @@ def test_model_script_env_var_wins_over_dotenv() -> None:
 
 
 def test_dotenv_parse_is_anchored() -> None:
-    """Bug C: the .env grep for MODEL_CACHE_DIR must be anchored to the start of the
-    variable name (so it can't match EXTRA_MODEL_CACHE_DIR) and must use `cut -d'=' -f2-`
-    (not `-f2`) so a path containing '=' isn't truncated."""
+    """Bug C, now closed via python-dotenv (issue #590) rather than a hand-rolled
+    grep/cut/tr pipeline. `dotenv_values()` matches the exact key -- it can never match
+    a variable like `EXTRA_MODEL_CACHE_DIR` -- and never truncates a value containing
+    '=' the way a naive `cut -d'=' -f2` would, so both original failure modes are
+    structurally impossible rather than merely avoided by a careful regex."""
     text = _MODEL_SH.read_text(encoding="utf-8")
-    assert re.search(r"grep\s+-E\s+'\^\[\[:space:\]\]\*MODEL_CACHE_DIR='", text), (
-        "fix-model-permissions.sh's .env grep for MODEL_CACHE_DIR must be anchored "
-        "(`grep -E '^[[:space:]]*MODEL_CACHE_DIR='`) so it can't match a variable like "
-        "EXTRA_MODEL_CACHE_DIR"
-    )
-    assert "cut -d'=' -f2-" in text, (
-        "fix-model-permissions.sh must use `cut -d'=' -f2-` (not -f2) so a MODEL_CACHE_DIR "
-        "value containing '=' isn't truncated"
+    assert re.search(r"env_reader\.py\"\s+\"\$PROJECT_ROOT/\.env\"\s+MODEL_CACHE_DIR", text), (
+        "fix-model-permissions.sh must read MODEL_CACHE_DIR via "
+        "scripts/lib/env_reader.py (python-dotenv), not a hand-rolled grep/cut/tr pipeline"
     )
 
 

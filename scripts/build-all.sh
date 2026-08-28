@@ -155,7 +155,9 @@ preflight_checks() {
     if [ -z "${HUGGINGFACE_TOKEN:-}" ]; then
         # Try to load from .env
         if [ -f "${PROJECT_ROOT}/.env" ]; then
-            HUGGINGFACE_TOKEN=$(grep "^HUGGINGFACE_TOKEN=" "${PROJECT_ROOT}/.env" | cut -d'=' -f2 | tr -d '"' | tr -d "'")
+            # python-dotenv, not grep/cut/tr (issue #590) -- the old chain silently
+            # corrupted a token line carrying a trailing `  # comment`.
+            HUGGINGFACE_TOKEN=$(python3 "${SCRIPT_DIR}/lib/env_reader.py" "${PROJECT_ROOT}/.env" HUGGINGFACE_TOKEN)
             export HUGGINGFACE_TOKEN
         fi
 
@@ -398,7 +400,9 @@ interactive_setup() {
     echo -e "${BLUE}[2/4] Checking HuggingFace token...${NC}"
     if [ -z "${HUGGINGFACE_TOKEN:-}" ]; then
         if [ -f "${PROJECT_ROOT}/.env" ]; then
-            HUGGINGFACE_TOKEN=$(grep "^HUGGINGFACE_TOKEN=" "${PROJECT_ROOT}/.env" | cut -d'=' -f2 | tr -d '"' | tr -d "'")
+            # python-dotenv, not grep/cut/tr (issue #590) -- the old chain silently
+            # corrupted a token line carrying a trailing `  # comment`.
+            HUGGINGFACE_TOKEN=$(python3 "${SCRIPT_DIR}/lib/env_reader.py" "${PROJECT_ROOT}/.env" HUGGINGFACE_TOKEN)
             export HUGGINGFACE_TOKEN
         fi
     fi

@@ -389,3 +389,126 @@ class TestJoiningAPromotedCluster:
         db_session.refresh(speaker)
         assert speaker.display_name == "Dana", "control: joining a promoted cluster renames"
         assert _queued(delay_mock) == {(str(media_file.uuid), "Dana"): ["SPEAKER_04"]}
+
+
+class TestAssignSpeakerToProfile:
+    """``SpeakerMatchingService.assign_speaker_to_profile`` — issue #605 follow-up.
+
+    ``confidence`` alone can move the canonical chunk-index label across the
+    suggestion threshold with no ``display_name`` write at all — the identical
+    shape ``_handle_no_speaker_match`` above is already tested against. This
+    method never wrote to the rename tracker at all before this fix.
+    """
+
+    def test_confidence_crossing_the_threshold_queues_the_newly_confident_suggestion(
+        self, db_session, normal_user
+    ):
+        from app.services.speaker_matching_service import SpeakerMatchingService
+
+        media_file = _media_file(db_session, normal_user, "assign-confidence")
+        # Below the 0.75 threshold — the chunk plane still holds the raw label.
+        speaker = _speaker(
+            db_session,
+            normal_user,
+            media_file,
+            "SPEAKER_00",
+            suggested_name="Dana",
+            confidence=0.5,
+        )
+        profile = _profile(db_session, normal_user, "Dana")
+
+        with patch(_DELAY) as delay_mock:
+            SpeakerMatchingService(db_session, embedding_service=None).assign_speaker_to_profile(
+                int(speaker.id), int(profile.id), confidence=0.9
+            )
+
+        db_session.refresh(speaker)
+        assert (speaker.confidence, speaker.profile_id) == (0.9, profile.id), (
+            "control: the assignment really happened"
+        )
+        assert _queued(delay_mock) == {(str(media_file.uuid), "Dana"): ["SPEAKER_00"]}
+
+    def test_assigning_an_already_confident_speaker_queues_nothing(self, db_session, normal_user):
+        """Chunks already carry the suggestion; the profile link alone changes
+        nothing indexed."""
+        from app.services.speaker_matching_service import SpeakerMatchingService
+
+        media_file = _media_file(db_session, normal_user, "assign-noop")
+        speaker = _speaker(
+            db_session,
+            normal_user,
+            media_file,
+            "SPEAKER_00",
+            suggested_name="Dana",
+            confidence=0.9,
+        )
+        profile = _profile(db_session, normal_user, "Dana")
+
+        with patch(_DELAY) as delay_mock:
+            SpeakerMatchingService(db_session, embedding_service=None).assign_speaker_to_profile(
+                int(speaker.id), int(profile.id)
+            )
+
+        db_session.refresh(speaker)
+        assert speaker.profile_id == profile.id, "control: the assignment really happened"
+        delay_mock.assert_not_called()
+
+
+class TestBatchSpeakerMatchingScript:
+    """``scripts/batch_speaker_matching.py`` — the standalone maintenance
+    script bumps ``suggested_name``/``confidence`` with no ``display_name``
+    write, the same #605 shape as ``_handle_no_speaker_match`` (#605 follow-up).
+    """
+
+    class _NonClosingSession:
+        """Forwards everything to the real test session except ``close()``.
+
+        The script owns its own session lifecycle (``get_db()`` ...
+        ``finally: db.close()``); this lets it reuse the test's savepoint
+        session while leaving the fixture's teardown in control of the
+        connection, matching the `client` fixture's ``override_get_db``
+        convention elsewhere in this suite — without a separate
+        ``monkeypatch.setattr`` on the session itself.
+        """
+
+        def __init__(self, session):
+            self._session = session
+
+        def __getattr__(self, name):
+            return getattr(self._session, name)
+
+        def close(self):
+            pass
+
+    def test_a_first_high_confidence_match_queues_the_new_suggestion(
+        self, db_session, normal_user, monkeypatch
+    ):
+        from app.scripts import batch_speaker_matching
+        from app.services.speaker_matching_service import SpeakerMatchingService
+
+        media_file = _media_file(db_session, normal_user, "batch-script")
+        speaker = _speaker(db_session, normal_user, media_file, "SPEAKER_00")
+
+        wrapped = self._NonClosingSession(db_session)
+        # The embedding-service construction is real pyannote model loading,
+        # so it is replaced with a stand-in the script never calls a method
+        # on (`find_and_store_speaker_matches` is patched below instead).
+        monkeypatch.setattr(batch_speaker_matching, "get_db", lambda: iter([wrapped]))
+        monkeypatch.setattr(
+            batch_speaker_matching, "get_speaker_embedding", lambda _speaker_id: [0.1] * 256
+        )
+        monkeypatch.setattr(batch_speaker_matching, "SpeakerEmbeddingService", lambda: None)
+
+        with (
+            patch.object(
+                SpeakerMatchingService,
+                "find_and_store_speaker_matches",
+                return_value=[{"confidence": 0.9, "display_name": "Dana"}],
+            ),
+            patch(_DELAY) as delay_mock,
+        ):
+            batch_speaker_matching.batch_process_speaker_matches()
+
+        db_session.refresh(speaker)
+        assert speaker.suggested_name == "Dana", "control: the suggestion really landed"
+        assert _queued(delay_mock) == {(str(media_file.uuid), "Dana"): ["SPEAKER_00"]}

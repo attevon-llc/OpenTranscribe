@@ -11,17 +11,19 @@ OpenTranscribe v0.4.0 supports four authentication methods that can all be activ
 | **Local** | Default username/password | N/A (built-in) | ✅ Yes | ✅ Yes |
 | **LDAP/AD** | Enterprise directory integration | ✅ LLDAP | ✅ Yes | ✅ Yes |
 | **Keycloak/OIDC** | SSO with external identity providers | ✅ Keycloak | ✅ Yes | ✅ Yes |
-| **PKI/X.509** | Certificate-based (CAC/PIV cards) | ✅ Self-signed certs | ❌ No* | ✅ Yes |
+| **PKI/X.509** | Certificate-based (CAC/PIV cards) | ✅ Self-signed certs | ✅ Yes* | ✅ Yes |
 
-*PKI requires nginx with mTLS for client certificate verification. Dev mode uses Vite dev server which cannot handle this.
+*PKI requires nginx with mTLS for client certificate verification, which the default dev mode's
+Vite dev server cannot do. `--with-pki` in dev mode loads `docker-compose.pki-dev.yml` instead,
+which swaps in a built nginx (`Dockerfile.prod`) in front of the normal bind-mounted, hot-reloading
+dev backend — so a backend fix is testable with no image rebuild. Only the PKI *frontend* is a
+built image there; a frontend change still needs `./opentr.sh rebuild-frontend`.
 
 > **v0.4.0 Change**: Authentication settings are now stored encrypted (AES-256-GCM) in the database and managed exclusively via the Super Admin UI (Settings → Authentication). Environment variables continue to work as an initial fallback seed but database configuration always takes precedence.
 
 ## Quick Start Commands
 
 ### Development Mode
-
-**IMPORTANT:** PKI authentication requires production mode (nginx with mTLS). It cannot work in dev mode which uses Vite dev server.
 
 **Local Authentication Only (Default):**
 ```bash
@@ -43,6 +45,13 @@ OpenTranscribe v0.4.0 supports four authentication methods that can all be activ
 ./opentr.sh start dev --with-ldap-test --with-keycloak-test
 ```
 
+**With PKI (mTLS via a built nginx in front of the dev backend):**
+```bash
+# Never edits .env — generates scripts/pki/test-certs/pki-test.{env,compose.yml}
+# and layers docker-compose.pki-dev.yml onto the normal dev chain.
+./opentr.sh start dev --with-pki
+```
+
 ### Production Mode
 
 **Standard Production (Docker Hub images):**
@@ -57,7 +66,6 @@ OpenTranscribe v0.4.0 supports four authentication methods that can all be activ
 
 **Production with PKI (HTTPS + Client Certificates):**
 ```bash
-# PKI only works in production mode (requires nginx with mTLS)
 ./opentr.sh start prod --build --with-pki
 ```
 
@@ -209,10 +217,15 @@ This mode disables the GPU worker requirement and is suitable for cloud-only tra
 **Location:** `scripts/pki/test-certs/clients/`
 
 **Available Certificates:**
-- `admin.p12` - Admin User (admin@example.com) - **Admin Role**
+- `pkiadmin.p12` - PKI Admin User (pkiadmin@example.com) - **Admin Role**
 - `testuser.p12` - Test User (testuser@example.com) - **User Role**
 - `john.doe.p12` - John Doe (john.doe@gov.example.com) - **User Role**
 - `jane.smith.p12` - Jane Smith (jane.smith@gov.example.com) - **User Role**
+- `admin.p12` - Admin User (admin@example.com) - exists but **do not use for admin-role
+  testing**: its email collides with the seeded dev `super_admin` account, and
+  `account_linking.assert_email_link_permitted()` refuses any email-matched link onto a
+  super_admin unconditionally, so this cert always fails to authenticate as admin. Use
+  `pkiadmin.p12` instead.
 
 **Password:** `changeit` (for all .p12 files)
 
@@ -226,7 +239,11 @@ This mode disables the GPU worker requirement and is suitable for cloud-only tra
 **Configuration in OpenTranscribe:**
 - PKI Enabled: `true`
 - CA Certificate Path: `/app/scripts/pki/test-certs/ca/ca.crt`
-- Admin DNs: `emailAddress=admin@example.com,CN=Admin User,OU=Users,O=OpenTranscribe Admins,L=Arlington,ST=Virginia,C=US`
+- Admin DNs (**semicolon**-separated — a DN itself contains commas, so PKI_ADMIN_DNS cannot use
+  `,` between entries): `emailAddress=pkiadmin@example.com,CN=PKI Admin User,OU=Users,O=OpenTranscribe Admins,L=Arlington,ST=Virginia,C=US`
+
+Or skip all of the above entirely: `./scripts/pki/generate-test-env.sh --print` derives these
+same values from the certificates on disk and never touches `.env`.
 
 ## Production Deployment
 
@@ -273,7 +290,8 @@ This mode disables the GPU worker requirement and is suitable for cloud-only tra
 # Settings → Authentication → PKI/X.509
 # - PKI Enabled: true
 # - CA Certificate: (upload your organization's CA cert)
-# - Admin DNs: (pipe-separated list of admin certificate DNs)
+# - Admin DNs: (semicolon-separated list of admin certificate DNs — a DN itself
+#   contains commas, so ',' cannot be the delimiter between multiple entries)
 # - Enable OCSP: true (recommended — real-time revocation checking)
 # - OCSP Responder URL: https://ocsp.your-ca.domain.com
 # - Enable CRL: true (optional — periodic revocation list)
@@ -476,8 +494,8 @@ docker compose -f docker-compose.yml \
 Enable multiple methods simultaneously:
 
 ```bash
-# Development: LDAP + Keycloak (no PKI)
-./opentr.sh start dev --with-ldap-test --with-keycloak-test
+# Development: LDAP + Keycloak + PKI (PKI via docker-compose.pki-dev.yml)
+./opentr.sh start dev --with-ldap-test --with-keycloak-test --with-pki
 
 # Production: All auth methods including PKI
 ./opentr.sh start prod --build --with-pki --with-ldap-test --with-keycloak-test
@@ -488,8 +506,6 @@ Enable multiple methods simultaneously:
 ```
 
 Users can then choose their login method on the login page.
-
-**Note:** PKI requires production mode because dev mode uses Vite dev server which cannot handle client certificate verification (mTLS).
 
 ### Reset and Test Each Method
 
@@ -511,11 +527,12 @@ Systematically test each authentication method:
 # Enable Keycloak, disable others in Admin UI
 # Test: (Keycloak user) / (password)
 
-# Test 4: PKI only (REQUIRES PRODUCTION MODE)
+# Test 4: PKI only
 ./opentr.sh reset prod --build --with-pki
 # Enable PKI, disable others in Admin UI
-# Test: Import admin.p12, access https://localhost:5182
-# Note: PKI requires nginx with mTLS, cannot use dev mode
+# Test: Import pkiadmin.p12 (not admin.p12 — see PKI Test Certificates above),
+# access https://localhost:5182
+# `./opentr.sh reset dev --with-pki` works the same way in dev mode.
 ```
 
 ## Documentation References

@@ -64,6 +64,15 @@ This creates:
 
 ### Step 2: Configure OpenTranscribe
 
+Fastest path — generates the values below from the certificates on disk and never touches
+`.env`:
+
+```bash
+./scripts/pki/generate-test-env.sh --print
+```
+
+Or by hand:
+
 ```bash
 # .env settings
 PKI_ENABLED=true
@@ -71,19 +80,20 @@ PKI_CA_CERT_PATH=/mnt/nvm/repos/transcribe-app/scripts/pki/test-certs/ca/ca.crt
 PKI_VERIFY_REVOCATION=false
 PKI_CERT_HEADER=X-Client-Cert
 PKI_CERT_DN_HEADER=X-Client-Cert-DN
-PKI_ADMIN_DNS=emailAddress=admin@example.com,CN=Admin User,OU=Users,O=OpenTranscribe Admins,L=Arlington,ST=Virginia,C=US
+# SEMICOLON-separated — a DN itself contains commas, so ',' cannot delimit multiple entries
+PKI_ADMIN_DNS=emailAddress=pkiadmin@example.com,CN=PKI Admin User,OU=Users,O=OpenTranscribe Admins,L=Arlington,ST=Virginia,C=US
 ```
 
 ### Step 3: Test via API
 
 ```bash
 # Using the test script
-./scripts/pki/test-pki-auth.sh admin      # Gets admin role
+./scripts/pki/test-pki-auth.sh pkiadmin   # Gets admin role
 ./scripts/pki/test-pki-auth.sh testuser   # Gets user role
 
 # Or manually with curl (simulates what Nginx does)
 # Get the DN from the certificate
-ADMIN_DN=$(openssl x509 -in scripts/pki/test-certs/clients/admin.crt -noout -subject | sed 's/subject=//')
+ADMIN_DN=$(openssl x509 -in scripts/pki/test-certs/clients/pkiadmin.crt -noout -subject | sed 's/subject=//')
 
 # Authenticate
 curl -X POST http://localhost:5174/api/auth/pki/authenticate \
@@ -126,15 +136,28 @@ PKI_CA_CERT_PATH=/app/scripts/pki/test-certs/ca/ca.crt
 PKI_VERIFY_REVOCATION=false
 PKI_CERT_HEADER=X-Client-Cert
 PKI_CERT_DN_HEADER=X-Client-Cert-DN
-PKI_ADMIN_DNS=emailAddress=admin@example.com,CN=Admin User,OU=Users,O=OpenTranscribe Admins,L=Arlington,ST=Virginia,C=US
+# SEMICOLON-separated — a DN itself contains commas, so ',' cannot delimit multiple entries
+PKI_ADMIN_DNS=emailAddress=pkiadmin@example.com,CN=PKI Admin User,OU=Users,O=OpenTranscribe Admins,L=Arlington,ST=Virginia,C=US
 ```
+
+Fastest path: skip the manual config entirely. `./scripts/pki/generate-test-env.sh` derives all of
+the above from the certificates on disk and writes a compose overlay that `--with-pki` (below)
+loads automatically — `.env` is never opened, read, or written.
 
 ### Step 3: Start with PKI Overlay
 
-**IMPORTANT:** PKI authentication requires production mode because it needs nginx with mTLS (mutual TLS) to verify client certificates. Dev mode uses Vite dev server which cannot handle client certificate verification.
+PKI authentication needs nginx in front of the backend to terminate mTLS and verify client
+certificates — the default dev mode's Vite dev server can't do this. `--with-pki` works in
+**both** modes; in dev it loads `docker-compose.pki-dev.yml`, which swaps in a built nginx
+(`Dockerfile.prod`) in front of the normal bind-mounted, hot-reloading dev backend, so a backend
+fix stays testable with no image rebuild (only the PKI frontend is a built image — a frontend
+change still needs `./opentr.sh rebuild-frontend`).
 
 **Recommended Method (using opentr.sh):**
 ```bash
+# Dev mode with PKI (bind-mounted backend, built PKI-nginx frontend)
+./opentr.sh start dev --with-pki
+
 # Production mode with PKI (test before push)
 ./opentr.sh start prod --build --with-pki
 
@@ -158,7 +181,7 @@ Import one of the `.p12` files from `scripts/pki/test-certs/clients/`:
 **macOS:**
 ```bash
 # Import to keychain (password: changeit)
-security import scripts/pki/test-certs/clients/admin.p12 -k ~/Library/Keychains/login.keychain-db -P changeit -A
+security import scripts/pki/test-certs/clients/pkiadmin.p12 -k ~/Library/Keychains/login.keychain-db -P changeit -A
 ```
 
 Then in **Keychain Access**:
@@ -169,13 +192,13 @@ Then in **Keychain Access**:
 
 **Windows/Linux Chrome:**
 1. Settings → Privacy and security → Security → Manage certificates
-2. Import → Select `admin.p12`
+2. Import → Select `pkiadmin.p12`
 3. Password: `changeit`
 
 **Firefox:**
 1. Settings → Privacy & Security → Certificates → View Certificates
 2. Your Certificates → Import
-3. Select `admin.p12`, password: `changeit`
+3. Select `pkiadmin.p12`, password: `changeit`
 
 ### Step 5: Access via HTTPS
 
@@ -191,12 +214,17 @@ Open: **https://localhost:5182**
 
 | Certificate | Email | Role |
 |-------------|-------|------|
-| admin.p12 | admin@example.com | Admin |
+| pkiadmin.p12 | pkiadmin@example.com | Admin |
 | testuser.p12 | testuser@example.com | User |
 | john.doe.p12 | john.doe@example.com | User |
 | jane.smith.p12 | jane.smith@example.com | User |
 
 Password for all `.p12` files: `changeit`
+
+`admin.p12` (admin@example.com) also exists but **do not use it for admin-role testing**: its
+email collides with the seeded dev `super_admin` account, and account-linking refuses any
+email-matched link onto a super_admin unconditionally — that login always fails. `pkiadmin.p12`
+has no pre-existing account, so PKI JIT-provisions a fresh one at the `admin` role.
 
 ---
 
@@ -342,7 +370,7 @@ PKI_CA_CERT_PATH=/etc/ssl/certs/enterprise-ca.crt
 PKI_VERIFY_REVOCATION=true
 PKI_CERT_HEADER=X-Client-Cert
 PKI_CERT_DN_HEADER=X-Client-Cert-DN
-PKI_ADMIN_DNS=CN=Admin1,OU=IT,O=Company,C=US|CN=Admin2,OU=IT,O=Company,C=US
+PKI_ADMIN_DNS=CN=Admin1,OU=IT,O=Company,C=US;CN=Admin2,OU=IT,O=Company,C=US
 ```
 
 ### OCSP Revocation Checking (Recommended)
@@ -435,8 +463,9 @@ Admins are designated by their certificate Distinguished Name (DN):
 # Single admin
 PKI_ADMIN_DNS=CN=John Doe,O=Company,C=US
 
-# Multiple admins (comma-separated)
-PKI_ADMIN_DNS=CN=John Doe,O=Company,C=US,CN=Jane Smith,O=Company,C=US
+# Multiple admins (SEMICOLON-separated — a DN itself contains commas, so ','
+# cannot be the delimiter between entries)
+PKI_ADMIN_DNS=CN=John Doe,O=Company,C=US;CN=Jane Smith,O=Company,C=US
 ```
 
 **Note**: DN must match exactly as it appears in the certificate.
@@ -531,7 +560,8 @@ openssl x509 -in user.crt -subject -noout
 4. **Key Storage**: Use hardware tokens (CAC, PIV, YubiKey) for high-security environments
 5. **DN Validation**: DN matching is case-sensitive and exact — copy DN strings directly from certificate details
 6. **Super Admin Fallback**: Ensure the super admin password is documented in a secure location; it is the only non-PKI access path when PKI-only mode is active
-7. **mTLS Requirement**: PKI authentication requires NGINX with mTLS (`--with-pki` flag); dev mode cannot use PKI
+7. **mTLS Requirement**: PKI authentication requires NGINX with mTLS (`--with-pki` flag). Both
+   dev (`docker-compose.pki-dev.yml`) and prod (`docker-compose.pki.yml`) support it.
 
 ## Certificate Revocation
 

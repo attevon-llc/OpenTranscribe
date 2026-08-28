@@ -75,8 +75,9 @@ certificate, unconditionally, and always have been.
 | CRL cache (s) | `pki_crl_cache_seconds` | `3600` (1–604800) |
 | Allow password fallback | `pki_allow_password_fallback` | `true` |
 
-`pki_admin_dns` is a `|`-separated list of full subject DNs that should receive `admin`. DN
-matching is exact and case-sensitive — copy the string straight out of the certificate.
+`pki_admin_dns` is a `;`-separated list of full subject DNs that should receive `admin` — a DN
+itself contains commas, so `,` cannot delimit multiple entries. DN matching is exact and
+case-sensitive — copy the string straight out of the certificate.
 
 ### Revocation checking
 
@@ -123,14 +124,18 @@ fall back to a local password, MFA still applies.
 ```
 
 Creates a root CA at `scripts/pki/test-certs/ca/ca.crt`, client certificates for `testuser`,
-`admin`, `john.doe` and `jane.smith`, and `.p12` files for browser import (password `changeit`).
+`pkiadmin` (plus `admin`, `john.doe` and `jane.smith`), and `.p12` files for browser import
+(password `changeit`). `./scripts/pki/generate-test-env.sh` wraps this and derives a full
+test-env fragment (`PKI_ENABLED`, `PKI_TRUSTED_PROXIES`, `PKI_ADMIN_DNS`, ports) from whatever
+certificates already exist — see "No-`.env` PKI testing" below, the fastest path for either
+testing style.
 
 ```bash
-./scripts/pki/test-pki-auth.sh admin      # gets admin
+./scripts/pki/test-pki-auth.sh pkiadmin   # gets admin
 ./scripts/pki/test-pki-auth.sh testuser   # gets user
 
 # or by hand, simulating what the proxy does
-ADMIN_DN=$(openssl x509 -in scripts/pki/test-certs/clients/admin.crt -noout -subject | sed 's/subject=//')
+ADMIN_DN=$(openssl x509 -in scripts/pki/test-certs/clients/pkiadmin.crt -noout -subject | sed 's/subject=//')
 curl -X POST http://localhost:5174/api/auth/pki/authenticate \
   -H "X-Client-Cert-DN: $ADMIN_DN"
 ```
@@ -141,21 +146,23 @@ route — it mints real access and refresh tokens.
 
 ### Browser-based (requires nginx mTLS)
 
-:::warning Production mode only
-Browser PKI needs nginx to verify the client certificate. The Vite dev server cannot do mTLS,
-so `./opentr.sh start dev` cannot be used for it.
-:::
+Browser PKI needs nginx to verify the client certificate — the Vite dev server can't do mTLS.
+`--with-pki` works in **both** modes: dev loads `docker-compose.pki-dev.yml` (a built nginx in
+front of the normal bind-mounted, hot-reloading dev backend — only the PKI frontend is a built
+image, so a *frontend* change still needs `./opentr.sh rebuild-frontend`), prod loads
+`docker-compose.pki.yml`.
 
 ```bash
-./opentr.sh start prod --build --with-pki   # build local code first
-./opentr.sh start prod --with-pki           # or use published images
+./opentr.sh start dev --with-pki            # dev, real mTLS, bind-mounted backend
+./opentr.sh start prod --build --with-pki   # prod, build local code first
+./opentr.sh start prod --with-pki           # prod, use published images
 ```
 
 Import a `.p12` from `scripts/pki/test-certs/clients/` (password `changeit`) and open
 **https://localhost:5182**.
 
 - **macOS**:
-  `security import scripts/pki/test-certs/clients/admin.p12 -k ~/Library/Keychains/login.keychain-db -P changeit -A`,
+  `security import scripts/pki/test-certs/clients/pkiadmin.p12 -k ~/Library/Keychains/login.keychain-db -P changeit -A`,
   then in Keychain Access set the private key's Access Control to allow all applications.
 - **Chrome (Windows/Linux)**: Settings → Privacy and security → Security → Manage certificates
   → Import.
@@ -164,10 +171,27 @@ Import a `.p12` from `scripts/pki/test-certs/clients/` (password `changeit`) and
 
 | Certificate | Email | Role |
 |---|---|---|
-| `admin.p12` | admin@example.com | admin |
+| `pkiadmin.p12` | pkiadmin@example.com | admin |
 | `testuser.p12` | testuser@example.com | user |
 | `john.doe.p12` | john.doe@example.com | user |
 | `jane.smith.p12` | jane.smith@example.com | user |
+
+`admin.p12` (admin@example.com) also exists but is not usable for admin-role testing: its email
+collides with the seeded dev `super_admin`, and [account linking](#account-linking) refuses any
+email-matched link onto a super_admin unconditionally.
+
+### No-`.env` PKI testing
+
+`scripts/pki/generate-test-env.sh` generates a gitignored fragment
+(`scripts/pki/test-certs/pki-test.env` + `pki-test.compose.yml`) that `--with-pki` loads
+automatically — `.env` is never opened, read, or written by any of it. This is what
+`RUN_PKI_E2E=true pytest backend/tests/e2e/test_pki.py` runs against.
+
+```bash
+./scripts/pki/generate-test-env.sh --print   # inspect the resolved values first; writes nothing
+./scripts/pki/generate-test-env.sh           # write the fragment
+./opentr.sh start dev --with-pki             # (or start prod --build --with-pki)
+```
 
 ## Smart cards (CAC / PIV)
 

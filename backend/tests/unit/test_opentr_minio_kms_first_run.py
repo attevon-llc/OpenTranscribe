@@ -43,6 +43,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OPENTR = REPO_ROOT / "opentr.sh"
+MANAGER = REPO_ROOT / "opentranscribe.sh"
 COMMON = REPO_ROOT / "scripts" / "common.sh"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
@@ -77,6 +78,31 @@ def _function_body(text: str, name: str) -> str:
     raise AssertionError(f"unbalanced braces scanning {name}()")
 
 
+def _extract_case_block(script: Path, start_label: str, end_label: str) -> str:
+    """Pull one `case` arm out of a script, from its label through the NEXT label's
+    line (exclusive), with the terminating `;;` stripped so the result is directly
+    executable as a standalone snippet (outside its enclosing `case`/`esac`, a bare
+    `;;` is a syntax error). Same base technique as `test_install_upgrade_scripts.py`'s
+    helper of the same name — duplicated rather than imported, since these are
+    independent test modules and pytest collection order should not matter for either;
+    the `;;`-stripping is new here because this file's tests assert on the real process
+    exit code, not just substring containment, so a trailing syntax error would fail
+    every behavioural test even when the wiring under test is correct.
+    """
+    out = subprocess.run(
+        ["sed", "-n", f"/^{start_label}/,/^{end_label}/p", str(script)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert out.strip(), f"{start_label} not found in {script.name}"
+    body = out.split(start_label, 1)[1]
+    body = body.rsplit(end_label, 1)[0]
+    stripped = body.rstrip()
+    assert stripped.endswith(";;"), f"expected the case arm to end in ';;': {body!r}"
+    return stripped[: -len(";;")]
+
+
 # ─── static ─────────────────────────────────────────────────────────────────
 
 
@@ -105,6 +131,73 @@ def test_the_function_extractor_can_actually_fail():
     """Guard the guard: a brace-matcher that finds nothing would pass every case above."""
     with pytest.raises(AssertionError):
         _function_body("echo hello\n", "not_a_real_function")
+
+
+def test_opentranscribe_sh_start_arm_calls_ensure_minio_kms_secret():
+    """A follow-up finding on this same issue (#613/#614): #613 promoted
+    backup_database/restore_database to opentranscribe.sh as the real production entry
+    point, but ensure_minio_kms_secret was never wired in there — so a curl-install /
+    production user got NO first-run protection at all, only `./opentr.sh` users did.
+    `start)` is opentranscribe.sh's equivalent of opentr.sh's start_app(): the command
+    that brings MinIO up from a truly fresh `.env`.
+    """
+    body = _extract_case_block(MANAGER, r"    start)", r"    stop)")
+    assert "ensure_minio_kms_secret" in body, (
+        "opentranscribe.sh's start) arm never calls ensure_minio_kms_secret — a fresh "
+        ".env with the .env.example placeholder still crash-loops MinIO from a "
+        "production/curl install (issue #613 follow-up)"
+    )
+
+
+def test_opentranscribe_sh_start_arm_guards_a_missing_function():
+    """The call must be guarded, not unconditional: an install whose scripts/common.sh
+    predates this fix (or is somehow missing — see require_db_helpers' own remedy
+    message for the same scenario) must still be able to `start`, just without the
+    auto-fix, rather than crashing on "unknown function" mid-startup.
+    """
+    body = _extract_case_block(MANAGER, r"    start)", r"    stop)")
+    assert "declare -F ensure_minio_kms_secret" in body, (
+        "the start) arm calls ensure_minio_kms_secret unconditionally — an install "
+        "whose scripts/common.sh predates this fix would crash on `start` instead of "
+        "just missing the auto-fix"
+    )
+
+
+def test_opentranscribe_sh_start_arm_actually_patches_a_fresh_env(tmp_path: Path):
+    """Behavioural: drives the REAL start) arm body (sourced from the real common.sh,
+    with docker/check_environment/etc. stubbed — this is a fast unit test, not an
+    integration one) against a scratch `.env` carrying the shipped placeholder, and
+    proves the file actually gets patched. Textual containment (the tests above) cannot
+    tell a real call from one sitting inside a comment or a string.
+    """
+    (tmp_path / ".env").write_text(f"MINIO_KMS_SECRET_KEY={PLACEHOLDER}\n")
+    body = _extract_case_block(MANAGER, r"    start)", r"    stop)")
+    snippet = f"""
+YELLOW=''; GREEN=''; RED=''; BLUE=''; NC=''
+cd {tmp_path}
+source "{COMMON}"
+check_environment() {{ :; }}
+fix_model_cache_permissions() {{ :; }}
+get_compose_files() {{ echo ""; }}
+docker() {{ return 0; }}
+show_access_info() {{ :; }}
+{body}
+"""
+    proc = subprocess.run(
+        ["bash", "-c", snippet],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 0, f"start) arm aborted: {proc.stderr}"
+    after = (tmp_path / ".env").read_text()
+    match = re.search(r"^MINIO_KMS_SECRET_KEY=(.+)$", after, re.MULTILINE)
+    assert match, f"MINIO_KMS_SECRET_KEY line missing after opentranscribe.sh start: {after!r}"
+    assert match.group(1) != PLACEHOLDER, (
+        f"opentranscribe.sh's start) arm ran but never actually replaced the "
+        f"placeholder: {after!r} (stdout={proc.stdout!r})"
+    )
 
 
 # ─── behavioural: the real function against a scratch (non-`.env`) file ────
@@ -224,6 +317,50 @@ def test_an_empty_value_is_left_untouched(tmp_path):
     """
     after, _ = _run_ensure(tmp_path, "MINIO_KMS_SECRET_KEY=\n")
     assert after.strip() == "MINIO_KMS_SECRET_KEY="
+
+
+def test_two_matching_lines_refuse_rather_than_guess(tmp_path):
+    """A follow-up finding on this same issue: `sed -i` with no line-count guard could
+    silently pick the wrong line (`tail -1`) or rewrite an ambiguous file if `.env`
+    somehow ends up with two `MINIO_KMS_SECRET_KEY=` lines — e.g. a real key first and a
+    leftover placeholder line second. Must fail closed and name the fix, not guess.
+    """
+    env_file = tmp_path / "scratch.env"
+    real_value = "opentranscribe-key:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    env_file.write_text(f"MINIO_KMS_SECRET_KEY={real_value}\nMINIO_KMS_SECRET_KEY={PLACEHOLDER}\n")
+    proc = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source "{COMMON}"; '
+            f"declare -F ensure_minio_kms_secret >/dev/null || "
+            f'{{ echo "FUNCTION_MISSING" >&2; exit 2; }}; '
+            f'ensure_minio_kms_secret "{env_file}"',
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 1, (
+        f"expected ensure_minio_kms_secret to fail closed on an ambiguous file, "
+        f"got rc={proc.returncode}, stdout={proc.stdout!r}, stderr={proc.stderr!r}"
+    )
+    after = env_file.read_text()
+    assert after == f"MINIO_KMS_SECRET_KEY={real_value}\nMINIO_KMS_SECRET_KEY={PLACEHOLDER}\n", (
+        f"the file must be left completely untouched when the guard refuses: {after!r}"
+    )
+
+
+def test_two_matching_lines_control_a_single_line_is_unaffected(tmp_path):
+    """Must-stay-clean control: the guard must not fire on the ordinary one-line case
+    the rest of this file already exercises — only on genuine ambiguity.
+    """
+    after, _ = _run_ensure(tmp_path, f"MINIO_KMS_SECRET_KEY={PLACEHOLDER}\n")
+    match = re.search(r"^MINIO_KMS_SECRET_KEY=(.+)$", after, re.MULTILINE)
+    assert match and match.group(1) != PLACEHOLDER, (
+        f"the single-line case must still generate normally: {after!r}"
+    )
 
 
 def test_a_missing_env_file_is_a_silent_noop(tmp_path):

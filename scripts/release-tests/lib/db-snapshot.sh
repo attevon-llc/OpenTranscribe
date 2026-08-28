@@ -134,6 +134,60 @@ dbs_active_connections() {
         2>/dev/null | tr -d '[:space:]'
 }
 
+# dbs_wait_for_speaker_attributes CONTAINER USER DB TIMEOUT FILE_UUID...
+#   Polls until backend/app/tasks/speaker_attribute_task.py's fire-and-forget
+#   detect_speaker_attributes_task has settled for every speaker belonging to
+#   the given media_file uuid(s) — i.e. every speaker row for those files has
+#   attributes_predicted_at IS NOT NULL, the same predicate the app itself uses
+#   (_attributes_already_predicted) to decide "already done".
+#
+#   Exists to close the race behind issue #617: postprocess.py's
+#   _dispatch_speaker_attributes fires the detection task the INSTANT a file's
+#   status flips to completed, but does not wait for it — so a caller that
+#   snapshots the DB immediately after seeding's "wait for status=completed"
+#   loop returns (test-upgrade.sh phase 06b) can catch the speaker table
+#   mid-write. That produced a real digest mismatch in a release rehearsal,
+#   which without the Fix 1 guard above then killed the whole script under
+#   set -e.
+#
+#   A file with zero speaker rows (e.g. single-speaker content the diarizer
+#   didn't split, or diarization disabled) is trivially "settled" and never
+#   waited on — this checks EXISTING rows only, not "at least one row exists".
+#   Returns non-zero (never dies) on timeout so the caller decides whether
+#   that is fatal; the digest guard above means it no longer needs to be.
+dbs_wait_for_speaker_attributes() {
+    local container="$1" user="$2" db="$3" timeout="$4"
+    shift 4
+    local file_uuids=("$@")
+    (( ${#file_uuids[@]} > 0 )) || return 0
+
+    local uuid_list quoted
+    quoted=()
+    local u
+    for u in "${file_uuids[@]}"; do
+        quoted+=("'${u}'")
+    done
+    uuid_list="$(IFS=,; echo "${quoted[*]}")"
+
+    local deadline=$(( $(date +%s) + timeout ))
+    local pending="?"
+    while (( $(date +%s) < deadline )); do
+        pending="$(docker exec "$container" psql -tA -U "$user" "$db" -c "
+            SELECT count(*) FROM speaker s
+            JOIN media_file mf ON mf.id = s.media_file_id
+            WHERE mf.uuid IN (${uuid_list}) AND s.attributes_predicted_at IS NULL;
+        " 2>/dev/null | tr -d '[:space:]')"
+        if [[ "$pending" == "0" ]]; then
+            dbs_log "speaker attribute detection settled for ${#file_uuids[@]} file(s)"
+            return 0
+        fi
+        dbs_log "  waiting on speaker attribute detection (${pending:-?} speaker row(s) still pending)"
+        sleep 5
+    done
+    dbs_warn "speaker attribute detection did not settle within ${timeout}s (pending=${pending:-?}) — proceeding anyway; the pre-upgrade snapshot may still race issue #617's window"
+    return 1
+}
+
 # dbs_diff_fingerprints DIR_A DIR_B LABEL [TABLE...]
 #   Compares two fingerprint directories table-by-table via as_record
 #   (requires assertions.sh sourced by the caller). With no TABLE arguments,

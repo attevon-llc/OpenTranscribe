@@ -718,6 +718,24 @@ phase_06b_pre_upgrade_backup() {
     local backups_dir="$TEST_ROOT/backups"
     mkdir -p "$backups_dir"
 
+    # issue #617: phase_05_seed_data's wait loop only waits for status=completed —
+    # that flip is what FIRES postprocess.py's _dispatch_speaker_attributes, not
+    # a signal that it has finished. Both backup artifacts below and the
+    # dbs_fingerprint oracle at the end of this phase read the `speaker` table,
+    # so wait for that fire-and-forget detection to settle on every seeded file
+    # BEFORE taking any of them — otherwise the "before" snapshot can land
+    # mid-write and produce a false digest mismatch in phase 15/17.
+    if [[ -s "$TEST_ROOT/seeded-file-ids.txt" ]]; then
+        local seeded_uuids=()
+        while IFS= read -r f; do
+            seeded_uuids+=("$f")
+        done < "$TEST_ROOT/seeded-file-ids.txt"
+        dbs_wait_for_speaker_attributes "$pg" "$db_user" "$db_name" 300 "${seeded_uuids[@]}" \
+            || gr_warn "proceeding with the pre-upgrade backup even though speaker attribute detection had not settled — a digest mismatch below is now recorded, not fatal (Fix 1, issue #617)"
+    else
+        gr_warn "no $TEST_ROOT/seeded-file-ids.txt — skipping the speaker-attribute settle wait"
+    fi
+
     # Guard the repo's OWN ./backups/ and .env for the rest of this run — both
     # opentranscribe.sh commands below and every later rollback-tail phase are staged
     # under TEST_ROOT, but the guard needs to be armed before the first one
@@ -1465,7 +1483,17 @@ phase_15_restore_and_assert() {
     fi
     # R-2 (media_file), R-7 (alembic_version, cross-checked again below), R-9
     # (transcript_segment), R-10 (user) — one content-digest diff per table.
-    dbs_diff_fingerprints "$fp_dir" "$TEST_ROOT/snapshots/restored/db-fingerprint" "restore"
+    # dbs_diff_fingerprints already records PASS/FAIL per table via as_record
+    # (see its own doc comment); its non-zero return is informational, NOT
+    # meant to be fatal. Called bare under `set -euo pipefail` (line 55) a
+    # single mismatch would kill the whole script on the spot, silently
+    # truncating phases 16-18 (issue #617) — guard it like
+    # selftest-rollback-fault-injection.sh already does.
+    if dbs_diff_fingerprints "$fp_dir" "$TEST_ROOT/snapshots/restored/db-fingerprint" "restore"; then
+        gr_log "restore: all table content digests match the pre-restore snapshot"
+    else
+        gr_warn "restore: at least one table content digest differs from the pre-restore snapshot — recorded as FAIL above, continuing"
+    fi
 
     # R-6: no table introduced by a post-FROM migration survives the restore —
     # derived from the table-list snapshots (after MINUS before), never a
@@ -1735,8 +1763,15 @@ phase_17_roll_forward_again() {
     # deliberately excluded from the comparison — it is SUPPOSED to differ
     # (FROM head before, TO head now); that is schema advancement, not damage.
     dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/recovered/db-fingerprint"
-    dbs_diff_fingerprints "$TEST_ROOT/snapshots/before/db-fingerprint" \
-        "$TEST_ROOT/snapshots/recovered/db-fingerprint" "F-4" media_file
+    # Guarded for the same reason as phase 15's call above (issue #617): a
+    # bare non-zero return here would trip `set -e` and kill the script
+    # before phase 18's summary ever runs.
+    if dbs_diff_fingerprints "$TEST_ROOT/snapshots/before/db-fingerprint" \
+        "$TEST_ROOT/snapshots/recovered/db-fingerprint" "F-4" media_file; then
+        gr_log "F-4: media_file content digest unchanged after the recovery re-upgrade"
+    else
+        gr_warn "F-4: media_file content digest differs after the recovery re-upgrade — recorded as FAIL above, continuing"
+    fi
 
     # F-5: hybrid search returns hits (reindex recovered).
     local hits=0 waited=0

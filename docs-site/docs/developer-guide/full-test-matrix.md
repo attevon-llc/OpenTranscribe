@@ -33,7 +33,7 @@ login) and asserts on outcome, not just that a command exited 0.
 | Mode | Stage / leg | Coverage | Known gaps |
 |---|---|---|---|
 | Dev — baseline | Stage 2A | Real: upload, e2e, chat vs mock + real vLLM, all 3 auth IdPs | Leg 4 (real vLLM) is **not reproducible on a single 12 GB GPU** — the default model does not fit at any documented setting ([#608](https://github.com/attevon-llc/OpenTranscribe/issues/608)); see Cycle 2A below for the numbers and the (unverified) `--enforce-eager` escape hatch |
-| Dev — GPU scaling | Stage 2B | Real: N-worker topology, concurrent uploads, OOM check | — |
+| Dev — GPU scaling | Stage 2B | Real: N-worker topology, concurrent uploads, OOM check | [#609](https://github.com/attevon-llc/OpenTranscribe/issues/609): the Flower leg only proves the worker answered a `?refresh=1` broadcast, not that N workers are registered in the plain `/api/workers` snapshot — that endpoint is a one-shot cache taken at Flower's own process startup and is never refreshed on a timer, so an unrefreshed read can omit a healthy worker forever |
 | Dev — diarization | Stage 2C | Real: diar-native default path + PyAnnote fallback | — |
 | Dev — lite/CPU | Stage 2D | **Topology-only** — proves no GPU worker/memory, uploads nothing | The pipeline itself (ASR/search/chat) is NOT exercised here — see the lite-mode rehearsal row below |
 | Prod — fresh install | Stage 3 | Real: full install against a built image | — |
@@ -145,10 +145,18 @@ parallel Celery workers pinned to `GPU_SCALE_DEVICE_ID`), which is additive with
 overlays. On a single-GPU host, set `GPU_SCALE_DEVICE_ID` to that GPU and stop `--with-llm-test`'s
 vLLM first — both want VRAM.
 
-Run via `scripts/gpu-scale-smoke.sh`. Pass: N workers register in Flower (`GPU_SCALE_WORKERS`,
-+1 if `GPU_SCALE_DEFAULT_WORKER=1`), at least 3 concurrent uploads all reach `completed`, no CUDA
-OOM string in `celery-worker-gpu-scaled` logs during the run, and batch wall-clock is less than
-N times a single-file baseline.
+Run via `scripts/gpu-scale-smoke.sh`. `docker-compose.gpu-scale.yml` runs exactly ONE celery
+process (`gpu-scaled@%h`) with `--concurrency=GPU_SCALE_WORKERS`, so "N workers register in
+Flower" was never the right pass criterion — it checks the pool's `max-concurrency` on that one
+process instead, plus the optional default worker (`gpu-transcription@%h`) when
+`GPU_SCALE_DEFAULT_WORKER=1`. Pass: the `gpu-scaled@*` worker is present in Flower's
+`/api/workers?refresh=1` (⚠️ **not** the unrefreshed `/api/workers` — that endpoint is a one-shot
+snapshot cached at Flower's own process startup and never re-inspects on a timer, so a worker
+still importing torch/whisperx when Flower booted is absent from it forever; see
+[#609](https://github.com/attevon-llc/OpenTranscribe/issues/609)) with `stats.pool.max-concurrency
+== GPU_SCALE_WORKERS`, at least 3 concurrent uploads all reach `completed`, no CUDA OOM string in
+`celery-worker-gpu-scaled` logs during the run, and batch wall-clock is less than N times a
+single-file baseline.
 
 ### Cycle 2C — diarization providers (~20 min, can fold into 2A if VRAM allows)
 

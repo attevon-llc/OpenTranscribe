@@ -177,3 +177,16 @@ A structural "does it call session_scope" test is not enough.
   changing any scheduling. Also note
   `GPU_SCALE_DEFAULT_WORKER` defaults to `0` in compose (default GPU worker disabled) but
   `1` in `.env.example` (both GPUs transcribe) — check which you actually have.
+- **Flower's `/api/workers` is a boot-time snapshot, not a live roster (issue #609).**
+  `Flower.start()` issues exactly ONE `celery inspect` broadcast at process startup with a 1 s
+  reply timeout and never re-inspects on a timer. A GPU worker that was still importing
+  torch/whisperx, or running `@worker_ready preload_models()` synchronously in its own main
+  thread (`PRELOAD_GPU_MODELS`, above), when Flower booted is absent from that endpoint
+  **forever** — waiting and re-checking cannot help. **`--pool=threads` workers are NOT
+  invisible to Celery** — `celery inspect ping` reaches them fine, which is exactly what their
+  container healthchecks rely on; two prefork workers (`cpu-processor`, `cloud-asr`) lose the
+  identical race, so the pool type is not the cause. Always read
+  `/api/workers?refresh=1` (Flower's own documented parameter, awaited server-side), never the
+  unrefreshed endpoint — `scripts/gpu-scale-smoke.sh` and `scripts/bulk-processing-cheatsheet.sh`
+  both do this. `docker-compose.yml`'s flower `command:` also raises `--inspect_timeout` to 10 s
+  so a refresh survives a GIL-bound worker.

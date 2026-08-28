@@ -1828,7 +1828,12 @@ class SpeakerClusteringService:
                 elif action == "skip":
                     # Mark as verified (reviewed) so it doesn't reappear in inbox
                     speaker.verified = True  # type: ignore[assignment]
-                    speaker.suggestion_source = "user_skipped"  # type: ignore[assignment]
+                    # Only stamp provenance when there is none to destroy. "user_skipped"
+                    # has no reader anywhere (backend or frontend), so overwriting a real
+                    # "llm_analysis" here only ever erased the historical marker
+                    # task_detection_service reads (issue #620 item 4).
+                    if not speaker.suggestion_source:
+                        speaker.suggestion_source = "user_skipped"  # type: ignore[assignment]
                     updated += 1
 
                 else:

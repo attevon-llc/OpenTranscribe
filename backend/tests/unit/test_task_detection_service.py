@@ -574,3 +574,203 @@ def test_rejecting_every_suggestion_on_a_file_does_not_re_offer_speaker_id(
         "a rejected-but-recorded LLM suggestion must not be re-offered as "
         "missing speaker identification"
     )
+
+
+def test_skipping_every_llm_suggestion_does_not_re_offer_speaker_id(
+    service, db_session, normal_user
+):
+    """Issue #620 item 4's exact reported scenario: LLM suggestions on both speakers,
+    user skips both via SpeakerClusteringService.batch_verify_speakers -- before the fix,
+    the "skip" branch unconditionally overwrote suggestion_source with "user_skipped",
+    destroying the "llm_analysis" marker task_detection_service reads and causing a
+    re-dispatch of the exact suggestions the user had just dismissed.
+    """
+    from unittest.mock import patch
+
+    from app.models.media import Speaker
+    from app.services.speaker_clustering_service import SpeakerClusteringService
+
+    media_file = _file(
+        db_session,
+        normal_user,
+        status=FileStatus.COMPLETED,
+        completed_at=ANCIENT,
+    )
+    speakers = [
+        Speaker(
+            user_id=normal_user.id,
+            media_file_id=media_file.id,
+            name=f"SPEAKER_0{i}",
+            suggested_name=f"Person {i}",
+            suggestion_source="llm_analysis",
+            confidence=0.9,
+        )
+        for i in range(2)
+    ]
+    db_session.add_all(speakers)
+    db_session.commit()
+    for s in speakers:
+        db_session.refresh(s)
+
+    clustering_service = SpeakerClusteringService(db_session)
+    result = clustering_service.batch_verify_speakers(
+        [str(s.uuid) for s in speakers], normal_user.id, action="skip"
+    )
+    assert result["updated_count"] == 2, f"expected both speakers skipped, got {result}"
+
+    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+        results = service.identify_incomplete_post_transcription_files(db_session)
+
+    ours = [r for r in results if r.media_file_id == media_file.id]
+    assert ours, "the file must still be reported (other post-transcription steps are missing)"
+    assert ours[0].missing_speaker_id is False, (
+        "skipping every LLM suggestion must not be re-offered as missing speaker "
+        "identification (issue #620 item 4)"
+    )
+
+
+def test_a_completed_speaker_identification_task_survives_a_voice_match_clobber(
+    service, db_session, normal_user
+):
+    """A later voice-match write can legitimately overwrite suggestion_source away from
+    "llm_analysis" (that write path is intentionally left unguarded -- it is real
+    provenance, read by live UI/API consumers). The Task-table leg proves the union
+    catches this independently of the legacy column.
+    """
+    from unittest.mock import patch
+
+    from app.models.media import Speaker
+
+    media_file = _file(
+        db_session,
+        normal_user,
+        status=FileStatus.COMPLETED,
+        completed_at=ANCIENT,
+    )
+    speaker = Speaker(
+        user_id=normal_user.id,
+        media_file_id=media_file.id,
+        name="SPEAKER_00",
+        suggestion_source="voice_match",  # clobbered away from "llm_analysis"
+    )
+    db_session.add(speaker)
+    _task(
+        db_session,
+        normal_user,
+        media_file,
+        task_type="speaker_identification",
+        status="completed",
+    )
+    db_session.commit()
+
+    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+        results = service.identify_incomplete_post_transcription_files(db_session)
+
+    ours = [r for r in results if r.media_file_id == media_file.id]
+    assert ours, "the file must still be reported (other post-transcription steps are missing)"
+    assert ours[0].missing_speaker_id is False, (
+        "a completed speaker_identification Task row must count as 'has speaker ID' "
+        "even when suggestion_source was overwritten by a later voice-match write"
+    )
+
+
+def test_legacy_suggestion_source_alone_still_works_with_no_task_row(
+    service, db_session, normal_user
+):
+    """Regression guard: historical files predate the Task-table leg ever being
+    written. suggestion_source == "llm_analysis" with NO completed Task row must still
+    be recognised -- proving the union did not silently drop the legacy leg.
+    """
+    from unittest.mock import patch
+
+    from app.models.media import Speaker
+
+    media_file = _file(
+        db_session,
+        normal_user,
+        status=FileStatus.COMPLETED,
+        completed_at=ANCIENT,
+    )
+    speaker = Speaker(
+        user_id=normal_user.id,
+        media_file_id=media_file.id,
+        name="SPEAKER_00",
+        suggestion_source="llm_analysis",
+    )
+    db_session.add(speaker)
+    db_session.commit()
+
+    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+        results = service.identify_incomplete_post_transcription_files(db_session)
+
+    ours = [r for r in results if r.media_file_id == media_file.id]
+    assert ours, "the file must still be reported (other post-transcription steps are missing)"
+    assert ours[0].missing_speaker_id is False, (
+        "the legacy suggestion_source=='llm_analysis' leg must still work with no Task row"
+    )
+
+
+def test_negative_control_neither_leg_present_reports_missing(service, db_session, normal_user):
+    """Without this, tests 1-3 above could pass against a function that always returns
+    False for missing_speaker_id -- prove the predicate can still fire at all.
+    """
+    from unittest.mock import patch
+
+    from app.models.media import Speaker
+
+    media_file = _file(
+        db_session,
+        normal_user,
+        status=FileStatus.COMPLETED,
+        completed_at=ANCIENT,
+    )
+    speaker = Speaker(
+        user_id=normal_user.id,
+        media_file_id=media_file.id,
+        name="SPEAKER_00",
+        suggestion_source=None,
+    )
+    db_session.add(speaker)
+    db_session.commit()
+
+    with patch.object(TaskDetectionService, "_check_llm_configured_for_user", return_value=True):
+        results = service.identify_incomplete_post_transcription_files(db_session)
+
+    ours = [r for r in results if r.media_file_id == media_file.id]
+    assert ours, "the file must be reported"
+    assert ours[0].missing_speaker_id is True, (
+        "with neither the legacy suggestion_source leg nor a completed Task row, "
+        "the file must still be flagged missing_speaker_id"
+    )
+
+
+def test_skip_action_still_stamps_provenance_when_none_existed(service, db_session, normal_user):
+    """6c must not become a no-op: a speaker with NO suggestion_source at all (never
+    LLM-identified) should still get "user_skipped" recorded on skip -- only an
+    EXISTING real value ("llm_analysis" etc.) must be protected from being overwritten.
+    """
+    from app.models.media import Speaker
+    from app.services.speaker_clustering_service import SpeakerClusteringService
+
+    media_file = _file(db_session, normal_user, status=FileStatus.COMPLETED)
+    speaker = Speaker(
+        user_id=normal_user.id,
+        media_file_id=media_file.id,
+        name="SPEAKER_00",
+        suggestion_source=None,
+    )
+    db_session.add(speaker)
+    db_session.commit()
+    db_session.refresh(speaker)
+
+    clustering_service = SpeakerClusteringService(db_session)
+    result = clustering_service.batch_verify_speakers(
+        [str(speaker.uuid)], normal_user.id, action="skip"
+    )
+    assert result["updated_count"] == 1, f"expected the skip to apply, got {result}"
+
+    db_session.refresh(speaker)
+    assert speaker.suggestion_source == "user_skipped", (
+        "a speaker with no prior suggestion_source must still get 'user_skipped' "
+        "recorded on skip -- the guard must only protect an EXISTING value"
+    )

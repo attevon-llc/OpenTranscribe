@@ -69,6 +69,47 @@ check_docker() {
   exit 1
 }
 
+# Generate a real MinIO KMS secret key on first run if .env.example's shipped
+# placeholder was never replaced (issue #614).
+#
+# MinIO's KMS auto-encryption (MINIO_KMS_AUTO_ENCRYPTION=on, the .env.example
+# default) requires MINIO_KMS_SECRET_KEY in the form <key-name>:<base64-encoded-
+# 32-byte-key> -- see the minio service's own comment in docker-compose.yml.
+# .env.example ships MINIO_KMS_SECRET_KEY=CHANGE_ME_auto_generated_on_install,
+# which is not that format, so a genuinely fresh `cp .env.example .env` +
+# `./opentr.sh start dev` refused to boot MinIO until an operator manually
+# generated a real key. scripts/install-offline-package.sh and
+# windows-installer/generate-secrets.ps1 already generate a value in this exact
+# format for THEIR OWN first-run paths (opentranscribe-key:$(openssl rand
+# -base64 32)); this is the same generation, for the one first-run path neither
+# of those covers -- a plain `./opentr.sh start dev` / `start prod`.
+#
+# Only touches the SHIPPED PLACEHOLDER. An empty or already-customized value is
+# left alone -- either means an operator made a deliberate choice (e.g. leaving
+# KMS auto-encryption off), and this must never clobber a real key.
+ensure_minio_kms_secret() {
+  local env_file="${1:-.env}"
+  [ -f "$env_file" ] || return 0
+
+  local current
+  current=$(grep -E '^MINIO_KMS_SECRET_KEY=' "$env_file" | tail -1 | cut -d'=' -f2- | tr -d ' "')
+
+  case "$current" in
+    *CHANGE_ME*)
+      local generated
+      generated="opentranscribe-key:$(openssl rand -base64 32)"
+      sed -i "s|^MINIO_KMS_SECRET_KEY=.*|MINIO_KMS_SECRET_KEY=${generated}|" "$env_file"
+      echo "🔑 Generated MINIO_KMS_SECRET_KEY in ${env_file} (replaced the .env.example placeholder) so MinIO KMS auto-encryption can boot."
+      # opentr.sh already `set -a; source ./.env`'d the placeholder into this
+      # shell's environment before this runs, and docker compose's variable
+      # interpolation prefers an inherited shell env var over re-reading .env
+      # -- without this re-export, the freshly-patched file would be silently
+      # ignored by the very `docker compose up` this is meant to unblock.
+      export MINIO_KMS_SECRET_KEY="$generated"
+      ;;
+  esac
+}
+
 # Create required directories
 create_required_dirs() {
   # Check if the models directory exists and create it if needed

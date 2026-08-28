@@ -1631,6 +1631,11 @@ start_app() {
     # Fix model cache permissions for non-root container
     fix_model_cache_permissions
 
+    # Generate a real MinIO KMS secret key if .env still has .env.example's
+    # shipped placeholder, so a genuinely fresh `cp .env.example .env` boots
+    # MinIO's KMS auto-encryption without manual intervention (issue #614).
+    ensure_minio_kms_secret ".env"
+
     # Fetch the NLTK corpora BEFORE de-hardlinking them: nothing else prefetches
     # them, so they were fetched at runtime from inside the transcription and
     # topic pipelines, which an airgapped deployment cannot do (issue #491).
@@ -2653,6 +2658,10 @@ reset_and_init() {
 
   # Fix model cache permissions for non-root container
   fix_model_cache_permissions
+
+  # Generate a real MinIO KMS secret key if .env still has .env.example's
+  # shipped placeholder (issue #614).
+  ensure_minio_kms_secret ".env"
 
   # Fetch the NLTK corpora BEFORE de-hardlinking them (issue #491).
   ensure_nltk_corpora

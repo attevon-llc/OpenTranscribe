@@ -56,6 +56,20 @@ SARAH_SEGMENT = {"start": 0.0, "end": 7.0}
 ANDREJ_SEGMENT = {"start": 7.7, "end": 20.0}
 
 
+@pytest.fixture(autouse=True)
+def _force_in_process_backend(monkeypatch):
+    """Pin every test in this module to the in-process PyAnnote backend.
+
+    Since issue #571 a v4 service prefers the diar-native sidecar and then loads no
+    model and has no torch device at all — which is the right default, and exactly
+    wrong for this module, whose subject is the `TORCH_DEVICE` device-selection knob
+    on the in-process path. `USE_NATIVE_SPEAKER_EMBEDDINGS=false` is the production
+    escape hatch for that, so this pins the backend through the real mechanism rather
+    than by patching internals.
+    """
+    monkeypatch.setenv("USE_NATIVE_SPEAKER_EMBEDDINGS", "false")
+
+
 def _embedding_service(mode: Literal["v3", "v4"] = "v4"):
     """Construct a SpeakerEmbeddingService, skipping if weights are unavailable."""
     pytest.importorskip("pyannote.audio", reason="pyannote.audio not installed")

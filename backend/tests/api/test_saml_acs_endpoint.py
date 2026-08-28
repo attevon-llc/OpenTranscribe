@@ -24,7 +24,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.endpoints.auth import saml as saml_module
+from app.auth.lockout import check_and_record_attempt
 from app.auth.lockout import get_lockout_info
+from app.auth.lockout import unlock_account
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.db.base import get_db
@@ -166,6 +168,16 @@ class TestSamlLoginRecordsLockoutAttempts:
 
         monkeypatch.setattr(saml_module, "build_auth", lambda request_data, cfg: _RejectingAuth())
 
+        # "unknown" is the shared pre-identity-failure bucket (oidc.py and saml.py both
+        # write it deliberately) and ACCOUNT_LOCKOUT_THRESHOLD defaults to 5 with no
+        # relaxed override in CI. Without a reset, tests across both files accumulate
+        # failed attempts on "unknown" until it locks -- and a locked identifier's
+        # check_and_record_attempt returns early WITHOUT incrementing failed_attempts,
+        # so `after == before + 1` silently fails as `after == before`. Reset via the
+        # real "successful login clears the counter" path first, so the baseline here
+        # is deterministic regardless of what ran before it.
+        unlock_account("unknown")
+        check_and_record_attempt("unknown", success=True)
         before = get_lockout_info("unknown")["failed_attempts"]
         response = saml_client.post(ENDPOINT, data={"SAMLResponse": "garbage"})
         after = get_lockout_info("unknown")["failed_attempts"]

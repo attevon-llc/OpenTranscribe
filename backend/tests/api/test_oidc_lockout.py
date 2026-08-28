@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 from app.api.endpoints.auth import oidc as oidc_module
 from app.auth.lockout import check_and_record_attempt
 from app.auth.lockout import get_lockout_info
+from app.auth.lockout import unlock_account
 from app.core.security import get_password_hash
 from app.db.base import get_db
 from app.main import app
@@ -100,6 +101,17 @@ class TestFailedExchangeRecordsAnAttempt:
 
         monkeypatch.setattr(oidc_module, "exchange_code_for_tokens", _failing_exchange)
 
+        # "unknown" is the shared pre-identity-failure bucket (oidc.py and saml.py both
+        # write it deliberately -- see the comment at oidc.py:249) and ACCOUNT_LOCKOUT_
+        # THRESHOLD defaults to 5 with no relaxed override in CI (docker-compose.override.
+        # yml is never loaded there). Without a reset, enough tests across both files
+        # accumulate failed attempts on "unknown" to lock it -- and a locked identifier's
+        # check_and_record_attempt returns early WITHOUT incrementing failed_attempts, so
+        # a later test's `after == before + 1` silently fails as `after == before`. Reset
+        # via the real "successful login clears the counter" path before every snapshot,
+        # so this test's baseline is deterministic regardless of what ran before it.
+        unlock_account("unknown")
+        check_and_record_attempt("unknown", success=True)
         before = get_lockout_info("unknown")["failed_attempts"]
         response = oidc_client.get(ENDPOINT, params={"code": "irrelevant", "state": STATE})
         after = get_lockout_info("unknown")["failed_attempts"]
@@ -119,6 +131,10 @@ class TestInvalidTokenRecordsAnAttempt:
 
         monkeypatch.setattr(oidc_module, "validate_oidc_token", _failing_validate)
 
+        # See the reset comment in TestFailedExchangeRecordsAnAttempt above -- same
+        # shared-bucket-vs-lockout-threshold reasoning applies here.
+        unlock_account("unknown")
+        check_and_record_attempt("unknown", success=True)
         before = get_lockout_info("unknown")["failed_attempts"]
         response = oidc_client.get(ENDPOINT, params={"code": "irrelevant", "state": STATE})
         after = get_lockout_info("unknown")["failed_attempts"]

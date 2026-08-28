@@ -899,7 +899,10 @@ def download_stream(
         try:
             ready = _resolve_ready_download(db_file, mode, variant)
         except HTTPException as e:
-            return sse("error", {"message": e.detail})
+            # `_resolve_ready_download`'s only raise site is the 422 below, but the
+            # "code" here stays a fixed literal slug — never `e.detail` itself — so
+            # the SSE contract guard (test_chat_sse_contract.py) can pin it structurally.
+            return sse("error", {"code": "transcript_not_ready", "message": e.detail})
         return sse("ready", ready) if ready else None
 
     async def event_stream():
@@ -948,7 +951,10 @@ def download_stream(
                     continue
                 except RedisError as e:
                     logger.warning(f"Download SSE pubsub error for {file_uuid}: {e}")
-                    yield sse("error", {"message": "Connection interrupted."})
+                    yield sse(
+                        "error",
+                        {"code": "connection_interrupted", "message": "Connection interrupted."},
+                    )
                     return
                 if msg is None:
                     yield ": keepalive\n\n"  # comment frame keeps proxies from closing

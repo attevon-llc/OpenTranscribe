@@ -226,6 +226,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--with-pki` enabled unauthenticated admin impersonation from the LAN** (#620). The
+  fixture's trusted-proxy default was `127.0.0.1/32,172.16.0.0/12,192.168.0.0/16`, written into
+  the stack as **both** `RATE_LIMIT_TRUSTED_PROXIES` and `PKI_TRUSTED_PROXIES` — and those are
+  not the same kind of setting. The second one decides whether a bare `X-Client-Cert-DN` header
+  is believed *as an identity*: `pki_mode` defaults to `header`, so a DN with no certificate at
+  all is accepted from any peer in the allowlist. `192.168.0.0/16` is the range ordinary
+  consumer/office routers hand out, `docker-compose.yml` published the backend on the host's
+  wildcard address, and the admin DN is not a secret (`setup-test-pki.sh` hardcodes it), so on
+  such a LAN any other device could `POST /api/auth/pki/authenticate` with a forged DN header
+  and receive admin tokens — no certificate, no password. Reproduced through the real
+  `_extract_user_info_from_request` before the fix and refused after it. The rationale comment
+  that justified the range was wrong twice over: it claimed the value only enabled
+  `X-Forwarded-For` spoofing (it also gates identity) and that "production never loads it"
+  (`opentr.sh`'s `add_pki_overlay()` generates and sources it for
+  `./opentr.sh start prod --build --with-pki` too). Three independent closures, because none of
+  them alone is sufficient: the allowlist is now **derived** from the compose project's own
+  docker network (`docker network inspect ... .IPAM.Config`) instead of guessed, which keeps
+  #615 fixed — that host's real subnet is `192.168.96.0/20` — while trusting one `/20` rather
+  than the 4096 in the enclosing `/16`, and is safe by construction because docker's IPAM
+  refuses a pool overlapping an existing host route; the backend's published port binds to
+  **loopback** for a `--with-pki` stack via a new `BACKEND_BIND_HOST` (default `0.0.0.0`
+  everywhere else, so no other deployment changes), so mTLS-terminating nginx is the only front
+  door; and the PKI nginx configs now **clear** `X-Client-Cert`/`-Verify`/`-DN` on every
+  backend-facing location except the one that actually terminated mTLS. That last one was the
+  same bypass a layer up and survived any narrowing of the CIDR: the plain-HTTP `:8080` server
+  had no `/api/auth/pki` block, so the request fell through to the generic `location /api/`,
+  which forwarded a client-supplied DN header from a peer the allowlist trusts *by design*.
 - **The release rehearsal's rollback phase could crash outright, and — once it stopped
   crashing — still fail for two further reasons** (#618). The same unguarded-command-under-
   `set -e` class of bug as #617, this time a bare `curl` against the frontend inside an
@@ -292,9 +319,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whole auto-assigned bridge range — once the default pools are exhausted by other concurrent
   Docker networks on a host, the daemon spills into `192.168.0.0/16` chunks, and the fail-closed
   trusted-proxy check silently refused a peer outside the allowlist (a valid client cert just
-  landed back on `/login` with no error). The default now includes `192.168.0.0/16`, measured
-  against the real dev stack's own network (`192.168.96.0/20`, already outside the old default
-  on a host with ~34 unrelated Docker networks) rather than assumed. A same-night follow-up audit
+  landed back on `/login` with no error). Measured against the real dev stack's own network
+  (`192.168.96.0/20`, already outside the old default on a host with ~34 unrelated Docker
+  networks) rather than assumed. The first fix widened the default to a blanket
+  `192.168.0.0/16`; that was itself a vulnerability and is superseded by the `#620` entry
+  below, which derives the actual subnet instead. A same-night follow-up audit
   of this work found four more real gaps: `restore_database` returned exit 1 on a **successful**
   `--no-safety-dump` restore because its own last statement's exit status silently became its
   return code; the pre-`DROP DATABASE` service stop ran unchecked, unlike every other destructive

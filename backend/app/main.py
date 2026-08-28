@@ -171,8 +171,12 @@ def _validate_production_secrets():
             logger.warning(
                 "SECURITY WARNING: PKI_ENABLED=true but PKI_TRUSTED_PROXIES is empty! "
                 "This allows any client to inject PKI certificate headers. "
-                "Configure PKI_TRUSTED_PROXIES with your reverse proxy IP addresses "
-                "(e.g., '127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')."
+                "Configure PKI_TRUSTED_PROXIES with the address of the proxy that "
+                "terminates mTLS — the narrowest range that covers it, e.g. its own "
+                "'/32', or the container network it runs on. Do NOT paste a whole "
+                "private range: '10.0.0.0/8' and '192.168.0.0/16' are what ordinary "
+                "LAN routers hand out, so trusting one lets any device on that LAN "
+                "assert a certificate DN and sign in as it (issue #620)."
             )
 
     # Same rule for trusted-header authentication, and for the same reason: a header

@@ -32,9 +32,18 @@ Header-sourced PKI authentication is **refused outright** when no trusted proxy 
 A hardened deployment additionally refuses to *start*.
 
 Previously a forwarded DN was accepted from any source with only a warning, and a DN header
-alone could authenticate without a certificate ever being parsed. Set
-`pki_trusted_proxies` to the address the backend sees the reverse proxy arrive from, e.g.
-`127.0.0.1,10.0.0.0/8`. Single addresses and CIDR ranges are both accepted.
+alone could authenticate without a certificate ever being parsed. Set `pki_trusted_proxies` to
+the address the backend sees the reverse proxy arrive from. Single addresses and CIDR ranges
+are both accepted.
+
+**Use the narrowest range that covers the proxy** — its own `/32`, or the container network it
+runs on (`docker network inspect <project>_default --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'`).
+Do **not** paste a whole private range. This setting gates *identity assertion*, not just
+`X-Forwarded-For`: with `pki_mode: header` (the default) a DN with no certificate at all is
+accepted from any peer in the list, so `10.0.0.0/8` or `192.168.0.0/16` — the ranges ordinary
+LAN routers hand out — let any device on that LAN sign in as any DN, including an admin one
+(issue #620). If the backend's own port is published, keep it off the LAN too
+(`BACKEND_BIND_HOST=127.0.0.1`), or a client can bypass the proxy entirely.
 :::
 
 A DN header is trusted **only** when it arrives from a configured proxy, or alongside a

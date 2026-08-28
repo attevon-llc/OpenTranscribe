@@ -32,7 +32,12 @@
 #   --https-port N       Host port for the mTLS listener   (default: $PKI_HTTPS_PORT or 5182)
 #   --http-port N        Host port for the plain listener  (default: $PKI_HTTP_PORT  or 5187)
 #   --admin-cert NAME     Client cert whose DN gets admin  (default: pkiadmin; repeatable)
-#   --trusted-proxies CIDR[,CIDR...]  (default: 127.0.0.1/32,172.16.0.0/12,192.168.0.0/16)
+#   --trusted-proxies CIDR[,CIDR...]  (default: derived from this compose project's own
+#                          docker network -- see --print-trusted-proxies)
+#   --print-trusted-proxies  Resolve the allowlist, print it, exit; touch nothing else
+#   --backend-bind-host HOST  Host interface the backend's published port binds to
+#                          (default: 127.0.0.1 — the LAN must not reach the backend
+#                          directly when a DN header is trusted from the proxy net)
 #   --verify-revocation   Turn OCSP/CRL checking on        (default: off)
 #   --force-certs         Re-issue client certs even if present (rotates keys —
 #                          invalidates any browser-imported .p12)
@@ -46,44 +51,87 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 PKI_DIR="${SCRIPT_DIR}/test-certs"
 
+# Print the whole leading comment block, however long it grows. This used to be
+# `sed -n '2,32p'`, a line range that had already fallen behind the option list
+# it was meant to print: `--help` stopped at `--http-port` and never mentioned
+# --admin-cert, --trusted-proxies, --print or --quiet at all.
 usage() {
-  sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "${BASH_SOURCE[0]}"
 }
 
 HTTPS_PORT="${PKI_HTTPS_PORT:-5182}"
 HTTP_PORT="${PKI_HTTP_PORT:-5187}"
 ADMIN_CERTS=()
-# 172.16.0.0/12 alone is not Docker's whole auto-assigned bridge-network range:
-# once its default pools (172.17.0.0/16-172.31.0.0/16) are exhausted by other
-# concurrent Docker networks on the host, the daemon spills into 192.168.0.0/16
-# chunks (issue #615) -- measured live on a host running ~34 unrelated Docker
-# networks, where even the ORDINARY non-fresh `opentranscribe_default` network
-# (not a --fresh deployment) landed at 192.168.96.0/20. 172.16.0.0/12 IS
-# never attacker-reachable from outside the host -- it is not a range anything
-# routes to a home/office LAN. 192.168.0.0/16 is different: it is the standard
-# private range issued by ordinary consumer/office routers, so on a machine
-# whose LAN happens to overlap it, this value is reachable from every OTHER
-# device on that LAN, not just from this host's own Docker bridges. This
-# value is exported as BOTH PKI_TRUSTED_PROXIES and RATE_LIMIT_TRUSTED_PROXIES
-# into the whole stack (opentr.sh's add_pki_overlay sources the fragment this
-# script writes), so a LAN peer within 192.168.0.0/16 could spoof
-# X-Forwarded-For to a `--with-pki` deployment and evade per-IP rate
-# limiting/lockout, or poison the audit trail's recorded client IP -- IF this
-# fixture's default were ever reused somewhere reachable from a real LAN.
-# It is not, today: this script only backs `--with-pki` test/dev runs, and
-# production never loads it -- `backend/app/core/config.py`'s
-# PKI_TRUSTED_PROXIES default is "", and docker-compose.{prod,nginx,pki,
-# pki-dev}.yml all default RATE_LIMIT_TRUSTED_PROXIES to
-# 127.0.0.1/32,172.16.0.0/12 with no 192.168.0.0/16 baked in anywhere outside
-# this file (verified: `rg PKI_TRUSTED_PROXIES` across the repo). So this is a
-# test-fixture convenience whose blast radius is bounded to isolated test/dev
-# deployments exposed on a LAN -- not something with no attacker-reachable
-# scope at all. Widening it is still the right default (a missing entry in
-# this allowlist is a spurious PKI test failure every time Docker spills into
-# 192.168.0.0/16, which is the failure #615 fixed), but a deployment operator
-# choosing to expose a `--with-pki` stack beyond localhost on a real LAN
-# should narrow --trusted-proxies rather than rely on this default.
-TRUSTED_PROXIES="127.0.0.1/32,172.16.0.0/12,192.168.0.0/16"
+
+# ---------------------------------------------------------------------------
+# Trusted-proxy allowlist (issue #620).
+#
+# WHAT THIS VALUE ACTUALLY GATES. It is written out as BOTH
+# RATE_LIMIT_TRUSTED_PROXIES *and* PKI_TRUSTED_PROXIES, and those two are not
+# the same kind of setting:
+#
+#   RATE_LIMIT_TRUSTED_PROXIES decides whose X-Forwarded-For is believed for
+#     per-IP rate limiting / lockout / the audit trail's client IP. A too-wide
+#     value costs attribution.
+#   PKI_TRUSTED_PROXIES decides whether a bare `X-Client-Cert-DN` header is
+#     believed AS AN IDENTITY. `backend/app/auth/pki_auth.py`'s
+#     `_extract_user_info_from_request` accepts a DN with NO certificate at all
+#     whenever `header_trust.header_source_is_trusted()` is true, and
+#     `pki_mode` defaults to "header", so DN-only IS the default transport. A
+#     too-wide value is unauthenticated admin impersonation: the admin DN is
+#     not a secret (setup-test-pki.sh hardcodes it and `pkiadmin` is this
+#     script's own default --admin-cert).
+#
+# The previous default was `127.0.0.1/32,172.16.0.0/12,192.168.0.0/16`, and its
+# comment justified the /16 on two claims that were both wrong:
+#
+#   * "it only enables X-Forwarded-For spoofing / lockout evasion" — no, it
+#     also gates identity assertion, per the paragraph above.
+#   * "production never loads it" — `opentr.sh`'s add_pki_overlay() generates
+#     and sources this fragment for `./opentr.sh start prod --build --with-pki`
+#     too, which is a documented command in the root CLAUDE.md.
+#
+# 192.168.0.0/16 is the range ordinary consumer/office routers hand out, and
+# docker-compose.yml publishes the backend on the host's wildcard address, so
+# on any such LAN every other device could POST a forged DN header straight to
+# the backend and be handed admin tokens. Two changes close that: the backend's
+# published port is now bound to loopback for a --with-pki stack (see
+# BACKEND_BIND_HOST below), and this allowlist is DERIVED rather than guessed.
+#
+# WHY DERIVED. #615 is real: once Docker's default pools
+# (172.17.0.0/16-172.31.0.0/16) are exhausted by other networks on the host,
+# the daemon spills into 192.168.0.0/16 in /20 chunks -- measured live, where
+# even the ordinary non-fresh `opentranscribe_default` network landed on
+# 192.168.96.0/20. Asking Docker which subnet it actually used covers that case
+# exactly, without trusting the 4095 other /20s in the same /16. It is also
+# safe by construction: Docker's IPAM refuses a pool that overlaps an existing
+# host route, so a subnet it allocated cannot be the LAN this host sits on.
+#
+# FALLBACK. When the daemon can't be reached, or the project's network does not
+# exist yet (a first-ever `--with-pki` start creates it only during `up`), we
+# fall back to Docker's default pool and say so loudly. On a host crowded
+# enough for #615's spill, that first start can still fail the fail-closed
+# trust check; the second one works, because the network exists by then. Pass
+# --trusted-proxies to skip the guessing entirely.
+PKI_TRUSTED_PROXIES_FALLBACK="127.0.0.1/32,172.16.0.0/12"
+TRUSTED_PROXIES=""
+TRUSTED_PROXIES_EXPLICIT=""
+TRUSTED_PROXIES_SOURCE=""
+PRINT_TRUSTED_ONLY=""
+
+# The backend's published port binds here for a --with-pki stack. Loopback is
+# the point: with mTLS terminated by the PKI nginx, nothing on the LAN has any
+# business reaching the backend's own port, and reaching it directly is what
+# turned a wide trusted-proxy CIDR into remote admin impersonation.
+#
+# Deliberately NOT `${BACKEND_BIND_HOST:-127.0.0.1}`. opentr.sh sources .env
+# before calling this script, and .env.example carries a live
+# BACKEND_BIND_HOST line for ordinary deployments — reading the ambient value
+# would let a stock .env silently switch the control back off, the same trap
+# add_pki_overlay documents for PKI_HTTP_PORT. Widening it takes the explicit
+# --backend-bind-host flag, which is then printed in the banner.
+BACKEND_BIND_HOST="127.0.0.1"
+
 VERIFY_REVOCATION="false"
 FORCE_CERTS=""
 PRINT_ONLY=""
@@ -104,7 +152,15 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --trusted-proxies)
-      TRUSTED_PROXIES="$2"
+      TRUSTED_PROXIES_EXPLICIT="$2"
+      shift 2
+      ;;
+    --print-trusted-proxies)
+      PRINT_TRUSTED_ONLY="1"
+      shift
+      ;;
+    --backend-bind-host)
+      BACKEND_BIND_HOST="$2"
       shift 2
       ;;
     --verify-revocation)
@@ -143,6 +199,94 @@ log() {
   [ -n "$QUIET" ] && return 0
   echo "$@"
 }
+
+# ---------------------------------------------------------------------------
+# 0. Resolve the trusted-proxy allowlist. See the long note beside
+#    PKI_TRUSTED_PROXIES_FALLBACK for why this is derived and not a constant.
+# ---------------------------------------------------------------------------
+
+# How docker compose names a project when COMPOSE_PROJECT_NAME is unset: the
+# project directory's basename, lowercased, with everything outside
+# [a-z0-9_-] dropped.
+compose_project_default() {
+  basename "$PROJECT_DIR" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-'
+}
+
+# Subnets docker actually allocated to THIS project's default network.
+# Prints a comma-separated list, or nothing when the daemon or the network is
+# unavailable. Never falls back to "every docker network on the host": most of
+# them belong to unrelated projects and trusting those would be no narrower
+# than the /16 this replaces.
+derive_docker_subnets() {
+  command -v docker > /dev/null 2>&1 || return 0
+
+  local candidates=() name out subnet seen="" all=""
+  if [ -n "${COMPOSE_PROJECT_NAME:-}" ]; then
+    # Set (by .env, or by opentr.sh for a --fresh deployment) means the name is
+    # not a guess: compose uses it, and docker-compose.nginx.yml pins the
+    # network to the same ${COMPOSE_PROJECT_NAME}_default. One candidate.
+    candidates+=("${COMPOSE_PROJECT_NAME}_default")
+  else
+    # Unset, so the name depends on which overlays load: compose derives it
+    # from the directory, while docker-compose.nginx.yml pins the literal
+    # `opentranscribe_default`. Both are candidates, and both get collected
+    # rather than stopping at the first hit — a directory-named network left
+    # behind by an unrelated project would otherwise shadow the real stack's
+    # and reintroduce #615's silent trust failure.
+    candidates+=("$(compose_project_default)_default" "opentranscribe_default")
+  fi
+
+  for name in "${candidates[@]}"; do
+    case ",${seen}," in *",${name},"*) continue ;; esac
+    seen="${seen},${name}"
+    out=""
+    out="$(docker network inspect "$name" \
+      --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2> /dev/null)" || continue
+    for subnet in $out; do
+      case ",${all}," in *",${subnet},"*) continue ;; esac
+      all="${all:+${all},}${subnet}"
+    done
+  done
+  printf '%s' "$all"
+}
+
+resolve_trusted_proxies() {
+  if [ -n "$TRUSTED_PROXIES_EXPLICIT" ]; then
+    TRUSTED_PROXIES="$TRUSTED_PROXIES_EXPLICIT"
+    TRUSTED_PROXIES_SOURCE="--trusted-proxies"
+    return 0
+  fi
+
+  local derived
+  derived="$(derive_docker_subnets)"
+  if [ -n "$derived" ]; then
+    # Loopback stays in the list because a host-side caller that reaches the
+    # published port over 127.0.0.1 may arrive either as the bridge gateway
+    # (inside the derived subnet) or as loopback itself, depending on whether
+    # docker's userland proxy handled the connection.
+    TRUSTED_PROXIES="127.0.0.1/32,${derived}"
+    TRUSTED_PROXIES_SOURCE="docker network"
+    return 0
+  fi
+
+  TRUSTED_PROXIES="$PKI_TRUSTED_PROXIES_FALLBACK"
+  TRUSTED_PROXIES_SOURCE="fallback"
+}
+
+resolve_trusted_proxies
+
+if [ -n "$PRINT_TRUSTED_ONLY" ]; then
+  echo "$TRUSTED_PROXIES"
+  exit 0
+fi
+
+if [ "$TRUSTED_PROXIES_SOURCE" = "fallback" ]; then
+  echo "⚠️  Could not read this project's docker network, so PKI_TRUSTED_PROXIES falls back" >&2
+  echo "    to ${PKI_TRUSTED_PROXIES_FALLBACK} (docker's default bridge pool)." >&2
+  echo "    If PKI sign-in fails silently on this start, the daemon spilled outside that" >&2
+  echo "    pool (issue #615): start once more so the network exists, or pass" >&2
+  echo "    --trusted-proxies <cidr>." >&2
+fi
 
 cd "$PROJECT_DIR"
 
@@ -231,7 +375,9 @@ if [ -n "$PRINT_ONLY" ]; then
   echo "PKI_HTTPS_PORT=${HTTPS_PORT}"
   echo "PKI_HTTP_PORT=${HTTP_PORT}"
   echo "PKI_E2E_URL=${PKI_E2E_URL}"
+  echo "BACKEND_BIND_HOST=${BACKEND_BIND_HOST}"
   echo ""
+  echo "# PKI_TRUSTED_PROXIES source: ${TRUSTED_PROXIES_SOURCE}"
   echo "# would write:"
   echo "#   ${PKI_DIR}/pki-test.env"
   echo "#   ${PKI_DIR}/pki-test.compose.yml"
@@ -294,6 +440,13 @@ _env_kv() {
   _env_kv PKI_HTTP_PORT "$HTTP_PORT"
   _env_kv PKI_E2E_URL "$PKI_E2E_URL"
   _env_kv RUN_PKI_E2E "true"
+  echo "# docker-compose.yml publishes the backend at"
+  echo "# \${BACKEND_BIND_HOST:-0.0.0.0}:\${BACKEND_PORT}. opentr.sh sources this"
+  echo "# fragment with 'set -a' BEFORE assembling the compose chain, so this line is"
+  echo "# what keeps a --with-pki backend off the LAN: mTLS-terminating nginx is the"
+  echo "# only front door, and a DN header from a LAN peer can no longer reach the"
+  echo "# backend's own port at all (issue #620)."
+  _env_kv BACKEND_BIND_HOST "$BACKEND_BIND_HOST"
 } > "$ENV_FILE"
 
 # ---------------------------------------------------------------------------
@@ -327,6 +480,8 @@ log ""
 log "   Access URL:  ${PKI_E2E_URL}"
 log "   Admin DN(s): ${ADMIN_DN_JOINED}"
 log "   Client certs: ${PKI_DIR}/clients/*.p12 (password: changeit)"
+log "   Trusted proxies: ${TRUSTED_PROXIES}  (${TRUSTED_PROXIES_SOURCE})"
+log "   Backend port bound to: ${BACKEND_BIND_HOST}"
 log ""
 log "   Run the E2E suite against this fragment with:"
 log "     set -a; source ${ENV_FILE}; set +a"

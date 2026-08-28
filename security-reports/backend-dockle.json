@@ -1,5 +1,5 @@
 {
-  "image": "davidamacey/opentranscribe-backend:v0.5.0",
+  "image": "davidamacey/opentranscribe-backend:latest",
   "summary": {
     "fatal": 1,
     "warn": 0,
@@ -22,16 +22,16 @@
       "level": "INFO",
       "alerts": [
         "setgid file: grwxr-xr-x usr/bin/chage",
+        "setuid file: urwxr-xr-x usr/bin/gpasswd",
+        "setuid file: urwxr-xr-x usr/bin/umount",
+        "setuid file: urwxr-xr-x usr/bin/chfn",
         "setuid file: urwxr-xr-x usr/bin/passwd",
         "setgid file: grwxr-xr-x usr/sbin/unix_chkpwd",
-        "setuid file: urwxr-xr-x usr/bin/newgrp",
-        "setuid file: urwxr-xr-x usr/bin/gpasswd",
         "setuid file: urwxr-xr-x usr/bin/chsh",
-        "setuid file: urwxr-xr-x usr/bin/umount",
-        "setuid file: urwxr-xr-x usr/bin/su",
         "setuid file: urwxr-xr-x usr/bin/mount",
+        "setuid file: urwxr-xr-x usr/bin/su",
         "setgid file: grwxr-xr-x usr/bin/expiry",
-        "setuid file: urwxr-xr-x usr/bin/chfn"
+        "setuid file: urwxr-xr-x usr/bin/newgrp"
       ]
     }
   ]

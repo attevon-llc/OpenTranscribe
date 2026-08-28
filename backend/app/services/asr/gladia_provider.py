@@ -244,6 +244,16 @@ class GladiaProvider(ASRProvider):
                     timeout=300,
                 )
             self._raise_if_rate_limited(up, "upload")
+            # `raise_for_status()` only raises on >=400 -- a 3xx (unfollowed, since
+            # _guarded_request always sets allow_redirects=False) falls through as if
+            # it were a success, and the .json() call below then fails on whatever body
+            # the redirect response carries with an opaque error instead of naming the
+            # actual cause (issue #620 item... LOW bucket).
+            if 300 <= up.status_code < 400:
+                raise RuntimeError(
+                    f"Gladia upload returned an unfollowed redirect "
+                    f"(HTTP {up.status_code} → {up.headers.get('Location', '?')})"
+                )
             up.raise_for_status()
         except ASRRateLimitedError:
             raise
@@ -281,6 +291,11 @@ class GladiaProvider(ASRProvider):
                 "POST", f"{self._base}/v2/transcription", headers=self._hdr(), json=body, timeout=30
             )
             self._raise_if_rate_limited(job_r, "job submission")
+            if 300 <= job_r.status_code < 400:
+                raise RuntimeError(
+                    f"Gladia job submission returned an unfollowed redirect "
+                    f"(HTTP {job_r.status_code} → {job_r.headers.get('Location', '?')})"
+                )
             job_r.raise_for_status()
         except ASRRateLimitedError:
             raise
@@ -333,6 +348,11 @@ class GladiaProvider(ASRProvider):
                         allow_redirects=False,
                     )
                     self._raise_if_rate_limited(poll, "poll")
+                    if 300 <= poll.status_code < 400:
+                        raise RuntimeError(
+                            f"Gladia poll returned an unfollowed redirect "
+                            f"(HTTP {poll.status_code} → {poll.headers.get('Location', '?')})"
+                        )
                     poll.raise_for_status()
                     data = poll.json()
                 except ASRRateLimitedError:

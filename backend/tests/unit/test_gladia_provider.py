@@ -116,10 +116,17 @@ def _make_audio_file(tmp_path) -> str:
 class _FakeResponse:
     """Minimal stand-in for ``requests.Response``."""
 
-    def __init__(self, json_data: dict | None = None, text: str = "", status_code: int = 200):
+    def __init__(
+        self,
+        json_data: dict | None = None,
+        text: str = "",
+        status_code: int = 200,
+        headers: dict | None = None,
+    ):
         self._json = json_data if json_data is not None else {}
         self.text = text
         self.status_code = status_code
+        self.headers = headers if headers is not None else {}
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -722,3 +729,85 @@ def test_every_outbound_call_passes_allow_redirects_false(tmp_path, monkeypatch)
         assert call.kwargs.get("allow_redirects") is False
     assert session.get.call_count == 1
     assert session.get.call_args.kwargs.get("allow_redirects") is False
+
+
+# ── 15. A 3xx must not fall through as success (issue #620 LOW bucket) ──────────────────
+#
+# raise_for_status() only raises on >=400. Every call site sets allow_redirects=False, so a
+# server answering with an unfollowed 3xx used to reach .json() on a redirect response body
+# instead of a clear, named error.
+
+
+def test_upload_redirect_names_redirect_and_status_code(tmp_path, monkeypatch):
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider()
+    config = ASRConfig(enable_diarization=False, language="en")
+    upload_resp = _FakeResponse(
+        status_code=302, headers={"Location": "https://evil.example/redirected"}
+    )
+    _mock_session(monkeypatch, post_side_effect=lambda *a, **k: upload_resp)
+
+    with pytest.raises(RuntimeError, match="Gladia upload failed") as excinfo:
+        provider.transcribe(audio_path, config)
+
+    assert "redirect" in str(excinfo.value)
+    assert "302" in str(excinfo.value)
+
+
+def test_job_submission_redirect_names_redirect_and_status_code(tmp_path, monkeypatch):
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider()
+    config = ASRConfig(enable_diarization=False, language="en")
+
+    upload_resp = _FakeResponse(json_data={"audio_url": "https://cdn.gladia.io/audio123"})
+    job_resp = _FakeResponse(
+        status_code=307, headers={"Location": "https://evil.example/redirected"}
+    )
+    job_capture: dict = {}
+    _mock_session(
+        monkeypatch,
+        post_side_effect=_dispatch_post(upload_resp, job_resp, job_capture),
+    )
+
+    with pytest.raises(RuntimeError, match="Gladia job submission failed") as excinfo:
+        provider.transcribe(audio_path, config)
+
+    assert "redirect" in str(excinfo.value)
+    assert "307" in str(excinfo.value)
+
+
+def test_poll_redirect_is_logged_as_a_named_redirect_not_an_opaque_error(
+    tmp_path, monkeypatch, caplog
+):
+    """The poll loop swallows-and-continues on any exception (documented, unchanged
+    behavior — see test 6/test_poll_loop_never_caps_consecutive_failures_current_behavior),
+    so a redirect does not raise out of transcribe() here. What must change is the log
+    line: it must name the redirect and status code rather than an opaque JSON-parse
+    failure from trying to .json() a redirect response body.
+    """
+    audio_path = _make_audio_file(tmp_path)
+    provider = _make_provider()
+    config = ASRConfig(enable_diarization=False, language="en")
+
+    upload_resp = _FakeResponse(json_data={"audio_url": "https://cdn.gladia.io/audio123"})
+    job_resp = _FakeResponse(json_data={"result_url": f"{_BASE}/v2/transcription/job1"})
+    redirect_resp = _FakeResponse(
+        status_code=303, headers={"Location": "https://evil.example/redirected"}
+    )
+    job_capture: dict = {}
+    _mock_session(
+        monkeypatch,
+        post_side_effect=_dispatch_post(upload_resp, job_resp, job_capture),
+        get_side_effect=lambda *a, **k: redirect_resp,
+    )
+    monkeypatch.setattr("time.sleep", lambda *_a, **_k: None)
+
+    with caplog.at_level("WARNING"):
+        with pytest.raises(RuntimeError, match="Gladia transcription timed out"):
+            provider.transcribe(audio_path, config)
+
+    poll_warnings = [r.message for r in caplog.records if "Gladia poll error" in r.message]
+    assert poll_warnings, "expected at least one 'Gladia poll error' warning"
+    assert any("redirect" in msg and "303" in msg for msg in poll_warnings), (
+        f"expected a poll warning naming the redirect and status code, got: {poll_warnings[:3]}"
+    )

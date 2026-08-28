@@ -32,7 +32,7 @@
 #   --https-port N       Host port for the mTLS listener   (default: $PKI_HTTPS_PORT or 5182)
 #   --http-port N        Host port for the plain listener  (default: $PKI_HTTP_PORT  or 5187)
 #   --admin-cert NAME     Client cert whose DN gets admin  (default: pkiadmin; repeatable)
-#   --trusted-proxies CIDR[,CIDR...]  (default: 127.0.0.1/32,172.16.0.0/12)
+#   --trusted-proxies CIDR[,CIDR...]  (default: 127.0.0.1/32,172.16.0.0/12,192.168.0.0/16)
 #   --verify-revocation   Turn OCSP/CRL checking on        (default: off)
 #   --force-certs         Re-issue client certs even if present (rotates keys —
 #                          invalidates any browser-imported .p12)
@@ -53,7 +53,18 @@ usage() {
 HTTPS_PORT="${PKI_HTTPS_PORT:-5182}"
 HTTP_PORT="${PKI_HTTP_PORT:-5187}"
 ADMIN_CERTS=()
-TRUSTED_PROXIES="127.0.0.1/32,172.16.0.0/12"
+# 172.16.0.0/12 alone is not Docker's whole auto-assigned bridge-network range:
+# once its default pools (172.17.0.0/16-172.31.0.0/16) are exhausted by other
+# concurrent Docker networks on the host, the daemon spills into 192.168.0.0/16
+# chunks (issue #615) -- measured live on a host running ~34 unrelated Docker
+# networks, where even the ORDINARY non-fresh `opentranscribe_default` network
+# (not a --fresh deployment) landed at 192.168.96.0/20. Both ranges are private
+# RFC1918 space Docker itself hands out for its own bridge networks, never
+# attacker-reachable from outside the host, so widening to cover both does not
+# change the threat model this allowlist defends against (a header injected by
+# something outside our own docker network) -- it just stops the allowlist
+# silently missing the range Docker actually used.
+TRUSTED_PROXIES="127.0.0.1/32,172.16.0.0/12,192.168.0.0/16"
 VERIFY_REVOCATION="false"
 FORCE_CERTS=""
 PRINT_ONLY=""

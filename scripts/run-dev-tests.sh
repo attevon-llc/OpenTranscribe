@@ -79,6 +79,18 @@ if [[ "$RUN_BACKEND" == "true" || "$RUN_E2E" == "true" ]]; then
         echo -e "${RED}error:${NC} dev backend not reachable at :5174 — run ./opentr.sh start dev first" >&2
         exit "$EXIT_PRECONDITION"
     fi
+
+    # backend/tests/CLAUDE.md's mock-llm suites (test_mock_llm_fixture.py, test_llm_reasoning_*,
+    # test_chat_redactor_egress_style.py, ...) need the mock-llm container reachable, not just
+    # the base stack. Without --with-mock-llm here, they don't skip — they fail outright, every
+    # single run, on a bare `./opentr.sh start dev`. `start dev --with-mock-llm` is idempotent
+    # (docker compose up -d only touches what's missing/changed), so it's safe to always run
+    # this rather than trying to detect whether the overlay is already loaded.
+    echo -e "${YELLOW}==>${NC} ensuring mock-llm overlay is up (required by backend/e2e suites)"
+    if ! "$REPO_ROOT/opentr.sh" start dev --with-mock-llm >/dev/null 2>&1; then
+        echo -e "${RED}error:${NC} failed to bring up the mock-llm overlay — run ./opentr.sh start dev --with-mock-llm manually to see why" >&2
+        exit "$EXIT_PRECONDITION"
+    fi
 fi
 if [[ "$RUN_E2E" == "true" && "$E2E_SMOKE" == "false" ]]; then
     if ! curl -sf http://localhost:5173 >/dev/null 2>&1; then

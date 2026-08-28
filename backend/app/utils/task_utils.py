@@ -25,6 +25,11 @@ TASK_STATUS_PENDING = "pending"
 TASK_STATUS_IN_PROGRESS = "in_progress"
 TASK_STATUS_COMPLETED = "completed"
 TASK_STATUS_FAILED = "failed"
+#: A terminal, non-error outcome: the task ran but deliberately did no real work
+#: (e.g. an idempotency guard found the result already present, or a duplicate
+#: dispatch was caught mid-flight). Distinct from COMPLETED so the Tasks UI can
+#: tell "did the work" apart from "correctly decided not to" — see issue #622.
+TASK_STATUS_SKIPPED = "skipped"
 
 
 def create_task_record(
@@ -105,17 +110,23 @@ def update_task_status(
             if error_message:
                 media_file.last_error_message = error_message
 
-            # Clear active task if completed or failed
-            if status in [TASK_STATUS_COMPLETED, TASK_STATUS_FAILED]:
+            # Clear active task once it reaches any terminal state — completed,
+            # failed, or skipped. Leaving this set after a skip would misreport
+            # the file as still busy to `is_file_safe_to_delete` and friends,
+            # even though nothing is running any more (issue #622).
+            if status in [TASK_STATUS_COMPLETED, TASK_STATUS_FAILED, TASK_STATUS_SKIPPED]:
                 media_file.active_task_id = None
                 media_file.task_started_at = None
 
     db.commit()
     db.refresh(task)
 
-    # If task is completed or failed, check if we need to update the media file status
+    # Terminal states re-check the media file's aggregate status.
     task_media_file_id = task.media_file_id
-    if status in [TASK_STATUS_COMPLETED, TASK_STATUS_FAILED] and task_media_file_id:
+    if (
+        status in [TASK_STATUS_COMPLETED, TASK_STATUS_FAILED, TASK_STATUS_SKIPPED]
+        and task_media_file_id
+    ):
         update_media_file_from_task_status(db, int(task_media_file_id))
 
     return task  # type: ignore[no-any-return]

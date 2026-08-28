@@ -27,7 +27,6 @@ docs/INSTALL_NATIVE.md).
 
 from __future__ import annotations
 
-import base64
 import contextlib
 import logging
 import os
@@ -56,7 +55,12 @@ _TIMEOUT_S = float(os.environ.get("DIAR_NATIVE_TIMEOUT_S", "3600"))
 _GENDER_ENABLED = os.environ.get("DIAR_NATIVE_GENDER", "1").lower() not in ("0", "false", "no")
 
 
-def _post_json(url: str, payload: dict, timeout: float) -> dict:
+def post_json(url: str, payload: dict, timeout: float) -> dict:
+    """POST JSON to the sidecar and decode the reply.
+
+    Public because ``services/native_embedding_client`` speaks to the same sidecar
+    for speaker embeddings; one HTTP client for both, not two.
+    """
     import json
 
     req = urllib.request.Request(  # noqa: S310 — fixed internal http:// sidecar URL
@@ -67,6 +71,11 @@ def _post_json(url: str, payload: dict, timeout: float) -> dict:
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310  # nosec B310 — internal service
         return cast(dict, json.loads(resp.read()))
+
+
+def default_base_url() -> str:
+    """The configured sidecar URL (``DIAR_NATIVE_URL``)."""
+    return _DEFAULT_URL
 
 
 def sidecar_healthy(base_url: str | None = None) -> bool:
@@ -184,7 +193,7 @@ class NativeSpeakerDiarizer:
                     wf.setframerate(16000)
                     wf.writeframes(pcm.tobytes())
 
-                out = _post_json(
+                out = post_json(
                     f"{self.base_url}/diarize",
                     # Gender rides this call: the sidecar has the decoded audio and the
                     # speaker turns in hand, so classifying costs no second fetch or decode.
@@ -246,28 +255,32 @@ class NativeSpeakerDiarizer:
         return diarize_df, overlap_info, native_embeddings
 
     def embed_window(self, audio: np.ndarray, start: float, end: float) -> np.ndarray | None:
-        """Same padding + never-raise semantics as SpeakerDiarizer.embed_window."""
+        """Same padding + never-raise semantics as SpeakerDiarizer.embed_window.
+
+        ⚠️ The clip is fitted to the sidecar's fixed 10 s model window before it is
+        sent (``native_embedding_client.fit_to_window``). Posting the raw slice —
+        which is what this did until issue #571 — let the sidecar zero-pad it to
+        10 s and pool the padding with mask weight 1, so a 0.8 s re-check window
+        came back as an embedding of mostly silence: measured cosine against the
+        in-process model on the same clip was **+0.012 at 0.8 s** (and +1.000 only
+        at exactly 10 s). Repeat-filling the window instead keeps every pooled
+        frame real speech from the disputed word, and restores agreement with the
+        in-process path to 0.989.
+        """
         if self._fallback is not None:
             # This job already fell back mid-diarization; keep the re-check on the same
             # engine that produced the segments.
             return self._fallback.embed_window(audio, start, end)
-        try:
-            sr = 16000
-            min_samples = int(0.8 * sr)
-            s, e = int(start * sr), int(end * sr)
-            if e - s < min_samples:
-                mid = (s + e) // 2
-                s, e = mid - min_samples // 2, mid + min_samples // 2
-            s, e = max(0, s), min(len(audio), e)
-            if e - s < min_samples // 2:
-                return None
-            clip = np.ascontiguousarray(audio[s:e]).astype("<f4")
-            out = _post_json(
-                f"{self.base_url}/embed_window",
-                {"samples_b64": base64.b64encode(clip.tobytes()).decode()},
-                timeout=60,
-            )
-            return np.asarray(out["embedding"], dtype=np.float32).reshape(-1)
-        except Exception as exc:  # noqa: BLE001 — never break diarization on a re-check embed
-            logger.debug("native embed_window failed (%s); skipping", exc)
+        from app.services.native_embedding_client import embed_waveform
+
+        sr = 16000
+        min_samples = int(0.8 * sr)
+        s, e = int(start * sr), int(end * sr)
+        if e - s < min_samples:
+            mid = (s + e) // 2
+            s, e = mid - min_samples // 2, mid + min_samples // 2
+        s, e = max(0, s), min(len(audio), e)
+        if e - s < min_samples // 2:
             return None
+        # embed_waveform never raises: it returns None on any sidecar failure.
+        return embed_waveform(np.ascontiguousarray(audio[s:e]), base_url=self.base_url)

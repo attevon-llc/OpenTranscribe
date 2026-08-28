@@ -94,6 +94,16 @@ MAX_SPEAKERS=20        # Maximum speakers to detect (no hard limit, can increase
 # Embedding & Fingerprinting
 EMBEDDING_MODE=auto    # or: v3, v4 (which embedding model to use)
 
+# Where v4 (256-dim) voiceprints are computed. Default true: they come from the
+# diarizer's own centroids, or from the diar-native sidecar when a separate
+# extraction is needed — both run the same WeSpeaker ResNet34-LM weights the
+# in-process model does, so this is a deployment choice, not an accuracy one.
+# Set false to force the in-process PyAnnote model (the escape hatch; costs a
+# 40-60s model load and ~500MB VRAM per worker). v3 (512-dim) installs always use
+# the in-process model — `pyannote/embedding` is a different network that the
+# sidecar does not serve.
+USE_NATIVE_SPEAKER_EMBEDDINGS=true
+
 # Model Caching & Warmup
 WARM_CACHE_ENABLED=false  # Pre-load speaker models on startup for faster first transcription
 MODEL_CACHE_DIR=./models

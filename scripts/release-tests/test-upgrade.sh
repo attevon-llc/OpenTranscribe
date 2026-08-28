@@ -1292,6 +1292,23 @@ phase_13_stage_rollback_tree() {
     # compose + old images moving via .env alone) rather than plain `update`.
     cp "$stage_after/docker-compose.yml" "$stage_rollback/docker-compose.yml"
     cp "$REPO_ROOT/docker-compose.prod.yml" "$stage_rollback/docker-compose.prod.yml"
+
+    # Same fix as phase 07's $stage_after (issue #909bfc17): docker-compose.prod.yml
+    # declares `build: context: ./docs-site` for the docs service. With pull_policy
+    # forced to never below and no local docs-site/ to build from, `docker compose up`
+    # fails to prepare the docs build context. Unlike the after-stack case — where a
+    # stale docs container was already running and the build failure only meant its
+    # own upgrade was silently skipped — phase 15's restore has already stopped the
+    # WHOLE app (issue #610), so here there is nothing to fall back to: the single
+    # `docker compose up` batch covering frontend + celery workers + flower + docs
+    # aborts entirely on the docs build failure and NONE of them start (issue #618) —
+    # not just docs. A real user always has docs-site/ in their checkout; only this
+    # staged rehearsal tree needs it copied in explicitly.
+    if [[ -d "$REPO_ROOT/docs-site" ]]; then
+        rm -rf "$stage_rollback/docs-site"
+        cp -r "$REPO_ROOT/docs-site" "$stage_rollback/docs-site"
+    fi
+
     cp_inject_labels "$stage_rollback/docker-compose.prod.yml" "$TEST_LABEL"
     cp_force_pull_policy "$stage_rollback/docker-compose.prod.yml" never
     if [[ "$TEST_USE_GPU" == "true" && -f "$stage_after/docker-compose.gpu.yml" ]]; then
@@ -1579,21 +1596,35 @@ phase_16_rollback_and_assert() {
     as_assert "B-3: rollback tells the operator to restore a pre-upgrade backup" \
         '[[ "$rollback_output" == *backup* ]]'
 
-    # B-4: EVERY opentranscribe-* container resolves :$FROM_VERSION, enumerated
-    # from `docker ps` — not a hardcoded service list (the same drift class
-    # test_every_prod_service_image_is_tag_pinnable guards statically).
+    # B-4: EVERY APP-OWNED opentranscribe-* container resolves :$FROM_VERSION,
+    # enumerated from `docker ps` — not a hardcoded service list (the same
+    # drift class test_every_prod_service_image_is_tag_pinnable guards
+    # statically). Scoped to images from the davidamacey/opentranscribe-*
+    # Docker Hub repo (backend/frontend/celery-*/flower/docs — every service
+    # that resolves `${OT_IMAGE_TAG:-latest}` in docker-compose.prod.yml), NOT
+    # every container whose NAME starts with opentranscribe-: postgres,
+    # opensearch, minio, and redis also get that container_name prefix (see
+    # docker-compose.yml) but are third-party infra images with their own
+    # independent version pins (postgres:17.5-alpine etc.) that never move
+    # per OpenTranscribe release — checking them against FROM_VERSION was
+    # always going to fail regardless of whether the rollback worked.
     local mismatched=() cname image
     while IFS= read -r cname; do
         [[ -n "$cname" ]] || continue
         image="$(docker inspect "$cname" --format '{{.Config.Image}}' 2>/dev/null || echo "")"
         case "$image" in
-            *":${FROM_VERSION}") ;;
-            *) mismatched+=("$cname=$image") ;;
+            davidamacey/opentranscribe-*)
+                case "$image" in
+                    *":${FROM_VERSION}") ;;
+                    *) mismatched+=("$cname=$image") ;;
+                esac
+                ;;
+            *) ;; # third-party infra image, not app-versioned — see comment above
         esac
     done < <(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-')
-    as_assert "B-4: every opentranscribe-* container resolves :${FROM_VERSION}" \
+    as_assert "B-4: every app-owned opentranscribe-* image resolves :${FROM_VERSION}" \
         '(( ${#mismatched[@]} == 0 ))'
-    [[ ${#mismatched[@]} -gt 0 ]] && gr_warn "images not on ${FROM_VERSION}: ${mismatched[*]}"
+    [[ ${#mismatched[@]} -gt 0 ]] && gr_warn "app images not on ${FROM_VERSION}: ${mismatched[*]}"
 
     API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
     export API_BASE
@@ -1722,9 +1753,20 @@ print(d.get("name") or (d.get("speaker") or {}).get("name", ""))
         as_record SKIP "R-5: post-backup upload absent" "login to the rolled-back stack failed, see B-6"
     fi
 
+    # B-8: nothing above waits for the FROM image's frontend container
+    # specifically (only the backend, via ac_wait_for_health above) — wait for
+    # it to answer before checking it, then guard the actual check too so any
+    # curl failure here is recorded as a FAIL rather than crashing the whole
+    # script under set -e (issue #618, same class as #617's
+    # dbs_diff_fingerprints crash).
+    local frontend_url="http://localhost:${TEST_FRONTEND_PORT}/"
+    ac_wait_for_frontend "$frontend_url" 900 || true
     local frontend_code
-    frontend_code="$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_FRONTEND_PORT}/")"
-    as_assert_http "B-8: frontend reachable on the FROM image" 200 "$frontend_code"
+    if frontend_code="$(curl -o /dev/null -s -w '%{http_code}' "$frontend_url")"; then
+        as_assert_http "B-8: frontend reachable on the FROM image" 200 "$frontend_code"
+    else
+        as_record FAIL "B-8: frontend reachable on the FROM image" "curl failed to reach $frontend_url"
+    fi
 }
 
 phase_17_roll_forward_again() {
@@ -1792,7 +1834,19 @@ print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
 
 phase_18_summary() {
     TEST_REPORT_FILE="${TEST_REPORT_FILE:-$TEST_ROOT/REPORT.md}"
-    as_summary | tee -a "$TEST_REPORT_FILE"
+    # as_summary deliberately returns 1 when any assertion FAILed — that is
+    # how 65-rehearse.sh's `... test-upgrade.sh --yes || upgrade_rc=$?` knows
+    # the run failed. But under set -o pipefail (set -euo pipefail, line 55),
+    # a non-zero return from EITHER stage of `as_summary | tee -a ...` trips
+    # set -e right here, on the spot — same class of bug as #617/#618, just at
+    # the very last phase: it skipped the "Finished:" line, 18.done, and the
+    # driver's closing banner below, discovered only because #618's other two
+    # fixes let a real run finally reach this phase. RELEASE_TEST_EXIT_CODE
+    # (global, read by the driver after this phase returns) carries the
+    # intended non-zero verdict forward WITHOUT letting it abort the script
+    # before the report is finished and phase 18 is marked done.
+    RELEASE_TEST_EXIT_CODE=0
+    as_summary | tee -a "$TEST_REPORT_FILE" || RELEASE_TEST_EXIT_CODE=$?
     {
         echo ""
         echo "Finished: $(date -Iseconds)"
@@ -1836,3 +1890,11 @@ phase 18 phase_18_summary
 echo
 echo "Done. Report: $TEST_ROOT/REPORT.md"
 echo "Stack left running for inspection. Tear down with: $0 --cleanup"
+
+# Propagate phase 18's assertion verdict as the script's own exit code (see
+# phase_18_summary's comment) — deferred to here, after the report is fully
+# written and every phase is marked done, rather than however set -e would
+# have aborted mid-summary. Defaults to 0 for a resumed run where phase 18
+# was already marked done and skipped (phase_check short-circuits it, so
+# RELEASE_TEST_EXIT_CODE is never assigned).
+exit "${RELEASE_TEST_EXIT_CODE:-0}"

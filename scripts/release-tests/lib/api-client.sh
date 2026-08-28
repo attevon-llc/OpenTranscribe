@@ -44,6 +44,36 @@ ac_wait_for_health() {
     ac_die "backend never reached healthy state within ${timeout}s"
 }
 
+ac_wait_for_frontend() {
+    # Poll a frontend URL until it answers with ANY http status (not a
+    # connection failure) or timeout (default 15 minutes, matching
+    # ac_wait_for_health's ceiling). Nothing else in this harness waits for
+    # the frontend container specifically before checking it (issue #618) —
+    # unlike the backend, whose /health readiness is awaited via
+    # ac_wait_for_health before any of its endpoints are probed.
+    #
+    # curl exits non-zero on a connection failure (e.g. exit 7, container not
+    # listening yet) as opposed to just a non-2xx HTTP status, so this loop
+    # treats "curl succeeded at all" as readiness and leaves judging the
+    # actual status code to the caller's own assertion. Deliberately NOT
+    # fatal on timeout (unlike ac_wait_for_health): the caller guards its own
+    # curl/as_assert_http so an unready frontend is recorded as a FAIL, not a
+    # script-ending crash.
+    local url="$1"
+    local timeout="${2:-900}"
+    local deadline=$(( $(date +%s) + timeout ))
+    ac_log "waiting up to ${timeout}s for $url to answer"
+    while (( $(date +%s) < deadline )); do
+        if curl -o /dev/null -s --max-time 5 "$url" 2>/dev/null; then
+            ac_log "frontend reachable"
+            return 0
+        fi
+        sleep 5
+    done
+    ac_warn "frontend never answered within ${timeout}s"
+    return 1
+}
+
 ac_register_admin() {
     # First-user registration becomes super-admin. Idempotent: returns silently
     # if registration fails because the user already exists.

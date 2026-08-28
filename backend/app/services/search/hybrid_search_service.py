@@ -1620,28 +1620,37 @@ class HybridSearchService:
 
         Single-word queries use fuzziness for typo tolerance plus an exact
         match boost so precise hits still outrank fuzzy ones.  Multi-word
-        queries deliberately skip the fuzzy clause and instead add cross-field
-        matching (terms can match different fields) and phrase proximity with
-        slop.  Quoted phrases bypass fuzziness entirely.
+        queries add cross-field matching (terms can match different fields),
+        phrase proximity with slop, AND a typo-tolerant clause that requires
+        every term to fuzzily match (see below) rather than any one of them.
+        Quoted phrases bypass fuzziness entirely.
 
-        The fuzzy clause is single-word-only on purpose (issue #606): OpenSearch's
-        ``fuzziness: AUTO`` on a multi-term ``multi_match`` matches if ANY one term
-        fuzzily matches ANY token in the field (no "all terms" requirement), so a
-        two-word query where only one word happens to have a same-length,
-        edit-distance-2 near neighbour elsewhere in the corpus scores a full
-        "keyword match" for the whole phrase — even when the other word has zero
-        support in that document. Measured: the stemmed query term "explor"
+        An OR-fuzzy clause is single-word-only on purpose (issue #606): OpenSearch's
+        ``fuzziness: AUTO`` on a multi-term ``multi_match`` with the default OR
+        operator matches if ANY one term fuzzily matches ANY token in the field (no
+        "all terms" requirement), so a two-word query where only one word happens to
+        have a same-length, edit-distance-2 near neighbour elsewhere in the corpus
+        scores a full "keyword match" for the whole phrase — even when the other word
+        has zero support in that document. Measured: the stemmed query term "explor"
         (from "exploration") sits at Levenshtein distance 2 from the unrelated
         stemmed term "export" (both 6 characters, so within ``fuzziness: AUTO``'s
         tolerance and past ``prefix_length: 2``'s "ex" prefix requirement), so
         "space exploration" fuzzy-matched every chunk containing "export" in a
         file with no mention of "space" at all — a false keyword hit that
         outranked the genuinely topical (semantic-only) result and every other
-        candidate. Cross-field and phrase-slop matching (below) have no
-        fuzziness and cannot produce this kind of false positive; they are the
-        multi-word queries' typo tolerance instead — full exact-token support
-        for at least one term rather than a same-length edit-distance match on
-        a single stemmed word.
+        candidate.
+
+        Multi-word queries therefore get a SECOND, additive fuzzy clause instead
+        (issue #606 follow-up finding 2) that forces ``operator: "and"`` alongside
+        ``fuzziness: AUTO`` — every term must fuzzily match *something* in the same
+        field before the clause can fire, which closes the #606 false-positive class
+        (a single lucky near-neighbour can no longer carry the whole query) while
+        still tolerating a genuine typo in any one word. This clause is additive
+        alongside cross-field and phrase-slop, never a replacement for them:
+        replacing the OR clause with an AND-fuzzy one measured 0 results for a
+        legitimate non-typo multi-word query on the live index, because requiring
+        every term to satisfy the *same* fuzzy leg is stricter than either
+        cross-field OR or phrase-slop alone.
 
         Args:
             query: Search query text.
@@ -1653,9 +1662,15 @@ class HybridSearchService:
         if not (query and query.strip()):
             return {"match_all": {}}
 
-        words = [w for w in query.split() if len(w) >= 2]
+        # Word count for the multi-word decision must come from the RAW query
+        # split, not a length-filtered one: filtering short tokens (e.g. "e",
+        # "x") before counting can make a genuinely multi-word query like
+        # "x exploration" read as single-word once its short token is
+        # dropped, wrongly re-enabling the single-word fuzzy clause below and
+        # reopening the exact false-positive class #606 fixed (issue #606
+        # follow-up finding 1).
         is_phrase_query = query.startswith('"') and query.endswith('"')
-        is_multi_word = len(words) > 1
+        is_multi_word = len(query.split()) > 1
 
         should_clauses: list[dict[str, Any]] = []
 
@@ -1719,6 +1734,32 @@ class HybridSearchService:
                             "type": "phrase",
                             "slop": 3,
                             "boost": 2.0,
+                        }
+                    }
+                )
+                # Typo tolerance for multi-word queries (issue #606 follow-up
+                # finding 2): additive alongside cross-field/phrase above, never
+                # a replacement — see the docstring for why `operator: "and"`
+                # rather than plain fuzziness is required here.
+                #
+                # prefix_length 1, not the single-word clause's 2: measured live,
+                # a same-length adjacent-letter transposition near the start of a
+                # word (e.g. "space" -> "sapce") changes BOTH of the first two
+                # characters, so prefix_length 2 demands an exact match on a
+                # prefix the typo itself corrupted and silently excludes exactly
+                # the typo class this clause exists to catch. prefix_length 1
+                # (first character only) still found real fuzzy candidates in
+                # every case measured, and the `operator: "and"` requirement
+                # above is what keeps false positives down here, not the prefix.
+                should_clauses.append(
+                    {
+                        "multi_match": {
+                            "query": query,
+                            "fields": search_fields,
+                            "type": "best_fields",
+                            "operator": "and",
+                            "fuzziness": "AUTO",
+                            "prefix_length": 1,
                         }
                     }
                 )

@@ -466,6 +466,17 @@ case "${1:-help}" in
     start)
         check_environment
         fix_model_cache_permissions
+        # Same first-run fix as opentr.sh's start_app()/reset_and_init() (issue #614):
+        # a genuinely fresh `cp .env.example .env` ships MINIO_KMS_SECRET_KEY as an
+        # unusable placeholder, which crash-loops MinIO on its very first boot. #613
+        # promoted this script to the real production entry point, so it needs the
+        # same first-run protection -- guarded (not require_db_helpers' hard failure)
+        # because an install whose scripts/common.sh predates this fix should still be
+        # able to `start`; it just doesn't get the auto-fix and hits the pre-existing
+        # MinIO KMS error, exactly as it did before common.sh was ever sourced here.
+        if declare -F ensure_minio_kms_secret >/dev/null; then
+            ensure_minio_kms_secret ".env"
+        fi
         echo -e "${YELLOW}🚀 Starting OpenTranscribe...${NC}"
         compose_files=$(get_compose_files)
         docker compose $compose_files up -d

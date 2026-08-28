@@ -58,12 +58,31 @@ ADMIN_CERTS=()
 # concurrent Docker networks on the host, the daemon spills into 192.168.0.0/16
 # chunks (issue #615) -- measured live on a host running ~34 unrelated Docker
 # networks, where even the ORDINARY non-fresh `opentranscribe_default` network
-# (not a --fresh deployment) landed at 192.168.96.0/20. Both ranges are private
-# RFC1918 space Docker itself hands out for its own bridge networks, never
-# attacker-reachable from outside the host, so widening to cover both does not
-# change the threat model this allowlist defends against (a header injected by
-# something outside our own docker network) -- it just stops the allowlist
-# silently missing the range Docker actually used.
+# (not a --fresh deployment) landed at 192.168.96.0/20. 172.16.0.0/12 IS
+# never attacker-reachable from outside the host -- it is not a range anything
+# routes to a home/office LAN. 192.168.0.0/16 is different: it is the standard
+# private range issued by ordinary consumer/office routers, so on a machine
+# whose LAN happens to overlap it, this value is reachable from every OTHER
+# device on that LAN, not just from this host's own Docker bridges. This
+# value is exported as BOTH PKI_TRUSTED_PROXIES and RATE_LIMIT_TRUSTED_PROXIES
+# into the whole stack (opentr.sh's add_pki_overlay sources the fragment this
+# script writes), so a LAN peer within 192.168.0.0/16 could spoof
+# X-Forwarded-For to a `--with-pki` deployment and evade per-IP rate
+# limiting/lockout, or poison the audit trail's recorded client IP -- IF this
+# fixture's default were ever reused somewhere reachable from a real LAN.
+# It is not, today: this script only backs `--with-pki` test/dev runs, and
+# production never loads it -- `backend/app/core/config.py`'s
+# PKI_TRUSTED_PROXIES default is "", and docker-compose.{prod,nginx,pki,
+# pki-dev}.yml all default RATE_LIMIT_TRUSTED_PROXIES to
+# 127.0.0.1/32,172.16.0.0/12 with no 192.168.0.0/16 baked in anywhere outside
+# this file (verified: `rg PKI_TRUSTED_PROXIES` across the repo). So this is a
+# test-fixture convenience whose blast radius is bounded to isolated test/dev
+# deployments exposed on a LAN -- not something with no attacker-reachable
+# scope at all. Widening it is still the right default (a missing entry in
+# this allowlist is a spurious PKI test failure every time Docker spills into
+# 192.168.0.0/16, which is the failure #615 fixed), but a deployment operator
+# choosing to expose a `--with-pki` stack beyond localhost on a real LAN
+# should narrow --trusted-proxies rather than rely on this default.
 TRUSTED_PROXIES="127.0.0.1/32,172.16.0.0/12,192.168.0.0/16"
 VERIFY_REVOCATION="false"
 FORCE_CERTS=""

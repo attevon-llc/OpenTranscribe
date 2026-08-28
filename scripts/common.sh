@@ -91,6 +91,25 @@ ensure_minio_kms_secret() {
   local env_file="${1:-.env}"
   [ -f "$env_file" ] || return 0
 
+  # Guard against ambiguous input BEFORE reading "the" current value: two matching
+  # lines (a real key first, a leftover placeholder line second, or vice versa) means
+  # `tail -1` and the sed replace-all below can silently pick or rewrite the wrong one
+  # -- possibly clobbering a real, already-in-use key. Fail closed and name the fix
+  # rather than guess.
+  # `|| true` INSIDE the substitution, not after the assignment: `local match_count`
+  # combined with `=$(...)` on one line reports the `local` builtin's own exit status
+  # under `set -e`, but split as `local match_count; match_count=$(...)` the
+  # assignment's status IS grep's -- and grep exits 1 on zero matches, which would
+  # abort this whole function under opentranscribe.sh's `set -e`. Keeping the guard
+  # inside the substitution keeps the count correct either way.
+  local match_count
+  match_count=$(grep -cE '^MINIO_KMS_SECRET_KEY=' "$env_file" || true)
+  if [ "$match_count" -gt 1 ]; then
+    echo "❌ Error: ${env_file} has ${match_count} lines starting with MINIO_KMS_SECRET_KEY= -- refusing to guess which one is real."
+    echo "   Remove the duplicate line(s) by hand, then re-run."
+    return 1
+  fi
+
   local current
   current=$(grep -E '^MINIO_KMS_SECRET_KEY=' "$env_file" | tail -1 | cut -d'=' -f2- | tr -d ' "')
 
@@ -98,8 +117,20 @@ ensure_minio_kms_secret() {
     *CHANGE_ME*)
       local generated
       generated="opentranscribe-key:$(openssl rand -base64 32)"
+      # No confirmation prompt for this .env edit -- deliberate deviation from this
+      # repo's usual ".env is never overwritten without confirmation" rule, because the
+      # value being replaced is ONLY ever the shipped placeholder (never a real key --
+      # see the case guard above and the "left alone" comment below), so there is
+      # nothing of the operator's to lose. What IS consequential is the generated key
+      # itself: MinIO decrypts every object it wrote under KMS auto-encryption with
+      # whatever key was active at write time, so losing this value after real data
+      # has been encrypted with it makes that data permanently unreadable. Warn loudly
+      # rather than silently.
       sed -i "s|^MINIO_KMS_SECRET_KEY=.*|MINIO_KMS_SECRET_KEY=${generated}|" "$env_file"
       echo "🔑 Generated MINIO_KMS_SECRET_KEY in ${env_file} (replaced the .env.example placeholder) so MinIO KMS auto-encryption can boot."
+      echo "⚠️  BACK UP this value now: ${env_file}'s MINIO_KMS_SECRET_KEY. MinIO decrypts every"
+      echo "   object written under KMS auto-encryption with this exact key -- if it is lost,"
+      echo "   everything encrypted with it becomes permanently unreadable, with no recovery."
       # opentr.sh already `set -a; source ./.env`'d the placeholder into this
       # shell's environment before this runs, and docker compose's variable
       # interpolation prefers an inherited shell env var over re-reading .env
@@ -1217,9 +1248,42 @@ restore_database() {
     fi
   fi
 
-  # Stop services that use the database
+  # Serialise the destructive portion of a restore. Two concurrent restore_database
+  # calls would both have already read current_head and expected_head above, both take
+  # their own safety dump, and the second one's DROP DATABASE ... WITH (FORCE) can kill
+  # the first's replay mid-transaction -- the same class of hazard
+  # run-mutation-tests.sh --verify's per-module flock exists for, and the same fix:
+  # non-blocking acquire, then a trap that releases on INT/TERM/ERR/EXIT so every one of
+  # this function's many `exit N` failure branches below still releases the lock (a
+  # `return`-based cleanup would not fire for those -- they end the process, not just
+  # this function). ./backups already exists (mkdir -p above), so the lock file lives
+  # there rather than needing its own directory.
+  local restore_lock_file="./backups/.restore.lock"
+  local restore_lock_fd
+  exec {restore_lock_fd}>"$restore_lock_file"
+  if ! flock -n "$restore_lock_fd"; then
+    echo "❌ Error: another restore is already in progress (lock: $restore_lock_file)."
+    echo "   Wait for it to finish, then retry. The database was NOT touched."
+    exec {restore_lock_fd}>&-
+    [ -n "$temp_sql" ] && rm -f "$temp_sql"
+    exit 3
+  fi
+  # shellcheck disable=SC2064  # expand $restore_lock_fd NOW (a literal fd number), not
+  # when the trap fires -- matches run-mutation-tests.sh's verify_survivor trap.
+  trap "flock -u $restore_lock_fd 2>/dev/null; exec $restore_lock_fd>&- 2>/dev/null" INT TERM ERR EXIT
+
+  # Stop services that use the database. Checked, like every other destructive step in
+  # this function (the safety dump and the drop/recreate right below both are) -- an
+  # unchecked stop here would let the DROP DATABASE that follows proceed while
+  # backend/celery are still connected to the database being dropped, e.g. on a
+  # version-skewed install whose compose file is missing one of these service names.
   # shellcheck disable=SC2086
-  docker compose $compose_files stop backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
+  if ! docker compose $compose_files stop backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat; then
+    echo "❌ Could not stop application services — refusing to proceed with restore."
+    echo "   The database was NOT touched."
+    [ -n "$temp_sql" ] && rm -f "$temp_sql"
+    exit 1
+  fi
 
   # Unquoted on purpose: $compose_files is a pre-split "-f a.yml -f b.yml" chain, the same
   # word-splitting idiom every other compose call site in this file relies on.
@@ -1329,7 +1393,23 @@ restore_database() {
   fi
   echo "ℹ️  MinIO and OpenSearch were NOT rolled back — reindex from Admin → Search if the"
   echo "   restored database's file list differs from what MinIO/OpenSearch currently have."
-  [ -n "$safety_dump_file" ] && echo "   Pre-restore safety dump of the database this replaced: $safety_dump_file"
+  if [ -n "$safety_dump_file" ]; then
+    echo "   Pre-restore safety dump of the database this replaced: $safety_dump_file"
+  fi
+
+  # Release the destructive-portion lock explicitly on this, the one path through the
+  # function that returns instead of exiting (every failure branch above calls `exit N`,
+  # which the INT/TERM/ERR/EXIT trap set above already covers).
+  flock -u "$restore_lock_fd" 2>/dev/null
+  trap - INT TERM ERR EXIT
+
+  # Explicit, not left to the truthiness of the `echo` above: `[ -n "$safety_dump_file" ]`
+  # is false (exit 1) whenever --no-safety-dump was used, and this was the LAST statement
+  # in the function -- so its exit status silently became restore_database's own return
+  # code, even on a completely successful restore. opentranscribe.sh's caller does
+  # `rc=$?; exit $rc` right after this call, so `restore --yes --no-safety-dump <file>`
+  # exited 1 after a clean restore, purely from that unrelated `[ -n ... ]` check.
+  return 0
 }
 
 # Display quick reference commands

@@ -628,8 +628,10 @@ gr_preflight() {
 
 # gr_assert_target_is_test_database CONTAINER EXPECTED_DB ENV_FILE
 #   Called immediately before every destructive DB operation in the rollback
-#   tail (the DROP DATABASE inside `opentr.sh restore`, and the swap
-#   `opentranscribe.sh update --rollback` performs). All four conditions below
+#   tail (the DROP DATABASE inside `restore_database`, invoked here through
+#   `opentranscribe.sh restore` — the shipped production command, issue #613 —
+#   and the swap `opentranscribe.sh update --rollback` performs). All four
+#   conditions below
 #   must hold or it dies — any inability to determine an answer counts as
 #   "this is live" (fail closed, same policy as gr_volume_has_live_marker).
 gr_assert_target_is_test_database() {
@@ -687,9 +689,11 @@ gr_assert_target_is_test_database() {
 
 # ─── The repo's own ./backups/ is never a test artifact ─────────────────────
 #
-# `opentr.sh backup`/`restore` use bare `docker compose` with no `-f` chain and
+# `backup`/`restore` (scripts/common.sh's shared implementation, invoked here through
+# the staged `opentranscribe.sh` — issue #613; `opentr.sh` uses the identical
+# relative-CWD write but a bare `docker compose` with no `-f` chain of its own)
 # write ./backups relative to CWD. A staging mistake that ran the staged
-# opentr.sh from the repo root — or forgot to stage it at all — would write
+# opentranscribe.sh from the repo root — or forgot to stage it at all — would write
 # this run's dumps (containing every seeded user's transcripts in plaintext)
 # into the developer's own checkout. Same measured-not-asserted pattern as
 # gr_fingerprint_repo_env: fingerprint before, verify after, fail loudly on any
@@ -727,7 +731,7 @@ gr_assert_repo_backups_untouched() {
         gr_die "the repo's ./backups directory CHANGED during this release test.
            before: $GR_REPO_BACKUPS_FINGERPRINT
            after:  $now
-           A release test must stage 'opentr.sh backup'/'restore' under TEST_ROOT
+           A release test must stage 'opentranscribe.sh backup'/'restore' under TEST_ROOT
            and never invoke them from the repo root. See gr_assert_not_repo_cwd."
     fi
     gr_ok "repo ./backups directory unchanged"
@@ -736,10 +740,10 @@ gr_assert_repo_backups_untouched() {
 # gr_assert_not_repo_cwd [DIR]
 #   Refuses to proceed if DIR (default: $PWD) resolves to the repo root, any
 #   other GR_PROTECTED_PATHS entry, or anywhere outside TEST_ROOT. Call this
-#   immediately before invoking a staged copy of opentr.sh: it has no -f
-#   compose chain of its own and writes ./backups relative to CWD, so running
-#   it from the wrong directory would drop the database of — or write dumps
-#   into — the live deployment's own tree.
+#   immediately before invoking a staged copy of opentranscribe.sh (or opentr.sh):
+#   both write ./backups relative to CWD, so running either from the wrong
+#   directory would drop the database of — or write dumps into — the live
+#   deployment's own tree.
 gr_assert_not_repo_cwd() {
     local dir="${1:-$PWD}"
     local resolved

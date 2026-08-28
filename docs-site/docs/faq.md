@@ -435,7 +435,7 @@ It depends on the store:
   search and AI features require the backend to read it. PostgreSQL has no built-in at-rest
   encryption, so use **full-disk encryption** (LUKS/dm-crypt, FileVault, BitLocker) or place
   the data volumes on an encrypted filesystem.
-- **Backups**: use `./opentr.sh backup --encrypt` for GPG AES-256 encrypted dumps.
+- **Backups**: use `./opentranscribe.sh backup --encrypt` for GPG AES-256 encrypted dumps.
 
 See [Security Hardening](operations/security-hardening.md) for the complete picture.
 

@@ -828,6 +828,469 @@ pg_restore_restart_decision() {
   echo "hold:schema-mismatch"
 }
 
+#######################
+# BACKUP / RESTORE (issue #613)
+#######################
+#
+# Moved here from opentr.sh so both front ends — opentr.sh (a git checkout) and
+# opentranscribe.sh (the shipped production entry point, release-manifest.txt:59) — share
+# exactly one implementation of the DROP DATABASE restore path. scripts/common.sh already
+# ships to every production install (release-manifest.txt:52, exec) and already holds the
+# whole #599/#600/#610 restore-safety core these two functions call into.
+#
+# Every function below takes two new LEADING parameters, on top of the primitives' existing
+# "first argument is an exec prefix" contract:
+#
+#   $1 compose_files  the `-f` chain to address the running stack, unquoted and
+#                      word-split at every `docker compose $compose_files ...` call site
+#                      (# shellcheck disable=SC2086, the same idiom opentranscribe.sh already
+#                      uses at its own compose call sites). "" for opentr.sh — a repo clone
+#                      auto-loads docker-compose.override.yml, which supplies image:/build:
+#                      for every application service, so bare `docker compose` is
+#                      byte-identical to what opentr.sh ran before this move.
+#                      "$(get_compose_files)" for opentranscribe.sh. MEASURED (issue #613):
+#                      the base compose file ALONE is not a valid compose project — it
+#                      declares image: for only postgres/minio/redis/opensearch, and neither
+#                      image: nor build: for backend, the nine celery-*, frontend, flower or
+#                      docs — so `ps`, `exec` and `stop` (the three verbs restore needs) all
+#                      fail before touching a container without a real chain.
+#   $2 frontend_cmd   "./opentr.sh" | "./opentranscribe.sh" — used ONLY in operator-facing
+#                      next-step messages, so a production install is never told to run a
+#                      script it does not have.
+#
+# Copying this logic into opentranscribe.sh instead was rejected: two divergent
+# implementations of a destructive DB path, and every existing static detector
+# (test_opentr_restore_safety.py, test_backup_restore_format_contract.py) keys on
+# extract_function(source, "restore_database") — a copy would be covered by none of them.
+
+# Function to backup the database
+# Usage: backup_database COMPOSE_FILES FRONTEND_CMD [--encrypt]
+#   --encrypt: pipe pg_dump straight into gpg (AES-256, passphrase prompt) so the
+#              plaintext dump never touches disk. Backups contain every user's
+#              transcripts - encrypt anything that leaves this machine.
+backup_database() {
+  local compose_files="$1"; shift
+  local frontend_cmd="$1"; shift
+
+  ENCRYPT_BACKUP=false
+  if [[ "$1" == "--encrypt" ]]; then
+    ENCRYPT_BACKUP=true
+    if ! command -v gpg &> /dev/null; then
+      echo "❌ Error: gpg is required for encrypted backups (e.g. 'apt install gnupg')."
+      exit 1
+    fi
+  elif [[ -n "$1" ]]; then
+    echo "❌ Error: unknown backup option: $1"
+    echo "Usage: $frontend_cmd backup [--encrypt]"
+    exit 1
+  fi
+
+  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+  BACKUP_FILE="opentranscribe_backup_${TIMESTAMP}.sql"
+  mkdir -p ./backups
+
+  # Respect a non-default DB name/user rather than hardcoding `postgres opentranscribe`
+  # (issue #599 correction 7) — harmless for backup on its own, but restore's DROP
+  # DATABASE must target the same names or it silently touches the wrong database.
+  local db_user="${POSTGRES_USER:-postgres}"
+  local db_name="${POSTGRES_DB:-opentranscribe}"
+
+  if [[ "$ENCRYPT_BACKUP" == true ]]; then
+    echo "📦 Creating encrypted database backup: ${BACKUP_FILE}.gpg..."
+    # Subshell with pipefail so a pg_dump failure isn't masked by gpg succeeding
+    # shellcheck disable=SC2086
+    if (set -o pipefail; docker compose $compose_files exec -T postgres pg_dump -U "$db_user" "$db_name" \
+        | gpg --symmetric --cipher-algo AES256 --output "./backups/${BACKUP_FILE}.gpg"); then
+      echo "✅ Encrypted backup created successfully: ./backups/${BACKUP_FILE}.gpg"
+      echo "   Restore with: $frontend_cmd restore ./backups/${BACKUP_FILE}.gpg"
+    else
+      rm -f "./backups/${BACKUP_FILE}.gpg"
+      echo "❌ Backup failed."
+      exit 1
+    fi
+  else
+    echo "📦 Creating database backup: ${BACKUP_FILE}..."
+    # shellcheck disable=SC2086
+    if docker compose $compose_files exec -T postgres pg_dump -U "$db_user" "$db_name" > "./backups/${BACKUP_FILE}"; then
+      echo "✅ Backup created successfully: ./backups/${BACKUP_FILE}"
+      echo "ℹ️  Tip: backups contain all user transcripts in plaintext - use '$frontend_cmd backup --encrypt' for off-box storage."
+    else
+      echo "❌ Backup failed."
+      exit 1
+    fi
+  fi
+}
+
+# Function to restore database from backup (issue #599)
+#
+# A plain `pg_dump` file carries no DROP/--clean statements, so replaying it into an
+# already-populated database makes every statement fail — and without ON_ERROR_STOP,
+# psql exits 0 anyway and prints "success" while nothing changed. Worse, the dump's
+# alembic_version INSERT does not collide on primary key with a drifted row already
+# present, so it succeeds while every data-table COPY fails — leaving TWO rows in
+# alembic_version, which Alembic can no longer migrate from. This restores by
+# guaranteeing an empty target (DROP DATABASE ... WITH (FORCE) + CREATE), replaying
+# inside a single transaction (so a mid-dump failure rolls back to nothing rather
+# than a hybrid schema), and verifying the result before ever reporting success.
+#
+# Usage: restore_database COMPOSE_FILES FRONTEND_CMD [--yes|-y] [--no-safety-dump] [--from-s3] \
+#                          [--migrate-forward|--no-restart] <file-or-object-name>
+restore_database() {
+  local compose_files="$1"; shift
+  local frontend_cmd="$1"; shift
+
+  # Issue #613: backup_database always created ./backups; restore_database never did,
+  # even though it writes there twice below (the GPG temp file, the safety dump). The
+  # realistic DR scenario — copy a dump onto a fresh install, restore before ever
+  # running a backup — used to fail closed here with a message blaming pg_dump instead
+  # of a missing directory.
+  mkdir -p ./backups
+
+  local skip_confirm=false
+  local skip_safety_dump=false
+  local from_s3=false
+  local migrate_forward=false
+  local no_restart=false
+  local backup_file=""
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --yes|-y)
+        skip_confirm=true
+        shift
+        ;;
+      --no-safety-dump)
+        skip_safety_dump=true
+        shift
+        ;;
+      --from-s3)
+        from_s3=true
+        shift
+        ;;
+      --migrate-forward)
+        # The operator explicitly accepts that the running (currently newer, in a
+        # rollback scenario) image will migrate the restored backup forward. This is
+        # the "recover data, stay on the current app version" intent (issue #610) —
+        # NOT what a version rollback wants.
+        migrate_forward=true
+        shift
+        ;;
+      --no-restart)
+        # Never restart the app services after this restore, regardless of whether the
+        # backup's schema head matches the live one. Escape hatch for scripted/orchestrated
+        # callers that manage the restart themselves (issue #610).
+        no_restart=true
+        shift
+        ;;
+      -*)
+        echo "❌ Error: unknown restore option: $1"
+        echo "Usage: $frontend_cmd restore [--yes] [--no-safety-dump] [--from-s3] [--migrate-forward|--no-restart] <backup_file>"
+        exit 1
+        ;;
+      *)
+        backup_file="$1"
+        shift
+        ;;
+    esac
+  done
+
+  if [ "$migrate_forward" = true ] && [ "$no_restart" = true ]; then
+    echo "❌ Error: --migrate-forward and --no-restart are mutually exclusive."
+    exit 1
+  fi
+
+  if [ -z "$backup_file" ]; then
+    echo "❌ Error: Backup file not specified."
+    echo "Usage: $frontend_cmd restore [--yes] [--no-safety-dump] [--from-s3] [--migrate-forward|--no-restart] <backup_file>"
+    exit 1
+  fi
+
+  # --from-s3: fetch the artifact out of the configured S3 destination FIRST — before
+  # anything below touches the database. The S3 credentials are AES-256-GCM-encrypted in
+  # SystemSettings, decryptable only inside the backend container (issue #600) — a host
+  # shell script cannot reach them, and the database holding them is exactly what a
+  # restore is about to drop. Fail closed, naming the manual two-step, if the backend
+  # isn't up to do that decryption.
+  if [ "$from_s3" = true ]; then
+    # shellcheck disable=SC2086
+    if ! docker compose $compose_files ps backend 2>/dev/null | grep -q "Up"; then
+      echo "❌ Error: --from-s3 needs the backend container running (it holds the only"
+      echo "   decryption key for the S3 credentials). Start it with '$frontend_cmd start dev'"
+      echo "   (or 'start prod'), or fetch manually:"
+      echo "     docker compose exec -T backend python -m app.scripts.fetch_backup $backup_file"
+      echo "     $frontend_cmd restore --yes \"\${BACKUP_HOST_PATH:-./backups}/$backup_file\""
+      exit 1
+    fi
+    local s3_name="$backup_file"
+    echo "☁️  Fetching $s3_name from the configured S3 backup destination (before anything destructive)..."
+    # shellcheck disable=SC2086
+    if ! docker compose $compose_files exec -T backend python -m app.scripts.fetch_backup "$s3_name"; then
+      echo "❌ Error: fetch of $s3_name failed — see the error above. Nothing was touched."
+      exit 1
+    fi
+    # fetch_backup.py writes into cfg["destination"], which docker-compose.backup.yml
+    # mounts at /backups <- BACKUP_HOST_PATH on the host — the same default the
+    # --with-backup overlay documents. If backup.destination was reconfigured in the
+    # admin UI to something other than the default /backups, this guess can miss; the
+    # file-exists check right below reports that clearly rather than silently guessing wrong.
+    backup_file="${BACKUP_HOST_PATH:-./backups}/$(basename "$s3_name")"
+    echo "✅ Fetched to $backup_file"
+  fi
+
+  if [ ! -f "$backup_file" ]; then
+    echo "❌ Error: Backup file not found: $backup_file"
+    exit 1
+  fi
+
+  # Transparently decrypt GPG-encrypted backups (created with 'backup --encrypt')
+  local restore_source="$backup_file"
+  local temp_sql=""
+  case "$backup_file" in
+    *.gpg|*.asc)
+      if ! command -v gpg &> /dev/null; then
+        echo "❌ Error: gpg is required to restore encrypted backups (e.g. 'apt install gnupg')."
+        exit 1
+      fi
+      echo "🔓 Decrypting backup..."
+      temp_sql=$(mktemp ./backups/.restore_XXXXXX)
+      if ! gpg --yes --output "$temp_sql" --decrypt "$backup_file"; then
+        rm -f "$temp_sql"
+        echo "❌ Decryption failed."
+        exit 1
+      fi
+      restore_source="$temp_sql"
+      ;;
+  esac
+
+  local db_user="${POSTGRES_USER:-postgres}"
+  local db_name="${POSTGRES_DB:-opentranscribe}"
+  # shellcheck disable=SC2086
+  local exec_prefix="docker compose $compose_files exec -T postgres"
+
+  # A custom-format (`pg_dump --format=custom`, i.e. `-Fc` — what the scheduled/S3 backup
+  # feature produces, backup_service.run_pg_dump) or directory-format dump starts with the
+  # "PGDMP" magic bytes. Dispatch the whole rest of this function on that: everything below
+  # — confirmation, safety dump, drop/recreate, service stop/start — is shared; only the
+  # expected-head read, the replay, and the verify step differ (issue #600).
+  local dump_format="plain"
+  if [ "$(head -c 5 "$restore_source" 2>/dev/null)" = "PGDMP" ]; then
+    dump_format="custom"
+  fi
+
+  # Read the dump's own alembic head BEFORE anything destructive so it survives the
+  # drop — the verify step needs the file, but the confirmation prompt below wants to
+  # show it to the operator too.
+  local expected_head
+  if [ "$dump_format" = "custom" ]; then
+    expected_head="$(pg_custom_dump_expected_head "$exec_prefix" "$db_user" "$restore_source")"
+  else
+    expected_head="$(awk '/^COPY public\.alembic_version /{getline; print; exit}' "$restore_source")"
+  fi
+
+  # Read the LIVE database's alembic head now — before anything is stopped or dropped,
+  # and UNCONDITIONALLY (not just on the interactive confirm path below, which --yes
+  # skips entirely — --yes is exactly the path issue #610 found unguarded). Because the
+  # backend runs `alembic upgrade head` on every startup (app/main.py lifespan ->
+  # app/db/migrations.py:run_migrations), this value is a faithful proxy for "what head
+  # does the currently-running image expect".
+  local current_head
+  current_head="$($exec_prefix psql -tA -U "$db_user" "$db_name" -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
+  current_head="${current_head:-unknown}"
+
+  # Which application image will serve this database after the restore, and does the
+  # schema it is about to see match what that image expects? Both heads are already in
+  # hand and both reads happen BEFORE anything is stopped or dropped (issue #610).
+  #
+  # Restarting the CURRENTLY-RUNNING image over a database restored to a DIFFERENT head
+  # silently re-migrates the backup forward — destroying the very state the restore
+  # recovered. "unknown" (either head unreadable, or the #599 two-row corruption shape,
+  # which `tr -d '[:space:]'` concatenates into a string matching nothing) is treated as
+  # not "same", i.e. fail closed. This is display-only; the actual restart decision
+  # below is made by the shared, independently-tested pg_restore_restart_decision.
+  local schema_relationship="unknown"
+  if [ -n "$expected_head" ] && [ -n "$current_head" ] && [ "$current_head" != "unknown" ]; then
+    if [ "$expected_head" = "$current_head" ]; then
+      schema_relationship="same"
+    else
+      schema_relationship="different"
+    fi
+  fi
+
+  echo "🔄 Restoring database from ${backup_file}..."
+
+  if [ "$skip_confirm" != true ]; then
+    if [ ! -t 0 ]; then
+      echo "❌ Refusing to restore without confirmation on a non-interactive terminal."
+      echo "   Re-run with --yes to confirm non-interactively: $frontend_cmd restore --yes $backup_file"
+      [ -n "$temp_sql" ] && rm -f "$temp_sql"
+      exit 4
+    fi
+
+    local current_media current_segments current_users backup_mtime
+    current_media="$($exec_prefix psql -tA -U "$db_user" "$db_name" -c "SELECT count(*) FROM media_file;" 2>/dev/null | tr -d '[:space:]')"
+    current_media="${current_media:-unknown}"
+    current_segments="$($exec_prefix psql -tA -U "$db_user" "$db_name" -c "SELECT count(*) FROM transcript_segment;" 2>/dev/null | tr -d '[:space:]')"
+    current_segments="${current_segments:-unknown}"
+    current_users="$($exec_prefix psql -tA -U "$db_user" "$db_name" -c 'SELECT count(*) FROM "user";' 2>/dev/null | tr -d '[:space:]')"
+    current_users="${current_users:-unknown}"
+    backup_mtime="$(stat -c '%y' "$backup_file" 2>/dev/null || stat -f '%Sm' "$backup_file" 2>/dev/null || echo "unknown")"
+
+    echo ""
+    echo "⚠️  About to REPLACE database \"$db_name\" from backup file dated: $backup_mtime"
+    echo ""
+    echo "   Current database:"
+    echo "     - alembic head:        $current_head"
+    echo "     - media_file rows:      $current_media"
+    echo "     - transcript_segment rows: $current_segments"
+    echo "     - user rows:            $current_users"
+    echo "   Backup file:"
+    echo "     - alembic head:        ${expected_head:-unknown}"
+    echo ""
+    if [ "$schema_relationship" != "same" ]; then
+      echo "   ⚠️  The backup's schema head differs from the running application's."
+      echo "       Restoring it and restarting the CURRENT image would run every migration"
+      echo "       between them, silently rolling this backup FORWARD (issue #610)."
+      echo "       Application services will be left STOPPED so you can choose the image first."
+      echo "       Pass --migrate-forward if you WANT the current version to migrate this backup."
+      echo ""
+    fi
+    echo "   This DROPS the current database and recreates it from the backup."
+    echo "   Everything written since that backup is destroyed."
+    if [ "$skip_safety_dump" != true ]; then
+      echo "   A safety dump of the CURRENT database will be written first, to ./backups/pre-restore_<timestamp>.sql"
+    else
+      echo "   ⚠️  --no-safety-dump: no safety dump will be taken. The current database is NOT recoverable after this."
+    fi
+    echo ""
+    echo "   ⚠️  MinIO (media files) and OpenSearch (search indices) are NOT rolled back with the"
+    echo "   database — restoring only PostgreSQL creates a time skew (media with no row, rows with"
+    echo "   no media, stale search hits). Reindex from Admin → Search afterwards."
+    echo ""
+    printf '   Type the database name ("%s") to confirm, anything else cancels: ' "$db_name"
+    local confirm_name
+    read -r confirm_name
+    if [ "$confirm_name" != "$db_name" ]; then
+      echo "❌ Restore cancelled."
+      [ -n "$temp_sql" ] && rm -f "$temp_sql"
+      exit 4
+    fi
+  fi
+
+  # Stop services that use the database
+  # shellcheck disable=SC2086
+  docker compose $compose_files stop backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
+
+  # Unquoted on purpose: $compose_files is a pre-split "-f a.yml -f b.yml" chain, the same
+  # word-splitting idiom every other compose call site in this file relies on.
+  # shellcheck disable=SC2206
+  local restart_services=(docker compose $compose_files start backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat)
+
+  # Pre-restore safety dump — fail CLOSED: if we can't dump the current database, we
+  # refuse to drop it. This is what makes the destructive step below reversible.
+  local safety_dump_file=""
+  if [ "$skip_safety_dump" != true ]; then
+    safety_dump_file="./backups/pre-restore_$(date +%Y%m%d_%H%M%S).sql"
+    echo "🛡️  Taking a safety dump of the current database: $safety_dump_file"
+    if ! $exec_prefix pg_dump -U "$db_user" "$db_name" > "$safety_dump_file"; then
+      rm -f "$safety_dump_file"
+      echo "❌ Could not dump the current database — refusing to drop it."
+      "${restart_services[@]}"
+      [ -n "$temp_sql" ] && rm -f "$temp_sql"
+      exit 1
+    fi
+  fi
+
+  echo "🗑️  Dropping and recreating database \"$db_name\"..."
+  if ! pg_drop_and_recreate_database "$exec_prefix" "$db_user" "$db_name"; then
+    echo "❌ Could not drop/recreate the database."
+    [ -n "$safety_dump_file" ] && echo "   The current database's safety dump is at: $safety_dump_file"
+    "${restart_services[@]}"
+    [ -n "$temp_sql" ] && rm -f "$temp_sql"
+    exit 1
+  fi
+
+  echo "📥 Replaying backup into \"$db_name\"..."
+  local replay_ok=true
+  if [ "$dump_format" = "custom" ]; then
+    pg_replay_custom_dump "$exec_prefix" "$db_user" "$db_name" "$restore_source" || replay_ok=false
+  else
+    pg_replay_dump "$exec_prefix" "$db_user" "$db_name" "$restore_source" || replay_ok=false
+  fi
+  if [ "$replay_ok" != true ]; then
+    echo "❌ Database restore failed — the database is now empty (the failed replay rolled back)."
+    if [ -n "$safety_dump_file" ]; then
+      echo "   Recover the previous state with:"
+      echo "     $frontend_cmd restore --yes $safety_dump_file"
+    else
+      echo "   No safety dump was taken (--no-safety-dump) — the previous state is not recoverable here."
+    fi
+    # Deliberately NOT restarting (issue #610): the database is now EMPTY, so restarting
+    # the newer backend would take run_migrations()'s "empty database" branch and seed a
+    # fresh admin — turning a failed restore into a silently brand-new empty deployment.
+    echo "⏸️  Services left stopped — recover with the command above before starting the app."
+    [ -n "$temp_sql" ] && rm -f "$temp_sql"
+    exit 1
+  fi
+
+  echo "🔍 Verifying restore..."
+  local verify_ok=true
+  if [ "$dump_format" = "custom" ]; then
+    pg_verify_custom_restore "$exec_prefix" "$db_user" "$db_name" "$restore_source" || verify_ok=false
+  else
+    pg_verify_restore "$exec_prefix" "$db_user" "$db_name" "$restore_source" || verify_ok=false
+  fi
+  if [ "$verify_ok" != true ]; then
+    echo "❌ Restore verification failed — the database does not match the backup. See the mismatch(es) above."
+    [ -n "$safety_dump_file" ] && echo "   The current (unverified) database's pre-restore safety dump is at: $safety_dump_file"
+    # Deliberately NOT restarting (issue #610) — same hazard family as the replay-failure
+    # path above: the database is in an unverified state, not the one the running image
+    # expects to see.
+    echo "⏸️  Services left stopped — recover with the command above before starting the app."
+    [ -n "$temp_sql" ] && rm -f "$temp_sql"
+    exit 1
+  fi
+
+  [ -n "$temp_sql" ] && rm -f "$temp_sql"
+
+  # Decide whether it is safe to bring the app back up automatically (issue #610). The
+  # decision is made by the shared, independently-tested pg_restore_restart_decision
+  # (scripts/common.sh) — never reimplemented here — so both front ends and their test
+  # suites share exactly one definition of "safe to restart".
+  local restart_decision
+  restart_decision="$(pg_restore_restart_decision "$expected_head" "$current_head" "$migrate_forward" "$no_restart")"
+
+  local hold_reason=""
+  case "$restart_decision" in
+    hold:no-restart)
+      hold_reason="--no-restart"
+      ;;
+    hold:schema-mismatch)
+      hold_reason="schema-head mismatch (backup=${expected_head:-unknown}, was-running=${current_head:-unknown})"
+      ;;
+  esac
+
+  if [ -n "$hold_reason" ]; then
+    echo "✅ Database restored successfully."
+    echo ""
+    echo "⏸️  Application services were left STOPPED on purpose: $hold_reason"
+    echo "   Starting the previously-running image now would migrate this backup forward."
+    echo ""
+    echo "   Choose one:"
+    echo "   • Roll the application back to the version that matches this backup:"
+    echo "       ./opentranscribe.sh update --rollback      # or: update --version vX.Y.Z"
+    echo "   • Keep the current version and let it migrate this backup forward (intended"
+    echo "     for data recovery, NOT for a version rollback):"
+    echo "       $frontend_cmd start dev                      # or: docker compose start backend …"
+  else
+    echo "🔄 Restarting services..."
+    "${restart_services[@]}"
+    echo "✅ Database restored successfully."
+  fi
+  echo "ℹ️  MinIO and OpenSearch were NOT rolled back — reindex from Admin → Search if the"
+  echo "   restored database's file list differs from what MinIO/OpenSearch currently have."
+  [ -n "$safety_dump_file" ] && echo "   Pre-restore safety dump of the database this replaced: $safety_dump_file"
+}
+
 # Display quick reference commands
 print_help_commands() {
   echo "⚡ Quick Commands Reference:"

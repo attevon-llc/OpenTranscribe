@@ -26,7 +26,7 @@ below.
 
 | Store | What's protected today | Gap | Severity | Recommendation |
 |---|---|---|---|---|
-| **PostgreSQL** (users, transcripts, segments, speakers, settings) | In-app scheduled `pg_dump -Fc` (GFS retention, optional gpg) to a local mount **or** S3-compatible bucket; manual `./opentr.sh backup [--encrypt]`; `restore` covers both plain-SQL and `-Fc`/S3 artifacts, with a real integration-test round-trip (#600) | Restore is not automatically *verified on a schedule* (no periodic restore drill / checksum) | **Low** | Run the quarterly restore drill in [Backup & Restore](./backup-restore.md#testing-backups). Good as shipped. |
+| **PostgreSQL** (users, transcripts, segments, speakers, settings) | In-app scheduled `pg_dump -Fc` (GFS retention, optional gpg) to a local mount **or** S3-compatible bucket; manual `./opentranscribe.sh backup [--encrypt]`; `restore` covers both plain-SQL and `-Fc`/S3 artifacts, with a real integration-test round-trip (#600) | Restore is not automatically *verified on a schedule* (no periodic restore drill / checksum) | **Low** | Run the quarterly restore drill in [Backup & Restore](./backup-restore.md#testing-backups). Good as shipped. |
 | **MinIO media** (~484 GB, irreplaceable originals) | **Addressed (#242):** in-app scheduled **Media Mirror** — incremental, never-deleting copy of the media bucket to a mounted folder or S3-compatible bucket, with metrics + failure alerting | Default-OFF (must be enabled + given a destination); mirror is single-copy (pair with offsite for 3-2-1) | **Low** (was High) | Enable the mirror and point it off-host; optionally add bucket versioning as a deployment-level extra. See [MinIO media](#2-minio-media--the-484-gb-gap). |
 | **OpenSearch** (search + vector indices) | Optional in-app `fs` snapshot alongside each dump (`backup.include_opensearch`); fully **rebuildable** from Postgres via reindex | None that matters — derived data | **Low** | Leave snapshots off unless you want to skip reindex time on restore. Confirmed adequate. |
 | **Configuration & Secrets** (`.env`: `ENCRYPTION_KEY`, `JWT_SECRET_KEY`, DB/MinIO creds; gpg passphrase) | **Addressed (#243):** encrypted runs write `opentranscribe-recovery.env.gpg` (the essential keys, same passphrase) beside the dumps; unencrypted runs write a no-secrets `RECOVERY-README.txt` + a one-time admin warning | With encryption off, keys must still be preserved separately (by design — no plaintext keys beside a plaintext dump) | **Low** (was Critical) | Keep the gpg passphrase in a password manager and verify keys in every restore drill. See [§4](#secrets-gap). |
@@ -44,8 +44,8 @@ authoritative state of the system and is well covered:
   applies grandfather-father-son retention, optionally gpg-encrypts (AES-256), and writes
   to either a **mounted folder** or an **S3-compatible bucket** — the latter already gets
   the dump **off the host**.
-- **Manual:** `./opentr.sh backup [--encrypt]` and `./opentr.sh restore <file>`.
-- **Restore covers both dump formats through one command**, `./opentr.sh restore`, which
+- **Manual:** `./opentranscribe.sh backup [--encrypt]` and `./opentranscribe.sh restore <file>`.
+- **Restore covers both dump formats through one command**, `./opentranscribe.sh restore`, which
   dispatches on the file's magic bytes: plain SQL/gzip via `psql`, custom-format (`-Fc`,
   what the scheduled/S3 backup produces) via `pg_restore` — reusing the same confirm /
   safety-dump / drop-recreate / verify sequence either way, plus `--from-s3` to fetch an

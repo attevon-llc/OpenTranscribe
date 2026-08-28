@@ -14,6 +14,23 @@ NC='\033[0m' # No Color
 # defines its own.
 CONTAINER_UID_GID="${CONTAINER_UID_GID:-1000:999}"
 
+# scripts/common.sh ships with every install (release-manifest.txt:52) and holds the ONE
+# implementation of the database backup/restore path (#599/#600/#610). Sourced here rather
+# than reimplemented so a production install cannot drift from the dev one — issue #613.
+#
+# Conditional on purpose: an install that predates the manifest entry may not have it yet,
+# and every OTHER command must keep working without it. The backup/restore arms check for
+# the functions explicitly (require_db_helpers) and fail with a remedy.
+#
+# Position matters. common.sh also defines fix_model_cache_permissions(); sourcing BEFORE
+# this script's own definition means the local one still wins (bash: last definition wins),
+# preserving today's behaviour exactly. Pinned by a test — do not move this below the
+# fix_model_cache_permissions definition.
+if [ -f ./scripts/common.sh ]; then
+    # shellcheck source=scripts/common.sh
+    . ./scripts/common.sh
+fi
+
 function show_help {
     echo -e "${BLUE}OpenTranscribe Management Script${NC}"
     echo ""
@@ -28,6 +45,8 @@ function show_help {
     echo "  update        Pull latest Docker images and restart"
     echo "  update-full   Update images AND configuration files"
     echo "  clean         Remove all volumes and data (CAUTION)"
+    echo "  backup        Backup the database (optional --encrypt)"
+    echo "  restore       Restore the database from a backup file (see --help below)"
     echo "  shell [svc]   Open shell in container (default: backend)"
     echo "  config        Show current configuration"
     echo "  health        Check service health"
@@ -40,6 +59,8 @@ function show_help {
     echo "  ./opentranscribe.sh logs backend"
     echo "  ./opentranscribe.sh update           # Update containers only"
     echo "  ./opentranscribe.sh update-full      # Update everything"
+    echo "  ./opentranscribe.sh backup           # Dump the database to ./backups"
+    echo "  ./opentranscribe.sh restore --yes ./backups/opentranscribe_backup_....sql"
     echo "  ./opentranscribe.sh setup-ssl"
     echo ""
 }
@@ -54,6 +75,21 @@ check_environment() {
     if [ ! -f docker-compose.yml ]; then
         echo -e "${RED}❌ docker-compose.yml not found${NC}"
         echo "Please run the setup script first."
+        exit 1
+    fi
+}
+
+# The two DB commands are the only ones that need scripts/common.sh. Everything else still
+# works standalone, so the source above is unconditional but this check is not — an install
+# whose common.sh predates issue #613 (or is somehow missing) gets a remedy instead of an
+# "unknown function" crash mid-backup/restore.
+require_db_helpers() {
+    if ! declare -F backup_database >/dev/null || ! declare -F restore_database >/dev/null; then
+        echo -e "${RED}❌ scripts/common.sh is missing or too old — it provides the database${NC}"
+        echo -e "${RED}   backup/restore implementation.${NC}"
+        echo -e "${YELLOW}   Fix with:  ./opentranscribe.sh update-full${NC}"
+        echo -e "${YELLOW}   Or fetch it directly:${NC}"
+        echo -e "     mkdir -p scripts && curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/scripts/common.sh -o scripts/common.sh && chmod +x scripts/common.sh"
         exit 1
     fi
 }
@@ -569,7 +605,7 @@ case "${1:-help}" in
                     echo -e "${RED}   ${rollback_live_head}, which ${target_version} does not know.${NC}"
                     echo -e "${YELLOW}   Restore a pre-upgrade backup first — it leaves services stopped for${NC}"
                     echo -e "${YELLOW}   you to choose the image (issue #610):${NC}"
-                    echo -e "${YELLOW}     ./opentr.sh restore <backup>${NC}"
+                    echo -e "${YELLOW}     ./opentranscribe.sh restore <backup>${NC}"
                     echo -e "${YELLOW}   then re-run this command. Override with --force-downgrade if certain.${NC}"
                     exit 1
                 fi
@@ -765,6 +801,38 @@ case "${1:-help}" in
         echo -e "${BLUE}🔧 Opening shell in $service container...${NC}"
         compose_files=$(get_compose_files)
         docker compose $compose_files exec "$service" /bin/bash || docker compose $compose_files exec "$service" /bin/sh
+        ;;
+    backup|restore)
+        check_environment
+        require_db_helpers
+        compose_files=$(get_compose_files)
+
+        # opentr.sh gets these from its prologue `set -a; source ./.env`; this script
+        # deliberately has no such prologue (it greps individual keys — see
+        # preflight_upgrade_env). Without these explicit reads a restore would DROP/CREATE
+        # the DEFAULT database name on any install that customised them (issue #613).
+        POSTGRES_USER=$(grep -E '^POSTGRES_USER=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
+        POSTGRES_DB=$(grep -E '^POSTGRES_DB=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
+        BACKUP_HOST_PATH=$(grep -E '^BACKUP_HOST_PATH=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
+        export POSTGRES_USER POSTGRES_DB BACKUP_HOST_PATH
+
+        cmd="$1"; shift
+        # The shared functions are written for opentr.sh's execution semantics, which
+        # deliberately omit `set -e` (many `|| true` paths). They contain several statements
+        # of the form `[ -n "$x" ] && rm -f "$x"`, which return 1 when $x is empty and would
+        # abort THIS script mid-restore under the `set -e` at the top of this file. Rather
+        # than retrofit `set -e` correctness across ~350 lines of a DROP DATABASE path —
+        # exactly where a subtle retrofit bug is unrecoverable — match the semantics the
+        # code was written for, for the duration of this one call.
+        set +e
+        if [ "$cmd" = "backup" ]; then
+            backup_database "$compose_files" "./opentranscribe.sh" "$@"
+        else
+            restore_database "$compose_files" "./opentranscribe.sh" "$@"
+        fi
+        rc=$?
+        set -e
+        exit $rc
         ;;
     config)
         check_environment

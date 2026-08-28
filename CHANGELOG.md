@@ -43,6 +43,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--passphrase-file`), the in-app scheduled-backup system's own end-to-end restore proof, and
   MinIO/OpenSearch restore (the DB restore does not touch either — asserted, not just
   unclaimed).
+- **Production installs now have a shipped `backup`/`restore` command** (#613). Every real
+  self-hosted install (curl-install via `setup-opentranscribe.sh`, or an existing install kept
+  current with `opentranscribe.sh update-full`) had **no way to run backup or restore at all**:
+  `opentr.sh` is deliberately not in `release-manifest.txt` (its bare `docker compose` calls
+  with no `-f` chain only work in a repo clone — MEASURED that the base compose file alone is
+  an invalid project outside one), and `opentranscribe.sh`, the script that actually ships, had
+  no `backup)`/`restore)` case at all. So the #599/#600/#610 restore-safety hardening landed
+  this cycle never reached a real deployment, and `opentranscribe.sh:572`'s own #610 rollback
+  preflight told operators to run `./opentr.sh restore <backup>` — a file they do not have.
+  Fixed by promoting `backup_database`/`restore_database` out of `opentr.sh` into
+  `scripts/common.sh` (already shipped, `release-manifest.txt:52`), parameterized by a leading
+  compose-files chain and front-end name, and wiring `backup)`/`restore)` into both front ends
+  — one implementation of the `DROP DATABASE` path, not two that could silently diverge.
+  `opentranscribe.sh`'s arm wraps the call in `set +e`/`set -e`: the shared code is written for
+  `opentr.sh`'s deliberate absence of `set -e` and has several unchecked `docker compose ...`
+  statements that would otherwise abort the whole restore mid-flight under `opentranscribe.sh`'s
+  own `set -e`. It also explicitly reads `POSTGRES_USER`/`POSTGRES_DB`/`BACKUP_HOST_PATH` from
+  `.env` before calling in — `opentranscribe.sh` has no `set -a; source .env` prologue, so
+  without this a restore would silently target the default database name on any install that
+  customised it. Also fixed: `restore_database` never created `./backups` (a copied-in dump
+  restored onto a fresh install failed closed with a message blaming `pg_dump`), and
+  `scripts/release-tests/test-upgrade.sh`'s phase 06b/15 now stage `opentranscribe.sh` + base
+  **and** prod compose (previously staged `opentr.sh` + base-only, which was itself an invalid
+  compose project — the exact defect this release blocks on, unnoticed through a full rehearsal
+  cycle because the postgres container it `exec`'d into was already running from an earlier,
+  correctly-chained `up`). `docker-compose.backup.yml` (the overlay the in-app scheduled/S3
+  backup feature needs mounted) is a separate, not-yet-shipped gap — tracked as its own
+  follow-up rather than folded into this fix.
 - **Watch sources: per-file management, reachable at last** (#489). Each source card gets a
   **Files** button opening its full import history — what was imported, skipped, or failed, with
   the actual reason rather than a count. Server-side status filter and filename search (so it

@@ -156,7 +156,8 @@ Configuration-only assertions would have passed against a backstop that did noth
   image over a database that was just restored to an OLDER dump silently rolls the
   backup forward — before an operator ever gets to see it in its original restored form
   (issue #610; the officially documented rollback recipe reproduced this verbatim).
-  `opentr.sh restore` now reads the live database's alembic head before touching
+  `restore_database` (scripts/common.sh, shared by `opentr.sh restore` and
+  `opentranscribe.sh restore` — issue #613) now reads the live database's alembic head before touching
   anything and holds the app services **stopped** on a head mismatch, printing the two
   supported next moves (`./opentranscribe.sh update --rollback`, or `--migrate-forward`
   if the forward migration is genuinely wanted). The decision is a pure function,

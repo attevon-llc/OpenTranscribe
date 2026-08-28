@@ -520,6 +520,10 @@ If the database is ever lost but the MinIO media survives, [**Storage Recovery**
 ./opentr.sh backup --encrypt     # GPG-encrypted backup (AES-256, no plaintext on disk)
 ./opentr.sh restore [--yes] [--no-safety-dump] [--from-s3] <file>  # REPLACE the database from a backup
                                                          # (.sql, .dump, .sql.gpg, .dump.gpg; --from-s3 fetches by name first) — destructive
+
+# Production installs (no repo clone, no opentr.sh) use the identical commands via the
+# shipped management script instead: ./opentranscribe.sh backup / restore — same flags,
+# same behavior. See docs-site/docs/operations/backup-restore.md.
 ```
 
 ### **System Administration**

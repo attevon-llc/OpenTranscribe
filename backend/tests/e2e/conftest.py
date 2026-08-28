@@ -480,6 +480,12 @@ OWNED_MEDIA_PREFIX = "e2e-owned-"
 #: continuing to poll for "completed" only burns the rest of the window.
 TERMINAL_FAILURE_STATUSES = frozenset({"error", "cancelled"})
 
+#: `MediaFile.redaction_status` values meaning the scan is still running — see
+#: `app/core/constants.py` REDACTION_STATUS_*. `None` (never dispatched — e.g. redaction
+#: disabled for this reader) and "done"/"failed" are both terminal for this wait: either
+#: way, nothing further is going to change before the next request.
+_REDACTION_IN_PROGRESS_STATUSES = frozenset({"pending", "processing"})
+
 
 def wait_for_stable_completion(
     backend_url: str, token: str, file_uuid: str, timeout_secs: int = 300
@@ -489,6 +495,14 @@ def wait_for_stable_completion(
     One ``completed`` poll is not enough: chained async stages (analytics, search
     indexing) can flip a file back to PROCESSING moments later, racing the next
     request into an INVALID_STATUS rejection.
+
+    Also waits for content redaction to leave "pending"/"processing". A freshly
+    uploaded file can be stably ``completed`` while its redaction scan is still
+    running — the scavenged ambient files this helper used to be tested against
+    had redaction finished long ago, so this gap was invisible until tests started
+    owning fresh uploads (issue: subtitle/export endpoints withhold a file whose
+    scan hasn't finished, e.g. `SubtitleService._files_awaiting_redaction`, and a
+    caller that requests an export immediately after "completed" can race it).
 
     Args:
         backend_url: Base URL of the API under test.
@@ -505,10 +519,12 @@ def wait_for_stable_completion(
     status = "unknown"
     while time.time() < deadline:
         resp = requests.get(f"{backend_url}/api/files/{file_uuid}", headers=headers, timeout=30)
-        status = str(resp.json().get("status", "unknown")) if resp.status_code == 200 else "unknown"
+        body = resp.json() if resp.status_code == 200 else {}
+        status = str(body.get("status", "unknown")) if resp.status_code == 200 else "unknown"
         if status in TERMINAL_FAILURE_STATUSES:
             return status
-        consecutive = consecutive + 1 if status == "completed" else 0
+        redaction_ready = body.get("redaction_status") not in _REDACTION_IN_PROGRESS_STATUSES
+        consecutive = consecutive + 1 if status == "completed" and redaction_ready else 0
         if consecutive >= 2:
             return status
         # Pure API polling: this helper takes no Playwright page, so there is no

@@ -482,19 +482,84 @@ THEMES = ["light", "dark"]
 #: be compared for real.
 #: Do not add a selector here without checking `page.locator(sel).count()`.
 _VOLATILE_SELECTORS: dict[str, tuple[str, ...]] = {
-    # "Last run: N minutes ago" (1 element) + per-cluster membership counts (20).
-    "speakers": (".last-clustered-chip", ".member-count"),
+    # `.count-chip` (GalleryCountChip.svelte) renders the true library total /
+    # loaded-count, which reflows the grid on every upload elsewhere in the
+    # stack; `.notification-badge` (Navbar.svelte) is the unread-count pill on
+    # every authenticated page. Neither is a layout fix (see module docstring
+    # issue #451 note) — row/page-height drift from card count is NOT maskable
+    # and is instead handled by the isolated-stack skip guard below.
+    "gallery": (".count-chip", ".notification-badge"),
+    # "Last run: N minutes ago" (1 element) + per-cluster membership counts (20)
+    # + the three tab counters ("13/1/11" etc, `.speakers-page .badge`) + the
+    # shared navbar notification pill. Row-count drift itself is not maskable —
+    # see the isolated-stack skip guard below.
+    "speakers": (
+        ".last-clustered-chip",
+        ".member-count",
+        ".speakers-page .badge",
+        ".notification-badge",
+    ),
     # Users/files/tasks/throughput/queue/model/CPU/mem/disk/GPU cards — live
-    # telemetry and DB totals, all inside one wrapper (see comment above).
-    "settings": (".settings-modal .stats-grid",),
+    # telemetry and DB totals, all inside one wrapper (see comment above). The
+    # settings modal is captured with `full_page=False` over the gallery page
+    # underneath it, which leaks `.count-chip` and the navbar's
+    # `.notification-badge` into the corner of the capture — `_volatile_regions`
+    # is keyed per-surface, so those two must be listed again here even though
+    # `gallery` already lists them.
+    "settings": (".settings-modal .stats-grid", ".count-chip", ".notification-badge"),
     # Every trace node renders the real wall-clock cost of its stage (GH #514).
     # Those milliseconds differ on EVERY run by construction — that is the whole
     # point of measuring them — so a baseline containing them would be
     # un-reproducible from the very first commit. Masking them leaves the part
     # worth comparing: row order, marker shapes, labels, counts, and the
-    # skipped-row de-emphasis.
-    "chat_trace": (".trace-ms",),
+    # skipped-row de-emphasis. `.trace-chip` carries the retrieval/rerank/sample
+    # counts (e.g. "12 found"), which move with corpus size between runs;
+    # labels, outcome badges, and reasons stay unmasked as real semantic content.
+    "chat_trace": (".trace-ms", ".trace-chip"),
+    # Shared navbar notification pill — the only volatile element on this
+    # surface; the two different-file problem (see issue #451 note in the
+    # module docstring) is not maskable and is handled by the skip guard below.
+    "file_detail": (".notification-badge",),
 }
+
+
+#: Host:port pairs that mean "the shared dev stack", not an isolated `--fresh`
+#: deployment. Matches conftest's own `FRONTEND_URL`/`BACKEND_URL` defaults
+#: (``localhost:5173``/``localhost:5174``) — the same signal the module
+#: docstring's issue #451 section already names as the isolation requirement,
+#: just not previously enforced anywhere.
+_SHARED_STACK_HOSTS = ("localhost:5173", "localhost:5174", "127.0.0.1:5173", "127.0.0.1:5174")
+
+#: Surfaces where masking cannot fully remove non-determinism — row/page-height
+#: drift from a changing card/cluster count, or (`file_detail`) two runs simply
+#: picking a different newest file. These need an isolated, seeded stack to be
+#: meaningfully green; `chat_trace` and `settings` are NOT in this set because
+#: masking makes them fully reproducible on the shared stack too.
+_NEEDS_ISOLATED_STACK = frozenset({"gallery", "speakers", "file_detail"})
+
+
+def _skip_unless_isolated_stack(surface: str, base_url: str, backend_url: str) -> None:
+    """Skip *surface* when running against the shared dev stack, not a `--fresh` one.
+
+    A missing isolated stack is not a UI regression, and this must never be a
+    false PASS either — masking cannot remove the row/page-height drift these
+    three surfaces have (see `_NEEDS_ISOLATED_STACK`), so comparing them against
+    a stale baseline on a shared, mutable stack is guaranteed to either fail on
+    ambient noise or (worse) silently pass because nobody has ever refreshed the
+    baseline for this exact random content.
+    """
+    if surface not in _NEEDS_ISOLATED_STACK:
+        return
+    if any(host in base_url or host in backend_url for host in _SHARED_STACK_HOSTS):
+        pytest.skip(
+            f"'{surface}' visual capture needs an isolated, seeded stack — the shared dev "
+            f"stack's file/cluster counts change between runs and cannot be fully masked "
+            f"(row/page-height drift). Run: ./opentr.sh start dev --fresh visual "
+            f"--port-offset 100 --seed-benchmark --with-mock-llm, then pytest "
+            f"backend/tests/e2e/test_visual_regression.py -v "
+            f"--base-url=http://localhost:5273 --backend-url=http://localhost:5274 "
+            f"(ports shift with --port-offset; wait for seeded files to leave 'processing' first)."
+        )
 
 
 def _run_traced_turn(page: Page, base_url: str, conversation_uuid: str) -> None:
@@ -560,6 +625,8 @@ def test_visual_regression(
     request: pytest.FixtureRequest,
 ) -> None:
     """Capture and compare a full-page screenshot for each surface and theme."""
+    backend_url = request.getfixturevalue("backend_url")
+    _skip_unless_isolated_stack(surface, base_url, backend_url)
     context = _make_context(browser, theme)
     page = context.new_page()
     try:
@@ -573,10 +640,24 @@ def test_visual_regression(
             page.wait_for_selector(".gallery-action-buttons", timeout=30000)
             page.wait_for_selector(".file-card, .file-list-row", timeout=30000)
             _stabilize(page)
+            # A masked surface must actually mask something — see the speakers
+            # branch below for why this is asserted rather than assumed.
+            assert _volatile_regions(page, "gallery"), (
+                "None of _VOLATILE_SELECTORS['gallery'] matched anything on the "
+                "gallery page, so this capture masks nothing and its baseline "
+                "will absorb the live file count / navbar notification badge."
+            )
         elif surface == "file_detail":
             page.goto(f"{base_url}/files/{transcribed_file_uuid}")
             page.wait_for_selector(".transcript-segment", timeout=30000)
             _stabilize(page)
+            # A masked surface must actually mask something — see the speakers
+            # branch below for why this is asserted rather than assumed.
+            assert _volatile_regions(page, "file_detail"), (
+                "None of _VOLATILE_SELECTORS['file_detail'] matched anything on "
+                "the file-detail page, so this capture masks nothing and its "
+                "baseline will absorb the navbar notification badge."
+            )
         elif surface == "speakers":
             page.goto(f"{base_url}/speakers")
             page.wait_for_selector(".speakers-page", timeout=30000)

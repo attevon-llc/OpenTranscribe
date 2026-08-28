@@ -215,6 +215,32 @@ an_already_shared_tag` passed throughout, because a broken store produces absenc
   Before #297 `gpu` was unregistered and silenced by a `PytestUnknownMarkWarning` filter, so
   those 17 tests ran in the fast suite *and* CPU-only CI, passing only on their own runtime skip
   guards, while the gate selected none of them.
+- **The three diarization `gpu` suites do NOT run in the gate's `-m gpu` phase — they need a
+  container, and the gate runs the venv.** `test_diarizer_lifecycle.py`,
+  `test_diarization_perf_gates.py` and `test_diarization_regression.py` each open with an
+  `ensure_container` fixture that skips unless `/.dockerenv` exists or
+  `OPENTRANSCRIBE_IN_CONTAINER=1`, and they read fixtures from `/app/benchmark/test_audio` and
+  `/app/docs/...`. `run-integration-tests.sh`'s GPU phase therefore reports them as skips, not
+  passes. Their entry point is:
+
+  ```bash
+  ./scripts/run-diarization-gpu-tests.sh            # all three, on real GPU hardware
+  ```
+
+  which builds `opentranscribe-backend-test:latest` (`backend/Dockerfile.test` = the prod image
+  plus `requirements-test.txt`) and runs the `diarization-tests` service from
+  `docker-compose.benchmark.yml` in its own compose project. Before #577 there was no working
+  path at all: the prod image ships no pytest, and installing it at run time with `--user root`
+  moves `site.getusersitepackages()` from `/home/appuser/.local/...` to `/root/.local/...`, which
+  drops the entire application dependency tree off `sys.path` — the reported "`fastapi` is
+  missing" and "meeteval wheel won't build" symptoms are both that one cause. Never run these
+  with `--user root`; see `backend/Dockerfile.test`'s header.
+
+  ⚠️ **Four separate ways this suite exits 0 having measured nothing**: outside a container it
+  skips (`ensure_container`); without `-o addopts= -m gpu` pytest deselects every test; without
+  the gitignored `benchmark/test_audio/*.wav` fixtures each test skips individually; and without
+  a visible CUDA device `torch_cuda` skips. `run-diarization-gpu-tests.sh` hard-fails on the
+  first three rather than handing you a green vacuum.
 - **`tests/integration/test_scheduled_backup_restore_roundtrip.py` needs the backend image
   built** (`./opentr.sh build` or `./opentr.sh start dev --build`) — its Tier-1 "trustworthy
   evidence" test runs the real `backup_service.run_pg_dump` inside a throwaway container from

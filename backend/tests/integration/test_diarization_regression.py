@@ -6,12 +6,14 @@ the committed reference. This catches any future code change that
 accidentally perturbs the diarization output — the Phase A RTTMs are
 the "golden" answer.
 
-Run (in-container):
+Run (in-container — the prod image has no pytest, so this needs the test image;
+issue #577):
 
-    docker compose -f docker-compose.yml -f docker-compose.override.yml \\
-                   -f docker-compose.gpu.yml -f docker-compose.benchmark.yml \\
-                   run --rm --entrypoint "" diarization-probe \\
-        python -m pytest /app/backend/tests/integration/test_diarization_regression.py -v
+    ./scripts/run-diarization-gpu-tests.sh \\
+        tests/integration/test_diarization_regression.py -v -o addopts= -m gpu
+
+(The path is ``tests/...``, not ``backend/tests/...``: docker-compose.benchmark.yml
+mounts ``./backend`` at ``/app``.)
 
 Refs: plan i-need-a-full-stateful-origami.md D.3.
 """

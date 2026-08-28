@@ -33,9 +33,15 @@ TASK_STATUS_SKIPPED = "skipped"
 
 
 def create_task_record(
-    db: Session, celery_task_id: str, user_id: int, media_file_id: int, task_type: str
+    db: Session, celery_task_id: str, user_id: int, media_file_id: int | None, task_type: str
 ) -> Task:
-    """Create a new task record in the database."""
+    """Create a new task record in the database.
+
+    ``media_file_id`` is ``None`` for a corpus-wide job with no single owning file (e.g.
+    issue #626's operator-triggered re-embed, which can span many files across many
+    owners) — the column is already ``nullable=True`` and ``update_task_status`` already
+    guards its own media-file lookup on ``if media_file_id:``.
+    """
     task = Task(
         id=celery_task_id,
         user_id=user_id,
@@ -58,16 +64,17 @@ def create_task_record(
 
     db.refresh(task)
 
-    # Update the media file with active task tracking
-    media_file = get_refreshed_object(db, MediaFile, media_file_id)
-    if media_file:
-        media_file.active_task_id = celery_task_id
-        media_file.task_started_at = datetime.now(UTC)
-        media_file.task_last_update = datetime.now(UTC)
-        media_file.cancellation_requested = False
-        if media_file.status == FileStatus.PENDING:
-            media_file.status = FileStatus.PROCESSING
-        db.commit()
+    # Update the media file with active task tracking — only when this task has one.
+    if media_file_id is not None:
+        media_file = get_refreshed_object(db, MediaFile, media_file_id)
+        if media_file:
+            media_file.active_task_id = celery_task_id
+            media_file.task_started_at = datetime.now(UTC)
+            media_file.task_last_update = datetime.now(UTC)
+            media_file.cancellation_requested = False
+            if media_file.status == FileStatus.PENDING:
+                media_file.status = FileStatus.PROCESSING
+            db.commit()
 
     return task
 

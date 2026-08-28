@@ -60,6 +60,13 @@
     text_only_chunk_files: number;
   }
 
+  interface DegradedPreview {
+    total_files: number;
+    truncated: boolean;
+    affected_users: number;
+    files: Array<{ file_uuid: string; title: string; user_id: number }>;
+  }
+
   let models: EmbeddingModel[] = [];
   let selectedModelId = '';
   let currentModelId = '';
@@ -72,6 +79,13 @@
   let indexHealth: Record<string, IndexHealthEntry> | null = null;
   let bootstrapStatus: BootstrapStatus | null = null;
   let bootstrapPollHandle: ReturnType<typeof setInterval> | null = null;
+
+  // Operator-triggered re-embed of neural-search degraded (text-only) files (issue #626,
+  // the follow-up to #625's bootstrap self-heal). Preview + confirm, never dispatch-on-click.
+  let degradedPreview: DegradedPreview | null = null;
+  let showReembedModal = false;
+  let isCheckingDegraded = false;
+  let isReembedding = false;
 
   // Live reindex progress
   let reindexProgress: ReindexProgress | null = null;
@@ -100,6 +114,10 @@
     lastReindexStats = event.detail?.stats || null;
     // Reload status to get updated counts
     loadStatus();
+    // A reindex (including one dispatched by the degraded re-embed) drives the degraded
+    // count back down — reload it rather than assuming it hit zero, since a re-embed run
+    // can be truncated and leave a remainder.
+    loadDegradedPreview();
     toastStore.success($t('search.reindexComplete'));
   }
 
@@ -112,7 +130,13 @@
   }
 
   onMount(async () => {
-    await Promise.all([loadModels(), loadStatus(), loadIndexHealth(), loadBootstrapStatus()]);
+    await Promise.all([
+      loadModels(),
+      loadStatus(),
+      loadIndexHealth(),
+      loadBootstrapStatus(),
+      loadDegradedPreview(),
+    ]);
     isLoading = false;
 
     // Listen for WebSocket events
@@ -153,6 +177,54 @@
       return new Date(iso).toLocaleString();
     } catch {
       return iso;
+    }
+  }
+
+  // Operator-triggered re-embed of neural-search degraded (text-only) files (#626).
+  // Preview-only — never dispatches anything. Called on load and again once a reindex
+  // (including one this button dispatched) completes, so the count reflects reality
+  // rather than being assumed to hit zero.
+  async function loadDegradedPreview() {
+    isCheckingDegraded = true;
+    try {
+      const res = await axiosInstance.get('/search/degraded-embeddings');
+      degradedPreview = res.data;
+    } catch (e) {
+      console.error('Failed to load degraded-embeddings preview:', e);
+      degradedPreview = null;
+    } finally {
+      isCheckingDegraded = false;
+    }
+  }
+
+  function openReembedModal() {
+    if (!degradedPreview || degradedPreview.total_files === 0) return;
+    showReembedModal = true;
+  }
+
+  function cancelReembed() {
+    showReembedModal = false;
+  }
+
+  async function confirmReembed() {
+    showReembedModal = false;
+    isReembedding = true;
+    try {
+      const res = await axiosInstance.post('/search/reembed-degraded');
+      if (res.data.status === 'started') {
+        toastStore.success($t('settings.search.reembedStarted'));
+        isReindexing = true;
+        await loadStatus();
+      } else if (res.data.status === 'already_running') {
+        toastStore.info($t('settings.search.reembedAlreadyRunning'));
+      } else if (res.data.status === 'no_degraded_files') {
+        toastStore.info($t('settings.search.reembedNoFiles'));
+        await loadDegradedPreview();
+      }
+    } catch (e: unknown) {
+      toastStore.error(getErrorMessage(e, $t('settings.search.reembedFailed')));
+    } finally {
+      isReembedding = false;
     }
   }
 
@@ -466,6 +538,28 @@
     </div>
   {/if}
 
+  <!-- Re-embed degraded (text-only) files (issue #626, the #625 follow-up). Shown
+       independently of the bootstrap banner above — a degraded window can leave text-only
+       files behind even after the neural pipeline has since recovered. -->
+  {#if degradedPreview && degradedPreview.total_files > 0}
+    <div class="banner banner-warning reembed-banner">
+      <div class="reembed-banner-text">
+        <div class="banner-title">{$t('settings.search.reembedButton')}</div>
+        <div class="banner-body">
+          {$t('settings.search.reembedButtonCount', { count: degradedPreview.total_files })}
+        </div>
+      </div>
+      <button
+        class="btn btn-secondary btn-sm reembed-btn"
+        on:click={openReembedModal}
+        disabled={isReembedding || isCheckingDegraded || isReindexing}
+      >
+        {#if isReembedding}<Spinner size="small" />{/if}
+        {$t('settings.search.reembedButton')}
+      </button>
+    </div>
+  {/if}
+
   <!-- Embedding Model Selection -->
   <div class="section-divider"></div>
   <div class="subsection-header">
@@ -578,6 +672,23 @@
   on:confirm={confirmModelChange}
   on:cancel={cancelModelChange}
   on:close={cancelModelChange}
+/>
+
+<ConfirmationModal
+  isOpen={showReembedModal}
+  title={$t('settings.search.reembedModalTitle')}
+  message={degradedPreview
+    ? $t('settings.search.reembedModalMessage', {
+        count: degradedPreview.total_files,
+        users: degradedPreview.affected_users,
+      }) + (degradedPreview.truncated
+        ? ' ' + $t('settings.search.reembedModalTruncated', { count: degradedPreview.total_files })
+        : '')
+    : ''}
+  confirmText={$t('settings.search.reembedButton')}
+  on:confirm={confirmReembed}
+  on:cancel={cancelReembed}
+  on:close={cancelReembed}
 />
 
 
@@ -816,6 +927,27 @@
     margin-top: 0.125rem;
   }
 
+  /* Re-embed degraded files banner (#626) — same .banner-warning shell as the bootstrap
+     banner above, laid out as text + action button. */
+  .reembed-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .reembed-banner-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .reembed-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
   /* Live reindex progress styles */
   .reindex-live-progress {
     margin-bottom: 0.75rem;
@@ -985,6 +1117,15 @@
   }
 
   @media (max-width: 768px) {
+    .reembed-banner {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .reembed-btn {
+      justify-content: center;
+    }
+
     .subsection-header {
       flex-direction: column;
       align-items: flex-start;

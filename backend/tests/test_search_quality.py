@@ -1,7 +1,8 @@
 """Search quality integration tests against a self-seeded corpus.
 
 Run: RUN_SEARCH_QUALITY_TESTS=true pytest backend/tests/test_search_quality.py -v
-Requires: running OpenTranscribe dev stack (localhost:5174) with OpenSearch reachable.
+Requires: running OpenTranscribe dev stack (localhost:5174, or ``BACKEND_PORT`` for an
+isolated stack) with OpenSearch reachable.
 
 Unlike the old version of this file, this suite needs NO hand-curated external
 corpus. ``search_corpus`` (registered via ``fixtures.search_corpus_stack``) injects
@@ -20,6 +21,7 @@ Set RUN_SEARCH_QUALITY_TESTS=true to run this suite (it is not run in CI, which
 forces SKIP_OPENSEARCH=True).
 """
 
+import os
 import re
 
 import pytest
@@ -38,7 +40,7 @@ pytestmark = pytest.mark.skipif(
     reason="Search quality tests need a live dev stack (set RUN_SEARCH_QUALITY_TESTS=true to run)",
 )
 
-BASE = "http://localhost:5174/api"
+BASE = f"http://localhost:{os.environ.get('BACKEND_PORT', '5174')}/api"
 
 
 @pytest.fixture(scope="module")
@@ -213,35 +215,7 @@ class TestSemanticSuppression:
 class TestSemanticQuality:
     """Semantic search should find topically related content, keyed off GOLD."""
 
-    @pytest.mark.parametrize(
-        "query",
-        [
-            pytest.param(
-                q,
-                marks=pytest.mark.skip(
-                    reason=(
-                        "pending gold-set calibration — 'artificial intelligence' does not "
-                        "place sq-ai-policy (Export Controls Sync) in the top 3 of 6 with the "
-                        "deployed embedding model (all-MiniLM-L6-v2), even after the one "
-                        "class-wide relaxation applied to this test (dropping the anti-gold "
-                        "exclusion, see the docstring below). Measured directly: all 6 files "
-                        "come back semantic_only with fused scores crammed into a 0.027-0.065 "
-                        "band (Excavation Planning 0.0645 top, sq-ai-policy 5th at 0.0313) — at "
-                        "6 documents, that band is too narrow to be a meaningful ranking signal "
-                        "rather than noise. Every file also shares one near-identical filler "
-                        "turn ('Let's schedule...', the GLOBAL_WORD anchor), which likely "
-                        "compresses all 6 embeddings toward the same neighbourhood and swamps "
-                        "the topic-specific signal at this corpus size. Left skipped rather than "
-                        "reworded further per this task's calibration cap of ~1-2 skips; a fix "
-                        "would mean redesigning GLOBAL_WORD's placement, not more prose tuning."
-                    )
-                ),
-            )
-            if q == "artificial intelligence"
-            else q
-            for q in sorted(SEMANTIC_QUERIES)
-        ],
-    )
+    @pytest.mark.parametrize("query", sorted(SEMANTIC_QUERIES))
     def test_semantic_query_finds_gold_file_in_top_results(
         self, headers, search_corpus, neural_available, query
     ):

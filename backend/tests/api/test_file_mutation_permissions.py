@@ -18,12 +18,16 @@ import ast
 import pathlib
 import uuid
 
+import pytest
+
 from app.core.enums import FileStatus
 from app.models.media import Collection
 from app.models.media import CollectionMember
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.sharing import CollectionShare
+from app.services.minio_service import MinIOService
+from app.services.video_processing_service import VideoProcessingService
 
 API_ENDPOINTS_DIR = pathlib.Path(__file__).resolve().parents[2] / "app" / "api" / "endpoints"
 
@@ -233,8 +237,8 @@ def _find_min_permission_editor_sites() -> list[tuple[str, int]]:
 # ``user_files.py``) were fixed by a prior commit (issue #588 part 1) and are
 # listed here only so the guard's count matches the codebase exactly.
 MUTATING_ENDPOINTS: list[tuple[str, int]] = [
-    ("files/__init__.py", 1131),
-    ("files/__init__.py", 1198),
+    ("files/__init__.py", 1137),
+    ("files/__init__.py", 1204),
     ("files/crud.py", 874),
     ("files/crud.py", 965),
     ("files/crud.py", 1040),
@@ -242,7 +246,7 @@ MUTATING_ENDPOINTS: list[tuple[str, int]] = [
     ("files/management.py", 258),
     ("files/management.py", 356),
     ("files/management.py", 907),
-    ("files/reprocess.py", 417),
+    ("files/reprocess.py", 434),
     ("files/summary_status.py", 105),
     ("files/waveform.py", 362),
     ("media_collections.py", 703),
@@ -496,8 +500,22 @@ def test_viewer_cannot_clear_video_cache(
     assert response.status_code == 403
 
 
+@pytest.fixture
+def _stub_object_storage(monkeypatch):
+    """Neutralize MinIO I/O (unreachable in CI, which runs no MinIO container).
+
+    Same stub as ``test_cache_management.py``'s ``_stub_object_storage`` — this
+    test only exercises the permission gate in front of ``clear_video_cache``,
+    not cache-key correctness, so a real bucket-existence check and delete
+    round trip are not part of the claim under test.
+    """
+    monkeypatch.setattr(VideoProcessingService, "_ensure_cache_bucket_exists", lambda self: None)
+    monkeypatch.setattr(MinIOService, "list_objects", lambda self, b, prefix, recursive=True: [])
+    monkeypatch.setattr(MinIOService, "delete_object", lambda self, b, k: None)
+
+
 def test_editor_can_clear_video_cache(
-    client, other_user_auth_headers, other_user, normal_user, db_session
+    client, other_user_auth_headers, other_user, normal_user, db_session, _stub_object_storage
 ):
     media_file = _make_file(db_session, normal_user)
     _share_file(db_session, media_file, normal_user, other_user, permission="editor")

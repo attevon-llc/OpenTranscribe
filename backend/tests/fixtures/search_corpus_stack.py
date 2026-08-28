@@ -132,6 +132,45 @@ def search_corpus_token(search_corpus_user):
     return resp.json()["access_token"]
 
 
+def _ensure_neural_ready() -> None:
+    """Force the neural model into a deployed, ingest-ready state before indexing (issue #612).
+
+    ``app.main._initialize_neural_search`` is a ONE-SHOT background task, 15s after backend
+    startup: register -> deploy -> configure the ingest pipeline, with no retry. On a genuinely
+    cold ``--fresh`` deployment (no cached OpenSearch ML Commons artifacts) that one attempt can
+    lose the race against its own internal polling ceilings
+    (``ml_model_service._REGISTRATION_MAX_WAIT`` = 300s) — measured live: registration's
+    OpenSearch-side async task kept running and completed a few minutes AFTER our poll gave up,
+    but nothing ever re-checked, so the model sat ``REGISTERED``/``deployed: False`` forever and
+    ``ensure_neural_ingest_pipeline`` was never called. ``ensure_model_deployed`` (below) is the
+    exact function ``_initialize_neural_search`` uses and is idempotent/resumable — calling it
+    again here picks up an already-registered model and only pays the (measured ~30s) deploy
+    step, rather than waiting on a startup task that has already permanently given up.
+
+    Without this, ``search_corpus`` (below) indexes every synthetic meeting BEFORE any neural
+    pipeline exists, so every chunk lands ``mode=text-only`` with no embedding — permanently: an
+    already-indexed chunk is never retroactively embedded once the model later becomes ready.
+    That is why ``TestMatchCounts::test_semantic_files_zero_keyword_count``'s purely-semantic
+    query ("espionage", a word that appears nowhere in the corpus text) returned zero results on
+    a ``--fresh`` deployment despite the same corpus indexing correctly for every keyword test in
+    the same run.
+    """
+    from app.core.config import settings
+
+    if not settings.OPENSEARCH_NEURAL_SEARCH_ENABLED:
+        return
+
+    from app.services.search.indexing_service import ensure_neural_ingest_pipeline
+    from app.services.search.ml_model_service import get_ml_model_service
+
+    ml_service = get_ml_model_service()
+    if not ml_service.get_active_model_id():
+        model_id = ml_service.ensure_model_deployed(settings.OPENSEARCH_NEURAL_MODEL)
+        if model_id:
+            ml_service.set_active_model_id(model_id)
+    ensure_neural_ingest_pipeline()
+
+
 @pytest.fixture(scope="session")
 def search_corpus(search_corpus_user, search_corpus_token):
     """Inject all six meetings, index them for real, wait for convergence, then tear down."""
@@ -145,6 +184,8 @@ def search_corpus(search_corpus_user, search_corpus_token):
     from app.services.opensearch_service import get_opensearch_client
     from app.services.search.indexing_service import TranscriptIndexingService
     from tests.fixtures.search_corpus import build_meeting_docs
+
+    _ensure_neural_ready()
 
     user_id = search_corpus_user["id"]
     seed = f"pytest-searchqual-{uuid.uuid4().hex[:10]}"

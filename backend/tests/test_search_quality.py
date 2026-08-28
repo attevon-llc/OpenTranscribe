@@ -182,7 +182,7 @@ class TestMatchCounts:
                         f"'{q}': {r['title']} has kw_occ=0 but isn't semantic_only"
                     )
 
-    def test_semantic_files_zero_keyword_count(self, headers, search_corpus):
+    def test_semantic_files_zero_keyword_count(self, headers, search_corpus, neural_available):
         assert SEMANTIC_QUERIES, "no semantic queries defined — the loop below would run zero times"
         for q in SEMANTIC_QUERIES:
             data = search(headers, q)

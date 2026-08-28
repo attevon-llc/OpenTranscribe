@@ -10,6 +10,16 @@ this file is for.
 
 ## Which script to reach for
 
+- **Quick dev-cycle check** — `run-dev-tests.sh --full` (or `--fast`/`--backend-only`/
+  `--e2e-only`/`--frontend-only`). Chains `run-integration-tests.sh` → `e2e/run-e2e.sh` →
+  `frontend-check.sh` and prints one consolidated pass/fail report with per-phase logs under a
+  fresh `/tmp/ot-run-dev-tests.*` dir. **Not** `test-matrix.sh`: this is the fast "does my
+  current branch work" loop for ordinary development (minutes), `test-matrix.sh` is the
+  exhaustive deployment-mode rehearsal (dev/prod/lite/PKI/GPU-scale/fresh-install/upgrade,
+  stages 1-4) run before cutting a release (up to hours). Owns no test logic itself — same
+  convention as `test-matrix.sh` below — if a phase needs new behavior, add it to the wrapped
+  script. `--fast` swaps the backend phase's `--coverage` for `--e2e-smoke` and skips the full
+  e2e phase, for a quicker loop when iterating.
 - **Pre-merge gate** — `run-integration-tests.sh` (`--coverage --e2e-smoke --search-quality --cleanup`).
   Runs the ungated suite, then all `RUN_*`-gated security suites twice (FIPS off, then `FIPS_MODE=true`),
   then `-m integration`, then `-m gpu`, then **model-vs-schema drift**

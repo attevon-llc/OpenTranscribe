@@ -51,6 +51,29 @@ backend/tests/
 
 ## Running Tests
 
+### The one-command dev-cycle check
+
+`scripts/run-dev-tests.sh` chains the backend gate, the full E2E suite, and the frontend check
+into one command with a single consolidated pass/fail report — the fast "does my current branch
+work" loop for ordinary development. It is **not** the same tool as
+[`scripts/test-matrix.sh`](full-test-matrix.md), which is the exhaustive deployment-mode
+rehearsal (dev/prod/lite/PKI/GPU-scale/fresh-install/upgrade) run before cutting a release, not
+during ordinary development.
+
+```bash
+./opentr.sh start dev                     # live stack must be up first
+
+./scripts/run-dev-tests.sh --full         # backend gate + full e2e + frontend check
+./scripts/run-dev-tests.sh --fast         # backend gate (e2e smoke subset) + frontend check
+./scripts/run-dev-tests.sh --backend-only # just scripts/run-integration-tests.sh
+./scripts/run-dev-tests.sh --e2e-only     # just the full e2e suite
+./scripts/run-dev-tests.sh --frontend-only # just the frontend check, no live stack needed
+```
+
+Per-phase logs are written to a fresh `/tmp/ot-run-dev-tests.*` directory and the path is
+printed in the final report. Exit codes match `scripts/release.sh`'s convention: `0` pass, `1`
+gate failed, `2` misuse, `3` precondition unmet (e.g. the dev stack isn't up).
+
 ### Prerequisites
 
 ```bash

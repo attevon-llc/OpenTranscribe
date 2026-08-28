@@ -311,6 +311,13 @@ Manual frontend check: `./scripts/frontend-check.sh [--no-claude] [--check-only]
                                           # flags: --coverage --e2e-smoke --cleanup
 ```
 
+For a quick "does my current branch work" check during normal development — backend gate + e2e
++ frontend check, chained, one consolidated report — use `./scripts/run-dev-tests.sh --full`
+(or `--fast` for a smoke-e2e variant, `--backend-only`/`--e2e-only`/`--frontend-only` for a
+single phase). This is **not** the same job as `scripts/test-matrix.sh` (the exhaustive
+deployment-mode rehearsal across dev/prod/lite/PKI/GPU-scale/fresh-install/upgrade, run before
+cutting a release, not during ordinary development) — see `scripts/CLAUDE.md`.
+
 MinIO/OpenSearch-backed tests **auto-enable** when the dev stack is reachable (conftest TCP-probes localhost:5178/5180) and skip otherwise. Coverage is configured report-only (`pytest --cov=app`, `npm run test:coverage`).
 
 ### Four tools that keep the suite honest (issue #431)

@@ -241,6 +241,15 @@ class Settings(BaseSettings):
     WATCH_ALLOW_PRIVATE_ENDPOINTS: bool = (
         os.getenv("WATCH_ALLOW_PRIVATE_ENDPOINTS", "true").lower() == "true"
     )
+    # Same policy again for cloud ASR provider base URLs (UserASRSettings.base_url /
+    # GLADIA_API_BASE_URL — issue #594). A SEPARATE flag from LLM_ALLOW_PRIVATE_ENDPOINTS
+    # on purpose: an operator may want a self-hosted LLM but not a self-hosted ASR
+    # endpoint, or vice versa, and coupling the two would silently loosen one policy
+    # while an admin thought they were only touching the other. MUST stay false on
+    # anything multi-tenant or publicly registerable, same rationale as LLM's.
+    ASR_ALLOW_PRIVATE_ENDPOINTS: bool = (
+        os.getenv("ASR_ALLOW_PRIVATE_ENDPOINTS", "false").lower() == "true"
+    )
 
     # Bootstrap admin (issue #284 A0.9). In a relaxed environment the seeder creates
     # the well-known admin@example.com / "password" super_admin that the test suite

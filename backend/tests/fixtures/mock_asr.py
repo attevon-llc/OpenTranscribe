@@ -18,14 +18,15 @@ Tests needing the backend to reach it must use :func:`mock_asr_base_url_for_back
 which skips when only the subprocess is available: ``localhost`` inside the
 backend container is the container, not the host.
 
-⚠️ ``GladiaProvider._base`` resolves ``GLADIA_API_BASE_URL`` once, at
-construction time, from the environment — never from a per-config ``base_url``
-(that field is not wired to the real request path; see issue #594). So a test
-that only calls :func:`register_mock_gladia_asr_config` has configured the
-*app's* record of where to send requests, but the backend/celery process must
-ALSO have ``GLADIA_API_BASE_URL`` pointed at the mock (``docker-compose.mock-asr.yml``
-sets this on ``backend``/``celery-cloud-asr-worker`` when the stack is started
-with ``--with-mock-asr``) for a real pipeline run to actually reach it.
+``GladiaProvider._resolve_base_url`` (issue #594, fixed) now honours a per-config
+``base_url`` — :func:`register_mock_gladia_asr_config` sets one to
+``mock_asr_base_url_for_backend``, so that alone is enough for a real pipeline run
+to reach the mock. ``GLADIA_API_BASE_URL`` remains a fallback for flows that never
+save a config at all (release-rehearsal scripts); ``docker-compose.mock-asr.yml``
+still sets it on ``backend``/``celery-cloud-asr-worker`` when the stack is started
+with ``--with-mock-asr``, alongside ``ASR_ALLOW_PRIVATE_ENDPOINTS=true`` — required
+because ``mock-asr`` is a private compose hostname and the #594 SSRF guard refuses
+any non-default base URL, env-var- or config-supplied, without it.
 
 Scenario models (see the server for details):
 

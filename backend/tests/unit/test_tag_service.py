@@ -164,6 +164,55 @@ def _competing_writer(db_session, contested: str):
         _delete_user_on_other_connection(racer_id)
 
 
+def _commit_collection_on_other_connection(name: str, user_id: int) -> int:
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "INSERT INTO collection (name, user_id, source) "
+                "VALUES (:n, :uid, 'manual') RETURNING id"
+            ),
+            {"n": name, "uid": user_id},
+        ).one()
+        conn.commit()
+        return int(row[0])
+
+
+def _delete_collection_on_other_connection(collection_id: int) -> None:
+    with engine.connect() as conn:
+        conn.execute(text("DELETE FROM collection WHERE id = :i"), {"i": collection_id})
+        conn.commit()
+
+
+@contextlib.contextmanager
+def _competing_collection_writer(db_session, contested: str, owner_id: int):
+    """Commit ``contested`` as a collection owned by ``owner_id`` from another
+    connection just before our SAVEPOINT insert.
+
+    Mirrors ``_competing_writer`` above, for ``Collection`` instead of ``Tag``:
+    ``find_existing_similar_collection``'s pre-check misses (the racer's row does
+    not exist yet), another connection commits the same ``(user_id, name)`` pair,
+    and our own INSERT then hits ``_user_collection_uc``.
+    """
+    fired = {"done": False}
+    state: dict[str, int | None] = {"collection_id": None}
+
+    @event.listens_for(db_session, "before_flush")
+    def _race(session, flush_context, instances):  # noqa: ANN001 - SQLAlchemy signature
+        if fired["done"]:
+            return
+        if any(isinstance(obj, Collection) and obj.name == contested for obj in session.new):
+            fired["done"] = True
+            state["collection_id"] = _commit_collection_on_other_connection(contested, owner_id)
+
+    try:
+        yield
+    finally:
+        event.remove(db_session, "before_flush", _race)
+        db_session.rollback()
+        if state["collection_id"] is not None:
+            _delete_collection_on_other_connection(state["collection_id"])
+
+
 def test_case_only_difference_returns_existing_tag(db_session, normal_user):
     """A name matching only by case resolves to the existing tag, creating no row."""
     name = f"Interview-{_suffix()}"
@@ -761,9 +810,39 @@ def test_auto_label_collection_lookup_does_not_cross_accounts(db_session, normal
     svc = AutoLabelService(db_session)
     assert svc.find_existing_similar_collection(normal_user.id, name) is None
 
-    created = svc._get_or_create_collection_with_dedup(name, normal_user.id)
+    created, was_created = svc._get_or_create_collection_with_dedup(name, normal_user.id)
     assert created.user_id == normal_user.id
     assert created.id != other_collection.id
+    assert was_created is True
+
+
+def test_collection_collision_is_not_reported_as_created(db_session):
+    """A lost race on the collection unique constraint must report created=False.
+
+    Reproduces issue #589: ``_get_or_create_collection_with_dedup``'s IntegrityError
+    branch used to hand back the EXISTING winning row while ALSO invalidating the
+    collection cache — the same side effect the genuine-create branch produces. A
+    caller (``group_batch_by_topics``) that inferred "created" from that cache
+    invalidation therefore miscounted a collision (same dedup key hits an existing
+    collection) as a create. The fixed signature returns the real outcome directly.
+    """
+    contested = f"Quarterly Reviews {_suffix()}"
+    racer_id = _commit_user_on_other_connection(f"race-{uuid.uuid4().hex[:10]}@example.com")
+
+    svc = AutoLabelService(db_session)
+
+    try:
+        with _competing_collection_writer(db_session, contested, racer_id):
+            collection, created = svc._get_or_create_collection_with_dedup(contested, racer_id)
+
+            assert collection.name == contested
+            assert collection.user_id == racer_id
+            assert created is False, (
+                "a collision that hands back the EXISTING winning row must not be "
+                "reported as created — that is the exact miscount issue #589 fixes"
+            )
+    finally:
+        _delete_user_on_other_connection(racer_id)
 
 
 def test_auto_label_collection_cache_is_not_shared_between_users(

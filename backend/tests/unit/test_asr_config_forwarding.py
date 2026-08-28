@@ -145,3 +145,87 @@ def test_non_aws_provider_ignores_access_key_id():
     cfg = _aws_cfg(provider="deepgram", model_name="nova-3")
     provider = ASRProviderFactory.create_from_db_config(cfg)
     assert provider.provider_name == "deepgram"
+
+
+# ---------------------------------------------------------------------------------------
+# base_url forwarding (issue #594) — the identical bug shape as #300 above: a validated,
+# persisted UserASRSettings field silently dropped between the DB row and the constructed
+# provider. create_from_config took a base_url parameter and never passed it to any
+# provider constructor; Gladia is the one provider currently wired to consume it.
+# ---------------------------------------------------------------------------------------
+
+
+def _gladia_cfg(**overrides):
+    """A stored Gladia config row with an encrypted API key."""
+    base = {
+        "id": 9,
+        "provider": "gladia",
+        "model_name": "standard",
+        "base_url": None,
+        "region": None,
+        "api_key": encrypt_api_key("GLADIA-KEY"),
+        "access_key_id": None,
+    }
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def test_create_from_db_config_forwards_gladia_base_url(monkeypatch):
+    from app.core.config import settings
+    from app.services.asr.gladia_provider import GladiaProvider
+
+    monkeypatch.setattr(settings, "ASR_ALLOW_PRIVATE_ENDPOINTS", True, raising=False)
+
+    provider = ASRProviderFactory.create_from_db_config(
+        _gladia_cfg(base_url="http://127.0.0.1:5198")
+    )
+
+    assert isinstance(provider, GladiaProvider)
+    assert provider._base == "http://127.0.0.1:5198"
+
+
+def test_create_for_user_matches_test_connection_gladia_base_url(monkeypatch):
+    """The job path and the saved-config test path must resolve the identical base_url —
+    same invariant test_create_for_user_matches_test_connection_credentials pins for AWS.
+    """
+    from app.core.config import settings
+    from app.services.asr.gladia_provider import GladiaProvider
+
+    monkeypatch.setattr(settings, "ASR_ALLOW_PRIVATE_ENDPOINTS", True, raising=False)
+
+    cfg = _gladia_cfg(base_url="http://127.0.0.1:5198")
+    db = _FakeDB(setting=SimpleNamespace(setting_value="9"), cfg=cfg)
+
+    job_provider = ASRProviderFactory.create_for_user(user_id=1, db=db)
+    test_provider = ASRProviderFactory.create_from_db_config(cfg)
+
+    assert isinstance(job_provider, GladiaProvider)
+    assert isinstance(test_provider, GladiaProvider)
+    assert job_provider._base == test_provider._base == "http://127.0.0.1:5198"
+
+
+def test_gladia_config_with_no_base_url_falls_back_to_the_default():
+    from app.services.asr.gladia_provider import DEFAULT_BASE_URL
+    from app.services.asr.gladia_provider import GladiaProvider
+
+    provider = ASRProviderFactory.create_from_db_config(_gladia_cfg(base_url=None))
+
+    assert isinstance(provider, GladiaProvider)
+    assert provider._base == DEFAULT_BASE_URL
+
+
+def test_create_for_user_propagates_a_blocked_gladia_base_url(monkeypatch):
+    """A blocked base_url is a DELIBERATE refusal, not a config-loading failure — it must
+    propagate out of create_for_user rather than silently degrade to local, the same
+    distinction _guard_local_allowed's ASRConfigurationError already gets (factory.py:
+    "Not a config-loading failure — a deliberate refusal ... Let it propagate"). Silently
+    falling back to local here would run the job on a completely different, unconfigured
+    provider instead of surfacing the blocked endpoint to the operator.
+    """
+    from app.core.exceptions import ASRConfigurationError
+
+    cfg = _gladia_cfg(base_url="http://127.0.0.1:5198")
+    db = _FakeDB(setting=SimpleNamespace(setting_value="9"), cfg=cfg)
+
+    with pytest.raises(ASRConfigurationError, match="not a permitted outbound target"):
+        ASRProviderFactory.create_for_user(user_id=1, db=db)

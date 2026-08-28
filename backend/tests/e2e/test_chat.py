@@ -126,6 +126,21 @@ def ensure_llm_provider(api_session: requests.Session, backend_url: str):
     Leaves a real configured provider alone (someone testing against Ollama or a
     cloud model should keep it), and removes anything it registers itself, since
     E2E must never persist changes to dev data.
+
+    Explicitly activates what it registers via ``POST /llm-settings/set-active``
+    (issue #607) rather than assuming registration alone is enough. Before #607,
+    ``POST /llm-settings`` only auto-activated a config when it was the user's
+    FIRST ever — on a dev stack that already carries a prior (possibly stale/
+    unreachable) config, near-guaranteed on a long-lived shared stack, this
+    fixture's registration was a silent no-op for making chat actually usable:
+    ``active_llm_config_id`` kept pointing at the old config, `/api/llm/status`
+    kept reporting `available: false`, and the streaming tests self-skipped
+    anyway — while `is_active` on the newly created row read `true` regardless,
+    which is the exact misleading-field defect #607 fixes at the model/API layer.
+    That model/API fix does not change this fixture's own activation behavior
+    (creation still only auto-activates a user's first-ever config), so the
+    explicit `/set-active` call below is still required for this fixture to do
+    what its docstring says.
     """
     if _llm_configured(api_session, backend_url) or not _mock_llm_running():
         yield
@@ -146,6 +161,11 @@ def ensure_llm_provider(api_session: requests.Session, backend_url: str):
         )
         if response.ok:
             created_uuid = response.json().get("uuid")
+            api_session.post(
+                f"{backend_url}/api/llm-settings/set-active",
+                json={"configuration_id": created_uuid},
+                timeout=30,
+            )
     except requests.RequestException:
         created_uuid = None
 

@@ -103,6 +103,12 @@ LABEL org.opencontainers.image.title="OpenTranscribe Backend" \
 # torch.compile's Inductor JIT, which emits C++ kernels. torch.compile is now
 # opt-in only (production uses eager PyTorch). Without gcc and triton, a
 # torch_compile=True caller gets an eager fallback. Saves ~150 MB.
+#
+# gnupg: `backup_service.run_pg_dump` shells out to `gpg --symmetric` when the
+# scheduled/S3 backup feature's `backup.encrypt` setting is on (issue #604). Without
+# it, `pg_dump` succeeds and the `gpg` step then fails with FileNotFoundError, so an
+# encrypted backup silently never completes. postgresql-client (above) does NOT pull
+# gnupg in as a dependency — they are unrelated packages.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
@@ -110,6 +116,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     libimage-exiftool-perl \
     libgomp1 \
     postgresql-client \
+    gnupg \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 

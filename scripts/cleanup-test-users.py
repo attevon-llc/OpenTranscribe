@@ -89,6 +89,8 @@ KEEP_EMAILS = {
     'admin@example.com',
     'test@example.com',
     'testuser@example.com',  # legacy manual account — keep unless asked
+    'pkiadmin@example.com',  # PKI E2E admin-cert identity (issue #593) — JIT-provisioned
+    # by test_pki.py's admin_cert_context fixture, same treatment as testuser@example.com.
     'sharetest@example.com',
 }
 KEEP_PREFIXES = ('ldap-', 'kc-', 'superdave')

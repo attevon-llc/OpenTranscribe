@@ -187,6 +187,150 @@ class TestLLMSettingsAPI:
         assert duplicate.status_code == 400
         assert "already exists" in duplicate.json()["detail"]
 
+    def test_second_config_starts_inactive_not_stale_true(self, client, user_token_headers):
+        """A second configuration must NOT read is_active=true until it is actually made
+        active (issue #607). Before this fix the column stayed at its `True` default for
+        every config after the first, so GET could report multiple rows simultaneously as
+        `is_active: true` while only one was tracked as the real active config via
+        `active_llm_config_id`.
+        """
+        first = client.post(
+            "/api/llm-settings",
+            headers=user_token_headers,
+            json=_create_config_payload(name="First Config"),
+        )
+        assert first.status_code == 200, first.json()
+        first_uuid = first.json()["uuid"]
+        assert first.json()["is_active"] is True  # auto-activated: the user's first ever
+
+        second = client.post(
+            "/api/llm-settings",
+            headers=user_token_headers,
+            json=_create_config_payload(name="Second Config"),
+        )
+        assert second.status_code == 200, second.json()
+        second_uuid = second.json()["uuid"]
+        assert second.json()["is_active"] is False, (
+            "a second configuration must start inactive — it must not inherit the "
+            "column's True default the way it did before issue #607"
+        )
+
+        listing = client.get("/api/llm-settings", headers=user_token_headers)
+        assert listing.status_code == 200
+        data = listing.json()
+        assert data["active_configuration_id"] == first_uuid
+        by_uuid = {c["uuid"]: c["is_active"] for c in data["configurations"]}
+        assert by_uuid[first_uuid] is True
+        assert by_uuid[second_uuid] is False
+
+    def test_activating_a_config_deactivates_the_previous_one(self, client, user_token_headers):
+        """Creates two configs, activates the second, and asserts the first is no longer
+        `is_active=True` — issue #607's core exclusivity requirement.
+        """
+        first = client.post(
+            "/api/llm-settings",
+            headers=user_token_headers,
+            json=_create_config_payload(name="Config A"),
+        ).json()
+        second = client.post(
+            "/api/llm-settings",
+            headers=user_token_headers,
+            json=_create_config_payload(name="Config B"),
+        ).json()
+
+        activate = client.post(
+            "/api/llm-settings/set-active",
+            headers=user_token_headers,
+            json={"configuration_id": second["uuid"]},
+        )
+        assert activate.status_code == 200, activate.json()
+        assert activate.json()["is_active"] is True
+
+        listing = client.get("/api/llm-settings", headers=user_token_headers).json()
+        assert listing["active_configuration_id"] == second["uuid"]
+        by_uuid = {c["uuid"]: c["is_active"] for c in listing["configurations"]}
+        assert by_uuid[first["uuid"]] is False, (
+            "the previously active config must be deactivated in the same operation"
+        )
+        assert by_uuid[second["uuid"]] is True
+
+    def test_updating_is_active_directly_also_stays_exclusive(self, client, user_token_headers):
+        """PUT is a second entry point that could set `is_active=True` directly — it must
+        not bypass exclusivity (issue #607's PUT-side fix).
+        """
+        first = client.post(
+            "/api/llm-settings",
+            headers=user_token_headers,
+            json=_create_config_payload(name="PUT Config A"),
+        ).json()
+        second = client.post(
+            "/api/llm-settings",
+            headers=user_token_headers,
+            json=_create_config_payload(name="PUT Config B"),
+        ).json()
+        assert first["is_active"] is True
+        assert second["is_active"] is False
+
+        update = client.put(
+            f"/api/llm-settings/config/{second['uuid']}",
+            headers=user_token_headers,
+            json={"is_active": True},
+        )
+        assert update.status_code == 200, update.json()
+        assert update.json()["is_active"] is True
+
+        listing = client.get("/api/llm-settings", headers=user_token_headers).json()
+        assert listing["active_configuration_id"] == second["uuid"]
+        by_uuid = {c["uuid"]: c["is_active"] for c in listing["configurations"]}
+        assert by_uuid[first["uuid"]] is False
+        assert by_uuid[second["uuid"]] is True
+
+    def test_ensure_llm_provider_fixture_assumption_now_holds(self, client, user_token_headers):
+        """Reproduces `backend/tests/e2e/test_chat.py::ensure_llm_provider`'s exact
+        sequence on a stack that already has a prior configured (and possibly stale/
+        unreachable) provider — the shape of issue #607's real-world reproduction, and
+        why that fixture silently defeated itself before this fix (a second registered
+        config never became the real active one, so the streaming tests still self-
+        skipped even with `--with-mock-llm` up and healthy). Registering a SECOND config
+        and then explicitly calling `/set-active` (the fixture's #607-era fix) must make
+        it the real active configuration.
+        """
+        stale = client.post(
+            "/api/llm-settings",
+            headers=user_token_headers,
+            json=_create_config_payload(name="Stale Pre-existing Config"),
+        ).json()
+        assert stale["is_active"] is True  # stands in for a pre-existing "vllm" config
+
+        mock = client.post(
+            "/api/llm-settings",
+            headers=user_token_headers,
+            json=_create_config_payload(
+                name="Mock LLM (e2e)",
+                provider="custom",
+                model_name="mock-gpt",
+                base_url="http://mock-llm:5199/v1",
+                api_key="mock-key-not-secret",
+            ),
+        ).json()
+        assert mock["is_active"] is False, "must not silently inherit is_active from creation"
+
+        activate = client.post(
+            "/api/llm-settings/set-active",
+            headers=user_token_headers,
+            json={"configuration_id": mock["uuid"]},
+        )
+        assert activate.status_code == 200, activate.json()
+
+        listing = client.get("/api/llm-settings", headers=user_token_headers).json()
+        assert listing["active_configuration_id"] == mock["uuid"], (
+            "ensure_llm_provider's registration + set-active must make the mock the "
+            "real active config — the exact assumption issue #607 was filed against"
+        )
+        by_uuid = {c["uuid"]: c["is_active"] for c in listing["configurations"]}
+        assert by_uuid[mock["uuid"]] is True
+        assert by_uuid[stale["uuid"]] is False
+
     def test_test_connection_invalid_provider(self, client, user_token_headers):
         """Unknown providers are rejected by schema validation"""
         response = client.post(

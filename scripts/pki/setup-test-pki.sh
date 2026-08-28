@@ -129,6 +129,16 @@ EOF
 # Create test user certificates
 create_client_cert "testuser" "Test User" "testuser@example.com" "OpenTranscribe Users"
 create_client_cert "admin" "Admin User" "admin@example.com" "OpenTranscribe Admins"
+# pkiadmin (issue #593): a PKI-only admin identity, deliberately NOT admin@example.com.
+# The E2E admin-cert fixture (backend/tests/e2e/test_pki.py) used to reuse the "admin" cert
+# above, whose email matches the shared dev super_admin account. account_linking.
+# assert_email_link_permitted() refuses ANY email-matched link onto a super_admin
+# unconditionally (auth/account_linking.py — "a platform-owner account is never acquired
+# through an external directory"), so that fixture's login always 401'd once that guard
+# shipped. pkiadmin@example.com has no pre-existing DB row, so PKI JIT-provisions a brand
+# new account and grants it at most 'admin' (external IdPs never grant super_admin) — no
+# collision, and it exercises the real admin-role UI path the fixture is actually for.
+create_client_cert "pkiadmin" "PKI Admin User" "pkiadmin@example.com" "OpenTranscribe Admins"
 create_client_cert "john.doe" "John Doe" "john.doe@gov.example.com" "Department of Testing"
 create_client_cert "jane.smith" "Jane Smith" "jane.smith@gov.example.com" "Department of Testing"
 

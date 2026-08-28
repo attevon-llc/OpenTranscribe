@@ -12,6 +12,8 @@ import os
 import time
 from collections.abc import Callable
 
+from app.core.exceptions import ASRConfigurationError
+
 from .base import ASRProvider
 from .errors import ASRRateLimitedError
 from .errors import retry_after_from_headers
@@ -22,20 +24,65 @@ from .types import ASRWord
 
 logger = logging.getLogger(__name__)
 
+#: The real Gladia API. A literal in this file, never user- or operator-supplied, so it
+#: is exempt from the SSRF guard below — guarding it would mean every provider
+#: construction (including every test that never touches base_url at all) pays a live
+#: DNS lookup against api.gladia.io.
+DEFAULT_BASE_URL = "https://api.gladia.io"
+
 
 class GladiaProvider(ASRProvider):
-    def __init__(self, api_key: str, model_name: str = "standard"):
+    def __init__(self, api_key: str, model_name: str = "standard", base_url: str | None = None):
         self._api_key = api_key
         self._model_name = model_name
-        # Deployment-config override for testing against a stand-in (e.g. the mock
-        # ASR server in scripts/mock-asr-server.py). Resolved per-instance so tests
-        # can `monkeypatch.setenv` before construction. This is DELIBERATELY separate
-        # from `UserASRSettings.base_url`, which is validated and persisted but never
-        # consumed here — wiring a user-supplied base URL into a live outbound target
-        # needs an SSRF guard (the LLM path has LLM_ALLOW_PRIVATE_ENDPOINTS; the ASR
-        # path has nothing) and its own security-reviewed PR. See GH issue filed for
-        # this gap.
-        self._base = os.environ.get("GLADIA_API_BASE_URL") or "https://api.gladia.io"
+        self._base = self._resolve_base_url(base_url)
+
+    @staticmethod
+    def _resolve_base_url(configured_base_url: str | None) -> str:
+        """Resolve the Gladia API base URL, guarded against SSRF (issue #594).
+
+        Priority: an explicit ``base_url`` — normally ``UserASRSettings.base_url``,
+        threaded through ``ASRProviderFactory.create_from_config`` — beats the
+        deployment-level ``GLADIA_API_BASE_URL`` env var (the ``--with-mock-asr``
+        overlay's override, resolved per-instance so tests can ``monkeypatch.setenv``
+        before construction), which beats the real Gladia API.
+
+        Anything that overrides :data:`DEFAULT_BASE_URL` is, by construction, either a
+        user-supplied config value or operator-set deployment config — exactly the kind
+        of live outbound target ``app/services/llm_service.py`` guards behind
+        ``LLM_ALLOW_PRIVATE_ENDPOINTS``. This mirrors that pattern with its own
+        ``ASR_ALLOW_PRIVATE_ENDPOINTS`` flag (a deliberately separate setting — see
+        ``core/config.py``) so a private/loopback/RFC1918/link-local target — including
+        a docker-compose hostname like ``mock-asr`` — is refused unless explicitly
+        allowed. Metadata addresses (169.254.169.254 and friends) are refused even then;
+        see ``app/utils/url_validation.py``.
+
+        Raises:
+            ASRConfigurationError: The resolved base URL is not a permitted outbound
+                target. Raised at construction time (like ``_guard_local_allowed``)
+                rather than deep inside ``transcribe()``, so a bad config fails fast
+                instead of surfacing as an opaque connection error inside a Celery task.
+        """
+        candidate = (configured_base_url or os.environ.get("GLADIA_API_BASE_URL") or "").strip()
+        if not candidate:
+            return DEFAULT_BASE_URL
+        candidate = candidate.rstrip("/")
+        if candidate == DEFAULT_BASE_URL:
+            return candidate
+
+        from app.core.config import settings as _settings
+        from app.utils.url_validation import is_safe_url
+
+        safe, reason = is_safe_url(candidate, allow_private=_settings.ASR_ALLOW_PRIVATE_ENDPOINTS)
+        if not safe:
+            logger.warning("Refusing Gladia base_url %r: %s", candidate, reason)
+            raise ASRConfigurationError(
+                "The configured Gladia base URL is not a permitted outbound target. It "
+                "must be a publicly reachable http(s) address. Set "
+                "ASR_ALLOW_PRIVATE_ENDPOINTS=true to allow a self-hosted endpoint on a "
+                "private network."
+            )
+        return candidate
 
     @property
     def provider_name(self) -> str:

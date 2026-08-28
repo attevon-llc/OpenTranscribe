@@ -178,7 +178,11 @@ get_admin_token() {
 }
 
 restore_admin_local_auth() {
-    # Restore admin user to local auth type after PKI tests convert it
+    # Defensive safety net, kept in cleanup_on_exit's unconditional teardown path.
+    # PKI Phase 3 (issue #593) no longer authenticates as admin@example.com — it uses a
+    # separate pkiadmin@example.com identity instead — so this is normally a no-op
+    # ("Admin already has local auth"). It stays in case some other phase or a future
+    # change ever converts the shared admin account's auth_type again.
     docker exec opentranscribe-backend python3 -c "
 import os, sys
 sys.path.insert(0, '/app')
@@ -514,9 +518,16 @@ phase_3_pki() {
     local token
     token=$(get_admin_token) || { log_err "Failed to get admin token"; RESULT_pki=1; return 1; }
 
-    # Get admin cert DN for PKI_ADMIN_DNS
+    # Get the pkiadmin cert DN for PKI_ADMIN_DNS. Deliberately NOT clients/admin.crt
+    # (issue #593): that cert's email is admin@example.com, which collides with the
+    # shared dev super_admin account — auth/account_linking.assert_email_link_permitted()
+    # refuses ANY email-matched link onto a super_admin unconditionally, so logging in
+    # with admin.p12 always 401'd once that guard shipped. pkiadmin.crt (email
+    # pkiadmin@example.com) has no pre-existing DB row, so PKI JIT-provisions a fresh
+    # account at the 'admin' role instead — no collision, and the real admin@example.com
+    # super_admin account is never touched by this phase at all.
     local admin_dn
-    admin_dn=$(openssl x509 -in "${PROJECT_ROOT}/scripts/pki/test-certs/clients/admin.crt" -noout -subject -nameopt RFC2253 2>/dev/null | sed 's/^subject=//')
+    admin_dn=$(openssl x509 -in "${PROJECT_ROOT}/scripts/pki/test-certs/clients/pkiadmin.crt" -noout -subject -nameopt RFC2253 2>/dev/null | sed 's/^subject=//')
 
     curl -sf -X PUT "${BACKEND_URL}/api/admin/auth-config/pki" \
         -H "Authorization: Bearer $token" \
@@ -549,9 +560,13 @@ phase_3_pki() {
     DEV_FRONTEND_STOPPED=false
     wait_for_port 5173 30 "Dev Frontend" || true
 
-    # Restore admin to local auth (PKI tests convert admin user)
-    log_step "Restoring admin to local auth..."
-    restore_admin_local_auth
+    # Note (issue #593): this phase used to log in with a cert whose email matched
+    # admin@example.com, converting the shared dev super_admin account to auth_type='pki'
+    # and requiring restore_admin_local_auth() here to convert it back. It now logs in
+    # with pkiadmin@example.com (a distinct, PKI-only account — see phase_3_pki's Step 5
+    # comment), so admin@example.com is never touched by this phase and there is nothing
+    # to restore. cleanup_on_exit's own restore_admin_local_auth() call remains as a
+    # defensive no-op in case any OTHER phase ever converts it.
 
     # Disable PKI
     token=$(get_admin_token 2>/dev/null) || true

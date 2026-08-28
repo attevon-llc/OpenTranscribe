@@ -39,7 +39,14 @@ PKI_URL = os.environ.get("PKI_E2E_URL", "https://localhost:5182")
 _project_root = Path(__file__).resolve().parents[3]
 CERTS_DIR = _project_root / "scripts" / "pki" / "test-certs"
 CA_CERT = CERTS_DIR / "ca" / "ca.crt"
-ADMIN_PFX = CERTS_DIR / "clients" / "admin.p12"
+# Deliberately NOT clients/admin.p12 (issue #593): that cert's email is
+# admin@example.com, which collides with the shared dev super_admin account.
+# auth/account_linking.assert_email_link_permitted() refuses ANY email-matched
+# link onto a super_admin unconditionally, so an admin.p12 login always 401'd
+# once that guard shipped. pkiadmin.p12 (CN "PKI Admin User", email
+# pkiadmin@example.com) has no pre-existing DB row, so PKI JIT-provisions a new
+# account at the 'admin' role (external IdPs never grant super_admin) instead.
+ADMIN_PFX = CERTS_DIR / "clients" / "pkiadmin.p12"
 TESTUSER_PFX = CERTS_DIR / "clients" / "testuser.p12"
 PFX_PASSPHRASE = "changeit"
 

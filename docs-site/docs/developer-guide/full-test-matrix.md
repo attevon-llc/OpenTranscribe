@@ -32,7 +32,7 @@ login) and asserts on outcome, not just that a command exited 0.
 
 | Mode | Stage / leg | Coverage | Known gaps |
 |---|---|---|---|
-| Dev — baseline | Stage 2A | Real: upload, e2e, chat vs mock + real vLLM, all 3 auth IdPs | — |
+| Dev — baseline | Stage 2A | Real: upload, e2e, chat vs mock + real vLLM, all 3 auth IdPs | Leg 4 (real vLLM) is **not reproducible on a single 12 GB GPU** — the default model does not fit at any documented setting ([#608](https://github.com/attevon-llc/OpenTranscribe/issues/608)); see Cycle 2A below for the numbers and the (unverified) `--enforce-eager` escape hatch |
 | Dev — GPU scaling | Stage 2B | Real: N-worker topology, concurrent uploads, OOM check | — |
 | Dev — diarization | Stage 2C | Real: diar-native default path + PyAnnote fallback | — |
 | Dev — lite/CPU | Stage 2D | **Topology-only** — proves no GPU worker/memory, uploads nothing | The pipeline itself (ASR/search/chat) is NOT exercised here — see the lite-mode rehearsal row below |
@@ -85,10 +85,39 @@ keeps a failure attributable to one leg.
 These five overlays safely co-run on one stack: each binds a distinct loopback port (mock-llm
 `5199`, `--with-llm-test`'s vLLM `5195`, lldap `3890`/`17170`, Keycloak `8180`, Authentik `9022`),
 none of them touches Celery worker scaling or `COMPOSE_PROFILES` (that's Cycle 2B's job), and only
-`--with-llm-test` takes a GPU — pinned via `LLM_TEST_GPU_DEVICE_ID`. On a single-usable-GPU host,
-set `LLM_TEST_GPU_DEVICE_ID` to that GPU and keep `LLM_TEST_VLLM_GPU_UTIL <= 0.45` so vLLM leaves
-headroom for a concurrent transcription, or sequence the LLM legs (3-4 below) after the
-transcription-heavy legs (1-2) finish.
+`--with-llm-test` takes a GPU — pinned via `LLM_TEST_GPU_DEVICE_ID`.
+
+⚠️ **`LLM_TEST_VLLM_GPU_UTIL <= 0.45` alone does NOT make the default model fit a 12 GB card — it
+does not fit at ALL, at any tested setting** ([#608](https://github.com/attevon-llc/OpenTranscribe/issues/608)).
+Measured on an idle RTX 3080 Ti (11.62 GiB visible to the container, every other GPU-resident
+container stopped first so the *entire* card was free):
+
+- Loading the model's weights alone (`--dtype float16 --quantization awq`, both hardcoded in
+  `docker-compose.llm-test.yml`) consumes **~8.85–9.3 GiB**, independent of
+  `--gpu-memory-utilization` — that flag only bounds the *planned* KV-cache pool, never weight
+  loading.
+- With weights loaded (~9.32 GiB) and the default `VLLM_COMPILE` mode's inductor autotuning then
+  running, the engine crashes trying to allocate **another ~1.25 GiB** of scratch
+  (`~10.87 GiB in use` when the allocation is attempted) — a floor of roughly **~10.6–10.9 GiB**
+  against the 11.62 GiB visible, and this crash is not bounded by `--max-num-batched-tokens`,
+  `--max-num-seqs`, or `--max-model-len` either.
+
+So on a single-usable-12GB-GPU host, leg 4 (real vLLM) of this cycle is currently **⊘ NOT
+MEASURED** — do not spend time chasing a `GPU_UTIL` value that will fit; none does. Two options,
+neither verified yet:
+
+1. Set `LLM_TEST_VLLM_EXTRA_ARGS=--enforce-eager` (compose passthrough added alongside this doc
+   fix) to disable `torch.compile`/CUDA graph capture — the standard vLLM VRAM workaround, and the
+   escape hatch that did not exist when #608 was measured. This removes the ~1.25 GiB compile
+   overhead but was **not** re-measured against a 12 GB card; confirm it actually fits before
+   trusting it as the new guidance.
+2. Point `LLM_TEST_MODEL` at a smaller model that is known to fit instead.
+
+On a **multi-GPU** host (this project's documented reference hardware: GPU 1 for
+transcription/diarization, GPUs 0/2 reserved A6000s with 49 GiB each), point
+`LLM_TEST_GPU_DEVICE_ID` at one of the larger idle cards — the default model is proven there
+(compose file header) — or sequence the LLM legs (3-4 below) after the transcription-heavy legs
+(1-2) finish if only the transcription GPU is available.
 
 Run these legs serially against that one stack. LLM provider and auth method are both
 single-valued DB-backed `SystemSettings`, so concurrent legs would race each other's config —
@@ -99,7 +128,7 @@ each leg restores its own configuration on exit.
 | 1 | `./scripts/run-integration-tests.sh --coverage --search-quality --cleanup` | Exit 0; the search-quality phase reports a non-zero collected-test count |
 | 2 | `./scripts/e2e/run-e2e.sh` | 0 failed. Visual-regression baseline failures must be explicitly triaged before release — never ignored as "known flaky" |
 | 3 | `pytest backend/tests/e2e/test_chat.py test_chat_grounding.py test_chat_trace_panel.py` against `mock-gpt`/`mock-echo`/`mock-error`/`mock-reasoning` | Citations resolve, redaction masks apply, SSE completes, each error model surfaces the error it models |
-| 4 | Same three files, provider repointed at `http://llm-test-vllm:8000/v1` | Real citations resolve to real segment ids; the local-provider redaction exemption fires (no masking of local-model input) |
+| 4 | Same three files, provider repointed at `http://llm-test-vllm:8000/v1` | Real citations resolve to real segment ids; the local-provider redaction exemption fires (no masking of local-model input). **⊘ NOT MEASURED on a single 12 GB GPU** — the default model does not fit at any tested setting ([#608](https://github.com/attevon-llc/OpenTranscribe/issues/608), see above); run it on a multi-GPU host or a confirmed-fitting `LLM_TEST_MODEL` |
 | 5 | `./scripts/run-auth-e2e.sh --cleanup --skip-pki` (PKI is Stage 3 only — no dev-mode PKI variant exists) | Per-method summary green; `GET /api/auth/session` returns 200 anonymous afterward, proving config was restored |
 | 6 | — | The `RUN_*`-gated security suites (both FIPS modes) already run inside leg 1's `run-integration-tests.sh` — do not re-run them separately here |
 

@@ -220,7 +220,7 @@ class AutoLabelService:
                     continue
 
                 try:
-                    collection = self._get_or_create_collection_with_dedup(name, user_id)
+                    collection, _created = self._get_or_create_collection_with_dedup(name, user_id)
                     self._add_file_to_collection(media_file, collection, confidence)
                     result["auto_applied_collections"].append(name)
                 except Exception as e:
@@ -280,11 +280,20 @@ class AutoLabelService:
 
     def _get_or_create_collection_with_dedup(
         self, name: str, user_id: int, source: str = TAG_SOURCE_AUTO_AI
-    ) -> Collection:
-        """Get or create a collection, using fuzzy matching to prevent duplicates."""
+    ) -> tuple[Collection, bool]:
+        """Get or create a collection, using fuzzy matching to prevent duplicates.
+
+        Returns:
+            ``(collection, created)`` — ``created`` is True only when this call
+            actually inserted a new row. A caller must not infer "created" from
+            a side effect (e.g. cache invalidation): the IntegrityError branch
+            below also invalidates the cache when a lost race hands back an
+            EXISTING collection, and inferring from that miscounted a collision
+            as a create (issue #589).
+        """
         existing = self.find_existing_similar_collection(user_id, name)
         if existing:
-            return existing
+            return existing, False
 
         try:
             nested = self.db.begin_nested()
@@ -292,7 +301,7 @@ class AutoLabelService:
             self.db.add(collection)
             self.db.flush()
             self._invalidate_collection_cache(user_id)
-            return collection
+            return collection, True
         except IntegrityError:
             nested.rollback()
             self._invalidate_collection_cache(user_id)
@@ -302,7 +311,7 @@ class AutoLabelService:
                 .first()
             )
             if existing_collection:
-                return existing_collection
+                return existing_collection, False
             raise
 
     def _add_tag_to_file(self, media_file: MediaFile, tag: Tag, confidence: float) -> bool:
@@ -427,10 +436,11 @@ class AutoLabelService:
             collection_name = tag_name.title()
 
             # _get_or_create_collection_with_dedup already does fuzzy lookup
-            # internally; detect new collections via cache invalidation.
-            # Ensure cache is populated so we can detect invalidation.
-            self._get_user_collections_cached(user_id)
-            collection = self._get_or_create_collection_with_dedup(
+            # internally and reports whether it actually inserted a row —
+            # trust that signal rather than inferring it from a side effect
+            # (issue #589: a collision that hands back an EXISTING collection
+            # also invalidates the cache, so that inference miscounted it).
+            collection, created = self._get_or_create_collection_with_dedup(
                 collection_name, user_id, source=TAG_SOURCE_BULK_GROUP
             )
 
@@ -438,8 +448,7 @@ class AutoLabelService:
                 self._add_file_to_collection(mf, collection, confidence=0.0)
                 files_grouped.add(mf.id)
 
-            # Cache is invalidated only when a new collection is created
-            if user_id not in self._collection_cache:
+            if created:
                 collections_created += 1
 
         batch.grouping_status = "completed"

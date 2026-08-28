@@ -881,19 +881,43 @@ services:
     env_file: .env
     security_opt:
       - no-new-privileges:true
+    # ⚠️ issue #609: flower 2.1.0's /api/workers is a ONE-SHOT startup snapshot,
+    # not a live roster. Flower.start() (flower/app.py:98) issues a single
+    # `celery inspect` broadcast at process boot with a 1 s reply timeout and
+    # never re-inspects on a timer (grep the installed package for
+    # update_workers/PeriodicCallback — there is no periodic inspection at
+    # all). A worker still importing torch/whisperx, or running
+    # @worker_ready preload_models() synchronously in its main thread
+    # (backend/app/core/celery.py PRELOAD_GPU_MODELS), is not ready to answer
+    # inside that 1 s boot window and is absent from the JSON API FOREVER —
+    # "wait longer and re-check" cannot fix it, because nothing ever asks
+    # again. This is NOT a --pool=threads bug: prefork workers (cpu-processor,
+    # cloud-asr) lose the exact same race, and a --pool=threads worker
+    # answering its own healthcheck's `inspect ping` proves threads workers
+    # DO respond to broadcasts. --inspect_timeout below only widens the
+    # window for a request that explicitly asks Flower to re-broadcast (see
+    # scripts/gpu-scale-smoke.sh and scripts/bulk-processing-cheatsheet.sh,
+    # both of which now call /api/workers?refresh=1) — it does not make the
+    # one-shot cache itself refresh. --queues=... and --broker=... used to be
+    # listed here and did NOTHING: flower.command.is_flower_option() silently
+    # discards any argv flag it doesn't recognize as a real Flower option
+    # (--queues has never been one), and Flower already resolves the broker
+    # from CELERY_BROKER_URL below via settings.CELERY_BROKER_URL — removing
+    # them is a no-op fix that also silences a boot-time warning.
+    # backend/tests/unit/test_flower_worker_discovery.py guards both facts so
+    # a future silently-dropped flag doesn't reappear unnoticed.
     command: >
       python -m celery -A app.core.celery flower
       --port=5555
       --url_prefix=${FLOWER_URL_PREFIX:-flower}
       --persistent=True
       --db=/app/temp/flower.db
-      --broker=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0
       --max_tasks=10000
       --natural_time=True
       --auto_refresh=True
       --tasks_columns=name,uuid,state,received,started,runtime,worker,args
       --purge_offline_workers=600
-      --queues=gpu,gpu-transcribe,gpu-diarize,download,cpu,nlp,embedding,utility,cloud-asr,cpu-transcribe,redaction,celery
+      --inspect_timeout=10000
       --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower}
     ports:
       # Loopback-only: prod reaches Flower through nginx on the compose network;

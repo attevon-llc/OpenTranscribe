@@ -22,6 +22,23 @@
 #   scripts/gpu-scale-smoke.sh --check-only # Flower/topology check only, no uploads
 #
 # Exit codes: 0 pass · 1 check failed · 4 NOT MEASURED (no stack, no Flower, no fixtures).
+#
+# ⚠️ issue #609: /api/workers is NOT a live worker roster. flower 2.1.0
+# populates it from a SINGLE `celery inspect` broadcast issued once in
+# Flower.start() (flower/app.py:98) with a 1 s reply timeout, and never
+# re-inspects on a timer — grep the installed package for update_workers /
+# PeriodicCallback and there is no periodic inspection call at all. A GPU
+# worker that is still importing torch/whisperx, or running
+# @worker_ready preload_models() synchronously in its own main thread
+# (backend/app/core/celery.py, PRELOAD_GPU_MODELS), is not ready to answer a
+# broadcast inside Flower's one-second boot window and is absent from the
+# cached response FOREVER — waiting and re-checking cannot help, because
+# nothing ever asks Flower to look again. `?refresh=1` is Flower's own
+# documented query parameter (it awaits a fresh inspect broadcast for THIS
+# request) and is what makes this check meaningful; without it, this script
+# was asserting on a snapshot taken before the GPU worker had a chance to
+# answer, which is exactly why "no gpu-scaled@* worker registered in Flower"
+# could fire against a demonstrably healthy, correctly running deployment.
 
 set -euo pipefail
 
@@ -72,23 +89,67 @@ FLOWER_BASE="http://127.0.0.1:${FLOWER_PORT}/${FLOWER_URL_PREFIX}"
 command -v curl >/dev/null 2>&1 || fail "curl not available" 4
 command -v python3 >/dev/null 2>&1 || fail "python3 not available" 4
 
-WORKERS_JSON="$(curl -fsS -u "${FLOWER_USER}:${FLOWER_PASSWORD}" "${FLOWER_BASE}/api/workers" 2>/dev/null || true)"
+# flower's /api/workers is a boot-time snapshot cache (see header). Ask it to
+# actually broadcast with ?refresh=1 (Flower's own documented parameter,
+# awaited server-side — flower/api/workers.py) and retry: a refresh landing
+# while the boot-time inspect is still in flight de-duplicates onto that
+# stale task (Inspector.inspect()), and a threads-pool GPU worker mid
+# preload_models()/mid-transcription can hold the GIL long enough to miss
+# even a widened reply deadline.
+FLOWER_REFRESH_ATTEMPTS="${FLOWER_REFRESH_ATTEMPTS:-6}"
+FLOWER_REFRESH_INTERVAL="${FLOWER_REFRESH_INTERVAL:-10}"
+WORKERS_JSON=""
+for _attempt in $(seq 1 "$FLOWER_REFRESH_ATTEMPTS"); do
+    # --max-time must exceed the container's --inspect_timeout (10 s), or a
+    # curl abort reintroduces #609 in a new shape.
+    WORKERS_JSON="$(curl -fsS --max-time 40 -u "${FLOWER_USER}:${FLOWER_PASSWORD}" \
+        "${FLOWER_BASE}/api/workers?refresh=1" 2>/dev/null || true)"
+    if [[ -n "$WORKERS_JSON" ]] && grep -q '"gpu-scaled@' <<<"$WORKERS_JSON"; then
+        break
+    fi
+    sleep "$FLOWER_REFRESH_INTERVAL"
+done
 [[ -n "$WORKERS_JSON" ]] || fail "Flower not reachable at $FLOWER_BASE — start the stack with ./opentr.sh start dev --gpu-scale" 4
 
 # WORKERS_JSON can exceed ARG_MAX with a full worker roster's stats blob
 # (observed with 8 registered workers) — pipe via stdin, never sys.argv.
-GPU_WORKER_CONCURRENCY="$(python3 -c '
-import json, sys
+#
+# Entry-freshness matters because Inspector.workers (flower/inspector.py) is a
+# defaultdict(dict) that is NEVER pruned — purge_offline_workers only touches
+# state.metrics, not this dict — so a worker seen once in an earlier
+# ?refresh=1 stays in the response forever, even after its container is gone.
+# A cached entry older than FLOWER_MAX_ENTRY_AGE seconds is not proof the
+# worker is alive right now (issue #609 edge case: a stale gpu-transcription@
+# entry could false-pass the GPU_SCALE_DEFAULT_WORKER=1 check below after that
+# worker was scaled to 0 without restarting Flower).
+FLOWER_MAX_ENTRY_AGE="${FLOWER_MAX_ENTRY_AGE:-120}"
+read -r GPU_WORKER_CONCURRENCY GPU_WORKER_FRESH <<<"$(python3 -c '
+import json, sys, time
 data = json.loads(sys.stdin.read())
+max_age = '"$FLOWER_MAX_ENTRY_AGE"'
 for name, info in data.items():
     if name.startswith("gpu-scaled@"):
         stats = info.get("stats", {}) if isinstance(info, dict) else {}
         pool = stats.get("pool", {})
-        print(pool.get("max-concurrency", ""))
+        age = time.time() - float(info.get("timestamp", 0) or 0)
+        fresh = "fresh" if age <= max_age else "stale"
+        print(pool.get("max-concurrency", ""), fresh)
         break
+else:
+    print("", "")
 ' <<<"$WORKERS_JSON")"
 
-[[ -n "$GPU_WORKER_CONCURRENCY" ]] || fail "no gpu-scaled@* worker registered in Flower"
+if [[ -z "$GPU_WORKER_CONCURRENCY" ]]; then
+    KNOWN_WORKERS="$(python3 -c 'import json, sys
+data = json.loads(sys.stdin.read())
+print(", ".join(sorted(data)) or "(none)")' <<<"$WORKERS_JSON" 2>/dev/null || echo "(unparseable response)")"
+    fail "no gpu-scaled@* worker registered in Flower after $FLOWER_REFRESH_ATTEMPTS refresh attempt(s).
+Flower returned: $KNOWN_WORKERS
+Cross-check with: ./opentr.sh shell celery-worker -> celery -A app.core.celery inspect ping
+If inspect ping lists gpu-scaled@ but Flower does not, re-read issue #609."
+fi
+[[ "$GPU_WORKER_FRESH" == "fresh" ]] || fail \
+    "gpu-scaled@* worker's Flower entry is stale (older than ${FLOWER_MAX_ENTRY_AGE}s) — Inspector.workers is never pruned, so this is a leftover cached entry, not proof the worker is alive now (issue #609)."
 [[ "$GPU_WORKER_CONCURRENCY" == "$GPU_SCALE_WORKERS" ]] || fail \
     "gpu-scaled worker pool concurrency is $GPU_WORKER_CONCURRENCY, expected GPU_SCALE_WORKERS=$GPU_SCALE_WORKERS"
 
@@ -97,12 +158,22 @@ if [[ "$GPU_SCALE_DEFAULT_WORKER" == "1" ]]; then
     # (docker-compose.yml's celery-worker service, --hostname gpu-transcription@%h)
     # — it has never been "celery@%h"; that stale assumption made this check fail
     # unconditionally in dual-GPU mode even against a correctly running deployment.
-    DEFAULT_PRESENT="$(python3 -c '
-import json, sys
+    read -r DEFAULT_PRESENT DEFAULT_FRESH <<<"$(python3 -c '
+import json, sys, time
 data = json.loads(sys.stdin.read())
-print("yes" if any(n.startswith("gpu-transcription@") for n in data) else "no")
+max_age = '"$FLOWER_MAX_ENTRY_AGE"'
+for name, info in data.items():
+    if name.startswith("gpu-transcription@"):
+        age = time.time() - float(info.get("timestamp", 0) or 0)
+        fresh = "fresh" if age <= max_age else "stale"
+        print("yes", fresh)
+        break
+else:
+    print("no", "")
 ' <<<"$WORKERS_JSON")"
     [[ "$DEFAULT_PRESENT" == "yes" ]] || fail "GPU_SCALE_DEFAULT_WORKER=1 (dual-GPU mode) but no gpu-transcription@* default worker is registered"
+    [[ "$DEFAULT_FRESH" == "fresh" ]] || fail \
+        "GPU_SCALE_DEFAULT_WORKER=1 (dual-GPU mode) but the gpu-transcription@* entry in Flower is stale (older than ${FLOWER_MAX_ENTRY_AGE}s) — Inspector.workers is never pruned, so this could be a leftover entry from before the worker was scaled to 0 (issue #609)."
 fi
 
 if [[ $CHECK_ONLY -eq 1 ]]; then

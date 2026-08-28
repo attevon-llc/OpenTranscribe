@@ -224,6 +224,76 @@ dbs_wait_for_speaker_attributes() {
     return 1
 }
 
+# dbs_wait_for_stable_query CONTAINER USER DB TIMEOUT QUERY_SQL [STABLE_POLLS] [INTERVAL]
+#   Generic settle primitive: polls QUERY_SQL (a single-value psql -tA query) until it
+#   returns the SAME value STABLE_POLLS times in a row (default 3), INTERVAL seconds apart
+#   (default 5) — "stopped changing", not merely "matches an expected value". Used where
+#   the set of async post-completion writers touching a table is not exhaustively known (or
+#   not worth tracking one predicate per writer, the way dbs_wait_for_speaker_attributes
+#   does above) — quiescence is the only signal available in that case.
+#
+#   Returns non-zero, never dies, on timeout. Prints nothing on stdout — this only gates
+#   timing, the caller re-derives whatever it needs (a fingerprint, a fresh dump) afterward.
+dbs_wait_for_stable_query() {
+    local container="$1" user="$2" db="$3" timeout="$4" query="$5"
+    local stable_polls="${6:-3}" interval="${7:-5}"
+    local deadline=$(( $(date +%s) + timeout ))
+    local last="" current="" streak=0
+    while (( $(date +%s) < deadline )); do
+        current="$(docker exec "$container" psql -tA -U "$user" "$db" -c "$query" 2>/dev/null | tr -d '[:space:]')"
+        if [[ "$current" == "$last" ]]; then
+            streak=$(( streak + 1 ))
+            if (( streak >= stable_polls )); then
+                return 0
+            fi
+        else
+            streak=1
+        fi
+        last="$current"
+        sleep "$interval"
+    done
+    return 1
+}
+
+# dbs_wait_for_media_file_settled CONTAINER USER DB TIMEOUT
+#   Waits for media_file's own content digest to stop changing before a caller treats a
+#   snapshot of it as stable. This repo has several async post-completion writers that
+#   touch media_file at an unpredictable delay after a file's status flips to completed
+#   (redaction detection's redaction_status/redaction_model_version/redaction_coverage
+#   when redaction is enabled, among others) and none of them is individually tracked the
+#   way speaker-attribute detection is above (issue #619, same class as #617's Layer 1).
+#   Rather than chase every current and future writer by name, this waits for the table's
+#   own content digest to stop moving. Best-effort: proceeding on timeout does not mean
+#   settled, it means the caller decided not to wait any longer.
+dbs_wait_for_media_file_settled() {
+    local container="$1" user="$2" db="$3" timeout="$4"
+    if dbs_wait_for_stable_query "$container" "$user" "$db" "$timeout" \
+        "SELECT md5(coalesce(string_agg(t::text, '|' ORDER BY t::text), '')) FROM media_file t;"; then
+        dbs_log "media_file content digest settled"
+        return 0
+    fi
+    dbs_warn "media_file content digest did not settle within ${timeout}s — proceeding anyway; F-4/phase-06b may still race issue #619's window"
+    return 1
+}
+
+# dbs_wait_for_system_settings_settled CONTAINER USER DB TIMEOUT
+#   Same technique, for system_settings. Specifically closes the
+#   embedding_normalization_done startup-timer race: app/main.py's
+#   _run_one_time_embedding_normalization fires exactly once, ~60s after backend startup,
+#   and inserts/updates this table — landing between phase_06b's two backup snapshots
+#   (the shipped pg_dump and the ./opentranscribe.sh backup wrapper, taken seconds apart)
+#   was issue #619's second reported symptom.
+dbs_wait_for_system_settings_settled() {
+    local container="$1" user="$2" db="$3" timeout="$4"
+    if dbs_wait_for_stable_query "$container" "$user" "$db" "$timeout" \
+        "SELECT md5(coalesce(string_agg(t::text, '|' ORDER BY t::text), '')) FROM system_settings t;"; then
+        dbs_log "system_settings content digest settled"
+        return 0
+    fi
+    dbs_warn "system_settings content digest did not settle within ${timeout}s — proceeding anyway; the backup-content-diff assertion may still race issue #619's window"
+    return 1
+}
+
 # dbs_diff_fingerprints DIR_A DIR_B LABEL [TABLE...]
 #   Compares two fingerprint directories table-by-table via as_record
 #   (requires assertions.sh sourced by the caller). With no TABLE arguments,

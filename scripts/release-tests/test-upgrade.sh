@@ -736,6 +736,22 @@ phase_06b_pre_upgrade_backup() {
         gr_warn "no $TEST_ROOT/seeded-file-ids.txt — skipping the speaker-attribute settle wait"
     fi
 
+    # issue #619: the SAME class of race as the speaker-table one above, for two more
+    # tables. media_file has several async post-completion writers of its own (not
+    # individually tracked, unlike the speaker predicates above), and this is also the
+    # window app/main.py's one-time embedding-normalization startup task (fires ~60s
+    # after backend startup, touching system_settings) can land in — straddling THIS
+    # phase's two backup snapshots below produced the intermittent "opentranscribe.sh
+    # backup produces the same content as the shipped pg_dump recipe" failure. Waiting
+    # for both tables' content digests to stop moving before taking either dump shrinks
+    # the residual race window to "changed in between the wait finishing and the first
+    # dump starting" rather than eliminating it outright — same best-effort posture as
+    # the speaker-attribute wait above.
+    dbs_wait_for_media_file_settled "$pg" "$db_user" "$db_name" 120 \
+        || gr_warn "proceeding with the pre-upgrade backup even though media_file had not settled — a digest mismatch in phase 17's F-4 is now a known possibility, not fatal (issue #619)"
+    dbs_wait_for_system_settings_settled "$pg" "$db_user" "$db_name" 90 \
+        || gr_warn "proceeding with the pre-upgrade backup even though system_settings had not settled — the shipped-vs-wrapper backup content-diff assertion below may still race issue #619's window"
+
     # Guard the repo's OWN ./backups/ and .env for the rest of this run — both
     # opentranscribe.sh commands below and every later rollback-tail phase are staged
     # under TEST_ROOT, but the guard needs to be armed before the first one

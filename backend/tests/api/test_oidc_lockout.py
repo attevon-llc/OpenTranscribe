@@ -26,7 +26,7 @@ from app.main import app
 from app.models.user import User
 from app.services.auth_config_service import AuthConfigService
 
-pytestmark = pytest.mark.xdist_group("oidc_lockout")
+pytestmark = pytest.mark.xdist_group("unknown_identifier_lockout")
 
 ENDPOINT = "/api/auth/oidc/callback"
 STATE = "fixed-state-value"

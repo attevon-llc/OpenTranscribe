@@ -33,7 +33,7 @@ from app.models.user import User
 from app.models.user_mfa import UserMFA
 from app.services.auth_config_service import AuthConfigService
 
-pytestmark = pytest.mark.xdist_group("saml_acs_endpoint")
+pytestmark = pytest.mark.xdist_group("unknown_identifier_lockout")
 
 ENDPOINT = "/api/auth/saml/acs"
 

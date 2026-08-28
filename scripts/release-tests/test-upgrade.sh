@@ -6,8 +6,10 @@
 #   upgrade path (`./opentranscribe.sh update` ≈ `compose down/pull/up`) and
 #   find their MinIO objects, transcripts, speakers, and search indices intact
 #   after the migration chain runs — AND, if the upgrade goes wrong, that the
-#   documented recovery path (`opentr.sh backup`/`restore`,
-#   `opentranscribe.sh update --rollback`) actually works (issue #598).
+#   documented recovery path (`opentranscribe.sh backup`/`restore`,
+#   `opentranscribe.sh update --rollback`) actually works (issue #598, and issue
+#   #613 — backup/restore moved from opentr.sh, which a real production install
+#   never has, into opentranscribe.sh, the script it actually ships with).
 #
 # Phases:
 #   00  preflight + secrets gate
@@ -18,7 +20,8 @@
 #   05  register user, upload media via URL, wait for completion
 #   06  snapshot pre-upgrade state (postgres SELECTs, MinIO ETags, transcripts)
 #   06b take the pre-upgrade backup — the rollback oracle (shipped pg_dump
-#       recipe + opentr.sh backup, cross-checked; scratch-restore verified)
+#       recipe + opentranscribe.sh backup, cross-checked; scratch-restore
+#       verified; issue #613 — this is the SHIPPED command now, not opentr.sh)
 #   07  down $FROM_VERSION, swap compose to current head, re-patch, point to local images
 #   08  './opentranscribe.sh update --version $TO_VERSION' — the real upgrade
 #       path, which also records the rollback bookkeeping phase 12 checks
@@ -661,24 +664,40 @@ _capture_minio_etags() {
     ' > "$out" 2>/dev/null || echo "[]" > "$out"
 }
 
-# _stage_opentr_at SRC_STAGE_DIR
-#   (Re)stages a copy of opentr.sh + scripts/common.sh under TEST_ROOT, paired
-#   with the compose file + .env from SRC_STAGE_DIR (e.g. $TEST_ROOT/before or
-#   $TEST_ROOT/after) so `docker compose exec ...` inside the staged opentr.sh
+# _stage_manager_at SRC_STAGE_DIR
+#   (Re)stages a copy of opentranscribe.sh + scripts/common.sh under TEST_ROOT, paired
+#   with BOTH compose files + .env from SRC_STAGE_DIR (e.g. $TEST_ROOT/before or
+#   $TEST_ROOT/after) so `docker compose exec ...` inside the staged opentranscribe.sh
 #   resolves the SAME running project/containers this scenario already has up.
-#   Echoes the staged directory. opentr.sh is not on release-manifest.txt
-#   (issue #598 §2.2 — it is a developer command), and it uses bare
-#   `docker compose` + writes ./backups relative to CWD with no -f chain of
-#   its own, so it must never run from the repo root: gr_assert_not_repo_cwd
-#   is the guard, this is only the staging half.
-_stage_opentr_at() {
+#   Echoes the staged directory.
+#
+#   Renamed from _stage_opentr_at (issue #613). opentr.sh is deliberately NOT on
+#   release-manifest.txt — its backup/restore path uses bare `docker compose` with no
+#   -f chain, which only works in a repo clone (docker-compose.override.yml auto-loads
+#   there and supplies image:/build: for every application service). A curl install has
+#   no override file, so the base compose project alone is INVALID (measured: `docker
+#   compose -f docker-compose.yml exec -T postgres echo hi` fails with "service ... has
+#   neither an image nor a build context specified"). This function used to stage ONLY
+#   docker-compose.yml for exactly that reason — which meant phase 06b was rehearsing a
+#   broken command shape and never noticed, because SRC_STAGE_DIR's postgres container
+#   was already running from an EARLIER, correctly-chained `docker compose up` (phase
+#   04/08's own compose_args includes docker-compose.prod.yml), so `exec` still found
+#   it despite the invalid project. The fix stages opentranscribe.sh (which resolves its
+#   own compose chain via get_compose_files(), including docker-compose.prod.yml) and
+#   both compose files, so this rehearses the command a real user actually has.
+_stage_manager_at() {
     local src_stage="$1"
-    local dst="$TEST_ROOT/opentr-stage"
+    local dst="$TEST_ROOT/manager-stage"
     mkdir -p "$dst/scripts" "$dst/backups"
-    cp "$REPO_ROOT/opentr.sh" "$dst/opentr.sh"
-    chmod +x "$dst/opentr.sh"
+    cp "$REPO_ROOT/opentranscribe.sh" "$dst/opentranscribe.sh"
+    chmod +x "$dst/opentranscribe.sh"
     cp "$REPO_ROOT/scripts/common.sh" "$dst/scripts/common.sh"
     cp "$src_stage/docker-compose.yml" "$dst/docker-compose.yml"
+    [[ -f "$src_stage/docker-compose.prod.yml" ]] \
+        || gr_die "$src_stage missing docker-compose.prod.yml — opentranscribe.sh's " \
+                  "get_compose_files() needs it, and a base-only compose project is " \
+                  "invalid (issue #613)"
+    cp "$src_stage/docker-compose.prod.yml" "$dst/docker-compose.prod.yml"
     cp "$src_stage/.env" "$dst/.env"
     echo "$dst"
 }
@@ -687,10 +706,11 @@ _stage_opentr_at() {
 #
 # Runs while the FROM stack is up and seeded, exactly where upgrading.md's
 # step 1 tells a real user to take a backup before upgrading. Two artifacts,
-# because two different audiences run two different procedures (#598 §2.2):
-# an installed deployment has no opentr.sh and copy-pastes the raw pg_dump
-# recipe upgrading.md gives it; a git checkout can additionally use
-# `./opentr.sh backup`, which is a thin wrapper around the same recipe.
+# because two different audiences run two different procedures (#598 §2.2,
+# amended by #613): an installed deployment copy-pastes the raw pg_dump recipe
+# upgrading.md gives it as a fallback, and can ALSO use `./opentranscribe.sh
+# backup` — the shipped wrapper around that same recipe, and (since #613) the
+# only backup command a real production install actually has.
 phase_06b_pre_upgrade_backup() {
     local pg="opentranscribe-postgres"
     local db_user="postgres"
@@ -699,7 +719,7 @@ phase_06b_pre_upgrade_backup() {
     mkdir -p "$backups_dir"
 
     # Guard the repo's OWN ./backups/ and .env for the rest of this run — both
-    # opentr.sh commands below and every later rollback-tail phase are staged
+    # opentranscribe.sh commands below and every later rollback-tail phase are staged
     # under TEST_ROOT, but the guard needs to be armed before the first one
     # runs, not after.
     gr_fingerprint_repo_backups
@@ -713,29 +733,30 @@ phase_06b_pre_upgrade_backup() {
     fi
     gr_ok "shipped-procedure backup: $shipped_dump"
 
-    # Artifact 2 — ./opentr.sh backup, exercised through a copy staged under
-    # TEST_ROOT (never the repo checkout — see _stage_opentr_at's doc comment).
-    local opentr_stage
-    opentr_stage="$(_stage_opentr_at "$TEST_ROOT/before")"
-    gr_assert_not_repo_cwd "$opentr_stage"
-    pushd "$opentr_stage" >/dev/null
-    ./opentr.sh backup || { popd >/dev/null; gr_die "'./opentr.sh backup' failed"; }
+    # Artifact 2 — ./opentranscribe.sh backup, exercised through a copy staged under
+    # TEST_ROOT (never the repo checkout — see _stage_manager_at's doc comment).
+    local manager_stage
+    manager_stage="$(_stage_manager_at "$TEST_ROOT/before")"
+    gr_assert_not_repo_cwd "$manager_stage"
+    pushd "$manager_stage" >/dev/null
+    ./opentranscribe.sh backup || { popd >/dev/null; gr_die "'./opentranscribe.sh backup' failed"; }
     popd >/dev/null
-    local opentr_dump
-    opentr_dump="$(ls -t "$opentr_stage/backups"/opentranscribe_backup_*.sql 2>/dev/null | head -1)"
-    [[ -n "$opentr_dump" && -s "$opentr_dump" ]] || gr_die "'./opentr.sh backup' produced no dump file"
-    gr_ok "opentr.sh-wrapper backup: $opentr_dump"
+    local manager_dump
+    manager_dump="$(ls -t "$manager_stage/backups"/opentranscribe_backup_*.sql 2>/dev/null | head -1)"
+    [[ -n "$manager_dump" && -s "$manager_dump" ]] \
+        || gr_die "'./opentranscribe.sh backup' produced no dump file"
+    gr_ok "opentranscribe.sh-wrapper backup: $manager_dump"
 
     # The wrapper claims to be a wrapper — prove it. Diff modulo pg_dump's own
     # "-- Dumped at" / "-- Dumped by" timestamp comment lines, the only lines
     # that legitimately differ between two dumps taken seconds apart.
     if diff -q \
         <(grep -vE '^-- Dumped (at|by)' "$shipped_dump") \
-        <(grep -vE '^-- Dumped (at|by)' "$opentr_dump") >/dev/null 2>&1; then
-        as_record PASS "opentr.sh backup produces the same content as the shipped pg_dump recipe"
+        <(grep -vE '^-- Dumped (at|by)' "$manager_dump") >/dev/null 2>&1; then
+        as_record PASS "opentranscribe.sh backup produces the same content as the shipped pg_dump recipe"
     else
-        as_record FAIL "opentr.sh backup produces the same content as the shipped pg_dump recipe" \
-            "$(diff -u "$shipped_dump" "$opentr_dump" | head -10 | tr '\n' ' ')"
+        as_record FAIL "opentranscribe.sh backup produces the same content as the shipped pg_dump recipe" \
+            "$(diff -u "$shipped_dump" "$manager_dump" | head -10 | tr '\n' ' ')"
     fi
 
     # The cheapest place to learn a backup does not restore: replay it into a
@@ -1230,7 +1251,7 @@ phase_12_assert_rollback_precondition() {
 #
 # Everything up to phase 12 proves the FORWARD path: real data survives a real
 # migration. Nothing above it ever exercised the documented recovery path —
-# opentr.sh backup/restore and `update --rollback` — which is exactly the
+# opentranscribe.sh backup/restore and `update --rollback` — which is exactly the
 # thing a user reaches for in an actual emergency. These phases restore the
 # phase 06b backup over damage inflicted through the real API, then run the
 # real `update --rollback`, and assert the FROM image serves the restored FROM
@@ -1383,8 +1404,8 @@ phase_15_restore_and_assert() {
     # 0 — rather than the parse failure a first guess would expect. A dump
     # truncated after the last statement it happens to complete therefore
     # still replays "cleanly" and silently drops whatever rows came after the
-    # cut: the SAME failure shape issue #598 originally measured in `opentr.sh
-    # restore` (reports success, changed nothing), reproduced structurally.
+    # cut: the SAME failure shape issue #598 originally measured in
+    # `restore_database` (reports success, changed nothing), reproduced structurally.
     # So the cut targets media_file's own COPY block specifically — its
     # header plus exactly one data row — so R-2/R-8 below are the assertions
     # expected to catch it, never R-1's exit code.
@@ -1402,17 +1423,18 @@ phase_15_restore_and_assert() {
     _capture_minio_etags "$minio_pre"
 
     # Guardrail: the first genuinely destructive statement in the rollback
-    # tail is the DROP DATABASE inside `opentr.sh restore`. All four
-    # conditions of gr_assert_target_is_test_database must hold or it dies.
+    # tail is the DROP DATABASE inside restore_database (scripts/common.sh,
+    # invoked here through opentranscribe.sh — the shipped front end, issue #613).
+    # All four conditions of gr_assert_target_is_test_database must hold or it dies.
     gr_assert_target_is_test_database "$pg" opentranscribe "$TEST_ROOT/after/.env"
 
-    local opentr_stage
-    opentr_stage="$(_stage_opentr_at "$TEST_ROOT/after")"
-    gr_assert_not_repo_cwd "$opentr_stage"
+    local manager_stage
+    manager_stage="$(_stage_manager_at "$TEST_ROOT/after")"
+    gr_assert_not_repo_cwd "$manager_stage"
 
-    pushd "$opentr_stage" >/dev/null
+    pushd "$manager_stage" >/dev/null
     local restore_rc=0
-    ./opentr.sh restore --yes "$restore_source" || restore_rc=$?
+    ./opentranscribe.sh restore --yes "$restore_source" || restore_rc=$?
     popd >/dev/null
 
     # R-1 is asserted the SAME way regardless of ROLLBACK_INJECT_FAULT=truncate:
@@ -1426,14 +1448,14 @@ phase_15_restore_and_assert() {
     # migrating the FROM-release backup forward before anyone (operator or this test)
     # ever gets to see it in its original restored form. `restore --yes` against a
     # schema-head mismatch (the FROM backup vs. the still-running TO image, exactly
-    # this scenario) now leaves services stopped by design — see opentr.sh's
-    # pg_restore_restart_decision / scripts/common.sh.
+    # this scenario) now leaves services stopped by design — see
+    # scripts/common.sh's pg_restore_restart_decision.
     local backend_running
     backend_running="$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-backend$' | head -1)"
     as_assert_eq "R-13: restore left the application stopped (no auto-migration window)" "" "${backend_running:-}"
 
     as_record SKIP "R-12: no live writer at the moment of the drop" \
-        "enforced inside opentr.sh's restore_database via DROP DATABASE ... WITH (FORCE) and its own client-stop sequence (#599) — not independently observable from outside that function without instrumenting it"
+        "enforced inside scripts/common.sh's restore_database via DROP DATABASE ... WITH (FORCE) and its own client-stop sequence (#599) — not independently observable from outside that function without instrumenting it"
 
     dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/restored/db-fingerprint"
     local fp_dir="$TEST_ROOT/snapshots/before/db-fingerprint"

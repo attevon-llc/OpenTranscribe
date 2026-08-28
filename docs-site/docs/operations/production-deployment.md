@@ -303,13 +303,13 @@ POSTGRES_DB=opentranscribe
 Use the built-in backup command:
 
 ```bash
-./opentr.sh backup
+./opentranscribe.sh backup
 ```
 
 This creates a timestamped SQL dump in the `backups/` directory. For automated backups, add a cron job:
 
 ```bash
-0 2 * * * cd /opt/opentranscribe && ./opentr.sh backup
+0 2 * * * cd /opt/opentranscribe && ./opentranscribe.sh backup
 ```
 
 ---
@@ -357,7 +357,7 @@ MinIO encryption covers **media files only**. Transcript text also lives in Post
 OpenSearch index, neither of which has built-in at-rest encryption — protect those with
 full-disk encryption (LUKS/dm-crypt) or by placing the data volumes on an encrypted
 filesystem. See [Security Hardening](security-hardening.md#data-protection) for the full
-data-protection picture, including encrypted backups (`./opentr.sh backup --encrypt`).
+data-protection picture, including encrypted backups (`./opentranscribe.sh backup --encrypt`).
 :::
 
 ### Access Key Rotation
@@ -795,7 +795,7 @@ docker exec opentranscribe-celery-worker nvidia-smi
 2. **Configure authentication** -- Navigate to Settings and configure your preferred authentication method(s).
 3. **Test a transcription** -- Upload a short audio file and verify the full pipeline (upload, transcription, diarization, search indexing).
 4. **Set up monitoring** -- Configure alerting on container health checks and disk usage.
-5. **Schedule backups** -- Add `./opentr.sh backup` to cron for automated database backups.
+5. **Schedule backups** -- Add `./opentranscribe.sh backup` to cron for automated database backups.
 
 ---
 

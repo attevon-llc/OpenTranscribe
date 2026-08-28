@@ -14,7 +14,10 @@ Before upgrading, complete these steps:
 
 1. **Back up the database** -- this is non-negotiable
    ```bash
-   # An installed deployment has no backup subcommand; dump directly.
+   ./opentranscribe.sh backup
+   ```
+   Or dump directly, if you don't have the script on hand:
+   ```bash
    docker compose exec -T postgres pg_dump -U postgres opentranscribe \
      > "opentranscribe-backup-$(date +%Y%m%d-%H%M%S).sql"
    ```
@@ -193,7 +196,7 @@ If a migration fails on startup:
    ```
 2. **Restore your backup** if the migration left the database in a broken state:
    ```bash
-   ./opentr.sh restore backups/opentranscribe-backup-YYYYMMDD-HHMMSS.sql
+   ./opentranscribe.sh restore backups/opentranscribe-backup-YYYYMMDD-HHMMSS.sql
    ```
    This replaces the database entirely (drop + recreate + replay + verify) rather than
    layering the backup over the broken schema — a plain `psql < backup.sql` into an
@@ -233,7 +236,7 @@ docker compose down
 #    still pinned in .env — restore detects that and leaves services STOPPED for you
 #    rather than restarting the (still-newer) image over it.
 docker compose up -d postgres
-./opentr.sh restore backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql
+./opentranscribe.sh restore backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql
 
 # 3. Re-pin the image tag to the previous version BEFORE starting anything — this is
 #    what `update --rollback` does (recommended over the manual pull/tag/up sequence
@@ -253,13 +256,13 @@ You must restore the database backup when rolling back. Newer migrations may hav
 
 :::danger The old order corrupted the restore (issue #610)
 This recipe used to restore the database, THEN re-pin the image — steps 3-5 pulled and
-tagged the previous version only *after* `./opentr.sh restore` had already restarted
+tagged the previous version only *after* `./opentranscribe.sh restore` had already restarted
 whatever was running. Because the `.env` image tag hadn't moved yet at that point, the
 service that restarted was the **newer, still-pinned** image — which runs its own
 migrations on startup, and silently migrated the just-restored, deliberately-older
 backup straight back to the newer schema before you ever got to step 3. Every operator
 who followed the old recipe got the corruption. Re-pinning the image **before** starting
-anything (`update --rollback`, step 3 above) is what fixes it; `opentr.sh restore` itself
+anything (`update --rollback`, step 3 above) is what fixes it; `opentranscribe.sh restore` itself
 now also refuses to restart into that trap on its own (see the note in
 [What to Do if Migrations Fail](#what-to-do-if-migrations-fail) above).
 :::

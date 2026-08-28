@@ -36,6 +36,7 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _OPENTR = _REPO_ROOT / "opentr.sh"
 _COMMON = _REPO_ROOT / "scripts" / "common.sh"
+_MANAGER = _REPO_ROOT / "opentranscribe.sh"
 _COMPOSE = _REPO_ROOT / "docker-compose.yml"
 
 
@@ -218,8 +219,8 @@ def test_pg_drop_and_recreate_database_drops_with_force_and_recreates() -> None:
 
 @pytest.mark.unit
 def test_safety_dump_precedes_the_drop_database_call() -> None:
-    body = extract_function(_read(_OPENTR), "restore_database")
-    assert body, "restore_database not found in opentr.sh"
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
     dump_idx = first_line_index(body, "pg_dump -U")
     drop_call_idx = first_line_index(body, "pg_drop_and_recreate_database")
     assert dump_idx != -1, "expected a pg_dump safety-dump line in restore_database"
@@ -239,8 +240,8 @@ def test_safety_dump_precedes_the_drop_database_call() -> None:
 
 @pytest.mark.unit
 def test_restore_database_supports_yes_flag_and_reads_a_confirmation() -> None:
-    body = extract_function(_read(_OPENTR), "restore_database")
-    assert body, "restore_database not found in opentr.sh"
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
     assert "--yes" in body
     assert re.search(r"\bread\s+-r\b", body), "expected an interactive `read -r` confirmation"
 
@@ -252,8 +253,8 @@ def test_restore_database_supports_yes_flag_and_reads_a_confirmation() -> None:
 
 @pytest.mark.unit
 def test_success_message_follows_verification() -> None:
-    body = extract_function(_read(_OPENTR), "restore_database")
-    assert body, "restore_database not found in opentr.sh"
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
     verify_idx = first_line_index(body, "pg_verify_restore")
     success_idx = first_line_index(body, "Database restored successfully")
     assert verify_idx != -1, "expected a call to pg_verify_restore in restore_database"
@@ -295,8 +296,8 @@ def test_current_head_is_read_before_the_confirmation_gate() -> None:
     use — never learned the running image's schema head, and so could never detect a
     mismatch with it.
     """
-    body = extract_function(_read(_OPENTR), "restore_database")
-    assert body, "restore_database not found in opentr.sh"
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
     assert head_read_precedes_gate(body), (
         "expected the live current_head read to precede the "
         '`if [ "$skip_confirm" != true ]` gate (issue #610 — --yes must not skip it)'
@@ -316,8 +317,8 @@ def test_success_restart_is_conditional() -> None:
     of whether the schema it just saw restored matches what it expects. That silent
     forward re-migration is issue #610 itself.
     """
-    body = extract_function(_read(_OPENTR), "restore_database")
-    assert body, "restore_database not found in opentr.sh"
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
     assert "pg_restore_restart_decision" in body, (
         "expected restore_database to consult the shared pg_restore_restart_decision "
         "(scripts/common.sh) before deciding whether to restart"
@@ -342,8 +343,8 @@ def test_failed_replay_and_verify_do_not_restart() -> None:
     and seed a fresh admin over nothing, turning a failed restore into a silently
     brand-new empty deployment.
     """
-    body = extract_function(_read(_OPENTR), "restore_database")
-    assert body, "restore_database not found in opentr.sh"
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
 
     replay_fail_idx = first_line_index(body, "the database is now empty")
     verify_fail_idx = first_line_index(body, "Restore verification failed")
@@ -376,8 +377,8 @@ def test_failed_replay_and_verify_do_not_restart() -> None:
 
 @pytest.mark.unit
 def test_restore_supports_migrate_forward_and_no_restart_flags() -> None:
-    body = extract_function(_read(_OPENTR), "restore_database")
-    assert body, "restore_database not found in opentr.sh"
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
     arms = case_arms(body)
     assert {"--migrate-forward", "--no-restart"} <= arms, (
         f"expected --migrate-forward and --no-restart as case arms in restore_database's "
@@ -387,8 +388,8 @@ def test_restore_supports_migrate_forward_and_no_restart_flags() -> None:
 
 @pytest.mark.unit
 def test_migrate_forward_and_no_restart_are_mutually_exclusive() -> None:
-    body = extract_function(_read(_OPENTR), "restore_database")
-    assert body, "restore_database not found in opentr.sh"
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
     assert has_mutex_check(body), (
         'expected an explicit `[ "$migrate_forward" = true ] && [ "$no_restart" = true ]` '
         "(or equivalent) rejection of the combination"
@@ -556,3 +557,80 @@ def test_mutex_check_detector_stays_clean_on_the_real_shape() -> None:
         'if [ "$migrate_forward" = true ] && [ "$no_restart" = true ]; then\n  exit 1\nfi\n'
     )
     assert has_mutex_check(real_shape)
+
+
+# ---------------------------------------------------------------------------------------------
+# Issue #613 detectors: backup_database/restore_database now live in ONE place
+# (scripts/common.sh), shared by both front ends (opentr.sh, opentranscribe.sh). A copy in
+# either front end would be a second, divergent implementation of a DROP DATABASE path that
+# none of the detectors above cover — see the module docstring's "Guard the guard" rationale.
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("front_end", [_OPENTR, _MANAGER], ids=lambda p: p.name)
+def test_no_front_end_redefines_the_destructive_db_functions(front_end: Path) -> None:
+    """Neither opentr.sh nor opentranscribe.sh may define its own backup_database/
+    restore_database — the shared implementation in scripts/common.sh is the only one.
+    """
+    source = _read(front_end)
+    offenders = [
+        name
+        for name in ("backup_database", "restore_database")
+        if re.search(rf"^{name}\s*\(\)\s*\{{", source, flags=re.MULTILINE)
+    ]
+    assert not offenders, (
+        f"{front_end.name} redefines {offenders} — these must live only in "
+        "scripts/common.sh (issue #613), or the two front ends can silently diverge on "
+        "the DROP DATABASE restore path"
+    )
+
+
+@pytest.mark.unit
+def test_redefinition_detector_fires_on_a_synthetic_redefinition() -> None:
+    """Must-fire control for the detector above."""
+    synthetic = "restore_database() {\n  echo hi\n}\n"
+    offenders = [
+        name
+        for name in ("backup_database", "restore_database")
+        if re.search(rf"^{name}\s*\(\)\s*\{{", synthetic, flags=re.MULTILINE)
+    ]
+    assert offenders == ["restore_database"]
+
+
+@pytest.mark.unit
+def test_restore_creates_the_backups_directory() -> None:
+    """restore_database must `mkdir -p ./backups` BEFORE its first write there.
+
+    backup_database always created it (`opentr.sh` did, pre-move); restore_database never
+    did, even though it writes there twice: the GPG-decrypt temp file
+    (``mktemp ./backups/.restore_XXXXXX``) and the pre-restore safety dump. So the realistic
+    DR scenario — copy a dump onto a fresh install, restore before ever running a backup —
+    failed closed with a message that blamed pg_dump instead of a missing directory
+    (issue #613).
+    """
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
+    mkdir_idx = first_line_index(body, "mkdir -p ./backups")
+    gpg_temp_idx = first_line_index(body, "mktemp ./backups/.restore_XXXXXX")
+    safety_dump_idx = first_line_index(body, 'safety_dump_file="./backups/pre-restore_')
+    assert mkdir_idx != -1, "expected `mkdir -p ./backups` in restore_database"
+    assert gpg_temp_idx != -1, "expected the GPG temp-file mktemp call in restore_database"
+    assert safety_dump_idx != -1, "expected the safety-dump file assignment in restore_database"
+    assert mkdir_idx < gpg_temp_idx, (
+        "mkdir -p ./backups must precede the GPG temp-file mktemp call — "
+        f"mkdir at line {mkdir_idx}, mktemp at line {gpg_temp_idx}"
+    )
+    assert mkdir_idx < safety_dump_idx, (
+        "mkdir -p ./backups must precede the safety-dump file write — "
+        f"mkdir at line {mkdir_idx}, safety dump at line {safety_dump_idx}"
+    )
+
+
+@pytest.mark.unit
+def test_backups_dir_ordering_detector_fires_when_reversed() -> None:
+    """Must-fire control: a synthetic body that mkdir's AFTER the first write."""
+    reversed_body = "temp_sql=$(mktemp ./backups/.restore_XXXXXX)\nmkdir -p ./backups\n"
+    mkdir_idx = first_line_index(reversed_body, "mkdir -p ./backups")
+    gpg_temp_idx = first_line_index(reversed_body, "mktemp ./backups/.restore_XXXXXX")
+    assert not (mkdir_idx < gpg_temp_idx), "fixture is wrong: this must be the REVERSED order"

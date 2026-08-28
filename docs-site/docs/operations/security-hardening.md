@@ -234,7 +234,7 @@ encryption strategy must cover all of them:
 | **OpenSearch** | Full transcript text (search index) + embeddings | No native encryption — use volume/disk encryption (below) |
 | **MinIO** | Original media files, exports, thumbnails | **AES-256-GCM server-side encryption, enabled by default** |
 | **Redis** | In-flight task payloads, notifications | Volume/disk encryption (if persistence enabled) |
-| **Backups** | Complete database dump (all transcripts) | `./opentr.sh backup --encrypt` (GPG AES-256) |
+| **Backups** | Complete database dump (all transcripts) | `./opentranscribe.sh backup --encrypt` (GPG AES-256) |
 
 ### Encryption at Rest
 
@@ -291,10 +291,10 @@ that leaves the host:
 ```bash
 # Encrypted backup - pg_dump is piped directly into GPG (AES-256);
 # the plaintext dump never touches disk. Prompts for a passphrase.
-./opentr.sh backup --encrypt
+./opentranscribe.sh backup --encrypt
 
 # Restore - .gpg files are detected and decrypted automatically
-./opentr.sh restore backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql.gpg
+./opentranscribe.sh restore backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql.gpg
 ```
 
 Store the passphrase in a password manager — an encrypted backup without its passphrase is

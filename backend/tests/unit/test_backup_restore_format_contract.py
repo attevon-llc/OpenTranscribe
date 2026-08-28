@@ -32,7 +32,9 @@ from tests.unit.test_opentr_restore_safety import extract_function
 from tests.unit.test_opentr_restore_safety import first_line_index
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_OPENTR = _REPO_ROOT / "opentr.sh"
+# The moved-to-common.sh code this file exercises (issue #613): restore_database now lives
+# in scripts/common.sh, not opentr.sh — see test_opentr_restore_safety.py's _COMMON for the
+# same rationale.
 _COMMON = _REPO_ROOT / "scripts" / "common.sh"
 
 
@@ -138,8 +140,8 @@ def _pgdmp_branch(body: str) -> str:
 
 @pytest.mark.unit
 def test_opentr_restore_dispatches_on_pgdmp_instead_of_erroring() -> None:
-    body = extract_function(_read(_OPENTR), "restore_database")
-    assert body, "restore_database not found in opentr.sh"
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
     branch = _pgdmp_branch(body)
     assert branch, "expected a PGDMP magic-byte branch inside restore_database"
     assert not re.search(r"\bexit 1\b", branch), (
@@ -313,8 +315,8 @@ def test_pg_verify_custom_restore_uses_the_correct_toc_filter_not_grep() -> None
 
 @pytest.mark.unit
 def test_safety_dump_precedes_the_drop_on_the_custom_path_too() -> None:
-    body = extract_function(_read(_OPENTR), "restore_database")
-    assert body, "restore_database not found in opentr.sh"
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
     dump_idx = first_line_index(body, "pg_dump -U")
     drop_call_idx = first_line_index(body, "pg_drop_and_recreate_database")
     assert dump_idx != -1, "expected a pg_dump safety-dump line in restore_database"
@@ -341,8 +343,8 @@ def test_safety_dump_precedes_the_drop_on_the_custom_path_too() -> None:
 
 @pytest.mark.unit
 def test_success_message_follows_custom_verification() -> None:
-    body = extract_function(_read(_OPENTR), "restore_database")
-    assert body, "restore_database not found in opentr.sh"
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
     verify_idx = first_line_index(body, "pg_verify_custom_restore")
     success_idx = first_line_index(body, "Database restored successfully")
     assert verify_idx != -1, "expected a call to pg_verify_custom_restore in restore_database"
@@ -360,8 +362,8 @@ def test_success_message_follows_custom_verification() -> None:
 
 @pytest.mark.unit
 def test_gpg_decryption_precedes_the_pgdmp_sniff() -> None:
-    body = extract_function(_read(_OPENTR), "restore_database")
-    assert body, "restore_database not found in opentr.sh"
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
     gpg_idx = first_line_index(body, "gpg --yes --output")
     sniff_idx = first_line_index(body, 'head -c 5 "$restore_source"')
     assert gpg_idx != -1, "expected the gpg decryption call in restore_database"

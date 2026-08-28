@@ -164,9 +164,11 @@ See the dedicated section in the planning doc and the `Edge Cases & Mitigations`
   when FROM is not strictly older than TO** — that constraint is real and
   still holds. It used to be phrased as "Rollback is not supported", which
   conflated the migration chain with the separate backup/restore MECHANISM
-  (`opentr.sh backup`/`restore`, `opentranscribe.sh update --rollback`) — that
+  (`opentranscribe.sh backup`/`restore`, `opentranscribe.sh update --rollback`) — that
   mechanism **is** rehearsed, by `test-upgrade.sh`'s phases 13-17 (issue
-  #598). What those phases prove: `opentr.sh backup` and the shipped
+  #598; the rehearsal itself stages `opentranscribe.sh` — the shipped production
+  command — rather than `opentr.sh` since issue #613). What those phases prove:
+  `opentranscribe.sh backup` and the shipped
   `pg_dump` recipe both restore an exact point-in-time database state
   (content digests, not just row counts), `update --rollback` puts the FROM
   image back and the FROM image serves the restored FROM database through

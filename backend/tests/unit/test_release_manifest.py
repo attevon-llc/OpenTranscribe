@@ -112,6 +112,30 @@ def test_update_full_reads_the_manifest():
     )
 
 
+def test_opentr_sh_is_not_shipped_and_the_shipped_script_covers_it():
+    """opentr.sh is deliberately absent (issue #613): its backup/restore path uses bare
+    `docker compose`, and the base compose file ALONE is an invalid project — measured
+    (`docker compose -f docker-compose.yml exec -T postgres echo hi` fails with "service
+    ... has neither an image nor a build context specified"). That exclusion is only
+    defensible while opentranscribe.sh carries the commands itself, so assert BOTH halves.
+    If someone ships opentr.sh, this test should make them say why.
+    """
+    entries = {path for path, _ in _entries()}
+    assert "opentr.sh" not in entries, (
+        "opentr.sh is now in release-manifest.txt, but its backup/restore path uses bare "
+        "`docker compose` with no -f chain — shipping it as-is gives production operators a "
+        "restore command that dies on its first `docker compose exec` (issue #613 §2.1). If "
+        "this is intentional, opentr.sh's compose calls must first be threaded through a "
+        "real -f chain the way scripts/common.sh's backup_database/restore_database are."
+    )
+
+    manager_source = MANAGER.read_text()
+    assert re.search(r"^\s*backup\|restore\)", manager_source, re.MULTILINE), (
+        "opentranscribe.sh has no backup|restore dispatch arm — with opentr.sh deliberately "
+        "unshipped, this is the ONLY production backup/restore path (issue #613)"
+    )
+
+
 def test_env_example_is_listed_for_new_key_reporting():
     """update-full diffs .env.example against the user's .env to report new keys.
 

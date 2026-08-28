@@ -497,9 +497,9 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
                 export API_CSRF_TOKEN="$csrf_token"
                 local chat_out answer citation_count chat_error
                 chat_out=$(ac_chat_completion "$llm_config_uuid" "$file_uuid" "What was discussed?" || true)
-                answer=$(echo "$chat_out" | sed -n '1p')
-                citation_count=$(echo "$chat_out" | sed -n '2p')
-                chat_error=$(echo "$chat_out" | sed -n '3p')
+                answer=$(ac_json_field "$chat_out" answer)
+                citation_count=$(ac_json_field "$chat_out" citations)
+                chat_error=$(ac_json_field "$chat_out" error)
                 if [[ -n "$chat_error" ]]; then
                     # GH #595: an `event: error` frame means the turn ended for a
                     # REASON, not that the model produced nothing — most commonly

@@ -488,6 +488,14 @@ class TestBatchSpeakerMatchingScript:
 
         media_file = _media_file(db_session, normal_user, "batch-script")
         speaker = _speaker(db_session, normal_user, media_file, "SPEAKER_00")
+        # A second, unrelated speaker already sitting in the table —
+        # reproduces at unit-test scale what a real (dev-stack) Postgres
+        # produces on its own: `batch_process_speaker_matches` loops over
+        # EVERY speaker row visible to this transaction, not just the one
+        # this test creates, so an unscoped mock would "match" this one too
+        # and queue a rename that has nothing to do with this test.
+        other_file = _media_file(db_session, normal_user, "batch-script-other")
+        other_speaker = _speaker(db_session, normal_user, other_file, "SPEAKER_09")
 
         wrapped = self._NonClosingSession(db_session)
         # The embedding-service construction is real pyannote model loading,
@@ -499,16 +507,29 @@ class TestBatchSpeakerMatchingScript:
         )
         monkeypatch.setattr(batch_speaker_matching, "SpeakerEmbeddingService", lambda: None)
 
+        # A `return_value=` canned match would return the SAME "Dana" match
+        # for `other_speaker` too (and for any other pre-existing speaker in
+        # a shared Postgres), so it is scoped by id instead. This also proves
+        # the production loop leaves every OTHER speaker alone.
+        def _matches_only_the_target_speaker(new_speaker_id, *_args, **_kwargs):
+            if new_speaker_id == speaker.id:
+                return [{"confidence": 0.9, "display_name": "Dana"}]
+            return []
+
         with (
             patch.object(
                 SpeakerMatchingService,
                 "find_and_store_speaker_matches",
-                return_value=[{"confidence": 0.9, "display_name": "Dana"}],
+                side_effect=_matches_only_the_target_speaker,
             ),
             patch(_DELAY) as delay_mock,
         ):
             batch_speaker_matching.batch_process_speaker_matches()
 
         db_session.refresh(speaker)
+        db_session.refresh(other_speaker)
         assert speaker.suggested_name == "Dana", "control: the suggestion really landed"
+        assert other_speaker.suggested_name is None, (
+            "control: an unrelated speaker in the same table must not be touched"
+        )
         assert _queued(delay_mock) == {(str(media_file.uuid), "Dana"): ["SPEAKER_00"]}

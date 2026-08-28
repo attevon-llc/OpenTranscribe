@@ -191,7 +191,7 @@ fix_model_cache_permissions() {
   # Read MODEL_CACHE_DIR from .env if it exists
   local MODEL_CACHE_DIR=""
   if [ -f .env ]; then
-    MODEL_CACHE_DIR=$(grep 'MODEL_CACHE_DIR' .env | grep -v '^#' | cut -d'#' -f1 | cut -d'=' -f2 | tr -d ' "' | head -1)
+    MODEL_CACHE_DIR=$(read_env_value MODEL_CACHE_DIR .env)
   fi
 
   # Use default if not set
@@ -270,7 +270,7 @@ fix_model_cache_permissions() {
 ensure_nltk_data_unlinked() {
   local MODEL_CACHE_DIR=""
   if [ -f .env ]; then
-    MODEL_CACHE_DIR=$(grep 'MODEL_CACHE_DIR' .env | grep -v '^#' | cut -d'#' -f1 | cut -d'=' -f2 | tr -d ' "' | head -1)
+    MODEL_CACHE_DIR=$(read_env_value MODEL_CACHE_DIR .env)
   fi
   MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-./models}"
 
@@ -359,7 +359,7 @@ ensure_opensearch_models() {
   # Read MODEL_CACHE_DIR from .env if it exists
   local MODEL_CACHE_DIR=""
   if [ -f .env ]; then
-    MODEL_CACHE_DIR=$(grep 'MODEL_CACHE_DIR' .env | grep -v '^#' | cut -d'#' -f1 | cut -d'=' -f2 | tr -d ' "' | head -1)
+    MODEL_CACHE_DIR=$(read_env_value MODEL_CACHE_DIR .env)
   fi
 
   # Use default if not set
@@ -408,7 +408,7 @@ ensure_opensearch_models() {
   # Get Hugging Face token from .env if available
   local HF_TOKEN=""
   if [ -f .env ]; then
-    HF_TOKEN=$(grep '^HUGGINGFACE_TOKEN=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
+    HF_TOKEN=$(read_env_value HUGGINGFACE_TOKEN .env)
   fi
 
   # Detect GPU
@@ -472,7 +472,7 @@ ensure_nltk_corpora() {
   # Read MODEL_CACHE_DIR from .env if it exists
   local MODEL_CACHE_DIR=""
   if [ -f .env ]; then
-    MODEL_CACHE_DIR=$(grep 'MODEL_CACHE_DIR' .env | grep -v '^#' | cut -d'#' -f1 | cut -d'=' -f2 | tr -d ' "' | head -1)
+    MODEL_CACHE_DIR=$(read_env_value MODEL_CACHE_DIR .env)
   fi
   MODEL_CACHE_DIR="${MODEL_CACHE_DIR:-./models}"
 
@@ -548,8 +548,8 @@ print_access_info() {
       domain="$NGINX_SERVER_NAME"
     # Then check .env file
     elif [ -f .env ]; then
-      domain=$(grep '^NGINX_SERVER_NAME=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
-      https_port=$(grep '^NGINX_HTTPS_PORT=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
+      domain=$(read_env_value NGINX_SERVER_NAME .env)
+      https_port=$(read_env_value NGINX_HTTPS_PORT .env)
       https_port="${https_port:-443}"
     fi
   fi

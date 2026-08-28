@@ -61,14 +61,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 resolve_downloader_image() {
     local tag="${OT_IMAGE_TAG:-}"
     if [ -z "$tag" ] && [ -f "$REPO_ROOT/.env" ]; then
-        tag=$(grep -E '^OT_IMAGE_TAG=' "$REPO_ROOT/.env" 2>/dev/null \
-            | cut -d'=' -f2 | tr -d ' "' | head -1)
+        # python-dotenv, not grep/cut (issue #590).
+        tag=$(python3 "$SCRIPT_DIR/lib/env_reader.py" "$REPO_ROOT/.env" OT_IMAGE_TAG)
     fi
     # A deployment sitting in the install dir (not a git clone) keeps .env beside
     # the compose files rather than one level up.
     if [ -z "$tag" ] && [ -f "./.env" ]; then
-        tag=$(grep -E '^OT_IMAGE_TAG=' ./.env 2>/dev/null \
-            | cut -d'=' -f2 | tr -d ' "' | head -1)
+        # python-dotenv, not grep/cut (issue #590).
+        tag=$(python3 "$SCRIPT_DIR/lib/env_reader.py" ./.env OT_IMAGE_TAG)
     fi
     echo "${DOCKERHUB_USERNAME:-davidamacey}/opentranscribe-backend:${tag:-latest}"
 }
@@ -188,7 +188,8 @@ check_huggingface_token() {
     # Check .env file
     if [ -f "$REPO_ROOT/.env" ]; then
         local token
-        token=$(grep "^HUGGINGFACE_TOKEN=" "$REPO_ROOT/.env" | cut -d'=' -f2 | tr -d ' ')
+        # python-dotenv, not grep/cut (issue #590).
+        token=$(python3 "$SCRIPT_DIR/lib/env_reader.py" "$REPO_ROOT/.env" HUGGINGFACE_TOKEN)
         if [ -n "$token" ]; then
             export HUGGINGFACE_TOKEN="$token"
             print_success "HuggingFace token loaded from .env file"
@@ -265,7 +266,8 @@ download_models_docker() {
     local whisper_model="${WHISPER_MODEL:-}"
     if [ -z "$whisper_model" ] && [ -f "$REPO_ROOT/.env" ]; then
         local env_model
-        env_model=$(grep "^WHISPER_MODEL=" "$REPO_ROOT/.env" | cut -d'=' -f2 | tr -d ' ')
+        # python-dotenv, not grep/cut (issue #590).
+        env_model=$(python3 "$SCRIPT_DIR/lib/env_reader.py" "$REPO_ROOT/.env" WHISPER_MODEL)
         if [ -n "$env_model" ]; then
             whisper_model="$env_model"
         fi

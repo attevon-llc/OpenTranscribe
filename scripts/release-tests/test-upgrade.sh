@@ -1080,8 +1080,10 @@ PY
     # CORRECT answer for a real install, so assert whichever the deployment is
     # configured for. Same correction as the fresh-install scenario.
     local docs_enabled
-    docs_enabled=$(grep -E '^ENABLE_API_DOCS=' "$TEST_ROOT/after/.env" 2>/dev/null \
-        | cut -d= -f2 | tr -d ' "' | tr '[:upper:]' '[:lower:]' || true)
+    # python-dotenv, not grep/cut (issue #590).
+    docs_enabled=$(python3 "$SCRIPT_DIR/../lib/env_reader.py" \
+        "$TEST_ROOT/after/.env" ENABLE_API_DOCS \
+        | tr '[:upper:]' '[:lower:]' || true)
     code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_BACKEND_PORT}/api/docs")
     if [[ "$docs_enabled" == "true" || "$docs_enabled" == "1" || "$docs_enabled" == "yes" ]]; then
         as_assert_http "API docs reachable post-upgrade (opted in)" 200 "$code"
@@ -1273,8 +1275,13 @@ phase_12_assert_rollback_precondition() {
     # version recorded". Phase 08's real `update --version` writes it.
     local env_file="$TEST_ROOT/after/.env"
     local prev_tag current_tag
+    # prev_tag reads a commented-out marker line (`^# *KEY=`), which is not a real
+    # dotenv key -- python-dotenv (and read_env_value) would never see it, so this
+    # one deliberately keeps its own grep rather than gaining a second helper
+    # parameter for a single caller.
     prev_tag="$(grep -E '^# *OT_PREVIOUS_IMAGE_TAG=' "$env_file" 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)"
-    current_tag="$(grep -E '^OT_IMAGE_TAG=' "$env_file" 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)"
+    # python-dotenv, not grep/cut (issue #590).
+    current_tag="$(python3 "$SCRIPT_DIR/../lib/env_reader.py" "$env_file" OT_IMAGE_TAG)"
     as_assert_eq "rollback precondition: # OT_PREVIOUS_IMAGE_TAG recorded as FROM" "$FROM_VERSION" "${prev_tag:-<absent>}"
     as_assert_eq "rollback precondition: OT_IMAGE_TAG now pinned to TO" "$LOCAL_IMAGE_TAG" "${current_tag:-<absent>}"
 
@@ -1607,7 +1614,8 @@ phase_16_rollback_and_assert() {
     as_assert_eq "B-1: update --rollback exits 0" "0" "$rollback_rc"
 
     local env_tag
-    env_tag="$(grep -E '^OT_IMAGE_TAG=' "$stage_rollback/.env" 2>/dev/null | cut -d= -f2 | tr -d ' "')"
+    # python-dotenv, not grep/cut (issue #590).
+    env_tag="$(python3 "$SCRIPT_DIR/../lib/env_reader.py" "$stage_rollback/.env" OT_IMAGE_TAG)"
     as_assert_eq "B-2: staged .env now pins OT_IMAGE_TAG to FROM" "$FROM_VERSION" "$env_tag"
 
     as_assert "B-3: rollback warns about the one-way migration chain" \

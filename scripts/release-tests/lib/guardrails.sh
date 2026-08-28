@@ -677,7 +677,8 @@ gr_assert_target_is_test_database() {
     # — catches a stage pointed at the wrong directory before it drops the
     # wrong database.
     local configured_db
-    configured_db="$(grep -E '^POSTGRES_DB=' "$env_file" 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)"
+    # python-dotenv, not grep/cut (issue #590).
+    configured_db="$(python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/env_reader.py" "$env_file" POSTGRES_DB)"
     configured_db="${configured_db:-opentranscribe}"
     if [[ "$configured_db" != "$expected_db" ]]; then
         gr_die "gr_assert_target_is_test_database: staged .env at '$env_file' has

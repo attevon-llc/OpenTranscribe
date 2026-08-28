@@ -161,23 +161,32 @@ def test_downloader_uses_the_deployments_pinned_image():
     a pinned v0.5.0 install would have fetched whatever :latest was that day —
     and on an air-gapped box, the wrong set means a hard failure at runtime.
     """
+    # SCRIPT_DIR is normally set once at the top of download-models.sh (real invocations
+    # always run the whole file); the isolated function here needs it injected the same
+    # way, since it now shells out to scripts/lib/env_reader.py (python-dotenv, issue #590)
+    # rather than a self-contained grep/cut pipeline.
+    script_dir_prelude = f'SCRIPT_DIR="{REPO_ROOT / "scripts"}"\n'
     fn = _extract_function(DOWNLOADER, "resolve_downloader_image")
 
     pinned = _run_shell(
-        fn + "\nREPO_ROOT=/nonexistent\nresolve_downloader_image\n",
+        script_dir_prelude + fn + "\nREPO_ROOT=/nonexistent\nresolve_downloader_image\n",
         env={"OT_IMAGE_TAG": "v0.5.0"},
     )
     assert pinned.endswith("opentranscribe-backend:v0.5.0")
 
-    unset = _run_shell(fn + "\nREPO_ROOT=/nonexistent\nresolve_downloader_image\n")
+    unset = _run_shell(
+        script_dir_prelude + fn + "\nREPO_ROOT=/nonexistent\nresolve_downloader_image\n"
+    )
     assert unset.endswith("opentranscribe-backend:latest"), "must stay backward-compatible"
 
 
 def test_downloader_reads_the_tag_from_a_deployment_env(tmp_path: Path):
     """An installed deployment keeps .env beside the compose files, not one level up."""
     (tmp_path / ".env").write_text("OT_IMAGE_TAG=v0.4.1\n")
+    script_dir_prelude = f'SCRIPT_DIR="{REPO_ROOT / "scripts"}"\n'
     out = _run_shell(
-        _extract_function(DOWNLOADER, "resolve_downloader_image")
+        script_dir_prelude
+        + _extract_function(DOWNLOADER, "resolve_downloader_image")
         + "\nREPO_ROOT=/nonexistent\nresolve_downloader_image\n",
         cwd=tmp_path,
     )

@@ -1370,12 +1370,17 @@ def get_neural_search_status(
         health while the vector segments are corrupt and *every* semantic query
         answers 503, because they describe the pipeline, the model registry and a
         ``terms`` aggregation, none of which touch the HNSW graph (issue #540).
+
+        And ``bootstrap`` — the self-heal's own state (issue #625): whether the beat task
+        is currently degraded, its attempt count, last error and next retry time, plus a
+        report-only ``text_only_chunk_files`` count (no auto re-embed; see #626).
     """
     from app.services.opensearch_service import probe_knn_health_cached
     from app.services.search.embedding_provenance import survey_embedding_models
     from app.services.search.indexing_service import is_neural_pipeline_available
     from app.services.search.ml_model_service import get_ml_model_service
     from app.services.search.model_switch import provenance_payload
+    from app.services.search.neural_bootstrap import bootstrap_status
 
     ml_service = get_ml_model_service()
     active_model_id = ml_service.get_active_model_id()
@@ -1399,6 +1404,7 @@ def get_neural_search_status(
         "active_model_dimension": active_model_info["dimension"] if active_model_info else None,
         "pipeline_name": settings.OPENSEARCH_NEURAL_PIPELINE,
         "embedding_provenance": provenance_payload(survey_embedding_models()),
+        "bootstrap": bootstrap_status(),
         "chunks_index_knn": {
             "index": settings.OPENSEARCH_CHUNKS_INDEX,
             "status": knn_probe.status,

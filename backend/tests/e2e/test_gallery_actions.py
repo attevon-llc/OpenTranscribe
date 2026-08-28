@@ -1066,9 +1066,35 @@ class TestFileSelectionUI:
         selected = self.page.locator(".file-card.selected")
         assert selected.count() >= 1, "At least one file should be selected"
 
-    def test_shift_click_range_selection(self) -> None:
-        """Shift+click should select a range of files."""
+    def test_shift_click_range_selection(self, owned_media_factory: Any, api_token: str) -> None:
+        """Shift+click should select a range of files.
+
+        Needs >=3 cards. Rather than assert on however many ambient files the dev
+        library happens to hold (0 on an empty/`--fresh` instance, and racy even on a
+        populated one — `.count()` is a synchronous snapshot with no auto-wait, unlike
+        `expect().to_be_visible()`), top up with this test's own uploads so the
+        precondition is guaranteed rather than hoped for, then wait for at least 3
+        cards to actually render before counting.
+        """
         cards = self.page.locator(".file-card")
+        # `.count()` is a synchronous snapshot with no auto-wait (unlike
+        # `expect().to_be_visible()`), so it can race the grid's async fetch and read 0
+        # even when the library is non-empty — poll briefly rather than trust one read.
+        existing = 0
+        for _ in range(10):
+            existing = cards.count()
+            if existing >= 3:
+                break
+            self.page.wait_for_timeout(300)
+        if existing < 3:
+            # Genuinely short on files (including a totally empty/`--fresh` instance) —
+            # top up with owned uploads instead of asserting on however many ambient
+            # files the dev library happens to hold.
+            for _ in range(3 - existing):
+                owned_media_factory(api_token)
+            self.page.reload()
+            self.page.wait_for_selector(".gallery-action-buttons", timeout=15000)
+            self.page.wait_for_selector(".file-card", timeout=15000)
         assert cards.count() >= 3, "Need at least 3 files for range selection test"
 
         # Ctrl+click first card to start selection

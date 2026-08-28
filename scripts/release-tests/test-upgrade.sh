@@ -1022,10 +1022,11 @@ phase_10_assert_and_report() {
     # Transcript prefix check (per file)
     if [[ -f "$TEST_ROOT/seeded-file-ids.txt" ]]; then
         while IFS= read -r fid; do
-            python3 - "$pre/transcript-$fid.json" "$post/transcript-$fid.json" "$fid" \
-                "$TEST_REPORT_FILE" <<'PY' || true
+            local detail
+            detail=""
+            if detail="$(python3 - "$pre/transcript-$fid.json" "$post/transcript-$fid.json" "$fid" <<'PY'
 import json, sys
-pre, post, fid, report = sys.argv[1:5]
+pre, post, fid = sys.argv[1:4]
 def segs(p):
     try:
         d = json.load(open(p))
@@ -1041,12 +1042,14 @@ if ok:
         if s.get("text") != ps.get("text") or abs((s.get("start") or 0) - (ps.get("start") or 0)) > 0.01:
             ok = False
             break
-status = "PASS" if ok else "FAIL"
-detail = "" if ok else f"pre={len(pre_segs or [])} post={len(post_segs or [])}"
-print(f"{status:5}  transcript prefix preserved for file {fid}  {detail}")
-with open(report, "a") as f:
-    f.write(f"| {status} | transcript prefix preserved for file {fid} | {detail} |\n")
+print(f"pre={len(pre_segs or [])} post={len(post_segs or [])}")
+sys.exit(0 if ok else 1)
 PY
+)"; then
+                as_record PASS "transcript prefix preserved for file $fid"
+            else
+                as_record FAIL "transcript prefix preserved for file $fid" "$detail"
+            fi
         done < "$TEST_ROOT/seeded-file-ids.txt"
     fi
 
@@ -1608,12 +1611,13 @@ phase_16_rollback_and_assert() {
     # independent version pins (postgres:17.5-alpine etc.) that never move
     # per OpenTranscribe release — checking them against FROM_VERSION was
     # always going to fail regardless of whether the rollback worked.
-    local mismatched=() cname image
+    local mismatched=() app_containers=() cname image
     while IFS= read -r cname; do
         [[ -n "$cname" ]] || continue
         image="$(docker inspect "$cname" --format '{{.Config.Image}}' 2>/dev/null || echo "")"
         case "$image" in
             davidamacey/opentranscribe-*)
+                app_containers+=("$cname")
                 case "$image" in
                     *":${FROM_VERSION}") ;;
                     *) mismatched+=("$cname=$image") ;;
@@ -1622,6 +1626,18 @@ phase_16_rollback_and_assert() {
             *) ;; # third-party infra image, not app-versioned — see comment above
         esac
     done < <(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-')
+
+    # #619's own root cause, guarded against here: with ZERO app containers running,
+    # `mismatched` is trivially empty and the assertion below PASSES having checked
+    # nothing at all. Assert containers actually exist BEFORE trusting an empty
+    # mismatch list.
+    if (( ${#app_containers[@]} == 0 )); then
+        gr_warn "B-4: no app-owned opentranscribe-* containers found via docker ps — $(docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null | tr '\n' '; ')"
+    fi
+    as_assert "B-4a: app-owned opentranscribe-* containers are running at all" \
+        '(( ${#app_containers[@]} > 0 ))'
+    as_assert "B-4a: backend and frontend containers are present" \
+        '[[ " ${app_containers[*]} " == *" opentranscribe-backend "* && " ${app_containers[*]} " == *" opentranscribe-frontend "* ]]'
     as_assert "B-4: every app-owned opentranscribe-* image resolves :${FROM_VERSION}" \
         '(( ${#mismatched[@]} == 0 ))'
     [[ ${#mismatched[@]} -gt 0 ]] && gr_warn "app images not on ${FROM_VERSION}: ${mismatched[*]}"
@@ -1671,9 +1687,11 @@ print(len(items or []))
             [[ -s "$pre_transcript" ]] || continue
             post_transcript="$(mktemp)"
             ac_get_segments "$fid" > "$post_transcript" 2>/dev/null || true
-            python3 - "$pre_transcript" "$post_transcript" "$fid" "$TEST_REPORT_FILE" <<'PY' || true
+            local detail
+            detail=""
+            if detail="$(python3 - "$pre_transcript" "$post_transcript" "$fid" <<'PY'
 import json, sys
-pre, post, fid, report = sys.argv[1:5]
+pre, post, fid = sys.argv[1:4]
 def segs(p):
     try:
         d = json.load(open(p))
@@ -1688,12 +1706,14 @@ if ok:
         if s.get("text") != ps.get("text") or abs((s.get("start") or 0) - (ps.get("start") or 0)) > 0.01:
             ok = False
             break
-status = "PASS" if ok else "FAIL"
-detail = "" if ok else f"pre={len(pre_segs or [])} post={len(post_segs or [])}"
-print(f"{status:5}  B-7: transcript for file {fid} matches the pre-upgrade snapshot exactly  {detail}")
-with open(report, "a") as f:
-    f.write(f"| {status} | B-7: transcript for file {fid} matches the pre-upgrade snapshot exactly | {detail} |\n")
+print(f"pre={len(pre_segs or [])} post={len(post_segs or [])}")
+sys.exit(0 if ok else 1)
 PY
+)"; then
+                as_record PASS "B-7: transcript for file $fid matches the pre-upgrade snapshot exactly"
+            else
+                as_record FAIL "B-7: transcript for file $fid matches the pre-upgrade snapshot exactly" "$detail"
+            fi
             rm -f "$post_transcript"
         done < "$TEST_ROOT/seeded-file-ids.txt"
     else

@@ -521,7 +521,15 @@ print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
     expected_head=$(ver_alembic_head "$REPO_ROOT/backend")
     as_assert_eq "alembic head" "$expected_head" "$alembic_head"
 
-    as_summary | tee -a "$TEST_REPORT_FILE"
+    # as_summary deliberately returns 1 when any assertion FAILed. This is the LAST
+    # phase, and under set -euo pipefail a non-zero return from either stage of
+    # `as_summary | tee -a ...` trips set -e right here — silently skipping the
+    # "Finished:" line and this phase's own done-marker, and (worse) leaving the
+    # driver's own exit code at whatever the last unrelated command happened to
+    # return, which is not the assertion verdict at all (same class as #617/#618,
+    # ported from test-upgrade.sh's phase_18_summary).
+    RELEASE_TEST_EXIT_CODE=0
+    as_summary | tee -a "$TEST_REPORT_FILE" || RELEASE_TEST_EXIT_CODE=$?
     {
         echo ""
         echo "Finished: $(date -Iseconds)"
@@ -553,3 +561,10 @@ echo
 echo "Done. Report: $TEST_ROOT/REPORT.md"
 echo "Stack left running for inspection. Tear down with: $0 --cleanup"
 echo "Then restart your live deployment with: ./opentr.sh start dev"
+
+# Propagate phase 06's assertion verdict as the script's own exit code (see
+# phase_06_api_smoke's comment). Without this, the capture above makes the script
+# exit 0 even when an assertion FAILed -- worse than the truncation bug it fixes
+# (silently green instead of noisily truncated). Defaults to 0 for a resumed run
+# where phase 06 was already marked done and skipped.
+exit "${RELEASE_TEST_EXIT_CODE:-0}"

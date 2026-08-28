@@ -1,7 +1,8 @@
 """Search quality integration tests against a self-seeded corpus.
 
 Run: RUN_SEARCH_QUALITY_TESTS=true pytest backend/tests/test_search_quality.py -v
-Requires: running OpenTranscribe dev stack (localhost:5174) with OpenSearch reachable.
+Requires: running OpenTranscribe dev stack (localhost:5174, or ``BACKEND_PORT`` for an
+isolated stack) with OpenSearch reachable.
 
 Unlike the old version of this file, this suite needs NO hand-curated external
 corpus. ``search_corpus`` (registered via ``fixtures.search_corpus_stack``) injects
@@ -20,6 +21,7 @@ Set RUN_SEARCH_QUALITY_TESTS=true to run this suite (it is not run in CI, which
 forces SKIP_OPENSEARCH=True).
 """
 
+import os
 import re
 
 import pytest
@@ -38,7 +40,7 @@ pytestmark = pytest.mark.skipif(
     reason="Search quality tests need a live dev stack (set RUN_SEARCH_QUALITY_TESTS=true to run)",
 )
 
-BASE = "http://localhost:5174/api"
+BASE = f"http://localhost:{os.environ.get('BACKEND_PORT', '5174')}/api"
 
 
 @pytest.fixture(scope="module")
@@ -220,20 +222,40 @@ class TestSemanticQuality:
                 q,
                 marks=pytest.mark.skip(
                     reason=(
-                        "pending gold-set calibration — 'artificial intelligence' does not "
-                        "place sq-ai-policy (Export Controls Sync) in the top 3 of 6 with the "
-                        "deployed embedding model (all-MiniLM-L6-v2), even after the one "
-                        "class-wide relaxation applied to this test (dropping the anti-gold "
-                        "exclusion, see the docstring below). Measured directly: all 6 files "
-                        "come back semantic_only with fused scores crammed into a 0.027-0.065 "
-                        "band (Excavation Planning 0.0645 top, sq-ai-policy 5th at 0.0313) — at "
-                        "6 documents, that band is too narrow to be a meaningful ranking signal "
-                        "rather than noise. Every file also shares one near-identical filler "
-                        "turn ('Let's schedule...', the GLOBAL_WORD anchor), which likely "
-                        "compresses all 6 embeddings toward the same neighbourhood and swamps "
-                        "the topic-specific signal at this corpus size. Left skipped rather than "
-                        "reworded further per this task's calibration cap of ~1-2 skips; a fix "
-                        "would mean redesigning GLOBAL_WORD's placement, not more prose tuning."
+                        "flaky, not fixed — re-measured after the #606 fix (issue #606's "
+                        "PR fixed two real defects: an unconditional fuzzy multi_match clause "
+                        "that produced a false keyword hit, and an OpenSearch collapse+hybrid-"
+                        "RRF combination that returns a wrong, query-independent ranking when "
+                        "the keyword leg is fully starved). Both mechanisms were VERIFIED not "
+                        "to be the cause here — this query is also fully keyword-starved and "
+                        "correctly takes the same fixed neural-only collapse path 'space "
+                        "exploration' does, with zero keyword false positives. What's left is "
+                        "a genuine near-tie: sq-ai-policy's fused score sits only ~0.0085 above "
+                        "the highest-scoring anti-gold file (sq-espionage, a signals-intercept/ "
+                        "covert-monitoring meeting) and only ~0.0048 above the third-place "
+                        "file, with all 6 files crammed into a ~0.045 band — 'space "
+                        "exploration' by contrast has a ~0.038 margin over its own #2, 4-8x "
+                        "wider. Measured deterministic PASS across 55 independent trials on an "
+                        "isolated, quiet single-node stack (10 fresh-corpus reinjections + 15 "
+                        "repeated same-corpus queries + 30 concurrent same-corpus queries, "
+                        "every one byte-identical), yet measured 4-of-5 FAIL in isolated "
+                        "single-test runs against the live dev stack's shared, long-lived "
+                        "OpenSearch instance under the identical code — consistent with a "
+                        "margin this thin being sensitive to environment-dependent ML-inference "
+                        "floating-point non-determinism (multi-threaded reduction order, or "
+                        "approximate-kNN graph variance on a much larger index) that a quiet "
+                        "isolated container doesn't exhibit. 'intelligence' is genuinely "
+                        "polysemous (artificial intelligence vs. signals/espionage "
+                        "intelligence) and the 6-document corpus's heavy shared boilerplate "
+                        "(the GLOBAL_WORD 'schedule' filler in every file's opening turns) "
+                        "compresses embeddings toward the same neighbourhood at this scale — "
+                        "the same corpus-design diagnosis the ORIGINAL skip (before #606) "
+                        "already made. A ranking-code fix cannot manufacture separation that "
+                        "isn't in the corpus; the actual fix is the fixture redesign that "
+                        "diagnosis named (move GLOBAL_WORD out of the opening turn, give each "
+                        "chunk more topic-bearing text, and re-measure) — out of scope here. "
+                        "Left skipped rather than un-skipped-and-flaky, which would put a coin "
+                        "flip into the merge gate."
                     )
                 ),
             )

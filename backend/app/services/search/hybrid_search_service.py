@@ -1618,10 +1618,30 @@ class HybridSearchService:
     ) -> dict[str, Any]:
         """Build an adaptive text query with fuzziness and cross-field support.
 
-        Single signal queries use fuzziness for typo tolerance plus an exact
+        Single-word queries use fuzziness for typo tolerance plus an exact
         match boost so precise hits still outrank fuzzy ones.  Multi-word
-        queries add cross-field matching (terms can match different fields)
-        and phrase proximity with slop.  Quoted phrases bypass fuzziness.
+        queries deliberately skip the fuzzy clause and instead add cross-field
+        matching (terms can match different fields) and phrase proximity with
+        slop.  Quoted phrases bypass fuzziness entirely.
+
+        The fuzzy clause is single-word-only on purpose (issue #606): OpenSearch's
+        ``fuzziness: AUTO`` on a multi-term ``multi_match`` matches if ANY one term
+        fuzzily matches ANY token in the field (no "all terms" requirement), so a
+        two-word query where only one word happens to have a same-length,
+        edit-distance-2 near neighbour elsewhere in the corpus scores a full
+        "keyword match" for the whole phrase — even when the other word has zero
+        support in that document. Measured: the stemmed query term "explor"
+        (from "exploration") sits at Levenshtein distance 2 from the unrelated
+        stemmed term "export" (both 6 characters, so within ``fuzziness: AUTO``'s
+        tolerance and past ``prefix_length: 2``'s "ex" prefix requirement), so
+        "space exploration" fuzzy-matched every chunk containing "export" in a
+        file with no mention of "space" at all — a false keyword hit that
+        outranked the genuinely topical (semantic-only) result and every other
+        candidate. Cross-field and phrase-slop matching (below) have no
+        fuzziness and cannot produce this kind of false positive; they are the
+        multi-word queries' typo tolerance instead — full exact-token support
+        for at least one term rather than a same-length edit-distance match on
+        a single stemmed word.
 
         Args:
             query: Search query text.
@@ -1635,6 +1655,7 @@ class HybridSearchService:
 
         words = [w for w in query.split() if len(w) >= 2]
         is_phrase_query = query.startswith('"') and query.endswith('"')
+        is_multi_word = len(words) > 1
 
         should_clauses: list[dict[str, Any]] = []
 
@@ -1650,18 +1671,21 @@ class HybridSearchService:
                 }
             )
         else:
-            # Primary: best_fields with AUTO fuzziness for typo tolerance
-            should_clauses.append(
-                {
-                    "multi_match": {
-                        "query": query,
-                        "fields": search_fields,
-                        "type": "best_fields",
-                        "fuzziness": "AUTO",
-                        "prefix_length": 2,
+            if not is_multi_word:
+                # Primary: best_fields with AUTO fuzziness for typo tolerance.
+                # Single-word only — see the docstring for why a multi-word
+                # query must not get this clause.
+                should_clauses.append(
+                    {
+                        "multi_match": {
+                            "query": query,
+                            "fields": search_fields,
+                            "type": "best_fields",
+                            "fuzziness": "AUTO",
+                            "prefix_length": 2,
+                        }
                     }
-                }
-            )
+                )
             # Exact match boost — precise hits outrank fuzzy matches
             should_clauses.append(
                 {
@@ -1673,7 +1697,7 @@ class HybridSearchService:
                     }
                 }
             )
-            if len(words) > 1:
+            if is_multi_word:
                 # Cross-field: different words can match different fields
                 should_clauses.append(
                     {
@@ -1792,7 +1816,7 @@ class HybridSearchService:
         use_neural: bool,
         sort_by: str = "relevance",
         sort_order: str = "desc",
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], bool]:
         """Build a search body with native collapse + inner_hits.
 
         OpenSearch groups results by file_uuid server-side, returning only
@@ -1810,7 +1834,9 @@ class HybridSearchService:
             sort_order: Sort direction.
 
         Returns:
-            OpenSearch search body dict with collapse configuration.
+            Tuple of (OpenSearch search body dict with collapse configuration,
+            whether the caller must attach the ``search_pipeline`` param — see
+            the starvation check below for why this is not simply ``use_neural``).
         """
         search_fields = self._get_search_fields(has_speaker_filter)
         text_query_clause = self._build_text_query(query, search_fields)
@@ -1840,7 +1866,54 @@ class HybridSearchService:
                     query,
                 )
             if model_id:
-                body: dict[str, Any] = {
+                neural_clause = {
+                    "bool": {
+                        "must": [
+                            {
+                                "neural": {
+                                    "embedding": {
+                                        "query_text": query,
+                                        "model_id": model_id,
+                                        "k": settings.SEARCH_RRF_WINDOW_SIZE,
+                                    }
+                                }
+                            }
+                        ],
+                        "filter": filters,
+                    }
+                }
+
+                # A fully-starved keyword leg (zero BM25 matches — the normal
+                # case for a genuinely semantic query, see `_build_text_query`)
+                # must NOT be handed to the hybrid `search_pipeline` (issue
+                # #606). OpenSearch 3.4's `collapse` + hybrid RRF
+                # (`score-ranker-processor`) silently returns a WRONG,
+                # QUERY-INDEPENDENT ranking whenever one of the two hybrid
+                # legs matches nothing — measured directly: two unrelated
+                # queries ("space exploration", "artificial intelligence"),
+                # both with zero keyword hits, produced byte-identical
+                # collapsed scores and file ordering, dominated by a file with
+                # no topical relevance to either. The bug is specific to
+                # `collapse` — the same starved-leg RRF fusion is correct at
+                # the raw chunk level (no collapse), and a plain neural-only
+                # collapse query (no `hybrid` wrapper at all) is also correct.
+                # The pre-check below is a `count` (no scoring, no fetch), not
+                # a second scored `search`, so it stays cheap.
+                if self._bm25_leg_is_starved(text_query_clause, filters):
+                    body = {
+                        "size": 0,  # Placeholder — set by _apply_sort_clause
+                        "query": neural_clause,
+                        "collapse": collapse_config,
+                        "highlight": {"fields": highlight_fields},
+                        "_source": {"excludes": ["embedding"]},
+                        "track_total_hits": False,
+                    }
+                    body["size"] = self._apply_sort_clause(
+                        body, sort_by, sort_order, page, page_size, use_search_pipeline=False
+                    )
+                    return body, False
+
+                body = {
                     "size": 0,  # Placeholder — set by _apply_sort_clause
                     "query": {
                         "hybrid": {
@@ -1851,22 +1924,7 @@ class HybridSearchService:
                                         "filter": filters,
                                     }
                                 },
-                                {
-                                    "bool": {
-                                        "must": [
-                                            {
-                                                "neural": {
-                                                    "embedding": {
-                                                        "query_text": query,
-                                                        "model_id": model_id,
-                                                        "k": settings.SEARCH_RRF_WINDOW_SIZE,
-                                                    }
-                                                }
-                                            }
-                                        ],
-                                        "filter": filters,
-                                    }
-                                },
+                                neural_clause,
                             ]
                         }
                     },
@@ -1883,19 +1941,71 @@ class HybridSearchService:
                 body["size"] = self._apply_sort_clause(
                     body, sort_by, sort_order, page, page_size, use_search_pipeline=True
                 )
-                return body
+                return body, True
 
         # BM25-only collapse
-        return self._build_collapsed_bm25_body(
-            query,
-            filters,
-            page,
-            page_size,
-            has_speaker_filter,
-            highlight_fields,
-            sort_by,
-            sort_order,
+        return (
+            self._build_collapsed_bm25_body(
+                query,
+                filters,
+                page,
+                page_size,
+                has_speaker_filter,
+                highlight_fields,
+                sort_by,
+                sort_order,
+            ),
+            False,
         )
+
+    def _bm25_leg_is_starved(
+        self, text_query_clause: dict[str, Any], filters: list[dict[str, Any]]
+    ) -> bool:
+        """Whether the BM25/keyword leg matches zero chunk documents.
+
+        A cheap ``count`` (no scoring, no fetch) against the same clause
+        ``_build_collapsed_search_body`` would otherwise put in the hybrid
+        query's keyword leg. See issue #606: this check exists specifically
+        to route around a broken collapse+hybrid-RRF combination when the
+        answer is yes.
+
+        Args:
+            text_query_clause: The clause `_build_text_query` produced.
+            filters: OpenSearch filter clauses (tenant scope, quarantine, etc).
+                Callers on this path already include `chunk_plane_clause()`
+                (`_build_filters`), but this count explicitly ANDs it in again
+                itself rather than trusting that — a reader of this index must
+                decide its own plane, not inherit the caller's (#403 Stage 3
+                addendum G3/G4; `tests/unit/test_chunk_plane_compat_arm.py`).
+
+        Returns:
+            True if the keyword leg would match nothing. Fails open to False
+            (i.e. "assume it matches something, use the normal hybrid path")
+            on any error — a starvation *false negative* only costs the
+            OpenSearch-level bug being observed as narrow scores again as
+            already documented (`artificial intelligence`'s prior skip);
+            fail-closed here would instead risk a spurious neural-only
+            fallback for every query if `count` itself is unhealthy.
+        """
+        client = get_opensearch_client()
+        if not client:
+            return False
+        try:
+            resp = client.count(
+                index=settings.OPENSEARCH_CHUNKS_INDEX,
+                body={
+                    "query": {
+                        "bool": {
+                            "must": [text_query_clause],
+                            "filter": [*filters, chunk_plane_clause()],
+                        }
+                    }
+                },
+            )
+            return int(resp.get("count", 0)) == 0
+        except Exception as e:  # noqa: BLE001 — best-effort pre-check, see docstring
+            logger.debug(f"BM25 starvation pre-check failed, assuming non-empty: {e}")
+            return False
 
     def _build_collapsed_bm25_body(
         self,
@@ -2936,7 +3046,7 @@ class HybridSearchService:
 
         # Build collapsed search body
         t_build = time.time()
-        search_body = self._build_collapsed_search_body(
+        search_body, needs_search_pipeline = self._build_collapsed_search_body(
             search_query,
             filters,
             page,
@@ -2948,7 +3058,10 @@ class HybridSearchService:
         )
         build_ms = round((time.time() - t_build) * 1000)
 
-        # Execute with search pipeline if using hybrid
+        # Execute with search pipeline if using hybrid. NOT simply `use_neural`
+        # (issue #606): a fully keyword-starved query is routed to a pure
+        # neural-only body with no `hybrid` wrapper to fuse, so no pipeline is
+        # attached for it either — see `_build_collapsed_search_body`.
         t_opensearch = time.time()
         response: dict[str, Any] | None = None
         fell_back_to_bm25 = False
@@ -2956,7 +3069,7 @@ class HybridSearchService:
             if not client:
                 return self._empty_response(query, page, page_size)
             search_params: dict[str, Any] = {}
-            if use_neural:
+            if needs_search_pipeline:
                 search_params["search_pipeline"] = search_pipeline
             response = client.search(
                 index=settings.OPENSEARCH_CHUNKS_INDEX,

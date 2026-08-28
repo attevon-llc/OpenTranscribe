@@ -916,6 +916,7 @@ def test_backup_arm_passes_the_resolved_compose_chain(tmp_path: Path):
     body = _backup_restore_arm()
     snippet = f"""
 YELLOW=''; GREEN=''; RED=''; BLUE=''; NC=''
+source {COMMON}
 cd {tmp_path}
 check_environment() {{ :; }}
 require_db_helpers() {{ :; }}
@@ -942,6 +943,7 @@ def test_restore_arm_forwards_every_flag_in_order(tmp_path: Path):
     body = _backup_restore_arm()
     snippet = f"""
 YELLOW=''; GREEN=''; RED=''; BLUE=''; NC=''
+source {COMMON}
 cd {tmp_path}
 check_environment() {{ :; }}
 require_db_helpers() {{ :; }}
@@ -1056,6 +1058,7 @@ def test_restore_arm_reads_a_custom_postgres_db_from_env(tmp_path: Path):
     body = _backup_restore_arm()
     snippet = f"""
 YELLOW=''; GREEN=''; RED=''; BLUE=''; NC=''
+source {COMMON}
 cd {tmp_path}
 check_environment() {{ :; }}
 require_db_helpers() {{ :; }}

@@ -31,6 +31,23 @@ if [ -f ./scripts/common.sh ]; then
     . ./scripts/common.sh
 fi
 
+# Fallback definition: common.sh is sourced conditionally above (an install predating
+# release-manifest.txt:52 may not have it), and every non-DB command must keep working
+# without it. Identical body; common.sh's wins when present. Same standalone-shipping
+# rationale as CONTAINER_UID_GID above.
+if ! declare -F read_env_value >/dev/null 2>&1; then
+    read_env_value() {
+        local key="$1" env_file="${2:-.env}"
+        [ -f "$env_file" ] || { echo ""; return 0; }
+        grep -E "^${key}=" "$env_file" 2>/dev/null \
+            | head -1 \
+            | cut -d= -f2- \
+            | sed -E 's/[[:space:]]+#.*$//' \
+            | tr -d ' "' \
+            || true
+    }
+fi
+
 function show_help {
     echo -e "${BLUE}OpenTranscribe Management Script${NC}"
     echo ""
@@ -98,7 +115,7 @@ fix_model_cache_permissions() {
     # Read MODEL_CACHE_DIR from .env if it exists
     local MODEL_CACHE_DIR=""
     if [ -f .env ]; then
-        MODEL_CACHE_DIR=$(grep 'MODEL_CACHE_DIR' .env | grep -v '^#' | cut -d'#' -f1 | cut -d'=' -f2 | tr -d ' "' | head -1)
+        MODEL_CACHE_DIR=$(read_env_value MODEL_CACHE_DIR)
     fi
 
     # Use default if not set
@@ -173,8 +190,7 @@ force_cpu_mode_requested() {
     fi
     if [ -f .env ]; then
         local value
-        value=$(grep '^FORCE_CPU_MODE=' .env 2>/dev/null \
-            | cut -d'=' -f2 | tr -d ' "' | head -1)
+        value=$(read_env_value FORCE_CPU_MODE)
         [ "$value" = "true" ]
         return
     fi
@@ -209,9 +225,7 @@ get_compose_files() {
 
     # Add NGINX overlay if NGINX_SERVER_NAME is configured
     local nginx_server_name=""
-    if [ -f .env ]; then
-        nginx_server_name=$(grep '^NGINX_SERVER_NAME=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
-    fi
+    nginx_server_name=$(read_env_value NGINX_SERVER_NAME)
 
     if [ -n "$nginx_server_name" ] && [ -f docker-compose.nginx.yml ]; then
         # Check for SSL certificates
@@ -249,11 +263,15 @@ preflight_upgrade_env() {
 
     # Relaxed environments opt out of all of this, exactly as the backend does.
     local env_name
-    env_name=$(grep -E '^ENVIRONMENT=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' | tr '[:upper:]' '[:lower:]' | head -1)
+    env_name=$(read_env_value ENVIRONMENT | tr '[:upper:]' '[:lower:]')
     case "$env_name" in
         development|dev|testing|test|local) return 0 ;;
     esac
 
+    # REDIS_PASSWORD / JWT_SECRET_KEY / ENCRYPTION_KEY deliberately keep the raw
+    # `cut -d= -f2-` form rather than read_env_value: a secret may legitimately
+    # contain a `#` (even ` #`), and read_env_value's inline-comment stripping
+    # would silently truncate it.
     local redis_pw
     redis_pw=$(grep -E '^REDIS_PASSWORD=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
     [ -z "$redis_pw" ] && problems+=("REDIS_PASSWORD is empty or missing")
@@ -352,7 +370,7 @@ perform_phased_restart() {
     local compose_files="$1"
     local backend_port waited max_wait state
 
-    backend_port=$(grep -E '^BACKEND_PORT=' .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' | head -1)
+    backend_port=$(read_env_value BACKEND_PORT)
     backend_port="${backend_port:-5174}"
 
     # Phase 1: infrastructure + backend only, no dependents.
@@ -420,9 +438,7 @@ show_access_info() {
 
     # Check if NGINX/HTTPS is configured
     local nginx_server_name=""
-    if [ -f .env ]; then
-        nginx_server_name=$(grep '^NGINX_SERVER_NAME=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
-    fi
+    nginx_server_name=$(read_env_value NGINX_SERVER_NAME)
 
     local cert_file="${NGINX_CERT_FILE:-./nginx/ssl/server.crt}"
     local key_file="${NGINX_CERT_KEY:-./nginx/ssl/server.key}"
@@ -540,10 +556,14 @@ case "${1:-help}" in
             esac
         done
 
-        current_tag=$(grep -E '^OT_IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)
+        current_tag=$(read_env_value OT_IMAGE_TAG)
         current_tag="${current_tag:-latest}"
 
         if [ "$do_rollback" = true ]; then
+            # Deliberately NOT read_env_value: that helper anchors on `^KEY=`, and this
+            # key is written commented-out (`^# *OT_PREVIOUS_IMAGE_TAG=`) by design (it's a
+            # rollback marker, not an active setting) -- not worth a second helper parameter
+            # for this one caller.
             target_version=$(grep -E '^# *OT_PREVIOUS_IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)
             if [ -z "$target_version" ]; then
                 echo -e "${RED}❌ No previous version recorded — nothing to roll back to.${NC}"
@@ -822,9 +842,9 @@ case "${1:-help}" in
         # deliberately has no such prologue (it greps individual keys — see
         # preflight_upgrade_env). Without these explicit reads a restore would DROP/CREATE
         # the DEFAULT database name on any install that customised them (issue #613).
-        POSTGRES_USER=$(grep -E '^POSTGRES_USER=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
-        POSTGRES_DB=$(grep -E '^POSTGRES_DB=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
-        BACKUP_HOST_PATH=$(grep -E '^BACKUP_HOST_PATH=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
+        POSTGRES_USER=$(read_env_value POSTGRES_USER)
+        POSTGRES_DB=$(read_env_value POSTGRES_DB)
+        BACKUP_HOST_PATH=$(read_env_value BACKUP_HOST_PATH)
         export POSTGRES_USER POSTGRES_DB BACKUP_HOST_PATH
 
         cmd="$1"; shift
@@ -896,9 +916,7 @@ case "${1:-help}" in
 
         # NGINX health (only if configured)
         nginx_server_name=""
-        if [ -f .env ]; then
-            nginx_server_name=$(grep '^NGINX_SERVER_NAME=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
-        fi
+        nginx_server_name=$(read_env_value NGINX_SERVER_NAME)
 
         if [ -n "$nginx_server_name" ]; then
             if curl -s -k https://localhost:${NGINX_HTTPS_PORT:-443}/health > /dev/null 2>&1 || \
@@ -958,9 +976,7 @@ case "${1:-help}" in
 
         # Get current NGINX_SERVER_NAME from .env if exists
         current_hostname=""
-        if [ -f .env ]; then
-            current_hostname=$(grep '^NGINX_SERVER_NAME=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
-        fi
+        current_hostname=$(read_env_value NGINX_SERVER_NAME)
 
         if [ -n "$current_hostname" ]; then
             read -p "Hostname [$current_hostname]: " user_hostname

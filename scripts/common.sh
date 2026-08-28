@@ -84,6 +84,30 @@ check_docker() {
 # -base64 32)); this is the same generation, for the one first-run path neither
 # of those covers -- a plain `./opentr.sh start dev` / `start prod`.
 #
+# read_env_value KEY [ENV_FILE]
+#   Reads one plain-config value out of a dotenv file, honouring the dotenv inline-comment
+#   convention: a `#` PRECEDED BY WHITESPACE starts a comment, a bare `#` inside a value does
+#   not. `ENVIRONMENT=production  # prod box` used to yield `production#prodbox`, silently
+#   breaking every prod-hardening string comparison in opentranscribe.sh (issue #590).
+#
+#   NOT for secrets. REDIS_PASSWORD / JWT_SECRET_KEY / ENCRYPTION_KEY may legitimately
+#   contain `#` (even ` #`), so those reads deliberately do NOT go through this and must
+#   keep their raw `cut -d= -f2-` form.
+#
+#   `|| true` is load-bearing: callers run under `set -e`, and an ABSENT optional key is the
+#   normal case (grep exits 1). Same reasoning as setup-opentranscribe.sh's `_env_val`.
+#   `-f2-` not `-f2`: a value may legitimately contain `=`.
+read_env_value() {
+  local key="$1" env_file="${2:-.env}"
+  [ -f "$env_file" ] || { echo ""; return 0; }
+  grep -E "^${key}=" "$env_file" 2>/dev/null \
+    | head -1 \
+    | cut -d= -f2- \
+    | sed -E 's/[[:space:]]+#.*$//' \
+    | tr -d ' "' \
+    || true
+}
+
 # Only touches the SHIPPED PLACEHOLDER. An empty or already-customized value is
 # left alone -- either means an operator made a deliberate choice (e.g. leaving
 # KMS auto-encryption off), and this must never clobber a real key.

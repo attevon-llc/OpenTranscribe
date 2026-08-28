@@ -71,6 +71,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correctly-chained `up`). `docker-compose.backup.yml` (the overlay the in-app scheduled/S3
   backup feature needs mounted) is a separate, not-yet-shipped gap — tracked as its own
   follow-up rather than folded into this fix.
+- **PKI testing now generates its own isolated env fragment and never touches `.env`.**
+  `scripts/pki/generate-test-env.sh` emits two gitignored artifacts (`pki-test.env`,
+  `pki-test.compose.yml`) that a new `add_pki_overlay()` in `opentr.sh` sources after `.env`,
+  replacing two ~25-line `--with-pki` blocks that were duplicated verbatim in `start_app()` and
+  `reset()`. Verified end to end against a pristine `cp .env.example .env` clone:
+  `RUN_PKI_E2E=true pytest backend/tests/e2e/test_pki.py` passes 14/14 with a continuous
+  sha256+mtime poll recording **zero writes to `.env`** across the whole run, and a paired red
+  check (blanking the fragment reproduces the predicted 400 "PKI authentication is not enabled")
+  confirms the wiring is load-bearing, not just present. Six pre-existing PKI bugs surfaced and
+  were fixed along the way: `PKI_ADMIN_DNS` was documented as comma-separated when the parser
+  requires semicolons (a DN's own commas made comma-separated silently grant zero admins);
+  `setup-test-pki.sh` told operators to configure `admin@example.com`, the exact cert #593
+  stopped using because it collides with the seeded dev super_admin; `scripts/pki/start-pki-
+  prod.sh` (superseded by `opentr.sh start prod --build --with-pki`) is deleted; `--with-pki` in
+  dev mode was outright refused despite `docker-compose.pki-dev.yml` already existing to serve
+  it, which in turn uncovered a reference to a nonexistent `backend/Dockerfile.dev` and a
+  `0600`-permission nginx key unreadable by the frontend's non-root user; `--with-pki`'s
+  `--fresh` port-isolation exemption was factually wrong (it does publish ports) and is now
+  properly isolated, with a new test asserting every exemption's stated reason is actually true
+  of its overlay, not just present; and `env_file: .env` was **mandatory** at 19 sites across
+  three compose files, so a fresh worktree with no `.env` at all — the actual root cause of
+  #593's original blocker — couldn't even reach `docker compose config`.
 - **Watch sources: per-file management, reachable at last** (#489). Each source card gets a
   **Files** button opening its full import history — what was imported, skipped, or failed, with
   the actual reason rather than a count. Server-side status filter and filename search (so it
@@ -204,6 +226,177 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The release rehearsal's rollback phase could crash outright, and — once it stopped
+  crashing — still fail for two further reasons** (#618). The same unguarded-command-under-
+  `set -e` class of bug as #617, this time a bare `curl` against the frontend inside an
+  assignment, which returns non-zero on a connection failure alone and killed the script with no
+  trace; a new `ac_wait_for_frontend()` (mirroring `ac_wait_for_health`'s poll/timeout shape,
+  non-fatal on timeout) now guards it. Once the crash was fixed, the check it guarded still
+  failed: `docs-site/` was never staged into the rollback rehearsal tree, the same gap already
+  fixed for the post-upgrade tree — with `pull_policy` forced to `never` and no local
+  `docs-site/` to build from, `docker compose up` for the remaining services aborted the whole
+  batch, not just docs, since the rollback scenario starts everything from a stopped app rather
+  than swapping one running service. A third instance of the same `set -e` class was found
+  during the real end-to-end verification run this fix enabled for the first time: phase 18's
+  summary step piped `as_summary` (which deliberately returns 1 when any assertion failed)
+  through `tee`, and under `pipefail` that non-zero return killed the script before it could
+  print its own "Finished" line or exit cleanly. Verified end-to-end with a real
+  `test-upgrade.sh --yes` run: `.phase/` reached `18.done` for the first time ever. Two
+  remaining, unrelated async-write-timing races (the same class #617 partially fixed, affecting
+  different tables) were found and deliberately deferred as issue #619, non-blocking — every
+  actual product-level integrity check in that same run (login, file access, transcript content,
+  search, new work after upgrade) passed.
+- **A release rehearsal failure late in the run could silently truncate the last several phases
+  with no error trace** (#617). `dbs_diff_fingerprints()` is documented as informational — a
+  non-zero return means a table digest differs, already recorded — but both production call
+  sites (the restore assertion and a later digest check) invoked it as a bare statement under
+  `set -euo pipefail`. Any real digest mismatch tripped `set -e` and killed the whole script on
+  the spot, silently truncating the rollback-serves-data and re-upgrade verification phases that
+  should have run after it. Both call sites are now guarded with `if`/`then`/`fi`, the same
+  pattern the rehearsal's own fault-injection selftest already used. The mismatch that originally
+  surfaced this was itself a benign timing race: speaker gender-attribute detection fires as
+  fire-and-forget the instant a file's status flips to completed, and the rollback-oracle backup
+  was taken immediately after seeding returned, with no wait for that async task to settle — so
+  the speaker table could gain attribute values between the "before" snapshot and a later
+  comparison. A new `dbs_wait_for_speaker_attributes()` polls until every seeded file's speaker
+  rows have settled before either backup artifact is taken.
+- **Speaker display-name changes could silently drift out of sync with the search index at 8
+  (then 9) different repair/propagation sites** (#605). The index writer resolves a speaker's
+  label through `canonical_speaker_label()` (`display_name` → confident `suggested_name` @
+  ≥0.75 → `name` → "Unknown Speaker"), but 8 repair/propagation sites still used an older,
+  less-correct `display_name or name` rule, and 5 writers of `suggested_name`/`confidence`
+  dispatched no chunk-plane propagation at all — so a suggestion crossing the 0.75 confidence
+  threshold, or later changing, could leave the OpenSearch index holding a stale label with no
+  recurrence guard. A new `canonical_speaker_label_for_row()` is now the single resolver every
+  repair site imports, and the 5 previously-silent writers (speaker identification, the
+  reject-suggestion path, the reprocess pipeline's speaker_llm stage, and both confidence tiers
+  of the retroactive-matching loop — previously only the ≥0.75 tier dispatched) are wired
+  through `SpeakerRenameTracker`. Rejecting a suggestion now also clears
+  `suggested_name`/`suggestion_source`, not just `confidence` — a second bug where
+  `was_auto_labeled` kept reading a rejected suggestion as still live. One already-drifted
+  production speaker was found and repaired via a targeted, single-file reindex (not a global
+  one) after the fix landed. A follow-up sweep found a 9th site the original pass missed
+  (`_handle_update_profile_action`'s profile-wide rename still computed the old ad hoc chain)
+  plus two more untracked writers with no tracker wiring at all —
+  `SpeakerMatchingService.assign_speaker_to_profile` (confidence alone can cross the suggestion
+  threshold with no `display_name` write) and the standalone `scripts/batch_speaker_matching.py`
+  maintenance script — both now record before/after via the tracker.
+- **A truly fresh `cp .env.example .env` install couldn't boot MinIO, and `--with-pki` could
+  silently refuse a valid client certificate** (#614, #615). `MINIO_KMS_AUTO_ENCRYPTION=on` (the
+  shipped default) requires `MINIO_KMS_SECRET_KEY` in `<key-name>:<base64-32-bytes>` form;
+  `.env.example` shipped the placeholder `CHANGE_ME_auto_generated_on_install`, which isn't that
+  format, so MinIO crash-looped (`FATAL Failed to connect to KMS: kms: invalid secret key
+  format`) until an operator generated a real key by hand. A new `ensure_minio_kms_secret()`
+  generates one on first run, called from both `start_app()` and `reset_and_init()`. Separately,
+  `--with-pki`'s trusted-proxy CIDR default (`127.0.0.1/32,172.16.0.0/12`) didn't cover Docker's
+  whole auto-assigned bridge range — once the default pools are exhausted by other concurrent
+  Docker networks on a host, the daemon spills into `192.168.0.0/16` chunks, and the fail-closed
+  trusted-proxy check silently refused a peer outside the allowlist (a valid client cert just
+  landed back on `/login` with no error). The default now includes `192.168.0.0/16`, measured
+  against the real dev stack's own network (`192.168.96.0/20`, already outside the old default
+  on a host with ~34 unrelated Docker networks) rather than assumed. A same-night follow-up audit
+  of this work found four more real gaps: `restore_database` returned exit 1 on a **successful**
+  `--no-safety-dump` restore because its own last statement's exit status silently became its
+  return code; the pre-`DROP DATABASE` service stop ran unchecked, unlike every other destructive
+  step in the function; two concurrent restores had no lock against racing each other's replay
+  (now a non-blocking `flock`, released via an INT/TERM/ERR/EXIT trap since most failure branches
+  call `exit N` directly); and the newly-generated MinIO KMS key — which every object written
+  under KMS auto-encryption depends on for decryption — printed no warning that losing it makes
+  that data permanently unreadable, and had no guard against an ambiguous `.env` with two
+  `MINIO_KMS_SECRET_KEY=` lines.
+- **The release rehearsal's chat SSE assertions were silently skipped on every run, having
+  misread the chat answer's own text as an error frame** (#611). Not a backend bug — the
+  backend's SSE stream and error-frame emission were exonerated four independent ways. The bug
+  was in the harness: `ac_chat_completion` printed three newline-separated records (answer /
+  citation-count / error) and consumed them by line position (`sed -n '1p/2p/3p'`); the mock
+  LLM's answer is multi-line markdown, so line 3 of the answer text was misread as an error code.
+  Because the harness's error branch then fired on this false positive, it had been skipping two
+  real assertions — chat summary non-empty, chat turn has at least one citation — on every
+  single run; they had never actually executed. A new `parse-chat-sse.py` parses the stream into
+  one line of JSON instead of positional `sed`, so answer content can never forge a record
+  boundary. Verified live against an isolated `--fresh` deployment: single-line JSON, a 686-char
+  real answer, 7 citations, and both previously-skipped assertions now execute and pass. The AST
+  guard added to `test_chat_sse_contract.py` to prevent this class of defect recurring was itself
+  found bypassable: it claimed to check "every `event: error` frame" but actually scanned a
+  hardcoded two-file list, invisible to a third file, and only matched bare-name `sse(...)`
+  calls, silently skipping `chat_service.sse(...)`-style attribute calls a refactor would
+  naturally produce. It now walks every `app/**/*.py` file and matches both call forms — which
+  immediately surfaced two real, previously-unscanned `sse("error", ...)` emitters with no
+  `code` field at all (`api/endpoints/files/subtitles.py`, `api/endpoints/files/__init__.py`),
+  now fixed with a literal code each.
+- **Resolving every suggested speaker on a file could cause speaker identification to silently
+  re-run on it** (#603 follow-up). `task_detection_service`'s "has LLM speaker ID already run on
+  this file" check reads `Speaker.suggestion_source == "llm_analysis"` as its sole existence
+  proxy. Both the reject-suggestion path and the #605 fix for `was_auto_labeled` reading a
+  rejected suggestion as still live nulled `suggestion_source` alongside
+  `suggested_name`/`confidence` — so a file where a user rejected (or manually confirmed) every
+  suggested speaker read as never-identified, and speaker identification got re-offered and
+  re-dispatched, regenerating the exact suggestions the user had just resolved (held off only by
+  the ~30-minute cooldown, not actually prevented). Every reader of `suggestion_source` already
+  requires `suggested_name`/`confidence` to also be truthy before treating a suggestion as
+  active, so leaving `suggestion_source` set after accept/reject can't resurrect a live
+  suggestion — it only preserves the historical record `task_detection_service` needs.
+  `suggested_name` and `confidence` are still cleared, which is the part #605 actually needed.
+- **Semantic search could miss the obvious file for a compound-concept query** (#606).
+  `_build_text_query`'s fuzzy `multi_match` (fuzziness `AUTO`) applied unconditionally to
+  multi-word queries — OpenSearch's fuzzy multi-term matching is an OR, not an AND, so the
+  stemmed term "explor" (from "exploration") fuzzy-matched the unrelated stemmed term "export"
+  (Levenshtein distance 2), and "space exploration" scored a false keyword hit on every "Export
+  Controls Sync" chunk with zero support for "space" anywhere in that file. A second, independent
+  defect surfaced once the first was fixed: OpenSearch 3.4's collapse + hybrid RRF
+  (`score-ranker-processor`) returns a wrong, query-independent ranking whenever the keyword leg
+  matches zero documents — confirmed live via two unrelated zero-keyword-hit queries producing
+  byte-identical collapsed scores. The fuzzy clause is now single-word-only, and a cheap count
+  pre-check routes a fully keyword-starved query to a neural-only collapse body instead. A
+  follow-up audit found the multi-word decision itself was computed off a length-filtered word
+  list (`len(w) >= 2`), so a query with one short token (e.g. "x exploration") was scored as
+  single-word once the short token was dropped, silently reopening the exact false-positive class
+  this fix closed — measured live: 7 hits before the fix (2 false positives) vs 5 after. Fixing
+  that also deleted **all** typo tolerance for multi-word queries outright, despite the docs
+  still advertising it; a second, additive fuzzy clause (`operator: and` + `fuzziness: AUTO`,
+  requiring every term to fuzzily match something) restores it without reproducing the original
+  single-lucky-neighbour bug — measured live: "exploratino sapce" (two typos) went from 0 hits to
+  3.
+- **`opentr.sh restore` could let a newer, already-running app silently re-migrate a
+  just-restored older backup forward** (#610). `restore_database()` unconditionally restarted
+  the app services it had stopped, on every code path — success, failed replay, and failed
+  verify alike. In a rollback scenario the image that came back up was the newer one, and since
+  the backend runs `alembic upgrade head` on every startup, it immediately re-migrated the
+  just-restored older backup, destroying the entire point of the restore. The documented
+  rollback recipe in `docs-site/docs/operations/upgrading.md` reproduced this verbatim — a
+  shipped operational defect, not just a rehearsal artifact. A new pure decision function
+  (`pg_restore_restart_decision`, fail-closed on any unknown or corrupt schema head) now governs
+  whether to restart, and `opentranscribe.sh update --rollback` gained a companion preflight that
+  reads the live Alembic head, asks the target image's own migration tree whether it recognizes
+  that revision, and refuses (exit 1, overridable with `--force-downgrade`) on a miss.
+  `--migrate-forward`/`--no-restart` flags make the choice explicit rather than automatic.
+- **Flower's worker list could permanently omit a healthy worker that simply wasn't ready within
+  Flower's first second of life** (#609). `/api/workers` is populated by a single `celery
+  inspect` broadcast issued once, at Flower's own process startup, with a 1-second reply timeout,
+  and Flower never re-inspects on its own — any worker not ready to answer in that window is gone
+  from `/api/workers` forever, regardless of pool type (the `--pool=threads` hypothesis in the
+  original issue was ruled out by direct probing). `gpu-scale-smoke.sh` and
+  `bulk-processing-cheatsheet.sh`'s `bulk-workers()` now force `?refresh=1` with a bounded retry
+  instead of trusting the cached snapshot, and `docker-compose.yml`'s flower command raises
+  `--inspect_timeout` to 10000ms and drops two flags (`--queues=`, `--broker=`) that Flower's own
+  argv filter silently discarded and that were actively misleading about what was configured.
+- **A quick-win batch closed six small, independently-filed defects** (#604, #589, #593, #594,
+  #607, #608). `gnupg` was missing from the backend's production Dockerfile, so
+  `backup_service`'s `gpg --symmetric` step had no binary to call (#604).
+  `_get_or_create_collection_with_dedup` inferred whether it had created a new collection from a
+  cache-invalidation side effect that fired identically on both the real-create and the
+  lost-race/collision path, so callers could not tell the two apart — it now returns
+  `(collection, created: bool)` explicitly (#589). The PKI E2E test admin certificate's email
+  matched the seeded dev super_admin, and `assert_email_link_permitted` unconditionally refuses
+  any email-matched link onto an existing super_admin — a new `pkiadmin@example.com` test cert
+  breaks the collision (#593). `UserASRSettings.base_url` was modeled but never wired into
+  `GladiaProvider`; it now is, guarded by a new fail-closed `ASR_ALLOW_PRIVATE_ENDPOINTS`
+  mirroring the LLM SSRF-guard pattern (#594). `UserLLMSettings.is_active` silently defaulted to
+  `True` on every row instead of funneling through the single `_set_active_configuration` path on
+  create/set-active/PUT/delete-promote (#607). And `full-test-matrix.md`'s vLLM GPU-utilization
+  guidance for a 12 GB card was corrected from a claimed-passing `<=0.45` (which doesn't fit at
+  any tested setting, per the issue's own measurements) to an honest NOT MEASURED, with a new
+  `LLM_TEST_VLLM_EXTRA_ARGS` passthrough added as an unverified workaround path (#608).
 - **The in-app scheduled/S3 backup feature's `pg_dump -Fc` output had no restore path at
   all** (#600, P0). `pg_restore` — the only tool that reads custom-format output — appeared
   nowhere in the repo; `./opentr.sh restore` sniffed the file's `PGDMP` magic bytes and
@@ -340,6 +533,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **security:** Gladia's `result_url` — a value the vendor's own API returns in its response and
+  is then polled up to 720 times over ~2 hours, with the user's API key attached — was fetched
+  unconditionally, with no SSRF validation and no redirect protection. The existing SSRF guard
+  (#594) validated only the configured `base_url`, once, at construction; a self-hosted/private
+  `base_url` (`ASR_ALLOW_PRIVATE_ENDPOINTS=true`) or a merely misbehaving server could point
+  `result_url` anywhere, leaking the API key and reaching internal services or cloud metadata
+  endpoints, and none of the outbound calls passed `allow_redirects=False` either, so even a URL
+  that passed validation could redirect to an internal target after the check. Mirrors the
+  pattern `llm_service.py` already uses for the identical bug class (#444): every outbound call
+  now goes through `resolve_pinned_target()` plus a pinned session and `allow_redirects=False`,
+  with `result_url` validated immediately after being read from the job-creation response —
+  before the poll loop starts — so a blocked URL now raises immediately with a clear reason
+  instead of retrying up to 720 times into a generic timeout.
 - **Search documentation named environment variables and embedding models that do not exist.**
   `configuration/environment-variables.md` told operators to set `NEURAL_SEARCH_ENABLED`,
   `OPENSEARCH_ML_COMMONS_ENABLED`, `OPENSEARCH_URL`, `OPENSEARCH_USERNAME`,

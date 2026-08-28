@@ -5,16 +5,21 @@ these drive the real Svelte UI in Chromium: they click the file-detail download
 dropdown and the gallery bulk-export menu and capture the actual browser download,
 proving the presigned-URL flow works end to end through the front end.
 
-Requires: ./opentr.sh start dev (frontend :5173, backend :5174) with at least one
-completed media file in the dev dataset (admin@example.com / password).
+Requires: ./opentr.sh start dev (frontend :5173, backend :5174). Creates and deletes
+its own media — no pre-existing dev data required (admin@example.com / password).
 """
 
 import os
 import re
+import uuid
 import zipfile
 
 import pytest
 import requests
+from conftest import COMMITTED_SAMPLE_MEDIA
+from conftest import OWNED_MEDIA_PREFIX
+from conftest import delete_media_file
+from conftest import wait_for_stable_completion
 from playwright.sync_api import Page
 
 # This module used to define its own ``BACKEND_URL`` constant here. A module constant is
@@ -28,7 +33,15 @@ TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")
 
 @pytest.fixture(scope="module")
 def completed_uuid(backend_url: str):
-    """UUID of a completed file in the dev dataset (one API login per module)."""
+    """UUID of a completed file this module OWNS, deleted on teardown.
+
+    Previously scavenged the first `completed` file out of the account (one API
+    login per module) — same race as `test_media_download.py::completed_file`: under
+    the parallel suite this could grab another xdist worker's `e2e-owned-*` upload
+    moments before that worker deleted it.
+    """
+    if not COMMITTED_SAMPLE_MEDIA.exists():  # pragma: no cover - the fixture is tracked
+        pytest.skip(f"missing media fixture {COMMITTED_SAMPLE_MEDIA}")
     tok = requests.post(
         f"{backend_url}/api/auth/token",
         data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
@@ -37,16 +50,31 @@ def completed_uuid(backend_url: str):
     )
     if tok.status_code != 200:
         pytest.skip(f"Cannot authenticate against dev stack (HTTP {tok.status_code})")
-    files = requests.get(
-        f"{backend_url}/api/files?limit=100",
-        headers={"Authorization": f"Bearer {tok.json()['access_token']}"},
-        timeout=30,
-    ).json()
-    target = next((f for f in files.get("items", []) if f.get("status") == "completed"), None)
-    if not target:
-        pytest.skip("No completed media file in dev dataset — required for media UI E2E")
-    assert target is not None
-    return str(target["uuid"])
+    token = str(tok.json()["access_token"])
+    headers = {"Authorization": f"Bearer {token}"}
+    # Dismiss FirstRunWizard (same pattern as test_visual_regression.py's api_token
+    # fixture): it mounts unconditionally in the root layout and, on an account that
+    # has never completed it — true of a brand-new empty/`--fresh` admin — opens a
+    # BaseModal on first authenticated page load whose backdrop intercepts every
+    # click, including this module's own `.download-button` / "Select Files".
+    # Idempotent — safe even if already completed.
+    requests.post(f"{backend_url}/api/admin/first-run-wizard/complete", headers=headers, timeout=10)
+    name = f"{OWNED_MEDIA_PREFIX}{uuid.uuid4().hex[:8]}{COMMITTED_SAMPLE_MEDIA.suffix}"
+    with COMMITTED_SAMPLE_MEDIA.open("rb") as fh:
+        resp = requests.post(
+            f"{backend_url}/api/files",
+            headers=headers,
+            files={"file": (name, fh, "audio/wav")},
+            timeout=300,
+        )
+    assert resp.status_code == 200, f"Upload failed: {resp.status_code} {resp.text[:300]}"
+    file_uuid = str(resp.json()["uuid"])
+    try:
+        status = wait_for_stable_completion(backend_url, token, file_uuid)
+        assert status == "completed", f"uploaded fixture never completed (status={status})"
+        yield file_uuid
+    finally:
+        delete_media_file(backend_url, token, file_uuid)
 
 
 def test_file_detail_download_dropdown_downloads_audio(

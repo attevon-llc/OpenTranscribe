@@ -7,8 +7,8 @@ against a real running dev environment.
 
 Requirements:
 - Dev environment running: ./opentr.sh start dev
-- At least one completed file in the gallery (e.g. "PyTorch at Tesla")
 - Frontend at localhost:5173, Backend at localhost:5174
+- Nothing else: subtitle/bulk-action tests upload and delete their own file
 
 Run:
     pytest backend/tests/e2e/test_gallery_actions.py -v
@@ -21,6 +21,7 @@ import os
 import re
 import tempfile
 import time
+import uuid
 from typing import Any
 
 import pytest
@@ -28,8 +29,11 @@ import requests
 
 # Absolute import — the e2e dir is not a package, so a relative import breaks
 # collection when invoked as `pytest backend/tests/e2e/` from the repo root.
+from conftest import COMMITTED_SAMPLE_MEDIA
+from conftest import OWNED_MEDIA_PREFIX
 from conftest import TEST_ADMIN_EMAIL
 from conftest import TEST_ADMIN_PASSWORD
+from conftest import delete_media_file
 from conftest import wait_for_stable_completion
 from playwright.sync_api import Page
 from playwright.sync_api import expect
@@ -41,9 +45,6 @@ from playwright.sync_api import expect
 # file moves with the selector. test_pytest_config_consistency.py now fails if a registered
 # marker selects nothing, so this cannot silently regress.
 pytestmark = pytest.mark.gallery
-
-# Test data
-TEST_FILE_TITLE = "PyTorch at Tesla"
 
 # URLs come from the `base_url` / `backend_url` fixtures in tests/e2e/conftest.py rather than
 # module-level constants: a constant is evaluated at import time, so it can never see
@@ -75,8 +76,15 @@ def _assert_zip_of(download: Any, extension: str) -> None:
 # Session-scoped auth: login ONCE, reuse cookies for all tests
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="module")
-def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
-    """Login once and save browser storage state for reuse across all tests."""
+def auth_storage_state(browser, base_url: str, api_token: str):  # type: ignore[no-untyped-def]
+    """Login once and save browser storage state for reuse across all tests.
+
+    Depends on ``api_token`` (not for the token itself, but to reuse the login it
+    already performed) purely to dismiss the FirstRunWizard first — see
+    ``api_token``'s docstring. On an untouched account the wizard opens a
+    `BaseModal` on first authenticated page load whose backdrop intercepts every
+    click, including the `.select-btn` / `.upload-btn` this suite's tests drive.
+    """
     context = browser.new_context(
         viewport={"width": 1920, "height": 1080},
         ignore_https_errors=True,
@@ -87,9 +95,13 @@ def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
     page.fill("#email", TEST_ADMIN_EMAIL)
     page.fill("#password", TEST_ADMIN_PASSWORD)
     page.click("button[type=submit]")
-    # Wait for gallery to load (confirms login succeeded)
+    # Wait for gallery to load (confirms login succeeded). NOT a `.file-card` wait:
+    # this fixture's only contract is "logged in and the gallery chrome rendered" —
+    # requiring a file card here made every consumer implicitly depend on the dev
+    # library being non-empty, which is exactly the ambient-data assumption this
+    # module's other fixtures (`api_owned_file_uuid`) exist to avoid. An empty
+    # `--fresh` instance has zero file cards until a test uploads its own.
     page.wait_for_selector(".gallery-action-buttons", timeout=30000)
-    page.wait_for_selector(".file-card, .file-list-row", timeout=30000)
 
     # Save storage state to a temp file
     fd, state_file = tempfile.mkstemp(suffix=".json")
@@ -115,9 +127,9 @@ def gallery_page(browser, auth_storage_state: str, base_url: str):  # type: igno
     )
     page = context.new_page()
     page.goto(base_url)
-    # Already authenticated via stored cookies, just wait for gallery
+    # Already authenticated via stored cookies, just wait for gallery. See
+    # `auth_storage_state` above for why this no longer waits on a file card.
     page.wait_for_selector(".gallery-action-buttons", timeout=30000)
-    page.wait_for_selector(".file-card, .file-list-row", timeout=30000)
     yield page
     page.close()
     context.close()
@@ -125,7 +137,18 @@ def gallery_page(browser, auth_storage_state: str, base_url: str):  # type: igno
 
 @pytest.fixture(scope="module")
 def api_token(backend_url: str) -> str:
-    """Get an API token once for the entire module."""
+    """Get an API token once for the entire module.
+
+    Also dismisses the FirstRunWizard (same pattern as
+    ``test_visual_regression.py``'s ``api_token`` fixture): it mounts
+    unconditionally in the root layout and, on an account that has never
+    completed it — true of a brand-new empty/`--fresh` admin — opens a
+    `BaseModal` on first authenticated page load whose backdrop intercepts every
+    click. There is no localStorage/query-param gate to suppress it with; its
+    visibility is server-derived from `SystemSettings`, so the only way to keep
+    it from appearing is to call the same completion endpoint the UI's own skip
+    button calls. Idempotent — safe even if already completed.
+    """
     resp = requests.post(
         f"{backend_url}/api/auth/token",
         data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
@@ -133,34 +156,45 @@ def api_token(backend_url: str) -> str:
         timeout=30,
     )
     assert resp.status_code == 200, f"API login failed: {resp.status_code}"
-    return str(resp.json()["access_token"])
-
-
-def _api_params(**kwargs: Any) -> dict[str, str]:
-    """Build query params dict with string values for requests."""
-    return {k: str(v) for k, v in kwargs.items()}
-
-
-def _get_completed_file_uuid(backend_url: str, token: str) -> str:
-    """Get the UUID of a completed file via API."""
-    resp = requests.get(
-        f"{backend_url}/api/files",
+    token = str(resp.json()["access_token"])
+    requests.post(
+        f"{backend_url}/api/admin/first-run-wizard/complete",
         headers={"Authorization": f"Bearer {token}"},
-        params=_api_params(page=1, page_size=20, sort_by="upload_time", sort_order="desc"),
-        timeout=30,
+        timeout=10,
     )
-    data: dict[str, Any] = resp.json()
-    files: list[dict[str, Any]] = data.get("items", data.get("files", []))
-    # Prefer the known test file
-    for f in files:
-        if TEST_FILE_TITLE.lower() in f.get("filename", "").lower():
-            return str(f["uuid"])
-    # Fall back to any completed file
-    for f in files:
-        if f.get("status") == "completed":
-            return str(f["uuid"])
-    pytest.skip("No completed file found in gallery")
-    return ""  # unreachable, satisfies mypy
+    return token
+
+
+@pytest.fixture(scope="module")
+def api_owned_file_uuid(api_token: str, backend_url: str):
+    """UUID of a completed file this module OWNS, deleted on teardown.
+
+    Previously ``_get_completed_file_uuid`` sorted the gallery by ``upload_time
+    desc`` — actively preferring the newest file, i.e. exactly the kind of
+    `e2e-owned-*` upload another xdist worker was about to delete mid-test
+    (MinIO NoSuchKey). This inlines the same upload/wait/delete contract
+    ``owned_media_factory`` uses, module-scoped so the five subtitle/bulk-action
+    call sites below share one upload instead of re-uploading per test.
+    """
+    if not COMMITTED_SAMPLE_MEDIA.exists():  # pragma: no cover - the fixture is tracked
+        pytest.skip(f"missing media fixture {COMMITTED_SAMPLE_MEDIA}")
+    headers = {"Authorization": f"Bearer {api_token}"}
+    name = f"{OWNED_MEDIA_PREFIX}{uuid.uuid4().hex[:8]}{COMMITTED_SAMPLE_MEDIA.suffix}"
+    with COMMITTED_SAMPLE_MEDIA.open("rb") as fh:
+        resp = requests.post(
+            f"{backend_url}/api/files",
+            headers=headers,
+            files={"file": (name, fh, "audio/wav")},
+            timeout=300,
+        )
+    assert resp.status_code == 200, f"Upload failed: {resp.status_code} {resp.text[:300]}"
+    file_uuid = str(resp.json()["uuid"])
+    try:
+        status = wait_for_stable_completion(backend_url, api_token, file_uuid)
+        assert status == "completed", f"uploaded fixture never completed (status={status})"
+        yield file_uuid
+    finally:
+        delete_media_file(backend_url, api_token, file_uuid)
 
 
 # ---------------------------------------------------------------------------
@@ -523,9 +557,11 @@ class TestBulkActions:
             f"Delete button should show non-zero count after selecting files, got: {text}"
         )
 
-    def test_export_srt_via_api(self, api_token: str, backend_url: str) -> None:
+    def test_export_srt_via_api(
+        self, api_owned_file_uuid: str, api_token: str, backend_url: str
+    ) -> None:
         """SRT export should return valid subtitle content via the backend API."""
-        file_uuid = _get_completed_file_uuid(backend_url, api_token)
+        file_uuid = api_owned_file_uuid
         resp = requests.get(
             f"{backend_url}/api/files/{file_uuid}/subtitles",
             headers={"Authorization": f"Bearer {api_token}"},
@@ -536,9 +572,11 @@ class TestBulkActions:
         assert "-->" in resp.text, "SRT content should contain --> timestamps"
         assert len(resp.text) > 50, "SRT content should not be empty"
 
-    def test_export_webvtt_via_api(self, api_token: str, backend_url: str) -> None:
+    def test_export_webvtt_via_api(
+        self, api_owned_file_uuid: str, api_token: str, backend_url: str
+    ) -> None:
         """WebVTT export should return valid subtitle content."""
-        file_uuid = _get_completed_file_uuid(backend_url, api_token)
+        file_uuid = api_owned_file_uuid
         resp = requests.get(
             f"{backend_url}/api/files/{file_uuid}/subtitles",
             headers={"Authorization": f"Bearer {api_token}"},
@@ -551,9 +589,11 @@ class TestBulkActions:
         assert "WEBVTT" in resp.text, "WebVTT content should start with WEBVTT header"
         assert "-->" in resp.text, "WebVTT content should contain --> timestamps"
 
-    def test_export_txt_via_api(self, api_token: str, backend_url: str) -> None:
+    def test_export_txt_via_api(
+        self, api_owned_file_uuid: str, api_token: str, backend_url: str
+    ) -> None:
         """TXT export should return plain text transcript content."""
-        file_uuid = _get_completed_file_uuid(backend_url, api_token)
+        file_uuid = api_owned_file_uuid
         resp = requests.get(
             f"{backend_url}/api/files/{file_uuid}/subtitles",
             headers={"Authorization": f"Bearer {api_token}"},
@@ -745,9 +785,11 @@ class TestBulkActionAPI:
                 f"Unexpected summarize error: {results[0]}"
             )
 
-    def test_bulk_action_invalid_action(self, api_token: str, backend_url: str) -> None:
+    def test_bulk_action_invalid_action(
+        self, api_owned_file_uuid: str, api_token: str, backend_url: str
+    ) -> None:
         """Bulk action with unknown action should return an error per file."""
-        file_uuid = _get_completed_file_uuid(backend_url, api_token)
+        file_uuid = api_owned_file_uuid
         resp = requests.post(
             f"{backend_url}/api/files/management/bulk-action",
             headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
@@ -759,9 +801,11 @@ class TestBulkActionAPI:
         assert len(results) == 1
         assert results[0]["success"] is False
 
-    def test_subtitle_export_formats(self, api_token: str, backend_url: str) -> None:
+    def test_subtitle_export_formats(
+        self, api_owned_file_uuid: str, api_token: str, backend_url: str
+    ) -> None:
         """All three subtitle formats should return valid content."""
-        file_uuid = _get_completed_file_uuid(backend_url, api_token)
+        file_uuid = api_owned_file_uuid
         for fmt, marker in [("srt", "-->"), ("webvtt", "WEBVTT"), ("txt", "")]:
             resp = requests.get(
                 f"{backend_url}/api/files/{file_uuid}/subtitles",

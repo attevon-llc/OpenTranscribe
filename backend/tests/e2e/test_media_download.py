@@ -6,15 +6,20 @@ Covers, against the running dev stack:
 - Bulk subtitle export downloads a ZIP via the async + presigned flow.
 - The removed legacy byte-proxy endpoints now return 404.
 
-Requires: ./opentr.sh start dev, with at least one completed media file in the
-dev dataset (admin@example.com / password).
+Requires: ./opentr.sh start dev (admin@example.com / password). Creates and deletes
+its own media — no pre-existing dev data required.
 """
 
 import os
 import time
+import uuid
 
 import pytest
 import requests
+from conftest import COMMITTED_SAMPLE_MEDIA
+from conftest import OWNED_MEDIA_PREFIX
+from conftest import delete_media_file
+from conftest import wait_for_stable_completion
 
 # URLs come from the `base_url` / `backend_url` fixtures in tests/e2e/conftest.py rather than
 # module-level constants: a constant is evaluated at import time, so it can never see
@@ -53,16 +58,39 @@ def session(backend_url: str):
 
 @pytest.fixture(scope="module")
 def completed_file(session, backend_url: str):
-    resp = requests.get(
-        f"{backend_url}/api/files?limit=100",
-        headers={"Authorization": f"Bearer {session}"},
-        timeout=30,
-    )
-    items = resp.json().get("items", []) if resp.status_code == 200 else []
-    target = next((f for f in items if f.get("status") == "completed"), None)
-    if not target:
-        pytest.skip("No completed media file in dev dataset — required for media E2E tests")
-    return target, session
+    """A completed media file this module OWNS for its whole lifetime.
+
+    Module-scoped on purpose: ~8 tests share one upload, and re-uploading per test
+    would cost a real ASR run each time. It cannot depend on the function-scoped
+    `owned_media_factory`, so it inlines the same contract from conftest's plain
+    helpers.
+
+    Previously this scavenged the first `completed` file out of the account. Under
+    the parallel suite that intermittently grabbed another worker's ephemeral
+    `e2e-owned-*` upload, which that worker then deleted mid-test — MinIO NoSuchKey
+    / 404 on a file that had worked seconds earlier.
+    """
+    if not COMMITTED_SAMPLE_MEDIA.exists():  # pragma: no cover - the fixture is tracked
+        pytest.skip(f"missing media fixture {COMMITTED_SAMPLE_MEDIA}")
+    headers = {"Authorization": f"Bearer {session}"}
+    name = f"{OWNED_MEDIA_PREFIX}{uuid.uuid4().hex[:8]}{COMMITTED_SAMPLE_MEDIA.suffix}"
+    with COMMITTED_SAMPLE_MEDIA.open("rb") as fh:
+        resp = requests.post(
+            f"{backend_url}/api/files",
+            headers=headers,
+            files={"file": (name, fh, "audio/wav")},
+            timeout=300,
+        )
+    assert resp.status_code == 200, f"Upload failed: {resp.status_code} {resp.text[:300]}"
+    file_uuid = str(resp.json()["uuid"])
+    try:
+        status = wait_for_stable_completion(backend_url, session, file_uuid)
+        assert status == "completed", f"uploaded fixture never completed (status={status})"
+        detail = requests.get(f"{backend_url}/api/files/{file_uuid}", headers=headers, timeout=30)
+        assert detail.status_code == 200, detail.text[:300]
+        yield detail.json(), session
+    finally:
+        delete_media_file(backend_url, session, file_uuid)
 
 
 class TestPresignedPlayback:

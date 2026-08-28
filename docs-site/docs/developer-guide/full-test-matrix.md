@@ -38,7 +38,7 @@ login) and asserts on outcome, not just that a command exited 0.
 | Dev — lite/CPU | Stage 2D | **Topology-only** — proves no GPU worker/memory, uploads nothing | The pipeline itself (ASR/search/chat) is NOT exercised here — see the lite-mode rehearsal row below |
 | Prod — fresh install | Stage 3 | Real: full install against a built image | — |
 | Prod — upgrade | Stage 3 | Real: version upgrade path | — |
-| Prod — backup/restore/rollback | Stage 3 (`test-upgrade.sh` phases 06b, 12–17, [#598](https://github.com/attevon-llc/OpenTranscribe/issues/598)) | Real: `opentranscribe.sh backup`/`restore` (issue #613 — the shipped production command; the rehearsal staged `opentr.sh` for this until #613, which was itself an invalid bare-`docker-compose` invocation outside a repo clone) and `update --rollback`, damage injected via the real API, restore asserted by content digest (not row count) | `backup --encrypt` (unattended gpg needs a passphrase file the CLI doesn't support); the in-app scheduled-backup system (`backup_service.py`) has real unit/API coverage but no end-to-end restore proof — see [#604](https://github.com/attevon-llc/OpenTranscribe/issues/604) for its one known remaining defect (gnupg missing from the backend image); MinIO/OpenSearch restore is not touched by the DB restore path |
+| Prod — backup/restore/rollback | Stage 3 (`test-upgrade.sh` phases 06b, 12–18, [#598](https://github.com/attevon-llc/OpenTranscribe/issues/598)) | Real: `opentranscribe.sh backup`/`restore` (issue #613 — the shipped production command; the rehearsal staged `opentr.sh` for this until #613, which was itself an invalid bare-`docker-compose` invocation outside a repo clone) and `update --rollback`, damage injected via the real API, restore asserted by content digest (not row count). A real `test-upgrade.sh --yes` run reached `.phase/18.done` for the first time ever after [#617](https://github.com/attevon-llc/OpenTranscribe/issues/617)/[#618](https://github.com/attevon-llc/OpenTranscribe/issues/618) fixed three separate unguarded-command-under-`set -e` crashes (`dbs_diff_fingerprints()`, a bare frontend `curl`, and the phase-18 `as_summary \| tee` summary step) that had silently truncated every prior run at phase 15, then 16 | `backup --encrypt` (unattended gpg needs a passphrase file the CLI doesn't support); the in-app scheduled-backup system (`backup_service.py`) has real unit/API coverage but no end-to-end restore proof; MinIO/OpenSearch restore is not touched by the DB restore path; two assertions — F-4's post-re-upgrade `media_file` content digest, and an intermittent phase-06b backup-content-diff — race an async DB write the harness doesn't wait for, the same "oracle snapshot beats an async writer" mechanism #617 diagnosed and partially fixed for the `speaker` table; tracked as [#619](https://github.com/attevon-llc/OpenTranscribe/issues/619), non-blocking |
 | Prod — lite-mode pipeline | Stage 3 (`test-lite-mode.sh`) | Real: full upload→ASR→search→chat against mocked cloud ASR + mocked LLM, no GPU/vendor key needed | Mock's per-request `?scenario=` override isn't reachable from `GladiaProvider` — the negative-path check restarts the mock container instead of driving it per-request |
 | Prod — PKI/mTLS | Stage 3 | Real: client-cert auth, cert-less request rejected at the TLS layer | Prod+nginx only by design — no dev-mode variant exists (Vite can't terminate mTLS) |
 | Prod — lite/gpu-scale as deployment modes | — | Compose-validated only (Stage 1.6) | No separate prod runtime pass — deliberate scope decision, since prod images behave identically to dev images for these flags and Stage 2 already proves the runtime behavior |
@@ -266,7 +266,19 @@ as an anonymous 200.
   proves the documented recovery loop (roll back -> re-upgrade) completes cleanly. A
   `ROLLBACK_INJECT_FAULT` self-check (`truncate`/`no-damage`/`stale-oracle`) deliberately breaks
   the tail so its own failure detection is exercised for real — see
-  `scripts/release-tests/selftest-rollback-fault-injection.sh`. **Still NOT covered, deliberately**:
+  `scripts/release-tests/selftest-rollback-fault-injection.sh`. The design above was in place
+  since #598, but a real end-to-end `test-upgrade.sh --yes` run had never actually reached the
+  end of it: three separate unguarded-command-under-`set -e` bugs
+  ([#617](https://github.com/attevon-llc/OpenTranscribe/issues/617),
+  [#618](https://github.com/attevon-llc/OpenTranscribe/issues/618)) silently truncated every
+  prior run, first at phase 15, then at phase 16, then at phase 18's own summary step, with no
+  error trace — each looked like ordinary progress rather than a crash, because a truncated run
+  still left the earlier phases' `.phase/*.done` files in place. Fixed, `.phase/` reaches
+  `18.done` for the first time. Two residual, non-blocking findings surfaced by that first real
+  run — the same "oracle snapshot races an async DB write" class #617 partially fixed for the
+  `speaker` table, now also affecting `media_file` and `system_settings` — are tracked as
+  [#619](https://github.com/attevon-llc/OpenTranscribe/issues/619). **Still NOT covered,
+  deliberately**:
   `backup --encrypt` (unattended `gpg` needs a passphrase file the CLI does not support), the
   in-app scheduled-backup system (`app/services/backup_service.py` — a separate implementation
   with its own real unit/API coverage but no end-to-end restore proof), and MinIO/OpenSearch

@@ -234,6 +234,28 @@ this file is for.
   learn anything, and made a harness bug look like a product bug. `ac_dump_failure_diagnostics`
   (`lib/api-client.sh`) prints every error-ish field of the file record — located **by name**,
   since that column has been renamed once already — and tails each pipeline worker.
+
+  ⚠️ **An unguarded call under `set -euo pipefail` that can legitimately return non-zero for a
+  non-fatal reason will silently kill the whole script — grep for this class before adding a new
+  assertion.** `dbs_diff_fingerprints()` (issue #617) is documented as informational — a non-zero
+  return just means a table digest differs, already recorded — but was invoked as a bare
+  statement at both production call sites, so a real mismatch tripped `set -e` and truncated the
+  rehearsal at phase 15 with no error trace. A bare `curl` against the frontend (issue #618) hit
+  the identical class at a different location: `curl` returns non-zero on a connection failure
+  alone, not just a bad HTTP status, so an unguarded assignment killed the script before the
+  frontend container was even up. `as_summary | tee` in the phase-18 summary step was a third
+  instance — `as_summary` deliberately returns 1 when any assertion failed, and under `pipefail`
+  that non-zero return killed the script before it could print its own "Finished" line. **The
+  fix is never to drop `set -e`** — guard the specific call with `if`/`then`/`fi` (as
+  `dbs_diff_fingerprints()`'s two call sites now do), or wait for real readiness before checking
+  at all, matching what `ac_wait_for_health`/`ac_wait_for_frontend` already do for the backend
+  and frontend containers. This exact bug class caused the release rehearsal to falsely
+  truncate — first silently stopping at phase 15, then (once partially fixed) at phase 16, then
+  phase 18's own summary step — for MONTHS before being caught, because a truncated run still
+  wrote partial `.phase/*.done` files and looked like ordinary progress rather than a crash. It
+  is worth deliberately grepping for (`grep -n ' | tee\| = \$(' phase_*.sh` as a starting point)
+  the next time anyone adds a new check to these scripts, rather than waiting to rediscover it a
+  fourth time.
 - **Cutting a release** — `release.sh` is the ONLY entry point; never hand-run
   `git tag` / `docker push` / `gh release`. 12 stages in `release/NN-<stage>.sh`,
   each independently runnable (`--skip`, `--only`, `--from`, `--dry-run`), with a

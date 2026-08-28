@@ -668,6 +668,91 @@ def _check_reindex_task_active(user_id: int) -> bool:
         return False
 
 
+@router.get("/degraded-embeddings")
+def get_degraded_embeddings(
+    limit: int = Query(500, le=5000),
+    current_user: User = Depends(get_current_admin_user),
+) -> dict[str, Any]:
+    """Preview the files stranded text-only by a neural-search degraded window (#626).
+
+    Read-only survey — pairs with ``POST /search/reembed-degraded``, which requires this
+    preview to be confirmed rather than dispatching on click.
+    """
+    from app.db.session_utils import session_scope
+    from app.models.media import MediaFile
+    from app.services.search.embedding_provenance import survey_degraded_files
+
+    files, truncated = survey_degraded_files(limit=limit)
+
+    if not files:
+        return {"total_files": 0, "truncated": False, "affected_users": 0, "files": []}
+
+    file_uuids = [f.file_uuid for f in files]
+    with session_scope() as db:
+        rows = (
+            db.query(MediaFile.uuid, MediaFile.filename)
+            .filter(MediaFile.uuid.in_(file_uuids))
+            .all()
+        )
+        titles = {str(row[0]): row[1] for row in rows}
+
+    return {
+        "total_files": len(files),
+        "truncated": truncated,
+        "affected_users": len({f.user_id for f in files}),
+        "files": [
+            {
+                "file_uuid": f.file_uuid,
+                "title": titles.get(f.file_uuid) or f.file_uuid,
+                "user_id": f.user_id,
+            }
+            for f in files
+        ],
+    }
+
+
+@router.post("/reembed-degraded")
+def trigger_reembed_degraded(
+    limit: int = Query(500, le=5000),
+    current_user: User = Depends(get_current_admin_user),
+) -> dict[str, Any]:
+    """Dispatch the operator-triggered re-embed of #626's degraded (text-only) files.
+
+    Checks the task's own lock before dispatching, rather than dispatching into a lock it
+    knows is already held — matches ``start_embedding_consistency_repair``'s shape in
+    ``admin.py``.
+    """
+    from app.tasks.search_reembed_task import REEMBED_LOCK_KEY
+    from app.tasks.search_reembed_task import reembed_degraded_files_task
+    from app.utils.task_lock import task_lock_manager
+
+    if task_lock_manager.is_locked(REEMBED_LOCK_KEY):
+        return {
+            "task_id": None,
+            "status": "already_running",
+            "message": "A re-embed of degraded files is already in progress.",
+        }
+
+    from app.services.search.embedding_provenance import survey_degraded_files
+
+    files, _truncated = survey_degraded_files(limit=limit)
+    if not files:
+        return {
+            "task_id": None,
+            "status": "no_degraded_files",
+            "message": "No degraded (text-only) files found to re-embed.",
+        }
+
+    result = reembed_degraded_files_task.apply_async(
+        kwargs={"triggered_by": current_user.id, "limit": limit},
+    )
+    return {
+        "task_id": str(result.id),
+        "status": "started",
+        "message": "Re-embedding started. Progress will be sent via WebSocket.",
+    }
+
+
 @router.get("/reindex/status")
 def reindex_status(
     current_user: User = Depends(get_current_active_user),

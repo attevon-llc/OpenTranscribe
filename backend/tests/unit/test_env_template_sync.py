@@ -209,6 +209,7 @@ def _config_py_vars(text: str) -> set[str]:
 _SURFACE_GLOBS = (
     "docker-compose*.yml",
     "opentr.sh",
+    "opentranscribe.sh",
     "scripts/**/*.sh",
     "scripts/**/*.py",
     "nginx/**/*",

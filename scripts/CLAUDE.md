@@ -234,6 +234,23 @@ this file is for.
   learn anything, and made a harness bug look like a product bug. `ac_dump_failure_diagnostics`
   (`lib/api-client.sh`) prints every error-ish field of the file record — located **by name**,
   since that column has been renamed once already — and tails each pipeline worker.
+
+  ⚠️ **A bare non-fatal-by-design helper call under `set -euo pipefail` silently truncates every
+  phase after it, with no error trace.** `dbs_diff_fingerprints()` (`lib/db-snapshot.sh`) is
+  documented as informational — its non-zero return isn't meant to be fatal, `as_record` has
+  already logged the PASS/FAIL either way — but `test-upgrade.sh` called it bare (unwrapped in
+  `if ... ; then`) at two sites. The first digest mismatch tripped `set -e` and killed the script
+  mid-phase-15: phases 16-18 (three phases, 8+ assertions, including the only checks that prove a
+  rollback actually serves a real user's data) never ran, and all that surfaced was a bare exit 1
+  (#617). Fixing that exposed the identical shape one phase later — an unguarded `curl` against
+  the frontend with no readiness wait (unlike the backend's `ac_wait_for_health`), which died the
+  instant the frontend wasn't yet reachable and truncated phases 17-18 the same way (#618). Both
+  were diagnosed from `$TEST_ROOT/.phase/`: the absence of a `NN.done` marker is what proved which
+  phase never ran, since the log itself gave no clue. When adding a new assertion, intermediate
+  helper call, or `curl` to `test-fresh-install.sh`/`test-upgrade.sh`, wrap anything whose failure
+  is meant to be recorded-not-fatal in `if ... ; then ... fi` — the pattern
+  `selftest-rollback-fault-injection.sh` already uses correctly — rather than trusting a bare
+  non-zero exit to fail loudly; under this harness's default `set -e` it fails silently instead.
 - **Cutting a release** — `release.sh` is the ONLY entry point; never hand-run
   `git tag` / `docker push` / `gh release`. 12 stages in `release/NN-<stage>.sh`,
   each independently runnable (`--skip`, `--only`, `--from`, `--dry-run`), with a

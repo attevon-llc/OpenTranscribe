@@ -180,6 +180,16 @@ preflight → bump → verify → test → build → scan → rehearse
   reads as current until you `reset`, so reset before a real run.
 - `rehearse` runs both scenarios and **requires the live stack stopped**; it
   refuses (exit 3) and prints the command rather than stopping it for you.
+  `test-upgrade.sh` now runs to completion across all 18 phases, including the
+  backup/rollback tail — previously masked by a `set -e` harness bug that
+  silently truncated the script at the first non-fatal-by-design digest mismatch
+  (`scripts/CLAUDE.md`'s rehearsal gotchas). That is not a claim the rehearsal
+  always passes: one non-blocking residual gap remains open, see
+  `full-test-matrix.md`'s coverage table (issue #619).
+- Running `test-upgrade.sh`/`test-fresh-install.sh` directly (not through
+  `rehearse`) in a backgrounded or non-interactive shell needs `--yes` — the
+  `I UNDERSTAND` confirmation prompt has no tty to read from and fails with
+  `No such device or address` otherwise.
 
 Full guide: `docs-site/docs/developer-guide/releasing.md` (Developer Guide →
 Releasing). Agent interface: `.claude/skills/release/SKILL.md`. Gate definitions:

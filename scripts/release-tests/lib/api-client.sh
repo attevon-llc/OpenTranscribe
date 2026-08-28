@@ -373,23 +373,32 @@ print(json.dumps({
 # ac_chat_completion LLM_CONFIG_UUID FILE_UUID QUESTION
 #
 # Creates a scoped conversation pinned to llm_config_uuid, sends one message,
-# and parses the SSE response stream. Mirrors the parsing done inline in
-# test_lite_mode_mocked_providers.py's test_chat_summary_has_non_empty_grounded_content:
-# `event: delta` frames carry {"content"|"text": ...} chunks concatenated into
-# the answer, `event: sources` carries {"citations": [...]}.
+# and parses the SSE response stream via lib/parse-chat-sse.py. Mirrors the
+# parsing done inline in test_lite_mode_mocked_providers.py's
+# test_chat_summary_has_non_empty_grounded_content: `event: delta` frames
+# carry {"content"|"text": ...} chunks concatenated into the answer,
+# `event: sources` carries {"citations": [...]}.
 #
 # GH #595: an `event: error` frame (the LLM call was blocked — e.g. by the SSRF
 # guard refusing a private-network endpoint — or otherwise failed) used to be
 # silently dropped by this parser, so a *correctly refused* request and a
-# genuinely empty answer were indistinguishable: both printed an empty first
-# line, and the caller's "chat summary non-empty" assertion failed with no way
-# to tell which one happened. The parser now also captures `error` frames and
-# prints the caller a third line so a blocked call reads as "blocked", not
-# "empty".
+# genuinely empty answer were indistinguishable. The parser captures `error`
+# frames too, so a blocked call reads as "blocked", not "empty".
 #
-# Deletes the conversation on return (best-effort). Prints three lines to
-# stdout: the full answer text, the citation count, then the error code from
-# an `event: error` frame (empty when none was sent).
+# GH #611: this used to print three newline-separated records (answer,
+# citation count, error code) and rely on the caller reading them back with
+# `sed -n '1p'/'2p'/'3p'`. The answer is markdown from an LLM and routinely
+# spans several lines (see mock-llm-server.py's REPLY_TEMPLATE), so a
+# positional read of "line 3" landed inside the answer text itself and was
+# misreported as an error frame — a newline-delimited "record" scheme cannot
+# represent multi-line content. `parse-chat-sse.py` instead emits ONE line of
+# JSON (`{"answer", "citations", "error"}`); json.dumps escapes embedded
+# newlines, so the answer cannot forge a record boundary no matter its shape.
+#
+# Deletes the conversation on return (best-effort). Prints ONE line of JSON
+# to stdout: `{"answer": "...", "citations": <int>, "error": "..."}`. `error`
+# is the empty string when no `event: error` frame arrived. Use `ac_json_field`
+# to read a key out of it.
 ac_chat_completion() {
     local llm_config_uuid="$1" file_uuid="$2" question="$3"
     local csrf_token="${API_CSRF_TOKEN:-}"
@@ -413,64 +422,40 @@ print(json.dumps({
     local msg_payload
     msg_payload=$(python3 -c 'import json,sys; print(json.dumps({"content": sys.argv[1]}))' "$question")
 
-    local answer citations error_info
-    answer=$(mktemp)
-    citations=$(mktemp)
-    error_info=$(mktemp)
-    printf '' > "$answer"
-    printf '0' > "$citations"
-    printf '' > "$error_info"
-
     # requests-style SSE parsing: `event:` lines set the frame type, `data:`
-    # lines carry its JSON payload, a blank line ends the frame.
+    # lines carry its JSON payload, a blank line ends the frame. Relocated to
+    # a standalone, unit-tested script (GH #611) — see parse-chat-sse.py's
+    # module docstring for why a heredoc parser shipped this bug untested.
     curl -sS --no-buffer -X POST "$API_BASE/chat/conversations/$conversation_uuid/messages" \
         -H "Content-Type: application/json" \
         -H "X-CSRF-Token: $csrf_token" \
         -H "Accept: text/event-stream" \
         -H "Authorization: Bearer ${API_TOKEN:-}" \
         -d "$msg_payload" \
-    | python3 -c '
-import sys, json
-
-event = None
-answer_parts = []
-citation_count = 0
-error_parts = []
-for raw in sys.stdin:
-    line = raw.rstrip("\r\n")
-    if line == "":
-        event = None
-        continue
-    if line.startswith("event:"):
-        event = line[len("event:"):].strip()
-        continue
-    if not line.startswith("data:"):
-        continue
-    data_str = line[len("data:"):].strip()
-    data = json.loads(data_str) if data_str else {}
-    if event == "delta":
-        answer_parts.append(data.get("content") or data.get("text") or "")
-    elif event == "sources":
-        citation_count = len(data.get("citations") or [])
-    elif event == "error":
-        code = data.get("code") or "unknown"
-        message = data.get("message") or ""
-        error_parts.append(f"{code}: {message}" if message else code)
-
-sys.stdout.write("".join(answer_parts))
-sys.stderr.write(str(citation_count))
-with open(sys.argv[1], "w") as f:
-    f.write("; ".join(error_parts))
-' "$error_info" > "$answer" 2> "$citations"
-
-    cat "$answer"
-    echo
-    cat "$citations"
-    echo
-    cat "$error_info"
-    echo
-    rm -f "$answer" "$citations" "$error_info"
+    | python3 "$(dirname "${BASH_SOURCE[0]}")/parse-chat-sse.py"
 
     ac_curl -X DELETE "$API_BASE/chat/conversations/$conversation_uuid" \
         -H "X-CSRF-Token: $csrf_token" >/dev/null 2>&1 || true
+}
+
+# ac_json_field JSON KEY
+#
+# Prints the raw value of KEY from a single JSON object on stdin-less input
+# (JSON passed as $1). Empty string when the key is absent, JSON is empty, or
+# the input does not parse — never a python traceback into the caller's
+# variable. Deliberately stdlib python3, not jq: nothing else in
+# release-tests/ requires jq and the rehearsal must run on a bare host.
+ac_json_field() {
+    local json="$1" key="$2"
+    python3 -c '
+import json, sys
+raw = sys.argv[1]
+key = sys.argv[2]
+try:
+    data = json.loads(raw) if raw.strip() else {}
+except json.JSONDecodeError:
+    data = {}
+value = data.get(key, "") if isinstance(data, dict) else ""
+print(value if value is not None else "")
+' "$json" "$key"
 }

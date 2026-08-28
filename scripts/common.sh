@@ -766,6 +766,68 @@ pg_verify_custom_restore() {
   _pg_verify_against "$exec_prefix" "$user" "$db" "$expected_head" "$expected_tables" "pg_verify_custom_restore"
 }
 
+# Decide whether a completed restore should restart the app services `restore_database`
+# stopped, or leave them stopped because the schema the app is about to see does not
+# match what it expects (issue #610).
+#
+# The backend runs `alembic upgrade head` on every startup (`app/main.py` lifespan ->
+# `app/db/migrations.py:run_migrations`). Restarting the CURRENTLY-RUNNING image over a
+# database that was just restored to a DIFFERENT alembic head silently re-migrates the
+# backup forward (or, for a newer dump onto an older image, crashes on an unknown
+# revision) -- destroying the very state the restore recovered. Direction is
+# deliberately not computed: either mismatch is unsafe to auto-restart, so one rule
+# covers both.
+#
+# Pure: no docker, no psql, no globals -- every input is a parameter, which is what
+# makes this directly testable (backend/tests/unit/test_restore_restart_decision.py)
+# without spinning up Postgres.
+#
+# $1 dump_head        the restored backup's own alembic head (may be empty)
+# $2 current_head      the live database's alembic head, read BEFORE the restore touched
+#                       anything. Because the backend migrates on startup, this is a
+#                       faithful proxy for "what head does the currently-running image
+#                       expect" -- no container introspection needed. Empty or the
+#                       literal string "unknown" (opentr.sh's placeholder when the read
+#                       itself failed, or the #599 two-row corruption shape) both fail
+#                       closed.
+# $3 migrate_forward   "true" if the operator passed --migrate-forward (explicitly
+#                       accepts the running image migrating this backup forward)
+# $4 no_restart        "true" if the operator passed --no-restart (never restart,
+#                       regardless of the head comparison)
+#
+# Echoes exactly one of: restart | hold:no-restart | hold:schema-mismatch
+# Returns 1 (nothing echoed) if migrate_forward and no_restart are both "true" -- the
+# caller's arg parser should already refuse that combination before this is ever
+# called, but the function stays correct if called directly.
+pg_restore_restart_decision() {
+  local dump_head="${1:-}"
+  local current_head="${2:-}"
+  local migrate_forward="${3:-false}"
+  local no_restart="${4:-false}"
+
+  if [ "$migrate_forward" = true ] && [ "$no_restart" = true ]; then
+    return 1
+  fi
+
+  if [ "$no_restart" = true ]; then
+    echo "hold:no-restart"
+    return 0
+  fi
+
+  local relationship="different"
+  if [ -n "$dump_head" ] && [ -n "$current_head" ] && [ "$current_head" != "unknown" ] \
+      && [ "$dump_head" = "$current_head" ]; then
+    relationship="same"
+  fi
+
+  if [ "$relationship" = "same" ] || [ "$migrate_forward" = true ]; then
+    echo "restart"
+    return 0
+  fi
+
+  echo "hold:schema-mismatch"
+}
+
 # Display quick reference commands
 print_help_commands() {
   echo "⚡ Quick Commands Reference:"

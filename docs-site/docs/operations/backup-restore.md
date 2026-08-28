@@ -572,9 +572,27 @@ This command automatically:
 5. **Replays** the dump inside a single transaction — a failure rolls back to nothing
    rather than leaving a half-restored, hybrid schema
 6. **Verifies** the result (row/table counts, exactly one migration-version row matching
-   the backup) before reporting success, then restarts services
+   the backup) before reporting success
+7. **Restarts services only if it is safe to** — compares the backup's own alembic head
+   against the head the database had immediately before the restore (i.e. what the
+   currently-running application expects). If they match, services restart as before. If
+   they **don't** — the common shape when restoring an older, pre-upgrade backup while a
+   newer application is still running — services are left **stopped** instead, because
+   restarting would immediately run every migration between the two heads and silently
+   carry the backup forward, defeating the point of restoring it (issue #610). The command
+   prints the two next moves: roll the app back to the version that matches the backup
+   (`./opentranscribe.sh update --rollback`), or explicitly accept the forward migration
+   with `--migrate-forward` if that's genuinely what you want (a "recover data, stay on
+   the current version" restore, not a version rollback).
 
-`opentr.sh restore --help`-equivalent usage: `./opentr.sh restore [--yes] [--no-safety-dump] <file>`.
+`opentr.sh restore --help`-equivalent usage:
+`./opentr.sh restore [--yes] [--no-safety-dump] [--from-s3] [--migrate-forward|--no-restart] <file>`.
+
+- `--migrate-forward` — accept that the currently-running (newer) application will
+  migrate this restored backup forward on restart. Restarts unconditionally.
+- `--no-restart` — never restart services after this restore, regardless of whether the
+  heads match. Escape hatch for scripted/orchestrated callers that manage the restart
+  themselves. Mutually exclusive with `--migrate-forward`.
 
 :::note MinIO / OpenSearch are not rolled back
 `opentr.sh backup`/`restore` cover **PostgreSQL only**. After a restore, MinIO (media

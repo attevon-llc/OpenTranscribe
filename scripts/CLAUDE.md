@@ -280,6 +280,15 @@ this file is for.
   in the integration tests) — that contract now covers both dump formats, not just plain SQL.
   `pg_replay_custom_dump` deliberately never passes `-j`/`--jobs`: it is mutually exclusive with
   `--single-transaction` (measured), so the safe path forfeits parallel restore for atomicity.
+  `pg_restore_restart_decision` (issue #610) is the pure function `restore_database` calls to
+  decide whether to restart the app services it stopped, or leave them stopped because the
+  backup's alembic head does not match the live DB's head read just before the restore — the
+  backend migrates on startup, so restarting the previously-running image over a
+  freshly-restored *older* dump silently re-migrates it forward, and over a *newer* one crashes
+  on an unknown revision. Echoes `restart` / `hold:no-restart` / `hold:schema-mismatch`; takes no
+  docker/psql/globals, only the two heads plus the `--migrate-forward`/`--no-restart` flags, so
+  it is unit-testable without Postgres
+  (`backend/tests/unit/test_restore_restart_decision.py`).
 - ⚠️ **Every `$VAR` in `opentr.sh` + `common.sh` must be defaulted — enforced by
   `backend/tests/unit/test_shell_expansion_guards.py`** (static, fast unit suite, no execution).
   Both run under `set -uo pipefail`, so an unguarded optional `.env` variable is a hard abort,

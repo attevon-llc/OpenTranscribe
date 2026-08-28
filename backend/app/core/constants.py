@@ -202,6 +202,15 @@ LLM_DEFAULT_TIMEOUT = 60
 OPENSEARCH_DEFAULT_SIZE = 20
 OPENSEARCH_MAX_RESULT_WINDOW = 50000
 
+# Neural search bootstrap self-heal (issue #625). See
+# app/services/search/neural_bootstrap.py and its CLAUDE.md section for why this is a
+# beat task rather than only a startup task.
+NEURAL_BOOTSTRAP_STARTUP_DELAY_SECONDS = 15
+NEURAL_BOOTSTRAP_BASE_BACKOFF_SECONDS = 600
+NEURAL_BOOTSTRAP_MAX_BACKOFF_SECONDS = 21600
+NEURAL_BOOTSTRAP_ALERT_AFTER_ATTEMPTS = 3
+NEURAL_BOOTSTRAP_LOCK_TIMEOUT_SECONDS = 900
+
 
 def get_speaker_index() -> str:
     """Get the speaker index alias name.

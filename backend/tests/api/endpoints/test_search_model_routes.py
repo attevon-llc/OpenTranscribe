@@ -142,6 +142,25 @@ def test_neural_status_and_list_allow_a_plain_user(client, user_token_headers):
     )
 
 
+def test_the_status_endpoint_reports_a_degraded_bootstrap(client, user_token_headers):
+    """Issue #625: ``GET /models/neural/status`` carries a ``bootstrap`` block whose
+    ``state`` tracks the cheap probe, not a cached/stale value."""
+    with patch("app.services.search.neural_bootstrap.neural_search_ready", return_value=False):
+        response = client.get(f"{_BASE}/models/neural/status", headers=user_token_headers)
+    assert response.status_code == 200
+    bootstrap = response.json()["bootstrap"]
+    assert bootstrap["state"] == "degraded"
+    assert "attempts" in bootstrap
+    assert "last_error" in bootstrap
+    assert "retry_at" in bootstrap
+    assert "text_only_chunk_files" in bootstrap
+
+    with patch("app.services.search.neural_bootstrap.neural_search_ready", return_value=True):
+        response = client.get(f"{_BASE}/models/neural/status", headers=user_token_headers)
+    assert response.status_code == 200
+    assert response.json()["bootstrap"]["state"] == "ok"
+
+
 # ---------------------------------------------------------------------------
 # 409 contract: registered-but-not-deployed / not-registered-at-all
 # ---------------------------------------------------------------------------

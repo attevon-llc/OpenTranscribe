@@ -249,6 +249,7 @@ celery_app.conf.update(
         "reindex_batch": {"queue": CeleryQueues.CPU},
         "search_index_maintenance": {"queue": CeleryQueues.CPU},
         "search.reembed_degraded": {"queue": CeleryQueues.CPU},
+        "neural_search_bootstrap": {"queue": CeleryQueues.UTILITY},
         "opensearch_orphan_cleanup": {"queue": CeleryQueues.CPU},
         "speaker_embedding_consistency_check": {"queue": CeleryQueues.CPU},
         "speaker_embedding_consistency_repair_batch": {"queue": CeleryQueues.GPU},
@@ -348,6 +349,14 @@ celery_app.conf.update(
             "task": "search_index_maintenance",
             "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours
             "options": {"queue": "cpu", "priority": 8},  # CPUPriority.MAINTENANCE
+        },
+        "neural-search-bootstrap": {
+            "task": "neural_search_bootstrap",
+            # Every 10 minutes. A cold or slow OpenSearch boot can outlast the startup
+            # fast path's one-shot attempt (issue #625) — this is the self-heal. A
+            # healthy deployment pays only the cheap probe every tick.
+            "schedule": crontab(minute="3,13,23,33,43,53"),
+            "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
         },
         "opensearch-orphan-cleanup": {
             "task": "opensearch_orphan_cleanup",

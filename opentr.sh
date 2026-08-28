@@ -162,7 +162,7 @@ show_help() {
   echo "  reset [dev|prod] [options]             - Reset and reinitialize (deletes all data!)"
   echo "                                           (Accepts same options as 'start' command)"
   echo "  backup [--encrypt]  - Create a database backup (--encrypt: GPG AES-256, no plaintext on disk)"
-  echo "  restore [--yes] [--no-safety-dump] [--from-s3] <file>  - REPLACE the database from a backup"
+  echo "  restore [--yes] [--no-safety-dump] [--from-s3] [--migrate-forward|--no-restart] <file>  - REPLACE the database from a backup"
   echo "                  (.sql, .dump, .sql.gpg, or .dump.gpg; --from-s3 fetches by name first) — destructive"
   echo ""
   echo "Development Commands:"
@@ -2772,6 +2772,8 @@ restore_database() {
   local skip_confirm=false
   local skip_safety_dump=false
   local from_s3=false
+  local migrate_forward=false
+  local no_restart=false
   local backup_file=""
 
   while [ $# -gt 0 ]; do
@@ -2788,9 +2790,24 @@ restore_database() {
         from_s3=true
         shift
         ;;
+      --migrate-forward)
+        # The operator explicitly accepts that the running (currently newer, in a
+        # rollback scenario) image will migrate the restored backup forward. This is
+        # the "recover data, stay on the current app version" intent (issue #610) —
+        # NOT what a version rollback wants.
+        migrate_forward=true
+        shift
+        ;;
+      --no-restart)
+        # Never restart the app services after this restore, regardless of whether the
+        # backup's schema head matches the live one. Escape hatch for scripted/orchestrated
+        # callers that manage the restart themselves (issue #610).
+        no_restart=true
+        shift
+        ;;
       -*)
         echo "❌ Error: unknown restore option: $1"
-        echo "Usage: ./opentr.sh restore [--yes] [--no-safety-dump] [--from-s3] <backup_file>"
+        echo "Usage: ./opentr.sh restore [--yes] [--no-safety-dump] [--from-s3] [--migrate-forward|--no-restart] <backup_file>"
         exit 1
         ;;
       *)
@@ -2800,9 +2817,14 @@ restore_database() {
     esac
   done
 
+  if [ "$migrate_forward" = true ] && [ "$no_restart" = true ]; then
+    echo "❌ Error: --migrate-forward and --no-restart are mutually exclusive."
+    exit 1
+  fi
+
   if [ -z "$backup_file" ]; then
     echo "❌ Error: Backup file not specified."
-    echo "Usage: ./opentr.sh restore [--yes] [--no-safety-dump] [--from-s3] <backup_file>"
+    echo "Usage: ./opentr.sh restore [--yes] [--no-safety-dump] [--from-s3] [--migrate-forward|--no-restart] <backup_file>"
     exit 1
   fi
 
@@ -2885,6 +2907,35 @@ restore_database() {
     expected_head="$(awk '/^COPY public\.alembic_version /{getline; print; exit}' "$restore_source")"
   fi
 
+  # Read the LIVE database's alembic head now — before anything is stopped or dropped,
+  # and UNCONDITIONALLY (not just on the interactive confirm path below, which --yes
+  # skips entirely — --yes is exactly the path issue #610 found unguarded). Because the
+  # backend runs `alembic upgrade head` on every startup (app/main.py lifespan ->
+  # app/db/migrations.py:run_migrations), this value is a faithful proxy for "what head
+  # does the currently-running image expect".
+  local current_head
+  current_head="$($exec_prefix psql -tA -U "$db_user" "$db_name" -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
+  current_head="${current_head:-unknown}"
+
+  # Which application image will serve this database after the restore, and does the
+  # schema it is about to see match what that image expects? Both heads are already in
+  # hand and both reads happen BEFORE anything is stopped or dropped (issue #610).
+  #
+  # Restarting the CURRENTLY-RUNNING image over a database restored to a DIFFERENT head
+  # silently re-migrates the backup forward — destroying the very state the restore
+  # recovered. "unknown" (either head unreadable, or the #599 two-row corruption shape,
+  # which `tr -d '[:space:]'` concatenates into a string matching nothing) is treated as
+  # not "same", i.e. fail closed. This is display-only; the actual restart decision
+  # below is made by the shared, independently-tested pg_restore_restart_decision.
+  local schema_relationship="unknown"
+  if [ -n "$expected_head" ] && [ -n "$current_head" ] && [ "$current_head" != "unknown" ]; then
+    if [ "$expected_head" = "$current_head" ]; then
+      schema_relationship="same"
+    else
+      schema_relationship="different"
+    fi
+  fi
+
   echo "🔄 Restoring database from ${backup_file}..."
 
   if [ "$skip_confirm" != true ]; then
@@ -2895,9 +2946,7 @@ restore_database() {
       exit 4
     fi
 
-    local current_head current_media current_segments current_users backup_mtime
-    current_head="$($exec_prefix psql -tA -U "$db_user" "$db_name" -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
-    current_head="${current_head:-unknown}"
+    local current_media current_segments current_users backup_mtime
     current_media="$($exec_prefix psql -tA -U "$db_user" "$db_name" -c "SELECT count(*) FROM media_file;" 2>/dev/null | tr -d '[:space:]')"
     current_media="${current_media:-unknown}"
     current_segments="$($exec_prefix psql -tA -U "$db_user" "$db_name" -c "SELECT count(*) FROM transcript_segment;" 2>/dev/null | tr -d '[:space:]')"
@@ -2917,6 +2966,14 @@ restore_database() {
     echo "   Backup file:"
     echo "     - alembic head:        ${expected_head:-unknown}"
     echo ""
+    if [ "$schema_relationship" != "same" ]; then
+      echo "   ⚠️  The backup's schema head differs from the running application's."
+      echo "       Restoring it and restarting the CURRENT image would run every migration"
+      echo "       between them, silently rolling this backup FORWARD (issue #610)."
+      echo "       Application services will be left STOPPED so you can choose the image first."
+      echo "       Pass --migrate-forward if you WANT the current version to migrate this backup."
+      echo ""
+    fi
     echo "   This DROPS the current database and recreates it from the backup."
     echo "   Everything written since that backup is destroyed."
     if [ "$skip_safety_dump" != true ]; then
@@ -2983,7 +3040,10 @@ restore_database() {
     else
       echo "   No safety dump was taken (--no-safety-dump) — the previous state is not recoverable here."
     fi
-    "${restart_services[@]}"
+    # Deliberately NOT restarting (issue #610): the database is now EMPTY, so restarting
+    # the newer backend would take run_migrations()'s "empty database" branch and seed a
+    # fresh admin — turning a failed restore into a silently brand-new empty deployment.
+    echo "⏸️  Services left stopped — recover with the command above before starting the app."
     [ -n "$temp_sql" ] && rm -f "$temp_sql"
     exit 1
   fi
@@ -2998,15 +3058,50 @@ restore_database() {
   if [ "$verify_ok" != true ]; then
     echo "❌ Restore verification failed — the database does not match the backup. See the mismatch(es) above."
     [ -n "$safety_dump_file" ] && echo "   The current (unverified) database's pre-restore safety dump is at: $safety_dump_file"
-    "${restart_services[@]}"
+    # Deliberately NOT restarting (issue #610) — same hazard family as the replay-failure
+    # path above: the database is in an unverified state, not the one the running image
+    # expects to see.
+    echo "⏸️  Services left stopped — recover with the command above before starting the app."
     [ -n "$temp_sql" ] && rm -f "$temp_sql"
     exit 1
   fi
 
   [ -n "$temp_sql" ] && rm -f "$temp_sql"
-  echo "🔄 Restarting services..."
-  "${restart_services[@]}"
-  echo "✅ Database restored successfully."
+
+  # Decide whether it is safe to bring the app back up automatically (issue #610). The
+  # decision is made by the shared, independently-tested pg_restore_restart_decision
+  # (scripts/common.sh) — never reimplemented here — so opentr.sh and its test suite
+  # share exactly one definition of "safe to restart".
+  local restart_decision
+  restart_decision="$(pg_restore_restart_decision "$expected_head" "$current_head" "$migrate_forward" "$no_restart")"
+
+  local hold_reason=""
+  case "$restart_decision" in
+    hold:no-restart)
+      hold_reason="--no-restart"
+      ;;
+    hold:schema-mismatch)
+      hold_reason="schema-head mismatch (backup=${expected_head:-unknown}, was-running=${current_head:-unknown})"
+      ;;
+  esac
+
+  if [ -n "$hold_reason" ]; then
+    echo "✅ Database restored successfully."
+    echo ""
+    echo "⏸️  Application services were left STOPPED on purpose: $hold_reason"
+    echo "   Starting the previously-running image now would migrate this backup forward."
+    echo ""
+    echo "   Choose one:"
+    echo "   • Roll the application back to the version that matches this backup:"
+    echo "       ./opentranscribe.sh update --rollback      # or: update --version vX.Y.Z"
+    echo "   • Keep the current version and let it migrate this backup forward (intended"
+    echo "     for data recovery, NOT for a version rollback):"
+    echo "       ./opentr.sh start dev                      # or: docker compose start backend …"
+  else
+    echo "🔄 Restarting services..."
+    "${restart_services[@]}"
+    echo "✅ Database restored successfully."
+  fi
   echo "ℹ️  MinIO and OpenSearch were NOT rolled back — reindex from Admin → Search if the"
   echo "   restored database's file list differs from what MinIO/OpenSearch currently have."
   [ -n "$safety_dump_file" ] && echo "   Pre-restore safety dump of the database this replaced: $safety_dump_file"

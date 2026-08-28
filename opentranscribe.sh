@@ -540,6 +540,40 @@ case "${1:-help}" in
             rm -f .env.bak
             echo -e "${GREEN}✓ Pinned OT_IMAGE_TAG=${target_version} (was ${current_tag})${NC}"
             echo -e "${YELLOW}📥 Updating to ${target_version}...${NC}"
+
+            # --rollback preflight (issue #610's companion, the mirror-image gap): an
+            # OLDER image booting against a NEWER schema it cannot read fails with a
+            # cryptic "Can't locate revision identified by '<head>'" -> SystemExit(1).
+            # Alembic's migration chain has no forward-compat story, so check BEFORE
+            # tearing anything down, not after. Read the live head now, while postgres
+            # is still up — compose_down_for_upgrade (below) takes the WHOLE stack
+            # down, postgres included, so this is the last point a plain
+            # `docker compose exec postgres` can reach it.
+            if [ "$do_rollback" = true ] && [ "$force_downgrade" = false ]; then
+                rollback_compose_files=$(get_compose_files)
+                # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
+                rollback_live_head=$(docker compose $rollback_compose_files exec -T postgres psql -tA \
+                    -U "${POSTGRES_USER:-postgres}" "${POSTGRES_DB:-opentranscribe}" \
+                    -c 'SELECT version_num FROM alembic_version;' 2>/dev/null | tr -d '[:space:]')
+
+                if [ -z "$rollback_live_head" ]; then
+                    echo -e "${YELLOW}⚠️  Could not read the live database's alembic head — skipping the${NC}"
+                    echo -e "${YELLOW}   rollback-compatibility check (postgres may not be running).${NC}"
+                # Ask the TARGET image whether it knows that revision — no Python imports,
+                # no env, no DB: every published backend image ships its own
+                # alembic/versions/ tree (backend/Dockerfile.prod:229, COPY --chown into /app).
+                elif ! docker run --rm --entrypoint sh "davidamacey/opentranscribe-backend:${target_version}" -c \
+                        "grep -lq 'revision = \"${rollback_live_head}\"' /app/alembic/versions/*.py" \
+                        >/dev/null 2>&1; then
+                    echo -e "${RED}❌ Refusing to roll back to ${target_version}: the database is at${NC}"
+                    echo -e "${RED}   ${rollback_live_head}, which ${target_version} does not know.${NC}"
+                    echo -e "${YELLOW}   Restore a pre-upgrade backup first — it leaves services stopped for${NC}"
+                    echo -e "${YELLOW}   you to choose the image (issue #610):${NC}"
+                    echo -e "${YELLOW}     ./opentr.sh restore <backup>${NC}"
+                    echo -e "${YELLOW}   then re-run this command. Override with --force-downgrade if certain.${NC}"
+                    exit 1
+                fi
+            fi
         else
             echo -e "${YELLOW}📥 Updating to the newest images for tag '${current_tag}'...${NC}"
         fi

@@ -206,6 +206,25 @@ def _dump(container: str, dbname: str, dest: Path) -> None:
     dest.write_text(result.stdout, encoding="utf-8")
 
 
+def _dump_custom(container: str, dbname: str, dest: Path) -> None:
+    """Custom-format (``-Fc``) dump — binary, so captured/written as bytes, not text."""
+    result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        ["docker", "exec", container, "pg_dump", "-U", _DB_USER, "-Fc", dbname],
+        capture_output=True,
+    )
+    assert result.returncode == 0, f"pg_dump -Fc failed: {result.stderr!r}"
+    dest.write_bytes(result.stdout)
+
+
+def _awk_extract_head(dump_path: Path) -> str:
+    """The exact awk expression ``opentr.sh`` uses to read a plain-SQL dump's alembic head."""
+    result = _run(
+        ["awk", r"/^COPY public\.alembic_version /{getline; print; exit}", str(dump_path)]
+    )
+    assert result.returncode == 0, f"awk head extraction failed: {result.stderr}"
+    return result.stdout.strip()
+
+
 def _query(container: str, dbname: str, sql: str) -> str:
     result = _run(["docker", "exec", container, "psql", "-tA", "-U", _DB_USER, dbname, "-c", sql])
     assert result.returncode == 0, f"query failed: {result.stderr}"
@@ -484,3 +503,82 @@ def test_drop_database_with_force_terminates_an_open_connection(pg_container: st
     finally:
         holder.kill()
         holder.wait(timeout=5)
+
+
+# ---------------------------------------------------------------------------------------------
+# 5. Issue #610: the real head-extraction functions feed the real restart decision correctly,
+#    for BOTH dump formats — closing the gap between "the decision function is right"
+#    (unit/test_restore_restart_decision.py) and "the values fed into it are right".
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("dump_format", ["plain", "custom"])
+def test_head_extraction_feeds_the_restart_decision(
+    pg_container: str, tmp_path: Path, dump_format: str
+) -> None:
+    container = pg_container
+    dbname = f"otrestore_head_{dump_format}"
+    _create_db(container, dbname)
+    _exec_sql(
+        container,
+        dbname,
+        "CREATE TABLE alembic_version (version_num varchar(32) NOT NULL PRIMARY KEY);\n"
+        "INSERT INTO alembic_version VALUES ('vOLD_seed');\n"
+        "CREATE TABLE media_file (id serial PRIMARY KEY, filename text NOT NULL);\n",
+    )
+
+    exec_prefix = f"docker exec -i {container}"
+
+    def _extract(dest_stem: str) -> str:
+        if dump_format == "plain":
+            dump_path = tmp_path / f"{dest_stem}.sql"
+            _dump(container, dbname, dump_path)
+            return _awk_extract_head(dump_path)
+        dump_path = tmp_path / f"{dest_stem}.dump"
+        _dump_custom(container, dbname, dump_path)
+        result = _call_common_fn(
+            "pg_custom_dump_expected_head", exec_prefix, _DB_USER, str(dump_path)
+        )
+        assert result.returncode == 0, f"pg_custom_dump_expected_head failed: {result.stderr}"
+        return result.stdout.strip()
+
+    # 1. Extract the backup's own head, taken while the DB is still at the seeded version.
+    dump_head = _extract("backup")
+    assert dump_head == "vOLD_seed", f"expected the dump's own head 'vOLD_seed', got {dump_head!r}"
+
+    # 2. Drift the LIVE database forward after the backup was taken — the exact shape of a
+    #    rollback scenario: a newer image has already migrated the schema since the backup.
+    _exec_sql(container, dbname, "UPDATE alembic_version SET version_num = 'vNEW_later';")
+    live_head = _query(container, dbname, "SELECT version_num FROM alembic_version;")
+    assert live_head == "vNEW_later", (
+        f"expected the drifted live head 'vNEW_later', got {live_head!r}"
+    )
+
+    # 3. Feed the REAL extracted values into the REAL shared decision function (issue #610).
+    mismatch = _call_common_fn(
+        "pg_restore_restart_decision", dump_head, live_head, "false", "false"
+    )
+    assert mismatch.returncode == 0, f"pg_restore_restart_decision failed: {mismatch.stderr}"
+    assert mismatch.stdout.strip() == "hold:schema-mismatch", (
+        f"[{dump_format}] expected hold:schema-mismatch (backup={dump_head!r} vs "
+        f"live={live_head!r}), got {mismatch.stdout!r}"
+    )
+
+    # 4. Control: dump the now-DRIFTED database and extract ITS head too. Same head as the
+    #    live DB it came from -> restart. Proves the mismatch above is about the head
+    #    values actually differing, not an artifact of always holding.
+    control_head = _extract("control")
+    assert control_head == "vNEW_later", (
+        f"expected the control dump's head 'vNEW_later', got {control_head!r}"
+    )
+
+    control_decision = _call_common_fn(
+        "pg_restore_restart_decision", control_head, live_head, "false", "false"
+    )
+    assert control_decision.returncode == 0, (
+        f"pg_restore_restart_decision failed: {control_decision.stderr}"
+    )
+    assert control_decision.stdout.strip() == "restart", (
+        f"[{dump_format}] expected restart for the matching-head control, got "
+        f"{control_decision.stdout!r}"
+    )

@@ -48,6 +48,21 @@ RUN_E2E=false
 RUN_FRONTEND=false
 E2E_SMOKE=false
 
+# Whether we brought the mock-llm container up ourselves, so we know whether to tear it
+# back down. This script is invoked deliberately at specific points in the dev cycle, not
+# left running — so unlike the base dev stack (which stays up per repo convention), a
+# mock-llm instance THIS script started should not outlive the run. But if the overlay was
+# already up before we got here (someone using it for other work), leave it alone.
+MOCK_LLM_STARTED_BY_US=false
+
+teardown_mock_llm() {
+    if [[ "$MOCK_LLM_STARTED_BY_US" == "true" ]]; then
+        echo -e "${YELLOW}==>${NC} stopping mock-llm (this run started it)"
+        docker stop opentranscribe-mock-llm >/dev/null 2>&1 || true
+    fi
+}
+trap teardown_mock_llm EXIT
+
 usage() {
     cat <<'EOF'
 Usage:
@@ -83,13 +98,18 @@ if [[ "$RUN_BACKEND" == "true" || "$RUN_E2E" == "true" ]]; then
     # backend/tests/CLAUDE.md's mock-llm suites (test_mock_llm_fixture.py, test_llm_reasoning_*,
     # test_chat_redactor_egress_style.py, ...) need the mock-llm container reachable, not just
     # the base stack. Without --with-mock-llm here, they don't skip — they fail outright, every
-    # single run, on a bare `./opentr.sh start dev`. `start dev --with-mock-llm` is idempotent
-    # (docker compose up -d only touches what's missing/changed), so it's safe to always run
-    # this rather than trying to detect whether the overlay is already loaded.
-    echo -e "${YELLOW}==>${NC} ensuring mock-llm overlay is up (required by backend/e2e suites)"
-    if ! "$REPO_ROOT/opentr.sh" start dev --with-mock-llm >/dev/null 2>&1; then
-        echo -e "${RED}error:${NC} failed to bring up the mock-llm overlay — run ./opentr.sh start dev --with-mock-llm manually to see why" >&2
-        exit "$EXIT_PRECONDITION"
+    # single run, on a bare `./opentr.sh start dev`. We detect whether it's already running
+    # (rather than unconditionally starting it) so the EXIT trap below only tears down a
+    # container THIS run brought up — never one already in use for something else.
+    if docker ps --filter "name=^opentranscribe-mock-llm$" --filter "status=running" --format '{{.Names}}' 2>/dev/null | grep -q .; then
+        echo -e "${YELLOW}==>${NC} mock-llm overlay already up — leaving it (not ours to stop)"
+    else
+        echo -e "${YELLOW}==>${NC} ensuring mock-llm overlay is up (required by backend/e2e suites)"
+        if ! "$REPO_ROOT/opentr.sh" start dev --with-mock-llm >/dev/null 2>&1; then
+            echo -e "${RED}error:${NC} failed to bring up the mock-llm overlay — run ./opentr.sh start dev --with-mock-llm manually to see why" >&2
+            exit "$EXIT_PRECONDITION"
+        fi
+        MOCK_LLM_STARTED_BY_US=true
     fi
 fi
 if [[ "$RUN_E2E" == "true" && "$E2E_SMOKE" == "false" ]]; then

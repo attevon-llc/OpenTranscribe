@@ -514,8 +514,14 @@ class TestRejectSuggestionPropagation:
             "suggested_name behind for any reader checking it without confidence "
             "(this module's own was_auto_labeled)"
         )
-        assert speaker.suggestion_source is None
         assert speaker.confidence is None
+        assert speaker.suggestion_source == "llm_analysis", (
+            "suggestion_source must survive rejection — it is "
+            "task_detection_service's only signal that LLM speaker ID already ran "
+            "on this file. Nulling it here (as an earlier version of this fix did) "
+            "made a fully-rejected file look never-identified and re-offered the "
+            "exact suggestion the user just rejected (audit follow-up to #603)."
+        )
 
     def test_rejecting_a_below_threshold_suggestion_queues_nothing(
         self, client, db_session, normal_user, user_token_headers, quiet_opensearch

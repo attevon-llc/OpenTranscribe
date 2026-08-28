@@ -11,8 +11,12 @@ import logging
 import os
 import time
 from collections.abc import Callable
+from typing import TYPE_CHECKING
+from typing import Any
 
 from app.core.exceptions import ASRConfigurationError
+from app.utils.url_validation import pinned_requests_session
+from app.utils.url_validation import resolve_pinned_target
 
 from .base import ASRProvider
 from .errors import ASRRateLimitedError
@@ -21,6 +25,9 @@ from .types import ASRConfig
 from .types import ASRResult
 from .types import ASRSegment
 from .types import ASRWord
+
+if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
+    import requests
 
 logger = logging.getLogger(__name__)
 
@@ -136,15 +143,62 @@ class GladiaProvider(ASRProvider):
             retry_after=retry_after_from_headers(getattr(resp, "headers", None)),
         )
 
+    def _guarded_request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
+        """Resolve *url*, pin the dial address, and send exactly one request.
+
+        Every outbound Gladia call goes through here — the same
+        ``resolve_pinned_target`` + ``pinned_requests_session`` + ``allow_redirects=False``
+        pattern ``app/services/llm_service.py`` uses for the identical class of bug
+        (issue #444). ``_resolve_base_url`` only validates ``base_url`` once, at
+        construction; that leaves a DNS-rebinding window between validation and connect,
+        and does nothing at all for ``result_url`` (see the poll loop below, which
+        resolves that separately since it is untrusted vendor-response data, not this
+        method's ``url`` argument).
+
+        Raises:
+            RuntimeError: *url* is not a permitted outbound target.
+        """
+        from app.core.config import settings as _settings
+
+        target, reason = resolve_pinned_target(
+            url, allow_private=_settings.ASR_ALLOW_PRIVATE_ENDPOINTS
+        )
+        if target is None:
+            logger.warning("Refusing Gladia %s to %r: %s", method.upper(), url, reason)
+            raise RuntimeError(
+                f"Gladia request blocked: not a permitted outbound target ({reason})"
+            )
+
+        headers = kwargs.pop("headers", None) or {}
+        with pinned_requests_session(target) as session:
+            # `getattr(session, method.lower())` — a bound `.get`/`.post`, matching the
+            # call shape `protected_media_plugins/mediacms.py` uses (and its tests mock),
+            # rather than `session.request(method, ...)`, which a `MagicMock()`-based
+            # test would not see configured on `.get`/`.post`.
+            send = getattr(session, method.lower())
+            # `allow_redirects=False`: the pin covers ONE hop. A URL that passes
+            # validation and then answers with a redirect to an internal target would
+            # otherwise be followed with no check at all, and would additionally reuse
+            # this session's SNI binding for a different host.
+            response: requests.Response = send(
+                target.url,
+                headers={**headers, **target.headers},
+                allow_redirects=False,
+                **kwargs,
+            )
+            return response
+
     def validate_connection(self) -> tuple[bool, str, float]:
         """Test API key by hitting the /v2/live endpoint (lightweight, no audio needed)."""
         start = time.time()
         try:
-            import requests
+            import requests  # noqa: F401  (import-availability probe only)
         except ImportError:
             return False, "requests not installed. Run: pip install requests", 0.0
         try:
-            r = requests.get(f"{self._base}/v2/live", headers=self._hdr(), timeout=10)
+            r = self._guarded_request(
+                "GET", f"{self._base}/v2/live", headers=self._hdr(), timeout=10
+            )
             ms = (time.time() - start) * 1000
             if r.status_code == 401:
                 return False, "Invalid Gladia API key", ms
@@ -159,8 +213,6 @@ class GladiaProvider(ASRProvider):
         config: ASRConfig,
         progress_callback: Callable[[float, str], None] | None = None,
     ) -> ASRResult:
-        import requests
-
         # Validate the file exists before attempting network I/O.
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
@@ -184,7 +236,8 @@ class GladiaProvider(ASRProvider):
             with open(audio_path, "rb") as f:
                 # The multipart part MUST carry a filename + content-type, else Gladia
                 # rejects with 400 "Missing audio file".
-                up = requests.post(
+                up = self._guarded_request(
+                    "POST",
                     f"{self._base}/v2/upload",
                     headers={"x-gladia-key": self._api_key},
                     files={"audio": (filename, f, content_type)},
@@ -224,8 +277,8 @@ class GladiaProvider(ASRProvider):
             body["custom_vocabulary"] = config.vocabulary[:100]
 
         try:
-            job_r = requests.post(
-                f"{self._base}/v2/transcription", headers=self._hdr(), json=body, timeout=30
+            job_r = self._guarded_request(
+                "POST", f"{self._base}/v2/transcription", headers=self._hdr(), json=body, timeout=30
             )
             self._raise_if_rate_limited(job_r, "job submission")
             job_r.raise_for_status()
@@ -240,37 +293,67 @@ class GladiaProvider(ASRProvider):
         if not result_url:
             raise RuntimeError("Gladia did not return a result_url for polling")
 
+        # `result_url` is data the (already-validated) base_url's server chose to return —
+        # untrusted vendor-response content, not a literal or operator-configured value like
+        # `base_url`. It must be validated before it is EVER fetched, even when `base_url` was
+        # the real default: a compromised or merely misbehaving server could still point
+        # `result_url` at an internal target (defense in depth). Resolved and pinned ONCE, here,
+        # rather than inside the per-iteration try/except below — that except is a deliberate
+        # swallow-and-continue for transient poll failures (see the "no consecutive-failure cap"
+        # characterization test), and letting it also swallow a blocked `result_url` would mean
+        # up to 720 silent retries against an address that was never going to be fetched, ending
+        # in a generic timeout instead of the specific reason it was refused.
+        from app.core.config import settings as _settings
+
+        result_target, result_reason = resolve_pinned_target(
+            result_url, allow_private=_settings.ASR_ALLOW_PRIVATE_ENDPOINTS
+        )
+        if result_target is None:
+            logger.warning("Refusing Gladia result_url %r: %s", result_url, result_reason)
+            raise RuntimeError(
+                "Gladia returned a result_url that is not a permitted outbound target: "
+                f"{result_reason}"
+            )
+
         if progress_callback:
             progress_callback(0.3, "Gladia transcription in progress…")
 
         data: dict = {}
         completed = False
-        for i in range(720):
-            time.sleep(10)
-            try:
-                poll = requests.get(result_url, headers=self._hdr(), timeout=30)
-                self._raise_if_rate_limited(poll, "poll")
-                poll.raise_for_status()
-                data = poll.json()
-            except ASRRateLimitedError:
-                raise
-            except Exception as exc:
-                sanitized = self._sanitize_error(str(exc), self._api_key)
-                logger.warning(
-                    "Gladia poll error (attempt %d) for file=%s: %s", i, filename, sanitized
-                )
-                continue
-            if data.get("status") == "done":
-                completed = True
-                break
-            if data.get("status") == "error":
-                err_msg = self._sanitize_error(
-                    str(data.get("error_message", "unknown error")), self._api_key
-                )
-                logger.error("Gladia job error for file=%s: %s", filename, err_msg)
-                raise RuntimeError(f"Gladia error: {err_msg}")
-            if progress_callback:
-                progress_callback(0.3 + min(i / 720, 0.5), "Gladia processing…")
+        with pinned_requests_session(result_target) as poll_session:
+            for i in range(720):
+                time.sleep(10)
+                try:
+                    # `allow_redirects=False`: the pin covers ONE hop — a 302 from the
+                    # otherwise-valid result_url must not be silently followed.
+                    poll = poll_session.get(
+                        result_target.url,
+                        headers={**self._hdr(), **result_target.headers},
+                        timeout=30,
+                        allow_redirects=False,
+                    )
+                    self._raise_if_rate_limited(poll, "poll")
+                    poll.raise_for_status()
+                    data = poll.json()
+                except ASRRateLimitedError:
+                    raise
+                except Exception as exc:
+                    sanitized = self._sanitize_error(str(exc), self._api_key)
+                    logger.warning(
+                        "Gladia poll error (attempt %d) for file=%s: %s", i, filename, sanitized
+                    )
+                    continue
+                if data.get("status") == "done":
+                    completed = True
+                    break
+                if data.get("status") == "error":
+                    err_msg = self._sanitize_error(
+                        str(data.get("error_message", "unknown error")), self._api_key
+                    )
+                    logger.error("Gladia job error for file=%s: %s", filename, err_msg)
+                    raise RuntimeError(f"Gladia error: {err_msg}")
+                if progress_callback:
+                    progress_callback(0.3 + min(i / 720, 0.5), "Gladia processing…")
 
         if not completed:
             raise RuntimeError("Gladia transcription timed out after 7200 seconds")

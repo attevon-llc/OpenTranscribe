@@ -585,7 +585,15 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
         up -d --force-recreate --no-deps mock-asr
     popd >/dev/null
 
-    as_summary | tee -a "$TEST_REPORT_FILE"
+    # as_summary deliberately returns 1 when any assertion FAILed. Under
+    # set -euo pipefail, a non-zero return from either stage of
+    # `as_summary | tee -a ...` trips set -e right here -- phase_08_finish (the
+    # informational "stack left running" banner) still follows this phase, so
+    # unlike test-upgrade.sh's last-phase case this would abort the WHOLE
+    # remaining run, not just skip a "Finished:" line. Same class as #617/#618,
+    # ported from test-upgrade.sh's phase_18_summary.
+    RELEASE_TEST_EXIT_CODE=0
+    as_summary | tee -a "$TEST_REPORT_FILE" || RELEASE_TEST_EXIT_CODE=$?
     {
         echo ""
         echo "Finished: $(date -Iseconds)"
@@ -622,3 +630,12 @@ phase 08 phase_08_finish
 
 echo
 echo "Done. Report: $TEST_ROOT/REPORT.md"
+echo "Stack left running for inspection. Tear down with: $0 --cleanup"
+echo "Then restart your live deployment with: ./opentr.sh start dev"
+
+# Propagate phase 07's assertion verdict as the script's own exit code (see
+# phase_07_pipeline_assertions's comment). Without this, the capture above makes
+# the script exit 0 even when an assertion FAILed -- worse than the truncation bug
+# it fixes (silently green instead of noisily truncated). Defaults to 0 for a
+# resumed run where phase 07 was already marked done and skipped.
+exit "${RELEASE_TEST_EXIT_CODE:-0}"

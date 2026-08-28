@@ -23,6 +23,7 @@ forces SKIP_OPENSEARCH=True).
 
 import os
 import re
+import time
 
 import pytest
 import requests
@@ -67,17 +68,45 @@ class TestNeuralSearchHealth:
     """Corpus-independent: the semantic half of hybrid search must be alive."""
 
     def test_active_neural_model_is_deployed(self, headers):
-        resp = requests.get(f"{BASE}/search/models/neural", headers=headers, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        if not data.get("neural_enabled"):
-            pytest.skip("Neural search disabled in this environment")
-        assert data.get("active_model_id"), "Neural search enabled but no active model"
+        """Issue #612: on a brand-new ``--fresh`` deployment, ``initialize_neural_search``
+        (``app/main.py``) registers/deploys/activates the default model on a background
+        task that starts 15s after startup and does its own HTTP round-trips against
+        OpenSearch — it is not guaranteed done by the time the stack reports healthy and
+        a test suite starts hitting it. A single synchronous check here raced that task
+        and failed on a deployment that was correct seconds later. Poll instead of
+        asserting once; a genuinely broken deployment (model never activates) still fails,
+        just after actually waiting for the async bootstrap rather than a healthcheck.
+        """
+        deadline = time.monotonic() + 90
+        data: dict = {}
+        while time.monotonic() < deadline:
+            resp = requests.get(f"{BASE}/search/models/neural", headers=headers, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            if not data.get("neural_enabled"):
+                pytest.skip("Neural search disabled in this environment")
+            if data.get("active_model_id"):
+                active = [m for m in data["models"] if m.get("model_id") == data["active_model_id"]]
+                deployed = bool(
+                    active
+                    and (active[0].get("model_state") or active[0].get("state")) == "DEPLOYED"
+                )
+                if deployed:
+                    break
+            time.sleep(3)
+
+        # Re-assert the full contract below regardless of how the loop exited, so the
+        # happy path (deployed on an early poll) still proves something rather than
+        # trusting the loop's own bookkeeping (issue #620's "bare return" finding).
+        assert data.get("active_model_id"), (
+            "Neural search enabled but no active model after 90s -- "
+            "app.main.initialize_neural_search never completed"
+        )
         active = [m for m in data["models"] if m.get("model_id") == data["active_model_id"]]
         assert active, f"Active model id not in model list: {data['active_model_id']}"
         state = active[0].get("model_state") or active[0].get("state")
         assert state == "DEPLOYED", (
-            f"Active neural model is {state!r}, not DEPLOYED — semantic search "
+            f"Active neural model is {state!r}, not DEPLOYED after 90s — semantic search "
             "is silently degraded to BM25-only"
         )
 

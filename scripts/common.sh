@@ -84,6 +84,30 @@ check_docker() {
 # -base64 32)); this is the same generation, for the one first-run path neither
 # of those covers -- a plain `./opentr.sh start dev` / `start prod`.
 #
+# read_env_value KEY [ENV_FILE]
+#   Reads one plain-config value out of a dotenv file, honouring the dotenv inline-comment
+#   convention: a `#` PRECEDED BY WHITESPACE starts a comment, a bare `#` inside a value does
+#   not. `ENVIRONMENT=production  # prod box` used to yield `production#prodbox`, silently
+#   breaking every prod-hardening string comparison in opentranscribe.sh (issue #590).
+#
+#   NOT for secrets. REDIS_PASSWORD / JWT_SECRET_KEY / ENCRYPTION_KEY may legitimately
+#   contain `#` (even ` #`), so those reads deliberately do NOT go through this and must
+#   keep their raw `cut -d= -f2-` form.
+#
+#   `|| true` is load-bearing: callers run under `set -e`, and an ABSENT optional key is the
+#   normal case (grep exits 1). Same reasoning as setup-opentranscribe.sh's `_env_val`.
+#   `-f2-` not `-f2`: a value may legitimately contain `=`.
+read_env_value() {
+  local key="$1" env_file="${2:-.env}"
+  [ -f "$env_file" ] || { echo ""; return 0; }
+  grep -E "^${key}=" "$env_file" 2>/dev/null \
+    | head -1 \
+    | cut -d= -f2- \
+    | sed -E 's/[[:space:]]+#.*$//' \
+    | tr -d ' "' \
+    || true
+}
+
 # Only touches the SHIPPED PLACEHOLDER. An empty or already-customized value is
 # left alone -- either means an operator made a deliberate choice (e.g. leaving
 # KMS auto-encryption off), and this must never clobber a real key.
@@ -127,6 +151,12 @@ ensure_minio_kms_secret() {
       # has been encrypted with it makes that data permanently unreadable. Warn loudly
       # rather than silently.
       sed -i "s|^MINIO_KMS_SECRET_KEY=.*|MINIO_KMS_SECRET_KEY=${generated}|" "$env_file"
+      # A fresh install is `cp .env.example .env` → mode 0644, and GNU `sed -i` preserves
+      # mode. The value just written is the one REAL secret in an otherwise placeholder-only
+      # file, and losing it makes every KMS-encrypted object permanently unreadable — so it
+      # must not stay world-readable. Matches scripts/install-offline-package.sh:541, which
+      # this generation was modelled on and which already does exactly this.
+      chmod 600 "$env_file" || echo "⚠️  Could not chmod 600 ${env_file} — it may be world-readable."
       echo "🔑 Generated MINIO_KMS_SECRET_KEY in ${env_file} (replaced the .env.example placeholder) so MinIO KMS auto-encryption can boot."
       echo "⚠️  BACK UP this value now: ${env_file}'s MINIO_KMS_SECRET_KEY. MinIO decrypts every"
       echo "   object written under KMS auto-encryption with this exact key -- if it is lost,"
@@ -1258,19 +1288,39 @@ restore_database() {
   # `return`-based cleanup would not fire for those -- they end the process, not just
   # this function). ./backups already exists (mkdir -p above), so the lock file lives
   # there rather than needing its own directory.
+  # Save any trap a CALLER already had installed for these signals before this function
+  # installs its own below -- the unconditional `trap - INT TERM ERR EXIT` on the success
+  # path used to reset all four straight to the shell default, silently discarding
+  # whatever the caller had, not just this function's own lock-release trap.
+  local prev_exit_trap prev_int_trap prev_term_trap prev_err_trap
+  prev_exit_trap="$(trap -p EXIT)"
+  prev_int_trap="$(trap -p INT)"
+  prev_term_trap="$(trap -p TERM)"
+  prev_err_trap="$(trap -p ERR)"
+
   local restore_lock_file="./backups/.restore.lock"
-  local restore_lock_fd
-  exec {restore_lock_fd}>"$restore_lock_file"
-  if ! flock -n "$restore_lock_fd"; then
-    echo "❌ Error: another restore is already in progress (lock: $restore_lock_file)."
-    echo "   Wait for it to finish, then retry. The database was NOT touched."
-    exec {restore_lock_fd}>&-
-    [ -n "$temp_sql" ] && rm -f "$temp_sql"
-    exit 3
+  # macOS ships no util-linux `flock`. Without this check the `if ! flock -n …` below sees
+  # exit 127 (command not found) and takes the "another restore is already in progress"
+  # branch, so EVERY restore aborted with a message naming a cause that did not exist.
+  # Fails closed, but confusingly — and on a platform where it fails ALWAYS.
+  local restore_lock_fd=""
+  if command -v flock >/dev/null 2>&1; then
+    exec {restore_lock_fd}>"$restore_lock_file"
+    if ! flock -n "$restore_lock_fd"; then
+      echo "❌ Error: another restore is already in progress (lock: $restore_lock_file)."
+      echo "   Wait for it to finish, then retry. The database was NOT touched."
+      exec {restore_lock_fd}>&-
+      [ -n "$temp_sql" ] && rm -f "$temp_sql"
+      exit 3
+    fi
+    # shellcheck disable=SC2064  # expand $restore_lock_fd NOW (a literal fd number), not
+    # when the trap fires -- matches run-mutation-tests.sh's verify_survivor trap.
+    trap "flock -u $restore_lock_fd 2>/dev/null; exec $restore_lock_fd>&- 2>/dev/null" INT TERM ERR EXIT
+  else
+    echo "⚠️  flock is unavailable on this host — concurrent-restore serialisation is DISABLED."
+    echo "   Do not run two restores at the same time; the second's DROP DATABASE can kill"
+    echo "   the first's replay mid-transaction."
   fi
-  # shellcheck disable=SC2064  # expand $restore_lock_fd NOW (a literal fd number), not
-  # when the trap fires -- matches run-mutation-tests.sh's verify_survivor trap.
-  trap "flock -u $restore_lock_fd 2>/dev/null; exec $restore_lock_fd>&- 2>/dev/null" INT TERM ERR EXIT
 
   # Stop services that use the database. Checked, like every other destructive step in
   # this function (the safety dump and the drop/recreate right below both are) -- an
@@ -1399,9 +1449,21 @@ restore_database() {
 
   # Release the destructive-portion lock explicitly on this, the one path through the
   # function that returns instead of exiting (every failure branch above calls `exit N`,
-  # which the INT/TERM/ERR/EXIT trap set above already covers).
-  flock -u "$restore_lock_fd" 2>/dev/null
+  # which the INT/TERM/ERR/EXIT trap set above already covers). Guarded: restore_lock_fd
+  # is empty when flock was unavailable (no lock was ever taken, nothing to release).
+  # Also closes the fd here rather than leaving it open until the whole process exits --
+  # the trap below only unregisters ITSELF, it does not run, so nothing else would.
+  if [ -n "$restore_lock_fd" ]; then
+    flock -u "$restore_lock_fd" 2>/dev/null
+    exec {restore_lock_fd}>&- 2>/dev/null
+  fi
   trap - INT TERM ERR EXIT
+  # Restore whatever the caller had before this function ran, rather than leaving all
+  # four signals with no trap at all.
+  [ -n "$prev_exit_trap" ] && eval "$prev_exit_trap"
+  [ -n "$prev_int_trap" ] && eval "$prev_int_trap"
+  [ -n "$prev_term_trap" ] && eval "$prev_term_trap"
+  [ -n "$prev_err_trap" ] && eval "$prev_err_trap"
 
   # Explicit, not left to the truthiness of the `echo` above: `[ -n "$safety_dump_file" ]`
   # is false (exit 1) whenever --no-safety-dump was used, and this was the LAST statement

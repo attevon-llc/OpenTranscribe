@@ -266,9 +266,18 @@ MUTATING_ENDPOINTS: list[tuple[str, int]] = [
 
 
 def test_min_permission_editor_sites_match_the_codebase():
-    """Fails with the exact file:line of any drift — a new mutating call site
-    added without ``min_permission="editor"``, or one removed from the code
-    without being removed from the table here.
+    """Fails with the exact file:line of any DRIFT between the code and
+    ``MUTATING_ENDPOINTS`` — a call site that already carries
+    ``min_permission="editor"`` and was never added to the table, or a table row whose
+    call site was removed from the code.
+
+    ⚠️ Scope boundary, not an unprotected-endpoint detector: ``_find_min_permission_
+    editor_sites`` only finds call sites that ALREADY pass ``min_permission="editor"``.
+    A brand-new mutating endpoint added with NO permission check at all produces no AST
+    match, so it is absent from both ``actual`` and ``expected`` — ``missing_from_table``
+    and ``missing_from_code`` are both empty, and this test PASSES having said nothing
+    about whether that endpoint is protected. This is a regression ratchet for sites this
+    table already knows about, not a scan for sites it does not (issue #620 item 8e).
     """
     actual = _find_min_permission_editor_sites()
     expected = sorted(MUTATING_ENDPOINTS)

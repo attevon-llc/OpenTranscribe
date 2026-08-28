@@ -135,11 +135,26 @@ dbs_active_connections() {
 }
 
 # dbs_wait_for_speaker_attributes CONTAINER USER DB TIMEOUT FILE_UUID...
-#   Polls until backend/app/tasks/speaker_attribute_task.py's fire-and-forget
-#   detect_speaker_attributes_task has settled for every speaker belonging to
-#   the given media_file uuid(s) — i.e. every speaker row for those files has
-#   attributes_predicted_at IS NOT NULL, the same predicate the app itself uses
-#   (_attributes_already_predicted) to decide "already done".
+#   Polls until the speaker table has SETTLED for the given media_file uuid(s) — three
+#   independent predicates, all of which must hold:
+#
+#   1. backend/app/tasks/speaker_attribute_task.py's fire-and-forget
+#      detect_speaker_attributes_task has finished for every speaker belonging to these
+#      files — i.e. every speaker row has attributes_predicted_at IS NOT NULL, the same
+#      predicate the app itself uses (_attributes_already_predicted) to decide "already
+#      done". A file with zero speaker rows (e.g. single-speaker content the diarizer
+#      didn't split, or diarization disabled) is trivially "settled" here — this checks
+#      EXISTING rows only, not "at least one row exists".
+#   2. No speaker_identification Task row for these files is still 'pending' or
+#      'in_progress' — closes issue #617's second write path (LLM speaker-suggestion
+#      writes at backend/app/tasks/speaker_identification_task.py:~309-311), which
+#      dispatches AFTER the gender-attribute detection above and so can still be running
+#      once predicate 1 is already satisfied.
+#   3. The speaker-table content digest for these files (same shape as dbs_fingerprint,
+#      md5(string_agg(row::text,'|' ORDER BY row::text))) is UNCHANGED across 3
+#      consecutive polls ~5s apart — a best-effort settle for any OTHER write this table
+#      might still receive that predicates 1/2 don't name, rather than an exhaustive list
+#      of every writer.
 #
 #   Exists to close the race behind issue #617: postprocess.py's
 #   _dispatch_speaker_attributes fires the detection task the INSTANT a file's
@@ -148,11 +163,10 @@ dbs_active_connections() {
 #   loop returns (test-upgrade.sh phase 06b) can catch the speaker table
 #   mid-write. That produced a real digest mismatch in a release rehearsal,
 #   which without the Fix 1 guard above then killed the whole script under
-#   set -e.
+#   set -e. Issue #620 item 5 (the #617 follow-up) added predicates 2 and 3
+#   after finding LLM speaker-suggestion writes could still land after
+#   predicate 1 alone was satisfied.
 #
-#   A file with zero speaker rows (e.g. single-speaker content the diarizer
-#   didn't split, or diarization disabled) is trivially "settled" and never
-#   waited on — this checks EXISTING rows only, not "at least one row exists".
 #   Returns non-zero (never dies) on timeout so the caller decides whether
 #   that is fatal; the digest guard above means it no longer needs to be.
 dbs_wait_for_speaker_attributes() {
@@ -170,21 +184,113 @@ dbs_wait_for_speaker_attributes() {
     uuid_list="$(IFS=,; echo "${quoted[*]}")"
 
     local deadline=$(( $(date +%s) + timeout ))
-    local pending="?"
+    local pending="?" pending_llm="?" digest="?" prev_digest="" prev_prev_digest=""
+    local stable_streak=0
     while (( $(date +%s) < deadline )); do
         pending="$(docker exec "$container" psql -tA -U "$user" "$db" -c "
             SELECT count(*) FROM speaker s
             JOIN media_file mf ON mf.id = s.media_file_id
             WHERE mf.uuid IN (${uuid_list}) AND s.attributes_predicted_at IS NULL;
         " 2>/dev/null | tr -d '[:space:]')"
-        if [[ "$pending" == "0" ]]; then
-            dbs_log "speaker attribute detection settled for ${#file_uuids[@]} file(s)"
+        pending_llm="$(docker exec "$container" psql -tA -U "$user" "$db" -c "
+            SELECT count(*) FROM task t
+            JOIN media_file mf ON mf.id = t.media_file_id
+            WHERE mf.uuid IN (${uuid_list}) AND t.task_type = 'speaker_identification'
+              AND t.status IN ('pending', 'in_progress');
+        " 2>/dev/null | tr -d '[:space:]')"
+        digest="$(docker exec "$container" psql -tA -U "$user" "$db" -c "
+            SELECT md5(coalesce(string_agg(s::text, '|' ORDER BY s::text), ''))
+            FROM speaker s
+            JOIN media_file mf ON mf.id = s.media_file_id
+            WHERE mf.uuid IN (${uuid_list});
+        " 2>/dev/null | tr -d '[:space:]')"
+
+        if [[ "$digest" == "$prev_digest" && "$digest" == "$prev_prev_digest" ]]; then
+            stable_streak=3
+        else
+            stable_streak=1
+        fi
+        prev_prev_digest="$prev_digest"
+        prev_digest="$digest"
+
+        if [[ "$pending" == "0" && "$pending_llm" == "0" && "$stable_streak" -ge 3 ]]; then
+            dbs_log "speaker table settled for ${#file_uuids[@]} file(s) (attributes done, no pending speaker_identification task, digest stable across 3 polls)"
             return 0
         fi
-        dbs_log "  waiting on speaker attribute detection (${pending:-?} speaker row(s) still pending)"
+        dbs_log "  waiting on speaker table to settle (attrs pending=${pending:-?}, llm task pending=${pending_llm:-?}, digest stable streak=${stable_streak})"
         sleep 5
     done
-    dbs_warn "speaker attribute detection did not settle within ${timeout}s (pending=${pending:-?}) — proceeding anyway; the pre-upgrade snapshot may still race issue #617's window"
+    dbs_warn "speaker table did not settle within ${timeout}s (attrs pending=${pending:-?}, llm task pending=${pending_llm:-?}) — proceeding anyway; the pre-upgrade snapshot may still race issue #617/#620's window"
+    return 1
+}
+
+# dbs_wait_for_stable_query CONTAINER USER DB TIMEOUT QUERY_SQL [STABLE_POLLS] [INTERVAL]
+#   Generic settle primitive: polls QUERY_SQL (a single-value psql -tA query) until it
+#   returns the SAME value STABLE_POLLS times in a row (default 3), INTERVAL seconds apart
+#   (default 5) — "stopped changing", not merely "matches an expected value". Used where
+#   the set of async post-completion writers touching a table is not exhaustively known (or
+#   not worth tracking one predicate per writer, the way dbs_wait_for_speaker_attributes
+#   does above) — quiescence is the only signal available in that case.
+#
+#   Returns non-zero, never dies, on timeout. Prints nothing on stdout — this only gates
+#   timing, the caller re-derives whatever it needs (a fingerprint, a fresh dump) afterward.
+dbs_wait_for_stable_query() {
+    local container="$1" user="$2" db="$3" timeout="$4" query="$5"
+    local stable_polls="${6:-3}" interval="${7:-5}"
+    local deadline=$(( $(date +%s) + timeout ))
+    local last="" current="" streak=0
+    while (( $(date +%s) < deadline )); do
+        current="$(docker exec "$container" psql -tA -U "$user" "$db" -c "$query" 2>/dev/null | tr -d '[:space:]')"
+        if [[ "$current" == "$last" ]]; then
+            streak=$(( streak + 1 ))
+            if (( streak >= stable_polls )); then
+                return 0
+            fi
+        else
+            streak=1
+        fi
+        last="$current"
+        sleep "$interval"
+    done
+    return 1
+}
+
+# dbs_wait_for_media_file_settled CONTAINER USER DB TIMEOUT
+#   Waits for media_file's own content digest to stop changing before a caller treats a
+#   snapshot of it as stable. This repo has several async post-completion writers that
+#   touch media_file at an unpredictable delay after a file's status flips to completed
+#   (redaction detection's redaction_status/redaction_model_version/redaction_coverage
+#   when redaction is enabled, among others) and none of them is individually tracked the
+#   way speaker-attribute detection is above (issue #619, same class as #617's Layer 1).
+#   Rather than chase every current and future writer by name, this waits for the table's
+#   own content digest to stop moving. Best-effort: proceeding on timeout does not mean
+#   settled, it means the caller decided not to wait any longer.
+dbs_wait_for_media_file_settled() {
+    local container="$1" user="$2" db="$3" timeout="$4"
+    if dbs_wait_for_stable_query "$container" "$user" "$db" "$timeout" \
+        "SELECT md5(coalesce(string_agg(t::text, '|' ORDER BY t::text), '')) FROM media_file t;"; then
+        dbs_log "media_file content digest settled"
+        return 0
+    fi
+    dbs_warn "media_file content digest did not settle within ${timeout}s — proceeding anyway; F-4/phase-06b may still race issue #619's window"
+    return 1
+}
+
+# dbs_wait_for_system_settings_settled CONTAINER USER DB TIMEOUT
+#   Same technique, for system_settings. Specifically closes the
+#   embedding_normalization_done startup-timer race: app/main.py's
+#   _run_one_time_embedding_normalization fires exactly once, ~60s after backend startup,
+#   and inserts/updates this table — landing between phase_06b's two backup snapshots
+#   (the shipped pg_dump and the ./opentranscribe.sh backup wrapper, taken seconds apart)
+#   was issue #619's second reported symptom.
+dbs_wait_for_system_settings_settled() {
+    local container="$1" user="$2" db="$3" timeout="$4"
+    if dbs_wait_for_stable_query "$container" "$user" "$db" "$timeout" \
+        "SELECT md5(coalesce(string_agg(t::text, '|' ORDER BY t::text), '')) FROM system_settings t;"; then
+        dbs_log "system_settings content digest settled"
+        return 0
+    fi
+    dbs_warn "system_settings content digest did not settle within ${timeout}s — proceeding anyway; the backup-content-diff assertion may still race issue #619's window"
     return 1
 }
 

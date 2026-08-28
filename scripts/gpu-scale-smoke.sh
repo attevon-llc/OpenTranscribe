@@ -123,7 +123,14 @@ done
 # entry could false-pass the GPU_SCALE_DEFAULT_WORKER=1 check below after that
 # worker was scaled to 0 without restarting Flower).
 FLOWER_MAX_ENTRY_AGE="${FLOWER_MAX_ENTRY_AGE:-120}"
-read -r GPU_WORKER_CONCURRENCY GPU_WORKER_FRESH <<<"$(python3 -c '
+# `IFS='|' read`, not the default whitespace-split `read`: `print(a, b)` with `a` empty
+# (a worker present but with no `stats`/`pool` yet — issue #609's "inspect broadcast
+# timed out" case) prints " fresh", and a plain `read -r A B <<< " fresh"` strips the
+# leading space and treats it as ONE field, silently shifting "fresh" into
+# GPU_WORKER_CONCURRENCY and leaving GPU_WORKER_FRESH empty — the wrong field held the
+# wrong value, and the failure two branches down then misreported "stale" for a case
+# that was never about age at all.
+IFS='|' read -r GPU_WORKER_CONCURRENCY GPU_WORKER_FRESH <<<"$(python3 -c '
 import json, sys, time
 data = json.loads(sys.stdin.read())
 max_age = '"$FLOWER_MAX_ENTRY_AGE"'
@@ -133,13 +140,13 @@ for name, info in data.items():
         pool = stats.get("pool", {})
         age = time.time() - float(info.get("timestamp", 0) or 0)
         fresh = "fresh" if age <= max_age else "stale"
-        print(pool.get("max-concurrency", ""), fresh)
+        print("|".join([str(pool.get("max-concurrency", "")), fresh]))
         break
 else:
-    print("", "")
+    print("|")
 ' <<<"$WORKERS_JSON")"
 
-if [[ -z "$GPU_WORKER_CONCURRENCY" ]]; then
+if [[ -z "$GPU_WORKER_CONCURRENCY" && -z "$GPU_WORKER_FRESH" ]]; then
     KNOWN_WORKERS="$(python3 -c 'import json, sys
 data = json.loads(sys.stdin.read())
 print(", ".join(sorted(data)) or "(none)")' <<<"$WORKERS_JSON" 2>/dev/null || echo "(unparseable response)")"
@@ -147,6 +154,9 @@ print(", ".join(sorted(data)) or "(none)")' <<<"$WORKERS_JSON" 2>/dev/null || ec
 Flower returned: $KNOWN_WORKERS
 Cross-check with: ./opentr.sh shell celery-worker -> celery -A app.core.celery inspect ping
 If inspect ping lists gpu-scaled@ but Flower does not, re-read issue #609."
+fi
+if [[ -n "$GPU_WORKER_FRESH" && -z "$GPU_WORKER_CONCURRENCY" ]]; then
+    fail "gpu-scaled@* is registered but reported no stats — its inspect broadcast timed out (issue #609), which is not the same as a stale entry."
 fi
 [[ "$GPU_WORKER_FRESH" == "fresh" ]] || fail \
     "gpu-scaled@* worker's Flower entry is stale (older than ${FLOWER_MAX_ENTRY_AGE}s) — Inspector.workers is never pruned, so this is a leftover cached entry, not proof the worker is alive now (issue #609)."
@@ -158,7 +168,12 @@ if [[ "$GPU_SCALE_DEFAULT_WORKER" == "1" ]]; then
     # (docker-compose.yml's celery-worker service, --hostname gpu-transcription@%h)
     # — it has never been "celery@%h"; that stale assumption made this check fail
     # unconditionally in dual-GPU mode even against a correctly running deployment.
-    read -r DEFAULT_PRESENT DEFAULT_FRESH <<<"$(python3 -c '
+    # Same IFS='|' separator as the gpu-scaled@ block above, for the same reason: a
+    # whitespace-split `read` is one empty field away from silently shifting values
+    # between GPU_WORKER_CONCURRENCY-style pairs. Both branches here always print two
+    # non-empty tokens today, but the separator choice should not depend on that staying
+    # true forever.
+    IFS='|' read -r DEFAULT_PRESENT DEFAULT_FRESH <<<"$(python3 -c '
 import json, sys, time
 data = json.loads(sys.stdin.read())
 max_age = '"$FLOWER_MAX_ENTRY_AGE"'
@@ -166,10 +181,10 @@ for name, info in data.items():
     if name.startswith("gpu-transcription@"):
         age = time.time() - float(info.get("timestamp", 0) or 0)
         fresh = "fresh" if age <= max_age else "stale"
-        print("yes", fresh)
+        print("|".join(["yes", fresh]))
         break
 else:
-    print("no", "")
+    print("|".join(["no", ""]))
 ' <<<"$WORKERS_JSON")"
     [[ "$DEFAULT_PRESENT" == "yes" ]] || fail "GPU_SCALE_DEFAULT_WORKER=1 (dual-GPU mode) but no gpu-transcription@* default worker is registered"
     [[ "$DEFAULT_FRESH" == "fresh" ]] || fail \

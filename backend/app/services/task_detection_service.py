@@ -770,15 +770,23 @@ class TaskDetectionService:
         )
 
         # Batch-fetch existence: files with LLM speaker identifications.
-        # ``suggestion_source`` is the existence proxy for "has LLM speaker ID
-        # already run on this file" — it must survive accept/reject, not just
-        # generation, or a file where the user resolved every suggestion looks
-        # never-identified and gets re-offered (and re-dispatched) the same
-        # suggestions it just rejected. Accept/reject in
-        # `api/endpoints/speakers.py` (`_apply_verification_on_display_name`,
-        # `_reject_speaker_suggestion`) deliberately leave this column set for
-        # exactly this reader; only `suggested_name`/`confidence` are cleared.
-        files_with_speaker_id = set(
+        # ``suggestion_source`` is a LEGACY / best-effort existence proxy for "has LLM
+        # speaker ID already run on this file" -- it survives accept/reject (accept/reject
+        # in `api/endpoints/speakers.py`, `_apply_verification_on_display_name` /
+        # `_reject_speaker_suggestion`, deliberately leave this column set for exactly this
+        # reader; only `suggested_name`/`confidence` are cleared), but it does NOT survive
+        # every write path: a later voice-match or clustering "skip" write can silently
+        # overwrite it with a different provenance string, and until issue #620 there was no
+        # other record. That produced a false `missing_speaker_id` and a wasted LLM
+        # re-dispatch for a file the LLM had already actually processed.
+        #
+        # The durable signal is the Task table: a completed `speaker_identification` Task
+        # row is never overwritten by anything else, unlike this column. Union the two
+        # rather than replace the legacy leg outright -- this is strictly MORE permissive
+        # than before (a file can only newly count as "has speaker ID", never newly count
+        # as missing), so it cannot cause a mass re-dispatch, and it keeps working for
+        # historical files that predate the Task-table leg ever being written.
+        files_with_speaker_id_legacy = set(
             row[0]
             for row in db.query(Speaker.media_file_id)
             .filter(
@@ -787,6 +795,17 @@ class TaskDetectionService:
             )
             .all()
         )
+        files_with_speaker_id_task = set(
+            row[0]
+            for row in db.query(Task.media_file_id)
+            .filter(
+                Task.media_file_id.in_(file_ids),
+                Task.task_type == "speaker_identification",
+                Task.status == "completed",
+            )
+            .all()
+        )
+        files_with_speaker_id = files_with_speaker_id_legacy | files_with_speaker_id_task
 
         # Batch-fetch files with successful search indexing (completed status)
         files_with_search_indexing = set(

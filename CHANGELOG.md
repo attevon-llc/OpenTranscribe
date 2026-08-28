@@ -276,6 +276,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   boto3 client (config validation, system/user-settings resolution, and the real Converse
   request shape) — **not yet verified against a live AWS Bedrock account**; that is the one
   remaining step before this can be considered fully closed.
+- **Remaining #620 adversarial-review findings (items 2-8) and issue #619** (release-rehearsal
+  harness): two rehearsal assertions bypassed `as_record` and could never fail the gate, now
+  routed through it; `test-fresh-install.sh`'s last phase had the same silent `set -e`
+  truncation bug #617/#618 fixed in `test-upgrade.sh`; the speaker-suggestion `suggestion_source`
+  clobber guard is now applied at the accidental-clobber writer site; #617's post-fix wait didn't
+  close the LLM-suggestion-write race, and #618's B-4 rescoping could vacuously pass with zero
+  running containers — both fixed; the MinIO KMS master key is now `chmod 600` in `.env`; the
+  speaker-profile activation endpoint's post-`flush()`/`commit()` region is now explicit;
+  `restore_database`'s `flock` gained an availability guard; and a #619 media_file/
+  backup-content-diff async-write race in the rehearsal harness was closed. Plus a LOW-priority
+  bundle: `GladiaProvider` now detects an unfollowed 3xx redirect at upload/job-submission/poll
+  instead of letting `raise_for_status()` pass it through as success (was spinning the ASR poll
+  loop for the full 7200s timeout on a redirect); `gpu-scale-smoke.sh`'s Flower worker-stats
+  parser switched from a whitespace-split `read` to an explicit `|`-separated one, with a third
+  failure branch distinguishing "registered but no stats" from a stale entry; two doc-drift fixes
+  (`speaker_labels.py`, `test_file_mutation_permissions.py`) and one documentation-only
+  clarification of `llm_settings.py`'s deliberate per-owner `is_active` scoping.
+- **`test_active_neural_model_is_deployed` (search-quality suite) asserted OpenSearch neural-model
+  activation exactly once** (#612), racing `app.main.initialize_neural_search`'s 15s-delayed
+  background bootstrap on a brand-new `--fresh` deployment. Now polls for up to 90s before
+  failing. The issue's second reported failure (a semantic query returning no results) is a
+  corpus-content question independent of this race and remains open.
+- **`opentranscribe.sh` had no way to select the scheduled-backup overlay
+  (`docker-compose.backup.yml`) on a production install** (#616) — `--with-backup` is an
+  `opentr.sh`-only dev flag, and the production manager script's `get_compose_files()` never
+  considered the overlay at all. Fixed with a new `BACKUP_OVERLAY_ENABLED=true` in `.env`,
+  deliberately a DEDICATED toggle rather than keying selection off `BACKUP_HOST_PATH` being
+  non-empty — `.env.example` ships that var SET (`./backups`), so a non-empty check would have
+  auto-enabled the overlay for every existing install on its next update, and the overlay also
+  sets `path.repo` on the OpenSearch service, so that would force-recreate OpenSearch on every
+  such install. `.env.example` ships `BACKUP_OVERLAY_ENABLED` commented out, and
+  `docker-compose.backup.yml` is now listed in `release-manifest.txt` (`optional`) so a
+  self-hosted install actually downloads it.
 - **The release rehearsal's rollback phase could crash outright, and — once it stopped
   crashing — still fail for two further reasons** (#618). The same unguarded-command-under-
   `set -e` class of bug as #617, this time a bare `curl` against the frontend inside an

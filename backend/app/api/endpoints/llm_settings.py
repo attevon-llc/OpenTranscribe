@@ -89,6 +89,19 @@ def _set_active_configuration(db: Session, user_id: int, config_id: int) -> None
     active config (creation's first-config auto-activate, this endpoint's own
     `/set-active`, and delete's auto-promote-remaining) funnels through this one function,
     so fixing it here closes every entry point at once.
+
+    Both the bulk deactivate and the target-activate below are scoped to
+    ``UserLLMSettings.user_id == user_id`` -- the CALLING user's own rows, never the
+    config's actual owner. ``UserSetting.active_llm_config_id`` (the real selector) is
+    updated for `user_id` regardless of who owns `config_id`, so activating a config
+    someone else shared with you still correctly selects it for your own use -- but the
+    owner-scoped queries here find no matching row for it, so their `is_active` column is
+    never touched. This is deliberate, not a gap: `is_active` is a per-owner display flag
+    ("is this MY config"), and flipping another user's row would misreport which of
+    *their* own configs is active in their own UI. Treat `active_llm_config_id` as the
+    authority for "what am I using" and `is_active` as "what does the owner see
+    highlighted" -- the two questions have different answers for a shared config in use
+    by a non-owner (issue #620 item 8d).
     """
     # Check if setting already exists
     existing_setting = (
@@ -640,7 +653,15 @@ def set_active_configuration(
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
-    Set the active LLM configuration for the user
+    Set the active LLM configuration for the user.
+
+    ``configuration_id`` may name a config owned by someone else, so long as it is
+    shared (the `is_shared` check below) -- selecting it here only changes what THIS
+    user's turns use (`UserSetting.active_llm_config_id`, see `_set_active_configuration`'s
+    own docstring). The shared config's `is_active` column, which the owner's own UI
+    reads, is deliberately left untouched: it belongs to the owner's row, not the
+    activating user's, and this endpoint's `_set_active_configuration` call is scoped to
+    the CALLING user's own configs only (issue #620 item 8d).
     """
     # Verify the configuration exists and belongs to the user (or is shared) using UUID
     user_config = get_llm_config_by_uuid(db, request.configuration_id)

@@ -34,7 +34,7 @@ workers that silently re-download every file. See
 | **Fresh / isolated** | `./opentr.sh start dev --fresh <name>` | Throwaway stack, own project + volumes, NAS overlay never loaded. See [Fresh Deployments](./fresh-deployments.md). |
 | **Monitoring** | `./opentr.sh start dev --with-monitoring` | Prometheus (:5186) + Grafana (:5185). See [Monitoring](./monitoring.md). |
 | **Watch sources** | `./opentr.sh start dev --with-watch` | Mounts `WATCH_HOST_PATH` for auto-import. |
-| **In-app backups** | `./opentr.sh start dev --with-backup` | Mounts `BACKUP_HOST_PATH` for scheduled backups. See [Backup & Restore](./backup-restore.md). |
+| **In-app backups** | `./opentr.sh start dev --with-backup` | Mounts `BACKUP_HOST_PATH` for scheduled backups. See [Backup & Restore](./backup-restore.md). On a production install, set `BACKUP_OVERLAY_ENABLED=true` in `.env` instead (`./opentranscribe.sh` has no `--with-*` flags) — commented out by default since it also recreates the OpenSearch container. |
 | **LDAP test IdP** | `./opentr.sh start dev --with-ldap-test` | lldap at `localhost:3890`, UI `:17170`. |
 | **Keycloak test IdP** | `./opentr.sh start dev --with-keycloak-test` | Keycloak at `localhost:8180`. |
 | **SMB test share** | `./opentr.sh start dev --with-smb-test` | Samba share for watch-source testing. |

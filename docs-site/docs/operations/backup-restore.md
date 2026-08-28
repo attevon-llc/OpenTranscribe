@@ -123,6 +123,12 @@ Start the stack with the backup overlay so a destination is mounted:
 ./opentr.sh start dev --with-backup
 ```
 
+On a **production install** (`./opentranscribe.sh`, which has no `--with-*` flags), set
+`BACKUP_OVERLAY_ENABLED=true` in `.env` instead — it selects the same
+`docker-compose.backup.yml` overlay. Left commented out by default, since the overlay also
+sets `path.repo` on the OpenSearch service and so recreates that container on the next
+`start`/`update`.
+
 Then, in the admin UI:
 
 - **Enable** scheduled backups and set a **cron schedule** (default `0 3 * * *` — 03:00 daily, UTC).
@@ -187,6 +193,9 @@ allow-listed:
 ./opentr.sh start dev --with-backup
 ```
 
+On a production install, `BACKUP_OVERLAY_ENABLED=true` in `.env` selects the same overlay
+(see above).
+
 If you enable "Include OpenSearch" **without** the overlay, the feature degrades
 gracefully: the database dump still succeeds and the OpenSearch status is recorded
 as `unsupported` with a message that `path.repo` is not configured.
@@ -249,7 +258,8 @@ How it works:
 - **Separate destination** from the database dumps (a media mirror is large and
   often lives on different storage):
   - **Local folder** — start the stack with the backup overlay
-    (`./opentr.sh start dev --with-backup`), which mounts
+    (`./opentr.sh start dev --with-backup`, or `BACKUP_OVERLAY_ENABLED=true` in `.env` on a
+    production install), which mounts
     `BACKUP_MIRROR_HOST_PATH` (default `./media-mirror`) to `/media-mirror` in the
     backend + download-worker containers. Point it at a NAS mount, external drive,
     or any second disk.

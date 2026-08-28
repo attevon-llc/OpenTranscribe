@@ -38,11 +38,6 @@ EXEMPT: dict[str, str] = {
         "docker-compose.backup.yml binds live host directories, same as watch, "
         "and likewise declares no container_name or ports."
     ),
-    "WITH_PKI_FLAG": (
-        "docker-compose.pki.yml is a prod/nginx overlay that layers certificates "
-        "onto existing services rather than adding its own; the compose project "
-        "name already namespaces it."
-    ),
 }
 
 
@@ -134,3 +129,114 @@ def test_every_exemption_names_a_real_flag_and_carries_a_reason(flag, source):
     """A stale exemption is worse than none: it hides a flag nobody isolated."""
     assert flag in _with_flags(source), f"{flag} is exempt but no longer exists"
     assert len(EXEMPT[flag]) > 40, f"{flag}'s exemption needs a written reason"
+
+
+def _overlay_files_for_flag(source: str, flag: str) -> set[str]:
+    """Compose overlay filenames the flag's OWN dispatch block references.
+
+    Indentation-aware rather than windowed: a fixed line-count window picked
+    up a NEIGHBOURING flag's overlay once two dispatch blocks landed close
+    together (``WITH_WATCH_FLAG``'s window reached into ``WITH_SMB_TEST_FLAG``'s
+    block and reported its port-publishing overlay as WATCH's — a false
+    positive that would have made this exact safeguard un-mergeable). The
+    opentr.sh dispatch blocks nest with 2-space indents, so the flag's own
+    block ends at the first later line matching its own indentation + ``fi``;
+    anything nested deeper (the ``if [ -f ... ]`` existence check inside) is
+    skipped rather than treated as the close.
+    """
+    lines = source.splitlines()
+    marker = f'if [ -n "${flag}" ]; then'
+    files: set[str] = set()
+    for i, line in enumerate(lines):
+        if marker not in line:
+            continue
+        indent = line[: len(line) - len(line.lstrip(" "))]
+        close = f"{indent}fi"
+        j = i + 1
+        while j < len(lines) and lines[j] != close:
+            j += 1
+        block = "\n".join(lines[i:j])
+        files.update(re.findall(r"-f (docker-compose\.[\w.-]+\.yml)", block))
+    return files
+
+
+def _isolation_contract_violation(text: str) -> str | None:
+    """None if a compose overlay's text declares neither ``ports:`` nor
+    ``container_name:`` for any service (i.e. it is safe to exempt from
+    ``--fresh`` isolation); otherwise the property that disqualifies it.
+    """
+    if re.search(r"^\s*ports:\s*$", text, re.MULTILINE):
+        return "ports:"
+    if re.search(r"^\s*container_name:", text, re.MULTILINE):
+        return "container_name:"
+    return None
+
+
+@pytest.mark.parametrize("flag", sorted(EXEMPT))
+def test_every_exemption_reason_is_factually_true(flag, source):
+    """Guards the exact bug this file exists to catch, one level deeper.
+
+    ``--with-pki``'s exemption *said* "layers onto existing services... rather
+    than adding its own" — true of ``container_name``, false of ``ports:``
+    (``docker-compose.pki.yml`` publishes ``PKI_HTTPS_PORT``). Nothing checked
+    the prose against the file it described, so the wrong exemption sat there
+    until read by hand. This reads the actual overlay(s) each exempt flag
+    loads and asserts neither property appears — the two an exemption's
+    reason is implicitly claiming absent, and the two ``--fresh`` isolation
+    (FRESH_*_PORT_VARS / FRESH_*_SERVICES) exists to re-pin.
+    """
+    repo_root = OPENTR.parent
+    overlay_files = _overlay_files_for_flag(source, flag)
+    assert overlay_files, (
+        f"{flag}'s exemption names no compose overlay in its dispatch block to "
+        f"verify the claim against"
+    )
+    for filename in sorted(overlay_files):
+        path = repo_root / filename
+        assert path.is_file(), f"{flag} references {filename}, which does not exist"
+        violation = _isolation_contract_violation(path.read_text(encoding="utf-8"))
+        assert violation is None, (
+            f"{filename} (exempt via {flag}) declares '{violation}' — it needs real "
+            f"--fresh isolation (FRESH_*_PORT_VARS/_port_vars+= for ports, "
+            f"FRESH_*_SERVICES/_aux_services+= for container_name), not an exemption. "
+            f"This is exactly the --with-pki regression this test suite exists to catch."
+        )
+
+
+def test_the_exemption_fact_checker_would_notice_a_false_claim():
+    """Must-fire control for ``_isolation_contract_violation``.
+
+    Reproduces the actual #5 shape: an exemption whose named overlay DOES
+    publish a port (or hard-codes a container_name). Exercises the same
+    helper the real test calls, so this cannot pass on logic the real test
+    does not use.
+    """
+    assert _isolation_contract_violation("services:\n  a:\n    ports:\n      - 1:1\n") == "ports:"
+    assert (
+        _isolation_contract_violation("services:\n  a:\n    container_name: x\n")
+        == "container_name:"
+    )
+    assert _isolation_contract_violation("services:\n  a:\n    image: alpine\n") is None
+
+
+def test_the_overlay_extractor_finds_the_flag_own_dispatch_reference():
+    """Must-fire control for ``_overlay_files_for_flag``.
+
+    Includes the actual regression shape: a NESTED ``if``/``fi`` (the
+    existence check every real dispatch block has) between the flag's own
+    ``if`` and its close, plus a second flag's block immediately afterward —
+    the extractor must stop at its own close and not bleed into the next
+    flag's overlay.
+    """
+    fake_source = (
+        'if [ -n "$WITH_FAKE_FLAG" ]; then\n'
+        '  if [ -f "docker-compose.fake.yml" ]; then\n'
+        "    -f docker-compose.fake.yml\n"
+        "  fi\n"
+        "fi\n"
+        'if [ -n "$WITH_OTHER_FLAG" ]; then\n'
+        "  -f docker-compose.other.yml\n"
+        "fi"
+    )
+    assert _overlay_files_for_flag(fake_source, "WITH_FAKE_FLAG") == {"docker-compose.fake.yml"}
+    assert _overlay_files_for_flag(fake_source, "WITH_OTHER_FLAG") == {"docker-compose.other.yml"}

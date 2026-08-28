@@ -266,8 +266,15 @@ this file is for.
 - **Release gates** — `check-schema-drift.py` (model-vs-schema, report-first),
   `validate-deployments.sh` (~20 compose permutations in ~15 s),
   `release/check-version-consistency.py` (the six version sources + Alembic single head).
-- **PKI** — `pki/`: `setup-test-pki.sh` (generates the gitignored `test-certs/`), `start-pki-prod.sh`,
-  `test-pki-auth.sh`.
+- **PKI** — `pki/`: `setup-test-pki.sh` (generates the gitignored `test-certs/` CA + client certs;
+  regenerates every client cert unconditionally each run, so callers other than
+  `generate-test-env.sh` should check for existing certs first), `generate-test-env.sh` (emits
+  `test-certs/pki-test.env` + `test-certs/pki-test.compose.yml` — the mechanism
+  `./opentr.sh --with-pki` uses to configure PKI without ever touching `.env`; idempotent unless
+  `--force-certs`), `test-pki-auth.sh` (curl-only smoke test, no browser).
+  `start-pki-prod.sh` was deleted — superseded by `./opentr.sh start prod --build --with-pki`,
+  which (unlike the old script) includes `docker-compose.local.yml` so it serves the locally
+  built image rather than stale Docker Hub tags, and never greps `.env`.
 - `common.sh` is sourced **only by `opentr.sh`** (docker checks, model-cache chown, OpenSearch model
   bootstrap). `offline-common.sh` is sourced only by the two offline/Windows builders.
 - `common.sh`'s **database restore helpers** (issues #599/#600) back `opentr.sh restore`'s two

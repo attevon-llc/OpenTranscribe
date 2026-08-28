@@ -40,6 +40,11 @@ fi
 # which aborts under `set -u` in any checkout whose .env omits it — i.e. every fresh
 # worktree. Empty means "no specific device", which that helper already handles.
 : "${GPU_DEVICE_ID:=}"
+# --with-pki host ports (docker-compose.pki.yml / docker-compose.pki-dev.yml).
+# Both are already guarded with `:-` at every read site, but listed here too
+# per the contract this block documents.
+: "${PKI_HTTPS_PORT:=}"
+: "${PKI_HTTP_PORT:=}"
 # Snapshot of the .env value, taken before any `--gpu-device` override replaces
 # it. The containers read GPU_DEVICE_ID from `env_file: .env` (not from this
 # shell), so the override has to be able to say which value they will still see.
@@ -132,7 +137,10 @@ show_help() {
   echo "  --dry-run            - Print the compose files + command that WOULD run; start nothing"
   echo "  --lite               - Cloud-only ASR mode (no GPU required)"
   echo "  --cpu                - CPU-only mode (local transcription, no GPU overlay)"
-  echo "  --with-pki           - Enable PKI certificate authentication (PROD MODE ONLY - requires nginx)"
+  echo "  --with-pki           - Enable PKI certificate authentication (mTLS). Works in dev (via"
+  echo "                         docker-compose.pki-dev.yml, a built nginx in front of the"
+  echo "                         bind-mounted dev backend) and prod. Generates its own test-env"
+  echo "                         fragment (scripts/pki/generate-test-env.sh) — never touches .env."
   echo "  --with-ldap-test     - Start LDAP test container (dev or prod; localhost:3890, UI :17170)"
   echo "  --with-mock-llm      - Start mock LLM provider (localhost:5199) so chat/AI features"
   echo "                         work without a GPU or API key. Models: mock-gpt, mock-echo,"
@@ -231,6 +239,7 @@ show_help() {
   echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
   echo "  ./opentr.sh start prod --build               # Production with local build (test before push)"
   echo "  ./opentr.sh start prod --build --with-pki    # Production with PKI (requires nginx)"
+  echo "  ./opentr.sh start dev --with-pki             # Dev with PKI (docker-compose.pki-dev.yml)"
   echo "  ./opentr.sh reset dev                        # Reset development environment"
   echo "  ./opentr.sh reset dev --lite                 # Reset in cloud-only ASR mode"
   echo "  ./opentr.sh logs backend                     # View backend logs"
@@ -482,6 +491,64 @@ add_nas_overlay() {
   echo "   MinIO media:  $NAS_PATH"
   echo "   PostgreSQL:   $PG_PATH"
   echo "   OpenSearch:   $OS_PATH"
+}
+
+# Append the PKI/mTLS overlay to $COMPOSE_FILES if --with-pki was passed.
+# Replaces two ~25-line blocks that used to be duplicated verbatim in
+# start_app() and reset() (issue: PKI test-env injection design doc).
+#
+# Dev vs prod: docker-compose.pki-dev.yml swaps in a Dockerfile.prod nginx in
+# front of the bind-mounted dev backend (real mTLS, no image rebuild needed for
+# a backend fix); docker-compose.pki.yml is the prod/nginx overlay. Either way
+# docker-compose.override.yml / docker-compose.prod.yml must already be in
+# $COMPOSE_FILES — start_app()/reset() add PKI after that base chain.
+#
+# Certificate generation and the test-env fragment are delegated to
+# scripts/pki/generate-test-env.sh, which is the ONLY thing that decides
+# whether certs need (re)issuing — see that script's header. This function
+# never opens .env; PKI_HTTPS_PORT/PKI_HTTP_PORT are read from whatever the
+# shell already has (a fresh deployment will have offset them beforehand).
+add_pki_overlay() {
+  if [ -z "$WITH_PKI_FLAG" ]; then
+    return
+  fi
+
+  local pki_compose_file
+  if [ "$ENVIRONMENT" = "dev" ]; then
+    pki_compose_file="docker-compose.pki-dev.yml"
+  else
+    pki_compose_file="docker-compose.pki.yml"
+  fi
+
+  if [ ! -f "$pki_compose_file" ]; then
+    echo "⚠️  --with-pki specified but $pki_compose_file not found"
+    return
+  fi
+
+  if ! ./scripts/pki/generate-test-env.sh --quiet \
+    --https-port "${PKI_HTTPS_PORT:-5182}" --http-port "${PKI_HTTP_PORT:-5187}"; then
+    echo "❌ Failed to generate PKI test env (scripts/pki/generate-test-env.sh)"
+    exit 1
+  fi
+
+  # Source the fragment AFTER .env (sourced at the top of this script), same
+  # ordering rule apply_gpu_device_override() follows for GPU_DEVICE_ID:
+  # PKI_HTTP_PORT is a live line in .env.example, so a pre-export would
+  # otherwise lose to it. .env itself is never opened by this function or by
+  # generate-test-env.sh.
+  set -a
+  # shellcheck source=scripts/pki/test-certs/pki-test.env
+  source scripts/pki/test-certs/pki-test.env
+  set +a
+
+  COMPOSE_FILES="$COMPOSE_FILES -f $pki_compose_file -f scripts/pki/test-certs/pki-test.compose.yml"
+  echo "🔐 Adding PKI authentication overlay ($pki_compose_file + generated test-env fragment)"
+  echo "   Access URL: ${PKI_E2E_URL:-https://localhost:${PKI_HTTPS_PORT:-5182}}"
+  echo "   Import client certificate from: scripts/pki/test-certs/clients/"
+  if [ "$ENVIRONMENT" = "dev" ]; then
+    echo "   ℹ️  Dev PKI frontend is a BUILT image — a *frontend* change still needs"
+    echo "      ./opentr.sh rebuild-frontend. Only the backend hot-reloads."
+  fi
 }
 
 #######################
@@ -792,6 +859,15 @@ FRESH_MONITORING_PORT_VARS=(
 FRESH_LLM_TEST_PORT_VARS=(
   "LLM_TEST_PORT=5195"          # vLLM   → :8000
   "LLM_TEST_OLLAMA_PORT=5196"   # ollama → :11434
+)
+# docker-compose.pki-dev.yml publishes BOTH — declares no container_name (backend
+# and frontend are already re-pinned by FRESH_NAMED_SERVICES), but DOES publish
+# ports, so the --with-pki exemption in
+# backend/tests/unit/test_opentr_fresh_aux_isolation.py was wrong (issue: PKI
+# test-env injection design doc, finding #5) and is isolated here instead.
+FRESH_PKI_PORT_VARS=(
+  "PKI_HTTPS_PORT=5182"         # PKI nginx mTLS listener  → :8443
+  "PKI_HTTP_PORT=5187"          # PKI nginx plain listener → :8080
 )
 
 # Resolve and export the host ports a fresh stack publishes, offset by $1.
@@ -1412,6 +1488,10 @@ start_app() {
       _aux_services+=("${FRESH_LLM_TEST_SERVICES[@]}")
       _aux_files+=("docker-compose.llm-test.yml")
     fi
+    if [ -n "$WITH_PKI_FLAG" ]; then
+      _port_vars+=("${FRESH_PKI_PORT_VARS[@]}")
+      _aux_files+=("docker-compose.pki-dev.yml" "scripts/pki/test-certs/pki-test.compose.yml")
+    fi
     fresh_apply_port_offset "$_offset" "${_port_vars[@]}"
 
     # Refuse to start when a port this stack needs is already bound. At offset 0
@@ -1483,18 +1563,6 @@ start_app() {
     if [ -n "$NO_BINDMOUNT_FLAG" ]; then
       echo "⚠️  --no-bindmount is only honored in fresh mode (--fresh); ignoring."
     fi
-  fi
-
-  # PKI requires production mode (nginx with mTLS)
-  if [ -n "$WITH_PKI_FLAG" ] && [ "$ENVIRONMENT" = "dev" ]; then
-    echo "❌ Error: PKI authentication requires production mode (nginx with mTLS)"
-    echo "   Use: ./opentr.sh start prod --build --with-pki"
-    echo ""
-    echo "   PKI cannot work in dev mode because:"
-    echo "   - Dev mode uses Vite dev server (no nginx)"
-    echo "   - PKI requires nginx to verify client certificates (mTLS)"
-    echo "   - Certificate headers must be set by nginx, not the browser"
-    exit 1
   fi
 
   if [ -n "$GPU_SCALE_FLAG" ] && [ -n "$GPU_SPLIT_FLAG" ]; then
@@ -1710,40 +1778,10 @@ start_app() {
     echo "ℹ️  NGINX_SERVER_NAME is set but skipped in dev mode (Vite serves frontend directly)"
   fi
 
-  # Add PKI overlay if requested
-  if [ -n "$WITH_PKI_FLAG" ]; then
-    if [ -f "docker-compose.pki.yml" ]; then
-      # Check for PKI certificates
-      if [ ! -f "scripts/pki/test-certs/ca/ca.crt" ]; then
-        echo "⚠️  PKI certificates not found. Generating test certificates..."
-        ./scripts/pki/setup-test-pki.sh || {
-          echo "❌ Failed to generate PKI certificates"
-          exit 1
-        }
-      fi
-
-      # Check for server certificate
-      if [ ! -f "scripts/pki/test-certs/nginx/server.crt" ] || [ ! -f "scripts/pki/test-certs/nginx/server.key" ]; then
-        echo "⚠️  HTTPS server certificate not found. Generating self-signed certificate..."
-        cd scripts/pki/test-certs/nginx || exit 1
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-          -keyout server.key -out server.crt \
-          -subj "/CN=${PKI_SERVER_NAME:-localhost}" \
-          -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" || {
-          echo "❌ Failed to generate server certificate"
-          exit 1
-        }
-        cd - > /dev/null || exit 1
-      fi
-
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.pki.yml"
-      echo "🔐 Adding PKI authentication overlay (docker-compose.pki.yml)"
-      echo "   Access URL: https://localhost:${PKI_HTTPS_PORT:-5182}"
-      echo "   Import client certificate from: scripts/pki/test-certs/clients/"
-    else
-      echo "⚠️  --with-pki specified but docker-compose.pki.yml not found"
-    fi
-  fi
+  # Add PKI overlay if requested (dev routes to docker-compose.pki-dev.yml,
+  # prod to docker-compose.pki.yml; cert generation + the test-env fragment
+  # are handled inside add_pki_overlay -> scripts/pki/generate-test-env.sh)
+  add_pki_overlay
 
   # Add mock LLM provider if requested
   if [ -n "$WITH_MOCK_LLM_FLAG" ]; then
@@ -2240,17 +2278,6 @@ reset_and_init() {
     esac
   done
 
-  # PKI requires production mode (nginx with mTLS)
-  if [ -n "$WITH_PKI_FLAG" ] && [ "$ENVIRONMENT" = "dev" ]; then
-    echo "❌ Error: PKI authentication requires production mode (nginx with mTLS)"
-    echo "   Use: ./opentr.sh reset prod --build --with-pki"
-    echo ""
-    echo "   PKI cannot work in dev mode because:"
-    echo "   - Dev mode uses Vite dev server (no nginx)"
-    echo "   - PKI requires nginx to verify client certificates (mTLS)"
-    echo "   - Certificate headers must be set by nginx, not the browser"
-    exit 1
-  fi
 
   if [ -n "$GPU_SCALE_FLAG" ] && [ -n "$GPU_SPLIT_FLAG" ]; then
     export COMPOSE_PROFILES="gpu-scale,gpu-split"
@@ -2435,40 +2462,10 @@ reset_and_init() {
     echo "ℹ️  NGINX_SERVER_NAME is set but skipped in dev mode (Vite serves frontend directly)"
   fi
 
-  # Add PKI overlay if requested
-  if [ -n "$WITH_PKI_FLAG" ]; then
-    if [ -f "docker-compose.pki.yml" ]; then
-      # Check for PKI certificates
-      if [ ! -f "scripts/pki/test-certs/ca/ca.crt" ]; then
-        echo "⚠️  PKI certificates not found. Generating test certificates..."
-        ./scripts/pki/setup-test-pki.sh || {
-          echo "❌ Failed to generate PKI certificates"
-          exit 1
-        }
-      fi
-
-      # Check for server certificate
-      if [ ! -f "scripts/pki/test-certs/nginx/server.crt" ] || [ ! -f "scripts/pki/test-certs/nginx/server.key" ]; then
-        echo "⚠️  HTTPS server certificate not found. Generating self-signed certificate..."
-        cd scripts/pki/test-certs/nginx || exit 1
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-          -keyout server.key -out server.crt \
-          -subj "/CN=${PKI_SERVER_NAME:-localhost}" \
-          -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" || {
-          echo "❌ Failed to generate server certificate"
-          exit 1
-        }
-        cd - > /dev/null || exit 1
-      fi
-
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.pki.yml"
-      echo "🔐 Adding PKI authentication overlay (docker-compose.pki.yml)"
-      echo "   Access URL: https://localhost:${PKI_HTTPS_PORT:-5182}"
-      echo "   Import client certificate from: scripts/pki/test-certs/clients/"
-    else
-      echo "⚠️  --with-pki specified but docker-compose.pki.yml not found"
-    fi
-  fi
+  # Add PKI overlay if requested (dev routes to docker-compose.pki-dev.yml,
+  # prod to docker-compose.pki.yml; cert generation + the test-env fragment
+  # are handled inside add_pki_overlay -> scripts/pki/generate-test-env.sh)
+  add_pki_overlay
 
   # Add mock LLM provider if requested
   if [ -n "$WITH_MOCK_LLM_FLAG" ]; then

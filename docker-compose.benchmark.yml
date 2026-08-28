@@ -4,7 +4,9 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     environment:
       - OPENTRANSCRIBE_IN_CONTAINER=1
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}

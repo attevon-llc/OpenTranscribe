@@ -11,7 +11,9 @@ services:
     container_name: opentranscribe-postgres
     image: postgres:17.5-alpine
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Performance tuning for transcription workloads (2500+ files, 1M+ segments)
@@ -48,7 +50,9 @@ services:
     container_name: opentranscribe-minio
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     volumes:
@@ -78,7 +82,9 @@ services:
     container_name: opentranscribe-redis
     image: redis:8.2.2-alpine3.22
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     ports:
@@ -200,7 +206,9 @@ services:
   backend:
     container_name: opentranscribe-backend
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Backend handles API requests only - except the search embedding model
@@ -279,7 +287,9 @@ services:
   celery-worker:
     container_name: opentranscribe-celery-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q gpu --pool=${GPU_WORKER_POOL:-threads} --concurrency=${GPU_CONCURRENT_REQUESTS:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-transcription@%h -E
@@ -339,7 +349,9 @@ services:
   celery-download-worker:
     container_name: opentranscribe-celery-download-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q download --concurrency=${DOWNLOAD_CONCURRENCY:-5} --max-tasks-per-child=${DOWNLOAD_MAX_TASKS:-10} --hostname media-downloader@%h -E
@@ -379,7 +391,9 @@ services:
   celery-cpu-worker:
     container_name: opentranscribe-celery-cpu-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Compute-bound queues only. cloud-asr runs on its own container
@@ -452,7 +466,9 @@ services:
   celery-redaction:
     container_name: opentranscribe-celery-redaction
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: nice -n ${REDACTION_NICE:-10} celery -A app.core.celery worker --loglevel=info -Q redaction --pool=${REDACTION_WORKER_POOL:-threads} --concurrency=${REDACTION_CONCURRENCY:-2} --max-tasks-per-child=${REDACTION_MAX_TASKS:-200} --hostname redaction@%h -E
@@ -509,7 +525,9 @@ services:
     # CPU worker. Phase 2 of the timing audit plan — item 17.
     container_name: opentranscribe-celery-cloud-asr-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q cloud-asr --concurrency=${CLOUD_ASR_CONCURRENCY:-16} --max-tasks-per-child=50 --hostname cloud-asr@%h -E
@@ -549,7 +567,9 @@ services:
   celery-nlp-worker:
     container_name: opentranscribe-celery-nlp-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q nlp,celery --concurrency=${NLP_CONCURRENCY:-4} --max-tasks-per-child=${NLP_MAX_TASKS:-50} --hostname ai-nlp@%h -E
@@ -590,7 +610,9 @@ services:
   celery-embedding-worker:
     container_name: opentranscribe-celery-embedding-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Dedicated embedding worker: concurrency=1 keeps one model loaded in memory.
@@ -644,7 +666,9 @@ services:
   celery-beat:
     container_name: opentranscribe-celery-beat
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery beat --loglevel=info
@@ -706,7 +730,9 @@ services:
     profiles:
       - gpu-split
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q gpu-transcribe --pool=${GPU_WORKER_POOL:-threads} --concurrency=${GPU_CONCURRENT_REQUESTS:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-transcribe@%h -E
@@ -764,7 +790,9 @@ services:
     profiles:
       - gpu-split
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q gpu-diarize --pool=${GPU_WORKER_POOL:-threads} --concurrency=${GPU_CONCURRENT_REQUESTS:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-diarize@%h -E
@@ -827,7 +855,9 @@ services:
       - gpu-scale  # Only activated with --gpu-scale flag
     scale: 0  # Disabled by default, gpu-scale.yml sets scale: 1
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     environment:
@@ -867,7 +897,9 @@ services:
   frontend:
     container_name: opentranscribe-frontend
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Note: ports, healthcheck, and NODE_ENV defined in override files (dev vs prod)
@@ -878,7 +910,9 @@ services:
   flower:
     container_name: opentranscribe-flower
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # ⚠️ issue #609: flower 2.1.0's /api/workers is a ONE-SHOT startup snapshot,

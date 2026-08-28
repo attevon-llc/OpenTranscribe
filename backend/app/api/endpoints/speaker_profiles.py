@@ -364,20 +364,40 @@ def assign_speaker_to_profile(
             int(speaker_id), int(profile_id), confidence
         )
 
-        # Update collections in OpenSearch
-        # For now, we'll use a default collection (could be expanded)
-        update_speaker_collections(str(speaker.uuid), int(profile_id), str(profile.uuid), [])
-
-        db.commit()
-
-        return {
-            "speaker_id": str(speaker.uuid),
-            "profile_id": str(profile.uuid),
-            "profile_name": profile.name,
-            "confidence": confidence,
-            "verified": updated_speaker.verified,
-            "status": "assigned",
-        }
+        # ─── POST-COMMIT REGION ───────────────────────────────────────────────
+        # assign_speaker_to_profile commits (72d34861: the rename tracker must only
+        # reach the chunk plane after the DB write is durable). From here on the
+        # except block's `db.rollback()`-adjacent handling below CANNOT undo the
+        # assignment, so nothing in this region may raise a 500 that tells the
+        # client it did not happen. update_speaker_collections is itself fail-open
+        # (it logs and returns on any OpenSearch error), so the only way to raise
+        # here is a DB read for an expired ORM attribute — which is exactly the
+        # case this guard covers (issue #620 item 8).
+        try:
+            speaker_uuid_str = str(speaker.uuid)
+            profile_uuid_str = str(profile.uuid)
+            response: dict[str, Any] = {
+                "speaker_id": speaker_uuid_str,
+                "profile_id": profile_uuid_str,
+                "profile_name": profile.name,
+                "confidence": confidence,
+                "verified": bool(updated_speaker.verified),
+                "status": "assigned",
+            }
+            # Update collections in OpenSearch
+            # For now, we'll use a default collection (could be expanded)
+            update_speaker_collections(speaker_uuid_str, int(profile_id), profile_uuid_str, [])
+        except Exception:
+            logger.exception(
+                "Speaker %s was assigned to profile %s and the write is COMMITTED, but "
+                "building the response / updating the OpenSearch speaker doc failed. "
+                "Reporting success: the durable state is correct; re-run a speaker "
+                "reindex if the search plane looks stale.",
+                speaker_id,
+                profile_id,
+            )
+            return {"status": "assigned", "profile_id": str(profile_uuid)}
+        return response
 
     except HTTPException:
         raise

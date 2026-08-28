@@ -634,3 +634,132 @@ def test_backups_dir_ordering_detector_fires_when_reversed() -> None:
     mkdir_idx = first_line_index(reversed_body, "mkdir -p ./backups")
     gpg_temp_idx = first_line_index(reversed_body, "mktemp ./backups/.restore_XXXXXX")
     assert not (mkdir_idx < gpg_temp_idx), "fixture is wrong: this must be the REVERSED order"
+
+
+# ---------------------------------------------------------------------------------------------
+# 12. flock's per-module-lock guard (issue #620 item 7): macOS ships no util-linux `flock`,
+#     so `flock -n "$restore_lock_fd"` returned exit 127 (command not found) there — taken by
+#     `if ! flock -n ...` as "lock held by someone else", so EVERY restore on that platform
+#     aborted with a message blaming a concurrent restore that did not exist. The fix
+#     WARNS AND CONTINUES with serialisation disabled rather than failing closed (explicit
+#     product decision — a --yes-confirmed restore should still be able to run on a platform
+#     that just lacks flock, not refuse outright).
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_flock_availability_is_checked_before_first_use() -> None:
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
+    guard_idx = first_line_index(body, "command -v flock")
+    first_flock_idx = first_line_index(body, "flock -n")
+    assert guard_idx != -1, "expected a `command -v flock` availability check"
+    assert first_flock_idx != -1, "expected a `flock -n` acquisition call"
+    assert guard_idx < first_flock_idx, (
+        "the flock availability check must precede the first `flock -n` call — a host "
+        "without flock (exit 127) would otherwise be misread as "
+        f"'lock held by another restore' (guard at line {guard_idx}, first use at "
+        f"line {first_flock_idx})"
+    )
+
+
+@pytest.mark.unit
+def test_flock_unavailable_warns_and_continues_rather_than_aborting() -> None:
+    """Escalation #2 (approved): warn-and-continue, NOT fail-closed, when flock is missing.
+
+    The `else` arm of the `command -v flock` check must not itself call `exit` — that
+    would turn "this host has no flock" into "no restore can ever run on this host",
+    which is worse than the confusing-but-survivable bug it replaces.
+    """
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
+    match = re.search(
+        r"if command -v flock[^\n]*\n(?P<if_arm>.*?)\n\s*else\n(?P<else_arm>.*?)\n\s*fi\n",
+        body,
+        flags=re.DOTALL,
+    )
+    assert match, "expected an if/else around the flock availability check"
+    else_arm = match.group("else_arm")
+    assert "exit" not in else_arm, (
+        f"the flock-unavailable branch calls exit -- it must warn and continue instead "
+        f"(issue #620 escalation #2): {else_arm!r}"
+    )
+    assert "flock" in else_arm.lower() or "serialisation" in else_arm.lower(), (
+        "expected the flock-unavailable branch to explain what is disabled"
+    )
+
+
+@pytest.mark.unit
+def test_lock_release_and_fd_close_are_guarded_against_an_empty_fd() -> None:
+    """When flock was unavailable, restore_lock_fd is "" -- releasing/closing it
+    unconditionally would run `flock -u ""` / `exec {}>&-`, either a no-op error or (for
+    the bare `exec >&-` shape) closing the CALLER's stdout outright.
+    """
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
+    assert '[ -n "$restore_lock_fd" ]' in body, (
+        'expected an `[ -n "$restore_lock_fd" ]` guard before releasing/closing the lock fd'
+    )
+    guard_idx = first_line_index(body, '[ -n "$restore_lock_fd" ]')
+    release_idx = first_line_index(body, 'flock -u "$restore_lock_fd"')
+    close_idx = first_line_index(body, "exec {restore_lock_fd}>&-")
+    assert guard_idx != -1 and release_idx != -1
+    # The success-path release/close must be the ones actually guarded -- there are two
+    # `exec {restore_lock_fd}>&-` sites (the "lock already held" early-exit, and the
+    # success path); assert at least the LAST one (success path) follows a guard line
+    # within a few lines.
+    close_lines = [i for i, ln in enumerate(body.splitlines()) if "exec {restore_lock_fd}>&-" in ln]
+    assert close_lines, "expected at least one lock-fd close on the success path"
+    last_close_idx = close_lines[-1]
+    assert 0 <= last_close_idx - guard_idx <= 5, (
+        f"the success-path fd close (line {last_close_idx}) is not immediately guarded by "
+        f'the `[ -n "$restore_lock_fd" ]` check (line {guard_idx})'
+    )
+    assert close_idx != -1
+
+
+@pytest.mark.unit
+def test_flock_guard_detector_fires_when_missing() -> None:
+    """Must-fire control: a synthetic body that releases the lock unconditionally."""
+    unguarded_body = 'flock -u "$restore_lock_fd" 2>/dev/null\ntrap - INT TERM ERR EXIT\n'
+    assert '[ -n "$restore_lock_fd" ]' not in unguarded_body
+
+
+# ---------------------------------------------------------------------------------------------
+# 13. Trap save/restore (issue #620 item 7, LOW): the success path's `trap - INT TERM ERR
+#     EXIT` used to reset all four signals to the shell default, discarding any trap a
+#     CALLER had installed before invoking restore_database, not just this function's own.
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_caller_traps_are_captured_before_being_overwritten() -> None:
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
+    for sig in ("EXIT", "INT", "TERM", "ERR"):
+        assert f"trap -p {sig}" in body, (
+            f"expected `trap -p {sig}` to capture any caller-installed {sig} trap before "
+            f"restore_database installs its own"
+        )
+
+
+@pytest.mark.unit
+def test_success_path_restores_the_captured_caller_traps() -> None:
+    body = extract_function(_read(_COMMON), "restore_database")
+    assert body, "restore_database not found in scripts/common.sh"
+    trap_clear_idx = first_line_index(body, "trap - INT TERM ERR EXIT")
+    assert trap_clear_idx != -1, "expected `trap - INT TERM ERR EXIT` on the success path"
+    lines = body.splitlines()
+    tail = "\n".join(lines[trap_clear_idx : trap_clear_idx + 8])
+    for var in ("prev_exit_trap", "prev_int_trap", "prev_term_trap", "prev_err_trap"):
+        assert f'eval "${var}"' in tail or f'eval "${{{var}}}"' in tail, (
+            f"expected the captured {var} to be restored (via eval) immediately after "
+            f"`trap - INT TERM ERR EXIT`, got: {tail!r}"
+        )
+
+
+@pytest.mark.unit
+def test_trap_capture_detector_fires_when_missing() -> None:
+    """Must-fire control: a synthetic body with no `trap -p` capture at all."""
+    body_without_capture = 'trap "flock -u $fd" INT TERM ERR EXIT\n'
+    assert "trap -p" not in body_without_capture

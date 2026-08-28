@@ -309,6 +309,38 @@ def test_an_already_real_value_is_left_untouched(tmp_path):
     assert exported in ("", real_value)
 
 
+def test_generated_key_leaves_the_env_file_owner_only(tmp_path):
+    """A fresh install is `cp .env.example .env` -> mode 0644, and GNU `sed -i` preserves
+    the file's mode across the in-place edit. The value just written is the ONE real
+    secret in an otherwise placeholder-only file -- world-readable is exactly wrong for
+    it, since MinIO decrypts every KMS-encrypted object with this exact key and losing
+    (or leaking) it makes that data permanently unreadable / exposed.
+    """
+    env_file = tmp_path / "scratch.env"
+    env_file.write_text(f"MINIO_KMS_SECRET_KEY={PLACEHOLDER}\n")
+    env_file.chmod(0o644)
+    _run_ensure(tmp_path, env_file.read_text())
+    mode = env_file.stat().st_mode & 0o777
+    assert mode == 0o600, f"expected mode 0o600 after key generation, got {oct(mode)}"
+
+
+def test_an_already_real_value_does_not_get_chmodded(tmp_path):
+    """Negative control for the chmod above: touching a file that already holds a real
+    key (the case guard's other arm) must not silently change its permissions either --
+    an operator may have deliberately loosened it for their own reasons, and this
+    function's job in that branch is to do nothing at all.
+    """
+    env_file = tmp_path / "scratch.env"
+    real_value = "opentranscribe-key:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    env_file.write_text(f"MINIO_KMS_SECRET_KEY={real_value}\n")
+    env_file.chmod(0o644)
+    _run_ensure(tmp_path, env_file.read_text())
+    mode = env_file.stat().st_mode & 0o777
+    assert mode == 0o644, (
+        f"an already-real MINIO_KMS_SECRET_KEY should never be chmodded, got {oct(mode)}"
+    )
+
+
 def test_an_empty_value_is_left_untouched(tmp_path):
     """An operator who deliberately blanked the key (KMS off) made a real choice.
 

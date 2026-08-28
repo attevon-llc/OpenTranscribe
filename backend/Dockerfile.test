@@ -1,0 +1,76 @@
+# =============================================================================
+# OpenTranscribe Backend — TEST image (issue #577)
+#
+# A thin layer over the production image that adds pytest and nothing else, so the
+# `@pytest.mark.gpu` diarization suites can actually be executed against the code
+# and dependency versions that SHIP, on real GPU hardware.
+#
+# Build (needs the prod image to exist first — `./opentr.sh start dev` builds it):
+#
+#     docker build -f backend/Dockerfile.test -t opentranscribe-backend-test:latest backend/
+#
+# or, the supported entry point, which builds and runs in one step:
+#
+#     ./scripts/run-diarization-gpu-tests.sh
+#
+# -----------------------------------------------------------------------------
+# ⚠️ WHY THIS FILE EXISTS INSTEAD OF `pip install` AT RUN TIME
+# -----------------------------------------------------------------------------
+# Dockerfile.prod's builder stage installs with `pip install --user`, so the entire
+# application dependency set lives in a USER site-packages directory:
+#
+#     /home/appuser/.local/lib/python3.13/site-packages
+#
+# `site.getusersitepackages()` is derived from $HOME. Running the prod image with
+# `--user root` therefore moves user-site to /root/.local/... and drops appuser's
+# tree off sys.path entirely — which is why `pip install --user root pytest` in the
+# prod image "succeeds" and then `python -m pytest` dies with
+# `ModuleNotFoundError: No module named 'fastapi'` (#577). It is not a broken
+# fastapi install; it is two different user-site directories.
+#
+# The same split is what made `pip install -r requirements-dev.txt` fail building
+# meeteval's wheel: meeteval IS already installed in appuser's site-packages, but a
+# root-user pip cannot see it, tries to build it from sdist, and the runtime stage
+# deliberately ships no gcc/g++ (they live only in the builder stage). Both symptoms
+# have one cause, so both are fixed by installing as the SAME user the image already
+# uses, into the SAME site-packages, at build time.
+#
+# Do not "fix" a future variant of this by adding PYTHONPATH=/home/appuser/.local/...
+# or by running as root: that papers over the split instead of removing it.
+# =============================================================================
+
+# DL3006 ("always tag the base image") cannot be satisfied here, and is asking for
+# something this file must not do. The default IS tagged — hadolint 2.12 simply does not
+# resolve an ARG default in FROM (hadolint#497) — and the tag has to be the moving
+# `:latest` of the LOCALLY BUILT dev image, because the only base worth layering pytest
+# onto is the image the developer is about to test. Pinning a digest would make this
+# target verify a stale image while claiming to verify the current one, which is the exact
+# failure DL3006 exists to prevent. Nothing built from this file is ever published:
+# `image:` in docker-compose.benchmark.yml is opentranscribe-backend-test, not any
+# davidamacey/* tag, and OPENTRANSCRIBE_TEST_IMAGE=1 below marks it at runtime.
+# Override the base with DIARIZATION_TEST_BASE_IMAGE to test a published release image.
+#
+# The ignore comment must sit directly above the instruction it covers — with the ARG in
+# between it attaches to the ARG and DL3006 still fires on the FROM.
+ARG BASE_IMAGE=opentranscribe-backend:latest
+# hadolint ignore=DL3006
+FROM ${BASE_IMAGE}
+
+# Inherited from the base image, but stated explicitly: the install below MUST run as
+# the same user whose site-packages already holds the application dependencies.
+USER appuser
+
+COPY --chown=appuser:appuser requirements-test.txt /tmp/requirements-test.txt
+
+# --user lands in /home/appuser/.local/lib/python3.13/site-packages, alongside (not
+# beside) the app dependencies, so pytest resolves `app.*`, fastapi, torch and
+# pyannote from one tree. Pure-Python wheels only — no compiler needed, which is why
+# the runtime stage can stay toolchain-free.
+RUN pip install --user --no-cache-dir --no-warn-script-location -r /tmp/requirements-test.txt \
+    && rm /tmp/requirements-test.txt
+
+# Marker other tooling (and a human reading `docker inspect`) can key off, so a test
+# image is never mistaken for something publishable.
+LABEL org.opencontainers.image.title="OpenTranscribe Backend (test)" \
+      org.opencontainers.image.description="Production backend image plus pytest — local GPU test runs only, never published"
+ENV OPENTRANSCRIBE_TEST_IMAGE=1

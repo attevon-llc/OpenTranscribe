@@ -11,16 +11,11 @@ mypy==2.3.1
 mypy-extensions==1.1.0
 import-linter==2.13  # Enforces the app ↛ cloud seam (forbidden contract in pyproject.toml)
 
-# Testing
-pytest==9.1.1
-pytest-asyncio==1.4.0  # For testing async code
-pytest-cov==7.1.0  # Code coverage reports
-pytest-xdist==3.8.0  # Parallel execution — pyproject addopts uses "-n auto"
-# REQUIRED, not optional: pyproject addopts passes --timeout, so a missing plugin is a
-# collection error, not a silently skipped feature. The suite serialises DDL tests behind a
-# Postgres advisory lock; without a timeout a genuine lock cycle hangs the run forever
-# instead of failing (issue #431).
-pytest-timeout==2.4.0
+# Testing — pytest + the plugins pyproject's addopts require. Pinned in
+# requirements-test.txt so a test-capable container image (backend/Dockerfile.test)
+# installs the SAME versions without also dragging in the linters below.
+-r requirements-test.txt
+pytest-cov==7.1.0  # Code coverage reports — venv/CI only; no container run reports coverage
 
 # Mutation testing — opt-in, local only, NEVER in CI.
 #

@@ -20,6 +20,18 @@ this file is for.
   `GATES` array: that array's variables are exported for the `GATED_FILES` pytest run, which
   does not include the drift file, so adding it there would have looked like coverage and
   changed nothing.
+- **GPU diarization suites** — `run-diarization-gpu-tests.sh` (issue #577). The gate's `-m gpu`
+  phase runs in `backend/venv`, so the three container-only diarization suites SKIP there; this
+  is the only thing that executes them. It builds `opentranscribe-backend-test:latest` from
+  `backend/Dockerfile.test` (prod image + `requirements-test.txt`) and runs the
+  `diarization-tests` service in its own compose project, so it can neither re-tag nor recreate
+  anything the live dev stack is using. **Never `pip install` pytest into the prod image at run
+  time with `--user root`** — user-site is `$HOME`-derived, so root gets `/root/.local` and the
+  entire app dependency tree (fastapi, meeteval, torch) falls off `sys.path`; that is the whole
+  of #577's "fastapi missing" and "meeteval wheel won't build" report, one cause with two faces.
+  It hard-fails when the base image, the gitignored `benchmark/test_audio/*.wav` fixtures, or the
+  `-o addopts= -m gpu` selector are missing, because each of those makes the run exit 0 having
+  measured nothing.
 - **E2E** — `e2e/run-e2e.sh`: two phases, non-visual in parallel (`E2E_WORKERS`, default 3) then
   `-m visual` serially. `e2e/run-e2e-smoke.sh` is a 4-file subset of it.
   **pytest exit 5 = "no tests collected" is not a failure for a marker-filtered phase.**

@@ -18,11 +18,12 @@ from typing import Any
 import numpy as np
 from sqlalchemy.orm import Session
 
-from app.models.media import MediaFile
 from app.models.media import Speaker
 from app.models.media import SpeakerMatch
 from app.models.media import SpeakerProfile
 from app.services.opensearch_service import get_speaker_embedding
+from app.services.speaker_rename_tracker import SpeakerRenameTracker
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
 
@@ -233,26 +234,13 @@ def _update_profile_embedding(db: Session, speaker_id: int, profile_id: int) -> 
         logger.warning(f"Failed to update profile embedding for speaker {speaker_id}: {e}")
 
 
-def _chunk_rename_for(db: Session, speaker: Speaker) -> tuple[str, str] | None:
-    """The ``(file_uuid, old_name)`` pair a rename of ``speaker`` invalidates.
-
-    Read **before** the display name is overwritten: the chunk plane was indexed
-    with ``display_name or name``, and after the write nothing in Postgres can
-    reconstruct which of the two it was (issue #405).
-
-    Returns **plain data**, never an ORM instance, so the caller can dispatch it
-    with the transaction already committed.
-    """
-    old_chunk_name = str(speaker.display_name or speaker.name or "")
-    if not old_chunk_name or not speaker.media_file_id:
-        return None
-    row = db.query(MediaFile.uuid).filter(MediaFile.id == speaker.media_file_id).first()
-    return (str(row[0]), old_chunk_name) if row else None
-
-
 def _apply_high_confidence_match(
-    db: Session, speaker: Speaker, trigger: dict[str, Any]
-) -> tuple[dict[str, Any], tuple[str, str] | None]:
+    db: Session,
+    speaker: Speaker,
+    trigger: dict[str, Any],
+    tracker: SpeakerRenameTracker,
+    before: str,
+) -> dict[str, Any]:
     """Apply automatic labeling for high confidence matches (75%+).
 
     **Postgres only.** The OpenSearch write this used to do inline is now returned
@@ -260,15 +248,20 @@ def _apply_high_confidence_match(
     transaction commits — one index round trip per auto-applied speaker was
     happening inside the matching transaction, once per match, for the whole library.
 
-    Returns:
-        ``(document, chunk_rename)`` — the speaker's search document, and the
-        ``(file_uuid, old_name)`` pair whose chunk documents this label just made
-        stale (``None`` when there is nothing to rewrite). The rename is captured
-        **before** the assignment below, because after it Postgres can no longer
-        say what the chunks were indexed with (issue #405).
-    """
-    chunk_rename = _chunk_rename_for(db, speaker)
+    ``before`` is the canonical label (``canonical_speaker_label_for_row`` — the
+    SAME resolver the chunk-index writers use, issue #605) captured by the
+    caller **before any field on this speaker was written this pass** —
+    ``confidence``/``suggested_name`` are set by the caller ahead of the
+    75%-confidence branch that reaches this function, and computing "before"
+    here instead would already see those, silently comparing the suggestion
+    against itself and recording a no-op. The rename this label makes stale is
+    recorded on ``tracker`` before the ``display_name`` assignment below,
+    because after it Postgres can no longer say what the chunks were indexed
+    with (issue #405). ``tracker`` flushes after the caller's commit.
 
+    Returns:
+        The speaker's search document.
+    """
     speaker.display_name = trigger["display_name"]  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
 
@@ -276,11 +269,13 @@ def _apply_high_confidence_match(
         speaker.profile_id = trigger["profile_id"]  # type: ignore[assignment]
         _update_profile_embedding(db, speaker.id, int(trigger["profile_id"]))
 
+    tracker.record(int(speaker.media_file_id), before, canonical_speaker_label_for_row(speaker))
+
     logger.info(
         f"Auto-applied {trigger['display_name']} to {speaker.name} "
         f"({speaker.confidence:.1%} confidence)"
     )
-    return _speaker_sync_document(db, speaker), chunk_rename
+    return _speaker_sync_document(db, speaker)
 
 
 def _score_candidates(
@@ -334,23 +329,36 @@ def _score_candidates(
 
 
 def _persist_match_results(
-    db: Session, trigger: dict[str, Any], scored: list[dict[str, Any]]
-) -> tuple[int, int, list[dict[str, Any]], list[tuple[str, str]]]:
+    db: Session,
+    trigger: dict[str, Any],
+    scored: list[dict[str, Any]],
+    tracker: SpeakerRenameTracker,
+) -> tuple[int, int, list[dict[str, Any]]]:
     """Write every scored match to Postgres.
 
-    Returns ``(auto_applied_count, suggested_count, documents, chunk_renames)``.
-    ``documents`` are the search documents for the auto-applied speakers and
-    ``chunk_renames`` the ``(file_uuid, old_name)`` pairs their new labels left
-    stale in the chunk plane (issue #405); both are dispatched once the
-    transaction has committed.
+    Every scored match — **both** confidence tiers, not just the auto-applied
+    one — records a before/after pair on ``tracker`` (issue #605). The medium
+    tier (50-75%) usually leaves the canonical label unchanged (it writes
+    ``suggested_name``/``confidence`` but the resolver only trusts a suggestion
+    at ``>= DEFAULT_SUGGESTION_CONFIDENCE_THRESHOLD``), so most calls here are a
+    no-op for ``tracker.record`` — EXCEPT when a speaker already carried a
+    confident suggestion and this match downgrades its confidence below
+    threshold, which genuinely moves the label back to the raw name. Comparing
+    the resolved labels directly, rather than trusting the tier split, is also
+    what keeps this correct if the two independent 0.75 constants (this
+    function's auto-apply cutoff and the resolver's suggestion threshold) ever
+    diverge — nothing here assumes they coincide.
+
+    Returns ``(auto_applied_count, suggested_count, documents)`` — ``documents``
+    are the search documents for the auto-applied speakers, dispatched by the
+    caller once the transaction has committed.
     """
     documents: list[dict[str, Any]] = []
-    chunk_renames: list[tuple[str, str]] = []
     auto_applied_count = 0
     suggested_count = 0
 
     if not scored:
-        return auto_applied_count, suggested_count, documents, chunk_renames
+        return auto_applied_count, suggested_count, documents
 
     rows = {
         int(row.id): row
@@ -362,6 +370,11 @@ def _persist_match_results(
         if speaker is None:
             continue
 
+        # Captured before ANY write below — `confidence`/`suggested_name` are
+        # about to change and canonical_speaker_label_for_row would otherwise
+        # compare the suggestion against itself.
+        before = canonical_speaker_label_for_row(speaker)
+
         similarity = match["similarity"]
         speaker.confidence = similarity  # type: ignore[assignment]
         speaker.suggested_name = trigger["display_name"]  # type: ignore[assignment]
@@ -369,45 +382,20 @@ def _persist_match_results(
         store_speaker_match(trigger["id"], speaker.id, similarity, db)
 
         if similarity >= 0.75:
-            document, chunk_rename = _apply_high_confidence_match(db, speaker, trigger)
-            documents.append(document)
-            if chunk_rename:
-                chunk_renames.append(chunk_rename)
+            documents.append(_apply_high_confidence_match(db, speaker, trigger, tracker, before))
             auto_applied_count += 1
             continue
 
-        # Medium confidence (50-75%): just suggest. Only ``suggested_name`` is
-        # written, so ``display_name`` — the value the chunk plane carries — is
-        # unchanged and this tier contributes no rename.
+        # Medium confidence (50-75%): just suggest, no `display_name` write.
+        # See the docstring above for why this still records — usually a no-op,
+        # occasionally a real downgrade.
+        tracker.record(int(speaker.media_file_id), before, canonical_speaker_label_for_row(speaker))
         logger.info(
             f"Suggested {trigger['display_name']} for {speaker.name} ({similarity:.1%} confidence)"
         )
         suggested_count += 1
 
-    return auto_applied_count, suggested_count, documents, chunk_renames
-
-
-def _dispatch_chunk_renames(chunk_renames: list[tuple[str, str]], new_name: str | None) -> None:
-    """Queue chunk-plane propagation for every auto-applied label (issue #405).
-
-    **Takes no ``Session``.** ``new_name`` arrives as plain data off the trigger
-    snapshot, and the pairs were captured before their speakers were overwritten,
-    so this runs with the transaction already committed — which is also what makes
-    it correct: a rolled-back match must never reach the index.
-
-    Best-effort: retroactive matching has already committed, and a broker that is
-    down must not turn that into an exception the caller reports as a failed
-    labelling.
-    """
-    if not chunk_renames or not new_name:
-        return
-    try:
-        from app.tasks.rename_propagation_task import dispatch_speaker_rename
-
-        files = dispatch_speaker_rename(chunk_renames, new_name)
-        logger.info(f"Queued chunk speaker-rename propagation for {files} file(s)")
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"Could not queue chunk-plane rename propagation: {e}")
+    return auto_applied_count, suggested_count, documents
 
 
 def _load_suggestion_speaker_documents(
@@ -528,6 +516,10 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
         function has always owned the transaction boundary here (the pre-split code
         committed mid-body too).
     """
+    # Accumulates chunk-plane label changes across every scored match — both
+    # confidence tiers (issue #605) — and flushes once, after Phase 2 commits.
+    tracker = SpeakerRenameTracker()
+
     try:
         # Phase 0 — snapshot the labeled speaker as plain data, then release the
         # transaction the caller handed us. Nothing below touches the instance.
@@ -584,20 +576,20 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
 
         # Phase 2 — the writes, then commit so the suggestion snapshot below sees
         # them (autoflush is off) and the locks are released before the push.
-        auto_applied_count, suggested_count, documents, chunk_renames = _persist_match_results(
-            db, trigger, scored
+        auto_applied_count, suggested_count, documents = _persist_match_results(
+            db, trigger, scored, tracker
         )
         db.commit()
+        # Flushed here, with the session still open post-commit — matches the
+        # commit-then-flush idiom `SpeakerMatchingService`/`SpeakerClusteringService`
+        # use for the same tracker (issue #605): a rolled-back match must never
+        # reach the index, so this must run after the commit, not before it.
+        tracker.flush(db)
         documents.extend(_load_suggestion_speaker_documents(db, trigger))
         db.commit()
 
-        # Phase 3 — index writes. NO transaction is open here. Auto-applied labels
-        # rewrite the chunk plane too, and one recording can contribute several
-        # matched speakers — dispatch_speaker_rename coalesces them into one
-        # update_by_query per file (issue #405). Both run after the commit so a
-        # rolled-back match never reaches the index.
+        # Phase 3 — index writes. NO transaction is open here.
         _push_speaker_documents(documents)
-        _dispatch_chunk_renames(chunk_renames, trigger["display_name"])
 
         logger.info(
             f"Retroactive matching complete: {auto_applied_count} auto-applied, {suggested_count} suggested"
@@ -610,6 +602,7 @@ def trigger_retroactive_matching(updated_speaker: Speaker, db: Session) -> dict[
     except Exception as e:
         logger.exception(f"Error in retroactive matching: {e}")
         db.rollback()
+        tracker.discard()
         return {"auto_applied_count": 0, "suggested_count": 0}
 
 

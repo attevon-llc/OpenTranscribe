@@ -27,6 +27,7 @@ from app.models.media import SpeakerClusterMember
 from app.models.media import SpeakerProfile
 from app.models.media import TranscriptSegment
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +193,7 @@ class SpeakerClusteringService:
                         if profile:
                             self._rename_tracker.record(
                                 int(speaker.media_file_id),
-                                str(speaker.display_name or speaker.name or ""),
+                                canonical_speaker_label_for_row(speaker),
                                 str(profile.name),
                             )
                             speaker.display_name = profile.name
@@ -1378,7 +1379,7 @@ class SpeakerClusteringService:
                     # its own indexed label — record before the overwrite (#432).
                     self._rename_tracker.record(
                         int(speaker.media_file_id),
-                        str(speaker.display_name or speaker.name or ""),
+                        canonical_speaker_label_for_row(speaker),
                         name,
                     )
                     speaker.display_name = name  # type: ignore[assignment]
@@ -1793,7 +1794,7 @@ class SpeakerClusteringService:
                 # indexed with, so each records the old one first (issue #432).
                 # "accept" applies a DIFFERENT name per speaker, which is why the
                 # tracker groups by new name rather than assuming one per batch.
-                indexed_as = str(speaker.display_name or speaker.name or "")
+                indexed_as = canonical_speaker_label_for_row(speaker)
 
                 if action == "accept":
                     if speaker.suggested_name:

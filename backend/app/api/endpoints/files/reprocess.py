@@ -170,6 +170,12 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
     from app.models.media import Analytics
     from app.models.media import Speaker
     from app.models.media import TranscriptSegment
+    from app.services.speaker_rename_tracker import SpeakerRenameTracker
+    from app.utils.speaker_labels import canonical_speaker_label_for_row
+
+    # Only the "speaker_llm" branch below writes to it — declared here so the
+    # `except` path can safely `discard()` regardless of which branch ran.
+    tracker = SpeakerRenameTracker()
 
     try:
         if "transcription" in stages:
@@ -215,13 +221,22 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
                 db.delete(existing_analytics)
 
         if "speaker_llm" in stages:
-            # Reset suggested names on speakers
+            # Reset suggested names on speakers. Nulling a confident suggestion
+            # moves the canonical label back to the raw diarizer name with no
+            # `display_name` write at all — one of five writers with zero
+            # chunk-plane dispatch until issue #605 (the chunk plane kept
+            # offering the cleared suggestion in the search facet and chat's
+            # speaker scope indefinitely). Per-speaker "after" values differ
+            # (each speaker's raw name), so this batches through the tracker
+            # rather than a single dispatch call.
             existing_speakers = (
                 db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
             )
             for speaker in existing_speakers:
+                before = canonical_speaker_label_for_row(speaker)
                 speaker.suggested_name = None
                 speaker.confidence = None
+                tracker.record(int(media_file.id), before, canonical_speaker_label_for_row(speaker))
 
         if "summarization" in stages:
             media_file.summary_data = None
@@ -241,10 +256,12 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
                 db.delete(suggestion)
 
         db.commit()
+        tracker.flush(db)
         logger.info(f"Cleared selective data for stages {stages} on file {media_file.id}")
     except Exception as e:
         logger.exception(f"Error clearing selective data for file {media_file.id}: {e}")
         db.rollback()
+        tracker.discard()
         raise
 
 

@@ -19,6 +19,8 @@ set and are the remaining work to close the disagreement completely.
 
 from __future__ import annotations
 
+from typing import Any
+
 #: The canonical "not diarized to a person" label. Chosen over the bare "Unknown" some
 #: planes used because it is unambiguous next to a real name in a roster or a facet —
 #: "Unknown" alone reads as "an unnamed *thing*", not "nobody was attributed here".
@@ -89,3 +91,37 @@ def canonical_speaker_label(
     if name:
         return str(name)
     return UNKNOWN_SPEAKER_LABEL
+
+
+def canonical_speaker_label_for_row(row: Any) -> str:
+    """The label a (re)index would write for this ``Speaker`` row, right now.
+
+    Issue #605: eight repair/propagation call sites (``rename_propagation_task``,
+    ``speakers.py``, ``speaker_update.py``, ``speaker_matching_service.py``,
+    ``speaker_clustering_service.py``) computed the "old"/"current" indexed name
+    with the ad hoc ``display_name or name`` chain, which stopped agreeing with
+    the chunk-index writer the moment the writer moved to
+    :func:`canonical_speaker_label` (this module's own docstring flagged the
+    writers as migrated and the propagation plane as NOT). A propagation task
+    computing the wrong "old name" narrows an ``update_by_query`` to a filter
+    that matches nothing — it logs ``status: success`` and the drift survives.
+
+    This wrapper exists so every such call site imports ONE function instead of
+    re-unpacking the same four attributes with its own copy of the rule — a copy
+    is exactly how the eight sites drifted in the first place.
+
+    Args:
+        row: Anything exposing ``.name`` / ``.display_name`` / ``.suggested_name``
+            / ``.confidence`` — a ``Speaker`` ORM instance, a SQLAlchemy
+            columns-only row/tuple with matching attribute names, or a test
+            stand-in.
+
+    Returns:
+        The canonical display label — never empty, never the bare ``"Unknown"``.
+    """
+    return canonical_speaker_label(
+        row.name,
+        display_name=row.display_name,
+        suggested_name=row.suggested_name,
+        confidence=row.confidence,
+    )

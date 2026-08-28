@@ -72,9 +72,27 @@ def _make_row(db_session, source, **overrides) -> WatchSourceFile:
 
 
 def _stage_audio(tmp_path: Path, name: str = "recording.wav") -> Path:
-    """Copy the committed fixture into tmp_path and return its path."""
+    """Copy the committed fixture into tmp_path, made content-UNIQUE, and return its path.
+
+    ⚠️ The bytes must differ on every run, or layer 3 of the dedup
+    (``check_duplicate_by_imohash``, which is deliberately **cross-user** and spans the
+    whole ``media_file`` table) matches leftovers in the live dev database. Two
+    ``sample_short.wav`` rows carrying the committed fixture's fingerprint
+    (``cec4134f1d31a18e393e05a8555f8334``) were leaked into the dev stack by an earlier
+    run, and from then on the negative control below skipped as ``duplicate_existing``
+    before it ever reached ``_finalize_media_ingest`` — a failure that says nothing about
+    the code under test.
+
+    A uuid4 tail is appended after the complete RIFF stream. imohash samples the tail and
+    mixes in the file size, so the fingerprint is fresh per call, while
+    ``validate_uploaded_file`` still reads a real WAVE header and returns ``audio/wav`` —
+    the property the module docstring requires (a synthetic buffer would be rejected as
+    ``skipped_invalid`` and pass for the wrong reason).
+    """
     dest = tmp_path / name
     shutil.copyfile(_SAMPLE_AUDIO, dest)
+    with dest.open("ab") as fp:
+        fp.write(b"\x00" * 64 + uuid_pkg.uuid4().bytes)
     return dest
 
 

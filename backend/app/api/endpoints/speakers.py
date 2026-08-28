@@ -30,6 +30,7 @@ from app.services.opensearch_service import update_speaker_display_name
 from app.services.permission_service import PermissionService
 from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.error_handlers import ErrorHandler
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.uuid_helpers import get_speaker_by_uuid
 
 logger = logging.getLogger(__name__)
@@ -1882,9 +1883,9 @@ def _propagate_speaker_rename_to_chunks(
     broker was unreachable. The chunk plane stays stale until the next reindex,
     which is exactly the pre-#405 behaviour.
 
-    ``new_display_name`` is the **effective indexed name** (``display_name or
-    name``), not the display name. Those differ in two reachable cases and both
-    used to propagate nothing:
+    ``new_display_name`` is the **canonical indexed label**
+    (``canonical_speaker_label_for_row``), not the display name. Those differ in
+    three reachable cases and all three used to propagate nothing:
 
     * **A cleared display name.** ``{"display_name": ""}`` is a legal
       ``SpeakerUpdate`` — it is how a user undoes a label. Postgres reverts to
@@ -1894,6 +1895,11 @@ def _propagate_speaker_rename_to_chunks(
     * **An edit to ``name`` alone.** ``name`` is updatable too, and for a speaker
       with no ``display_name`` it is what the indexer writes — but dispatch used
       to key solely off ``display_name``.
+    * **A confident suggestion with no ``display_name`` at all** (issue #605).
+      The indexer writes ``suggested_name`` once ``confidence >= 0.75``; the old
+      ``display_name or name`` rule here never looked at either field, so a
+      speaker indexed under an LLM suggestion stayed keyed to the raw diarizer
+      label and any rename computed the wrong ``old_names``.
     """
     if not new_display_name:
         return
@@ -1940,10 +1946,12 @@ def update_speaker(
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
     was_auto_labeled = speaker.suggested_name is not None and not speaker.verified
     media_file_id = int(speaker.media_file_id)
-    # The exact string the chunk plane was indexed with — display_name when the
-    # speaker had one, else the diarizer's raw label. Captured here because the
-    # overwrite below is the last moment it exists (issue #405).
-    previous_chunk_name = str(speaker.display_name or speaker.name or "")
+    # The exact string the chunk plane was indexed with — the SAME resolver the
+    # chunk-index writers use (issue #605; previously a stale `display_name or
+    # name` copy that stopped agreeing once the writers picked up a confident
+    # suggestion). Captured here because the overwrite below is the last moment
+    # it exists (issue #405).
+    previous_chunk_name = canonical_speaker_label_for_row(speaker)
     speaker_file_uuid = _get_media_file_uuid(speaker, db)
 
     # Update speaker fields
@@ -1996,11 +2004,13 @@ def update_speaker(
     # the search facet dropdown keep working off the pre-rename snapshot — see
     # app/tasks/rename_propagation_task.py (issue #405).
     #
-    # Keyed on the EFFECTIVE indexed name (`display_name or name`, the indexer's
-    # own rule in search_indexing_task), not on `display_name`. Keying on the
-    # latter missed both a cleared display name and an edit to `name` alone —
-    # see `_propagate_speaker_rename_to_chunks`.
-    new_chunk_name = str(speaker.display_name or speaker.name or "")
+    # Keyed on the CANONICAL indexed label (`canonical_speaker_label_for_row`,
+    # the SAME resolver `search_indexing_task`/`reindex_task` use), not on
+    # `display_name` alone. Keying on `display_name or name` missed three
+    # things: a cleared display name, an edit to `name` alone, and — issue
+    # #605 — a confident LLM/embedding suggestion the writer would have
+    # indexed instead of the raw name. See `_propagate_speaker_rename_to_chunks`.
+    new_chunk_name = canonical_speaker_label_for_row(speaker)
     _propagate_speaker_rename_to_chunks(
         file_uuid=speaker_file_uuid,
         previous_chunk_name=previous_chunk_name,
@@ -2137,14 +2147,42 @@ def _accept_speaker_profile_match(
 
 
 def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -> dict[str, Any]:
-    """Handle rejection of a speaker identification suggestion."""
+    """Handle rejection of a speaker identification suggestion.
+
+    Clears ``suggested_name``/``suggestion_source`` alongside ``confidence``
+    (issue #605) — nulling ``confidence`` alone left ``suggested_name``
+    populated, so any reader that checks ``suggested_name is not None`` without
+    also checking ``confidence`` (this module's own
+    ``was_auto_labeled = speaker.suggested_name is not None and not
+    speaker.verified``) kept surfacing a rejected suggestion as if it were
+    still live. Clearing both also means the canonical label can genuinely move
+    (a rejected suggestion falls back to the raw diarizer name), so the
+    rejection is propagated to the chunk plane exactly like every other write
+    that moves the canonical label — a suggestion the user rejected must not
+    keep appearing in search facets or chat's speaker scope.
+    """
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
+    before = canonical_speaker_label_for_row(speaker)
 
     # Mark as verified but don't assign to profile - use setattr for proper type handling
     speaker.profile_id = None  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
+    speaker.suggested_name = None  # type: ignore[assignment]
+    speaker.suggestion_source = None  # type: ignore[assignment]
     speaker.confidence = None  # type: ignore[assignment]
+    after = canonical_speaker_label_for_row(speaker)
     db.commit()
+
+    if before != after:
+        try:
+            from app.tasks.rename_propagation_task import dispatch_speaker_rename
+
+            file_uuid = _get_media_file_uuid(speaker, db)
+            dispatch_speaker_rename([(file_uuid, before)], after, speaker_id=speaker_id)
+        except Exception as exc:  # noqa: BLE001 — a rejection must not fail on dispatch
+            logger.warning(
+                f"Could not queue chunk-plane label sync for rejected speaker {speaker_id}: {exc}"
+            )
 
     # Update the old profile's embedding if speaker was previously assigned
     if old_profile_id:

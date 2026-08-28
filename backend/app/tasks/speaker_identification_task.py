@@ -273,7 +273,22 @@ def _store_speaker_predictions(file_id: int, predictions: dict[str, Any]) -> Non
 
     Opens its **own** short session: the caller has just returned from the LLM
     provider and deliberately holds none.
+
+    A ≥0.75-confidence prediction here moves the CANONICAL label
+    (``canonical_speaker_label``) with no ``display_name`` write at all — this
+    was one of five writers with zero chunk-plane dispatch (issue #605): a clean
+    ingest indexes chunks under the raw diarizer label, this task's suggestion
+    then lands after (``enrich_and_dispatch`` dispatches indexing before speaker
+    ID), and nothing reconciled the two. Every prediction is recorded on a
+    tracker keyed by this ONE file, then flushed once after the explicit commit
+    below — predictions in the same call commonly target different speakers
+    with different names, which is exactly the case ``SpeakerRenameTracker``
+    groups by new name at flush time.
     """
+    from app.services.speaker_rename_tracker import SpeakerRenameTracker
+    from app.utils.speaker_labels import canonical_speaker_label_for_row
+
+    tracker = SpeakerRenameTracker()
     with session_scope() as db:
         for prediction in predictions.get("speaker_predictions", []):
             speaker_label = prediction.get("speaker_label")
@@ -290,9 +305,17 @@ def _store_speaker_predictions(file_id: int, predictions: dict[str, Any]) -> Non
             )
 
             if speaker:
+                before = canonical_speaker_label_for_row(speaker)
                 speaker.suggested_name = predicted_name
                 speaker.confidence = confidence
                 speaker.suggestion_source = "llm_analysis"  # type: ignore[assignment]
+                tracker.record(file_id, before, canonical_speaker_label_for_row(speaker))
+
+        # Commit explicitly (rather than relying on session_scope's exit-time
+        # commit) so the tracker can flush — dispatch after commit, never
+        # before — while this session is still open to resolve the file UUID.
+        db.commit()
+        tracker.flush(db)
 
 
 def _apply_cross_reference_context(

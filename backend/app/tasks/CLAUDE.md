@@ -28,9 +28,19 @@ indexing → WebSocket notification.
   chunk. Dispatch through `dispatch_speaker_rename` — it coalesces `(file_uuid, old_name)` pairs
   per file — and **capture the old name before the overwrite**: after the commit, Postgres
   cannot say what the chunks were indexed with. Three rules the follow-up round added:
-  - **Key on the EFFECTIVE indexed name, `display_name or name`** — the indexer's own rule.
-    Keying on `display_name` missed a *cleared* label (a legal `{"display_name": ""}`, which
-    reverts to the diarizer label) and an edit to `name` alone.
+  - **Key on the CANONICAL indexed label,
+    `app/utils/speaker_labels.py::canonical_speaker_label_for_row`** — the SAME resolver the
+    chunk-index writers (`search_indexing_task`, `reindex_task`) call. Keying on `display_name`
+    alone missed a *cleared* label (a legal `{"display_name": ""}`, which reverts to the
+    diarizer label) and an edit to `name` alone; keying on the older `display_name or name`
+    chain (removed in issue #605) additionally missed a confident LLM/embedding
+    `suggested_name` — the indexer trusts one at `confidence >= 0.75` and eight
+    repair/propagation call sites kept computing the pre-suggestion value, so a rename
+    computed the wrong `old_names`, the `update_by_query` matched nothing, and it logged
+    `status: success` while the drift survived. `SpeakerRenameTracker.record`/`.flush` is the
+    seam every writer of `suggested_name`/`confidence` must route through too, not just a
+    `display_name` write — five writers previously dispatched nothing at all when a
+    suggestion alone moved the canonical label.
   - **Both tasks re-resolve their target from Postgres at run time**, so two renames dispatched
     close together converge instead of inverting. `A→B` and `B→C` are unordered on an 8-way
     queue; if `B→C` ran first it matched nothing and `A→B` then wrote **B**, recreating #405's

@@ -6,7 +6,14 @@ import axiosInstance from '../axios';
 import { get } from 'svelte/store';
 import { t } from '$stores/locale';
 
-export type LLMProvider = 'openai' | 'vllm' | 'ollama' | 'anthropic' | 'openrouter' | 'custom';
+export type LLMProvider =
+  | 'openai'
+  | 'vllm'
+  | 'ollama'
+  | 'anthropic'
+  | 'openrouter'
+  | 'bedrock'
+  | 'custom';
 
 export type ConnectionStatus = 'success' | 'failed' | 'pending' | 'untested';
 
@@ -448,6 +455,13 @@ export class LLMSettingsApi {
         max_tokens: 128000, // OpenRouter typical context window
         temperature: '0.3',
       },
+      bedrock: {
+        provider: 'bedrock',
+        model_name: 'anthropic.claude-haiku-4-5-20251001-v1:0',
+        // No base_url: Bedrock is reached through the AWS SDK, not an HTTP endpoint.
+        max_tokens: 200000, // Typical for the Claude-on-Bedrock family; varies by model
+        temperature: '0.3',
+      },
       custom: {
         provider: 'custom',
         model_name: '',
@@ -471,6 +485,7 @@ export class LLMSettingsApi {
       anthropic: 'Anthropic',
       claude: 'Anthropic', // Legacy support
       openrouter: 'OpenRouter',
+      bedrock: 'AWS Bedrock',
       custom: 'Custom Provider',
     };
 

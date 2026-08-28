@@ -253,6 +253,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same bypass a layer up and survived any narrowing of the CIDR: the plain-HTTP `:8080` server
   had no `/api/auth/pki` block, so the request fell through to the generic `location /api/`,
   which forwarded a client-supplied DN header from a peer the allowlist trusts *by design*.
+- **The AWS Bedrock LLM provider was implemented but unreachable — no schema/UI wiring
+  existed to select it** (#596). The runtime call path (`llm_bedrock.py`'s Converse/
+  ConverseStream integration, and the non-streaming `chat_completion` fix landed alongside
+  this issue) worked, but `BEDROCK` was missing from the user-settings wire enum
+  (`schemas/llm_settings.LLMProvider`), `LLMService._get_provider_config` had no branch for
+  it (so `LLM_PROVIDER=bedrock` in `.env` silently no-opped — `BEDROCK_MODEL_NAME` was
+  declared and documented but read by nothing), and `validate_connection` fell into the
+  OpenAI-compatible "derive a `/models` URL" branch, which has nothing to derive from for an
+  SDK call — a Bedrock "Test Connection" always failed with "No endpoint configured for
+  bedrock" regardless of whether Bedrock was reachable. Fixed: the schema enum, a dedicated
+  `_get_provider_config` branch gated on `BEDROCK_MODEL_NAME`/`BEDROCK_REGION` presence
+  (never an API key — Bedrock has none, credentials resolve via boto3's standard AWS
+  credential chain), a `validate_connection` branch that drives a real Converse call the same
+  way Claude/Anthropic's does, and a frontend provider option with a model-ID field only (no
+  base URL, no API key — both are genuinely inapplicable, not merely hidden). The AWS region
+  and credentials remain a **deployment-level** setting (`BEDROCK_REGION`/the AWS credential
+  chain), matching how the existing runtime call sites already read them, rather than a new
+  per-configuration field — see `backend/app/services/CLAUDE.md`'s "LLM features" section.
+  Reasoning-probe support (`llm_reasoning.PROBEABLE_PROVIDERS`) remains deliberately excluded
+  pending a real measurement against a live endpoint. Verified structurally against a mocked
+  boto3 client (config validation, system/user-settings resolution, and the real Converse
+  request shape) — **not yet verified against a live AWS Bedrock account**; that is the one
+  remaining step before this can be considered fully closed.
 - **The release rehearsal's rollback phase could crash outright, and — once it stopped
   crashing — still fail for two further reasons** (#618). The same unguarded-command-under-
   `set -e` class of bug as #617, this time a bare `curl` against the frontend inside an

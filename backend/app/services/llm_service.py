@@ -183,6 +183,13 @@ class LLMService:
             # Fixed endpoints - these providers don't support custom base URLs
             LLMProvider.CLAUDE: "https://api.anthropic.com/v1/messages",
             LLMProvider.ANTHROPIC: "https://api.anthropic.com/v1/messages",
+            # Not a real HTTP endpoint — boto3 resolves it from the region. This entry
+            # exists only so `self.endpoints[...]` (validate_connection, the
+            # /llm-settings/test endpoint) has something descriptive to read instead of
+            # raising KeyError or logging a bare "None".
+            LLMProvider.BEDROCK: (
+                f"boto3 bedrock-runtime (region={settings.BEDROCK_REGION or 'NOT CONFIGURED'})"
+            ),
         }
 
         # SDK-based providers have no HTTP endpoint to validate — Bedrock is reached
@@ -1506,16 +1513,23 @@ class LLMService:
         try:
             headers = self._get_headers()
 
-            # Claude/Anthropic providers don't have a models endpoint, test with a simple request
-            if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
+            # Claude/Anthropic and Bedrock have no models endpoint to probe (Bedrock has no
+            # HTTP endpoint at all — it's an SDK call), so all three test with a simple request
+            # instead, exercising the exact code path a real chat turn would take.
+            if self.config.provider in [
+                LLMProvider.CLAUDE,
+                LLMProvider.ANTHROPIC,
+                LLMProvider.BEDROCK,
+            ]:
                 # No local guard here: this branch reaches the network through
                 # `chat_completion`, which now validates and PINS the URL it actually
                 # POSTs to (`_endpoint_session`). The `is_safe_url(base_url)` check that
                 # used to sit here was validate-only — it judged a *different* string
-                # from the one fetched, resolved it a second time, and for these two
-                # providers judged a `base_url` that is never used at all (their
-                # endpoints are fixed). The refusal still surfaces here, as the
-                # `LLMEndpointBlockedError` message caught below.
+                # from the one fetched, resolved it a second time, and for Claude/
+                # Anthropic judged a `base_url` that is never used at all (their
+                # endpoints are fixed). Bedrock has no `base_url` concept whatsoever.
+                # The refusal still surfaces here, as the `LLMEndpointBlockedError`
+                # message caught below.
                 #
                 # Test with a simple message
                 test_messages = [{"role": "user", "content": "Hi"}]
@@ -2208,6 +2222,25 @@ IMPORTANT: Only include predictions with confidence >= 0.5. If you cannot confid
         if provider == LLMProvider.CUSTOM:
             logger.info("Custom provider requires user-specific configuration via UI")
             return None
+
+        if provider == LLMProvider.BEDROCK:
+            # Bedrock has no `base_url`/`api_key` shape at all (SDK call, credentials via
+            # the IAM chain — see `llm_bedrock.py`'s module docstring), so it does not fit
+            # the dict-driven validation below, which assumes an HTTP endpoint and casts
+            # `base_url` to `str()` unconditionally. Validated instead against the two
+            # things that actually gate a Bedrock call: a model ID, and a region for
+            # boto3 to construct the client against (`_client` in `llm_bedrock.py` raises
+            # `BedrockNotConfiguredError` without one).
+            model = str(settings.BEDROCK_MODEL_NAME or "").strip()
+            if not model:
+                logger.info("Bedrock provider configured but no model ID set (BEDROCK_MODEL_NAME)")
+                return None
+            if not settings.BEDROCK_REGION:
+                logger.info(
+                    "Bedrock provider configured but no AWS region set (BEDROCK_REGION/AWS_REGION)"
+                )
+                return None
+            return model, None, None
 
         if provider not in provider_settings:
             logger.warning(f"Unsupported LLM provider: {provider}")

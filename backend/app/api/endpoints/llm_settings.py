@@ -189,6 +189,20 @@ def _get_provider_defaults() -> list[schemas.ProviderDefaults]:
             max_context_length=200000,
             description="OpenRouter provides access to many model providers",
         ),
+        schemas.ProviderDefaults(
+            provider=schemas.LLMProvider.BEDROCK,
+            default_model="anthropic.claude-haiku-4-5-20251001-v1:0",
+            default_base_url=None,
+            requires_api_key=False,
+            supports_custom_url=False,
+            max_context_length=None,
+            description=(
+                "AWS Bedrock — Converse API access to Claude, Nova, Llama and Mistral "
+                "models. No API key: credentials resolve via the AWS SDK's standard "
+                "chain (IAM role, profile, or environment). The AWS region is set by "
+                "your administrator (BEDROCK_REGION/AWS_REGION), not per configuration."
+            ),
+        ),
     ]
 
 

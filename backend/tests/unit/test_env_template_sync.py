@@ -59,14 +59,6 @@ _ALLOWLIST: dict[str, str] = {
         "Standard AWS SDK convention var, read only as BEDROCK_REGION's secondary fallback "
         "behind the already-documented AWS_REGION. Not OpenTranscribe-specific."
     ),
-    "BEDROCK_MODEL_NAME": (
-        "Declared in config.py with a full explanatory comment as a system-fallback "
-        "'quick access default' parallel to VLLM_MODEL_NAME/OPENAI_MODEL_NAME/etc., but "
-        "llm_service.py._get_provider_config's provider_settings dict has no LLMProvider."
-        "BEDROCK entry, so create_from_system_settings() never reads it for that provider — "
-        "genuinely unconsumed (verified by grep), unlike BEDROCK_REGION beside it, which IS "
-        "read directly in the boto3 Converse call path and is documented."
-    ),
     "DATA_DIR": (
         "Hardcoded container path default (/app/data). No compose service sets it and no "
         "volume exists for another value, so a .env override breaks upload persistence."

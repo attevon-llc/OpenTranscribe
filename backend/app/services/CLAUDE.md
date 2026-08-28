@@ -186,7 +186,7 @@ every difference between the two backends (issue #284 A1.11/A1.12):
 ## LLM features (optional)
 
 `llm_service.py` is a **synchronous** client on purpose (Celery tasks; no asyncio conflicts).
-`LLMProvider` = openai · vllm · ollama · anthropic · openrouter · custom (`claude` is a
+`LLMProvider` = openai · vllm · ollama · anthropic · openrouter · bedrock · custom (`claude` is a
 deprecated alias for `anthropic`).
 
 - **Resolution order**: `create_from_user_settings(user_id)` → falls back to
@@ -194,6 +194,15 @@ deprecated alias for `anthropic`).
   `LLM_PROVIDER` and no user config = transcription-only; `create_from_system_settings`
   returns `None` and callers must handle it. `custom` is **user-config only** — it always
   returns `None` from system settings.
+- **`bedrock` is the one SDK-based provider** (`SDK_PROVIDERS`, `llm_bedrock.py`): boto3's
+  Converse API, not an HTTP endpoint. No `api_key` — credentials resolve via boto3's standard
+  chain (IAM role, profile, or environment) — and no per-configuration region: both
+  `create_from_system_settings` and a per-user `bedrock` row call through to the SAME
+  deployment-wide `settings.BEDROCK_REGION`/`BEDROCK_MODEL_NAME` (system-fallback validated in
+  `_get_provider_config`; the runtime call sites in `llm_service.py` read `settings.BEDROCK_REGION`
+  directly, never `self.config`). A user config only ever supplies the model ID. Reasoning-probe
+  support is deliberately **not** wired (`llm_reasoning.PROBEABLE_PROVIDERS` excludes it) — see
+  that section below for why a provider needs a live measurement first, not just an enum entry.
 - Per-user keys are AES-encrypted (`utils/encryption.encrypt_api_key`) and never returned;
   edit mode reuses the stored key when the request omits `api_key`.
 - Summarization: BLUF, speaker analysis with talk time, action items, decisions, follow-ups,

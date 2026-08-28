@@ -508,12 +508,32 @@ class SpeakerMatchingService:
         if not speaker:
             raise ValueError(f"Speaker {speaker_id} not found")
 
+        # Captured before ANY write below (issue #605) — `confidence` alone can
+        # move the canonical chunk-index label across the suggestion threshold
+        # with no `display_name` write at all, the same shape as the other
+        # writers of this field in this class (`_handle_speaker_match`,
+        # `_handle_no_speaker_match`).
+        before = canonical_speaker_label_for_row(speaker)
+
         speaker.profile_id = profile_id  # type: ignore[assignment]
         speaker.verified = True  # type: ignore[assignment]
         if confidence is not None:
             speaker.confidence = confidence  # type: ignore[assignment]
 
-        self.db.flush()
+        self._rename_tracker.record(
+            int(speaker.media_file_id) if speaker.media_file_id else None,
+            before,
+            canonical_speaker_label_for_row(speaker),
+        )
+
+        # Commit-then-flush, matching `process_speaker_segments`/
+        # `process_speaker_embeddings_native` above: a rolled-back assignment
+        # must never reach the chunk index, so the tracker flushes only after
+        # this method's own write is durable. This is the sole write in the
+        # call — the endpoint's own `db.commit()` right after this call is a
+        # harmless no-op on an already-committed session.
+        self.db.commit()
+        self._rename_tracker.flush(self.db)
         return speaker  # type: ignore[no-any-return]
 
     def process_speaker_segments(

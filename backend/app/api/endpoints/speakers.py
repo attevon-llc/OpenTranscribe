@@ -1674,7 +1674,14 @@ def _handle_update_profile_action(
 
     renames: list[tuple[str, str]] = []
     for linked_speaker in linked_speakers:
-        old_chunk_name = str(linked_speaker.display_name or linked_speaker.name or "")
+        # The CANONICAL indexed label (`canonical_speaker_label_for_row`, the
+        # SAME resolver the chunk-index writers use) — not the ad hoc
+        # `display_name or name` chain issue #605's original sweep replaced at
+        # eight other call sites but missed here. A linked speaker indexed
+        # under a confident suggestion (no `display_name` set) would compute
+        # the wrong "old name", and the propagation's `update_by_query` would
+        # match nothing while logging `status: success`.
+        old_chunk_name = canonical_speaker_label_for_row(linked_speaker)
         file_uuid = file_uuids.get(int(linked_speaker.media_file_id or 0))
         if file_uuid and old_chunk_name:
             renames.append((file_uuid, old_chunk_name))

@@ -336,6 +336,46 @@ class TestProfileRenameCapture:
         assert _handle_update_profile_action(empty.id, "Renamed", normal_user, db_session) == []
         assert _handle_update_profile_action(-1, "Renamed", normal_user, db_session) is None
 
+    def test_a_linked_speaker_indexed_under_a_suggestion_reports_the_suggestion_as_old_name(
+        self, db_session, normal_user
+    ):
+        """Follow-up to issue #605: this call site still computed the ad hoc
+        ``display_name or name`` chain directly instead of going through
+        ``canonical_speaker_label_for_row``, the SAME resolver the chunk-index
+        writers use. A linked speaker with no ``display_name`` but a confident
+        ``suggested_name`` (>= the 0.75 threshold) is indexed under the
+        SUGGESTION, exactly the shape of speaker 74070 from #605's own repro.
+        The old chain computed the raw diarizer label here, so
+        ``_propagate_speaker_rename_to_chunks``'s ``update_by_query`` would
+        match nothing against the real indexed text and log ``status:
+        success`` while the drift survived.
+        """
+        from app.api.endpoints.speakers import _handle_update_profile_action
+
+        profile = SpeakerProfile(uuid=str(uuid_mod.uuid4()), user_id=normal_user.id, name="Host")
+        db_session.add(profile)
+        db_session.flush()
+
+        media_file = _make_media_file(db_session, normal_user, "suggestion-linked")
+        _make_speaker(
+            db_session,
+            normal_user,
+            media_file,
+            "SPEAKER_01",
+            profile_id=profile.id,
+            suggested_name="Joe Rogan (Host)",
+            confidence=0.9,
+        )
+
+        renames = _handle_update_profile_action(profile.id, "Joe Rogan", normal_user, db_session)
+
+        assert renames == [(str(media_file.uuid), "Joe Rogan (Host)")], (
+            "the real indexed label is the confident suggestion, not the raw "
+            "diarizer name — the old ad hoc chain computed 'SPEAKER_01' here, "
+            "which a propagation update_by_query would then match nothing "
+            "against"
+        )
+
 
 class TestRetroactiveAutoApply:
     def test_auto_applied_match_reports_the_stale_chunk_name(

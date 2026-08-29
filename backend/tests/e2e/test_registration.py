@@ -230,9 +230,14 @@ class TestEmailValidation:
         page.click("button:has-text('Create Account')")
         # Deterministic settle rather than a guessed duration (issue #431).
         page.wait_for_load_state("networkidle")
-        # Should show validation error
-        still_on_register = "register" in page.url or page.locator("#email").is_visible()
-        assert still_on_register, "Should validate email format"
+        # BOTH halves, not an `or` chain over them. The chain was true on a page that
+        # had crashed to a blank document (still at /register, nothing rendered) and on
+        # a page that had navigated away while a stale #email lingered — so it could not
+        # fail for the reason the test is named for. Requiring the URL AND the mounted
+        # field AND the absence of the post-login gallery makes each of those red.
+        expect(page).to_have_url(re.compile(r"/register"))
+        expect(page.locator("#email")).to_be_visible()
+        expect(page.locator(".gallery-action-buttons")).to_have_count(0)
 
     def test_email_missing_domain(self, page: Page, base_url: str):
         """Test email without domain is rejected."""
@@ -247,8 +252,10 @@ class TestEmailValidation:
         page.click("button:has-text('Create Account')")
         # Deterministic settle rather than a guessed duration (issue #431).
         page.wait_for_load_state("networkidle")
-        still_on_register = "register" in page.url or page.locator("#email").is_visible()
-        assert still_on_register
+        # See test_email_invalid_format for why the `or` chain could not fail.
+        expect(page).to_have_url(re.compile(r"/register"))
+        expect(page.locator("#email")).to_be_visible()
+        expect(page.locator(".gallery-action-buttons")).to_have_count(0)
 
     def test_email_missing_at_symbol(self, page: Page, base_url: str):
         """Test email without @ symbol is rejected."""
@@ -263,8 +270,10 @@ class TestEmailValidation:
         page.click("button:has-text('Create Account')")
         # Deterministic settle rather than a guessed duration (issue #431).
         page.wait_for_load_state("networkidle")
-        still_on_register = "register" in page.url or page.locator("#email").is_visible()
-        assert still_on_register
+        # See test_email_invalid_format for why the `or` chain could not fail.
+        expect(page).to_have_url(re.compile(r"/register"))
+        expect(page.locator("#email")).to_be_visible()
+        expect(page.locator(".gallery-action-buttons")).to_have_count(0)
 
 
 class TestPasswordValidation:
@@ -283,8 +292,10 @@ class TestPasswordValidation:
         page.click("button:has-text('Create Account')")
         # Deterministic settle rather than a guessed duration (issue #431).
         page.wait_for_load_state("networkidle")
-        still_on_register = "register" in page.url or page.locator("#password").is_visible()
-        assert still_on_register, "Should enforce minimum password length"
+        # See test_email_invalid_format for why the `or` chain could not fail.
+        expect(page).to_have_url(re.compile(r"/register"))
+        expect(page.locator("#password")).to_be_visible()
+        expect(page.locator(".gallery-action-buttons")).to_have_count(0)
 
     def test_password_no_uppercase(self, page: Page, base_url: str, registration_email: str):
         """Test password requires uppercase letter."""
@@ -360,8 +371,10 @@ class TestPasswordValidation:
         page.click("button:has-text('Create Account')")
         # Deterministic settle rather than a guessed duration (issue #431).
         page.wait_for_load_state("networkidle")
-        still_on_register = "register" in page.url or page.locator("#confirmPassword").is_visible()
-        assert still_on_register, "Should reject mismatched passwords"
+        # See test_email_invalid_format for why the `or` chain could not fail.
+        expect(page).to_have_url(re.compile(r"/register"))
+        expect(page.locator("#confirmPassword")).to_be_visible()
+        expect(page.locator(".gallery-action-buttons")).to_have_count(0)
 
     def test_password_visibility_toggle(self, page: Page, base_url: str):
         """Test password visibility toggle button if present."""
@@ -440,7 +453,8 @@ class TestRegistrationSuccess:
             # Wait for the NAVIGATION (the navbar user-button can render a
             # beat before goto("/") completes — asserting on it races).
             page.wait_for_url(lambda url: "register" not in url.lower(), timeout=15000)
-            page.wait_for_selector(".user-button", timeout=15000)
+            expect(page).not_to_have_url(re.compile(r"/register"))
+            expect(page.locator(".user-button")).to_be_visible(timeout=15000)
         finally:
             _delete_user_by_email(api_helper, email)
 
@@ -468,7 +482,7 @@ class TestRegistrationSuccess:
             # Wait for the navigation itself — the navbar button can render
             # a beat before goto("/") completes.
             page.wait_for_url(lambda url: "register" not in url.lower(), timeout=15000)
-            page.wait_for_selector(".user-button", timeout=15000)
+            expect(page.locator(".user-button")).to_be_visible(timeout=15000)
 
             # Drop the session cookies, then log in fresh with the new creds
             page.context.clear_cookies()
@@ -481,7 +495,8 @@ class TestRegistrationSuccess:
             # Wait for the post-login NAVIGATION (the navbar can render before
             # the SPA finishes goto("/") — asserting on page.url races).
             page.wait_for_url(lambda url: "/login" not in url, timeout=15000)
-            page.wait_for_selector(".user-button", timeout=15000)
+            expect(page).not_to_have_url(re.compile(r"/login"))
+            expect(page.locator(".user-button")).to_be_visible(timeout=15000)
         finally:
             _delete_user_by_email(api_helper, email)
 

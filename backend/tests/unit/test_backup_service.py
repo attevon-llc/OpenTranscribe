@@ -19,6 +19,7 @@ import pytest
 from app.core import constants as C  # noqa: N812
 from app.services import backup_service as bs
 from app.services import system_settings_service as sss
+from tests.fixtures.fake_s3 import FakeS3Client
 
 # This file, test_backup_metrics.py, and test_backup_alerts.py all upsert the same
 # backup.* SystemSettings keys (bs.KEY_*) with no coordination between them — under
@@ -393,43 +394,10 @@ def test_select_to_delete_works_on_s3_keys():
     assert f"{prefix}{_name(_utc(2026, 6, 10, 3, 0))}" not in to_delete
 
 
-class _FakeS3Client:
-    """Minimal in-memory S3 stand-in for the boto3 client boundary."""
-
-    def __init__(self, *, bucket_ok=True, objects=None):
-        self._bucket_ok = bucket_ok
-        # objects: {key: size}
-        self.objects: dict[str, int] = dict(objects or {})
-        self.uploaded: list[tuple[str, str]] = []
-        self.deleted: list[str] = []
-
-    def head_bucket(self, Bucket):  # noqa: N803 - boto3 kwarg name
-        if not self._bucket_ok:
-            raise RuntimeError("bucket not found")
-        return {}
-
-    def upload_file(self, local_path, bucket, key):
-        size = Path(local_path).stat().st_size
-        self.objects[key] = size
-        self.uploaded.append((bucket, key))
-
-    def delete_object(self, Bucket, Key):  # noqa: N803
-        self.objects.pop(Key, None)
-        self.deleted.append(Key)
-
-    def list_objects_v2(self, **kwargs):
-        prefix = kwargs.get("Prefix", "")
-        contents = [{"Key": k, "Size": v} for k, v in self.objects.items() if k.startswith(prefix)]
-        return {"Contents": contents}
-
-    def get_paginator(self, _name):
-        client = self
-
-        class _Paginator:
-            def paginate(self, **kwargs):
-                yield client.list_objects_v2(**kwargs)
-
-        return _Paginator()
+# _FakeS3Client used to be defined here. It now has a second consumer
+# (tests/unit/test_backup_fetch.py, issue #600) and lives in tests/fixtures/fake_s3.py so the
+# two cannot drift; kept importable under the old private name for this file's existing uses.
+_FakeS3Client = FakeS3Client
 
 
 def _pgdump_writes(payload=b"FAKE PGDUMP DATA"):

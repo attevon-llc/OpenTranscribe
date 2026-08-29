@@ -17,11 +17,8 @@
   import { page } from '$app/stores';
   import { t } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
-  import {
-    verifyEmail,
-    resendEmailVerification,
-    invitationErrorMessage,
-  } from '$lib/api/invitations';
+  import { verifyEmail, resendEmailVerification } from '$lib/api/invitations';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { onMount } from 'svelte';
 
   import logoBanner from '../../assets/logo-banner.png';
@@ -49,7 +46,7 @@
       outcomeMessage = message || $t('auth.verifyEmail.verified');
       phase = 'verified';
     } catch (err) {
-      outcomeMessage = invitationErrorMessage(err, $t('auth.verifyEmail.failed'));
+      outcomeMessage = getErrorMessage(err, $t('auth.verifyEmail.failed'));
       phase = 'failed';
     }
   }

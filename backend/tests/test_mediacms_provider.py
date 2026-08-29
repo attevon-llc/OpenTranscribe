@@ -14,10 +14,29 @@ import pytest
 from fastapi import HTTPException
 
 from app.services.protected_media_plugins.mediacms import MediacmsProvider
+from tests.helpers import stub_pinned_session
+from tests.helpers import stub_public_dns
+
+_MEDIACMS_MODULE = "app.services.protected_media_plugins.mediacms"
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _public_media_host_dns(monkeypatch):
+    """Let ``*.example.com`` resolve to a public address for this module.
+
+    Every outbound request the provider makes is now re-checked against
+    ``utils/url_validation`` immediately before it is issued (audit finding A1), so the
+    ``m.example.com`` hosts these tests use must resolve to something public or the
+    guard refuses them for a reason unrelated to what is being tested.
+
+    The guard's own behaviour is covered in ``unit/test_media_source_ssrf.py``, which
+    does **not** stub DNS for its hostile hosts.
+    """
+    stub_public_dns(monkeypatch)
 
 
 @pytest.fixture
@@ -399,16 +418,17 @@ class TestLoginAndGetInfo:
 
         return login_resp, info_resp
 
-    @patch("app.services.protected_media_plugins.mediacms.requests")
-    def test_successful_login_and_info(self, mock_requests, provider, _clear_mediacms_env):
+    def test_successful_login_and_info(self, provider, _clear_mediacms_env, monkeypatch):
         """Successful login returns token, base_url, info, and auth_token."""
         login_resp, info_resp = self._mock_login_success(
             "https://m.example.com",
             "vid123",
             {"title": "Test Video", "duration": 60},
         )
-        mock_requests.post.return_value = login_resp
-        mock_requests.get.return_value = info_resp
+        mock_session = MagicMock()
+        mock_session.post.return_value = login_resp
+        mock_session.get.return_value = info_resp
+        stub_pinned_session(monkeypatch, _MEDIACMS_MODULE, mock_session)
 
         with (
             patch.object(
@@ -429,20 +449,23 @@ class TestLoginAndGetInfo:
             assert info["title"] == "Test Video"
             assert auth == "auth-tok-123"
 
-        # Verify login was called with correct credentials
-        mock_requests.post.assert_called_once()
-        call_kwargs = mock_requests.post.call_args
+        # Verify login was called with correct credentials, and that the redirect guard
+        # (finding A1) is present on the pinned request.
+        mock_session.post.assert_called_once()
+        call_kwargs = mock_session.post.call_args
         assert call_kwargs.kwargs["data"]["username"] == "alice"
         assert call_kwargs.kwargs["data"]["password"] == "secret"
+        assert call_kwargs.kwargs["allow_redirects"] is False
 
-    @patch("app.services.protected_media_plugins.mediacms.requests")
-    def test_falls_back_to_stored_credentials(self, mock_requests, provider, _clear_mediacms_env):
+    def test_falls_back_to_stored_credentials(self, provider, _clear_mediacms_env, monkeypatch):
         """When no credentials provided, falls back to stored."""
         login_resp, info_resp = self._mock_login_success(
             "https://m.example.com", "tok", {"title": "V"}
         )
-        mock_requests.post.return_value = login_resp
-        mock_requests.get.return_value = info_resp
+        mock_session = MagicMock()
+        mock_session.post.return_value = login_resp
+        mock_session.get.return_value = info_resp
+        stub_pinned_session(monkeypatch, _MEDIACMS_MODULE, mock_session)
 
         with (
             patch.object(
@@ -455,7 +478,7 @@ class TestLoginAndGetInfo:
         ):
             provider._login_and_get_info("https://m.example.com/view?m=tok")
 
-        call_kwargs = mock_requests.post.call_args
+        call_kwargs = mock_session.post.call_args
         assert call_kwargs.kwargs["data"]["username"] == "stored-user"
         assert call_kwargs.kwargs["data"]["password"] == "stored-pass"
 
@@ -472,14 +495,15 @@ class TestLoginAndGetInfo:
             assert exc.value.status_code == 400
             assert "Credentials" in str(exc.value.detail)
 
-    @patch("app.services.protected_media_plugins.mediacms.requests")
-    def test_login_no_token_raises(self, mock_requests, provider, _clear_mediacms_env):
+    def test_login_no_token_raises(self, provider, _clear_mediacms_env, monkeypatch):
         """Raises 502 when login response has no token."""
         login_resp = MagicMock()
         login_resp.status_code = 200
         login_resp.json.return_value = {}  # No token
         login_resp.raise_for_status = MagicMock()
-        mock_requests.post.return_value = login_resp
+        mock_session = MagicMock()
+        mock_session.post.return_value = login_resp
+        stub_pinned_session(monkeypatch, _MEDIACMS_MODULE, mock_session)
 
         with (
             patch.object(
@@ -495,13 +519,13 @@ class TestLoginAndGetInfo:
             assert exc.value.status_code == 502
             assert "auth token" in str(exc.value.detail)
 
-    @patch("app.services.protected_media_plugins.mediacms.requests")
-    def test_login_request_error_wraps_as_502(self, mock_requests, provider, _clear_mediacms_env):
+    def test_login_request_error_wraps_as_502(self, provider, _clear_mediacms_env, monkeypatch):
         """Network errors during login are wrapped as 502."""
         import requests
 
-        mock_requests.post.side_effect = requests.exceptions.ConnectionError("Connection refused")
-        mock_requests.exceptions = requests.exceptions
+        mock_session = MagicMock()
+        mock_session.post.side_effect = requests.exceptions.ConnectionError("Connection refused")
+        stub_pinned_session(monkeypatch, _MEDIACMS_MODULE, mock_session)
 
         with (
             patch.object(
@@ -525,8 +549,7 @@ class TestLoginAndGetInfo:
 class TestExtractInfo:
     """extract_info delegates to _login_and_get_info + _build_media_info."""
 
-    @patch("app.services.protected_media_plugins.mediacms.requests")
-    def test_extract_info_returns_media_dict(self, mock_requests, provider, _clear_mediacms_env):
+    def test_extract_info_returns_media_dict(self, provider, _clear_mediacms_env, monkeypatch):
         """extract_info returns a complete media info dict."""
         login_resp = MagicMock()
         login_resp.status_code = 200
@@ -538,8 +561,10 @@ class TestExtractInfo:
         info_resp.json.return_value = {"title": "Info Video", "duration": 90}
         info_resp.raise_for_status = MagicMock()
 
-        mock_requests.post.return_value = login_resp
-        mock_requests.get.return_value = info_resp
+        mock_session = MagicMock()
+        mock_session.post.return_value = login_resp
+        mock_session.get.return_value = info_resp
+        stub_pinned_session(monkeypatch, _MEDIACMS_MODULE, mock_session)
 
         with (
             patch.object(provider, "_get_allowed_hosts", return_value={"m.example.com"}),
@@ -564,8 +589,7 @@ class TestExtractInfo:
 class TestDownload:
     """download() with mocked HTTP for login + file download."""
 
-    @patch("app.services.protected_media_plugins.mediacms.requests")
-    def test_download_success(self, mock_requests, provider, tmp_path, _clear_mediacms_env):
+    def test_download_success(self, provider, tmp_path, _clear_mediacms_env, monkeypatch):
         """Successful download writes file and returns info."""
         # Login mock
         login_resp = MagicMock()
@@ -592,9 +616,11 @@ class TestDownload:
         download_resp.__enter__ = MagicMock(return_value=download_resp)
         download_resp.__exit__ = MagicMock(return_value=False)
 
-        mock_requests.post.return_value = login_resp
+        mock_session = MagicMock()
+        mock_session.post.return_value = login_resp
         # First .get call is info, second is download (via context manager)
-        mock_requests.get.side_effect = [info_resp, download_resp]
+        mock_session.get.side_effect = [info_resp, download_resp]
+        stub_pinned_session(monkeypatch, _MEDIACMS_MODULE, mock_session)
 
         with (
             patch.object(provider, "_get_allowed_hosts", return_value={"m.example.com"}),
@@ -611,9 +637,13 @@ class TestDownload:
             assert "filename" in result
             assert result["info"]["title"] == "Download Test"
 
-    @patch("app.services.protected_media_plugins.mediacms.requests")
+        # The download leg carries the same redirect guard as login/info (finding A1) —
+        # a 302 here would write the redirected body to a file the user then owns.
+        download_call = mock_session.get.call_args_list[1]
+        assert download_call.kwargs["allow_redirects"] is False
+
     def test_download_missing_original_url_raises(
-        self, mock_requests, provider, tmp_path, _clear_mediacms_env
+        self, provider, tmp_path, _clear_mediacms_env, monkeypatch
     ):
         """Raises 502 when original_media_url is missing from info."""
         login_resp = MagicMock()
@@ -626,8 +656,10 @@ class TestDownload:
         info_resp.json.return_value = {"title": "No URL"}  # Missing original_media_url
         info_resp.raise_for_status = MagicMock()
 
-        mock_requests.post.return_value = login_resp
-        mock_requests.get.return_value = info_resp
+        mock_session = MagicMock()
+        mock_session.post.return_value = login_resp
+        mock_session.get.return_value = info_resp
+        stub_pinned_session(monkeypatch, _MEDIACMS_MODULE, mock_session)
 
         with (
             patch.object(provider, "_get_allowed_hosts", return_value={"m.example.com"}),
@@ -644,9 +676,8 @@ class TestDownload:
             assert exc.value.status_code == 502
             assert "original_media_url" in str(exc.value.detail)
 
-    @patch("app.services.protected_media_plugins.mediacms.requests")
     def test_download_ssrf_absolute_url_rejected(
-        self, mock_requests, provider, tmp_path, _clear_mediacms_env
+        self, provider, tmp_path, _clear_mediacms_env, monkeypatch
     ):
         """Absolute original_media_url (potential SSRF) is rejected."""
         login_resp = MagicMock()
@@ -662,8 +693,10 @@ class TestDownload:
         }
         info_resp.raise_for_status = MagicMock()
 
-        mock_requests.post.return_value = login_resp
-        mock_requests.get.return_value = info_resp
+        mock_session = MagicMock()
+        mock_session.post.return_value = login_resp
+        mock_session.get.return_value = info_resp
+        stub_pinned_session(monkeypatch, _MEDIACMS_MODULE, mock_session)
 
         with (
             patch.object(provider, "_get_allowed_hosts", return_value={"m.example.com"}),
@@ -680,9 +713,8 @@ class TestDownload:
             assert exc.value.status_code == 502
             assert "invalid media URL" in str(exc.value.detail)
 
-    @patch("app.services.protected_media_plugins.mediacms.requests")
     def test_download_protocol_relative_url_rejected(
-        self, mock_requests, provider, tmp_path, _clear_mediacms_env
+        self, provider, tmp_path, _clear_mediacms_env, monkeypatch
     ):
         """Protocol-relative original_media_url (//) is rejected as SSRF."""
         login_resp = MagicMock()
@@ -698,8 +730,10 @@ class TestDownload:
         }
         info_resp.raise_for_status = MagicMock()
 
-        mock_requests.post.return_value = login_resp
-        mock_requests.get.return_value = info_resp
+        mock_session = MagicMock()
+        mock_session.post.return_value = login_resp
+        mock_session.get.return_value = info_resp
+        stub_pinned_session(monkeypatch, _MEDIACMS_MODULE, mock_session)
 
         with (
             patch.object(provider, "_get_allowed_hosts", return_value={"m.example.com"}),
@@ -714,6 +748,66 @@ class TestDownload:
                     password="p",
                 )
             assert exc.value.status_code == 502
+
+    def test_download_login_leg_does_not_follow_a_redirect_to_a_private_target(
+        self, provider, tmp_path, _clear_mediacms_env, monkeypatch
+    ):
+        """The concrete exploit from finding A1: a 302 on the media-info leg to a
+        private/link-local target must never be followed.
+
+        Before ``allow_redirects=False`` was added, ``requests`` followed a redirect
+        transparently: the login leg (validated, public) succeeds, and the media-info leg
+        responds with a 302 to ``http://169.254.169.254/latest/meta-data/...``. Because
+        ``requests`` resolves and dials that Location header itself, nothing in the old
+        code ever saw or judged the redirect target — it just returned whatever the
+        metadata endpoint said, stored under ``media_info["mediacms_raw"]``.
+
+        A mocked session can't literally "follow" a redirect (that's a real `requests`
+        client behaviour, not something a fake session does), so this test proves the
+        thing that actually stops it: the request that would receive that redirect is
+        issued with ``allow_redirects=False``. Watched red against ``git archive HEAD``
+        (pre-fix): the assertion below failed because the kwarg was entirely absent from
+        the call — this test used the mock's own default of not being called with that
+        kwarg at all, i.e. `allow_redirects` was never even sent, which is the same bug
+        `requests`' default (`allow_redirects=True`) produces at the real HTTP layer.
+        """
+        login_resp = MagicMock()
+        login_resp.status_code = 200
+        login_resp.json.return_value = {"token": "auth-tok"}
+        login_resp.raise_for_status = MagicMock()
+
+        # Simulate what a compromised/malicious MediaCMS host would answer with: a
+        # redirect response object. `raise_for_status` on a 3xx does not raise, and a real
+        # `requests.Session.get(..., allow_redirects=True)` would silently chase the
+        # `Location` header to the attacker's chosen target and return ITS body here.
+        info_resp = MagicMock()
+        info_resp.status_code = 302
+        info_resp.headers = {"Location": "http://169.254.169.254/latest/meta-data/iam/"}
+        info_resp.json.return_value = {"title": "redirected"}
+        info_resp.raise_for_status = MagicMock()
+
+        mock_session = MagicMock()
+        mock_session.post.return_value = login_resp
+        mock_session.get.return_value = info_resp
+        stub_pinned_session(monkeypatch, _MEDIACMS_MODULE, mock_session)
+
+        with (
+            patch.object(provider, "_get_allowed_hosts", return_value={"m.example.com"}),
+            patch.object(provider, "_get_verify_ssl_for_host", return_value=True),
+            patch.object(provider, "_get_stored_credentials", return_value=(None, None)),
+        ):
+            provider.extract_info(
+                "https://m.example.com/view?m=vid1",
+                username="u",
+                password="p",
+            )
+
+        info_call = mock_session.get.call_args
+        assert info_call.kwargs.get("allow_redirects") is False, (
+            "the media-info request must refuse to follow a redirect — a mock session "
+            "cannot simulate the real client silently chasing one, but the missing "
+            "`allow_redirects=False` kwarg is exactly what lets that happen for real"
+        )
 
 
 # ===================================================================

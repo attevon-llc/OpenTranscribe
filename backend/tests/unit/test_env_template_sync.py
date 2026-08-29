@@ -67,9 +67,13 @@ _ALLOWLIST: dict[str, str] = {
         "Managed-edition seam value ('community'|'cloud'), set only by the private cloud "
         "build. A self-hosted .env never needs it — see backend/app/core/CLAUDE.md."
     ),
-    "JWT_REFRESH_TOKEN_EXPIRE_MINUTES": (
-        "Unwired field, own comment says 'future implementation'. The live FedRAMP AC-12 "
-        "setting is the already-documented JWT_REFRESH_TOKEN_EXPIRE_DAYS."
+    "ENCRYPTION_ALGORITHM_V3": (
+        "Validated at boot against IMPLEMENTED_ENCRYPTION_ALGORITHMS = {'AES-256-GCM'}, the "
+        "only algorithm utils/encryption.py's v3 envelope actually implements — setting it to "
+        "anything else refuses production startup, and setting it to the only valid value is a "
+        "no-op versus the default. Not a real operator knob; see config.py's IMPLEMENTED_"
+        "ENCRYPTION_ALGORITHMS comment for why adding a second algorithm here without writing "
+        "the decrypt code would silently orphan every existing ciphertext."
     ),
     "MODELS_DIR": (
         "Internal container path default (/app/models). Base compose sets a differently-"
@@ -87,6 +91,13 @@ _ALLOWLIST: dict[str, str] = {
     "TESTING": (
         "Test-harness-only flag (config.py's own pydantic Config class) that decides "
         "whether Settings loads a .env file AT ALL — never itself a .env setting."
+    ),
+    "USE_GPU": (
+        "Dead config.py field: only consumer is the effective_use_gpu property, and nothing "
+        "in backend/app calls effective_use_gpu, effective_torch_device, effective_compute_"
+        "type, or effective_batch_size (verified by grep) — real hardware detection reads "
+        "TORCH_DEVICE/COMPUTE_TYPE/BATCH_SIZE directly via os.getenv in hardware_detection.py "
+        "and transcription/config.py instead, bypassing these Settings fields entirely."
     ),
     "WATCH_FOLDER_PATH": (
         "Internal container path, set unconditionally to /watch by docker-compose.watch.yml. "
@@ -198,6 +209,7 @@ def _config_py_vars(text: str) -> set[str]:
 _SURFACE_GLOBS = (
     "docker-compose*.yml",
     "opentr.sh",
+    "opentranscribe.sh",
     "scripts/**/*.sh",
     "scripts/**/*.py",
     "nginx/**/*",
@@ -371,6 +383,14 @@ def test_consumption_scanner_finds_names_and_the_corpus_is_real():
 
 @pytest.mark.unit
 def test_reader_and_documented_scans_are_nonempty_on_the_real_repo():
-    """Guard against a path typo silently making every check above pass vacuously."""
+    """Guard against a path typo silently making every check above pass vacuously.
+
+    The floor is a sanity check that the scan isn't vacuous, not a target count: it
+    was 200 back when .env.example was ~1900 lines. `8ca346a2` and later commits cut
+    it to secrets/system-config only (currently ~165-170 documented keys) — most of
+    what it used to list is now UI-configurable `SystemSettings`, not `.env`. Lower
+    this again only if a future trim drops the real count below it for the same
+    legitimate reason; don't raise it back to chase a stale historical number.
+    """
     assert len(_reader_names()) > 50
-    assert len(_documented_keys(ENV_EXAMPLE.read_text(encoding="utf-8"))) > 200
+    assert len(_documented_keys(ENV_EXAMPLE.read_text(encoding="utf-8"))) > 100

@@ -109,6 +109,47 @@ def test_status_detail_nonexistent_404(client, user_token_headers):
     assert response.json()["detail"] == "File not found"
 
 
+def test_status_detail_max_retries_reflects_the_admin_ceiling(
+    client, user_token_headers, normal_user, db_session
+):
+    """`max_retries` (and `is_retryable`/`can_retry` derived from it) must report the
+    admin-tunable SystemSettings ceiling, not `MediaFile.max_retries` — a column
+    nothing ever writes, so it always read back the ORM default of 3 regardless of
+    what an admin configured. That made this endpoint disagree with what
+    `/retry` (both of them) actually enforces.
+    """
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=1)
+    media_file = _make_file(db_session, normal_user, file_status="error", retry_count=1)
+
+    response = client.get(f"/api/files/{media_file.uuid}/status-detail", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["max_retries"] == 1
+    # retry_count (1) has reached the lowered ceiling (1): the file must NOT be
+    # reported as retryable, even though `can_retry` (status-only) says "retry" is a
+    # legal action to attempt.
+    assert "This file has reached maximum retry attempts" in " ".join(body["recommendations"])
+    assert "This file can be retried for processing." not in body["recommendations"]
+
+
+def test_status_detail_max_retries_below_ceiling_is_retryable(
+    client, user_token_headers, normal_user, db_session
+):
+    """Control: below the (raised) admin ceiling, status-detail reports retryable."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=5)
+    media_file = _make_file(db_session, normal_user, file_status="error", retry_count=1)
+
+    response = client.get(f"/api/files/{media_file.uuid}/status-detail", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["max_retries"] == 5
+    assert "This file can be retried for processing." in body["recommendations"]
+
+
 # ---------------------------------------------------------------------------
 # POST /api/files/{uuid}/cancel  (cancel ACTIVE PROCESSING)
 # ---------------------------------------------------------------------------
@@ -169,6 +210,67 @@ def test_retry_other_user_forbidden(client, other_user_auth_headers, normal_user
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
+def test_retry_honours_admin_ceiling_even_reading_the_stale_column(
+    client, user_token_headers, normal_user, db_session
+):
+    """A3: /retry used to read MediaFile.max_retries (never written anywhere, so
+    always the ORM default of 3) instead of the admin-tunable system setting that
+    /reprocess honours. Set the admin ceiling to 1 and a file already at 2
+    retries must be refused, even though the stale column would still say "3"."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=1)
+    media_file = _make_file(db_session, normal_user, file_status="error", retry_count=2)
+    response = client.post(f"/api/files/{media_file.uuid}/retry", headers=user_token_headers)
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "maximum retry attempts" in response.json()["detail"]
+
+
+def test_retry_below_admin_ceiling_still_succeeds(
+    client, user_token_headers, normal_user, db_session
+):
+    """Control: below the (lowered) ceiling, retry still works."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=5)
+    media_file = _make_file(db_session, normal_user, file_status="error", retry_count=1)
+    response = client.post(f"/api/files/{media_file.uuid}/retry", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+
+
+def test_retry_reset_retry_count_requires_admin(
+    client, user_token_headers, normal_user, db_session
+):
+    """A3: reset_retry_count used to skip the ceiling check entirely for ANY
+    caller, including a non-admin file owner. It must now require admin."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=1)
+    media_file = _make_file(db_session, normal_user, file_status="error", retry_count=5)
+    response = client.post(
+        f"/api/files/{media_file.uuid}/retry",
+        headers=user_token_headers,
+        params={"reset_retry_count": "true"},
+    )
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_retry_reset_retry_count_by_admin_succeeds(
+    client, admin_token_headers, admin_user, db_session
+):
+    """Control: an admin resetting the retry count is still allowed."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=1)
+    media_file = _make_file(db_session, admin_user, file_status="error", retry_count=5)
+    response = client.post(
+        f"/api/files/{media_file.uuid}/retry",
+        headers=admin_token_headers,
+        params={"reset_retry_count": "true"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+
+
 # ---------------------------------------------------------------------------
 # DELETE /api/files/{uuid}/force  (admin only)
 # ---------------------------------------------------------------------------
@@ -194,6 +296,32 @@ def test_force_delete_admin_200(client, admin_token_headers, normal_user, db_ses
     response = client.delete(f"/api/files/{media_file.uuid}/force", headers=admin_token_headers)
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["file_uuid"] == str(media_file.uuid)
+
+
+def test_force_delete_admin_cancels_a_live_active_task_200(
+    client, admin_token_headers, normal_user, db_session
+):
+    """``/force`` is the documented escape hatch for exactly the case a plain
+    DELETE refuses: a file with a genuinely live ``active_task_id`` (see
+    ``test_files_crud.py::test_delete_file_with_live_active_task_409``). An admin
+    must still be able to force through it — revoking the task, not leaving it
+    orphaned pointing at a deleted file.
+    """
+    media_file = _make_file(
+        db_session,
+        normal_user,
+        file_status="completed",
+        active_task_id="33333333-3333-3333-3333-333333333333",
+    )
+    with (
+        patch("app.utils.task_utils.AsyncResult") as mock_async_result,
+        patch("app.utils.task_utils.celery_app.control.revoke") as mock_revoke,
+    ):
+        mock_async_result.return_value.state = "STARTED"
+        response = client.delete(f"/api/files/{media_file.uuid}/force", headers=admin_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["file_uuid"] == str(media_file.uuid)
+    mock_revoke.assert_called_once_with("33333333-3333-3333-3333-333333333333", terminate=True)
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +368,69 @@ def test_bulk_delete_owner_success(client, user_token_headers, normal_user, db_s
     results = response.json()
     assert len(results) == 1
     assert results[0]["file_uuid"] == str(media_file.uuid)
+    assert results[0]["success"] is True
+
+
+def test_bulk_delete_force_by_non_admin_is_not_honoured(
+    client, user_token_headers, normal_user, db_session
+):
+    """A non-admin owner cannot use bulk-action's ``force`` to bypass the
+    admin-only ``/force`` gate on a file with a genuinely live active task.
+
+    ``DELETE /{uuid}/force`` refuses non-admins outright
+    (``test_force_delete_non_admin_403``); this pins that bulk-action's
+    ``force=true`` must not be a second, ungated path to the same operation.
+    Before the fix, ``_handle_delete_action`` forwarded the request body's
+    ``force`` straight through with no admin check at all.
+    """
+    from unittest.mock import patch
+
+    media_file = _make_file(
+        db_session,
+        normal_user,
+        file_status="completed",
+        active_task_id="44444444-4444-4444-4444-444444444444",
+    )
+    with patch("app.utils.task_utils.AsyncResult") as mock_async_result:
+        mock_async_result.return_value.state = "STARTED"
+        response = client.post(
+            "/api/files/management/bulk-action",
+            headers=user_token_headers,
+            json={"file_uuids": [str(media_file.uuid)], "action": "delete", "force": True},
+        )
+    assert response.status_code == status.HTTP_200_OK
+    results = response.json()
+    assert results[0]["success"] is False
+    # The file must survive: force was silently downgraded to a normal delete,
+    # which the live active task correctly refuses (409-shaped soft failure).
+    follow_up = client.get(f"/api/files/{media_file.uuid}", headers=user_token_headers)
+    assert follow_up.status_code == status.HTTP_200_OK
+
+
+def test_bulk_delete_force_by_admin_is_honoured(
+    client, admin_token_headers, normal_user, db_session
+):
+    """Control: an admin's bulk-action ``force=true`` still works as designed."""
+    from unittest.mock import patch
+
+    media_file = _make_file(
+        db_session,
+        normal_user,
+        file_status="completed",
+        active_task_id="55555555-5555-5555-5555-555555555555",
+    )
+    with (
+        patch("app.utils.task_utils.AsyncResult") as mock_async_result,
+        patch("app.utils.task_utils.celery_app.control.revoke"),
+    ):
+        mock_async_result.return_value.state = "STARTED"
+        response = client.post(
+            "/api/files/management/bulk-action",
+            headers=admin_token_headers,
+            json={"file_uuids": [str(media_file.uuid)], "action": "delete", "force": True},
+        )
+    assert response.status_code == status.HTTP_200_OK
+    results = response.json()
     assert results[0]["success"] is True
 
 
@@ -298,6 +489,148 @@ def test_bulk_action_missing_fields_422(client, user_token_headers):
         json={"file_uuids": [str(uuid.uuid4())]},  # missing action
     )
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+# ---------------------------------------------------------------------------
+# POST /api/files/management/bulk-action, action="retry" | "reprocess"
+#
+# These two used to be the retry ceiling's actual bypass: the single-file
+# /{uuid}/retry above enforces the admin-tunable ceiling (A3), but the bulk
+# "retry" action skipped the status check AND the ceiling entirely, and bulk
+# "reprocess" unconditionally reset retry_count to 0 for every caller —
+# defeating the ceiling on every future retry of the file too.
+# ---------------------------------------------------------------------------
+
+
+def test_bulk_retry_wrong_status_soft_failure(client, user_token_headers, normal_user, db_session):
+    """A COMPLETED file must not be bulk-retried — it used to sail through with
+    no status check and `reset_file_for_retry` deletes transcript segments."""
+    media_file = _make_file(db_session, normal_user, file_status="completed")
+    response = client.post(
+        "/api/files/management/bulk-action",
+        headers=user_token_headers,
+        json={"file_uuids": [str(media_file.uuid)], "action": "retry"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    result = response.json()[0]
+    assert result["success"] is False
+    assert result["error"] == "INVALID_STATUS"
+
+
+def test_bulk_retry_honours_admin_ceiling(client, user_token_headers, normal_user, db_session):
+    """A non-admin at/above the admin-tunable ceiling is refused via bulk retry,
+    same as the single-file endpoint."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=1)
+    media_file = _make_file(db_session, normal_user, file_status="error", retry_count=2)
+    response = client.post(
+        "/api/files/management/bulk-action",
+        headers=user_token_headers,
+        json={"file_uuids": [str(media_file.uuid)], "action": "retry"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    result = response.json()[0]
+    assert result["success"] is False
+    assert result["error"] == "RETRY_CEILING_REACHED"
+
+
+def test_bulk_retry_below_ceiling_succeeds(client, user_token_headers, normal_user, db_session):
+    """Control: below the ceiling, bulk retry still works."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=5)
+    media_file = _make_file(db_session, normal_user, file_status="error", retry_count=1)
+    response = client.post(
+        "/api/files/management/bulk-action",
+        headers=user_token_headers,
+        json={"file_uuids": [str(media_file.uuid)], "action": "retry"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()[0]["success"] is True
+
+
+def test_bulk_retry_reset_retry_count_requires_admin(
+    client, user_token_headers, normal_user, db_session
+):
+    """reset_retry_count used to be accepted from any caller via bulk-action,
+    bypassing the ceiling entirely for a non-admin file owner."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=1)
+    media_file = _make_file(db_session, normal_user, file_status="error", retry_count=5)
+    response = client.post(
+        "/api/files/management/bulk-action",
+        headers=user_token_headers,
+        json={
+            "file_uuids": [str(media_file.uuid)],
+            "action": "retry",
+            "reset_retry_count": True,
+        },
+    )
+    assert response.status_code == status.HTTP_200_OK
+    result = response.json()[0]
+    assert result["success"] is False
+    assert result["error"] == "FORBIDDEN"
+
+
+def test_bulk_retry_reset_retry_count_by_admin_succeeds(
+    client, admin_token_headers, admin_user, db_session
+):
+    """Control: an admin resetting the retry count via bulk-action is still allowed."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=1)
+    media_file = _make_file(db_session, admin_user, file_status="error", retry_count=5)
+    response = client.post(
+        "/api/files/management/bulk-action",
+        headers=admin_token_headers,
+        json={
+            "file_uuids": [str(media_file.uuid)],
+            "action": "retry",
+            "reset_retry_count": True,
+        },
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()[0]["success"] is True
+
+
+def test_bulk_reprocess_honours_admin_ceiling(client, user_token_headers, normal_user, db_session):
+    """Bulk reprocess used to have no ceiling check at all — a non-admin could
+    reprocess past the admin-configured limit indefinitely."""
+    from app.services import system_settings_service
+
+    system_settings_service.update_retry_config(db_session, max_retries=1)
+    media_file = _make_file(db_session, normal_user, file_status="error", retry_count=2)
+    response = client.post(
+        "/api/files/management/bulk-action",
+        headers=user_token_headers,
+        json={"file_uuids": [str(media_file.uuid)], "action": "reprocess"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    result = response.json()[0]
+    assert result["success"] is False
+    assert result["error"] == "RETRY_CEILING_REACHED"
+
+
+def test_bulk_reprocess_never_resets_retry_count(
+    client, admin_token_headers, admin_user, db_session
+):
+    """Bulk reprocess used to unconditionally reset retry_count to 0 for every
+    caller (including admins) — defeating the ceiling on every future retry of
+    the file, through every route, not just this one. It must increment like
+    a normal attempt instead, matching the single-file
+    files/reprocess.py::reprocess_file's reset_retry_count=False contract."""
+    media_file = _make_file(db_session, admin_user, file_status="error", retry_count=3)
+    response = client.post(
+        "/api/files/management/bulk-action",
+        headers=admin_token_headers,
+        json={"file_uuids": [str(media_file.uuid)], "action": "reprocess"},
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()[0]["success"] is True
+    db_session.refresh(media_file)
+    assert media_file.retry_count == 4
 
 
 # ---------------------------------------------------------------------------

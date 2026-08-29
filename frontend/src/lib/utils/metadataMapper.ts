@@ -4,6 +4,7 @@
  * Maps FFmpeg/FFprobe output to match backend/app/tasks/transcription/metadata_extractor.py
  */
 
+import { DEFAULT_EXTRACTION_CONFIG } from '../types/audioExtraction';
 import type { VideoMetadata } from '../types/audioExtraction';
 
 /**
@@ -214,13 +215,32 @@ export function mapFFmpegMetadata(probeData: FFmpegProbeData, file: File): Video
 }
 
 /**
+ * Rough heuristic for a video's duration before its real metadata is available,
+ * based on a typical size-to-duration ratio. Shared by the upload wizard and the
+ * bulk extraction modal so both size estimates are derived the same way.
+ *
+ * @param fileSizeBytes - Video file size in bytes
+ * @returns Estimated duration in seconds
+ */
+export function estimateDurationFromFileSize(fileSizeBytes: number): number {
+  return (fileSizeBytes / (1024 * 1024)) * 60;
+}
+
+/**
  * Estimate compressed audio size based on video duration
  *
  * @param duration - Video duration in seconds
- * @param bitrate - Target audio bitrate in kbps (default: 32)
+ * @param bitrate - Target audio bitrate in kbps. Defaults to
+ *   `DEFAULT_EXTRACTION_CONFIG.bitrate` — the single source of truth for the
+ *   real extraction bitrate (G3: two call sites previously hardcoded their own
+ *   copy of this number, one of them wrong, and this default disagreed with
+ *   both).
  * @returns Estimated audio file size in bytes
  */
-export function estimateAudioSize(duration: number, bitrate: number = 32): number {
+export function estimateAudioSize(
+  duration: number,
+  bitrate: number = DEFAULT_EXTRACTION_CONFIG.bitrate
+): number {
   // bitrate is in kbps, convert to bytes per second
   const bytesPerSecond = (bitrate * 1000) / 8;
 

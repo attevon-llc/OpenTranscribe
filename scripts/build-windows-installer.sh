@@ -18,7 +18,9 @@ source "${SCRIPT_DIR}/offline-common.sh"
 
 # Load .env file if it exists and HUGGINGFACE_TOKEN is not already set
 if [ -z "$HUGGINGFACE_TOKEN" ] && [ -f .env ]; then
-    HUGGINGFACE_TOKEN=$(grep "^HUGGINGFACE_TOKEN=" .env | cut -d'=' -f2)
+    # python-dotenv, not grep/cut (issue #590) -- see gpu-scale-smoke.sh's read_env
+    # for the inline-comment corruption class this replaces.
+    HUGGINGFACE_TOKEN=$(python3 "${SCRIPT_DIR}/lib/env_reader.py" .env HUGGINGFACE_TOKEN)
     export HUGGINGFACE_TOKEN
 fi
 

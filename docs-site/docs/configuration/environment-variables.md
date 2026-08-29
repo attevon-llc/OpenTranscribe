@@ -94,6 +94,16 @@ MAX_SPEAKERS=20        # Maximum speakers to detect (no hard limit, can increase
 # Embedding & Fingerprinting
 EMBEDDING_MODE=auto    # or: v3, v4 (which embedding model to use)
 
+# Where v4 (256-dim) voiceprints are computed. Default true: they come from the
+# diarizer's own centroids, or from the diar-native sidecar when a separate
+# extraction is needed — both run the same WeSpeaker ResNet34-LM weights the
+# in-process model does, so this is a deployment choice, not an accuracy one.
+# Set false to force the in-process PyAnnote model (the escape hatch; costs a
+# 40-60s model load and ~500MB VRAM per worker). v3 (512-dim) installs always use
+# the in-process model — `pyannote/embedding` is a different network that the
+# sidecar does not serve.
+USE_NATIVE_SPEAKER_EMBEDDINGS=true
+
 # Model Caching & Warmup
 WARM_CACHE_ENABLED=false  # Pre-load speaker models on startup for faster first transcription
 MODEL_CACHE_DIR=./models
@@ -338,7 +348,6 @@ PYANNOTE_API_KEY=
 PYANNOTE_MODEL=parakeet  # or: whisper-large-v3-turbo
 
 # Cloud ASR Options
-CLOUD_ASR_EXTRACT_EMBEDDINGS=true  # Extract speaker embeddings locally for cross-file matching
 CLOUD_ASR_CONCURRENCY=4            # Concurrency for cloud-asr worker
 ```
 
@@ -778,9 +787,19 @@ deployment on EC2/ECS/EKS provisions no secret at all. Required IAM actions:
 ### Context window
 
 `max_tokens` is a **UI setting**, not an environment variable
-(**Settings → LLM Provider → Max Tokens**). It defaults to **8192**; leaving it
-there silently truncates long transcripts, so raise it to your model's real
-capability.
+(**Settings → LLM Provider → Max Tokens**). It still defaults to **8192**, but a
+**Discover context window** probe (beside Test Connection) now measures the
+model's real maximum instead of making you trust that default: for **vLLM** it
+reads `max_model_len` off `GET /v1/models`, for **Ollama** it reads the model's
+`context_length` off `POST /api/show`. Both are metadata-only calls — no
+generation, no user content — and run only when you click the button, never on
+a schedule. Every other provider (Anthropic, OpenRouter, Bedrock, `custom`)
+reports as unsupported and your configured value stands unchanged. The probe
+never guesses upward — a stale or wrong measurement fails closed to "unknown"
+rather than raising your configured limit for you — so `max_tokens` still needs
+to be raised by hand to match what the probe reports; leaving it at 8192 still
+truncates long transcripts, the probe just makes that visible instead of
+silent.
 
 ## Worker Concurrency and PostgreSQL Tuning
 
@@ -953,7 +972,7 @@ AWS_ASR_MODEL=standard
 | `OPENROUTER_MODEL_NAME` | 🖥️ UI | `vendor/model` slug | `anthropic/claude-haiku-4.5` | Note the `vendor/model` form — a bare model name will not resolve. |
 | `OPENROUTER_BASE_URL` | 🖥️ UI | URL | `https://openrouter.ai/api/v1` | OpenRouter endpoint. |
 | `BEDROCK_REGION` | 📄 env | AWS region id | *(empty)* | Falls back to `AWS_REGION` / `AWS_DEFAULT_REGION`. **No API key exists** — boto3 uses the standard credential chain. The Bedrock *model* is chosen per user in the UI only, so there is no env var for it. |
-| *max tokens / context window* | 🖥️ **UI only** | 512 – 2,000,000 | 8192 | **There is no env var.** Set it at Settings → LLM Provider → Max Tokens. Leaving it at 8192 silently truncates long transcripts. |
+| *max tokens / context window* | 🖥️ **UI only** | 512 – 2,000,000 | 8192 | **There is no env var.** Set it at Settings → LLM Provider → Max Tokens. A **Discover context window** probe (vLLM/Ollama only) can measure the model's real maximum for comparison, but never raises this value for you — leaving it at 8192 still silently truncates long transcripts. |
 
 #### Example — local Ollama on the same host
 

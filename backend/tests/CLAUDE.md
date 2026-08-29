@@ -63,8 +63,10 @@ what it appears to. A green one from the wrong schema is worse.
   `test_mfa_security`, `RUN_LLM_TESTS`→`test_llm_settings`, `RUN_FEDRAMP_TESTS`→
   `test_fedramp_compliance`+`_controls`, `RUN_FIPS_TESTS`→`test_fips_140_3`,
   `RUN_AUTH_CONFIG_TESTS`→`test_auth_config_service`, `RUN_ADVANCED_ADMIN_TESTS`→
-  `test_admin_security`, `RUN_SEARCH_QUALITY_TESTS`→`test_search_quality` (corpus-dependent,
-  deliberately never in CI), `RUN_SCHEMA_DRIFT_TESTS`→`unit/test_schema_drift` (needs the live
+  `test_admin_security`, `RUN_SEARCH_QUALITY_TESTS`→`test_search_quality` (self-seeding — injects
+  its own 6-meeting corpus via `app/scripts/corpus_injection` through a throwaway `searchqual-`
+  user, see `tests/fixtures/search_corpus.py`; still deliberately never in CI, since CI forces
+  `SKIP_OPENSEARCH=True`), `RUN_SCHEMA_DRIFT_TESTS`→`unit/test_schema_drift` (needs the live
   migrated DB; now its own phase in `run-integration-tests.sh` — it was previously set only by
   the release pipeline's `warn`-severity `schema-drift` criterion, so it never ran pre-merge),
   `RUN_AUTH_E2E`→`e2e/test_ldap_oidc` + LDAP half of
@@ -139,7 +141,20 @@ was finding nothing at all.
   `nosuchuser-e2e@example.com` and the `ldap-*`/`kc-*` IdP fixtures are the allow-listed
   shared identities. `scripts/cleanup-test-users.py`'s `ORPHAN_PATTERNS` is the backstop for
   runs that die mid-flight — **add your prefix there in the same commit** (`mfa-e2e-` was
-  missing for as long as `test_mfa.py` leaked one account per run).
+  missing for as long as `test_mfa.py` leaked one account per run). For everything that is
+  NOT a user email — uploaded media filenames, collection/tag/watch-source/speaker-profile
+  names, chat conversation titles — the equivalent backstop is
+  `scripts/cleanup-test-data.py` (issue #629), registered in
+  `backend/tests/unit/test_cleanup_test_data_safety.py`'s prefix-registration gate: a new
+  `..._PREFIX = "foo-"` constant anywhere under `backend/tests` that isn't in that script's
+  `MEDIA_FILENAME_SPECS`/`NAME_PREFIXES` fails the fast unit suite, not silently leaked
+  forever. Chat conversation titles use `e2e/conftest.py`'s `unique_conversation_title()`
+  helper (prefix `E2E_CONVERSATION_PREFIX = "e2e-chat-"`) — deliberately its own helper, not
+  a reuse of `test_chat.py`'s `_unique()`, which also names LLM provider configs and would be
+  wrong to prefix the same way. Both scripts are unconditionally invoked (Tier A only, via
+  `cleanup-test-data.py --execute-unambiguous`) at the start of
+  `scripts/run-integration-tests.sh` and `scripts/e2e/run-e2e.sh`, degrading rather than
+  blocking the run on failure; `OT_SKIP_TEST_DATA_SWEEP=1` is the escape hatch.
 - **Negative-login tests must use a nonexistent account** (`nonexistent@example.com`,
   `nosuchuser-e2e@example.com`, `ldap-nosuchuser-e2e`), never a wrong password for
   `admin@example.com` — lockout is keyed on the **resolved account** (`canonical_identifier`
@@ -150,9 +165,16 @@ was finding nothing at all.
   provisioned and its lockout bucket belongs to nothing. Registration forms are exempt from
   this check: they have `#email`/`#password` fields but submitting one is not a login.
 - Dev relaxes auth limits (`docker-compose.override.yml`: `RATE_LIMIT_AUTH_PER_MINUTE=120`,
-  `ACCOUNT_LOCKOUT_THRESHOLD=100`, `DEV_*`-tunable). **Prod never loads that overlay** — don't
-  write a test that only passes under the relaxed values. `shared_auth_state`/`gallery_page`
-  exist to log in **once per session** for the same reason.
+  `ACCOUNT_LOCKOUT_THRESHOLD=100`, and — since issue #632 — `MAX_CONCURRENT_SESSIONS=1000`, all
+  `DEV_*`-tunable). **Prod never loads that overlay** — don't write a test that only passes
+  under the relaxed values. `shared_auth_state`/`gallery_page` exist to log in **once per
+  session** for the same reason. `MAX_CONCURRENT_SESSIONS` sits on the `x-dev-environment`
+  ANCHOR rather than on `backend` alone, unlike the other two: the nightly `session.cap_sweep`
+  runs on `celery-cpu-worker`, and if that process disagreed with `backend` about the cap it
+  would evict the dev stack's sessions back to 5 every night. Don't add a session-cap e2e test
+  either — it would exercise the relaxation, not the cap; that control is covered at unit/API
+  level only (`backend/tests/unit/test_session_ceiling.py`,
+  `backend/tests/unit/test_session_cap_sweep.py`).
 
 ## Before you debug a "flaky" E2E test, rule out the STACK (issue #431)
 
@@ -213,6 +235,40 @@ an_already_shared_tag` passed throughout, because a broken store produces absenc
   Before #297 `gpu` was unregistered and silenced by a `PytestUnknownMarkWarning` filter, so
   those 17 tests ran in the fast suite *and* CPU-only CI, passing only on their own runtime skip
   guards, while the gate selected none of them.
+- **The three diarization `gpu` suites do NOT run in the gate's `-m gpu` phase — they need a
+  container, and the gate runs the venv.** `test_diarizer_lifecycle.py`,
+  `test_diarization_perf_gates.py` and `test_diarization_regression.py` each open with an
+  `ensure_container` fixture that skips unless `/.dockerenv` exists or
+  `OPENTRANSCRIBE_IN_CONTAINER=1`, and they read fixtures from `/app/benchmark/test_audio` and
+  `/app/docs/...`. `run-integration-tests.sh`'s GPU phase therefore reports them as skips, not
+  passes. Their entry point is:
+
+  ```bash
+  ./scripts/run-diarization-gpu-tests.sh            # all three, on real GPU hardware
+  ```
+
+  which builds `opentranscribe-backend-test:latest` (`backend/Dockerfile.test` = the prod image
+  plus `requirements-test.txt`) and runs the `diarization-tests` service from
+  `docker-compose.benchmark.yml` in its own compose project. Before #577 there was no working
+  path at all: the prod image ships no pytest, and installing it at run time with `--user root`
+  moves `site.getusersitepackages()` from `/home/appuser/.local/...` to `/root/.local/...`, which
+  drops the entire application dependency tree off `sys.path` — the reported "`fastapi` is
+  missing" and "meeteval wheel won't build" symptoms are both that one cause. Never run these
+  with `--user root`; see `backend/Dockerfile.test`'s header.
+
+  ⚠️ **Four separate ways this suite exits 0 having measured nothing**: outside a container it
+  skips (`ensure_container`); without `-o addopts= -m gpu` pytest deselects every test; without
+  the gitignored `benchmark/test_audio/*.wav` fixtures each test skips individually; and without
+  a visible CUDA device `torch_cuda` skips. `run-diarization-gpu-tests.sh` hard-fails on the
+  first three rather than handing you a green vacuum.
+- **`tests/integration/test_scheduled_backup_restore_roundtrip.py` needs the backend image
+  built** (`./opentr.sh build` or `./opentr.sh start dev --build`) — its Tier-1 "trustworthy
+  evidence" test runs the real `backup_service.run_pg_dump` inside a throwaway container from
+  `opentranscribe-backend:latest`, because `pg_dump`/`pg_restore` are not installed on the host
+  (`backend/venv` has no PostgreSQL client tools; only `gpg` is present there). Named skip, not
+  silent, if the image is missing. Its `encrypt=True` variant additionally skips citing issue
+  #604 — the *published* image has no `gpg` on PATH either (`Dockerfile.prod` installs
+  `postgresql-client` but never `gnupg`), so `backup.encrypt` fails in production today.
 - `db_session` rolls back the DB, **not MinIO or OpenSearch**. Hence `upload_test_file`'s API
   delete and the forced `AUDIT_LOG_TO_OPENSEARCH=false` — savepoints can't undo index writes
   into the live dev cluster.
@@ -525,3 +581,61 @@ in CI rather than fail.
 **Each new migration breaks the previous suite's detection assertion.** `_detect_schema_version`
 returns the newest matching revision, so when you add vNNN, widen the vNNN-1 test to accept
 either value and pin the exact one in your own suite.
+
+## Mock cloud ASR provider (no GPU, no vendor account)
+
+`scripts/mock-asr-server.py` is a stdlib Gladia API v2 stand-in
+(`GET /v2/live`, `POST /v2/upload`, `POST /v2/transcription`,
+`GET /v2/transcription/<id>`). Only the returned transcript is canned — upload
+validates real RIFF/WAVE structure, and the submitted diarization/language/
+vocabulary fields are recorded verbatim and inspectable via
+`GET /_mock/last-request`, the same "prove the app's real request shape"
+role `mock_llm_completion` plays for the LLM mock.
+
+```bash
+./opentr.sh start dev --with-mock-asr     # http://mock-asr:5198 in-network
+```
+
+✅ `GladiaProvider._resolve_base_url` (`backend/app/services/asr/gladia_provider.py`)
+now honours a per-config `base_url` — fixed by issue #594, which also added an SSRF
+guard (`ASR_ALLOW_PRIVATE_ENDPOINTS`, mirroring `LLM_ALLOW_PRIVATE_ENDPOINTS`) that
+refuses a private-network base URL, env-var- or config-supplied, unless allowed.
+`GLADIA_API_BASE_URL` is still read as a fallback for flows that never save a
+config; `docker-compose.mock-asr.yml` sets it (plus `ASR_ALLOW_PRIVATE_ENDPOINTS=true`,
+since `mock-asr` is a private compose hostname) on `backend` and
+`celery-cloud-asr-worker` — without both, `--with-mock-asr` doesn't route ASR
+traffic anywhere.
+
+Fixtures live in `tests/fixtures/mock_asr.py`:
+
+| Fixture | Use |
+|---|---|
+| `mock_asr_url` | URL the TEST process can reach (`http://127.0.0.1:5198`) |
+| `mock_asr_base_url_for_backend` | URL the BACKEND CONTAINER can reach (`http://mock-asr:5198`) |
+| `register_mock_gladia_asr_config` | Configure the app's `gladia` provider at the mock, deleted on teardown |
+
+Scenario selected via `?scenario=` on the transcription POST, **and** via the
+`MOCK_ASR_SCENARIO` env var as the server-start default (there is no per-job
+selection hook on the client side — see the gap note below):
+
+| Scenario | Behaviour |
+|---|---|
+| `ok` (default) | canned transcript from `sample_transcript.json`, reshaped with a distinctive `"Zylofenix"` token appended |
+| `error` | transcription job ends in a Gladia-shaped error payload |
+| `malformed` | response body doesn't match the expected schema |
+| `upload-reject` | `POST /v2/upload` itself rejects the file |
+
+**Known, documented gap**: `backend/tests/integration/test_lite_mode_mocked_providers.py`
+covers only the `ok` happy path end to end through the real pipeline. The 3
+negative-scenario tests (`error`/`malformed`/`upload-reject`) were **not**
+implemented there — the mock selects scenario via `?scenario=` on the request
+the *app* sends, and `GladiaProvider` has no per-job scenario-selection hook to
+drive that; only the server-start `MOCK_ASR_SCENARIO` default exists, which
+can't be changed mid-pytest-module without breaking that module's own `ok`
+happy-path tests (all tests in the module share one mock-asr container,
+serialized via `xdist_group`). The mock's own scenario contract IS covered at
+the unit level against `GladiaProvider` directly, in
+`backend/tests/unit/test_gladia_provider.py`. A bash-driven harness (unlike a
+shared pytest module) can restart the container between phases —
+`scripts/release-tests/test-lite-mode.sh`'s negative-path phase does exactly
+that. Fixing the live-pipeline pytest gap remains follow-on work.

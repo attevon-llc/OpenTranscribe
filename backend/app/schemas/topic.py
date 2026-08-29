@@ -56,16 +56,6 @@ class TopicSuggestionBase(BaseModel):
     """Base schema for AI suggestions"""
 
 
-class TopicSuggestionCreate(TopicSuggestionBase):
-    """Schema for creating AI suggestions (internal use)"""
-
-    media_file_id: int
-    user_id: int
-    suggested_tags: list[dict] = Field(default_factory=list)
-    suggested_collections: list[dict] = Field(default_factory=list)
-    status: str = "pending"
-
-
 class TopicSuggestionResponse(UUIDBaseSchema):
     """
     AI suggestions response for tags and collections

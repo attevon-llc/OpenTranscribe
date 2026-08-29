@@ -1,10 +1,33 @@
-# FIPS 140-3 Cryptographic Compliance Guide
+# FIPS 140-3 Algorithm-Approved Configuration Guide
 
-This document describes OpenTranscribe's compliance with FIPS 140-3 cryptographic standards for federal government and high-security deployments.
+This document describes OpenTranscribe's support for **FIPS 140-3 approved cryptographic
+algorithms** for federal government and high-security deployments.
 
 ## Overview
 
-FIPS 140-3 (Federal Information Processing Standard) is the latest cryptographic module validation standard, mandatory for new federal system deployments since September 2021. OpenTranscribe v0.4.0 supports FIPS 140-3 compliant cryptographic operations for:
+FIPS 140-3 (Federal Information Processing Standard) is the current cryptographic module
+validation standard, mandatory for new federal system deployments since September 2021. It
+has two distinct compliance tiers, and this document — like its
+[FIPS 140-2 sibling](FIPS_COMPLIANCE.md) — is careful to distinguish them:
+
+| Tier | Description | When required |
+|------|-------------|----------------|
+| **FIPS-Approved Algorithms** | Uses algorithms on the FIPS 140-3 approved list | FedRAMP Moderate, most government systems |
+| **FIPS 140-3 Validated Module** | Runs inside a CMVP-certified cryptographic module | FedRAMP High, DoD IL4+, classified systems |
+
+**OpenTranscribe implements the first tier only.** Every algorithm below is FIPS-approved and
+this is boot-enforced (a misconfigured algorithm/secret fails startup rather than degrading
+silently — see [Compliance Verification](#compliance-verification) below), which is a real,
+tested, meaningful property. It is **not** the same claim as "FIPS 140-3 validated": that
+requires the cryptographic module itself (not just the algorithm choice) to hold a CMVP
+certificate, which is a separate, formal validation process this project has not undergone. If
+your deployment requires a validated module (FedRAMP High, DoD IL4+), see
+[FIPS_COMPLIANCE.md](FIPS_COMPLIANCE.md#full-fips-140-2-validated-deployment) for the
+host/container-level configuration that gets you there, and consult
+[NIST's CMVP validated modules list](https://csrc.nist.gov/projects/cryptographic-module-validation-program/validated-modules)
+for a module your platform can validate against.
+
+OpenTranscribe v0.4.0+ supports FIPS 140-3 approved cryptographic algorithms for:
 
 - Password hashing (PBKDF2-SHA256, 600,000 iterations)
 - Authentication configuration storage (AES-256-GCM encryption at rest)
@@ -214,9 +237,10 @@ All data remains accessible; the system simply stops creating new FIPS 140-3 art
 
 ### Verification Script
 
-Run the compliance verification script:
+Run the FIPS 140-3 test suite (gated behind `RUN_FIPS_TESTS`, part of the full
+pre-merge gate — see `./scripts/run-integration-tests.sh`):
 ```bash
-./scripts/verify-fips-140-3.sh
+cd backend && RUN_FIPS_TESTS=true pytest tests/test_fips_140_3.py -v
 ```
 
 This checks:
@@ -240,17 +264,30 @@ Logs are available in:
 
 | FedRAMP Control | Implementation |
 |-----------------|----------------|
-| IA-5 (Authenticator Management) | PBKDF2-SHA256 (600k iter), password policy, history enforcement |
+| IA-5 (Authenticator Management) | PBKDF2-SHA256 (600k iter), configurable password policy, history enforcement — see the note below on current NIST composition/expiry guidance |
 | AC-7 (Unsuccessful Login Attempts) | Account lockout (NIST AC-7 compliant), progressive lockout |
 | SC-12 (Cryptographic Key Establishment) | PBKDF2 key derivation for AES-256-GCM |
 | SC-13 (Cryptographic Protection) | AES-256-GCM for config at rest, HS512 for JWT signing |
 | SC-28 (Protection of Information at Rest) | AES-256-GCM encrypted sensitive auth config in database |
 | AU-2/AU-3 (Audit Events) | JSON + CEF structured audit logging, OpenSearch integration |
 
+> **Password composition/expiry note (added 2026-08-27):** NIST finalized
+> [SP 800-63B Revision 4](https://pages.nist.gov/800-63-4/sp800-63b.html) on 2025-07-31,
+> superseding Revision 3. It now directs verifiers to **not** force periodic password changes
+> absent evidence of compromise, and **not** impose composition rules (mandatory character-type
+> mixes). OpenTranscribe's password policy (`PASSWORD_MAX_AGE_DAYS`,
+> `PASSWORD_REQUIRE_{UPPERCASE,LOWERCASE,DIGIT,SPECIAL}`) is fully admin-configurable at runtime
+> (Admin → Settings → Authentication) — the shipped defaults currently still reflect the older,
+> now-superseded Rev. 3-era posture (60-day expiry, mandatory composition). See the full
+> discussion and current guidance in
+> [Security Hardening → Password Policy](../docs-site/docs/operations/security-hardening.md#password-policy-and-current-nist-guidance).
+
 ## References
 
 - [NIST FIPS 140-3](https://csrc.nist.gov/publications/detail/fips/140/3/final)
 - [NIST SP 800-132](https://csrc.nist.gov/publications/detail/sp/800-132/final) - Password-Based Key Derivation
 - [NIST SP 800-131A Rev. 2](https://csrc.nist.gov/publications/detail/sp/800-131a/rev-2/final) - Algorithm Transitions
+- [NIST SP 800-63B Revision 4](https://pages.nist.gov/800-63-4/sp800-63b.html) - Digital Identity Guidelines: Authentication and Authenticator Management (current password-policy guidance)
+- [NIST Cryptographic Module Validation Program (CMVP)](https://csrc.nist.gov/projects/cryptographic-module-validation-program/validated-modules) - validated-module list, for FIPS 140-3 Validated deployments
 - [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)
 - [RFC 6238](https://tools.ietf.org/html/rfc6238) - TOTP

@@ -7,6 +7,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.transcription.engine.config import EngineConfig
 
+#: RESERVED extension point (E5, issue #366) — dynamic dispatch is exercised by
+#: ``get_transcriber_backend`` below, but nothing in the pipeline currently calls it: the
+#: transcription task selects an ASR provider directly (see
+#: ``backend/app/services/asr/CLAUDE.md``), and ``FasterWhisperBackend`` is the only one of
+#: the three below that is not a ``raise NotImplementedError`` stub. Kept, and documented as
+#: the extension path in ``docs/combined-engine-design.md``, for issue #366 (NeMo/Parakeet
+#: ASR) to register a fourth entry here rather than growing a second dispatch mechanism.
+#: Do NOT delete this registry.
 _TRANSCRIBER_REGISTRY: dict[str, str] = {
     "faster_whisper": (
         "app.transcription.engine.backends.transcribers.faster_whisper_backend.FasterWhisperBackend"
@@ -30,6 +38,12 @@ _DIARIZER_REGISTRY: dict[str, str] = {
 #: validation). Keeping both readers pointed at this tuple instead of a hardcoded list is what
 #: makes the registry a real consolidation target rather than a second, driftable copy.
 VALID_DIARIZER_BACKENDS: tuple[str, ...] = tuple(_DIARIZER_REGISTRY)
+
+#: The valid set of ``engine.transcriber_backend`` / ``ENGINE_TRANSCRIBER_BACKEND`` values —
+#: used only for admin-write validation (E5). The setting itself is presently read by a log
+#: line only (see the reservation note above); this tuple stops
+#: ``{"transcriber_backend": "anything"}`` from persisting silently.
+VALID_TRANSCRIBER_BACKENDS: tuple[str, ...] = tuple(_TRANSCRIBER_REGISTRY)
 
 
 def _import_class(dotted_path: str):

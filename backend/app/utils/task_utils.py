@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
@@ -7,6 +8,7 @@ from typing import Any
 from celery.result import AsyncResult
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.celery import celery_app
@@ -23,12 +25,23 @@ TASK_STATUS_PENDING = "pending"
 TASK_STATUS_IN_PROGRESS = "in_progress"
 TASK_STATUS_COMPLETED = "completed"
 TASK_STATUS_FAILED = "failed"
+#: A terminal, non-error outcome: the task ran but deliberately did no real work
+#: (e.g. an idempotency guard found the result already present, or a duplicate
+#: dispatch was caught mid-flight). Distinct from COMPLETED so the Tasks UI can
+#: tell "did the work" apart from "correctly decided not to" — see issue #622.
+TASK_STATUS_SKIPPED = "skipped"
 
 
 def create_task_record(
-    db: Session, celery_task_id: str, user_id: int, media_file_id: int, task_type: str
+    db: Session, celery_task_id: str, user_id: int, media_file_id: int | None, task_type: str
 ) -> Task:
-    """Create a new task record in the database."""
+    """Create a new task record in the database.
+
+    ``media_file_id`` is ``None`` for a corpus-wide job with no single owning file (e.g.
+    issue #626's operator-triggered re-embed, which can span many files across many
+    owners) — the column is already ``nullable=True`` and ``update_task_status`` already
+    guards its own media-file lookup on ``if media_file_id:``.
+    """
     task = Task(
         id=celery_task_id,
         user_id=user_id,
@@ -51,16 +64,17 @@ def create_task_record(
 
     db.refresh(task)
 
-    # Update the media file with active task tracking
-    media_file = get_refreshed_object(db, MediaFile, media_file_id)
-    if media_file:
-        media_file.active_task_id = celery_task_id
-        media_file.task_started_at = datetime.now(UTC)
-        media_file.task_last_update = datetime.now(UTC)
-        media_file.cancellation_requested = False
-        if media_file.status == FileStatus.PENDING:
-            media_file.status = FileStatus.PROCESSING
-        db.commit()
+    # Update the media file with active task tracking — only when this task has one.
+    if media_file_id is not None:
+        media_file = get_refreshed_object(db, MediaFile, media_file_id)
+        if media_file:
+            media_file.active_task_id = celery_task_id
+            media_file.task_started_at = datetime.now(UTC)
+            media_file.task_last_update = datetime.now(UTC)
+            media_file.cancellation_requested = False
+            if media_file.status == FileStatus.PENDING:
+                media_file.status = FileStatus.PROCESSING
+            db.commit()
 
     return task
 
@@ -103,17 +117,23 @@ def update_task_status(
             if error_message:
                 media_file.last_error_message = error_message
 
-            # Clear active task if completed or failed
-            if status in [TASK_STATUS_COMPLETED, TASK_STATUS_FAILED]:
+            # Clear active task once it reaches any terminal state — completed,
+            # failed, or skipped. Leaving this set after a skip would misreport
+            # the file as still busy to `is_file_safe_to_delete` and friends,
+            # even though nothing is running any more (issue #622).
+            if status in [TASK_STATUS_COMPLETED, TASK_STATUS_FAILED, TASK_STATUS_SKIPPED]:
                 media_file.active_task_id = None
                 media_file.task_started_at = None
 
     db.commit()
     db.refresh(task)
 
-    # If task is completed or failed, check if we need to update the media file status
+    # Terminal states re-check the media file's aggregate status.
     task_media_file_id = task.media_file_id
-    if status in [TASK_STATUS_COMPLETED, TASK_STATUS_FAILED] and task_media_file_id:
+    if (
+        status in [TASK_STATUS_COMPLETED, TASK_STATUS_FAILED, TASK_STATUS_SKIPPED]
+        and task_media_file_id
+    ):
         update_media_file_from_task_status(db, int(task_media_file_id))
 
     return task  # type: ignore[no-any-return]
@@ -518,9 +538,22 @@ def is_file_safe_to_delete(db: Session, file_id: int) -> tuple[bool, str]:
     if not media_file:
         return False, "File not found"
 
-    # Check if file has an active task
+    # Check if file has an active task. Deliberately NOT gated on
+    # `media_file.status == FileStatus.PROCESSING` — a selective reprocess of an
+    # already-completed file (search_indexing/analytics/speaker_llm/summarization/
+    # topic_extraction/speaker_clustering) sets `active_task_id` via
+    # `create_task_record`, but that function only flips status to PROCESSING when
+    # the file was previously PENDING, so an in-flight downstream stage on a
+    # completed file leaves status="completed" with a genuinely live task. Requiring
+    # both conditions let `purge_media_file` run concurrently with that task, which
+    # could delete the file (and its OpenSearch chunks, via a delete-by-query that
+    # finds nothing yet) moments before the task's own async write landed — leaving
+    # a permanently orphaned chunk with no MediaFile or Speaker row left to clean it
+    # up. `active_task_id` alone is enough to warrant the Celery check below; the
+    # check itself is what actually confirms liveness, so this only adds coverage,
+    # it never skips a check that used to run.
     active_task_id = media_file.active_task_id
-    if active_task_id and media_file.status == FileStatus.PROCESSING:
+    if active_task_id:
         # Double-check with Celery
         try:
             task_result = AsyncResult(str(active_task_id))
@@ -553,6 +586,15 @@ def is_file_safe_to_delete(db: Session, file_id: int) -> tuple[bool, str]:
     return False, f"File status is {media_file.status}"
 
 
+#: SQLSTATE 40P01 (deadlock_detected) — the standard Postgres code, checked instead of a
+#: driver-specific exception class so this survives a DB-driver swap. A deadlock is a
+#: transient, order-of-execution artifact (Postgres picks a victim transaction to abort so
+#: the others can proceed) — retrying it is the correct response, not a workaround.
+_DEADLOCK_SQLSTATE = "40P01"
+_DEADLOCK_RETRY_ATTEMPTS = 3
+_DEADLOCK_RETRY_DELAY_S = 0.5
+
+
 def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = False) -> bool:
     """Reset a file for retry processing.
 
@@ -564,60 +606,76 @@ def reset_file_for_retry(db: Session, file_id: int, reset_retry_count: bool = Fa
     Returns:
         True if reset was successful, False otherwise
     """
-    media_file = get_refreshed_object(db, MediaFile, file_id)
-    if not media_file:
-        return False
+    for attempt in range(1, _DEADLOCK_RETRY_ATTEMPTS + 1):
+        media_file = get_refreshed_object(db, MediaFile, file_id)
+        if not media_file:
+            return False
 
-    try:
-        # Cancel any active task first
-        if media_file.active_task_id:
-            cancel_active_task(db, file_id)
+        try:
+            # Cancel any active task first
+            if media_file.active_task_id:
+                cancel_active_task(db, file_id)
 
-        # Reset retry count if requested. `retry_count` is nullable with a Python-side
-        # default of 0, so a NULL row must be normalized rather than incremented in place —
-        # this is the manual-retry entry point (POST /my-files/{uuid}/retry), and a bare
-        # `+= 1` here turns a NULL row into a 500 the user cannot get past.
-        if reset_retry_count:
-            media_file.retry_count = 0
-        else:
-            media_file.retry_count = int(media_file.retry_count or 0) + 1
+            # Reset retry count if requested. `retry_count` is nullable with a Python-side
+            # default of 0, so a NULL row must be normalized rather than incremented in
+            # place — this is the manual-retry entry point (POST /my-files/{uuid}/retry),
+            # and a bare `+= 1` here turns a NULL row into a 500 the user cannot get past.
+            if reset_retry_count:
+                media_file.retry_count = 0
+            else:
+                media_file.retry_count = int(media_file.retry_count or 0) + 1
 
-        # Reset file state
-        media_file.status = FileStatus.PENDING
-        media_file.active_task_id = None
-        media_file.task_started_at = None
-        media_file.task_last_update = None
-        media_file.cancellation_requested = False
-        media_file.last_error_message = None
-        media_file.force_delete_eligible = False
+            # Reset file state
+            media_file.status = FileStatus.PENDING
+            media_file.active_task_id = None
+            media_file.task_started_at = None
+            media_file.task_last_update = None
+            media_file.cancellation_requested = False
+            media_file.last_error_message = None
+            media_file.force_delete_eligible = False
 
-        # Clear existing transcript data for clean retry
-        from app.models.media import Analytics
-        from app.models.media import Speaker
-        from app.models.media import TranscriptSegment
+            # Clear existing transcript data for clean retry
+            from app.models.media import Analytics
+            from app.models.media import Speaker
+            from app.models.media import TranscriptSegment
 
-        # Delete existing transcript segments
-        db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).delete()
+            # Delete existing transcript segments
+            db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == file_id).delete()
 
-        # Delete existing speakers
-        db.query(Speaker).filter(Speaker.media_file_id == file_id).delete()
+            # Delete existing speakers
+            db.query(Speaker).filter(Speaker.media_file_id == file_id).delete()
 
-        # Delete existing analytics
-        db.query(Analytics).filter(Analytics.media_file_id == file_id).delete()
+            # Delete existing analytics
+            db.query(Analytics).filter(Analytics.media_file_id == file_id).delete()
 
-        # Clear related task records for clean slate
-        db.query(Task).filter(Task.media_file_id == file_id).delete()
+            # Clear related task records for clean slate
+            db.query(Task).filter(Task.media_file_id == file_id).delete()
 
-        # Reset summary fields so auto-summary triggers correctly after transcription retry
-        media_file.summary_data = None
-        media_file.summary_opensearch_id = None
-        media_file.summary_status = "pending"
+            # Reset summary fields so auto-summary triggers correctly after transcription retry
+            media_file.summary_data = None
+            media_file.summary_opensearch_id = None
+            media_file.summary_status = "pending"
 
-        db.commit()
-        logger.info(f"Reset file {file_id} for retry (attempt {media_file.retry_count})")
-        return True
+            db.commit()
+            logger.info(f"Reset file {file_id} for retry (attempt {media_file.retry_count})")
+            return True
 
-    except Exception as e:
-        logger.error(f"Failed to reset file {file_id} for retry: {e}")
-        db.rollback()
-        return False
+        except OperationalError as e:
+            db.rollback()
+            is_deadlock = getattr(getattr(e, "orig", None), "pgcode", None) == _DEADLOCK_SQLSTATE
+            if is_deadlock and attempt < _DEADLOCK_RETRY_ATTEMPTS:
+                logger.warning(
+                    f"Deadlock resetting file {file_id} for retry "
+                    f"(attempt {attempt}/{_DEADLOCK_RETRY_ATTEMPTS}); retrying"
+                )
+                time.sleep(_DEADLOCK_RETRY_DELAY_S)
+                continue
+            logger.error(f"Failed to reset file {file_id} for retry: {e}")
+            return False
+
+        except Exception as e:
+            logger.error(f"Failed to reset file {file_id} for retry: {e}")
+            db.rollback()
+            return False
+
+    return False

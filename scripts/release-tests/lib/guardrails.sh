@@ -75,6 +75,30 @@ gr_path_inside() {
     [[ "$needle" == "$parent" || "$needle" == "$parent"/* ]]
 }
 
+# ─── EXIT-check registry ────────────────────────────────────────────────────
+#
+# Several guardrails need to run a check on EVERY exit path (a scenario that
+# dies halfway is exactly when a stray write is most likely and least
+# expected). `trap` REPLACES rather than stacks, so a second `trap ... EXIT`
+# would silently drop the first one's check — this is what let that actually
+# happen once. Register a function name instead of building a bigger trap
+# string each time; gr_run_exit_checks is the single EXIT handler and runs
+# every registered check in registration order.
+GR_EXIT_CHECKS=()
+
+gr_run_exit_checks() {
+    trap - EXIT
+    local check
+    for check in "${GR_EXIT_CHECKS[@]}"; do
+        "$check"
+    done
+}
+
+gr_register_exit_check() {
+    GR_EXIT_CHECKS+=("$1")
+    trap gr_run_exit_checks EXIT
+}
+
 # ─── Guardrail checks ───────────────────────────────────────────────────────
 gr_require_vars() {
     local missing=()
@@ -464,10 +488,7 @@ gr_fingerprint_repo_env() {
         GR_REPO_ENV_FINGERPRINT="absent"
         gr_log "no repo .env to fingerprint"
     fi
-    # Checked on EVERY exit path, not just the happy one — a scenario that dies
-    # halfway is exactly when a stray write is most likely and least expected.
-    # The trap clears itself first so gr_die's exit cannot re-enter it.
-    trap 'trap - EXIT; gr_assert_repo_env_untouched' EXIT
+    gr_register_exit_check gr_assert_repo_env_untouched
 }
 
 gr_assert_repo_env_untouched() {
@@ -595,4 +616,149 @@ gr_preflight() {
     gr_check_disk_space 80 10
     gr_confirmation_gate
     gr_ok "all preflight checks passed"
+}
+
+# ─── Rollback-tail guardrails (issue #598) ──────────────────────────────────
+#
+# test-upgrade.sh's rollback phases run `DROP DATABASE`, which none of the
+# checks above needed to guard against — the fresh-install and forward-upgrade
+# scenarios never destroy a database, only create or migrate one. These three
+# are called explicitly by the rollback phases, not from gr_preflight, because
+# they are not needed by test-fresh-install.sh or test-lite-mode.sh.
+
+# gr_assert_target_is_test_database CONTAINER EXPECTED_DB ENV_FILE
+#   Called immediately before every destructive DB operation in the rollback
+#   tail (the DROP DATABASE inside `restore_database`, invoked here through
+#   `opentranscribe.sh restore` — the shipped production command, issue #613 —
+#   and the swap `opentranscribe.sh update --rollback` performs). All four
+#   conditions below
+#   must hold or it dies — any inability to determine an answer counts as
+#   "this is live" (fail closed, same policy as gr_volume_has_live_marker).
+gr_assert_target_is_test_database() {
+    local container="$1" expected_db="$2" env_file="$3"
+
+    # (a) the container must carry our release-test label — the same label
+    # cp_inject_labels stamps on every service this run creates.
+    local label
+    label="$(docker inspect "$container" \
+        --format '{{index .Config.Labels "com.opentranscribe.release-test"}}' 2>/dev/null || echo "")"
+    if [[ -z "$label" ]]; then
+        gr_die "gr_assert_target_is_test_database: container '$container' carries no
+           com.opentranscribe.release-test label — refusing a destructive DB
+           operation against a container this run cannot prove it owns"
+    fi
+
+    # (b) the volume backing postgres must not be one this run found
+    # PRE-EXISTING at preflight (gr_stamp_owned_resources' 'preexisting=' list)
+    # — that is someone else's database, not this run's.
+    local vol
+    vol="$(docker inspect "$container" \
+        --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}' \
+        2>/dev/null || echo "")"
+    if [[ -z "$vol" ]]; then
+        gr_die "gr_assert_target_is_test_database: could not resolve the postgres data
+           volume for container '$container' — refusing (fail closed)"
+    fi
+    if [[ -f "$GR_OWNED_STAMP" ]] && grep -qxF "preexisting=$vol" "$GR_OWNED_STAMP"; then
+        gr_die "gr_assert_target_is_test_database: volume '$vol' existed BEFORE this run
+           started — refusing to drop a database this run does not own"
+    fi
+
+    # (c) no live-data marker, probed from inside a container per
+    # gr_volume_has_live_marker's own doc comment (a host-side stat on the
+    # root-owned mountpoint would silently report "no marker" for every
+    # volume, which is the exact mistake that once deleted a live one).
+    if gr_volume_has_live_marker "$vol"; then
+        gr_die "gr_assert_target_is_test_database: volume '$vol' carries the
+           .opentranscribe-live-data marker — REFUSING a destructive operation"
+    fi
+
+    # (d) the resolved POSTGRES_DB must match the staged .env this run wrote
+    # — catches a stage pointed at the wrong directory before it drops the
+    # wrong database.
+    local configured_db
+    # python-dotenv, not grep/cut (issue #590).
+    configured_db="$(python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/lib/env_reader.py" "$env_file" POSTGRES_DB)"
+    configured_db="${configured_db:-opentranscribe}"
+    if [[ "$configured_db" != "$expected_db" ]]; then
+        gr_die "gr_assert_target_is_test_database: staged .env at '$env_file' has
+           POSTGRES_DB='$configured_db', expected '$expected_db'"
+    fi
+
+    gr_ok "target database '$expected_db' in container '$container' verified as this run's own test database"
+}
+
+# ─── The repo's own ./backups/ is never a test artifact ─────────────────────
+#
+# `backup`/`restore` (scripts/common.sh's shared implementation, invoked here through
+# the staged `opentranscribe.sh` — issue #613; `opentr.sh` uses the identical
+# relative-CWD write but a bare `docker compose` with no `-f` chain of its own)
+# write ./backups relative to CWD. A staging mistake that ran the staged
+# opentranscribe.sh from the repo root — or forgot to stage it at all — would write
+# this run's dumps (containing every seeded user's transcripts in plaintext)
+# into the developer's own checkout. Same measured-not-asserted pattern as
+# gr_fingerprint_repo_env: fingerprint before, verify after, fail loudly on any
+# difference, checked on every exit path via gr_register_exit_check (which
+# ADDS this check to whatever gr_fingerprint_repo_env already registered,
+# rather than a second `trap ... EXIT` clobbering it).
+GR_REPO_BACKUPS_DIR="${GR_REPO_BACKUPS_DIR:-/mnt/nvm/repos/transcribe-app/backups}"
+GR_REPO_BACKUPS_FINGERPRINT=""
+
+gr_fingerprint_repo_backups() {
+    if [[ -d "$GR_REPO_BACKUPS_DIR" ]]; then
+        GR_REPO_BACKUPS_FINGERPRINT="$(find "$GR_REPO_BACKUPS_DIR" -type f -printf '%P %s\n' 2>/dev/null \
+            | LC_ALL=C sort | sha256sum | awk '{print $1}')"
+        gr_ok "fingerprinted repo ./backups (must be unchanged at exit)"
+    else
+        GR_REPO_BACKUPS_FINGERPRINT="absent"
+        gr_log "no repo ./backups directory to fingerprint — will refuse if one appears"
+    fi
+
+    gr_register_exit_check gr_assert_repo_backups_untouched
+}
+
+gr_assert_repo_backups_untouched() {
+    [[ -n "$GR_REPO_BACKUPS_FINGERPRINT" ]] || return 0
+
+    local now
+    if [[ -d "$GR_REPO_BACKUPS_DIR" ]]; then
+        now="$(find "$GR_REPO_BACKUPS_DIR" -type f -printf '%P %s\n' 2>/dev/null \
+            | LC_ALL=C sort | sha256sum | awk '{print $1}')"
+    else
+        now="absent"
+    fi
+
+    if [[ "$now" != "$GR_REPO_BACKUPS_FINGERPRINT" ]]; then
+        gr_die "the repo's ./backups directory CHANGED during this release test.
+           before: $GR_REPO_BACKUPS_FINGERPRINT
+           after:  $now
+           A release test must stage 'opentranscribe.sh backup'/'restore' under TEST_ROOT
+           and never invoke them from the repo root. See gr_assert_not_repo_cwd."
+    fi
+    gr_ok "repo ./backups directory unchanged"
+}
+
+# gr_assert_not_repo_cwd [DIR]
+#   Refuses to proceed if DIR (default: $PWD) resolves to the repo root, any
+#   other GR_PROTECTED_PATHS entry, or anywhere outside TEST_ROOT. Call this
+#   immediately before invoking a staged copy of opentranscribe.sh (or opentr.sh):
+#   both write ./backups relative to CWD, so running either from the wrong
+#   directory would drop the database of — or write dumps into — the live
+#   deployment's own tree.
+gr_assert_not_repo_cwd() {
+    local dir="${1:-$PWD}"
+    local resolved
+    resolved="$(gr_realpath "$dir")"
+    local protected
+    for protected in "${GR_PROTECTED_PATHS[@]}"; do
+        if gr_path_inside "$resolved" "$protected"; then
+            gr_die "gr_assert_not_repo_cwd: refusing to run a staged opentr.sh from
+               '$resolved' — resolves under protected path '$protected'"
+        fi
+    done
+    if ! gr_path_inside "$resolved" "${TEST_ROOT:-/nonexistent-test-root}"; then
+        gr_die "gr_assert_not_repo_cwd: refusing to run a staged opentr.sh from
+           '$resolved' — it must be inside TEST_ROOT ('${TEST_ROOT:-<unset>}')"
+    fi
+    gr_ok "staged opentr.sh CWD '$resolved' is inside TEST_ROOT, not the repo"
 }

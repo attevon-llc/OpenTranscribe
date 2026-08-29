@@ -534,37 +534,6 @@ def detect_hardware() -> HardwareConfig:
     return HardwareConfig(force_device, force_compute_type)
 
 
-def get_docker_runtime_config() -> dict[str, Any]:
-    """
-    Get Docker runtime configuration based on detected hardware.
-
-    Returns:
-        Dictionary with Docker runtime settings
-    """
-    config = detect_hardware()
-
-    docker_config: dict[str, Any] = {
-        "environment": config.get_environment_variables(),
-        "deploy": {},
-    }
-
-    if config.device == "cuda":
-        # NVIDIA GPU runtime
-        docker_config["deploy"]["resources"] = {
-            "reservations": {
-                "devices": [
-                    {
-                        "driver": "nvidia",
-                        "device_ids": [os.getenv("GPU_DEVICE_ID", "0")],
-                        "capabilities": ["gpu"],
-                    }
-                ]
-            }
-        }
-
-    return docker_config
-
-
 if __name__ == "__main__":
     # Test hardware detection
     config = detect_hardware()

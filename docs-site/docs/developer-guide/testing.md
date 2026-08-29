@@ -51,6 +51,107 @@ backend/tests/
 
 ## Running Tests
 
+### The one-command dev-cycle check
+
+`scripts/run-dev-tests.sh` chains the backend gate, the full E2E suite, and the frontend check
+into one command with a single consolidated pass/fail report — the fast "does my current branch
+work" loop for ordinary development. It is **not** the same tool as
+[`scripts/test-matrix.sh`](full-test-matrix.md), which is the exhaustive deployment-mode
+rehearsal (dev/prod/lite/PKI/GPU-scale/fresh-install/upgrade) run before cutting a release, not
+during ordinary development.
+
+```bash
+./opentr.sh start dev                     # live stack must be up first
+
+./scripts/run-dev-tests.sh --full         # backend gate + full e2e + frontend check
+./scripts/run-dev-tests.sh --fast         # backend gate (e2e smoke subset) + frontend check
+./scripts/run-dev-tests.sh --backend-only # just scripts/run-integration-tests.sh
+./scripts/run-dev-tests.sh --e2e-only     # just the full e2e suite
+./scripts/run-dev-tests.sh --frontend-only # just the frontend check, no live stack needed
+```
+
+Mode flags are composable — pass more than one to union their phases (e.g.
+`--backend-only --frontend-only`).
+
+Measured on this host: `--fast` ≈ 22 minutes end to end (integration-marked tests dominate at
+~9 min; e2e-smoke, GPU-marked tests, and the unit/API suite are each 2–3 min; everything else
+combined is under a minute). `--full` runs the entire e2e suite instead of the smoke subset and
+takes correspondingly longer. These numbers rot — re-run and read the per-phase report rather
+than trusting them.
+
+#### Overlay auto-orchestration
+
+The backend/e2e phases need certain auth/LLM test containers up — `run-dev-tests.sh` starts and
+stops them for you, the same way it already did for the mock-LLM overlay alone before this was
+generalized:
+
+```bash
+./scripts/run-dev-tests.sh --all-overlays    # also bring up --with-watch / --with-mock-asr
+./scripts/run-dev-tests.sh --with-gpu-scale  # exercise the multi-GPU worker topology;
+                                              # auto-skips with a clear message on a
+                                              # single-GPU deployment — never auto-started
+                                              # under any other flag
+./scripts/run-dev-tests.sh --no-overlays     # escape hatch: stack is already configured
+                                              # as desired, skip all overlay auto-detection
+./scripts/run-dev-tests.sh --list-overlays   # print the resolved overlay set, start nothing
+./scripts/run-dev-tests.sh --dry-run         # + the exact opentr.sh command, start nothing
+```
+
+Which overlays get resolved depends on the requested phase — `--mock-llm`, `--with-keycloak-test`,
+and `--with-ldap-test` come up automatically when the tests that need them are in scope. Each
+overlay this run started is torn back down on exit, and any `auth_config` DB setting it flipped
+(`oidc_enabled`/`ldap_enabled`) is restored to its prior value — an overlay already running before
+this script started is left alone (not this run's to stop). `scripts/lib/dev-test-overlays.sh`'s
+overlay table is the source of truth for exactly what's managed; every other `opentr.sh --with-*`
+flag not in that table is either intentionally out of scope (documented inline with a reason —
+e.g. `--with-pki` needs the prod/nginx overlay, not the dev stack this script targets) or a gap a
+unit test (`test_run_dev_tests_overlay_coverage.py`) will fail the build over.
+
+#### Strict opt-in phases
+
+Three more flags, **never** included by `--full`/`--fast` — each is also a valid phase selector
+on its own (a bare `--with-mutation-tests` is a complete invocation):
+
+```bash
+./scripts/run-dev-tests.sh --with-gpu-diarization   # the 3 container-only GPU diarization
+                                                     # suites (run-diarization-gpu-tests.sh);
+                                                     # builds a dedicated test image, several
+                                                     # minutes, needs a visible GPU
+./scripts/run-dev-tests.sh --with-mutation-tests    # a single-module mutation-testing run
+                                                     # (default module: spans, ~1-3 min);
+                                                     # override with MUTATION_TEST_MODULE=<module>
+./scripts/run-dev-tests.sh --with-pipeline-smoke    # the ONLY test that pushes a fixture through
+                                                     # real upload -> ASR/diarization -> search ->
+                                                     # a real local LLM chat answer, start to
+                                                     # finish (tests/e2e/test_full_pipeline_smoke.py)
+```
+
+Never `--all` (hours) through `--with-mutation-tests` — run `scripts/run-mutation-tests.sh --all`
+by hand for that. All three need the live stack's `.env`, and GPU diarization additionally needs
+the gitignored `benchmark/test_audio/*.wav` fixtures and a populated `MODEL_CACHE_DIR` — none of
+these are checked into git, so a fresh worktree needs them symlinked in (same as `.env` and
+`backend/venv`) or the wrapped script's own precondition check fails cleanly rather than
+silently measuring nothing. To target a non-default GPU (e.g. this project's card is already
+busy), the wrapped script honors `DIARIZATION_PROBE_GPU`:
+`DIARIZATION_PROBE_GPU=2 ./scripts/run-dev-tests.sh --with-gpu-diarization`.
+
+**`--with-pipeline-smoke` exists because nothing else in the suite proves the pipeline actually
+works end to end.** Every other e2e test either checks an upload merely *lands* in the backend
+(`test_upload.py`, 30s poll on the file record, never on completion) or drives the UI against a
+file that was *already* `status == "completed"` from an earlier session
+(`test_file_detail_transcript.py`, `test_search.py`). This is the one test that uploads
+`backend/tests/fixtures/media/sample_short.wav` (10s of real speech — not the silent
+`e2e/fixtures/sample_audio.wav` sine tone, which produces zero ASR segments), waits for the real
+pipeline to finish, pulls a word out of the *actual* transcript and confirms search finds it, then
+asks a real local model (not the deterministic `--with-mock-llm`) a real question about the file
+through the real chat UI. It brings up `--with-llm-test` itself if not already running (a real
+GPU-backed vLLM on `LLM_TEST_GPU_DEVICE_ID`, default GPU 2 — several minutes cold, measured ~99s
+once warm) and stops it again on exit if this run was the one that started it.
+
+Per-phase logs are written to a fresh `/tmp/ot-run-dev-tests.*` directory and the path is
+printed in the final report. Exit codes match `scripts/release.sh`'s convention: `0` pass, `1`
+gate failed, `2` misuse, `3` precondition unmet (e.g. the dev stack isn't up).
+
 ### Prerequisites
 
 ```bash

@@ -34,6 +34,7 @@ Scenario models (see the server for details):
 from __future__ import annotations
 
 import contextlib
+import os
 import socket
 import subprocess
 import sys
@@ -44,7 +45,7 @@ from pathlib import Path
 import pytest
 import requests
 
-CONTAINER_PORT = 5199
+CONTAINER_PORT = int(os.environ.get("MOCK_LLM_PORT", "5199"))
 CONTAINER_HOSTNAME = "mock-llm"
 SERVER = Path(__file__).resolve().parents[3] / "scripts" / "mock-llm-server.py"
 

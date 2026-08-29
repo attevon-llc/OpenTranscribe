@@ -64,6 +64,7 @@ def _all_spans(seg: dict) -> list[RedactionSpan]:
 
 def test_label_style_matches_golden(segments, expected_label):
     """Every fixture segment masks to the committed golden output (label style)."""
+    assert segments, "no fixture segments loaded — the golden-output check ran against nothing"
     enabled = {"pii", "profanity", "custom"}
     for seg in segments:
         masked, _ = apply_redactions(seg["text"], _all_spans(seg), enabled_categories=enabled)

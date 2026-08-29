@@ -360,7 +360,12 @@ def generate_waveform_for_file(
         # Verify user access to the file (tenant-gated via ctx.org_id)
         is_admin = current_user.is_admin
         db_file = get_media_file_by_uuid(
-            db, file_uuid, current_user.id, is_admin=bool(is_admin), organization_id=ctx.org_id
+            db,
+            file_uuid,
+            current_user.id,
+            is_admin=bool(is_admin),
+            organization_id=ctx.org_id,
+            min_permission="editor",
         )
         file_id = db_file.id  # Get internal ID for task trigger
 

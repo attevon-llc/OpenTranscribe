@@ -32,6 +32,9 @@ import subprocess
 import sys
 import time
 import uuid
+import warnings
+from collections.abc import Callable
+from collections.abc import Iterator
 from pathlib import Path
 from typing import cast
 
@@ -53,6 +56,29 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _backend_dir = str(_REPO_ROOT / "backend")
 if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
+
+# ``search_corpus_stack.py`` is the first e2e fixture to import ``app.*`` in-process (real
+# ``SessionLocal``/``settings``/OpenSearch client, to inject the corpus via the production
+# corpus-injection tool) rather than only talking to the backend over HTTP like every other
+# e2e fixture. That import crashes immediately from a bare host process: ``Settings.__init__``
+# ``mkdir()``s ``DATA_DIR``/``MODELS_DIR``/``TEMP_DIR``, which default to ``/app/...`` (only
+# valid inside the Docker image), and ``POSTGRES_HOST`` defaults to the "postgres" Docker
+# service name, unresolvable from the host. ``tests/conftest.py`` already solves exactly this
+# for the main suite (throwaway temp dirs + localhost DB/MinIO/OpenSearch port autodetection,
+# same env vars this dev stack exposes) — imported here for its **module-level side effects
+# only** (setting `os.environ` before any `app.*` import happens), not registered as a plugin,
+# so its own fixtures / its own `pytest_plugins` entries don't leak into this rootdir.
+import tests.conftest  # noqa: F401,E402 — side effects only, see above
+
+# ``tests/conftest.py`` registers ``search_corpus``/``search_corpus_token``/``neural_available``
+# etc. (the self-seeding 6-file search-quality corpus, ``tests/fixtures/search_corpus_stack.py``)
+# via its own ``pytest_plugins = ["fixtures.search_corpus_stack", ...]`` — but that conftest is
+# cut off from this directory by the same confcutdir boundary explained above, so those fixtures
+# are otherwise invisible here. Registered again, explicitly, for this rootdir; the dotted form
+# (vs. root conftest's bare ``fixtures.search_corpus_stack``) is required because root conftest's
+# own sys.path entry point is ``backend/tests``, while this file put ``backend/`` on sys.path
+# instead (see above), so the module lives at ``tests.fixtures.search_corpus_stack`` from here.
+pytest_plugins = ["tests.fixtures.search_corpus_stack"]
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -316,7 +342,17 @@ def login_page(page: Page, base_url: str):
 
 @pytest.fixture
 def authenticated_page(page: Page, base_url: str):
-    """Return a page that's already logged in as admin."""
+    """Return a page that's already logged in as admin.
+
+    THE volume driver for issue #632's session backlog (~200 admin sessions per
+    full ``run-dev-tests.sh --full`` run, measured 2026-08-28) — every test that
+    uses this fixture logs in fresh and never logged back out. Logout at teardown
+    (best-effort: a network hiccup here must not fail a test that already passed)
+    closes that. Tests with a genuine need to reuse one login across many cases
+    should prefer ``shared_auth_state``/``gallery_page`` instead — see that
+    fixture's docstring — but migrating every existing ``authenticated_page`` user
+    is a separate, larger change and out of scope here.
+    """
     page.goto(base_url)
     page.wait_for_selector("#email", timeout=10000)
 
@@ -332,7 +368,15 @@ def authenticated_page(page: Page, base_url: str):
     # Wait for page to be fully loaded
     page.wait_for_load_state("networkidle")
 
-    return page
+    yield page
+
+    try:
+        # httpOnly auth cookies live on the browser context; page.request shares
+        # that cookie jar, so this reaches the real /api/auth/logout endpoint
+        # with no token ever exposed to page.evaluate().
+        page.request.post(f"{base_url}/api/auth/logout")
+    except Exception as exc:  # pragma: no cover - best-effort teardown
+        warnings.warn(f"authenticated_page teardown: logout call failed: {exc}", stacklevel=2)
 
 
 @pytest.fixture(scope="session")
@@ -364,6 +408,19 @@ def shared_auth_state(browser, base_url: str):
 
     yield state_file
 
+    # Log the session out before discarding its storage state (issue #632) —
+    # otherwise the one login this fixture exists to make cheap still leaves a
+    # session behind on every run. Reload the saved cookies into a fresh
+    # throwaway context rather than reusing the one already closed above.
+    try:
+        logout_context = browser.new_context(storage_state=state_file, ignore_https_errors=True)
+        try:
+            logout_context.request.post(f"{base_url}/api/auth/logout")
+        finally:
+            logout_context.close()
+    except Exception as exc:  # pragma: no cover - best-effort teardown
+        warnings.warn(f"shared_auth_state teardown: logout call failed: {exc}", stacklevel=2)
+
     if os.path.exists(state_file):
         os.unlink(state_file)
 
@@ -379,6 +436,17 @@ def gallery_page(browser, shared_auth_state, base_url: str):
     page = context.new_page()
     page.goto(base_url)
     page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    # `.gallery-action-buttons` renders unconditionally, independent of the `GET
+    # /api/files` fetch — so a test could act (select-all, read header geometry)
+    # before the file list has actually landed. `.gallery-header-right`
+    # (GalleryHeader.svelte) is gated on `files.length > 0`, so waiting for it is the
+    # exact "the file list landed AND is non-empty" signal these gallery-content tests
+    # need. (`.count-chip` looked like a loading-agnostic proxy for this but is driven
+    # by a separate fetch that settles independently — verified it does not track the
+    # main file-grid fetch, so it is not a substitute here.) On a genuinely empty
+    # library this will time out; the tests using this fixture already assume ambient
+    # content, same as before this fixture existed.
+    page.wait_for_selector(".gallery-header-right", timeout=30000)
     yield page
     page.close()
     context.close()
@@ -446,14 +514,21 @@ COMMITTED_SAMPLE_MEDIA = (
     Path(__file__).resolve().parents[1] / "fixtures" / "media" / "sample_short.wav"
 )
 
-#: Prefix for every file these suites upload. Also listed in
-#: ``scripts/cleanup-test-users.py``'s ORPHAN_PATTERNS, the backstop for a run that
-#: dies before its teardown.
+#: Prefix for every file these suites upload. Also listed (as a filename pattern, not a
+#: user-email pattern — ``scripts/cleanup-test-users.py``'s ``ORPHAN_PATTERNS`` matches
+#: ``user.email`` and could never match this) in ``scripts/cleanup-test-data.py``'s
+#: Tier A media-filename patterns, the backstop for a run that dies before its teardown.
 OWNED_MEDIA_PREFIX = "e2e-owned-"
 
 #: Statuses a file can never leave on its own. Reaching one decides the answer, so
 #: continuing to poll for "completed" only burns the rest of the window.
 TERMINAL_FAILURE_STATUSES = frozenset({"error", "cancelled"})
+
+#: `MediaFile.redaction_status` values meaning the scan is still running — see
+#: `app/core/constants.py` REDACTION_STATUS_*. `None` (never dispatched — e.g. redaction
+#: disabled for this reader) and "done"/"failed" are both terminal for this wait: either
+#: way, nothing further is going to change before the next request.
+_REDACTION_IN_PROGRESS_STATUSES = frozenset({"pending", "processing"})
 
 
 def wait_for_stable_completion(
@@ -464,6 +539,14 @@ def wait_for_stable_completion(
     One ``completed`` poll is not enough: chained async stages (analytics, search
     indexing) can flip a file back to PROCESSING moments later, racing the next
     request into an INVALID_STATUS rejection.
+
+    Also waits for content redaction to leave "pending"/"processing". A freshly
+    uploaded file can be stably ``completed`` while its redaction scan is still
+    running — the scavenged ambient files this helper used to be tested against
+    had redaction finished long ago, so this gap was invisible until tests started
+    owning fresh uploads (issue: subtitle/export endpoints withhold a file whose
+    scan hasn't finished, e.g. `SubtitleService._files_awaiting_redaction`, and a
+    caller that requests an export immediately after "completed" can race it).
 
     Args:
         backend_url: Base URL of the API under test.
@@ -480,10 +563,12 @@ def wait_for_stable_completion(
     status = "unknown"
     while time.time() < deadline:
         resp = requests.get(f"{backend_url}/api/files/{file_uuid}", headers=headers, timeout=30)
-        status = str(resp.json().get("status", "unknown")) if resp.status_code == 200 else "unknown"
+        body = resp.json() if resp.status_code == 200 else {}
+        status = str(body.get("status", "unknown")) if resp.status_code == 200 else "unknown"
         if status in TERMINAL_FAILURE_STATUSES:
             return status
-        consecutive = consecutive + 1 if status == "completed" else 0
+        redaction_ready = body.get("redaction_status") not in _REDACTION_IN_PROGRESS_STATUSES
+        consecutive = consecutive + 1 if status == "completed" and redaction_ready else 0
         if consecutive >= 2:
             return status
         # Pure API polling: this helper takes no Playwright page, so there is no
@@ -492,13 +577,54 @@ def wait_for_stable_completion(
     return status
 
 
+def wait_until_safe_to_delete(
+    backend_url: str, token: str, file_uuid: str, timeout_secs: int = 90
+) -> bool:
+    """Poll until *file_uuid* has no live ``active_task_id``, not merely ``completed``.
+
+    ``is_file_safe_to_delete`` (``app/utils/task_utils.py``) is deliberately NOT gated
+    on ``status == PROCESSING``: a selective follow-on stage on an already-completed
+    file (search_indexing/analytics/speaker_llm/summarization/topic_extraction/
+    speaker_clustering) sets ``active_task_id`` via ``create_task_record`` without ever
+    flipping ``status`` away from ``completed``. So two consecutive ``completed`` polls
+    from ``wait_for_stable_completion`` do not guarantee the file is actually safe to
+    delete — a real run hit exactly this: DELETE 409'd twice right after completion,
+    each time against a *different* ``active_task_id``, and needed ``/force`` to clean
+    up (found running the full pipeline verification against a fresh dev stack).
+    Waiting on this directly lets the owning test's teardown delete on the first real
+    attempt instead of quietly falling back to ``/force`` every time.
+
+    Args:
+        backend_url: Base URL of the API under test.
+        token: Bearer token.
+        file_uuid: File to poll.
+        timeout_secs: Upper bound on the wait — short, because this only covers the
+            tail of already-``completed`` follow-on stages, not the main pipeline.
+
+    Returns:
+        True once ``active_task_id`` is observed clear; False if the deadline passed
+        first (the caller still has ``delete_media_file``'s own 409-retry + force
+        fallback as a backstop).
+    """
+    headers = {"Authorization": f"Bearer {token}"}
+    deadline = time.time() + timeout_secs
+    while time.time() < deadline:
+        resp = requests.get(f"{backend_url}/api/files/{file_uuid}", headers=headers, timeout=30)
+        if resp.status_code == 200 and resp.json().get("active_task_id") is None:
+            return True
+        time.sleep(3)
+    return False
+
+
 def delete_media_file(backend_url: str, token: str, file_uuid: str) -> None:
     """Remove a test-created file, retrying past the window where it is still busy.
 
-    A file mid-pipeline answers 409, so a single DELETE is not enough. Falls back to
+    A file mid-pipeline answers 409, so a single DELETE is not enough. Waits out any
+    live follow-on task first (see ``wait_until_safe_to_delete``), then falls back to
     ``/force`` so a failed test can never leave its upload in the dev library.
     """
     headers = {"Authorization": f"Bearer {token}"}
+    wait_until_safe_to_delete(backend_url, token, file_uuid)
     deadline = time.time() + 90
     while time.time() < deadline:
         try:
@@ -566,6 +692,291 @@ def owned_media_factory(backend_url: str):
     finally:
         for token, file_uuid in created:
             delete_media_file(backend_url, token, file_uuid)
+
+
+# ---------------------------------------------------------------------------
+# Second user / collection sharing: the one setup path that reaches every
+# non-owner permission journey (issues #583/#585/#588). PermissionService
+# resolves a non-owner's file permission ONLY through "file is in a
+# collection shared with the user" — there is no per-file share endpoint.
+# ---------------------------------------------------------------------------
+
+#: Prefix for every account the second-user fixture mints. Also listed in
+#: scripts/cleanup-test-users.py's ORPHAN_PATTERNS, the backstop for a run that
+#: dies before its teardown (the same contract OWNED_MEDIA_PREFIX has).
+SECOND_USER_PREFIX = "share-e2e-"
+
+#: Satisfies the DB-backed password policy (12+, upper/lower/digit/special, no
+#: fragment of the name or email). Same shape as test_mfa.py's.
+SECOND_USER_PASSWORD = "Xk9!pLm2@Wq7Rn"  # noqa: S105
+
+#: Prefix for every collection the sharing fixtures create.
+SHARED_COLLECTION_PREFIX = "e2e-shared-"
+
+#: Prefix for every chat conversation TITLE a suite mints for itself (issue #629). Also
+#: listed in ``scripts/cleanup-test-data.py``'s Tier A conversation-title patterns.
+#: Deliberately its own constant, NOT a reuse of ``_unique()`` — that helper also names
+#: LLM provider configs (``test_chat.py:154``), and prefixing a provider *name* with
+#: ``e2e-chat-`` would be wrong (it isn't a conversation). Use :func:`unique_conversation_title`
+#: below for any conversation title a suite creates and does not reliably delete in every
+#: teardown path.
+E2E_CONVERSATION_PREFIX = "e2e-chat-"
+
+
+def unique_conversation_title(label: str) -> str:
+    """A conversation title carrying :data:`E2E_CONVERSATION_PREFIX` plus a random suffix.
+
+    Mirrors the shape ``OWNED_MEDIA_PREFIX``/``SECOND_USER_PREFIX``/``SHARED_COLLECTION_PREFIX``
+    already use: a fixed prefix a sweep can match, plus a random suffix so two runs never
+    collide on the same title.
+    """
+    return f"{E2E_CONVERSATION_PREFIX}{label}-{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture(scope="session")
+def admin_token(backend_url: str) -> Iterator[str]:
+    """A bearer token for TEST_ADMIN_EMAIL, obtained once per session.
+
+    Retries through transient rate limiting the same way APIHelper.login does.
+    Skips (not fails) if login never succeeds, so a stack with auth misconfigured
+    doesn't masquerade every dependent test as a real failure.
+
+    Logs the session out at teardown (issue #632) — the REFRESH token, not the
+    access token, since ``POST /auth/logout`` revokes the ``refresh_token`` row
+    matching the bearer credential's own ``jti``, and only the refresh token has
+    one; presenting the access token would clear cookies but leave the session
+    row (and therefore this fixture's whole share of the concurrent-session
+    count) live until it expired naturally.
+    """
+    result: dict = {}
+    for attempt in range(4):
+        response = requests.post(
+            f"{backend_url}/api/auth/token",
+            data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=30,
+        )
+        if response.status_code == 200:
+            result = response.json()
+            break
+        time.sleep(5 * (attempt + 1))
+    else:
+        pytest.skip(f"Could not obtain admin token from {backend_url} (last status not 200)")
+
+    access_token = str(result["access_token"])
+    refresh_token = result.get("refresh_token")
+
+    yield access_token
+
+    if refresh_token:
+        try:
+            requests.post(
+                f"{backend_url}/api/auth/logout",
+                headers={"Authorization": f"Bearer {refresh_token}"},
+                timeout=30,
+            )
+        except Exception as exc:  # pragma: no cover - best-effort teardown
+            warnings.warn(f"admin_token teardown: logout call failed: {exc}", stacklevel=2)
+
+
+@pytest.fixture(scope="session")
+def second_user(backend_url: str, admin_token: str) -> Iterator[dict[str, str]]:
+    """A real, non-admin user account distinct from TEST_ADMIN_EMAIL.
+
+    Created via POST /api/admin/users (not /api/auth/register — registration is a
+    DB-backed toggle an admin can disable, and a disabled stack would make every
+    consumer skip for the wrong reason). ``role="user"`` is required: a plain admin
+    cannot grant an elevated role, and an admin second-user would see
+    ``my_permission == "owner"`` everywhere, defeating the point of this fixture.
+    """
+    email = f"{SECOND_USER_PREFIX}{uuid.uuid4().hex[:8]}@example.com"
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    # A throwaway creation password, deliberately DIFFERENT from SECOND_USER_PASSWORD —
+    # see the reset-password call below for why.
+    provisioning_password = f"Zq3!{uuid.uuid4().hex[:10]}Rv9#"  # noqa: S105
+    response = requests.post(
+        f"{backend_url}/api/admin/users",
+        headers=headers,
+        json={
+            "email": email,
+            "password": provisioning_password,
+            "full_name": "Rec Ipient",
+            "role": "user",
+        },
+        timeout=30,
+    )
+    if response.status_code not in (200, 201):
+        pytest.skip(
+            f"Could not create second-user fixture account (HTTP {response.status_code}): "
+            f"{response.text[:300]}"
+        )
+    body = response.json()
+    user_uuid = str(body["uuid"])
+
+    # Admin-created local accounts always come back with must_change_password=True
+    # (app/api/endpoints/users.py create_user) — the created-by-admin path assumes an
+    # admin knows the password and forces a change before the account is usable. A
+    # browser login for this fixture would otherwise land on the forced-change screen
+    # instead of the app, so clear the flag the same way an admin would from the UI.
+    # The reset must set a DIFFERENT password than the one just used to create the
+    # account, or the password-history/reuse check (FedRAMP IA-5) rejects it as a
+    # reused password — hence the separate throwaway creation password above.
+    reset_resp = requests.post(
+        f"{backend_url}/api/admin/users/{user_uuid}/reset-password",
+        headers=headers,
+        json={"new_password": SECOND_USER_PASSWORD, "force_change": False},
+        timeout=30,
+    )
+    if reset_resp.status_code != 200:
+        requests.delete(f"{backend_url}/api/admin/users/{user_uuid}", headers=headers, timeout=30)
+        pytest.skip(
+            f"Could not clear must_change_password on second-user fixture account "
+            f"(HTTP {reset_resp.status_code}): {reset_resp.text[:300]}"
+        )
+
+    try:
+        yield {
+            "email": email,
+            "password": SECOND_USER_PASSWORD,
+            "uuid": user_uuid,
+            "full_name": "Rec Ipient",
+        }
+    finally:
+        requests.delete(f"{backend_url}/api/admin/users/{user_uuid}", headers=headers, timeout=30)
+
+
+@pytest.fixture(scope="session")
+def second_user_auth_state(browser, base_url: str, second_user: dict[str, str]):
+    """Login as ``second_user`` ONCE per session and persist browser storage state.
+
+    Mirrors ``shared_auth_state`` except a brand-new user's gallery is empty, so
+    waiting on ``.gallery-action-buttons`` cannot be assumed — a freshly created
+    account may render an empty-state screen with none of those buttons. Falling
+    back to "left the login page" is the deterministic signal available either way.
+    """
+    import tempfile
+
+    context = browser.new_context(
+        viewport={"width": 1920, "height": 1080},
+        ignore_https_errors=True,
+    )
+    page = context.new_page()
+    page.goto(base_url)
+    page.wait_for_selector("#email", timeout=15000)
+    page.fill("#email", second_user["email"])
+    page.fill("#password", second_user["password"])
+    page.click("button[type=submit]")
+    try:
+        page.wait_for_selector(".gallery-action-buttons", timeout=10000)
+    except Exception:
+        page.wait_for_url(lambda url: "/login" not in url, timeout=30000)
+
+    fd, state_file = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    context.storage_state(path=state_file)
+    page.close()
+    context.close()
+
+    yield state_file
+
+    # Same reasoning as shared_auth_state's teardown (issue #632); runs before
+    # second_user's own teardown deletes the account (fixture finalizers run in
+    # reverse dependency order), so the logout call still has a live account to
+    # act on.
+    try:
+        logout_context = browser.new_context(storage_state=state_file, ignore_https_errors=True)
+        try:
+            logout_context.request.post(f"{base_url}/api/auth/logout")
+        finally:
+            logout_context.close()
+    except Exception as exc:  # pragma: no cover - best-effort teardown
+        warnings.warn(f"second_user_auth_state teardown: logout call failed: {exc}", stacklevel=2)
+
+    if os.path.exists(state_file):
+        os.unlink(state_file)
+
+
+@pytest.fixture
+def second_user_page(browser, second_user_auth_state, base_url: str):
+    """A fresh pre-authenticated page for ``second_user`` (no per-test login)."""
+    context = browser.new_context(
+        storage_state=second_user_auth_state,
+        viewport={"width": 1920, "height": 1080},
+        ignore_https_errors=True,
+    )
+    page = context.new_page()
+    page.goto(base_url)
+    page.wait_for_load_state("networkidle")
+    yield page
+    page.close()
+    context.close()
+
+
+@pytest.fixture
+def shared_collection_factory(
+    backend_url: str, admin_token: str, second_user: dict[str, str]
+) -> Iterator[Callable[..., dict]]:
+    """``share(*, member_file_uuids=(), permission="viewer") -> dict``: create a
+    collection owned by admin, optionally add files, and share it with ``second_user``.
+
+    Every collection created is deleted on teardown regardless of test outcome —
+    the sequence mirrors the one real setup path for every non-owner permission
+    journey in this app (there is no per-file share endpoint).
+    """
+    headers = {"Authorization": f"Bearer {admin_token}", "Content-Type": "application/json"}
+    created: list[str] = []
+
+    def _share(*, member_file_uuids: tuple[str, ...] = (), permission: str = "viewer") -> dict:
+        name = f"{SHARED_COLLECTION_PREFIX}{uuid.uuid4().hex[:8]}"
+        collection_resp = requests.post(
+            f"{backend_url}/api/collections",
+            headers=headers,
+            json={"name": name},
+            timeout=30,
+        )
+        assert collection_resp.status_code == 200, (
+            f"Collection creation failed: {collection_resp.status_code} {collection_resp.text[:300]}"
+        )
+        collection = cast(dict, collection_resp.json())
+        collection_uuid = collection["uuid"]
+        created.append(collection_uuid)
+
+        if member_file_uuids:
+            media_resp = requests.post(
+                f"{backend_url}/api/collections/{collection_uuid}/media",
+                headers=headers,
+                json={"media_file_ids": list(member_file_uuids)},
+                timeout=30,
+            )
+            assert media_resp.status_code == 200, (
+                f"Adding media to collection failed: {media_resp.status_code} "
+                f"{media_resp.text[:300]}"
+            )
+
+        share_resp = requests.post(
+            f"{backend_url}/api/collections/{collection_uuid}/shares",
+            headers=headers,
+            json={
+                "target_type": "user",
+                "target_uuid": second_user["uuid"],
+                "permission": permission,
+            },
+            timeout=30,
+        )
+        assert share_resp.status_code == 201, (
+            f"Sharing collection failed: {share_resp.status_code} {share_resp.text[:300]}"
+        )
+
+        collection["share"] = share_resp.json()
+        return collection
+
+    try:
+        yield _share
+    finally:
+        for collection_uuid in created:
+            requests.delete(
+                f"{backend_url}/api/collections/{collection_uuid}", headers=headers, timeout=30
+            )
 
 
 @pytest.fixture
@@ -680,6 +1091,7 @@ class APIHelper:
     def __init__(self, backend_url: str):
         self.backend_url = backend_url
         self._token: str | None = None
+        self._refresh_token: str | None = None
 
     def login(self, email: str, password: str) -> dict:
         """Login via API and store token (retry through transient rate limiting)."""
@@ -698,11 +1110,39 @@ class APIHelper:
             result = cast(dict, response.json())
             if response.status_code == 200:
                 self._token = cast(str, result["access_token"])
+                self._refresh_token = cast(str | None, result.get("refresh_token"))
                 return result
             # Kept (issue #431): raw requests.post retry against rate limiting — no Playwright
             # page in this helper, no locator to wait on.
             time.sleep(5 * (attempt + 1))
         return result
+
+    def logout(self) -> None:
+        """End the session this helper's ``login()`` established (issue #632).
+
+        Presents the REFRESH token, not the access token: ``POST /auth/logout``
+        revokes the ``refresh_token`` row matching the bearer credential's own
+        ``jti``, and only the refresh token has one — the access token's jti
+        matches no such row, so passing it would clear nothing server-side.
+        Best-effort and silent on failure: a teardown call must never fail a
+        test that already passed, and there is nothing further for a caller to
+        do with the result.
+        """
+        import requests
+
+        if not self._refresh_token:
+            return
+        try:
+            requests.post(
+                f"{self.backend_url}/api/auth/logout",
+                headers={"Authorization": f"Bearer {self._refresh_token}"},
+                timeout=30,
+            )
+        except Exception as exc:  # pragma: no cover - best-effort teardown
+            warnings.warn(f"APIHelper.logout(): logout call failed: {exc}", stacklevel=2)
+        finally:
+            self._token = None
+            self._refresh_token = None
 
     def get(self, endpoint: str) -> dict:
         """Make authenticated GET request."""
@@ -739,5 +1179,12 @@ class APIHelper:
 
 @pytest.fixture
 def api_helper(backend_url: str):
-    """Provide API helper for backend calls."""
-    return APIHelper(backend_url)
+    """Provide API helper for backend calls.
+
+    Logs out at teardown when the test actually obtained a token (issue #632)
+    — a test that never called ``.login()`` has no session to end.
+    """
+    helper = APIHelper(backend_url)
+    yield helper
+    if helper._token:
+        helper.logout()

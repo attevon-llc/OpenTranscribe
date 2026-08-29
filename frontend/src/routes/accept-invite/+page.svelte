@@ -21,10 +21,10 @@
   import {
     lookupInvitation,
     acceptInvitation,
-    invitationErrorMessage,
     type InvitationLookup,
     type InvitationAcceptResult,
   } from '$lib/api/invitations';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { onMount } from 'svelte';
 
   import logoBanner from '../../assets/logo-banner.png';
@@ -57,7 +57,7 @@
       fullName = invitation.full_name || '';
       phase = 'form';
     } catch (err) {
-      errorMessage = invitationErrorMessage(err, $t('auth.acceptInvite.invalidLink'));
+      errorMessage = getErrorMessage(err, $t('auth.acceptInvite.invalidLink'));
       phase = 'error';
     }
   }
@@ -91,7 +91,7 @@
     } catch (err) {
       // Covers a weak password and a token that expired mid-form alike; both
       // arrive as a 400 and both are shown exactly as the server worded them.
-      errorMessage = invitationErrorMessage(err, $t('auth.acceptInvite.acceptFailed'));
+      errorMessage = getErrorMessage(err, $t('auth.acceptInvite.acceptFailed'));
       toastStore.error(errorMessage);
     } finally {
       submitting = false;

@@ -76,8 +76,12 @@ def test_reasoning_model_reports_reasoning_content_non_streamed(mock_llm_complet
     """The non-streaming shape carries reasoning too, matching a real provider."""
     result = mock_llm_completion("what happened", model="mock-reasoning")
     message = result["body"]["choices"][0]["message"]
-    assert message["reasoning_content"]
-    assert message["content"]  # the final answer is still there, separately
+    # SEPARATED, which is the whole claim — two truthy strings would also be produced
+    # by a server that put the same text in both fields, or that leaked the
+    # chain-of-thought into the answer (the #439 shape this scenario exists to model).
+    assert "Let me look at what was actually retrieved" in message["reasoning_content"]
+    assert "Based on the transcript excerpts provided" in message["content"]
+    assert message["reasoning_content"] not in message["content"]
 
 
 def test_reasoning_streams_before_the_answer(mock_llm_url):

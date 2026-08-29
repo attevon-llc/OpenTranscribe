@@ -112,6 +112,7 @@ celery_app = Celery(
         "app.tasks.search_maintenance_task",
         "app.tasks.opensearch_integrity_task",
         "app.tasks.search_indexing_task",
+        "app.tasks.search_reembed_task",
         "app.tasks.rename_propagation_task",
         "app.tasks.redaction_task",
         "app.tasks.chat_retention",
@@ -133,6 +134,8 @@ celery_app = Celery(
         "app.tasks.recovery_tasks",
         "app.tasks.backup_tasks",
         "app.tasks.directory_sync_task",
+        "app.tasks.account_lifecycle",
+        "app.tasks.session_cap",
     ],
 )
 
@@ -246,6 +249,8 @@ celery_app.conf.update(
         "reindex_transcripts": {"queue": CeleryQueues.CPU},
         "reindex_batch": {"queue": CeleryQueues.CPU},
         "search_index_maintenance": {"queue": CeleryQueues.CPU},
+        "search.reembed_degraded": {"queue": CeleryQueues.CPU},
+        "neural_search_bootstrap": {"queue": CeleryQueues.UTILITY},
         "opensearch_orphan_cleanup": {"queue": CeleryQueues.CPU},
         "speaker_embedding_consistency_check": {"queue": CeleryQueues.CPU},
         "speaker_embedding_consistency_repair_batch": {"queue": CeleryQueues.GPU},
@@ -265,7 +270,12 @@ celery_app.conf.update(
         # 'celery' queue silently — see `_validate_task_routes` below.
         "regenerate_rename_digests": {"queue": CeleryQueues.CPU},
         "process_speaker_merge_background": {"queue": CeleryQueues.CPU},
-        "extract_speaker_embeddings": {"queue": CeleryQueues.GPU},
+        # CPU, not GPU: this task only extracts embeddings from already-known
+        # segments (no diarization model pass) — SpeakerEmbeddingService resolves
+        # its device via hardware_detection.py, so it runs fine on CPU. Lite mode
+        # (docker-compose.lite.yml) scales the GPU worker to zero replicas, so
+        # pinning this to 'gpu' left it queued forever there (issue #584).
+        "extract_speaker_embeddings": {"queue": CeleryQueues.CPU},
         # NLP Queue - LLM API calls (concurrency=4, no GPU needed)
         "ai.generate_summary": {"queue": CeleryQueues.NLP},
         "ai.identify_speakers": {"queue": CeleryQueues.NLP},
@@ -325,6 +335,12 @@ celery_app.conf.update(
         # GDPR Art. 17 reconciliation (issue #442): small DB reads plus, when there is
         # deferred work, object-storage and OpenSearch deletes. Utility — never gpu.
         "gdpr.erasure_reconcile": {"queue": CeleryQueues.UTILITY},
+        # FedRAMP AC-2 account-inactivity expiration: small DB reads/writes only.
+        # Utility — never gpu.
+        "account.inactivity_sweep": {"queue": CeleryQueues.UTILITY},
+        # FedRAMP AC-10 concurrent-session ceiling (issue #632): one grouped
+        # query plus small per-user UPDATEs. Utility — never gpu.
+        "session.cap_sweep": {"queue": CeleryQueues.UTILITY},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
@@ -337,6 +353,14 @@ celery_app.conf.update(
             "task": "search_index_maintenance",
             "schedule": crontab(minute=0, hour="*/6"),  # Every 6 hours
             "options": {"queue": "cpu", "priority": 8},  # CPUPriority.MAINTENANCE
+        },
+        "neural-search-bootstrap": {
+            "task": "neural_search_bootstrap",
+            # Every 10 minutes. A cold or slow OpenSearch boot can outlast the startup
+            # fast path's one-shot attempt (issue #625) — this is the self-heal. A
+            # healthy deployment pays only the cheap probe every tick.
+            "schedule": crontab(minute="3,13,23,33,43,53"),
+            "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
         },
         "opensearch-orphan-cleanup": {
             "task": "opensearch_orphan_cleanup",
@@ -398,6 +422,16 @@ celery_app.conf.update(
             "schedule": crontab(minute=10, hour=4),
             "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
         },
+        "account-inactivity-sweep": {
+            "task": "account.inactivity_sweep",
+            # Daily at 04:25, offset from the chat retention (04:10) / GDPR erasure
+            # (04:40) sweeps so none contend on the same tick. FedRAMP AC-2: a no-op
+            # unless an admin sets ACCOUNT_EXPIRATION_ENABLED (default off), so this
+            # costs one indexed query a day by default on a deployment that hasn't
+            # opted in.
+            "schedule": crontab(minute=25, hour=4),
+            "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
+        },
         "gdpr-erasure-reconcile": {
             "task": "gdpr.erasure_reconcile",
             # Daily at 04:40, offset from the chat retention sweep. Two indexed
@@ -407,6 +441,17 @@ celery_app.conf.update(
             # deadline it defends is one MONTH (Art. 12(3)) and the prompt path is
             # the hook in tasks/erasure_reconciliation.notify_hold_released.
             "schedule": crontab(minute=40, hour=4),
+            "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
+        },
+        "session-cap-sweep": {
+            "task": "session.cap_sweep",
+            # Daily at 04:55, offset from chat retention (04:10) / account
+            # inactivity (04:25) / GDPR erasure (04:40) so none contend on the
+            # same tick. Defence in depth for issue #632: every session-minting
+            # path now enforces the cap itself, so this only has real work to do
+            # after an admin LOWERS the cap (existing sessions don't shrink until
+            # someone logs in again) or against a pre-fix backlog.
+            "schedule": crontab(minute=55, hour=4),
             "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
         },
         "media-mirror-check-schedule": {

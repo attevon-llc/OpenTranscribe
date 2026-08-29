@@ -912,19 +912,8 @@
     color: var(--text-secondary);
   }
 
-  /* Search highlighting */
-  :global(.search-match) {
-    background-color: rgba(255, 255, 0, 0.3);
-    padding: 0.1em 0.2em;
-    border-radius: 3px;
-  }
-
-  :global(.current-match) {
-    background-color: rgba(255, 165, 0, 0.6);
-    padding: 0.1em 0.2em;
-    border-radius: 3px;
-    box-shadow: 0 0 0 1px rgba(255, 165, 0, 0.8);
-  }
+  /* Search highlighting: .search-match / .current-match live in src/styles/search.css
+     (shared across TranscriptModal, SummaryDisplay, TopicsList — see G7). */
 
   /* Overlap group styles */
   .overlap-group {

@@ -196,24 +196,6 @@ def _set_settings_batch(db: Session, updates: dict[str, tuple[Any, str | None]])
         settings_cache.invalidate(key)
 
 
-def get_all_settings(db: Session) -> dict[str, dict]:
-    """
-    Get all system settings.
-
-    Returns:
-        Dictionary of all settings with their values and descriptions
-    """
-    settings = db.query(SystemSettings).all()
-    return {
-        str(s.key): {
-            "value": s.value,
-            "description": s.description,
-            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
-        }
-        for s in settings
-    }
-
-
 def get_retry_config(db: Session) -> dict:
     """
     Get retry configuration as a structured dict.
@@ -246,9 +228,43 @@ def should_retry_file(db: Session, retry_count: int) -> bool:
     if not config["retry_limit_enabled"]:
         return True
 
-    # Check against the system-wide max retries
+    # 0 means unlimited retries -- documented here, in admin.py's settings
+    # response, and in schemas/admin.py's validator message ("0 = unlimited").
+    # `retry_count < 0` is never true, so without this branch an admin setting
+    # 0 meaning "never give up" got the opposite: zero retries, immediately.
     max_retries = config["max_retries"]
+    if max_retries == 0:
+        return True
+
     return bool(retry_count < max_retries)
+
+
+def retry_ceiling_message(db: Session, retry_count: int) -> str | None:
+    """Return the "max retries reached" detail for *retry_count*, or None if retries remain.
+
+    Single source for the message AND the ceiling determination, shared by every retry entry
+    point: ``api/endpoints/user_files.py``'s ``POST /my-files/{uuid}/retry`` (the one the SPA
+    calls), ``api/endpoints/files/management.py``'s ``POST /files/{uuid}/retry``, the same
+    module's ``POST /management/bulk-action`` for both its ``retry`` and ``reprocess`` actions
+    (``_handle_retry_action`` / ``_handle_reprocess_action``), and
+    ``api/endpoints/tasks.py``'s ``POST /tasks/retry/{uuid}``. An earlier fix added a ceiling
+    check to only the first two of these; the admin-tunable retry limit stayed fully
+    bypassable through bulk retry/reprocess and the tasks-router retry route until a later
+    audit pass closed all three. This function does not raise — service code doesn't raise
+    ``fastapi.HTTPException`` (that's an endpoint-layer concern, see
+    ``backend/app/api/CLAUDE.md``) — callers turn a non-``None`` result into their own 400.
+
+    Args:
+        db: Database session.
+        retry_count: The file's current ``retry_count`` (NULL-normalized by the caller).
+
+    Returns:
+        A user-facing detail string if the ceiling is reached, else None.
+    """
+    if should_retry_file(db, retry_count):
+        return None
+    config = get_retry_config(db)
+    return f"File has reached maximum retry attempts ({config['max_retries']}). Contact admin for help."
 
 
 def update_retry_config(
@@ -472,16 +488,3 @@ def set_media_sources(db: Session, sources: list[dict]) -> list[dict]:
         "Protected media sources configuration (hosts, credentials, providers)",
     )
     return sources
-
-
-def get_media_source_hosts(db: Session) -> set[str]:
-    """Return set of configured hostnames from DB media sources."""
-    return {s["hostname"] for s in get_media_sources(db) if s.get("hostname")}
-
-
-def get_media_source_for_host(db: Session, hostname: str) -> dict | None:
-    """Look up media source config for a specific hostname."""
-    for source in get_media_sources(db):
-        if source.get("hostname") == hostname:
-            return source
-    return None

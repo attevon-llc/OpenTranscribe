@@ -44,6 +44,7 @@ describe('clearUserState', () => {
       loaded: true,
       capabilities: { 'cap:transcription.diarization': false, 'cap:admin.platform': true },
       audience: { 'cap:admin.platform': 'platform' },
+      maxUploadBytes: 5_000_000,
     });
 
     await clearUserState();
@@ -55,6 +56,10 @@ describe('clearUserState', () => {
     // `loaded: false` matters: a consumer that gates on `loaded` must wait for the
     // NEXT user's fetch rather than treat the empty fail-open map as an answer.
     expect(state.loaded).toBe(false);
+    // Same tier-scoped leak as above, for the upload ceiling: `undefined` (not the
+    // stale 5,000,000) makes $lib/utils/uploadLimits fall back to its coded default
+    // until the next user's fetch resolves.
+    expect(state.maxUploadBytes).toBeUndefined();
   });
 
   it('removes the localStorage keys that hold user data', async () => {

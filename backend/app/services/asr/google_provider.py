@@ -80,6 +80,8 @@ class GoogleASRProvider(ASRProvider):
         progress_callback: Callable[[float, str], None] | None = None,
     ) -> ASRResult:
         try:
+            from google.api_core.exceptions import ResourceExhausted
+            from google.api_core.exceptions import TooManyRequests
             from google.cloud import speech
         except ImportError as err:
             raise RuntimeError(
@@ -133,6 +135,17 @@ class GoogleASRProvider(ASRProvider):
         try:
             op = client.long_running_recognize(config=recognition_cfg, audio=audio)
             response = op.result(timeout=3600)
+        except (ResourceExhausted, TooManyRequests) as exc:
+            from .errors import ASRRateLimitedError
+            from .errors import retry_after_of
+
+            sanitized = self._sanitize_error(str(exc))
+            logger.warning("Google Cloud Speech rate-limited for file=%s: %s", filename, sanitized)
+            raise ASRRateLimitedError(
+                f"Google Cloud Speech rate limited: {sanitized}",
+                provider="google",
+                retry_after=retry_after_of(exc),
+            ) from exc
         except Exception as exc:
             logger.error("Google Cloud Speech transcription failed for file=%s: %s", filename, exc)
             raise RuntimeError(

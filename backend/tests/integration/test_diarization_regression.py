@@ -6,12 +6,14 @@ the committed reference. This catches any future code change that
 accidentally perturbs the diarization output — the Phase A RTTMs are
 the "golden" answer.
 
-Run (in-container):
+Run (in-container — the prod image has no pytest, so this needs the test image;
+issue #577):
 
-    docker compose -f docker-compose.yml -f docker-compose.override.yml \\
-                   -f docker-compose.gpu.yml -f docker-compose.benchmark.yml \\
-                   run --rm --entrypoint "" diarization-probe \\
-        python -m pytest /app/backend/tests/integration/test_diarization_regression.py -v
+    ./scripts/run-diarization-gpu-tests.sh \\
+        tests/integration/test_diarization_regression.py -v -o addopts= -m gpu
+
+(The path is ``tests/...``, not ``backend/tests/...``: docker-compose.benchmark.yml
+mounts ``./backend`` at ``/app``.)
 
 Refs: plan i-need-a-full-stateful-origami.md D.3.
 """
@@ -37,10 +39,6 @@ REFERENCE_CONFIGS = [
     ("0.5h_1899s.wav", 16, "off"),
     ("2.2h_7998s.wav", 16, "off"),
 ]
-
-# Budget values to replay (all select bs=16 via the new ladder when
-# free VRAM is plentiful; caller sets env so we exercise the path).
-REPLAY_BUDGETS_MB = [None, 5000, 2000]
 
 
 def _in_container() -> bool:
@@ -101,14 +99,12 @@ def _read_rttm(rttm_path: Path) -> Any:
 
 
 @pytest.mark.parametrize("audio,bs,mp", REFERENCE_CONFIGS)
-@pytest.mark.parametrize("budget_mb", REPLAY_BUDGETS_MB)
 def test_regression_against_reference_rttm(
     ensure_container: None,
     torch_cuda: object,
     audio: str,
     bs: int,
     mp: str,
-    budget_mb: int | None,
 ) -> None:
     """Replay the Phase A.3 reference config and assert DER == 0."""
     from pyannote.audio import Pipeline
@@ -126,7 +122,12 @@ def test_regression_against_reference_rttm(
 
     import torch
 
-    # Bypass the fork auto-scaler for reproducibility with A.3 reference.
+    # Bypass the fork's free-VRAM auto-scaler for reproducibility with the A.3
+    # reference — this is the ONLY thing controlling batch size here.
+    # `pipeline.vram_budget_mb` is never read once this env var is set (the fork's
+    # `_force` branch short-circuits before it), so setting it here would be dead
+    # code exercising nothing: previously this test parametrized 3 "budget" values
+    # that all produced byte-identical runs, tripling GPU time for zero coverage.
     os.environ["PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE"] = str(bs)
 
     token = os.environ.get("HUGGINGFACE_TOKEN")
@@ -134,8 +135,6 @@ def test_regression_against_reference_rttm(
     if pipeline is None:
         pytest.skip("pyannote pipeline unavailable (token or network)")
     pipeline.to(torch.device("cuda"))
-    if budget_mb is not None and hasattr(pipeline, "vram_budget_mb"):
-        pipeline.vram_budget_mb = budget_mb
 
     audio_dict = _load_audio(wav)
     output = pipeline(audio_dict)
@@ -155,7 +154,7 @@ def test_regression_against_reference_rttm(
     # config, so DER must be exactly 0. A non-zero here means something
     # changed in the pipeline between A.3 (2026-04-20) and this test run.
     assert der == pytest.approx(0.0, abs=1e-4), (
-        f"DER regression: {der:.4f} on {audio} bs={bs} mp={mp} budget={budget_mb}. "
+        f"DER regression: {der:.4f} on {audio} bs={bs} mp={mp}. "
         f"Pipeline output drifted from the Phase A.3 reference. Check "
         f"docs/diarization-vram-profile/raw/rttm/{rttm_name} vs current output."
     )
@@ -164,6 +163,5 @@ def test_regression_against_reference_rttm(
     ref_spk = len(reference.labels())
     hyp_spk = len(hypothesis.labels())
     assert hyp_spk == ref_spk, (
-        f"Speaker-count regression: ref={ref_spk} hyp={hyp_spk} on "
-        f"{audio} bs={bs} budget={budget_mb}"
+        f"Speaker-count regression: ref={ref_spk} hyp={hyp_spk} on {audio} bs={bs}"
     )

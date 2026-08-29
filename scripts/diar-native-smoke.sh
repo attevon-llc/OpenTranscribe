@@ -80,9 +80,12 @@ read -r RESTARTING RESTART_COUNT PID < <(
 # Which GPU the project told it to use. The overlay's own precedence is
 # DIAR_NATIVE_GPU -> GPU_DEVICE_ID -> 0; mirror it exactly rather than guessing.
 ENV_FILE="$REPO_ROOT/.env"
+# Real dotenv parsing (issue #590) via python-dotenv, not a hand-rolled grep/cut/tr
+# pipeline — see gpu-scale-smoke.sh's read_env for the exact corruption this used to
+# cause (a trailing `  # comment` glued onto the value).
 read_env() {
     [[ -f "$ENV_FILE" ]] || return 0
-    grep -E "^${1}=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'"' \r'
+    python3 "$REPO_ROOT/scripts/lib/env_reader.py" "$ENV_FILE" "$1"
 }
 EXPECTED_GPU="${DIAR_NATIVE_GPU:-$(read_env DIAR_NATIVE_GPU)}"
 [[ -n "$EXPECTED_GPU" ]] || EXPECTED_GPU="${GPU_DEVICE_ID:-$(read_env GPU_DEVICE_ID)}"

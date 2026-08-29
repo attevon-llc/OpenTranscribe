@@ -52,6 +52,21 @@
     error: string | null;
   }
 
+  interface BootstrapStatus {
+    state: 'ok' | 'degraded' | 'disabled';
+    attempts: number;
+    last_error: string | null;
+    retry_at: string | null;
+    text_only_chunk_files: number;
+  }
+
+  interface DegradedPreview {
+    total_files: number;
+    truncated: boolean;
+    affected_users: number;
+    files: Array<{ file_uuid: string; title: string; user_id: number }>;
+  }
+
   let models: EmbeddingModel[] = [];
   let selectedModelId = '';
   let currentModelId = '';
@@ -62,6 +77,15 @@
   let isPreparingModel = false;
   let isStopping = false;
   let indexHealth: Record<string, IndexHealthEntry> | null = null;
+  let bootstrapStatus: BootstrapStatus | null = null;
+  let bootstrapPollHandle: ReturnType<typeof setInterval> | null = null;
+
+  // Operator-triggered re-embed of neural-search degraded (text-only) files (issue #626,
+  // the follow-up to #625's bootstrap self-heal). Preview + confirm, never dispatch-on-click.
+  let degradedPreview: DegradedPreview | null = null;
+  let showReembedModal = false;
+  let isCheckingDegraded = false;
+  let isReembedding = false;
 
   // Live reindex progress
   let reindexProgress: ReindexProgress | null = null;
@@ -90,6 +114,10 @@
     lastReindexStats = event.detail?.stats || null;
     // Reload status to get updated counts
     loadStatus();
+    // A reindex (including one dispatched by the degraded re-embed) drives the degraded
+    // count back down — reload it rather than assuming it hit zero, since a re-embed run
+    // can be truncated and leave a remainder.
+    loadDegradedPreview();
     toastStore.success($t('search.reindexComplete'));
   }
 
@@ -102,7 +130,13 @@
   }
 
   onMount(async () => {
-    await Promise.all([loadModels(), loadStatus(), loadIndexHealth()]);
+    await Promise.all([
+      loadModels(),
+      loadStatus(),
+      loadIndexHealth(),
+      loadBootstrapStatus(),
+      loadDegradedPreview(),
+    ]);
     isLoading = false;
 
     // Listen for WebSocket events
@@ -115,7 +149,84 @@
     window.removeEventListener('reindex-progress', handleReindexProgress as EventListener);
     window.removeEventListener('reindex-complete', handleReindexComplete as EventListener);
     window.removeEventListener('reindex-stopped', handleReindexStopped as EventListener);
+    if (bootstrapPollHandle) clearInterval(bootstrapPollHandle);
   });
+
+  // Neural search bootstrap self-heal (issue #625). The backend beat task retries every
+  // 10 minutes; polling every 30s here just keeps the banner from going stale while an
+  // admin has the page open watching it recover — it does not drive the recovery itself.
+  async function loadBootstrapStatus() {
+    try {
+      const res = await axiosInstance.get('/search/models/neural/status');
+      bootstrapStatus = res.data.bootstrap ?? null;
+    } catch (e) {
+      console.error('Failed to load neural bootstrap status:', e);
+      bootstrapStatus = null;
+    }
+    if (bootstrapStatus?.state === 'degraded' && !bootstrapPollHandle) {
+      bootstrapPollHandle = setInterval(loadBootstrapStatus, 30000);
+    } else if (bootstrapStatus?.state !== 'degraded' && bootstrapPollHandle) {
+      clearInterval(bootstrapPollHandle);
+      bootstrapPollHandle = null;
+    }
+  }
+
+  function formatRetryAt(iso: string | null): string {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleString();
+    } catch {
+      return iso;
+    }
+  }
+
+  // Operator-triggered re-embed of neural-search degraded (text-only) files (#626).
+  // Preview-only — never dispatches anything. Called on load and again once a reindex
+  // (including one this button dispatched) completes, so the count reflects reality
+  // rather than being assumed to hit zero.
+  async function loadDegradedPreview() {
+    isCheckingDegraded = true;
+    try {
+      const res = await axiosInstance.get('/search/degraded-embeddings');
+      degradedPreview = res.data;
+    } catch (e) {
+      console.error('Failed to load degraded-embeddings preview:', e);
+      degradedPreview = null;
+    } finally {
+      isCheckingDegraded = false;
+    }
+  }
+
+  function openReembedModal() {
+    if (!degradedPreview || degradedPreview.total_files === 0) return;
+    showReembedModal = true;
+  }
+
+  function cancelReembed() {
+    showReembedModal = false;
+  }
+
+  async function confirmReembed() {
+    showReembedModal = false;
+    isReembedding = true;
+    try {
+      const res = await axiosInstance.post('/search/reembed-degraded');
+      if (res.data.status === 'started') {
+        toastStore.success($t('settings.search.reembedStarted'));
+        isReindexing = true;
+        await loadStatus();
+      } else if (res.data.status === 'already_running') {
+        toastStore.info($t('settings.search.reembedAlreadyRunning'));
+      } else if (res.data.status === 'no_degraded_files') {
+        toastStore.info($t('settings.search.reembedNoFiles'));
+        await loadDegradedPreview();
+      }
+    } catch (e: unknown) {
+      toastStore.error(getErrorMessage(e, $t('settings.search.reembedFailed')));
+    } finally {
+      isReembedding = false;
+    }
+  }
 
   async function loadModels() {
     try {
@@ -402,6 +513,53 @@
     </div>
   {/if}
 
+  <!-- Neural search bootstrap self-heal warning (issue #625) -->
+  {#if bootstrapStatus?.state === 'degraded'}
+    <div class="banner banner-warning">
+      <div class="banner-title">{$t('settings.search.bootstrapDegradedTitle')}</div>
+      <div class="banner-body">
+        {$t('settings.search.bootstrapDegradedBody', { attempts: bootstrapStatus.attempts })}
+      </div>
+      {#if bootstrapStatus.last_error}
+        <div class="banner-detail">
+          {$t('settings.search.bootstrapLastError', { error: bootstrapStatus.last_error })}
+        </div>
+      {/if}
+      {#if bootstrapStatus.retry_at}
+        <div class="banner-detail">
+          {$t('settings.search.bootstrapRetryAt', { time: formatRetryAt(bootstrapStatus.retry_at) })}
+        </div>
+      {/if}
+      {#if bootstrapStatus.text_only_chunk_files > 0}
+        <div class="banner-detail">
+          {$t('settings.search.bootstrapTextOnlyFiles', { count: bootstrapStatus.text_only_chunk_files })}
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Re-embed degraded (text-only) files (issue #626, the #625 follow-up). Shown
+       independently of the bootstrap banner above — a degraded window can leave text-only
+       files behind even after the neural pipeline has since recovered. -->
+  {#if degradedPreview && degradedPreview.total_files > 0}
+    <div class="banner banner-warning reembed-banner">
+      <div class="reembed-banner-text">
+        <div class="banner-title">{$t('settings.search.reembedButton')}</div>
+        <div class="banner-body">
+          {$t('settings.search.reembedButtonCount', { count: degradedPreview.total_files })}
+        </div>
+      </div>
+      <button
+        class="btn btn-secondary btn-sm reembed-btn"
+        on:click={openReembedModal}
+        disabled={isReembedding || isCheckingDegraded || isReindexing}
+      >
+        {#if isReembedding}<Spinner size="small" />{/if}
+        {$t('settings.search.reembedButton')}
+      </button>
+    </div>
+  {/if}
+
   <!-- Embedding Model Selection -->
   <div class="section-divider"></div>
   <div class="subsection-header">
@@ -514,6 +672,23 @@
   on:confirm={confirmModelChange}
   on:cancel={cancelModelChange}
   on:close={cancelModelChange}
+/>
+
+<ConfirmationModal
+  isOpen={showReembedModal}
+  title={$t('settings.search.reembedModalTitle')}
+  message={degradedPreview
+    ? $t('settings.search.reembedModalMessage', {
+        count: degradedPreview.total_files,
+        users: degradedPreview.affected_users,
+      }) + (degradedPreview.truncated
+        ? ' ' + $t('settings.search.reembedModalTruncated', { count: degradedPreview.total_files })
+        : '')
+    : ''}
+  confirmText={$t('settings.search.reembedButton')}
+  on:confirm={confirmReembed}
+  on:cancel={cancelReembed}
+  on:close={cancelReembed}
 />
 
 
@@ -720,6 +895,59 @@
     border-top: 1px solid var(--border-color);
   }
 
+  /* Neural search bootstrap warning banner (#625). Colours come from theme vars so
+     light/dark parity is automatic, matching the .lang-badge pattern above. */
+  .banner {
+    border-radius: 6px;
+    padding: 0.625rem 0.75rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+  }
+
+  .banner-warning {
+    border: 1px solid var(--warning-color, #b45309);
+    background-color: var(--warning-bg, rgba(180, 83, 9, 0.08));
+    color: var(--text-color);
+  }
+
+  .banner-title {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    color: var(--warning-color, #b45309);
+  }
+
+  .banner-body {
+    margin-bottom: 0.125rem;
+  }
+
+  .banner-detail {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.125rem;
+  }
+
+  /* Re-embed degraded files banner (#626) — same .banner-warning shell as the bootstrap
+     banner above, laid out as text + action button. */
+  .reembed-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .reembed-banner-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .reembed-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
   /* Live reindex progress styles */
   .reindex-live-progress {
     margin-bottom: 0.75rem;
@@ -889,6 +1117,15 @@
   }
 
   @media (max-width: 768px) {
+    .reembed-banner {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .reembed-btn {
+      justify-content: center;
+    }
+
     .subsection-header {
       flex-direction: column;
       align-items: flex-start;

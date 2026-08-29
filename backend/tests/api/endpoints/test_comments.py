@@ -292,6 +292,64 @@ class TestNotFoundAndValidation:
 
 
 # --------------------------------------------------------------------------- #
+# Quarantine parity for the comment-UUID routes (adversarial-review follow-up) #
+# --------------------------------------------------------------------------- #
+class TestQuarantineHidesCommentByUuid:
+    """``test_a_quarantined_file_hides_its_comments_from_the_owner`` above
+    covers the file-scoped listing route (``_check_file_access``, which
+    resolves through ``get_file_by_uuid_with_permission`` and already 404s a
+    quarantined file). ``GET``/``PUT``/``DELETE /{comment_uuid}`` reach the
+    SAME comments through a completely different gate
+    (``_assert_comment_file_in_scope``), which used only
+    ``PermissionService.get_file_permission`` — no quarantine awareness at
+    all. So a comment on the caller's own quarantined file stayed fully
+    readable, editable and deletable by UUID even though the file itself, and
+    its comment LIST, both 404 — A2's leak class, reaching even the file's
+    own owner."""
+
+    def test_a_quarantined_files_comment_is_404_on_read_by_uuid(
+        self, client, db_session, normal_user, user_token_headers
+    ):
+        hidden = _make_file(db_session, normal_user, quarantined=True)
+        comment = _make_comment(db_session, hidden, normal_user)
+        response = client.get(f"{COMMENTS_PATH}/{comment.uuid}", headers=user_token_headers)
+        assert response.status_code == 404, response.text
+
+    def test_a_quarantined_files_comment_cannot_be_edited_by_uuid(
+        self, client, db_session, normal_user, user_token_headers
+    ):
+        hidden = _make_file(db_session, normal_user, quarantined=True)
+        comment = _make_comment(db_session, hidden, normal_user)
+        response = client.put(
+            f"{COMMENTS_PATH}/{comment.uuid}",
+            headers=user_token_headers,
+            json={"text": "should not apply"},
+        )
+        assert response.status_code == 404, response.text
+        db_session.refresh(comment)
+        assert comment.text == "a remark"
+
+    def test_a_quarantined_files_comment_cannot_be_deleted_by_uuid(
+        self, client, db_session, normal_user, user_token_headers
+    ):
+        hidden = _make_file(db_session, normal_user, quarantined=True)
+        comment = _make_comment(db_session, hidden, normal_user)
+        response = client.delete(f"{COMMENTS_PATH}/{comment.uuid}", headers=user_token_headers)
+        assert response.status_code == 404, response.text
+        assert db_session.query(Comment).filter(Comment.id == comment.id).first() is not None
+
+    def test_a_platform_admin_can_still_read_a_quarantined_files_comment(
+        self, client, db_session, normal_user, admin_token_headers
+    ):
+        """Control: admins retain review access, matching every other
+        quarantine gate (``is_hidden_for`` bypasses on ``is_admin``)."""
+        hidden = _make_file(db_session, normal_user, quarantined=True)
+        comment = _make_comment(db_session, hidden, normal_user)
+        response = client.get(f"{COMMENTS_PATH}/{comment.uuid}", headers=admin_token_headers)
+        assert response.status_code == 200, response.text
+
+
+# --------------------------------------------------------------------------- #
 # The three-way authorization asymmetry                                        #
 # --------------------------------------------------------------------------- #
 class TestTenantGateAsymmetry:

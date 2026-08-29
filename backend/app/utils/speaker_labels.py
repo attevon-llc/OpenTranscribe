@@ -8,16 +8,23 @@ live correctness bug, not a cosmetic one: ``transcript_builders.get_speaker_name
 roster built from another could name the same speaker two different ways in the same
 answer.
 
-This module is the one place that decides. ``facts.py``, ``digest.py``,
-``transcript_builders.get_speaker_name`` and ``speaker_status_service`` all call
-:func:`canonical_speaker_label`; the chunk-index writers (``tasks/search_indexing_task.py``,
-``tasks/reindex_task.py``) and a handful of API-response formatters
+This module is the one place that decides, and every plane now goes through it (issue #620
+item 8c — this docstring previously listed four of them as "not yet"; verified current,
+Aug 2026). ``facts.py``, ``digest.py``, ``transcript_builders.get_speaker_name`` and
+``speaker_status_service`` call :func:`canonical_speaker_label` directly; the chunk-index
+writers (``tasks/search_indexing_task.py::resolve_chunk_speaker_name``,
+``tasks/reindex_task.py::_resolve_reindex_speaker_name``) and the API-response formatters
 (``api/endpoints/files/crud.py::_resolve_segment_speaker_name``,
-``services/formatting_service.py``) do **not** yet — they are outside this change's file
-set and are the remaining work to close the disagreement completely.
+``services/formatting_service.py``) delegate to it through their own thin resolution
+helpers — see ``tests/unit/test_canonical_speaker_label.py``'s cross-plane agreement tests,
+which call each writer's real helper directly (never a second call to
+``canonical_speaker_label`` re-proving the function against itself) so a writer that
+reverted to its own ad hoc chain would fail the comparison.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 #: The canonical "not diarized to a person" label. Chosen over the bare "Unknown" some
 #: planes used because it is unambiguous next to a real name in a roster or a facet —
@@ -26,10 +33,12 @@ UNKNOWN_SPEAKER_LABEL = "Unknown Speaker"
 
 #: Every spelling that has meant "not diarized to a person" somewhere in this codebase.
 #: A caller filtering an aggregate (a roster, a facet, a "who's in this" list) must
-#: exclude the whole set, not just :data:`UNKNOWN_SPEAKER_LABEL` — the chunk-index writers
-#: and the API formatters above still emit the bare ``"Unknown"``, so checking only the
-#: canonical spelling would silently let those rows back in as if they were a real person
-#: named "Unknown".
+#: exclude the whole set, not just :data:`UNKNOWN_SPEAKER_LABEL` — every writer now emits
+#: only the canonical spelling going forward, but OpenSearch documents indexed BEFORE this
+#: module unified them still carry the bare ``"Unknown"`` literal, and nothing reindexes
+#: them proactively. Checking only the canonical spelling would silently let those legacy
+#: rows back in as if they were a real person named "Unknown". Keep this entry until a
+#: full reindex is known to have retired every pre-unification document.
 UNKNOWN_SPEAKER_LABELS: frozenset[str] = frozenset({UNKNOWN_SPEAKER_LABEL, "Unknown"})
 
 #: The confidence a suggestion needs before it is shown at all. Matches the value both
@@ -89,3 +98,37 @@ def canonical_speaker_label(
     if name:
         return str(name)
     return UNKNOWN_SPEAKER_LABEL
+
+
+def canonical_speaker_label_for_row(row: Any) -> str:
+    """The label a (re)index would write for this ``Speaker`` row, right now.
+
+    Issue #605: eight repair/propagation call sites (``rename_propagation_task``,
+    ``speakers.py``, ``speaker_update.py``, ``speaker_matching_service.py``,
+    ``speaker_clustering_service.py``) computed the "old"/"current" indexed name
+    with the ad hoc ``display_name or name`` chain, which stopped agreeing with
+    the chunk-index writer the moment the writer moved to
+    :func:`canonical_speaker_label` (this module's own docstring flagged the
+    writers as migrated and the propagation plane as NOT). A propagation task
+    computing the wrong "old name" narrows an ``update_by_query`` to a filter
+    that matches nothing — it logs ``status: success`` and the drift survives.
+
+    This wrapper exists so every such call site imports ONE function instead of
+    re-unpacking the same four attributes with its own copy of the rule — a copy
+    is exactly how the eight sites drifted in the first place.
+
+    Args:
+        row: Anything exposing ``.name`` / ``.display_name`` / ``.suggested_name``
+            / ``.confidence`` — a ``Speaker`` ORM instance, a SQLAlchemy
+            columns-only row/tuple with matching attribute names, or a test
+            stand-in.
+
+    Returns:
+        The canonical display label — never empty, never the bare ``"Unknown"``.
+    """
+    return canonical_speaker_label(
+        row.name,
+        display_name=row.display_name,
+        suggested_name=row.suggested_name,
+        confidence=row.confidence,
+    )

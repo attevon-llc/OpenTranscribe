@@ -147,6 +147,10 @@ accepted CVE with no reachable path — never to turn a red run green.
 
 ## The two rehearsal scenarios
 
+These rehearse the same `./opentranscribe.sh update` path a real operator runs; see
+[Upgrading](../operations/upgrading.md) for the operator-facing failure-recovery guidance this
+rehearsal is meant to keep accurate.
+
 ```bash
 ./opentr.sh stop            # required — see below
 ./scripts/release-tests/test-fresh-install.sh
@@ -180,6 +184,16 @@ also refuses any path under the live data directories and requires an
 
 For a stack that runs *beside* the live one, use
 `./opentr.sh start dev --fresh <name> --port-offset N` instead.
+:::
+
+:::tip Non-interactive or backgrounded runs need `--yes`
+The `I UNDERSTAND` confirmation above reads from a tty. Under a backgrounded or
+otherwise non-interactive invocation there is no tty to read from, and the prompt
+fails with `No such device or address` rather than hanging. Pass `--yes` to skip
+it (both scripts also accept `--cleanup`, `--force`, and `test-upgrade.sh` also
+takes `--no-rollback`/`--only-rollback` — see each script's own `--help`).
+`scripts/release/65-rehearse.sh` already passes `--yes` on both scenarios when
+driven through `./scripts/release.sh rehearse`.
 :::
 
 ### What the upgrade scenario proves
@@ -280,6 +294,11 @@ hour QEMU emulation into roughly 20 minutes of native build.
 
 ## Before you start
 
+Cutting a release is not the place to discover a regression. Run the
+[full local test matrix](full-test-matrix.md) on the branch first — its Stage 1 is what
+`preflight`/`verify` run automatically, and its Stage 3 rehearsal legs are exactly what
+`rehearse` runs below; this page does not re-derive those steps.
+
 `preflight` checks all of this, but knowing it saves a cycle:
 
 - **Clean worktree** — a release must be reproducible from its tag.
@@ -299,6 +318,8 @@ hour QEMU emulation into roughly 20 minutes of native build.
 - [Deployment configuration](../operations/deployment-configuration.md) — the
   permutations the matrix validates
 - [Testing](./testing.md) — the suites the `test` stage runs
+- [Full application test matrix](./full-test-matrix.md) — the staged local matrix this
+  pipeline's stages implement pieces of
 
 ### In the repository
 

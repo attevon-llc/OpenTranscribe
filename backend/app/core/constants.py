@@ -131,6 +131,19 @@ class RedactionPriority:
 
 
 # =============================================================================
+# Cloud ASR rate-limit retry policy (transcribe_gpu_task's ASRRateLimitedError handler)
+# =============================================================================
+# Separate from the task's autoretry_for=(ConnectionError, TimeoutError) policy — that one's
+# retry_backoff_max=30/max_retries=1 are tuned for a GPU-path connection blip, not a vendor
+# throttle response, which needs a longer backoff ceiling and more attempts. See
+# app/services/asr/errors.py and app/tasks/transcription/core.py.
+
+CLOUD_ASR_RETRY_BASE = 15  # seconds — first retry delay when the vendor gave no Retry-After
+CLOUD_ASR_RETRY_MAX = 300  # seconds — backoff ceiling (5 min)
+CLOUD_ASR_MAX_RETRIES = 5  # attempts, distinct from the GPU path's max_retries=1
+
+
+# =============================================================================
 # Dynamic imports for language support
 # =============================================================================
 
@@ -152,11 +165,6 @@ else:
 UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024  # 10MB chunks for file uploads
 MAX_FILENAME_LENGTH = 255
 DEFAULT_FILE_NAME = "unnamed_file"
-
-# Video processing constants (legacy - kept for backward compatibility)
-THUMBNAIL_MAX_WIDTH = 320
-THUMBNAIL_MAX_HEIGHT = 240
-THUMBNAIL_QUALITY = 85
 
 # Thumbnail settings (WebP optimized, preserves aspect ratio)
 THUMBNAIL_MAX_DIMENSION = 1280  # Longest edge - Full HD for crisp display on any screen
@@ -193,6 +201,15 @@ LLM_DEFAULT_TIMEOUT = 60
 # OpenSearch settings
 OPENSEARCH_DEFAULT_SIZE = 20
 OPENSEARCH_MAX_RESULT_WINDOW = 50000
+
+# Neural search bootstrap self-heal (issue #625). See
+# app/services/search/neural_bootstrap.py and its CLAUDE.md section for why this is a
+# beat task rather than only a startup task.
+NEURAL_BOOTSTRAP_STARTUP_DELAY_SECONDS = 15
+NEURAL_BOOTSTRAP_BASE_BACKOFF_SECONDS = 600
+NEURAL_BOOTSTRAP_MAX_BACKOFF_SECONDS = 21600
+NEURAL_BOOTSTRAP_ALERT_AFTER_ATTEMPTS = 3
+NEURAL_BOOTSTRAP_LOCK_TIMEOUT_SECONDS = 900
 
 
 def get_speaker_index() -> str:
@@ -379,8 +396,6 @@ OPENSEARCH_EMBEDDING_MODELS = {
 # Default OpenSearch neural model for new installations
 OPENSEARCH_DEFAULT_MODEL = "huggingface/sentence-transformers/all-MiniLM-L6-v2"
 
-# Neural ingest pipeline name
-OPENSEARCH_NEURAL_PIPELINE = "transcript-neural-ingest"
 
 # WebSocket notification types for search
 NOTIFICATION_TYPE_REINDEX_PROGRESS = "reindex_progress"
@@ -439,13 +454,6 @@ NOTIFICATION_TYPE_COLLECTION_SHARE_REVOKED = "collection_share_revoked"
 NOTIFICATION_TYPE_COLLECTION_SHARE_UPDATED = "collection_share_updated"
 NOTIFICATION_TYPE_GROUP_MEMBER_ADDED = "group_member_added"
 NOTIFICATION_TYPE_GROUP_MEMBER_REMOVED = "group_member_removed"
-
-# Task statuses
-TASK_STATUS_PENDING = "pending"
-TASK_STATUS_PROCESSING = "processing"
-TASK_STATUS_COMPLETED = "completed"
-TASK_STATUS_FAILED = "failed"
-TASK_STATUS_ERROR = "error"
 
 # Embedding dimensions
 SENTENCE_TRANSFORMER_DIMENSION = 384  # sentence-transformers/all-MiniLM-L6-v2
@@ -602,6 +610,26 @@ DEFAULT_DIRECTORY_SYNC_DRY_RUN = True  # report what WOULD be disabled, change n
 # search_base, wrong group DN) is indistinguishable from mass offboarding, so the
 # cap is what stops one bad config from disabling the deployment in a single run.
 DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN = 10
+
+# Same reasoning as DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN, for the AC-2
+# inactivity sweep (account_lifecycle_service.py): ACCOUNT_INACTIVE_DAYS has no
+# range validation at the env layer, so a misconfigured 0/negative value would
+# otherwise make every account with a recorded login a candidate on the first
+# tick. Higher than directory sync's 10 because this is a deployment-wide DAILY
+# pass, not a 15-minute LDAP reconciliation tick -- a legitimate first enable on
+# an established deployment can easily have more than 10 genuinely stale accounts.
+ACCOUNT_INACTIVITY_MAX_DISABLES_PER_RUN = 500
+
+# FedRAMP AC-10 concurrent-session ceiling (issue #632). `token_service.
+# enforce_session_ceiling` revokes every active session beyond the newest N in one
+# UPDATE ... OFFSET :limit statement; this bounds the per-call blast radius against a
+# large pre-existing backlog (a user who accumulated hundreds of sessions before the
+# ceiling became a real invariant). Applied both on the per-login path (login.py) and
+# the periodic sweep (session_cap_service.py), the latter with its own, larger cap
+# below — a login only ever has to clear its own small overshoot, while the sweep may
+# be catching up an entire deployment's backlog in one pass.
+SESSION_CAP_EVICTION_BATCH_LIMIT = 50
+SESSION_CAP_SWEEP_MAX_PER_USER = 500
 
 # Silero VAD defaults — used by faster-whisper BatchedInferencePipeline
 DEFAULT_VAD_THRESHOLD = 0.5  # Speech detection sensitivity (0.1-0.95)

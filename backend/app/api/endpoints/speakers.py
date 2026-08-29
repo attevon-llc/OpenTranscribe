@@ -30,6 +30,7 @@ from app.services.opensearch_service import update_speaker_display_name
 from app.services.permission_service import PermissionService
 from app.services.speaker_status_service import SpeakerStatusService
 from app.utils.error_handlers import ErrorHandler
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.uuid_helpers import get_speaker_by_uuid
 
 logger = logging.getLogger(__name__)
@@ -762,13 +763,22 @@ def list_speakers(
             joinedload(Speaker.profile), joinedload(Speaker.media_file)
         )
         # Admins see all speakers; when file_id is provided, permission was
-        # already checked by _resolve_file_uuid_to_id; otherwise scope to owner.
+        # already checked by _resolve_file_uuid_to_id (which applies the
+        # takedown gate via get_file_by_uuid_with_permission); otherwise scope
+        # to owner AND drop speakers whose file is quarantined (A2's class —
+        # the general listing has no per-file permission check to catch it,
+        # so a caller's OWN quarantined file's speakers would otherwise leak
+        # here even though the file itself 404s for them).
         if current_user.is_admin:
             pass  # Admins see all speakers
         elif file_id is not None:
             pass  # Viewing specific file — permission already checked
         else:
+            from sqlalchemy import select
+
             query = query.filter(Speaker.user_id == current_user.id)
+            quarantined_ids = select(MediaFile.id).where(MediaFile.is_quarantined.is_(True))
+            query = query.filter(~Speaker.media_file_id.in_(quarantined_ids))
         query = _filter_speakers_query(query, verified_only, False, file_id)
         speakers = query.all()
         speakers = _sort_speakers(speakers)
@@ -1194,7 +1204,18 @@ def get_speaker_cross_media_occurrences(
     Get all media files where this speaker (or their profile) appears.
     """
     try:
+        from app.services.takedown_service import is_hidden_for
+
         speaker = get_speaker_by_uuid(db, speaker_uuid)
+        # A quarantined file is hidden from its own owner (A2's class) — the
+        # ownership/sharing check below has no notion of quarantine at all, so
+        # without this a non-admin whose OWN file got taken down could still
+        # reach its speaker's cross-media data through this endpoint even
+        # though the file itself 404s.
+        if speaker.media_file is not None and is_hidden_for(
+            speaker.media_file, is_admin=current_user.is_admin
+        ):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaker not found")
         file_perm = (
             "owner"
             if current_user.is_admin
@@ -1253,9 +1274,28 @@ def verify_speaker_identification(
 
         profile_id = _resolve_profile_uuid_to_id(profile_uuid, current_user, db)
 
-        return _dispatch_verify_action(
+        # Captured before dispatch commits: `expire_on_commit=True` means a post-commit
+        # attribute read re-queries rather than reusing the value already in hand.
+        speaker_uuid_str = str(speaker.uuid)
+        media_file_uuid = _get_media_file_uuid(speaker, db)
+
+        result = _dispatch_verify_action(
             action, speaker, speaker.id, profile_id, profile_name, current_user, db
         )
+
+        from app.utils.websocket_notify import send_ws_event
+
+        send_ws_event(
+            current_user.id,
+            "speaker_updated",
+            {
+                "media_file_id": media_file_uuid,
+                "speaker_uuid": speaker_uuid_str,
+                "reason": f"speaker_verification_{action}",
+            },
+        )
+
+        return result
 
     except HTTPException:
         raise
@@ -1291,10 +1331,29 @@ def confirm_speaker_gender(
 
     speaker.predicted_gender = gender  # type: ignore[assignment]
     speaker.gender_confirmed_by_user = True  # type: ignore[assignment]
+
+    # Captured before commit: the session default is `expire_on_commit=True`, so a
+    # post-commit read of a relationship/column re-queries instead of reusing the
+    # already-loaded value.
+    speaker_uuid_str = str(speaker.uuid)
+    media_file_uuid = _get_media_file_uuid(speaker, db)
+
     db.commit()
 
+    from app.utils.websocket_notify import send_ws_event
+
+    send_ws_event(
+        current_user.id,
+        "speaker_updated",
+        {
+            "media_file_id": media_file_uuid,
+            "speaker_uuid": speaker_uuid_str,
+            "reason": "gender_confirmed",
+        },
+    )
+
     return {
-        "speaker_uuid": str(speaker.uuid),
+        "speaker_uuid": speaker_uuid_str,
         "predicted_gender": gender,
         "gender_confirmed_by_user": True,
     }
@@ -1615,7 +1674,14 @@ def _handle_update_profile_action(
 
     renames: list[tuple[str, str]] = []
     for linked_speaker in linked_speakers:
-        old_chunk_name = str(linked_speaker.display_name or linked_speaker.name or "")
+        # The CANONICAL indexed label (`canonical_speaker_label_for_row`, the
+        # SAME resolver the chunk-index writers use) — not the ad hoc
+        # `display_name or name` chain issue #605's original sweep replaced at
+        # eight other call sites but missed here. A linked speaker indexed
+        # under a confident suggestion (no `display_name` set) would compute
+        # the wrong "old name", and the propagation's `update_by_query` would
+        # match nothing while logging `status: success`.
+        old_chunk_name = canonical_speaker_label_for_row(linked_speaker)
         file_uuid = file_uuids.get(int(linked_speaker.media_file_id or 0))
         if file_uuid and old_chunk_name:
             renames.append((file_uuid, old_chunk_name))
@@ -1789,38 +1855,6 @@ def _get_media_file_uuid(speaker: Speaker, db: Session) -> str | None:
     return None
 
 
-def _send_websocket_notification(speaker: Speaker, current_user: User, db: Session) -> None:
-    """Send WebSocket notification for speaker update (best-effort)."""
-    try:
-        import asyncio
-
-        from app.api.websockets import publish_notification
-
-        notification_data = {
-            "speaker_id": str(speaker.uuid),
-            "media_file_id": _get_media_file_uuid(speaker, db),
-            "display_name": speaker.display_name,
-            "verified": speaker.verified,
-            "profile_id": _get_profile_uuid(speaker, db),
-        }
-
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(
-                publish_notification(
-                    user_id=current_user.id,
-                    notification_type="speaker_updated",
-                    data=notification_data,
-                )
-            )
-        except RuntimeError:
-            logger.debug(
-                f"Skipped WebSocket notification for speaker {speaker.uuid} (no event loop)"
-            )
-    except Exception as e:
-        logger.debug(f"WebSocket notification skipped for speaker update: {e}")
-
-
 def _set_no_cache_headers(response: Response) -> None:
     """Set cache-busting headers on response."""
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -1829,11 +1863,23 @@ def _set_no_cache_headers(response: Response) -> None:
 
 
 def _apply_verification_on_display_name(speaker: Speaker, speaker_update: SpeakerUpdate) -> None:
-    """Mark speaker as verified when display name is set."""
+    """Mark speaker as verified when display name is set.
+
+    Clears ``suggested_name``/``confidence`` — the *active pending suggestion*
+    — so nothing reads a resolved speaker as still carrying one (issue #605).
+    ``suggestion_source`` is deliberately left alone: every reader of it
+    (``smart_speaker_suggestion_service``, ``speaker_profiles.py``, this
+    module's own display-flag builder) already gates on ``suggested_name``/
+    ``confidence`` being truthy too, so it never resurrects a "live"
+    suggestion — but ``task_detection_service`` reads it standalone as its
+    only signal for "has LLM speaker ID already run on this file", and
+    clearing it here caused every manually-confirmed speaker's file to look
+    unidentified again, re-offering (and re-dispatching) identification the
+    user had just finished with (issue #603 follow-up regression).
+    """
     if speaker_update.display_name is not None and speaker_update.display_name.strip():
         speaker.verified = True  # type: ignore[assignment]
         speaker.suggested_name = None  # type: ignore[assignment]
-        speaker.suggestion_source = None  # type: ignore[assignment]
         speaker.confidence = None  # type: ignore[assignment]
 
 
@@ -1856,9 +1902,9 @@ def _propagate_speaker_rename_to_chunks(
     broker was unreachable. The chunk plane stays stale until the next reindex,
     which is exactly the pre-#405 behaviour.
 
-    ``new_display_name`` is the **effective indexed name** (``display_name or
-    name``), not the display name. Those differ in two reachable cases and both
-    used to propagate nothing:
+    ``new_display_name`` is the **canonical indexed label**
+    (``canonical_speaker_label_for_row``), not the display name. Those differ in
+    three reachable cases and all three used to propagate nothing:
 
     * **A cleared display name.** ``{"display_name": ""}`` is a legal
       ``SpeakerUpdate`` — it is how a user undoes a label. Postgres reverts to
@@ -1868,6 +1914,11 @@ def _propagate_speaker_rename_to_chunks(
     * **An edit to ``name`` alone.** ``name`` is updatable too, and for a speaker
       with no ``display_name`` it is what the indexer writes — but dispatch used
       to key solely off ``display_name``.
+    * **A confident suggestion with no ``display_name`` at all** (issue #605).
+      The indexer writes ``suggested_name`` once ``confidence >= 0.75``; the old
+      ``display_name or name`` rule here never looked at either field, so a
+      speaker indexed under an LLM suggestion stayed keyed to the raw diarizer
+      label and any rename computed the wrong ``old_names``.
     """
     if not new_display_name:
         return
@@ -1914,10 +1965,12 @@ def update_speaker(
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
     was_auto_labeled = speaker.suggested_name is not None and not speaker.verified
     media_file_id = int(speaker.media_file_id)
-    # The exact string the chunk plane was indexed with — display_name when the
-    # speaker had one, else the diarizer's raw label. Captured here because the
-    # overwrite below is the last moment it exists (issue #405).
-    previous_chunk_name = str(speaker.display_name or speaker.name or "")
+    # The exact string the chunk plane was indexed with — the SAME resolver the
+    # chunk-index writers use (issue #605; previously a stale `display_name or
+    # name` copy that stopped agreeing once the writers picked up a confident
+    # suggestion). Captured here because the overwrite below is the last moment
+    # it exists (issue #405).
+    previous_chunk_name = canonical_speaker_label_for_row(speaker)
     speaker_file_uuid = _get_media_file_uuid(speaker, db)
 
     # Update speaker fields
@@ -1970,11 +2023,13 @@ def update_speaker(
     # the search facet dropdown keep working off the pre-rename snapshot — see
     # app/tasks/rename_propagation_task.py (issue #405).
     #
-    # Keyed on the EFFECTIVE indexed name (`display_name or name`, the indexer's
-    # own rule in search_indexing_task), not on `display_name`. Keying on the
-    # latter missed both a cleared display name and an edit to `name` alone —
-    # see `_propagate_speaker_rename_to_chunks`.
-    new_chunk_name = str(speaker.display_name or speaker.name or "")
+    # Keyed on the CANONICAL indexed label (`canonical_speaker_label_for_row`,
+    # the SAME resolver `search_indexing_task`/`reindex_task` use), not on
+    # `display_name` alone. Keying on `display_name or name` missed three
+    # things: a cleared display name, an edit to `name` alone, and — issue
+    # #605 — a confident LLM/embedding suggestion the writer would have
+    # indexed instead of the raw name. See `_propagate_speaker_rename_to_chunks`.
+    new_chunk_name = canonical_speaker_label_for_row(speaker)
     _propagate_speaker_rename_to_chunks(
         file_uuid=speaker_file_uuid,
         previous_chunk_name=previous_chunk_name,
@@ -2111,14 +2166,53 @@ def _accept_speaker_profile_match(
 
 
 def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -> dict[str, Any]:
-    """Handle rejection of a speaker identification suggestion."""
+    """Handle rejection of a speaker identification suggestion.
+
+    Clears ``suggested_name`` alongside ``confidence`` (issue #605) — nulling
+    ``confidence`` alone left ``suggested_name`` populated, so any reader that
+    checks ``suggested_name is not None`` without also checking ``confidence``
+    (this module's own ``was_auto_labeled = speaker.suggested_name is not
+    None and not speaker.verified``) kept surfacing a rejected suggestion as
+    if it were still live. Clearing both also means the canonical label can
+    genuinely move (a rejected suggestion falls back to the raw diarizer
+    name), so the rejection is propagated to the chunk plane exactly like
+    every other write that moves the canonical label — a suggestion the user
+    rejected must not keep appearing in search facets or chat's speaker
+    scope.
+
+    ``suggestion_source`` is deliberately NOT cleared here. Every display
+    reader gates on ``suggested_name``/``confidence`` too (both nulled
+    above), so leaving it set never resurrects a "live" suggestion — but
+    ``task_detection_service.identify_incomplete_post_transcription_files``
+    reads ``suggestion_source == "llm_analysis"`` on its own as the sole
+    signal for "has LLM speaker ID already run on this file". Nulling it here
+    used to make a fully-rejected file look never-identified, so identify-
+    speakers got re-offered (and re-dispatched) and regenerated the exact
+    suggestions the user had just rejected, gated only by the ~30 minute
+    ``recently_attempted`` cooldown rather than actually prevented (audit
+    follow-up to issue #603).
+    """
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
+    before = canonical_speaker_label_for_row(speaker)
 
     # Mark as verified but don't assign to profile - use setattr for proper type handling
     speaker.profile_id = None  # type: ignore[assignment]
     speaker.verified = True  # type: ignore[assignment]
+    speaker.suggested_name = None  # type: ignore[assignment]
     speaker.confidence = None  # type: ignore[assignment]
+    after = canonical_speaker_label_for_row(speaker)
     db.commit()
+
+    if before != after:
+        try:
+            from app.tasks.rename_propagation_task import dispatch_speaker_rename
+
+            file_uuid = _get_media_file_uuid(speaker, db)
+            dispatch_speaker_rename([(file_uuid, before)], after, speaker_id=speaker_id)
+        except Exception as exc:  # noqa: BLE001 — a rejection must not fail on dispatch
+            logger.warning(
+                f"Could not queue chunk-plane label sync for rejected speaker {speaker_id}: {exc}"
+            )
 
     # Update the old profile's embedding if speaker was previously assigned
     if old_profile_id:
@@ -2429,6 +2523,7 @@ def _get_profile_based_occurrences(
     )
     if not current_user.is_admin:
         query = query.filter(Speaker.user_id == current_user.id)
+        query = query.filter(MediaFile.is_quarantined.is_(False))
     profile_speakers = query.all()
 
     result: list[dict[str, Any]] = []
@@ -2469,6 +2564,7 @@ def _get_display_name_based_occurrences(
     )
     if not current_user.is_admin:
         similar_q = similar_q.filter(Speaker.user_id == current_user.id)
+        similar_q = similar_q.filter(MediaFile.is_quarantined.is_(False))
     similar_speakers = similar_q.all()
 
     for similar_speaker in similar_speakers:

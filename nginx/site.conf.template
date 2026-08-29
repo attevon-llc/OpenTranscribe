@@ -52,8 +52,8 @@ server {
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
     # File upload size limit (for audio/video transcription)
-    # Supports files up to 10GB for large GoPro/4K recordings
-    client_max_body_size 10G;
+    # Supports files up to 15GB, matching MAX_UPLOAD_BYTES's default (config.py)
+    client_max_body_size 15G;
     client_body_timeout 600s;
     client_body_buffer_size 256k;
 
@@ -130,8 +130,8 @@ server {
         proxy_pass http://backend:8080/api/;
         proxy_http_version 1.1;
 
-        # Large file upload support for audio/video (10GB for GoPro/4K files)
-        client_max_body_size 10G;
+        # Large file upload support for audio/video (15GB, matching MAX_UPLOAD_BYTES)
+        client_max_body_size 15G;
         proxy_request_buffering off;
 
         # Extended timeouts for long transcription operations
@@ -194,8 +194,8 @@ server {
         # Must match exactly what the minio_client was initialized with
         proxy_set_header Host "minio:9000";
 
-        # Large file uploads to MinIO (10GB for GoPro/4K files)
-        client_max_body_size 10G;
+        # Large file uploads to MinIO (15GB, matching MAX_UPLOAD_BYTES)
+        client_max_body_size 15G;
         proxy_request_buffering off;
 
         # Stream large media downloads straight through instead of buffering them

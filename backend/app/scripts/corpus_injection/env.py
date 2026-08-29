@@ -11,8 +11,8 @@ because it reads ``os.environ`` at class-definition time:
    that is perfectly healthy. ``tests/conftest.py`` already does this dance;
    this is the same fix for a script.
 2. **Point the data directories somewhere writable.** ``Settings.__init__``
-   mkdirs ``UPLOAD_DIR``, which is ``/app/data/uploads`` inside the container
-   and unwritable on the host.
+   mkdirs ``TEMP_DIR``, which is ``/app/temp`` inside the container and
+   unwritable on the host.
 
 It also holds the live-stack guard. The injector writes hundreds of rows and
 thousands of OpenSearch documents; doing that to the shared dev stack would

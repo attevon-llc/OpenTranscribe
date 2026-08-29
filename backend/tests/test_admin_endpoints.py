@@ -83,6 +83,11 @@ class TestAdminAuditLog:
         (``admin.py:1754``) and conftest forces it false, since savepoint rollback cannot undo
         OpenSearch writes. That precondition is now a visible skip rather than a false pass,
         and the authorization half stays covered unconditionally (issue #431).
+
+        The authorization half used to be a standalone ``not in (401, 403)`` check, which
+        also passes on a 500 — but the exact-status assert in whichever branch below
+        actually runs already forbids both 401 and 403 (neither is 200 nor 400), so the
+        weak check added no coverage beyond them and is removed rather than kept alongside.
         """
         from app.core.config import settings
 
@@ -91,8 +96,6 @@ class TestAdminAuditLog:
             headers=super_admin_token_headers,
             params={"export_format": "csv"},
         )
-        # Whatever the sink state, a super admin must not be refused on authorization.
-        assert response.status_code not in (401, 403), response.text
         if not settings.AUDIT_LOG_TO_OPENSEARCH:
             assert response.status_code == 400, response.text
             pytest.skip("audit export needs AUDIT_LOG_TO_OPENSEARCH=true (conftest forces it off)")

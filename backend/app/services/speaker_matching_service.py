@@ -19,6 +19,7 @@ from app.services.opensearch_service import add_speaker_embedding
 from app.services.opensearch_service import find_matching_speaker
 from app.services.speaker_embedding_service import SpeakerEmbeddingService
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
 
@@ -507,12 +508,32 @@ class SpeakerMatchingService:
         if not speaker:
             raise ValueError(f"Speaker {speaker_id} not found")
 
+        # Captured before ANY write below (issue #605) — `confidence` alone can
+        # move the canonical chunk-index label across the suggestion threshold
+        # with no `display_name` write at all, the same shape as the other
+        # writers of this field in this class (`_handle_speaker_match`,
+        # `_handle_no_speaker_match`).
+        before = canonical_speaker_label_for_row(speaker)
+
         speaker.profile_id = profile_id  # type: ignore[assignment]
         speaker.verified = True  # type: ignore[assignment]
         if confidence is not None:
             speaker.confidence = confidence  # type: ignore[assignment]
 
-        self.db.flush()
+        self._rename_tracker.record(
+            int(speaker.media_file_id) if speaker.media_file_id else None,
+            before,
+            canonical_speaker_label_for_row(speaker),
+        )
+
+        # Commit-then-flush, matching `process_speaker_segments`/
+        # `process_speaker_embeddings_native` above: a rolled-back assignment
+        # must never reach the chunk index, so the tracker flushes only after
+        # this method's own write is durable. This is the sole write in the
+        # call — the endpoint's own `db.commit()` right after this call is a
+        # harmless no-op on an already-committed session.
+        self.db.commit()
+        self._rename_tracker.flush(self.db)
         return speaker  # type: ignore[no-any-return]
 
     def process_speaker_segments(
@@ -728,6 +749,12 @@ class SpeakerMatchingService:
         Returns:
             Speaker processing result
         """
+        # Captured before ANY write below (issue #605) — a suggestion crossing
+        # the confidence threshold moves the canonical label on its own, with
+        # no `display_name` write at all, so "before" has to be read first or
+        # a suggestion-only bump (no auto-accept) would dispatch nothing.
+        before = canonical_speaker_label_for_row(speaker)
+
         # Found a matching speaker - store the suggestion only if high confidence
         speaker.confidence = match["confidence"]
         if match["confidence"] >= ConfidenceLevel.HIGH:  # Only suggest if ≥75% confidence
@@ -741,18 +768,23 @@ class SpeakerMatchingService:
             logger.info(
                 f"Auto-accepting match for speaker {int(speaker.id)} -> {match['suggested_name']}"
             )
-            # The string the chunk plane holds, captured while it still exists
-            # (issue #432) — after the commit Postgres only knows the new name.
-            self._rename_tracker.record(
-                int(speaker.media_file_id),
-                str(speaker.display_name or speaker.name or ""),
-                match["suggested_name"],
-            )
             speaker.display_name = match["suggested_name"]
             speaker.verified = True  # type: ignore[assignment]
             # Assign to profile if this match came from a profile
             if match.get("profile_id"):
                 speaker.profile_id = match["profile_id"]
+
+        # One record call covers both paths above: a suggestion-only bump (no
+        # `display_name` write) and a full auto-accept. Captured while the old
+        # value still exists (issue #432) — after the commit Postgres only
+        # knows the new one. `canonical_speaker_label_for_row` is the SAME
+        # resolver the chunk-index writers use, so "after" is exactly what a
+        # reindex would write (issue #605; this used to compute `display_name
+        # or name`, which stopped agreeing the moment a confident suggestion
+        # was the reason the label moved).
+        self._rename_tracker.record(
+            int(speaker.media_file_id), before, canonical_speaker_label_for_row(speaker)
+        )
 
         self.db.flush()
 
@@ -938,9 +970,19 @@ class SpeakerMatchingService:
                 # If there are high-confidence matches from verified speakers, suggest them
                 for match in found_matches:
                     if match["confidence"] >= ConfidenceLevel.HIGH and match["display_name"]:
+                        # No `display_name` write on this path at all — a
+                        # suggestion crossing the resolver's confidence
+                        # threshold moves the canonical label on its own, and
+                        # nothing dispatched propagation for it until #605.
+                        before = canonical_speaker_label_for_row(speaker)
                         speaker.suggested_name = match["display_name"]
                         speaker.confidence = match["confidence"]
                         speaker.suggestion_source = "voice_match"  # type: ignore[assignment]
+                        self._rename_tracker.record(
+                            int(speaker.media_file_id),
+                            before,
+                            canonical_speaker_label_for_row(speaker),
+                        )
                         self.db.flush()
                         break
 

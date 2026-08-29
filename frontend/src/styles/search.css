@@ -30,6 +30,41 @@
   border: 1px solid rgba(250, 204, 21, 0.7);
 }
 
+/* `<mark class="search-match">` / `<mark class="current-match">` — the whole-word highlight
+   used by TranscriptModal, SummaryDisplay, and TopicsList's in-document find. Class names are
+   load-bearing: TranscriptModal's scroll-to-match uses
+   `[data-match-index="N"].current-match` as a runtime querySelector target (not TS-checked),
+   as does SummaryModal — do not rename. Previously each of the three components declared its
+   own `:global(.search-match)`/`:global(.current-match)` with conflicting values and no dark
+   variant; consolidated here so all three render identically (G7). */
+.search-match {
+  background-color: rgba(250, 204, 21, 0.45);
+  color: var(--text-primary);
+  padding: 0.1em 0.2em;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.current-match {
+  background-color: rgba(249, 115, 22, 0.55);
+  color: var(--text-primary);
+  padding: 0.1em 0.2em;
+  border-radius: 3px;
+  font-weight: 600;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.75);
+}
+
+[data-theme='dark'] .search-match {
+  background-color: rgba(250, 204, 21, 0.35);
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] .current-match {
+  background-color: rgba(249, 115, 22, 0.45);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.65);
+}
+
 /* Whole-element "current match" pulse — used when scrolling a container (e.g. a
    transcript segment) into view. */
 .search-current-match {

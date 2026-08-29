@@ -68,6 +68,11 @@ repos:
           - sqlalchemy>=2.0
           # joserfc ships py.typed (app/auth/oidc/claims.py, #33) — same reason.
           - joserfc>=1.7.4
+          # playwright ships py.typed — without it Page.get_attribute()/Locator
+          # methods degrade to Any in the hook's isolated env, and returning
+          # that Any from a function declared -> str trips no-any-return even
+          # though backend/venv (which has it installed) reports no issue.
+          - playwright
         args: [--ignore-missing-imports, --check-untyped-defs]
 
   # Frontend formatting with Prettier

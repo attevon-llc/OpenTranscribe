@@ -2027,7 +2027,8 @@ download_ai_models() {
     if [ "$(id -u)" -eq 0 ]; then
         # Running as root - explicitly set ownership to UID 1000 for container compatibility
         echo "  Detected root user - setting ownership to UID 1000 for container compatibility"
-        chown -R 1000:1000 models
+        # appuser is uid 1000 / gid 999 in the backend image (issue #580).
+        chown -R 1000:999 models
     else
         # Running as regular user - ensure current user owns the directories
         current_uid=$(id -u)

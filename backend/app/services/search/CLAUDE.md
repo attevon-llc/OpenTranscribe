@@ -507,6 +507,65 @@ one deployed model is not a choice and is adopted with a warning (the recovery t
 exists for); more than one returns `None` and leaves search on BM25 — loud, obvious and
 reversible, where a wrong guess is silent and costs a full re-embed.
 
+## The bootstrap self-heals, and why it is a beat task (#625)
+
+**The old bootstrap was a one-shot startup task with no retry.** `app/main.py`'s
+`_initialize_neural_search` fired exactly once from `lifespan` via `asyncio.create_task`, and
+every failure arm was a bare `return` after a `logger.warning`. Nothing ever re-entered it.
+
+The specific race: `ml_model_service._REGISTRATION_MAX_WAIT` (300s) is a poll **ceiling on our
+own polling**, not on OpenSearch's registration task, which keeps running server-side after we
+stop looking. A model can finish `REGISTERED, deployed=False` a few minutes after the API
+process gave up, and then sit there forever — nothing re-checks it. Consequence: the ingest
+pipeline never gets created, and every file indexed during that window is written with
+`use_neural=False` / `embedding_model` absent, **permanently** — `search_index_maintenance`
+(above) only finds files with **no** chunks, never files with text-only ones.
+
+**The fix is one idempotent function, two callers**, not two implementations:
+`services/search/neural_bootstrap.py`'s `ensure_neural_search_bootstrap` owns the whole
+sequence (managed-mode adoption, ML settings, local-model scan, download,
+`ensure_model_deployed`, `set_active_model_id`, `ensure_neural_ingest_pipeline`) that used to
+be inlined in `_initialize_neural_search`. It is a **sequencer**, not a state machine —
+`ensure_model_deployed` and `ensure_neural_ingest_pipeline` are already fully
+idempotent/resumable, so this module reimplements none of that.
+
+- **Caller 1: the startup fast path.** `app/main.py::_initialize_neural_search` sleeps
+  `NEURAL_BOOTSTRAP_STARTUP_DELAY_SECONDS` (15s), then calls the same function once via
+  `run_in_threadpool`, elected with `run_once_per_boot("neural_search_bootstrap")` so N
+  replicas booting together don't all race the same expensive OpenSearch calls. This is no
+  longer the ONLY attempt.
+- **Caller 2: the beat self-heal**, `app/tasks/search_maintenance_task.neural_search_bootstrap_task`,
+  every 10 minutes (`crontab(minute="3,13,23,33,43,53")`). A healthy deployment pays only
+  `neural_search_ready()` — the cheap probe (`get_active_model_id()` +
+  `is_neural_pipeline_available()`, no OpenSearch mutation) — on every tick, forever. Only a
+  miss runs the expensive arm.
+
+**The backoff never terminates.** `run_bootstrap_tick` tracks `attempts` / `next_at` /
+`last_error` in Redis (`neural_bootstrap:*` keys, 24h TTL), doubling from
+`NEURAL_BOOTSTRAP_BASE_BACKOFF_SECONDS` (600s) and saturating at
+`NEURAL_BOOTSTRAP_MAX_BACKOFF_SECONDS` (6h) — it never gives up the way the old one-shot did.
+Redis failure **fails open** (attempts the bootstrap anyway), the same rule
+`app/utils/boot_once.py` documents: duplicated work is safer than skipped work.
+
+**No new `SystemSettings` row for bootstrap health** — matches this package's "derive, don't
+record" rule (see the mixed-index detector above). `bootstrap_status()` re-derives `state` from
+the same cheap probe on every read; only the attempt *history* (genuinely not derivable) lives
+in Redis. `GET /search/models/neural/status`'s `bootstrap` block and the admin Settings → Search
+banner both read it.
+
+**The explicit non-decision: no auto re-embed of the text-only tail.** `bootstrap_status()`
+reports `text_only_chunk_files` — a distinct-file count of chunks with no `embedding_model`
+field, i.e. files indexed while the pipeline was down — but nothing dispatches a reindex for
+them automatically. Same reasoning as the mixed-index detector: dispatching a full re-embed
+from a beat tick is how a health check becomes an outage, and here it's worse, because an
+operator hasn't even chosen to look yet. An operator-triggered re-embed action for exactly this
+count is tracked separately, issue #626 — do not build it as part of this mechanism.
+
+⚠️ **`text_only_chunk_files` counts `EMBEDDING_MODEL_ABSENT`, never `EMBEDDING_MODEL_UNKNOWN`
+("neural").** The `"neural"` sentinel means "embedded, but by a pre-#437 pipeline that never
+recorded provenance" — a much larger, unrelated population on any index older than #437.
+Counting it here would vastly overstate this specific bootstrap-gap defect.
+
 ## A failed index must not report success (#495)
 
 `index_transcript_chunks` used to `except Exception: return 0`, and its caller

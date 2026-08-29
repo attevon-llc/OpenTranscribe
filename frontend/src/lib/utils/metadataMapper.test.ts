@@ -12,6 +12,7 @@ import {
   calculateCompressionRatio,
   formatFileSize,
 } from './metadataMapper';
+import { DEFAULT_EXTRACTION_CONFIG } from '../types/audioExtraction';
 
 function videoFile(
   overrides: Partial<{ name: string; size: number; type: string; lastModified: number }> = {}
@@ -168,8 +169,25 @@ describe('estimateAudioSize', () => {
     expect(estimateAudioSize(60, 32)).toBe(264000);
   });
 
-  it('defaults to a 32kbps bitrate when none is given', () => {
-    expect(estimateAudioSize(60)).toBe(estimateAudioSize(60, 32));
+  it('defaults to DEFAULT_EXTRACTION_CONFIG.bitrate when none is given', () => {
+    // G3 follow-up: this default used to be a hardcoded 32 — half the real
+    // 64kbps extraction uses — disagreeing with the config it should mirror.
+    // No current caller omits the argument, but a future one would have
+    // silently reproduced the original G3 bug via this default alone.
+    expect(estimateAudioSize(60)).toBe(estimateAudioSize(60, DEFAULT_EXTRACTION_CONFIG.bitrate));
+    expect(DEFAULT_EXTRACTION_CONFIG.bitrate).toBe(64);
+  });
+
+  it("tracks DEFAULT_EXTRACTION_CONFIG.bitrate as its one source, so it can't drift from it again", () => {
+    // Proves the default is DERIVED, not a copied literal that happens to
+    // match today: changing the config changes the default in lockstep.
+    const original = DEFAULT_EXTRACTION_CONFIG.bitrate;
+    try {
+      DEFAULT_EXTRACTION_CONFIG.bitrate = 128;
+      expect(estimateAudioSize(60)).toBe(estimateAudioSize(60, 128));
+    } finally {
+      DEFAULT_EXTRACTION_CONFIG.bitrate = original;
+    }
   });
 });
 

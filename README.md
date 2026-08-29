@@ -513,18 +513,22 @@ If the database is ever lost but the MinIO media survives, [**Storage Recovery**
 ```bash
 # Data operations (⚠️ DESTRUCTIVE)
 ./opentr.sh reset [dev|prod]     # Complete reset - deletes ALL data!
-./opentr.sh init-db              # Initialize database without container reset
+# Alembic migrations run automatically on dev backend startup — no separate init command needed.
 
 # Backup and restore
 ./opentr.sh backup               # Create timestamped database backup
 ./opentr.sh backup --encrypt     # GPG-encrypted backup (AES-256, no plaintext on disk)
-./opentr.sh restore [file]       # Restore from backup file (.sql or .gpg)
+./opentr.sh restore [--yes] [--no-safety-dump] [--from-s3] <file>  # REPLACE the database from a backup
+                                                         # (.sql, .dump, .sql.gpg, .dump.gpg; --from-s3 fetches by name first) — destructive
+
+# Production installs (no repo clone, no opentr.sh) use the identical commands via the
+# shipped management script instead: ./opentranscribe.sh backup / restore — same flags,
+# same behavior. See docs-site/docs/operations/backup-restore.md.
 ```
 
 ### **System Administration**
 ```bash
 # Maintenance
-./opentr.sh clean                # Remove unused containers and images
 ./opentr.sh health               # Check service health status
 ./opentr.sh shell [service]      # Open shell in container
 
@@ -825,7 +829,7 @@ LLM_PROVIDER=ollama                  # Local Ollama server
 - **📱 Small Models**: Even 3B Ollama models can handle hours of content via intelligent sectioning
 - **🚫 No LLM**: Leave `LLM_PROVIDER` empty. Transcription, diarization, redaction and full hybrid **search (keyword + semantic)** all still work — only summaries, topic suggestions, speaker-ID hints and AI Chat need a provider
 
-See [LLM_DEPLOYMENT_OPTIONS.md](LLM_DEPLOYMENT_OPTIONS.md) for detailed setup instructions.
+See [LLM Integration](docs-site/docs/features/llm-integration.md) for detailed setup instructions.
 
 #### **🗂️ Model Caching**
 
@@ -1179,9 +1183,6 @@ docker stats
 ```bash
 # Check service status
 ./opentr.sh status
-
-# Clean up resources
-./opentr.sh clean
 
 # Full reset (⚠️ deletes all data)
 ./opentr.sh reset dev

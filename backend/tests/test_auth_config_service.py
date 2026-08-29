@@ -35,6 +35,25 @@ from app.services.auth_config_service import AuthConfigService
 from tests.helpers import does_not_raise
 
 
+def _added[M](mock_db, model: type[M]) -> list[M]:
+    """Every object of type *model* handed to ``db.add`` on this mock session.
+
+    ``mock_db`` is a ``MagicMock(spec=Session)``, so nothing is persisted and there is
+    no row to query back. The objects the service constructed are still real
+    ``AuthConfig``/``AuthConfigAudit`` instances, though, and they are reachable through
+    the recorded call args — which is where the assertions belong. ``add.call_count``
+    alone cannot tell a correct write from one that stored a plaintext secret.
+    """
+    return [call.args[0] for call in mock_db.add.call_args_list if isinstance(call.args[0], model)]
+
+
+def _audit_row(mock_db) -> AuthConfigAudit:
+    """The single audit record ``set_config`` wrote, asserting there is exactly one."""
+    rows = _added(mock_db, AuthConfigAudit)
+    assert len(rows) == 1, f"expected exactly one audit record, got {len(rows)}"
+    return rows[0]
+
+
 class TestAuthConfigServiceGetConfig:
     """Test AuthConfigService get configuration methods."""
 
@@ -144,6 +163,14 @@ class TestAuthConfigServiceSetConfig:
             user_id=1,
         )
 
+        # The row that was built, not just that `add` happened: `assert_called()` is
+        # equally true of a call that stored the wrong key, the wrong category, or an
+        # empty value.
+        assert result.config_key == "new_key"
+        assert result.config_value == "new_value"
+        assert result.category == "test"
+        assert result.is_sensitive is False
+        assert result.created_by == 1
         mock_db.add.assert_called()
         mock_db.commit.assert_called()
 
@@ -169,7 +196,7 @@ class TestAuthConfigServiceSetConfig:
         """Test that sensitive values are encrypted."""
         with patch("app.services.auth_config_service.encrypt_api_key") as mock_encrypt:
             mock_encrypt.return_value = "encrypted"
-            AuthConfigService.set_config(
+            config = AuthConfigService.set_config(
                 db=mock_db,
                 key="secret_key",
                 value="secret_value",
@@ -178,10 +205,25 @@ class TestAuthConfigServiceSetConfig:
                 user_id=1,
             )
             mock_encrypt.assert_called_once_with("secret_value")
+            # Encryption-at-rest is about what got STORED. Calling the cipher and then
+            # writing the plaintext anyway satisfies `assert_called_once_with` exactly,
+            # and is the only failure mode this test exists to catch.
+            assert config.config_value == "encrypted"
+            assert config.config_value != "secret_value"
+            assert config.is_sensitive is True
 
     def test_set_config_bool_conversion(self, mock_db):
-        """Test boolean value conversion."""
-        AuthConfigService.set_config(
+        """A bool value is stored as the string "true"/"false", not Python's str(bool).
+
+        Mirrors ``test_set_config_creates_new``'s shape: assert on the returned
+        ``AuthConfig``'s actual stored value, not just that ``db.add`` was called
+        with *something*. Proven via mutation (see this module's CLAUDE.md
+        conventions): changing ``set_config``'s
+        ``str_value = "true" if value else "false"`` to a wrong constant left the
+        previous version of this test green, because ``len(call_args_list) >= 1``
+        is true regardless of what value was stored.
+        """
+        result = AuthConfigService.set_config(
             db=mock_db,
             key="bool_key",
             value=True,
@@ -190,10 +232,18 @@ class TestAuthConfigServiceSetConfig:
             user_id=1,
         )
 
-        # Check that the add call includes a properly converted value
-        call_args = mock_db.add.call_args_list
-        # At least one call should have been made with an AuthConfig
-        assert len(call_args) >= 1
+        assert result.config_value == "true"
+        mock_db.add.assert_called()
+
+        result_false = AuthConfigService.set_config(
+            db=mock_db,
+            key="bool_key_false",
+            value=False,
+            is_sensitive=False,
+            category="test",
+            user_id=1,
+        )
+        assert result_false.config_value == "false"
 
     def test_set_config_with_request(self, mock_db):
         """Test setting config with request for audit logging."""
@@ -213,7 +263,14 @@ class TestAuthConfigServiceSetConfig:
             request=mock_request,
         )
 
-        mock_db.add.assert_called()
+        # The request is passed for ONE reason — to put the caller's address and agent
+        # into the audit record. `add.assert_called()` says nothing about whether either
+        # arrived, which is the whole difference between an audit trail and a row count.
+        audit = _audit_row(mock_db)
+        assert audit.ip_address == "127.0.0.1"
+        assert audit.user_agent == "test-agent"
+        assert audit.config_key == "test_key"
+        assert audit.changed_by == 1
         mock_db.commit.assert_called()
 
 
@@ -241,12 +298,19 @@ class TestAuthConfigServiceBulkUpdate:
             "oidc_use_pkce": True,
         }
 
-        AuthConfigService.bulk_update_category(
+        results = AuthConfigService.bulk_update_category(
             db=mock_db, category="oidc", config_dict=config, user_id=1
         )
 
-        # Should have processed all non-sensitive keys
-        assert mock_db.add.call_count >= 3  # At least 3 configs + 3 audits
+        # Every key, under the category it was submitted with, carrying its own value.
+        # `add.call_count >= 3` is satisfied by three writes of the same key, or by
+        # three audits and no config at all.
+        assert set(results) == {"oidc_realm", "oidc_admin_role", "oidc_use_pkce"}
+        assert results["oidc_realm"].config_value == "opentranscribe"
+        assert results["oidc_admin_role"].config_value == "admin"
+        # Booleans are stored as the lowercase strings the read path parses back.
+        assert results["oidc_use_pkce"].config_value == "true"
+        assert {c.category for c in results.values()} == {"oidc"}
 
     def test_bulk_update_rejects_unknown_keys(self, mock_db):
         """A typo'd key is refused instead of being stored and read by nothing."""
@@ -285,13 +349,13 @@ class TestAuthConfigServiceBulkUpdate:
         with patch("app.services.auth_config_service.encrypt_api_key") as mock_encrypt:
             mock_encrypt.return_value = "encrypted"
 
-            AuthConfigService.bulk_update_category(
+            ldap = AuthConfigService.bulk_update_category(
                 db=mock_db,
                 category="ldap",
                 config_dict={"ldap_bind_password": "secret123"},
                 user_id=1,
             )
-            AuthConfigService.bulk_update_category(
+            oidc = AuthConfigService.bulk_update_category(
                 db=mock_db,
                 category="oidc",
                 config_dict={"oidc_client_secret": "another_secret"},
@@ -300,6 +364,17 @@ class TestAuthConfigServiceBulkUpdate:
 
             # Both sensitive keys should have been encrypted
             assert mock_encrypt.call_count == 2
+            # …and the ciphertext is what each row carries. A bulk path that encrypted
+            # and then wrote `value` verbatim passes the call_count assertion above and
+            # leaves two credentials in the clear in the database.
+            assert ldap["ldap_bind_password"].config_value == "encrypted"
+            assert oidc["oidc_client_secret"].config_value == "encrypted"
+            stored = {c.config_value for c in (*ldap.values(), *oidc.values())}
+            assert "secret123" not in stored
+            assert "another_secret" not in stored
+            # And the audit trail must not become the leak the encryption prevented.
+            for audit in _added(mock_db, AuthConfigAudit):
+                assert audit.new_value == "***REDACTED***"
 
 
 class TestAuthConfigServiceEffectiveConfig:
@@ -437,8 +512,15 @@ class TestAuthConfigAudit:
             user_id=1,
         )
 
-        # Verify audit entry was added (2 add calls: config + audit)
-        assert mock_db.add.call_count >= 2
+        # The record itself. `add.call_count >= 2` counts objects, and an audit row that
+        # named the wrong key — or recorded no value, or the wrong change type — is
+        # indistinguishable from a correct one by a count.
+        audit = _audit_row(mock_db)
+        assert audit.config_key == "audit_test"
+        assert audit.new_value == "test_value"
+        assert audit.old_value is None
+        assert audit.change_type == "create"
+        assert audit.changed_by == 1
 
     def test_sensitive_values_masked_in_audit(self, mock_db):
         """Test that sensitive values are masked in audit log."""
@@ -604,8 +686,24 @@ class TestAuthConfigServiceMigration:
 
             count = AuthConfigService.migrate_from_env(mock_db, user_id=1)
 
-            # Should have migrated settings
-            assert mock_db.add.call_count > 0
+            rows = {c.config_key: c for c in _added(mock_db, AuthConfig)}
+
+            # The returned count is what the caller reports to the operator, and nothing
+            # asserted it: a migration that wrote every row and returned 0 (or wrote
+            # nothing and returned 12) passed `add.call_count > 0` either way.
+            assert count == len(rows)
+            assert count > 0
+
+            # The three values actually set on the patched settings object must arrive
+            # as their stored string forms, under the keys `env_var_for` resolves —
+            # a mapping miss is the failure this migration has already had, and it
+            # shows up as a row that is present but empty.
+            assert rows["ldap_server"].config_value == "ldap.example.com"
+            assert rows["ldap_port"].config_value == "636"
+            assert rows["ldap_enabled"].config_value == "true"
+            assert (
+                rows["ldap_server"].description == "Migrated from environment variable LDAP_SERVER"
+            )
 
     def test_migrate_skips_existing(self, mock_db):
         """Test that migration skips existing database entries."""

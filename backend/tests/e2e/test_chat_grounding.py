@@ -121,6 +121,10 @@ def llm_config_factory(api_session: requests.Session, backend_url: str) -> Itera
     budget is computed against.
     """
     created: list[str] = []
+    # Captured lazily on the FIRST activation, not eagerly here: a GET this fixture
+    # never uses (no config created) must not touch the account's active pointer at
+    # all — restoring "no prior config" is different from restoring nothing.
+    prior_active_uuid: list[str | None] = []
 
     def _make(context_window: int, name: str) -> str:
         # UUID-suffixed, like the user fixtures: config names are unique per user,
@@ -145,6 +149,36 @@ def llm_config_factory(api_session: requests.Session, backend_url: str) -> Itera
         )
         uuid = str(response.json()["uuid"])
         created.append(uuid)
+
+        # The backend only auto-activates a config when it is the user's FIRST one
+        # ever (`create_user_llm_configuration`). The shared e2e account accumulates
+        # configs across runs, so this is essentially never true here, and the
+        # ChatComposer's disabled state is driven by that global "active" pointer
+        # (`llmStatusStore` -> GET /api/llm-settings/status), not by the
+        # conversation's own pinned `llm_config_uuid`. Without this, the composer
+        # stays disabled with "Chat needs a language model" even though the
+        # conversation this config is about to be pinned to is fully usable —
+        # exactly what the real Settings UI does after a save
+        # (LLMSettings.svelte calls the same set-active endpoint).
+        #
+        # This mutates the SHARED e2e account's active-config pointer, which the
+        # dev-data-hygiene rule (never persist changes to shared dev data) covers
+        # just as much as a created row does — captured once, before the first
+        # activation, and restored in the teardown below.
+        if not prior_active_uuid:
+            status = api_session.get(f"{backend_url}/api/llm-settings/status", timeout=30)
+            assert status.ok, f"Could not read prior LLM status: {status.status_code} {status.text}"
+            active = status.json().get("active_configuration")
+            prior_active_uuid.append(active["uuid"] if active else None)
+
+        activate = api_session.post(
+            f"{backend_url}/api/llm-settings/set-active",
+            json={"configuration_id": uuid},
+            timeout=30,
+        )
+        assert activate.ok, (
+            f"Could not activate LLM config {unique_name!r}: {activate.status_code} {activate.text}"
+        )
         return uuid
 
     yield _make
@@ -152,6 +186,21 @@ def llm_config_factory(api_session: requests.Session, backend_url: str) -> Itera
     for uuid in created:
         try:
             api_session.delete(f"{backend_url}/api/llm-settings/config/{uuid}", timeout=30)
+        except requests.RequestException:
+            pass
+
+    # Restore whichever config (if any) was active before this fixture touched it.
+    # Deleting the configs above already re-picks SOME active config server-side
+    # (llm_settings.py's post-delete reassignment) when one of them had been active
+    # — this puts it back to what it was, rather than leaving it at whatever that
+    # reassignment happened to land on.
+    if prior_active_uuid and prior_active_uuid[0]:
+        try:
+            api_session.post(
+                f"{backend_url}/api/llm-settings/set-active",
+                json={"configuration_id": prior_active_uuid[0]},
+                timeout=30,
+            )
         except requests.RequestException:
             pass
 

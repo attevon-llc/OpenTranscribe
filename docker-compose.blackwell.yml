@@ -67,8 +67,10 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/user/.cache/nltk_data
       - ${MODEL_CACHE_DIR:-./models}/sentence-transformers:/home/user/.cache/sentence-transformers
       - ${MODEL_CACHE_DIR:-./models}/yt-dlp:/home/user/.cache/yt-dlp
-      # Temp directory for processing intermediate files
-      - ${TEMP_DIR:-./temp}:/app/temp
+      # Temp directory for processing intermediate files. TEMP_DIR_HOST is the
+      # HOST-side bind source — distinct from the base stack's in-container
+      # TEMP_DIR (hardcoded to /app/temp there, not user-configurable).
+      - ${TEMP_DIR_HOST:-./temp}:/app/temp
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d gpu-transcription@$$HOSTNAME"]
       interval: 30s

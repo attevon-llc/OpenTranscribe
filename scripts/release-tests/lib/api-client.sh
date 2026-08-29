@@ -44,6 +44,36 @@ ac_wait_for_health() {
     ac_die "backend never reached healthy state within ${timeout}s"
 }
 
+ac_wait_for_frontend() {
+    # Poll a frontend URL until it answers with ANY http status (not a
+    # connection failure) or timeout (default 15 minutes, matching
+    # ac_wait_for_health's ceiling). Nothing else in this harness waits for
+    # the frontend container specifically before checking it (issue #618) —
+    # unlike the backend, whose /health readiness is awaited via
+    # ac_wait_for_health before any of its endpoints are probed.
+    #
+    # curl exits non-zero on a connection failure (e.g. exit 7, container not
+    # listening yet) as opposed to just a non-2xx HTTP status, so this loop
+    # treats "curl succeeded at all" as readiness and leaves judging the
+    # actual status code to the caller's own assertion. Deliberately NOT
+    # fatal on timeout (unlike ac_wait_for_health): the caller guards its own
+    # curl/as_assert_http so an unready frontend is recorded as a FAIL, not a
+    # script-ending crash.
+    local url="$1"
+    local timeout="${2:-900}"
+    local deadline=$(( $(date +%s) + timeout ))
+    ac_log "waiting up to ${timeout}s for $url to answer"
+    while (( $(date +%s) < deadline )); do
+        if curl -o /dev/null -s --max-time 5 "$url" 2>/dev/null; then
+            ac_log "frontend reachable"
+            return 0
+        fi
+        sleep 5
+    done
+    ac_warn "frontend never answered within ${timeout}s"
+    return 1
+}
+
 ac_register_admin() {
     # First-user registration becomes super-admin. Idempotent: returns silently
     # if registration fails because the user already exists.
@@ -268,4 +298,194 @@ ac_search() {
         --data-urlencode "q=$q" \
         --data-urlencode "page=1" \
         --data-urlencode "page_size=10"
+}
+
+# ac_create_asr_config PROVIDER BASE_URL API_KEY [NAME]
+#
+# POST /api/... registers a cloud ASR provider config, then activates it via
+# POST /asr-settings/set-active (config_uuid) — mirrors the two-step sequence
+# backend/tests/fixtures/mock_asr.py's register_mock_gladia_asr_config uses
+# against the real API (see backend/tests/integration/
+# test_lite_mode_mocked_providers.py, Phase 3). model_name is a required
+# field on UserASRSettingsCreate (backend/app/schemas/asr_settings.py) —
+# omitting it 422s. Echoes the new config's uuid.
+ac_create_asr_config() {
+    local provider="$1" base_url="$2" api_key="$3"
+    local name="${4:-release-test-${provider}-$(date +%s)}"
+    ac_log "creating ASR config: provider=$provider base_url=$base_url"
+    # Idempotent: a same-named config from a prior (interrupted or --force'd)
+    # run of this phase 409s on create otherwise, since name is unique per
+    # user. Delete-if-exists first so a re-run never needs manual cleanup.
+    local existing_uuid
+    existing_uuid=$(ac_curl "$API_BASE/asr-settings" 2>/dev/null \
+        | python3 -c "
+import sys, json
+name = sys.argv[1]
+for c in json.load(sys.stdin).get('configs', []):
+    if c.get('name') == name:
+        print(c['uuid']); break
+" "$name" 2>/dev/null || true)
+    if [[ -n "$existing_uuid" ]]; then
+        ac_log "deleting pre-existing ASR config '$name' ($existing_uuid) before recreating"
+        ac_curl -X DELETE "$API_BASE/asr-settings/config/$existing_uuid" >/dev/null 2>&1 || true
+    fi
+    local payload
+    payload=$(python3 -c '
+import json, sys
+print(json.dumps({
+    "name": sys.argv[1],
+    "provider": sys.argv[2],
+    "model_name": "default",
+    "base_url": sys.argv[3],
+    "api_key": sys.argv[4],
+}))
+' "$name" "$provider" "$base_url" "$api_key")
+    local body config_uuid
+    body=$(ac_curl -X POST "$API_BASE/asr-settings" \
+        -H "Content-Type: application/json" \
+        -d "$payload") || ac_die "ASR config creation failed"
+    config_uuid=$(echo "$body" | python3 -c 'import sys,json; print(json.load(sys.stdin)["uuid"])')
+    ac_curl -X POST "$API_BASE/asr-settings/set-active" \
+        -H "Content-Type: application/json" \
+        -d "{\"config_uuid\": \"$config_uuid\"}" >/dev/null || ac_die "ASR config activation failed"
+    echo "$config_uuid"
+}
+
+# ac_create_llm_config PROVIDER MODEL_NAME BASE_URL API_KEY [NAME]
+#
+# Mirrors the POST /api/llm-settings payload validated in
+# test_lite_mode_mocked_providers.py's TestMockedAsrPlusMockedLlm — provider
+# "custom" pointed at the mock-llm OpenAI-compatible server. Then activates
+# it via POST /llm-settings/set-active (configuration_id — this endpoint's
+# field name, per schemas/llm_settings.py's SetActiveConfigRequest, differs
+# from the ASR endpoint's config_uuid). Echoes the new config's uuid.
+ac_create_llm_config() {
+    local provider="$1" model_name="$2" base_url="$3" api_key="$4"
+    local name="${5:-release-test-${provider}-$(date +%s)}"
+    ac_log "creating LLM config: provider=$provider model=$model_name base_url=$base_url"
+    # Idempotent, same reason as ac_create_asr_config: a same-named config
+    # from a prior run 409s on create otherwise.
+    local existing_uuid
+    existing_uuid=$(ac_curl "$API_BASE/llm-settings" 2>/dev/null \
+        | python3 -c "
+import sys, json
+name = sys.argv[1]
+for c in json.load(sys.stdin).get('configurations', []):
+    if c.get('name') == name:
+        print(c['uuid']); break
+" "$name" 2>/dev/null || true)
+    if [[ -n "$existing_uuid" ]]; then
+        ac_log "deleting pre-existing LLM config '$name' ($existing_uuid) before recreating"
+        ac_curl -X DELETE "$API_BASE/llm-settings/config/$existing_uuid" >/dev/null 2>&1 || true
+    fi
+    local payload
+    payload=$(python3 -c '
+import json, sys
+print(json.dumps({
+    "name": sys.argv[1],
+    "provider": sys.argv[2],
+    "model_name": sys.argv[3],
+    "base_url": sys.argv[4],
+    "api_key": sys.argv[5],
+}))
+' "$name" "$provider" "$model_name" "$base_url" "$api_key")
+    local body config_uuid
+    body=$(ac_curl -X POST "$API_BASE/llm-settings" \
+        -H "Content-Type: application/json" \
+        -d "$payload") || ac_die "LLM config creation failed"
+    config_uuid=$(echo "$body" | python3 -c 'import sys,json; print(json.load(sys.stdin)["uuid"])')
+    ac_curl -X POST "$API_BASE/llm-settings/set-active" \
+        -H "Content-Type: application/json" \
+        -d "{\"configuration_id\": \"$config_uuid\"}" >/dev/null || ac_die "LLM config activation failed"
+    echo "$config_uuid"
+}
+
+# ac_chat_completion LLM_CONFIG_UUID FILE_UUID QUESTION
+#
+# Creates a scoped conversation pinned to llm_config_uuid, sends one message,
+# and parses the SSE response stream via lib/parse-chat-sse.py. Mirrors the
+# parsing done inline in test_lite_mode_mocked_providers.py's
+# test_chat_summary_has_non_empty_grounded_content: `event: delta` frames
+# carry {"content"|"text": ...} chunks concatenated into the answer,
+# `event: sources` carries {"citations": [...]}.
+#
+# GH #595: an `event: error` frame (the LLM call was blocked — e.g. by the SSRF
+# guard refusing a private-network endpoint — or otherwise failed) used to be
+# silently dropped by this parser, so a *correctly refused* request and a
+# genuinely empty answer were indistinguishable. The parser captures `error`
+# frames too, so a blocked call reads as "blocked", not "empty".
+#
+# GH #611: this used to print three newline-separated records (answer,
+# citation count, error code) and rely on the caller reading them back with
+# `sed -n '1p'/'2p'/'3p'`. The answer is markdown from an LLM and routinely
+# spans several lines (see mock-llm-server.py's REPLY_TEMPLATE), so a
+# positional read of "line 3" landed inside the answer text itself and was
+# misreported as an error frame — a newline-delimited "record" scheme cannot
+# represent multi-line content. `parse-chat-sse.py` instead emits ONE line of
+# JSON (`{"answer", "citations", "error"}`); json.dumps escapes embedded
+# newlines, so the answer cannot forge a record boundary no matter its shape.
+#
+# Deletes the conversation on return (best-effort). Prints ONE line of JSON
+# to stdout: `{"answer": "...", "citations": <int>, "error": "..."}`. `error`
+# is the empty string when no `event: error` frame arrived. Use `ac_json_field`
+# to read a key out of it.
+ac_chat_completion() {
+    local llm_config_uuid="$1" file_uuid="$2" question="$3"
+    local csrf_token="${API_CSRF_TOKEN:-}"
+    [[ -n "$csrf_token" ]] || ac_die "ac_chat_completion requires API_CSRF_TOKEN (cookie-session CSRF header) to be set"
+
+    local conv_payload conv_body conversation_uuid
+    conv_payload=$(python3 -c '
+import json, sys
+print(json.dumps({
+    "title": "release-test chat",
+    "llm_config_uuid": sys.argv[1],
+    "scope": {"file_uuids": [sys.argv[2]], "collection_uuids": [], "tag_names": [], "speakers": []},
+}))
+' "$llm_config_uuid" "$file_uuid")
+    conv_body=$(ac_curl -X POST "$API_BASE/chat/conversations" \
+        -H "Content-Type: application/json" \
+        -H "X-CSRF-Token: $csrf_token" \
+        -d "$conv_payload") || ac_die "chat conversation creation failed"
+    conversation_uuid=$(echo "$conv_body" | python3 -c 'import sys,json; print(json.load(sys.stdin)["uuid"])')
+
+    local msg_payload
+    msg_payload=$(python3 -c 'import json,sys; print(json.dumps({"content": sys.argv[1]}))' "$question")
+
+    # requests-style SSE parsing: `event:` lines set the frame type, `data:`
+    # lines carry its JSON payload, a blank line ends the frame. Relocated to
+    # a standalone, unit-tested script (GH #611) — see parse-chat-sse.py's
+    # module docstring for why a heredoc parser shipped this bug untested.
+    curl -sS --no-buffer -X POST "$API_BASE/chat/conversations/$conversation_uuid/messages" \
+        -H "Content-Type: application/json" \
+        -H "X-CSRF-Token: $csrf_token" \
+        -H "Accept: text/event-stream" \
+        -H "Authorization: Bearer ${API_TOKEN:-}" \
+        -d "$msg_payload" \
+    | python3 "$(dirname "${BASH_SOURCE[0]}")/parse-chat-sse.py"
+
+    ac_curl -X DELETE "$API_BASE/chat/conversations/$conversation_uuid" \
+        -H "X-CSRF-Token: $csrf_token" >/dev/null 2>&1 || true
+}
+
+# ac_json_field JSON KEY
+#
+# Prints the raw value of KEY from a single JSON object on stdin-less input
+# (JSON passed as $1). Empty string when the key is absent, JSON is empty, or
+# the input does not parse — never a python traceback into the caller's
+# variable. Deliberately stdlib python3, not jq: nothing else in
+# release-tests/ requires jq and the rehearsal must run on a bare host.
+ac_json_field() {
+    local json="$1" key="$2"
+    python3 -c '
+import json, sys
+raw = sys.argv[1]
+key = sys.argv[2]
+try:
+    data = json.loads(raw) if raw.strip() else {}
+except json.JSONDecodeError:
+    data = {}
+value = data.get(key, "") if isinstance(data, dict) else ""
+print(value if value is not None else "")
+' "$json" "$key"
 }

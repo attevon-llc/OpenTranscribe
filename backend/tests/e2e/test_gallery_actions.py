@@ -7,8 +7,8 @@ against a real running dev environment.
 
 Requirements:
 - Dev environment running: ./opentr.sh start dev
-- At least one completed file in the gallery (e.g. "PyTorch at Tesla")
 - Frontend at localhost:5173, Backend at localhost:5174
+- Nothing else: subtitle/bulk-action tests upload and delete their own file
 
 Run:
     pytest backend/tests/e2e/test_gallery_actions.py -v
@@ -21,6 +21,7 @@ import os
 import re
 import tempfile
 import time
+import uuid
 from typing import Any
 
 import pytest
@@ -28,8 +29,11 @@ import requests
 
 # Absolute import — the e2e dir is not a package, so a relative import breaks
 # collection when invoked as `pytest backend/tests/e2e/` from the repo root.
+from conftest import COMMITTED_SAMPLE_MEDIA
+from conftest import OWNED_MEDIA_PREFIX
 from conftest import TEST_ADMIN_EMAIL
 from conftest import TEST_ADMIN_PASSWORD
+from conftest import delete_media_file
 from conftest import wait_for_stable_completion
 from playwright.sync_api import Page
 from playwright.sync_api import expect
@@ -42,13 +46,45 @@ from playwright.sync_api import expect
 # marker selects nothing, so this cannot silently regress.
 pytestmark = pytest.mark.gallery
 
-# Test data
-TEST_FILE_TITLE = "PyTorch at Tesla"
-
 # URLs come from the `base_url` / `backend_url` fixtures in tests/e2e/conftest.py rather than
 # module-level constants: a constant is evaluated at import time, so it can never see
 # `--base-url` / `--backend-url` and a run aimed at an isolated stack silently drove the LIVE
 # stack instead (issue #431).
+
+
+def _click_select_all_and_verify(page: Page) -> None:
+    """Click `.select-all-btn` and confirm it actually selected something.
+
+    `fetchFiles()` (+page.svelte) calls `resetPagination()` — clearing `files` to
+    `[]` — on EVERY refetch, and a refetch can be triggered mid-test by another
+    concurrent client's upload/delete (websocket-driven refresh) on this shared dev
+    stack. Under the full parallel suite (3 xdist workers, all uploading/deleting
+    concurrently) this window reopens often enough that a single click-then-check
+    is not reliable: `.select-all-btn` silently selects nothing if clicked while
+    `files` is momentarily empty (`stores/gallery.ts`'s `selectAllFiles()` reads
+    `size === length`, and 0 === 0 selects nothing). Retry the click itself, not
+    just the read — a stale click's result does not un-stale by waiting longer.
+    """
+    delete_btn = page.locator(".delete-btn")
+    for attempt in range(5):
+        page.click(".select-all-btn")
+        # Kept (issue #431): callers read the resulting selection through
+        # `is_disabled()` / `text_content()` snapshots, which cannot auto-wait for
+        # the selection store to propagate to the toolbar.
+        page.wait_for_timeout(500)
+        text = delete_btn.text_content() or ""
+        numbers = re.findall(r"\d+", text)
+        if numbers and int(numbers[0]) > 0:
+            return
+        if attempt < 4:
+            # Selected nothing — the file list was momentarily empty. Undo the
+            # (no-op) toggle state and wait for a real render before retrying.
+            page.wait_for_timeout(500)
+    text = delete_btn.text_content() or ""
+    raise AssertionError(
+        f"select-all selected nothing after 5 attempts (delete button: {text!r}) — "
+        f"the gallery's file list kept being empty at click time"
+    )
 
 
 def _assert_zip_of(download: Any, extension: str) -> None:
@@ -75,8 +111,15 @@ def _assert_zip_of(download: Any, extension: str) -> None:
 # Session-scoped auth: login ONCE, reuse cookies for all tests
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="module")
-def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
-    """Login once and save browser storage state for reuse across all tests."""
+def auth_storage_state(browser, base_url: str, api_token: str):  # type: ignore[no-untyped-def]
+    """Login once and save browser storage state for reuse across all tests.
+
+    Depends on ``api_token`` (not for the token itself, but to reuse the login it
+    already performed) purely to dismiss the FirstRunWizard first — see
+    ``api_token``'s docstring. On an untouched account the wizard opens a
+    `BaseModal` on first authenticated page load whose backdrop intercepts every
+    click, including the `.select-btn` / `.upload-btn` this suite's tests drive.
+    """
     context = browser.new_context(
         viewport={"width": 1920, "height": 1080},
         ignore_https_errors=True,
@@ -87,9 +130,13 @@ def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
     page.fill("#email", TEST_ADMIN_EMAIL)
     page.fill("#password", TEST_ADMIN_PASSWORD)
     page.click("button[type=submit]")
-    # Wait for gallery to load (confirms login succeeded)
+    # Wait for gallery to load (confirms login succeeded). NOT a `.file-card` wait:
+    # this fixture's only contract is "logged in and the gallery chrome rendered" —
+    # requiring a file card here made every consumer implicitly depend on the dev
+    # library being non-empty, which is exactly the ambient-data assumption this
+    # module's other fixtures (`api_owned_file_uuid`) exist to avoid. An empty
+    # `--fresh` instance has zero file cards until a test uploads its own.
     page.wait_for_selector(".gallery-action-buttons", timeout=30000)
-    page.wait_for_selector(".file-card, .file-list-row", timeout=30000)
 
     # Save storage state to a temp file
     fd, state_file = tempfile.mkstemp(suffix=".json")
@@ -115,9 +162,9 @@ def gallery_page(browser, auth_storage_state: str, base_url: str):  # type: igno
     )
     page = context.new_page()
     page.goto(base_url)
-    # Already authenticated via stored cookies, just wait for gallery
+    # Already authenticated via stored cookies, just wait for gallery. See
+    # `auth_storage_state` above for why this no longer waits on a file card.
     page.wait_for_selector(".gallery-action-buttons", timeout=30000)
-    page.wait_for_selector(".file-card, .file-list-row", timeout=30000)
     yield page
     page.close()
     context.close()
@@ -125,7 +172,18 @@ def gallery_page(browser, auth_storage_state: str, base_url: str):  # type: igno
 
 @pytest.fixture(scope="module")
 def api_token(backend_url: str) -> str:
-    """Get an API token once for the entire module."""
+    """Get an API token once for the entire module.
+
+    Also dismisses the FirstRunWizard (same pattern as
+    ``test_visual_regression.py``'s ``api_token`` fixture): it mounts
+    unconditionally in the root layout and, on an account that has never
+    completed it — true of a brand-new empty/`--fresh` admin — opens a
+    `BaseModal` on first authenticated page load whose backdrop intercepts every
+    click. There is no localStorage/query-param gate to suppress it with; its
+    visibility is server-derived from `SystemSettings`, so the only way to keep
+    it from appearing is to call the same completion endpoint the UI's own skip
+    button calls. Idempotent — safe even if already completed.
+    """
     resp = requests.post(
         f"{backend_url}/api/auth/token",
         data={"username": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
@@ -133,34 +191,45 @@ def api_token(backend_url: str) -> str:
         timeout=30,
     )
     assert resp.status_code == 200, f"API login failed: {resp.status_code}"
-    return str(resp.json()["access_token"])
-
-
-def _api_params(**kwargs: Any) -> dict[str, str]:
-    """Build query params dict with string values for requests."""
-    return {k: str(v) for k, v in kwargs.items()}
-
-
-def _get_completed_file_uuid(backend_url: str, token: str) -> str:
-    """Get the UUID of a completed file via API."""
-    resp = requests.get(
-        f"{backend_url}/api/files",
+    token = str(resp.json()["access_token"])
+    requests.post(
+        f"{backend_url}/api/admin/first-run-wizard/complete",
         headers={"Authorization": f"Bearer {token}"},
-        params=_api_params(page=1, page_size=20, sort_by="upload_time", sort_order="desc"),
-        timeout=30,
+        timeout=10,
     )
-    data: dict[str, Any] = resp.json()
-    files: list[dict[str, Any]] = data.get("items", data.get("files", []))
-    # Prefer the known test file
-    for f in files:
-        if TEST_FILE_TITLE.lower() in f.get("filename", "").lower():
-            return str(f["uuid"])
-    # Fall back to any completed file
-    for f in files:
-        if f.get("status") == "completed":
-            return str(f["uuid"])
-    pytest.skip("No completed file found in gallery")
-    return ""  # unreachable, satisfies mypy
+    return token
+
+
+@pytest.fixture(scope="module")
+def api_owned_file_uuid(api_token: str, backend_url: str):
+    """UUID of a completed file this module OWNS, deleted on teardown.
+
+    Previously ``_get_completed_file_uuid`` sorted the gallery by ``upload_time
+    desc`` — actively preferring the newest file, i.e. exactly the kind of
+    `e2e-owned-*` upload another xdist worker was about to delete mid-test
+    (MinIO NoSuchKey). This inlines the same upload/wait/delete contract
+    ``owned_media_factory`` uses, module-scoped so the five subtitle/bulk-action
+    call sites below share one upload instead of re-uploading per test.
+    """
+    if not COMMITTED_SAMPLE_MEDIA.exists():  # pragma: no cover - the fixture is tracked
+        pytest.skip(f"missing media fixture {COMMITTED_SAMPLE_MEDIA}")
+    headers = {"Authorization": f"Bearer {api_token}"}
+    name = f"{OWNED_MEDIA_PREFIX}{uuid.uuid4().hex[:8]}{COMMITTED_SAMPLE_MEDIA.suffix}"
+    with COMMITTED_SAMPLE_MEDIA.open("rb") as fh:
+        resp = requests.post(
+            f"{backend_url}/api/files",
+            headers=headers,
+            files={"file": (name, fh, "audio/wav")},
+            timeout=300,
+        )
+    assert resp.status_code == 200, f"Upload failed: {resp.status_code} {resp.text[:300]}"
+    file_uuid = str(resp.json()["uuid"])
+    try:
+        status = wait_for_stable_completion(backend_url, api_token, file_uuid)
+        assert status == "completed", f"uploaded fixture never completed (status={status})"
+        yield file_uuid
+    finally:
+        delete_media_file(backend_url, api_token, file_uuid)
 
 
 # ---------------------------------------------------------------------------
@@ -258,21 +327,11 @@ class TestSelectionModeButtons:
         """Clicking Select All should select all files, clicking again deselects."""
         btn = self.page.locator(".select-all-btn")
 
-        # Click to select all
-        btn.click()
-        # Kept (issue #431): the label flip is a local Svelte re-render with no network
-        # activity, and `text_content()` below is a one-shot read that cannot auto-wait.
-        self.page.wait_for_timeout(500)
+        # Click to select all — see `_click_select_all_and_verify` for why this
+        # retries rather than a bare click-then-check.
+        _click_select_all_and_verify(self.page)
         text_after_select = btn.text_content() or ""
         assert "deselect" in text_after_select.lower() or "all" in text_after_select.lower()
-
-        # Delete button should now show a count > 0
-        delete_btn = self.page.locator(".delete-btn")
-        delete_text = delete_btn.text_content() or ""
-        numbers = re.findall(r"\d+", delete_text)
-        assert numbers and int(numbers[0]) > 0, (
-            f"Delete button should show non-zero count, got: {delete_text}"
-        )
 
         # Click again to deselect
         btn.click()
@@ -319,7 +378,9 @@ class TestSelectionModeButtons:
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
         items = menu.locator(".dropdown-item")
-        for i in range(items.count()):
+        item_count = items.count()
+        assert item_count > 0, "no Process dropdown items found to check tooltips on"
+        for i in range(item_count):
             title = items.nth(i).get_attribute("title")
             assert title is not None and len(title) > 10, f"Dropdown item {i} missing tooltip"
 
@@ -331,7 +392,9 @@ class TestSelectionModeButtons:
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
         items = menu.locator(".dropdown-item")
-        for i in range(items.count()):
+        item_count = items.count()
+        assert item_count > 0, "no Process dropdown items found to check disabled state on"
+        for i in range(item_count):
             assert items.nth(i).is_disabled(), f"Item {i} should be disabled with no files selected"
 
     def test_organize_dropdown_visible_and_has_tooltip(self) -> None:
@@ -363,7 +426,9 @@ class TestSelectionModeButtons:
         self.page.wait_for_timeout(300)
         menu = self.page.locator(".dropdown-menu")
         items = menu.locator(".dropdown-item")
-        for i in range(items.count()):
+        item_count = items.count()
+        assert item_count > 0, "no Organize dropdown items found to check tooltips on"
+        for i in range(item_count):
             title = items.nth(i).get_attribute("title")
             assert title is not None and len(title) > 10, f"Organize item {i} missing tooltip"
 
@@ -422,15 +487,37 @@ class TestSelectionModeButtons:
 
     def test_toolbar_does_not_overflow_header(self) -> None:
         """Selection toolbar should not extend past the gallery header right controls."""
-        left_section = self.page.locator(".gallery-header-left")
-        right_section = self.page.locator(".gallery-header-right")
-        left_box = left_section.bounding_box()
-        right_box = right_section.bounding_box()
-
-        if left_box and right_box:
-            assert left_box["x"] + left_box["width"] <= right_box["x"] + 5, (
-                "Action buttons overflow into sort/view controls"
+        # `.gallery-header-right` (GalleryHeader.svelte) is gated on `files.length > 0`.
+        # That's not just a load-time race: `fetchFiles()` (+page.svelte) calls
+        # `resetPagination()` — which clears `files` to `[]` — on every refetch, and a
+        # refetch can be triggered mid-test by another concurrent client's upload/
+        # delete (websocket-driven refresh) on this shared dev stack, not only by this
+        # page's own initial load. So a single read can land in that empty window at
+        # ANY point, not just at the start. Read both boxes together (never split
+        # across two `.bounding_box()` calls straddling different renders) and retry
+        # a few times rather than treating one `None` reading as the final answer.
+        left_box = right_box = None
+        for _ in range(10):
+            boxes = self.page.evaluate(
+                """() => {
+                    const left = document.querySelector('.gallery-header-left');
+                    const right = document.querySelector('.gallery-header-right');
+                    return {
+                        left: left ? left.getBoundingClientRect() : null,
+                        right: right ? right.getBoundingClientRect() : null,
+                    };
+                }"""
             )
+            left_box, right_box = boxes["left"], boxes["right"]
+            if left_box and right_box:
+                break
+            self.page.wait_for_timeout(300)
+        assert left_box and right_box, (
+            "gallery header left/right sections not found (or not rendered) to check overflow on"
+        )
+        assert left_box["x"] + left_box["width"] <= right_box["x"] + 5, (
+            "Action buttons overflow into sort/view controls"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -449,12 +536,8 @@ class TestBulkActions:
         yield
 
     def _select_all_files(self) -> None:
-        """Select all files in the gallery."""
-        self.page.click(".select-all-btn")
-        # Kept (issue #431): callers read the resulting selection through
-        # `is_disabled()` / `text_content()` snapshots, which cannot auto-wait for the
-        # selection store to propagate to the toolbar.
-        self.page.wait_for_timeout(500)
+        """Select all files in the gallery — see `_click_select_all_and_verify`."""
+        _click_select_all_and_verify(self.page)
 
     def test_process_reprocess_enabled_with_selection(self) -> None:
         """Reprocess should be enabled when completed files are selected."""
@@ -515,9 +598,11 @@ class TestBulkActions:
             f"Delete button should show non-zero count after selecting files, got: {text}"
         )
 
-    def test_export_srt_via_api(self, api_token: str, backend_url: str) -> None:
+    def test_export_srt_via_api(
+        self, api_owned_file_uuid: str, api_token: str, backend_url: str
+    ) -> None:
         """SRT export should return valid subtitle content via the backend API."""
-        file_uuid = _get_completed_file_uuid(backend_url, api_token)
+        file_uuid = api_owned_file_uuid
         resp = requests.get(
             f"{backend_url}/api/files/{file_uuid}/subtitles",
             headers={"Authorization": f"Bearer {api_token}"},
@@ -528,9 +613,11 @@ class TestBulkActions:
         assert "-->" in resp.text, "SRT content should contain --> timestamps"
         assert len(resp.text) > 50, "SRT content should not be empty"
 
-    def test_export_webvtt_via_api(self, api_token: str, backend_url: str) -> None:
+    def test_export_webvtt_via_api(
+        self, api_owned_file_uuid: str, api_token: str, backend_url: str
+    ) -> None:
         """WebVTT export should return valid subtitle content."""
-        file_uuid = _get_completed_file_uuid(backend_url, api_token)
+        file_uuid = api_owned_file_uuid
         resp = requests.get(
             f"{backend_url}/api/files/{file_uuid}/subtitles",
             headers={"Authorization": f"Bearer {api_token}"},
@@ -543,9 +630,11 @@ class TestBulkActions:
         assert "WEBVTT" in resp.text, "WebVTT content should start with WEBVTT header"
         assert "-->" in resp.text, "WebVTT content should contain --> timestamps"
 
-    def test_export_txt_via_api(self, api_token: str, backend_url: str) -> None:
+    def test_export_txt_via_api(
+        self, api_owned_file_uuid: str, api_token: str, backend_url: str
+    ) -> None:
         """TXT export should return plain text transcript content."""
-        file_uuid = _get_completed_file_uuid(backend_url, api_token)
+        file_uuid = api_owned_file_uuid
         resp = requests.get(
             f"{backend_url}/api/files/{file_uuid}/subtitles",
             headers={"Authorization": f"Bearer {api_token}"},
@@ -637,6 +726,72 @@ class TestBulkActions:
         dialog = self.page.locator("[role=dialog], .modal-backdrop")
         expect(dialog.first).to_be_visible(timeout=5000)
 
+    def test_bulk_delete_removes_selected_files(
+        self, owned_media_factory: Any, api_token: str, backend_url: str
+    ) -> None:
+        """Selecting two owned files, confirming Delete, removes both from the
+        gallery DOM and from the backend.
+
+        Uses ``owned_media_factory`` directly (not the shared ``owned_media_file``
+        fixture used by ``TestEndToEndProcessing``) so two files can be uploaded and
+        bulk-deleted together. The autouse ``setup_selection`` fixture already
+        entered selection mode before these files existed, so the page is reloaded
+        to pick them up and selection mode is re-entered. Deleting them here is not
+        a data-hygiene violation of the ``owned_media_factory`` contract: its
+        teardown calls ``delete_media_file``, which treats a 404 from an
+        already-deleted file as success (see ``e2e/conftest.py``), so there is no
+        double-delete error either way.
+        """
+        file1 = owned_media_factory(api_token)
+        file2 = owned_media_factory(api_token)
+        name1 = file1["filename"]
+        name2 = file2["filename"]
+
+        self.page.reload()
+        self.page.wait_for_selector(".gallery-action-buttons", timeout=15000)
+        self.page.click(".select-btn")
+        self.page.wait_for_selector(".select-all-btn", timeout=5000)
+
+        card1 = self.page.locator(".file-card", has_text=name1)
+        card2 = self.page.locator(".file-card", has_text=name2)
+        expect(card1).to_be_visible(timeout=15000)
+        expect(card2).to_be_visible(timeout=15000)
+
+        # The checkbox is visually replaced by a `.checkmark` overlay (custom styled
+        # checkbox), which intercepts pointer events on the input itself — click the
+        # `.file-selector` label instead, exactly as a real user would.
+        card1.locator(".file-selector").click()
+        card2.locator(".file-selector").click()
+
+        delete_btn = self.page.locator(".delete-btn")
+        delete_text = delete_btn.text_content() or ""
+        numbers = re.findall(r"\d+", delete_text)
+        assert numbers and int(numbers[0]) == 2, (
+            f"Expected 2 files selected before delete, got: {delete_text}"
+        )
+
+        delete_btn.click()
+
+        # ConfirmationModal (routes/+page.svelte) renders a BaseModal `role=dialog`
+        # whose confirm button carries the `confirmButtonClass` passed for the
+        # delete flow: `.modal-delete-button`.
+        dialog = self.page.locator("[role=dialog]")
+        expect(dialog).to_be_visible(timeout=5000)
+        dialog.locator(".modal-delete-button").click()
+
+        expect(card1).to_have_count(0, timeout=15000)
+        expect(card2).to_have_count(0, timeout=15000)
+
+        for file_uuid in (file1["uuid"], file2["uuid"]):
+            resp = requests.get(
+                f"{backend_url}/api/files/{file_uuid}",
+                headers={"Authorization": f"Bearer {api_token}"},
+                timeout=30,
+            )
+            assert resp.status_code == 404, (
+                f"Expected file {file_uuid} gone after bulk delete, got {resp.status_code}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # API-Level Bulk Action Tests (no browser needed)
@@ -671,9 +826,11 @@ class TestBulkActionAPI:
                 f"Unexpected summarize error: {results[0]}"
             )
 
-    def test_bulk_action_invalid_action(self, api_token: str, backend_url: str) -> None:
+    def test_bulk_action_invalid_action(
+        self, api_owned_file_uuid: str, api_token: str, backend_url: str
+    ) -> None:
         """Bulk action with unknown action should return an error per file."""
-        file_uuid = _get_completed_file_uuid(backend_url, api_token)
+        file_uuid = api_owned_file_uuid
         resp = requests.post(
             f"{backend_url}/api/files/management/bulk-action",
             headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
@@ -685,9 +842,11 @@ class TestBulkActionAPI:
         assert len(results) == 1
         assert results[0]["success"] is False
 
-    def test_subtitle_export_formats(self, api_token: str, backend_url: str) -> None:
+    def test_subtitle_export_formats(
+        self, api_owned_file_uuid: str, api_token: str, backend_url: str
+    ) -> None:
         """All three subtitle formats should return valid content."""
-        file_uuid = _get_completed_file_uuid(backend_url, api_token)
+        file_uuid = api_owned_file_uuid
         for fmt, marker in [("srt", "-->"), ("webvtt", "WEBVTT"), ("txt", "")]:
             resp = requests.get(
                 f"{backend_url}/api/files/{file_uuid}/subtitles",
@@ -948,9 +1107,35 @@ class TestFileSelectionUI:
         selected = self.page.locator(".file-card.selected")
         assert selected.count() >= 1, "At least one file should be selected"
 
-    def test_shift_click_range_selection(self) -> None:
-        """Shift+click should select a range of files."""
+    def test_shift_click_range_selection(self, owned_media_factory: Any, api_token: str) -> None:
+        """Shift+click should select a range of files.
+
+        Needs >=3 cards. Rather than assert on however many ambient files the dev
+        library happens to hold (0 on an empty/`--fresh` instance, and racy even on a
+        populated one — `.count()` is a synchronous snapshot with no auto-wait, unlike
+        `expect().to_be_visible()`), top up with this test's own uploads so the
+        precondition is guaranteed rather than hoped for, then wait for at least 3
+        cards to actually render before counting.
+        """
         cards = self.page.locator(".file-card")
+        # `.count()` is a synchronous snapshot with no auto-wait (unlike
+        # `expect().to_be_visible()`), so it can race the grid's async fetch and read 0
+        # even when the library is non-empty — poll briefly rather than trust one read.
+        existing = 0
+        for _ in range(10):
+            existing = cards.count()
+            if existing >= 3:
+                break
+            self.page.wait_for_timeout(300)
+        if existing < 3:
+            # Genuinely short on files (including a totally empty/`--fresh` instance) —
+            # top up with owned uploads instead of asserting on however many ambient
+            # files the dev library happens to hold.
+            for _ in range(3 - existing):
+                owned_media_factory(api_token)
+            self.page.reload()
+            self.page.wait_for_selector(".gallery-action-buttons", timeout=15000)
+            self.page.wait_for_selector(".file-card", timeout=15000)
         assert cards.count() >= 3, "Need at least 3 files for range selection test"
 
         # Ctrl+click first card to start selection

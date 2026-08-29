@@ -34,6 +34,7 @@ import requests
 # collection when invoked as `pytest backend/tests/e2e/` from the repo root.
 from conftest import TEST_ADMIN_EMAIL
 from conftest import TEST_ADMIN_PASSWORD
+from conftest import unique_conversation_title
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 
@@ -126,6 +127,21 @@ def ensure_llm_provider(api_session: requests.Session, backend_url: str):
     Leaves a real configured provider alone (someone testing against Ollama or a
     cloud model should keep it), and removes anything it registers itself, since
     E2E must never persist changes to dev data.
+
+    Explicitly activates what it registers via ``POST /llm-settings/set-active``
+    (issue #607) rather than assuming registration alone is enough. Before #607,
+    ``POST /llm-settings`` only auto-activated a config when it was the user's
+    FIRST ever — on a dev stack that already carries a prior (possibly stale/
+    unreachable) config, near-guaranteed on a long-lived shared stack, this
+    fixture's registration was a silent no-op for making chat actually usable:
+    ``active_llm_config_id`` kept pointing at the old config, `/api/llm/status`
+    kept reporting `available: false`, and the streaming tests self-skipped
+    anyway — while `is_active` on the newly created row read `true` regardless,
+    which is the exact misleading-field defect #607 fixes at the model/API layer.
+    That model/API fix does not change this fixture's own activation behavior
+    (creation still only auto-activates a user's first-ever config), so the
+    explicit `/set-active` call below is still required for this fixture to do
+    what its docstring says.
     """
     if _llm_configured(api_session, backend_url) or not _mock_llm_running():
         yield
@@ -146,6 +162,11 @@ def ensure_llm_provider(api_session: requests.Session, backend_url: str):
         )
         if response.ok:
             created_uuid = response.json().get("uuid")
+            api_session.post(
+                f"{backend_url}/api/llm-settings/set-active",
+                json={"configuration_id": created_uuid},
+                timeout=30,
+            )
     except requests.RequestException:
         created_uuid = None
 
@@ -402,7 +423,7 @@ def test_conversation_appears_in_sidebar_and_can_be_deleted(
     gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
 ):
     """Create via API, verify it lists, then delete it through the UI."""
-    title = _unique("E2E temporary conversation")
+    title = unique_conversation_title("temporary conversation")
     response = api_session.post(
         f"{backend_url}/api/chat/conversations",
         json={"title": title},
@@ -512,7 +533,7 @@ def test_context_can_be_turned_off(
     gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
 ):
     """Context-off mode is visibly distinct — no transcripts, no citations."""
-    title = _unique("E2E context toggle")
+    title = unique_conversation_title("context toggle")
     response = api_session.post(
         f"{backend_url}/api/chat/conversations",
         json={"title": title},
@@ -542,7 +563,7 @@ def test_chat_controls_persist_across_reload(
     gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
 ):
     """Per-conversation settings are stored server-side, not just in the tab."""
-    title = _unique("E2E persistence")
+    title = unique_conversation_title("persistence")
     response = api_session.post(
         f"{backend_url}/api/chat/conversations",
         json={"title": title},
@@ -672,7 +693,7 @@ def test_export_downloads_the_conversation(
     gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
 ):
     """Export produces a Markdown file the user can keep."""
-    title = _unique("E2E export")
+    title = unique_conversation_title("export")
     response = api_session.post(
         f"{backend_url}/api/chat/conversations",
         json={"title": title},
@@ -698,7 +719,7 @@ def test_archive_and_restore_a_conversation(
     gallery_page: Page, api_session: requests.Session, base_url: str, backend_url: str
 ):
     """Archiving hides a conversation; the archived view brings it back."""
-    title = _unique("E2E archive target")
+    title = unique_conversation_title("archive target")
     response = api_session.post(
         f"{backend_url}/api/chat/conversations",
         json={"title": title},

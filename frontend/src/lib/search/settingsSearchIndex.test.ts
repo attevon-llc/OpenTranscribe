@@ -8,8 +8,8 @@ import {
 const dict: Record<string, string> = {
   // engine-settings namespace
   'settings.engineSettings.title': 'Engine Configuration',
-  'settings.engineSettings.transcriberBackend': 'Transcriber backend',
-  'settings.engineSettings.transcriberBackendHelp': 'Choose the ASR engine to use',
+  'settings.engineSettings.diarizerBackend': 'Diarizer backend',
+  'settings.engineSettings.diarizerBackendHelp': 'Choose the diarization engine to use',
   'settings.engineSettings.save': 'Save', // chrome — excluded
   'settings.engineSettings.saveFailed': 'Save failed', // chrome — excluded
   'settings.engineSettings.toast.saved': 'Saved!', // toast — excluded
@@ -45,10 +45,10 @@ describe('buildSettingsSearchItems', () => {
     // `toBeTruthy()` on a `.find()` proved the row existed but nothing about it — a row
     // indexed under the wrong section is unreachable from the search results, which is the
     // failure this test is named for. Assert the row's identity.
-    expect(items.find((i) => i.label === 'Transcriber backend')).toMatchObject({
+    expect(items.find((i) => i.label === 'Diarizer backend')).toMatchObject({
       sectionId: 'engine-settings',
       sectionLabel: 'Engine Configuration',
-      anchorText: 'Transcriber backend',
+      anchorText: 'Diarizer backend',
       isSectionTitle: false,
     });
     expect(items.find((i) => i.label === 'LDAP server URL')).toMatchObject({
@@ -68,18 +68,14 @@ describe('buildSettingsSearchItems', () => {
     // vacuous-exclusion trap. Asserting the complete set of indexed settings proves the
     // exclusions AND that there is something to exclude from.
     const settingLabels = items.filter((i) => !i.isSectionTitle).map((i) => i.label);
-    expect(settingLabels).toEqual([
-      'Transcriber backend',
-      'LDAP server URL',
-      'Personal information',
-    ]);
+    expect(settingLabels).toEqual(['Diarizer backend', 'LDAP server URL', 'Personal information']);
   });
 
   it('folds Help text into its base setting as keywords, not a separate row', () => {
-    const rows = items.filter((i) => i.label === 'Choose the ASR engine to use');
+    const rows = items.filter((i) => i.label === 'Choose the diarization engine to use');
     expect(rows.length).toBe(0);
-    const backend = items.find((i) => i.label === 'Transcriber backend');
-    expect(backend?.keywords).toContain('Choose the ASR engine to use');
+    const backend = items.find((i) => i.label === 'Diarizer backend');
+    expect(backend?.keywords).toContain('Choose the diarization engine to use');
   });
 
   it('includes enumerated option labels sourced from the key tree', () => {
@@ -107,12 +103,12 @@ describe('createSettingsFuzzyIndex', () => {
   const index = createSettingsFuzzyIndex(items);
 
   it('finds a setting and points at the right section', () => {
-    const results = index.search('transcriber backend');
+    const results = index.search('diarizer backend');
     expect(results[0].item.sectionId).toBe('engine-settings');
   });
 
   it('finds a setting via its help text (keywords)', () => {
-    const results = index.search('ASR engine');
+    const results = index.search('diarization engine');
     expect(results.map((r) => r.item.sectionId)).toContain('engine-settings');
   });
 

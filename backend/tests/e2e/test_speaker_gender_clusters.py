@@ -144,7 +144,14 @@ class TestGenderChipsOnClusterCards:
         expect(authenticated_page.locator("h1, .page-title")).to_be_visible(timeout=10000)
 
     def test_gender_chips_render_on_clusters(self, authenticated_page: Page, base_url: str):
-        """Verify gender chips appear on cluster cards when gender data exists."""
+        """Verify gender chips appear on cluster cards when gender data exists.
+
+        Was conditional-only: every assertion sat inside ``if gender_chips.count() > 0``,
+        so the test passed silently on a stack with no confirmed gender data. The dev
+        library always carries confirmed-gender clusters, so the precondition is asserted
+        directly rather than skipped past \u2014 a stack that regresses to zero chips fails
+        loudly here instead of reporting green having checked nothing.
+        """
         authenticated_page.goto(f"{base_url}/speakers")
         authenticated_page.wait_for_load_state("networkidle")
         # expect() below already polls, so a fixed wait here is pure waste (issue #431).
@@ -153,16 +160,19 @@ class TestGenderChipsOnClusterCards:
             pytest.skip("No clusters found - need transcribed media with speakers")
 
         gender_chips = authenticated_page.locator(".gender-chip")
-        if gender_chips.count() > 0:
-            first_chip = gender_chips.first
-            expect(first_chip).to_be_visible()
-            # Chips render an SVG gender icon + the composition label
-            # ("100% Male" etc.) \u2014 SpeakerClusterCard.svelte
-            expect(first_chip.locator("svg.gender-svg")).to_be_visible()
-            text = (first_chip.text_content() or "").lower()
-            assert "male" in text or "female" in text, (
-                f"Gender chip should contain the composition label, got: {text!r}"
-            )
+        assert gender_chips.count() > 0, (
+            "No gender chips found to check \u2014 need at least one cluster with a "
+            "confirmed gender prediction (total_with_gender > 0)"
+        )
+        first_chip = gender_chips.first
+        expect(first_chip).to_be_visible()
+        # Chips render an SVG gender icon + the composition label
+        # ("100% Male" etc.) \u2014 SpeakerClusterCard.svelte
+        expect(first_chip.locator("svg.gender-svg")).to_be_visible()
+        text = (first_chip.text_content() or "").lower()
+        assert "male" in text or "female" in text, (
+            f"Gender chip should contain the composition label, got: {text!r}"
+        )
 
     def test_gender_chip_coherent_vs_conflict(self, authenticated_page: Page, base_url: str):
         """Verify coherent chips are green, conflict chips are amber."""
@@ -178,21 +188,58 @@ class TestGenderChipsOnClusterCards:
         if conflict_chips.count() > 0:
             expect(conflict_chips.first).to_be_visible()
 
-    def test_no_chips_when_no_gender_predictions(self, authenticated_page: Page, base_url: str):
-        """Verify no gender chips render when gender predictions are absent."""
+    def test_no_chips_when_no_gender_predictions(
+        self,
+        authenticated_page: Page,
+        base_url: str,
+        api_session: requests.Session,
+        backend_url: str,
+    ):
+        """Verify gender chips render on exactly the clusters with gender data — no more.
+
+        SpeakerClusterCard.svelte renders ``.gender-chip`` iff
+        ``cluster.gender_composition.total_with_gender > 0``. Cross-checks the DOM
+        against the same ``/api/speaker-clusters?page=1&per_page=20`` listing the page
+        itself fetches on initial load (routes/speakers/+page.svelte): the number of
+        rendered ``.gender-chip`` elements must equal the number of clusters the API
+        reports with a nonzero gender composition — a chip on a cluster the backend says
+        has no gender data would be exactly the bug this test is named for.
+        """
         authenticated_page.goto(f"{base_url}/speakers")
         authenticated_page.wait_for_load_state("networkidle")
         # expect() below already polls, so a fixed wait here is pure waste (issue #431).
         cluster_cards = authenticated_page.locator(".cluster-card")
         if cluster_cards.count() == 0:
             pytest.skip("No clusters found")
+
+        resp = api_session.get(
+            f"{backend_url}/api/speaker-clusters", params={"page": 1, "per_page": 20}, timeout=10
+        )
+        assert resp.status_code == 200, f"Could not list clusters: {resp.text[:300]}"
+        items = resp.json().get("items", [])
+        expected_chip_count = sum(
+            1
+            for item in items
+            if (item.get("gender_composition") or {}).get("total_with_gender", 0) > 0
+        )
+        actual_chip_count = authenticated_page.locator(".gender-chip").count()
+        assert actual_chip_count == expected_chip_count, (
+            f"Expected {expected_chip_count} gender chip(s) (clusters with "
+            f"total_with_gender > 0 per the API) but the page rendered {actual_chip_count}"
+        )
 
 
 class TestGenderIconsOnMemberRows:
     """Verify gender icons appear on expanded cluster member rows."""
 
     def test_expand_cluster_shows_gender_icons(self, authenticated_page: Page, base_url: str):
-        """Expand a cluster and verify gender icons on member rows."""
+        """Expand a cluster and verify gender icons on member rows.
+
+        Was conditional-only: every assertion sat inside ``if gender_icons.count() > 0``.
+        The dev library's clusters always carry at least one member with a confirmed
+        gender (``ClusterMemberList.svelte`` renders ``.gender-icon`` per
+        ``member.predicted_gender``), so the precondition is asserted directly.
+        """
         authenticated_page.goto(f"{base_url}/speakers")
         authenticated_page.wait_for_load_state("networkidle")
         # expect() below already polls, so a fixed wait here is pure waste (issue #431).
@@ -201,21 +248,27 @@ class TestGenderIconsOnMemberRows:
             pytest.skip("No clusters found")
 
         cluster_cards.first.locator(".card-header").click()
-        # expect() below already polls, so a fixed wait here is pure waste (issue #431).
+        # expect() polls; count() does not (same trap as test_profiles_tab_has_gender_buttons
+        # above) \u2014 wait for the member list to actually render before counting icons, or the
+        # count is taken against the pre-expand DOM and reads 0 regardless of data.
+        expect(authenticated_page.locator(".member-row").first).to_be_visible(timeout=10000)
         gender_icons = authenticated_page.locator(".gender-icon")
-        if gender_icons.count() > 0:
-            first_icon = gender_icons.first
-            expect(first_icon).to_be_visible()
-            # Member rows render an SVG icon whose title carries the gender
-            # label (ClusterMemberList.svelte) \u2014 there is no text glyph.
-            expect(first_icon.locator("svg.gender-svg")).to_be_visible()
-            title = (first_icon.get_attribute("title") or "").lower()
-            assert "male" in title or "female" in title, (
-                f"Gender icon title should name the gender, got: {title!r}"
-            )
+        assert gender_icons.count() > 0, (
+            "No gender icons found to check \u2014 need at least one expanded cluster member "
+            "with a predicted_gender"
+        )
+        first_icon = gender_icons.first
+        expect(first_icon).to_be_visible()
+        # Member rows render an SVG icon whose title carries the gender
+        # label (ClusterMemberList.svelte) \u2014 there is no text glyph.
+        expect(first_icon.locator("svg.gender-svg")).to_be_visible()
+        title = (first_icon.get_attribute("title") or "").lower()
+        assert "male" in title or "female" in title, (
+            f"Gender icon title should name the gender, got: {title!r}"
+        )
 
     def test_outlier_highlighting(self, authenticated_page: Page, base_url: str):
-        """Verify outlier members get highlighted styling."""
+        """Verify outlier members get highlighted styling when a cluster carries one."""
         authenticated_page.goto(f"{base_url}/speakers")
         authenticated_page.wait_for_load_state("networkidle")
         # expect() below already polls, so a fixed wait here is pure waste (issue #431).
@@ -224,13 +277,18 @@ class TestGenderIconsOnMemberRows:
             pytest.skip("No clusters found")
 
         cluster_cards.first.locator(".card-header").click()
-        # Kept (issue #431): the accordion expand is client-side, and the only thing
-        # checked afterwards is that resolving the outlier locator raises nothing —
-        # outliers are data-dependent, so their ABSENCE is an acceptable outcome and
-        # there is no state an auto-waiting assertion could poll for.
-        authenticated_page.wait_for_timeout(2000)
-        # Just verify no errors - outliers are data-dependent
-        authenticated_page.locator(".member-row.gender-outlier")
+        # Expanding a cluster must render its members — the one thing true regardless
+        # of whether THIS particular cluster happens to carry a gender conflict.
+        member_rows = authenticated_page.locator(".member-row")
+        expect(member_rows.first).to_be_visible(timeout=10000)
+
+        # Outliers are data-dependent (ClusterMemberList.svelte only runs outlier
+        # analysis for a cluster with `hasGenderConflict`), so their absence is a
+        # legitimate outcome. When they ARE present, they must actually render
+        # highlighted and visible, not just resolve as a locator.
+        outlier_rows = authenticated_page.locator(".member-row.gender-outlier")
+        if outlier_rows.count() > 0:
+            expect(outlier_rows.first).to_be_visible()
 
 
 class TestProfileGenderConfirmation:
@@ -453,3 +511,111 @@ class TestSpeakerClustersAPI:
         # A freshly created profile has no members, so the bulk UPDATE must touch
         # nothing. On an ambient profile this number was never checked at all.
         assert result["updated_count"] == 0
+
+
+class TestSpeakerRenamePropagationAcrossFiles:
+    """A rename that updates a shared profile must repaint EVERY linked file (issue #432).
+
+    ``_handle_update_profile_action`` (``app/api/endpoints/speakers.py``) rewrites
+    ``display_name`` for every ``Speaker`` row linked to a profile, synchronously, in
+    the same request that renames one of them — see
+    ``tests/api/test_rename_propagation_dispatch.py`` for the dispatch-side coverage
+    and ``tests/api/test_speaker_rename_service_sites.py`` for the six service-layer
+    writers. Nothing in this repo previously drove that path through the real UI
+    across two distinct files: this uploads two owned clips, forces their diarized
+    speakers onto one owned profile (real voice-similarity matching is not needed —
+    ``assign-profile`` is the same explicit linking action the Suggestions UI drives),
+    renames one speaker from File A's transcript editor with the "Update Profile
+    Globally" decision, and asserts the new name repaints on File B's transcript
+    **after a fresh page load** — proving the propagation reached Postgres, not just
+    File A's in-memory optimistic state.
+    """
+
+    def test_rename_via_transcript_editor_propagates_to_other_file(
+        self,
+        authenticated_page: Page,
+        base_url: str,
+        backend_url: str,
+        api_session: requests.Session,
+        api_token: str,
+        owned_media_factory,
+        owned_profile: str,
+    ) -> None:
+        # Two independently uploaded clips -> two independently diarized speakers.
+        media_a = owned_media_factory(api_token)
+        media_b = owned_media_factory(api_token)
+
+        def _first_speaker(file_uuid: str) -> dict:
+            resp = api_session.get(
+                f"{backend_url}/api/speakers", params={"file_uuid": file_uuid}, timeout=30
+            )
+            assert resp.status_code == 200, f"list speakers failed: {resp.text[:300]}"
+            payload = resp.json()
+            speakers = payload if isinstance(payload, list) else payload.get("items", [])
+            assert speakers, f"diarization produced no speakers for {file_uuid}"
+            return dict(speakers[0])
+
+        speaker_a = _first_speaker(media_a["uuid"])
+        speaker_b = _first_speaker(media_b["uuid"])
+
+        # Explicitly link both speakers to the one owned profile — the same action
+        # the Suggestions UI performs, without depending on real cross-file voice
+        # matching to land two clips of the same fixture on the same profile.
+        for speaker in (speaker_a, speaker_b):
+            assign_resp = api_session.post(
+                f"{backend_url}/api/speaker-profiles/speakers/{speaker['uuid']}/assign-profile",
+                params={"profile_uuid": owned_profile},
+                timeout=15,
+            )
+            assert assign_resp.status_code == 200, (
+                f"assign-profile failed for {speaker['uuid']}: {assign_resp.text[:300]}"
+            )
+
+        new_name = f"E2E Propagated {uuid.uuid4().hex[:8]}"
+
+        # Rename speaker_a via File A's real transcript editor, choosing the
+        # "Update Profile Globally" decision so the propagation actually fires.
+        authenticated_page.goto(f"{base_url}/files/{media_a['uuid']}")
+        authenticated_page.wait_for_load_state("networkidle")
+        authenticated_page.wait_for_selector(".transcript-segment", timeout=25000)
+
+        edit_btn = authenticated_page.locator(".edit-speakers-button")
+        if edit_btn.count() == 0:
+            pytest.skip("File has no diarization (no Edit Speakers affordance)")
+        edit_btn.click()
+        expect(authenticated_page.locator(".speaker-editor-container")).to_be_visible(timeout=10000)
+
+        name_input = authenticated_page.locator(f'input[data-speaker-id="{speaker_a["uuid"]}"]')
+        expect(name_input).to_be_visible(timeout=10000)
+        name_input.fill(new_name)
+
+        save_btn = authenticated_page.locator(".save-speakers-button")
+        expect(save_btn).to_be_enabled(timeout=5000)
+        save_btn.click()
+
+        # speaker_a is linked to owned_profile, so the confirmation dialog must
+        # appear; picking anything else (or letting it time out) would silently
+        # test the wrong path.
+        update_globally_btn = authenticated_page.locator(
+            '.modal-overlay button:has-text("Update Profile Globally")'
+        )
+        expect(update_globally_btn).to_be_visible(timeout=10000)
+        update_globally_btn.click()
+
+        # Confirms the write reached Postgres for File A itself before checking
+        # propagation to File B.
+        expect(
+            authenticated_page.locator(".transcript-display").get_by_text(new_name).first
+        ).to_be_visible(timeout=10000)
+
+        # The proof: a FRESH load of the OTHER file must show the new name too.
+        # No stub, no optimistic client state carries across this navigation — the
+        # only way `new_name` can appear here is a real Postgres write to
+        # speaker_b's `display_name` in the same request that renamed speaker_a.
+        authenticated_page.goto(f"{base_url}/files/{media_b['uuid']}")
+        authenticated_page.wait_for_load_state("networkidle")
+        authenticated_page.wait_for_selector(".transcript-segment", timeout=25000)
+
+        expect(
+            authenticated_page.locator(".segment-speaker").filter(has_text=new_name).first
+        ).to_be_visible(timeout=15000)

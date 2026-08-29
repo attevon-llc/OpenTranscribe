@@ -468,6 +468,7 @@
       claude: $t('llm.provider.claude'),
       anthropic: $t('llm.provider.anthropic'),
       openrouter: $t('llm.provider.openrouter'),
+      bedrock: $t('llm.provider.bedrock'),
       custom: $t('llm.provider.custom')
     };
     return displayNames[provider] || provider;
@@ -515,6 +516,15 @@
         </div>
 
         {#if formData.provider}
+          <!-- Bedrock: no base URL / API key to enter — credentials and region are a
+               deployment-level setting (BEDROCK_REGION / AWS credential chain), not
+               per-configuration. Say so instead of leaving the form looking incomplete. -->
+          {#if formData.provider === 'bedrock'}
+            <div class="form-group">
+              <p class="field-desc">{$t('llm.bedrockInfo')}</p>
+            </div>
+          {/if}
+
           <!-- Base URL (if supported) -->
           {#if getProviderDefaults(formData.provider)?.supports_custom_url}
             <div class="form-group">

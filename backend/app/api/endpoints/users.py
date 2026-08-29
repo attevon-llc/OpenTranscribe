@@ -475,14 +475,7 @@ def update_user(
     # super_admin changes the role, recompute is_superuser to keep the invariant
     # (enforced by the v369 DB CHECK constraint) intact.
     update_data.pop("is_superuser", None)
-    if "role" in update_data:
-        if update_data["role"] not in VALID_ROLES:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid role: {update_data['role']}",
-            )
-        update_data["is_superuser"] = role_implies_superuser(update_data["role"])
-        _assert_not_last_super_admin(db, user, update_data["role"])
+    _validate_role_and_activation_changes(db, user, update_data)
 
     # allow_local_fallback only means anything for accounts whose identity lives in
     # PKI or an OIDC provider. The UI hides the toggle elsewhere, but that is a
@@ -558,6 +551,29 @@ def update_user(
     return user
 
 
+def _validate_role_and_activation_changes(
+    db: Session, user: User, update_data: dict[str, object]
+) -> None:
+    """Validate a role change and/or deactivation on ``update_data`` in place.
+
+    Split out of ``update_user`` to keep that function's branch count readable
+    (ruff C901). Mutates ``update_data["is_superuser"]`` when the role changes,
+    and raises if either change would leave the deployment with no active
+    super_admin.
+    """
+    if "role" in update_data:
+        if update_data["role"] not in VALID_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid role: {update_data['role']}",
+            )
+        update_data["is_superuser"] = role_implies_superuser(update_data["role"])
+        _assert_not_last_super_admin(db, user, update_data["role"])
+
+    if update_data.get("is_active") is False:
+        _assert_not_last_super_admin_deactivation(db, user)
+
+
 def _audit_expiration_if_changed(
     user: User, actor: User, old_expires_at: str | None, client_ip: str, user_agent: str
 ) -> None:
@@ -565,6 +581,20 @@ def _audit_expiration_if_changed(
     new_expires_at = str(user.account_expires_at) if user.account_expires_at else None
     if new_expires_at != old_expires_at:
         audit_expiration_change(user, actor, old_expires_at, new_expires_at, client_ip, user_agent)
+
+
+def _count_other_active_super_admins(db: Session, user: User) -> int:
+    """Count active super_admins other than ``user``.
+
+    Shared by every guard that must refuse leaving the deployment with zero
+    active super_admins — role change, deactivation, and delete all need this
+    same count, decided against differently.
+    """
+    return (
+        db.query(User)
+        .filter(User.role == ROLE_SUPER_ADMIN, User.id != user.id, User.is_active.is_(True))
+        .count()
+    )
 
 
 def _assert_not_last_super_admin(db: Session, user: User, new_role: str) -> None:
@@ -577,15 +607,26 @@ def _assert_not_last_super_admin(db: Session, user: User, new_role: str) -> None
     if str(user.role) != ROLE_SUPER_ADMIN or new_role == ROLE_SUPER_ADMIN:
         return
 
-    remaining = (
-        db.query(User)
-        .filter(User.role == ROLE_SUPER_ADMIN, User.id != user.id, User.is_active.is_(True))
-        .count()
-    )
-    if remaining == 0:
+    if _count_other_active_super_admins(db, user) == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot demote the last super_admin — promote another account first.",
+        )
+
+
+def _assert_not_last_super_admin_deactivation(db: Session, user: User) -> None:
+    """Refuse deactivating the last active super_admin.
+
+    Mirrors ``_assert_not_last_super_admin``, but for `is_active=False` rather
+    than a role change — deactivating has the same lockout effect as demoting.
+    """
+    if str(user.role) != ROLE_SUPER_ADMIN or bool(user.is_active) is False:
+        return
+
+    if _count_other_active_super_admins(db, user) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot deactivate the last super_admin — promote another account first.",
         )
 
 

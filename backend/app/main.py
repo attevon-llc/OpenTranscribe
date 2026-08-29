@@ -13,7 +13,11 @@ from starlette.responses import JSONResponse
 from app.api.router import api_router
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
+from app.core.config import IMPLEMENTED_ENCRYPTION_ALGORITHMS
 from app.core.config import settings
+from app.core.constants import NEURAL_BOOTSTRAP_STARTUP_DELAY_SECONDS
+from app.core.entropy import assert_csprng_available
+from app.core.entropy import validate_secret_entropy
 from app.core.exceptions import AuthenticationError
 from app.core.exceptions import EmailDeliveryError
 from app.core.exceptions import LLMServiceError
@@ -32,6 +36,67 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 
+def _validate_fips_cryptographic_configuration() -> None:
+    """Enforce the FIPS 140-3 settings this build has to be able to honour.
+
+    A private step of :func:`_validate_production_secrets`, extracted only because that
+    function is at its complexity ceiling — **not** a second boot gate. It has exactly one
+    caller and must keep exactly one.
+
+    Gated on ``settings.fips_140_3_active`` rather than ``is_hardened``: ``FIPS_MODE``
+    defaults to false, so an ordinary dev/CI boot returns immediately, but a deployment
+    that has explicitly claimed the FIPS profile must satisfy it whatever its ENVIRONMENT
+    says. Both settings below were documented as compliance controls in
+    ``docs/FIPS_140_3_COMPLIANCE.md``, ``docs/ENV_VARIABLES_FIPS_140_3.md`` and the
+    operations security-hardening guide while being read by nothing outside a test that
+    asserted a constant equals its own default. This is what makes that documentation true.
+
+    Raises:
+        ValueError: If ``ENCRYPTION_ALGORITHM_V3`` names an algorithm this build does not
+            implement, or if ``FIPS_VALIDATE_ENTROPY`` is on and the CSPRNG or the
+            configured key material fails validation.
+    """
+    if not settings.fips_140_3_active:
+        return
+
+    # Normalised before comparison: refusing to boot over `aes-256-gcm` vs `AES-256-GCM`
+    # would be a false refusal, and a fail-closed control that rejects a correct
+    # configuration is a bug rather than extra safety.
+    configured_algorithm = settings.ENCRYPTION_ALGORITHM_V3.strip().upper()
+    if configured_algorithm not in IMPLEMENTED_ENCRYPTION_ALGORITHMS:
+        # Refuse rather than fall back. Silently encrypting with AES-256-GCM while the
+        # operator configured something else would make the compliance documentation a
+        # lie; switching algorithm to obey the setting would orphan every existing
+        # ciphertext, because the v3 envelope records no algorithm field (see
+        # IMPLEMENTED_ENCRYPTION_ALGORITHMS in core/config.py).
+        implemented = ", ".join(sorted(IMPLEMENTED_ENCRYPTION_ALGORITHMS))
+        logger.critical(
+            "ENCRYPTION_ALGORITHM_V3=%r is not implemented by this build. "
+            "Implemented: %s. Refusing to start.",
+            settings.ENCRYPTION_ALGORITHM_V3,
+            implemented,
+        )
+        raise ValueError(
+            f"ENCRYPTION_ALGORITHM_V3={settings.ENCRYPTION_ALGORITHM_V3!r} is not "
+            f"implemented by this build (implemented: {implemented}). FIPS 140-3 mode "
+            "refuses to start rather than encrypt with an algorithm other than the one "
+            "configured."
+        )
+
+    if not settings.FIPS_VALIDATE_ENTROPY:
+        return
+
+    # REDIS_PASSWORD is deliberately not in this list: it is a service credential checked
+    # for presence by the caller, not cryptographic key material anything derives from.
+    try:
+        assert_csprng_available()
+        for secret_name in ("ENCRYPTION_KEY", "JWT_SECRET_KEY"):
+            validate_secret_entropy(secret_name, getattr(settings, secret_name))
+    except ValueError as exc:
+        logger.critical("%s Refusing to start.", exc)
+        raise
+
+
 def _validate_production_secrets():
     """Validate that production secrets are properly configured.
 
@@ -39,6 +104,9 @@ def _validate_production_secrets():
     ENVIRONMENT explicitly names a relaxed environment. The previous
     ``ENVIRONMENT in ("production", "prod")`` test was never true in practice — nothing
     passes ENVIRONMENT into the containers — so none of these ran anywhere (#284 A0.3).
+
+    The one exception is :func:`_validate_fips_cryptographic_configuration`, which gates on
+    ``settings.fips_140_3_active`` instead — see its docstring.
     """
     is_production = settings.is_hardened
 
@@ -69,6 +137,8 @@ def _validate_production_secrets():
             "Set a strong, unique encryption key via the ENCRYPTION_KEY environment variable."
         )
         raise ValueError("Insecure ENCRYPTION_KEY in production environment")
+
+    _validate_fips_cryptographic_configuration()
 
     # Warn about OIDC audience validation disabled in production
     if is_production and settings.OIDC_ENABLED and not settings.OIDC_VERIFY_AUDIENCE:
@@ -102,8 +172,12 @@ def _validate_production_secrets():
             logger.warning(
                 "SECURITY WARNING: PKI_ENABLED=true but PKI_TRUSTED_PROXIES is empty! "
                 "This allows any client to inject PKI certificate headers. "
-                "Configure PKI_TRUSTED_PROXIES with your reverse proxy IP addresses "
-                "(e.g., '127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')."
+                "Configure PKI_TRUSTED_PROXIES with the address of the proxy that "
+                "terminates mTLS — the narrowest range that covers it, e.g. its own "
+                "'/32', or the container network it runs on. Do NOT paste a whole "
+                "private range: '10.0.0.0/8' and '192.168.0.0/16' are what ordinary "
+                "LAN routers hand out, so trusting one lets any device on that LAN "
+                "assert a certificate DN and sign in as it (issue #620)."
             )
 
     # Same rule for trusted-header authentication, and for the same reason: a header
@@ -530,147 +604,48 @@ async def _run_one_time_embedding_normalization():
 # No need to load them into runtime config - they're read directly from DB when needed.
 
 
-def _managed_embedding_mode() -> bool:
-    """Whether the embedding model is owned by the OpenSearch domain, not by us."""
-    return settings.OPENSEARCH_EMBEDDING_MODE.strip().lower() == "managed"
-
-
-def _adopt_managed_embedding_model(ml_service) -> None:
-    """Use an embedding model the OpenSearch domain already hosts (issue #284 A1.13).
-
-    The default "local" path mutates ML Commons cluster settings and registers a
-    model from a ``file://`` or public ``https://`` URL. Amazon OpenSearch Service
-    exposes neither knob, so on a managed domain that path fails at the first
-    cluster-settings PUT and neural search never comes up. In "managed" mode the
-    operator has already registered the model (typically a remote-model connector),
-    and all we do is adopt its id and wire the ingest pipeline.
-
-    Synchronous: the model-id write and the ingest-pipeline PUT are both blocking
-    OpenSearch calls with nothing to await (issue #320). The caller offloads it.
-
-    Args:
-        ml_service: The ``MLModelService`` singleton.
-    """
-    from app.services.search.indexing_service import ensure_neural_ingest_pipeline
-
-    model_id = settings.OPENSEARCH_NEURAL_MODEL_ID.strip() or ml_service.get_active_model_id()
-    if not model_id:
-        logger.warning(
-            "OPENSEARCH_EMBEDDING_MODE=managed but no model id is configured. Set "
-            "OPENSEARCH_NEURAL_MODEL_ID to a model already registered in the domain, "
-            "or set OPENSEARCH_NEURAL_SEARCH_ENABLED=false to run keyword-only search."
-        )
-        return
-
-    ml_service.set_active_model_id(model_id)
-    logger.info(f"Neural search using domain-managed model: {model_id}")
-
-    if ensure_neural_ingest_pipeline():
-        logger.info("Neural ingest pipeline configured successfully")
-    else:
-        logger.warning("Could not configure neural ingest pipeline")
-
-
 async def _initialize_neural_search():
-    """Initialize OpenSearch neural search models on startup.
+    """Startup fast path for the neural-search bootstrap (issue #625).
 
-    This function:
-    1. Configures ML Commons cluster settings
-    2. Checks for local models (offline deployment support)
-    3. Auto-downloads default model if missing and internet available
-    4. Ensures the default model is registered and deployed
-    5. Creates/updates the neural ingest pipeline
+    Waits for OpenSearch to come up, then runs the same idempotent
+    :func:`~app.services.search.neural_bootstrap.ensure_neural_search_bootstrap` that
+    ``app.tasks.search_maintenance_task.neural_search_bootstrap_task`` runs every 10 minutes
+    from Celery beat. This is no longer the only attempt: a cold or slow OpenSearch boot that
+    outlasts this one shot self-heals on the next beat tick instead of losing neural search
+    permanently. All the actual bootstrap logic (managed-mode adoption, ML settings,
+    local-model scan, download, deploy, pipeline) lives in that module now — see
+    ``backend/app/services/search/CLAUDE.md``.
 
-    Runs after a delay to allow OpenSearch to fully start.
-    For offline/air-gapped deployments, models are loaded from
-    pre-downloaded local files (mounted at /ml-models in OpenSearch container).
-
-    ``OPENSEARCH_EMBEDDING_MODE=managed`` short-circuits steps 1-4 and adopts a model
-    the domain already hosts — see :func:`_adopt_managed_embedding_model`.
+    Elected via ``run_once_per_boot`` so N replicas booting together don't all race the same
+    expensive OpenSearch calls.
     """
     if not settings.OPENSEARCH_NEURAL_SEARCH_ENABLED:
         logger.info("Neural search disabled, skipping initialization")
         return
 
     try:
+        from app.utils.boot_once import run_once_per_boot
+
+        if not run_once_per_boot("neural_search_bootstrap"):
+            return
+
         # Wait for OpenSearch to be ready
-        await asyncio.sleep(15)
+        await asyncio.sleep(NEURAL_BOOTSTRAP_STARTUP_DELAY_SECONDS)
 
-        from app.services.search.ml_model_service import get_ml_model_service
+        from app.services.search.neural_bootstrap import ensure_neural_search_bootstrap
 
-        ml_service = get_ml_model_service()
-
-        if _managed_embedding_mode():
-            await run_in_threadpool(_adopt_managed_embedding_model, ml_service)
-            return
-
-        # Configure ML Commons settings
-        if not ml_service.configure_ml_settings():
-            logger.warning("Could not configure ML Commons settings")
-            return
-
-        # Check for available local models (offline deployment support)
-        local_models = ml_service.get_available_local_models()
-        if local_models:
-            model_names = [m["short_name"] for m in local_models]
-            logger.info(f"Found {len(local_models)} local models for offline use: {model_names}")
+        result = await run_in_threadpool(ensure_neural_search_bootstrap)
+        if result.state == "ok":
+            logger.info(f"Neural search bootstrap ready (model={result.model_id})")
+        elif result.state == "disabled":
+            logger.info("Neural search bootstrap: disabled")
         else:
-            logger.warning("No local models found - attempting automatic download")
-
-            # Try to download default model if internet is available
-            from app.services.search.model_downloader import check_internet_connectivity
-            from app.services.search.model_downloader import ensure_model_downloaded
-
-            default_model = settings.OPENSEARCH_NEURAL_MODEL
-
-            if check_internet_connectivity():
-                logger.info(f"Internet available - downloading default model: {default_model}")
-                model_path = ensure_model_downloaded(default_model)
-
-                if model_path:
-                    logger.info(f"Model downloaded successfully: {model_path}")
-                    # Re-check local models after download
-                    local_models = ml_service.get_available_local_models()
-                    if local_models:
-                        logger.info("Models now available for offline use")
-                else:
-                    logger.warning("Model download failed - will use remote registration")
-            else:
-                logger.warning("No internet connection - cannot download models")
-                logger.warning("Will use remote registration (requires OpenSearch to download)")
-
-        # Check if we have an active model
-        active_model_id = ml_service.get_active_model_id()
-
-        if active_model_id:
-            logger.info(f"Neural search already has active model: {active_model_id}")
-        else:
-            # Try to register and deploy the default model
-            default_model = settings.OPENSEARCH_NEURAL_MODEL
-            logger.info(f"No active model, attempting to setup default: {default_model}")
-
-            # Check if default model is available locally
-            local_path = ml_service.get_local_model_path(default_model)
-            if local_path:
-                logger.info(f"Default model available locally: {local_path}")
-            else:
-                logger.info("Default model not found locally, will download from remote")
-
-            model_id = ml_service.ensure_model_deployed(default_model)
-            if model_id:
-                ml_service.set_active_model_id(model_id)
-                logger.info(f"Default neural model deployed: {default_model} -> {model_id}")
-            else:
-                logger.warning(f"Could not deploy default model {default_model}")
-                return
-
-        # Ensure neural ingest pipeline is configured
-        from app.services.search.indexing_service import ensure_neural_ingest_pipeline
-
-        if ensure_neural_ingest_pipeline():
-            logger.info("Neural ingest pipeline configured successfully")
-        else:
-            logger.warning("Could not configure neural ingest pipeline")
+            logger.warning(
+                "Neural search bootstrap degraded at startup (stage=%s: %s); "
+                "the beat self-heal will retry.",
+                result.stage,
+                result.detail,
+            )
 
     except Exception as e:
         logger.error(f"Error initializing neural search: {e}")

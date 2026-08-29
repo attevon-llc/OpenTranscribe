@@ -6,6 +6,7 @@ from pydantic import ValidationInfo
 from pydantic import field_validator
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
 
 from app.core.legacy_auth_env import oidc_bool_env
 from app.core.legacy_auth_env import oidc_env
@@ -18,24 +19,6 @@ _config_logger = logging.getLogger(__name__)
 #: A module constant rather than a literal in the field so a test can pin the
 #: DEFAULT independently of whatever an operator set in the running environment.
 DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS = 300_000
-
-
-def _int_env(key: str, default: int) -> int:
-    """Read an environment variable and convert to int with validation.
-
-    Args:
-        key: Environment variable name.
-        default: Default value if the variable is not set or is invalid.
-
-    Returns:
-        The integer value, or the default if conversion fails.
-    """
-    val = os.getenv(key, str(default))
-    try:
-        return int(val)
-    except (ValueError, TypeError):
-        _config_logger.warning(f"Invalid integer for {key}='{val}', using default {default}")
-        return default
 
 
 # The ONLY environment names that relax security controls. Anything else — including
@@ -56,6 +39,43 @@ def is_relaxed_environment(environment: str) -> bool:
         True only for an explicit member of :data:`RELAXED_ENVIRONMENTS`.
     """
     return environment.strip().lower() in RELAXED_ENVIRONMENTS
+
+
+# The symmetric encryption algorithms ``app/utils/encryption.py`` actually IMPLEMENTS.
+#
+# ⚠️ This is keyed on the code, NOT on what FIPS approves. AES-256-CCM is equally
+# FIPS-approved and adding its name here without writing the code would be a data-loss
+# bug, not a compliance win: the v3 envelope is ``v3:salt:nonce:ciphertext`` and records
+# no algorithm field, so decrypt has to use exactly the algorithm encrypt used. Every
+# ciphertext already in the database — LLM/ASR provider keys, MFA TOTP secrets, SMB/SMTP
+# credentials, backup secrets — would become undecryptable.
+#
+# ``ENCRYPTION_ALGORITHM_V3`` is therefore validated against this set at boot
+# (``app.main._validate_production_secrets``) rather than dispatched on at runtime: a
+# FIPS deployment configured for an algorithm this build does not implement refuses to
+# start instead of silently encrypting with a different one than its compliance
+# documentation claims.
+IMPLEMENTED_ENCRYPTION_ALGORITHMS = frozenset({"AES-256-GCM"})
+
+
+def resolve_ldap_search_filter(search_filter: str, username_attr: str) -> str:
+    """Substitute the ``{username_attr}`` placeholder in an LDAP search filter.
+
+    Shared by the ``.env``-backed :class:`Settings` validator (below) and
+    ``LdapConfig.from_db`` (``app/auth/ldap_auth.py``) so this bug class — a search
+    filter loaded with the literal placeholder still in it, matching no real LDAP
+    attribute — cannot recur in only one of the two config-loading paths again. See
+    ``LDAP_USER_SEARCH_FILTER``'s declaration for why the placeholder exists at all.
+
+    Args:
+        search_filter: The raw filter, e.g. ``"({username_attr}={username})"``.
+        username_attr: The resolved LDAP username attribute, e.g. ``"uid"``.
+
+    Returns:
+        The filter with ``{username_attr}`` substituted. ``{username}`` is left
+        untouched — it is filled in per-login with the escaped username.
+    """
+    return search_filter.replace("{username_attr}", username_attr)
 
 
 def _validate_ldap_settings(settings: "Settings") -> None:
@@ -168,7 +188,13 @@ class Settings(BaseSettings):
     # could skip the UI and PUT an arbitrarily large object to the presigned URL.
     # Enforced at prepare (declared size) AND complete (the size MinIO observed).
     # Set 0 to disable — only sensible on a trusted single-user install.
-    MAX_UPLOAD_BYTES: int | None = _int_env("MAX_UPLOAD_BYTES", 15 * 1024 * 1024 * 1024) or None
+    MAX_UPLOAD_BYTES: int | None = 15 * 1024 * 1024 * 1024
+
+    @field_validator("MAX_UPLOAD_BYTES", mode="after")
+    @classmethod
+    def _normalize_max_upload_bytes(cls, v: int | None) -> int | None:
+        """An explicit 0 still means "disabled" (falsy -> None)."""
+        return v or None
 
     # Whether anyone can create their own account via POST /api/auth/register.
     # New users are immediately active and GPU-capable, so on a public deployment this
@@ -215,6 +241,15 @@ class Settings(BaseSettings):
     WATCH_ALLOW_PRIVATE_ENDPOINTS: bool = (
         os.getenv("WATCH_ALLOW_PRIVATE_ENDPOINTS", "true").lower() == "true"
     )
+    # Same policy again for cloud ASR provider base URLs (UserASRSettings.base_url /
+    # GLADIA_API_BASE_URL — issue #594). A SEPARATE flag from LLM_ALLOW_PRIVATE_ENDPOINTS
+    # on purpose: an operator may want a self-hosted LLM but not a self-hosted ASR
+    # endpoint, or vice versa, and coupling the two would silently loosen one policy
+    # while an admin thought they were only touching the other. MUST stay false on
+    # anything multi-tenant or publicly registerable, same rationale as LLM's.
+    ASR_ALLOW_PRIVATE_ENDPOINTS: bool = (
+        os.getenv("ASR_ALLOW_PRIVATE_ENDPOINTS", "false").lower() == "true"
+    )
 
     # Bootstrap admin (issue #284 A0.9). In a relaxed environment the seeder creates
     # the well-known admin@example.com / "password" super_admin that the test suite
@@ -235,23 +270,25 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     # Access token expiration: 60 minutes (NIST recommended for moderate assurance)
     # Can be reduced to 15-30 minutes for high-security environments
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = _int_env("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 60)
-    # Refresh token expiration: 7 days (for token refresh flow, future implementation)
-    JWT_REFRESH_TOKEN_EXPIRE_MINUTES: int = _int_env("JWT_REFRESH_TOKEN_EXPIRE_MINUTES", 10080)
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     # Session idle timeout: 15 minutes (NIST moderate assurance, DoD STIG compliant)
-    SESSION_IDLE_TIMEOUT_MINUTES: int = _int_env("SESSION_IDLE_TIMEOUT_MINUTES", 15)
+    SESSION_IDLE_TIMEOUT_MINUTES: int = 15
     # Session absolute timeout: 8 hours (force re-authentication)
-    SESSION_ABSOLUTE_TIMEOUT_MINUTES: int = _int_env("SESSION_ABSOLUTE_TIMEOUT_MINUTES", 480)
+    SESSION_ABSOLUTE_TIMEOUT_MINUTES: int = 480
 
     # ===== FIPS 140-2 Password Hashing =====
     # Enable FIPS mode to use only FIPS-approved algorithms (PBKDF2-SHA256)
     FIPS_MODE: bool = os.getenv("FIPS_MODE", "false").lower() == "true"
     # PBKDF2 iterations (OWASP 2023 recommendation: 210,000 for SHA-256)
-    PBKDF2_ITERATIONS: int = _int_env("PBKDF2_ITERATIONS", 210000)
-
+    PBKDF2_ITERATIONS: int = 210000
     # ===== FIPS 140-3 Configuration (upgraded from FIPS 140-2) =====
     FIPS_VERSION: str = os.getenv("FIPS_VERSION", "140-3")  # "140-2" or "140-3"
-    PBKDF2_ITERATIONS_V3: int = _int_env("PBKDF2_ITERATIONS_V3", 600000)  # NIST SP 800-132 2024
+    # Governs PASSWORD HASHING ONLY (core/security.py) -- NOT the utils/encryption.py data
+    # encryption envelope, which hardcodes its own module constant of the same value and
+    # default (C8). That envelope records no iteration count, so decrypt must reproduce
+    # exactly what encrypt used; if this setting ever governed it too, raising it in .env
+    # would silently orphan every ciphertext encrypted under the old count.
+    PBKDF2_ITERATIONS_V3: int = 600000  # NIST SP 800-132 2024
     JWT_ALGORITHM_V3: str = os.getenv("JWT_ALGORITHM_V3", "HS512")
     ENCRYPTION_ALGORITHM_V3: str = os.getenv("ENCRYPTION_ALGORITHM_V3", "AES-256-GCM")
     FIPS_MIGRATION_MODE: str = os.getenv(
@@ -266,7 +303,7 @@ class Settings(BaseSettings):
     # Enable password policy enforcement (disable for testing or non-FedRAMP environments)
     PASSWORD_POLICY_ENABLED: bool = os.getenv("PASSWORD_POLICY_ENABLED", "true").lower() == "true"
     # Minimum password length (NIST SP 800-63B recommends 8+, FedRAMP typically requires 12+)
-    PASSWORD_MIN_LENGTH: int = _int_env("PASSWORD_MIN_LENGTH", 12)
+    PASSWORD_MIN_LENGTH: int = 12
     # Require at least one uppercase letter
     PASSWORD_REQUIRE_UPPERCASE: bool = (
         os.getenv("PASSWORD_REQUIRE_UPPERCASE", "true").lower() == "true"
@@ -280,15 +317,14 @@ class Settings(BaseSettings):
     # Require at least one special character
     PASSWORD_REQUIRE_SPECIAL: bool = os.getenv("PASSWORD_REQUIRE_SPECIAL", "true").lower() == "true"
     # Number of previous passwords to prevent reuse (FedRAMP requires 24)
-    PASSWORD_HISTORY_COUNT: int = _int_env("PASSWORD_HISTORY_COUNT", 24)
+    PASSWORD_HISTORY_COUNT: int = 24
     # Maximum password age in days before forced reset (FedRAMP requires 60)
-    PASSWORD_MAX_AGE_DAYS: int = _int_env("PASSWORD_MAX_AGE_DAYS", 60)
-
+    PASSWORD_MAX_AGE_DAYS: int = 60
     # ===== Rate Limiting Settings (OWASP recommended) =====
     # Rate limit authentication endpoints per IP address
-    RATE_LIMIT_AUTH_PER_MINUTE: int = _int_env("RATE_LIMIT_AUTH_PER_MINUTE", 10)
+    RATE_LIMIT_AUTH_PER_MINUTE: int = 10
     # Rate limit for general API endpoints
-    RATE_LIMIT_API_PER_MINUTE: int = _int_env("RATE_LIMIT_API_PER_MINUTE", 100)
+    RATE_LIMIT_API_PER_MINUTE: int = 100
     # Enable rate limiting (disable for testing)
     RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
     # Trusted proxy IPs for rate limiting (comma-separated)
@@ -298,23 +334,21 @@ class Settings(BaseSettings):
 
     # ===== Token Management (FedRAMP AC-12) =====
     # Refresh token expiration in days (7 days default for refresh token flow)
-    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = _int_env("JWT_REFRESH_TOKEN_EXPIRE_DAYS", 7)
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     # Enable token revocation checking via Redis blacklist
     TOKEN_REVOCATION_ENABLED: bool = os.getenv("TOKEN_REVOCATION_ENABLED", "true").lower() == "true"
 
     # ===== Account Lockout Settings (NIST AC-7 compliant) =====
     # Number of failed login attempts before lockout
-    ACCOUNT_LOCKOUT_THRESHOLD: int = _int_env("ACCOUNT_LOCKOUT_THRESHOLD", 5)
+    ACCOUNT_LOCKOUT_THRESHOLD: int = 5
     # Initial lockout duration in minutes (progressive: 15 -> 30 -> 60 -> 1440)
-    ACCOUNT_LOCKOUT_DURATION_MINUTES: int = _int_env("ACCOUNT_LOCKOUT_DURATION_MINUTES", 15)
+    ACCOUNT_LOCKOUT_DURATION_MINUTES: int = 15
     # Enable progressive lockout (doubles duration for each subsequent lockout)
     ACCOUNT_LOCKOUT_PROGRESSIVE: bool = (
         os.getenv("ACCOUNT_LOCKOUT_PROGRESSIVE", "true").lower() == "true"
     )
     # Maximum lockout duration in minutes (24 hours)
-    ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES: int = _int_env(
-        "ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES", 1440
-    )
+    ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES: int = 1440
     # Enable account lockout (disable for testing)
     ACCOUNT_LOCKOUT_ENABLED: bool = os.getenv("ACCOUNT_LOCKOUT_ENABLED", "true").lower() == "true"
 
@@ -322,7 +356,7 @@ class Settings(BaseSettings):
     AUDIT_LOG_ENABLED: bool = os.getenv("AUDIT_LOG_ENABLED", "true").lower() == "true"
     AUDIT_LOG_FORMAT: str = os.getenv("AUDIT_LOG_FORMAT", "json")  # json or cef
     AUDIT_LOG_TO_OPENSEARCH: bool = os.getenv("AUDIT_LOG_TO_OPENSEARCH", "true").lower() == "true"
-    AUDIT_LOG_RETENTION_DAYS: int = _int_env("AUDIT_LOG_RETENTION_DAYS", 365)
+    AUDIT_LOG_RETENTION_DAYS: int = 365
     # Fallback to file-based logging when OpenSearch is unavailable (FedRAMP AU-9)
     AUDIT_LOG_FALLBACK_ENABLED: bool = (
         os.getenv("AUDIT_LOG_FALLBACK_ENABLED", "true").lower() == "true"
@@ -337,20 +371,20 @@ class Settings(BaseSettings):
     LOGIN_BANNER_CLASSIFICATION: str = os.getenv("LOGIN_BANNER_CLASSIFICATION", "UNCLASSIFIED")
 
     # ===== Account Expiration (FedRAMP AC-2) =====
-    ACCOUNT_INACTIVE_DAYS: int = _int_env("ACCOUNT_INACTIVE_DAYS", 90)
+    ACCOUNT_INACTIVE_DAYS: int = 90
     ACCOUNT_EXPIRATION_ENABLED: bool = (
         os.getenv("ACCOUNT_EXPIRATION_ENABLED", "false").lower() == "true"
     )
 
     # ===== Concurrent Session Limits (FedRAMP AC-10) =====
-    MAX_CONCURRENT_SESSIONS: int = _int_env("MAX_CONCURRENT_SESSIONS", 5)  # 0 = unlimited
+    MAX_CONCURRENT_SESSIONS: int = 5  # 0 = unlimited
     CONCURRENT_SESSION_POLICY: str = os.getenv(
         "CONCURRENT_SESSION_POLICY", "terminate_oldest"
     )  # or "reject"
 
     # ===== SMTP Settings (for password reset emails) =====
     SMTP_HOST: str = os.getenv("SMTP_HOST", "")
-    SMTP_PORT: int = _int_env("SMTP_PORT", 587)
+    SMTP_PORT: int = 587
     SMTP_USER: str = os.getenv("SMTP_USER", "")
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     SMTP_FROM: str = os.getenv("SMTP_FROM", "noreply@example.com")
@@ -376,10 +410,20 @@ class Settings(BaseSettings):
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
     POSTGRES_DB: str = os.getenv("POSTGRES_DB", "transcribe_app")
     POSTGRES_SSLMODE: str = os.getenv("POSTGRES_SSLMODE", "prefer")
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL",
-        f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}",
-    )
+    # Plain "" default (not a class-body `os.getenv("DATABASE_URL", <computed>)`
+    # expression) resolved in `validate_auth_settings` below. `os.getenv` only
+    # substitutes its fallback when the key is ABSENT from the environment, not
+    # when it's present-but-empty -- and `.env.example` ships `DATABASE_URL=`
+    # (deliberately blank, meaning "assemble it from the POSTGRES_* components").
+    # A real `.env` file with that blank line sets `DATABASE_URL=""` in the
+    # process environment, so the old class-body form returned "" instead of
+    # the computed postgres URL -- crashing `create_engine()` with
+    # `Could not parse SQLAlchemy URL from given URL string`. Same bug class as
+    # MFA_REQUIRE_REDIS/PKI_REVOCATION_SOFT_FAIL above, just for a str field
+    # instead of a bool. `env_ignore_empty=True` cannot fix this: it only
+    # affects pydantic-settings' own post-hoc re-sourcing of a field from the
+    # environment, not a Python expression that already ran in the class body.
+    DATABASE_URL: str = ""
 
     # MinIO / S3 settings
     MINIO_ROOT_USER: str = os.getenv("MINIO_ROOT_USER", "minioadmin")
@@ -403,7 +447,14 @@ class Settings(BaseSettings):
     S3_ENDPOINT_URL: str = os.getenv("S3_ENDPOINT_URL", "")
     # SigV4 signing region. Wrong region = every request 400s with AuthorizationHeaderMalformed.
     # Falls back to AWS_REGION so a container that already sets the standard AWS var works.
-    S3_REGION: str = os.getenv("S3_REGION", os.getenv("AWS_REGION", "us-east-1"))
+    # Plain "" default; the nested-getenv chain (fall through to AWS_REGION,
+    # then "us-east-1") is resolved in `validate_auth_settings` below -- the
+    # same self-referential-default bug as DATABASE_URL: an explicit
+    # `S3_REGION=` (present-but-empty) made the old `os.getenv("S3_REGION",
+    # os.getenv("AWS_REGION", "us-east-1"))` return "" instead of consulting
+    # AWS_REGION, since `os.getenv` only substitutes its fallback when the key
+    # is absent, not when it's empty.
+    S3_REGION: str = ""
     # True (default) resolves credentials through the AWS provider chain — env vars,
     # EKS/IRSA web-identity token, ECS task role, EC2 instance metadata — so no static
     # keys are needed and rotation is automatic. Set false to sign with the static
@@ -424,16 +475,16 @@ class Settings(BaseSettings):
     # viewing/labeling session of a multi-hour file (a 5-minute URL 403s mid-playback when
     # the player issues a byte-range request after expiry — the <video> element keeps the
     # stale URL even though the frontend refresher updates its variable). Override via env.
-    MEDIA_URL_EXPIRE_SECONDS: int = _int_env("MEDIA_URL_EXPIRE_SECONDS", 21600)
+    MEDIA_URL_EXPIRE_SECONDS: int = 21600
     # Thumbnail URLs: 15 minutes default - longer since they're static images
-    THUMBNAIL_URL_EXPIRE_SECONDS: int = _int_env("THUMBNAIL_URL_EXPIRE_SECONDS", 900)
+    THUMBNAIL_URL_EXPIRE_SECONDS: int = 900
     # Derived-asset cache retention (subtitle-embedded videos + extracted audio in the
     # processed-videos/derived/ prefix). These are a regenerable cache, not storage —
     # they are duplicates of the originals and re-created on demand in seconds. A MinIO
     # lifecycle rule auto-expires them after this many days to bound disk/cloud usage.
     # Baseline default for headless/cloud deployments; the admin UI (DB) overrides it.
     # 0 disables auto-expiry (keep forever). Tune low on laptops, high on big-disk servers.
-    DERIVED_CACHE_RETENTION_DAYS: int = _int_env("DERIVED_CACHE_RETENTION_DAYS", 7)
+    DERIVED_CACHE_RETENTION_DAYS: int = 7
     # Public URL for presigned URLs (how browsers access MinIO)
     # Dev: http://localhost:5178 | Prod/nginx: https://yourdomain.com/minio or https://minio.yourdomain.com
     MINIO_PUBLIC_URL: str = os.getenv("MINIO_PUBLIC_URL", "")
@@ -448,15 +499,14 @@ class Settings(BaseSettings):
     # signed it, and STS session credentials (IMDS/IRSA/ECS) top out at 1–12 h with 6 h a
     # safe common denominator — so a 24 h URL would 403 long before it "expires".
     # Requests above the ceiling are clamped and logged, never rejected.
-    PRESIGNED_URL_MAX_SECONDS: int = _int_env("PRESIGNED_URL_MAX_SECONDS", 21600)
+    PRESIGNED_URL_MAX_SECONDS: int = 21600
     # Object size (MB) at or above which the browser uploads via presigned multipart
     # instead of one presigned PUT (issue #327). Above the backend's single-PUT ceiling
     # multipart is mandatory — 5 GiB on native S3 — and this knob cannot raise the
     # threshold past it. Below the ceiling multipart is what makes an interrupted upload
     # resumable, so the default sits far under it. Raise it to keep more uploads on the
     # single-PUT path; it can never disable multipart for objects that need it.
-    MULTIPART_THRESHOLD_MB: int = _int_env("MULTIPART_THRESHOLD_MB", 512)
-
+    MULTIPART_THRESHOLD_MB: int = 512
     # Redis settings (for Celery)
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT: str = os.getenv("REDIS_PORT", "6379")
@@ -465,10 +515,12 @@ class Settings(BaseSettings):
     _REDIS_SCHEME: str = (
         "rediss" if os.getenv("REDIS_USE_TLS", "false").lower() == "true" else "redis"
     )
-    REDIS_URL: str = os.getenv(
-        "REDIS_URL",
-        f"{_REDIS_SCHEME}://{':' + REDIS_PASSWORD + '@' if REDIS_PASSWORD else ''}{REDIS_HOST}:{REDIS_PORT}/0",
-    )
+    # Plain "" default resolved in `validate_auth_settings` below -- same bug
+    # class as DATABASE_URL: `.env.example` ships `REDIS_URL=` (blank, meaning
+    # "assemble it from REDIS_USE_TLS/HOST/PORT/PASSWORD"), and the old
+    # class-body `os.getenv("REDIS_URL", <computed>)` returned "" instead of
+    # the computed value whenever the key was present-but-empty.
+    REDIS_URL: str = ""
 
     # OpenSearch settings
     OPENSEARCH_HOST: str = os.getenv("OPENSEARCH_HOST", "localhost")
@@ -484,13 +536,13 @@ class Settings(BaseSettings):
     OPENSEARCH_AUTH: str = os.getenv("OPENSEARCH_AUTH", "basic")  # basic | sigv4
     # Signing region and service for OPENSEARCH_AUTH=sigv4. "es" is a managed domain;
     # "aoss" is OpenSearch Serverless (a different signing service name).
+    # Plain "" default; resolved to AWS_REGION in `validate_auth_settings` below when
+    # empty — same self-referential-default bug as S3_REGION/BEDROCK_REGION.
     OPENSEARCH_AWS_REGION: str = os.getenv("OPENSEARCH_AWS_REGION", "")  # empty -> AWS_REGION
     OPENSEARCH_AWS_SERVICE: str = os.getenv("OPENSEARCH_AWS_SERVICE", "es")  # es | aoss
     OPENSEARCH_TRANSCRIPT_INDEX: str = "transcripts"
     OPENSEARCH_SPEAKER_INDEX: str = "speakers"
     OPENSEARCH_SUMMARY_INDEX: str = "transcript_summaries"
-    OPENSEARCH_TOPIC_SUGGESTIONS_INDEX: str = "topic_suggestions"
-    OPENSEARCH_TOPIC_VECTORS_INDEX: str = "topic_vectors"
 
     # Search & RAG settings
     OPENSEARCH_CHUNKS_INDEX: str = "transcript_chunks"
@@ -501,8 +553,8 @@ class Settings(BaseSettings):
     # to mean anything; on a single-node box (laptop/home-server) they leave every replica
     # shard permanently UNASSIGNED and the index status yellow. See
     # docs-site/docs/operations/deployment-configuration.md's AWS profile section.
-    OPENSEARCH_CHUNKS_INDEX_SHARDS: int = max(_int_env("OPENSEARCH_CHUNKS_INDEX_SHARDS", 1), 1)
-    OPENSEARCH_CHUNKS_INDEX_REPLICAS: int = max(_int_env("OPENSEARCH_CHUNKS_INDEX_REPLICAS", 0), 0)
+    OPENSEARCH_CHUNKS_INDEX_SHARDS: int = 1
+    OPENSEARCH_CHUNKS_INDEX_REPLICAS: int = 0
 
     @field_validator("OPENSEARCH_CHUNKS_INDEX_SHARDS", "OPENSEARCH_CHUNKS_INDEX_REPLICAS")
     @classmethod
@@ -523,10 +575,10 @@ class Settings(BaseSettings):
         return max(v, floor)
 
     OPENSEARCH_SEARCH_PIPELINE: str = "transcript-hybrid-search"
-    SEARCH_CHUNK_TARGET_WORDS: int = _int_env("SEARCH_CHUNK_TARGET_WORDS", 200)
-    SEARCH_CHUNK_OVERLAP_WORDS: int = _int_env("SEARCH_CHUNK_OVERLAP_WORDS", 40)
-    SEARCH_RRF_RANK_CONSTANT: int = _int_env("SEARCH_RRF_RANK_CONSTANT", 30)
-    SEARCH_RRF_WINDOW_SIZE: int = _int_env("SEARCH_RRF_WINDOW_SIZE", 500)
+    SEARCH_CHUNK_TARGET_WORDS: int = 200
+    SEARCH_CHUNK_OVERLAP_WORDS: int = 40
+    SEARCH_RRF_RANK_CONSTANT: int = 30
+    SEARCH_RRF_WINDOW_SIZE: int = 500
     # Hybrid fusion strategy (issue #363). "rrf" is the shipped default;
     # "normalization" selects OpenSearch's normalization-processor instead.
     # Env-only and deliberately NOT DB-backed, like SEARCH_RRF_RANK_CONSTANT above:
@@ -537,37 +589,30 @@ class Settings(BaseSettings):
     SEARCH_COMBINATION_TECHNIQUE: str = os.getenv("SEARCH_COMBINATION_TECHNIQUE", "arithmetic_mean")
     # Comma-separated per-leg weights, e.g. "0.7,0.3" (BM25, neural). Empty = equal.
     SEARCH_COMBINATION_WEIGHTS: str = os.getenv("SEARCH_COMBINATION_WEIGHTS", "")
-    SEARCH_BULK_BATCH_SIZE: int = max(_int_env("SEARCH_BULK_BATCH_SIZE", 100), 1)
-    SEARCH_NEURAL_BATCH_SIZE: int = _int_env("SEARCH_NEURAL_BATCH_SIZE", 5)
-    SEARCH_REINDEX_REFRESH_INTERVAL: int = _int_env("SEARCH_REINDEX_REFRESH_INTERVAL", 100)
-    REINDEX_PARALLEL_WORKERS: int = _int_env("REINDEX_PARALLEL_WORKERS", 4)
-    SEARCH_HYBRID_MIN_SCORE: float = float(os.getenv("SEARCH_HYBRID_MIN_SCORE", "0.005"))
-    SEARCH_SEMANTIC_HIGH_CONFIDENCE: float = float(
-        os.getenv("SEARCH_SEMANTIC_HIGH_CONFIDENCE", "0.010")
-    )
+    SEARCH_BULK_BATCH_SIZE: int = 100
+    SEARCH_NEURAL_BATCH_SIZE: int = 5
+    SEARCH_REINDEX_REFRESH_INTERVAL: int = 100
+    REINDEX_PARALLEL_WORKERS: int = 4
+    SEARCH_HYBRID_MIN_SCORE: float = 0.005
+    SEARCH_SEMANTIC_HIGH_CONFIDENCE: float = 0.010
     # Intra-semantic suppression: filter semantic-only results whose score falls
     # below this fraction of the semantic score range. 0.5 = keep top half.
-    SEARCH_SEMANTIC_SUPPRESS_RATIO: float = float(
-        os.getenv("SEARCH_SEMANTIC_SUPPRESS_RATIO", "0.20")
-    )
+    SEARCH_SEMANTIC_SUPPRESS_RATIO: float = 0.20
 
     # Max concurrent group searches for collapse inner_hits (OpenSearch default: 0 = sequential)
-    SEARCH_COLLAPSE_MAX_CONCURRENT: int = _int_env("SEARCH_COLLAPSE_MAX_CONCURRENT", 20)
-
+    SEARCH_COLLAPSE_MAX_CONCURRENT: int = 20
     # Maximum number of collapsed file groups to over-fetch for client-side sorting.
     # Higher values improve recall for large collections at the cost of memory.
-    SEARCH_MAX_OVERFETCH: int = _int_env("SEARCH_MAX_OVERFETCH", 1000)
-
+    SEARCH_MAX_OVERFETCH: int = 1000
     # Chunk threshold above which bulk indexing temporarily disables OpenSearch
     # refresh (sets refresh_interval=-1) for the target index to avoid one
     # segment-refresh per bulk batch. The interval is restored afterwards so
     # normal search latency is unaffected. Tuned for 6+ hour transcripts.
-    SEARCH_LARGE_TRANSCRIPT_CHUNKS: int = _int_env("SEARCH_LARGE_TRANSCRIPT_CHUNKS", 500)
-
+    SEARCH_LARGE_TRANSCRIPT_CHUNKS: int = 500
     # SQLAlchemy connection pool for the FastAPI backend. Celery workers build
     # their own engines, so these sizes mainly control API concurrency.
-    DB_POOL_SIZE: int = max(_int_env("DB_POOL_SIZE", 20), 1)
-    DB_MAX_OVERFLOW: int = max(_int_env("DB_MAX_OVERFLOW", 40), 0)
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 40
 
     # Server-side backstop for the "transaction held open across slow work"
     # bug class (issue #440). Postgres terminates a backend that has an OPEN
@@ -585,9 +630,7 @@ class Settings(BaseSettings):
     # Applies to the shared app engine only. `db/migrations.py` builds its own
     # engines, so a long `ALTER TABLE` and the advisory-lock holder are outside
     # this timeout by construction.
-    DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: int = max(
-        _int_env("DB_IDLE_IN_TRANSACTION_TIMEOUT_MS", DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS), 0
-    )
+    DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: int = DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS
 
     @field_validator(
         "DB_POOL_SIZE",
@@ -651,9 +694,11 @@ class Settings(BaseSettings):
     # Pre-registered ML Commons model id, used when OPENSEARCH_EMBEDDING_MODE=managed.
     OPENSEARCH_NEURAL_MODEL_ID: str = os.getenv("OPENSEARCH_NEURAL_MODEL_ID", "")
 
-    # Celery settings
-    CELERY_BROKER_URL: str = REDIS_URL
-    CELERY_RESULT_BACKEND: str = REDIS_URL
+    # Celery settings. Plain "" defaults (not `= REDIS_URL`, which at class-body
+    # execution time would bind to REDIS_URL's own pre-validator "" placeholder,
+    # not its resolved value) resolved in `validate_auth_settings` below.
+    CELERY_BROKER_URL: str = ""
+    CELERY_RESULT_BACKEND: str = ""
 
     @property
     def is_hardened(self) -> bool:
@@ -710,6 +755,55 @@ class Settings(BaseSettings):
         """
         import warnings
 
+        # Resolve the environment-conditional defaults that can't live in a plain
+        # class-body `os.getenv(key, default)` expression — see MFA_REQUIRE_REDIS's
+        # declaration above for why. Both fields are `bool | None`, so pydantic-settings
+        # itself already distinguishes "genuinely unset" (`None`) from "explicitly set"
+        # (a real `True`/`False`, including an explicit `false`/`0` from a .env FILE —
+        # `env_ignore_empty` only skips a truly empty string, not a literal false value).
+        # Checking `self.<field> is None` here (instead of re-reading raw `os.environ`)
+        # is what makes this resolve correctly regardless of whether the value came from
+        # process env, a `.env` file, or Docker Compose's `env_file:` — all three are
+        # already merged onto `self` by pydantic-settings before this validator runs.
+        if self.MFA_REQUIRE_REDIS is None:
+            self.MFA_REQUIRE_REDIS = not is_relaxed_environment(self.ENVIRONMENT)
+        if self.PKI_REVOCATION_SOFT_FAIL is None:
+            self.PKI_REVOCATION_SOFT_FAIL = is_relaxed_environment(self.ENVIRONMENT)
+
+        # Same bug class, for str fields whose default is assembled from other
+        # already-resolved fields instead of a bool computed from ENVIRONMENT.
+        # `self.POSTGRES_*`/`self.REDIS_*`/etc. are themselves plain `str`
+        # fields with LITERAL `os.getenv` defaults, so they are already
+        # correctly resolved on `self` by this point regardless of whether
+        # this validator runs before or after them.
+        if not self.DATABASE_URL:
+            self.DATABASE_URL = (
+                f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+                f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+            )
+        if not self.REDIS_URL:
+            scheme = "rediss" if self.REDIS_USE_TLS else "redis"
+            auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
+            self.REDIS_URL = f"{scheme}://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/0"
+        if not self.CELERY_BROKER_URL:
+            self.CELERY_BROKER_URL = self.REDIS_URL
+        if not self.CELERY_RESULT_BACKEND:
+            self.CELERY_RESULT_BACKEND = self.REDIS_URL
+        if not self.S3_REGION:
+            self.S3_REGION = self.AWS_REGION or "us-east-1"
+        if not self.BEDROCK_REGION:
+            self.BEDROCK_REGION = self.AWS_REGION or os.environ.get("AWS_DEFAULT_REGION") or ""
+        if not self.OPENSEARCH_AWS_REGION:
+            self.OPENSEARCH_AWS_REGION = self.AWS_REGION
+
+        # Resolve the LDAP search filter's `{username_attr}` placeholder from the
+        # resolved LDAP_USERNAME_ATTR field — same bug class as MFA_REQUIRE_REDIS
+        # above, a plain-field default instead of a class-body expression computed
+        # from another env var. See LDAP_USER_SEARCH_FILTER's declaration.
+        self.LDAP_USER_SEARCH_FILTER = resolve_ldap_search_filter(
+            self.LDAP_USER_SEARCH_FILTER, self.LDAP_USERNAME_ATTR
+        )
+
         _validate_ldap_settings(self)
         _validate_oidc_settings(self)
         _validate_pki_settings(self)
@@ -738,12 +832,7 @@ class Settings(BaseSettings):
     TORCH_DEVICE: str = os.getenv("TORCH_DEVICE", "auto")  # auto, cuda, mps, cpu
     COMPUTE_TYPE: str = os.getenv("COMPUTE_TYPE", "auto")  # auto, float16, float32, int8
     USE_GPU: str = os.getenv("USE_GPU", "auto")  # auto, true, false
-    GPU_DEVICE_ID: int = _int_env("GPU_DEVICE_ID", 0)  # Host GPU index (Docker maps to device 0)
-    GPU_CLUSTERING_DEVICE: int | None = (
-        int(os.environ["GPU_CLUSTERING_DEVICE"])
-        if os.environ.get("GPU_CLUSTERING_DEVICE")
-        else None
-    )  # Dedicated GPU for speaker clustering (falls back to GPU_DEVICE_ID)
+    GPU_DEVICE_ID: int = 0  # Host GPU index (Docker maps to device 0)
     BATCH_SIZE: str = os.getenv("BATCH_SIZE", "auto")  # auto or integer
 
     # AI Models settings
@@ -756,11 +845,16 @@ class Settings(BaseSettings):
     HUGGINGFACE_TOKEN: str | None = os.getenv("HUGGINGFACE_TOKEN", None)
 
     # Speaker diarization settings
-    MIN_SPEAKERS: int = _int_env("MIN_SPEAKERS", 1)
-    MAX_SPEAKERS: int = _int_env("MAX_SPEAKERS", 20)
-    # NUM_SPEAKERS forces exact speaker count (overrides min/max if set)
-    _NUM_SPEAKERS_STR: str | None = os.getenv("NUM_SPEAKERS")
-    NUM_SPEAKERS: int | None = int(_NUM_SPEAKERS_STR) if _NUM_SPEAKERS_STR else None
+    MIN_SPEAKERS: int = 1
+    MAX_SPEAKERS: int = 20
+    # NUM_SPEAKERS forces exact speaker count (overrides min/max if set). An
+    # unset/empty env var means "genuinely unset" and falls back to the MIN/MAX
+    # range via `env_ignore_empty` on `model_config` above; a malformed non-empty
+    # value (e.g. a stray inline `#` comment on the same .env line, which docker
+    # compose's env_file loading does not strip) raises `ValidationError` at
+    # startup instead of silently degrading — deliberate, see model_config's
+    # docstring above.
+    NUM_SPEAKERS: int | None = None
 
     # Diarization embedding batch size is pinned at 16 in
     # backend/app/transcription/diarizer.py. See
@@ -776,7 +870,7 @@ class Settings(BaseSettings):
     # LDAP/Active Directory Configuration
     LDAP_ENABLED: bool = os.getenv("LDAP_ENABLED", "false").lower() == "true"
     LDAP_SERVER: str = os.getenv("LDAP_SERVER", "")
-    LDAP_PORT: int = _int_env("LDAP_PORT", 636)
+    LDAP_PORT: int = 636
     LDAP_USE_SSL: bool = os.getenv("LDAP_USE_SSL", "true").lower() == "true"
     # LDAP_USE_TLS enables StartTLS on non-SSL connections (port 389)
     # Use LDAP_USE_SSL=true for LDAPS (port 636) - they are mutually exclusive
@@ -785,12 +879,15 @@ class Settings(BaseSettings):
     LDAP_BIND_PASSWORD: str = os.getenv("LDAP_BIND_PASSWORD", "")
     LDAP_SEARCH_BASE: str = os.getenv("LDAP_SEARCH_BASE", "")
     LDAP_USERNAME_ATTR: str = os.getenv("LDAP_USERNAME_ATTR", "sAMAccountName")
-    LDAP_USER_SEARCH_FILTER: str = os.getenv(
-        "LDAP_USER_SEARCH_FILTER", "({username_attr}={username})"
-    ).replace("{username_attr}", os.getenv("LDAP_USERNAME_ATTR", "sAMAccountName"))
+    # Plain field default (not a class-body expression computed from another
+    # os.getenv call) resolved in `validate_auth_settings` below — same bug class
+    # as MFA_REQUIRE_REDIS/DATABASE_URL: the old class-body `.replace(...)` chain
+    # ran once at class-definition time against `os.getenv`, so it never saw a
+    # value that pydantic-settings later sourced from a real .env FILE.
+    LDAP_USER_SEARCH_FILTER: str = "({username_attr}={username})"
     LDAP_EMAIL_ATTR: str = os.getenv("LDAP_EMAIL_ATTR", "mail")
     LDAP_NAME_ATTR: str = os.getenv("LDAP_NAME_ATTR", "cn")
-    LDAP_TIMEOUT: int = _int_env("LDAP_TIMEOUT", 10)
+    LDAP_TIMEOUT: int = 10
     LDAP_ADMIN_USERS: str = os.getenv("LDAP_ADMIN_USERS", "")
     # LDAP Group-based RBAC (alternative to LDAP_ADMIN_USERS)
     # Comma-separated list of group DNs that grant admin role
@@ -917,12 +1014,12 @@ class Settings(BaseSettings):
     # Issuer name shown in authenticator apps
     MFA_ISSUER_NAME: str = os.getenv("MFA_ISSUER_NAME", "OpenTranscribe")
     # Number of backup codes to generate (one-time use)
-    MFA_BACKUP_CODE_COUNT: int = _int_env("MFA_BACKUP_CODE_COUNT", 10)
+    MFA_BACKUP_CODE_COUNT: int = 10
     # MFA token expiry in minutes (short-lived token for MFA verification step)
-    MFA_TOKEN_EXPIRE_MINUTES: int = _int_env("MFA_TOKEN_EXPIRE_MINUTES", 5)
+    MFA_TOKEN_EXPIRE_MINUTES: int = 5
     # TOTP verification window (number of time steps before/after to accept)
     # 1 = allow 1 step before/after for clock drift (±30 seconds)
-    TOTP_VALID_WINDOW: int = _int_env("TOTP_VALID_WINDOW", 1)
+    TOTP_VALID_WINDOW: int = 1
     # Require Redis for MFA replay protection (fail-secure mode).
     # Redis is the only place the "this TOTP code / this MFA half-token was already
     # used" claim lives. With this off, a Redis outage silently downgrades MFA to
@@ -933,13 +1030,20 @@ class Settings(BaseSettings):
     # see app/core/CLAUDE.md): fail closed in a real deployment, stay permissive in
     # dev/test where a stack without Redis must still log in. An explicit env value
     # always wins over the default.
-    MFA_REQUIRE_REDIS: bool = (
-        os.getenv(
-            "MFA_REQUIRE_REDIS",
-            "false" if is_relaxed_environment(ENVIRONMENT) else "true",
-        ).lower()
-        == "true"
-    )
+    #
+    # Plain `bool` field (not `bool | None` — that shape fights every downstream
+    # reader that expects `bool`, e.g. `DynamicAuthSettings.get_bool`'s signature),
+    # resolved in `validate_auth_settings` below (keyed on the INSTANCE's
+    # ENVIRONMENT), not a class-body `os.getenv(...)` expression: the class-body
+    # form computed its conditional default via `os.getenv(key, computed_default)`,
+    # but `os.getenv` only substitutes its default when the var is UNSET — a var
+    # set to the EMPTY string ("" — `.env.example`'s "use the coded default"
+    # convention) previously still returned "" and skipped the conditional default
+    # entirely, silently landing on False regardless of environment. Now `bool | None`:
+    # `None` unambiguously means "unset", so `validate_auth_settings` can distinguish
+    # that from an explicit `false` and only recompute the environment-conditional
+    # default when the field is still `None`, using `is_relaxed_environment(self.ENVIRONMENT)`.
+    MFA_REQUIRE_REDIS: bool | None = None
 
     # ===== PKI/X.509 Certificate Configuration =====
     PKI_ENABLED: bool = os.getenv("PKI_ENABLED", "false").lower() == "true"
@@ -959,21 +1063,18 @@ class Settings(BaseSettings):
         "PKI_ADMIN_DNS", ""
     )  # Comma-separated list of admin certificate DNs
     # OCSP/CRL revocation checking settings
-    PKI_OCSP_TIMEOUT_SECONDS: int = _int_env("PKI_OCSP_TIMEOUT_SECONDS", 5)
-    PKI_CRL_CACHE_SECONDS: int = _int_env("PKI_CRL_CACHE_SECONDS", 3600)  # Cache CRL for 1 hour
+    PKI_OCSP_TIMEOUT_SECONDS: int = 5
+    PKI_CRL_CACHE_SECONDS: int = 3600  # Cache CRL for 1 hour
     # Soft-fail allows authentication if revocation check fails (network issues)
-    # Defaults to false in production (strict revocation checking)
-    PKI_REVOCATION_SOFT_FAIL: bool = (
-        os.getenv(
-            "PKI_REVOCATION_SOFT_FAIL",
-            "true" if is_relaxed_environment(ENVIRONMENT) else "false",
-        ).lower()
-        == "true"
-    )
+    # Defaults to false in production (strict revocation checking). `bool | None`
+    # field, resolved in `validate_auth_settings` below — see MFA_REQUIRE_REDIS
+    # above for why this can't be a class-body `os.getenv(key, computed_default)`
+    # expression, and why `None` (not a literal `False`) is what marks it unset.
+    PKI_REVOCATION_SOFT_FAIL: bool | None = None
     # Maximum cache size for OCSP responses (LRU eviction when exceeded)
-    PKI_OCSP_CACHE_MAX_SIZE: int = _int_env("PKI_OCSP_CACHE_MAX_SIZE", 1000)
+    PKI_OCSP_CACHE_MAX_SIZE: int = 1000
     # Maximum cache size for CRLs (LRU eviction when exceeded)
-    PKI_CRL_CACHE_MAX_SIZE: int = _int_env("PKI_CRL_CACHE_MAX_SIZE", 1000)
+    PKI_CRL_CACHE_MAX_SIZE: int = 1000
     # Trusted proxy IPs for PKI certificate headers (comma-separated)
     # Only accept PKI certificate headers from these IPs
     # Example: "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
@@ -1039,9 +1140,11 @@ class Settings(BaseSettings):
     # provisioned at all — which is most of the operational appeal over a raw API key.
     # Region falls back to the AWS SDK's own variables so an already-configured host
     # needs nothing extra.
-    BEDROCK_REGION: str = os.getenv(
-        "BEDROCK_REGION", os.getenv("AWS_REGION", os.getenv("AWS_DEFAULT_REGION", ""))
-    )
+    # Plain "" default; the nested-getenv chain (AWS_REGION, then
+    # AWS_DEFAULT_REGION, then "") is resolved in `validate_auth_settings`
+    # below -- same self-referential-default bug as DATABASE_URL/S3_REGION.
+    # `.env.example` ships `BEDROCK_REGION=` blank.
+    BEDROCK_REGION: str = ""
     # Bare foundation-model ID; a geography prefix is applied at call time to select the
     # cross-region inference profile (see llm_bedrock.resolve_model_id). Set a fully
     # prefixed ID or a profile ARN here to bypass that and pin an exact profile.
@@ -1055,21 +1158,15 @@ class Settings(BaseSettings):
     DEEPGRAM_MODEL: str = os.getenv("DEEPGRAM_MODEL", "nova-3")
     ASSEMBLYAI_API_KEY: str = os.getenv("ASSEMBLYAI_API_KEY", "")
     ASSEMBLYAI_MODEL: str = os.getenv("ASSEMBLYAI_MODEL", "universal")
-    # OpenAI ASR — reuses OPENAI_API_KEY defined above under LLM settings
-    OPENAI_ASR_API_KEY: str = os.getenv("OPENAI_ASR_API_KEY", os.getenv("OPENAI_API_KEY", ""))
     OPENAI_ASR_MODEL: str = os.getenv("OPENAI_ASR_MODEL", "gpt-4o-transcribe")
     # Google Cloud Speech — credentials file path (service account JSON)
-    GOOGLE_ASR_API_KEY: str = os.getenv(
-        "GOOGLE_ASR_API_KEY", ""
-    )  # alias; prefer GOOGLE_CLOUD_CREDENTIALS
     GOOGLE_CLOUD_CREDENTIALS: str = os.getenv("GOOGLE_CLOUD_CREDENTIALS", "")
     GOOGLE_ASR_MODEL: str = os.getenv("GOOGLE_ASR_MODEL", "chirp-3")
     AZURE_SPEECH_KEY: str = os.getenv("AZURE_SPEECH_KEY", "")
     AZURE_SPEECH_REGION: str = os.getenv("AZURE_SPEECH_REGION", "eastus")
-    # AZURE_SPEECH_MODEL is the canonical name; AZURE_ASR_MODEL is the alias kept for env compat
-    AZURE_SPEECH_MODEL: str = os.getenv(
-        "AZURE_SPEECH_MODEL", os.getenv("AZURE_ASR_MODEL", "whisper")
-    )
+    # `services/asr/factory.py` reads this env var directly via `os.getenv`, bypassing
+    # this Settings field entirely — declared here only so it is discoverable, not
+    # because anything reads `settings.AZURE_ASR_MODEL` (C3).
     AZURE_ASR_MODEL: str = os.getenv("AZURE_ASR_MODEL", "whisper")
     # AWS Transcribe — credentials (can also use IAM role / instance profile)
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
@@ -1081,9 +1178,6 @@ class Settings(BaseSettings):
     SPEECHMATICS_MODEL: str = os.getenv("SPEECHMATICS_MODEL", "standard")
     GLADIA_API_KEY: str = os.getenv("GLADIA_API_KEY", "")
     GLADIA_MODEL: str = os.getenv("GLADIA_MODEL", "standard")
-    CLOUD_ASR_EXTRACT_EMBEDDINGS: bool = (
-        os.getenv("CLOUD_ASR_EXTRACT_EMBEDDINGS", "true").lower() == "true"
-    )
     DEPLOYMENT_MODE: str = os.getenv("DEPLOYMENT_MODE", "full")  # full or lite
 
     # ===== OpenSearch Toggle =====
@@ -1102,33 +1196,28 @@ class Settings(BaseSettings):
     YOUTUBE_PLAYLIST_STAGGER_ENABLED: bool = (
         os.getenv("YOUTUBE_PLAYLIST_STAGGER_ENABLED", "true").lower() == "true"
     )
-    YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS: int = _int_env("YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS", 5)
-    YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS: int = _int_env("YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS", 30)
-    YOUTUBE_PLAYLIST_STAGGER_INCREMENT: int = _int_env("YOUTUBE_PLAYLIST_STAGGER_INCREMENT", 5)
+    YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS: int = 5
+    YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS: int = 30
+    YOUTUBE_PLAYLIST_STAGGER_INCREMENT: int = 5
 
     # Pre-Download Jitter (random delay before each download starts)
     YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED: bool = (
         os.getenv("YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED", "true").lower() == "true"
     )
-    YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS: int = _int_env(
-        "YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS", 2
-    )
-    YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS: int = _int_env(
-        "YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS", 15
-    )
+    YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS: int = 2
+    YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS: int = 15
 
     # User Rate Limiting (per-user quotas to prevent abuse)
     YOUTUBE_USER_RATE_LIMIT_ENABLED: bool = (
         os.getenv("YOUTUBE_USER_RATE_LIMIT_ENABLED", "true").lower() == "true"
     )
-    YOUTUBE_USER_RATE_LIMIT_PER_HOUR: int = _int_env("YOUTUBE_USER_RATE_LIMIT_PER_HOUR", 50)
-    YOUTUBE_USER_RATE_LIMIT_PER_DAY: int = _int_env("YOUTUBE_USER_RATE_LIMIT_PER_DAY", 500)
+    YOUTUBE_USER_RATE_LIMIT_PER_HOUR: int = 50
+    YOUTUBE_USER_RATE_LIMIT_PER_DAY: int = 500
 
     # Recovery throttle: max YouTube downloads re-queued per health-check cycle
     # (every 10 min).  Keep this well below YOUTUBE_USER_RATE_LIMIT_PER_HOUR / 6
     # to leave headroom for user-initiated downloads.
-    YOUTUBE_RECOVERY_BATCH_SIZE: int = _int_env("YOUTUBE_RECOVERY_BATCH_SIZE", 3)
-
+    YOUTUBE_RECOVERY_BATCH_SIZE: int = 3
     # Master switch for automatic YouTube download retries.
     # Set to false to stop all automatic re-attempts (both Celery task retries
     # and the recovery task's periodic re-queuing).  Manual downloads via the
@@ -1199,7 +1288,6 @@ class Settings(BaseSettings):
 
     # Storage paths (container paths, mounted from host via docker-compose volumes)
     DATA_DIR: Path = Path(os.getenv("DATA_DIR", "/app/data"))
-    UPLOAD_DIR: Path = DATA_DIR / "uploads"
     MODEL_BASE_DIR: Path = Path(os.getenv("MODELS_DIR", "/app/models"))
     TEMP_DIR: Path = Path(os.getenv("TEMP_DIR", "/app/temp"))
 
@@ -1224,25 +1312,35 @@ class Settings(BaseSettings):
     def __init__(self, **data):
         super().__init__(**data)
         # Ensure directories exist
-        self.UPLOAD_DIR.mkdir(exist_ok=True, parents=True)
         self.TEMP_DIR.mkdir(exist_ok=True, parents=True)
 
-    class Config:
-        # `env_file` is resolved against the WORKING DIRECTORY, which made the whole test
-        # suite CWD-sensitive: `pytest` from `backend/` found no env file and used the
-        # values conftest exports, while the same command from the repo root loaded the
-        # operator's real `.env` into a unit-test run. That is not a cosmetic difference —
-        # it produced two false failures, one of them a security test that stopped
-        # exercising the SSRF guard and started asserting that nothing happened to be
-        # listening on a local port, i.e. a control that passed for the wrong reason.
-        #
-        # Under `TESTING` no env file is loaded at all, so both invocations see exactly the
-        # environment the fixtures set. This is also already the de-facto contract: the
-        # supported `backend/`-relative run never found a file here, which is why conftest
-        # carries its own defaults for the DB connection.
-        env_file = None if os.getenv("TESTING", "").lower() in ("1", "true") else ".env"
-        case_sensitive = True
-        extra = "ignore"  # Ignore env vars not defined in Settings (e.g., from docker-compose)
+    # `env_file` is resolved against the WORKING DIRECTORY, which made the whole test
+    # suite CWD-sensitive: `pytest` from `backend/` found no env file and used the
+    # values conftest exports, while the same command from the repo root loaded the
+    # operator's real `.env` into a unit-test run. That is not a cosmetic difference —
+    # it produced two false failures, one of them a security test that stopped
+    # exercising the SSRF guard and started asserting that nothing happened to be
+    # listening on a local port, i.e. a control that passed for the wrong reason.
+    #
+    # Under `TESTING` no env file is loaded at all, so both invocations see exactly the
+    # environment the fixtures set. This is also already the de-facto contract: the
+    # supported `backend/`-relative run never found a file here, which is why conftest
+    # carries its own defaults for the DB connection.
+    #
+    # `env_ignore_empty=True`: `.env.example` ships dozens of deliberate `VAR=` blanks
+    # meaning "use the coded default" (a convention used throughout that file). Without
+    # this, pydantic-settings treats an empty string as an explicit value and its bool/int
+    # parsers reject "" outright — this is what crashed a real fresh install on
+    # `MFA_REQUIRE_REDIS=` (empty). With it on, an empty env var is treated as unset and
+    # the field's plain Python default applies; a malformed NON-empty value (e.g. a stray
+    # inline `#` comment pydantic-settings does not strip) still raises loudly, which is
+    # the correct, deliberate behavior — see NUM_SPEAKERS below.
+    model_config = SettingsConfigDict(
+        env_file=None if os.getenv("TESTING", "").lower() in ("1", "true") else ".env",
+        case_sensitive=True,
+        extra="ignore",  # Ignore env vars not defined in Settings (e.g., from docker-compose)
+        env_ignore_empty=True,
+    )
 
 
 settings = Settings()

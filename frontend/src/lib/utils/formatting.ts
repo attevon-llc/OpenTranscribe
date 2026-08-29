@@ -79,12 +79,13 @@ function splitTime(totalSeconds: number): {
 
 /**
  * Unpadded-minute clock for inline transcript/comment/playback labels.
- * e.g. 5 -> "0:05", 65 -> "1:05", 3661 -> "1:01:01". Invalid input -> "0:00".
+ * e.g. 5 -> "0:05", 65 -> "1:05", 3661 -> "1:01:01". Invalid, `null`, or
+ * `undefined` input -> "0:00".
  * Use this where the UI shows a compact running time; use {@link formatDuration}
  * where 2-digit-padded minutes are expected (e.g. "01:05").
  */
-export function formatClock(totalSeconds: number): string {
-  const { hours, minutes, seconds } = splitTime(totalSeconds);
+export function formatClock(totalSeconds: number | null | undefined): string {
+  const { hours, minutes, seconds } = splitTime(totalSeconds ?? NaN);
   const ss = String(seconds).padStart(2, '0');
   return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${ss}` : `${minutes}:${ss}`;
 }

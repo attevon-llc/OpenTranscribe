@@ -28,6 +28,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST = REPO_ROOT / "release-manifest.txt"
 MANAGER = REPO_ROOT / "opentranscribe.sh"
+ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 pytestmark = pytest.mark.skipif(
     not MANIFEST.exists(), reason="release-manifest.txt not present in this checkout"
@@ -112,6 +113,30 @@ def test_update_full_reads_the_manifest():
     )
 
 
+def test_opentr_sh_is_not_shipped_and_the_shipped_script_covers_it():
+    """opentr.sh is deliberately absent (issue #613): its backup/restore path uses bare
+    `docker compose`, and the base compose file ALONE is an invalid project — measured
+    (`docker compose -f docker-compose.yml exec -T postgres echo hi` fails with "service
+    ... has neither an image nor a build context specified"). That exclusion is only
+    defensible while opentranscribe.sh carries the commands itself, so assert BOTH halves.
+    If someone ships opentr.sh, this test should make them say why.
+    """
+    entries = {path for path, _ in _entries()}
+    assert "opentr.sh" not in entries, (
+        "opentr.sh is now in release-manifest.txt, but its backup/restore path uses bare "
+        "`docker compose` with no -f chain — shipping it as-is gives production operators a "
+        "restore command that dies on its first `docker compose exec` (issue #613 §2.1). If "
+        "this is intentional, opentr.sh's compose calls must first be threaded through a "
+        "real -f chain the way scripts/common.sh's backup_database/restore_database are."
+    )
+
+    manager_source = MANAGER.read_text()
+    assert re.search(r"^\s*backup\|restore\)", manager_source, re.MULTILINE), (
+        "opentranscribe.sh has no backup|restore dispatch arm — with opentr.sh deliberately "
+        "unshipped, this is the ONLY production backup/restore path (issue #613)"
+    )
+
+
 def test_env_example_is_listed_for_new_key_reporting():
     """update-full diffs .env.example against the user's .env to report new keys.
 
@@ -119,3 +144,71 @@ def test_env_example_is_listed_for_new_key_reporting():
     rather than erroring — reporting it at upgrade time is the only signal.
     """
     assert ".env.example" in {path for path, _ in _entries()}
+
+
+def test_backup_overlay_is_opt_in_not_default():
+    """The backup overlay must not be selected by a value .env.example ships SET.
+
+    .env.example ships BACKUP_HOST_PATH=./backups, so keying selection off that being
+    non-empty would enable the overlay for every install — and it sets path.repo on the
+    opensearch service, force-recreating that container on every existing deployment's
+    next update. Keyed on a dedicated BACKUP_OVERLAY_ENABLED that .env.example leaves
+    COMMENTED OUT (issue #616).
+    """
+    manager_source = MANAGER.read_text(encoding="utf-8")
+    assert "BACKUP_OVERLAY_ENABLED" in manager_source, (
+        "opentranscribe.sh no longer references BACKUP_OVERLAY_ENABLED — did the backup "
+        "overlay selection get keyed back onto BACKUP_HOST_PATH?"
+    )
+    # The selection guard must not test BACKUP_HOST_PATH's presence/truthiness -- only
+    # its own dedicated toggle.
+    assert not re.search(r'\[\s*-n\s*"\$backup_host_path"\s*\]', manager_source), (
+        "opentranscribe.sh's backup overlay selection appears keyed on BACKUP_HOST_PATH "
+        "being non-empty -- .env.example ships that SET, so this would enable the "
+        "overlay (and its OpenSearch path.repo recreate) for every install by default"
+    )
+
+    assert ENV_EXAMPLE.exists(), ".env.example not present in this checkout"
+    env_example_source = ENV_EXAMPLE.read_text(encoding="utf-8")
+    assert "#BACKUP_OVERLAY_ENABLED=" in env_example_source, (
+        ".env.example does not ship BACKUP_OVERLAY_ENABLED commented out -- the backup "
+        "overlay must be opt-in, not enabled by a fresh `cp .env.example .env`"
+    )
+    assert not re.search(r"^BACKUP_OVERLAY_ENABLED=", env_example_source, re.MULTILINE), (
+        ".env.example ships an UNCOMMENTED BACKUP_OVERLAY_ENABLED -- this would enable "
+        "the backup overlay (and its OpenSearch path.repo recreate) for every fresh install"
+    )
+
+
+def test_no_shipped_script_references_scripts_lib():
+    """No script listed in release-manifest.txt may reference scripts/lib/.
+
+    scripts/lib/ (env_reader.py and friends) is dev/CI-only tooling -- it is
+    deliberately NOT in this manifest, so it never reaches a standalone
+    setup-opentranscribe.sh install. issue #590 added scripts/lib/env_reader.py and a
+    caller in two SHIPPED scripts (download-models.sh, fix-model-permissions.sh)
+    without adding env_reader.py itself to the manifest -- every real end-user install
+    called a file that does not exist on disk (issue #590/#581), silently degrading
+    (download-models.sh fell back to :latest instead of the pinned image tag) or
+    crashing outright (fix-model-permissions.sh, which runs under `set -e`).
+
+    This is the invariant that would have caught that mistake, and the guard against
+    it recurring for any future script added to the manifest: a shipped script must
+    read its .env values via scripts/common.sh's read_env_value() (also shipped),
+    never scripts/lib/env_reader.py.
+    """
+    offenders = []
+    for path, _flags in _entries():
+        full = REPO_ROOT / path
+        if full.suffix != ".sh":
+            continue
+        # A real invocation, not an explanatory comment naming the file (both
+        # download-models.sh and fix-model-permissions.sh now carry comments
+        # documenting why they DON'T call it -- those must not trip this).
+        if re.search(r"python3[^\n]*lib/env_reader\.py", full.read_text(encoding="utf-8")):
+            offenders.append(path)
+    assert not offenders, (
+        f"shipped script(s) reference scripts/lib/, which is dev/CI-only and never "
+        f"reaches a standalone install: {offenders}. Use scripts/common.sh's "
+        f"read_env_value() instead (issue #590/#581)."
+    )

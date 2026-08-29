@@ -76,11 +76,6 @@ def get_refreshed_object(db: Session, model_class, obj_id: int):
     """Get a fresh copy of an object from the database."""
     # Handles detached objects in Celery tasks
     # Provides fallback session creation
-
-def refresh_session_object(obj, session=None):
-    """Refresh a detached object with a new session if needed."""
-    # Re-attaches objects to active sessions
-    # Handles session state management
 ```
 
 **Usage:**

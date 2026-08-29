@@ -198,8 +198,10 @@ describe('formatClock', () => {
     expect(formatClock(3725)).toBe('1:02:05');
   });
 
-  it('handles null and negative input', () => {
-    expect(formatClock(null)).toBe('0:00');
+  it('handles negative input', () => {
+    // The null case is pinned in formatting.test.ts — formatClock is a
+    // re-export of formatting.ts's implementation, which is where the real
+    // behavior lives.
     expect(formatClock(-10)).toBe('0:00');
   });
 });

@@ -152,7 +152,7 @@ def test_no_db_scope_open_during_model_load_and_inference(
 
     monkeypatch.setattr(sat, "_run_gender_inference_parallel", fake_inference)
 
-    result = sat._detect_speaker_attributes(str(media_file.uuid), normal_user.id)
+    result = sat._detect_speaker_attributes(str(media_file.uuid), normal_user.id, "test-task-id")
 
     assert result["status"] == "success", result
 
@@ -193,7 +193,7 @@ def test_scope_is_released_when_inference_fails(db_session, normal_user, tracked
 
     monkeypatch.setattr(sat, "_run_gender_inference_parallel", boom)
 
-    result = sat._detect_speaker_attributes(str(media_file.uuid), normal_user.id)
+    result = sat._detect_speaker_attributes(str(media_file.uuid), normal_user.id, "test-task-id")
 
     assert result["status"] == "error"
     assert dict(tracked.depth_during_slow_phase)["gender_inference"] == 0

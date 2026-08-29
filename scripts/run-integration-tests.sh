@@ -172,6 +172,22 @@ run_phase_watching_skips() {
     fi
 }
 
+# 0. Signature-scoped sweep of orphaned test data (issue #629) — unconditional (not
+# gated behind --cleanup, unlike phase 10's dry-run report below), so leftovers from a
+# PREVIOUS killed run are cleared before this run adds its own. Deletes Tier A
+# (unambiguous-signature) candidates only; escape hatch: OT_SKIP_TEST_DATA_SWEEP=1.
+# Registers this run as a live testrun marker first, so anything IT creates is
+# protected by the same liveness cutoff that protects any other concurrently-running
+# suite's data.
+source "$PROJECT_ROOT/scripts/testrun-registry.sh"
+testrun_begin
+if [ "${OT_SKIP_TEST_DATA_SWEEP:-}" = "1" ]; then
+    echo -e "${YELLOW}--- Test-data sweep: skipped (OT_SKIP_TEST_DATA_SWEEP=1) ---${NC}\n"
+else
+    run_phase "Test-data sweep (Tier A)" \
+        "$VENV_PY" "$PROJECT_ROOT/scripts/cleanup-test-data.py" --execute-unambiguous
+fi
+
 # 1. Ungated suite (default config: -n auto, -m 'not integration')
 run_phase "Unit/API suite" "$VENV_PY" -m pytest tests/ "${COV_ARGS[@]}"
 
@@ -242,10 +258,20 @@ run_phase "Dependency parity: venv vs container" \
 # this gate is the ONLY place they run — they were silently ungated before #297.
 # Each module still carries its own runtime skip guard, so this is a no-op on a
 # machine without CUDA; pass --skip-gpu to drop the phase entirely.
+#
+# ⚠️ This phase runs in the VENV, so the three container-only diarization suites
+# (test_diarizer_lifecycle / test_diarization_perf_gates / test_diarization_regression)
+# report as SKIPS here, not passes: their `ensure_container` fixture needs /.dockerenv,
+# and their audio/RTTM fixtures live at /app paths that only exist inside the benchmark
+# container. They have their own entry point — see the pointer printed below.
 if $RUN_GPU; then
     run_phase "GPU-marked tests" \
         "$VENV_PY" -m pytest tests/ -o addopts="" -m gpu -q --tb=short \
         --timeout="${GPU_TEST_TIMEOUT:-1800}"
+
+    echo -e "${YELLOW}NOTE: the diarization lifecycle/perf-gate/RTTM-regression suites skip in the${NC}"
+    echo -e "${YELLOW}      phase above (container-only). Run them with:${NC}"
+    echo -e "${YELLOW}        ./scripts/run-diarization-gpu-tests.sh${NC}"
 
     # The diar-native sidecar is a separate container running a Rust binary, so no
     # pytest module can inspect it — its execution provider is only observable from

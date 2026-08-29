@@ -5,6 +5,48 @@
   --navbar-height: 60px;
   --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px));
 
+  /* ─────────────────────────────────────────────────────────────────────
+     z-index scale (H5). Theme-independent, so it lives here rather than in
+     a light/dark block. There is no enforcement mechanism — this is a
+     documented vocabulary, not a lint rule — so treat "which tier is this"
+     as a real design decision, not a bigger-number-wins escalation.
+
+     Only BaseModal's internal 3-way self-disagreement, the ~9 files that had
+     copy-pasted the bare literal `1300`, and the Toast/ClassificationBanner
+     pair were migrated onto these tokens. The rest of the codebase's ~95 raw
+     z-index values are UNCHANGED — migrate incrementally, matching each
+     value to the nearest tier below rather than inventing a new number:
+       1           → --z-base     (nudge one element above a local sibling —
+                                    not a real stacking-context competition)
+       10          → --z-sticky   (sticky headers/footers within a scroll
+                                    container, e.g. GalleryHeader)
+       20–999      → --z-dropdown (small local floating panels; most of this
+                                    band is already effectively `1000`)
+       1000        → --z-dropdown (app-wide floating panels: dropdown menus,
+                                    autocomplete, filter panels, the floating
+                                    preview player)
+       1099–1200   → --z-navbar   (app chrome: Navbar, mobile nav drawer,
+                                    ConnectionStatusBanner)
+       1300        → --z-modal    (BaseModal and every modal dialog)
+       9998–9999   → --z-toast    (toast notifications, the classification
+                                    banner strip, UploadManager)
+       10000       → --z-critical (session/consent overlays and portaled
+                                    menus that must clear an open modal —
+                                    LoginBanner, the classification consent
+                                    overlay, SegmentSpeakerDropdown's portal)
+       99997–99999 → --z-max      (fullscreen video player controls — must
+                                    clear the browser's native fullscreen
+                                    chrome, not just the app's own layers)
+     ───────────────────────────────────────────────────────────────────── */
+  --z-base: 1;
+  --z-sticky: 10;
+  --z-dropdown: 1000;
+  --z-navbar: 1200;
+  --z-modal: 1300;
+  --z-toast: 9999;
+  --z-critical: 10000;
+  --z-max: 99999;
+
   /* Default Light Theme */
   --primary-color: #3b82f6; /* Original blue color */
   --primary-color-rgb: 59, 130, 246; /* RGB values for primary color */

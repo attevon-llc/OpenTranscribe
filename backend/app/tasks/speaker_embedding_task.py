@@ -1,9 +1,11 @@
 """
 Speaker embedding extraction and reassignment tasks.
 
-Handles GPU-intensive voice embedding extraction after transcription
-completes, and embedding updates when segments are manually reassigned
-to different speakers.
+Handles voice embedding extraction after transcription completes (routed to
+the CPU queue — ``SpeakerEmbeddingService`` resolves its device via
+``hardware_detection.py`` and needs no GPU diarization pass, see issue #584),
+and embedding updates when segments are manually reassigned to different
+speakers.
 """
 
 import contextlib

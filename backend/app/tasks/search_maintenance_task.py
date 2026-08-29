@@ -10,7 +10,9 @@ from typing import Any
 
 from app.core.celery import celery_app
 from app.core.config import settings
+from app.core.constants import NEURAL_BOOTSTRAP_LOCK_TIMEOUT_SECONDS
 from app.core.constants import CPUPriority
+from app.core.constants import UtilityPriority
 from app.core.redis import get_redis
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.utils.task_lock import with_task_lock
@@ -99,6 +101,21 @@ def _report_embedding_provenance(stats: dict[str, int | bool | str]) -> None:
         logger.info(survey.describe())
 
 
+def _report_neural_bootstrap_state(stats: dict[str, int | bool | str]) -> None:
+    """Annotate the 6-hourly maintenance log with the neural bootstrap's health (#625).
+
+    This task and the dedicated ``neural_search_bootstrap`` beat task (every 10 minutes) are
+    independent — this call is a cheap probe added to an existing log line, not a second
+    self-heal mechanism.
+
+    Args:
+        stats: The maintenance stats dict, annotated in place.
+    """
+    from app.services.search.neural_bootstrap import neural_search_ready
+
+    stats["neural_bootstrap"] = "ok" if neural_search_ready() else "degraded"
+
+
 def _find_unindexed_by_user(
     completed_files: list[Any], indexed_uuids: set[str]
 ) -> dict[int, list[str]]:
@@ -167,6 +184,34 @@ def search_index_maintenance_task() -> dict[str, Any]:
         ...}`` when another pass already holds the lock.
     """
     return _run_search_maintenance()
+
+
+#: Lock key for the neural-search bootstrap self-heal (issue #625). The recovery arm can
+#: block up to ~420s inside ``ensure_model_deployed``, so the lock timeout must exceed that
+#: worst case by a wide margin — see NEURAL_BOOTSTRAP_LOCK_TIMEOUT_SECONDS's docstring in
+#: constants.py.
+NEURAL_BOOTSTRAP_LOCK_KEY = "neural_search_bootstrap"
+
+
+@celery_app.task(name="neural_search_bootstrap", priority=UtilityPriority.ROUTINE)
+@with_task_lock(NEURAL_BOOTSTRAP_LOCK_KEY, timeout=NEURAL_BOOTSTRAP_LOCK_TIMEOUT_SECONDS)
+def neural_search_bootstrap_task() -> dict[str, Any]:
+    """Self-heal neural search every 10 minutes (issue #625).
+
+    Runs the same idempotent ``neural_bootstrap.ensure_neural_search_bootstrap`` the startup
+    fast path in ``app.main`` runs once. A healthy deployment pays only the cheap probe on
+    every tick; a degraded one retries with exponential backoff (capped at
+    ``NEURAL_BOOTSTRAP_MAX_BACKOFF_SECONDS``) and never gives up — see
+    ``backend/app/services/search/CLAUDE.md``'s "The bootstrap self-heals" section for why
+    this exists as a beat task rather than a longer startup ceiling.
+
+    Returns:
+        Dict from ``neural_bootstrap.run_bootstrap_tick``, or ``with_task_lock``'s
+        ``{"skipped": True, ...}`` when another tick already holds the lock.
+    """
+    from app.services.search.neural_bootstrap import run_bootstrap_tick
+
+    return run_bootstrap_tick()
 
 
 def _dispatch_facts_backfill(
@@ -305,6 +350,7 @@ def _run_search_maintenance() -> dict[str, Any]:
                 return stats
             stats["indexed_files"] = len(indexed_uuids)
             _report_embedding_provenance(stats)
+            _report_neural_bootstrap_state(stats)
 
             unindexed_by_user = _find_unindexed_by_user(completed_files, indexed_uuids)
             total_unindexed = sum(len(uuids) for uuids in unindexed_by_user.values())

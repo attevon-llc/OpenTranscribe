@@ -262,8 +262,17 @@ class TestThroughputBenchmark:
 
         # Phase 3: Process all prepared files through the pipeline
         if not prepared_files:
-            print("  No files were prepared successfully.")
-            return
+            if skipped == len(sample):
+                # Every sampled file legitimately has no speakers to benchmark — a real
+                # (if unhelpful) environment state, not a broken one.
+                pytest.skip(
+                    f"None of the {len(sample)} sampled completed files have speakers to benchmark"
+                )
+            pytest.fail(
+                f"No files were prepared successfully out of {len(sample)} sampled "
+                f"({skipped} skipped for no speakers, {len(sample) - skipped} hit I/O "
+                "errors — see the per-file log above for the exceptions)"
+            )
 
         runner = MultiModelRunner([EmbeddingModelAdapter(embedding_service)])
 

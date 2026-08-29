@@ -22,6 +22,12 @@ class LLMProvider(StrEnum):
     OLLAMA = "ollama"
     ANTHROPIC = "anthropic"
     OPENROUTER = "openrouter"
+    #: AWS-native, reached through boto3's Converse API (see
+    #: ``services/llm_bedrock.py``). No ``api_key``/``base_url`` — credentials resolve
+    #: via boto3's standard chain (IAM role, profile, or environment) and the AWS
+    #: region is a deployment-level setting (``BEDROCK_REGION``/``AWS_REGION``), not a
+    #: per-configuration field.
+    BEDROCK = "bedrock"
     CUSTOM = "custom"
     # Legacy - kept for backward compatibility with existing database records
     CLAUDE = "claude"  # Deprecated: use ANTHROPIC instead

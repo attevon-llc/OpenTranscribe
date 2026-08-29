@@ -12,7 +12,9 @@
   import Spinner from '$components/ui/Spinner.svelte';
 
   export let file: MediaFileDetail | null = null;
-  export let canEdit = true;
+  // Default-deny: the real page (routes/files/[id]/+page.svelte) always passes
+  // a computed value; this default only governs callers that omit the prop.
+  export let canEdit = false;
   export let llmAvailable = false;
   export let summaryGenerating = false;
   export let generatingSummary = false;

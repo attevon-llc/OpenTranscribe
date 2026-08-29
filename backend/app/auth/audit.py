@@ -50,6 +50,11 @@ class AuditEventType(StrEnum):
     AUTH_ACCOUNT_UNLOCK = "auth.account.unlock"
     AUTH_ACCOUNT_DISABLED = "auth.account.disabled"
     AUTH_ACCOUNT_EXPIRED = "auth.account.expired"
+    # Distinct from AUTH_ACCOUNT_EXPIRED: the AC-2 inactivity sweep declined to
+    # deactivate a super_admin candidate (it would have zeroed active
+    # super_admins). No account state changed here — see
+    # `services/account_lifecycle_service.py`.
+    AUTH_ACCOUNT_EXPIRATION_SKIPPED = "auth.account.expiration_skipped"
 
     # Token events (event type names, not passwords)
     AUTH_TOKEN_REFRESH = "auth.token.refresh"  # noqa: S105 # nosec B105

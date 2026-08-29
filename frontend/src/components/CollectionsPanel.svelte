@@ -29,6 +29,7 @@
   let showShareModal = false;
   let shareModalCollectionUuid = '';
   let shareModalCollectionName = '';
+  let shareModalCanManage = false;
   let loading = false;
   let showCreateModal = false;
   let showEditModal = false;
@@ -60,10 +61,15 @@
     selection_size: number;
   }> = [];
   let currentLoading = false;
+  // Guards against an earlier (slower) loadCurrentCollections() call resolving
+  // AFTER a later (faster) one and overwriting the chips with stale data for a
+  // previous selection — same pattern as TagManagerModal's fileRequestId.
+  let currentCollectionsRequestId = 0;
 
   $: isSingleFile = selectedMediaIds.length === 1;
 
   async function loadCurrentCollections() {
+    const requestId = ++currentCollectionsRequestId;
     if (viewMode !== 'add' || selectedMediaIds.length === 0) {
       currentCollections = [];
       return;
@@ -73,12 +79,14 @@
       const params = new URLSearchParams();
       for (const uuid of selectedMediaIds) params.append('file_uuids', uuid);
       const response = await axiosInstance.get('/collections/for-files', { params });
+      if (requestId !== currentCollectionsRequestId) return;
       currentCollections = response.data;
     } catch {
+      if (requestId !== currentCollectionsRequestId) return;
       // Non-fatal: adding still works without the chips.
       currentCollections = [];
     } finally {
-      currentLoading = false;
+      if (requestId === currentCollectionsRequestId) currentLoading = false;
     }
   }
 
@@ -180,6 +188,10 @@
   function openShareModal(collection: Collection) {
     shareModalCollectionUuid = collection.uuid;
     shareModalCollectionName = collection.name;
+    // Backend already computes ownership per collection (`my_permission`,
+    // default 'owner' when absent). Only the owner may manage shares
+    // (`_require_collection_owner`) — mirror that here instead of assuming true.
+    shareModalCanManage = (collection.my_permission ?? 'owner') === 'owner';
     showShareModal = true;
   }
 
@@ -539,6 +551,7 @@
   <ShareCollectionModal
     collectionUuid={shareModalCollectionUuid}
     collectionName={shareModalCollectionName}
+    canManage={shareModalCanManage}
     on:shared={handleShared}
     on:close={() => showShareModal = false}
   />

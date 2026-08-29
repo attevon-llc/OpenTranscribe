@@ -95,6 +95,7 @@ from app.services.account_security_service import audit_role_change
 from app.services.account_security_service import audit_user_deleted
 from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import revoke_all_sessions
+from app.utils.stats_helpers import format_bytes
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -301,14 +302,6 @@ def get_gpu_usage():
                 "memory_percent": "Unknown",
             }
         ]
-
-
-def format_bytes(byte_count):
-    """Format bytes to a human-readable string"""
-    for unit in ["B", "KB", "MB", "GB", "TB"]:
-        if byte_count < 1024 or unit == "TB":
-            return f"{byte_count:.2f} {unit}"
-        byte_count /= 1024
 
 
 def _delete_user_speakers(db: Session, user_id: int) -> None:

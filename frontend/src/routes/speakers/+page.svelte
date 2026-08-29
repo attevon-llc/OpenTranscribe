@@ -28,7 +28,8 @@
     uploadProfileAvatar,
     deleteProfileAvatar,
     confirmProfileGender,
-    unassignSpeakers
+    unassignSpeakers,
+    RENAME_PROPAGATION_TIMEOUT_MS
   } from '$lib/api/speakerClusters';
   import type { SpeakerMediaPreviewData } from '$lib/api/speakerClusters';
   import type {
@@ -38,6 +39,7 @@
     SpeakerProfile
   } from '$lib/types/speakerCluster';
   import { apiCache } from '$lib/apiCache';
+  import { createDebouncedHandler } from '$lib/utils/debounce';
 
   type Tab = 'clusters' | 'profiles' | 'inbox';
   // Deep link from elsewhere in the app — currently the file-detail speaker
@@ -106,7 +108,10 @@
   let inboxActionInProgress: Set<string> = new Set();
 
   // Search debounce
-  let searchTimeout: ReturnType<typeof setTimeout>;
+  const debouncedClusterSearch = createDebouncedHandler(() => {
+    clusterPage = 1;
+    loadClusters();
+  }, 300);
 
   // Delete modal state
   let showDeleteModal = false;
@@ -146,7 +151,6 @@
   // must not leave the indicator stuck forever).
   let pendingRenamePropagations = 0;
   let renamePropagationTimers: ReturnType<typeof setTimeout>[] = [];
-  const RENAME_PROPAGATION_TIMEOUT_MS = 20000;
 
   function beginRenamePropagation() {
     pendingRenamePropagations += 1;
@@ -229,7 +233,7 @@
     window.removeEventListener('clustering-complete', handleClusteringComplete);
     window.removeEventListener('clustering-file-complete', handleClusteringFileComplete);
     window.removeEventListener('speaker-rename-propagation', handleRenamePropagation);
-    clearTimeout(searchTimeout);
+    debouncedClusterSearch.cleanup();
     if (reclusterTimeout) clearTimeout(reclusterTimeout);
     renamePropagationTimers.forEach(clearTimeout);
   });
@@ -780,11 +784,7 @@
   // --- Search debounce ---
 
   function handleClusterSearch() {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => {
-      clusterPage = 1;
-      loadClusters();
-    }, 300);
+    debouncedClusterSearch.trigger();
   }
 
   // --- Keyboard shortcuts ---
@@ -1152,7 +1152,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1300;
+    z-index: var(--z-modal);
     overflow: hidden;
     overscroll-behavior: none;
   }

@@ -35,6 +35,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import requests
 from sqlalchemy.orm import Session
@@ -44,6 +45,9 @@ from app.core.constants import LLM_CONTEXT_WINDOW_PROBE_TIMEOUT_S
 from app.core.enums import ContextWindowStatus
 from app.services.llm_service import LLMConfig
 from app.services.llm_service import LLMProvider
+
+if TYPE_CHECKING:
+    from app.utils.url_validation import PinnedTarget
 
 logger = logging.getLogger(__name__)
 
@@ -94,15 +98,53 @@ def discovery_key(provider: str, base_url: str | None, model: str) -> str:
     return f"{LLM_CONTEXT_WINDOW_KEY_PREFIX}{digest}"
 
 
+def _pin_or_refuse(url: str, purpose: str) -> ContextWindowProbeResult | PinnedTarget:
+    """Validate+pin *url*, matching ``llm_settings.py``'s ``_pin_llm_endpoint``.
+
+    Both discovery probes take a user-controlled ``base_url`` and fetch it server-side
+    with no user content — the exact SSRF shape ``_assert_safe_llm_endpoint``/
+    ``_pin_llm_endpoint`` exist to close everywhere else an LLM endpoint is dialled
+    (issue #284 A0.1, and this module was the one sibling that stayed unguarded — a
+    followup to the mediacms.py SSRF fix in the same family). Validate-then-fetch
+    would let ``requests`` re-resolve the hostname a second time, so a host whose DNS
+    alternates public/loopback would pass the check and still connect wherever the
+    second resolution lands; pinning removes that window.
+
+    Returns a :class:`ContextWindowProbeResult` (UNREACHABLE) to return directly when
+    the URL must be refused, else the pinned target to dial.
+    """
+    from app.core.config import settings
+    from app.utils.url_validation import resolve_pinned_target
+
+    target, reason = resolve_pinned_target(url, allow_private=settings.LLM_ALLOW_PRIVATE_ENDPOINTS)
+    if target is None:
+        logger.warning("Blocked %s to %r: %s", purpose, url, reason)
+        return ContextWindowProbeResult(
+            status=ContextWindowStatus.UNREACHABLE,
+            detail="the configured endpoint could not be used for discovery",
+        )
+    return target
+
+
 def _probe_vllm(config: LLMConfig) -> ContextWindowProbeResult:
     """Read ``max_model_len`` off the OpenAI-compatible ``/v1/models`` list."""
+    from app.utils.url_validation import pinned_requests_session
+
     base = (config.base_url or "").rstrip("/")
-    headers = {}
+    target = _pin_or_refuse(f"{base}/models", "context-window probe (vLLM)")
+    if isinstance(target, ContextWindowProbeResult):
+        return target
+
+    headers = dict(target.headers)
     if config.api_key:
         headers["Authorization"] = f"Bearer {config.api_key}"
-    response = requests.get(
-        f"{base}/models", headers=headers, timeout=LLM_CONTEXT_WINDOW_PROBE_TIMEOUT_S
-    )
+    with pinned_requests_session(target) as session:
+        response = session.get(
+            target.url,
+            headers=headers,
+            timeout=LLM_CONTEXT_WINDOW_PROBE_TIMEOUT_S,
+            allow_redirects=False,
+        )
     response.raise_for_status()
     entries = response.json().get("data") or []
     for entry in entries:
@@ -133,13 +175,22 @@ def _probe_ollama(config: LLMConfig) -> ContextWindowProbeResult:
     Ollama's OpenAI-compatible surface lives under ``/v1`` but ``/api/show`` is
     served at the root, so the ``/v1`` suffix is stripped before dialling.
     """
+    from app.utils.url_validation import pinned_requests_session
+
     base = (config.base_url or "").rstrip("/")
     root = base[: -len("/v1")] if base.endswith("/v1") else base
-    response = requests.post(
-        f"{root}/api/show",
-        json={"model": config.model},
-        timeout=LLM_CONTEXT_WINDOW_PROBE_TIMEOUT_S,
-    )
+    target = _pin_or_refuse(f"{root}/api/show", "context-window probe (Ollama)")
+    if isinstance(target, ContextWindowProbeResult):
+        return target
+
+    with pinned_requests_session(target) as session:
+        response = session.post(
+            target.url,
+            json={"model": config.model},
+            headers=target.headers,
+            timeout=LLM_CONTEXT_WINDOW_PROBE_TIMEOUT_S,
+            allow_redirects=False,
+        )
     if response.status_code == 404:
         # The server answered; it just has no such model (verified live: Ollama
         # 404s /api/show for an unknown name). "Answered without the model" is

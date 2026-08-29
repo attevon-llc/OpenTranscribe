@@ -124,6 +124,7 @@ const sidebars: SidebarsConfig = {
         'developer-guide/rag-prior-art-and-packages',
         'developer-guide/contributing',
         'developer-guide/testing',
+        'developer-guide/full-test-matrix',
         'developer-guide/releasing',
         'developer-guide/ffmpeg-wasm-build',
       ],

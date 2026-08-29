@@ -193,6 +193,18 @@ def test_set_string_backend_persists(client, super_admin_token_headers, db_sessi
     assert entry["source"] == "db"
 
 
+def test_unknown_transcriber_backend_is_400(client, super_admin_token_headers):
+    """E5: transcriber_backend had NO validation at all — any string returned 200
+    and persisted, unlike diarizer_backend six lines away in the same handler."""
+    resp = client.post(
+        f"{_BASE}/update",
+        json={"transcriber_backend": "anything"},
+        headers=super_admin_token_headers,
+    )
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+    assert "Unknown transcriber_backend" in resp.json()["detail"]
+
+
 # ---------------------------------------------------------------------------
 # Update validation
 # ---------------------------------------------------------------------------

@@ -221,9 +221,12 @@ class TestLocalLogin:
         # Wait for gallery content to load (gallery container or file cards)
         page.wait_for_load_state("networkidle", timeout=10000)
 
-        # Verify we have a main content area
-        body_text = page.text_content("body")
-        assert body_text is not None
+        # `page.text_content("body")` is not None on ANY document, including a blank
+        # one and a crash page, so the test's only assertion could not fail. The gallery
+        # is the thing named in the test id: assert the toolbar it renders, and the user
+        # menu that only appears once the session is real.
+        expect(page.locator(".gallery-action-buttons")).to_be_visible(timeout=15000)
+        expect(page.locator(".user-button").first).to_be_visible(timeout=15000)
 
     def test_local_login_invalid_password(self, page: Page, base_url: str):
         """Bad local credentials are rejected.
@@ -279,6 +282,7 @@ class TestLocalLogin:
 # ===== LDAP Login Tests =====
 
 
+@pytest.mark.ldap
 class TestLDAPLogin:
     """Test LDAP login flow through the browser.
 
@@ -375,6 +379,7 @@ class TestLDAPLogin:
 # ===== OIDC Login Tests =====
 
 
+@pytest.mark.keycloak
 class TestOIDCLogin:
     """Test Keycloak/OIDC login button and redirect flow.
 
@@ -485,10 +490,14 @@ class TestPKIButton:
         with page.expect_response("**/api/auth/pki/authenticate") as response_info:
             pki_button.click()
 
-        # Without a real client cert, this will fail with 401
-        # But the API call should happen
+        # Without a real client cert, this will fail with 401 — but the API call must
+        # happen. Was `in (200, 401)`, which is the test's own docstring's contract
+        # asserting BOTH the outcome it names ("fail with 401") and its opposite; pin
+        # the one the docstring actually claims.
         response = response_info.value
-        assert response.status in (200, 401), f"Expected 200 or 401, got {response.status}"
+        assert response.status == 401, (
+            f"Expected 401 (no client cert presented), got {response.status}"
+        )
 
     def test_pki_api_responds(self, page: Page, base_url: str):
         """PKI API endpoint is reachable from the browser."""

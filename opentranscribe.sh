@@ -7,6 +7,47 @@ RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Container user ownership. appuser in the backend image is `useradd -u 1000` (UID pinned)
+# but `groupadd -r appuser` (system group, no GID pin) — it lands at gid 999, so a chown to
+# 1000:1000 sets a group that does not exist in the image (issue #580). Kept in sync with
+# CONTAINER_UID_GID in scripts/common.sh; this script ships standalone to end users, so it
+# defines its own.
+CONTAINER_UID_GID="${CONTAINER_UID_GID:-1000:999}"
+
+# scripts/common.sh ships with every install (release-manifest.txt:52) and holds the ONE
+# implementation of the database backup/restore path (#599/#600/#610). Sourced here rather
+# than reimplemented so a production install cannot drift from the dev one — issue #613.
+#
+# Conditional on purpose: an install that predates the manifest entry may not have it yet,
+# and every OTHER command must keep working without it. The backup/restore arms check for
+# the functions explicitly (require_db_helpers) and fail with a remedy.
+#
+# Position matters. common.sh also defines fix_model_cache_permissions(); sourcing BEFORE
+# this script's own definition means the local one still wins (bash: last definition wins),
+# preserving today's behaviour exactly. Pinned by a test — do not move this below the
+# fix_model_cache_permissions definition.
+if [ -f ./scripts/common.sh ]; then
+    # shellcheck source=scripts/common.sh
+    . ./scripts/common.sh
+fi
+
+# Fallback definition: common.sh is sourced conditionally above (an install predating
+# release-manifest.txt:52 may not have it), and every non-DB command must keep working
+# without it. Identical body; common.sh's wins when present. Same standalone-shipping
+# rationale as CONTAINER_UID_GID above.
+if ! declare -F read_env_value >/dev/null 2>&1; then
+    read_env_value() {
+        local key="$1" env_file="${2:-.env}"
+        [ -f "$env_file" ] || { echo ""; return 0; }
+        grep -E "^${key}=" "$env_file" 2>/dev/null \
+            | head -1 \
+            | cut -d= -f2- \
+            | sed -E 's/[[:space:]]+#.*$//' \
+            | tr -d ' "' \
+            || true
+    }
+fi
+
 function show_help {
     echo -e "${BLUE}OpenTranscribe Management Script${NC}"
     echo ""
@@ -21,6 +62,8 @@ function show_help {
     echo "  update        Pull latest Docker images and restart"
     echo "  update-full   Update images AND configuration files"
     echo "  clean         Remove all volumes and data (CAUTION)"
+    echo "  backup        Backup the database (optional --encrypt)"
+    echo "  restore       Restore the database from a backup file (see --help below)"
     echo "  shell [svc]   Open shell in container (default: backend)"
     echo "  config        Show current configuration"
     echo "  health        Check service health"
@@ -33,6 +76,8 @@ function show_help {
     echo "  ./opentranscribe.sh logs backend"
     echo "  ./opentranscribe.sh update           # Update containers only"
     echo "  ./opentranscribe.sh update-full      # Update everything"
+    echo "  ./opentranscribe.sh backup           # Dump the database to ./backups"
+    echo "  ./opentranscribe.sh restore --yes ./backups/opentranscribe_backup_....sql"
     echo "  ./opentranscribe.sh setup-ssl"
     echo ""
 }
@@ -51,11 +96,26 @@ check_environment() {
     fi
 }
 
+# The two DB commands are the only ones that need scripts/common.sh. Everything else still
+# works standalone, so the source above is unconditional but this check is not — an install
+# whose common.sh predates issue #613 (or is somehow missing) gets a remedy instead of an
+# "unknown function" crash mid-backup/restore.
+require_db_helpers() {
+    if ! declare -F backup_database >/dev/null || ! declare -F restore_database >/dev/null; then
+        echo -e "${RED}❌ scripts/common.sh is missing or too old — it provides the database${NC}"
+        echo -e "${RED}   backup/restore implementation.${NC}"
+        echo -e "${YELLOW}   Fix with:  ./opentranscribe.sh update-full${NC}"
+        echo -e "${YELLOW}   Or fetch it directly:${NC}"
+        echo -e "     mkdir -p scripts && curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/scripts/common.sh -o scripts/common.sh && chmod +x scripts/common.sh"
+        exit 1
+    fi
+}
+
 fix_model_cache_permissions() {
     # Read MODEL_CACHE_DIR from .env if it exists
     local MODEL_CACHE_DIR=""
     if [ -f .env ]; then
-        MODEL_CACHE_DIR=$(grep 'MODEL_CACHE_DIR' .env | grep -v '^#' | cut -d'#' -f1 | cut -d'=' -f2 | tr -d ' "' | head -1)
+        MODEL_CACHE_DIR=$(read_env_value MODEL_CACHE_DIR)
     fi
 
     # Use default if not set
@@ -77,14 +137,14 @@ fix_model_cache_permissions() {
 
         # Try using Docker to fix permissions (works without sudo)
         if command -v docker &> /dev/null; then
-            if docker run --rm -v "$MODEL_CACHE_DIR:/models" busybox:latest sh -c "chown -R 1000:1000 /models && chmod -R 755 /models" > /dev/null 2>&1; then
+            if docker run --rm -v "$MODEL_CACHE_DIR:/models" busybox:latest sh -c "chown -R $CONTAINER_UID_GID /models && chmod -R 755 /models" > /dev/null 2>&1; then
                 echo -e "${GREEN}✅ Model cache permissions fixed using Docker${NC}"
                 return 0
             fi
         fi
 
         # Fallback: try direct chown if user has permissions
-        if chown -R 1000:1000 "$MODEL_CACHE_DIR" > /dev/null 2>&1 && chmod -R 755 "$MODEL_CACHE_DIR" > /dev/null 2>&1; then
+        if chown -R "$CONTAINER_UID_GID" "$MODEL_CACHE_DIR" > /dev/null 2>&1 && chmod -R 755 "$MODEL_CACHE_DIR" > /dev/null 2>&1; then
             echo -e "${GREEN}✅ Model cache permissions fixed${NC}"
             return 0
         fi
@@ -130,8 +190,7 @@ force_cpu_mode_requested() {
     fi
     if [ -f .env ]; then
         local value
-        value=$(grep '^FORCE_CPU_MODE=' .env 2>/dev/null \
-            | cut -d'=' -f2 | tr -d ' "' | head -1)
+        value=$(read_env_value FORCE_CPU_MODE)
         [ "$value" = "true" ]
         return
     fi
@@ -166,9 +225,7 @@ get_compose_files() {
 
     # Add NGINX overlay if NGINX_SERVER_NAME is configured
     local nginx_server_name=""
-    if [ -f .env ]; then
-        nginx_server_name=$(grep '^NGINX_SERVER_NAME=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
-    fi
+    nginx_server_name=$(read_env_value NGINX_SERVER_NAME)
 
     if [ -n "$nginx_server_name" ] && [ -f docker-compose.nginx.yml ]; then
         # Check for SSL certificates
@@ -185,6 +242,22 @@ get_compose_files() {
             echo -e "${YELLOW}   Generate with: ./opentranscribe.sh setup-ssl${NC}" >&2
             echo -e "${YELLOW}   Continuing without HTTPS...${NC}" >&2
         fi
+    fi
+
+    # Add the scheduled-backup overlay when explicitly opted into. Deliberately keyed on a
+    # DEDICATED toggle, not on BACKUP_HOST_PATH being non-empty: .env.example ships
+    # BACKUP_HOST_PATH=./backups SET, so a non-empty test would enable this for every
+    # install by default — and this overlay also sets `path.repo` on the opensearch
+    # service, so that would force-recreate OpenSearch on every existing deployment's
+    # next `update`. Same trap .env.example already documents for MEDIA_NAS_PATH (#597).
+    # BACKUP_HOST_PATH stays what it has always been: WHERE the mount points, not WHETHER.
+    local backup_overlay_enabled=""
+    backup_overlay_enabled=$(read_env_value BACKUP_OVERLAY_ENABLED)
+    if [ "$backup_overlay_enabled" = "true" ] && [ -f docker-compose.backup.yml ]; then
+        compose_files="$compose_files -f docker-compose.backup.yml"
+        echo -e "${BLUE}💾 Scheduled-backup overlay enabled (BACKUP_OVERLAY_ENABLED=true)${NC}" >&2
+        echo -e "${BLUE}   Destination: ${BACKUP_HOST_PATH:-./backups} → /backups${NC}" >&2
+        echo -e "${YELLOW}   Note: this also sets path.repo on OpenSearch — the opensearch container will be recreated.${NC}" >&2
     fi
 
     echo "$compose_files"
@@ -206,11 +279,15 @@ preflight_upgrade_env() {
 
     # Relaxed environments opt out of all of this, exactly as the backend does.
     local env_name
-    env_name=$(grep -E '^ENVIRONMENT=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' | tr '[:upper:]' '[:lower:]' | head -1)
+    env_name=$(read_env_value ENVIRONMENT | tr '[:upper:]' '[:lower:]')
     case "$env_name" in
         development|dev|testing|test|local) return 0 ;;
     esac
 
+    # REDIS_PASSWORD / JWT_SECRET_KEY / ENCRYPTION_KEY deliberately keep the raw
+    # `cut -d= -f2-` form rather than read_env_value: a secret may legitimately
+    # contain a `#` (even ` #`), and read_env_value's inline-comment stripping
+    # would silently truncate it.
     local redis_pw
     redis_pw=$(grep -E '^REDIS_PASSWORD=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
     [ -z "$redis_pw" ] && problems+=("REDIS_PASSWORD is empty or missing")
@@ -309,7 +386,7 @@ perform_phased_restart() {
     local compose_files="$1"
     local backend_port waited max_wait state
 
-    backend_port=$(grep -E '^BACKEND_PORT=' .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' | head -1)
+    backend_port=$(read_env_value BACKEND_PORT)
     backend_port="${backend_port:-5174}"
 
     # Phase 1: infrastructure + backend only, no dependents.
@@ -377,9 +454,7 @@ show_access_info() {
 
     # Check if NGINX/HTTPS is configured
     local nginx_server_name=""
-    if [ -f .env ]; then
-        nginx_server_name=$(grep '^NGINX_SERVER_NAME=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
-    fi
+    nginx_server_name=$(read_env_value NGINX_SERVER_NAME)
 
     local cert_file="${NGINX_CERT_FILE:-./nginx/ssl/server.crt}"
     local key_file="${NGINX_CERT_KEY:-./nginx/ssl/server.key}"
@@ -423,6 +498,17 @@ case "${1:-help}" in
     start)
         check_environment
         fix_model_cache_permissions
+        # Same first-run fix as opentr.sh's start_app()/reset_and_init() (issue #614):
+        # a genuinely fresh `cp .env.example .env` ships MINIO_KMS_SECRET_KEY as an
+        # unusable placeholder, which crash-loops MinIO on its very first boot. #613
+        # promoted this script to the real production entry point, so it needs the
+        # same first-run protection -- guarded (not require_db_helpers' hard failure)
+        # because an install whose scripts/common.sh predates this fix should still be
+        # able to `start`; it just doesn't get the auto-fix and hits the pre-existing
+        # MinIO KMS error, exactly as it did before common.sh was ever sourced here.
+        if declare -F ensure_minio_kms_secret >/dev/null; then
+            ensure_minio_kms_secret ".env"
+        fi
         echo -e "${YELLOW}🚀 Starting OpenTranscribe...${NC}"
         compose_files=$(get_compose_files)
         docker compose $compose_files up -d
@@ -486,10 +572,14 @@ case "${1:-help}" in
             esac
         done
 
-        current_tag=$(grep -E '^OT_IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)
+        current_tag=$(read_env_value OT_IMAGE_TAG)
         current_tag="${current_tag:-latest}"
 
         if [ "$do_rollback" = true ]; then
+            # Deliberately NOT read_env_value: that helper anchors on `^KEY=`, and this
+            # key is written commented-out (`^# *OT_PREVIOUS_IMAGE_TAG=`) by design (it's a
+            # rollback marker, not an active setting) -- not worth a second helper parameter
+            # for this one caller.
             target_version=$(grep -E '^# *OT_PREVIOUS_IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)
             if [ -z "$target_version" ]; then
                 echo -e "${RED}❌ No previous version recorded — nothing to roll back to.${NC}"
@@ -533,6 +623,40 @@ case "${1:-help}" in
             rm -f .env.bak
             echo -e "${GREEN}✓ Pinned OT_IMAGE_TAG=${target_version} (was ${current_tag})${NC}"
             echo -e "${YELLOW}📥 Updating to ${target_version}...${NC}"
+
+            # --rollback preflight (issue #610's companion, the mirror-image gap): an
+            # OLDER image booting against a NEWER schema it cannot read fails with a
+            # cryptic "Can't locate revision identified by '<head>'" -> SystemExit(1).
+            # Alembic's migration chain has no forward-compat story, so check BEFORE
+            # tearing anything down, not after. Read the live head now, while postgres
+            # is still up — compose_down_for_upgrade (below) takes the WHOLE stack
+            # down, postgres included, so this is the last point a plain
+            # `docker compose exec postgres` can reach it.
+            if [ "$do_rollback" = true ] && [ "$force_downgrade" = false ]; then
+                rollback_compose_files=$(get_compose_files)
+                # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
+                rollback_live_head=$(docker compose $rollback_compose_files exec -T postgres psql -tA \
+                    -U "${POSTGRES_USER:-postgres}" "${POSTGRES_DB:-opentranscribe}" \
+                    -c 'SELECT version_num FROM alembic_version;' 2>/dev/null | tr -d '[:space:]')
+
+                if [ -z "$rollback_live_head" ]; then
+                    echo -e "${YELLOW}⚠️  Could not read the live database's alembic head — skipping the${NC}"
+                    echo -e "${YELLOW}   rollback-compatibility check (postgres may not be running).${NC}"
+                # Ask the TARGET image whether it knows that revision — no Python imports,
+                # no env, no DB: every published backend image ships its own
+                # alembic/versions/ tree (backend/Dockerfile.prod:229, COPY --chown into /app).
+                elif ! docker run --rm --entrypoint sh "davidamacey/opentranscribe-backend:${target_version}" -c \
+                        "grep -lq 'revision = \"${rollback_live_head}\"' /app/alembic/versions/*.py" \
+                        >/dev/null 2>&1; then
+                    echo -e "${RED}❌ Refusing to roll back to ${target_version}: the database is at${NC}"
+                    echo -e "${RED}   ${rollback_live_head}, which ${target_version} does not know.${NC}"
+                    echo -e "${YELLOW}   Restore a pre-upgrade backup first — it leaves services stopped for${NC}"
+                    echo -e "${YELLOW}   you to choose the image (issue #610):${NC}"
+                    echo -e "${YELLOW}     ./opentranscribe.sh restore <backup>${NC}"
+                    echo -e "${YELLOW}   then re-run this command. Override with --force-downgrade if certain.${NC}"
+                    exit 1
+                fi
+            fi
         else
             echo -e "${YELLOW}📥 Updating to the newest images for tag '${current_tag}'...${NC}"
         fi
@@ -543,7 +667,12 @@ case "${1:-help}" in
         compose_down_for_upgrade "$compose_files" || exit 1
         docker compose $compose_files pull
 
-        perform_phased_restart "$compose_files" || exit 1
+        if ! perform_phased_restart "$compose_files"; then
+            echo -e "${RED}❌ Upgrade did not complete successfully.${NC}"
+            echo -e "${YELLOW}   See https://docs.opentranscribe.app/docs/operations/upgrading#common-upgrade-issues${NC}"
+            echo -e "${YELLOW}   for recovery steps, or run './opentranscribe.sh logs backend' for details.${NC}"
+            exit 1
+        fi
 
         echo -e "${GREEN}✅ OpenTranscribe containers updated!${NC}"
         echo ""
@@ -659,7 +788,12 @@ case "${1:-help}" in
         # backend's health wait and SIGTERM it mid-Alembic — and update-full is
         # the MORE likely of the two to run a long migration chain, since it is
         # what people run when moving across releases.
-        perform_phased_restart "$compose_files" || exit 1
+        if ! perform_phased_restart "$compose_files"; then
+            echo -e "${RED}❌ Upgrade did not complete successfully.${NC}"
+            echo -e "${YELLOW}   See https://docs.opentranscribe.app/docs/operations/upgrading#common-upgrade-issues${NC}"
+            echo -e "${YELLOW}   for recovery steps, or run './opentranscribe.sh logs backend' for details.${NC}"
+            exit 1
+        fi
 
         # A release can introduce a NEW model (v0.5.0 adds the chat reranker and
         # the content-redaction weights). Nothing in the upgrade path fetches it:
@@ -715,6 +849,38 @@ case "${1:-help}" in
         compose_files=$(get_compose_files)
         docker compose $compose_files exec "$service" /bin/bash || docker compose $compose_files exec "$service" /bin/sh
         ;;
+    backup|restore)
+        check_environment
+        require_db_helpers
+        compose_files=$(get_compose_files)
+
+        # opentr.sh gets these from its prologue `set -a; source ./.env`; this script
+        # deliberately has no such prologue (it greps individual keys — see
+        # preflight_upgrade_env). Without these explicit reads a restore would DROP/CREATE
+        # the DEFAULT database name on any install that customised them (issue #613).
+        POSTGRES_USER=$(read_env_value POSTGRES_USER)
+        POSTGRES_DB=$(read_env_value POSTGRES_DB)
+        BACKUP_HOST_PATH=$(read_env_value BACKUP_HOST_PATH)
+        export POSTGRES_USER POSTGRES_DB BACKUP_HOST_PATH
+
+        cmd="$1"; shift
+        # The shared functions are written for opentr.sh's execution semantics, which
+        # deliberately omit `set -e` (many `|| true` paths). They contain several statements
+        # of the form `[ -n "$x" ] && rm -f "$x"`, which return 1 when $x is empty and would
+        # abort THIS script mid-restore under the `set -e` at the top of this file. Rather
+        # than retrofit `set -e` correctness across ~350 lines of a DROP DATABASE path —
+        # exactly where a subtle retrofit bug is unrecoverable — match the semantics the
+        # code was written for, for the duration of this one call.
+        set +e
+        if [ "$cmd" = "backup" ]; then
+            backup_database "$compose_files" "./opentranscribe.sh" "$@"
+        else
+            restore_database "$compose_files" "./opentranscribe.sh" "$@"
+        fi
+        rc=$?
+        set -e
+        exit $rc
+        ;;
     config)
         check_environment
         echo -e "${BLUE}⚙️  Current Configuration:${NC}"
@@ -766,9 +932,7 @@ case "${1:-help}" in
 
         # NGINX health (only if configured)
         nginx_server_name=""
-        if [ -f .env ]; then
-            nginx_server_name=$(grep '^NGINX_SERVER_NAME=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
-        fi
+        nginx_server_name=$(read_env_value NGINX_SERVER_NAME)
 
         if [ -n "$nginx_server_name" ]; then
             if curl -s -k https://localhost:${NGINX_HTTPS_PORT:-443}/health > /dev/null 2>&1 || \
@@ -828,9 +992,7 @@ case "${1:-help}" in
 
         # Get current NGINX_SERVER_NAME from .env if exists
         current_hostname=""
-        if [ -f .env ]; then
-            current_hostname=$(grep '^NGINX_SERVER_NAME=' .env | grep -v '^#' | cut -d'=' -f2 | tr -d ' "' | head -1)
-        fi
+        current_hostname=$(read_env_value NGINX_SERVER_NAME)
 
         if [ -n "$current_hostname" ]; then
             read -p "Hostname [$current_hostname]: " user_hostname

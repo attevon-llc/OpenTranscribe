@@ -148,9 +148,6 @@ def get_user_file_stats(db: Session, user_id: int) -> dict:
 
 #### Tag Management
 ```python
-def get_file_tags(db: Session, file_id: int) -> List[str]:
-    """Get tag names for a file."""
-
 def add_tags_to_file(db: Session, file_id: int, tag_names: List[str]) -> bool:
     """Add tags to a file, creating tags if they don't exist."""
 

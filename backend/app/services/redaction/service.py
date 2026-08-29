@@ -172,6 +172,46 @@ class RedactionService:
         return [s.model_dump() for s in spans], toxicity
 
     @staticmethod
+    def _decline_for_unresolvable_language(
+        language: str | None, supported: set[str], skipped: dict[str, str]
+    ) -> tuple[bool, bool, bool]:
+        """Whether to actually RUN profanity/pii/toxicity, and the coverage-honest reason not to.
+
+        ``detector_language_support(None)`` deliberately returns every detector as
+        "supported" — that is what keeps ``coverage.py``'s ``relied_on`` computation
+        from excusing them (a genuine language skip is a permanent product limit; an
+        unresolvable one is not, and must stay a real, reported gap; see that
+        function's docstring). But "supported" must NOT be read as "safe to run":
+        ``pii_presidio`` hardcodes ``language="en"``, so actually running these
+        detectors here would silently analyze text of unknown language as English
+        and then credit it as covered — the exact "fall back to English and record
+        full coverage" fail-open ``detector_language_support``'s own docstring warns
+        against, one call site removed. So an unresolvable language is marked
+        skipped HERE, mutating the caller's ``skipped`` dict with a reason distinct
+        from a known-unsupported language, purely so the caller's ``ran``/
+        ``redaction_coverage`` stay honest. ``supported`` itself is never touched —
+        ``coverage.py`` reads ``detector_language_support`` again, independently, so
+        this function's decision cannot leak into whether the gap is excused there.
+
+        Args:
+            language: The file's stored (unnormalized) language value.
+            supported: ``detector_language_support``'s first return value.
+            skipped: ``detector_language_support``'s second return value, mutated in
+                place with ``"language_unresolvable"`` entries when applicable.
+
+        Returns:
+            ``(run_profanity, run_pii, run_toxicity)``.
+        """
+        if normalize_language(language) is None:
+            for name in ("profanity", "pii", "toxicity"):
+                skipped[name] = "language_unresolvable"
+        return (
+            "profanity" in supported and "profanity" not in skipped,
+            "pii" in supported and "pii" not in skipped,
+            "toxicity" in supported and "toxicity" not in skipped,
+        )
+
+    @staticmethod
     def detect_and_store(db: Session, file_id: int) -> dict:
         """Detect + cache redaction spans for every segment of a file. Idempotent."""
         media = db.query(MediaFile).filter(MediaFile.id == file_id).first()
@@ -194,9 +234,9 @@ class RedactionService:
             det_cfg["pii_use_gliner"] = C.REDACTION_PII_USE_GLINER
         # Language gating: skip detectors that don't support this transcript's language.
         supported, skipped = detector_language_support(media.language)
-        run_profanity = "profanity" in supported
-        run_pii = "pii" in supported
-        run_toxicity = "toxicity" in supported
+        run_profanity, run_pii, run_toxicity = RedactionService._decline_for_unresolvable_language(
+            media.language, supported, skipped
+        )
         # Run LLM detector only if the owner enabled it (it needs their provider).
         run_llm = RedactionService._owner_wants_llm(db, int(media.user_id))
         if skipped:
@@ -230,6 +270,12 @@ class RedactionService:
         # distinction is load-bearing rather than cosmetic.
         detector_unavailable: list[str] = []
 
+        # Did the LLM detector actually EXAMINE the text? `detect_with_llm` returns `{}` both
+        # when a working model found nothing and when the provider raised, so this sink is the
+        # only thing that separates them — the same ambiguity, and the same remedy, as the
+        # PII/toxicity sinks above (issue #324). Without it, `ran.append("llm")` below recorded
+        # a misconfigured provider as full coverage with zero findings.
+        llm_failures: list[str] = []
         llm_spans_by_idx: dict[int, list] = {}
         if run_llm:
             try:
@@ -238,11 +284,24 @@ class RedactionService:
                 seg_dicts = [{"text": s.text, "words": s.words} for s in segments]
                 llm_spans_by_idx = {
                     idx: [sp.model_dump() for sp in spans]
-                    for idx, spans in llm.detect_with_llm(seg_dicts, int(media.user_id)).items()
+                    for idx, spans in llm.detect_with_llm(
+                        seg_dicts, int(media.user_id), failures=llm_failures
+                    ).items()
                 }
             except Exception as exc:  # noqa: BLE001
                 logger.warning("LLM redaction detection failed for file %s: %s", file_id, exc)
+                llm_failures.append("llm")
+            if llm_failures:
+                # Reported and recorded as a GAP, never FAILED. `failed` is not an inert label
+                # — `llm_guard` turns it into a permanent, NON-retryable refusal that would
+                # break summarization, speaker-ID and topic extraction for this file for good.
+                # An LLM detector fault is the `DetectorUnavailableError` shape: the provider is
+                # absent or misconfigured, and re-running the scan configures nothing. The
+                # coverage gap is the fail-closed record, and it is enough — `llm` maps to all
+                # four categories, so `uncovered_detectors` reports it for any masking policy
+                # and every egress path falls through to inline, fail-closed masking.
                 detector_failures.append("llm")
+                detector_unavailable.append("llm")
 
         # Serialize GPU inference (no-op on CPU) so concurrent files never stack model
         # activations on one GPU — peak VRAM stays bounded to a single inference.
@@ -339,7 +398,9 @@ class RedactionService:
             ran: list[str] = [
                 d for d in ("profanity", "pii", "toxicity") if d in supported and d not in skipped
             ]
-            if run_llm:
+            # Only when it actually RETURNED. `run_llm` says the owner asked for it, which is a
+            # different question from whether it examined one segment.
+            if run_llm and not llm_failures:
                 ran.append("llm")
             media.redaction_status = C.REDACTION_STATUS_DONE  # type: ignore[assignment]
             media.redaction_model_version = C.REDACTION_MODEL_VERSION  # type: ignore[assignment]

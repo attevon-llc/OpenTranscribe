@@ -11,10 +11,8 @@ from sqlalchemy.orm import Session
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
-from app.models.media import FileTag
 from app.models.media import MediaFile
 from app.models.media import Speaker
-from app.models.media import Tag
 from app.models.media import TranscriptSegment
 
 if TYPE_CHECKING:
@@ -237,26 +235,6 @@ def get_unique_speakers_for_file(db: Session, file_id: int) -> list[Speaker]:
     """
     result = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
     return result  # type: ignore[no-any-return]
-
-
-def get_file_tags(db: Session, file_id: int) -> list[str]:
-    """
-    Get tag names for a file.
-
-    Args:
-        db: Database session
-        file_id: File ID
-
-    Returns:
-        List of tag names
-    """
-    try:
-        tags = db.query(Tag.name).join(FileTag).filter(FileTag.media_file_id == file_id).all()
-        return [tag[0] for tag in tags]
-    except SQLAlchemyError as e:
-        logger.error(f"Error getting tags for file {file_id}: {e}")
-        db.rollback()
-        return []
 
 
 def get_files_by_status(db: Session, user_id: int, status: str) -> list[MediaFile]:

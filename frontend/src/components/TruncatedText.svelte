@@ -8,8 +8,8 @@
 
   let expanded = false;
 
-  $: showMoreText = showMoreText || $t('common.seeMore');
-  $: showLessText = showLessText || $t('common.seeLess');
+  $: resolvedShowMoreText = showMoreText || $t('common.seeMore');
+  $: resolvedShowLessText = showLessText || $t('common.seeLess');
 
   $: needsTruncation = text.length > maxLength;
   $: displayText = needsTruncation && !expanded
@@ -30,7 +30,7 @@
       on:click={toggleExpanded}
       title={expanded ? $t('common.showLessTooltip') : $t('common.showMoreTooltip')}
     >
-      {expanded ? showLessText : showMoreText}
+      {expanded ? resolvedShowLessText : resolvedShowMoreText}
     </button>
   {/if}
 </div>

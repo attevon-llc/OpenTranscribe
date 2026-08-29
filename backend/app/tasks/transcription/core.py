@@ -18,10 +18,15 @@ import tempfile
 import time
 
 from app.core.celery import celery_app
+from app.core.constants import CLOUD_ASR_MAX_RETRIES
+from app.core.constants import CLOUD_ASR_RETRY_BASE
+from app.core.constants import CLOUD_ASR_RETRY_MAX
 from app.core.constants import GPUPriority
+from app.core.exceptions import ASRConfigurationError
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
+from app.services.asr.errors import ASRRateLimitedError
 from app.utils import benchmark_timing
 from app.utils.task_utils import update_task_status
 
@@ -65,6 +70,29 @@ __all__ = [
     "transcribe_gpu_task",
     "trigger_automatic_summarization",
 ]
+
+
+def _resolve_asr_provider_or_none(user_id: int):
+    """Resolve the user's ASR provider, or ``None`` on a config-loading failure.
+
+    ``None`` signals the caller to fall through to the local WhisperX pipeline — the
+    documented "asymmetric failure" behaviour (errors *constructing* a provider fall back
+    to local; errors from ``transcribe()`` itself propagate and fail the file).
+
+    ``ASRConfigurationError`` is different: it is a deliberate refusal to silently resolve
+    to a local provider this deployment (e.g. ``DEPLOYMENT_MODE=lite``) cannot run, so it
+    is re-raised rather than swallowed — falling through here would still hit the local
+    pipeline and fail later with a confusing ``ModuleNotFoundError``.
+    """
+    from app.services.asr.factory import ASRProviderFactory
+
+    try:
+        with session_scope() as db:
+            return ASRProviderFactory.create_for_user(user_id, db)
+    except ASRConfigurationError:
+        raise
+    except Exception:
+        return None
 
 
 @celery_app.task(
@@ -115,13 +143,7 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
             update_task_status(db, task_id, "in_progress", progress=0.22)
 
         # ── Check for cloud ASR provider (needed in both code paths) ──────────
-        try:
-            from app.services.asr.factory import ASRProviderFactory
-
-            with session_scope() as db:
-                provider = ASRProviderFactory.create_for_user(user_id, db)
-        except Exception:
-            provider = None
+        provider = _resolve_asr_provider_or_none(user_id)
 
         # Read diarization settings (needed in both code paths)
         diarization_source = preprocess_context.get("diarization_source", "provider")
@@ -294,6 +316,27 @@ def transcribe_gpu_task(self, preprocess_context: dict) -> dict:
 
             return gpu_result
 
+    except ASRRateLimitedError as exc:
+        # Vendor throttle/quota response — retry with the vendor's own Retry-After when
+        # given, else a bounded exponential backoff. Deliberately a SEPARATE policy from
+        # the task's autoretry_for=(ConnectionError, TimeoutError): that one's
+        # retry_backoff_max=30/max_retries=1 are tuned for a GPU-path connection blip, far
+        # too short for a vendor throttle, and autoretry_for cannot honor Retry-After.
+        # self.retry() raises celery.exceptions.Retry, which Celery's task machinery
+        # handles as a scheduled retry (not a task failure) — dispatch.py's on_pipeline_error
+        # link_error callback does not fire for it, so the file is not marked FAILED here.
+        countdown = exc.retry_after or min(
+            CLOUD_ASR_RETRY_BASE * 2**self.request.retries, CLOUD_ASR_RETRY_MAX
+        )
+        logger.warning(
+            "Cloud ASR rate-limited for file %s (attempt %d/%d), retrying in %.0fs: %s",
+            file_uuid,
+            self.request.retries + 1,
+            CLOUD_ASR_MAX_RETRIES,
+            countdown,
+            exc,
+        )
+        raise self.retry(exc=exc, countdown=countdown, max_retries=CLOUD_ASR_MAX_RETRIES) from exc
     except Exception as e:
         # Best-effort cleanup of shared-volume WAV on failure
         _wav = locals().get("local_wav_path", "")

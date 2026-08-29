@@ -10,6 +10,59 @@ this file is for.
 
 ## Which script to reach for
 
+- **Quick dev-cycle check** — `run-dev-tests.sh --full` (or `--fast`/`--backend-only`/
+  `--e2e-only`/`--frontend-only`). Chains `run-integration-tests.sh` → `e2e/run-e2e.sh` →
+  `frontend-check.sh` and prints one consolidated pass/fail report with per-phase logs under a
+  fresh `/tmp/ot-run-dev-tests.*` dir. **Not** `test-matrix.sh`: this is the fast "does my
+  current branch work" loop for ordinary development (minutes), `test-matrix.sh` is the
+  exhaustive deployment-mode rehearsal (dev/prod/lite/PKI/GPU-scale/fresh-install/upgrade,
+  stages 1-4) run before cutting a release (up to hours). Owns no test logic itself — same
+  convention as `test-matrix.sh` below — if a phase needs new behavior, add it to the wrapped
+  script. `--fast` swaps the backend phase's `--coverage` for `--e2e-smoke` and skips the full
+  e2e phase, for a quicker loop when iterating. Measured `--fast` on this host: ~22 min
+  end-to-end, dominated by the integration-marked phase (~9 min of real live-stack roundtrips).
+  Mode flags are composable (union their phases). **Overlay auto-orchestration**
+  (`scripts/lib/dev-test-overlays.sh`, issue #630): mock-LLM/Keycloak/LDAP test containers
+  needed by the requested phase start automatically and tear back down on exit, restoring any
+  `auth_config` DB setting (`oidc_enabled`/`ldap_enabled`) they flipped — an overlay already
+  running before the script started is left alone. `--all-overlays` also brings up
+  `--with-watch`/`--with-mock-asr`; `--with-gpu-scale` exercises the multi-GPU worker topology
+  and auto-skips with a clear message on a single-GPU deployment (never auto-started under any
+  other flag); `--no-overlays` is the escape hatch (stack already configured, skip all
+  auto-detection); `--list-overlays`/`--dry-run` print the resolved plan without starting
+  anything. Every `opentr.sh --with-*` flag is either in the overlay table or explicitly
+  exempted with a written reason there — `test_run_dev_tests_overlay_coverage.py` fails the
+  build on any flag that's neither. `compose_project_name()` in that file resolves the live
+  stack's actual compose project from a running `postgres` container's label, not
+  `basename $REPO_ROOT` — the latter breaks when this script runs from a git worktree
+  (`.claude/worktrees/<name>`), since `$REPO_ROOT` then resolves to the worktree's own
+  directory name, not the main checkout's. **Three more phases, all STRICT opt-in — never
+  included by `--full`/`--fast`, each also a valid phase selector on its own**:
+  `--with-gpu-diarization` wraps `run-diarization-gpu-tests.sh` (see its own entry below —
+  builds a dedicated test image, several minutes, needs a visible GPU); `--with-mutation-tests`
+  runs a single-module `run-mutation-tests.sh --module` pass (default module `spans`, override
+  with `MUTATION_TEST_MODULE=<module>`; never `--all` through this flag — that's hours, run it
+  by hand); `--with-pipeline-smoke` runs `tests/e2e/test_full_pipeline_smoke.py` — the one test
+  in the whole suite that pushes a real fixture (`backend/tests/fixtures/media/sample_short.wav`,
+  10s of real speech) through real upload -> real WhisperX/diarization -> real search indexing ->
+  a real local LLM chat answer, start to finish, and asserts on the result. Every other e2e test
+  either checks an upload merely lands in the backend (`test_upload.py`, never waits for
+  completion) or drives the UI against a file that was already `status == "completed"` from an
+  earlier session. It brings up `--with-llm-test` itself (real GPU-backed vLLM on
+  `LLM_TEST_GPU_DEVICE_ID`, default GPU 2) if not already running and stops it again on exit if
+  this run started it — same "bring it up, tear it back down" shape as `--with-gpu-scale`, except
+  this one *does* revert (cheap to stop, unlike the gpu-scale worker topology). All three need
+  the live stack's `.env` and (for GPU diarization) the gitignored `benchmark/test_audio/*.wav`
+  fixtures and a populated `MODEL_CACHE_DIR` — none of these are checked into a fresh git
+  worktree, only symlinked in by hand alongside `.env`/`backend/venv`; a worktree missing any of
+  them fails the wrapped script's own precondition check (not a bug in the flag itself). Verified
+  live end-to-end on this host: GPU diarization pinned at a **non-default** card via the wrapped
+  script's own `DIARIZATION_PROBE_GPU` env var (`DIARIZATION_PROBE_GPU=2
+  ./scripts/run-dev-tests.sh --with-gpu-diarization`) — real image build, real container, real
+  GPU, 11/11 passed; `--with-pipeline-smoke` from a cold `llm-test-vllm` — real model load, real
+  10s-clip transcription (1 segment, 19 words), real diarization, real search hit on a word
+  pulled from the actual transcript, real chat answer from the real model — 3/3 passed (99s),
+  llm-test-vllm correctly stopped afterward since this run started it.
 - **Pre-merge gate** — `run-integration-tests.sh` (`--coverage --e2e-smoke --search-quality --cleanup`).
   Runs the ungated suite, then all `RUN_*`-gated security suites twice (FIPS off, then `FIPS_MODE=true`),
   then `-m integration`, then `-m gpu`, then **model-vs-schema drift**
@@ -20,6 +73,18 @@ this file is for.
   `GATES` array: that array's variables are exported for the `GATED_FILES` pytest run, which
   does not include the drift file, so adding it there would have looked like coverage and
   changed nothing.
+- **GPU diarization suites** — `run-diarization-gpu-tests.sh` (issue #577). The gate's `-m gpu`
+  phase runs in `backend/venv`, so the three container-only diarization suites SKIP there; this
+  is the only thing that executes them. It builds `opentranscribe-backend-test:latest` from
+  `backend/Dockerfile.test` (prod image + `requirements-test.txt`) and runs the
+  `diarization-tests` service in its own compose project, so it can neither re-tag nor recreate
+  anything the live dev stack is using. **Never `pip install` pytest into the prod image at run
+  time with `--user root`** — user-site is `$HOME`-derived, so root gets `/root/.local` and the
+  entire app dependency tree (fastapi, meeteval, torch) falls off `sys.path`; that is the whole
+  of #577's "fastapi missing" and "meeteval wheel won't build" report, one cause with two faces.
+  It hard-fails when the base image, the gitignored `benchmark/test_audio/*.wav` fixtures, or the
+  `-o addopts= -m gpu` selector are missing, because each of those makes the run exit 0 having
+  measured nothing.
 - **E2E** — `e2e/run-e2e.sh`: two phases, non-visual in parallel (`E2E_WORKERS`, default 3) then
   `-m visual` serially. `e2e/run-e2e-smoke.sh` is a 4-file subset of it.
   **pytest exit 5 = "no tests collected" is not a failure for a marker-filtered phase.**
@@ -182,21 +247,35 @@ this file is for.
     where `expect(x).toBeTruthy()` is not. `loop-only` also needs single-assignment resolution
     (`endpoints = [...]` then `for e in endpoints:` is as static as the literal) or 22
     table-driven tests are false positives.
-- **Fake LLM** — `mock-llm-server.py`: OpenAI-compatible server so chat/AI features work
+- **Fake providers** — `mock-llm-server.py`: OpenAI-compatible server so chat/AI features work
   without a GPU or API key. Run it via `./opentr.sh start dev --with-mock-llm` (compose
   service `mock-llm`, in-network `http://mock-llm:5199/v1`) rather than by hand — a bare
   host process binds 5199 and then blocks the container. Scenario models (`mock-echo`,
   `mock-empty`, `mock-error`, `mock-slow`) drive the app's real error paths; fixtures and
   the full table are in `backend/tests/CLAUDE.md`.
+  `mock-asr-server.py`: a stdlib Gladia API v2 stand-in so cloud-ASR features (and the whole
+  `--lite` deployment shape) work without a vendor account. Run via
+  `./opentr.sh start dev --with-mock-asr` (compose service `mock-asr`, in-network
+  `http://mock-asr:5198`) — never by hand, same bind-port hazard as the LLM mock. Scenario
+  models (`ok`/`error`/`malformed`/`upload-reject`) select via `?scenario=` on the request or
+  the `MOCK_ASR_SCENARIO` env var at server start; fixtures and the full table are in
+  `backend/tests/CLAUDE.md`.
 - **Frontend gate** — `frontend-check.sh`: `npm ci` → `svelte-kit sync` → ESLint → svelte-check → vite
   build. Also the pre-commit hook (`files: ^frontend/src/`) and the `/fix-frontend` command.
 - **Publish images** — `docker-build-push.sh`; prefer the skill at `.claude/skills/docker-build-push/SKILL.md`.
 - **Models** — `download-models.sh <cache-dir>` is a host wrapper that runs `download-models.py` inside
   the backend image (`DOWNLOAD_ALL_OPENSEARCH_MODELS`, `OPENSEARCH_MODELS`, `WHISPER_MODEL`).
-  `fix-model-permissions.sh` chowns the cache to **1000:1000** (the container's non-root `appuser`).
+  `fix-model-permissions.sh` chowns the cache to **`$CONTAINER_UID_GID`** (`scripts/common.sh`,
+  default **1000:999**) — `appuser` is `useradd -u 1000` but `groupadd -r`, so its GID is 999,
+  not 1000 (issue #580). Never hardcode `1000:1000` in a new chown. `1000:999` has no static
+  source of truth — `Dockerfile.prod` uses `groupadd -r` with no GID pin, so the GID is
+  whatever the base image leaves free. `backend/tests/integration/test_chown_scripts_real_tree.py`
+  derives it from the built image; a base-image bump that moves it fails there.
 - **Fixtures** — `seed-fresh-deployment.sh`, `setup-watch-source-test-data.sh`, `test-watch-e2e.sh`.
 - **Release rehearsals** — `release-tests/`: `test-fresh-install.sh`, `test-upgrade.sh`
-  (both auto-detect FROM/TO — see `lib/versions.sh`), with `lib/guardrails.sh` as the
+  (both auto-detect FROM/TO — see `lib/versions.sh`), and `test-lite-mode.sh` (no
+  FROM/TO to detect — always rehearses the CURRENT `VERSION`'s `--lite` deployment shape
+  against mocked cloud ASR + mocked LLM), with `lib/guardrails.sh` as the
   safety firewall and `lib/{compose-patch,api-client,assertions,versions,model-cache}.sh`.
 
   ⚠️ **NEVER hardlink `nltk_data` when seeding the model cache — seed through
@@ -220,6 +299,23 @@ this file is for.
   learn anything, and made a harness bug look like a product bug. `ac_dump_failure_diagnostics`
   (`lib/api-client.sh`) prints every error-ish field of the file record — located **by name**,
   since that column has been renamed once already — and tails each pipeline worker.
+
+  ⚠️ **A bare non-fatal-by-design helper call under `set -euo pipefail` silently truncates every
+  phase after it, with no error trace.** `dbs_diff_fingerprints()` (`lib/db-snapshot.sh`) is
+  documented as informational — its non-zero return isn't meant to be fatal, `as_record` has
+  already logged the PASS/FAIL either way — but `test-upgrade.sh` called it bare (unwrapped in
+  `if ... ; then`) at two sites. The first digest mismatch tripped `set -e` and killed the script
+  mid-phase-15: phases 16-18 (three phases, 8+ assertions, including the only checks that prove a
+  rollback actually serves a real user's data) never ran, and all that surfaced was a bare exit 1
+  (#617). Fixing that exposed the identical shape one phase later — an unguarded `curl` against
+  the frontend with no readiness wait (unlike the backend's `ac_wait_for_health`), which died the
+  instant the frontend wasn't yet reachable and truncated phases 17-18 the same way (#618). Both
+  were diagnosed from `$TEST_ROOT/.phase/`: the absence of a `NN.done` marker is what proved which
+  phase never ran, since the log itself gave no clue. When adding a new assertion, intermediate
+  helper call, or `curl` to `test-fresh-install.sh`/`test-upgrade.sh`, wrap anything whose failure
+  is meant to be recorded-not-fatal in `if ... ; then ... fi` — the pattern
+  `selftest-rollback-fault-injection.sh` already uses correctly — rather than trusting a bare
+  non-zero exit to fail loudly; under this harness's default `set -e` it fails silently instead.
 - **Cutting a release** — `release.sh` is the ONLY entry point; never hand-run
   `git tag` / `docker push` / `gh release`. 12 stages in `release/NN-<stage>.sh`,
   each independently runnable (`--skip`, `--only`, `--from`, `--dry-run`), with a
@@ -230,18 +326,97 @@ this file is for.
   `reset <version>` clears rehearsal history — do it before a real run, or the
   status table reports stale state as current.
   Full guide: `docs-site/docs/developer-guide/releasing.md`.
-- **Harness self-test** — `release-tests/selftest-cleanup.sh` (15 cases). Run it
+- **Harness self-test** — `release-tests/selftest-cleanup.sh` (25 cases). Run it
   after ANY change to `lib/guardrails.sh`: it exercises the code that deletes
   volumes, and caught the live-data marker check deleting a volume it should have
   refused (the marker was read from the host, where the root-owned mountpoint made
-  every volume look unmarked).
+  every volume look unmarked). Cases 8-10 (issue #598) cover the rollback tail's
+  additional guardrails (`gr_assert_target_is_test_database`,
+  `gr_fingerprint_repo_backups`/`gr_assert_repo_backups_untouched`,
+  `gr_assert_not_repo_cwd`) — the tail runs `DROP DATABASE`, which none of the
+  earlier cases needed to guard against.
+  `release-tests/selftest-rollback-fault-injection.sh` (6 cases, ~1 minute) is the
+  sibling for `lib/db-snapshot.sh`: it proves `test-upgrade.sh`'s rollback-tail
+  assertions can actually FAIL (a truncated dump, a stale comparison oracle, a
+  skipped damage step) against a throwaway isolated Postgres container, never the
+  4-hour scenario. Run it after any change to `lib/db-snapshot.sh` or to
+  `test-upgrade.sh`'s phases 13-17. It also pins a real, measured finding: a
+  plain-format `pg_dump` truncated mid-`COPY` replays with exit 0 and silently
+  wrong data — psql treats an unterminated `COPY ... FROM stdin` at EOF as simply
+  ending the copy, not a parse error — so that fault mode's rehearsal assertion
+  is a content digest, never `restore`'s exit code.
 - **Release gates** — `check-schema-drift.py` (model-vs-schema, report-first),
   `validate-deployments.sh` (~20 compose permutations in ~15 s),
   `release/check-version-consistency.py` (the six version sources + Alembic single head).
-- **PKI** — `pki/`: `setup-test-pki.sh` (generates the gitignored `test-certs/`), `start-pki-prod.sh`,
-  `test-pki-auth.sh`.
-- `common.sh` is sourced **only by `opentr.sh`** (docker checks, model-cache chown, OpenSearch model
-  bootstrap). `offline-common.sh` is sourced only by the two offline/Windows builders.
+- **PKI** — `pki/`: `setup-test-pki.sh` (generates the gitignored `test-certs/` CA + client certs;
+  regenerates every client cert unconditionally each run, so callers other than
+  `generate-test-env.sh` should check for existing certs first), `generate-test-env.sh` (emits
+  `test-certs/pki-test.env` + `test-certs/pki-test.compose.yml` — the mechanism
+  `./opentr.sh --with-pki` uses to configure PKI without ever touching `.env`; idempotent unless
+  `--force-certs`), `test-pki-auth.sh` (curl-only smoke test, no browser).
+  ⚠️ **`PKI_TRUSTED_PROXIES` gates IDENTITY, not just `X-Forwarded-For`.** With the default
+  `pki_mode: header`, a bare `X-Client-Cert-DN` from any peer in that list authenticates with
+  **no certificate at all**, and the admin DN is not a secret (`setup-test-pki.sh` hardcodes
+  it). `generate-test-env.sh` writes one value as *both* `RATE_LIMIT_TRUSTED_PROXIES` and
+  `PKI_TRUSTED_PROXIES`, which is how a blanket `192.168.0.0/16` — added to fix #615's silent
+  trust failure — became remote unauthenticated admin impersonation on any ordinary LAN (#620).
+  Three closures, none sufficient alone: the allowlist is **derived** from the compose
+  project's own docker network (`--print-trusted-proxies` resolves it and exits; fallback
+  `127.0.0.1/32,172.16.0.0/12` with a loud warning, self-healing on the next start once the
+  network exists); the backend's published port pins to loopback via `BACKEND_BIND_HOST`
+  (`--backend-bind-host` widens it, explicitly — the script deliberately does **not** read the
+  ambient value, or a stock `.env` line would switch the control off silently); and the PKI
+  nginx configs **clear** `X-Client-Cert`/`-Verify`/`-DN` on every backend-facing `location`
+  that is not the mTLS one — the plain-HTTP listener had no `/api/auth/pki` block, so a forged
+  DN reached the backend from a peer the allowlist trusts by design, which no CIDR narrowing
+  could have fixed. `backend/tests/unit/test_pki_trusted_proxies_default.py` and
+  `test_pki_lan_exposure_guards.py` fail on any of the three regressing.
+  `start-pki-prod.sh` was deleted — superseded by `./opentr.sh start prod --build --with-pki`,
+  which (unlike the old script) includes `docker-compose.local.yml` so it serves the locally
+  built image rather than stale Docker Hub tags, and never greps `.env`.
+- `common.sh` is sourced by **both** front ends: `opentr.sh` (dev, docker checks, model-cache
+  chown, OpenSearch model bootstrap) and, since issue #613, `opentranscribe.sh` (production —
+  conditionally, `if [ -f ./scripts/common.sh ]`, and BEFORE its own `fix_model_cache_permissions`
+  definition so the local one still wins — bash keeps the last definition). `offline-common.sh`
+  is sourced only by the two offline/Windows builders.
+- `common.sh`'s **`backup_database`/`restore_database`** (moved out of `opentr.sh` by issue #613)
+  are the ONE shared implementation of the backup/restore CLI both front ends dispatch into —
+  `opentr.sh`'s `backup)`/`restore)` arms and `opentranscribe.sh`'s `backup|restore)` arm both call
+  them. Two new LEADING parameters on top of the primitives' existing "first arg is an exec
+  prefix" contract: `$1` is the compose-files chain (`""` for `opentr.sh` — a repo clone
+  auto-loads `docker-compose.override.yml`, which supplies `image:`/`build:` for every
+  application service, so bare `docker compose` is unchanged; `"$(get_compose_files)"` for
+  `opentranscribe.sh` — MEASURED that the base compose file alone is an invalid project, so a
+  curl install needs the real chain), `$2` is the front-end name (`"./opentr.sh"` |
+  `"./opentranscribe.sh"`) used only in operator-facing next-step messages, so a production
+  install is never told to run a script it does not have. `opentranscribe.sh`'s arm wraps the
+  call in `set +e` / `set -e`: the shared functions are written for `opentr.sh`'s deliberate
+  absence of `set -e` (many unchecked `docker compose ...` statements on the assumption a
+  failure there is non-fatal), and `opentranscribe.sh` runs `set -e` at file scope — without the
+  adapter, any one of those unchecked commands failing would abort the WHOLE restore mid-flight.
+  It also explicitly reads `POSTGRES_USER`/`POSTGRES_DB`/`BACKUP_HOST_PATH` from `.env` before
+  calling in — unlike `opentr.sh` (which does `set -a; source ./.env` in its prologue),
+  `opentranscribe.sh` has no such prologue, so without this a restore would silently target the
+  DEFAULT database name on any install that customised it.
+- `common.sh`'s **database restore primitives** (issues #599/#600) back `restore_database`'s two
+  replay backends: `pg_drop_and_recreate_database` / `pg_replay_dump` / `pg_verify_restore` for
+  plain-SQL dumps, `pg_replay_custom_dump` / `pg_custom_dump_expected_head` /
+  `pg_verify_custom_restore` for `pg_dump -Fc` (custom-format — what the scheduled/S3 backup
+  feature produces) dumps, sharing one comparison routine (`_pg_verify_against`) so the two
+  verifiers cannot independently drift. Every function's first argument is an **exec prefix**
+  (`"docker compose exec -T postgres"` in production, `"docker exec -i <throwaway-container>"`
+  in the integration tests) — that contract now covers both dump formats, not just plain SQL.
+  `pg_replay_custom_dump` deliberately never passes `-j`/`--jobs`: it is mutually exclusive with
+  `--single-transaction` (measured), so the safe path forfeits parallel restore for atomicity.
+  `pg_restore_restart_decision` (issue #610) is the pure function `restore_database` calls to
+  decide whether to restart the app services it stopped, or leave them stopped because the
+  backup's alembic head does not match the live DB's head read just before the restore — the
+  backend migrates on startup, so restarting the previously-running image over a
+  freshly-restored *older* dump silently re-migrates it forward, and over a *newer* one crashes
+  on an unknown revision. Echoes `restart` / `hold:no-restart` / `hold:schema-mismatch`; takes no
+  docker/psql/globals, only the two heads plus the `--migrate-forward`/`--no-restart` flags, so
+  it is unit-testable without Postgres
+  (`backend/tests/unit/test_restore_restart_decision.py`).
 - ⚠️ **Every `$VAR` in `opentr.sh` + `common.sh` must be defaulted — enforced by
   `backend/tests/unit/test_shell_expansion_guards.py`** (static, fast unit suite, no execution).
   Both run under `set -uo pipefail`, so an unguarded optional `.env` variable is a hard abort,
@@ -249,7 +424,10 @@ this file is for.
   five *other* optional variables and not that one, so `./opentr.sh` died with
   `GPU_DEVICE_ID: unbound variable` in **any checkout without a `.env`** — i.e. every git
   worktree (`.env` is gitignored and never comes along), which blocked exactly the
-  isolated-worktree workflow. Guard at the use site (`${VAR:-default}`) or add
+  isolated-worktree workflow. `opentranscribe.sh` runs only `set -e` — no `set -u` — so an
+  unguarded expansion there is empty rather than fatal, but the same test suite scans it too
+  (issue #613) to keep the guard uniform across the code the two front ends now share.
+  Guard at the use site (`${VAR:-default}`) or add
   `: "${VAR:=}"` to the `opentr.sh` prologue block; the prologue runs at top level before any
   function, which is why it also covers references inside `common.sh`. Exemptions are a
   `_ALLOWLIST` dict keyed `<script>::<VAR>` with a mandatory reason, and a **stale entry fails**.
@@ -343,7 +521,64 @@ aux-file record.
   no confirmation, no dry-run.**
 - `fix-database-issues.sql` / `fix-false-error-files.sql` — mass status UPDATEs; both are stale one-offs
   superseded by `backend/app/tasks/recovery.py`. (`comprehensive-database-review.sql` is read-only.)
-- `cleanup-test-users.py` — `DELETE FROM "user"`; dry-run unless `--execute`.
+- `cleanup-test-users.py` — `DELETE FROM "user"`; dry-run unless `--execute`. Targets
+  `POSTGRES_HOST`/`POSTGRES_PORT` (env var, or `.env` fallback for the port only — `POSTGRES_HOST`
+  is env-var-only, see the script's `_host_setting` docstring for why), never the orphaned
+  `POSTGRES_TEST_PORT` name that appeared nowhere else in the repo before issue #601 and always
+  silently resolved to the live dev stack's port (5176) regardless of what an operator intended
+  to target. Prints `Target: <user>@<host>:<port>/<db>` as the first line of every run — check it
+  before trusting `--execute`. A candidate blocked by a leftover child row (`tag`/`task`/
+  `comment`/`collection`/`speaker`/`speaker_profile`/`speaker_collection`.`user_id`, all
+  `ON DELETE NO ACTION`) is reported and skipped, not fatal to the batch — exit code 1 if
+  anything was blocked. `ORPHAN_PATTERNS` is now split into `ORPHAN_PATTERNS_UNAMBIGUOUS`
+  (5 patterns — `-e2e-`-infix or RFC 2606 `.invalid`, no human types these) and
+  `ORPHAN_PATTERNS_REVIEW` (7 patterns — `testuser_%`, `test-%@example.com`, plausible
+  hand-created accounts); `ORPHAN_PATTERNS` stays the union so existing callers/tests are
+  unchanged. `--execute-unambiguous` deletes only the unambiguous tier; `--execute` deletes
+  both, same as before.
+- `cleanup-test-data.py` (issue #629) — the sibling sweep for everything `cleanup-test-users.py`
+  never touched: orphaned test-uploaded media, collections, tags, watch sources, speaker
+  profiles, and chat conversations. It is the ONE entry point — it shells out to
+  `cleanup-test-users.py` (same subprocess idiom `run-integration-tests.sh` uses) for the
+  user/LLM-config plane rather than duplicating that logic, and runs it LAST, after every
+  other sweep, because clearing a corpus-owning test user's files/collections/tags first is
+  what lets that user finally become deletable (`classify()`'s "owns files -> never a
+  candidate" rule otherwise makes an owner permanently unsweepable).
+  - **Media cannot be swept with SQL.** Child rows reference `media_file.id` with
+    `ON DELETE NO ACTION`, and MinIO objects + OpenSearch documents are unreachable from
+    Postgres at all — the only correct destroyer is `purge_media_file()`
+    (`backend/app/services/file_cleanup_service.py`), reached via `DELETE /api/files/{uuid}`
+    (falling back to `/force`). So every Tier A resource type here is deleted over the HTTP
+    API, never direct SQL, even where a table has no external-store problem of its own —
+    consistency, and so each resource's own cascade/embedding cleanup always runs.
+  - **Tier A (unambiguous) vs Tier B (review), same risk-asymmetry reasoning as
+    `cleanup-test-users.py`'s split**: a wrongly-deleted media file is annoying; a
+    wrongly-deleted collection/tag/watch-source/speaker-profile/conversation is the same
+    category of annoying. `--execute-unambiguous` selects Tier A only (matched by a
+    registered filename/name/title PREFIX plus an 8-hex-char uniquifier — never a bare
+    prefix, so `e2e-tag-notes` a human typed by hand survives); `--execute` adds Tier B
+    (currently none defined for this script — every registered signature here is
+    unambiguous by construction).
+  - **Liveness cutoff, not a name-embedded seed** (`scripts/testrun-registry.sh`): every
+    candidate table already carries a creation timestamp, so a row created by a
+    CONCURRENTLY LIVE run is protected by comparing its timestamp against
+    `min(started_at)` across every currently-held `.testruns/*.lock` flock marker — a
+    crashed run's leftovers wait for other live runs to finish before being swept, never
+    destroyed while something might still be using them.
+  - Admin credentials from `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`, defaulting to the
+    documented dev pair. Logs itself out when done (`POST /api/auth/logout`) so the tool
+    does not itself contribute to the `refresh_token` leak tracked in issue #633.
+  - Degrades rather than blocks: an unreachable backend skips the whole API plane with a
+    loud warning (DB-only planes — the `cleanup-test-users.py` subprocess — still run) and
+    the process exits non-zero, so `run-integration-tests.sh`/`e2e/run-e2e.sh`'s
+    `|| sweep_rc=$?` guard is what keeps a sweep failure from blocking the actual test run.
+- `testrun-registry.sh` — not itself destructive (it only ever creates a lock file under
+  `.testruns/`), but is the liveness mechanism `cleanup-test-data.py`'s safety argument
+  depends on. `testrun_begin` opens a marker file, takes `flock -n` on it, and holds the fd
+  for the rest of the CALLING PROCESS's life — released automatically (by the kernel) on
+  exit, including SIGKILL/OOM/reboot, so a crashed run cannot be mistaken for a still-live
+  one and there is no PID-reuse hazard. `TESTRUN_REGISTRY_DIR` overrides the `.testruns/`
+  location — used only by the isolated-DB test proving this mechanism, never in normal use.
 - `uninstall-offline-package.sh` — `docker compose down -v`, `docker rmi`, `rm -rf /opt/opentranscribe`.
 - `release-tests/*` — `docker volume rm` on `opentranscribe_*` plus `rm -rf $TEST_ROOT`. They
   **require the live stack to be stopped**: they bind the standard 5173–5180 ports under the stock

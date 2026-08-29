@@ -56,7 +56,7 @@ export const audioLevel = derived(recordingStore, ($store) => $store.audioLevel)
 export const recordingStartTime = derived(recordingStore, ($store) => $store.recordingStartTime);
 
 // Global recording manager class
-export class RecordingManager {
+class RecordingManager {
   private static instance: RecordingManager;
   private mediaRecorder: MediaRecorder | null = null;
   private audioStream: MediaStream | null = null;
@@ -206,6 +206,14 @@ export class RecordingManager {
           isRecording: false,
           isPaused: false,
         }));
+        // G2: release the mic tracks, close the AudioContext and cancel the
+        // level-meter rAF now that the blob is built — not only when the user
+        // later clicks Upload/Delete. This used to be reachable only from
+        // clearRecording()/the start-error path, so record -> stop -> navigate
+        // away left the browser's mic indicator lit for the rest of the SPA
+        // session. Ordered after the blob update above: cleanupRecording()
+        // clears `recordedChunks`, which this handler has already consumed.
+        this.cleanupRecording();
       };
 
       this.mediaRecorder.start();
@@ -259,7 +267,15 @@ export class RecordingManager {
 
   public stopRecording(): void {
     if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      // Hardware release (G2) happens in `onstop` below, not here — `stop()`
+      // returns before the 'stop' event fires, and `onstop` is what builds
+      // `recordedBlob` from `recordedChunks`. Clearing that array synchronously
+      // here would race the async event and could empty the blob.
       this.mediaRecorder.stop();
+    } else {
+      // Already inactive (e.g. stopped twice, or never started): no 'stop'
+      // event is coming to trigger cleanup, so do it directly.
+      this.cleanupRecording();
     }
 
     if (this.durationInterval) {
@@ -384,3 +400,33 @@ export class RecordingManager {
 
 // Export singleton instance
 export const recordingManager = RecordingManager.getInstance();
+
+// G2 failsafe, comment corrected (adversarial review): `recordingManager` is a
+// module-level singleton that outlives every SPA route change (Navbar, where the
+// recorder popup lives, is never destroyed by client-side navigation), so there
+// is no component `onDestroy` that reliably runs when a recording is left
+// active. A real tab close/reload is the one case a route change can't cover.
+//
+// ⚠️ This handler does NOT reliably release the microphone before unload, and
+// should not be read as doing so. `stopRecording()` only REQUESTS a stop —
+// `MediaRecorder.stop()` is asynchronous, and the actual hardware release
+// (`cleanupRecording()`'s `track.stop()`) runs inside the later `onstop` event,
+// which the spec gives no guarantee of firing before the browser finishes
+// tearing the page down once a `beforeunload` listener returns (this one sets
+// no `returnValue`, so nothing pauses unload to give it a chance). In practice
+// the mic indicator going dark on a real tab close is the BROWSER's own
+// guarantee — it releases every `MediaStreamTrack` owned by a document that
+// unloads, independent of any application JS. This listener's only reliably
+// observable effect is synchronous: it asks the recorder to stop and updates
+// `recordingStore`'s in-memory state, which matters only for the cases where
+// the page does NOT actually finish unloading (a cancelled navigation, or a
+// page frozen into the back/forward cache rather than destroyed) — not as a
+// genuine last-resort hardware release.
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    const state = get(recordingStore);
+    if (state.isRecording) {
+      recordingManager.stopRecording();
+    }
+  });
+}

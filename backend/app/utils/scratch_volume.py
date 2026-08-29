@@ -33,7 +33,6 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-import tempfile
 import time
 from pathlib import Path
 
@@ -191,12 +190,3 @@ def sweep_expired(ttl_seconds: int = DEFAULT_TTL_SECONDS) -> tuple[int, int]:
             errors += 1
             logger.debug(f"scratch sweep failed on {entry}: {e}")
     return (removed, errors)
-
-
-def make_local_tempfile(suffix: str = ".wav") -> str:
-    """Helper used by readers who need an on-disk path for downstream
-    tools that don't accept file-like objects.
-    """
-    fd, path = tempfile.mkstemp(suffix=suffix)
-    os.close(fd)
-    return path

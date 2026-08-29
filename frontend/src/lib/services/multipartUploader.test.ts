@@ -16,6 +16,17 @@ vi.mock('$lib/axios', async () => {
   return { ...actual, default: mockInstance };
 });
 
+// H4a: part retries used to compute their own delay inline (500ms base, uncapped,
+// unjittered) instead of going through the shared `backoff.ts` policy. Spy on the
+// real implementation to prove the module now calls through it, with 1-based
+// attempt numbers, rather than reimplementing the math locally.
+const reconnectDelayMs = vi.hoisted(() => vi.fn());
+vi.mock('$lib/utils/backoff', async () => {
+  const actual = await vi.importActual<typeof import('$lib/utils/backoff')>('$lib/utils/backoff');
+  reconnectDelayMs.mockImplementation(actual.reconnectDelayMs);
+  return { ...actual, reconnectDelayMs };
+});
+
 import { uploadInParts, type MultipartPlan, type PutPart } from './multipartUploader';
 
 /** A part-shaped stub: only `.size` is read by the module under test. */
@@ -167,6 +178,11 @@ describe('uploadInParts — retry and terminal errors', () => {
     // The retry must not reuse the URL that just failed.
     expect(putPart.mock.calls[1][0]).toBe('https://bucket/part1-refreshed');
     expect(result.parts).toEqual([{ part_number: 1, etag: 'etag-after-retry' }]);
+
+    // The retry delay comes from the shared backoff policy (H4a), not a local
+    // reimplementation — called once, for the 1st retry.
+    expect(reconnectDelayMs).toHaveBeenCalledTimes(1);
+    expect(reconnectDelayMs).toHaveBeenCalledWith(1);
   });
 
   it('does not retry a cancellation — it propagates immediately', async () => {
@@ -222,6 +238,10 @@ describe('uploadInParts — retry and terminal errors', () => {
     await vi.runAllTimersAsync();
     await expect(promise).rejects.toBe(persistent);
     expect(putPart).toHaveBeenCalledTimes(3); // PART_MAX_ATTEMPTS
+    // Two retries (after attempts 1 and 2; the 3rd attempt is the final failure
+    // and schedules no further wait) via the shared backoff policy (H4a).
+    expect(reconnectDelayMs).toHaveBeenNthCalledWith(1, 1);
+    expect(reconnectDelayMs).toHaveBeenNthCalledWith(2, 2);
   });
 });
 

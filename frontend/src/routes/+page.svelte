@@ -204,7 +204,7 @@
 
     // Pagination
     params.append('page', page.toString());
-    params.append('page_size', '100');
+    params.append('page_size', $galleryState.pageSize.toString());
 
     // Sort
     params.append('sort_by', sortBy);
@@ -1317,6 +1317,12 @@
     });
     refreshTimeouts.clear();
 
+    // Clean up pending notification flush timer
+    if (wsFlushTimer) {
+      clearTimeout(wsFlushTimer);
+      wsFlushTimer = null;
+    }
+
     // Close any in-flight bulk export SSE stream
     bulkExportStream?.close();
   });
@@ -1720,7 +1726,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1300;
+    z-index: var(--z-modal);
     overflow: hidden;
     overscroll-behavior: none;
   }
@@ -1817,10 +1823,10 @@
     }
 
     /* Upload & Collections modals: fullscreen on mobile.
-       Raise above navbar (z-index 1200) so close button is reachable. */
+       Raise above navbar (--z-navbar) so close button is reachable. */
     .modal-backdrop {
       align-items: stretch;
-      z-index: 1300;
+      z-index: var(--z-modal);
     }
 
     .modal-container {

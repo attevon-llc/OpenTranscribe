@@ -145,6 +145,7 @@ def test_created_by_does_not_cascade_deletes(db_session):
 )
 def test_the_live_checks_carry_the_new_values(db_session, constraint, expected):
     clause = _check_clause(db_session.connection(), constraint)
+    assert expected, f"no expected values declared for {constraint}"
     for value in expected:
         assert f"'{value}'" in clause
 

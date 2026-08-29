@@ -190,3 +190,24 @@ def test_metadata_filters_bad_ownership_422(client, user_token_headers):
 def test_metadata_filters_unauthorized(client):
     response = client.get("/api/files/metadata-filters")
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_metadata_filters_excludes_quarantined_facets(
+    client, user_token_headers, normal_user, db_session
+):
+    """A2: a quarantined file's language must not leak into the filter facets
+    for an ordinary user — the file itself already 404s everywhere else."""
+    _make_file(db_session, normal_user, language="qz", is_quarantined=True)
+    response = client.get("/api/files/metadata-filters", headers=user_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    assert "qz" not in response.json()["languages"]
+
+
+def test_metadata_filters_admin_sees_quarantined_facets(
+    client, admin_token_headers, admin_user, db_session
+):
+    """Control: an admin (who reviews takedowns) still sees the facet value."""
+    _make_file(db_session, admin_user, language="qz", is_quarantined=True)
+    response = client.get("/api/files/metadata-filters", headers=admin_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    assert "qz" in response.json()["languages"]

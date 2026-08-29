@@ -56,6 +56,12 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+# Re-imported, NOT redefined (issue #545). This module used to carry its own copy, which
+# disagreed with `redaction/config.py`'s on 13 of 21 inputs. The name stays here because
+# `_classify`, `resolve_text_field_preset_for_locale` and `tests/test_chat_language_scope.py`
+# reach it through this module; what must not exist twice is the implementation.
+from app.utils.language import normalize_language
+
 logger = logging.getLogger(__name__)
 
 #: Fallback support set, used when the active embedding model is English-only or
@@ -114,34 +120,9 @@ WARNING_CODE = "unsupported_language"
 #: ``msg_metadata`` key carrying the per-turn language diagnostics.
 METADATA_KEY = "context_languages"
 
-# Values a detector writes when it declined to commit to a language. Treated as
-# UNKNOWN, which is neither "English" nor "not English" — see ContextLanguages.
-_UNKNOWN_TOKENS = frozenset({"", "und", "undefined", "unknown", "none", "null", "auto", "nan"})
-
 # A frame is a notice, not a report. Enough codes to be specific, few enough that
 # a 500-file mixed scope does not put a paragraph of ISO codes on screen.
 _MAX_REPORTED_LANGUAGES = 8
-
-
-def normalize_language(raw: str | None) -> str | None:
-    """Reduce a stored language value to a bare ISO 639-1 code.
-
-    ``MediaFile.language`` is written by whichever ASR provider ran, and they do
-    not agree on shape: ``en``, ``EN``, ``en-US`` and ``en_GB`` all occur. The
-    region subtag is irrelevant here — English is English — so it is dropped.
-
-    Args:
-        raw: The stored value, possibly ``None``, blank, or a placeholder.
-
-    Returns:
-        A lowercase primary subtag, or ``None`` when the language is unknown.
-    """
-    if not raw:
-        return None
-    code = raw.strip().lower().replace("_", "-").split("-", 1)[0]
-    if code in _UNKNOWN_TOKENS or not code.isalpha():
-        return None
-    return code
 
 
 @dataclass(frozen=True)

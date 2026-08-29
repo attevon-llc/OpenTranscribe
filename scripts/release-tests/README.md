@@ -1,11 +1,12 @@
 # OpenTranscribe Release-Test Harness
 
-End-to-end validation for every OpenTranscribe release. Two scenarios:
+End-to-end validation for every OpenTranscribe release. Three scenarios:
 
 | Script | What it proves |
 |---|---|
 | `test-fresh-install.sh` | A new user runs the documented `setup-opentranscribe.sh` one-liner and ends up with a working stack on the current release |
 | `test-upgrade.sh` | A user with real data on the previous release can run the documented upgrade path and find their data intact, migrations applied, new features available |
+| `test-lite-mode.sh` | The no-GPU lite deployment (`docker-compose.lite.yml`, cloud-only ASR) runs the real upload -> ASR -> segments/speakers -> search -> chat pipeline, against mocked cloud ASR (`scripts/mock-asr-server.py`, a Gladia stand-in) and a mocked LLM (`scripts/mock-llm-server.py`) — no GPU, vendor API key, or network egress required. Complements `scripts/lite-smoke.sh` (Stage 2, Cycle 2D), which only checks lite/cpu-only **topology**, not the pipeline. |
 
 ## ⚠️ Precondition: the live stack must be STOPPED
 
@@ -72,6 +73,9 @@ OPENAI_MODEL_NAME=
 # Scenario B — upgrade from the previous published release (auto-detected)
 ./scripts/release-tests/test-upgrade.sh
 
+# Scenario C — lite-mode full pipeline rehearsal (mocked cloud ASR + mocked LLM)
+./scripts/release-tests/test-lite-mode.sh
+
 # Skip the confirmation gate (for unattended re-runs)
 ./scripts/release-tests/test-fresh-install.sh --yes
 
@@ -81,6 +85,7 @@ OPENAI_MODEL_NAME=
 # Tear down (only resources labeled com.opentranscribe.release-test=*)
 ./scripts/release-tests/test-fresh-install.sh --cleanup
 ./scripts/release-tests/test-upgrade.sh --cleanup
+./scripts/release-tests/test-lite-mode.sh --cleanup
 ```
 
 Each scenario writes:
@@ -155,8 +160,34 @@ See the dedicated section in the planning doc and the `Edge Cases & Mitigations`
 - **Disk space**: each scenario needs ~20 GB free under `$TEST_ROOT` and ~10 GB on the docker root.
 - **Docker Hub rate limits**: an unauthenticated pull is limited to 100/6h per IP. Login (`docker login`) if you're iterating.
 - **Public test URLs may decay**: edit `fixtures/test-urls.txt` if archive.org links 404.
-- **Rollback is not supported** — the migration chain is one-way, and the scenario
-  refuses to run when FROM is not strictly older than TO.
+- **The Alembic migration chain is one-way, and the scenario refuses to run
+  when FROM is not strictly older than TO** — that constraint is real and
+  still holds. It used to be phrased as "Rollback is not supported", which
+  conflated the migration chain with the separate backup/restore MECHANISM
+  (`opentranscribe.sh backup`/`restore`, `opentranscribe.sh update --rollback`) — that
+  mechanism **is** rehearsed, by `test-upgrade.sh`'s phases 13-17 (issue
+  #598; the rehearsal itself stages `opentranscribe.sh` — the shipped production
+  command — rather than `opentr.sh` since issue #613). What those phases prove:
+  `opentranscribe.sh backup` and the shipped
+  `pg_dump` recipe both restore an exact point-in-time database state
+  (content digests, not just row counts), `update --rollback` puts the FROM
+  image back and the FROM image serves the restored FROM database through
+  its real API, and the documented recovery loop (roll back -> re-upgrade)
+  completes cleanly. What it deliberately does NOT cover: backup
+  `--encrypt` (unattended `gpg` needs a passphrase file the CLI does not
+  support — filed as a follow-up), the in-app scheduled-backup system
+  (`app/services/backup_service.py` — a separate implementation, its own
+  end-to-end restore rehearsal is a follow-up), and MinIO/OpenSearch restore
+  (the DB restore does not touch either — asserted, not merely unclaimed).
+  Flags: `--no-rollback` (or `ROLLBACK_REHEARSAL=0`) skips phases 13-17;
+  `--only-rollback` resumes at phase 12 against an already-completed
+  `TEST_ROOT` (run the full scenario first — it does not fabricate that
+  state); `ROLLBACK_INJECT_FAULT=truncate|no-damage|stale-oracle`
+  deliberately breaks one input of the tail so its own failure detection is
+  exercised for real — see `test-upgrade.sh --help` and
+  `selftest-rollback-fault-injection.sh` (a ~1-minute self-test against a
+  throwaway isolated Postgres container, run it after any change to
+  `lib/db-snapshot.sh`).
 - **The Alembic head is derived, never recorded.** `expected-schemas.tsv` used to
   claim that role but was read by no script and never got its `v0.4.1` row.
   `lib/alembic-head.py` computes the single head from the `down_revision` graph —

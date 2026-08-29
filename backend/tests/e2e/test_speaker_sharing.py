@@ -94,8 +94,12 @@ def test_profiles_have_sharing_fields(logged_in_page: Page):
     }""")
     if result.get("empty"):
         pytest.skip("No profiles exist")
-    assert result["has_is_shared"], f"Missing is_shared. Keys: {result['keys']}"
-    assert result["has_owner_name"], f"Missing owner_name. Keys: {result['keys']}"
+    assert "is_shared" in result["keys"], f"Missing is_shared. Keys: {result['keys']}"
+    assert "owner_name" in result["keys"], f"Missing owner_name. Keys: {result['keys']}"
+    # Present is not the contract — the sharing badge is rendered from the VALUE. A
+    # serializer that emits `is_shared: null` satisfies `'is_shared' in p` and leaves
+    # the UI unable to say whether the profile is shared or not.
+    assert isinstance(result["is_shared"], bool)
 
 
 def test_own_profiles_not_shared(logged_in_page: Page):
@@ -181,8 +185,3 @@ def test_occurrences_endpoint(logged_in_page: Page):
     if result.get("skip"):
         pytest.skip("No profiles exist")
     assert result["status"] in (200, 404)
-
-
-def test_final_screenshot(logged_in_page: Page):
-    """Capture final screenshot for visual review."""
-    logged_in_page.screenshot(path=os.path.join(SCREENSHOT_DIR, "04-final.png"), full_page=True)

@@ -168,7 +168,11 @@ By using this IS (which includes any device attached to this IS), you consent to
     font-size: 14px;
     letter-spacing: 0.5px;
     text-transform: uppercase;
-    z-index: 9999;
+    /* Same tier as ToastContainer (H5) — both are globally-rendered and can be
+       bottom-anchored (`.classification-banner-bottom`) at once; there is no
+       measured reason to prefer one above the other, so they share a layer
+       rather than guessing an order. Flagged for human visual confirmation. */
+    z-index: var(--z-toast);
     position: fixed;
     top: 0;
     left: 0;

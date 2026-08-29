@@ -46,15 +46,25 @@ graph TB
 
 ## Database Backup
 
-### Using opentr.sh (Recommended)
+### Using opentranscribe.sh (Recommended)
 
 The built-in backup command creates a timestamped SQL dump:
 
 ```bash
-./opentr.sh backup
+./opentranscribe.sh backup
 ```
 
 This creates a file at `./backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql`.
+
+:::note `opentranscribe.sh`, not `opentr.sh`
+`opentranscribe.sh` is the management script the installer places next to your
+compose files — it is what you have. `opentr.sh` is the *development* script and
+only exists in a git clone of the repository; it shares the exact same `backup`/
+`restore` flags and behavior (`./opentranscribe.sh backup [--encrypt]`,
+`./opentranscribe.sh restore [--yes] [--no-safety-dump] [--from-s3]
+[--migrate-forward|--no-restart] <file>`), so every recipe on this page reads
+identically for either script — only the leading command name differs.
+:::
 
 ### Encrypted Backup
 
@@ -64,7 +74,7 @@ leaves the host (offsite copies, cloud storage, USB drives).
 :::
 
 ```bash
-./opentr.sh backup --encrypt
+./opentranscribe.sh backup --encrypt
 ```
 
 This pipes `pg_dump` directly into GPG symmetric encryption (AES-256) — the plaintext dump
@@ -74,7 +84,7 @@ never touches disk — and prompts for a passphrase. The result is
 Restore detects `.gpg` files automatically:
 
 ```bash
-./opentr.sh restore backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql.gpg
+./opentranscribe.sh restore backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql.gpg
 ```
 
 Store the passphrase in a password manager — an encrypted backup without its passphrase is
@@ -92,7 +102,9 @@ docker compose exec -T postgres pg_dump -U postgres opentranscribe > backup.sql
 # Compressed backup (recommended for large databases)
 docker compose exec -T postgres pg_dump -U postgres opentranscribe | gzip > backup.sql.gz
 
-# Custom format (supports parallel restore)
+# Custom format (supports parallel restore for a manual pg_restore — but see the
+# --single-transaction/-j note under Restore Procedures: ./opentranscribe.sh restore's safe path
+# deliberately does NOT use -j, so it does not get that parallelism)
 docker compose exec -T postgres pg_dump -U postgres -Fc opentranscribe > backup.dump
 ```
 
@@ -111,6 +123,12 @@ Start the stack with the backup overlay so a destination is mounted:
 ./opentr.sh start dev --with-backup
 ```
 
+On a **production install** (`./opentranscribe.sh`, which has no `--with-*` flags), set
+`BACKUP_OVERLAY_ENABLED=true` in `.env` instead — it selects the same
+`docker-compose.backup.yml` overlay. Left commented out by default, since the overlay also
+sets `path.repo` on the OpenSearch service and so recreates that container on the next
+`start`/`update`.
+
 Then, in the admin UI:
 
 - **Enable** scheduled backups and set a **cron schedule** (default `0 3 * * *` — 03:00 daily, UTC).
@@ -118,7 +136,11 @@ Then, in the admin UI:
   - **Local folder** — the mounted `/backups` path (set via `BACKUP_HOST_PATH`).
   - **S3-compatible bucket** — any AWS S3 / MinIO / Backblaze-style endpoint. Provide endpoint URL, region, bucket, prefix, and access/secret keys. The secret is encrypted at rest (AES-256-GCM) and never returned by the API; a **Test Connection** button validates it. This lets backups land **off the host machine** entirely.
 - Set **GFS retention** (grandfather-father-son: daily / weekly / monthly counts; default 7 / 4 / 12).
-- Optionally enable **gpg encryption** (provide a passphrase file path).
+- Optionally enable **gpg encryption** (provide a passphrase file path). ⚠️ Currently
+  broken on the published production image — `gpg` is not installed
+  (`Dockerfile.prod` installs `postgresql-client` but never `gnupg`), so an encrypted
+  scheduled/S3 backup fails on every run until [issue #604](https://github.com/attevon-llc/OpenTranscribe/issues/604) lands. Unencrypted
+  scheduled backups are unaffected.
 - Use **Run Now** to take an immediate backup and see the last result.
 
 Under the hood: a lightweight `backup.check_schedule` beat task fires every few
@@ -135,8 +157,10 @@ bucket on a different machine or provider** — a host failure then can't take
 your backups with it. The bucket can be your own MinIO on another box.
 :::
 
-Restore an in-app backup the same way as any custom-format dump — see
-[Restore Procedures](#restore-procedures) below (`pg_restore`).
+Restore an in-app backup with the same `./opentranscribe.sh restore` command as any other backup —
+see [Restoring a custom-format (-Fc) or scheduled-backup dump](#restoring-a-custom-format--fc-or-scheduled-backup-dump)
+below. For an S3 destination, fetch the artifact first with `--from-s3` — see
+[Restoring an S3-destination backup](#restoring-an-s3-destination-backup).
 
 #### OpenSearch snapshots (optional)
 
@@ -168,6 +192,9 @@ allow-listed:
 ```bash
 ./opentr.sh start dev --with-backup
 ```
+
+On a production install, `BACKUP_OVERLAY_ENABLED=true` in `.env` selects the same overlay
+(see above).
 
 If you enable "Include OpenSearch" **without** the overlay, the feature degrades
 gracefully: the database dump still succeeds and the OpenSearch status is recorded
@@ -231,7 +258,8 @@ How it works:
 - **Separate destination** from the database dumps (a media mirror is large and
   often lives on different storage):
   - **Local folder** — start the stack with the backup overlay
-    (`./opentr.sh start dev --with-backup`), which mounts
+    (`./opentr.sh start dev --with-backup`, or `BACKUP_OVERLAY_ENABLED=true` in `.env` on a
+    production install), which mounts
     `BACKUP_MIRROR_HOST_PATH` (default `./media-mirror`) to `/media-mirror` in the
     backend + download-worker containers. Point it at a NAS mount, external drive,
     or any second disk.
@@ -342,10 +370,10 @@ automatic daily backups with cron:
 crontab -e
 
 # Add daily backup at 2:00 AM
-0 2 * * * cd /opt/opentranscribe && ./opentr.sh backup
+0 2 * * * cd /opt/opentranscribe && ./opentranscribe.sh backup
 
 # With log rotation (keep last 30 days)
-0 2 * * * cd /opt/opentranscribe && ./opentr.sh backup && find ./backups -name "*.sql" -mtime +30 -delete
+0 2 * * * cd /opt/opentranscribe && ./opentranscribe.sh backup && find ./backups -name "*.sql" -mtime +30 -delete
 ```
 
 ### Automated Backup with systemd Timer
@@ -360,7 +388,7 @@ Description=OpenTranscribe Database Backup
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/opentranscribe
-ExecStart=/opt/opentranscribe/opentr.sh backup
+ExecStart=/opt/opentranscribe/opentranscribe.sh backup
 ExecStartPost=/usr/bin/find /opt/opentranscribe/backups -name "*.sql" -mtime +30 -delete
 ```
 
@@ -528,7 +556,7 @@ echo "Full backup complete: $BACKUP_DIR"
 ```bash
 # Cron: run full backup weekly, database-only backup daily
 # Daily database backup at 2:00 AM
-0 2 * * * cd /opt/opentranscribe && ./opentr.sh backup
+0 2 * * * cd /opt/opentranscribe && ./opentranscribe.sh backup
 
 # Weekly full backup at 3:00 AM on Sundays
 0 3 * * 0 /opt/opentranscribe/scripts/full-backup.sh
@@ -538,32 +566,137 @@ echo "Full backup complete: $BACKUP_DIR"
 
 ### Restoring the Database
 
-Using `opentr.sh`:
+Using `opentranscribe.sh`:
 
 ```bash
-./opentr.sh restore backups/opentranscribe_backup_20260310_020000.sql
+./opentranscribe.sh restore backups/opentranscribe_backup_20260310_020000.sql
 ```
 
-This command automatically:
-1. Stops backend and all Celery workers
-2. Restores the SQL dump into PostgreSQL
-3. Restarts all stopped services
+:::warning Destructive — full replace, not a merge
+This **replaces the database entirely**. A plain `pg_dump` file has no `DROP`/`--clean`
+statements, so replaying it into an already-populated database used to fail on every
+statement while `psql` still reported success (issue #599) — and worse, could leave the
+migration-tracking table with two conflicting rows. `restore` now guarantees an exact
+restore instead.
+:::
 
-Manual restore:
+This command automatically:
+1. **Confirms** — shows the current database's row counts and alembic head vs. the
+   backup's, and requires typing the database name to proceed (skip with `--yes` for
+   scripted use)
+2. **Takes a safety dump** of the *current* database first (`--no-safety-dump` to skip —
+   not recommended), so the pre-restore state is recoverable if anything goes wrong
+3. Stops backend and all Celery workers
+4. **Drops and recreates** the database (`DROP DATABASE ... WITH (FORCE)` + `CREATE
+   DATABASE`), guaranteeing an empty target regardless of schema drift since the backup
+5. **Replays** the dump inside a single transaction — a failure rolls back to nothing
+   rather than leaving a half-restored, hybrid schema
+6. **Verifies** the result (row/table counts, exactly one migration-version row matching
+   the backup) before reporting success
+7. **Restarts services only if it is safe to** — compares the backup's own alembic head
+   against the head the database had immediately before the restore (i.e. what the
+   currently-running application expects). If they match, services restart as before. If
+   they **don't** — the common shape when restoring an older, pre-upgrade backup while a
+   newer application is still running — services are left **stopped** instead, because
+   restarting would immediately run every migration between the two heads and silently
+   carry the backup forward, defeating the point of restoring it (issue #610). The command
+   prints the two next moves: roll the app back to the version that matches the backup
+   (`./opentranscribe.sh update --rollback`), or explicitly accept the forward migration
+   with `--migrate-forward` if that's genuinely what you want (a "recover data, stay on
+   the current version" restore, not a version rollback).
+
+`opentranscribe.sh restore --help`-equivalent usage:
+`./opentranscribe.sh restore [--yes] [--no-safety-dump] [--from-s3] [--migrate-forward|--no-restart] <file>`.
+
+- `--migrate-forward` — accept that the currently-running (newer) application will
+  migrate this restored backup forward on restart. Restarts unconditionally.
+- `--no-restart` — never restart services after this restore, regardless of whether the
+  heads match. Escape hatch for scripted/orchestrated callers that manage the restart
+  themselves. Mutually exclusive with `--migrate-forward`.
+
+:::note MinIO / OpenSearch are not rolled back
+`opentranscribe.sh backup`/`restore` cover **PostgreSQL only**. After a restore, MinIO (media
+files) and OpenSearch (search indices) may be ahead of or behind the restored database —
+media with no row, rows with no media, stale search hits. Reindex from **Admin → Search**
+if the restored database's file list differs from what MinIO/OpenSearch currently have.
+:::
+
+### Restoring a custom-format (`-Fc`) or scheduled-backup dump
+
+`./opentranscribe.sh restore` above handles **both** dump formats — it's the same command for
+either, not a separate procedure. It sniffs the file's `PGDMP` magic bytes and, for a
+custom-format `.dump`/`.dump.gpg` (what the in-app scheduled/S3 backup produces, and what
+`pg_dump -Fc` produces manually), replays it with `pg_restore --exit-on-error
+--single-transaction --no-owner --no-privileges` instead of `psql` — reusing the exact same
+confirm / safety-dump / drop-recreate / verify sequence described above (issue #600):
+
+```bash
+./opentranscribe.sh restore backups/opentranscribe-20260827-030000.dump
+# or, encrypted:
+./opentranscribe.sh restore backups/opentranscribe-20260827-030000.dump.gpg
+```
+
+:::danger Do not "fix" a missing stdin redirect by hand
+An earlier version of this page showed `docker compose exec -T postgres pg_restore -U
+postgres -d opentranscribe backup.dump` — that fails outright (`could not open input file`,
+the path resolves *inside* the postgres container). Adding `< backup.dump` to fix the
+redirect reproduces issue #599's exact silent-corruption bug for `pg_restore`: drifted data
+survives, and `alembic_version` ends with two conflicting rows. Unlike `psql`, `pg_restore`
+does exit nonzero here (`warning: errors ignored on restore: N`) — but it has **already
+committed the partial damage** by the time it prints that, so the nonzero exit is not the
+safety net it looks like. Use `./opentranscribe.sh restore` above; it guarantees an empty target
+before replaying, exactly like the plain-SQL path.
+:::
+
+#### Restoring an S3-destination backup
+
+An S3-destination scheduled backup exists **only in the bucket** — the local artifact is
+deleted right after upload. The S3 credentials needed to fetch it back are encrypted in the
+database, so:
+
+☠️ **Fetch the artifact BEFORE anything destructive happens** — the credentials to reach
+your bucket live inside the very database a restore is about to drop.
+
+```bash
+./opentranscribe.sh restore --from-s3 opentranscribe-20260827-030000.dump
+```
+
+This fetches the named object out of the configured S3 destination (via
+`app.scripts.fetch_backup` inside the backend container, the only place the decryption key
+is available) into `${BACKUP_HOST_PATH:-./backups}`, verifying its size and magic bytes,
+*then* runs the normal restore flow above. It refuses (naming the manual two-step below) if
+the backend container isn't running. Manual fallback:
+
+```bash
+docker compose exec -T backend python -m app.scripts.fetch_backup --list
+docker compose exec -T backend python -m app.scripts.fetch_backup opentranscribe-20260827-030000.dump
+./opentranscribe.sh restore "${BACKUP_HOST_PATH:-./backups}/opentranscribe-20260827-030000.dump"
+```
+
+#### If you specifically need `pg_restore`'s parallel restore (`-j`)
+
+`./opentranscribe.sh restore`'s safe path uses `--single-transaction`, which is **mutually
+exclusive** with `-j`/`--jobs` (measured: `pg_restore: error: cannot specify both
+--single-transaction and multiple jobs`) — so it deliberately forfeits parallel restore for
+the atomicity guarantee (a failure rolls back to nothing, not a hybrid schema). An operator
+who knowingly wants `-j` for a very large database can run it by hand, accepting that
+tradeoff explicitly:
 
 ```bash
 # Stop services that use the database
 docker compose stop backend celery-worker celery-download-worker \
   celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-beat
 
-# Restore from plain SQL
-docker compose exec -T postgres psql -U postgres opentranscribe < backup.sql
+# Guarantee an empty target first — pg_restore --clean is NOT enough (it only drops
+# objects the dump itself knows about, so a later migration's table would survive).
+docker compose exec -T postgres psql -U postgres -d postgres \
+  -c 'DROP DATABASE IF EXISTS "opentranscribe" WITH (FORCE);' \
+  -c 'CREATE DATABASE "opentranscribe" OWNER "postgres";'
 
-# Or from compressed backup
-gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U postgres opentranscribe
-
-# Or from custom format
-docker compose exec -T postgres pg_restore -U postgres -d opentranscribe backup.dump
+# Parallel restore — no atomicity guarantee: a failure partway through leaves a
+# hybrid schema, not a clean rollback.
+docker compose exec -T postgres pg_restore -U postgres -d opentranscribe -j 4 \
+  --no-owner --no-privileges < backup.dump
 
 # Restart services
 docker compose start backend celery-worker celery-download-worker \
@@ -667,8 +800,9 @@ Untested backups are not backups. Verify your backups regularly:
 # 1. Create a test database
 docker compose exec postgres createdb -U postgres opentranscribe_test
 
-# 2. Restore backup into test database
-docker compose exec -T postgres psql -U postgres opentranscribe_test < backups/opentranscribe_backup_latest.sql
+# 2. Restore backup into test database (ON_ERROR_STOP so a replay failure is loud, not
+#    silent — see issue #599. No DROP needed: opentranscribe_test is already empty.)
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres opentranscribe_test < backups/opentranscribe_backup_latest.sql
 
 # 3. Verify row counts
 docker compose exec postgres psql -U postgres opentranscribe_test -c "
@@ -682,6 +816,35 @@ docker compose exec postgres psql -U postgres opentranscribe_test -c "
 # 4. Clean up test database
 docker compose exec postgres dropdb -U postgres opentranscribe_test
 ```
+
+The same drill for a custom-format (`-Fc`) or scheduled-backup artifact, using
+`pg_restore` (issue #600):
+
+```bash
+# 1. Create a test database
+docker compose exec postgres createdb -U postgres opentranscribe_test
+
+# 2. Restore into it — --exit-on-error --single-transaction so a replay failure rolls
+#    back to nothing rather than a hybrid schema. No drop/--clean needed:
+#    opentranscribe_test is already empty.
+docker compose exec -T postgres pg_restore -U postgres -d opentranscribe_test \
+  --exit-on-error --single-transaction --no-owner --no-privileges < backups/opentranscribe-latest.dump
+
+# 3. Verify — same query as above
+docker compose exec postgres psql -U postgres opentranscribe_test -c "
+  SELECT 'users' as table_name, count(*) FROM \"user\"
+  UNION ALL
+  SELECT 'media_files', count(*) FROM media_file
+  UNION ALL
+  SELECT 'transcripts', count(*) FROM transcript_segment;
+"
+
+# 4. Clean up test database
+docker compose exec postgres dropdb -U postgres opentranscribe_test
+```
+
+Or skip both hand-rolled drills and just run the real thing against a throwaway copy —
+`./opentranscribe.sh restore` handles both formats and does the drop/recreate + verify for you.
 
 :::tip
 Schedule a quarterly disaster recovery drill where you restore from backup onto a separate machine to validate the entire recovery process end-to-end.

@@ -174,7 +174,7 @@ Error indicators:
 1. Verify both model agreements accepted (see Step 3)
 2. Check token is correct in `.env` file
 3. Regenerate token if needed
-4. Restart OpenTranscribe: `./opentr.sh restart`
+4. Restart OpenTranscribe: `./opentr.sh restart-all`
 
 ### Error: "Invalid HuggingFace token"
 

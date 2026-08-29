@@ -76,9 +76,3 @@ def get_used_mb(device: int = 0) -> float:
     """Convenience: get GPU used memory in MB, or 0.0 if unavailable."""
     mem = get_gpu_memory(device)
     return mem.used_mb if mem else 0.0
-
-
-def get_free_mb(device: int = 0) -> float:
-    """Convenience: get GPU free memory in MB, or 0.0 if unavailable."""
-    mem = get_gpu_memory(device)
-    return mem.free_mb if mem else 0.0

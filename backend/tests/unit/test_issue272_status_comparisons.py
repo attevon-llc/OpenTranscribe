@@ -62,7 +62,17 @@ class TestRedactionReprocessGuard:
         assert str(FileStatus.PROCESSING) not in ("processing", "cancelling")
 
     def test_task_skips_mid_reprocess_file_without_segments(self):
-        """End-to-end through the task body: PROCESSING + no segments → skipped."""
+        """End-to-end through the task body: PROCESSING + no segments → skipped.
+
+        The task now also creates/updates a ``Task`` row (issue #622), so the
+        session mock must tell a ``MediaFile`` query apart from a ``Task``
+        query — a single blanket ``query().filter().first()`` return value
+        (the previous form here) would hand the ``MediaFile`` mock back for
+        the ``Task`` lookup too, and ``update_task_status`` calling
+        ``int()`` on that mock's mock attributes would raise, masking the
+        very "skipped" outcome this test exists to pin.
+        """
+        from app.models.media import MediaFile
         from app.tasks.redaction_task import redaction_detect_task
 
         media = MagicMock()
@@ -70,8 +80,29 @@ class TestRedactionReprocessGuard:
         media.transcript_segments = []
         media.user_id = 1
 
-        session = MagicMock()
-        session.query.return_value.filter.return_value.first.return_value = media
+        class _FakeSession:
+            """Distinguishes MediaFile lookups from everything else (Task)."""
+
+            def query(self, model, *_args, **_kwargs):
+                mock_query = MagicMock()
+                mock_query.filter.return_value.first.return_value = (
+                    media if model is MediaFile else None
+                )
+                return mock_query
+
+            def add(self, *_a, **_kw):
+                pass
+
+            def commit(self):
+                pass
+
+            def rollback(self):
+                pass
+
+            def refresh(self, *_a, **_kw):
+                pass
+
+        session = _FakeSession()
 
         class _Scope:
             def __enter__(self):

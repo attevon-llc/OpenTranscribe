@@ -192,8 +192,7 @@ admin-only dependency.
 Real UI features whose call site the scan missed or which have no panel yet:
 `/files/{uuid}/thumbnail` (server-provided URL, above) · `/files/{uuid}/{apply,auto-label}` ·
 `/speaker-profiles/profiles/{uuid}/occurrences`, `.../assign-profile`, `.../suggestions` ·
-`/speakers/{uuid}/verify` · `/user-settings/ai-summary` (**the SPA calls the wrong path** — see
-Gotchas) · `/files/{uuid}/waveform/peaks` (redundant with `/waveform`).
+`/speakers/{uuid}/verify` · `/files/{uuid}/waveform/peaks` (redundant with `/waveform`).
 
 ## How it connects
 
@@ -263,11 +262,6 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   so `/unused` may list a tag `/cleanup` declines to delete. System tags are exempt in both
   scopes. Still gated by an **inline** `is_admin` check rather than a dependency, so a
   dependency-based authz audit does not see it.
-- **`endpoints/tags_pkg/` is dead code — do not edit it.** A leftover pre-split copy of the tag
-  endpoints (no `__init__.py`, its own local `APIRouter`, zero importers; `router.py` mounts
-  `endpoints.tags`). None of its routes are served. It still receives accidental maintenance from
-  repo-wide sweeps, and grepping a tag path literal matches both copies — always confirm you are
-  in `endpoints/tags/`.
 - `GET /api/auth/session` must **never 401** (200 for anonymous); it is the SPA's session probe.
 - **`GET /tasks` and `GET /tasks/{task_id}` read the `task` table (fixed in #431) — and accept
   TWO id forms.** #76 had repointed both at `MediaFile` while every writer stayed on `task`, so
@@ -314,12 +308,6 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   which is now exactly `stuck_files_found` · `recovered` · `errors` · `dry_run` (#431). It had no
   consumer in `frontend/src` or the tests. Don't re-add an orphan counter to this handler; nothing
   in it marks a file orphaned.
-- **`/api/user-settings/ai-summary` is unreachable from the SPA.** `LLMSettings.svelte` calls
-  `/settings/ai-summary` (lines 129 and 139), and no router is mounted at `/settings` — the GET 404
-  is swallowed by a `console.warn` and the PUT surfaces a toast error. The backend route is
-  correct; the **frontend** path is wrong and the fix is `/settings/` → `/user-settings/` in those
-  two lines. The admin twin in the same file (`/admin/system/ai-summary`) is right, which is why
-  only the per-user toggle is dead.
 - **`GET /admin/stats`: `system.version` is `core.version.APP_VERSION` and `system.gpu` is always
   a LIST.** The version was a hardcoded `"1.0.0"` that no release moved, so the admin panel
   disagreed with `/health` and the About dialog about the running build; and the

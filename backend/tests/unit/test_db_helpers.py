@@ -363,55 +363,6 @@ def test_get_unique_speakers_for_file_scoped_to_file(db_session, normal_user):
 
 
 # ---------------------------------------------------------------------------
-# get_file_tags
-# ---------------------------------------------------------------------------
-
-
-def test_get_file_tags_returns_tag_names(db_session, normal_user):
-    media_file = _make_file(db_session, normal_user)
-    tag_1 = Tag(name=f"alpha-{_suffix()}", user_id=normal_user.id)
-    tag_2 = Tag(name=f"beta-{_suffix()}", user_id=normal_user.id)
-    db_session.add_all([tag_1, tag_2])
-    db_session.flush()
-    db_session.add_all(
-        [
-            FileTag(media_file_id=media_file.id, tag_id=tag_1.id, source="manual"),
-            FileTag(media_file_id=media_file.id, tag_id=tag_2.id, source="manual"),
-        ]
-    )
-    db_session.flush()
-
-    names = db_helpers.get_file_tags(db_session, media_file.id)
-
-    assert sorted(names) == sorted([tag_1.name, tag_2.name])
-
-
-def test_get_file_tags_empty_for_untagged_file(db_session, normal_user):
-    media_file = _make_file(db_session, normal_user)
-
-    assert db_helpers.get_file_tags(db_session, media_file.id) == []
-
-
-def test_get_file_tags_swallows_query_error(db_session):
-    # media_file_id is an Integer FK -> a non-numeric filter value raises DataError,
-    # which the function is documented to catch and turn into [].
-    assert db_helpers.get_file_tags(db_session, "not-an-int") == []  # type: ignore[arg-type]  # deliberately wrong type to trigger a DB-level error
-
-
-def test_get_file_tags_leaves_session_usable_after_query_error(db_session, normal_user):
-    """Same missing ``db.rollback()`` as ``safe_get_by_id`` — see that test's
-    docstring for why the user id is captured before the error rather than read
-    off the ORM instance afterward.
-    """
-    user_id = normal_user.id
-
-    db_helpers.get_file_tags(db_session, "not-an-int")  # type: ignore[arg-type]  # deliberately wrong type to trigger a DB-level error
-
-    count = db_session.query(MediaFile).filter(MediaFile.user_id == user_id).count()
-    assert count == 0
-
-
-# ---------------------------------------------------------------------------
 # get_files_by_status
 # ---------------------------------------------------------------------------
 

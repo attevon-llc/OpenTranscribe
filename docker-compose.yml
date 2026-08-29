@@ -11,7 +11,9 @@ services:
     container_name: opentranscribe-postgres
     image: postgres:17.5-alpine
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Performance tuning for transcription workloads (2500+ files, 1M+ segments)
@@ -48,7 +50,9 @@ services:
     container_name: opentranscribe-minio
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     volumes:
@@ -78,7 +82,9 @@ services:
     container_name: opentranscribe-redis
     image: redis:8.2.2-alpine3.22
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     ports:
@@ -200,7 +206,9 @@ services:
   backend:
     container_name: opentranscribe-backend
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Backend handles API requests only - except the search embedding model
@@ -213,7 +221,16 @@ services:
       # Shared scratch for cross-worker preprocessed-WAV handoff
       - pipeline_scratch:/scratch/opentranscribe
     ports:
-      - "${BACKEND_PORT:-5174}:8080"
+      # BACKEND_BIND_HOST defaults to the wildcard address, which is the
+      # historical behaviour and what a plain deployment expects. A --with-pki
+      # stack overrides it to 127.0.0.1 (scripts/pki/generate-test-env.sh writes
+      # it into the fragment opentr.sh sources before assembling this chain):
+      # there, mTLS-terminating nginx is the only legitimate front door, and a
+      # reachable backend port turned the trusted-proxy allowlist into remote
+      # unauthenticated admin impersonation (issue #620). Set via env, never a
+      # second `ports:` entry in an overlay — compose APPENDS port lists, so an
+      # overlay would publish the wildcard binding as well (issue #343).
+      - "${BACKEND_BIND_HOST:-0.0.0.0}:${BACKEND_PORT:-5174}:8080"
     environment:
       # Internal Docker network settings (hardcoded for service-to-service communication)
       - POSTGRES_HOST=postgres
@@ -279,7 +296,9 @@ services:
   celery-worker:
     container_name: opentranscribe-celery-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q gpu --pool=${GPU_WORKER_POOL:-threads} --concurrency=${GPU_CONCURRENT_REQUESTS:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-transcription@%h -E
@@ -339,7 +358,9 @@ services:
   celery-download-worker:
     container_name: opentranscribe-celery-download-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q download --concurrency=${DOWNLOAD_CONCURRENCY:-5} --max-tasks-per-child=${DOWNLOAD_MAX_TASKS:-10} --hostname media-downloader@%h -E
@@ -365,7 +386,11 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d media-downloader@$$HOSTNAME"]
+      # prefork pool (default, no --pool= flag): `inspect ping` is answered by the
+      # MainProcess regardless of whether the forked child pool is alive, so it
+      # cannot detect a wedged pool. Prove a child process actually exists instead
+      # (see backend/scripts/celery_pool_healthcheck.py for the incident this fixes).
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py media-downloader@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -379,7 +404,9 @@ services:
   celery-cpu-worker:
     container_name: opentranscribe-celery-cpu-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Compute-bound queues only. cloud-asr runs on its own container
@@ -427,7 +454,10 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d cpu-processor@$$HOSTNAME"]
+      # prefork pool: `inspect ping` answers from MainProcess even with every forked
+      # child dead — this is the queue hit by the 10h46m wedge incident. Prove a
+      # child process actually exists (backend/scripts/celery_pool_healthcheck.py).
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py cpu-processor@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -452,7 +482,9 @@ services:
   celery-redaction:
     container_name: opentranscribe-celery-redaction
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: nice -n ${REDACTION_NICE:-10} celery -A app.core.celery worker --loglevel=info -Q redaction --pool=${REDACTION_WORKER_POOL:-threads} --concurrency=${REDACTION_CONCURRENCY:-2} --max-tasks-per-child=${REDACTION_MAX_TASKS:-200} --hostname redaction@%h -E
@@ -509,7 +541,9 @@ services:
     # CPU worker. Phase 2 of the timing audit plan — item 17.
     container_name: opentranscribe-celery-cloud-asr-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q cloud-asr --concurrency=${CLOUD_ASR_CONCURRENCY:-16} --max-tasks-per-child=50 --hostname cloud-asr@%h -E
@@ -535,7 +569,8 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d cloud-asr@$$HOSTNAME"]
+      # prefork pool: see the cpu-processor healthcheck comment above.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py cloud-asr@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -549,7 +584,9 @@ services:
   celery-nlp-worker:
     container_name: opentranscribe-celery-nlp-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q nlp,celery --concurrency=${NLP_CONCURRENCY:-4} --max-tasks-per-child=${NLP_MAX_TASKS:-50} --hostname ai-nlp@%h -E
@@ -574,7 +611,8 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d ai-nlp@$$HOSTNAME"]
+      # prefork pool: see the cpu-processor healthcheck comment above.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py ai-nlp@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -590,7 +628,9 @@ services:
   celery-embedding-worker:
     container_name: opentranscribe-celery-embedding-worker
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Dedicated embedding worker: concurrency=1 keeps one model loaded in memory.
@@ -629,7 +669,8 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d search-indexer@$$HOSTNAME"]
+      # prefork pool: see the cpu-processor healthcheck comment above.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py search-indexer@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -644,7 +685,9 @@ services:
   celery-beat:
     container_name: opentranscribe-celery-beat
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery beat --loglevel=info
@@ -706,7 +749,9 @@ services:
     profiles:
       - gpu-split
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q gpu-transcribe --pool=${GPU_WORKER_POOL:-threads} --concurrency=${GPU_CONCURRENT_REQUESTS:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-transcribe@%h -E
@@ -764,7 +809,9 @@ services:
     profiles:
       - gpu-split
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     command: celery -A app.core.celery worker --loglevel=info -Q gpu-diarize --pool=${GPU_WORKER_POOL:-threads} --concurrency=${GPU_CONCURRENT_REQUESTS:-1} --max-tasks-per-child=${GPU_MAX_TASKS:-100000} --hostname gpu-diarize@%h -E
@@ -827,7 +874,9 @@ services:
       - gpu-scale  # Only activated with --gpu-scale flag
     scale: 0  # Disabled by default, gpu-scale.yml sets scale: 1
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     environment:
@@ -867,7 +916,9 @@ services:
   frontend:
     container_name: opentranscribe-frontend
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
     # Note: ports, healthcheck, and NODE_ENV defined in override files (dev vs prod)
@@ -878,22 +929,48 @@ services:
   flower:
     container_name: opentranscribe-flower
     restart: always
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     security_opt:
       - no-new-privileges:true
+    # ⚠️ issue #609: flower 2.1.0's /api/workers is a ONE-SHOT startup snapshot,
+    # not a live roster. Flower.start() (flower/app.py:98) issues a single
+    # `celery inspect` broadcast at process boot with a 1 s reply timeout and
+    # never re-inspects on a timer (grep the installed package for
+    # update_workers/PeriodicCallback — there is no periodic inspection at
+    # all). A worker still importing torch/whisperx, or running
+    # @worker_ready preload_models() synchronously in its main thread
+    # (backend/app/core/celery.py PRELOAD_GPU_MODELS), is not ready to answer
+    # inside that 1 s boot window and is absent from the JSON API FOREVER —
+    # "wait longer and re-check" cannot fix it, because nothing ever asks
+    # again. This is NOT a --pool=threads bug: prefork workers (cpu-processor,
+    # cloud-asr) lose the exact same race, and a --pool=threads worker
+    # answering its own healthcheck's `inspect ping` proves threads workers
+    # DO respond to broadcasts. --inspect_timeout below only widens the
+    # window for a request that explicitly asks Flower to re-broadcast (see
+    # scripts/gpu-scale-smoke.sh and scripts/bulk-processing-cheatsheet.sh,
+    # both of which now call /api/workers?refresh=1) — it does not make the
+    # one-shot cache itself refresh. --queues=... and --broker=... used to be
+    # listed here and did NOTHING: flower.command.is_flower_option() silently
+    # discards any argv flag it doesn't recognize as a real Flower option
+    # (--queues has never been one), and Flower already resolves the broker
+    # from CELERY_BROKER_URL below via settings.CELERY_BROKER_URL — removing
+    # them is a no-op fix that also silences a boot-time warning.
+    # backend/tests/unit/test_flower_worker_discovery.py guards both facts so
+    # a future silently-dropped flag doesn't reappear unnoticed.
     command: >
       python -m celery -A app.core.celery flower
       --port=5555
       --url_prefix=${FLOWER_URL_PREFIX:-flower}
       --persistent=True
       --db=/app/temp/flower.db
-      --broker=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0
       --max_tasks=10000
       --natural_time=True
       --auto_refresh=True
       --tasks_columns=name,uuid,state,received,started,runtime,worker,args
       --purge_offline_workers=600
-      --queues=gpu,gpu-transcribe,gpu-diarize,download,cpu,nlp,embedding,utility,cloud-asr,cpu-transcribe,redaction,celery
+      --inspect_timeout=10000
       --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-flower}
     ports:
       # Loopback-only: prod reaches Flower through nginx on the compose network;

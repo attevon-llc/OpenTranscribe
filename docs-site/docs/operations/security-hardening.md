@@ -234,7 +234,7 @@ encryption strategy must cover all of them:
 | **OpenSearch** | Full transcript text (search index) + embeddings | No native encryption — use volume/disk encryption (below) |
 | **MinIO** | Original media files, exports, thumbnails | **AES-256-GCM server-side encryption, enabled by default** |
 | **Redis** | In-flight task payloads, notifications | Volume/disk encryption (if persistence enabled) |
-| **Backups** | Complete database dump (all transcripts) | `./opentr.sh backup --encrypt` (GPG AES-256) |
+| **Backups** | Complete database dump (all transcripts) | `./opentranscribe.sh backup --encrypt` (GPG AES-256) |
 
 ### Encryption at Rest
 
@@ -291,10 +291,10 @@ that leaves the host:
 ```bash
 # Encrypted backup - pg_dump is piped directly into GPG (AES-256);
 # the plaintext dump never touches disk. Prompts for a passphrase.
-./opentr.sh backup --encrypt
+./opentranscribe.sh backup --encrypt
 
 # Restore - .gpg files are detected and decrypted automatically
-./opentr.sh restore backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql.gpg
+./opentranscribe.sh restore backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql.gpg
 ```
 
 Store the passphrase in a password manager — an encrypted backup without its passphrase is
@@ -416,12 +416,76 @@ OpenTranscribe includes features that map to NIST 800-53 controls:
 | **AC-12** (Session Termination) | Configurable session timeouts, auto-logout on inactivity |
 | **AU-2/AU-3** (Audit Events) | Comprehensive audit logging with timestamps and source IPs |
 | **IA-2** (Identification and Authentication) | Multi-factor authentication, PKI/CAC support |
-| **IA-5** (Authenticator Management) | Password complexity, history, expiration policies |
+| **IA-5** (Authenticator Management) | Configurable password policy (complexity, history, expiration) — see [Password Policy and Current NIST Guidance](#password-policy-and-current-nist-guidance) below for how the shipped defaults relate to current guidance |
 | **SC-12** (Cryptographic Key Establishment) | PBKDF2 key derivation |
 | **SC-13** (Cryptographic Protection) | AES-256-GCM at rest, HMAC-SHA-256 (HS256) JWT signing -- both FIPS-approved; see [Algorithm Requirements](#algorithm-requirements) |
 | **SC-28** (Protection of Information at Rest) | Encrypted sensitive data fields |
 
 Classification banners are configurable in **Admin > Settings > System > Classification Banner**.
+
+### Password Policy and Current NIST Guidance
+
+OpenTranscribe's password policy is fully admin-configurable at runtime
+(**Admin → Settings → Authentication**, backed by `SystemSettings`, resolved DB > `.env` >
+coded default — no restart needed) rather than hardcoded:
+
+| Setting | Shipped default | Purpose |
+|---|---|---|
+| `password_min_length` | 12 | Minimum password length |
+| `password_require_uppercase` / `_lowercase` / `_digit` / `_special` | all `true` | Composition (character-class) requirements |
+| `password_max_age_days` | 60 | Forced expiration; **0 disables expiry entirely** |
+| `password_history_count` | 24 | Prevents reuse of recent passwords |
+
+**These defaults reflect NIST SP 800-63B Revision 3, not the current Revision 4.** NIST finalized
+[SP 800-63B Revision 4](https://pages.nist.gov/800-63-4/sp800-63b.html) on 2025-07-31
+(effective 2025-08-01), and it explicitly reverses the older composition/expiry guidance:
+
+> "Verifiers and CSPs **SHALL NOT** require subscribers to change passwords periodically.
+> However, verifiers **SHALL** force a change if there is evidence that the authenticator has
+> been compromised."
+>
+> "Verifiers and CSPs **SHALL NOT** impose other composition rules (e.g., requiring mixtures of
+> different character types) for passwords."
+
+The rationale (well-documented in the security community, not unique to this guidance): forced
+periodic rotation and mandatory character-class mixing empirically push users toward weaker,
+more predictable passwords (`Summer2024!` → `Summer2025!`), and current guidance instead favors
+length and breach-based rotation (checking new passwords against known-breach corpora — not yet
+implemented here; see [OWASP's Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#implement-proper-password-strength-controls)
+for the current recommended approach) over composition rules.
+
+**What this means for your deployment:**
+
+- If your own organization's policy — independent of NIST — still requires periodic rotation
+  or composition rules (some non-federal compliance frameworks do), the current defaults already
+  satisfy that; no action needed.
+- If you want to align with current NIST SP 800-63B Rev. 4 guidance, set
+  `password_max_age_days = 0` and relax the composition-requirement toggles in
+  **Admin → Settings → Authentication**. This does not retroactively affect existing users'
+  stored passwords — the policy is enforced only when a password is set or changed.
+- OpenTranscribe does not change its *shipped defaults* to Rev. 4's posture as of this writing;
+  they remain what they were. This section exists so operators can make an informed choice
+  rather than relying on a compliance-mapping table that overstated the currency of the
+  guidance it was mapped against.
+
+### GDPR Compliance
+
+Erasure (Art. 17) previously destroyed data but left no durable record that a request had ever
+been made or fulfilled — which made Art. 30(1)'s demonstrability requirement and Art. 12(3)'s
+one-month deadline both impossible to prove against. An **erasure-ledger** now records that an
+erasure was requested, one row per request, with the SLA clock on it.
+
+- **No free-text column, by design.** Every column is a short, `CHECK`-constrained enum
+  (subject type, status, actor kind, deferred reason) — there is nowhere to put an email or any
+  other personal data even by accident, so the ledger itself can never become a copy of the PII
+  it is documenting. The subject is identified only by surrogate database keys, which are
+  meaningless once the row they point at is destroyed.
+- **Legal-hold re-erasure.** A file under a legal hold (Art. 17(3)(e)) is deferred rather than
+  erased immediately; once the hold is lifted, the deferred entry is re-erased rather than
+  silently forgotten.
+- **Restore reconciliation.** Restoring a database backup taken before an erasure can resurrect
+  the erased subject. A reconciliation task re-checks every completed ledger entry against the
+  live schema after a restore and re-erases any subject it finds has come back.
 
 ## Secrets Management
 
@@ -481,6 +545,22 @@ alone can never be false. Every gate in the codebase therefore goes through one 
 `settings.fips_140_3_active` (= `FIPS_MODE and FIPS_VERSION == "140-3"`), and
 `tests/unit/test_jwt_algorithm_single_owner.py` fails the build if a module reads
 `FIPS_VERSION` directly. Set `FIPS_MODE=true`.
+:::
+
+:::caution `ENCRYPTION_ALGORITHM_V3` is validated, not dispatched on
+`AES-256-GCM` is the only value this build implements, and it is not selectable. The v3
+ciphertext envelope (`v3:salt:nonce:ciphertext`) records **no algorithm field**, so decrypt
+has to use exactly the algorithm encrypt used — switching would make every stored provider
+key, TOTP secret and credential undecryptable. Naming any other algorithm therefore makes a
+FIPS deployment **refuse to start**, rather than silently encrypt with something other than
+what you configured.
+
+`FIPS_VALIDATE_ENTROPY=true` (the default) makes that same startup check verify the OS
+CSPRNG is usable and that `ENCRYPTION_KEY` and `JWT_SECRET_KEY` are plausibly random —
+minimum length, distinct bytes, no repeated block or run, and a Shannon-entropy floor. A
+failure names the offending variable and refuses the boot. Both checks are inert unless
+`FIPS_MODE=true`. Generate keys with the installer or
+`generate_encryption_key()`; a hand-typed passphrase will be rejected.
 :::
 
 ### Algorithm Requirements
@@ -581,10 +661,11 @@ TOTP_ALGORITHM=SHA256  # or SHA512
 
 ### Verification
 
-Run the compliance verification script:
+Run the FIPS 140-3 test suite (gated behind `RUN_FIPS_TESTS`, part of the full
+pre-merge gate — see `./scripts/run-integration-tests.sh`):
 
 ```bash
-./scripts/verify-fips-140-3.sh
+cd backend && RUN_FIPS_TESTS=true pytest tests/test_fips_140_3.py -v
 ```
 
 This checks password hashing algorithm and iterations, JWT signing algorithm, encryption algorithm, and token hash algorithm.

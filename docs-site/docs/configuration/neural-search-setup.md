@@ -385,7 +385,7 @@ POST /api/search/validate
 
 4. Restart backend:
    ```bash
-   ./opentr.sh restart backend
+   ./opentr.sh restart-backend
    ```
 
 ### Issue: Embedding Generation Errors
@@ -494,9 +494,10 @@ POST /api/search/validate
    POST /api/admin/search/cancel-reindex
    ```
 
-4. Restart OpenSearch:
+4. Restart OpenSearch (`opentr.sh` has no single-service restart for OpenSearch, so this
+   restarts everything):
    ```bash
-   ./opentr.sh restart opensearch
+   ./opentr.sh restart-all
    ```
 
 ## Offline & Airgapped Setup

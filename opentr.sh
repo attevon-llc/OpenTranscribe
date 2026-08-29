@@ -40,6 +40,11 @@ fi
 # which aborts under `set -u` in any checkout whose .env omits it — i.e. every fresh
 # worktree. Empty means "no specific device", which that helper already handles.
 : "${GPU_DEVICE_ID:=}"
+# --with-pki host ports (docker-compose.pki.yml / docker-compose.pki-dev.yml).
+# Both are already guarded with `:-` at every read site, but listed here too
+# per the contract this block documents.
+: "${PKI_HTTPS_PORT:=}"
+: "${PKI_HTTP_PORT:=}"
 # Snapshot of the .env value, taken before any `--gpu-device` override replaces
 # it. The containers read GPU_DEVICE_ID from `env_file: .env` (not from this
 # shell), so the override has to be able to say which value they will still see.
@@ -49,11 +54,6 @@ GPU_DEVICE_ID_FROM_ENV="${GPU_DEVICE_ID}"
 # through start/reset first aborted before it could print anything. `dev` matches the
 # default those functions use, so defaulting here cannot change a real invocation.
 : "${ENVIRONMENT:=dev}"
-# Same reason as GPU_DEVICE_ID above: it is read to warn that clustering cannot be
-# moved off its pinned device, and that warning path runs on checkouts whose .env
-# never set it. Line 406 guards its own read with `:-`; line 409 does not, and a
-# static guard cannot know the `-n` test above it already proved it non-empty.
-: "${GPU_CLUSTERING_DEVICE:=}"
 
 # Export APP_VERSION so docker compose can pass it through to containers
 # (used instead of ./VERSION file bind-mount to avoid OCI stub creation in dev mode)
@@ -116,10 +116,9 @@ show_help() {
   echo "                         Does NOT move LLM_TEST_GPU_DEVICE_ID (--with-llm-test keeps its own"
   echo "                         card on purpose — co-locating a multi-GB LLM with transcription is"
   echo "                         what that separation prevents); use LLM_TEST_GPU_DEVICE_ID=N ./opentr.sh"
-  echo "                         Does NOT move GPU_CLUSTERING_DEVICE, nor the in-container copy of"
-  echo "                         GPU_DEVICE_ID: both come from 'env_file: .env', which no shell export"
-  echo "                         can reach. The in-container copy only labels the admin GPU-stats"
-  echo "                         panel; placement is the reservation this flag sets."
+  echo "                         Does NOT move the in-container copy of GPU_DEVICE_ID: it comes from"
+  echo "                         'env_file: .env', which no shell export can reach. It only labels the"
+  echo "                         admin GPU-stats panel; placement is the reservation this flag sets."
   echo "  --nas                - Use custom storage paths (NAS for media, NVMe for DB/search)"
   echo "  --no-nas             - Suppress the auto-loaded NAS overlay (use Docker named volumes)"
   echo "  --no-diar-native     - Suppress the auto-loaded native diarization sidecar"
@@ -138,11 +137,17 @@ show_help() {
   echo "  --dry-run            - Print the compose files + command that WOULD run; start nothing"
   echo "  --lite               - Cloud-only ASR mode (no GPU required)"
   echo "  --cpu                - CPU-only mode (local transcription, no GPU overlay)"
-  echo "  --with-pki           - Enable PKI certificate authentication (PROD MODE ONLY - requires nginx)"
+  echo "  --with-pki           - Enable PKI certificate authentication (mTLS). Works in dev (via"
+  echo "                         docker-compose.pki-dev.yml, a built nginx in front of the"
+  echo "                         bind-mounted dev backend) and prod. Generates its own test-env"
+  echo "                         fragment (scripts/pki/generate-test-env.sh) — never touches .env."
   echo "  --with-ldap-test     - Start LDAP test container (dev or prod; localhost:3890, UI :17170)"
   echo "  --with-mock-llm      - Start mock LLM provider (localhost:5199) so chat/AI features"
   echo "                         work without a GPU or API key. Models: mock-gpt, mock-echo,"
   echo "                         mock-empty, mock-error, mock-slow"
+  echo "  --with-mock-asr      - Start mock cloud ASR provider (Gladia stand-in, localhost:5198)"
+  echo "                         so cloud-ASR features work without a vendor account."
+  echo "                         Scenarios: ok, error, malformed, upload-reject"
   echo "  --with-llm-test      - Start a real GPU-backed LLM (vLLM, localhost:5195) for chat"
   echo "                         testing against actual model output, not canned tokens."
   echo "                         Default model: Gemma 4 E4B (AWQ), GPU 2. See"
@@ -165,7 +170,8 @@ show_help() {
   echo "  reset [dev|prod] [options]             - Reset and reinitialize (deletes all data!)"
   echo "                                           (Accepts same options as 'start' command)"
   echo "  backup [--encrypt]  - Create a database backup (--encrypt: GPG AES-256, no plaintext on disk)"
-  echo "  restore [file]      - Restore database from backup (.sql or .gpg)"
+  echo "  restore [--yes] [--no-safety-dump] [--from-s3] [--migrate-forward|--no-restart] <file>  - REPLACE the database from a backup"
+  echo "                  (.sql, .dump, .sql.gpg, or .dump.gpg; --from-s3 fetches by name first) — destructive"
   echo ""
   echo "Development Commands:"
   echo "  restart-backend     - Restart backend, all celery workers, celery-beat & flower without database reset"
@@ -225,6 +231,7 @@ show_help() {
   echo "  ./opentr.sh start dev --cpu                  # Local CPU-only (skip GPU overlay)"
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
   echo "  ./opentr.sh start dev --with-mock-llm        # Dev with a fake LLM for chat/AI testing"
+  echo "  ./opentr.sh start dev --with-mock-asr        # Dev with a fake cloud ASR provider for testing"
   echo "  ./opentr.sh start dev --with-llm-test        # Dev with a real GPU-backed LLM (vLLM) for chat testing"
   echo "  ./opentr.sh start dev --with-diar-native     # Dev with the native diarization sidecar"
   echo "  ./opentr.sh start dev --with-keycloak-test   # Dev with Keycloak test container"
@@ -232,6 +239,7 @@ show_help() {
   echo "  ./opentr.sh start prod                       # Production (pulls from Docker Hub)"
   echo "  ./opentr.sh start prod --build               # Production with local build (test before push)"
   echo "  ./opentr.sh start prod --build --with-pki    # Production with PKI (requires nginx)"
+  echo "  ./opentr.sh start dev --with-pki             # Dev with PKI (docker-compose.pki-dev.yml)"
   echo "  ./opentr.sh reset dev                        # Reset development environment"
   echo "  ./opentr.sh reset dev --lite                 # Reset in cloud-only ASR mode"
   echo "  ./opentr.sh logs backend                     # View backend logs"
@@ -390,9 +398,9 @@ GPU_DEVICE_VARS=(
 #     Folding it in would co-locate them — the exact OOM that separation avoids.
 #     Move it explicitly with `LLM_TEST_GPU_DEVICE_ID=N ./opentr.sh ...` (it is
 #     absent from .env.example, so a pre-export survives unless your .env sets it).
-#   * GPU_CLUSTERING_DEVICE, and the container-side copy of GPU_DEVICE_ID, are read
-#     INSIDE the container from `env_file: .env` rather than interpolated by
-#     compose, so no shell export can reach them. Both are warned about below.
+#   * The container-side copy of GPU_DEVICE_ID is read INSIDE the container from
+#     `env_file: .env` rather than interpolated by compose, so no shell export can
+#     reach it. Warned about below.
 apply_gpu_device_override() {
   local requested="$1"
   local var
@@ -432,11 +440,6 @@ apply_gpu_device_override() {
     echo "      only labels the admin GPU-stats panel; the reserved card is $requested."
   fi
 
-  if [ -n "${GPU_CLUSTERING_DEVICE:-}" ] && [ "${GPU_CLUSTERING_DEVICE}" != "$requested" ]; then
-    echo "   ⚠️  GPU_CLUSTERING_DEVICE=${GPU_CLUSTERING_DEVICE} in .env: speaker clustering runs on the"
-    echo "      cpu-worker (which sees ALL GPUs) and reads that value from env_file — --gpu-device"
-    echo "      cannot move it. Unset it in .env, or expect clustering on GPU ${GPU_CLUSTERING_DEVICE}."
-  fi
 }
 
 # Flag combinations that make --gpu-device mean less than it looks like it means.
@@ -490,6 +493,64 @@ add_nas_overlay() {
   echo "   OpenSearch:   $OS_PATH"
 }
 
+# Append the PKI/mTLS overlay to $COMPOSE_FILES if --with-pki was passed.
+# Replaces two ~25-line blocks that used to be duplicated verbatim in
+# start_app() and reset() (issue: PKI test-env injection design doc).
+#
+# Dev vs prod: docker-compose.pki-dev.yml swaps in a Dockerfile.prod nginx in
+# front of the bind-mounted dev backend (real mTLS, no image rebuild needed for
+# a backend fix); docker-compose.pki.yml is the prod/nginx overlay. Either way
+# docker-compose.override.yml / docker-compose.prod.yml must already be in
+# $COMPOSE_FILES — start_app()/reset() add PKI after that base chain.
+#
+# Certificate generation and the test-env fragment are delegated to
+# scripts/pki/generate-test-env.sh, which is the ONLY thing that decides
+# whether certs need (re)issuing — see that script's header. This function
+# never opens .env; PKI_HTTPS_PORT/PKI_HTTP_PORT are read from whatever the
+# shell already has (a fresh deployment will have offset them beforehand).
+add_pki_overlay() {
+  if [ -z "$WITH_PKI_FLAG" ]; then
+    return
+  fi
+
+  local pki_compose_file
+  if [ "$ENVIRONMENT" = "dev" ]; then
+    pki_compose_file="docker-compose.pki-dev.yml"
+  else
+    pki_compose_file="docker-compose.pki.yml"
+  fi
+
+  if [ ! -f "$pki_compose_file" ]; then
+    echo "⚠️  --with-pki specified but $pki_compose_file not found"
+    return
+  fi
+
+  if ! ./scripts/pki/generate-test-env.sh --quiet \
+    --https-port "${PKI_HTTPS_PORT:-5182}" --http-port "${PKI_HTTP_PORT:-5187}"; then
+    echo "❌ Failed to generate PKI test env (scripts/pki/generate-test-env.sh)"
+    exit 1
+  fi
+
+  # Source the fragment AFTER .env (sourced at the top of this script), same
+  # ordering rule apply_gpu_device_override() follows for GPU_DEVICE_ID:
+  # PKI_HTTP_PORT is a live line in .env.example, so a pre-export would
+  # otherwise lose to it. .env itself is never opened by this function or by
+  # generate-test-env.sh.
+  set -a
+  # shellcheck source=scripts/pki/test-certs/pki-test.env
+  source scripts/pki/test-certs/pki-test.env
+  set +a
+
+  COMPOSE_FILES="$COMPOSE_FILES -f $pki_compose_file -f scripts/pki/test-certs/pki-test.compose.yml"
+  echo "🔐 Adding PKI authentication overlay ($pki_compose_file + generated test-env fragment)"
+  echo "   Access URL: ${PKI_E2E_URL:-https://localhost:${PKI_HTTPS_PORT:-5182}}"
+  echo "   Import client certificate from: scripts/pki/test-certs/clients/"
+  if [ "$ENVIRONMENT" = "dev" ]; then
+    echo "   ℹ️  Dev PKI frontend is a BUILT image — a *frontend* change still needs"
+    echo "      ./opentr.sh rebuild-frontend. Only the backend hot-reloads."
+  fi
+}
+
 #######################
 # FRESH DEPLOYMENT HELPERS
 #######################
@@ -538,6 +599,9 @@ FRESH_LDAP_SERVICES=(lldap)
 # Mock LLM provider (--with-mock-llm). Isolated like every other aux overlay so
 # a fresh stack cannot collide with the main one on port 5199.
 FRESH_MOCK_LLM_SERVICES=(mock-llm)
+# Mock cloud ASR provider (--with-mock-asr). Isolated like every other aux
+# overlay so a fresh stack cannot collide with the main one on port 5198.
+FRESH_MOCK_ASR_SERVICES=(mock-asr)
 # Native diarization sidecar (--with-diar-native). No published host port, but the
 # service still needs re-pinning into the fresh project so two stacks never share one.
 FRESH_DIAR_NATIVE_SERVICES=(diar-native)
@@ -782,6 +846,9 @@ FRESH_LDAP_PORT_VARS=(
 FRESH_MOCK_LLM_PORT_VARS=(
   "MOCK_LLM_PORT=5199"          # mock LLM provider → :5199
 )
+FRESH_MOCK_ASR_PORT_VARS=(
+  "MOCK_ASR_PORT=5198"          # mock cloud ASR provider → :5198
+)
 FRESH_SMB_PORT_VARS=(
   "SMB_TEST_PORT=4450"          # samba → :445
 )
@@ -792,6 +859,15 @@ FRESH_MONITORING_PORT_VARS=(
 FRESH_LLM_TEST_PORT_VARS=(
   "LLM_TEST_PORT=5195"          # vLLM   → :8000
   "LLM_TEST_OLLAMA_PORT=5196"   # ollama → :11434
+)
+# docker-compose.pki-dev.yml publishes BOTH — declares no container_name (backend
+# and frontend are already re-pinned by FRESH_NAMED_SERVICES), but DOES publish
+# ports, so the --with-pki exemption in
+# backend/tests/unit/test_opentr_fresh_aux_isolation.py was wrong (issue: PKI
+# test-env injection design doc, finding #5) and is isolated here instead.
+FRESH_PKI_PORT_VARS=(
+  "PKI_HTTPS_PORT=5182"         # PKI nginx mTLS listener  → :8443
+  "PKI_HTTP_PORT=5187"          # PKI nginx plain listener → :8080
 )
 
 # Resolve and export the host ports a fresh stack publishes, offset by $1.
@@ -1177,6 +1253,7 @@ start_app() {
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
   WITH_MOCK_LLM_FLAG=""
+  WITH_MOCK_ASR_FLAG=""
   WITH_DIAR_NATIVE_FLAG=""
   NO_DIAR_NATIVE_FLAG=""
   WITH_LLM_TEST_FLAG=""
@@ -1283,6 +1360,10 @@ start_app() {
         WITH_MOCK_LLM_FLAG="--with-mock-llm"
         shift
         ;;
+      --with-mock-asr)
+        WITH_MOCK_ASR_FLAG="--with-mock-asr"
+        shift
+        ;;
       --with-diar-native)
         WITH_DIAR_NATIVE_FLAG="--with-diar-native"
         shift
@@ -1383,6 +1464,11 @@ start_app() {
       _aux_services+=("${FRESH_MOCK_LLM_SERVICES[@]}")
       _aux_files+=("docker-compose.mock-llm.yml")
     fi
+    if [ -n "$WITH_MOCK_ASR_FLAG" ]; then
+      _port_vars+=("${FRESH_MOCK_ASR_PORT_VARS[@]}")
+      _aux_services+=("${FRESH_MOCK_ASR_SERVICES[@]}")
+      _aux_files+=("docker-compose.mock-asr.yml")
+    fi
     if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
       _aux_services+=("${FRESH_DIAR_NATIVE_SERVICES[@]}")
       _aux_files+=("docker-compose.diar-native.yml")
@@ -1401,6 +1487,10 @@ start_app() {
       _port_vars+=("${FRESH_LLM_TEST_PORT_VARS[@]}")
       _aux_services+=("${FRESH_LLM_TEST_SERVICES[@]}")
       _aux_files+=("docker-compose.llm-test.yml")
+    fi
+    if [ -n "$WITH_PKI_FLAG" ]; then
+      _port_vars+=("${FRESH_PKI_PORT_VARS[@]}")
+      _aux_files+=("docker-compose.pki-dev.yml" "scripts/pki/test-certs/pki-test.compose.yml")
     fi
     fresh_apply_port_offset "$_offset" "${_port_vars[@]}"
 
@@ -1475,18 +1565,6 @@ start_app() {
     fi
   fi
 
-  # PKI requires production mode (nginx with mTLS)
-  if [ -n "$WITH_PKI_FLAG" ] && [ "$ENVIRONMENT" = "dev" ]; then
-    echo "❌ Error: PKI authentication requires production mode (nginx with mTLS)"
-    echo "   Use: ./opentr.sh start prod --build --with-pki"
-    echo ""
-    echo "   PKI cannot work in dev mode because:"
-    echo "   - Dev mode uses Vite dev server (no nginx)"
-    echo "   - PKI requires nginx to verify client certificates (mTLS)"
-    echo "   - Certificate headers must be set by nginx, not the browser"
-    exit 1
-  fi
-
   if [ -n "$GPU_SCALE_FLAG" ] && [ -n "$GPU_SPLIT_FLAG" ]; then
     export COMPOSE_PROFILES="gpu-scale,gpu-split"
   elif [ -n "$GPU_SCALE_FLAG" ]; then
@@ -1552,6 +1630,11 @@ start_app() {
 
     # Fix model cache permissions for non-root container
     fix_model_cache_permissions
+
+    # Generate a real MinIO KMS secret key if .env still has .env.example's
+    # shipped placeholder, so a genuinely fresh `cp .env.example .env` boots
+    # MinIO's KMS auto-encryption without manual intervention (issue #614).
+    ensure_minio_kms_secret ".env"
 
     # Fetch the NLTK corpora BEFORE de-hardlinking them: nothing else prefetches
     # them, so they were fetched at runtime from inside the transcription and
@@ -1700,40 +1783,10 @@ start_app() {
     echo "ℹ️  NGINX_SERVER_NAME is set but skipped in dev mode (Vite serves frontend directly)"
   fi
 
-  # Add PKI overlay if requested
-  if [ -n "$WITH_PKI_FLAG" ]; then
-    if [ -f "docker-compose.pki.yml" ]; then
-      # Check for PKI certificates
-      if [ ! -f "scripts/pki/test-certs/ca/ca.crt" ]; then
-        echo "⚠️  PKI certificates not found. Generating test certificates..."
-        ./scripts/pki/setup-test-pki.sh || {
-          echo "❌ Failed to generate PKI certificates"
-          exit 1
-        }
-      fi
-
-      # Check for server certificate
-      if [ ! -f "scripts/pki/test-certs/nginx/server.crt" ] || [ ! -f "scripts/pki/test-certs/nginx/server.key" ]; then
-        echo "⚠️  HTTPS server certificate not found. Generating self-signed certificate..."
-        cd scripts/pki/test-certs/nginx || exit 1
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-          -keyout server.key -out server.crt \
-          -subj "/CN=${PKI_SERVER_NAME:-localhost}" \
-          -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" || {
-          echo "❌ Failed to generate server certificate"
-          exit 1
-        }
-        cd - > /dev/null || exit 1
-      fi
-
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.pki.yml"
-      echo "🔐 Adding PKI authentication overlay (docker-compose.pki.yml)"
-      echo "   Access URL: https://localhost:${PKI_HTTPS_PORT:-5182}"
-      echo "   Import client certificate from: scripts/pki/test-certs/clients/"
-    else
-      echo "⚠️  --with-pki specified but docker-compose.pki.yml not found"
-    fi
-  fi
+  # Add PKI overlay if requested (dev routes to docker-compose.pki-dev.yml,
+  # prod to docker-compose.pki.yml; cert generation + the test-env fragment
+  # are handled inside add_pki_overlay -> scripts/pki/generate-test-env.sh)
+  add_pki_overlay
 
   # Add mock LLM provider if requested
   if [ -n "$WITH_MOCK_LLM_FLAG" ]; then
@@ -1744,6 +1797,18 @@ start_app() {
       echo "   Models: mock-gpt (normal) mock-echo mock-empty mock-error mock-slow"
     else
       echo "⚠️  --with-mock-llm specified but docker-compose.mock-llm.yml not found"
+    fi
+  fi
+
+  # Add mock cloud ASR provider if requested
+  if [ -n "$WITH_MOCK_ASR_FLAG" ]; then
+    if [ -f "docker-compose.mock-asr.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.mock-asr.yml"
+      echo "🤖 Adding mock cloud ASR provider (docker-compose.mock-asr.yml)"
+      echo "   From containers: http://mock-asr:5198   From host: http://localhost:${MOCK_ASR_PORT:-5198}"
+      echo "   Scenarios: ok (default) error malformed upload-reject"
+    else
+      echo "⚠️  --with-mock-asr specified but docker-compose.mock-asr.yml not found"
     fi
   fi
 
@@ -1827,8 +1892,10 @@ start_app() {
     if [ -f "docker-compose.watch.yml" ]; then
       WATCH_HOST_PATH="${WATCH_HOST_PATH:-./watch}"
       mkdir -p "$WATCH_HOST_PATH"
-      # Match the non-root container user (UID/GID 1000) so imports can read/write.
-      chown -R 1000:1000 "$WATCH_HOST_PATH" 2>/dev/null || true
+      # Match the non-root container user so imports can read/write. appuser is
+      # uid 1000 / gid 999 (see CONTAINER_UID_GID in scripts/common.sh) — the owner
+      # bit is what the import path needs, but keep the GID honest.
+      chown -R "${CONTAINER_UID_GID:-1000:999}" "$WATCH_HOST_PATH" 2>/dev/null || true
       export WATCH_HOST_PATH
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.watch.yml"
       echo "👁️  Adding Watch Sources overlay (docker-compose.watch.yml)"
@@ -1975,9 +2042,15 @@ start_app() {
     _pf_ports=("${FRESH_PORT_VARS[@]}")
     [ -n "$WITH_LDAP_TEST_FLAG" ] && _pf_ports+=("${FRESH_LDAP_PORT_VARS[@]}")
     [ -n "$WITH_MOCK_LLM_FLAG" ] && _pf_ports+=("${FRESH_MOCK_LLM_PORT_VARS[@]}")
+    [ -n "$WITH_MOCK_ASR_FLAG" ] && _pf_ports+=("${FRESH_MOCK_ASR_PORT_VARS[@]}")
     [ -n "$WITH_SMB_TEST_FLAG" ] && _pf_ports+=("${FRESH_SMB_PORT_VARS[@]}")
     [ -n "$WITH_MONITORING_FLAG" ] && _pf_ports+=("${FRESH_MONITORING_PORT_VARS[@]}")
     [ -n "$WITH_LLM_TEST_FLAG" ] && _pf_ports+=("${FRESH_LLM_TEST_PORT_VARS[@]}")
+    # Keycloak (issue #630): this list previously covered every aux test overlay except
+    # keycloak-test/authentik-test, so a bound 8180 failed deep inside `compose up --wait`
+    # instead of failing fast here. Only Keycloak is added — Authentik is out of scope
+    # (scripts/run-dev-tests.sh's overlay table deliberately excludes it; see that file).
+    [ -n "$WITH_KEYCLOAK_TEST_FLAG" ] && _pf_ports+=("${FRESH_KEYCLOAK_PORT_VARS[@]}")
     preflight_ports_or_die "${_pf_ports[@]}"
   fi
 
@@ -2072,6 +2145,11 @@ reset_and_init() {
   PULL_FLAG=""
   WITH_PKI_FLAG=""
   WITH_LDAP_TEST_FLAG=""
+  WITH_MOCK_LLM_FLAG=""
+  WITH_MOCK_ASR_FLAG=""
+  WITH_DIAR_NATIVE_FLAG=""
+  NO_DIAR_NATIVE_FLAG=""
+  WITH_LLM_TEST_FLAG=""
   WITH_KEYCLOAK_TEST_FLAG=""
   WITH_AUTHENTIK_TEST_FLAG=""
   WITH_WATCH_FLAG=""
@@ -2081,6 +2159,9 @@ reset_and_init() {
   LITE_FLAG=""
   CPU_FLAG=""
   NO_NAS_FLAG=""
+  FRESH_FLAG=""
+  DRY_RUN_FLAG=""
+  NO_BINDMOUNT_FLAG=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -2136,12 +2217,44 @@ reset_and_init() {
         CPU_FLAG="--cpu"
         shift
         ;;
+      --dry-run)
+        DRY_RUN_FLAG="--dry-run"
+        shift
+        ;;
+      --no-bindmount)
+        # Only meaningful under --fresh, which reset refuses outright (see the
+        # --fresh|--port-offset|--seed-benchmark branch above) -- parsed so it is
+        # a recognized no-op rather than an "Unknown flag" warning, matching how
+        # start_app() itself already ignores it outside fresh mode.
+        NO_BINDMOUNT_FLAG="--no-bindmount"
+        shift
+        ;;
       --with-pki)
         WITH_PKI_FLAG="--with-pki"
         shift
         ;;
       --with-ldap-test)
         WITH_LDAP_TEST_FLAG="--with-ldap-test"
+        shift
+        ;;
+      --with-mock-llm)
+        WITH_MOCK_LLM_FLAG="--with-mock-llm"
+        shift
+        ;;
+      --with-mock-asr)
+        WITH_MOCK_ASR_FLAG="--with-mock-asr"
+        shift
+        ;;
+      --with-diar-native)
+        WITH_DIAR_NATIVE_FLAG="--with-diar-native"
+        shift
+        ;;
+      --no-diar-native)
+        NO_DIAR_NATIVE_FLAG="--no-diar-native"
+        shift
+        ;;
+      --with-llm-test)
+        WITH_LLM_TEST_FLAG="--with-llm-test"
         shift
         ;;
       --with-keycloak-test)
@@ -2175,17 +2288,6 @@ reset_and_init() {
     esac
   done
 
-  # PKI requires production mode (nginx with mTLS)
-  if [ -n "$WITH_PKI_FLAG" ] && [ "$ENVIRONMENT" = "dev" ]; then
-    echo "❌ Error: PKI authentication requires production mode (nginx with mTLS)"
-    echo "   Use: ./opentr.sh reset prod --build --with-pki"
-    echo ""
-    echo "   PKI cannot work in dev mode because:"
-    echo "   - Dev mode uses Vite dev server (no nginx)"
-    echo "   - PKI requires nginx to verify client certificates (mTLS)"
-    echo "   - Certificate headers must be set by nginx, not the browser"
-    exit 1
-  fi
 
   if [ -n "$GPU_SCALE_FLAG" ] && [ -n "$GPU_SPLIT_FLAG" ]; then
     export COMPOSE_PROFILES="gpu-scale,gpu-split"
@@ -2370,40 +2472,10 @@ reset_and_init() {
     echo "ℹ️  NGINX_SERVER_NAME is set but skipped in dev mode (Vite serves frontend directly)"
   fi
 
-  # Add PKI overlay if requested
-  if [ -n "$WITH_PKI_FLAG" ]; then
-    if [ -f "docker-compose.pki.yml" ]; then
-      # Check for PKI certificates
-      if [ ! -f "scripts/pki/test-certs/ca/ca.crt" ]; then
-        echo "⚠️  PKI certificates not found. Generating test certificates..."
-        ./scripts/pki/setup-test-pki.sh || {
-          echo "❌ Failed to generate PKI certificates"
-          exit 1
-        }
-      fi
-
-      # Check for server certificate
-      if [ ! -f "scripts/pki/test-certs/nginx/server.crt" ] || [ ! -f "scripts/pki/test-certs/nginx/server.key" ]; then
-        echo "⚠️  HTTPS server certificate not found. Generating self-signed certificate..."
-        cd scripts/pki/test-certs/nginx || exit 1
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-          -keyout server.key -out server.crt \
-          -subj "/CN=${PKI_SERVER_NAME:-localhost}" \
-          -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" || {
-          echo "❌ Failed to generate server certificate"
-          exit 1
-        }
-        cd - > /dev/null || exit 1
-      fi
-
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.pki.yml"
-      echo "🔐 Adding PKI authentication overlay (docker-compose.pki.yml)"
-      echo "   Access URL: https://localhost:${PKI_HTTPS_PORT:-5182}"
-      echo "   Import client certificate from: scripts/pki/test-certs/clients/"
-    else
-      echo "⚠️  --with-pki specified but docker-compose.pki.yml not found"
-    fi
-  fi
+  # Add PKI overlay if requested (dev routes to docker-compose.pki-dev.yml,
+  # prod to docker-compose.pki.yml; cert generation + the test-env fragment
+  # are handled inside add_pki_overlay -> scripts/pki/generate-test-env.sh)
+  add_pki_overlay
 
   # Add mock LLM provider if requested
   if [ -n "$WITH_MOCK_LLM_FLAG" ]; then
@@ -2414,6 +2486,18 @@ reset_and_init() {
       echo "   Models: mock-gpt (normal) mock-echo mock-empty mock-error mock-slow"
     else
       echo "⚠️  --with-mock-llm specified but docker-compose.mock-llm.yml not found"
+    fi
+  fi
+
+  # Add mock cloud ASR provider if requested
+  if [ -n "$WITH_MOCK_ASR_FLAG" ]; then
+    if [ -f "docker-compose.mock-asr.yml" ]; then
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.mock-asr.yml"
+      echo "🤖 Adding mock cloud ASR provider (docker-compose.mock-asr.yml)"
+      echo "   From containers: http://mock-asr:5198   From host: http://localhost:${MOCK_ASR_PORT:-5198}"
+      echo "   Scenarios: ok (default) error malformed upload-reject"
+    else
+      echo "⚠️  --with-mock-asr specified but docker-compose.mock-asr.yml not found"
     fi
   fi
 
@@ -2497,8 +2581,10 @@ reset_and_init() {
     if [ -f "docker-compose.watch.yml" ]; then
       WATCH_HOST_PATH="${WATCH_HOST_PATH:-./watch}"
       mkdir -p "$WATCH_HOST_PATH"
-      # Match the non-root container user (UID/GID 1000) so imports can read/write.
-      chown -R 1000:1000 "$WATCH_HOST_PATH" 2>/dev/null || true
+      # Match the non-root container user so imports can read/write. appuser is
+      # uid 1000 / gid 999 (see CONTAINER_UID_GID in scripts/common.sh) — the owner
+      # bit is what the import path needs, but keep the GID honest.
+      chown -R "${CONTAINER_UID_GID:-1000:999}" "$WATCH_HOST_PATH" 2>/dev/null || true
       export WATCH_HOST_PATH
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.watch.yml"
       echo "👁️  Adding Watch Sources overlay (docker-compose.watch.yml)"
@@ -2549,6 +2635,25 @@ reset_and_init() {
     fi
   fi
 
+  # Dry-run: print exactly what WOULD run and exit before touching Docker — most
+  # important here of anywhere in this script, since the next step is `down -v`,
+  # which destroys the current stack's data. A --dry-run that silently proceeded
+  # to a real reset would be the opposite of what it promises.
+  if [ -n "$DRY_RUN_FLAG" ]; then
+    echo ""
+    echo "🔎 DRY RUN — no containers stopped, no volumes removed."
+    echo "   COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-opentranscribe (default)}"
+    echo "   Compose files:"
+    # shellcheck disable=SC2086
+    for _f in $COMPOSE_FILES; do
+      [ "$_f" = "-f" ] && continue
+      echo "     - $_f"
+    done
+    echo "   Would run: docker compose \$COMPOSE_FILES down -v"
+    echo "   ...then rebuild and start all services (--build)."
+    return 0
+  fi
+
   echo "🛑 Stopping all containers and removing volumes..."
   # shellcheck disable=SC2086
   docker compose $COMPOSE_FILES down -v
@@ -2558,6 +2663,10 @@ reset_and_init() {
 
   # Fix model cache permissions for non-root container
   fix_model_cache_permissions
+
+  # Generate a real MinIO KMS secret key if .env still has .env.example's
+  # shipped placeholder (issue #614).
+  ensure_minio_kms_secret ".env"
 
   # Fetch the NLTK corpora BEFORE de-hardlinking them (issue #491).
   ensure_nltk_corpora
@@ -2604,107 +2713,10 @@ reset_and_init() {
   print_access_info
 }
 
-# Function to backup the database
-# Usage: backup_database [--encrypt]
-#   --encrypt: pipe pg_dump straight into gpg (AES-256, passphrase prompt) so the
-#              plaintext dump never touches disk. Backups contain every user's
-#              transcripts - encrypt anything that leaves this machine.
-backup_database() {
-  ENCRYPT_BACKUP=false
-  if [[ "$1" == "--encrypt" ]]; then
-    ENCRYPT_BACKUP=true
-    if ! command -v gpg &> /dev/null; then
-      echo "❌ Error: gpg is required for encrypted backups (e.g. 'apt install gnupg')."
-      exit 1
-    fi
-  elif [[ -n "$1" ]]; then
-    echo "❌ Error: unknown backup option: $1"
-    echo "Usage: ./opentr.sh backup [--encrypt]"
-    exit 1
-  fi
-
-  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-  BACKUP_FILE="opentranscribe_backup_${TIMESTAMP}.sql"
-  mkdir -p ./backups
-
-  if [[ "$ENCRYPT_BACKUP" == true ]]; then
-    echo "📦 Creating encrypted database backup: ${BACKUP_FILE}.gpg..."
-    # Subshell with pipefail so a pg_dump failure isn't masked by gpg succeeding
-    if (set -o pipefail; docker compose exec -T postgres pg_dump -U postgres opentranscribe \
-        | gpg --symmetric --cipher-algo AES256 --output "./backups/${BACKUP_FILE}.gpg"); then
-      echo "✅ Encrypted backup created successfully: ./backups/${BACKUP_FILE}.gpg"
-      echo "   Restore with: ./opentr.sh restore ./backups/${BACKUP_FILE}.gpg"
-    else
-      rm -f "./backups/${BACKUP_FILE}.gpg"
-      echo "❌ Backup failed."
-      exit 1
-    fi
-  else
-    echo "📦 Creating database backup: ${BACKUP_FILE}..."
-    if docker compose exec -T postgres pg_dump -U postgres opentranscribe > "./backups/${BACKUP_FILE}"; then
-      echo "✅ Backup created successfully: ./backups/${BACKUP_FILE}"
-      echo "ℹ️  Tip: backups contain all user transcripts in plaintext - use './opentr.sh backup --encrypt' for off-box storage."
-    else
-      echo "❌ Backup failed."
-      exit 1
-    fi
-  fi
-}
-
-# Function to restore database from backup
-restore_database() {
-  BACKUP_FILE=$1
-
-  if [ -z "$BACKUP_FILE" ]; then
-    echo "❌ Error: Backup file not specified."
-    echo "Usage: ./opentr.sh restore [backup_file]"
-    exit 1
-  fi
-
-  if [ ! -f "$BACKUP_FILE" ]; then
-    echo "❌ Error: Backup file not found: $BACKUP_FILE"
-    exit 1
-  fi
-
-  # Transparently decrypt GPG-encrypted backups (created with './opentr.sh backup --encrypt')
-  RESTORE_SOURCE="$BACKUP_FILE"
-  TEMP_SQL=""
-  case "$BACKUP_FILE" in
-    *.gpg|*.asc)
-      if ! command -v gpg &> /dev/null; then
-        echo "❌ Error: gpg is required to restore encrypted backups (e.g. 'apt install gnupg')."
-        exit 1
-      fi
-      echo "🔓 Decrypting backup..."
-      TEMP_SQL=$(mktemp ./backups/.restore_XXXXXX)
-      if ! gpg --yes --output "$TEMP_SQL" --decrypt "$BACKUP_FILE"; then
-        rm -f "$TEMP_SQL"
-        echo "❌ Decryption failed."
-        exit 1
-      fi
-      RESTORE_SOURCE="$TEMP_SQL"
-      ;;
-  esac
-
-  echo "🔄 Restoring database from ${BACKUP_FILE}..."
-
-  # Stop services that use the database
-  docker compose stop backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
-
-  # Restore the database
-  if docker compose exec -T postgres psql -U postgres opentranscribe < "$RESTORE_SOURCE"; then
-    [ -n "$TEMP_SQL" ] && rm -f "$TEMP_SQL"
-    echo "✅ Database restored successfully."
-    echo "🔄 Restarting services..."
-    docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
-  else
-    [ -n "$TEMP_SQL" ] && rm -f "$TEMP_SQL"
-    echo "❌ Database restore failed."
-    echo "🔄 Restarting services anyway..."
-    docker compose start backend celery-worker celery-download-worker celery-cpu-worker celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
-    exit 1
-  fi
-}
+# backup_database / restore_database moved to scripts/common.sh (issue #613),
+# parameterized by a leading compose-files chain and front-end name so opentr.sh and
+# opentranscribe.sh share exactly one implementation of the DROP DATABASE restore path.
+# common.sh is sourced at the top of this file, so both functions are already in scope.
 
 # Function to restart backend services (backend, all celery workers, flower) without database reset
 restart_backend() {
@@ -3040,11 +3052,14 @@ case "$1" in
     ;;
 
   backup)
-    backup_database "${2:-}"
+    # "" = bare `docker compose`, which in a repo clone auto-loads
+    # docker-compose.override.yml — byte-identical behaviour to before the move (issue #613).
+    backup_database "" "./opentr.sh" "${2:-}"
     ;;
 
   restore)
-    restore_database "${2:-}"
+    shift  # Remove 'restore' command
+    restore_database "" "./opentr.sh" "$@"  # Pass all remaining arguments (flags + file)
     ;;
 
   restart-backend)

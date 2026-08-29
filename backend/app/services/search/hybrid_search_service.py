@@ -561,6 +561,47 @@ def _redaction_policy_fingerprint(cfg: "EffectiveRedactionConfig | None") -> str
     return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()
 
 
+# A single OpenSearch `terms` clause is bounded by `index.max_terms_count`
+# (65536 by default); quarantine is expected to be rare, so this cap is a
+# defensive ceiling, not a normal operating limit. Exceeding it degrades to
+# excluding only the oldest-quarantined files rather than failing the whole
+# facet request.
+_QUARANTINED_UUID_CAP = 10_000
+
+
+def _quarantined_file_uuids() -> list[str]:
+    """Every currently-quarantined file's uuid, for excluding facets built from it.
+
+    Quarantine (``takedown_service.quarantine_file``) is Postgres-only — it never
+    writes to OpenSearch — so a facet-aggregation query has no field of its own to
+    filter on and must resolve the exclusion set here first. Not scoped to a
+    caller: it feeds a ``must_not`` against a query already scoped to what that
+    caller can see (``accessible_user_ids``), so a global list only ever narrows
+    that intersection, never widens what a caller could learn.
+
+    Returns:
+        Quarantined file uuids as strings, capped at ``_QUARANTINED_UUID_CAP``.
+        Empty (never raises) if the DB is unreachable — an aggregation request
+        must not break because this best-effort exclusion could not run.
+    """
+    from app.db.session_utils import session_scope
+    from app.models.media import MediaFile
+
+    try:
+        with session_scope() as db:
+            rows = (
+                db.query(MediaFile.uuid)
+                .filter(MediaFile.is_quarantined.is_(True))
+                .order_by(MediaFile.quarantined_at.desc().nullslast())
+                .limit(_QUARANTINED_UUID_CAP)
+                .all()
+            )
+            return [str(row[0]) for row in rows]
+    except Exception:  # noqa: BLE001 — best-effort; see docstring
+        logger.exception("Could not resolve quarantined file uuids for facet exclusion")
+        return []
+
+
 def _get_cached_response(cache_key: str) -> SearchResponse | None:
     """Get a cached response if it exists and hasn't expired."""
     with _search_cache_lock:
@@ -1309,13 +1350,16 @@ class HybridSearchService:
         return suggestions[:limit]
 
     def get_available_filters(
-        self, user_id: int, organization_id: int | None = None
+        self, user_id: int, organization_id: int | None = None, is_admin: bool = False
     ) -> dict[str, Any]:
         """Return available filter options for the current user.
 
         Args:
             user_id: Current user ID.
             organization_id: Active org id (None = personal) — tenant gate.
+            is_admin: When True, skip the quarantine exclusion — matches the
+                admin review bypass ``search.py``'s ``_drop_quarantined_search_hits``
+                already applies on the results page beside this endpoint.
 
         Returns:
             Dict with speakers, tags, and date_range.
@@ -1336,6 +1380,32 @@ class HybridSearchService:
 
         from app.services.search.tenant_scope import org_filter_clauses
 
+        query_filter: list[dict[str, Any]] = [
+            {"terms": {"accessible_user_ids": [user_id]}},
+            *org_filter_clauses(organization_id),
+            # Addendum G3: facet counts are per-document, so
+            # digest sections would inflate every speaker and
+            # tag bucket by a file-shaped amount.
+            chunk_plane_clause(),
+        ]
+        query_must_not: list[dict[str, Any]] = []
+
+        # A quarantine (takedown) is Postgres-only — takedown_service.quarantine_file
+        # never touches OpenSearch — so without this, a quarantined file's speaker
+        # names, tag names and upload-time date range keep appearing in these facets
+        # for everyone who had access before the takedown, including the file's own
+        # owner (who takedown_service.is_hidden_for says must not see it at all).
+        # search.py's search_summaries already post-filters quarantined HITS off a
+        # results page; there is no equivalent hit list here to post-filter, since
+        # this endpoint returns aggregated buckets, not documents — so the exclusion
+        # has to be built into the aggregation query itself. Quarantine is rare and
+        # the OpenSearch `terms` clause is naturally bounded, unlike the general
+        # accessible-file set, so excluding by quarantined uuid (rather than trying
+        # to enumerate every accessible-and-non-quarantined uuid) keeps this cheap.
+        quarantined_uuids = [] if is_admin else _quarantined_file_uuids()
+        if quarantined_uuids:
+            query_must_not.append({"terms": {"file_uuid": quarantined_uuids}})
+
         try:
             response = opensearch_client.search(
                 index=index_name,
@@ -1343,14 +1413,8 @@ class HybridSearchService:
                     "size": 0,
                     "query": {
                         "bool": {
-                            "filter": [
-                                {"terms": {"accessible_user_ids": [user_id]}},
-                                *org_filter_clauses(organization_id),
-                                # Addendum G3: facet counts are per-document, so
-                                # digest sections would inflate every speaker and
-                                # tag bucket by a file-shaped amount.
-                                chunk_plane_clause(),
-                            ]
+                            "filter": query_filter,
+                            **({"must_not": query_must_not} if query_must_not else {}),
                         }
                     },
                     "aggs": {
@@ -1554,10 +1618,39 @@ class HybridSearchService:
     ) -> dict[str, Any]:
         """Build an adaptive text query with fuzziness and cross-field support.
 
-        Single signal queries use fuzziness for typo tolerance plus an exact
+        Single-word queries use fuzziness for typo tolerance plus an exact
         match boost so precise hits still outrank fuzzy ones.  Multi-word
-        queries add cross-field matching (terms can match different fields)
-        and phrase proximity with slop.  Quoted phrases bypass fuzziness.
+        queries add cross-field matching (terms can match different fields),
+        phrase proximity with slop, AND a typo-tolerant clause that requires
+        every term to fuzzily match (see below) rather than any one of them.
+        Quoted phrases bypass fuzziness entirely.
+
+        An OR-fuzzy clause is single-word-only on purpose (issue #606): OpenSearch's
+        ``fuzziness: AUTO`` on a multi-term ``multi_match`` with the default OR
+        operator matches if ANY one term fuzzily matches ANY token in the field (no
+        "all terms" requirement), so a two-word query where only one word happens to
+        have a same-length, edit-distance-2 near neighbour elsewhere in the corpus
+        scores a full "keyword match" for the whole phrase — even when the other word
+        has zero support in that document. Measured: the stemmed query term "explor"
+        (from "exploration") sits at Levenshtein distance 2 from the unrelated
+        stemmed term "export" (both 6 characters, so within ``fuzziness: AUTO``'s
+        tolerance and past ``prefix_length: 2``'s "ex" prefix requirement), so
+        "space exploration" fuzzy-matched every chunk containing "export" in a
+        file with no mention of "space" at all — a false keyword hit that
+        outranked the genuinely topical (semantic-only) result and every other
+        candidate.
+
+        Multi-word queries therefore get a SECOND, additive fuzzy clause instead
+        (issue #606 follow-up finding 2) that forces ``operator: "and"`` alongside
+        ``fuzziness: AUTO`` — every term must fuzzily match *something* in the same
+        field before the clause can fire, which closes the #606 false-positive class
+        (a single lucky near-neighbour can no longer carry the whole query) while
+        still tolerating a genuine typo in any one word. This clause is additive
+        alongside cross-field and phrase-slop, never a replacement for them:
+        replacing the OR clause with an AND-fuzzy one measured 0 results for a
+        legitimate non-typo multi-word query on the live index, because requiring
+        every term to satisfy the *same* fuzzy leg is stricter than either
+        cross-field OR or phrase-slop alone.
 
         Args:
             query: Search query text.
@@ -1569,8 +1662,15 @@ class HybridSearchService:
         if not (query and query.strip()):
             return {"match_all": {}}
 
-        words = [w for w in query.split() if len(w) >= 2]
+        # Word count for the multi-word decision must come from the RAW query
+        # split, not a length-filtered one: filtering short tokens (e.g. "e",
+        # "x") before counting can make a genuinely multi-word query like
+        # "x exploration" read as single-word once its short token is
+        # dropped, wrongly re-enabling the single-word fuzzy clause below and
+        # reopening the exact false-positive class #606 fixed (issue #606
+        # follow-up finding 1).
         is_phrase_query = query.startswith('"') and query.endswith('"')
+        is_multi_word = len(query.split()) > 1
 
         should_clauses: list[dict[str, Any]] = []
 
@@ -1586,18 +1686,21 @@ class HybridSearchService:
                 }
             )
         else:
-            # Primary: best_fields with AUTO fuzziness for typo tolerance
-            should_clauses.append(
-                {
-                    "multi_match": {
-                        "query": query,
-                        "fields": search_fields,
-                        "type": "best_fields",
-                        "fuzziness": "AUTO",
-                        "prefix_length": 2,
+            if not is_multi_word:
+                # Primary: best_fields with AUTO fuzziness for typo tolerance.
+                # Single-word only — see the docstring for why a multi-word
+                # query must not get this clause.
+                should_clauses.append(
+                    {
+                        "multi_match": {
+                            "query": query,
+                            "fields": search_fields,
+                            "type": "best_fields",
+                            "fuzziness": "AUTO",
+                            "prefix_length": 2,
+                        }
                     }
-                }
-            )
+                )
             # Exact match boost — precise hits outrank fuzzy matches
             should_clauses.append(
                 {
@@ -1609,7 +1712,7 @@ class HybridSearchService:
                     }
                 }
             )
-            if len(words) > 1:
+            if is_multi_word:
                 # Cross-field: different words can match different fields
                 should_clauses.append(
                     {
@@ -1631,6 +1734,32 @@ class HybridSearchService:
                             "type": "phrase",
                             "slop": 3,
                             "boost": 2.0,
+                        }
+                    }
+                )
+                # Typo tolerance for multi-word queries (issue #606 follow-up
+                # finding 2): additive alongside cross-field/phrase above, never
+                # a replacement — see the docstring for why `operator: "and"`
+                # rather than plain fuzziness is required here.
+                #
+                # prefix_length 1, not the single-word clause's 2: measured live,
+                # a same-length adjacent-letter transposition near the start of a
+                # word (e.g. "space" -> "sapce") changes BOTH of the first two
+                # characters, so prefix_length 2 demands an exact match on a
+                # prefix the typo itself corrupted and silently excludes exactly
+                # the typo class this clause exists to catch. prefix_length 1
+                # (first character only) still found real fuzzy candidates in
+                # every case measured, and the `operator: "and"` requirement
+                # above is what keeps false positives down here, not the prefix.
+                should_clauses.append(
+                    {
+                        "multi_match": {
+                            "query": query,
+                            "fields": search_fields,
+                            "type": "best_fields",
+                            "operator": "and",
+                            "fuzziness": "AUTO",
+                            "prefix_length": 1,
                         }
                     }
                 )
@@ -1728,7 +1857,7 @@ class HybridSearchService:
         use_neural: bool,
         sort_by: str = "relevance",
         sort_order: str = "desc",
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], bool]:
         """Build a search body with native collapse + inner_hits.
 
         OpenSearch groups results by file_uuid server-side, returning only
@@ -1746,7 +1875,9 @@ class HybridSearchService:
             sort_order: Sort direction.
 
         Returns:
-            OpenSearch search body dict with collapse configuration.
+            Tuple of (OpenSearch search body dict with collapse configuration,
+            whether the caller must attach the ``search_pipeline`` param — see
+            the starvation check below for why this is not simply ``use_neural``).
         """
         search_fields = self._get_search_fields(has_speaker_filter)
         text_query_clause = self._build_text_query(query, search_fields)
@@ -1776,7 +1907,54 @@ class HybridSearchService:
                     query,
                 )
             if model_id:
-                body: dict[str, Any] = {
+                neural_clause = {
+                    "bool": {
+                        "must": [
+                            {
+                                "neural": {
+                                    "embedding": {
+                                        "query_text": query,
+                                        "model_id": model_id,
+                                        "k": settings.SEARCH_RRF_WINDOW_SIZE,
+                                    }
+                                }
+                            }
+                        ],
+                        "filter": filters,
+                    }
+                }
+
+                # A fully-starved keyword leg (zero BM25 matches — the normal
+                # case for a genuinely semantic query, see `_build_text_query`)
+                # must NOT be handed to the hybrid `search_pipeline` (issue
+                # #606). OpenSearch 3.4's `collapse` + hybrid RRF
+                # (`score-ranker-processor`) silently returns a WRONG,
+                # QUERY-INDEPENDENT ranking whenever one of the two hybrid
+                # legs matches nothing — measured directly: two unrelated
+                # queries ("space exploration", "artificial intelligence"),
+                # both with zero keyword hits, produced byte-identical
+                # collapsed scores and file ordering, dominated by a file with
+                # no topical relevance to either. The bug is specific to
+                # `collapse` — the same starved-leg RRF fusion is correct at
+                # the raw chunk level (no collapse), and a plain neural-only
+                # collapse query (no `hybrid` wrapper at all) is also correct.
+                # The pre-check below is a `count` (no scoring, no fetch), not
+                # a second scored `search`, so it stays cheap.
+                if self._bm25_leg_is_starved(text_query_clause, filters):
+                    body = {
+                        "size": 0,  # Placeholder — set by _apply_sort_clause
+                        "query": neural_clause,
+                        "collapse": collapse_config,
+                        "highlight": {"fields": highlight_fields},
+                        "_source": {"excludes": ["embedding"]},
+                        "track_total_hits": False,
+                    }
+                    body["size"] = self._apply_sort_clause(
+                        body, sort_by, sort_order, page, page_size, use_search_pipeline=False
+                    )
+                    return body, False
+
+                body = {
                     "size": 0,  # Placeholder — set by _apply_sort_clause
                     "query": {
                         "hybrid": {
@@ -1787,22 +1965,7 @@ class HybridSearchService:
                                         "filter": filters,
                                     }
                                 },
-                                {
-                                    "bool": {
-                                        "must": [
-                                            {
-                                                "neural": {
-                                                    "embedding": {
-                                                        "query_text": query,
-                                                        "model_id": model_id,
-                                                        "k": settings.SEARCH_RRF_WINDOW_SIZE,
-                                                    }
-                                                }
-                                            }
-                                        ],
-                                        "filter": filters,
-                                    }
-                                },
+                                neural_clause,
                             ]
                         }
                     },
@@ -1819,19 +1982,71 @@ class HybridSearchService:
                 body["size"] = self._apply_sort_clause(
                     body, sort_by, sort_order, page, page_size, use_search_pipeline=True
                 )
-                return body
+                return body, True
 
         # BM25-only collapse
-        return self._build_collapsed_bm25_body(
-            query,
-            filters,
-            page,
-            page_size,
-            has_speaker_filter,
-            highlight_fields,
-            sort_by,
-            sort_order,
+        return (
+            self._build_collapsed_bm25_body(
+                query,
+                filters,
+                page,
+                page_size,
+                has_speaker_filter,
+                highlight_fields,
+                sort_by,
+                sort_order,
+            ),
+            False,
         )
+
+    def _bm25_leg_is_starved(
+        self, text_query_clause: dict[str, Any], filters: list[dict[str, Any]]
+    ) -> bool:
+        """Whether the BM25/keyword leg matches zero chunk documents.
+
+        A cheap ``count`` (no scoring, no fetch) against the same clause
+        ``_build_collapsed_search_body`` would otherwise put in the hybrid
+        query's keyword leg. See issue #606: this check exists specifically
+        to route around a broken collapse+hybrid-RRF combination when the
+        answer is yes.
+
+        Args:
+            text_query_clause: The clause `_build_text_query` produced.
+            filters: OpenSearch filter clauses (tenant scope, quarantine, etc).
+                Callers on this path already include `chunk_plane_clause()`
+                (`_build_filters`), but this count explicitly ANDs it in again
+                itself rather than trusting that — a reader of this index must
+                decide its own plane, not inherit the caller's (#403 Stage 3
+                addendum G3/G4; `tests/unit/test_chunk_plane_compat_arm.py`).
+
+        Returns:
+            True if the keyword leg would match nothing. Fails open to False
+            (i.e. "assume it matches something, use the normal hybrid path")
+            on any error — a starvation *false negative* only costs the
+            OpenSearch-level bug being observed as narrow scores again as
+            already documented (`artificial intelligence`'s prior skip);
+            fail-closed here would instead risk a spurious neural-only
+            fallback for every query if `count` itself is unhealthy.
+        """
+        client = get_opensearch_client()
+        if not client:
+            return False
+        try:
+            resp = client.count(
+                index=settings.OPENSEARCH_CHUNKS_INDEX,
+                body={
+                    "query": {
+                        "bool": {
+                            "must": [text_query_clause],
+                            "filter": [*filters, chunk_plane_clause()],
+                        }
+                    }
+                },
+            )
+            return int(resp.get("count", 0)) == 0
+        except Exception as e:  # noqa: BLE001 — best-effort pre-check, see docstring
+            logger.debug(f"BM25 starvation pre-check failed, assuming non-empty: {e}")
+            return False
 
     def _build_collapsed_bm25_body(
         self,
@@ -2872,7 +3087,7 @@ class HybridSearchService:
 
         # Build collapsed search body
         t_build = time.time()
-        search_body = self._build_collapsed_search_body(
+        search_body, needs_search_pipeline = self._build_collapsed_search_body(
             search_query,
             filters,
             page,
@@ -2884,7 +3099,10 @@ class HybridSearchService:
         )
         build_ms = round((time.time() - t_build) * 1000)
 
-        # Execute with search pipeline if using hybrid
+        # Execute with search pipeline if using hybrid. NOT simply `use_neural`
+        # (issue #606): a fully keyword-starved query is routed to a pure
+        # neural-only body with no `hybrid` wrapper to fuse, so no pipeline is
+        # attached for it either — see `_build_collapsed_search_body`.
         t_opensearch = time.time()
         response: dict[str, Any] | None = None
         fell_back_to_bm25 = False
@@ -2892,7 +3110,7 @@ class HybridSearchService:
             if not client:
                 return self._empty_response(query, page, page_size)
             search_params: dict[str, Any] = {}
-            if use_neural:
+            if needs_search_pipeline:
                 search_params["search_pipeline"] = search_pipeline
             response = client.search(
                 index=settings.OPENSEARCH_CHUNKS_INDEX,

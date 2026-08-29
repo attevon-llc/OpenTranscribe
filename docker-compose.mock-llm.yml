@@ -17,6 +17,21 @@
 # a container restart, not a rebuild. Uses the stock python image for the same
 # reason — the server is stdlib-only, so there is nothing to install.
 services:
+  # LLMService._resolve_pinned_target's SSRF guard refuses a private-network
+  # base_url unless LLM_ALLOW_PRIVATE_ENDPOINTS=true (default false — correct
+  # for a real deployment, since mock-llm's address IS private by construction
+  # here). Without this override every chat/summarization call against
+  # mock-llm ends in a correctly-refused `event: error` frame (see the GH #595
+  # comment in scripts/release-tests/test-lite-mode.sh) instead of exercising
+  # the actual LLM call path. Both services that can initiate an LLM call need
+  # it: backend serves the synchronous chat endpoint, celery-nlp-worker runs
+  # summarization/topic-extraction/speaker-identification tasks.
+  backend:
+    environment:
+      LLM_ALLOW_PRIVATE_ENDPOINTS: "true"
+  celery-nlp-worker:
+    environment:
+      LLM_ALLOW_PRIVATE_ENDPOINTS: "true"
   mock-llm:
     image: python:3.12-slim
     container_name: ${MOCK_LLM_CONTAINER_NAME:-opentranscribe-mock-llm}

@@ -30,6 +30,26 @@ from app.utils.task_utils import TASK_STATUS_PENDING
 logger = logging.getLogger(__name__)
 
 
+def format_bytes(byte_count: float) -> str:
+    """Format a byte count as a human-readable string with a size suffix.
+
+    The one canonical implementation for system/GPU stats display — previously
+    duplicated (byte-for-byte identical behavior) between
+    ``api/endpoints/admin.py`` and ``tasks/utility.py``.
+
+    Args:
+        byte_count: Size in bytes.
+
+    Returns:
+        Formatted string, e.g. ``"2.50 GB"``.
+    """
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if byte_count < 1024 or unit == "TB":
+            return f"{byte_count:.2f} {unit}"
+        byte_count /= 1024
+    return f"{byte_count:.2f} TB"
+
+
 def get_user_stats(db: Session, *, include_breakdown: bool = False) -> dict[str, Any]:
     """Get user statistics in a single query.
 

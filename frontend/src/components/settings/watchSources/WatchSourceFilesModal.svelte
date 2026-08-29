@@ -22,6 +22,7 @@
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { createDebouncedHandler } from '$lib/utils/debounce';
   import {
     getWatchSourceFiles,
     retryWatchSourceFiles,
@@ -51,7 +52,10 @@
   let confirmBulkDelete = false;
   /** Set once the user has changed something, so the parent refreshes its counts. */
   let dirty = false;
-  let searchDebounce: ReturnType<typeof setTimeout> | undefined;
+  const debouncedSearch = createDebouncedHandler(() => {
+    page = 1;
+    load();
+  }, 300);
   let loadedFor: string | null = null;
 
   $: totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -109,7 +113,7 @@
     if (typeof window !== 'undefined') {
       window.removeEventListener('watch-source-scan', onScanEvent);
     }
-    clearTimeout(searchDebounce);
+    debouncedSearch.cleanup();
   });
 
   function onFilterChange() {
@@ -118,11 +122,7 @@
   }
 
   function onSearchInput() {
-    clearTimeout(searchDebounce);
-    searchDebounce = setTimeout(() => {
-      page = 1;
-      load();
-    }, 300);
+    debouncedSearch.trigger();
   }
 
   function onPageChange(event: CustomEvent<number>) {

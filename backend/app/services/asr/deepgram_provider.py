@@ -11,6 +11,10 @@ import time
 from collections.abc import Callable
 
 from .base import ASRProvider
+from .errors import ASRRateLimitedError
+from .errors import http_status_of
+from .errors import is_rate_limit_status
+from .errors import retry_after_of
 from .types import ASRConfig
 from .types import ASRResult
 from .types import ASRSegment
@@ -162,6 +166,13 @@ class DeepgramProvider(ASRProvider):
             )
         except Exception as exc:
             sanitized = self._sanitize_error(str(exc), self._api_key)
+            if is_rate_limit_status(http_status_of(exc)):
+                logger.warning("Deepgram rate-limited for file=%s: %s", filename, sanitized)
+                raise ASRRateLimitedError(
+                    f"Deepgram rate limited: {sanitized}",
+                    provider="deepgram",
+                    retry_after=retry_after_of(exc),
+                ) from exc
             logger.error("Deepgram transcription failed for file=%s: %s", filename, sanitized)
             raise RuntimeError(f"Deepgram transcription failed: {sanitized}") from exc
 

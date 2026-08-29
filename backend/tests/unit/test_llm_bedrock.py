@@ -16,7 +16,9 @@ from unittest.mock import patch
 import pytest
 
 from app.services.llm_bedrock import BedrockNotConfiguredError
+from app.services.llm_bedrock import BedrockStreamError
 from app.services.llm_bedrock import build_request_metadata
+from app.services.llm_bedrock import converse
 from app.services.llm_bedrock import resolve_model_id
 from app.services.llm_bedrock import split_system_messages
 from app.services.llm_bedrock import stream_converse
@@ -365,3 +367,112 @@ def test_temperature_is_omitted_when_unset():
         _drain()
 
     assert "temperature" not in client.converse_stream.call_args.kwargs["inferenceConfig"]
+
+
+# --------------------------------------------------------------------------
+# converse() — the non-streaming entry point (issue: KeyError on the
+# non-streaming path, since Bedrock is not a key in LLMService.endpoints at all)
+# --------------------------------------------------------------------------
+
+
+def test_non_streaming_bedrock_does_not_crash_on_a_missing_endpoint():
+    """`LLMService.chat_completion` for Bedrock used to hit a bare
+    `self.endpoints[self.config.provider]` subscript. `BEDROCK` is not a key in that
+    dict at all (it is reached through boto3, not HTTP — see `SDK_PROVIDERS`), so the
+    subscript raised `KeyError` before the guarded `ValueError` on the next line could
+    ever run. This is the falsifiable core of the fix: watch it RED against
+    `git archive HEAD` pre-fix (KeyError), green here (a clean, non-KeyError failure —
+    or a real response — depending on what `stream_converse` does).
+    """
+    from app.services.llm_service import LLMConfig
+    from app.services.llm_service import LLMProvider
+    from app.services.llm_service import LLMService
+
+    service = LLMService(LLMConfig(provider=LLMProvider.BEDROCK, model=MODEL))
+
+    events = [
+        {"contentBlockDelta": {"delta": {"text": "Hello"}}},
+        {"messageStop": {"stopReason": "end_turn"}},
+        {"metadata": {"usage": {"inputTokens": 5, "outputTokens": 2}}},
+    ]
+    with patch("app.services.llm_bedrock._client", return_value=_fake_client(events)):
+        response = service.chat_completion([{"role": "user", "content": "hi"}])
+
+    assert response.content == "Hello"
+    assert response.provider == "bedrock"
+
+
+def test_converse_drains_the_stream_into_a_single_response():
+    events = [
+        {"contentBlockDelta": {"delta": {"text": "Hello"}}},
+        {"contentBlockDelta": {"delta": {"text": " world"}}},
+        {"messageStop": {"stopReason": "end_turn"}},
+        {"metadata": {"usage": {"inputTokens": 10, "outputTokens": 2}}},
+    ]
+    with patch("app.services.llm_bedrock._client", return_value=_fake_client(events)):
+        content, usage_tokens, finish_reason = converse(
+            model=MODEL,
+            region="us-east-1",
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=100,
+        )
+
+    assert content == "Hello world"
+    assert usage_tokens == 12
+    assert finish_reason == "end_turn"
+
+
+def test_converse_raises_on_an_error_event_naming_the_provider_message():
+    """The error is raised, not swallowed into a generic "empty content" exception
+    that hides what Bedrock actually said.
+    """
+    events = [{"throttlingException": {"message": "Too many requests"}}]
+    with patch("app.services.llm_bedrock._client", return_value=_fake_client(events)):
+        with pytest.raises(BedrockStreamError, match="throttled"):
+            converse(
+                model=MODEL,
+                region="us-east-1",
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=100,
+            )
+
+
+def test_chat_completion_raw_is_not_supported_for_bedrock():
+    """chat_completion_raw's contract is "the provider's parsed JSON, unshaped" — for
+    Bedrock (an SDK call, not an HTTP endpoint) there is no such JSON. This is a guard,
+    not a regression: `llm_reasoning.PROBEABLE_PROVIDERS` already deliberately excludes
+    Bedrock.
+    """
+    from app.services.llm_service import LLMConfig
+    from app.services.llm_service import LLMProvider
+    from app.services.llm_service import LLMService
+
+    service = LLMService(LLMConfig(provider=LLMProvider.BEDROCK, model=MODEL))
+
+    with pytest.raises(ValueError, match="Bedrock"):
+        service.chat_completion_raw([{"role": "user", "content": "hi"}])
+
+
+def test_openai_config_still_reaches_send_llm_request_unchanged():
+    """Control: the Bedrock branch in `chat_completion` must not affect any other
+    provider's non-streaming path.
+    """
+    from app.services.llm_service import LLMConfig
+    from app.services.llm_service import LLMProvider
+    from app.services.llm_service import LLMService
+
+    service = LLMService(
+        LLMConfig(provider=LLMProvider.OPENAI, model="gpt-test", api_key="sk-test")
+    )
+    with patch.object(
+        service,
+        "_send_llm_request",
+        return_value={
+            "choices": [{"message": {"content": "hi"}, "finish_reason": "stop"}],
+            "usage": {"total_tokens": 3},
+        },
+    ) as mock_send:
+        response = service.chat_completion([{"role": "user", "content": "hi"}])
+
+    assert response.content == "hi"
+    mock_send.assert_called_once()

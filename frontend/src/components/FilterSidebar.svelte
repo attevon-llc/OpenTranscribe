@@ -267,18 +267,17 @@
   const SPEAKER_SEARCH_DEBOUNCE_MS = 300;
   let speakerSearchQuery = '';
   let searchingSpeakers = false;
-  let speakerSearchTimer: ReturnType<typeof setTimeout> | undefined;
+  const debouncedSpeakerSearch = createDebouncedHandler(async () => {
+    await fetchSpeakers(speakerSearchQuery);
+    searchingSpeakers = false;
+  }, SPEAKER_SEARCH_DEBOUNCE_MS);
 
   function scheduleSpeakerSearch() {
-    clearTimeout(speakerSearchTimer);
     searchingSpeakers = true;
-    speakerSearchTimer = setTimeout(async () => {
-      await fetchSpeakers(speakerSearchQuery);
-      searchingSpeakers = false;
-    }, SPEAKER_SEARCH_DEBOUNCE_MS);
+    debouncedSpeakerSearch.trigger();
   }
 
-  onDestroy(() => clearTimeout(speakerSearchTimer));
+  onDestroy(() => debouncedSpeakerSearch.cleanup());
 
   /**
    * Handle tag selection

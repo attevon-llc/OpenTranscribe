@@ -28,6 +28,7 @@ from app.auth.cookies import clear_oidc_state_binding
 from app.auth.cookies import get_oidc_state_binding
 from app.auth.cookies import set_oidc_state_binding
 from app.auth.direct_auth import create_access_token as direct_create_token
+from app.auth.lockout import check_and_record_attempt
 from app.auth.mfa import MFAService
 from app.auth.oidc import OIDCConfig
 from app.auth.oidc import exchange_code_for_tokens
@@ -244,6 +245,12 @@ async def oidc_callback(
     tokens = await exchange_code_for_tokens(code, code_verifier, cfg=cfg)
     if not tokens:
         logger.error("Failed to exchange authorization code for tokens")
+        # No identity is known yet at this point in the flow, so this shares the
+        # "unknown" bucket with every other pre-identity refusal below — same
+        # shape as proxy_login's unattributable-assertion bucket. Retries still
+        # throttle: unlimited retry against a stolen/guessed authorization code
+        # is exactly what account lockout (NIST AC-7) exists to bound.
+        check_and_record_attempt("unknown", success=False)
         audit_logger.log_login_failure(
             username="unknown",
             source_ip=client_ip,
@@ -263,6 +270,7 @@ async def oidc_callback(
     )
     if not oidc_data:
         logger.error("Invalid or missing ID token received from the OIDC provider")
+        check_and_record_attempt("unknown", success=False)
         audit_logger.log_login_failure(
             username="unknown",
             source_ip=client_ip,
@@ -291,6 +299,7 @@ async def oidc_callback(
 
     if not user.is_active:
         logger.warning(f"OIDC user account is inactive: {oidc_data['oidc_subject']}")
+        check_and_record_attempt(oidc_data.get("email", "unknown"), success=False)
         audit_logger.log_login_failure(
             username=oidc_data.get("email", "unknown"),
             source_ip=client_ip,
@@ -302,6 +311,11 @@ async def oidc_callback(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user account",
         )
+
+    # A successful authentication clears whatever failure count this identifier
+    # had accrued — the same clear-on-success semantics /token gives a local
+    # password login.
+    check_and_record_attempt(user.email, success=True)
 
     # Generate our own JWT token
     access_token_expires = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)

@@ -129,6 +129,9 @@ app actually *sent*), `mock-empty`, `mock-error`, `mock-slow`, `mock-reasoning`
 testable). Never start it as a
 bare host process: it binds 5199 and then blocks the container. Fixtures and the
 full table: `backend/tests/CLAUDE.md`.
+`--with-mock-asr` is the sibling overlay — a mocked cloud ASR (Gladia stand-in) provider at
+`http://mock-asr:5198`, so `--lite`-mode ASR can be exercised with no vendor account either;
+same fixture/table location.
 Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.
 Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`.
 
@@ -177,6 +180,16 @@ preflight → bump → verify → test → build → scan → rehearse
   reads as current until you `reset`, so reset before a real run.
 - `rehearse` runs both scenarios and **requires the live stack stopped**; it
   refuses (exit 3) and prints the command rather than stopping it for you.
+  `test-upgrade.sh` now runs to completion across all 18 phases, including the
+  backup/rollback tail — previously masked by a `set -e` harness bug that
+  silently truncated the script at the first non-fatal-by-design digest mismatch
+  (`scripts/CLAUDE.md`'s rehearsal gotchas). That is not a claim the rehearsal
+  always passes: one non-blocking residual gap remains open, see
+  `full-test-matrix.md`'s coverage table (issue #619).
+- Running `test-upgrade.sh`/`test-fresh-install.sh` directly (not through
+  `rehearse`) in a backgrounded or non-interactive shell needs `--yes` — the
+  `I UNDERSTAND` confirmation prompt has no tty to read from and fails with
+  `No such device or address` otherwise.
 
 Full guide: `docs-site/docs/developer-guide/releasing.md` (Developer Guide →
 Releasing). Agent interface: `.claude/skills/release/SKILL.md`. Gate definitions:
@@ -298,6 +311,17 @@ Manual frontend check: `./scripts/frontend-check.sh [--no-claude] [--check-only]
                                           # flags: --coverage --e2e-smoke --cleanup
 ```
 
+For a quick "does my current branch work" check during normal development — backend gate + e2e
++ frontend check, chained, one consolidated report — use `./scripts/run-dev-tests.sh --full`
+(or `--fast` for a smoke-e2e variant, `--backend-only`/`--e2e-only`/`--frontend-only` for a
+single phase; mode flags compose). It auto-starts/stops whatever auth/LLM test overlays the
+requested phase needs (mock-LLM, Keycloak, LDAP) and reconciles the DB config it flips back on
+exit — `--all-overlays`/`--with-gpu-scale`/`--no-overlays`/`--list-overlays`/`--dry-run` control
+this; see `scripts/CLAUDE.md` for the full flag table. This is **not** the same job as
+`scripts/test-matrix.sh` (the exhaustive deployment-mode rehearsal across
+dev/prod/lite/PKI/GPU-scale/fresh-install/upgrade, run before cutting a release, not during
+ordinary development).
+
 MinIO/OpenSearch-backed tests **auto-enable** when the dev stack is reachable (conftest TCP-probes localhost:5178/5180) and skip otherwise. Coverage is configured report-only (`pytest --cov=app`, `npm run test:coverage`).
 
 ### Four tools that keep the suite honest (issue #431)
@@ -373,7 +397,7 @@ System tool at `~/bin/browser-tools/browse.js` — opens URL, runs actions (`fil
 
 Configured via `MODEL_CACHE_DIR` in `.env` (default `./models`). Volumes mount each cache (`huggingface`, `torch`, `nltk_data`, `sentence-transformers`, `opensearch-ml`) into the container's `~/.cache/...`. `opensearch-ml` is also mounted read-only at `/ml-models` in the OpenSearch container.
 
-Models persist across rebuilds (~2.5 GB total). Permissions auto-fixed by `./opentr.sh` startup; manual fix: `./scripts/fix-model-permissions.sh` (chowns to UID/GID 1000:1000 — the non-root container user).
+Models persist across rebuilds (~2.5 GB total). Permissions auto-fixed by `./opentr.sh` startup; manual fix: `./scripts/fix-model-permissions.sh` (chowns to `$CONTAINER_UID_GID`, default **1000:999** — the non-root `appuser`, whose GID is 999 because the Dockerfile uses `groupadd -r`; issue #580).
 
 ## Where subsystem detail lives
 
@@ -407,6 +431,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Test suite: markers, gates, E2E fixtures | `backend/tests/CLAUDE.md` |
 | Repo scripts + destructive-op warnings | `scripts/CLAUDE.md` |
 | Release pipeline (12 stages, ledger, gates) | `docs-site/docs/developer-guide/releasing.md` |
+| Full local test matrix (4 stages, overlay sub-matrix) | `docs-site/docs/developer-guide/full-test-matrix.md` |
 | Frontend SPA (+ 24 folder-level files) | `frontend/CLAUDE.md` |
 
 > **Cosine score conversion (repo-wide trap):** OpenSearch `cosinesimil` returns `(1 + cosine) / 2`, NOT raw cosine. Every kNN score read must do `raw_cosine = 2.0 * hit["_score"] - 1.0`. All 11 read sites live in the speaker/voiceprint plane under `backend/app/services/` (none in `api/`, and transcript search ranks by RRF, never raw cosine) — all 11 currently correct. Full table: `backend/app/services/search/CLAUDE.md`.
@@ -418,13 +443,17 @@ subsystem, and put new subsystem detail **there**, not in this file.
 > still gets masked text (sending unredacted PII to a third party is a data-egress event). Key that
 > off the **provider**, never a global setting.
 >
-> ⚠️ **The provider keying is DECIDED, NOT BUILT.** No code branches on the provider — only the
-> CLAUDE.md files were amended — so **input masking applies to every provider today** and a local
-> deployment is *not* currently less protected than before the decision. **Output redaction landed
-> first, deliberately**: `services/chat/output_redactor.py` masks what the model *writes*,
-> sentence-buffered, gated on `cfg.enabled and cfg.enabled_categories` (the **display** policy, not
-> the `redact_before_llm` **egress** policy). Land the provider keying before it and the gap is
-> real, between two commits, on a deployment that believes it is protected.
+> ✅ **The provider keying is BUILT and shipped**, not just decided. `chat/service.py._prepare_context`
+> resolves `redaction.llm_guard.is_local_provider(llm.config)` once per turn and threads it as
+> `unmask_for_local` to all three masking call sites (`mask_chunks`, and both `mask_digests` calls).
+> A **local** model (a `vllm`/`ollama`/`custom` config whose `base_url` resolves to
+> loopback/RFC1918/link-local/a docker-compose hostname) receives excerpt text unmasked; a
+> **remote/cloud provider** still gets masked text. The classification **fails closed** — any
+> ambiguity reads as remote. An admin's `redaction.force_redact_before_llm` lock always wins the
+> local exemption. Full detail: `backend/app/services/chat/CLAUDE.md`. **Output redaction**
+> (`services/chat/output_redactor.py`, masks what the model *writes*, gated on
+> `cfg.enabled and cfg.enabled_categories`) is a separate, independent layer — the **display**
+> policy, not the `redact_before_llm` **egress** policy this section describes.
 >
 > ⚠️ **Two maskers, not interchangeable.** `redactor.mask_chunks()` addresses text by **time
 > range**; `redactor.mask_digests()` by **provenance** (`segment_ids`). A digest through the chunk

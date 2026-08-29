@@ -18,7 +18,9 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
   from the selection, exactly as Collections does: a selection opens this modal, nothing
   selected opens `components/tags/TagManagerModal.svelte`. There is no `/tags` route —
   a tag is metadata over the library, not a destination.
-- `GallerySortDropdown.svelte`, `GalleryViewToggle.svelte`, `GalleryCountChip.svelte` — small controls.
+- Sort control is `$components/ui/SortDropdown.svelte` (shared with search, H2), consumed
+  directly by `GalleryHeader.svelte`. `GalleryViewToggle.svelte`, `GalleryCountChip.svelte` —
+  small controls.
 
 ## Conventions / patterns
 

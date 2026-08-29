@@ -48,6 +48,11 @@ cachetools==7.1.7
 # Asynchronous Tasks
 celery==5.6.3
 redis==8.1.0
+# Pure-Python (tornado/prometheus_client/humanize/pytz deps only, no torch) — needed so
+# backend/tests/unit/test_flower_worker_discovery.py's is_flower_option() check (issue #609)
+# actually runs in CI instead of importorskip-ing silently, which is the exact "240 security
+# tests gated off behind stale env vars" failure mode scripts/audit-tests.py exists to prevent.
+flower==2.1.0
 psycopg2-binary==2.9.12
 minio==7.2.20
 imohash==1.1.0

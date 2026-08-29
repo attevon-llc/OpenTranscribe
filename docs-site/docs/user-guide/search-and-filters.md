@@ -96,6 +96,28 @@ When search results are returned, matching text is highlighted with `<em>` tags 
 
 ![Search results with highlighted matching transcript segments](/img/screenshots/search/search-results.png)
 
+## Finding Text Inside a Transcript
+
+The gallery/library search above searches across your whole collection. A separate **find bar**
+searches *within* the transcript or summary you currently have open, and shares its component
+and fuzzy-matching behavior (diacritic- and case-folding) everywhere it appears, so it behaves
+the same way in the transcript viewer as it does in the summary panel.
+
+In the transcript viewer, the find bar highlights matches in the currently loaded portion of the
+transcript instantly, then resolves a lightweight, debounced count query scoped to that file to
+show an accurate **N of M+** indicator and progressively load more matches if any exist outside
+what's currently rendered — so a match late in a long transcript is never missed just because
+that page hasn't loaded yet. In the summary panel, where the whole summary is already in memory,
+the find bar is a simpler, complete-from-the-start version of the same component.
+
+### Searching Settings
+
+**Settings** has its own macOS-style search: a search box above the sidebar tabs that replaces
+the grouped navigation with ranked, highlighted results as you type. Selecting a result jumps
+straight to that section and briefly flashes the matched control, so you don't have to remember
+which tab a setting lives under. It works across all supported languages and only surfaces
+settings your account and edition can actually see.
+
 ## Transcript Comments
 
 Add timestamped comments to any transcript for notes, annotations, or collaboration.

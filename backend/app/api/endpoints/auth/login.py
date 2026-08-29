@@ -42,11 +42,13 @@ from app.auth.password_policy import is_password_expired
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.roles import ROLE_SUPER_ADMIN
+from app.auth.token_service import enforce_session_ceiling
 from app.auth.token_service import token_service
 from app.auth.utils import local_password_allowed
 from app.core.auth_settings import DynamicAuthSettings
 from app.core.auth_settings import get_auth_settings
 from app.core.config import settings
+from app.core.constants import SESSION_CAP_EVICTION_BATCH_LIMIT
 from app.db.base import get_db
 from app.models.user import User
 from app.models.user_mfa import UserMFA
@@ -653,10 +655,24 @@ def login_for_access_token(
                         ),
                     )
                 elif concurrent_session_policy == "terminate_oldest" and active_session_rows:
-                    # Terminate oldest session - rows are already locked from the query above
-                    # Sort by created_at to find the oldest
-                    oldest_token = min(active_session_rows, key=lambda t: t.created_at)
-                    oldest_token.revoked_at = datetime.now(UTC)  # type: ignore[assignment]
+                    # Delegate the actual eviction to the shared ceiling enforcer
+                    # (issue #632) rather than revoking a single Python-computed
+                    # `min()` row: "evict exactly one, mint exactly one" is a
+                    # conservation law once active_sessions is already >= the cap, so
+                    # it can never bring the count DOWN, only hold it steady — and
+                    # with no gap lock, two concurrent logins can each see room for
+                    # one more and both mint, netting +1. `enforce_session_ceiling`
+                    # is a post-condition instead ("keep the newest N-1, so the
+                    # session about to be minted lands at exactly N"), which is what
+                    # actually converges regardless of arrival rate. The
+                    # `with_for_update()` lock above is kept: `reject` still needs a
+                    # stable count to refuse on.
+                    evicted_jtis = enforce_session_ceiling(
+                        db,
+                        user_db.id,
+                        max_concurrent_sessions - 1,
+                        batch_limit=SESSION_CAP_EVICTION_BATCH_LIMIT,
+                    )
                     db.commit()
 
                     # AUTH_SESSION_LIMIT_EXCEEDED, not AUTH_SESSION_EXPIRED: this
@@ -677,6 +693,7 @@ def login_for_access_token(
                             "policy": "terminate_oldest",
                             "max_concurrent_sessions": max_concurrent_sessions,
                             "active_sessions": active_sessions,
+                            "sessions_revoked": len(evicted_jtis),
                         },
                     )
 

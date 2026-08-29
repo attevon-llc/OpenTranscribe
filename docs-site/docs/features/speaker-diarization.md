@@ -306,6 +306,30 @@ An unrecognized value, or `pyannote` selected without an API key configured, is 
 error rather than silently falling back to local diarization — unlike ASR provider selection,
 which does degrade to a local model automatically.
 
+### Native Diarization Engine (New in v0.5.0)
+
+The `local` diarization path described above no longer means "PyAnnote" by default. A
+from-scratch **native diarization engine** — a `diar-server` sidecar built for this project — is
+now the primary engine for on-box (`local`) diarization, replacing PyAnnote as the default while
+staying fully independent of ASR engine selection: you can run cloud ASR with local diarization,
+local ASR with cloud diarization, or any other combination.
+
+- **Backend selection**: `engine.diarizer_backend` (SystemSettings, falls back to env
+  `ENGINE_DIARIZER_BACKEND`) accepts `native` (default) or `pyannote`. If the `diar-native`
+  sidecar is unreachable when a task needs it, the pipeline automatically falls back to the
+  in-process PyAnnote engine documented earlier on this page — there is no hard dependency on
+  the sidecar being up.
+- **Running it**: the sidecar ships as an additive Docker Compose overlay,
+  `docker-compose.diar-native.yml`, wired through `./opentr.sh start dev --with-diar-native`. It
+  shares the backend image rather than shipping a separate one, and is auto-loaded in dev when
+  its models directory is present (`--no-diar-native` suppresses that).
+- **Inline gender classification**: while the sidecar already holds the decoded audio for
+  diarization, it can also classify each speaker's gender in the same pass
+  (`DIAR_NATIVE_GENDER`, on by default). When active, this skips the separate ~87–90s CPU
+  wav2vec2 gender-classification task described below entirely, rather than running both —
+  verified to produce the same labels as the CPU path at higher confidence (e.g. male
+  0.999/female 0.989 vs. 0.999/0.593).
+
 ### Speaker Verification Status
 
 Track identification confidence:

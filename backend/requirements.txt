@@ -106,6 +106,10 @@ tqdm==4.70.0
 # is also --no-deps below and no longer has pip enforcing that constraint for us.
 transformers==4.57.6
 huggingface-hub==0.36.2
+# Transitive (huggingface_hub, pyannote-pipeline, tldextract, torch, transformers,
+# virtualenv) — pinned after the dependency-parity gate caught the venv and the
+# image resolving different patch releases (issue #492's exact failure mode).
+filelock==3.32.4
 # pandas removed: only used by diarizer/speaker_assigner/reprocess, replaced with
 # DiarizeResult numpy dataclass. Saves ~72 MB. See app/transcription/diarize_result.py.
 # triton removed: openai/triton only needed for torch.compile(backend="inductor") JIT,
@@ -289,8 +293,16 @@ lxml==6.1.2                # via python3-saml, xmlsec — drifted 6.1.1 (venv) v
 typer==0.27.1              # via spacy, weasel — drifted 0.26.8 (venv) vs 0.27.1 (image), 2026-08-23
 httpcore2==2.12.0          # via httpx2
 httpx2==2.12.0             # via openai
+google-api-core==2.35.0    # via google-cloud-speech — drifted 2.34.0 (venv) vs 2.35.0 (image), 2026-08-25
+google-auth==2.57.0        # via google-api-core, google-cloud-speech — drifted 2.56.3 (venv) vs 2.57.0 (image), 2026-08-25
+spacy==3.8.16              # via presidio_analyzer — drifted 3.8.15 (venv) vs 3.8.16 (image), 2026-08-25
+googleapis-common-protos==1.75.2  # via google-api-core — drifted 1.75.1 (venv) vs 1.75.2 (image), 2026-08-26
+proto-plus==1.28.4         # via google-cloud-speech — drifted 1.28.3 (venv) vs 1.28.4 (image), 2026-08-26
+mmh3==5.3.0                # via imohash — drifted 5.2.1 (venv) vs 5.3.0 (image), 2026-08-26
+pyspnego==0.12.2           # via smbprotocol — drifted 0.12.1 (venv) vs 0.12.2 (image), 2026-08-26
 idna==3.19                 # via requests, httpx, anyio, yarl, tldextract
 argon2-cffi-bindings==26.1.0  # via argon2-cffi — drifted 25.1.0 (venv) vs 26.1.0 (image), 2026-08-21
 protobuf==7.36.0           # via grpcio-status, onnx, opensearch-protobufs — drifted 7.35.1 (venv) vs 7.36.0 (image), 2026-08-21
 narwhals==2.25.0           # via altair/plotly family — drifted 2.24.0 (venv) vs 2.25.0 (image), 2026-08-21
 scipy==1.18.1              # via scikit-learn, librosa — drifted 1.18.0 (venv) vs 1.18.1 (image), 2026-08-21
+click==8.5.0                # via uvicorn/celery — drifted 8.4.2 (venv) vs 8.5.0 (image), 2026-08-27

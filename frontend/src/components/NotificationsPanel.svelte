@@ -5,7 +5,7 @@
   import { goto } from '$app/navigation';
   import { token } from '../stores/auth';
   import { websocketStore } from '../stores/websocket';
-  import { notifications, showNotificationsPanel, markAllAsRead as markAllNotificationsAsRead } from '../stores/notifications';
+  import { showNotificationsPanel } from '../stores/notificationsPanel';
   import { t } from '$stores/locale';
   import EmptyState from './ui/EmptyState.svelte';
 

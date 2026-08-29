@@ -50,8 +50,8 @@ export interface PacerOptions {
   now?: () => number;
 }
 
-export const DEFAULT_INTERVAL_MS = 55;
-export const DEFAULT_FLUSH_THRESHOLD = 6;
+const DEFAULT_INTERVAL_MS = 55;
+const DEFAULT_FLUSH_THRESHOLD = 6;
 
 /**
  * Decides *when* queued nodes become visible. Holds no timers itself — the

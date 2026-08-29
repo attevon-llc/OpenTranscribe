@@ -154,9 +154,11 @@ describe('role change', () => {
     const select = container.querySelector('td select') as HTMLSelectElement;
     await fireEvent.change(select, { target: { value: 'admin' } });
 
-    await waitFor(() =>
-      expect(toastStore.error).toHaveBeenCalledWith('userManagement.updateRoleFailed')
-    );
+    // Repointed to the canonical getErrorMessage (apiError.ts), which — unlike
+    // the deleted local extractErrorMessage — falls through to error.message
+    // when there's no response.data.detail, so a plain network error surfaces
+    // its own text rather than the generic fallback.
+    await waitFor(() => expect(toastStore.error).toHaveBeenCalledWith('network error'));
     // The select is one-way bound (value={currentUser.role}), so the failed
     // change leaves the DOM value out of sync with server state unless the
     // list refetch re-renders it back.

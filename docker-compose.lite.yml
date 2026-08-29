@@ -53,3 +53,13 @@ services:
     image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
     environment:
       - DEPLOYMENT_MODE=lite
+
+  celery-embedding-worker:
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    environment:
+      - DEPLOYMENT_MODE=lite
+
+  celery-redaction:
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:latest}
+    environment:
+      - DEPLOYMENT_MODE=lite

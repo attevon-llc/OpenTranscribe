@@ -146,6 +146,11 @@ class AuthConfigService:
         "oidc_verify_audience": "bool",
         "oidc_use_pkce": "bool",
         "oidc_verify_issuer": "bool",
+        # SAML settings (C10)
+        "saml_enabled": "bool",
+        "saml_want_assertions_signed": "bool",
+        "saml_want_messages_signed": "bool",
+        "saml_sign_authn_requests": "bool",
         # PKI settings
         "pki_enabled": "bool",
         "pki_verify_revocation": "bool",
@@ -245,6 +250,31 @@ class AuthConfigService:
         "OIDC_AUDIENCE": "oidc_audience",
         "OIDC_USE_PKCE": "oidc_use_pkce",
         "OIDC_VERIFY_ISSUER": "oidc_verify_issuer",
+        # SAML (C10, issue #567). These previously resolved by accident —
+        # ``saml_enabled``.upper() happens to equal ``SAML_ENABLED`` for every key
+        # here, so ``env_var_for()`` worked without being registered. That is not
+        # true of every category (``allow_registration`` -> ``ALLOW_OPEN_REGISTRATION``
+        # above is why this mapping exists at all), so an unregistered key silently
+        # resolves to ``None`` the moment a future rename breaks the coincidence.
+        "SAML_ENABLED": "saml_enabled",
+        "SAML_SP_ENTITY_ID": "saml_sp_entity_id",
+        "SAML_SP_ACS_URL": "saml_sp_acs_url",
+        "SAML_SP_SLS_URL": "saml_sp_sls_url",
+        "SAML_SP_X509_CERT": "saml_sp_x509_cert",
+        "SAML_SP_PRIVATE_KEY": "saml_sp_private_key",
+        "SAML_IDP_ENTITY_ID": "saml_idp_entity_id",
+        "SAML_IDP_SSO_URL": "saml_idp_sso_url",
+        "SAML_IDP_SLO_URL": "saml_idp_slo_url",
+        "SAML_IDP_X509_CERT": "saml_idp_x509_cert",
+        "SAML_WANT_ASSERTIONS_SIGNED": "saml_want_assertions_signed",
+        "SAML_WANT_MESSAGES_SIGNED": "saml_want_messages_signed",
+        "SAML_SIGN_AUTHN_REQUESTS": "saml_sign_authn_requests",
+        "SAML_EMAIL_ATTRIBUTE": "saml_email_attribute",
+        "SAML_NAME_ATTRIBUTE": "saml_name_attribute",
+        "SAML_GROUPS_ATTRIBUTE": "saml_groups_attribute",
+        "SAML_ADMIN_GROUP": "saml_admin_group",
+        "SAML_ALLOWED_GROUPS": "saml_allowed_groups",
+        "SAML_BLOCKED_GROUPS": "saml_blocked_groups",
         # PKI
         "PKI_ENABLED": "pki_enabled",
         "PKI_CA_CERT_PATH": "pki_ca_cert_path",

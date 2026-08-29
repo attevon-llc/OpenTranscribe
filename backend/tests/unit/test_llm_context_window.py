@@ -18,7 +18,9 @@ to a status whose reader falls back to the user's declared value; only
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from typing import cast
+from urllib.parse import urlparse
 
 import pytest
 import requests
@@ -33,6 +35,7 @@ from app.services.llm_context_window import measured_window
 from app.services.llm_context_window import probe
 from app.services.llm_service import LLMConfig
 from app.services.llm_service import LLMProvider
+from app.utils.url_validation import PinnedTarget
 
 
 class _FakeResponse:
@@ -60,15 +63,64 @@ def _ollama_config(model: str = "qwen3.8:latest") -> LLMConfig:
     )
 
 
+class _FakeSession:
+    """Stands in for the ``requests.Session`` ``pinned_requests_session`` yields."""
+
+    def __init__(self, get_fn=None, post_fn=None) -> None:
+        self._get_fn = get_fn
+        self._post_fn = post_fn
+
+    def get(self, url, **kwargs):
+        return self._get_fn(url, **kwargs)
+
+    def post(self, url, **kwargs):
+        return self._post_fn(url, **kwargs)
+
+
+def _patch_pinning(monkeypatch, *, get_fn=None, post_fn=None) -> None:
+    """Bypass real DNS resolution/pinning so these discovery-LOGIC tests exercise
+    the response-parsing code without touching the network — the pinning
+    mechanism itself (rebinding, redirect handling, the loopback refusal) is
+    covered end to end by ``test_ssrf_chat_completion.py``'s rebinding suite,
+    against the same ``resolve_pinned_target``/``pinned_requests_session`` this
+    module calls. Patched at the SOURCE module (``app.utils.url_validation``),
+    matching how ``llm_context_window`` imports both names lazily inside the
+    functions that use them — patching a module-level alias here would silently
+    not apply.
+    """
+    import app.utils.url_validation as uv
+
+    def fake_resolve(url, **kwargs):
+        parsed = urlparse(url)
+        return (
+            PinnedTarget(
+                original_url=url,
+                url=url,
+                address="203.0.113.1",  # RFC 5737 TEST-NET-3 — a fake, non-bindable address
+                hostname=parsed.hostname or "",
+                host_header=parsed.netloc,
+                scheme=parsed.scheme,
+                pinned=False,
+            ),
+            "",
+        )
+
+    @contextmanager
+    def fake_session(target):
+        yield _FakeSession(get_fn=get_fn, post_fn=post_fn)
+
+    monkeypatch.setattr(uv, "resolve_pinned_target", fake_resolve)
+    monkeypatch.setattr(uv, "pinned_requests_session", fake_session)
+
+
 # ------------------------------------------------------------------ vLLM path
 
 
 class TestVllmDiscovery:
     def test_the_measured_reference_shape_reads_max_model_len(self, monkeypatch):
-        monkeypatch.setattr(
-            llm_context_window.requests,
-            "get",
-            lambda url, **kw: _FakeResponse(
+        _patch_pinning(
+            monkeypatch,
+            get_fn=lambda url, **kw: _FakeResponse(
                 {"data": [{"id": "gemma-4-e4b", "max_model_len": 60000}]}
             ),
         )
@@ -77,10 +129,11 @@ class TestVllmDiscovery:
         assert result.context_window == 60000
 
     def test_an_unlisted_model_is_not_found_never_a_guess(self, monkeypatch):
-        monkeypatch.setattr(
-            llm_context_window.requests,
-            "get",
-            lambda url, **kw: _FakeResponse({"data": [{"id": "other", "max_model_len": 4096}]}),
+        _patch_pinning(
+            monkeypatch,
+            get_fn=lambda url, **kw: _FakeResponse(
+                {"data": [{"id": "other", "max_model_len": 4096}]}
+            ),
         )
         result = probe(_vllm_config())
         assert result.status is ContextWindowStatus.NOT_FOUND
@@ -89,10 +142,9 @@ class TestVllmDiscovery:
     def test_an_openai_compatible_server_without_the_extension_is_not_found(self, monkeypatch):
         """A clone can serve /v1/models with no max_model_len — that is 'the
         number could not be read', never 'the window is <anything>'."""
-        monkeypatch.setattr(
-            llm_context_window.requests,
-            "get",
-            lambda url, **kw: _FakeResponse({"data": [{"id": "gemma-4-e4b"}]}),
+        _patch_pinning(
+            monkeypatch,
+            get_fn=lambda url, **kw: _FakeResponse({"data": [{"id": "gemma-4-e4b"}]}),
         )
         result = probe(_vllm_config())
         assert result.status is ContextWindowStatus.NOT_FOUND
@@ -101,11 +153,11 @@ class TestVllmDiscovery:
     def test_the_models_url_and_bearer_header_are_built_from_the_config(self, monkeypatch):
         seen: dict = {}
 
-        def fake_get(url, headers=None, timeout=None):
+        def fake_get(url, headers=None, timeout=None, **kw):
             seen.update(url=url, headers=headers or {}, timeout=timeout)
             return _FakeResponse({"data": []})
 
-        monkeypatch.setattr(llm_context_window.requests, "get", fake_get)
+        _patch_pinning(monkeypatch, get_fn=fake_get)
         config = LLMConfig(
             provider=LLMProvider.VLLM, model="m", base_url="http://llm:8000/v1/", api_key="sk-x"
         )
@@ -122,11 +174,11 @@ class TestOllamaDiscovery:
     def test_the_measured_reference_shape_reads_arch_context_length(self, monkeypatch):
         seen: dict = {}
 
-        def fake_post(url, json=None, timeout=None):
+        def fake_post(url, json=None, timeout=None, **kw):
             seen.update(url=url, body=json)
             return _FakeResponse({"model_info": {"qwen35.context_length": 262144}})
 
-        monkeypatch.setattr(llm_context_window.requests, "post", fake_post)
+        _patch_pinning(monkeypatch, post_fn=fake_post)
         result = probe(_ollama_config())
         assert result.status is ContextWindowStatus.MEASURED
         assert result.context_window == 262144
@@ -136,10 +188,9 @@ class TestOllamaDiscovery:
         assert seen["body"] == {"model": "qwen3.8:latest"}
 
     def test_any_architecture_prefix_is_accepted(self, monkeypatch):
-        monkeypatch.setattr(
-            llm_context_window.requests,
-            "post",
-            lambda url, **kw: _FakeResponse({"model_info": {"llama.context_length": 8192}}),
+        _patch_pinning(
+            monkeypatch,
+            post_fn=lambda url, **kw: _FakeResponse({"model_info": {"llama.context_length": 8192}}),
         )
         result = probe(_ollama_config(model="llama3:8b"))
         assert result.status is ContextWindowStatus.MEASURED
@@ -148,19 +199,19 @@ class TestOllamaDiscovery:
     def test_a_404_for_an_unknown_model_is_not_found_not_unreachable(self, monkeypatch):
         """Measured live: Ollama 404s /api/show for a name it does not serve.
         UNREACHABLE would send the operator debugging the network for a typo."""
-        monkeypatch.setattr(
-            llm_context_window.requests,
-            "post",
-            lambda url, **kw: _FakeResponse({"error": "model not found"}, status_code=404),
+        _patch_pinning(
+            monkeypatch,
+            post_fn=lambda url, **kw: _FakeResponse({"error": "model not found"}, status_code=404),
         )
         result = probe(_ollama_config(model="no-such-model"))
         assert result.status is ContextWindowStatus.NOT_FOUND
 
     def test_a_show_without_context_length_is_not_found(self, monkeypatch):
-        monkeypatch.setattr(
-            llm_context_window.requests,
-            "post",
-            lambda url, **kw: _FakeResponse({"model_info": {"general.architecture": "qwen35"}}),
+        _patch_pinning(
+            monkeypatch,
+            post_fn=lambda url, **kw: _FakeResponse(
+                {"model_info": {"general.architecture": "qwen35"}}
+            ),
         )
         assert probe(_ollama_config()).status is ContextWindowStatus.NOT_FOUND
 
@@ -192,7 +243,7 @@ class TestFailClosed:
         def refuse(*a, **kw):
             raise requests.ConnectionError("connection refused")
 
-        monkeypatch.setattr(llm_context_window.requests, "get", refuse)
+        _patch_pinning(monkeypatch, get_fn=refuse)
         result = probe(_vllm_config())
         assert result.status is ContextWindowStatus.UNREACHABLE
 
@@ -203,9 +254,35 @@ class TestFailClosed:
         def refuse(*a, **kw):
             raise requests.ConnectionError("refused: http://secret-host:8000/v1/models")
 
-        monkeypatch.setattr(llm_context_window.requests, "get", refuse)
+        _patch_pinning(monkeypatch, get_fn=refuse)
         result = probe(_vllm_config())
         assert "secret-host" not in result.detail
+
+    def test_a_private_endpoint_is_refused_before_any_http_call(self, monkeypatch):
+        """H6: the probe used to dial a user-configured base_url with no SSRF
+        guard at all — same class as the mediacms.py SSRF fix (#284 A0.1), the
+        one sibling module that stayed unguarded. `resolve_pinned_target`
+        refuses a private/internal target for real here (not mocked out, unlike
+        every other test in this file) — LLM_ALLOW_PRIVATE_ENDPOINTS defaults to
+        False, so a link-local metadata address must never reach `requests`.
+        """
+
+        from app.core.config import settings as app_settings
+
+        def explode(*a, **kw):  # pragma: no cover - the assertion is that it never runs
+            raise AssertionError("a refused SSRF target must never be dialled")
+
+        monkeypatch.setattr(app_settings, "LLM_ALLOW_PRIVATE_ENDPOINTS", False, raising=False)
+        monkeypatch.setattr(llm_context_window.requests, "get", explode)
+        config = LLMConfig(
+            provider=LLMProvider.VLLM,
+            model="m",
+            base_url="http://169.254.169.254/latest/meta-data",
+            api_key="",
+        )
+        result = probe(config)
+        assert result.status is ContextWindowStatus.UNREACHABLE
+        assert "169.254.169.254" not in result.detail
 
 
 # ----------------------------------------------------------- key + the record

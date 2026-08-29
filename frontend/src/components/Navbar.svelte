@@ -13,8 +13,8 @@
   import { isCloudEdition } from "$lib/edition";
   import { refreshUsage, refreshBilling } from "$lib/cloud";
 
-  // Import the centralized notification store
-  import { showNotificationsPanel, toggleNotificationsPanel, notifications } from '../stores/notifications';
+  // Import the centralized notification panel store
+  import { showNotificationsPanel, toggleNotificationsPanel } from '../stores/notificationsPanel';
   import { unreadCount } from '../stores/websocket';
 
   // Import recording store

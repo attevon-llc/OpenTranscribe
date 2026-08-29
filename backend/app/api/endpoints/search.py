@@ -459,13 +459,19 @@ def get_available_filters(
     """
     Return available filter options (speakers, tags, date range).
 
+    Quarantined (DMCA/abuse takedown) files are excluded from every facet for
+    non-admins, including the file's own owner — same admin bypass as the
+    results page's ``_drop_quarantined_search_hits``.
+
     Returns:
         Dict with speakers, tags, and date_range filter options.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
 
     search_service = HybridSearchService()
-    return search_service.get_available_filters(user_id=ctx.user.id, organization_id=ctx.org_id)
+    return search_service.get_available_filters(
+        user_id=ctx.user.id, organization_id=ctx.org_id, is_admin=ctx.user.is_admin
+    )
 
 
 @router.post("/reindex")
@@ -660,6 +666,91 @@ def _check_reindex_task_active(user_id: int) -> bool:
     except Exception as e:
         logger.debug(f"Could not check reindex lock: {e}")
         return False
+
+
+@router.get("/degraded-embeddings")
+def get_degraded_embeddings(
+    limit: int = Query(500, le=5000),
+    current_user: User = Depends(get_current_admin_user),
+) -> dict[str, Any]:
+    """Preview the files stranded text-only by a neural-search degraded window (#626).
+
+    Read-only survey — pairs with ``POST /search/reembed-degraded``, which requires this
+    preview to be confirmed rather than dispatching on click.
+    """
+    from app.db.session_utils import session_scope
+    from app.models.media import MediaFile
+    from app.services.search.embedding_provenance import survey_degraded_files
+
+    files, truncated = survey_degraded_files(limit=limit)
+
+    if not files:
+        return {"total_files": 0, "truncated": False, "affected_users": 0, "files": []}
+
+    file_uuids = [f.file_uuid for f in files]
+    with session_scope() as db:
+        rows = (
+            db.query(MediaFile.uuid, MediaFile.filename)
+            .filter(MediaFile.uuid.in_(file_uuids))
+            .all()
+        )
+        titles = {str(row[0]): row[1] for row in rows}
+
+    return {
+        "total_files": len(files),
+        "truncated": truncated,
+        "affected_users": len({f.user_id for f in files}),
+        "files": [
+            {
+                "file_uuid": f.file_uuid,
+                "title": titles.get(f.file_uuid) or f.file_uuid,
+                "user_id": f.user_id,
+            }
+            for f in files
+        ],
+    }
+
+
+@router.post("/reembed-degraded")
+def trigger_reembed_degraded(
+    limit: int = Query(500, le=5000),
+    current_user: User = Depends(get_current_admin_user),
+) -> dict[str, Any]:
+    """Dispatch the operator-triggered re-embed of #626's degraded (text-only) files.
+
+    Checks the task's own lock before dispatching, rather than dispatching into a lock it
+    knows is already held — matches ``start_embedding_consistency_repair``'s shape in
+    ``admin.py``.
+    """
+    from app.tasks.search_reembed_task import REEMBED_LOCK_KEY
+    from app.tasks.search_reembed_task import reembed_degraded_files_task
+    from app.utils.task_lock import task_lock_manager
+
+    if task_lock_manager.is_locked(REEMBED_LOCK_KEY):
+        return {
+            "task_id": None,
+            "status": "already_running",
+            "message": "A re-embed of degraded files is already in progress.",
+        }
+
+    from app.services.search.embedding_provenance import survey_degraded_files
+
+    files, _truncated = survey_degraded_files(limit=limit)
+    if not files:
+        return {
+            "task_id": None,
+            "status": "no_degraded_files",
+            "message": "No degraded (text-only) files found to re-embed.",
+        }
+
+    result = reembed_degraded_files_task.apply_async(
+        kwargs={"triggered_by": current_user.id, "limit": limit},
+    )
+    return {
+        "task_id": str(result.id),
+        "status": "started",
+        "message": "Re-embedding started. Progress will be sent via WebSocket.",
+    }
 
 
 @router.get("/reindex/status")
@@ -1364,12 +1455,17 @@ def get_neural_search_status(
         health while the vector segments are corrupt and *every* semantic query
         answers 503, because they describe the pipeline, the model registry and a
         ``terms`` aggregation, none of which touch the HNSW graph (issue #540).
+
+        And ``bootstrap`` — the self-heal's own state (issue #625): whether the beat task
+        is currently degraded, its attempt count, last error and next retry time, plus a
+        report-only ``text_only_chunk_files`` count (no auto re-embed; see #626).
     """
     from app.services.opensearch_service import probe_knn_health_cached
     from app.services.search.embedding_provenance import survey_embedding_models
     from app.services.search.indexing_service import is_neural_pipeline_available
     from app.services.search.ml_model_service import get_ml_model_service
     from app.services.search.model_switch import provenance_payload
+    from app.services.search.neural_bootstrap import bootstrap_status
 
     ml_service = get_ml_model_service()
     active_model_id = ml_service.get_active_model_id()
@@ -1393,6 +1489,7 @@ def get_neural_search_status(
         "active_model_dimension": active_model_info["dimension"] if active_model_info else None,
         "pipeline_name": settings.OPENSEARCH_NEURAL_PIPELINE,
         "embedding_provenance": provenance_payload(survey_embedding_models()),
+        "bootstrap": bootstrap_status(),
         "chunks_index_knn": {
             "index": settings.OPENSEARCH_CHUNKS_INDEX,
             "status": knn_probe.status,

@@ -60,6 +60,10 @@
 
   onDestroy(() => {
     if (_llmModalWasOpen) unlockScroll();
+    if (keydownHandler) {
+      document.removeEventListener('keydown', keydownHandler);
+      keydownHandler = null;
+    }
   });
 
   async function loadData() {
@@ -497,6 +501,7 @@
       claude: $t('llm.provider.claude'),
       anthropic: $t('llm.provider.anthropic'),
       openrouter: $t('llm.provider.openrouter'),
+      bedrock: $t('llm.provider.bedrock'),
       custom: $t('llm.provider.custom')
     };
     return displayNames[provider] || provider;

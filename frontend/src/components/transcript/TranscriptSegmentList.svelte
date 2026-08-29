@@ -17,7 +17,6 @@
   export let speakerList: Speaker[] = [];
   export let currentTime: number = 0;
   export let diarizationDisabled: boolean = false;
-  export let isEditingTranscript: boolean = false;
   export let editingSegmentId: string | number | null = null;
   export let editingSegmentText: string = '';
   export let savingTranscript: boolean = false;
@@ -212,8 +211,7 @@
     scrollbarIndicatorEnabled = !!(
       transcriptSegments &&
       transcriptSegments.length > 10 && // Only show for transcripts with substantial content
-      currentTime >= 0 &&
-      !isEditingTranscript // Hide during transcript editing
+      currentTime >= 0
     );
   }
 
@@ -479,7 +477,7 @@
       {currentTime}
       {transcriptSegments}
       containerElement={transcriptContainer?.querySelector('.transcript-display')}
-      disabled={isEditingTranscript || !file?.transcript_segments?.length}
+      disabled={!file?.transcript_segments?.length}
       on:seekToPlayhead={handleSeekToPlayhead}
     />
   {/if}

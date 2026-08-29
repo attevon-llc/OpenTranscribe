@@ -13,32 +13,6 @@ from uuid import UUID
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
-from pydantic import field_validator
-
-
-# Legacy schemas kept for backward compatibility with default BLUF prompt
-class SpeakerInfo(BaseModel):
-    """Speaker information (optional, used by default BLUF prompt)"""
-
-    name: str = Field(..., description="Speaker name or label")
-    talk_time_seconds: int | float = Field(..., description="Total talk time in seconds")
-    percentage: float = Field(..., description="Percentage of total talk time")
-    key_points: list[str] = Field(..., description="Key points from this speaker")
-
-    @field_validator("talk_time_seconds")
-    @classmethod
-    def convert_talk_time_to_int(cls, v):
-        if isinstance(v, float):
-            return int(round(v))
-        return v
-
-
-class ContentSection(BaseModel):
-    """Content section (optional, used by some prompts)"""
-
-    time_range: str = Field(..., description="Time range for this section")
-    topic: str = Field(..., description="Topic or title")
-    key_points: list[str] = Field(..., description="Key discussion points")
 
 
 class ActionItem(BaseModel):
@@ -50,19 +24,6 @@ class ActionItem(BaseModel):
     priority: Literal["high", "medium", "low"] = Field(..., description="Priority level")
     context: str = Field(..., description="Context about why this action is needed")
     status: Literal["pending", "completed", "cancelled"] | None = Field("pending")
-
-
-class SummaryMetadata(BaseModel):
-    """Metadata about summary generation (always present)"""
-
-    provider: str = Field(..., description="LLM provider used")
-    model: str = Field(..., description="Model name")
-    usage_tokens: int | None = None
-    transcript_length: int
-    processing_time_ms: int | None = None
-    confidence_score: float | None = None
-    language: str | None = None
-    error: str | None = None
 
 
 class MajorTopic(BaseModel):

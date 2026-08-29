@@ -17,8 +17,6 @@
   import { getErrorMessage } from '$lib/utils/apiError';
 
   export let file: any = null;
-  export let isEditingTranscript: boolean = false;
-  export let editedTranscript: string = '';
   export let savingTranscript: boolean = false;
   export let savingSpeakers: boolean = false;
 
@@ -129,14 +127,6 @@
 
   function handleSegmentClick(startTime: number) {
     dispatch('segmentClick', { startTime });
-  }
-
-  function saveTranscript() {
-    dispatch('saveTranscript');
-  }
-
-  function cancelEditTranscript() {
-    isEditingTranscript = false;
   }
 
   function exportTranscript(format: string) {
@@ -277,6 +267,9 @@
 
   // Open SSE streams keyed by fileId so we can clean them up on completion/unmount.
   const downloadStreams = new Map<string, EventSource>();
+  // Watchdog timers for the streams above, keyed the same way, so onDestroy can
+  // clear a still-pending one rather than letting it fire after unmount.
+  const downloadTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
   const DOWNLOAD_STREAM_TIMEOUT_MS = 5 * 60 * 1000;
 
   async function downloadMedia(mode: DownloadMode) {
@@ -338,6 +331,7 @@
       closeDownloadStream(fileId);
       downloadStore.updateStatus(fileId, 'error', undefined, $t('transcript.downloadFailed'));
     }, DOWNLOAD_STREAM_TIMEOUT_MS);
+    downloadTimeouts.set(fileId, timeout);
 
     es.addEventListener('progress', (e: MessageEvent) => {
       try {
@@ -379,11 +373,18 @@
       es.close();
       downloadStreams.delete(fileId);
     }
+    const timeout = downloadTimeouts.get(fileId);
+    if (timeout) {
+      clearTimeout(timeout);
+      downloadTimeouts.delete(fileId);
+    }
   }
 
   onDestroy(() => {
     downloadStreams.forEach((es) => es.close());
     downloadStreams.clear();
+    downloadTimeouts.forEach((timeout) => clearTimeout(timeout));
+    downloadTimeouts.clear();
   });
 
   function triggerAnchorDownload(href: string, filename: string) {
@@ -415,78 +416,59 @@
   </div>
 
   {#if file.transcript_segments && file.transcript_segments.length > 0}
-    {#if isEditingTranscript}
-      <textarea bind:value={editedTranscript} rows="20" class="transcript-textarea"></textarea>
-      <div class="edit-actions">
-        <button
-          on:click={saveTranscript}
-          disabled={savingTranscript}
-          title={$t('transcript.saveChangesTitle')}
-        >
-          {savingTranscript ? $t('common.saving') : $t('transcript.saveTranscript')}
-        </button>
-        <button
-          class="cancel-button"
-          on:click={cancelEditTranscript}
-          title={$t('transcript.cancelEditingTitle')}
-        >{$t('common.cancel')}</button>
-      </div>
-    {:else}
-      <TranscriptSegmentList
+    <TranscriptSegmentList
+      {file}
+      {groupedTranscriptSegments}
+      {transcriptSegments}
+      {speakerList}
+      {currentTime}
+      {diarizationDisabled}
+      {editingSegmentId}
+      bind:editingSegmentText
+      {savingTranscript}
+      {searchQuery}
+      {searchMatches}
+      {currentMatchIndex}
+      {totalSegments}
+      {hasMoreSegments}
+      {loadingMoreSegments}
+      on:segmentClick
+      on:editSegment
+      on:saveSegment
+      on:cancelEditSegment
+      on:loadMore
+      on:seekToPlayhead
+      on:segmentSpeakerChange={handleSegmentSpeakerChange}
+      on:speakerCreatedFromDropdown={handleSpeakerCreated}
+    />
+
+
+    <TranscriptActionsBar
+      {file}
+      {diarizationDisabled}
+      {isEditingSpeakers}
+      {isDownloading}
+      {currentDownload}
+      {isVideoFile}
+      {canEmbedSubtitles}
+      on:exportTranscript={handleExportFromBar}
+      on:toggleSpeakerEditor={toggleSpeakerEditor}
+      on:download={handleDownloadFromBar}
+    />
+
+    {#if isEditingSpeakers && !diarizationDisabled}
+      <SpeakerEditorPanel
         {file}
-        {groupedTranscriptSegments}
-        {transcriptSegments}
         {speakerList}
-        {currentTime}
-        {diarizationDisabled}
-        {isEditingTranscript}
-        {editingSegmentId}
-        bind:editingSegmentText
-        {savingTranscript}
-        {searchQuery}
-        {searchMatches}
-        {currentMatchIndex}
-        {totalSegments}
-        {hasMoreSegments}
-        {loadingMoreSegments}
+        {speakerNamesChanged}
+        {savingSpeakers}
+        on:speakerNameChanged
+        on:speakerUpdate
+        on:speakersMerged
+        on:saveSpeakerNames
         on:segmentClick
-        on:editSegment
-        on:saveSegment
-        on:cancelEditSegment
-        on:loadMore
-        on:seekToPlayhead
-        on:segmentSpeakerChange={handleSegmentSpeakerChange}
-        on:speakerCreatedFromDropdown={handleSpeakerCreated}
+        on:loadUpTo
       />
-
-
-      <TranscriptActionsBar
-        {file}
-        {diarizationDisabled}
-        {isEditingSpeakers}
-        {isDownloading}
-        {currentDownload}
-        {isVideoFile}
-        {canEmbedSubtitles}
-        on:exportTranscript={handleExportFromBar}
-        on:toggleSpeakerEditor={toggleSpeakerEditor}
-        on:download={handleDownloadFromBar}
-      />
-
-      {#if isEditingSpeakers && !diarizationDisabled}
-        <SpeakerEditorPanel
-          {file}
-          {speakerList}
-          {speakerNamesChanged}
-          {savingSpeakers}
-          on:speakerNameChanged
-          on:speakerUpdate
-          on:speakersMerged
-          on:saveSpeakerNames
-          on:segmentClick
-          on:loadUpTo
-        />
-      {/if}
     {/if}
   {:else if file.status === 'completed'}
     <p>{$t('transcript.noTranscriptAvailable')}</p>
@@ -511,75 +493,6 @@
     align-items: center;
     margin-bottom: 6px;
     min-height: 32px;
-  }
-
-  .transcript-textarea {
-    width: 100%;
-    padding: 16px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--surface-color);
-    color: var(--text-primary);
-    font-family: monospace;
-    font-size: 14px;
-    line-height: 1.5;
-    resize: vertical;
-    min-height: 400px;
-  }
-
-  .edit-actions {
-    display: flex;
-    gap: 12px;
-    margin-top: 12px;
-  }
-
-  .edit-actions button {
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .edit-actions button:first-child {
-    background: #3b82f6;
-    color: white;
-    border: none;
-  }
-
-  .edit-actions button:first-child:hover:not(:disabled) {
-    background: #2563eb;
-  }
-
-  .edit-actions button:first-child:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .cancel-button {
-    background: #6b7280;
-    color: white;
-    border: 1px solid #6b7280;
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    font-size: 0.95rem;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
-  .cancel-button:hover {
-    background: #4b5563;
-    border-color: #4b5563;
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
-  }
-
-  .cancel-button:active {
-    transform: scale(1);
-    box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
   }
 
 </style>

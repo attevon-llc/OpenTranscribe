@@ -13,7 +13,13 @@ const mockedGet = vi.mocked(axiosInstance.get);
 describe('capabilities store', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    capabilities.set({ edition: 'community', loaded: false, capabilities: {}, audience: {} });
+    capabilities.set({
+      edition: 'community',
+      loaded: false,
+      capabilities: {},
+      audience: {},
+      maxUploadBytes: undefined,
+    });
   });
 
   it('defaults fail-open: unknown keys are enabled', () => {
@@ -52,5 +58,30 @@ describe('capabilities store', () => {
     expect(state.edition).toBe('community');
     expect(state.loaded).toBe(true);
     expect(isCapabilityEnabled(state, 'watch_sources')).toBe(true);
+    // NOT a number and NOT null — "unknown", so $lib/utils/uploadLimits falls back
+    // to its own coded default rather than reading a failed fetch as "no limit".
+    expect(state.maxUploadBytes).toBeUndefined();
+  });
+
+  it('carries the live max_upload_bytes value through from the response', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: { edition: 'community', capabilities: {}, audience: {}, max_upload_bytes: 5_000_000 },
+    });
+
+    await loadCapabilities();
+
+    expect(get(capabilities).maxUploadBytes).toBe(5_000_000);
+  });
+
+  it('carries an explicit null max_upload_bytes through as null, not "unknown"', async () => {
+    // The admin set MAX_UPLOAD_BYTES=0 server-side, which the backend resolves to
+    // `None` (no limit) rather than a numeric ceiling.
+    mockedGet.mockResolvedValueOnce({
+      data: { edition: 'community', capabilities: {}, audience: {}, max_upload_bytes: null },
+    });
+
+    await loadCapabilities();
+
+    expect(get(capabilities).maxUploadBytes).toBeNull();
   });
 });

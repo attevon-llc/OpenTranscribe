@@ -82,8 +82,6 @@
   let isTagsExpanded = false;
   let isCollectionsExpanded = false;
   let isAnalyticsExpanded = false;
-  let isEditingTranscript = false;
-  let editedTranscript = '';
   let savingTranscript = false;
   let savingSpeakers = false;
   let editingSegmentId: string | number | null = null;
@@ -124,9 +122,14 @@
   let aiTagSuggestions: TagSuggestion[] = [];
   let aiCollectionSuggestions: CollectionSuggestion[] = [];
 
-  // Permission level for shared files (null = owner/full access)
-  let myPermission: string | null = null;
-  $: canEdit = !myPermission || myPermission === 'editor' || myPermission === 'owner';
+  // Caller's permission on this file. Backend convention (files/crud.py:778):
+  // `null` = you are the owner. `undefined` = not fetched yet / fetch failed —
+  // never treated as owner, so every gate below fails closed until load.
+  let myPermission: string | null | undefined = undefined;
+  $: permissionLoaded = myPermission !== undefined;
+  $: canEdit =
+    permissionLoaded &&
+    (myPermission === null || myPermission === 'editor' || myPermission === 'owner');
 
   // Content redaction: owner/admin can reveal the original (non-admin-forced categories).
   let showOriginal = false;
@@ -134,7 +137,7 @@
   // When redaction is enabled but detection hasn't finished, the transcript is withheld.
   let redactionPending = false;
   let redactionStatus = ''; // pending | processing | done | failed
-  $: canViewOriginal = myPermission === null || myPermission === 'owner';
+  $: canViewOriginal = permissionLoaded && (myPermission === null || myPermission === 'owner');
   $: showRedactionToggle = canViewOriginal && (redactionActive || showOriginal);
 
   // LLM availability for summary functionality
@@ -285,7 +288,7 @@
       if (response.data && typeof response.data === 'object') {
         file = response.data;
         collections = response.data.collections || [];
-        myPermission = response.data.my_permission || null;
+        myPermission = response.data.my_permission ?? null;
         // Content-redaction state: pending (transcript withheld) + whether masking applied.
         redactionPending = response.data.redaction_pending || false;
         redactionStatus = response.data.redaction_status || '';
@@ -549,11 +552,6 @@
 
       // Update the file with sorted data
       file.transcript_segments = transcriptData;
-
-      // Update transcript text for editing
-      editedTranscript = transcriptData.map((seg: Segment) =>
-        `${seg.display_timestamp || seg.formatted_timestamp || formatDuration(seg.start_time)} [${seg.speaker_label || seg.speaker?.name || 'Speaker'}]: ${seg.text}`
-      ).join('\n');
 
       // Load speakers and update store after they're loaded
       loadSpeakers();
@@ -1197,32 +1195,6 @@
     editingSegmentText = '';
   }
 
-  async function handleSaveTranscript() {
-    if (!editedTranscript || !file) return;
-
-    try {
-      savingTranscript = true;
-      const response = await axiosInstance.put(`/files/${fileId}/transcript`, {
-        transcript: editedTranscript
-      });
-
-      if (response.data) {
-        // Refresh file data to get updated segments
-        await fetchFileDetails(fileId);
-
-        // The fetchFileDetails will reload the transcript store via processTranscriptData() and loadSpeakers()
-        // so the transcript modal will automatically update
-
-        isEditingTranscript = false;
-      }
-    } catch (error) {
-      console.error('Error saving transcript:', error);
-      toastStore.error($t('fileDetail.failedToSaveTranscript'));
-    } finally {
-      savingTranscript = false;
-    }
-  }
-
 
   async function handleExportTranscript(event: any) {
     const format = event.detail.format;
@@ -1824,7 +1796,48 @@
   }
 
   /**
-   * Eventual-consistency backstop for a speaker rename.
+   * Re-fetch segments after a speaker merge (issue #603).
+   *
+   * A merge deletes the SOURCE speaker's Postgres row and re-labels its segments under
+   * the TARGET speaker. `speaker_processing_complete` for a merge carries only the target
+   * uuid, so `applySpeakerRename` — which patches segments that still hold a KNOWN uuid —
+   * has no old-to-new mapping and can't find the segments still holding the now-dead
+   * source uuid client-side. Merges are rare enough that refetching is the honest fix:
+   * reset to empty and replay the same paging path `loadMoreSegments`/`handleLoadUpTo`
+   * use (`appendSegmentPage`, which skips already-seen uuids — starting from empty is
+   * what turns that into a full replace), preserving however many segments were already
+   * loaded rather than force-loading the rest of a not-yet-fully-loaded transcript.
+   */
+  async function refetchSegmentsAfterMerge(): Promise<void> {
+    if (!fileId || !file) return;
+
+    const targetCount = file.transcript_segments?.length || 0;
+    file = { ...file, transcript_segments: [], grouped_segments: [] };
+    if (targetCount === 0) return;
+
+    try {
+      for (let offset = 0; offset < targetCount; offset += segmentLimit) {
+        const response = await axiosInstance.get(`/files/${fileId}/segments`, {
+          params: {
+            segment_limit: Math.min(segmentLimit, targetCount - offset),
+            segment_offset: offset,
+            ...(showOriginal ? { redact: false } : {})
+          }
+        });
+        if (!response.data?.transcript_segments) break;
+        file = appendSegmentPage(file, response.data);
+      }
+
+      if (file?.uuid && file.transcript_segments && speakerList) {
+        transcriptStore.loadTranscriptData(file.uuid, file.transcript_segments, speakerList);
+      }
+    } catch (error) {
+      console.error('Error refetching segments after speaker merge:', error);
+    }
+  }
+
+  /**
+   * Eventual-consistency backstop for a speaker rename or merge.
    *
    * Renaming a speaker kicks off a background task that projects the change into
    * OpenSearch and retroactively labels matching speakers in other files. This event is
@@ -1835,9 +1848,14 @@
     const detail = (e as CustomEvent).detail;
     if (!detail?.media_file_id || String(detail.media_file_id) !== String(fileId)) return;
 
-    // Repaint the renamed speaker directly: loadSpeakers() refreshes the speaker list but
-    // touches neither the segments nor the transcript store.
-    if (detail.speaker_uuid && detail.display_name) {
+    if (detail.reason === 'speaker_merged') {
+      // The merged-away speaker's uuid is gone from Postgres; there is no rename mapping
+      // to patch segments in place with, so refetch rather than trying to guess. See
+      // `refetchSegmentsAfterMerge`'s docstring.
+      refetchSegmentsAfterMerge();
+    } else if (detail.speaker_uuid && detail.display_name) {
+      // Repaint the renamed speaker directly: loadSpeakers() refreshes the speaker list but
+      // touches neither the segments nor the transcript store.
       const speakerUuid = String(detail.speaker_uuid);
       const speakerLabel = speakerList.find(s => s.uuid === speakerUuid)?.name;
       applySpeakerRename(speakerUuid, speakerLabel, String(detail.display_name));
@@ -2098,7 +2116,7 @@
       <FileHeader
         {file}
         {currentProcessingStep}
-        sharedPermission={myPermission}
+        sharedPermission={myPermission ?? null}
         on:titleUpdated={(e) => { if (file) file.title = e.detail.title; }}
       />
 
@@ -2198,8 +2216,6 @@
           <TranscriptDisplay
           bind:file
           {currentTime}
-          {isEditingTranscript}
-          {editedTranscript}
           {savingTranscript}
           {savingSpeakers}
           {speakerNamesChanged}
@@ -2216,7 +2232,6 @@
           on:editSegment={handleEditSegment}
           on:saveSegment={handleSaveSegment}
           on:cancelEditSegment={handleCancelEditSegment}
-          on:saveTranscript={handleSaveTranscript}
           on:exportTranscript={handleExportTranscript}
           on:saveSpeakerNames={handleSaveSpeakerNames}
           on:speakerUpdate={handleSpeakerUpdate}

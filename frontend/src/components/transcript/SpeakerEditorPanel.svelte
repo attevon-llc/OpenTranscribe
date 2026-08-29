@@ -5,6 +5,7 @@
   import SpeakerMerge from '$components/SpeakerMerge.svelte';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
+  import { RENAME_PROPAGATION_TIMEOUT_MS } from '$lib/api/speakerClusters';
 
   export let file: any = null;
   export let speakerList: any[] = [];
@@ -24,7 +25,6 @@
   // TranscriptDisplay for a purely informational status line.
   let propagationPending = false;
   let propagationTimer: ReturnType<typeof setTimeout> | undefined;
-  const PROPAGATION_TIMEOUT_MS = 20000;
   let wasSaving = savingSpeakers;
 
   // The transition check and the bookkeeping assignment must share ONE
@@ -40,7 +40,7 @@
       clearTimeout(propagationTimer);
       propagationTimer = setTimeout(() => {
         propagationPending = false;
-      }, PROPAGATION_TIMEOUT_MS);
+      }, RENAME_PROPAGATION_TIMEOUT_MS);
     }
     wasSaving = savingSpeakers;
   }

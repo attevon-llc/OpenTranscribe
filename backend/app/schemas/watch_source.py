@@ -46,14 +46,6 @@ class SkipReason(StrEnum):
     VALIDATION_FAILED = "validation_failed"
 
 
-class ScanStatus(StrEnum):
-    """Outcome of the last scan of a source."""
-
-    SUCCESS = "success"
-    ERROR = "error"
-    RUNNING = "running"
-
-
 # ----- shared processing config -----
 
 

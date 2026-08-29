@@ -136,6 +136,20 @@ def update_engine_settings(
     if not updates:
         raise HTTPException(status_code=400, detail="No fields provided to update")
 
+    if "transcriber_backend" in updates:
+        from app.transcription.engine.backends import VALID_TRANSCRIBER_BACKENDS
+
+        value = updates["transcriber_backend"]
+        if value.lower() not in VALID_TRANSCRIBER_BACKENDS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown transcriber_backend '{value}'. "
+                    f"Valid values: {sorted(VALID_TRANSCRIBER_BACKENDS)}"
+                ),
+            )
+        updates["transcriber_backend"] = value.lower()
+
     if "diarizer_backend" in updates:
         from app.transcription.engine.backends import VALID_DIARIZER_BACKENDS
 

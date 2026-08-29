@@ -472,18 +472,27 @@ class OpenSearchMLModelService:
             logger.error(f"Failed to register model {model_name}: {e}")
             return None
 
-    def _wait_for_registration(self, task_id: str) -> str | None:
+    def _wait_for_registration(
+        self,
+        task_id: str,
+        *,
+        max_wait: float = _REGISTRATION_MAX_WAIT,
+        poll_interval: float = _REGISTRATION_POLL_INTERVAL,
+    ) -> str | None:
         """Wait for model registration task to complete.
 
         Args:
             task_id: The registration task ID.
+            max_wait: Ceiling in seconds. Defaults to the module constant; only
+                overridden by tests so they don't pay the real ~300s ceiling.
+            poll_interval: Seconds between polls. Same override rationale as `max_wait`.
 
         Returns:
             Model ID if registration succeeded, None otherwise.
         """
         start_time = time.time()
 
-        while (time.time() - start_time) < _REGISTRATION_MAX_WAIT:
+        while (time.time() - start_time) < max_wait:
             try:
                 assert self._client is not None
                 task_response = self._client.transport.perform_request(
@@ -504,13 +513,13 @@ class OpenSearchMLModelService:
 
                 # Still in progress
                 logger.debug(f"Registration task {task_id} state: {state}")
-                time.sleep(_REGISTRATION_POLL_INTERVAL)
+                time.sleep(poll_interval)
 
             except Exception as e:
                 logger.warning(f"Error polling registration task: {e}")
-                time.sleep(_REGISTRATION_POLL_INTERVAL)
+                time.sleep(poll_interval)
 
-        logger.error(f"Model registration timed out after {_REGISTRATION_MAX_WAIT}s")
+        logger.error(f"Model registration timed out after {max_wait}s")
         return None
 
     def deploy_model(self, model_id: str) -> bool:
@@ -549,19 +558,29 @@ class OpenSearchMLModelService:
             logger.error(f"Failed to deploy model {model_id}: {e}")
             return False
 
-    def _wait_for_deployment(self, model_id: str, task_id: str) -> bool:
+    def _wait_for_deployment(
+        self,
+        model_id: str,
+        task_id: str,
+        *,
+        max_wait: float = _DEPLOYMENT_MAX_WAIT,
+        poll_interval: float = _DEPLOYMENT_POLL_INTERVAL,
+    ) -> bool:
         """Wait for model deployment to complete.
 
         Args:
             model_id: The model ID.
             task_id: The deployment task ID.
+            max_wait: Ceiling in seconds. Defaults to the module constant; only
+                overridden by tests so they don't pay the real ceiling.
+            poll_interval: Seconds between polls. Same override rationale as `max_wait`.
 
         Returns:
             True if deployment succeeded.
         """
         start_time = time.time()
 
-        while (time.time() - start_time) < _DEPLOYMENT_MAX_WAIT:
+        while (time.time() - start_time) < max_wait:
             try:
                 # Check task status
                 assert self._client is not None
@@ -582,13 +601,13 @@ class OpenSearchMLModelService:
                     return False
 
                 logger.debug(f"Deployment task {task_id} state: {state}")
-                time.sleep(_DEPLOYMENT_POLL_INTERVAL)
+                time.sleep(poll_interval)
 
             except Exception as e:
                 logger.warning(f"Error polling deployment task: {e}")
-                time.sleep(_DEPLOYMENT_POLL_INTERVAL)
+                time.sleep(poll_interval)
 
-        logger.error(f"Model deployment timed out after {_DEPLOYMENT_MAX_WAIT}s")
+        logger.error(f"Model deployment timed out after {max_wait}s")
         return False
 
     def _verified_or_none(self, model_name: str, model_id: str) -> str | None:

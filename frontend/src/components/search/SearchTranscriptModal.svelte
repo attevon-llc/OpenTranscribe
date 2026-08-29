@@ -6,6 +6,8 @@
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { reconnectDelayMs } from '$lib/utils/backoff';
+  import { toastStore } from '$stores/toast';
   import Spinner from '../ui/Spinner.svelte';
   import BaseModal from '../ui/BaseModal.svelte';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
@@ -57,6 +59,11 @@
 
   // Progressive loading state
   const SEGMENTS_PER_PAGE = 200;
+  //: G1 follow-up (adversarial review): a rejected page fetch used to give up
+  //: permanently after exactly one failure. Retries a transient failure up to
+  //: this many times, matching `uploadService.ts`'s MAX_RETRIES, before
+  //: genuinely giving up and truncating the list.
+  const MAX_LOAD_MORE_RETRIES = 3;
   let totalSegmentCount = 0;
   let totalSpeakerSegmentCount = 0;
   let loadedSegmentOffset = 0;
@@ -397,8 +404,9 @@
   // place — no loading-state flip, no flicker.
   let showOriginal = false;
   let redactionActive = false;
-  let myPermission: string | null = null;
-  $: canViewOriginal = myPermission === null || myPermission === 'owner';
+  let myPermission: string | null | undefined = undefined;
+  $: permissionLoaded = myPermission !== undefined;
+  $: canViewOriginal = permissionLoaded && (myPermission === null || myPermission === 'owner');
   $: showRedactionToggle = canViewOriginal && (redactionActive || showOriginal);
 
   function redactParams(): Record<string, unknown> {
@@ -460,7 +468,7 @@
       });
 
       const segments = res.data.transcript_segments || [];
-      myPermission = res.data.my_permission || null;
+      myPermission = res.data.my_permission ?? null;
       if (!showOriginal && segments.some((s: Segment) => s?.redactions?.length)) {
         redactionActive = true;
       }
@@ -514,69 +522,91 @@
     if (loadingMoreSegments || !hasMoreSegments || !fileUuid) return;
     loadingMoreSegments = true;
 
-    try {
-      const res = await axiosInstance.get(`/files/${fileUuid}`, {
-        params: {
-          segment_limit: SEGMENTS_PER_PAGE,
-          segment_offset: loadedSegmentOffset,
-          ...redactParams()
+    // G1 follow-up (adversarial review): the original G1 fix stopped the
+    // infinite re-request loop by clearing `hasMoreSegments` on the FIRST
+    // failure — but a transient failure (a dropped connection, a backend
+    // restart mid-request) then permanently truncated the transcript with no
+    // chance to recover, identical in effect to the bug it replaced from the
+    // user's point of view. Retries up to MAX_LOAD_MORE_RETRIES times with the
+    // same jittered backoff `uploadService.ts` uses, and `loadingMoreSegments`
+    // stays true for the whole sequence — including while a retry is pending —
+    // so neither the IntersectionObserver nor `navigateToMatch`'s `await
+    // loadMoreSegments()` loop can re-enter or race ahead of a queued retry.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const res = await axiosInstance.get(`/files/${fileUuid}`, {
+          params: {
+            segment_limit: SEGMENTS_PER_PAGE,
+            segment_offset: loadedSegmentOffset,
+            ...redactParams()
+          }
+        });
+
+        const newSegments = res.data.transcript_segments || [];
+        if (newSegments.length === 0) {
+          hasMoreSegments = false;
+          break;
         }
-      });
 
-      const newSegments = res.data.transcript_segments || [];
-      if (newSegments.length === 0) {
-        hasMoreSegments = false;
-        loadingMoreSegments = false;
-        return;
-      }
+        const { keywordRanges, semanticRanges } = buildTimeRanges();
 
-      const { keywordRanges, semanticRanges } = buildTimeRanges();
+        // Check if we should try to continue the last group from previous batch
+        const lastExisting = groupedSegments.length > 0 ? groupedSegments[groupedSegments.length - 1] : null;
+        const result = processSegments(newSegments, keywordRanges, semanticRanges, nextSegIdx, null, loadedSegmentOffset);
+        nextSegIdx = result.nextSegIdx;
 
-      // Check if we should try to continue the last group from previous batch
-      const lastExisting = groupedSegments.length > 0 ? groupedSegments[groupedSegments.length - 1] : null;
-      const result = processSegments(newSegments, keywordRanges, semanticRanges, nextSegIdx, null, loadedSegmentOffset);
-      nextSegIdx = result.nextSegIdx;
+        // If the first new group has the same speaker as the last existing group,
+        // merge them for speaker continuity (inline highlights are preserved)
+        const firstNew = result.grouped.length > 0 ? result.grouped[0] : null;
+        const canMerge = lastExisting && firstNew
+          && firstNew.speakerName === lastExisting.speakerName;
 
-      // If the first new group has the same speaker as the last existing group,
-      // merge them for speaker continuity (inline highlights are preserved)
-      const firstNew = result.grouped.length > 0 ? result.grouped[0] : null;
-      const canMerge = lastExisting && firstNew
-        && firstNew.speakerName === lastExisting.speakerName;
+        if (canMerge && lastExisting && firstNew) {
+          const mergedGroup: GroupedSegment = {
+            ...lastExisting,
+            text: lastExisting.text + ' ' + firstNew.text,
+            endTime: firstNew.endTime,
+            isKeyword: lastExisting.isKeyword || firstNew.isKeyword,
+            isSemantic: lastExisting.isSemantic || firstNew.isSemantic,
+            highlightedText: lastExisting.highlightedText + ' ' + firstNew.highlightedText
+          };
 
-      if (canMerge && lastExisting && firstNew) {
-        const mergedGroup: GroupedSegment = {
-          ...lastExisting,
-          text: lastExisting.text + ' ' + firstNew.text,
-          endTime: firstNew.endTime,
-          isKeyword: lastExisting.isKeyword || firstNew.isKeyword,
-          isSemantic: lastExisting.isSemantic || firstNew.isSemantic,
-          highlightedText: lastExisting.highlightedText + ' ' + firstNew.highlightedText
-        };
+          // Replace last group and append the rest
+          groupedSegments = [...groupedSegments.slice(0, -1), mergedGroup, ...result.grouped.slice(1)];
+        } else {
+          groupedSegments = [...groupedSegments, ...result.grouped];
+        }
 
-        // Replace last group and append the rest
-        groupedSegments = [...groupedSegments.slice(0, -1), mergedGroup, ...result.grouped.slice(1)];
-      } else {
-        groupedSegments = [...groupedSegments, ...result.grouped];
-      }
+        loadedSegmentOffset += newSegments.length;
+        hasMoreSegments = loadedSegmentOffset < totalSegmentCount;
 
-      loadedSegmentOffset += newSegments.length;
-      hasMoreSegments = loadedSegmentOffset < totalSegmentCount;
+        // Rebuild match positions for currently loaded segments (for scrolling)
+        matchPositions = buildMatchPositions(groupedSegments);
 
-      // Rebuild match positions for currently loaded segments (for scrolling)
-      matchPositions = buildMatchPositions(groupedSegments);
-
-      // Resolve segment indices for any newly covered matches
-      for (const pos of allMatchPositions) {
-        if (!pos.resolved) {
-          const resolvedIdx = resolveMatchPositionIndex(pos);
-          if (resolvedIdx !== -1) {
-            pos.segmentIndex = resolvedIdx;
-            pos.resolved = true;
+        // Resolve segment indices for any newly covered matches
+        for (const pos of allMatchPositions) {
+          if (!pos.resolved) {
+            const resolvedIdx = resolveMatchPositionIndex(pos);
+            if (resolvedIdx !== -1) {
+              pos.segmentIndex = resolvedIdx;
+              pos.resolved = true;
+            }
           }
         }
+        break;
+      } catch (e: unknown) {
+        console.error('Failed to load more segments:', e);
+        if (attempt < MAX_LOAD_MORE_RETRIES) {
+          await new Promise((resolve) => setTimeout(resolve, reconnectDelayMs(attempt + 1)));
+          continue;
+        }
+        // Retries exhausted — genuinely give up. `hasMoreSegments = false`
+        // stops the navigateToMatch loop from re-issuing the identical
+        // request forever, with a visible error this time.
+        hasMoreSegments = false;
+        toastStore.error(getErrorMessage(e, $t('searchTranscript.error')));
+        break;
       }
-    } catch (e: unknown) {
-      console.error('Failed to load more segments:', e);
     }
     loadingMoreSegments = false;
   }

@@ -134,7 +134,11 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                 logger.warning(f"Failed to dispatch rediarization: {e}")
         elif not diarization_disabled:
             if is_cloud_asr:
-                # Cloud ASR with provider diarization: dispatch GPU embedding extraction
+                # Cloud ASR with provider diarization: dispatch CPU embedding extraction.
+                # This is embedding extraction from already-known segments — no GPU
+                # diarization pass — so it belongs on the CPU queue, which lite mode
+                # (docker-compose.lite.yml) actually runs a worker for (issue #584;
+                # the GPU queue has zero consumers there).
                 send_progress_notification(
                     user_id, file_id, 0.80, "Dispatching speaker embedding extraction"
                 )
@@ -144,13 +148,13 @@ def finalize_transcription(self, gpu_result: dict) -> dict:
                     extract_speaker_embeddings_task.apply_async(
                         args=[str(file_uuid), speaker_mapping],
                         kwargs={"pipeline_task_id": task_id},
-                        queue=CeleryQueues.GPU,
+                        queue=CeleryQueues.CPU,
                     )
                     # Embedding task reads the preprocessed WAV; defer
                     # cleanup until it finishes (it cleans up itself).
                     defer_temp_cleanup = True
                     logger.info(
-                        f"Dispatched speaker embedding extraction to GPU queue for "
+                        f"Dispatched speaker embedding extraction to CPU queue for "
                         f"cloud-transcribed file {file_id}"
                     )
                 except Exception as e:

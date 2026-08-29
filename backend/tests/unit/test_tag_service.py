@@ -55,6 +55,13 @@ def _make_tag(db_session, name: str, *, source: str = "manual", user_id=None) ->
     return tag
 
 
+def _make_collection(db_session, name: str, owner, source: str = "manual") -> Collection:
+    collection = Collection(name=name, user_id=owner.id, source=source)
+    db_session.add(collection)
+    db_session.flush()
+    return collection
+
+
 def _make_file(db_session, owner) -> MediaFile:
     file_uuid = str(uuid.uuid4())
     media_file = MediaFile(
@@ -155,6 +162,55 @@ def _competing_writer(db_session, contested: str):
         db_session.rollback()
         _delete_tag_on_other_connection(contested)
         _delete_user_on_other_connection(racer_id)
+
+
+def _commit_collection_on_other_connection(name: str, user_id: int) -> int:
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "INSERT INTO collection (name, user_id, source) "
+                "VALUES (:n, :uid, 'manual') RETURNING id"
+            ),
+            {"n": name, "uid": user_id},
+        ).one()
+        conn.commit()
+        return int(row[0])
+
+
+def _delete_collection_on_other_connection(collection_id: int) -> None:
+    with engine.connect() as conn:
+        conn.execute(text("DELETE FROM collection WHERE id = :i"), {"i": collection_id})
+        conn.commit()
+
+
+@contextlib.contextmanager
+def _competing_collection_writer(db_session, contested: str, owner_id: int):
+    """Commit ``contested`` as a collection owned by ``owner_id`` from another
+    connection just before our SAVEPOINT insert.
+
+    Mirrors ``_competing_writer`` above, for ``Collection`` instead of ``Tag``:
+    ``find_existing_similar_collection``'s pre-check misses (the racer's row does
+    not exist yet), another connection commits the same ``(user_id, name)`` pair,
+    and our own INSERT then hits ``_user_collection_uc``.
+    """
+    fired = {"done": False}
+    state: dict[str, int | None] = {"collection_id": None}
+
+    @event.listens_for(db_session, "before_flush")
+    def _race(session, flush_context, instances):  # noqa: ANN001 - SQLAlchemy signature
+        if fired["done"]:
+            return
+        if any(isinstance(obj, Collection) and obj.name == contested for obj in session.new):
+            fired["done"] = True
+            state["collection_id"] = _commit_collection_on_other_connection(contested, owner_id)
+
+    try:
+        yield
+    finally:
+        event.remove(db_session, "before_flush", _race)
+        db_session.rollback()
+        if state["collection_id"] is not None:
+            _delete_collection_on_other_connection(state["collection_id"])
 
 
 def test_case_only_difference_returns_existing_tag(db_session, normal_user):
@@ -259,10 +315,17 @@ def test_collision_leaves_callers_pending_writes_intact(db_session, normal_user)
     _make_tag(db_session, pending_name, user_id=normal_user.id)
 
     with _competing_writer(db_session, contested) as racer_id:
-        resolve_or_create_tag(db_session, contested, user_id=racer_id)
+        resolved = resolve_or_create_tag(db_session, contested, user_id=racer_id)
+
+        # The collision has to have actually happened, or "the pending write survived"
+        # is true for the boring reason that nothing was ever rolled back.
+        assert _count_tags(db_session, normalize_tag_name(contested)) == 1
+        assert resolved.name == contested
 
         survivor = db_session.query(Tag).filter(Tag.name == pending_name).first()
         assert survivor is not None, "the caller's pending write was discarded"
+        assert survivor.user_id == normal_user.id
+        assert survivor.name == pending_name
 
 
 def test_long_name_truncated_identically_across_paths(db_session, normal_user):
@@ -659,3 +722,185 @@ def test_batch_resolver_owns_what_it_creates(db_session, normal_user):
 
     assert len(created) == 2
     assert all(tag.user_id == normal_user.id for tag in created)
+
+
+# ---------------------------------------------------------------------------
+# Auto-label tenancy scoping (issue #587)
+#
+# AutoLabelService is already correctly scoped (per-instance, per-user-id-keyed
+# caches; _owned_or_system unions the acting user's rows with the system tier).
+# These are regression guards for PR #488's leak shape: tag list endpoints once
+# had no user filter, so one user's unattached tags leaked into another's view.
+# ---------------------------------------------------------------------------
+
+
+def test_auto_label_tag_lookup_does_not_cross_to_another_users_same_named_tag(
+    db_session, normal_user, other_user
+):
+    """A same-named tag owned by another account must not resolve as a match."""
+    name = f"Budget {_suffix()}"
+    _make_tag(db_session, name, user_id=other_user.id)
+
+    assert AutoLabelService(db_session).find_existing_similar_tag(name, normal_user.id) is None
+
+
+def test_auto_label_creates_its_own_row_rather_than_reusing_another_users(
+    db_session, normal_user, other_user
+):
+    """Failing to find a match, the service must create A's own row, not reuse B's."""
+    name = f"Budget {_suffix()}"
+    other_tag = _make_tag(db_session, name, user_id=other_user.id)
+
+    svc = AutoLabelService(db_session)
+    tag = svc._get_or_create_tag_with_dedup(name, normal_user.id)
+
+    assert tag.user_id == normal_user.id
+    assert tag.id != other_tag.id
+
+
+def test_auto_label_tag_cache_is_not_shared_between_users(db_session, normal_user, other_user):
+    """The per-instance tag cache must be keyed per user, never a flat shared list."""
+    name = f"Budget {_suffix()}"
+    other_tag = _make_tag(db_session, name, user_id=other_user.id)
+
+    svc = AutoLabelService(db_session)
+    b_tags = svc._get_all_tags_cached(other_user.id)
+    a_tags = svc._get_all_tags_cached(normal_user.id)
+
+    assert other_tag.id in {t.id for t in b_tags}
+    assert other_tag.id not in {t.id for t in a_tags}
+    assert set(svc._tag_cache.keys()) == {other_user.id, normal_user.id}
+
+
+def test_auto_label_system_tags_are_visible_to_every_user(db_session, normal_user, other_user):
+    """A system (ownerless) tag is shared vocabulary — every user sees it."""
+    name = f"System-{_suffix()}"
+    system_tag = _make_tag(db_session, name, user_id=None)
+
+    svc = AutoLabelService(db_session)
+    a_tags = svc._get_all_tags_cached(normal_user.id)
+    b_tags = svc._get_all_tags_cached(other_user.id)
+
+    assert system_tag.id in {t.id for t in a_tags}
+    assert system_tag.id in {t.id for t in b_tags}
+
+    found = svc.find_existing_similar_tag(name, normal_user.id)
+    assert found is not None
+    assert found.id == system_tag.id
+    assert found.user_id is None
+
+
+def test_own_tag_wins_over_a_same_named_system_tag_on_the_auto_label_path(db_session, normal_user):
+    """Pins the ORDER BY user_id NULLS-LAST fast path in find_existing_similar_tag."""
+    name = f"Meeting-{_suffix()}"
+    _make_tag(db_session, name, user_id=None)
+    owned = _make_tag(db_session, name, user_id=normal_user.id)
+
+    found = AutoLabelService(db_session).find_existing_similar_tag(name, normal_user.id)
+
+    assert found is not None
+    assert found.id == owned.id
+
+
+def test_auto_label_collection_lookup_does_not_cross_accounts(db_session, normal_user, other_user):
+    """A collection owned by another account must not resolve, or be reused, as a match."""
+    name = f"Quarterly Reviews {_suffix()}"
+    other_collection = _make_collection(db_session, name, other_user)
+
+    svc = AutoLabelService(db_session)
+    assert svc.find_existing_similar_collection(normal_user.id, name) is None
+
+    created, was_created = svc._get_or_create_collection_with_dedup(name, normal_user.id)
+    assert created.user_id == normal_user.id
+    assert created.id != other_collection.id
+    assert was_created is True
+
+
+def test_collection_collision_is_not_reported_as_created(db_session):
+    """A lost race on the collection unique constraint must report created=False.
+
+    Reproduces issue #589: ``_get_or_create_collection_with_dedup``'s IntegrityError
+    branch used to hand back the EXISTING winning row while ALSO invalidating the
+    collection cache — the same side effect the genuine-create branch produces. A
+    caller (``group_batch_by_topics``) that inferred "created" from that cache
+    invalidation therefore miscounted a collision (same dedup key hits an existing
+    collection) as a create. The fixed signature returns the real outcome directly.
+    """
+    contested = f"Quarterly Reviews {_suffix()}"
+    racer_id = _commit_user_on_other_connection(f"race-{uuid.uuid4().hex[:10]}@example.com")
+
+    svc = AutoLabelService(db_session)
+
+    try:
+        with _competing_collection_writer(db_session, contested, racer_id):
+            collection, created = svc._get_or_create_collection_with_dedup(contested, racer_id)
+
+            assert collection.name == contested
+            assert collection.user_id == racer_id
+            assert created is False, (
+                "a collision that hands back the EXISTING winning row must not be "
+                "reported as created — that is the exact miscount issue #589 fixes"
+            )
+    finally:
+        _delete_user_on_other_connection(racer_id)
+
+
+def test_auto_label_collection_cache_is_not_shared_between_users(
+    db_session, normal_user, other_user
+):
+    """The per-instance collection cache must be keyed per user, never a flat shared list."""
+    name = f"Quarterly Reviews {_suffix()}"
+    other_collection = _make_collection(db_session, name, other_user)
+
+    svc = AutoLabelService(db_session)
+    b_collections = svc._get_user_collections_cached(other_user.id)
+    a_collections = svc._get_user_collections_cached(normal_user.id)
+
+    assert other_collection.id in {c.id for c in b_collections}
+    assert other_collection.id not in {c.id for c in a_collections}
+    assert set(svc._collection_cache.keys()) == {other_user.id, normal_user.id}
+
+
+def test_fuzzy_match_does_not_reach_another_users_near_miss(db_session, normal_user, other_user):
+    """The fuzzy leg bypasses the normalized-exact index — the likeliest regression point."""
+    suffix = _suffix()
+    other_tag = _make_tag(db_session, f"Quarterly Planning {suffix}", user_id=other_user.id)
+
+    svc = AutoLabelService(db_session)
+    created = svc._get_or_create_tag_with_dedup(f"Quarterly Plannning {suffix}", normal_user.id)
+
+    assert created.user_id == normal_user.id
+    assert created.id != other_tag.id
+
+
+def test_auto_apply_never_applies_another_users_tag_row(db_session, normal_user, other_user):
+    """End-to-end via auto_apply_suggestions: never attach another user's tag row."""
+    name = f"Budget {_suffix()}"
+    other_tag = _make_tag(db_session, name, user_id=other_user.id)
+    media_file = _make_file(db_session, normal_user)
+
+    suggestion = TopicSuggestion(
+        media_file_id=media_file.id,
+        user_id=normal_user.id,
+        suggested_tags=[{"name": name, "confidence": 0.95}],
+        suggested_collections=[],
+    )
+    db_session.add(suggestion)
+    db_session.flush()
+
+    AutoLabelService(db_session).auto_apply_suggestions(
+        media_file=media_file,
+        suggestion=suggestion,
+        user_id=normal_user.id,
+    )
+
+    file_tag = (
+        db_session.query(FileTag)
+        .filter(FileTag.media_file_id == media_file.id)
+        .join(Tag, Tag.id == FileTag.tag_id)
+        .filter(Tag.name == name)
+        .first()
+    )
+    assert file_tag is not None
+    assert file_tag.tag.user_id == normal_user.id
+    assert file_tag.tag_id != other_tag.id

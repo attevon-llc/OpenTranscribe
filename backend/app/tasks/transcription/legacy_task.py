@@ -10,6 +10,7 @@ import tempfile
 
 from app.core.celery import celery_app
 from app.core.constants import GPUPriority
+from app.core.exceptions import ASRConfigurationError
 from app.db.session_utils import get_refreshed_object
 from app.db.session_utils import session_scope
 from app.models.media import MediaFile
@@ -146,6 +147,10 @@ def _process_file_in_temp_dir(
 
         with session_scope() as db:
             provider = ASRProviderFactory.create_for_user(ctx.user_id, db)
+    except ASRConfigurationError:
+        # Not a config-loading failure — a deliberate refusal to silently fall back to
+        # a local provider this deployment (e.g. DEPLOYMENT_MODE=lite) cannot run.
+        raise
     except Exception as factory_exc:
         logger.warning(
             "Failed to instantiate ASR provider for file %d (user %d), "

@@ -185,14 +185,6 @@ export function citationHref(source: CitationLinkSource): string {
   return `/files/${uuid}?t=${seconds}`;
 }
 
-/** Format seconds as a clock label (`m:ss` or `h:mm:ss`). */
-export function formatClock(seconds: number | null | undefined): string {
-  const total = Math.max(0, Math.floor(seconds ?? 0));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const secs = total % 60;
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  }
-  return `${minutes}:${String(secs).padStart(2, '0')}`;
-}
+// Time formatting lives ONLY in formatting.ts (see src/lib/utils/CLAUDE.md) —
+// re-exported here so existing chatMarkdown call sites don't need to change.
+export { formatClock } from './formatting';

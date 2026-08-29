@@ -14,8 +14,15 @@ Request/response shaping and validation only; logic lives in `app/services`. 25 
   Analytics, Collection + 3 local enums. `validate_whisper_model` gates on `VALID_LOCAL_WHISPER_MODELS`
   (L18); the whisper-model / `min<=max` / positive-speaker validator trio is duplicated verbatim on
   `ReprocessRequest` (L92+) and `PrepareUploadRequest` (L198+).
-- `media_source.py:13` — `_RESERVED_HOSTNAMES` is an **SSRF blocklist** of internal Docker service
-  names. `admin.py:147-210` re-declares the same four schemas *without* it.
+- `media_source.py:22` — `_validated_hostname` is an **SSRF gate**, not a format check: the value
+  becomes an allowed host that `protected_media_plugins/mediacms.py` fetches server-side. It
+  delegates to `app/utils/url_validation.is_safe_url`, which resolves the name and rejects on
+  address class. It used to be a regex + a "must contain a dot" rule + a hardcoded first-label
+  blocklist that resolved nothing and accepted `169.254.169.254`, `127.0.0.1` and `0.0.0.0`
+  (audit A1). **Never reintroduce a local host-safety check here** — `url_validation` is the one
+  implementation. ⚠️ `admin.py:158-205` still re-declares the same shapes with a **regex only**;
+  that path is admin-only and is covered at request time by `mediacms.py`'s
+  `assert_safe_outbound_url` calls, but the schema itself is unguarded.
 - `__init__.py` — a **partial, drifting** re-export; 11 modules are absent (`base`, `admin`, `search`,
   `watch_source`, `speaker_cluster`, `topic`, `redaction_settings`, …). Import from the submodule.
   `UserSchema` / `GroupSchema` are aliases that exist only here.
@@ -92,9 +99,51 @@ value falls back to. They were dead code while the write path accepted a bare `d
   `frontend/src/lib/api/authConfig.ts:7`); `admin.py:271-275` `QuarantinedFile` exposes `user_id`,
   `organization_id`, `quarantined_by` as ints. Don't copy either. `Task.id` is a *string* Celery id by
   design; `TranscriptSegmentUpdate.id` is request-only.
-- **Some schemas are dead documentation** — the endpoint hand-builds a dict instead: all of `search.py`
-  bar `SetEmbeddingModelSchema` (`api/endpoints/search.py` declares no `response_model` at all),
-  `CustomVocabularyResponse`, `UserASRSettingsResponse`, `ASRSettingsList`, `SpeakerClusterResponse`.
+- **Some schemas were dead documentation and have been deleted (issue #567 / E8, 2026-08-24).**
+  `api/endpoints/search.py` declares no `response_model` at all — it hand-builds a dict instead —
+  so most of `search.py`'s response schemas were never actually wired to anything. E8 enumerated
+  the whole package mechanically (a class is dead iff it has ≤1 whole-repo reference AND is not a
+  base class of anything else in `schemas/` AND is not in `__init__.py`'s imports/`__all__`) and
+  deleted exactly 30 classes across 7 files, 8 of them in `search.py`
+  (`SuggestionItemSchema`, `FilterOptionsSchema`, `ReindexRequestSchema`, `ReindexStatusSchema`,
+  `EmbeddingModelsResponseSchema`, `NeuralModelsResponseSchema`, `NeuralModelStatusSchema`,
+  `SetActiveNeuralModelSchema`). The rest of `search.py` (`SetEmbeddingModelSchema`,
+  `SearchOccurrenceSchema`, `SearchHitSchema`, `SearchResponseSchema`, `EmbeddingModelSchema`,
+  `NeuralModelInfoSchema`, `SummarySectionMatchSchema`, `SummaryHitSchema`) legitimately
+  survives the same method — each is referenced as a nested field type by a sibling class in the
+  same file, which is real usage even though the endpoint itself never puts any of them behind a
+  `response_model`. ⚠️ **A prior version of this note also named `CustomVocabularyResponse`,
+  `UserASRSettingsResponse`, `ASRSettingsList`, and `SpeakerClusterResponse` as dead — that was
+  wrong.** `CustomVocabularyResponse`, `UserASRSettingsResponse`, and `ASRSettingsList` are all
+  re-exported through `schemas/__init__.py`'s `__all__` (E8's method excludes anything
+  re-exported for exactly this reason — a re-export is a real, if indirect, consumer), and
+  `UserASRSettingsResponse` is additionally referenced as a nested field type by
+  `ASRSettingsList`/`ASRStatusResponse` in its own file (`asr_settings.py`).
+  `SpeakerClusterResponse` is the odd one out: it is **not** re-exported via `__init__.py` at
+  all (`rg SpeakerClusterResponse --type py` finds only `speaker_cluster.py` itself) — its sole
+  surviving reference is `PaginatedClusterResponse` using it as a nested field type
+  (`items: list[SpeakerClusterResponse]`) in that same file. It survives on the nested-field-type
+  rule alone, not the re-export rule.
+
+  **Phase B (2026-08-24) found and deleted 6 more**, all backend-only:
+  `speaker_cluster.py`'s `OutlierAnalysisResponse`/`BatchVerifyResponse`/`ReclusterResponse`
+  and `summary.py`'s `SpeakerInfo`/`ContentSection`/`SummaryMetadata` (the last three carried a
+  stale `# Legacy schemas kept for backward compatibility` comment — nothing actually read
+  them). **E8's original pass missed these because its `rg` hit-count wasn't scoped to
+  `backend/`**: `frontend/src/lib/types/speakerCluster.ts` and `.../types/summary.ts` declare
+  hand-authored TypeScript mirrors of the identical names, which pushed the whole-repo hit
+  count above E8's ≤1 threshold and hid genuinely dead Python classes behind an unrelated
+  same-named TS type. **Re-running this enumeration must scope the reference count to
+  `backend/`, or count only Python-file hits** — a same-named frontend type is not a Python
+  consumer. Deleting `OutlierAnalysisResponse` leaves `MinorityAnalysisItem` (same file) as a
+  fresh second-order orphan — its only remaining reference was the field type usage inside the
+  now-deleted class — deliberately left alone per the same "don't chase in the same pass"
+  discipline as the first round.
+
+  Re-running the (corrected) enumerator after these 6 deletions surfaces further second-order
+  orphans on top of the original 5 — deliberately not chased in the same pass; check the
+  audit-remediation branch's Phase B re-audit notes before assuming this list is now
+  exhaustive.
 - **There is exactly one tag shape (#326).** `media.py:Tag` (`uuid`/`name`/`source`) is what
   `/api/tags` (as `TagWithCount`), `POST /api/tags`, `POST /api/tags/files/{uuid}/tags` **and**
   `MediaFileDetail.tags` all serve. `MediaFileDetail.tags` was `list[str]` until #326 — don't

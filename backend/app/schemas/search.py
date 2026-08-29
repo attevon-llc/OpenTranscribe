@@ -65,43 +65,6 @@ class SearchResponseSchema(BaseModel):
     search_mode: str = Field("hybrid", description="Search mode: hybrid or keyword")
 
 
-class SuggestionItemSchema(BaseModel):
-    """Auto-complete suggestion item."""
-
-    type: str = Field(..., description="Suggestion type: title, speaker, or content")
-    text: str = Field(..., description="Suggestion text")
-    file_uuid: str | None = Field(None, description="File UUID if type is title")
-    count: int | None = Field(None, description="Match count if applicable")
-
-
-class FilterOptionsSchema(BaseModel):
-    """Available filter options for search."""
-
-    speakers: list[dict[str, Any]] = Field(default_factory=list)
-    tags: list[dict[str, Any]] = Field(default_factory=list)
-    date_range: dict[str, Any] = Field(default_factory=dict)
-
-
-class ReindexRequestSchema(BaseModel):
-    """Request to trigger re-indexing."""
-
-    file_uuids: list[str] | None = Field(
-        None, description="Specific file UUIDs to re-index (None = all)"
-    )
-
-
-class ReindexStatusSchema(BaseModel):
-    """Re-indexing status response."""
-
-    total_files: int = Field(0)
-    indexed_files: int = Field(0)
-    pending_files: int = Field(0)
-    in_progress: bool = Field(False)
-    current_model: str = Field("")
-    current_dimension: int = Field(0)
-    last_indexed_at: str | None = Field(None)
-
-
 class EmbeddingModelSchema(BaseModel):
     """Embedding model info."""
 
@@ -110,14 +73,6 @@ class EmbeddingModelSchema(BaseModel):
     dimension: int
     description: str
     size_mb: int
-
-
-class EmbeddingModelsResponseSchema(BaseModel):
-    """Available embedding models response."""
-
-    models: list[EmbeddingModelSchema]
-    current_model_id: str
-    current_dimension: int
 
 
 class SetEmbeddingModelSchema(BaseModel):
@@ -147,34 +102,6 @@ class NeuralModelInfoSchema(BaseModel):
         "NOT_REGISTERED", description="Model state: NOT_REGISTERED, REGISTERED, DEPLOYING, DEPLOYED"
     )
     is_active: bool = Field(False, description="Whether this is the currently active model")
-
-
-class NeuralModelsResponseSchema(BaseModel):
-    """List of available neural models."""
-
-    models: list[NeuralModelInfoSchema] = Field(default_factory=list)
-    active_model: str | None = Field(None, description="Currently active model name")
-    neural_search_enabled: bool = Field(False, description="Whether neural search is enabled")
-
-
-class NeuralModelStatusSchema(BaseModel):
-    """Neural search status."""
-
-    enabled: bool = Field(False, description="Whether neural search is enabled in config")
-    available: bool = Field(False, description="Whether neural search is currently available")
-    active_model_name: str | None = Field(None, description="Active model name")
-    active_model_id: str | None = Field(None, description="OpenSearch model ID")
-    pipeline_configured: bool = Field(False, description="Whether ingest pipeline is configured")
-    ml_commons_configured: bool = Field(
-        False, description="Whether ML Commons settings are configured"
-    )
-
-
-class SetActiveNeuralModelSchema(BaseModel):
-    """Request to set active neural model."""
-
-    model_name: str = Field(..., description="Model name to activate")
-    reindex: bool = Field(True, description="Whether to trigger reindex after model change")
 
 
 # Result-type union (issue #462) — one parameter, extended by later lanes.

@@ -148,6 +148,39 @@ class TestSpeakerRenameEndpoint:
             "(display_name or name), not skip the rewrite"
         )
 
+    def test_relabelling_over_a_confident_suggestion_queues_the_suggestion_not_the_raw_label(
+        self, client, db_session, normal_user, user_token_headers, quiet_opensearch
+    ):
+        """Issue #605, the exact shape of speaker 74070: a confident LLM/embedding
+        suggestion with NO ``display_name`` set is what the chunk plane was
+        indexed with (``canonical_speaker_label``, ``confidence >= 0.75``). The
+        old ``display_name or name`` capture ignored ``suggested_name`` entirely,
+        so ``old_names`` computed the raw diarizer label — a filter the
+        ``update_by_query`` never matched, silently leaving the drift in place.
+        """
+        media_file = _make_media_file(db_session, normal_user, "suggestion-relabel")
+        speaker = _make_speaker(
+            db_session,
+            normal_user,
+            media_file,
+            "SPEAKER_01",
+            suggested_name="Joe Rogan (Host)",
+            confidence=0.9,
+            suggestion_source="llm_analysis",
+        )
+
+        with patch(_DELAY) as delay_mock:
+            resp = client.put(
+                f"/api/speakers/{speaker.uuid}",
+                json={"display_name": "Joe Rogan"},
+                headers=user_token_headers,
+            )
+
+        assert resp.status_code == 200, resp.text
+        delay_mock.assert_called_once()
+        assert delay_mock.call_args.kwargs["old_names"] == ["Joe Rogan (Host)"]
+        assert delay_mock.call_args.kwargs["new_name"] == "Joe Rogan"
+
     def test_editing_name_alone_queues_propagation_for_an_unlabelled_speaker(
         self, client, db_session, normal_user, user_token_headers, quiet_opensearch
     ):
@@ -303,13 +336,62 @@ class TestProfileRenameCapture:
         assert _handle_update_profile_action(empty.id, "Renamed", normal_user, db_session) == []
         assert _handle_update_profile_action(-1, "Renamed", normal_user, db_session) is None
 
+    def test_a_linked_speaker_indexed_under_a_suggestion_reports_the_suggestion_as_old_name(
+        self, db_session, normal_user
+    ):
+        """Follow-up to issue #605: this call site still computed the ad hoc
+        ``display_name or name`` chain directly instead of going through
+        ``canonical_speaker_label_for_row``, the SAME resolver the chunk-index
+        writers use. A linked speaker with no ``display_name`` but a confident
+        ``suggested_name`` (>= the 0.75 threshold) is indexed under the
+        SUGGESTION, exactly the shape of speaker 74070 from #605's own repro.
+        The old chain computed the raw diarizer label here, so
+        ``_propagate_speaker_rename_to_chunks``'s ``update_by_query`` would
+        match nothing against the real indexed text and log ``status:
+        success`` while the drift survived.
+        """
+        from app.api.endpoints.speakers import _handle_update_profile_action
+
+        profile = SpeakerProfile(uuid=str(uuid_mod.uuid4()), user_id=normal_user.id, name="Host")
+        db_session.add(profile)
+        db_session.flush()
+
+        media_file = _make_media_file(db_session, normal_user, "suggestion-linked")
+        _make_speaker(
+            db_session,
+            normal_user,
+            media_file,
+            "SPEAKER_01",
+            profile_id=profile.id,
+            suggested_name="Joe Rogan (Host)",
+            confidence=0.9,
+        )
+
+        renames = _handle_update_profile_action(profile.id, "Joe Rogan", normal_user, db_session)
+
+        assert renames == [(str(media_file.uuid), "Joe Rogan (Host)")], (
+            "the real indexed label is the confident suggestion, not the raw "
+            "diarizer name — the old ad hoc chain computed 'SPEAKER_01' here, "
+            "which a propagation update_by_query would then match nothing "
+            "against"
+        )
+
 
 class TestRetroactiveAutoApply:
     def test_auto_applied_match_reports_the_stale_chunk_name(
         self, db_session, normal_user, quiet_opensearch
     ):
-        """The batch path renames other files' speakers; each one leaves stale chunks."""
+        """The batch path renames other files' speakers; each one leaves stale chunks.
+
+        Issue #605: the rename is now recorded on a ``SpeakerRenameTracker``
+        (``before`` computed by the caller via ``canonical_speaker_label_for_row``,
+        the SAME resolver the chunk-index writers use) rather than returned as a
+        bespoke ``(file_uuid, old_name)`` tuple — the caller may need to batch
+        heterogeneous after-values across many matched speakers in one pass.
+        """
         from app.api.endpoints.speaker_update import _apply_high_confidence_match
+        from app.services.speaker_rename_tracker import SpeakerRenameTracker
+        from app.utils.speaker_labels import canonical_speaker_label_for_row
 
         source_file = _make_media_file(db_session, normal_user, "auto-source")
         target_file = _make_media_file(db_session, normal_user, "auto-target")
@@ -329,9 +411,11 @@ class TestRetroactiveAutoApply:
             "display_name": labelled.display_name,
             "profile_id": labelled.profile_id,
         }
-        _, rename = _apply_high_confidence_match(db_session, matched, trigger)
+        before = canonical_speaker_label_for_row(matched)
+        tracker = SpeakerRenameTracker()
+        _apply_high_confidence_match(db_session, matched, trigger, tracker, before)
 
-        assert rename == (str(target_file.uuid), "SPEAKER_03")
+        assert tracker.pending == [(target_file.id, "SPEAKER_03", "Dana")]
         assert matched.display_name == "Dana"
 
 
@@ -431,6 +515,222 @@ class TestDispatchHelper:
 
         assert queued == 0
         delay_mock.assert_not_called()
+
+
+class TestRejectSuggestionPropagation:
+    """Issue #605: rejecting a confident suggestion moves the canonical label
+    back to the raw diarizer name, and the chunk plane must be told — this
+    writer (``_reject_speaker_suggestion``) previously dispatched nothing."""
+
+    def test_rejecting_a_confident_suggestion_queues_the_revert_to_the_raw_label(
+        self, client, db_session, normal_user, user_token_headers, quiet_opensearch
+    ):
+        media_file = _make_media_file(db_session, normal_user, "reject-suggestion")
+        speaker = _make_speaker(
+            db_session,
+            normal_user,
+            media_file,
+            "SPEAKER_01",
+            suggested_name="Joe Rogan (Host)",
+            confidence=0.9,
+            suggestion_source="llm_analysis",
+        )
+
+        with patch(_DELAY) as delay_mock:
+            resp = client.post(
+                f"/api/speakers/{speaker.uuid}/verify",
+                params={"action": "reject"},
+                headers=user_token_headers,
+            )
+
+        assert resp.status_code == 200, resp.text
+        delay_mock.assert_called_once()
+        assert delay_mock.call_args.kwargs["old_names"] == ["Joe Rogan (Host)"]
+        assert delay_mock.call_args.kwargs["new_name"] == "SPEAKER_01"
+
+        db_session.refresh(speaker)
+        assert speaker.suggested_name is None, (
+            "issue #605's second bug: confidence alone used to be cleared, leaving "
+            "suggested_name behind for any reader checking it without confidence "
+            "(this module's own was_auto_labeled)"
+        )
+        assert speaker.confidence is None
+        assert speaker.suggestion_source == "llm_analysis", (
+            "suggestion_source must survive rejection — it is "
+            "task_detection_service's only signal that LLM speaker ID already ran "
+            "on this file. Nulling it here (as an earlier version of this fix did) "
+            "made a fully-rejected file look never-identified and re-offered the "
+            "exact suggestion the user just rejected (audit follow-up to #603)."
+        )
+
+    def test_rejecting_a_below_threshold_suggestion_queues_nothing(
+        self, client, db_session, normal_user, user_token_headers, quiet_opensearch
+    ):
+        """Control: the canonical label was already the raw name (a sub-threshold
+        suggestion never won), so rejecting it must not dispatch a no-op rewrite."""
+        media_file = _make_media_file(db_session, normal_user, "reject-weak-suggestion")
+        speaker = _make_speaker(
+            db_session,
+            normal_user,
+            media_file,
+            "SPEAKER_01",
+            suggested_name="Maybe Someone",
+            confidence=0.6,
+            suggestion_source="voice_match",
+        )
+
+        with patch(_DELAY) as delay_mock:
+            resp = client.post(
+                f"/api/speakers/{speaker.uuid}/verify",
+                params={"action": "reject"},
+                headers=user_token_headers,
+            )
+
+        assert resp.status_code == 200, resp.text
+        delay_mock.assert_not_called()
+
+
+class TestReprocessSpeakerLLMStageClear:
+    """Issue #605: clearing suggestions for a reprocess must propagate. Nulling a
+    confident suggestion moves the canonical label back to the raw diarizer name
+    with NO ``display_name`` write at all — one of five writers that dispatched
+    nothing until this fix."""
+
+    def test_clearing_suggestions_queues_propagation_for_every_moved_speaker(
+        self, db_session, normal_user, quiet_opensearch
+    ):
+        from app.api.endpoints.files.reprocess import clear_selective_data
+
+        media_file = _make_media_file(db_session, normal_user, "reprocess-speaker-llm")
+        moved = _make_speaker(
+            db_session,
+            normal_user,
+            media_file,
+            "SPEAKER_00",
+            suggested_name="Priya",
+            confidence=0.9,
+            suggestion_source="llm_analysis",
+        )
+        # Control, same call: a sub-threshold suggestion's canonical label was
+        # already the raw name, so clearing it must not dispatch a no-op.
+        unmoved = _make_speaker(
+            db_session,
+            normal_user,
+            media_file,
+            "SPEAKER_01",
+            suggested_name="Maybe Bob",
+            confidence=0.6,
+            suggestion_source="llm_analysis",
+        )
+
+        with patch(_DELAY) as delay_mock:
+            clear_selective_data(db_session, media_file, ["speaker_llm"])
+
+        delay_mock.assert_called_once()
+        assert delay_mock.call_args.kwargs["file_uuid"] == str(media_file.uuid)
+        assert delay_mock.call_args.kwargs["old_names"] == ["Priya"]
+        assert delay_mock.call_args.kwargs["new_name"] == "SPEAKER_00"
+
+        db_session.refresh(moved)
+        db_session.refresh(unmoved)
+        assert moved.suggested_name is None
+        assert moved.confidence is None
+        assert unmoved.suggested_name is None, "the stage clear still nulls it"
+
+
+class TestSpeakerIdentificationPredictionPropagation:
+    """Issue #605: an LLM prediction crossing the confidence threshold moves the
+    canonical label with no ``display_name`` write — a clean ingest indexes
+    chunks under the raw diarizer label, this task's prediction lands after
+    (``enrich_and_dispatch`` dispatches indexing before speaker ID), and until
+    this fix nothing reconciled the two."""
+
+    def test_a_confident_prediction_queues_propagation(
+        self, db_session, normal_user, quiet_opensearch
+    ):
+        from contextlib import contextmanager
+
+        from app.tasks.speaker_identification_task import _store_speaker_predictions
+
+        media_file = _make_media_file(db_session, normal_user, "llm-prediction")
+        speaker = _make_speaker(db_session, normal_user, media_file, "SPEAKER_01")
+
+        predictions = {
+            "speaker_predictions": [
+                {
+                    "speaker_label": "SPEAKER_01",
+                    "predicted_name": "Joe Rogan (Host)",
+                    "confidence": 0.9,
+                }
+            ]
+        }
+
+        @contextmanager
+        def _yield_test_session():
+            yield db_session
+
+        with (
+            patch(
+                "app.tasks.speaker_identification_task.session_scope",
+                _yield_test_session,
+            ),
+            patch(_DELAY) as delay_mock,
+        ):
+            _store_speaker_predictions(media_file.id, predictions)
+
+        delay_mock.assert_called_once()
+        assert delay_mock.call_args.kwargs["old_names"] == ["SPEAKER_01"]
+        assert delay_mock.call_args.kwargs["new_name"] == "Joe Rogan (Host)"
+
+        # Mock bookkeeping alone would pass even if the prediction never reached
+        # Postgres. Assert the durable write too.
+        db_session.refresh(speaker)
+        assert speaker.suggested_name == "Joe Rogan (Host)"
+        assert speaker.confidence == 0.9
+        assert speaker.suggestion_source == "llm_analysis"
+
+    def test_a_weak_prediction_queues_nothing(self, db_session, normal_user, quiet_opensearch):
+        """Over-firing control: a sub-threshold prediction must not dispatch — a
+        detector that fires on every suggestion write regardless of whether the
+        label actually moved would queue an ``update_by_query`` per speaker per
+        LLM identification run, not just extra noise."""
+        from contextlib import contextmanager
+
+        from app.tasks.speaker_identification_task import _store_speaker_predictions
+
+        media_file = _make_media_file(db_session, normal_user, "llm-weak-prediction")
+        speaker = _make_speaker(db_session, normal_user, media_file, "SPEAKER_01")
+
+        predictions = {
+            "speaker_predictions": [
+                {
+                    "speaker_label": "SPEAKER_01",
+                    "predicted_name": "Maybe Someone",
+                    "confidence": 0.6,
+                }
+            ]
+        }
+
+        @contextmanager
+        def _yield_test_session():
+            yield db_session
+
+        with (
+            patch(
+                "app.tasks.speaker_identification_task.session_scope",
+                _yield_test_session,
+            ),
+            patch(_DELAY) as delay_mock,
+        ):
+            _store_speaker_predictions(media_file.id, predictions)
+
+        delay_mock.assert_not_called()
+
+        # The suggestion itself is still written below the propagation
+        # threshold — only the dispatch is withheld, not the write.
+        db_session.refresh(speaker)
+        assert speaker.suggested_name == "Maybe Someone"
+        assert speaker.confidence == 0.6
 
 
 class TestTaskWiring:

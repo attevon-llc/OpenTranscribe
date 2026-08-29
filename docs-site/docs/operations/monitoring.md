@@ -244,6 +244,10 @@ Flower is configured with these operational settings in `docker-compose.yml`:
 - `--persistent=True` -- persists task history to `/app/flower.db`
 - `--purge_offline_workers=600` -- removes offline workers after 10 minutes
 - `--natural_time=True` -- displays human-readable timestamps
+- `--inspect_timeout=10000` -- widens the `celery inspect` broadcast's reply deadline from
+  Flower's 1 s default to 10 s, so a GPU worker mid model-load can still answer a
+  `?refresh=1` request (see the caveat under "Integration with External Monitoring" below —
+  issue [#609](https://github.com/attevon-llc/OpenTranscribe/issues/609))
 
 ## Docker Container Monitoring
 
@@ -496,7 +500,7 @@ OpenTranscribe ships with a built-in Prometheus + Grafana stack for application-
 - **PostgreSQL Exporter**: Use [postgres_exporter](https://github.com/prometheus-community/postgres_exporter) pointed at the exposed PostgreSQL port
 - **Redis Exporter**: Use [redis_exporter](https://github.com/oliver006/redis_exporter) for Redis metrics
 - **OpenSearch**: OpenSearch exposes `/_prometheus/metrics` via the [prometheus-exporter plugin](https://github.com/aiven/prometheus-exporter-plugin-for-opensearch)
-- **Flower**: Flower exposes a JSON API at `/api/workers` and `/api/tasks` that can be scraped by a custom exporter
+- **Flower**: Flower exposes a JSON API at `/api/workers` and `/api/tasks` that can be scraped by a custom exporter. ⚠️ **`/api/workers` without `?refresh=1` is a one-shot snapshot cached at Flower's own process startup and is never refreshed on a timer** (issue [#609](https://github.com/attevon-llc/OpenTranscribe/issues/609)) — a worker that was still starting up when Flower booted (importing torch/whisperx, or preloading GPU models) is absent from the unrefreshed endpoint permanently, so a scraper that never passes `refresh=1` will under-report the worker fleet forever, not just during a brief startup race. A scraper polling on an interval should pass `?refresh=1` on every poll (Flower awaits the broadcast server-side before responding, up to `--inspect_timeout`, 10 s by default here) rather than trusting the cache.
 - **Docker**: Use [cAdvisor](https://github.com/google/cadvisor) for per-container resource metrics
 
 ### Datadog / New Relic / Similar

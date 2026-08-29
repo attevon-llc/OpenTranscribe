@@ -13,6 +13,7 @@ import os
 from app.core.celery import celery_app
 from app.core.constants import CPUPriority
 from app.core.redis import get_redis
+from app.utils.stats_helpers import format_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -205,13 +206,6 @@ def update_gpu_stats(self):
     try:
         import os
         import subprocess
-
-        def format_bytes(byte_count):
-            for unit in ["B", "KB", "MB", "GB", "TB"]:
-                if byte_count < 1024 or unit == "TB":
-                    return f"{byte_count:.2f} {unit}"
-                byte_count /= 1024
-            return f"{byte_count:.2f} TB"
 
         # Determine which GPU devices the app workers are using.
         # All values come from .env via env_file on the cpu-worker service.

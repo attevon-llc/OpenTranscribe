@@ -232,16 +232,19 @@ falling back to the original content.
 
 ### Masking is conditional on WHERE the model runs — BUILT
 
-Owner decision, 2026-08-13, landed. A **local** model — vLLM/Ollama on our own GPU, or a
-`custom` OpenAI-compatible endpoint whose `base_url` resolves to loopback / RFC1918 /
+Owner decision, 2026-08-13, landed. A **local** model — a `vllm`, `ollama`, or `custom`
+OpenAI-compatible config whose `base_url` resolves to loopback / RFC1918 /
 link-local / IPv6 ULA / a bare docker-compose hostname — receives excerpt text unmasked:
 the text never leaves the machine, so masking costs recall and buys nothing. A **remote or
 cloud provider** still receives masked text, because sending unredacted PII to a third party
-is a data-egress event in a way a local inference call is not. The decision is keyed off the
-**provider**, never off a global setting: `redaction.llm_guard.is_local_provider(llm.config)`
-is the ONE place that classification happens, and it **fails closed** — any ambiguity (an
-unresolvable hostname, a mixed public/private DNS answer, a provider it does not recognise)
-reads as remote, so masking still applies.
+is a data-egress event in a way a local inference call is not. **`provider` name alone is
+NOT sufficient for `vllm`/`ollama`**: both are genuinely self-hostable, so their `base_url` is
+free-form operator input and gets the identical loopback/RFC1918/link-local/dotless-hostname
+check a `custom` endpoint gets — a `vllm` config pointed at a hosted vLLM SaaS is remote.
+`redaction.llm_guard.is_local_provider(llm.config)` is the ONE place this classification
+happens, and it **fails closed** — any ambiguity (an unresolvable hostname, a mixed
+public/private DNS answer, a provider it does not recognise, a `vllm`/`ollama` config with no
+`base_url` at all) reads as remote, so masking still applies.
 
 `chat/service.py._prepare_context` resolves `is_local_provider(llm.config)` exactly once per
 turn (pure — reads only the LLM config, no I/O) and threads it as `unmask_for_local` to all

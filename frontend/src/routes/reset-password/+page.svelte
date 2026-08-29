@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import axiosInstance from '$lib/axios';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { t } from '$stores/locale';
 
   import logoBanner from '../../assets/logo-banner.png';
@@ -23,17 +24,17 @@
     errorMessage = '';
 
     if (!tokenParam) {
-      errorMessage = 'Invalid or missing reset token.';
+      errorMessage = $t('auth.invalidResetLink');
       return;
     }
 
     if (!newPassword) {
-      errorMessage = 'Please enter a new password.';
+      errorMessage = $t('auth.passwordRequired');
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      errorMessage = 'Passwords do not match.';
+      errorMessage = $t('auth.passwordsNoMatch');
       return;
     }
 
@@ -45,19 +46,8 @@
         new_password: newPassword,
       });
       success = true;
-    } catch (err: any) {
-      if (err.response?.data?.detail) {
-        const detail = err.response.data.detail;
-        if (typeof detail === 'string') {
-          errorMessage = detail;
-        } else if (Array.isArray(detail)) {
-          errorMessage = detail.map((d: any) => d.msg || String(d)).join('. ');
-        } else {
-          errorMessage = 'Failed to reset password. The link may have expired.';
-        }
-      } else {
-        errorMessage = 'Failed to reset password. The link may have expired.';
-      }
+    } catch (err) {
+      errorMessage = getErrorMessage(err, $t('auth.resetPasswordFailed'));
     } finally {
       loading = false;
     }

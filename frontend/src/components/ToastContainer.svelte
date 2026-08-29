@@ -22,7 +22,7 @@
     bottom: calc(20px + env(safe-area-inset-bottom, 0px));
     left: 50%;
     transform: translateX(-50%);
-    z-index: 9999;
+    z-index: var(--z-toast);
     display: flex;
     flex-direction: column;
     gap: 8px;

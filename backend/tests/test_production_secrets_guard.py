@@ -19,8 +19,17 @@ PLACEHOLDER = "CHANGE_ME_auto_generated_on_install"
 
 @pytest.fixture
 def production_settings(monkeypatch):
-    """Baseline settings that pass production validation."""
+    """Baseline settings that pass production validation.
+
+    ``FIPS_MODE`` is published explicitly, like every other flag here, rather than
+    inherited from the process. ``run-integration-tests.sh`` runs part of the suite with
+    ``FIPS_MODE=true``, and under that profile ``_validate_production_secrets`` also
+    validates key-material entropy — which ``STRONG_JWT``/``STRONG_ENCRYPTION`` (a repeated
+    character padded to length) correctly fail. This file exercises the ``is_hardened``
+    branch; the FIPS branch has its own red/green coverage in ``test_fips_140_3.py``.
+    """
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "FIPS_MODE", False)
     monkeypatch.setattr(settings, "JWT_SECRET_KEY", STRONG_JWT)
     monkeypatch.setattr(settings, "ENCRYPTION_KEY", STRONG_ENCRYPTION)
     monkeypatch.setattr(settings, "REDIS_PASSWORD", "strong-redis-password")

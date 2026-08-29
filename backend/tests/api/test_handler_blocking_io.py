@@ -64,6 +64,7 @@ import app.api.endpoints.user_files as user_files
 import app.api.endpoints.user_settings as user_settings
 import app.api.websockets as websockets
 import app.main as app_main
+import app.services.search.neural_bootstrap as neural_bootstrap
 import app.utils.file_hash as file_hash
 import app.utils.thumbnail as thumbnail
 
@@ -267,8 +268,10 @@ BLOCKING_HELPERS = [
     # Issue #320 follow-ups — awaitless coroutines outside the endpoint layer.
     # Blocking object storage, dispatched from the lifespan via run_in_threadpool.
     (app_main, "_setup_minio"),
-    # Blocking OpenSearch (model-id write + ingest-pipeline PUT).
-    (app_main, "_adopt_managed_embedding_model"),
+    # Blocking OpenSearch (model-id write + ingest-pipeline PUT). Moved from app.main into
+    # neural_bootstrap.py by issue #625; still reached only via run_in_threadpool, now inside
+    # ensure_neural_search_bootstrap.
+    (neural_bootstrap, "_adopt_managed_embedding_model"),
     # Builds a lazily-connecting async pool and schedules a task; nothing to await.
     (websockets, "setup_redis"),
     # In-memory bookkeeping only, mirroring ConnectionManager.disconnect.

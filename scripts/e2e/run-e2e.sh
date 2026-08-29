@@ -33,6 +33,24 @@ if ! port_open 5173 || ! port_open 5174; then
     exit 1
 fi
 
+# Signature-scoped sweep of orphaned test data (issue #629) — registers this run as a
+# live testrun marker first (protecting anything IT creates from a concurrently
+# starting sweep), then clears Tier A leftovers from any PREVIOUS killed run. A sweep
+# failure must never block the e2e run itself — this file has no log-dir convention
+# and no trap, so it is guarded the same way the pytest phases further down are
+# (`|| sweep_rc=$?` + a printed warning), not with `set +e`.
+source "$PROJECT_ROOT/scripts/testrun-registry.sh"
+testrun_begin
+if [ "${OT_SKIP_TEST_DATA_SWEEP:-}" = "1" ]; then
+    echo -e "${YELLOW}Test-data sweep: skipped (OT_SKIP_TEST_DATA_SWEEP=1)${NC}"
+else
+    sweep_rc=0
+    "$VENV_PY" "$PROJECT_ROOT/scripts/cleanup-test-data.py" --execute-unambiguous || sweep_rc=$?
+    if [ "$sweep_rc" -ne 0 ]; then
+        echo -e "${YELLOW}Test-data sweep exited $sweep_rc — continuing with the e2e run anyway${NC}"
+    fi
+fi
+
 cd "$PROJECT_ROOT"
 ARGS=("$@")
 # Default to the whole e2e directory when no path argument was given.

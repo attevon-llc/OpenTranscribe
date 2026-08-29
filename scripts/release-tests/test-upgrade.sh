@@ -5,20 +5,48 @@
 #   A real user with real data on the previous release can run the documented
 #   upgrade path (`./opentranscribe.sh update` ≈ `compose down/pull/up`) and
 #   find their MinIO objects, transcripts, speakers, and search indices intact
-#   after the migration chain runs.
+#   after the migration chain runs — AND, if the upgrade goes wrong, that the
+#   documented recovery path (`opentranscribe.sh backup`/`restore`,
+#   `opentranscribe.sh update --rollback`) actually works (issue #598, and issue
+#   #613 — backup/restore moved from opentr.sh, which a real production install
+#   never has, into opentranscribe.sh, the script it actually ships with).
 #
 # Phases:
-#   00 preflight + secrets gate
-#   01 build local $TO_VERSION images (skipped if already present from Scenario A)
-#   02 verify Docker Hub has :$FROM_VERSION tags
-#   03 create $FROM_VERSION worktree, copy compose into TEST_ROOT, patch
-#   04 generate isolated .env, start the $FROM_VERSION stack, wait for health
-#   05 register user, upload media via URL, wait for completion
-#   06 snapshot pre-upgrade state (postgres SELECTs, MinIO ETags, transcripts)
-#   07 down $FROM_VERSION, swap compose to current head, re-patch, point to local images
-#   08 up the upgraded stack, wait for migrations + health
-#   09 snapshot post-upgrade state
-#   10 diff snapshots, run feature liveness checks, write REPORT.md
+#   00  preflight + secrets gate
+#   01  build local $TO_VERSION images (skipped if already present from Scenario A)
+#   02  verify Docker Hub has :$FROM_VERSION tags
+#   03  create $FROM_VERSION worktree, copy compose into TEST_ROOT, patch
+#   04  generate isolated .env, start the $FROM_VERSION stack, wait for health
+#   05  register user, upload media via URL, wait for completion
+#   06  snapshot pre-upgrade state (postgres SELECTs, MinIO ETags, transcripts)
+#   06b take the pre-upgrade backup — the rollback oracle (shipped pg_dump
+#       recipe + opentranscribe.sh backup, cross-checked; scratch-restore
+#       verified; issue #613 — this is the SHIPPED command now, not opentr.sh)
+#   07  down $FROM_VERSION, swap compose to current head, re-patch, point to local images
+#   08  './opentranscribe.sh update --version $TO_VERSION' — the real upgrade
+#       path, which also records the rollback bookkeeping phase 12 checks
+#   09  snapshot post-upgrade state
+#   10  diff snapshots, run feature liveness checks, write REPORT.md
+#   11  new upload + transcription on the upgraded stack (does it still work?)
+#   12  assert the rollback precondition (# OT_PREVIOUS_IMAGE_TAG) was recorded
+#   13  stage the rollback tree (unpinned images); verify the TO-side backup too
+#   14  damage the database through the real API (delete a file, rename a speaker)
+#   15  restore the phase-06b backup; assert EXACT pre-backup state (content
+#       digests, not row counts) — R-1..R-2, R-6..R-13, gated by ROLLBACK_REHEARSAL.
+#       Issue #610: restore now leaves the app STOPPED on a schema-head mismatch
+#       (R-13 asserts this directly), so R-3/R-4/R-5 — which need a running
+#       application to serve the restored data — moved to phase 16.
+#   16  './opentranscribe.sh update --rollback'; assert the FROM image serves
+#       the restored FROM database through its real API — B-1..B-8, plus
+#       R-3/R-4/R-5 (moved from phase 15, issue #610)
+#   17  roll forward again — the documented recovery loop, end to end — F-1..F-5
+#   18  summary
+#
+# ROLLBACK_REHEARSAL=0 / --no-rollback skips 13-17 (12 and 18 still run).
+# ROLLBACK_INJECT_FAULT=truncate|no-damage|stale-oracle deliberately breaks
+# one input of the tail so its own failure detection is exercised for real —
+# see selftest-rollback-fault-injection.sh for the fast (~1 min), no-live-stack
+# version of that same proof.
 #
 # Future releases need NO edits: FROM and TO are discovered (see the Tunables
 # block). FROM_VERSION / TO_VERSION override; FROM_VERSIONS (plural) runs the
@@ -98,14 +126,27 @@ TEST_MEDIA_MAX_SIZE="${TEST_MEDIA_MAX_SIZE:-100M}"
 
 DO_CLEANUP=0
 DO_FORCE=0
+ONLY_ROLLBACK=0
+# ROLLBACK_REHEARSAL gates phases 13-17 (issue #598): the backup/restore +
+# `update --rollback` tail. Defaults ON — it is part of what a release
+# rehearsal is now expected to prove — with an explicit opt-out for anyone who
+# only wants the forward-upgrade proof phases 00-11 already gave.
+ROLLBACK_REHEARSAL="${ROLLBACK_REHEARSAL:-1}"
+# ROLLBACK_INJECT_FAULT deliberately breaks one step of the rollback tail so the
+# tail's own failure detection is exercised for real rather than assumed — a
+# leg that silently asserts nothing looks exactly like a leg that passes.
+# Modes: truncate | no-damage | stale-oracle (see phases 14/15). Unset = off.
+ROLLBACK_INJECT_FAULT="${ROLLBACK_INJECT_FAULT:-}"
 while (( $# > 0 )); do
     case "$1" in
         --cleanup) DO_CLEANUP=1 ;;
         --force)   DO_FORCE=1 ;;
         --yes)     export OT_RELEASE_TEST_YES=1 ;;
+        --no-rollback)   ROLLBACK_REHEARSAL=0 ;;
+        --only-rollback) ONLY_ROLLBACK=1 ;;
         --help|-h)
             cat <<EOF
-Usage: $0 [--cleanup] [--force] [--yes]
+Usage: $0 [--cleanup] [--force] [--yes] [--no-rollback|--only-rollback]
 
 Prerequisite: stop the live deployment first with \`./opentr.sh stop\`.
 This scenario runs under the one-liner's stock container names and ports so it
@@ -122,12 +163,30 @@ Env:
   LOCAL_IMAGE_TAG        alias for TO_VERSION (locally built tag for the "after" stack)
   REQUIRE_PREVIOUS       1 = fail instead of skip when no previous release exists
   FRONTEND_PORT..        default 5173-5180 (one-liner defaults; see README)
+  ROLLBACK_REHEARSAL     0 = skip phases 13-17 (the backup/restore + rollback tail)
+  ROLLBACK_INJECT_FAULT  truncate|no-damage|stale-oracle — self-check, breaks the
+                         tail on purpose so its failure detection is exercised
+  --no-rollback          same as ROLLBACK_REHEARSAL=0
+  --only-rollback        resume at phase 12, reusing an already-completed
+                         TEST_ROOT's phase-00..11 markers (run the full
+                         scenario first; this does not fabricate that state)
 EOF
             exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
     shift
 done
+
+if (( ONLY_ROLLBACK == 1 )); then
+    ROLLBACK_REHEARSAL=1
+    if [[ ! -f "$TEST_ROOT/.phase/11.done" ]]; then
+        echo "--only-rollback requires a TEST_ROOT that already completed phase 11." >&2
+        echo "Run the full scenario first (or point TEST_ROOT at one that did):" >&2
+        echo "  TEST_ROOT=$TEST_ROOT $0" >&2
+        exit 2
+    fi
+fi
+export ROLLBACK_REHEARSAL ROLLBACK_INJECT_FAULT
 
 export TEST_SCENARIO TEST_PROJECT_NAME TEST_ROOT TEST_LABEL
 export TEST_FRONTEND_PORT TEST_BACKEND_PORT TEST_FLOWER_PORT TEST_POSTGRES_PORT \
@@ -148,6 +207,8 @@ source "$LIB_DIR/assertions.sh"
 source "$LIB_DIR/versions.sh"
 # shellcheck source=lib/model-cache.sh
 source "$LIB_DIR/model-cache.sh"
+# shellcheck source=lib/db-snapshot.sh
+source "$LIB_DIR/db-snapshot.sh"
 
 if (( DO_CLEANUP == 1 )); then
     gr_log "cleanup requested"
@@ -397,7 +458,7 @@ phase_03_prepare_v033_compose() {
     mc_assert_no_hardlinks "$model_cache/nltk_data" "shared model cache"
 
     docker run --rm -v "$model_cache:/models" busybox:latest \
-        sh -c "chown -R 1000:1000 /models && chmod -R 755 /models" >/dev/null 2>&1 \
+        sh -c "chown -R 1000:999 /models && chmod -R 755 /models" >/dev/null 2>&1 \
         || gr_warn "could not chown model cache (may need sudo)"
 
     # Generate a .env for the FROM stack with isolated credentials.
@@ -590,6 +651,165 @@ phase_06_snapshot_pre() {
     snapshot_state before
 }
 
+# _capture_minio_etags OUT_PATH
+#   Same MinIO ETag capture snapshot_state uses, factored out so the rollback
+#   tail (phase 15, R-11) can call it around a DB-only restore without
+#   re-running the rest of snapshot_state.
+_capture_minio_etags() {
+    local out="$1"
+    local minio="opentranscribe-minio"
+    docker exec "$minio" sh -c '
+        mc alias set local http://localhost:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1 || true
+        mc ls --recursive --json local/opentranscribe 2>/dev/null
+    ' > "$out" 2>/dev/null || echo "[]" > "$out"
+}
+
+# _stage_manager_at SRC_STAGE_DIR
+#   (Re)stages a copy of opentranscribe.sh + scripts/common.sh under TEST_ROOT, paired
+#   with BOTH compose files + .env from SRC_STAGE_DIR (e.g. $TEST_ROOT/before or
+#   $TEST_ROOT/after) so `docker compose exec ...` inside the staged opentranscribe.sh
+#   resolves the SAME running project/containers this scenario already has up.
+#   Echoes the staged directory.
+#
+#   Renamed from _stage_opentr_at (issue #613). opentr.sh is deliberately NOT on
+#   release-manifest.txt — its backup/restore path uses bare `docker compose` with no
+#   -f chain, which only works in a repo clone (docker-compose.override.yml auto-loads
+#   there and supplies image:/build: for every application service). A curl install has
+#   no override file, so the base compose project alone is INVALID (measured: `docker
+#   compose -f docker-compose.yml exec -T postgres echo hi` fails with "service ... has
+#   neither an image nor a build context specified"). This function used to stage ONLY
+#   docker-compose.yml for exactly that reason — which meant phase 06b was rehearsing a
+#   broken command shape and never noticed, because SRC_STAGE_DIR's postgres container
+#   was already running from an EARLIER, correctly-chained `docker compose up` (phase
+#   04/08's own compose_args includes docker-compose.prod.yml), so `exec` still found
+#   it despite the invalid project. The fix stages opentranscribe.sh (which resolves its
+#   own compose chain via get_compose_files(), including docker-compose.prod.yml) and
+#   both compose files, so this rehearses the command a real user actually has.
+_stage_manager_at() {
+    local src_stage="$1"
+    local dst="$TEST_ROOT/manager-stage"
+    mkdir -p "$dst/scripts" "$dst/backups"
+    cp "$REPO_ROOT/opentranscribe.sh" "$dst/opentranscribe.sh"
+    chmod +x "$dst/opentranscribe.sh"
+    cp "$REPO_ROOT/scripts/common.sh" "$dst/scripts/common.sh"
+    cp "$src_stage/docker-compose.yml" "$dst/docker-compose.yml"
+    [[ -f "$src_stage/docker-compose.prod.yml" ]] \
+        || gr_die "$src_stage missing docker-compose.prod.yml — opentranscribe.sh's " \
+                  "get_compose_files() needs it, and a base-only compose project is " \
+                  "invalid (issue #613)"
+    cp "$src_stage/docker-compose.prod.yml" "$dst/docker-compose.prod.yml"
+    cp "$src_stage/.env" "$dst/.env"
+    echo "$dst"
+}
+
+# ─── Phase 06b: the pre-upgrade backup — the rollback oracle (issue #598) ───
+#
+# Runs while the FROM stack is up and seeded, exactly where upgrading.md's
+# step 1 tells a real user to take a backup before upgrading. Two artifacts,
+# because two different audiences run two different procedures (#598 §2.2,
+# amended by #613): an installed deployment copy-pastes the raw pg_dump recipe
+# upgrading.md gives it as a fallback, and can ALSO use `./opentranscribe.sh
+# backup` — the shipped wrapper around that same recipe, and (since #613) the
+# only backup command a real production install actually has.
+phase_06b_pre_upgrade_backup() {
+    local pg="opentranscribe-postgres"
+    local db_user="postgres"
+    local db_name="opentranscribe"
+    local backups_dir="$TEST_ROOT/backups"
+    mkdir -p "$backups_dir"
+
+    # issue #617: phase_05_seed_data's wait loop only waits for status=completed —
+    # that flip is what FIRES postprocess.py's _dispatch_speaker_attributes, not
+    # a signal that it has finished. Both backup artifacts below and the
+    # dbs_fingerprint oracle at the end of this phase read the `speaker` table,
+    # so wait for that fire-and-forget detection to settle on every seeded file
+    # BEFORE taking any of them — otherwise the "before" snapshot can land
+    # mid-write and produce a false digest mismatch in phase 15/17.
+    if [[ -s "$TEST_ROOT/seeded-file-ids.txt" ]]; then
+        local seeded_uuids=()
+        while IFS= read -r f; do
+            seeded_uuids+=("$f")
+        done < "$TEST_ROOT/seeded-file-ids.txt"
+        dbs_wait_for_speaker_attributes "$pg" "$db_user" "$db_name" 300 "${seeded_uuids[@]}" \
+            || gr_warn "proceeding with the pre-upgrade backup even though speaker attribute detection had not settled — a digest mismatch below is now recorded, not fatal (Fix 1, issue #617)"
+    else
+        gr_warn "no $TEST_ROOT/seeded-file-ids.txt — skipping the speaker-attribute settle wait"
+    fi
+
+    # issue #619: the SAME class of race as the speaker-table one above, for two more
+    # tables. media_file has several async post-completion writers of its own (not
+    # individually tracked, unlike the speaker predicates above), and this is also the
+    # window app/main.py's one-time embedding-normalization startup task (fires ~60s
+    # after backend startup, touching system_settings) can land in — straddling THIS
+    # phase's two backup snapshots below produced the intermittent "opentranscribe.sh
+    # backup produces the same content as the shipped pg_dump recipe" failure. Waiting
+    # for both tables' content digests to stop moving before taking either dump shrinks
+    # the residual race window to "changed in between the wait finishing and the first
+    # dump starting" rather than eliminating it outright — same best-effort posture as
+    # the speaker-attribute wait above.
+    dbs_wait_for_media_file_settled "$pg" "$db_user" "$db_name" 120 \
+        || gr_warn "proceeding with the pre-upgrade backup even though media_file had not settled — a digest mismatch in phase 17's F-4 is now a known possibility, not fatal (issue #619)"
+    dbs_wait_for_system_settings_settled "$pg" "$db_user" "$db_name" 90 \
+        || gr_warn "proceeding with the pre-upgrade backup even though system_settings had not settled — the shipped-vs-wrapper backup content-diff assertion below may still race issue #619's window"
+
+    # Guard the repo's OWN ./backups/ and .env for the rest of this run — both
+    # opentranscribe.sh commands below and every later rollback-tail phase are staged
+    # under TEST_ROOT, but the guard needs to be armed before the first one
+    # runs, not after.
+    gr_fingerprint_repo_backups
+
+    # Artifact 1 — the SHIPPED procedure (upgrading.md step 1): a plain
+    # `docker compose exec -T postgres pg_dump`, run from the staged before/
+    # directory so compose resolves THIS run's project.
+    local shipped_dump="$backups_dir/pre-upgrade-${FROM_VERSION}.sql"
+    if ! dbs_dump "$pg" "$db_user" "$db_name" "$shipped_dump"; then
+        gr_die "shipped pg_dump procedure failed — cannot take the rollback oracle backup"
+    fi
+    gr_ok "shipped-procedure backup: $shipped_dump"
+
+    # Artifact 2 — ./opentranscribe.sh backup, exercised through a copy staged under
+    # TEST_ROOT (never the repo checkout — see _stage_manager_at's doc comment).
+    local manager_stage
+    manager_stage="$(_stage_manager_at "$TEST_ROOT/before")"
+    gr_assert_not_repo_cwd "$manager_stage"
+    pushd "$manager_stage" >/dev/null
+    ./opentranscribe.sh backup || { popd >/dev/null; gr_die "'./opentranscribe.sh backup' failed"; }
+    popd >/dev/null
+    local manager_dump
+    manager_dump="$(ls -t "$manager_stage/backups"/opentranscribe_backup_*.sql 2>/dev/null | head -1)"
+    [[ -n "$manager_dump" && -s "$manager_dump" ]] \
+        || gr_die "'./opentranscribe.sh backup' produced no dump file"
+    gr_ok "opentranscribe.sh-wrapper backup: $manager_dump"
+
+    # The wrapper claims to be a wrapper — prove it. Diff modulo pg_dump's own
+    # "-- Dumped at" / "-- Dumped by" timestamp comment lines, the only lines
+    # that legitimately differ between two dumps taken seconds apart.
+    if diff -q \
+        <(grep -vE '^-- Dumped (at|by)' "$shipped_dump") \
+        <(grep -vE '^-- Dumped (at|by)' "$manager_dump") >/dev/null 2>&1; then
+        as_record PASS "opentranscribe.sh backup produces the same content as the shipped pg_dump recipe"
+    else
+        as_record FAIL "opentranscribe.sh backup produces the same content as the shipped pg_dump recipe" \
+            "$(diff -u "$shipped_dump" "$manager_dump" | head -10 | tr '\n' ' ')"
+    fi
+
+    # The cheapest place to learn a backup does not restore: replay it into a
+    # scratch database in the SAME container, never the database under test.
+    local scratch_rows
+    if scratch_rows=$(dbs_verify_dump_restores "$pg" "$db_user" "$shipped_dump" opentranscribe_verify_pre); then
+        as_assert_ge "pre-upgrade backup restores cleanly into a scratch database" "${scratch_rows:-0}" 1
+    else
+        as_record FAIL "pre-upgrade backup restores cleanly into a scratch database" "replay failed — see log"
+    fi
+    dbs_scratch_drop "$pg" "$db_user" opentranscribe_verify_pre
+
+    # The digest-level oracle phase 15's restore is measured against, and the
+    # table-list oracle phase 15's R-6 (no post-FROM-migration table survives)
+    # is derived from.
+    dbs_fingerprint "$pg" "$db_user" "$db_name" "$TEST_ROOT/snapshots/before/db-fingerprint"
+    dbs_table_list "$pg" "$db_user" "$db_name" > "$TEST_ROOT/snapshots/before/tables.txt"
+}
+
 phase_07_swap_to_new() {
     local stage_before="$TEST_ROOT/before"
     local stage_after="$TEST_ROOT/after"
@@ -607,6 +827,18 @@ phase_07_swap_to_new() {
     if [[ -d "$REPO_ROOT/database" ]]; then
         rm -rf "$stage_after/database"
         cp -r "$REPO_ROOT/database" "$stage_after/database"
+    fi
+
+    # docker-compose.prod.yml declares `build: context: ./docs-site` for the
+    # docs service even though it normally just pulls a published image. With
+    # pull_policy forced to 'never' below, an absent local docs image falls
+    # back to that build context — a real user always has docs-site/ in their
+    # checkout, but this staged "after" tree didn't, so the docs container's
+    # own upgrade was silently skipped ("unable to prepare context") instead
+    # of actually being exercised.
+    if [[ -d "$REPO_ROOT/docs-site" ]]; then
+        rm -rf "$stage_after/docs-site"
+        cp -r "$REPO_ROOT/docs-site" "$stage_after/docs-site"
     fi
 
     cp_inject_labels "$stage_after/docker-compose.yml" "$TEST_LABEL"
@@ -632,20 +864,18 @@ phase_07_swap_to_new() {
     # upgrade (mirrors what a real user sees on disk).
     cp "$stage_before/.env" "$stage_after/.env"
 
-    # ...but move OT_IMAGE_TAG to the version being upgraded TO. Every service
-    # image resolves ${OT_IMAGE_TAG:-latest}, so copying the FROM value verbatim
-    # would leave the "upgraded" stack running the OLD images for the four
-    # services cp_pin_image_tag's hardcoded list does not name (docs and the
-    # three GPU worker variants) — an upgrade test that partly did not upgrade.
-    #
-    # This is also exactly what a real user's `update --version` does to their
-    # .env, so the rehearsal exercises the same mechanism.
-    if grep -q '^OT_IMAGE_TAG=' "$stage_after/.env"; then
-        sed -i "s|^OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${LOCAL_IMAGE_TAG}|" "$stage_after/.env"
-    else
-        echo "OT_IMAGE_TAG=${LOCAL_IMAGE_TAG}" >> "$stage_after/.env"
-    fi
-    gr_ok "after-stack .env pinned to OT_IMAGE_TAG=${LOCAL_IMAGE_TAG}"
+    # OT_IMAGE_TAG is deliberately left at FROM_VERSION here — every service
+    # image resolves ${OT_IMAGE_TAG:-latest}, so it still needs to move to
+    # LOCAL_IMAGE_TAG before the four services outside cp_pin_image_tag's
+    # hardcoded list (docs, the three GPU worker variants) actually upgrade.
+    # That move used to happen here via a hand-rolled `sed`, which is also
+    # exactly what `opentranscribe.sh update --version` does to a real user's
+    # .env — except the sed never recorded `# OT_PREVIOUS_IMAGE_TAG`, so a
+    # `--rollback` invoked at the end of this scenario had no target and
+    # exited 1 (issue #598 §2.4). Phase 08 now runs the real `update --version`
+    # command instead, which performs the same rewrite AND writes the rollback
+    # bookkeeping phase 12 checks and phase 16 depends on.
+    gr_ok "after-stack .env left at OT_IMAGE_TAG=${FROM_VERSION} — phase 08's real 'update --version' does the rewrite"
 }
 
 # Defensive cleanup for the stale-network-endpoint daemon bug. If a previous
@@ -691,14 +921,20 @@ phase_08_start_new() {
     # real user's environment would be.
     _clean_stale_opentranscribe_network
 
-    # Invoke the actual './opentranscribe.sh update' command. This is what
-    # real users run to upgrade in place. It does 'compose down && compose
-    # pull && compose up -d' under the hood, but going through the script
-    # means we validate the code path users actually exercise — not a
-    # hand-rolled sequence that could silently drift from the real behavior.
+    # Invoke the actual './opentranscribe.sh update --version' command. This
+    # is what real users run to upgrade to a specific release. It does
+    # 'compose down && compose pull && compose up -d' under the hood (plus the
+    # .env rewrite and rollback bookkeeping --version adds), but going through
+    # the script means we validate the code path users actually exercise —
+    # not a hand-rolled sequence that could silently drift from the real
+    # behavior. `--version` (over a bare `update`) is what actually moves
+    # OT_IMAGE_TAG to LOCAL_IMAGE_TAG now that phase 07 no longer seds it, and
+    # it is also the only path that records `# OT_PREVIOUS_IMAGE_TAG`, which
+    # phase 12 asserts and phase 16's `--rollback` depends on (issue #598).
     pushd "$stage_after" >/dev/null
-    gr_log "running './opentranscribe.sh update' (real user upgrade path)"
-    ./opentranscribe.sh update || gr_die "opentranscribe.sh update failed"
+    gr_log "running './opentranscribe.sh update --version ${LOCAL_IMAGE_TAG}' (real user upgrade path)"
+    ./opentranscribe.sh update --version "$LOCAL_IMAGE_TAG" \
+        || gr_die "opentranscribe.sh update --version failed"
     popd >/dev/null
 
     API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
@@ -802,10 +1038,11 @@ phase_10_assert_and_report() {
     # Transcript prefix check (per file)
     if [[ -f "$TEST_ROOT/seeded-file-ids.txt" ]]; then
         while IFS= read -r fid; do
-            python3 - "$pre/transcript-$fid.json" "$post/transcript-$fid.json" "$fid" \
-                "$TEST_REPORT_FILE" <<'PY' || true
+            local detail
+            detail=""
+            if detail="$(python3 - "$pre/transcript-$fid.json" "$post/transcript-$fid.json" "$fid" <<'PY'
 import json, sys
-pre, post, fid, report = sys.argv[1:5]
+pre, post, fid = sys.argv[1:4]
 def segs(p):
     try:
         d = json.load(open(p))
@@ -821,12 +1058,14 @@ if ok:
         if s.get("text") != ps.get("text") or abs((s.get("start") or 0) - (ps.get("start") or 0)) > 0.01:
             ok = False
             break
-status = "PASS" if ok else "FAIL"
-detail = "" if ok else f"pre={len(pre_segs or [])} post={len(post_segs or [])}"
-print(f"{status:5}  transcript prefix preserved for file {fid}  {detail}")
-with open(report, "a") as f:
-    f.write(f"| {status} | transcript prefix preserved for file {fid} | {detail} |\n")
+print(f"pre={len(pre_segs or [])} post={len(post_segs or [])}")
+sys.exit(0 if ok else 1)
 PY
+)"; then
+                as_record PASS "transcript prefix preserved for file $fid"
+            else
+                as_record FAIL "transcript prefix preserved for file $fid" "$detail"
+            fi
         done < "$TEST_ROOT/seeded-file-ids.txt"
     fi
 
@@ -841,8 +1080,10 @@ PY
     # CORRECT answer for a real install, so assert whichever the deployment is
     # configured for. Same correction as the fresh-install scenario.
     local docs_enabled
-    docs_enabled=$(grep -E '^ENABLE_API_DOCS=' "$TEST_ROOT/after/.env" 2>/dev/null \
-        | cut -d= -f2 | tr -d ' "' | tr '[:upper:]' '[:lower:]' || true)
+    # python-dotenv, not grep/cut (issue #590).
+    docs_enabled=$(python3 "$SCRIPT_DIR/../lib/env_reader.py" \
+        "$TEST_ROOT/after/.env" ENABLE_API_DOCS \
+        | tr '[:upper:]' '[:lower:]' || true)
     code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_BACKEND_PORT}/api/docs")
     if [[ "$docs_enabled" == "true" || "$docs_enabled" == "1" || "$docs_enabled" == "yes" ]]; then
         as_assert_http "API docs reachable post-upgrade (opted in)" 200 "$code"
@@ -988,6 +1229,10 @@ phase_11_new_data_post_upgrade() {
         return 0
     fi
     as_record PASS "new upload accepted post-upgrade" "$(basename "$new_media") uuid=$fid"
+    # Recorded so phase 15's R-5 can assert this POST-backup file is ABSENT
+    # after a restore to the pre-upgrade backup — a restore that leaves it
+    # merged rather than replaced.
+    echo "$fid" > "$TEST_ROOT/post-upgrade-new-file-id.txt"
 
     # The real proof: a task queued AFTER the upgrade runs to completion under
     # the new image. This is what exercises the workers, the ASR stack and the
@@ -1020,9 +1265,632 @@ print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
     as_assert_ge "NEW content indexed and searchable post-upgrade" "$new_hits" 1
 }
 
-phase_12_summary() {
+phase_12_assert_rollback_precondition() {
     TEST_REPORT_FILE="${TEST_REPORT_FILE:-$TEST_ROOT/REPORT.md}"
-    as_summary | tee -a "$TEST_REPORT_FILE"
+    export TEST_REPORT_FILE
+
+    # Cheap, and it is what makes phase 16's `--rollback` possible at all
+    # (issue #598 §2.4): a bare `update` never wrote this, so a --rollback
+    # invoked at the end of this scenario used to exit 1 with "no previous
+    # version recorded". Phase 08's real `update --version` writes it.
+    local env_file="$TEST_ROOT/after/.env"
+    local prev_tag current_tag
+    # prev_tag reads a commented-out marker line (`^# *KEY=`), which is not a real
+    # dotenv key -- python-dotenv (and read_env_value) would never see it, so this
+    # one deliberately keeps its own grep rather than gaining a second helper
+    # parameter for a single caller.
+    prev_tag="$(grep -E '^# *OT_PREVIOUS_IMAGE_TAG=' "$env_file" 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)"
+    # python-dotenv, not grep/cut (issue #590).
+    current_tag="$(python3 "$SCRIPT_DIR/../lib/env_reader.py" "$env_file" OT_IMAGE_TAG)"
+    as_assert_eq "rollback precondition: # OT_PREVIOUS_IMAGE_TAG recorded as FROM" "$FROM_VERSION" "${prev_tag:-<absent>}"
+    as_assert_eq "rollback precondition: OT_IMAGE_TAG now pinned to TO" "$LOCAL_IMAGE_TAG" "${current_tag:-<absent>}"
+
+    if [[ "$ROLLBACK_REHEARSAL" != "1" ]]; then
+        as_record SKIP "backup/restore + update --rollback tail (phases 13-17)" \
+            "ROLLBACK_REHEARSAL=0 / --no-rollback"
+    fi
+}
+
+# ─── Phases 13-17: the backup/restore + update --rollback tail (issue #598) ─
+#
+# Everything up to phase 12 proves the FORWARD path: real data survives a real
+# migration. Nothing above it ever exercised the documented recovery path —
+# opentranscribe.sh backup/restore and `update --rollback` — which is exactly the
+# thing a user reaches for in an actual emergency. These phases restore the
+# phase 06b backup over damage inflicted through the real API, then run the
+# real `update --rollback`, and assert the FROM image serves the restored FROM
+# database through its real API — not merely that commands exited 0.
+phase_13_stage_rollback_tree() {
+    local stage_after="$TEST_ROOT/after"
+    local stage_rollback="$TEST_ROOT/rollback"
+    mkdir -p "$stage_rollback"
+
+    # Same compose set as the after-stack, but WITHOUT cp_pin_image_tag's
+    # hardcoded per-service pins. Those pin backend/frontend/9 celery services
+    # to $LOCAL_IMAGE_TAG literally, so `update --rollback`'s .env rewrite
+    # would move only the services outside that list (docs + 3 GPU worker
+    # variants) and produce a mixed-version stack — a rollback rehearsal that
+    # mostly did not roll back. docker-compose.prod.yml already resolves
+    # every service through ${OT_IMAGE_TAG:-latest}
+    # (test_every_prod_service_image_is_tag_pinnable guards this statically),
+    # so removing the pins here is what a real deployment does, not a
+    # workaround. This means the tail rehearses the `update-full` variant (new
+    # compose + old images moving via .env alone) rather than plain `update`.
+    cp "$stage_after/docker-compose.yml" "$stage_rollback/docker-compose.yml"
+    cp "$REPO_ROOT/docker-compose.prod.yml" "$stage_rollback/docker-compose.prod.yml"
+
+    # Same fix as phase 07's $stage_after (issue #909bfc17): docker-compose.prod.yml
+    # declares `build: context: ./docs-site` for the docs service. With pull_policy
+    # forced to never below and no local docs-site/ to build from, `docker compose up`
+    # fails to prepare the docs build context. Unlike the after-stack case — where a
+    # stale docs container was already running and the build failure only meant its
+    # own upgrade was silently skipped — phase 15's restore has already stopped the
+    # WHOLE app (issue #610), so here there is nothing to fall back to: the single
+    # `docker compose up` batch covering frontend + celery workers + flower + docs
+    # aborts entirely on the docs build failure and NONE of them start (issue #618) —
+    # not just docs. A real user always has docs-site/ in their checkout; only this
+    # staged rehearsal tree needs it copied in explicitly.
+    if [[ -d "$REPO_ROOT/docs-site" ]]; then
+        rm -rf "$stage_rollback/docs-site"
+        cp -r "$REPO_ROOT/docs-site" "$stage_rollback/docs-site"
+    fi
+
+    cp_inject_labels "$stage_rollback/docker-compose.prod.yml" "$TEST_LABEL"
+    cp_force_pull_policy "$stage_rollback/docker-compose.prod.yml" never
+    if [[ "$TEST_USE_GPU" == "true" && -f "$stage_after/docker-compose.gpu.yml" ]]; then
+        cp "$stage_after/docker-compose.gpu.yml" "$stage_rollback/docker-compose.gpu.yml"
+    fi
+    cp "$REPO_ROOT/opentranscribe.sh" "$stage_rollback/opentranscribe.sh"
+    chmod +x "$stage_rollback/opentranscribe.sh"
+    cp "$stage_after/.env" "$stage_rollback/.env"
+
+    TEST_REPORT_FILE="${TEST_REPORT_FILE:-$TEST_ROOT/REPORT.md}"
+    {
+        echo ""
+        echo "## Rollback rehearsal scope"
+        echo ""
+        echo "The staged rollback tree removes \`cp_pin_image_tag\`'s hardcoded"
+        echo "per-service image pins, so phases 13-17 rehearse the \`update-full\`"
+        echo "variant (new compose + old images move via \`.env\` alone) rather"
+        echo "than plain \`update\` (old compose, only \`OT_IMAGE_TAG\` moves) —"
+        echo "deliberately: it is both the more common upgrade path and the one"
+        echo "an unpinned service could silently miss on a real deployment."
+        echo ""
+    } >> "$TEST_REPORT_FILE"
+
+    # The table-list oracle R-6 (phase 15) needs the OTHER endpoint of: what
+    # did this migration ADD relative to FROM? Captured here (the after-stack
+    # is fully migrated and running) rather than in phase 09, so it lives
+    # beside the backup/restore artifacts it exists to support.
+    local pg="opentranscribe-postgres"
+    dbs_table_list "$pg" postgres opentranscribe > "$TEST_ROOT/snapshots/after/tables.txt"
+
+    # Verify the TO-side backup too — needed as phase 17's restore point and
+    # it proves `backup` works on the MIGRATED schema, not just the
+    # pre-migration one phase 06b already checked.
+    local backups_dir="$TEST_ROOT/backups"
+    local to_dump="$backups_dir/post-upgrade-${LOCAL_IMAGE_TAG}.sql"
+    if ! dbs_dump "$pg" postgres opentranscribe "$to_dump"; then
+        gr_die "could not take the post-upgrade (TO-side) backup"
+    fi
+    local restored_rows
+    if restored_rows=$(dbs_verify_dump_restores "$pg" postgres "$to_dump" opentranscribe_verify_post); then
+        as_assert_ge "post-upgrade backup restores cleanly into a scratch database" "${restored_rows:-0}" 1
+    else
+        as_record FAIL "post-upgrade backup restores cleanly into a scratch database" "replay failed — see log"
+    fi
+    dbs_scratch_drop "$pg" postgres opentranscribe_verify_post
+
+    gr_ok "rollback tree staged at $stage_rollback; TO-side backup verified"
+}
+
+phase_14_damage_database() {
+    API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
+    export API_BASE
+    TEST_REPORT_FILE="${TEST_REPORT_FILE:-$TEST_ROOT/REPORT.md}"
+    export TEST_REPORT_FILE
+    ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"
+
+    if [[ "${ROLLBACK_INJECT_FAULT:-}" == "no-damage" ]]; then
+        gr_warn "ROLLBACK_INJECT_FAULT=no-damage — damage step intentionally skipped (self-check)"
+    else
+        # Delete one of phase 05's seeded files — a user losing data, the
+        # scenario a rollback exists for. Through the real API, not a raw SQL
+        # poke: a poke tests postgres, not OpenTranscribe.
+        local deleted_fid
+        deleted_fid="$(head -1 "$TEST_ROOT/seeded-file-ids.txt")"
+        echo "$deleted_fid" > "$TEST_ROOT/damage-deleted-file-id.txt"
+        ac_curl -X DELETE "$API_BASE/files/$deleted_fid" >/dev/null \
+            || gr_die "could not delete seeded file $deleted_fid to simulate damage"
+
+        # Rename a speaker — a second, independent mutation shape (UPDATE, not
+        # DELETE).
+        local speaker_json speaker_uuid old_name new_name
+        speaker_json="$(ac_curl "$API_BASE/speakers" 2>/dev/null || echo '{}')"
+        speaker_uuid="$(echo "$speaker_json" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+items = d.get("speakers") if isinstance(d, dict) else d
+items = items if isinstance(items, list) else []
+print(items[0]["uuid"] if items else "")
+' 2>/dev/null || echo "")"
+        if [[ -n "$speaker_uuid" ]]; then
+            old_name="$(echo "$speaker_json" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+items = d.get("speakers") if isinstance(d, dict) else d
+items = items if isinstance(items, list) else []
+print(items[0].get("name", "") if items else "")
+' 2>/dev/null || echo "")"
+            new_name="rollback-damage-rename-$(date +%s)"
+            if ac_curl -X PATCH "$API_BASE/speakers/$speaker_uuid" \
+                -H "Content-Type: application/json" \
+                -d "{\"name\":\"$new_name\"}" >/dev/null 2>&1; then
+                printf '%s\n%s\n%s\n' "$speaker_uuid" "$old_name" "$new_name" > "$TEST_ROOT/damage-speaker.txt"
+            else
+                gr_warn "could not rename speaker $speaker_uuid to simulate damage — R-4 will SKIP"
+            fi
+        else
+            gr_warn "no speaker found to rename for damage simulation — R-4 will SKIP"
+        fi
+        # The phase-11 post-upgrade upload is left in place deliberately — it
+        # is POST-backup data and phase 15's R-5 asserts it is ABSENT after
+        # restoring to the pre-upgrade backup.
+    fi
+
+    local pg="opentranscribe-postgres"
+    dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/damaged/db-fingerprint"
+
+    # The damage must be real before the restore assertion means anything —
+    # otherwise R-2 could pass by never having anything to fix.
+    local before_digest damaged_digest
+    before_digest="$(cat "$TEST_ROOT/snapshots/before/db-fingerprint/media_file.digest" 2>/dev/null || echo '?')"
+    damaged_digest="$(cat "$TEST_ROOT/snapshots/damaged/db-fingerprint/media_file.digest" 2>/dev/null || echo '?')"
+    as_assert_ne "damage precondition: media_file digest changed by phase 14" "$before_digest" "$damaged_digest"
+}
+
+phase_15_restore_and_assert() {
+    TEST_REPORT_FILE="${TEST_REPORT_FILE:-$TEST_ROOT/REPORT.md}"
+    export TEST_REPORT_FILE
+    local pg="opentranscribe-postgres"
+    local shipped_dump="$TEST_ROOT/backups/pre-upgrade-${FROM_VERSION}.sql"
+    [[ -s "$shipped_dump" ]] || gr_die "pre-upgrade backup missing: $shipped_dump (phase 06b did not complete)"
+
+    # Fault injection: corrupt the oracle the restore is about to load, so the
+    # tail's own failure detection is exercised for real (issue #598 §9.3).
+    #
+    # MEASURED, not assumed (selftest-rollback-fault-injection.sh case 2): psql
+    # reading a plain-format dump from a FILE treats an unterminated
+    # `COPY ... FROM stdin` at EOF as simply ending the copy — no error, exit
+    # 0 — rather than the parse failure a first guess would expect. A dump
+    # truncated after the last statement it happens to complete therefore
+    # still replays "cleanly" and silently drops whatever rows came after the
+    # cut: the SAME failure shape issue #598 originally measured in
+    # `restore_database` (reports success, changed nothing), reproduced structurally.
+    # So the cut targets media_file's own COPY block specifically — its
+    # header plus exactly one data row — so R-2/R-8 below are the assertions
+    # expected to catch it, never R-1's exit code.
+    local restore_source="$shipped_dump"
+    if [[ "${ROLLBACK_INJECT_FAULT:-}" == "truncate" ]]; then
+        restore_source="$TEST_ROOT/backups/pre-upgrade-${FROM_VERSION}.truncated.sql"
+        local copy_line
+        copy_line="$(grep -n '^COPY public\.media_file ' "$shipped_dump" | head -1 | cut -d: -f1)"
+        [[ -n "$copy_line" ]] || gr_die "ROLLBACK_INJECT_FAULT=truncate: could not find media_file's COPY line in $shipped_dump"
+        head -n "$(( copy_line + 1 ))" "$shipped_dump" > "$restore_source"
+        gr_warn "ROLLBACK_INJECT_FAULT=truncate — restoring a dump cut mid-way through media_file's COPY block; R-1 is expected to still report success (0), R-2/R-8 below are EXPECTED to FAIL"
+    fi
+
+    local minio_pre="$TEST_ROOT/snapshots/damaged/minio_etags.json"
+    _capture_minio_etags "$minio_pre"
+
+    # Guardrail: the first genuinely destructive statement in the rollback
+    # tail is the DROP DATABASE inside restore_database (scripts/common.sh,
+    # invoked here through opentranscribe.sh — the shipped front end, issue #613).
+    # All four conditions of gr_assert_target_is_test_database must hold or it dies.
+    gr_assert_target_is_test_database "$pg" opentranscribe "$TEST_ROOT/after/.env"
+
+    local manager_stage
+    manager_stage="$(_stage_manager_at "$TEST_ROOT/after")"
+    gr_assert_not_repo_cwd "$manager_stage"
+
+    pushd "$manager_stage" >/dev/null
+    local restore_rc=0
+    ./opentranscribe.sh restore --yes "$restore_source" || restore_rc=$?
+    popd >/dev/null
+
+    # R-1 is asserted the SAME way regardless of ROLLBACK_INJECT_FAULT=truncate:
+    # per the measured note above, a mid-COPY truncation genuinely reports exit
+    # 0 too. The corruption is caught below, by content (R-2/R-8), not here.
+    as_assert_eq "R-1: restore command exits 0 on success" "0" "$restore_rc"
+
+    # R-13 (issue #610): the restore must NOT have restarted the application. This is
+    # THE direct regression assertion for #610 — a running backend here would
+    # immediately run `alembic upgrade head` over the dump we just installed, silently
+    # migrating the FROM-release backup forward before anyone (operator or this test)
+    # ever gets to see it in its original restored form. `restore --yes` against a
+    # schema-head mismatch (the FROM backup vs. the still-running TO image, exactly
+    # this scenario) now leaves services stopped by design — see
+    # scripts/common.sh's pg_restore_restart_decision.
+    local backend_running
+    backend_running="$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-backend$' | head -1)"
+    as_assert_eq "R-13: restore left the application stopped (no auto-migration window)" "" "${backend_running:-}"
+
+    as_record SKIP "R-12: no live writer at the moment of the drop" \
+        "enforced inside scripts/common.sh's restore_database via DROP DATABASE ... WITH (FORCE) and its own client-stop sequence (#599) — not independently observable from outside that function without instrumenting it"
+
+    dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/restored/db-fingerprint"
+    local fp_dir="$TEST_ROOT/snapshots/before/db-fingerprint"
+    if [[ "${ROLLBACK_INJECT_FAULT:-}" == "stale-oracle" ]]; then
+        fp_dir="$TEST_ROOT/snapshots/after/db-fingerprint"
+        gr_warn "ROLLBACK_INJECT_FAULT=stale-oracle — comparing against the AFTER (post-upgrade) fingerprint on purpose; digest assertions below are EXPECTED to FAIL"
+    fi
+    # R-2 (media_file), R-7 (alembic_version, cross-checked again below), R-9
+    # (transcript_segment), R-10 (user) — one content-digest diff per table.
+    # dbs_diff_fingerprints already records PASS/FAIL per table via as_record
+    # (see its own doc comment); its non-zero return is informational, NOT
+    # meant to be fatal. Called bare under `set -euo pipefail` (line 55) a
+    # single mismatch would kill the whole script on the spot, silently
+    # truncating phases 16-18 (issue #617) — guard it like
+    # selftest-rollback-fault-injection.sh already does.
+    if dbs_diff_fingerprints "$fp_dir" "$TEST_ROOT/snapshots/restored/db-fingerprint" "restore"; then
+        gr_log "restore: all table content digests match the pre-restore snapshot"
+    else
+        gr_warn "restore: at least one table content digest differs from the pre-restore snapshot — recorded as FAIL above, continuing"
+    fi
+
+    # R-6: no table introduced by a post-FROM migration survives the restore —
+    # derived from the table-list snapshots (after MINUS before), never a
+    # hardcoded name.
+    local new_tables leaked
+    new_tables="$(comm -23 <(sort "$TEST_ROOT/snapshots/after/tables.txt") <(sort "$TEST_ROOT/snapshots/before/tables.txt"))"
+    leaked="$(comm -12 <(echo "$new_tables") <(sort "$TEST_ROOT/snapshots/restored/tables.txt"))"
+    as_assert "R-6: no post-FROM-migration table survives the restore" '[[ -z "$leaked" ]]'
+    [[ -n "$leaked" ]] && gr_warn "post-FROM tables that survived the restore: $leaked"
+
+    # R-7: alembic_version restored to the FROM release's OWN head, derived
+    # from that release's migration chain in the phase-03 worktree — the same
+    # measured-vs-derived pair phase 10 already uses, replayed here after a
+    # restore instead of after a forward migration.
+    local restored_head derived_from_head
+    restored_head="$(docker exec "$pg" psql -tA -U postgres opentranscribe \
+        -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
+    local from_worktree="$TEST_ROOT/worktree-${FROM_VERSION}"
+    if derived_from_head="$(ver_alembic_head "$from_worktree/backend" 2>/dev/null)"; then
+        as_assert_eq "R-7: alembic_version restored to the FROM release's own head" "$derived_from_head" "$restored_head"
+    else
+        as_record SKIP "R-7: alembic head" "FROM worktree chain is not single-headed"
+    fi
+
+    # R-8: no duplicate rows — the append-instead-of-replace failure mode
+    # (issue #598 §3) produces exactly this on a table without a PK conflict.
+    local t label total distinct_ct
+    for t in media_file transcript_segment speaker '"user"'; do
+        label="${t//\"/}"
+        total="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT count(*) FROM ${t};" 2>/dev/null | tr -d '[:space:]')"
+        distinct_ct="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT count(DISTINCT id) FROM ${t};" 2>/dev/null | tr -d '[:space:]')"
+        as_assert_eq "R-8: no duplicate rows in ${label}" "${total:-?}" "${distinct_ct:-?}"
+    done
+
+    # R-11: the DB restore must not disturb MinIO — the honest scoping
+    # statement that media is not part of what this mechanism restores.
+    local minio_post="$TEST_ROOT/snapshots/restored/minio_etags.json"
+    _capture_minio_etags "$minio_post"
+    as_assert_diff_files "R-11: MinIO ETag list unchanged by the DB-only restore" "$minio_pre" "$minio_post"
+
+    # R-3/R-4/R-5 moved to phase 16 (issue #610): they assert that restored data is
+    # visible THROUGH THE APPLICATION, but per R-13 above, nothing is up here to serve
+    # it any more — restore now leaves the app stopped on purpose. Serving a
+    # FROM-schema database is the FROM image's job (this phase's subject is whatever
+    # was running before the restore, i.e. TO), so the checks belong in phase 16,
+    # after `update --rollback` has put the FROM image in front of it. Before this
+    # fix they ran here and passed only because the STILL-RUNNING TO image
+    # force-migrated the data into a shape it could read — i.e. they were green
+    # BECAUSE of the bug.
+}
+
+phase_16_rollback_and_assert() {
+    TEST_REPORT_FILE="${TEST_REPORT_FILE:-$TEST_ROOT/REPORT.md}"
+    export TEST_REPORT_FILE
+    if [[ "${ROLLBACK_INJECT_FAULT:-}" == "truncate" ]]; then
+        as_record SKIP "B-1..B-8: update --rollback" \
+            "ROLLBACK_INJECT_FAULT=truncate: phase 15 already proved the corruption is caught (R-2/R-8 FAILed); the database is NOT empty (the truncated dump replays with exit 0 and partial data — see phase 15's comment), so continuing to roll images back onto known-corrupt fixture data would only carry it forward without exercising anything --rollback-specific"
+        # R-3/R-4/R-5 (issue #610) now live in THIS phase, not phase 15 — without an
+        # explicit record here, this early return would silently drop three
+        # assertions from the fault-injection run instead of skipping them visibly.
+        as_record SKIP "R-3: deleted file restored" "ROLLBACK_INJECT_FAULT=truncate: phase 16 (which now runs R-3/R-4/R-5) was itself skipped, see above"
+        as_record SKIP "R-4: speaker rename reverted" "ROLLBACK_INJECT_FAULT=truncate: phase 16 (which now runs R-3/R-4/R-5) was itself skipped, see above"
+        as_record SKIP "R-5: post-backup upload absent" "ROLLBACK_INJECT_FAULT=truncate: phase 16 (which now runs R-3/R-4/R-5) was itself skipped, see above"
+        return 0
+    fi
+
+    local stage_rollback="$TEST_ROOT/rollback"
+    pushd "$stage_rollback" >/dev/null
+    gr_log "running './opentranscribe.sh update --rollback' (real user recovery path)"
+    local rollback_output rollback_rc=0
+    rollback_output="$(./opentranscribe.sh update --rollback 2>&1)" || rollback_rc=$?
+    echo "$rollback_output" > "$TEST_ROOT/rollback-output.txt"
+    popd >/dev/null
+
+    as_assert_eq "B-1: update --rollback exits 0" "0" "$rollback_rc"
+
+    local env_tag
+    # python-dotenv, not grep/cut (issue #590).
+    env_tag="$(python3 "$SCRIPT_DIR/../lib/env_reader.py" "$stage_rollback/.env" OT_IMAGE_TAG)"
+    as_assert_eq "B-2: staged .env now pins OT_IMAGE_TAG to FROM" "$FROM_VERSION" "$env_tag"
+
+    as_assert "B-3: rollback warns about the one-way migration chain" \
+        '[[ "$rollback_output" == *"ONE-WAY"* ]]'
+    as_assert "B-3: rollback tells the operator to restore a pre-upgrade backup" \
+        '[[ "$rollback_output" == *backup* ]]'
+
+    # B-4: EVERY APP-OWNED opentranscribe-* container resolves :$FROM_VERSION,
+    # enumerated from `docker ps` — not a hardcoded service list (the same
+    # drift class test_every_prod_service_image_is_tag_pinnable guards
+    # statically). Scoped to images from the davidamacey/opentranscribe-*
+    # Docker Hub repo (backend/frontend/celery-*/flower/docs — every service
+    # that resolves `${OT_IMAGE_TAG:-latest}` in docker-compose.prod.yml), NOT
+    # every container whose NAME starts with opentranscribe-: postgres,
+    # opensearch, minio, and redis also get that container_name prefix (see
+    # docker-compose.yml) but are third-party infra images with their own
+    # independent version pins (postgres:17.5-alpine etc.) that never move
+    # per OpenTranscribe release — checking them against FROM_VERSION was
+    # always going to fail regardless of whether the rollback worked.
+    local mismatched=() app_containers=() cname image
+    while IFS= read -r cname; do
+        [[ -n "$cname" ]] || continue
+        image="$(docker inspect "$cname" --format '{{.Config.Image}}' 2>/dev/null || echo "")"
+        case "$image" in
+            davidamacey/opentranscribe-*)
+                app_containers+=("$cname")
+                case "$image" in
+                    *":${FROM_VERSION}") ;;
+                    *) mismatched+=("$cname=$image") ;;
+                esac
+                ;;
+            *) ;; # third-party infra image, not app-versioned — see comment above
+        esac
+    done < <(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-')
+
+    # #619's own root cause, guarded against here: with ZERO app containers running,
+    # `mismatched` is trivially empty and the assertion below PASSES having checked
+    # nothing at all. Assert containers actually exist BEFORE trusting an empty
+    # mismatch list.
+    if (( ${#app_containers[@]} == 0 )); then
+        gr_warn "B-4: no app-owned opentranscribe-* containers found via docker ps — $(docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null | tr '\n' '; ')"
+    fi
+    as_assert "B-4a: app-owned opentranscribe-* containers are running at all" \
+        '(( ${#app_containers[@]} > 0 ))'
+    as_assert "B-4a: backend and frontend containers are present" \
+        '[[ " ${app_containers[*]} " == *" opentranscribe-backend "* && " ${app_containers[*]} " == *" opentranscribe-frontend "* ]]'
+    as_assert "B-4: every app-owned opentranscribe-* image resolves :${FROM_VERSION}" \
+        '(( ${#mismatched[@]} == 0 ))'
+    [[ ${#mismatched[@]} -gt 0 ]] && gr_warn "app images not on ${FROM_VERSION}: ${mismatched[*]}"
+
+    API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
+    export API_BASE
+    ac_wait_for_health 900
+
+    local running_version
+    running_version="$(curl -fsS --max-time 10 "$API_BASE/version" 2>/dev/null \
+        | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")"
+    as_assert_eq "B-5: /api/version reports FROM after rollback" \
+        "$FROM_VERSION" "$(ver_normalize "${running_version:-none}" 2>/dev/null || echo "${running_version:-none}")"
+    as_assert_ne "B-5: /api/version is not 'unknown' (build-arg contract)" "unknown" "${running_version:-none}"
+
+    local login_ok=false
+    if ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"; then
+        login_ok=true
+        as_record PASS "B-6: login succeeds — the FROM image serves the restored FROM database"
+
+        local files_json file_count expected_count
+        files_json="$(ac_list_files 2>/dev/null || echo '{}')"
+        file_count="$(echo "$files_json" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+items = d.get("files") if isinstance(d, dict) else d
+items = items if isinstance(items, list) else (d.get("items") if isinstance(d, dict) else [])
+print(len(items or []))
+' 2>/dev/null || echo -1)"
+        expected_count="$(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+items = d.get("files") if isinstance(d, dict) else d
+items = items if isinstance(items, list) else (d.get("items") if isinstance(d, dict) else [])
+print(len(items or []))
+' "$TEST_ROOT/snapshots/before/files.json" 2>/dev/null || echo -2)"
+        as_assert_eq "B-6: GET /api/files returns exactly the pre-upgrade file set" "$expected_count" "$file_count"
+
+        # B-7: transcript text/timing for every seeded file matches the
+        # pre-upgrade snapshot EXACTLY (not merely a prefix, unlike phase 10's
+        # forward-upgrade check — a rollback claims to reproduce the pre-backup
+        # state, not extend it).
+        local fid pre_transcript post_transcript
+        while IFS= read -r fid; do
+            [[ -n "$fid" ]] || continue
+            pre_transcript="$TEST_ROOT/snapshots/before/transcript-$fid.json"
+            [[ -s "$pre_transcript" ]] || continue
+            post_transcript="$(mktemp)"
+            ac_get_segments "$fid" > "$post_transcript" 2>/dev/null || true
+            local detail
+            detail=""
+            if detail="$(python3 - "$pre_transcript" "$post_transcript" "$fid" <<'PY'
+import json, sys
+pre, post, fid = sys.argv[1:4]
+def segs(p):
+    try:
+        d = json.load(open(p))
+    except Exception:
+        return None
+    return d.get("segments") or d.get("transcript_segments") or []
+pre_segs = segs(pre)
+post_segs = segs(post)
+ok = pre_segs is not None and post_segs is not None and len(post_segs) == len(pre_segs)
+if ok:
+    for s, ps in zip(pre_segs, post_segs):
+        if s.get("text") != ps.get("text") or abs((s.get("start") or 0) - (ps.get("start") or 0)) > 0.01:
+            ok = False
+            break
+print(f"pre={len(pre_segs or [])} post={len(post_segs or [])}")
+sys.exit(0 if ok else 1)
+PY
+)"; then
+                as_record PASS "B-7: transcript for file $fid matches the pre-upgrade snapshot exactly"
+            else
+                as_record FAIL "B-7: transcript for file $fid matches the pre-upgrade snapshot exactly" "$detail"
+            fi
+            rm -f "$post_transcript"
+        done < "$TEST_ROOT/seeded-file-ids.txt"
+    else
+        as_record FAIL "B-6: login to the rolled-back stack"
+    fi
+
+    # R-3/R-4/R-5 (issue #610), relocated here from phase 15: these assert that data a
+    # restore brought back is visible THROUGH THE APPLICATION, and per phase 15's R-13,
+    # nothing was up there to serve it any more — restore now leaves the app stopped on
+    # purpose. The application that should serve a FROM-schema database is the FROM
+    # image, i.e. THIS phase, after `update --rollback` has put it in front of the
+    # restored database — not whatever was running when phase 15's restore ran. Before
+    # this fix these ran in phase 15 and passed only because the STILL-RUNNING TO image
+    # force-migrated the restored data into a shape it could read — green BECAUSE of
+    # the bug, not despite it. Reuses B-6's own login rather than logging in twice.
+    if [[ "$login_ok" == true ]]; then
+        # R-3: the file deleted in phase 14 is back, addressable via the API.
+        local deleted_fid
+        deleted_fid="$(cat "$TEST_ROOT/damage-deleted-file-id.txt" 2>/dev/null || echo "")"
+        if [[ -n "$deleted_fid" ]]; then
+            local code
+            code="$(curl -o /dev/null -s -w '%{http_code}' -H "Authorization: Bearer ${API_TOKEN:-}" "$API_BASE/files/$deleted_fid")"
+            as_assert_http "R-3: file deleted in phase 14 is back, addressable via the API" 200 "$code"
+        else
+            as_record SKIP "R-3: deleted file restored" "no deleted-file id recorded (phase 14's damage step was skipped)"
+        fi
+
+        # R-4: the renamed speaker has its old name back.
+        if [[ -f "$TEST_ROOT/damage-speaker.txt" ]]; then
+            local sp_uuid sp_old sp_new current_name
+            { read -r sp_uuid; read -r sp_old; read -r sp_new; } < "$TEST_ROOT/damage-speaker.txt"
+            current_name="$(ac_curl "$API_BASE/speakers/$sp_uuid" 2>/dev/null | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+print(d.get("name") or (d.get("speaker") or {}).get("name", ""))
+' 2>/dev/null || echo "")"
+            as_assert_eq "R-4: renamed speaker has its pre-damage name" "$sp_old" "$current_name"
+            [[ "$current_name" == "$sp_new" ]] && gr_warn "speaker still carries the phase-14 damage name ($sp_new) — the restore left it in place"
+        else
+            as_record SKIP "R-4: speaker rename reverted" "no speaker was renamed in phase 14"
+        fi
+
+        # R-5: the phase-11 POST-backup upload is ABSENT — a restore that leaves
+        # it is a merge, not a replace. This is the assertion that fails under a
+        # `--clean`-only fix (issue #598 §3).
+        if [[ -f "$TEST_ROOT/post-upgrade-new-file-id.txt" ]]; then
+            local post_fid post_code
+            post_fid="$(cat "$TEST_ROOT/post-upgrade-new-file-id.txt")"
+            post_code="$(curl -o /dev/null -s -w '%{http_code}' -H "Authorization: Bearer ${API_TOKEN:-}" "$API_BASE/files/$post_fid")"
+            as_assert_http "R-5: post-backup upload (phase 11) is ABSENT after restore" 404 "$post_code"
+        else
+            as_record SKIP "R-5: post-backup upload absent" "phase 11 recorded no new-file id (skipped or no suitable media?)"
+        fi
+    else
+        as_record SKIP "R-3: deleted file restored" "login to the rolled-back stack failed, see B-6"
+        as_record SKIP "R-4: speaker rename reverted" "login to the rolled-back stack failed, see B-6"
+        as_record SKIP "R-5: post-backup upload absent" "login to the rolled-back stack failed, see B-6"
+    fi
+
+    # B-8: nothing above waits for the FROM image's frontend container
+    # specifically (only the backend, via ac_wait_for_health above) — wait for
+    # it to answer before checking it, then guard the actual check too so any
+    # curl failure here is recorded as a FAIL rather than crashing the whole
+    # script under set -e (issue #618, same class as #617's
+    # dbs_diff_fingerprints crash).
+    local frontend_url="http://localhost:${TEST_FRONTEND_PORT}/"
+    ac_wait_for_frontend "$frontend_url" 900 || true
+    local frontend_code
+    if frontend_code="$(curl -o /dev/null -s -w '%{http_code}' "$frontend_url")"; then
+        as_assert_http "B-8: frontend reachable on the FROM image" 200 "$frontend_code"
+    else
+        as_record FAIL "B-8: frontend reachable on the FROM image" "curl failed to reach $frontend_url"
+    fi
+}
+
+phase_17_roll_forward_again() {
+    TEST_REPORT_FILE="${TEST_REPORT_FILE:-$TEST_ROOT/REPORT.md}"
+    export TEST_REPORT_FILE
+    if [[ "${ROLLBACK_INJECT_FAULT:-}" == "truncate" ]]; then
+        as_record SKIP "F-1..F-5: roll forward again" \
+            "ROLLBACK_INJECT_FAULT=truncate — phase 16 was itself skipped (see its own reason); nothing to roll forward from"
+        return 0
+    fi
+
+    local stage_rollback="$TEST_ROOT/rollback"
+    pushd "$stage_rollback" >/dev/null
+    gr_log "running './opentranscribe.sh update --version ${LOCAL_IMAGE_TAG}' again (recovery loop: roll back -> investigate -> re-upgrade)"
+    ./opentranscribe.sh update --version "$LOCAL_IMAGE_TAG" || gr_die "recovery re-upgrade failed"
+    popd >/dev/null
+
+    API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
+    export API_BASE
+    ac_wait_for_health 900
+    as_record PASS "F-1: health reached within the 900s budget after the recovery re-upgrade"
+
+    local pg="opentranscribe-postgres"
+    local post_head expected_head
+    post_head="$(docker exec "$pg" psql -tA -U postgres opentranscribe -c "SELECT version_num FROM alembic_version;" 2>/dev/null | tr -d '[:space:]')"
+    expected_head="$(ver_alembic_head "$REPO_ROOT/backend")"
+    as_assert_eq "F-2: alembic head re-migrated to the current head" "$expected_head" "$post_head"
+
+    local running_version
+    running_version="$(curl -fsS --max-time 10 "$API_BASE/version" 2>/dev/null \
+        | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")"
+    as_assert_eq "F-3: /api/version reports TO after the recovery re-upgrade" \
+        "$TO_VERSION" "$(ver_normalize "${running_version:-none}" 2>/dev/null || echo "${running_version:-none}")"
+
+    # F-4: the restored data survived a SECOND migration. alembic_version is
+    # deliberately excluded from the comparison — it is SUPPOSED to differ
+    # (FROM head before, TO head now); that is schema advancement, not damage.
+    dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/recovered/db-fingerprint"
+    # Guarded for the same reason as phase 15's call above (issue #617): a
+    # bare non-zero return here would trip `set -e` and kill the script
+    # before phase 18's summary ever runs.
+    if dbs_diff_fingerprints "$TEST_ROOT/snapshots/before/db-fingerprint" \
+        "$TEST_ROOT/snapshots/recovered/db-fingerprint" "F-4" media_file; then
+        gr_log "F-4: media_file content digest unchanged after the recovery re-upgrade"
+    else
+        gr_warn "F-4: media_file content digest differs after the recovery re-upgrade — recorded as FAIL above, continuing"
+    fi
+
+    # F-5: hybrid search returns hits (reindex recovered).
+    local hits=0 waited=0
+    while [ "$waited" -lt 300 ]; do
+        hits="$(ac_search "the" 2>/dev/null | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
+' 2>/dev/null || echo 0)"
+        [ "$hits" -ge 1 ] && break
+        sleep 10
+        waited=$((waited + 10))
+    done
+    as_assert_ge "F-5: hybrid search returns hits after recovery" "$hits" 1
+
+    gr_log "recovery complete — stack is back at TO=${TO_VERSION}, matching the scenario's leave-behind contract"
+}
+
+phase_18_summary() {
+    TEST_REPORT_FILE="${TEST_REPORT_FILE:-$TEST_ROOT/REPORT.md}"
+    # as_summary deliberately returns 1 when any assertion FAILed — that is
+    # how 65-rehearse.sh's `... test-upgrade.sh --yes || upgrade_rc=$?` knows
+    # the run failed. But under set -o pipefail (set -euo pipefail, line 55),
+    # a non-zero return from EITHER stage of `as_summary | tee -a ...` trips
+    # set -e right here, on the spot — same class of bug as #617/#618, just at
+    # the very last phase: it skipped the "Finished:" line, 18.done, and the
+    # driver's closing banner below, discovered only because #618's other two
+    # fixes let a real run finally reach this phase. RELEASE_TEST_EXIT_CODE
+    # (global, read by the driver after this phase returns) carries the
+    # intended non-zero verdict forward WITHOUT letting it abort the script
+    # before the report is finished and phase 18 is marked done.
+    RELEASE_TEST_EXIT_CODE=0
+    as_summary | tee -a "$TEST_REPORT_FILE" || RELEASE_TEST_EXIT_CODE=$?
     {
         echo ""
         echo "Finished: $(date -Iseconds)"
@@ -1045,13 +1913,32 @@ phase 03 phase_03_prepare_v033_compose
 phase 04 phase_04_start_v033
 phase 05 phase_05_seed_data
 phase 06 phase_06_snapshot_pre
+phase 06b phase_06b_pre_upgrade_backup
 phase 07 phase_07_swap_to_new
 phase 08 phase_08_start_new
 phase 09 phase_09_snapshot_post
 phase 10 phase_10_assert_and_report
 phase 11 phase_11_new_data_post_upgrade
-phase 12 phase_12_summary
+phase 12 phase_12_assert_rollback_precondition
+if [[ "$ROLLBACK_REHEARSAL" == "1" ]]; then
+    phase 13 phase_13_stage_rollback_tree
+    phase 14 phase_14_damage_database
+    phase 15 phase_15_restore_and_assert
+    phase 16 phase_16_rollback_and_assert
+    phase 17 phase_17_roll_forward_again
+else
+    gr_warn "rollback rehearsal tail SKIPPED (ROLLBACK_REHEARSAL=0 / --no-rollback)"
+fi
+phase 18 phase_18_summary
 
 echo
 echo "Done. Report: $TEST_ROOT/REPORT.md"
 echo "Stack left running for inspection. Tear down with: $0 --cleanup"
+
+# Propagate phase 18's assertion verdict as the script's own exit code (see
+# phase_18_summary's comment) — deferred to here, after the report is fully
+# written and every phase is marked done, rather than however set -e would
+# have aborted mid-summary. Defaults to 0 for a resumed run where phase 18
+# was already marked done and skipped (phase_check short-circuits it, so
+# RELEASE_TEST_EXIT_CODE is never assigned).
+exit "${RELEASE_TEST_EXIT_CODE:-0}"

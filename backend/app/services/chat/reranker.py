@@ -125,12 +125,15 @@ def get_reranker(model_name: str = C.CHAT_RERANKER_MODEL) -> Any:
             from app.utils.hf_hub_offline import hf_offline_requested
             from app.utils.hf_hub_offline import load_with_timeout
 
-            kwargs: dict[str, Any] = {"device": "cpu", "max_length": 512}
+            extra_kwargs: dict[str, Any] = {}
             if hf_offline_requested():
-                kwargs["local_files_only"] = True
+                extra_kwargs["local_files_only"] = True
 
+            # device="cpu" stays a literal keyword (not folded into extra_kwargs) so it
+            # remains visible to test_laptop_deployment_invariant.py's AST scan, which
+            # pins the reranker to CPU-only by checking for this exact literal.
             model = load_with_timeout(
-                lambda: CrossEncoder(model_name, **kwargs),
+                lambda: CrossEncoder(model_name, device="cpu", max_length=512, **extra_kwargs),
                 timeout=_LOAD_TIMEOUT_S,
                 label=f"Chat reranker ({model_name})",
             )

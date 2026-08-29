@@ -28,10 +28,18 @@
 #   scripts/run-dev-tests.sh --full --no-overlays       # assume the stack is already configured
 #   scripts/run-dev-tests.sh --full --list-overlays     # print the resolved overlay set, start nothing
 #   scripts/run-dev-tests.sh --full --dry-run           # + the exact opentr.sh command, start nothing
+#   scripts/run-dev-tests.sh --with-gpu-diarization     # + the 3 container-only GPU diarization
+#                                                        #   suites (run-diarization-gpu-tests.sh);
+#                                                        #   builds a test image, several minutes
+#   scripts/run-dev-tests.sh --with-mutation-tests      # + a single-module mutation-testing run
+#                                                        #   (default: spans, ~1-3 min; override
+#                                                        #   with MUTATION_TEST_MODULE=<module>)
 #
 # Mode flags (--full/--fast/--backend-only/--e2e-only/--frontend-only) are composable — pass more
 # than one to union their phases. --fast additionally selects the e2e-smoke subset unless
-# --e2e-only is also given, in which case the full e2e suite runs.
+# --e2e-only is also given, in which case the full e2e suite runs. --with-gpu-diarization and
+# --with-mutation-tests are STRICT opt-in: never included by --full/--fast, and each also counts
+# as a phase selector on its own (so a bare `--with-mutation-tests` is a valid invocation).
 #
 # Requires: ./opentr.sh start dev (live stack up) for any phase but --frontend-only.
 #
@@ -71,6 +79,9 @@ WITH_GPU_SCALE=false
 NO_OVERLAYS=false
 LIST_OVERLAYS=false
 DRY_RUN=false
+WITH_GPU_DIARIZATION=false
+WITH_MUTATION_TESTS=false
+MUTATION_TEST_MODULE="${MUTATION_TEST_MODULE:-spans}"
 
 usage() {
     cat <<'EOF'
@@ -95,6 +106,18 @@ Overlay flags:
   --dry-run           print the resolved overlay set + the exact opentr.sh command that
                       would run, start nothing
 
+Strict opt-in phases (never included by --full/--fast; each also counts as a phase
+selector on its own):
+  --with-gpu-diarization  the 3 container-only GPU diarization suites
+                          (run-diarization-gpu-tests.sh) — builds a dedicated test
+                          image, several minutes, needs a visible GPU + the
+                          gitignored benchmark/test_audio/*.wav fixtures
+  --with-mutation-tests   a single-module mutation-testing run (run-mutation-tests.sh
+                          --module), default module "spans" (~1-3 min); override with
+                          MUTATION_TEST_MODULE=<module>. Never --all (hours) through
+                          this flag — run scripts/run-mutation-tests.sh --all by hand
+                          for that.
+
 Report and per-phase logs are written to a fresh temp dir, printed at the end.
 Requires the live dev stack up (./opentr.sh start dev) for any phase but
 --frontend-only.
@@ -118,6 +141,8 @@ while [[ $# -gt 0 ]]; do
         --no-overlays)   NO_OVERLAYS=true ;;
         --list-overlays) LIST_OVERLAYS=true ;;
         --dry-run)       DRY_RUN=true ;;
+        --with-gpu-diarization) WITH_GPU_DIARIZATION=true ;;
+        --with-mutation-tests)  WITH_MUTATION_TESTS=true ;;
         -h|--help)       usage; exit 0 ;;
         *) echo -e "${RED}error:${NC} unknown option: $1" >&2; usage; exit "$EXIT_MISUSE" ;;
     esac
@@ -129,7 +154,7 @@ if $E2E_ONLY_EXPLICIT; then
     E2E_SMOKE=false
 fi
 
-if ! $RUN_BACKEND && ! $RUN_E2E && ! $RUN_FRONTEND; then
+if ! $RUN_BACKEND && ! $RUN_E2E && ! $RUN_FRONTEND && ! $WITH_GPU_DIARIZATION && ! $WITH_MUTATION_TESTS; then
     if $LIST_OVERLAYS || $DRY_RUN; then
         echo -e "${YELLOW}==>${NC} no phase flag given — resolving overlays as if --full were passed"
         RUN_BACKEND=true; RUN_E2E=true; RUN_FRONTEND=true
@@ -157,6 +182,14 @@ if $LIST_OVERLAYS || $DRY_RUN; then
         echo "  --with-gpu-scale: project GPU count = $(project_gpu_count)" \
              "(GPU_DEVICE_ID vs GPU_SCALE_DEVICE_ID distinct values in .env)"
     fi
+    if $WITH_GPU_DIARIZATION; then
+        echo ""
+        echo "  --with-gpu-diarization: would run scripts/run-diarization-gpu-tests.sh"
+    fi
+    if $WITH_MUTATION_TESTS; then
+        echo ""
+        echo "  --with-mutation-tests: would run scripts/run-mutation-tests.sh --module $MUTATION_TEST_MODULE"
+    fi
     echo ""
     echo "(--list-overlays/--dry-run: nothing started)"
     exit 0
@@ -165,7 +198,7 @@ fi
 # --------------------------------------------------------------------------- preconditions
 resolve_needed_overlays
 
-if [[ "$RUN_BACKEND" == "true" || "$RUN_E2E" == "true" ]]; then
+if [[ "$RUN_BACKEND" == "true" || "$RUN_E2E" == "true" || "$WITH_GPU_DIARIZATION" == "true" || "$WITH_MUTATION_TESTS" == "true" ]]; then
     if ! curl -sf http://localhost:5174/health >/dev/null 2>&1; then
         echo -e "${RED}error:${NC} dev backend not reachable at :5174 — run ./opentr.sh start dev first" >&2
         exit "$EXIT_PRECONDITION"
@@ -289,6 +322,16 @@ fi
 if [[ "$RUN_FRONTEND" == "true" ]]; then
     run_phase "frontend (frontend-check.sh --check-only)" \
         "$REPO_ROOT/scripts/frontend-check.sh" --no-claude --check-only
+fi
+
+if $WITH_GPU_DIARIZATION; then
+    run_phase "GPU diarization suites (run-diarization-gpu-tests.sh)" \
+        "$REPO_ROOT/scripts/run-diarization-gpu-tests.sh"
+fi
+
+if $WITH_MUTATION_TESTS; then
+    run_phase "mutation testing ($MUTATION_TEST_MODULE, run-mutation-tests.sh)" \
+        "$REPO_ROOT/scripts/run-mutation-tests.sh" --module "$MUTATION_TEST_MODULE"
 fi
 
 echo ""

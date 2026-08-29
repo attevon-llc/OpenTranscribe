@@ -36,7 +36,20 @@ this file is for.
   stack's actual compose project from a running `postgres` container's label, not
   `basename $REPO_ROOT` — the latter breaks when this script runs from a git worktree
   (`.claude/worktrees/<name>`), since `$REPO_ROOT` then resolves to the worktree's own
-  directory name, not the main checkout's.
+  directory name, not the main checkout's. **Two more phases, both STRICT opt-in — never
+  included by `--full`/`--fast`, each also a valid phase selector on its own**:
+  `--with-gpu-diarization` wraps `run-diarization-gpu-tests.sh` (see its own entry below —
+  builds a dedicated test image, several minutes, needs a visible GPU); `--with-mutation-tests`
+  runs a single-module `run-mutation-tests.sh --module` pass (default module `spans`, override
+  with `MUTATION_TEST_MODULE=<module>`; never `--all` through this flag — that's hours, run it
+  by hand). Both need the live stack's `.env` and (for GPU diarization) the gitignored
+  `benchmark/test_audio/*.wav` fixtures and a populated `MODEL_CACHE_DIR` — none of the three
+  are checked into a fresh git worktree, only symlinked in by hand alongside `.env`/
+  `backend/venv`; a worktree missing any of them fails the wrapped script's own precondition
+  check (not a bug in the flag itself). Verified live end-to-end on this host by pinning the
+  GPU diarization run at a **non-default** card via the wrapped script's own
+  `DIARIZATION_PROBE_GPU` env var (`DIARIZATION_PROBE_GPU=2 ./scripts/run-dev-tests.sh
+  --with-gpu-diarization`) — real image build, real container, real GPU, 11/11 passed.
 - **Pre-merge gate** — `run-integration-tests.sh` (`--coverage --e2e-smoke --search-quality --cleanup`).
   Runs the ungated suite, then all `RUN_*`-gated security suites twice (FIPS off, then `FIPS_MODE=true`),
   then `-m integration`, then `-m gpu`, then **model-vs-schema drift**

@@ -107,6 +107,30 @@ flag not in that table is either intentionally out of scope (documented inline w
 e.g. `--with-pki` needs the prod/nginx overlay, not the dev stack this script targets) or a gap a
 unit test (`test_run_dev_tests_overlay_coverage.py`) will fail the build over.
 
+#### Strict opt-in phases
+
+Two more flags, **never** included by `--full`/`--fast` — each is also a valid phase selector
+on its own (a bare `--with-mutation-tests` is a complete invocation):
+
+```bash
+./scripts/run-dev-tests.sh --with-gpu-diarization   # the 3 container-only GPU diarization
+                                                     # suites (run-diarization-gpu-tests.sh);
+                                                     # builds a dedicated test image, several
+                                                     # minutes, needs a visible GPU
+./scripts/run-dev-tests.sh --with-mutation-tests    # a single-module mutation-testing run
+                                                     # (default module: spans, ~1-3 min);
+                                                     # override with MUTATION_TEST_MODULE=<module>
+```
+
+Never `--all` (hours) through either flag — run `scripts/run-mutation-tests.sh --all` by hand
+for that. Both need the live stack's `.env`, and GPU diarization additionally needs the
+gitignored `benchmark/test_audio/*.wav` fixtures and a populated `MODEL_CACHE_DIR` — none of
+these are checked into git, so a fresh worktree needs them symlinked in (same as `.env` and
+`backend/venv`) or the wrapped script's own precondition check fails cleanly rather than
+silently measuring nothing. To target a non-default GPU (e.g. this project's card is already
+busy), the wrapped script honors `DIARIZATION_PROBE_GPU`:
+`DIARIZATION_PROBE_GPU=2 ./scripts/run-dev-tests.sh --with-gpu-diarization`.
+
 Per-phase logs are written to a fresh `/tmp/ot-run-dev-tests.*` directory and the path is
 printed in the final report. Exit codes match `scripts/release.sh`'s convention: `0` pass, `1`
 gate failed, `2` misuse, `3` precondition unmet (e.g. the dev stack isn't up).

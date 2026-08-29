@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`scripts/run-dev-tests.sh` overlay orchestration** (#630). Auth/LLM test overlays
+  (`--with-mock-llm`, `--with-keycloak-test`, `--with-ldap-test`) now start/stop automatically
+  based on which phase is requested, generalizing the mock-llm-only auto-start pattern to a
+  declarative table (`scripts/lib/dev-test-overlays.sh`) with per-overlay DB-config
+  reconciliation (`auth_config.oidc_enabled`/`ldap_enabled` restored to their prior value on
+  exit) and an honesty test enumerating every `opentr.sh --with-*` flag as either
+  managed-or-explicitly-exempt-with-a-reason. Fixed a real bug found while verifying this live
+  from a git worktree: `compose_project_name()` fell back to `basename $REPO_ROOT`, which
+  resolves to the *worktree's own directory name* rather than the main checkout's, so the
+  live-stack preflight silently found no containers at all under this repo's own standard
+  worktree workflow — now detects the actual running project via the `postgres` container's
+  compose-project label. Also fixed `test_gpu_scale_smoke_live.py`'s
+  `test_gpu_scaled_worker_is_registered_with_expected_concurrency`, which failed
+  unconditionally on any single-GPU host instead of skipping (it checked only that Flower
+  itself was reachable, not that the deployment was actually started with `--gpu-scale`) — the
+  exact "auto-skip the multi-GPU portion on one GPU" behavior this effort set out to provide.
+- **Signature-scoped automatic test-data cleanup** (#629). `scripts/cleanup-test-data.py`
+  sweeps orphaned e2e-owned media, collections, tags, watch sources, speaker profiles, and chat
+  conversations left behind by interrupted test runs — Tier A (unambiguous signature, e.g.
+  `e2e-owned-<8hex>.<ext>`) auto-executes via `--execute-unambiguous`, Tier B/C stay dry-run/
+  report-only. Media deletion goes through the HTTP purge API, never raw SQL, since MinIO
+  objects/OpenSearch docs are unreachable from Postgres and child-row FKs are
+  `ON DELETE NO ACTION`. `scripts/testrun-registry.sh` adds a flock-based liveness marker so a
+  sweep never deletes rows from a run still in flight, even after a crash. Wired as an
+  unconditional Phase-0 step in `run-integration-tests.sh`/`e2e/run-e2e.sh`
+  (`OT_SKIP_TEST_DATA_SWEEP=1` escape hatch). Verified live: correctly identified and removed 2
+  real orphaned media files in the dev database end-to-end.
 - **Release-rehearsal coverage for `opentr.sh backup`/`restore` and `opentranscribe.sh
   update --rollback`** (#598). `test-upgrade.sh` proved the forward upgrade path but never
   exercised the documented recovery path — exactly what an operator reaches for in a real
@@ -226,6 +253,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Concurrent-session cap could never shrink an existing backlog back down** (#632). The
+  `terminate_oldest` policy revoked exactly one session per login while minting exactly one —
+  a conservation law once the active count already sat at or above the configured cap, proven
+  via 6 days of live DB data (creates == revokes exactly, count pinned at 1342 regardless of
+  the configured limit). Two further defects found and fixed in the same pass: a race with no
+  gap lock (concurrent logins could each mint with zero eviction, netting the count *up*), and
+  five other token-minting paths (OIDC, SAML, PKI, proxy, MFA enrollment, session reissue)
+  enforcing no cap at all — only the interactive login endpoint did. `enforce_session_ceiling()`
+  expresses the fix as a postcondition ("keep the newest N active sessions") rather than an
+  action ("revoke one"), closing the race in a single parameterized
+  `UPDATE ... RETURNING`. A new `session.cap_sweep` nightly beat task backstops every user as
+  defence in depth (an admin lowering the cap doesn't retroactively shrink sessions minted
+  under a higher one).
+- **Reranker/embedding model loaders had no offline guard** (#631, partial — the underlying
+  10h46m Celery prefork-pool wedge that motivated this investigation self-healed before live
+  diagnosis was possible and remains open as a root-cause investigation). `get_reranker()` and
+  three sibling HuggingFace loaders (`_get_sentence_transformer`, `SpeakerDiarizer.load_model`,
+  `speaker_attribute_service.load_models`) had no `local_files_only` guard, causing ~23-30s
+  DNS-retry storms against huggingface.co on every cold start when the model cache is warm but
+  the network isn't reachable. Also replaced `celery inspect ping` with a real
+  child-process-existence check (`celery_pool_healthcheck.py`) for the 5 prefork-pool worker
+  queues — `inspect ping` is answered by the Celery MainProcess regardless of whether the
+  forked child pool is alive, so it structurally cannot detect a wedged pool. Closed a real
+  FK-violation race in `chat/service.py._persist_reply` when a conversation is deleted
+  mid-stream. Verified live: rebuilt the affected containers from the merged code and confirmed
+  Docker's healthcheck subsystem actually reports the 5 workers `healthy` under the new check.
 - **`--with-pki` enabled unauthenticated admin impersonation from the LAN** (#620). The
   fixture's trusted-proxy default was `127.0.0.1/32,172.16.0.0/12,192.168.0.0/16`, written into
   the stack as **both** `RATE_LIMIT_TRUSTED_PROXIES` and `PKI_TRUSTED_PROXIES` — and those are

@@ -42,6 +42,11 @@ _retry_after: dict[str, float] = {}
 # ready recovers on its own within a few chats.
 RETRY_COOLDOWN_S = 300.0
 
+# The model is ~90MB and served from a local disk cache in the normal case; this
+# bounds a stalled Hub round trip (DNS retry storms observed against
+# huggingface.co, ~23-30s per retry cycle) rather than the load itself.
+_LOAD_TIMEOUT_S = 30.0
+
 #: The cross-encoder is ``ms-marco-MiniLM-L-6-v2`` — English MS MARCO. Reranking a
 #: predominantly non-English pool with it does not merely fail to help: it REPLACES
 #: the retrieval scores (``hit.score = float(score)``) with the output of a model
@@ -117,7 +122,18 @@ def get_reranker(model_name: str = C.CHAT_RERANKER_MODEL) -> Any:
             # model-less deployments can still import this module.
             from sentence_transformers import CrossEncoder
 
-            model = CrossEncoder(model_name, device="cpu", max_length=512)
+            from app.utils.hf_hub_offline import hf_offline_requested
+            from app.utils.hf_hub_offline import load_with_timeout
+
+            kwargs: dict[str, Any] = {"device": "cpu", "max_length": 512}
+            if hf_offline_requested():
+                kwargs["local_files_only"] = True
+
+            model = load_with_timeout(
+                lambda: CrossEncoder(model_name, **kwargs),
+                timeout=_LOAD_TIMEOUT_S,
+                label=f"Chat reranker ({model_name})",
+            )
             _rerankers[model_name] = model
             logger.info(f"Chat reranker loaded on CPU: {model_name}")
         except Exception as exc:  # noqa: BLE001

@@ -92,13 +92,29 @@ def _speaker_org_filter_clauses(organization_id: int | None) -> list[dict[str, A
     return org_filter_clauses(organization_id)
 
 
+# Bounds a stalled Hub round trip (~80MB model, normally served from local disk
+# cache) rather than the load itself — see app/utils/hf_hub_offline.py.
+_SENTENCE_TRANSFORMER_LOAD_TIMEOUT_S = 30.0
+
+
 def _get_sentence_transformer():
     """Lazy singleton for SentenceTransformer model."""
     global _sentence_transformer_model
     if _sentence_transformer_model is None:
         from sentence_transformers import SentenceTransformer
 
-        _sentence_transformer_model = SentenceTransformer("all-MiniLM-L6-v2")
+        from app.utils.hf_hub_offline import hf_offline_requested
+        from app.utils.hf_hub_offline import load_with_timeout
+
+        kwargs: dict[str, Any] = {}
+        if hf_offline_requested():
+            kwargs["local_files_only"] = True
+
+        _sentence_transformer_model = load_with_timeout(
+            lambda: SentenceTransformer("all-MiniLM-L6-v2", **kwargs),
+            timeout=_SENTENCE_TRANSFORMER_LOAD_TIMEOUT_S,
+            label="OpenSearch query-embedding SentenceTransformer",
+        )
     return _sentence_transformer_model
 
 

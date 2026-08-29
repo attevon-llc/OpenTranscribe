@@ -2656,44 +2656,82 @@ def _persist_reply(
     is_first_exchange: bool,
     question: str,
 ) -> str | None:
-    """Write the assistant message and bump the conversation. Returns a new title, if set."""
+    """Write the assistant message and bump the conversation. Returns a new title, if set.
+
+    A conversation can legitimately vanish while a turn is still streaming — the
+    same user deleting it from another tab, or (in tests) a teardown fixture
+    deleting it the moment the test that created it finishes, without waiting
+    for a still-in-flight SSE stream to settle. Neither is a bug in the
+    persistence path; a stream that outlives the conversation it writes to is
+    an ordinary consequence of streaming being concurrent with everything else
+    a user can do. So this treats "conversation is gone" as an expected abort,
+    not an error: it checks first (the common case, avoiding a doomed INSERT
+    and its full-transaction rollback entirely) and still degrades gracefully
+    if the conversation is deleted in the narrow window between that check and
+    commit (the `IntegrityError` safety net below) — never let either surface
+    as the unhandled `chat_message_conversation_id_fkey` ForeignKeyViolation
+    the caller would otherwise log as an unexplained error.
+    """
     import uuid as uuid_pkg
     from datetime import UTC
     from datetime import datetime
+
+    from sqlalchemy.exc import IntegrityError
 
     from app.db.session_utils import session_scope
     from app.models.chat import ChatConversation
     from app.models.chat import ChatMessage
 
     title: str | None = None
-    with session_scope() as db:
-        message = ChatMessage(
-            uuid=uuid_pkg.UUID(assistant_message_uuid),
-            conversation_id=conversation_id,
-            role=ROLE_ASSISTANT,
-            content=turn.answer,
-            reasoning_content=turn.reasoning or None,
-            citations=used_citations or None,
-            msg_metadata=turn.metadata or None,
-            prompt_tokens=turn.prompt_tokens,
-            completion_tokens=turn.completion_tokens,
-            total_tokens=total_tokens,
-            tokens_estimated=turn.tokens_estimated,
-            provider=str(llm.config.provider.value),
-            model=str(llm.config.model),
-            status=turn.status(),
-            error=turn.error,
-        )
-        db.add(message)
+    try:
+        with session_scope() as db:
+            conversation = (
+                db.query(ChatConversation).filter(ChatConversation.id == conversation_id).first()
+            )
+            if conversation is None:
+                logger.info(
+                    "Abandoning persistence of chat reply %s: conversation %s no longer "
+                    "exists (deleted while the turn was streaming)",
+                    assistant_message_uuid,
+                    conversation_id,
+                )
+                return None
 
-        conversation = (
-            db.query(ChatConversation).filter(ChatConversation.id == conversation_id).first()
-        )
-        if conversation is not None:
+            message = ChatMessage(
+                uuid=uuid_pkg.UUID(assistant_message_uuid),
+                conversation_id=conversation_id,
+                role=ROLE_ASSISTANT,
+                content=turn.answer,
+                reasoning_content=turn.reasoning or None,
+                citations=used_citations or None,
+                msg_metadata=turn.metadata or None,
+                prompt_tokens=turn.prompt_tokens,
+                completion_tokens=turn.completion_tokens,
+                total_tokens=total_tokens,
+                tokens_estimated=turn.tokens_estimated,
+                provider=str(llm.config.provider.value),
+                model=str(llm.config.model),
+                status=turn.status(),
+                error=turn.error,
+            )
+            db.add(message)
+
             conversation.last_message_at = datetime.now(UTC)
             if is_first_exchange and not conversation.title:
                 title = _title_from(question)
                 conversation.title = title
+    except IntegrityError as exc:
+        # The existence check above closes most of the window, but not a delete
+        # landing between that SELECT and this transaction's commit. Narrowed to
+        # IntegrityError specifically (not a bare except) so a genuinely
+        # unexpected persistence failure still surfaces loudly to the caller.
+        logger.info(
+            "Abandoning persistence of chat reply %s: conversation %s was deleted mid-persist (%s)",
+            assistant_message_uuid,
+            conversation_id,
+            exc.__class__.__name__,
+        )
+        return None
     return title
 
 

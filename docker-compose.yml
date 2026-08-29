@@ -386,7 +386,11 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d media-downloader@$$HOSTNAME"]
+      # prefork pool (default, no --pool= flag): `inspect ping` is answered by the
+      # MainProcess regardless of whether the forked child pool is alive, so it
+      # cannot detect a wedged pool. Prove a child process actually exists instead
+      # (see backend/scripts/celery_pool_healthcheck.py for the incident this fixes).
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py media-downloader@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -450,7 +454,10 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d cpu-processor@$$HOSTNAME"]
+      # prefork pool: `inspect ping` answers from MainProcess even with every forked
+      # child dead — this is the queue hit by the 10h46m wedge incident. Prove a
+      # child process actually exists (backend/scripts/celery_pool_healthcheck.py).
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py cpu-processor@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -562,7 +569,8 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d cloud-asr@$$HOSTNAME"]
+      # prefork pool: see the cpu-processor healthcheck comment above.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py cloud-asr@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -603,7 +611,8 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d ai-nlp@$$HOSTNAME"]
+      # prefork pool: see the cpu-processor healthcheck comment above.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py ai-nlp@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -660,7 +669,8 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
     healthcheck:
-      test: ["CMD-SHELL", "celery -A app.core.celery inspect ping -d search-indexer@$$HOSTNAME"]
+      # prefork pool: see the cpu-processor healthcheck comment above.
+      test: ["CMD-SHELL", "python3 scripts/celery_pool_healthcheck.py search-indexer@$$HOSTNAME"]
       interval: 30s
       timeout: 10s
       retries: 3

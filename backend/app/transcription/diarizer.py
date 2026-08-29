@@ -28,6 +28,12 @@ _BATCH_SIZE_RETRY_SEQUENCE = [16, 8, 4, 2, 1]
 PYANNOTE_V4_MODEL = "pyannote/speaker-diarization-community-1"
 PYANNOTE_V3_FALLBACK = "pyannote/speaker-diarization-3.1"
 
+# Bounds a stalled Hub round trip (DNS retry storms observed against
+# huggingface.co, ~23-30s per retry cycle) rather than the pipeline load itself,
+# which also builds the model graph on CPU before any GPU move — larger budget
+# than the reranker/embedding models. See app/utils/hf_hub_offline.py.
+_PIPELINE_LOAD_TIMEOUT_S = 60.0
+
 
 class SpeakerDiarizer:
     """PyAnnote v4 speaker diarization."""
@@ -45,12 +51,20 @@ class SpeakerDiarizer:
         """Load the PyAnnote diarization pipeline."""
         from pyannote.audio import Pipeline
 
+        from app.utils.hf_hub_offline import force_offline_if_requested
+        from app.utils.hf_hub_offline import load_with_timeout
+
         step_start = time.perf_counter()
 
         logger.info(f"Loading PyAnnote v4 pipeline: {PYANNOTE_V4_MODEL}")
 
         try:
-            self._pipeline = Pipeline.from_pretrained(PYANNOTE_V4_MODEL, token=self.config.hf_token)
+            with force_offline_if_requested():
+                self._pipeline = load_with_timeout(
+                    lambda: Pipeline.from_pretrained(PYANNOTE_V4_MODEL, token=self.config.hf_token),
+                    timeout=_PIPELINE_LOAD_TIMEOUT_S,
+                    label=f"PyAnnote pipeline ({PYANNOTE_V4_MODEL})",
+                )
             if self._pipeline is None:
                 import os
 
@@ -79,9 +93,14 @@ class SpeakerDiarizer:
                 f"Trying fallback: {PYANNOTE_V3_FALLBACK}"
             )
             try:
-                self._pipeline = Pipeline.from_pretrained(
-                    PYANNOTE_V3_FALLBACK, token=self.config.hf_token
-                )
+                with force_offline_if_requested():
+                    self._pipeline = load_with_timeout(
+                        lambda: Pipeline.from_pretrained(
+                            PYANNOTE_V3_FALLBACK, token=self.config.hf_token
+                        ),
+                        timeout=_PIPELINE_LOAD_TIMEOUT_S,
+                        label=f"PyAnnote fallback pipeline ({PYANNOTE_V3_FALLBACK})",
+                    )
                 if self._pipeline is None:
                     import os
 

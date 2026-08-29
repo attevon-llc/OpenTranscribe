@@ -52,6 +52,41 @@ pytestmark = pytest.mark.gallery
 # stack instead (issue #431).
 
 
+def _click_select_all_and_verify(page: Page) -> None:
+    """Click `.select-all-btn` and confirm it actually selected something.
+
+    `fetchFiles()` (+page.svelte) calls `resetPagination()` — clearing `files` to
+    `[]` — on EVERY refetch, and a refetch can be triggered mid-test by another
+    concurrent client's upload/delete (websocket-driven refresh) on this shared dev
+    stack. Under the full parallel suite (3 xdist workers, all uploading/deleting
+    concurrently) this window reopens often enough that a single click-then-check
+    is not reliable: `.select-all-btn` silently selects nothing if clicked while
+    `files` is momentarily empty (`stores/gallery.ts`'s `selectAllFiles()` reads
+    `size === length`, and 0 === 0 selects nothing). Retry the click itself, not
+    just the read — a stale click's result does not un-stale by waiting longer.
+    """
+    delete_btn = page.locator(".delete-btn")
+    for attempt in range(5):
+        page.click(".select-all-btn")
+        # Kept (issue #431): callers read the resulting selection through
+        # `is_disabled()` / `text_content()` snapshots, which cannot auto-wait for
+        # the selection store to propagate to the toolbar.
+        page.wait_for_timeout(500)
+        text = delete_btn.text_content() or ""
+        numbers = re.findall(r"\d+", text)
+        if numbers and int(numbers[0]) > 0:
+            return
+        if attempt < 4:
+            # Selected nothing — the file list was momentarily empty. Undo the
+            # (no-op) toggle state and wait for a real render before retrying.
+            page.wait_for_timeout(500)
+    text = delete_btn.text_content() or ""
+    raise AssertionError(
+        f"select-all selected nothing after 5 attempts (delete button: {text!r}) — "
+        f"the gallery's file list kept being empty at click time"
+    )
+
+
 def _assert_zip_of(download: Any, extension: str) -> None:
     """Assert a gallery export download is a ZIP whose entries match `extension`.
 
@@ -292,21 +327,11 @@ class TestSelectionModeButtons:
         """Clicking Select All should select all files, clicking again deselects."""
         btn = self.page.locator(".select-all-btn")
 
-        # Click to select all
-        btn.click()
-        # Kept (issue #431): the label flip is a local Svelte re-render with no network
-        # activity, and `text_content()` below is a one-shot read that cannot auto-wait.
-        self.page.wait_for_timeout(500)
+        # Click to select all — see `_click_select_all_and_verify` for why this
+        # retries rather than a bare click-then-check.
+        _click_select_all_and_verify(self.page)
         text_after_select = btn.text_content() or ""
         assert "deselect" in text_after_select.lower() or "all" in text_after_select.lower()
-
-        # Delete button should now show a count > 0
-        delete_btn = self.page.locator(".delete-btn")
-        delete_text = delete_btn.text_content() or ""
-        numbers = re.findall(r"\d+", delete_text)
-        assert numbers and int(numbers[0]) > 0, (
-            f"Delete button should show non-zero count, got: {delete_text}"
-        )
 
         # Click again to deselect
         btn.click()
@@ -511,26 +536,8 @@ class TestBulkActions:
         yield
 
     def _select_all_files(self) -> None:
-        """Select all files in the gallery."""
-        self.page.click(".select-all-btn")
-        # Kept (issue #431): callers read the resulting selection through
-        # `is_disabled()` / `text_content()` snapshots, which cannot auto-wait for the
-        # selection store to propagate to the toolbar.
-        self.page.wait_for_timeout(500)
-        # `.select-all-btn` silently selects NOTHING if clicked before the file list
-        # has loaded (stores/gallery.ts's selectAllFiles() reads `allSelected =
-        # selectedFiles.size === files.length`, and 0 === 0 is true, taking the
-        # deselect branch) — the every-caller-of-this-helper class of bug (issue
-        # #431): a wrong precondition presented as a downstream, harder-to-diagnose
-        # failure (a 30s download timeout, a disabled menu item) instead of failing
-        # here with a clear reason. Same count-reading convention as
-        # test_delete_count_updates_with_selection.
-        text = self.page.locator(".delete-btn").text_content() or ""
-        numbers = re.findall(r"\d+", text)
-        assert numbers and int(numbers[0]) > 0, (
-            f"select-all selected nothing (delete button shows: {text!r}) — "
-            f"gallery_page's file-list fetch may not have landed yet"
-        )
+        """Select all files in the gallery — see `_click_select_all_and_verify`."""
+        _click_select_all_and_verify(self.page)
 
     def test_process_reprocess_enabled_with_selection(self) -> None:
         """Reprocess should be enabled when completed files are selected."""

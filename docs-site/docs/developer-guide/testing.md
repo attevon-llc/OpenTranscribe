@@ -109,7 +109,7 @@ unit test (`test_run_dev_tests_overlay_coverage.py`) will fail the build over.
 
 #### Strict opt-in phases
 
-Two more flags, **never** included by `--full`/`--fast` — each is also a valid phase selector
+Three more flags, **never** included by `--full`/`--fast` — each is also a valid phase selector
 on its own (a bare `--with-mutation-tests` is a complete invocation):
 
 ```bash
@@ -120,16 +120,33 @@ on its own (a bare `--with-mutation-tests` is a complete invocation):
 ./scripts/run-dev-tests.sh --with-mutation-tests    # a single-module mutation-testing run
                                                      # (default module: spans, ~1-3 min);
                                                      # override with MUTATION_TEST_MODULE=<module>
+./scripts/run-dev-tests.sh --with-pipeline-smoke    # the ONLY test that pushes a fixture through
+                                                     # real upload -> ASR/diarization -> search ->
+                                                     # a real local LLM chat answer, start to
+                                                     # finish (tests/e2e/test_full_pipeline_smoke.py)
 ```
 
-Never `--all` (hours) through either flag — run `scripts/run-mutation-tests.sh --all` by hand
-for that. Both need the live stack's `.env`, and GPU diarization additionally needs the
-gitignored `benchmark/test_audio/*.wav` fixtures and a populated `MODEL_CACHE_DIR` — none of
+Never `--all` (hours) through `--with-mutation-tests` — run `scripts/run-mutation-tests.sh --all`
+by hand for that. All three need the live stack's `.env`, and GPU diarization additionally needs
+the gitignored `benchmark/test_audio/*.wav` fixtures and a populated `MODEL_CACHE_DIR` — none of
 these are checked into git, so a fresh worktree needs them symlinked in (same as `.env` and
 `backend/venv`) or the wrapped script's own precondition check fails cleanly rather than
 silently measuring nothing. To target a non-default GPU (e.g. this project's card is already
 busy), the wrapped script honors `DIARIZATION_PROBE_GPU`:
 `DIARIZATION_PROBE_GPU=2 ./scripts/run-dev-tests.sh --with-gpu-diarization`.
+
+**`--with-pipeline-smoke` exists because nothing else in the suite proves the pipeline actually
+works end to end.** Every other e2e test either checks an upload merely *lands* in the backend
+(`test_upload.py`, 30s poll on the file record, never on completion) or drives the UI against a
+file that was *already* `status == "completed"` from an earlier session
+(`test_file_detail_transcript.py`, `test_search.py`). This is the one test that uploads
+`backend/tests/fixtures/media/sample_short.wav` (10s of real speech — not the silent
+`e2e/fixtures/sample_audio.wav` sine tone, which produces zero ASR segments), waits for the real
+pipeline to finish, pulls a word out of the *actual* transcript and confirms search finds it, then
+asks a real local model (not the deterministic `--with-mock-llm`) a real question about the file
+through the real chat UI. It brings up `--with-llm-test` itself if not already running (a real
+GPU-backed vLLM on `LLM_TEST_GPU_DEVICE_ID`, default GPU 2 — several minutes cold, measured ~99s
+once warm) and stops it again on exit if this run was the one that started it.
 
 Per-phase logs are written to a fresh `/tmp/ot-run-dev-tests.*` directory and the path is
 printed in the final report. Exit codes match `scripts/release.sh`'s convention: `0` pass, `1`

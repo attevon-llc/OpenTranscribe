@@ -34,12 +34,17 @@
 #   scripts/run-dev-tests.sh --with-mutation-tests      # + a single-module mutation-testing run
 #                                                        #   (default: spans, ~1-3 min; override
 #                                                        #   with MUTATION_TEST_MODULE=<module>)
+#   scripts/run-dev-tests.sh --with-pipeline-smoke      # + the real upload->ASR/diarize->
+#                                                        #   search->chat live smoke test, against
+#                                                        #   a real local LLM (--with-llm-test);
+#                                                        #   several minutes, needs a visible GPU
 #
 # Mode flags (--full/--fast/--backend-only/--e2e-only/--frontend-only) are composable — pass more
 # than one to union their phases. --fast additionally selects the e2e-smoke subset unless
-# --e2e-only is also given, in which case the full e2e suite runs. --with-gpu-diarization and
-# --with-mutation-tests are STRICT opt-in: never included by --full/--fast, and each also counts
-# as a phase selector on its own (so a bare `--with-mutation-tests` is a valid invocation).
+# --e2e-only is also given, in which case the full e2e suite runs. --with-gpu-diarization,
+# --with-mutation-tests, and --with-pipeline-smoke are STRICT opt-in: never included by
+# --full/--fast, and each also counts as a phase selector on its own (so a bare
+# `--with-pipeline-smoke` is a valid invocation).
 #
 # Requires: ./opentr.sh start dev (live stack up) for any phase but --frontend-only.
 #
@@ -82,6 +87,7 @@ DRY_RUN=false
 WITH_GPU_DIARIZATION=false
 WITH_MUTATION_TESTS=false
 MUTATION_TEST_MODULE="${MUTATION_TEST_MODULE:-spans}"
+WITH_PIPELINE_SMOKE=false
 
 usage() {
     cat <<'EOF'
@@ -117,6 +123,16 @@ selector on its own):
                           MUTATION_TEST_MODULE=<module>. Never --all (hours) through
                           this flag — run scripts/run-mutation-tests.sh --all by hand
                           for that.
+  --with-pipeline-smoke   the ONLY test that pushes a real fixture through upload ->
+                          real WhisperX/diarization -> search -> a real local LLM
+                          chat answer, start to finish, and asserts on the result
+                          (tests/e2e/test_full_pipeline_smoke.py). Brings up
+                          --with-llm-test itself if not already running (a real
+                          GPU-backed model on LLM_TEST_GPU_DEVICE_ID, default GPU 2
+                          — several minutes to become healthy the first time it
+                          needs to download) and stops it again on exit if this run
+                          was the one that started it (a container --with-llm-test
+                          was already running before this run is left alone).
 
 Report and per-phase logs are written to a fresh temp dir, printed at the end.
 Requires the live dev stack up (./opentr.sh start dev) for any phase but
@@ -143,6 +159,7 @@ while [[ $# -gt 0 ]]; do
         --dry-run)       DRY_RUN=true ;;
         --with-gpu-diarization) WITH_GPU_DIARIZATION=true ;;
         --with-mutation-tests)  WITH_MUTATION_TESTS=true ;;
+        --with-pipeline-smoke)  WITH_PIPELINE_SMOKE=true ;;
         -h|--help)       usage; exit 0 ;;
         *) echo -e "${RED}error:${NC} unknown option: $1" >&2; usage; exit "$EXIT_MISUSE" ;;
     esac
@@ -154,7 +171,7 @@ if $E2E_ONLY_EXPLICIT; then
     E2E_SMOKE=false
 fi
 
-if ! $RUN_BACKEND && ! $RUN_E2E && ! $RUN_FRONTEND && ! $WITH_GPU_DIARIZATION && ! $WITH_MUTATION_TESTS; then
+if ! $RUN_BACKEND && ! $RUN_E2E && ! $RUN_FRONTEND && ! $WITH_GPU_DIARIZATION && ! $WITH_MUTATION_TESTS && ! $WITH_PIPELINE_SMOKE; then
     if $LIST_OVERLAYS || $DRY_RUN; then
         echo -e "${YELLOW}==>${NC} no phase flag given — resolving overlays as if --full were passed"
         RUN_BACKEND=true; RUN_E2E=true; RUN_FRONTEND=true
@@ -190,6 +207,11 @@ if $LIST_OVERLAYS || $DRY_RUN; then
         echo ""
         echo "  --with-mutation-tests: would run scripts/run-mutation-tests.sh --module $MUTATION_TEST_MODULE"
     fi
+    if $WITH_PIPELINE_SMOKE; then
+        echo ""
+        echo "  --with-pipeline-smoke: would ensure --with-llm-test is up, then run" \
+             "RUN_PIPELINE_SMOKE=1 against tests/e2e/test_full_pipeline_smoke.py"
+    fi
     echo ""
     echo "(--list-overlays/--dry-run: nothing started)"
     exit 0
@@ -198,7 +220,7 @@ fi
 # --------------------------------------------------------------------------- preconditions
 resolve_needed_overlays
 
-if [[ "$RUN_BACKEND" == "true" || "$RUN_E2E" == "true" || "$WITH_GPU_DIARIZATION" == "true" || "$WITH_MUTATION_TESTS" == "true" ]]; then
+if [[ "$RUN_BACKEND" == "true" || "$RUN_E2E" == "true" || "$WITH_GPU_DIARIZATION" == "true" || "$WITH_MUTATION_TESTS" == "true" || "$WITH_PIPELINE_SMOKE" == "true" ]]; then
     if ! curl -sf http://localhost:5174/health >/dev/null 2>&1; then
         echo -e "${RED}error:${NC} dev backend not reachable at :5174 — run ./opentr.sh start dev first" >&2
         exit "$EXIT_PRECONDITION"
@@ -239,7 +261,7 @@ sys.exit(2)
 
     setup_overlays
 fi
-if [[ "$RUN_E2E" == "true" && "$E2E_SMOKE" == "false" ]]; then
+if [[ ( "$RUN_E2E" == "true" && "$E2E_SMOKE" == "false" ) || "$WITH_PIPELINE_SMOKE" == "true" ]]; then
     if ! curl -sf http://localhost:5173 >/dev/null 2>&1; then
         echo -e "${RED}error:${NC} dev frontend not reachable at :5173 — run ./opentr.sh start dev first" >&2
         exit "$EXIT_PRECONDITION"
@@ -270,6 +292,40 @@ if $WITH_GPU_SCALE; then
         echo -e "  ${YELLOW}NOTE:${NC} this run does not revert the --gpu-scale topology automatically —" \
              "run './opentr.sh start dev' (no --gpu-scale) afterward to drop back to the single default worker."
     fi
+fi
+
+# --with-pipeline-smoke: explicit opt-in only, reserves a real GPU (LLM_TEST_GPU_DEVICE_ID,
+# default 2 — an idle secondary card, never this project's own GPU 1). Same "bring it up if
+# not already there" shape as --with-gpu-scale above, but unlike that one this container is
+# cheap to tear back down, so it does — only if THIS run was the one that started it.
+LLM_TEST_STARTED_BY_US=false
+if $WITH_PIPELINE_SMOKE; then
+    LLM_TEST_PORT="${LLM_TEST_PORT:-5195}"
+    LLM_TEST_CONTAINER="$(overlay_container_name llm-test-vllm)"
+    if [[ -n "$LLM_TEST_CONTAINER" ]]; then
+        echo -e "${YELLOW}==>${NC} --with-pipeline-smoke: llm-test-vllm already up ($LLM_TEST_CONTAINER) — leaving it"
+    else
+        echo -e "${YELLOW}==>${NC} --with-pipeline-smoke: bringing up --with-llm-test (real GPU-backed model," \
+             "can take several minutes on a cold model download)"
+        if ! "$REPO_ROOT/opentr.sh" start dev --with-llm-test >/dev/null 2>&1; then
+            echo -e "${RED}error:${NC} failed to bring up --with-llm-test — run" \
+                 "'./opentr.sh start dev --with-llm-test' manually to see why" >&2
+            exit "$EXIT_PRECONDITION"
+        fi
+        LLM_TEST_STARTED_BY_US=true
+        echo -e "${YELLOW}==>${NC} waiting for the vLLM OpenAI-compatible endpoint on :$LLM_TEST_PORT..."
+        LLM_TEST_DEADLINE=$(( $(date +%s) + 600 ))
+        until curl -sf "http://localhost:$LLM_TEST_PORT/v1/models" >/dev/null 2>&1; do
+            if [[ $(date +%s) -ge $LLM_TEST_DEADLINE ]]; then
+                echo -e "${RED}error:${NC} llm-test-vllm did not become healthy within 10 min — check" \
+                     "'./opentr.sh logs llm-test-vllm'" >&2
+                exit "$EXIT_PRECONDITION"
+            fi
+            sleep 5
+        done
+        echo -e "${GREEN}==>${NC} llm-test-vllm is healthy"
+    fi
+    export RUN_PIPELINE_SMOKE=1
 fi
 
 declare -a PHASE_NAMES=()
@@ -332,6 +388,16 @@ fi
 if $WITH_MUTATION_TESTS; then
     run_phase "mutation testing ($MUTATION_TEST_MODULE, run-mutation-tests.sh)" \
         "$REPO_ROOT/scripts/run-mutation-tests.sh" --module "$MUTATION_TEST_MODULE"
+fi
+
+if $WITH_PIPELINE_SMOKE; then
+    run_phase "pipeline smoke (upload->ASR/diarize->search->real-LLM chat)" \
+        "$REPO_ROOT/scripts/e2e/run-e2e.sh" backend/tests/e2e/test_full_pipeline_smoke.py -v
+fi
+
+if $LLM_TEST_STARTED_BY_US; then
+    echo -e "${YELLOW}==>${NC} --with-pipeline-smoke: stopping llm-test-vllm (this run started it)"
+    docker stop "$(overlay_container_name llm-test-vllm)" >/dev/null 2>&1 || true
 fi
 
 echo ""

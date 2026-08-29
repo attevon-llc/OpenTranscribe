@@ -32,6 +32,7 @@ import subprocess
 import sys
 import time
 import uuid
+import warnings
 from collections.abc import Callable
 from collections.abc import Iterator
 from pathlib import Path
@@ -341,7 +342,17 @@ def login_page(page: Page, base_url: str):
 
 @pytest.fixture
 def authenticated_page(page: Page, base_url: str):
-    """Return a page that's already logged in as admin."""
+    """Return a page that's already logged in as admin.
+
+    THE volume driver for issue #632's session backlog (~200 admin sessions per
+    full ``run-dev-tests.sh --full`` run, measured 2026-08-28) — every test that
+    uses this fixture logs in fresh and never logged back out. Logout at teardown
+    (best-effort: a network hiccup here must not fail a test that already passed)
+    closes that. Tests with a genuine need to reuse one login across many cases
+    should prefer ``shared_auth_state``/``gallery_page`` instead — see that
+    fixture's docstring — but migrating every existing ``authenticated_page`` user
+    is a separate, larger change and out of scope here.
+    """
     page.goto(base_url)
     page.wait_for_selector("#email", timeout=10000)
 
@@ -357,7 +368,15 @@ def authenticated_page(page: Page, base_url: str):
     # Wait for page to be fully loaded
     page.wait_for_load_state("networkidle")
 
-    return page
+    yield page
+
+    try:
+        # httpOnly auth cookies live on the browser context; page.request shares
+        # that cookie jar, so this reaches the real /api/auth/logout endpoint
+        # with no token ever exposed to page.evaluate().
+        page.request.post(f"{base_url}/api/auth/logout")
+    except Exception as exc:  # pragma: no cover - best-effort teardown
+        warnings.warn(f"authenticated_page teardown: logout call failed: {exc}", stacklevel=2)
 
 
 @pytest.fixture(scope="session")
@@ -388,6 +407,19 @@ def shared_auth_state(browser, base_url: str):
     context.close()
 
     yield state_file
+
+    # Log the session out before discarding its storage state (issue #632) —
+    # otherwise the one login this fixture exists to make cheap still leaves a
+    # session behind on every run. Reload the saved cookies into a fresh
+    # throwaway context rather than reusing the one already closed above.
+    try:
+        logout_context = browser.new_context(storage_state=state_file, ignore_https_errors=True)
+        try:
+            logout_context.request.post(f"{base_url}/api/auth/logout")
+        finally:
+            logout_context.close()
+    except Exception as exc:  # pragma: no cover - best-effort teardown
+        warnings.warn(f"shared_auth_state teardown: logout call failed: {exc}", stacklevel=2)
 
     if os.path.exists(state_file):
         os.unlink(state_file)
@@ -682,12 +714,19 @@ SHARED_COLLECTION_PREFIX = "e2e-shared-"
 
 
 @pytest.fixture(scope="session")
-def admin_token(backend_url: str) -> str:
+def admin_token(backend_url: str) -> Iterator[str]:
     """A bearer token for TEST_ADMIN_EMAIL, obtained once per session.
 
     Retries through transient rate limiting the same way APIHelper.login does.
     Skips (not fails) if login never succeeds, so a stack with auth misconfigured
     doesn't masquerade every dependent test as a real failure.
+
+    Logs the session out at teardown (issue #632) — the REFRESH token, not the
+    access token, since ``POST /auth/logout`` revokes the ``refresh_token`` row
+    matching the bearer credential's own ``jti``, and only the refresh token has
+    one; presenting the access token would clear cookies but leave the session
+    row (and therefore this fixture's whole share of the concurrent-session
+    count) live until it expired naturally.
     """
     result: dict = {}
     for attempt in range(4):
@@ -699,10 +738,25 @@ def admin_token(backend_url: str) -> str:
         )
         if response.status_code == 200:
             result = response.json()
-            return str(result["access_token"])
+            break
         time.sleep(5 * (attempt + 1))
-    pytest.skip(f"Could not obtain admin token from {backend_url} (last status not 200)")
-    raise AssertionError("unreachable — pytest.skip always raises")  # for mypy
+    else:
+        pytest.skip(f"Could not obtain admin token from {backend_url} (last status not 200)")
+
+    access_token = str(result["access_token"])
+    refresh_token = result.get("refresh_token")
+
+    yield access_token
+
+    if refresh_token:
+        try:
+            requests.post(
+                f"{backend_url}/api/auth/logout",
+                headers={"Authorization": f"Bearer {refresh_token}"},
+                timeout=30,
+            )
+        except Exception as exc:  # pragma: no cover - best-effort teardown
+            warnings.warn(f"admin_token teardown: logout call failed: {exc}", stacklevel=2)
 
 
 @pytest.fixture(scope="session")
@@ -804,6 +858,19 @@ def second_user_auth_state(browser, base_url: str, second_user: dict[str, str]):
     context.close()
 
     yield state_file
+
+    # Same reasoning as shared_auth_state's teardown (issue #632); runs before
+    # second_user's own teardown deletes the account (fixture finalizers run in
+    # reverse dependency order), so the logout call still has a live account to
+    # act on.
+    try:
+        logout_context = browser.new_context(storage_state=state_file, ignore_https_errors=True)
+        try:
+            logout_context.request.post(f"{base_url}/api/auth/logout")
+        finally:
+            logout_context.close()
+    except Exception as exc:  # pragma: no cover - best-effort teardown
+        warnings.warn(f"second_user_auth_state teardown: logout call failed: {exc}", stacklevel=2)
 
     if os.path.exists(state_file):
         os.unlink(state_file)
@@ -1004,6 +1071,7 @@ class APIHelper:
     def __init__(self, backend_url: str):
         self.backend_url = backend_url
         self._token: str | None = None
+        self._refresh_token: str | None = None
 
     def login(self, email: str, password: str) -> dict:
         """Login via API and store token (retry through transient rate limiting)."""
@@ -1022,11 +1090,39 @@ class APIHelper:
             result = cast(dict, response.json())
             if response.status_code == 200:
                 self._token = cast(str, result["access_token"])
+                self._refresh_token = cast(str | None, result.get("refresh_token"))
                 return result
             # Kept (issue #431): raw requests.post retry against rate limiting — no Playwright
             # page in this helper, no locator to wait on.
             time.sleep(5 * (attempt + 1))
         return result
+
+    def logout(self) -> None:
+        """End the session this helper's ``login()`` established (issue #632).
+
+        Presents the REFRESH token, not the access token: ``POST /auth/logout``
+        revokes the ``refresh_token`` row matching the bearer credential's own
+        ``jti``, and only the refresh token has one — the access token's jti
+        matches no such row, so passing it would clear nothing server-side.
+        Best-effort and silent on failure: a teardown call must never fail a
+        test that already passed, and there is nothing further for a caller to
+        do with the result.
+        """
+        import requests
+
+        if not self._refresh_token:
+            return
+        try:
+            requests.post(
+                f"{self.backend_url}/api/auth/logout",
+                headers={"Authorization": f"Bearer {self._refresh_token}"},
+                timeout=30,
+            )
+        except Exception as exc:  # pragma: no cover - best-effort teardown
+            warnings.warn(f"APIHelper.logout(): logout call failed: {exc}", stacklevel=2)
+        finally:
+            self._token = None
+            self._refresh_token = None
 
     def get(self, endpoint: str) -> dict:
         """Make authenticated GET request."""
@@ -1063,5 +1159,12 @@ class APIHelper:
 
 @pytest.fixture
 def api_helper(backend_url: str):
-    """Provide API helper for backend calls."""
-    return APIHelper(backend_url)
+    """Provide API helper for backend calls.
+
+    Logs out at teardown when the test actually obtained a token (issue #632)
+    — a test that never called ``.login()`` has no session to end.
+    """
+    helper = APIHelper(backend_url)
+    yield helper
+    if helper._token:
+        helper.logout()

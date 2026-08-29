@@ -350,9 +350,15 @@ someone else's product.
 - **Negative login tests MUST use a nonexistent account** — never a wrong password for
   `admin@example.com`. Lockout is progressive per-account and poisons the whole suite.
 - **Dev relaxes auth limits** (`docker-compose.override.yml`: `RATE_LIMIT_AUTH_PER_MINUTE`
-  120, `ACCOUNT_LOCKOUT_THRESHOLD` 100, `..._DURATION_MINUTES` 1; `DEV_*` tunable in `.env`).
-  Prod keeps strict values — the override is never loaded there. Env changes need a
-  container **recreate**, not `restart-backend`.
+  120, `ACCOUNT_LOCKOUT_THRESHOLD` 100, `..._DURATION_MINUTES` 1, and — since issue #632 —
+  `MAX_CONCURRENT_SESSIONS` 1000 (exactly `auth_config.py`'s `le=1000` ceiling, so the relaxed
+  value stays settable through the admin UI); all `DEV_*` tunable in `.env`). Prod keeps strict
+  values — the override is never loaded there. Env changes need a container **recreate**, not
+  `restart-backend`. `MAX_CONCURRENT_SESSIONS` is the one exception to "each var lives on the
+  service that reads it": it sits on the `x-dev-environment` **anchor**, not on `backend`
+  alone, because `celery-cpu-worker` runs the nightly `session.cap_sweep` (utility queue) —
+  if that process and `backend` disagreed about the cap, the sweep would silently evict the
+  dev stack's sessions back down to 5 every night.
 - Local IdPs for testing: `--with-ldap-test` (LDAP :3890, UI :17170, `admin`/`admin_password`),
   `--with-keycloak-test` (a Keycloak to test OIDC against, :8180, `admin`/`admin`),
   `--with-authentik-test` (an Authentik to test OIDC against, :9022, bootstrap

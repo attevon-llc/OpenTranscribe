@@ -152,9 +152,16 @@ was finding nothing at all.
   provisioned and its lockout bucket belongs to nothing. Registration forms are exempt from
   this check: they have `#email`/`#password` fields but submitting one is not a login.
 - Dev relaxes auth limits (`docker-compose.override.yml`: `RATE_LIMIT_AUTH_PER_MINUTE=120`,
-  `ACCOUNT_LOCKOUT_THRESHOLD=100`, `DEV_*`-tunable). **Prod never loads that overlay** — don't
-  write a test that only passes under the relaxed values. `shared_auth_state`/`gallery_page`
-  exist to log in **once per session** for the same reason.
+  `ACCOUNT_LOCKOUT_THRESHOLD=100`, and — since issue #632 — `MAX_CONCURRENT_SESSIONS=1000`, all
+  `DEV_*`-tunable). **Prod never loads that overlay** — don't write a test that only passes
+  under the relaxed values. `shared_auth_state`/`gallery_page` exist to log in **once per
+  session** for the same reason. `MAX_CONCURRENT_SESSIONS` sits on the `x-dev-environment`
+  ANCHOR rather than on `backend` alone, unlike the other two: the nightly `session.cap_sweep`
+  runs on `celery-cpu-worker`, and if that process disagreed with `backend` about the cap it
+  would evict the dev stack's sessions back to 5 every night. Don't add a session-cap e2e test
+  either — it would exercise the relaxation, not the cap; that control is covered at unit/API
+  level only (`backend/tests/unit/test_session_ceiling.py`,
+  `backend/tests/unit/test_session_cap_sweep.py`).
 
 ## Before you debug a "flaky" E2E test, rule out the STACK (issue #431)
 

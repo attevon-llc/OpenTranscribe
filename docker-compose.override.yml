@@ -13,6 +13,13 @@
 # what marks a dev stack as development. This file is NEVER loaded in prod.
 x-dev-environment: &dev-environment
   ENVIRONMENT: development
+  # Dev-only AC-10 relaxation. A full chained run-dev-tests.sh --full costs ~414
+  # admin sessions (measured 2026-08-28); the production cap of 5 is sized for a
+  # human with five devices. Unlike the rate-limit/lockout relaxations below, this
+  # one lives on the ANCHOR rather than on `backend` alone: the nightly
+  # session.cap_sweep runs on celery-cpu-worker (utility queue), and if the two
+  # processes disagreed the sweep would evict the dev stack back to 5 every night.
+  MAX_CONCURRENT_SESSIONS: ${DEV_MAX_CONCURRENT_SESSIONS:-1000}
 
 # All 13 backend-image build blocks below build the same image and must agree on
 # how — most importantly these args. Dockerfile.prod's APP_VERSION/GIT_SHA ARGs

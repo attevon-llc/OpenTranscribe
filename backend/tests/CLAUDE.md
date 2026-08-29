@@ -141,7 +141,20 @@ was finding nothing at all.
   `nosuchuser-e2e@example.com` and the `ldap-*`/`kc-*` IdP fixtures are the allow-listed
   shared identities. `scripts/cleanup-test-users.py`'s `ORPHAN_PATTERNS` is the backstop for
   runs that die mid-flight — **add your prefix there in the same commit** (`mfa-e2e-` was
-  missing for as long as `test_mfa.py` leaked one account per run).
+  missing for as long as `test_mfa.py` leaked one account per run). For everything that is
+  NOT a user email — uploaded media filenames, collection/tag/watch-source/speaker-profile
+  names, chat conversation titles — the equivalent backstop is
+  `scripts/cleanup-test-data.py` (issue #629), registered in
+  `backend/tests/unit/test_cleanup_test_data_safety.py`'s prefix-registration gate: a new
+  `..._PREFIX = "foo-"` constant anywhere under `backend/tests` that isn't in that script's
+  `MEDIA_FILENAME_SPECS`/`NAME_PREFIXES` fails the fast unit suite, not silently leaked
+  forever. Chat conversation titles use `e2e/conftest.py`'s `unique_conversation_title()`
+  helper (prefix `E2E_CONVERSATION_PREFIX = "e2e-chat-"`) — deliberately its own helper, not
+  a reuse of `test_chat.py`'s `_unique()`, which also names LLM provider configs and would be
+  wrong to prefix the same way. Both scripts are unconditionally invoked (Tier A only, via
+  `cleanup-test-data.py --execute-unambiguous`) at the start of
+  `scripts/run-integration-tests.sh` and `scripts/e2e/run-e2e.sh`, degrading rather than
+  blocking the run on failure; `OT_SKIP_TEST_DATA_SWEEP=1` is the escape hatch.
 - **Negative-login tests must use a nonexistent account** (`nonexistent@example.com`,
   `nosuchuser-e2e@example.com`, `ldap-nosuchuser-e2e`), never a wrong password for
   `admin@example.com` — lockout is keyed on the **resolved account** (`canonical_identifier`

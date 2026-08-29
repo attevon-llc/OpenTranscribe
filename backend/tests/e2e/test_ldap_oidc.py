@@ -496,6 +496,7 @@ def admin_page(browser_context, base_url: str):
 
 
 @pytest.mark.auth
+@pytest.mark.ldap
 class TestLDAPConfiguration:
     """Configure LDAP via the admin UI and verify it works."""
 
@@ -590,6 +591,7 @@ class TestLDAPConfiguration:
 
 
 @pytest.mark.auth
+@pytest.mark.ldap
 class TestLDAPLogin:
     """Test LDAP user login through the frontend."""
 
@@ -679,6 +681,7 @@ class TestLDAPLogin:
 
 
 @pytest.mark.auth
+@pytest.mark.keycloak
 class TestOIDCConfiguration:
     """Configure Keycloak via the admin UI."""
 
@@ -735,6 +738,7 @@ class TestOIDCConfiguration:
 
 
 @pytest.mark.auth
+@pytest.mark.keycloak
 class TestOIDCLogin:
     """Test Keycloak OIDC login flow through the frontend."""
 
@@ -873,6 +877,8 @@ class TestOIDCLogin:
 
 
 @pytest.mark.auth
+@pytest.mark.ldap
+@pytest.mark.keycloak
 class TestHybridAuthentication:
     """Test that multiple auth methods work simultaneously."""
 

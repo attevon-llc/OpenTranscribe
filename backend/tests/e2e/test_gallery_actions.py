@@ -462,11 +462,31 @@ class TestSelectionModeButtons:
 
     def test_toolbar_does_not_overflow_header(self) -> None:
         """Selection toolbar should not extend past the gallery header right controls."""
-        left_section = self.page.locator(".gallery-header-left")
-        right_section = self.page.locator(".gallery-header-right")
-        left_box = left_section.bounding_box()
-        right_box = right_section.bounding_box()
-
+        # `.gallery-header-right` (GalleryHeader.svelte) is gated on `files.length > 0`.
+        # That's not just a load-time race: `fetchFiles()` (+page.svelte) calls
+        # `resetPagination()` — which clears `files` to `[]` — on every refetch, and a
+        # refetch can be triggered mid-test by another concurrent client's upload/
+        # delete (websocket-driven refresh) on this shared dev stack, not only by this
+        # page's own initial load. So a single read can land in that empty window at
+        # ANY point, not just at the start. Read both boxes together (never split
+        # across two `.bounding_box()` calls straddling different renders) and retry
+        # a few times rather than treating one `None` reading as the final answer.
+        left_box = right_box = None
+        for _ in range(10):
+            boxes = self.page.evaluate(
+                """() => {
+                    const left = document.querySelector('.gallery-header-left');
+                    const right = document.querySelector('.gallery-header-right');
+                    return {
+                        left: left ? left.getBoundingClientRect() : null,
+                        right: right ? right.getBoundingClientRect() : null,
+                    };
+                }"""
+            )
+            left_box, right_box = boxes["left"], boxes["right"]
+            if left_box and right_box:
+                break
+            self.page.wait_for_timeout(300)
         assert left_box and right_box, (
             "gallery header left/right sections not found (or not rendered) to check overflow on"
         )
@@ -497,6 +517,20 @@ class TestBulkActions:
         # `is_disabled()` / `text_content()` snapshots, which cannot auto-wait for the
         # selection store to propagate to the toolbar.
         self.page.wait_for_timeout(500)
+        # `.select-all-btn` silently selects NOTHING if clicked before the file list
+        # has loaded (stores/gallery.ts's selectAllFiles() reads `allSelected =
+        # selectedFiles.size === files.length`, and 0 === 0 is true, taking the
+        # deselect branch) — the every-caller-of-this-helper class of bug (issue
+        # #431): a wrong precondition presented as a downstream, harder-to-diagnose
+        # failure (a 30s download timeout, a disabled menu item) instead of failing
+        # here with a clear reason. Same count-reading convention as
+        # test_delete_count_updates_with_selection.
+        text = self.page.locator(".delete-btn").text_content() or ""
+        numbers = re.findall(r"\d+", text)
+        assert numbers and int(numbers[0]) > 0, (
+            f"select-all selected nothing (delete button shows: {text!r}) — "
+            f"gallery_page's file-list fetch may not have landed yet"
+        )
 
     def test_process_reprocess_enabled_with_selection(self) -> None:
         """Reprocess should be enabled when completed files are selected."""

@@ -233,6 +233,14 @@ function createGalleryStore() {
 
     selectAllFiles: () => {
       update((state) => {
+        // An empty list makes `size === length` (0 === 0) true, so "select all" of
+        // nothing was read as "already all selected" and took the deselect branch —
+        // clicking Select All while the file list is still loading silently selected
+        // nothing instead of either selecting the (eventually non-empty) list or
+        // visibly doing nothing.
+        if (state.files.length === 0) {
+          return state;
+        }
         const allSelected = state.selectedFiles.size === state.files.length;
         const newSelected = allSelected
           ? new Set<string>()

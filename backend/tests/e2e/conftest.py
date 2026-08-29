@@ -404,6 +404,17 @@ def gallery_page(browser, shared_auth_state, base_url: str):
     page = context.new_page()
     page.goto(base_url)
     page.wait_for_selector(".gallery-action-buttons", timeout=30000)
+    # `.gallery-action-buttons` renders unconditionally, independent of the `GET
+    # /api/files` fetch — so a test could act (select-all, read header geometry)
+    # before the file list has actually landed. `.gallery-header-right`
+    # (GalleryHeader.svelte) is gated on `files.length > 0`, so waiting for it is the
+    # exact "the file list landed AND is non-empty" signal these gallery-content tests
+    # need. (`.count-chip` looked like a loading-agnostic proxy for this but is driven
+    # by a separate fetch that settles independently — verified it does not track the
+    # main file-grid fetch, so it is not a substitute here.) On a genuinely empty
+    # library this will time out; the tests using this fixture already assume ambient
+    # content, same as before this fixture existed.
+    page.wait_for_selector(".gallery-header-right", timeout=30000)
     yield page
     page.close()
     context.close()

@@ -142,6 +142,34 @@ def _flower_port_open() -> bool:
         return sock.connect_ex(("127.0.0.1", int(FLOWER_PORT))) == 0
 
 
+def _gpu_scaled_container_running() -> bool:
+    """Whether this deployment was actually started with `--gpu-scale` -- Flower
+    itself is part of the base stack and stays reachable regardless, so a
+    Flower-reachability check alone cannot tell a single-GPU dev deployment (this
+    project's usual host config, one GPU reserved for it) from a dual-GPU one.
+    Without this, the gpu-scaled-worker assertions below fail unconditionally on
+    any single-GPU host instead of skipping -- exactly the "auto-skip the
+    multi-GPU portion" case the dev test runner already handles for --gpu-scale
+    the overlay itself."""
+    import shutil
+    import subprocess
+
+    if shutil.which("docker") is None:
+        return False
+    names = (
+        subprocess.run(
+            ["docker", "ps", "--filter", "name=celery-worker-gpu-scaled", "--format", "{{.Names}}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        .stdout.strip()
+        .splitlines()
+    )
+    return bool(names)
+
+
 @pytest.fixture(scope="module")
 def flower_workers() -> dict:
     if not _flower_port_open():
@@ -155,6 +183,10 @@ def flower_workers() -> dict:
 
 
 def test_gpu_scaled_worker_is_registered_with_expected_concurrency(flower_workers: dict) -> None:
+    if not _gpu_scaled_container_running():
+        pytest.skip(
+            "no running celery-worker-gpu-scaled container -- this deployment is not --gpu-scale"
+        )
     concurrency, fresh = _worker_pool_concurrency_and_freshness(flower_workers, "gpu-scaled@")
 
     assert concurrency is not None or fresh is not None, (

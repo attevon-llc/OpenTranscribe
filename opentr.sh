@@ -2046,6 +2046,11 @@ start_app() {
     [ -n "$WITH_SMB_TEST_FLAG" ] && _pf_ports+=("${FRESH_SMB_PORT_VARS[@]}")
     [ -n "$WITH_MONITORING_FLAG" ] && _pf_ports+=("${FRESH_MONITORING_PORT_VARS[@]}")
     [ -n "$WITH_LLM_TEST_FLAG" ] && _pf_ports+=("${FRESH_LLM_TEST_PORT_VARS[@]}")
+    # Keycloak (issue #630): this list previously covered every aux test overlay except
+    # keycloak-test/authentik-test, so a bound 8180 failed deep inside `compose up --wait`
+    # instead of failing fast here. Only Keycloak is added — Authentik is out of scope
+    # (scripts/run-dev-tests.sh's overlay table deliberately excludes it; see that file).
+    [ -n "$WITH_KEYCLOAK_TEST_FLAG" ] && _pf_ports+=("${FRESH_KEYCLOAK_PORT_VARS[@]}")
     preflight_ports_or_die "${_pf_ports[@]}"
   fi
 

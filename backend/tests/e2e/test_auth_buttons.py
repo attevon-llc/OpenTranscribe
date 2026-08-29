@@ -282,6 +282,7 @@ class TestLocalLogin:
 # ===== LDAP Login Tests =====
 
 
+@pytest.mark.ldap
 class TestLDAPLogin:
     """Test LDAP login flow through the browser.
 
@@ -378,6 +379,7 @@ class TestLDAPLogin:
 # ===== OIDC Login Tests =====
 
 
+@pytest.mark.keycloak
 class TestOIDCLogin:
     """Test Keycloak/OIDC login button and redirect flow.
 

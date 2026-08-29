@@ -186,26 +186,19 @@ def _load_models_with_timeout(service, timeout: float = _MODEL_LOAD_TIMEOUT_SECO
     pool's per-future ``result(timeout=30)`` — that call carries no wall-clock bound
     of its own. On a degraded or blocked network it can sit doing nothing (0% CPU)
     for the rest of the task's budget, indistinguishable from a task that isn't
-    running at all until the Celery hard ``time_limit`` kills it. Bound it
-    explicitly with the same one-shot-thread-pool idiom used below, so a stalled
-    load surfaces as a clear, fast error instead.
+    running at all until the Celery hard ``time_limit`` kills it.
+
+    Delegates to :func:`app.utils.hf_hub_offline.load_with_timeout` — the same
+    one-shot-thread-pool idiom used below and by every other HuggingFace Hub load
+    site in this codebase, kept as one implementation rather than four.
     """
-    pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="attr-model-load")
-    try:
-        future = pool.submit(service.load_models)
-        try:
-            future.result(timeout=timeout)
-        except TimeoutError as exc:
-            raise TimeoutError(
-                f"Gender-detection model load did not complete within {timeout}s "
-                "(possibly a stalled HuggingFace Hub network call — set "
-                "HF_HUB_OFFLINE=1 if the model is already cached locally)"
-            ) from exc
-    finally:
-        # Not `wait=True`: a wedged from_pretrained() call would otherwise block
-        # shutdown forever too. The loader thread dies daemon; the model may finish
-        # loading in the background, but the task has already failed loudly by then.
-        pool.shutdown(wait=False, cancel_futures=True)
+    from app.utils.hf_hub_offline import load_with_timeout
+
+    load_with_timeout(
+        service.load_models,
+        timeout=timeout,
+        label="Gender-detection model load",
+    )
 
 
 def _run_gender_inference_parallel(

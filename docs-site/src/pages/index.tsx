@@ -376,7 +376,7 @@ function Comparison() {
     {feature: 'URL import (YouTube etc.)',       values: [C, D, D, D, D, D, C, D, D, D, S('Pro')]},
     {feature: 'Docker Compose deploy',          values: [C, D, D, D, D, D, D, C, C, C, D]},
     {feature: 'Desktop app',                    values: [D, D, D, D, D, D, C, D, D, D, C]},
-    {feature: 'Subtitle editor',                values: [D, D, D, D, D, D, D, D, D, C, C]},
+    {feature: 'Subtitle editor',                values: [C, D, D, D, D, D, D, D, D, C, C]},
     {feature: 'SOC 2 / ISO 27001',             values: [D, D, C, C, C, C, D, D, D, D, D]},
   ];
 

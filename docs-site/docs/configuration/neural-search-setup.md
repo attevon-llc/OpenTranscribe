@@ -249,6 +249,32 @@ New transcripts are automatically embedded when uploaded. Only use "Reindex All"
 - Changing embedding models
 - Recovering from indexing errors
 
+### Recovering Text-Only Files From a Neural Search Outage
+
+If the neural search backend is briefly unavailable (a slow or cold OpenSearch ML boot), files
+transcribed during that window are indexed as full-text only — they have no embedding vector and
+are excluded from neural/hybrid search until re-embedded.
+
+**The bootstrap itself self-heals automatically.** A background task retries neural search
+availability on a backoff, so new uploads resume getting embeddings again without any admin
+action once the backend recovers.
+
+**Files already indexed during the outage need one manual step.** They don't get an embedding
+added later on their own. To recover them:
+
+1. Go to **Settings** → **Search Configuration**
+2. If any files were left text-only, a banner reports the affected file count (separate from the
+   "neural search degraded" bootstrap banner — a file can be stuck here even after the backend
+   itself has fully recovered)
+3. Click **Re-embed Degraded Files**
+4. Confirm in the dialog, which shows the file and user counts affected
+5. Progress reports through the same reindex notification as **Reindex All Transcripts**
+
+:::note Large Backlogs
+The preview can be truncated on very large backlogs. If the banner says so after a re-embed
+completes, run **Re-embed Degraded Files** again to catch the remaining files.
+:::
+
 ## Frontend Features
 
 ### User Search Interface

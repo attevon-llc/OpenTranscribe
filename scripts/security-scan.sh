@@ -222,17 +222,42 @@ scan_trivy() {
     local json_output="${OUTPUT_DIR}/${component}-trivy.json"
     local txt_output="${OUTPUT_DIR}/${component}-trivy.txt"
 
-    # Run Trivy scan ONCE with JSON output, then convert to table
+    # Run Trivy scan ONCE with JSON output, then convert to table.
+    #
+    # --timeout: Trivy's own default (5m) is comfortably enough for frontend/docs but not
+    # for the backend image (~13.8 GB, a large torch/CUDA dependency tree) -- measured
+    # "context deadline exceeded" at 5m22s against davidamacey/opentranscribe-backend:v0.5.0,
+    # and a from-cold re-run still hadn't finished at 23+ minutes. That failure is SILENT to
+    # this function: the JSON write fails, the `trivy convert` fallback below then does its
+    # own fresh (and slower, uncached) table-only scan of the same image, which happens to
+    # fit under ITS OWN 5m default often enough that the overall scan_trivy() call looks like
+    # it succeeded -- while json_output silently keeps whatever it held from the last time
+    # the JSON step actually finished (a stale prior release's report, in the case that
+    # surfaced this). 45m is deliberately generous: it costs nothing when a scan finishes in
+    # seconds (frontend/docs), and a failed release-gate re-run from an insufficient ceiling
+    # costs far more wall-clock than a longer wait on the one image that needs it.
+    # --skip-dirs: yt-dlp bundles ~10 site extractors (adultswim, aenetworks,
+    # blackboardcollaborate, cloudflarestream, espn, go, nbc, shahid, tbs, vice) that embed
+    # public, site-issued API credentials/JWTs/example URLs as class constants and `_TESTS`
+    # fixtures -- required for the extractor to authenticate exactly as that site's own
+    # official web/mobile client does, not a leaked secret of ours. Confirmed by inspecting
+    # several: JWT/API-key constants used as documented client credentials, plus
+    # `'only_matching': True` test-fixture URLs that are asserted against a regex, never
+    # fetched. This does not affect vulnerability detection for the yt-dlp package itself,
+    # which Trivy resolves from installed-package metadata, not by walking this directory.
     trivy image \
         --severity "${SEVERITY_THRESHOLD},HIGH,CRITICAL" \
         --format json \
         --output "${json_output}" \
+        --timeout 45m \
+        --skip-dirs '**/yt_dlp/extractor' \
         --quiet \
         "${image}"
 
     # Generate table format from JSON (faster than re-scanning)
     trivy convert --format table --output "${txt_output}" "${json_output}" 2>/dev/null || \
-        trivy image --severity "${SEVERITY_THRESHOLD},HIGH,CRITICAL" --format table --output "${txt_output}" "${image}"
+        trivy image --severity "${SEVERITY_THRESHOLD},HIGH,CRITICAL" --format table --timeout 45m \
+            --skip-dirs '**/yt_dlp/extractor' --output "${txt_output}" "${image}"
 
     print_success "Trivy reports generated:"
     print_info "  - JSON: ${json_output}"

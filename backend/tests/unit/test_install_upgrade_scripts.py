@@ -163,9 +163,11 @@ def test_downloader_uses_the_deployments_pinned_image():
     """
     # SCRIPT_DIR is normally set once at the top of download-models.sh (real invocations
     # always run the whole file); the isolated function here needs it injected the same
-    # way, since it now shells out to scripts/lib/env_reader.py (python-dotenv, issue #590)
-    # rather than a self-contained grep/cut pipeline.
-    script_dir_prelude = f'SCRIPT_DIR="{REPO_ROOT / "scripts"}"\n'
+    # way. resolve_downloader_image() calls read_env_value() (scripts/common.sh), not
+    # scripts/lib/env_reader.py directly (issue #590/#581) -- source common.sh so the
+    # extracted function body has it, exactly as download-models.sh itself does and as
+    # test_downloader_reads_the_tag_from_a_deployment_env already does below.
+    script_dir_prelude = f'SCRIPT_DIR="{REPO_ROOT / "scripts"}"\nsource {COMMON}\n'
     fn = _extract_function(DOWNLOADER, "resolve_downloader_image")
 
     pinned = _run_shell(

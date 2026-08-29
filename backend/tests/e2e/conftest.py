@@ -482,9 +482,10 @@ COMMITTED_SAMPLE_MEDIA = (
     Path(__file__).resolve().parents[1] / "fixtures" / "media" / "sample_short.wav"
 )
 
-#: Prefix for every file these suites upload. Also listed in
-#: ``scripts/cleanup-test-users.py``'s ORPHAN_PATTERNS, the backstop for a run that
-#: dies before its teardown.
+#: Prefix for every file these suites upload. Also listed (as a filename pattern, not a
+#: user-email pattern — ``scripts/cleanup-test-users.py``'s ``ORPHAN_PATTERNS`` matches
+#: ``user.email`` and could never match this) in ``scripts/cleanup-test-data.py``'s
+#: Tier A media-filename patterns, the backstop for a run that dies before its teardown.
 OWNED_MEDIA_PREFIX = "e2e-owned-"
 
 #: Statuses a file can never leave on its own. Reaching one decides the answer, so
@@ -679,6 +680,25 @@ SECOND_USER_PASSWORD = "Xk9!pLm2@Wq7Rn"  # noqa: S105
 
 #: Prefix for every collection the sharing fixtures create.
 SHARED_COLLECTION_PREFIX = "e2e-shared-"
+
+#: Prefix for every chat conversation TITLE a suite mints for itself (issue #629). Also
+#: listed in ``scripts/cleanup-test-data.py``'s Tier A conversation-title patterns.
+#: Deliberately its own constant, NOT a reuse of ``_unique()`` — that helper also names
+#: LLM provider configs (``test_chat.py:154``), and prefixing a provider *name* with
+#: ``e2e-chat-`` would be wrong (it isn't a conversation). Use :func:`unique_conversation_title`
+#: below for any conversation title a suite creates and does not reliably delete in every
+#: teardown path.
+E2E_CONVERSATION_PREFIX = "e2e-chat-"
+
+
+def unique_conversation_title(label: str) -> str:
+    """A conversation title carrying :data:`E2E_CONVERSATION_PREFIX` plus a random suffix.
+
+    Mirrors the shape ``OWNED_MEDIA_PREFIX``/``SECOND_USER_PREFIX``/``SHARED_COLLECTION_PREFIX``
+    already use: a fixed prefix a sweep can match, plus a random suffix so two runs never
+    collide on the same title.
+    """
+    return f"{E2E_CONVERSATION_PREFIX}{label}-{uuid.uuid4().hex[:8]}"
 
 
 @pytest.fixture(scope="session")

@@ -127,10 +127,12 @@ def _find_ungated_deletes(source: str) -> list[str]:
     count, since the visitor descends through every node type).
     """
 
+    guard_names = {"execute", "execute_unambiguous", "effective_execute"}
+
     def _is_execute_guard(test: ast.expr) -> bool:
-        if isinstance(test, ast.Name) and test.id == "execute":
+        if isinstance(test, ast.Name) and test.id in guard_names:
             return True
-        return isinstance(test, ast.Attribute) and test.attr == "execute"
+        return isinstance(test, ast.Attribute) and test.attr in guard_names
 
     tree = ast.parse(source)
     violations: list[str] = []
@@ -182,6 +184,28 @@ def test_execute_defaults_to_false() -> None:
     assert args.execute is False
 
 
+@pytest.mark.unit
+def test_execute_unambiguous_defaults_to_false() -> None:
+    args = cleanup.build_parser().parse_args([])
+    assert args.execute_unambiguous is False
+
+
+@pytest.mark.unit
+def test_execute_unambiguous_selects_exactly_tier_a() -> None:
+    """``ORPHAN_PATTERNS_UNAMBIGUOUS`` is the exact set ``--execute-unambiguous`` may
+    delete; it must never silently grow to include a review-tier pattern.
+    """
+    assert set(cleanup.ORPHAN_PATTERNS_UNAMBIGUOUS).isdisjoint(cleanup.ORPHAN_PATTERNS_REVIEW)
+    assert set(cleanup.ORPHAN_PATTERNS) == set(cleanup.ORPHAN_PATTERNS_UNAMBIGUOUS) | set(
+        cleanup.ORPHAN_PATTERNS_REVIEW
+    )
+    assert len(cleanup.ORPHAN_PATTERNS) == len(cleanup.ORPHAN_PATTERNS_UNAMBIGUOUS) + len(
+        cleanup.ORPHAN_PATTERNS_REVIEW
+    ), (
+        "ORPHAN_PATTERNS_UNAMBIGUOUS/REVIEW must be disjoint AND their union must equal ORPHAN_PATTERNS"
+    )
+
+
 # ---------------------------------------------------------------------------------------------
 # 2. The DELETE is reachable only behind the --execute gate
 # ---------------------------------------------------------------------------------------------
@@ -216,6 +240,27 @@ def test_the_ungated_delete_detector_actually_fires() -> None:
         "        conn.execute(text('DELETE FROM \"user\" WHERE id = :id'), {'id': 1})\n"
     )
     assert _find_ungated_deletes(guarded_source) == []
+
+
+@pytest.mark.unit
+def test_an_ungated_execute_unambiguous_style_delete_is_also_caught() -> None:
+    """Guards the extension made for ``--execute-unambiguous`` (issue #629): a delete
+    gated only by an ``effective_execute``/``execute_unambiguous``-named variable must be
+    caught the same way a bare ``execute``-gated one is, and an UNGATED one (no `if` at
+    all) must still be flagged.
+    """
+    unguarded = (
+        "def f(execute_unambiguous):\n"
+        "    conn.execute(text('DELETE FROM \"user\" WHERE id = :id'), {'id': 1})\n"
+    )
+    assert _find_ungated_deletes(unguarded) != []
+
+    guarded = (
+        "def f(effective_execute):\n"
+        "    if effective_execute:\n"
+        "        conn.execute(text('DELETE FROM \"user\" WHERE id = :id'), {'id': 1})\n"
+    )
+    assert _find_ungated_deletes(guarded) == []
 
 
 # ---------------------------------------------------------------------------------------------

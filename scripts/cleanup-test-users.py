@@ -17,8 +17,14 @@ Safety model:
   is reported and skipped rather than aborting the whole batch (issue #601).
 
 Usage (from repo root, inside backend venv):
-    python scripts/cleanup-test-users.py            # dry run
-    python scripts/cleanup-test-users.py --execute  # actually delete
+    python scripts/cleanup-test-users.py                        # dry run
+    python scripts/cleanup-test-users.py --execute-unambiguous  # delete only the
+                                                                  # unambiguous tier
+    python scripts/cleanup-test-users.py --execute              # delete both tiers
+
+Invoked by ``scripts/cleanup-test-data.py`` (issue #629) as the user/LLM-config plane of a
+broader signature-scoped sweep — see that script for the media/collection/tag/watch-source/
+speaker-profile/conversation planes, which this script does not touch.
 """
 
 from __future__ import annotations
@@ -69,7 +75,23 @@ def _host_setting() -> str:
 # appearing; this list is the backstop for runs that died mid-flight.
 # `tests/unit/test_cleanup_test_users_safety.py::test_every_e2e_registered_prefix_has_an_orphan_pattern`
 # is the gate that stops a NEW email-minting prefix appearing here with no match.
-ORPHAN_PATTERNS = [
+#
+# Split into two tiers (issue #629): UNAMBIGUOUS patterns carry an `-e2e-`/`-test-`-style
+# infix plus a random hex suffix, or an RFC 2606 `.invalid` TLD — no human being ever types
+# one of these by hand, so they are safe for `--execute-unambiguous` (no review needed).
+# REVIEW patterns (`testuser_%`, `test-%@example.com`, ...) are plausible things a developer
+# could hand-create (e.g. `test-foo@example.com`), so they stay behind the full `--execute`
+# review gate. `ORPHAN_PATTERNS` is the union, kept so every existing caller/test that reads
+# it unchanged keeps working.
+ORPHAN_PATTERNS_UNAMBIGUOUS = [
+    'reg-e2e-%@example.com',  # e2e registration attempts (test_registration, test_auth_flow)
+    'shortname-%@example.com',  # e2e display-name registration test
+    'mfa-e2e-%@example.com',  # e2e MFA enrolment user (test_mfa.py session fixture)
+    'searchqual-%@example.invalid',  # test_search_quality.py self-seeding corpus owner
+    'share-e2e-%@example.com',  # e2e second-user fixture (conftest.SECOND_USER_PREFIX)
+]
+
+ORPHAN_PATTERNS_REVIEW = [
     r'testuser\_%@example.com',
     r'testadmin\_%@example.com',
     r'testsuperadmin\_%@example.com',
@@ -77,12 +99,9 @@ ORPHAN_PATTERNS = [
     r'unique\_%@example.com',
     r'newuser\_%@example.com',
     'test-%@example.com',  # test-<uuid>@example.com
-    'reg-e2e-%@example.com',  # e2e registration attempts (test_registration, test_auth_flow)
-    'shortname-%@example.com',  # e2e display-name registration test
-    'mfa-e2e-%@example.com',  # e2e MFA enrolment user (test_mfa.py session fixture)
-    'searchqual-%@example.invalid',  # test_search_quality.py self-seeding corpus owner
-    'share-e2e-%@example.com',  # e2e second-user fixture (conftest.SECOND_USER_PREFIX)
 ]
+
+ORPHAN_PATTERNS = [*ORPHAN_PATTERNS_UNAMBIGUOUS, *ORPHAN_PATTERNS_REVIEW]
 
 # Real dev-stack accounts that must never be touched, even if a pattern drifts.
 KEEP_EMAILS = {
@@ -123,7 +142,19 @@ class UserRow(NamedTuple):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--execute', action='store_true', help='Actually delete (default: dry run)')
+    parser.add_argument(
+        '--execute',
+        action='store_true',
+        help='Actually delete (default: dry run) — unambiguous AND review-tier candidates',
+    )
+    parser.add_argument(
+        '--execute-unambiguous',
+        action='store_true',
+        help=(
+            'Actually delete, but ONLY the unambiguous-tier candidates '
+            '(ORPHAN_PATTERNS_UNAMBIGUOUS) — review-tier candidates are still only reported'
+        ),
+    )
     return parser
 
 
@@ -245,6 +276,14 @@ def main() -> int:
     url = f'postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
     engine = create_engine(url)
     where = ' OR '.join(rf"email LIKE '{p}' ESCAPE '\'" for p in ORPHAN_PATTERNS)
+    where_unambiguous = ' OR '.join(
+        rf"email LIKE '{p}' ESCAPE '\'" for p in ORPHAN_PATTERNS_UNAMBIGUOUS
+    )
+
+    # --execute-unambiguous restricts DELETION to the unambiguous tier; --execute deletes
+    # both tiers. Both are "execute" for the purposes of the LLM-config sweep (Tier A) and
+    # for the DELETE/WOULD DELETE verb on rows that end up in `deletable`.
+    effective_execute = args.execute or args.execute_unambiguous
 
     exit_code = 0
     with engine.connect() as conn:
@@ -265,23 +304,42 @@ def main() -> int:
         blocked = blocked_by_foreign_keys(conn, ids_by_email) if candidates else {}
         deletable = [(uid, email) for uid, email in candidates if email not in blocked]
 
+        if args.execute_unambiguous and not args.execute and deletable:
+            unambiguous_emails = set(
+                conn.execute(
+                    text(
+                        f'SELECT email FROM "user" WHERE email = ANY(:emails) '
+                        f'AND ({where_unambiguous})'
+                    ),
+                    {'emails': [email for _uid, email in deletable]},
+                )
+                .scalars()
+                .all()
+            )
+            deletable = [(uid, email) for uid, email in deletable if email in unambiguous_emails]
+
+        deletable_ids = {uid for uid, _email in deletable}
+
         print(f'Matched {len(rows)} users:')
         for email in kept:
             print(f'  KEEP    {email} (keep-list)')
         for email, files in owners:
             print(f'  SKIP    {email} (owns {files} media files — review manually)')
-        for _uid, email in candidates:
+        for uid, email in candidates:
             if email in blocked:
                 print(f'  BLOCKED {email} ({blocked[email]})')
-            else:
-                verb = 'DELETE' if args.execute else 'WOULD DELETE'
+            elif uid in deletable_ids:
+                verb = 'DELETE' if effective_execute else 'WOULD DELETE'
                 print(f'  {verb}  {email}')
+            else:
+                # Review-tier candidate not selected by --execute-unambiguous alone.
+                print(f'  WOULD DELETE  {email}')
 
-        removed, failed = _delete_users(conn, deletable, execute=args.execute)
+        removed, failed = _delete_users(conn, deletable, execute=effective_execute)
 
         if not candidates:
             print('Nothing to delete.')
-        elif args.execute:
+        elif effective_execute:
             print(f'Deleted {len(removed)} orphaned test users.')
             if blocked or failed:
                 # A partial sweep must not read as success — run-integration-tests.sh's
@@ -291,10 +349,10 @@ def main() -> int:
             note = f', {len(blocked)} blocked' if blocked else ''
             print(
                 f'\nDry run — {len(deletable)} users would be deleted{note}. '
-                'Re-run with --execute to apply.'
+                'Re-run with --execute (or --execute-unambiguous) to apply.'
             )
 
-        _sweep_leaked_llm_configs(conn, execute=args.execute)
+        _sweep_leaked_llm_configs(conn, execute=effective_execute)
     return exit_code
 
 

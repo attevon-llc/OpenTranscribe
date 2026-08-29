@@ -172,6 +172,22 @@ run_phase_watching_skips() {
     fi
 }
 
+# 0. Signature-scoped sweep of orphaned test data (issue #629) — unconditional (not
+# gated behind --cleanup, unlike phase 10's dry-run report below), so leftovers from a
+# PREVIOUS killed run are cleared before this run adds its own. Deletes Tier A
+# (unambiguous-signature) candidates only; escape hatch: OT_SKIP_TEST_DATA_SWEEP=1.
+# Registers this run as a live testrun marker first, so anything IT creates is
+# protected by the same liveness cutoff that protects any other concurrently-running
+# suite's data.
+source "$PROJECT_ROOT/scripts/testrun-registry.sh"
+testrun_begin
+if [ "${OT_SKIP_TEST_DATA_SWEEP:-}" = "1" ]; then
+    echo -e "${YELLOW}--- Test-data sweep: skipped (OT_SKIP_TEST_DATA_SWEEP=1) ---${NC}\n"
+else
+    run_phase "Test-data sweep (Tier A)" \
+        "$VENV_PY" "$PROJECT_ROOT/scripts/cleanup-test-data.py" --execute-unambiguous
+fi
+
 # 1. Ungated suite (default config: -n auto, -m 'not integration')
 run_phase "Unit/API suite" "$VENV_PY" -m pytest tests/ "${COV_ARGS[@]}"
 

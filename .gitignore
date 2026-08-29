@@ -333,6 +333,11 @@ test-results/
 # Local test matrix ledger (scripts/test-matrix.sh) — per-run leg state
 .test-matrix/
 
+# Test-run liveness markers (scripts/testrun-registry.sh, issue #629) — flock files only,
+# not /tmp: a reboot clearing /tmp once silently disarmed the mutation ratchet, and the
+# same hazard applies here.
+.testruns/
+
 # Legal/licensing planning — internal, not for public repo
 .legal/
 

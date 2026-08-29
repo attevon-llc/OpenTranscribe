@@ -487,7 +487,55 @@ aux-file record.
   before trusting `--execute`. A candidate blocked by a leftover child row (`tag`/`task`/
   `comment`/`collection`/`speaker`/`speaker_profile`/`speaker_collection`.`user_id`, all
   `ON DELETE NO ACTION`) is reported and skipped, not fatal to the batch — exit code 1 if
-  anything was blocked.
+  anything was blocked. `ORPHAN_PATTERNS` is now split into `ORPHAN_PATTERNS_UNAMBIGUOUS`
+  (5 patterns — `-e2e-`-infix or RFC 2606 `.invalid`, no human types these) and
+  `ORPHAN_PATTERNS_REVIEW` (7 patterns — `testuser_%`, `test-%@example.com`, plausible
+  hand-created accounts); `ORPHAN_PATTERNS` stays the union so existing callers/tests are
+  unchanged. `--execute-unambiguous` deletes only the unambiguous tier; `--execute` deletes
+  both, same as before.
+- `cleanup-test-data.py` (issue #629) — the sibling sweep for everything `cleanup-test-users.py`
+  never touched: orphaned test-uploaded media, collections, tags, watch sources, speaker
+  profiles, and chat conversations. It is the ONE entry point — it shells out to
+  `cleanup-test-users.py` (same subprocess idiom `run-integration-tests.sh` uses) for the
+  user/LLM-config plane rather than duplicating that logic, and runs it LAST, after every
+  other sweep, because clearing a corpus-owning test user's files/collections/tags first is
+  what lets that user finally become deletable (`classify()`'s "owns files -> never a
+  candidate" rule otherwise makes an owner permanently unsweepable).
+  - **Media cannot be swept with SQL.** Child rows reference `media_file.id` with
+    `ON DELETE NO ACTION`, and MinIO objects + OpenSearch documents are unreachable from
+    Postgres at all — the only correct destroyer is `purge_media_file()`
+    (`backend/app/services/file_cleanup_service.py`), reached via `DELETE /api/files/{uuid}`
+    (falling back to `/force`). So every Tier A resource type here is deleted over the HTTP
+    API, never direct SQL, even where a table has no external-store problem of its own —
+    consistency, and so each resource's own cascade/embedding cleanup always runs.
+  - **Tier A (unambiguous) vs Tier B (review), same risk-asymmetry reasoning as
+    `cleanup-test-users.py`'s split**: a wrongly-deleted media file is annoying; a
+    wrongly-deleted collection/tag/watch-source/speaker-profile/conversation is the same
+    category of annoying. `--execute-unambiguous` selects Tier A only (matched by a
+    registered filename/name/title PREFIX plus an 8-hex-char uniquifier — never a bare
+    prefix, so `e2e-tag-notes` a human typed by hand survives); `--execute` adds Tier B
+    (currently none defined for this script — every registered signature here is
+    unambiguous by construction).
+  - **Liveness cutoff, not a name-embedded seed** (`scripts/testrun-registry.sh`): every
+    candidate table already carries a creation timestamp, so a row created by a
+    CONCURRENTLY LIVE run is protected by comparing its timestamp against
+    `min(started_at)` across every currently-held `.testruns/*.lock` flock marker — a
+    crashed run's leftovers wait for other live runs to finish before being swept, never
+    destroyed while something might still be using them.
+  - Admin credentials from `E2E_ADMIN_EMAIL`/`E2E_ADMIN_PASSWORD`, defaulting to the
+    documented dev pair. Logs itself out when done (`POST /api/auth/logout`) so the tool
+    does not itself contribute to the `refresh_token` leak tracked in issue #633.
+  - Degrades rather than blocks: an unreachable backend skips the whole API plane with a
+    loud warning (DB-only planes — the `cleanup-test-users.py` subprocess — still run) and
+    the process exits non-zero, so `run-integration-tests.sh`/`e2e/run-e2e.sh`'s
+    `|| sweep_rc=$?` guard is what keeps a sweep failure from blocking the actual test run.
+- `testrun-registry.sh` — not itself destructive (it only ever creates a lock file under
+  `.testruns/`), but is the liveness mechanism `cleanup-test-data.py`'s safety argument
+  depends on. `testrun_begin` opens a marker file, takes `flock -n` on it, and holds the fd
+  for the rest of the CALLING PROCESS's life — released automatically (by the kernel) on
+  exit, including SIGKILL/OOM/reboot, so a crashed run cannot be mistaken for a still-live
+  one and there is no PID-reuse hazard. `TESTRUN_REGISTRY_DIR` overrides the `.testruns/`
+  location — used only by the isolated-DB test proving this mechanism, never in normal use.
 - `uninstall-offline-package.sh` — `docker compose down -v`, `docker rmi`, `rm -rf /opt/opentranscribe`.
 - `release-tests/*` — `docker volume rm` on `opentranscribe_*` plus `rm -rf $TEST_ROOT`. They
   **require the live stack to be stopped**: they bind the standard 5173–5180 ports under the stock

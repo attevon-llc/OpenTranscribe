@@ -620,6 +620,17 @@ DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN = 10
 # an established deployment can easily have more than 10 genuinely stale accounts.
 ACCOUNT_INACTIVITY_MAX_DISABLES_PER_RUN = 500
 
+# FedRAMP AC-10 concurrent-session ceiling (issue #632). `token_service.
+# enforce_session_ceiling` revokes every active session beyond the newest N in one
+# UPDATE ... OFFSET :limit statement; this bounds the per-call blast radius against a
+# large pre-existing backlog (a user who accumulated hundreds of sessions before the
+# ceiling became a real invariant). Applied both on the per-login path (login.py) and
+# the periodic sweep (session_cap_service.py), the latter with its own, larger cap
+# below — a login only ever has to clear its own small overshoot, while the sweep may
+# be catching up an entire deployment's backlog in one pass.
+SESSION_CAP_EVICTION_BATCH_LIMIT = 50
+SESSION_CAP_SWEEP_MAX_PER_USER = 500
+
 # Silero VAD defaults — used by faster-whisper BatchedInferencePipeline
 DEFAULT_VAD_THRESHOLD = 0.5  # Speech detection sensitivity (0.1-0.95)
 DEFAULT_VAD_MIN_SILENCE_MS = 2000  # Min silence to split segments (ms)

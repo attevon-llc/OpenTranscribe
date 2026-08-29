@@ -135,6 +135,7 @@ celery_app = Celery(
         "app.tasks.backup_tasks",
         "app.tasks.directory_sync_task",
         "app.tasks.account_lifecycle",
+        "app.tasks.session_cap",
     ],
 )
 
@@ -337,6 +338,9 @@ celery_app.conf.update(
         # FedRAMP AC-2 account-inactivity expiration: small DB reads/writes only.
         # Utility — never gpu.
         "account.inactivity_sweep": {"queue": CeleryQueues.UTILITY},
+        # FedRAMP AC-10 concurrent-session ceiling (issue #632): one grouped
+        # query plus small per-user UPDATEs. Utility — never gpu.
+        "session.cap_sweep": {"queue": CeleryQueues.UTILITY},
     },
     # Configure beat schedule for periodic tasks
     beat_schedule={
@@ -437,6 +441,17 @@ celery_app.conf.update(
             # deadline it defends is one MONTH (Art. 12(3)) and the prompt path is
             # the hook in tasks/erasure_reconciliation.notify_hold_released.
             "schedule": crontab(minute=40, hour=4),
+            "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
+        },
+        "session-cap-sweep": {
+            "task": "session.cap_sweep",
+            # Daily at 04:55, offset from chat retention (04:10) / account
+            # inactivity (04:25) / GDPR erasure (04:40) so none contend on the
+            # same tick. Defence in depth for issue #632: every session-minting
+            # path now enforces the cap itself, so this only has real work to do
+            # after an admin LOWERS the cap (existing sessions don't shrink until
+            # someone logs in again) or against a pre-fix backlog.
+            "schedule": crontab(minute=55, hour=4),
             "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
         },
         "media-mirror-check-schedule": {

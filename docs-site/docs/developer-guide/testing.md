@@ -70,6 +70,43 @@ during ordinary development.
 ./scripts/run-dev-tests.sh --frontend-only # just the frontend check, no live stack needed
 ```
 
+Mode flags are composable — pass more than one to union their phases (e.g.
+`--backend-only --frontend-only`).
+
+Measured on this host: `--fast` ≈ 22 minutes end to end (integration-marked tests dominate at
+~9 min; e2e-smoke, GPU-marked tests, and the unit/API suite are each 2–3 min; everything else
+combined is under a minute). `--full` runs the entire e2e suite instead of the smoke subset and
+takes correspondingly longer. These numbers rot — re-run and read the per-phase report rather
+than trusting them.
+
+#### Overlay auto-orchestration
+
+The backend/e2e phases need certain auth/LLM test containers up — `run-dev-tests.sh` starts and
+stops them for you, the same way it already did for the mock-LLM overlay alone before this was
+generalized:
+
+```bash
+./scripts/run-dev-tests.sh --all-overlays    # also bring up --with-watch / --with-mock-asr
+./scripts/run-dev-tests.sh --with-gpu-scale  # exercise the multi-GPU worker topology;
+                                              # auto-skips with a clear message on a
+                                              # single-GPU deployment — never auto-started
+                                              # under any other flag
+./scripts/run-dev-tests.sh --no-overlays     # escape hatch: stack is already configured
+                                              # as desired, skip all overlay auto-detection
+./scripts/run-dev-tests.sh --list-overlays   # print the resolved overlay set, start nothing
+./scripts/run-dev-tests.sh --dry-run         # + the exact opentr.sh command, start nothing
+```
+
+Which overlays get resolved depends on the requested phase — `--mock-llm`, `--with-keycloak-test`,
+and `--with-ldap-test` come up automatically when the tests that need them are in scope. Each
+overlay this run started is torn back down on exit, and any `auth_config` DB setting it flipped
+(`oidc_enabled`/`ldap_enabled`) is restored to its prior value — an overlay already running before
+this script started is left alone (not this run's to stop). `scripts/lib/dev-test-overlays.sh`'s
+overlay table is the source of truth for exactly what's managed; every other `opentr.sh --with-*`
+flag not in that table is either intentionally out of scope (documented inline with a reason —
+e.g. `--with-pki` needs the prod/nginx overlay, not the dev stack this script targets) or a gap a
+unit test (`test_run_dev_tests_overlay_coverage.py`) will fail the build over.
+
 Per-phase logs are written to a fresh `/tmp/ot-run-dev-tests.*` directory and the path is
 printed in the final report. Exit codes match `scripts/release.sh`'s convention: `0` pass, `1`
 gate failed, `2` misuse, `3` precondition unmet (e.g. the dev stack isn't up).

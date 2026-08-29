@@ -19,7 +19,24 @@ this file is for.
   stages 1-4) run before cutting a release (up to hours). Owns no test logic itself — same
   convention as `test-matrix.sh` below — if a phase needs new behavior, add it to the wrapped
   script. `--fast` swaps the backend phase's `--coverage` for `--e2e-smoke` and skips the full
-  e2e phase, for a quicker loop when iterating.
+  e2e phase, for a quicker loop when iterating. Measured `--fast` on this host: ~22 min
+  end-to-end, dominated by the integration-marked phase (~9 min of real live-stack roundtrips).
+  Mode flags are composable (union their phases). **Overlay auto-orchestration**
+  (`scripts/lib/dev-test-overlays.sh`, issue #630): mock-LLM/Keycloak/LDAP test containers
+  needed by the requested phase start automatically and tear back down on exit, restoring any
+  `auth_config` DB setting (`oidc_enabled`/`ldap_enabled`) they flipped — an overlay already
+  running before the script started is left alone. `--all-overlays` also brings up
+  `--with-watch`/`--with-mock-asr`; `--with-gpu-scale` exercises the multi-GPU worker topology
+  and auto-skips with a clear message on a single-GPU deployment (never auto-started under any
+  other flag); `--no-overlays` is the escape hatch (stack already configured, skip all
+  auto-detection); `--list-overlays`/`--dry-run` print the resolved plan without starting
+  anything. Every `opentr.sh --with-*` flag is either in the overlay table or explicitly
+  exempted with a written reason there — `test_run_dev_tests_overlay_coverage.py` fails the
+  build on any flag that's neither. `compose_project_name()` in that file resolves the live
+  stack's actual compose project from a running `postgres` container's label, not
+  `basename $REPO_ROOT` — the latter breaks when this script runs from a git worktree
+  (`.claude/worktrees/<name>`), since `$REPO_ROOT` then resolves to the worktree's own
+  directory name, not the main checkout's.
 - **Pre-merge gate** — `run-integration-tests.sh` (`--coverage --e2e-smoke --search-quality --cleanup`).
   Runs the ungated suite, then all `RUN_*`-gated security suites twice (FIPS off, then `FIPS_MODE=true`),
   then `-m integration`, then `-m gpu`, then **model-vs-schema drift**

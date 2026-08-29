@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--with-pipeline-smoke`: the first real end-to-end pipeline test.** Every other e2e test
+  either checks an upload merely lands in the backend (`test_upload.py`, never waits for
+  completion) or drives the UI against a file that was already `status == "completed"` from an
+  earlier session. `tests/e2e/test_full_pipeline_smoke.py` uploads a real-speech fixture, waits
+  for real WhisperX transcription + diarization to finish, confirms OpenSearch indexed a word
+  pulled from the actual transcript, then asks a real local vLLM (`--with-llm-test`, not the
+  deterministic mock) a real question through the chat UI and asserts on a genuine answer.
+  Strict opt-in (`RUN_PIPELINE_SMOKE=1`, never in `--full`/`--fast`), wired into
+  `run-dev-tests.sh` as `--with-pipeline-smoke`, which brings up `--with-llm-test` on a GPU
+  separate from this project's own and tears it back down if it started it. Found and fixed two
+  real bugs while building it: `GET /files/{uuid}/segments` withholds transcript_segments until
+  the independent async redaction step finishes even after transcription status reads
+  `"completed"`; an LLM config's `model_name` must be vLLM's `--served-model-name`, not the HF
+  repo id, which silently passes creation/activation but reports `available: false`.
 - **`scripts/run-dev-tests.sh` overlay orchestration** (#630). Auth/LLM test overlays
   (`--with-mock-llm`, `--with-keycloak-test`, `--with-ldap-test`) now start/stop automatically
   based on which phase is requested, generalizing the mock-llm-only auto-start pattern to a

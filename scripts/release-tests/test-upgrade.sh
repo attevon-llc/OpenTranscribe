@@ -1103,6 +1103,11 @@ PY
     local running_version
     running_version=$(curl -fsS --max-time 10 "$API_BASE/version" 2>/dev/null \
         | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+    # De-vacuum: "${running_version:-none}" defaults an EMPTY response to the
+    # string "none", and "unknown" != "none" is trivially true — so a curl
+    # failure or an unparseable body silently satisfied the build-arg-contract
+    # check below without the endpoint ever having answered anything.
+    as_assert "running version returned a version field" '[[ -n "$running_version" ]]'
     as_assert_eq "running version is the version under test" \
         "$TO_VERSION" "$(ver_normalize "${running_version:-none}" 2>/dev/null || echo "${running_version:-none}")"
     as_assert_ne "running version is not 'unknown' (build-arg contract)" "unknown" "${running_version:-none}"
@@ -1364,6 +1369,13 @@ phase_13_stage_rollback_tree() {
     # beside the backup/restore artifacts it exists to support.
     local pg="opentranscribe-postgres"
     dbs_table_list "$pg" postgres opentranscribe > "$TEST_ROOT/snapshots/after/tables.txt"
+    # ROLLBACK_INJECT_FAULT=stale-oracle (phase 15) compares the restore
+    # against THIS directory on purpose, to prove the harness's own oracle
+    # can be wrong. That self-check is only real if the directory exists —
+    # measured: it didn't, so every digest read from it fell back to "?" and
+    # mismatched everything, making the fault "work" for the wrong reason
+    # (a missing file) rather than by actually exercising the diff logic.
+    dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/after/db-fingerprint"
 
     # Verify the TO-side backup too — needed as phase 17's restore point and
     # it proves `backup` works on the MIGRATED schema, not just the
@@ -1443,10 +1455,26 @@ print(items[0].get("name", "") if items else "")
 
     # The damage must be real before the restore assertion means anything —
     # otherwise R-2 could pass by never having anything to fix.
-    local before_digest damaged_digest
+    #
+    # `before` was fingerprinted pre-upgrade (FROM schema) and `damaged` is
+    # fingerprinted here post-upgrade (TO schema, 15 more media_file columns
+    # by v0.5.0) — a bare whole-row digest comparison across that boundary
+    # always differs regardless of whether phase 14 actually damaged
+    # anything, the same schema-vs-damage conflation F-4 has (see its
+    # comment in phase 18). Restrict both sides to before's column set so a
+    # PASS here means the DAMAGE SIMULATION really changed a value, not that
+    # the schema moved out from under an unrestricted comparison.
+    local before_cols="$TEST_ROOT/snapshots/before/db-fingerprint/media_file.columns"
+    local before_digest damaged_digest_restricted
     before_digest="$(cat "$TEST_ROOT/snapshots/before/db-fingerprint/media_file.digest" 2>/dev/null || echo '?')"
-    damaged_digest="$(cat "$TEST_ROOT/snapshots/damaged/db-fingerprint/media_file.digest" 2>/dev/null || echo '?')"
-    as_assert_ne "damage precondition: media_file digest changed by phase 14" "$before_digest" "$damaged_digest"
+    if [[ -s "$before_cols" ]] && \
+       damaged_digest_restricted="$(dbs_digest_baseline_columns "$pg" postgres opentranscribe media_file "$before_cols")"; then
+        as_assert_ne "damage precondition: media_file digest changed by phase 14" \
+            "$before_digest" "$damaged_digest_restricted"
+    else
+        as_record SKIP "damage precondition: media_file digest changed by phase 14" \
+            "before-schema column list unavailable or no longer a subset of the current schema — cannot compute a schema-comparable digest"
+    fi
 }
 
 phase_15_restore_and_assert() {
@@ -1670,12 +1698,49 @@ phase_16_rollback_and_assert() {
     export API_BASE
     ac_wait_for_health 900
 
-    local running_version
-    running_version="$(curl -fsS --max-time 10 "$API_BASE/version" 2>/dev/null \
-        | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")"
-    as_assert_eq "B-5: /api/version reports FROM after rollback" \
-        "$FROM_VERSION" "$(ver_normalize "${running_version:-none}" 2>/dev/null || echo "${running_version:-none}")"
-    as_assert_ne "B-5: /api/version is not 'unknown' (build-arg contract)" "unknown" "${running_version:-none}"
+    # B-5 assumes the FROM image can even answer /api/version -- it can't for
+    # any FROM predating v0.5.0. The endpoint itself (commit 5d4f9164) and the
+    # ARG APP_VERSION build-arg contract it depends on (commit c8a332e8) were
+    # both added IN v0.5.0. Measured directly: v0.4.1's worktree has no
+    # backend/app/api/endpoints/version.py and no ARG line in Dockerfile.prod,
+    # and the phase-06 `before` snapshot (captured from the live FROM stack,
+    # before any upgrade ran) already recorded {"version":"unavailable"} --
+    # so this was never about the rollback, the route is simply a 404 on that
+    # image. Gate on a capability derived from the FROM worktree rather than
+    # hardcoding a version cutoff, matching R-6/R-7/ver_alembic_head's own
+    # "derive, don't hardcode" discipline. This self-heals for the next
+    # release (v0.5.0 -> v0.6.0): FROM will then ship both, and the else
+    # branch runs unmodified.
+    local from_worktree="$TEST_ROOT/worktree-${FROM_VERSION}"
+    local from_has_endpoint=false from_has_buildarg=false
+    [[ -f "$from_worktree/backend/app/api/endpoints/version.py" ]] && from_has_endpoint=true
+    grep -qE '^ARG[[:space:]]+APP_VERSION' "$from_worktree/backend/Dockerfile.prod" 2>/dev/null \
+        && from_has_buildarg=true
+
+    if [[ "$from_has_endpoint" != true ]]; then
+        as_record SKIP "B-5: /api/version reports FROM after rollback" \
+            "${FROM_VERSION} predates the /api/version endpoint (added in v0.5.0, commit 5d4f9164) -- the published image has no such route and cannot be changed retroactively. B-4 already proves every running app image resolves :${FROM_VERSION}."
+        as_record SKIP "B-5: /api/version is not 'unknown' (build-arg contract)" \
+            "same reason"
+        # Positive proof the running binary really is the old one: a TO image
+        # would answer 200, not 404.
+        local version_status
+        version_status="$(curl -fsS -o /dev/null -w '%{http_code}' --max-time 10 "$API_BASE/version" 2>/dev/null || echo "000")"
+        as_assert_eq "B-5: /api/version 404s on a FROM image predating the endpoint" "404" "$version_status"
+    elif [[ "$from_has_buildarg" != true ]]; then
+        as_record SKIP "B-5: /api/version reports FROM after rollback" \
+            "${FROM_VERSION}'s Dockerfile.prod has no ARG APP_VERSION (added in v0.5.0, commit c8a332e8) -- the published image reports 'unknown' by construction"
+        as_record SKIP "B-5: /api/version is not 'unknown' (build-arg contract)" "same reason"
+    else
+        local running_version
+        running_version="$(curl -fsS --max-time 10 "$API_BASE/version" 2>/dev/null \
+            | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")"
+        # De-vacuum: an empty response must not satisfy the "not unknown" check below.
+        as_assert "B-5: /api/version returned a version field" '[[ -n "$running_version" ]]'
+        as_assert_eq "B-5: /api/version reports FROM after rollback" \
+            "$FROM_VERSION" "$(ver_normalize "${running_version:-none}" 2>/dev/null || echo "${running_version:-none}")"
+        as_assert_ne "B-5: /api/version is not 'unknown' (build-arg contract)" "unknown" "${running_version:-none}"
+    fi
 
     local login_ok=false
     if ac_login "$TEST_ADMIN_EMAIL" "$TEST_ADMIN_PASSWORD"; then
@@ -1848,15 +1913,33 @@ phase_17_roll_forward_again() {
     # F-4: the restored data survived a SECOND migration. alembic_version is
     # deliberately excluded from the comparison — it is SUPPOSED to differ
     # (FROM head before, TO head now); that is schema advancement, not damage.
+    #
+    # But excluding alembic_version is necessary, not sufficient: dbs_fingerprint
+    # hashes the WHOLE row, and TO's schema added 15 columns to media_file
+    # between v0.4.1 (61 columns) and v0.5.0 (76). Adding a column changes
+    # every row's t::text with zero stored values touched, so the plain
+    # dbs_diff_fingerprints comparison below always "failed" once the schema
+    # advanced — measured: restricting the comparison to the 61 columns that
+    # existed when `before` was captured reproduces that exact digest
+    # (01ce171b86eecd9a6a8e0a0830016251) against this same recovered database,
+    # proving the data survived byte-for-byte. Scoped to media_file
+    # deliberately, not widened to the other fingerprinted tables:
+    # tag.normalized_name is a SHARED column the upgrade legitimately
+    # backfills (NULL -> a computed value on the seeded system tags), so an
+    # unrestricted or column-restricted diff on `tag` would still show a
+    # real, expected change that is not damage either way.
     dbs_fingerprint "$pg" postgres opentranscribe "$TEST_ROOT/snapshots/recovered/db-fingerprint"
-    # Guarded for the same reason as phase 15's call above (issue #617): a
-    # bare non-zero return here would trip `set -e` and kill the script
-    # before phase 18's summary ever runs.
-    if dbs_diff_fingerprints "$TEST_ROOT/snapshots/before/db-fingerprint" \
-        "$TEST_ROOT/snapshots/recovered/db-fingerprint" "F-4" media_file; then
-        gr_log "F-4: media_file content digest unchanged after the recovery re-upgrade"
+
+    local before_cols="$TEST_ROOT/snapshots/before/db-fingerprint/media_file.columns"
+    local before_digest recovered_digest
+    before_digest="$(cat "$TEST_ROOT/snapshots/before/db-fingerprint/media_file.digest" 2>/dev/null || echo '?')"
+    if [[ -s "$before_cols" ]] && \
+       recovered_digest="$(dbs_digest_baseline_columns "$pg" postgres opentranscribe media_file "$before_cols")"; then
+        as_assert_eq "F-4: media_file content digest unchanged (FROM-schema columns)" \
+            "$before_digest" "$recovered_digest"
     else
-        gr_warn "F-4: media_file content digest differs after the recovery re-upgrade — recorded as FAIL above, continuing"
+        as_record SKIP "F-4: media_file content digest unchanged" \
+            "a column present at ${FROM_VERSION} no longer exists at ${TO_VERSION} (DROP/RENAME), or the pre-upgrade column list was never captured -- the pre-upgrade whole-row digest is not reproducible; compare by column set, not by digest"
     fi
 
     # F-5: hybrid search returns hits (reindex recovered).

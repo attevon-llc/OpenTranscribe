@@ -471,14 +471,23 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
         done
         as_assert_eq "search for 'Zylofenix' returns this file" "1" "$found"
 
-        local ml_deployed
-        ml_deployed=$(docker exec opentranscribe-opensearch curl -s \
-            'http://localhost:9200/_plugins/_ml/models/_search' \
-            -H 'Content-Type: application/json' \
-            -d '{"query":{"term":{"model_state":"DEPLOYED"}},"size":1}' \
-            2>/dev/null \
-            | python3 -c 'import sys,json; print(json.load(sys.stdin).get("hits",{}).get("total",{}).get("value",0))' \
-            2>/dev/null || echo 0)
+        # Polled, not checked once: registering+deploying the model can take
+        # 30s+ on a cold volume, and a one-shot check here measured a real
+        # v0.5.0 run failing while the model was still mid-registration. See
+        # test-fresh-install.sh's identical fix for the full measurement.
+        local ml_deployed=0 ml_wait=0
+        while [ "$ml_wait" -lt 300 ]; do
+            ml_deployed=$(docker exec opentranscribe-opensearch curl -s \
+                'http://localhost:9200/_plugins/_ml/models/_search' \
+                -H 'Content-Type: application/json' \
+                -d '{"query":{"term":{"model_state":"DEPLOYED"}},"size":1}' \
+                2>/dev/null \
+                | python3 -c 'import sys,json; print(json.load(sys.stdin).get("hits",{}).get("total",{}).get("value",0))' \
+                2>/dev/null || echo 0)
+            [ "$ml_deployed" -ge 1 ] && break
+            sleep 10
+            ml_wait=$((ml_wait + 10))
+        done
         as_assert_ge "OpenSearch ML model deployed (neural search active)" "$ml_deployed" 1
 
         # Chat via the mocked LLM, grounded in the mocked-ASR transcript.

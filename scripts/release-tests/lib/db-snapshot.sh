@@ -100,8 +100,64 @@ dbs_fingerprint() {
             -c "SELECT md5(coalesce(string_agg(t::text, '|' ORDER BY t::text), '')) FROM ${table} t;" 2>/dev/null \
             | tr -d '[:space:]' > "$out_dir/${label}.digest" \
             || echo "error" > "$out_dir/${label}.digest"
+        # Column list in ordinal order -- lets a LATER comparison (see
+        # dbs_digest_baseline_columns) restrict itself to the columns that
+        # existed when THIS fingerprint was taken. Without it, a migration
+        # that only ADDS columns still moves the whole-row digest above
+        # (every row's t::text grows), which reads as data damage when
+        # nothing was touched.
+        docker exec "$container" psql -tA -U "$user" "$db" \
+            -c "SELECT column_name FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='${label}'
+                ORDER BY ordinal_position;" 2>/dev/null \
+            | tr -d '\r' > "$out_dir/${label}.columns" \
+            || : > "$out_dir/${label}.columns"
     done
     dbs_log "fingerprinted $db (${#DBS_FINGERPRINT_TABLES[@]} tables) into $out_dir"
+}
+
+# dbs_digest_baseline_columns CONTAINER USER DB TABLE COLUMNS_FILE
+#   Content digest of TABLE restricted to the columns named in COLUMNS_FILE
+#   (one per line, in that file's order). Exists because dbs_fingerprint above
+#   hashes the WHOLE row: a migration that merely ADDS a column rewrites every
+#   row's `t::text` and moves the digest without a single stored value
+#   changing. Comparing a pre-upgrade fingerprint against a post-upgrade one
+#   therefore always "fails" once any column has been added, which is exactly
+#   what release-tests/test-upgrade.sh's F-4 assertion was doing.
+#   MEASURED: restricting media_file to v0.4.1's 61 columns reproduces the
+#   v0.4.1 whole-row digest exactly (01ce171b86eecd9a6a8e0a0830016251) when
+#   run against the v0.5.0 database after a full rollback+restore+re-upgrade
+#   cycle -- i.e. the data survived byte-for-byte; only the column SET moved.
+#   Returns 1 (printing nothing) if any baseline column no longer exists in
+#   the current schema -- a DROP/RENAME (e.g. v380 renamed user.keycloak_id)
+#   makes the old digest fundamentally unreproducible. That is schema
+#   evolution, not damage, and the caller should SKIP rather than fail.
+dbs_digest_baseline_columns() {
+    local container="$1" user="$2" db="$3" table="$4" columns_file="$5"
+    [[ -s "$columns_file" ]] || return 1
+
+    local -a cols=()
+    while IFS= read -r col; do
+        [[ -n "$col" ]] && cols+=("$col")
+    done < "$columns_file"
+    [[ ${#cols[@]} -gt 0 ]] || return 1
+
+    local current_cols
+    current_cols=$(docker exec "$container" psql -tA -U "$user" "$db" \
+        -c "SELECT column_name FROM information_schema.columns
+            WHERE table_schema='public' AND table_name='${table}';" 2>/dev/null)
+    local col
+    for col in "${cols[@]}"; do
+        grep -qxF "$col" <<< "$current_cols" || return 1
+    done
+
+    local select_list
+    select_list=$(printf '"%s",' "${cols[@]}")
+    select_list="${select_list%,}"
+    docker exec "$container" psql -tA -U "$user" "$db" \
+        -c "SELECT md5(coalesce(string_agg(t::text, '|' ORDER BY t::text), ''))
+            FROM (SELECT ${select_list} FROM ${table}) t;" 2>/dev/null \
+        | tr -d '[:space:]'
 }
 
 # dbs_table_list CONTAINER USER DB

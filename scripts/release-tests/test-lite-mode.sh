@@ -474,9 +474,11 @@ print(",".join(r.get("file_uuid", "") for r in d.get("results") or []))
         # Polled, not checked once: registering+deploying the model can take
         # 30s+ on a cold volume, and a one-shot check here measured a real
         # v0.5.0 run failing while the model was still mid-registration. See
-        # test-fresh-install.sh's identical fix for the full measurement.
+        # test-fresh-install.sh's identical fix for the full measurement and
+        # why 600s (not 300s): the shared opensearch-ml cache is never
+        # seeded, so this always cold-downloads from the network.
         local ml_deployed=0 ml_wait=0
-        while [ "$ml_wait" -lt 300 ]; do
+        while [ "$ml_wait" -lt 600 ]; do
             ml_deployed=$(docker exec opentranscribe-opensearch curl -s \
                 'http://localhost:9200/_plugins/_ml/models/_search' \
                 -H 'Content-Type: application/json' \

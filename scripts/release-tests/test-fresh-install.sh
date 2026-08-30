@@ -505,12 +505,20 @@ print(d.get("total_results") or len(d.get("results") or d.get("hits") or []))
             # take 30s+ on its own. A one-shot check here measured a real
             # v0.5.0 run failing at ~35s elapsed while the model was still
             # mid-registration -- hybrid search itself passed via BM25
-            # fallback the whole time. 300s matches
-            # ml_model_service._REGISTRATION_MAX_WAIT and test-upgrade.sh's
-            # own poll (which uses 180s since its stack is warmer). Costs
+            # fallback the whole time. Unlike test-upgrade.sh (180s poll,
+            # warmer stack), a fresh install can never seed the shared
+            # opensearch-ml cache -- mc_seed_cache's live-cache source
+            # deliberately skips it as "container-specific" (see the
+            # comment beside its call in test-upgrade.sh's own seeding),
+            # so /ml-models/ is always empty and registration always goes
+            # the cold remote-download route, whose duration depends on
+            # network conditions rather than local disk. Measured: even
+            # 300s (ml_model_service._REGISTRATION_MAX_WAIT) was not
+            # always enough on this host under concurrent build/scan
+            # load. 600s gives real headroom for that variance; costs
             # nothing on a healthy run -- exits on the first successful poll.
             local ml_deployed=0 ml_wait=0
-            while [ "$ml_wait" -lt 300 ]; do
+            while [ "$ml_wait" -lt 600 ]; do
                 ml_deployed=$(docker exec opentranscribe-opensearch curl -s \
                     'http://localhost:9200/_plugins/_ml/models/_search' \
                     -H 'Content-Type: application/json' \

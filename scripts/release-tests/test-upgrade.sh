@@ -1724,9 +1724,15 @@ phase_16_rollback_and_assert() {
             "same reason"
         # Positive proof the running binary really is the old one: a TO image
         # would answer 200, not 404.
+        #
+        # No -f: it makes curl treat the (expected, correct) 404 as a
+        # request FAILURE and exit non-zero -- but -w's write-out has
+        # already printed "404" to stdout by then, so the `|| echo "000"`
+        # fallback this used to have would ALSO fire and get concatenated
+        # onto it, producing the literal string "404000". Measured live.
         local version_status
-        version_status="$(curl -fsS -o /dev/null -w '%{http_code}' --max-time 10 "$API_BASE/version" 2>/dev/null || echo "000")"
-        as_assert_eq "B-5: /api/version 404s on a FROM image predating the endpoint" "404" "$version_status"
+        version_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$API_BASE/version" 2>/dev/null)"
+        as_assert_eq "B-5: /api/version 404s on a FROM image predating the endpoint" "404" "${version_status:-000}"
     elif [[ "$from_has_buildarg" != true ]]; then
         as_record SKIP "B-5: /api/version reports FROM after rollback" \
             "${FROM_VERSION}'s Dockerfile.prod has no ARG APP_VERSION (added in v0.5.0, commit c8a332e8) -- the published image reports 'unknown' by construction"

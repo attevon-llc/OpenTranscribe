@@ -102,6 +102,11 @@ tests/
 scripts/
 # Dockerfile.blackwell needs the SM_121 patch script at build time
 !scripts/blackwell_patches.py
+# docker-compose.yml's celery worker healthchecks run this inside the running
+# container (media-downloader/cpu-processor/cloud-asr/ai-nlp/search-indexer
+# queues) -- without this exception it never reaches the image and every one
+# of those five services reports unhealthy forever (issue #631).
+!scripts/celery_pool_healthcheck.py
 pyproject.toml
 
 # OS generated files

@@ -540,6 +540,32 @@ idempotent/resumable, so this module reimplements none of that.
   `is_neural_pipeline_available()`, no OpenSearch mutation) — on every tick, forever. Only a
   miss runs the expensive arm.
 
+⚠️ **Two callers means a race, and the race is DESTRUCTIVE, not just wasteful (issue #625
+follow-up).** `find_model_by_name` matches a model the instant ML Commons creates its meta
+document — state `REGISTERING`, long before there is anything to deploy. `ensure_model_deployed`
+used to see "matched, `deployed` is False" and call `deploy_model` unconditionally. A deploy
+issued into a `REGISTERING` model does not merely fail: OpenSearch's own deploy-failure cleanup
+runs `ModelHelper.deleteFileCache(modelId)`, which **recursively deletes**
+`ml_cache/models_cache/register/<modelId>/` — the exact directory the OTHER caller's in-flight
+download is still writing into. Measured on `opensearch:3.4.0`: the control (no concurrent
+deploy) registers in ~12-18s every time; forcing a second deploy ~3s into registration turns it
+into `REGISTER_MODEL FAILED: <path>.zip (No such file or directory)` plus a `DEPLOY_MODEL`
+NPE (`totalChunks is null`) — the exact pair a real fresh-install rehearsal hit live, in ~6
+seconds. **No poll duration can rescue this**: the files are gone, so there is nothing left to
+wait for. `run_bootstrap_tick`'s 600s backoff after one failure happened to match
+`test-fresh-install.sh`'s 600s poll window exactly, which is why one race guaranteed the
+rehearsal's assertion would fail.
+
+The fix is a state guard, not a lock alone: `ml_model_service._DEPLOYABLE_STATES` /
+`_IN_FLIGHT_STATES` plus `_await_deployable_state()` make `ensure_model_deployed` wait out
+`REGISTERING`/`DEPLOYING` rather than deploying into it, so the destructive path is closed even
+if two callers still overlap. **Defense in depth, not a substitute**: `_initialize_neural_search`
+also takes `search_maintenance_task.NEURAL_BOOTSTRAP_LOCK_KEY` — the SAME lock the beat task
+already held via `@with_task_lock` — so the two callers exclude each other instead of relying
+purely on the state guard to save them. `run_once_per_boot` only ever protected N replicas'
+startup paths from racing EACH OTHER; it did nothing about one replica's own startup path racing
+its own beat tick, which is the race that actually shipped.
+
 **The backoff never terminates.** `run_bootstrap_tick` tracks `attempts` / `next_at` /
 `last_error` in Redis (`neural_bootstrap:*` keys, 24h TTL), doubling from
 `NEURAL_BOOTSTRAP_BASE_BACKOFF_SECONDS` (600s) and saturating at

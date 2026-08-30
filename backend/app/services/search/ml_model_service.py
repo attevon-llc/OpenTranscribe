@@ -43,6 +43,31 @@ _REGISTRATION_MAX_WAIT = 300  # 5 minutes max wait for model registration
 _DEPLOYMENT_POLL_INTERVAL = 2.0  # seconds
 _DEPLOYMENT_MAX_WAIT = 120  # 2 minutes max wait for deployment
 
+#: ML Commons states from which a deploy is legal (issue #625 follow-up). Deploying
+#: a model in any OTHER state does not merely fail: OpenSearch's own deploy-failure
+#: cleanup runs ``ModelHelper.deleteFileCache(modelId)``, which recursively deletes
+#: ``ml_cache/models_cache/register/<modelId>/`` -- the exact directory an in-flight
+#: REGISTRATION is still writing its download into. Measured on opensearch:3.4.0: a
+#: deploy issued ~3s into a registration that would otherwise COMPLETE in ~12-18s
+#: turns it into `REGISTER_MODEL FAILED: <path>.zip (No such file or directory)` plus
+#: a `DEPLOY_MODEL` NPE ("totalChunks is null") -- byte-identical to the failure a
+#: real fresh-install rehearsal hit live. The control (no concurrent deploy) always
+#: completes. This is a genuine race, not a slow host: the failing task went from
+#: created to FAILED in ~6 seconds, so no poll duration could have saved it.
+#:
+#: The race exists because #625 gave neural-search bootstrap TWO independent
+#: callers -- the one-shot startup path (``app.main._initialize_neural_search``)
+#: and the beat self-heal (``app.tasks.search_maintenance_task.neural_search_bootstrap_task``,
+#: every 10 minutes) -- and `find_model_by_name` matches a model the instant ML
+#: Commons creates its meta document (state REGISTERING), long before it is
+#: actually deployable. Whichever caller runs second used to see "registered but
+#: not deployed" and deploy into the first caller's in-flight write.
+_DEPLOYABLE_STATES = frozenset({"REGISTERED", "DEPLOY_FAILED", "PARTIALLY_DEPLOYED"})
+
+#: States meaning "another actor is mid-registration/deploy right now" -- wait for
+#: one of these to resolve, never deploy into it.
+_IN_FLIGHT_STATES = frozenset({"REGISTERING", "DEPLOYING"})
+
 #: Probe text for the post-deploy inference check (#503). Ordinary prose, because
 #: the point is to exercise the normal path rather than an edge case.
 _VERIFICATION_TEXT = "the quarterly planning meeting covered budget and hiring"
@@ -837,6 +862,35 @@ class OpenSearchMLModelService:
                 return model.get("model_id")
         return None
 
+    def _await_deployable_state(
+        self,
+        model_id: str,
+        *,
+        max_wait: float = _REGISTRATION_MAX_WAIT,
+        poll_interval: float = _REGISTRATION_POLL_INTERVAL,
+    ) -> str:
+        """Block while another actor is still registering/deploying this model.
+
+        Returns the model's state once it leaves ``_IN_FLIGHT_STATES`` (or the
+        last-seen state if ``max_wait`` elapses first). Callers must never deploy
+        into an in-flight state -- see ``_DEPLOYABLE_STATES``'s docstring for the
+        destructive OpenSearch cleanup that follows.
+
+        ``max_wait``/``poll_interval`` default to the same module constants
+        ``_wait_for_registration`` uses, and exist for the same reason: tests
+        override them so this never pays the real ~300s ceiling.
+        """
+        deadline = time.time() + max_wait
+        state = str(self.get_model_status(model_id).get("state", "")).upper()
+        while state in _IN_FLIGHT_STATES and time.time() < deadline:
+            logger.info(
+                f"Model {model_id} is {state}; waiting for it to finish rather than "
+                "deploying into it"
+            )
+            time.sleep(poll_interval)
+            state = str(self.get_model_status(model_id).get("state", "")).upper()
+        return state
+
     def ensure_model_deployed(self, model_name: str) -> str | None:
         """Ensure a model is registered and deployed.
 
@@ -857,6 +911,24 @@ class OpenSearchMLModelService:
             if status.get("deployed"):
                 logger.info(f"Model {model_name} already deployed: {model_id}")
                 return self._verified_or_none(model_name, model_id)
+
+            # `find_model_by_name` matches the moment ML Commons creates the model's
+            # meta document -- state REGISTERING, long before there is anything to
+            # deploy. Wait it out rather than deploying into it (see
+            # _DEPLOYABLE_STATES's docstring for why that is destructive, not just
+            # wrong).
+            state = self._await_deployable_state(model_id)
+            if state == "DEPLOYED":
+                # Finished registering AND deploying while we waited.
+                return self._verified_or_none(model_name, model_id)
+            if state not in _DEPLOYABLE_STATES:
+                logger.warning(
+                    f"Model {model_name} ({model_id}) is in state {state!r}, which is "
+                    "not deployable. Not deploying -- doing so would delete the "
+                    "registration cache of an in-flight register. The bootstrap "
+                    "self-heal will retry."
+                )
+                return None
 
             # Deploy if registered but not deployed
             if self.deploy_model(model_id):

@@ -224,5 +224,15 @@ def check_internet_connectivity(timeout: float = 5.0) -> bool:
         req = urllib.request.Request(test_url, method="HEAD")  # noqa: S310  # nosec B310
         urllib.request.urlopen(req, timeout=timeout)  # noqa: S310  # nosec B310
         return True
+    except urllib.error.HTTPError:
+        # An HTTP error response (even 4xx/5xx) still means DNS resolved, the TCP
+        # handshake completed, and TLS negotiated -- the opposite of "no internet".
+        # Measured live: a bare HEAD on this bucket's root gets a 403 from
+        # CloudFront regardless of real connectivity (S3 buckets commonly reject a
+        # rootless HEAD), which made every fresh-install/lite-mode rehearsal on a
+        # real network report "No internet connection" and skip straight to
+        # OpenSearch's own remote-registration path -- exactly the branch this
+        # check exists to avoid needing.
+        return True
     except Exception:
         return False

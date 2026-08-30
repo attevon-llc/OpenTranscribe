@@ -18,9 +18,9 @@
 
 # fastapi capped <0.137: 0.137+ stops flattening include_router prefixes into
 # scope["route"].path — breaks route-templated metrics labels (see requirements.txt)
-fastapi==0.136.3
-uvicorn[standard]==0.52.3
-websockets==17.0.1
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+websockets==17.1
 sqlalchemy==2.0.52
 alembic==1.19.1
 pydantic==2.13.4
@@ -41,7 +41,7 @@ bcrypt==4.3.0
 email-validator==2.3.0
 
 # Observability (Prometheus metrics + structured JSON logs) — CI imports app.main
-prometheus-client==0.25.0
+prometheus-client==0.26.0
 python-json-logger==4.2.0
 cachetools==7.1.7
 
@@ -62,12 +62,12 @@ httpx==0.28.1
 python-dotenv==1.2.3
 ldap3==2.9.1
 slowapi==0.1.10
-cryptography==50.0.0
+cryptography==50.0.1
 pyotp==2.10.0
 qrcode[pil]==8.2
 
 # AI/ML stack (CPU wheels via the extra index above)
-numpy==2.4.6
+numpy==2.5.2
 # See requirements.txt for why 2.11.0 (not a newer torch) is the pinned pair.
 torch==2.11.0
 torchaudio==2.11.0
@@ -77,7 +77,7 @@ faster-whisper==1.2.1
 transformers==4.57.6
 huggingface-hub==0.36.2
 onnx==1.22.0
-onnxruntime==1.28.0
+onnxruntime==1.29.0
 omegaconf==2.3.1
 
 # Supporting libraries
@@ -86,22 +86,22 @@ global-gender-predictor==0.0.5
 sentencepiece==0.2.2
 psutil==7.2.2
 pyexiftool==0.5.6
-yt-dlp[default]==2026.7.4
+yt-dlp[default]==2026.8.19
 
 # Semantic search and NLP
-sentence-transformers==5.7.0
+sentence-transformers==6.0.0
 nltk==3.10.3  # see requirements.txt — pathsec hardening is required, not avoided
 
 # Cloud ASR provider SDKs (lazily imported)
 # deepgram-sdk<7.6.0 breaks under websockets>=15 — see requirements.txt for the full
 # explanation. Caught by tests/unit/test_provider_sdk_compat.py.
-deepgram-sdk==7.7.0
+deepgram-sdk==7.7.1
 assemblyai==1.0.0
 google-cloud-speech==2.40.0
-azure-cognitiveservices-speech==1.51.1
+azure-cognitiveservices-speech==1.51.2
 speechmatics-batch==0.5.0
-boto3==1.43.74
-openai==3.3.0
+boto3==1.43.81
+openai==3.5.0
 requests==2.34.2
 
 # Diarization metrics (cpWER) — exercised by tests/unit/test_diarization_metrics.py
@@ -110,14 +110,14 @@ meeteval==0.4.3
 # Content redaction (wordlist/config tests run in the default suite;
 # model-weight tests carry @pytest.mark.models and skip in CI)
 presidio-analyzer==2.2.364
-presidio-anonymizer==2.2.362
+presidio-anonymizer==2.2.364
 gliner==0.2.28
 detoxify==0.5.2
 
 # Watch sources
 watchdog==6.0.0
 smbprotocol==1.17.0
-msal==1.37.0
+msal==1.38.0
 
 # Test tooling (mirrors the test section of requirements-dev.txt)
 pytest==9.1.1

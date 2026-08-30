@@ -47,7 +47,7 @@
 # provider-specific failure, a top-level one, verified against this exact
 # venv before this pin was added.
 #
-# `langchain-community==0.3.31` (the last 0.3.x release, one before the
+# `langchain-community==0.4.2` (the last 0.3.x release, one before the
 # deprecation-era 0.4 line) still ships `chat_models.vertexai` and resolves
 # cleanly alongside everything else `ragas` needs (`langchain>=0.3.27,<2.0.0` —
 # `langchain==1.3.15` here satisfies that numerically). Verified: `import
@@ -58,7 +58,7 @@
 # (an unpinned, unconditionally-imported integration dependency), not a
 # choice — pin it explicitly rather than let it float, per `backend/CLAUDE.md`
 # (#492): "every spec is pinned, a floor is not a pin."
-langchain-community==0.3.31
+langchain-community==0.4.2
 
 ragas==0.4.3
 
@@ -70,9 +70,9 @@ ragas==0.4.3
 # (`answer_correctness` failed at construction with exactly that ImportError,
 # `faithfulness` — which does not need an embedder — worked before this line was
 # added). Pinned to the SAME version `backend/requirements.txt` already resolves
-# for the app's own embedder (`sentence-transformers==5.7.0`), so `venv-eval`'s
+# for the app's own embedder (`sentence-transformers==6.0.0`), so `venv-eval`'s
 # `all-MiniLM-L6-v2` behaves identically to the app's, not coincidentally close.
-sentence-transformers==5.7.0
+sentence-transformers==6.0.0
 
 # RAGAS_DO_NOT_TRACK=true — set in the environment wherever judge_runner.py runs,
 # never hardcoded here (this file has no way to set process environment).

@@ -1,7 +1,7 @@
 # fastapi 0.137+ stops flattening include_router prefixes into scope["route"].path,
 # which breaks route-templated metrics labels (test_observability_middleware).
 # Cap until the observability middleware adapts to the new routing.
-fastapi==0.136.3
+fastapi==0.141.1
 # starlette is pinned EXPLICITLY even though it is only a transitive dependency of
 # fastapi (issue #492). fastapi constrains it to a range, not a version, so it was
 # free to differ between the venv and the image — and did, by a MAJOR version
@@ -9,8 +9,8 @@ fastapi==0.136.3
 # what issue #485 turns on, so the gate and production were running different
 # concurrency code.
 starlette==1.6.0
-uvicorn[standard]==0.52.3
-websockets==17.0.1
+uvicorn[standard]==0.52.4
+websockets==17.1
 sqlalchemy==2.0.52
 alembic==1.19.1
 pydantic==2.13.4
@@ -37,7 +37,7 @@ bcrypt==4.3.0
 email-validator==2.3.0
 
 # Observability (Prometheus metrics + structured JSON logs)
-prometheus-client==0.25.0   # 0.25.0 current; NEVER 0.23.0 (yanked)
+prometheus-client==0.26.0   # 0.25.0 current; NEVER 0.23.0 (yanked)
 python-json-logger==4.2.0         # v4.x current, same PyPI name (nhairs maintains);
                                 # import from pythonjsonlogger.json (legacy .jsonlogger is a shim)
 cachetools==7.1.7                # 7.1.4 current; TTLCache still NOT thread-safe (we lock)
@@ -60,7 +60,7 @@ ldap3==2.9.1
 slowapi==0.1.10
 
 # PKI/X.509 Certificate Authentication
-cryptography==50.0.0
+cryptography==50.0.1
 
 # MFA/TOTP Authentication (FedRAMP IA-2)
 pyotp==2.10.0
@@ -68,7 +68,7 @@ qrcode[pil]==8.2
 
 # AI/ML Stack - All cuDNN 9 compatible for CUDA 12.8
 # NumPy 2.x - required by whisperx>=3.7.6
-numpy==2.4.6
+numpy==2.5.2
 
 # PyTorch with CUDA 12.8 support (CVE-2025-32434 fixed in 2.6.0+)
 # 2.11.0 is the newest matched torch/torchaudio pair on the cu128 index (torch has
@@ -94,7 +94,7 @@ ctranslate2==4.8.1
 # constraint upstream). ctranslate2 and huggingface-hub above/below already
 # satisfy its other needs.
 av==18.1.0
-tokenizers==0.22.2
+tokenizers==0.23.1
 tqdm==4.70.0
 
 # ML/Data processing
@@ -131,8 +131,8 @@ onnx==1.22.0
 # — silently dropping CUDAExecutionProvider). faster-whisper and gliner both have
 # an unconditional `onnxruntime` dependency upstream, which is exactly why both
 # are installed with --no-deps from requirements-nodeps.txt instead of from this file.
-onnxruntime-gpu==1.28.0; sys_platform == 'linux' and platform_machine == 'x86_64'
-onnxruntime==1.28.0; sys_platform != 'linux' or platform_machine != 'x86_64'
+onnxruntime-gpu==1.29.0; sys_platform == 'linux' and platform_machine == 'x86_64'
+onnxruntime==1.29.0; sys_platform != 'linux' or platform_machine != 'x86_64'
 # NOTE: `tensorrt` was added during Phase 6.3 spike but removed 2026-04-23.
 # ORT's TensorrtExecutionProvider hit rebuild storms on pyannote's variable
 # input shapes — 2 min CPU saturation, 0% GPU usage, no inference. Microbench
@@ -173,10 +173,10 @@ psutil==7.2.2
 pyexiftool==0.5.6
 # [default] extras: mutagen (metadata), pycryptodomex (stream decryption),
 # websockets (WS-based extractors), brotli (compressed responses), certifi (SSL)
-yt-dlp[default]==2026.7.4
+yt-dlp[default]==2026.8.19
 
 # Semantic search and NLP
-sentence-transformers==5.7.0  # For semantic search embeddings (all-MiniLM-L6-v2)
+sentence-transformers==6.0.0  # For semantic search embeddings (all-MiniLM-L6-v2)
 # Required by whisperx>=3.7.6, also for SnowballStemmer.
 # Floor is >=3.10.3 deliberately, to REQUIRE the `nltk/pathsec.py` hardening rather than
 # avoid it: 3.10 refuses to open multiply-linked data files (CWE-59). A hardlinked model
@@ -195,15 +195,15 @@ nltk==3.10.3
 # tests/unit/test_provider_sdk_compat.py::TestDeepgramSdkContract. 7.6.0 fixes it upstream
 # (same websockets>=12.0 floor, so it's the SDK's own import chain that changed, not a
 # websockets pin) — verified via a real import + client.listen.v1.media.transcribe_file check.
-deepgram-sdk==7.7.0
+deepgram-sdk==7.7.1
 assemblyai==1.0.0
 google-cloud-speech==2.40.0
-azure-cognitiveservices-speech==1.51.1
+azure-cognitiveservices-speech==1.51.2
 speechmatics-batch==0.5.0
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
-boto3==1.43.74
+boto3==1.43.81
 # openai must be listed explicitly — no package in this requirements pulls it in
-openai==3.3.0
+openai==3.5.0
 # requests is pulled in by many packages but listed explicitly for Gladia REST calls
 requests==2.34.2
 
@@ -218,7 +218,7 @@ meeteval==0.4.3
 # Loaded only by the celery-redaction worker (PRELOAD_REDACTION_MODELS=true).
 # Presidio = PII detection orchestration (built-in regex recognizers + NER).
 presidio-analyzer==2.2.364
-presidio-anonymizer==2.2.362
+presidio-anonymizer==2.2.364
 # The spaCy pipeline Presidio tokenizes with. DECLARED HERE, not installed by a
 # Dockerfile step (issue #492).
 #
@@ -258,7 +258,7 @@ watchdog==6.0.0
 smbprotocol==1.17.0
 # msal = Microsoft Authentication Library for M365 Graph sendMail (OAuth2) when
 # the tenant has SMTP basic-auth disabled. (boto3 already listed above for S3.)
-msal==1.37.0
+msal==1.38.0
 
 # -----------------------------------------------------------------------------
 # Transitive pins — measured drift, not housekeeping
@@ -278,8 +278,8 @@ msal==1.37.0
 # ⚠️ This list is NOT the full transitive closure. It is the set that demonstrably
 # drifted. A package that starts drifting later belongs here too; the check that
 # finds it is a `pip freeze` diff of a fresh venv against a fresh image.
-cuda-pathfinder==1.6.1     # via cuda-bindings
-botocore==1.43.75          # via boto3 — drifted 1.43.74 (venv) vs 1.43.75 (image), 2026-08-20
+cuda-pathfinder==1.7.0     # via cuda-bindings
+botocore==1.43.81          # via boto3 — drifted 1.43.74 (venv) vs 1.43.75 (image), 2026-08-20
 # The four below all predate documents and remain pulled in by packages that have
 # nothing to do with them (see each line). They are here because #551 removed
 # docling-slim, whose own constraints had been holding them at fixed versions as a

@@ -168,11 +168,21 @@ gr_check_mount_path() {
 }
 
 gr_check_container_names() {
-    # Refuse if any container that matches the production prefix is currently
-    # RUNNING. We expect the caller to have stopped the live deployment first
-    # (via ./opentr.sh stop), so opentranscribe-* containers should be gone.
+    # Refuse if any container belonging to the live `opentranscribe` compose
+    # PROJECT is currently RUNNING. We expect the caller to have stopped the
+    # live deployment first (via ./opentr.sh stop).
+    #
+    # Filtered by the compose project label, not a bare name prefix: an
+    # unrelated container on this host (e.g. a homepage/dashboard app named
+    # "opentranscribe-homepage", from a totally different compose project)
+    # can share the name prefix without being this project's stack at all,
+    # and would never actually collide on container_name during create
+    # (this scenario only ever creates opentranscribe-backend,
+    # opentranscribe-postgres, etc. — never opentranscribe-homepage). A naive
+    # `--filter 'name=^opentranscribe-'` reports a false positive that then
+    # refuses to start for a reason that was never true.
     local running
-    running=$(docker ps --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    running=$(docker ps --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}' || true)
     if [[ -n "$running" ]]; then
         gr_die "live opentranscribe-* containers still running:
 $running
@@ -183,7 +193,7 @@ Stop them first with: ./opentr.sh stop  (preserves all data)"
     # also collide on container_name during create — flag them so the caller
     # can decide whether to remove them.
     local stopped
-    stopped=$(docker ps -a --format '{{.Names}}' --filter 'name=^opentranscribe-' || true)
+    stopped=$(docker ps -a --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}' || true)
     if [[ -n "$stopped" ]]; then
         gr_warn "stopped opentranscribe-* containers exist (will collide on create):"
         echo "$stopped" >&2

@@ -6,7 +6,39 @@ End-to-end validation for every OpenTranscribe release. Three scenarios:
 |---|---|
 | `test-fresh-install.sh` | A new user runs the documented `setup-opentranscribe.sh` one-liner and ends up with a working stack on the current release |
 | `test-upgrade.sh` | A user with real data on the previous release can run the documented upgrade path and find their data intact, migrations applied, new features available |
-| `test-lite-mode.sh` | The no-GPU lite deployment (`docker-compose.lite.yml`, cloud-only ASR) runs the real upload -> ASR -> segments/speakers -> search -> chat pipeline, against mocked cloud ASR (`scripts/mock-asr-server.py`, a Gladia stand-in) and a mocked LLM (`scripts/mock-llm-server.py`) — no GPU, vendor API key, or network egress required. Complements `scripts/lite-smoke.sh` (Stage 2, Cycle 2D), which only checks lite/cpu-only **topology**, not the pipeline. |
+| `test-lite-mode.sh` | The no-GPU lite **topology and pipeline** (`docker-compose.lite.yml`, cloud-only ASR) run the real upload -> ASR -> segments/speakers -> search -> chat flow, against mocked cloud ASR (`scripts/mock-asr-server.py`, a Gladia stand-in) and a mocked LLM (`scripts/mock-llm-server.py`) — no GPU, vendor API key, or network egress required. Complements `scripts/lite-smoke.sh` (Stage 2, Cycle 2D), which only checks lite/cpu-only topology, not the pipeline. **⚠️ It does NOT prove a user can deploy lite mode** — see below. |
+
+## Scenarios A and B run the SHIPPED commands
+
+Both bring stacks up with **`./opentranscribe.sh start` / `update`** — the management
+script `setup-opentranscribe.sh` places next to the compose files, and the one the
+installer's own `prompt_start()` runs. They do **not** hand-build
+`docker compose -f docker-compose.yml -f docker-compose.prod.yml …` chains, and they do
+**not** use `./opentr.sh` (the development script, deliberately absent from
+`release-manifest.txt`; no curl install has it).
+
+That matters because `opentranscribe.sh:get_compose_files()` is the single owner of
+overlay selection — GPU vs Blackwell vs CPU-only, nginx, scheduled backup. While the
+scenarios built their own chains, that whole layer was **dead code at rehearsal time**,
+and `release-manifest.txt`'s header records what it cost: a fresh install on a Blackwell
+card silently ran the wrong image. Both scenarios now read the resolved chain back
+(`./opentranscribe.sh compose-files`) and assert it, including that every overlay the
+manifest promises was actually downloaded. Rationale and the full finding list:
+[`REHEARSAL_ALIGNMENT_PLAN.md`](REHEARSAL_ALIGNMENT_PLAN.md).
+
+### Scenario C (`--lite`) is a repo/dev-only deployment shape
+
+`test-lite-mode.sh` is the one scenario that still hand-builds its chain, and that is
+correct rather than an oversight: `docker-compose.lite.yml` is **not** in
+`release-manifest.txt` (a curl install never downloads it), `get_compose_files()` has no
+lite branch (nothing could select it if it did), and `scripts/docker-build-push.sh all`
+does not build the lite image (no release publishes it). The only documented invocation
+is `./opentr.sh start dev --lite` — the *development* script, in a git clone.
+
+So the scenario's verdict is "lite works", not "a user can deploy lite". Making the
+latter true is a product decision. `test_lite_mode_is_not_reachable_by_a_shipped_deployment`
+(`backend/tests/unit/test_compose_file_selection.py`) fails the moment any of those three
+facts changes, so this section cannot go stale unnoticed.
 
 ## ⚠️ Precondition: the live stack must be STOPPED
 

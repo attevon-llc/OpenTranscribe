@@ -3,6 +3,7 @@
   import Plyr from 'plyr';
   import 'plyr/dist/plyr.css';
   import WaveformPlayer from '$components/WaveformPlayer.svelte';
+  import { waitForMediaMetadata, HAVE_METADATA } from '$lib/utils/mediaReady';
 
   export let mediaUrl: string;
   export let contentType: string;
@@ -121,31 +122,11 @@
     if (!player || !mediaElement) return;
     const media = mediaElement;
 
-    if (media.readyState < 1) {
-      await new Promise<void>((resolve) => {
-        const onReady = () => {
-          media.removeEventListener('loadedmetadata', onReady);
-          media.removeEventListener('canplay', onReady);
-          resolve();
-        };
-        media.addEventListener('loadedmetadata', onReady, { once: true });
-        media.addEventListener('canplay', onReady, { once: true });
-        if (media.readyState >= 1) {
-          media.removeEventListener('loadedmetadata', onReady);
-          media.removeEventListener('canplay', onReady);
-          resolve();
-          return;
-        }
-        // Timeout for very large files
-        setTimeout(() => {
-          media.removeEventListener('loadedmetadata', onReady);
-          media.removeEventListener('canplay', onReady);
-          resolve();
-        }, 15000);
-      });
-      // Brief delay so Plyr finishes its own metadata handlers (its setter bails
-      // on seek while duration is still 0).
-      await new Promise((r) => setTimeout(r, 150));
+    if (media.readyState < HAVE_METADATA) {
+      // Shared with VideoPlayer — see $lib/utils/mediaReady. The raw
+      // `media.currentTime` assignment below always lands even if Plyr's own
+      // setter bails, so no extra settling delay is needed here.
+      await waitForMediaMetadata(media);
     }
 
     if (!player) return;
@@ -241,7 +222,7 @@
     <!-- playsinline prevents iOS from forcing fullscreen on play -->
     <video
       bind:this={mediaElement}
-      preload="auto"
+      preload="metadata"
       playsinline
     >
       <source src={mediaUrl} />
@@ -250,7 +231,7 @@
     <!-- svelte-ignore a11y-media-has-caption -->
     <audio
       bind:this={mediaElement}
-      preload="auto"
+      preload="metadata"
     >
       <source src={mediaUrl} />
     </audio>

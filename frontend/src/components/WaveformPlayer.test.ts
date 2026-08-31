@@ -56,6 +56,12 @@ async function waitForMountedLoad() {
   await new Promise((resolve) => setTimeout(resolve, 150));
 }
 
+/** Let one requestAnimationFrame callback run (drag seeks are rAF-coalesced). */
+async function nextAnimationFrame() {
+  await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   ctx = fakeCtx();
@@ -225,6 +231,74 @@ describe('click-to-seek', () => {
     expect(onSeek).not.toHaveBeenCalled();
   });
 
+  it('dispatches exactly ONE seek for a real mouse click (mousedown + click)', async () => {
+    // DEFECT THIS CATCHES (issue #645): the canvas had on:click AND on:mousedown
+    // and both seeked, so every click on the waveform issued two identical seeks
+    // to the media element — two Plyr seeks plus two raw seeks, four
+    // `currentTime` assignments, per single click. Measured live before the fix.
+    mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
+    const onSeek = vi.fn();
+    const { container } = render(WaveformPlayer, {
+      props: { fileId: 'f1', duration: 100 },
+      events: { seek: onSeek },
+    } as never);
+    setContainerWidth(container, 300);
+    await waitForMountedLoad();
+
+    const root = rootOf(container);
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      width: 300,
+      top: 0,
+      right: 300,
+      bottom: 0,
+      height: 0,
+      x: 0,
+      y: 0,
+      toJSON() {},
+    });
+
+    const canvas = canvasOf(container);
+    // A real pointer interaction fires mousedown, then mouseup, then click.
+    await fireEvent.mouseDown(canvas, { clientX: 150 });
+    await fireEvent.mouseUp(document);
+    await fireEvent.click(canvas, { clientX: 150 });
+    await nextAnimationFrame();
+
+    expect(onSeek).toHaveBeenCalledTimes(1);
+    expect(onSeek).toHaveBeenCalledWith(expect.objectContaining({ detail: { time: 50 } }));
+  });
+
+  it('still seeks on a synthetic click that has no preceding mousedown', async () => {
+    // Assistive tech and programmatic activation dispatch `click` alone; the
+    // dedupe above must not swallow those.
+    mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
+    const onSeek = vi.fn();
+    const { container } = render(WaveformPlayer, {
+      props: { fileId: 'f1', duration: 100 },
+      events: { seek: onSeek },
+    } as never);
+    setContainerWidth(container, 300);
+    await waitForMountedLoad();
+
+    const root = rootOf(container);
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      width: 300,
+      top: 0,
+      right: 300,
+      bottom: 0,
+      height: 0,
+      x: 0,
+      y: 0,
+      toJSON() {},
+    });
+
+    await fireEvent.click(canvasOf(container), { clientX: 75 });
+    expect(onSeek).toHaveBeenCalledTimes(1);
+    expect(onSeek).toHaveBeenCalledWith(expect.objectContaining({ detail: { time: 25 } }));
+  });
+
   it('clamps a drag past the container edge to the end of the track, and tracks mousemove while dragging', async () => {
     mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
     const onSeek = vi.fn();
@@ -254,11 +328,16 @@ describe('click-to-seek', () => {
 
     onSeek.mockClear();
     await fireEvent.mouseMove(document, { clientX: 150 }); // 50% while still dragging
+    // Drag seeks are coalesced to one per animation frame (issue #645): raw
+    // mousemove fires far faster than a media element can service a seek, and
+    // each uncoalesced seek can cost a fresh byte-range request.
+    await nextAnimationFrame();
     expect(onSeek).toHaveBeenCalledWith(expect.objectContaining({ detail: { time: 50 } }));
 
     onSeek.mockClear();
     await fireEvent.mouseUp(document);
     await fireEvent.mouseMove(document, { clientX: 0 }); // no longer dragging
+    await nextAnimationFrame();
     expect(onSeek).not.toHaveBeenCalled();
   });
 });

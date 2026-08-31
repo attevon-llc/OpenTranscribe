@@ -208,9 +208,15 @@
   }
 
   /**
-   * Handle click/seek on waveform
+   * A real mouse click fires mousedown AND click, and both used to seek — so
+   * every click on the waveform issued two identical seeks to the media element.
+   * `handleMouseDown` claims the interaction and sets this flag so the trailing
+   * `click` is a no-op. The `on:click` handler stays because synthetic clicks
+   * (assistive tech, tests) arrive without a preceding mousedown.
    */
-  function handleInteraction(event: MouseEvent) {
+  let mouseDownHandledSeek = false;
+
+  function seekFromPointer(event: MouseEvent) {
     if (!container || duration <= 0) return;
 
     const rect = container.getBoundingClientRect();
@@ -222,20 +228,53 @@
   }
 
   /**
+   * Handle click/seek on waveform
+   */
+  function handleInteraction(event: MouseEvent) {
+    if (mouseDownHandledSeek) {
+      mouseDownHandledSeek = false;
+      return;
+    }
+    seekFromPointer(event);
+  }
+
+  /**
    * Handle mouse down for dragging
    */
   function handleMouseDown(event: MouseEvent) {
     isDragging = true;
-    handleInteraction(event);
+    mouseDownHandledSeek = true;
+    seekFromPointer(event);
+
+    // Coalesce drag updates to one seek per frame. Raw mousemove fires far
+    // faster than the media element can service a seek, and each one can cost a
+    // fresh byte-range request.
+    let pendingMove: MouseEvent | null = null;
+    let rafId: number | null = null;
+
+    const flushMove = () => {
+      rafId = null;
+      if (pendingMove && isDragging) {
+        seekFromPointer(pendingMove);
+      }
+      pendingMove = null;
+    };
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      if (isDragging) {
-        handleInteraction(moveEvent);
+      if (!isDragging) return;
+      pendingMove = moveEvent;
+      if (rafId === null) {
+        rafId = requestAnimationFrame(flushMove);
       }
     };
 
     const handleMouseUp = () => {
       isDragging = false;
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      pendingMove = null;
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };

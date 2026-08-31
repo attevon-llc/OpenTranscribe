@@ -45,6 +45,14 @@ docker-compose.gpu-scale.yml
 docker-compose.blackwell.yml	optional
 docker-compose.nginx.yml
 docker-compose.backup.yml	optional
+# The native (Rust/ONNX) diarization sidecar. `engine.diarizer_backend` defaults to
+# `native`, so without this overlay a deployment silently serves every file from the
+# in-process PyAnnote fallback instead (issue #639). The diar-server binary already
+# ships inside the backend image; the ONNX/PLDA weights are exported locally by
+# scripts/download-models.py from the operator's own gated HuggingFace access, exactly
+# as the PyAnnote weights are. Selection is gated on those weights existing — no
+# separate toggle, since the directory is only created by running the export.
+docker-compose.diar-native.yml	optional
 
 # --- Reverse proxy -------------------------------------------------------------
 nginx/site.conf.template

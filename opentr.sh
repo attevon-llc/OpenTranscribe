@@ -1820,7 +1820,7 @@ start_app() {
   # Fresh stacks stay opt-in (pass --with-diar-native explicitly).
   if [ -z "$WITH_DIAR_NATIVE_FLAG" ] && [ -z "$NO_DIAR_NATIVE_FLAG" ] && [ -z "$FRESH_FLAG" ] \
      && [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ] \
-     && [ -d "${DIAR_NATIVE_MODELS_DIR:-/mnt/nvm/repos/diar-native/models_folded}" ]; then
+     && [ -d "${DIAR_NATIVE_MODELS_DIR:-${MODEL_CACHE_DIR:-./models}/diar-native}" ]; then
     WITH_DIAR_NATIVE_FLAG="auto"
     echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
   fi
@@ -1828,6 +1828,13 @@ start_app() {
   # Add the native diarization sidecar if requested
   if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
     if [ -f "docker-compose.diar-native.yml" ]; then
+      # The overlay defaults to the PUBLISHED backend image, which is correct for a
+      # self-hosted deployment but wrong in this checkout — dev builds the image
+      # locally as opentranscribe-backend:latest and never pushes it. Point the
+      # sidecar at the local build so it matches the workers it serves.
+      if [ "$ENVIRONMENT" = "dev" ]; then
+        export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-opentranscribe-backend:latest}"
+      fi
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
       echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
       echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~4.1 GB warm ORT arena while up."
@@ -2509,7 +2516,7 @@ reset_and_init() {
   # Fresh stacks stay opt-in (pass --with-diar-native explicitly).
   if [ -z "$WITH_DIAR_NATIVE_FLAG" ] && [ -z "$NO_DIAR_NATIVE_FLAG" ] && [ -z "$FRESH_FLAG" ] \
      && [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ] \
-     && [ -d "${DIAR_NATIVE_MODELS_DIR:-/mnt/nvm/repos/diar-native/models_folded}" ]; then
+     && [ -d "${DIAR_NATIVE_MODELS_DIR:-${MODEL_CACHE_DIR:-./models}/diar-native}" ]; then
     WITH_DIAR_NATIVE_FLAG="auto"
     echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
   fi
@@ -2517,6 +2524,13 @@ reset_and_init() {
   # Add the native diarization sidecar if requested
   if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
     if [ -f "docker-compose.diar-native.yml" ]; then
+      # The overlay defaults to the PUBLISHED backend image, which is correct for a
+      # self-hosted deployment but wrong in this checkout — dev builds the image
+      # locally as opentranscribe-backend:latest and never pushes it. Point the
+      # sidecar at the local build so it matches the workers it serves.
+      if [ "$ENVIRONMENT" = "dev" ]; then
+        export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-opentranscribe-backend:latest}"
+      fi
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
       echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
       echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~4.1 GB warm ORT arena while up."

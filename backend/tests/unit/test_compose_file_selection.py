@@ -44,14 +44,18 @@ GPU = "docker-compose.gpu.yml"
 BLACKWELL = "docker-compose.blackwell.yml"
 NGINX = "docker-compose.nginx.yml"
 BACKUP = "docker-compose.backup.yml"
+DIAR = "docker-compose.diar-native.yml"
+
+ALL_OVERLAYS = (BASE, PROD, GPU, BLACKWELL, NGINX, BACKUP, DIAR)
 
 
 def _make_deployment(
     tmp_path: Path,
     *,
-    overlays: tuple[str, ...] = (BASE, PROD, GPU, BLACKWELL, NGINX, BACKUP),
+    overlays: tuple[str, ...] = ALL_OVERLAYS,
     env_lines: tuple[str, ...] = (),
     certs: bool = False,
+    diar_weights: bool = False,
 ) -> Path:
     """Lay out a directory shaped like a real curl install and drop the script in it."""
     install = tmp_path / "install"
@@ -64,6 +68,11 @@ def _make_deployment(
         ssl_dir.mkdir(parents=True)
         (ssl_dir / "server.crt").write_text("cert\n", encoding="utf-8")
         (ssl_dir / "server.key").write_text("key\n", encoding="utf-8")
+    if diar_weights:
+        # The default DIAR_NATIVE_MODELS_DIR, i.e. ${MODEL_CACHE_DIR:-./models}/diar-native.
+        weights = install / "models" / "diar-native"
+        weights.mkdir(parents=True)
+        (weights / "segmentation-3.0.onnx").write_text("onnx\n", encoding="utf-8")
     (install / "opentranscribe.sh").write_bytes(MANAGER.read_bytes())
     (install / "opentranscribe.sh").chmod(0o755)
     return install
@@ -101,13 +110,20 @@ def _resolve(
     *,
     nvidia_runtime: bool = True,
     compute_cap: str = "8.6",
-    overlays: tuple[str, ...] = (BASE, PROD, GPU, BLACKWELL, NGINX, BACKUP),
+    overlays: tuple[str, ...] = ALL_OVERLAYS,
     env_lines: tuple[str, ...] = (),
     certs: bool = False,
+    diar_weights: bool = False,
     extra_env: dict[str, str] | None = None,
 ) -> tuple[str, str]:
     """Run `./opentranscribe.sh compose-files` and return (stdout chain, stderr banners)."""
-    install = _make_deployment(tmp_path, overlays=overlays, env_lines=env_lines, certs=certs)
+    install = _make_deployment(
+        tmp_path,
+        overlays=overlays,
+        env_lines=env_lines,
+        certs=certs,
+        diar_weights=diar_weights,
+    )
     bin_dir = _make_stubs(tmp_path, nvidia_runtime=nvidia_runtime, compute_cap=compute_cap)
     env = {
         "PATH": f"{bin_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
@@ -274,6 +290,59 @@ def test_backup_overlay_needs_its_own_toggle_not_just_a_backup_path(tmp_path: Pa
     )
     assert _files(enabled) == [BASE, PROD, BACKUP], enabled
     assert "Scheduled-backup overlay enabled" in stderr, stderr
+
+
+# --------------------------------------------------------------------------- #
+# The native diarization sidecar (issue #639)
+# --------------------------------------------------------------------------- #
+
+
+def test_diar_native_does_not_start_without_its_exported_weights(tmp_path: Path):
+    """.env.example ships ENGINE_DIARIZER_BACKEND=native and several DIAR_NATIVE_*
+    variables, so none of those can mean "run the sidecar" — every install has them.
+
+    It also must not start weightless: diar-server exits when it cannot load its models
+    and the service is `restart: unless-stopped`, so that combination is an endless
+    crash loop that ALSO fails `up --wait` for the entire stack. Falling back to the
+    in-process PyAnnote engine is the correct, working outcome here.
+    """
+    chain, _ = _resolve(
+        tmp_path,
+        env_lines=(
+            "ENGINE_DIARIZER_BACKEND=native",
+            "DIAR_NATIVE_URL=http://diar-native:8701",
+            "DIAR_NATIVE_GPU=0",
+        ),
+        diar_weights=False,
+    )
+    assert DIAR not in _files(chain), chain
+
+
+def test_diar_native_starts_once_its_weights_have_been_exported(tmp_path: Path):
+    """The whole point of #639: a self-hosted deployment must have SOME path to the
+    engine its own config claims is the default. Before this, there was none.
+
+    Exporting the weights is the opt-in — that directory is created only by
+    `download-models diar-native`, so no extra env var is needed to express intent.
+    """
+    chain, stderr = _resolve(tmp_path, diar_weights=True)
+    assert _files(chain) == [BASE, PROD, GPU, DIAR], chain
+    assert "Native diarization sidecar enabled" in stderr, stderr
+
+
+def test_diar_native_weights_without_the_overlay_file_warns_loudly(tmp_path: Path):
+    """The Blackwell lesson (#640) applied to this overlay: a missing compose file must
+    not be a silent `[ -f ]` fallthrough when the operator went to the trouble of
+    exporting several hundred MB of weights."""
+    chain, stderr = _resolve(
+        tmp_path,
+        overlays=(BASE, PROD, GPU, BLACKWELL, NGINX, BACKUP),  # no DIAR on disk
+        diar_weights=True,
+    )
+    assert DIAR not in _files(chain), chain
+    assert "docker-compose.diar-native.yml is missing" in stderr, stderr
+    assert "PyAnnote" in stderr, "the operator must be told which engine actually runs"
+    assert "update-full" in stderr, "the warning must name the command that fetches it"
 
 
 # --------------------------------------------------------------------------- #

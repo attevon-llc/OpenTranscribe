@@ -262,6 +262,44 @@ get_compose_files() {
         echo -e "${YELLOW}   Note: this also sets path.repo on OpenSearch — the opensearch container will be recreated.${NC}" >&2
     fi
 
+    # Add the native diarization sidecar when its weights have been exported.
+    #
+    # engine.diarizer_backend defaults to `native`, but before issue #639 no self-hosted
+    # deployment could ever run the sidecar: the overlay was not in release-manifest.txt,
+    # so it never reached disk, and this script had no reference to it at all. Every
+    # install therefore served every file from the in-process PyAnnote fallback while
+    # the config, the docs and the admin UI all said `native`.
+    #
+    # The signal is the exported weights EXISTING, not a dedicated toggle. Unlike
+    # BACKUP_HOST_PATH (which .env.example ships set, so its presence proves nothing),
+    # this directory is created only by `download-models diar-native` — so its presence
+    # is real evidence the operator asked for this engine, and needs no new variable to
+    # say so. It is also self-consistent: no weights means no sidecar, which is exactly
+    # the condition under which starting it would crash-loop.
+    local diar_models_dir=""
+    diar_models_dir=$(read_env_value DIAR_NATIVE_MODELS_DIR)
+    if [ -z "$diar_models_dir" ]; then
+        local diar_cache_dir=""
+        diar_cache_dir=$(read_env_value MODEL_CACHE_DIR)
+        diar_models_dir="${diar_cache_dir:-./models}/diar-native"
+    fi
+
+    if [ -d "$diar_models_dir" ] && [ -n "$(ls -A "$diar_models_dir" 2>/dev/null)" ]; then
+        if [ -f docker-compose.diar-native.yml ]; then
+            compose_files="$compose_files -f docker-compose.diar-native.yml"
+            echo -e "${BLUE}🎙️  Native diarization sidecar enabled (weights present)${NC}" >&2
+            echo -e "${BLUE}   Weights: ${diar_models_dir} → /models${NC}" >&2
+            echo -e "${BLUE}   Holds ~4 GB of GPU memory on device ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} while up.${NC}" >&2
+        else
+            # Loud, unlike the GPU overlays' silent `[ -f ]` fallthrough: the operator
+            # exported these weights on purpose, and quietly serving PyAnnote instead is
+            # the exact defect #639 is about.
+            echo -e "${YELLOW}⚠️  Native diarization weights are present but docker-compose.diar-native.yml is missing.${NC}" >&2
+            echo -e "${YELLOW}   Diarization will fall back to the in-process PyAnnote engine.${NC}" >&2
+            echo -e "${YELLOW}   Run './opentranscribe.sh update-full' to fetch it.${NC}" >&2
+        fi
+    fi
+
     echo "$compose_files"
 }
 

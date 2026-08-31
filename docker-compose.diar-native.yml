@@ -22,8 +22,16 @@ services:
     # no ENTRYPOINT, so `command:` replaces the whole CMD cleanly.
     #
     # Previously `image: diar-server:latest` — an UNQUALIFIED name that Docker resolves
-    # to docker.io/library/diar-server, a namespace we do not control.
-    image: opentranscribe-backend:latest
+    # to docker.io/library/diar-server, a namespace we do not control. Then
+    # `opentranscribe-backend:latest`, which is the DEV-LOCAL build tag: because this
+    # overlay is merged LAST, that pinned every self-hosted deployment's diar-native
+    # service to an image name that only exists on a maintainer's workstation, and
+    # Docker would try to pull docker.io/library/opentranscribe-backend (issue #639).
+    #
+    # Default to the same published image the prod overlay uses, keyed on the same
+    # OT_IMAGE_TAG, so the sidecar and the workers that talk to it are always the same
+    # build. opentr.sh exports DIAR_NATIVE_IMAGE for local dev.
+    image: ${DIAR_NATIVE_IMAGE:-davidamacey/opentranscribe-backend:${OT_IMAGE_TAG:-latest}}
     command: ["diar-server"]
     # ORT resolves its provider libs relative to the executable's directory AND the
     # process cwd (diar-server has no ELF NEEDED entry for libonnxruntime — it's
@@ -47,8 +55,19 @@ services:
       # needs resolves against those wheels, zero unsatisfied sonames.
       - LD_LIBRARY_PATH=/opt/diar-native/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cudnn/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cuda_runtime/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cublas/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/cufft/lib:/home/appuser/.local/lib/python3.13/site-packages/nvidia/curand/lib
     volumes:
-      # self-exported community-1 models (gated weights — local only, never distributed)
-      - ${DIAR_NATIVE_MODELS_DIR:-/mnt/nvm/repos/diar-native/models_folded}:/models:ro
+      # ONNX/PLDA artifacts exported from pyannote/speaker-diarization-community-1.
+      #
+      # These are the SAME weights the PyAnnote path uses, obtained the SAME way: the
+      # operator's own HUGGINGFACE_TOKEN against the gated HF repo, then exported to
+      # ONNX locally. `./opentranscribe.sh` runs that export via
+      # scripts/download-models.py (group: diar-native). Nothing here is redistributed
+      # by this project — identical to how the PyAnnote weights are acquired today.
+      #
+      # The default used to be /mnt/nvm/repos/diar-native/models_folded, an absolute
+      # path on one maintainer's workstation, which is why no self-hosted deployment
+      # could ever start this service (issue #639). Now it follows MODEL_CACHE_DIR like
+      # every other model cache in docker-compose.yml.
+      - ${DIAR_NATIVE_MODELS_DIR:-${MODEL_CACHE_DIR:-./models}/diar-native}:/models:ro
       - diar-native-tmp:/tmp/diar-native
     deploy:
       resources:

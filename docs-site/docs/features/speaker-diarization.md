@@ -320,9 +320,26 @@ local ASR with cloud diarization, or any other combination.
   in-process PyAnnote engine documented earlier on this page — there is no hard dependency on
   the sidecar being up.
 - **Running it**: the sidecar ships as an additive Docker Compose overlay,
-  `docker-compose.diar-native.yml`, wired through `./opentr.sh start dev --with-diar-native`. It
-  shares the backend image rather than shipping a separate one, and is auto-loaded in dev when
-  its models directory is present (`--no-diar-native` suppresses that).
+  `docker-compose.diar-native.yml`. It shares the backend image rather than shipping a separate
+  one — the `diar-server` binary is already inside `davidamacey/opentranscribe-backend`, so
+  there is nothing extra to pull.
+  - **Self-hosted install**: export the weights once
+    (`./opentranscribe.sh download-models diar-native`) and restart. There is no separate
+    on/off switch — the sidecar starts when its weights are present, and is skipped when they
+    are not, because starting it weightless would crash-loop and take stack startup with it.
+    They land in `${MODEL_CACHE_DIR}/diar-native`, a sibling of the `huggingface/` and `torch/`
+    caches the PyAnnote path already uses.
+  - **This repo's dev checkout**: `./opentr.sh start dev --with-diar-native`, auto-loaded when
+    the models directory is present (`--no-diar-native` suppresses that).
+- **Where the weights come from**: the same place PyAnnote's do. The sidecar runs ONNX/PLDA
+  artifacts exported from the very same gated `pyannote/speaker-diarization-community-1`
+  pipeline the in-process engine loads — it is a Rust/ONNX reimplementation of that pipeline,
+  not a different model. They are exported locally from your own HuggingFace access
+  (`HUGGINGFACE_TOKEN`, plus accepting the model's conditions), exactly as the PyAnnote weights
+  are obtained today. Nothing about this engine is redistributed by OpenTranscribe.
+- **If the sidecar is not running**, diarization falls back to the in-process PyAnnote engine
+  and everything keeps working — slower, and slightly worse on AMI, but correct. That fallback
+  is a supported configuration, not a degraded one; see issue #572 for why PyAnnote stays.
 - **Inline gender classification**: while the sidecar already holds the decoded audio for
   diarization, it can also classify each speaker's gender in the same pass
   (`DIAR_NATIVE_GENDER`, on by default). When active, this skips the separate ~87–90s CPU

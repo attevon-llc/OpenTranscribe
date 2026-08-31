@@ -88,6 +88,11 @@ WITH_GPU_DIARIZATION=false
 WITH_MUTATION_TESTS=false
 MUTATION_TEST_MODULE="${MUTATION_TEST_MODULE:-spans}"
 WITH_PIPELINE_SMOKE=false
+# Passed straight through to run-integration-tests.sh. It exists so the full-test-matrix
+# Cycle 2A leg can be run by ONE command that matches the doc's leg 1 exactly
+# (`run-integration-tests.sh --coverage --search-quality --cleanup`) instead of the matrix
+# calling run-integration-tests.sh separately and losing this script's overlay orchestration.
+SEARCH_QUALITY=false
 
 usage() {
     cat <<'EOF'
@@ -106,6 +111,10 @@ Overlay flags:
   --with-gpu-scale    exercise the --gpu-scale multi-GPU worker topology; auto-skips
                       with a clear message when this project has fewer than 2 GPUs
                       configured (never auto-started under any other flag)
+  --search-quality    add run-integration-tests.sh's --search-quality phase to the backend
+                      gate (self-seeding 6-meeting corpus; several extra minutes). This is
+                      what full-test-matrix.md's Cycle 2A leg 1 asks for, so the matrix can
+                      run that leg through this script and keep its overlay orchestration
   --no-overlays       escape hatch: assume the stack is already configured as desired,
                       skip all overlay auto-detection/starting/DB reconciliation
   --list-overlays     print the resolved overlay set and exit, start nothing
@@ -154,6 +163,7 @@ while [[ $# -gt 0 ]]; do
         --frontend-only) RUN_FRONTEND=true ;;
         --all-overlays)  ALL_OVERLAYS=true ;;
         --with-gpu-scale) WITH_GPU_SCALE=true ;;
+        --search-quality) SEARCH_QUALITY=true ;;
         --no-overlays)   NO_OVERLAYS=true ;;
         --list-overlays) LIST_OVERLAYS=true ;;
         --dry-run)       DRY_RUN=true ;;
@@ -361,13 +371,15 @@ run_phase() {
 }
 
 if [[ "$RUN_BACKEND" == "true" ]]; then
+    backend_flags=(--cleanup)
     if [[ "$E2E_SMOKE" == "true" ]]; then
-        run_phase "backend (run-integration-tests.sh --e2e-smoke --cleanup)" \
-            "$REPO_ROOT/scripts/run-integration-tests.sh" --e2e-smoke --cleanup
+        backend_flags=(--e2e-smoke "${backend_flags[@]}")
     else
-        run_phase "backend (run-integration-tests.sh --coverage --cleanup)" \
-            "$REPO_ROOT/scripts/run-integration-tests.sh" --coverage --cleanup
+        backend_flags=(--coverage "${backend_flags[@]}")
     fi
+    $SEARCH_QUALITY && backend_flags=(--search-quality "${backend_flags[@]}")
+    run_phase "backend (run-integration-tests.sh ${backend_flags[*]})" \
+        "$REPO_ROOT/scripts/run-integration-tests.sh" "${backend_flags[@]}"
 fi
 
 if [[ "$RUN_E2E" == "true" ]]; then

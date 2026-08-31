@@ -1,0 +1,38 @@
+
+davidamacey/opentranscribe-docs:v0.5.0 (alpine 3.23.5)
+======================================================
+Total: 8 (UNKNOWN: 0, LOW: 0, MEDIUM: 6, HIGH: 2, CRITICAL: 0)
+
+┌────────────┬────────────────┬──────────┬────────┬───────────────────┬───────────────┬──────────────────────────────────────────────────────────────┐
+│  Library   │ Vulnerability  │ Severity │ Status │ Installed Version │ Fixed Version │                            Title                             │
+├────────────┼────────────────┼──────────┼────────┼───────────────────┼───────────────┼──────────────────────────────────────────────────────────────┤
+│ libcrypto3 │ CVE-2026-14456 │ HIGH     │ fixed  │ 3.5.7-r0          │ 3.5.8-r0      │ openssl: OpenSSL: Denial of Service via unbounded memory     │
+│            │                │          │        │                   │               │ growth in QUIC server...                                     │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-14456                   │
+│            ├────────────────┼──────────┤        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-18798 │ MEDIUM   │        │                   │               │ openssl: QUIC server may trigger double free when processing │
+│            │                │          │        │                   │               │ INITIAL packet                                               │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-18798                   │
+│            ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-63072 │          │        │                   │               │ openssl: heap buffer overflow in CMS key unwrapping          │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-63072                   │
+│            ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-63076 │          │        │                   │               │ openssl: invalid pointer dereference in CMP server via       │
+│            │                │          │        │                   │               │ crafted protectionAlg                                        │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-63076                   │
+├────────────┼────────────────┼──────────┤        │                   │               ├──────────────────────────────────────────────────────────────┤
+│ libssl3    │ CVE-2026-14456 │ HIGH     │        │                   │               │ openssl: OpenSSL: Denial of Service via unbounded memory     │
+│            │                │          │        │                   │               │ growth in QUIC server...                                     │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-14456                   │
+│            ├────────────────┼──────────┤        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-18798 │ MEDIUM   │        │                   │               │ openssl: QUIC server may trigger double free when processing │
+│            │                │          │        │                   │               │ INITIAL packet                                               │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-18798                   │
+│            ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-63072 │          │        │                   │               │ openssl: heap buffer overflow in CMS key unwrapping          │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-63072                   │
+│            ├────────────────┤          │        │                   │               ├──────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-63076 │          │        │                   │               │ openssl: invalid pointer dereference in CMP server via       │
+│            │                │          │        │                   │               │ crafted protectionAlg                                        │
+│            │                │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-63076                   │
+└────────────┴────────────────┴──────────┴────────┴───────────────────┴───────────────┴──────────────────────────────────────────────────────────────┘

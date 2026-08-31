@@ -973,7 +973,15 @@ class LLMService:
         """
         Split transcript into intelligent chunks using ONLY user's max_tokens setting
         """
-        available_tokens = self.user_context_window - 2000  # Reserve for prompt + response
+        # Reserve the ACTUAL response budget, not a flat guess -- this used to subtract a
+        # flat 2000 regardless of self.response_tokens (up to 16384), so a transcript sized
+        # to "fit" here could still overflow the model's real context once the requested
+        # response tokens were added back in. Measured live: a 3-hour transcript (204,655
+        # chars) was accepted as a single chunk, then vLLM 400'd at 45001 input + 15000
+        # output against a 60000-token model (issue #645-adjacent finding). The extra 2000
+        # keeps the original margin for prompt-template/speaker-data overhead on top of the
+        # response reservation.
+        available_tokens = self.user_context_window - self.response_tokens - 2000
         estimated_tokens = self._estimate_tokens(transcript)
 
         logger.info(

@@ -8,7 +8,11 @@
 # It never stops the stack for you. Taking someone's deployment down is their
 # call, so this refuses and prints the command.
 #
-# Exit: 0 both passed · 1 a scenario failed · 3 live stack still running
+# Exit: 0 both passed · 1 a scenario failed · 3 live stack still running ·
+#       4 operator declined a scenario's confirmation prompt (nothing ran —
+#       scripts/release.sh records this as ledger status=aborted, never
+#       =failed, and --force-rehearse does not apply to it: re-run and answer
+#       the prompt, or pass --yes)
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

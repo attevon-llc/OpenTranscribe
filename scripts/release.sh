@@ -158,9 +158,11 @@ cmd_status() {
         local st; st="$(ledger_status "$version" "$stage")"
         local mark="  "
         case "$st" in
-            done)    mark="✓ " ;;
-            failed)  mark="✗ " ;;
-            skipped) mark="- " ;;
+            done)       mark="✓ " ;;
+            failed)     mark="✗ " ;;
+            aborted)    mark="⊘ " ;;
+            overridden) mark="! " ;;
+            skipped)    mark="- " ;;
         esac
         printf '  %s%-12s %s\n' "$mark" "$stage" "$st"
     done
@@ -241,6 +243,28 @@ run_stage() {
         "$EXIT_PRECONDITION")
             ledger_record "$version" "$stage" "failed" "precondition"
             err "$stage: a precondition is unmet (see above) — this is not a gate failure" ;;
+        "$EXIT_ABORT")
+            # An abort means the operator declined the stage's own confirmation
+            # prompt (e.g. rehearse's `I UNDERSTAND` gate) — nothing ran, so there
+            # is nothing to accept or override. That is a different fact from a
+            # gate that ran and found a real regression (the `*` branch below),
+            # and the ledger must say so: `status=aborted`, never `status=failed`,
+            # or a declined prompt reads identically to a broken release.
+            #
+            # Deliberately, `--force-<stage>` does NOT apply here. Forcing past a
+            # FAILURE means "a human reviewed the regression and accepts the
+            # risk" — that is a real decision to record. Forcing past an ABORT
+            # would only mean "pretend the operator answered a prompt they in
+            # fact declined", which is not a decision, it's a fiction. The
+            # correct recovery for an abort is simply to run the stage again and
+            # answer the prompt (or pass --yes upstream) — never to force it.
+            if [[ -n "${FORCE_REASON[$stage]:-}" ]]; then
+                warn "$stage was ABORTED (operator declined a confirmation prompt), not failed"
+                warn "  --force-$stage does not apply to an abort — only to a real failure"
+                warn "  re-run '$stage' and answer the prompt (or pass --yes) instead of forcing"
+            fi
+            ledger_record "$version" "$stage" "aborted" "exit=$rc; operator=${USER:-unknown}"
+            err "$stage aborted by operator (exit $rc) — nothing ran" ;;
         *)
             # An overridden gate still FAILED. The distinction the ledger records
             # is that a named operator accepted the failure and said why -- the

@@ -23,7 +23,10 @@ VERSION="${1:-${RELEASE_VERSION:-}}"
 JSON_OUT="${JSON_OUT:-false}"
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 
-if docker ps --format '{{.Names}}' | grep -q '^opentranscribe-'; then
+# Filter by compose project label, not a name prefix -- see 10-preflight.sh's
+# live-stack check for why a naive prefix match false-positives on unrelated
+# containers (e.g. "opentranscribe-homepage").
+if docker ps --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}' | grep -q .; then
     echo -e "${RED}The live stack is running; the scenarios cannot run beside it.${NC}" >&2
     echo -e "${YELLOW}  ./opentr.sh stop     # preserves all data${NC}" >&2
     echo -e "${YELLOW}  (restart afterwards with ./opentr.sh start dev)${NC}" >&2
@@ -52,12 +55,12 @@ echo -e "${BLUE}Tearing down Scenario A's stack so Scenario B can bind its ports
 # holds its port bindings, and B's preflight would see a stale name. Wait for
 # the names to actually disappear rather than racing them.
 for _ in $(seq 1 30); do
-    docker ps -a --format '{{.Names}}' | grep -q '^opentranscribe-' || break
+    docker ps -a --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}' | grep -q . || break
     sleep 2
 done
-if docker ps -a --format '{{.Names}}' | grep -q '^opentranscribe-'; then
+if docker ps -a --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}' | grep -q .; then
     echo -e "${RED}Scenario A's containers did not go away; Scenario B cannot start${NC}" >&2
-    docker ps -a --format '  {{.Names}}\t{{.Status}}' | grep '^  opentranscribe-' >&2
+    docker ps -a --filter 'label=com.docker.compose.project=opentranscribe' --format '  {{.Names}}\t{{.Status}}' >&2
     upgrade_rc=3
 fi
 

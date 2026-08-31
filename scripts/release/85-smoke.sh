@@ -38,7 +38,10 @@ else
 fi
 
 # ── amd64: the documented one-liner, against Docker Hub ────────────────────
-if docker ps --format '{{.Names}}' | grep -q '^opentranscribe-'; then
+# Filter by compose project label, not a name prefix -- see 10-preflight.sh's
+# live-stack check for why a naive prefix match false-positives on unrelated
+# containers (e.g. "opentranscribe-homepage").
+if docker ps --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}' | grep -q .; then
     echo -e "${RED}live stack running — the Hub install smoke needs it stopped${NC}" >&2
     exit 3
 fi

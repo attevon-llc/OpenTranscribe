@@ -291,7 +291,12 @@ else
 fi
 
 # ── Live stack (informational here, blocking at `rehearse`) ────────────────
-if docker ps --format '{{.Names}}' | grep -q '^opentranscribe-'; then
+# Filter by the compose PROJECT label, not a name prefix: an unrelated container
+# on this host (e.g. a homepage/dashboard app named "opentranscribe-homepage")
+# can share the name prefix without being this project's stack at all, and a
+# naive `grep '^opentranscribe-'` reports a false positive that then blocks
+# `rehearse` for a reason that was never true.
+if docker ps --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}' | grep -q .; then
     record live-stack fail \
         "the live stack is running — the rehearse stage requires it stopped" \
         "./opentr.sh stop  (preserves all data)"

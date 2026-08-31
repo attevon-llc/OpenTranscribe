@@ -217,6 +217,23 @@ def _validate_production_secrets():
         logger.critical("DEBUG=true in production environment!")
         raise ValueError("DEBUG must be false in production environment")
 
+    # ALLOW_INSECURE_COOKIES strips the auth cookies' Secure flag on plain-HTTP
+    # requests to this deployment (see auth/cookies.py:_secure_for_request) — the
+    # documented, narrow opt-out for a homelab/small-business LAN install with no
+    # TLS-terminating reverse proxy. Logged here, not at cookies.py's import time:
+    # this function runs after configure_logging(), so under LOG_FORMAT=json this
+    # warning is actually JSON like every other boot line, instead of being the
+    # one line a structured log collector could drop or mangle.
+    if is_production and settings.ALLOW_INSECURE_COOKIES:
+        logger.warning(
+            "ALLOW_INSECURE_COOKIES is enabled: auth cookies are set WITHOUT the "
+            "Secure flag on plain-HTTP requests to this hardened deployment. This "
+            "is intended for a plain-HTTP LAN deployment with no TLS-terminating "
+            "reverse proxy. If this deployment is reachable from an untrusted "
+            "network, put a TLS-terminating reverse proxy in front of it and "
+            "disable this setting instead."
+        )
+
     # Warn about insecure presigned URLs in production
     public_storage_url = settings.STORAGE_PUBLIC_URL or settings.MINIO_PUBLIC_URL
     if is_production and public_storage_url and not public_storage_url.startswith("https://"):

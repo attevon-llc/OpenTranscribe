@@ -4468,6 +4468,7 @@
   "extraction.extractSavings": "~{{ratio}} % más pequeño • Carga más rápida • Metadatos conservados",
   "extraction.uploadFullDesc": "Subir el archivo de vídeo original de {{size}} tal cual",
   "auth.error.invalidLoginResponse": "Respuesta de inicio de sesión no válida del servidor",
+  "auth.error.sessionCookieRejected": "Su contraseña era correcta, pero su navegador rechazó la cookie de sesión. Esto suele ocurrir al acceder a la aplicación por HTTP simple desde una dirección de red (no localhost). Pida a su administrador que active HTTPS o la opción de cookies inseguras para este despliegue.",
   "auth.error.loginFailedCheckCredentials": "Error al iniciar sesión. Comprueba tus credenciales e inténtalo de nuevo.",
   "auth.error.invalidCredentials": "Correo electrónico o contraseña no válidos. Inténtalo de nuevo.",
   "auth.error.invalidRequest": "Solicitud no válida. Comprueba los datos introducidos.",

@@ -4468,6 +4468,7 @@
   "extraction.extractSavings": "~{{ratio}} % kleiner • Schnellerer Upload • Metadaten bleiben erhalten",
   "extraction.uploadFullDesc": "Die originale {{size}} große Videodatei unverändert hochladen",
   "auth.error.invalidLoginResponse": "Ungültige Anmeldeantwort vom Server",
+  "auth.error.sessionCookieRejected": "Ihr Passwort war korrekt, aber Ihr Browser hat das Sitzungscookie abgelehnt. Dies passiert meist, wenn die App über einfaches HTTP von einer Netzwerkadresse (nicht localhost) aufgerufen wird. Bitten Sie Ihren Administrator, HTTPS oder die Einstellung für unsichere Cookies für diese Bereitstellung zu aktivieren.",
   "auth.error.loginFailedCheckCredentials": "Anmeldung fehlgeschlagen. Bitte prüfen Sie Ihre Zugangsdaten und versuchen Sie es erneut.",
   "auth.error.invalidCredentials": "Ungültige E-Mail-Adresse oder ungültiges Passwort. Bitte versuchen Sie es erneut.",
   "auth.error.invalidRequest": "Ungültige Anfrage. Bitte überprüfen Sie Ihre Eingabe.",

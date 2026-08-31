@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import Response
 from fastapi import status
 from sqlalchemy.orm import Session
@@ -118,6 +119,7 @@ def reissue_current_session(
     db: Session,
     user: User,
     response: Response,
+    request: Request,
     *,
     user_agent: str | None = None,
     ip_address: str | None = None,
@@ -140,6 +142,8 @@ def reissue_current_session(
             caller's own commit.
         user: The account whose session is being re-established.
         response: The outgoing response; auth cookies are set on it.
+        request: The inbound request; its scheme decides the cookie Secure flag
+            under ALLOW_INSECURE_COOKIES (see `auth/cookies.py:_secure_for_request`).
         user_agent: Recorded on the new session row.
         ip_address: Recorded on the new session row.
     """
@@ -161,7 +165,7 @@ def reissue_current_session(
         user_agent=user_agent,
         ip_address=ip_address,
     )
-    set_auth_cookies(response, access_token, refresh_token)
+    set_auth_cookies(response, access_token, refresh_token, request)
     logger.info("Re-issued the caller's session for user %s after a credential change", user.id)
 
 

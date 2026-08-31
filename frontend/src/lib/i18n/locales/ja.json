@@ -4468,6 +4468,7 @@
   "extraction.extractSavings": "約 {{ratio}}% 小さい • アップロードが高速 • メタデータを保持",
   "extraction.uploadFullDesc": "元の {{size}} の動画ファイルをそのままアップロード",
   "auth.error.invalidLoginResponse": "サーバーからのログイン応答が不正です",
+  "auth.error.sessionCookieRejected": "パスワードは正しいのですが、ブラウザがセッションクッキーを拒否しました。これは通常、localhost以外のネットワークアドレスから単純なHTTPでアプリにアクセスした場合に発生します。管理者にHTTPSまたはこのデプロイメントの安全でないクッキー設定を有効にするよう依頼してください。",
   "auth.error.loginFailedCheckCredentials": "ログインに失敗しました。認証情報を確認して再試行してください。",
   "auth.error.invalidCredentials": "メールアドレスまたはパスワードが正しくありません。もう一度お試しください。",
   "auth.error.invalidRequest": "リクエストが不正です。入力内容を確認してください。",

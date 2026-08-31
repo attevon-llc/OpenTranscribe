@@ -180,9 +180,10 @@ def test_csrf_cookie_outlives_the_access_cookie():
     from app.auth.cookies import CSRF_COOKIE
     from app.auth.cookies import REFRESH_MAX_AGE
     from app.auth.cookies import set_auth_cookies
+    from tests.helpers import fake_request
 
     response = Response()
-    set_auth_cookies(response, "access", "refresh")
+    set_auth_cookies(response, "access", "refresh", fake_request())
     csrf_header = next(
         value.decode()
         for key, value in response.raw_headers
@@ -199,9 +200,10 @@ def test_refresh_cookie_is_samesite_strict():
 
     from app.auth.cookies import REFRESH_COOKIE
     from app.auth.cookies import set_auth_cookies
+    from tests.helpers import fake_request
 
     response = Response()
-    set_auth_cookies(response, "access", "refresh")
+    set_auth_cookies(response, "access", "refresh", fake_request())
     refresh_header = next(
         value.decode()
         for key, value in response.raw_headers

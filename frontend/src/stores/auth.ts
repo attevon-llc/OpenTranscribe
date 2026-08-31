@@ -439,23 +439,46 @@ export async function initAuth() {
 // and the misleading `certificate?:` field is gone from the user type entirely.
 // Hydrating it here would have put those fields back on every session probe for
 // the local/LDAP/OIDC majority, for whom they are meaningless.
+// Set on every fetchUserInfo() call (cleared on success). A just-completed login
+// needs to know WHY a null came back — a 401 means the auth cookie genuinely never
+// arrived (see _sessionCookieWasRejected below); a 5xx/timeout/network error means
+// the cookie may be perfectly fine and the session should not be blamed on it. The
+// other eight call sites don't read this at all, so nothing about their behavior
+// changes.
+let _lastFetchUserInfoStatus: number | undefined;
+
 export async function fetchUserInfo() {
   try {
     const response = await axiosInstance.get('/auth/me');
     const userData = response.data;
 
     authStore.setUser(userData);
+    _lastFetchUserInfoStatus = undefined;
     return userData;
   } catch (error: unknown) {
     // No logout() here: callers decide what a failed probe means. The old
     // logout() side effect aborted unrelated in-flight requests (e.g. the
     // login page's getAuthMethods) on every anonymous page load.
     const status = asAuthError(error).response?.status;
+    _lastFetchUserInfoStatus = status;
     if (status !== 401) {
       console.error('auth.ts: Failed to fetch user info:', error);
     }
     return null;
   }
+}
+
+/**
+ * True only when the most recent fetchUserInfo() call failed with exactly 401,
+ * right after a login response that already proved the credentials correct. That
+ * combination means the auth cookie never came back — almost always a `Secure`
+ * cookie silently dropped over plain HTTP to a non-localhost origin (see
+ * ALLOW_INSECURE_COOKIES). Any OTHER failure (5xx, timeout, network) is NOT this:
+ * the cookie may be fine and the request just didn't complete, so callers must not
+ * claim a cookie problem — or discard a possibly-good session — over one of those.
+ */
+function _sessionCookieWasRejected(): boolean {
+  return _lastFetchUserInfoStatus === 401;
 }
 
 // Login function - returns mfa_required and mfa_token if MFA is needed
@@ -524,6 +547,27 @@ export async function login(
 
     const userData = await fetchUserInfo();
 
+    if (!userData) {
+      authStore.reset();
+      if (_sessionCookieWasRejected()) {
+        // The login POST above already returned 200 with an access_token, i.e.
+        // the credentials were correct — but the follow-up /auth/me 401'd,
+        // which means the browser never sent the auth cookie back. The common
+        // cause is a `Secure` cookie silently dropped because this origin is
+        // plain HTTP and isn't localhost (e.g. a LAN IP reached from another
+        // machine) — see ALLOW_INSECURE_COOKIES. It's safe to name that here:
+        // this branch is only reachable after the password was already
+        // verified, so it tells a genuine operator something actionable
+        // without giving an unauthenticated attacker any signal they didn't
+        // already have.
+        return { success: false, message: get(t)('auth.error.sessionCookieRejected') };
+      }
+      // Any OTHER /auth/me failure (5xx, timeout, network) is not a cookie
+      // problem — the cookie may well have been stored fine — so don't blame
+      // it on one; a generic, retryable failure is the honest answer here.
+      return { success: false, message: get(t)('auth.error.loginFailed') };
+    }
+
     authStore.setReady(true);
 
     // Re-fetch the (tier-scoped) capability map for the NEW user. `clearUserState()`
@@ -535,7 +579,7 @@ export async function login(
     // lifecycle gate, so this flag is the earliest honest signal. Surfacing it
     // here means the forced-change screen appears instead of the app shell
     // failing its first request with a 403.
-    return { success: true, must_change_password: userData?.must_change_password === true };
+    return { success: true, must_change_password: userData.must_change_password === true };
   } catch (rawErr: unknown) {
     const err = asAuthError(rawErr);
     console.error('auth.ts: Login error:', rawErr);
@@ -864,7 +908,19 @@ export async function handleOIDCCallback(
       // Token is now in httpOnly cookie
       authStore.setToken('cookie');
 
-      await fetchUserInfo();
+      const userData = await fetchUserInfo();
+      if (!userData) {
+        // Same failure shape as the local-login path: the callback already proved
+        // the identity was accepted (a real access_token came back), but the
+        // cookie never made it back on /auth/me — a self-hosted IdP reached over
+        // plain-HTTP LAN is a normal homelab setup and reproduces this exactly.
+        authStore.reset();
+        const message = _sessionCookieWasRejected()
+          ? get(t)('auth.error.sessionCookieRejected')
+          : get(t)('auth.error.oidcCallbackFailed');
+        return { success: false, message };
+      }
+
       authStore.setReady(true);
       void loadCapabilities();
 
@@ -901,7 +957,19 @@ export async function loginWithPKI(): Promise<{
       // Token is now in httpOnly cookie
       authStore.setToken('cookie');
 
-      await fetchUserInfo();
+      const userData = await fetchUserInfo();
+      if (!userData) {
+        // Same failure shape as the local-login path: mTLS already proved the
+        // certificate, but the cookie never made it back on /auth/me. mTLS implies
+        // HTTPS so this is unlikely in practice, but the check should still be
+        // honest rather than silently reporting success with no working session.
+        authStore.reset();
+        const message = _sessionCookieWasRejected()
+          ? get(t)('auth.error.sessionCookieRejected')
+          : get(t)('auth.error.pkiInvalidResponse');
+        return { success: false, message };
+      }
+
       authStore.setReady(true);
       void loadCapabilities();
 

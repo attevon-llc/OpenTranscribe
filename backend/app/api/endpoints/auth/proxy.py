@@ -158,5 +158,5 @@ def proxy_login(request: Request, response: Response, db: Session = Depends(get_
             "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         }
     )
-    set_auth_cookies(result, access_token, refresh_token)
+    set_auth_cookies(result, access_token, refresh_token, request)
     return result

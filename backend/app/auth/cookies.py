@@ -22,24 +22,82 @@ OIDC_STATE_COOKIE = "oidc_state_binding"
 ACCESS_MAX_AGE = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
 REFRESH_MAX_AGE = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
 
-# Only set Secure flag when not in dev (allows HTTP cookies in development)
-_IS_DEV = not settings.is_hardened
-_SECURE = not _IS_DEV
+# Only set Secure flag when not in dev (allows HTTP cookies in development).
+# `ALLOW_INSECURE_COOKIES` is the explicit, narrowly-scoped opt-out for a hardened
+# deployment running on plain HTTP -- a LAN-only homelab/small-business install with
+# no TLS-terminating reverse proxy in front. It touches only this one attribute;
+# every other hardened-mode control (secrets, rate limits, lockout, DEBUG) is
+# unaffected. See the setting's docstring in `core/config.py` for the full rationale.
+_HARDENED = settings.is_hardened
+# Gated on _HARDENED so the flag reads as inert (not just "true but unused") on an
+# already-relaxed deployment, where dev/test mode never sets Secure anyway.
+_ALLOW_INSECURE = _HARDENED and settings.ALLOW_INSECURE_COOKIES
+# The Secure decision when no request is available to check its scheme against
+# (there should be none left after `_secure_for_request` below, but this is the
+# fallback and it is what the module-level tests exercise directly). Equal to
+# `_secure_for_request` in every case EXCEPT "hardened + override active + the
+# request is actually HTTPS" -- see that function for why that case needs a
+# per-request answer rather than a single process-wide constant.
+_SECURE = _HARDENED and not _ALLOW_INSECURE
+
+# The operator-visible warning for _ALLOW_INSECURE lives in
+# `main.py:_validate_production_secrets`, not here — this module is imported
+# (transitively, via the auth routers) before `configure_logging()` runs, so a
+# warning logged at import time here would be the one boot line NOT in JSON under
+# LOG_FORMAT=json, and a structured log collector could drop or mangle it.
 
 
-def set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+def _secure_for_request(request: Request) -> bool:
+    """Per-response Secure decision — closes the process-wide footgun in `_SECURE`.
+
+    `ALLOW_INSECURE_COOKIES` used to strip `Secure` from EVERY cookie the process
+    ever set, including one served over genuine HTTPS on the SAME process — e.g. a
+    LAN deployment later put behind a TLS reverse proxy, or a deployment reachable
+    over both a plain-HTTP LAN port and an HTTPS one. That loses `Secure`
+    protection on the very connection that never needed the override at all, and a
+    browser then attaches the resulting non-`Secure` cookie to a plain-HTTP request
+    to the same host too — exactly what `Secure` exists to prevent.
+
+    `Dockerfile.prod` runs uvicorn with `--proxy-headers --forwarded-allow-ips
+    <RFC1918 ranges>`, so `request.url.scheme` already reflects the real
+    client-facing scheme: `https` when a configured, trusted reverse proxy vouches
+    for it via `X-Forwarded-Proto`, the raw connection scheme otherwise. No new
+    trust boundary is introduced here — this reads a value Starlette already
+    resolved through the existing trusted-proxy configuration.
+
+    Net effect: Secure on an actually-HTTPS request even with the override on;
+    insecure only on an actually-plain-HTTP one — exactly the LAN case the
+    override exists for, and nothing broader.
+    """
+    if not _HARDENED:
+        return False
+    if not _ALLOW_INSECURE:
+        return True
+    return bool(request.url.scheme == "https")
+
+
+def set_auth_cookies(
+    response: Response, access_token: str, refresh_token: str, request: Request
+) -> None:
     """Set authentication cookies on a response.
 
     Sets httpOnly access_token and refresh_token cookies plus a
     non-httpOnly csrf_token cookie for double-submit CSRF protection.
+
+    ``request`` is required, not optional: it is what lets
+    :func:`_secure_for_request` tell an actually-HTTPS request apart from an
+    actually-plain-HTTP one when ``ALLOW_INSECURE_COOKIES`` is active. A caller
+    with no request in scope is a sign something upstream should be threading one
+    through, not a case to silently default away.
     """
+    secure = _secure_for_request(request)
     csrf = secrets.token_hex(32)
 
     response.set_cookie(
         ACCESS_COOKIE,
         access_token,
         httponly=True,
-        secure=_SECURE,
+        secure=secure,
         samesite="lax",
         max_age=ACCESS_MAX_AGE,
         path="/",
@@ -48,7 +106,7 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str) 
         REFRESH_COOKIE,
         refresh_token,
         httponly=True,
-        secure=_SECURE,
+        secure=secure,
         # Strict, not Lax: this cookie is only ever used by same-site XHR to
         # /api/auth/token/refresh, so it never needs to survive a cross-site
         # top-level navigation — and not sending it on one removes the CSRF
@@ -61,7 +119,7 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str) 
         CSRF_COOKIE,
         csrf,
         httponly=False,  # Readable by JavaScript for double-submit pattern
-        secure=_SECURE,
+        secure=secure,
         samesite="lax",
         # Must outlive the ACCESS cookie, not match it. The double-submit token
         # is what authorises a token refresh, and a refresh happens precisely
@@ -73,7 +131,7 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str) 
     )
 
 
-def set_oidc_state_binding(response: Response, secret: str, max_age: int) -> None:
+def set_oidc_state_binding(response: Response, secret: str, max_age: int, request: Request) -> None:
     """Bind an in-flight OIDC login to the browser that started it.
 
     The `state` parameter is unguessable and single-use, which stops replay — but
@@ -95,7 +153,7 @@ def set_oidc_state_binding(response: Response, secret: str, max_age: int) -> Non
         OIDC_STATE_COOKIE,
         secret,
         httponly=True,
-        secure=_SECURE,
+        secure=_secure_for_request(request),
         samesite="lax",
         max_age=max_age,
         path="/api/auth",

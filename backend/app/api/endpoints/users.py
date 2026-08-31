@@ -340,7 +340,7 @@ def update_current_user(
         # The revocation above is total and includes THIS session. Hand the caller
         # a fresh one rather than signing them out of the flow they just completed.
         reissue_current_session(
-            db, current_user, response, user_agent=user_agent, ip_address=client_ip
+            db, current_user, response, request, user_agent=user_agent, ip_address=client_ip
         )
 
     if password_changed:

@@ -267,6 +267,27 @@ someone else's product.
 
 ## Gotchas
 
+- **`cookies.py`'s `_SECURE` module constant is computed once at import time from
+  `settings.is_hardened` and `settings.ALLOW_INSECURE_COOKIES`, in that order — hardened first,
+  override second.** A hardened deployment (`ENVIRONMENT` unset or `production`, the default)
+  sets `Secure` on every auth cookie, which a browser silently drops when sent over plain HTTP to
+  anything other than `localhost`/`127.0.0.1`. That made a LAN-IP login (a homelab/small-business
+  deployment with no TLS-terminating reverse proxy, e.g. `http://10.10.10.20:5173`) answer 200
+  with a real `access_token` and then never actually hold a session — the next request 401s,
+  which looks exactly like a wrong password and gives no hint why. `ALLOW_INSECURE_COOKIES`
+  (default `false`, `core/config.py`) is the one explicit, narrow opt-out; enabling it on a
+  hardened deployment logs a `logging.warning` at import time so the relaxation is visible in
+  the boot log, not silent. Because it is a module-level constant, a test that needs a different
+  combination must `importlib.reload(cookies)` after monkeypatching `settings` — see
+  `tests/unit/test_cookie_secure_flag.py`. Self-signed HTTPS, a real reverse proxy, and future
+  cloud/EC2 deployments all already work under the default and need no override — `Secure` only
+  requires the `https:` scheme, not a browser-trusted CA.
+  `stores/auth.ts:login()` on the frontend treats a failed `/auth/me` immediately after a 200
+  `/auth/login` as this exact failure mode (the cookie never came back) and reports
+  `auth.error.sessionCookieRejected` instead of a generic failure — safe to be specific there
+  because that branch is only reachable after the password was already verified correct, so it
+  tells a genuine operator something actionable without giving an unauthenticated attacker any
+  signal they didn't already have.
 - **Every token carries a `type` claim and every consumer verifies it.** Access, refresh and
   MFA tokens are signed with the same key, so `type` is the only thing separating them —
   without the check the MFA half-token (handed out BEFORE the second factor) was a full

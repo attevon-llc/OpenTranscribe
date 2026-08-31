@@ -419,6 +419,7 @@ def _check_mfa_requirement(
 
 
 def _generate_login_tokens(
+    request: Request,
     db: Session,
     user: User,
     user_uuid_str: str,
@@ -430,6 +431,8 @@ def _generate_login_tokens(
     """Generate access and refresh tokens for successful login.
 
     Args:
+        request: FastAPI request object (its scheme decides the cookie Secure flag
+            under ALLOW_INSECURE_COOKIES — see `auth/cookies.py:_secure_for_request`)
         db: Database session
         user: User model object
         user_uuid_str: User UUID string
@@ -486,7 +489,7 @@ def _generate_login_tokens(
     # Set httpOnly cookies for browser-based authentication (C2 security hardening)
     from app.auth.cookies import set_auth_cookies
 
-    set_auth_cookies(response, access_token, refresh_token)
+    set_auth_cookies(response, access_token, refresh_token, request)
     return response
 
 
@@ -707,6 +710,7 @@ def login_for_access_token(
 
         # Generate tokens and return response
         return _generate_login_tokens(
+            request,
             db,
             user_db,
             user_uuid_str,

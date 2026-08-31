@@ -176,6 +176,10 @@ services:
       - plugins.ml_commons.native_memory_threshold=99
       - plugins.ml_commons.model_access_control_enabled=false
       - plugins.ml_commons.allow_registering_model_via_url=true
+      # Required separately from the url permission above -- OpenSearch 3.4 refuses a
+      # file:// registration outright without this, independent of whether the backend
+      # can even reach the shared /ml-models path (issue #638).
+      - plugins.ml_commons.allow_registering_model_via_local_file=true
     ulimits:
       memlock:
         soft: -1
@@ -218,6 +222,11 @@ services:
       - ${MODEL_CACHE_DIR:-./models}/nltk_data:/home/appuser/.cache/nltk_data
       # RAG chat loads a CPU cross-encoder here to rerank retrieval results.
       - ${MODEL_CACHE_DIR:-./models}/huggingface:/home/appuser/.cache/huggingface
+      # Read-write access to the SAME host directory OpenSearch mounts read-only at
+      # /ml-models (issue #638) -- OpenSearch resolves a file:// model registration on
+      # its OWN filesystem, so a model the backend downloads must land in this shared
+      # path, not the backend's private cache, for OpenSearch to ever find it.
+      - ${MODEL_CACHE_DIR:-./models}/opensearch-ml:/ml-models
       # Shared scratch for cross-worker preprocessed-WAV handoff
       - pipeline_scratch:/scratch/opentranscribe
     ports:

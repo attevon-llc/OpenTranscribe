@@ -206,6 +206,14 @@ boto3==1.43.74
 openai==3.3.0
 # requests is pulled in by many packages but listed explicitly for Gladia REST calls
 requests==2.34.2
+# Recovers structurally-malformed JSON from LLM summary responses
+# (llm_service.py::_parse_summary_response) that `_repair_truncated_json`'s
+# bracket-closing can't fix — chiefly an unescaped literal `"` inside a string
+# value (e.g. a transcript quoting a feet/inches measurement like `6'6"`,
+# verified live on a real transcript), which desyncs the parser's
+# in-string tracking for everything after it, not just the tail. Zero
+# transitive dependencies.
+json-repair==0.63.4
 
 # Diarization-boundary benchmark (issue #193): cpWER metric. Lazily imported by
 # app.utils.diarization_metrics.cpwer + backend/scripts/benchmark_boundary.py — only

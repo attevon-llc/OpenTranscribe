@@ -103,6 +103,8 @@ speechmatics-batch==0.5.0
 boto3==1.43.74
 openai==3.3.0
 requests==2.34.2
+# See requirements.txt for why — LLM summary JSON repair (llm_service.py)
+json-repair==0.63.4
 
 # Diarization metrics (cpWER) — exercised by tests/unit/test_diarization_metrics.py
 meeteval==0.4.3

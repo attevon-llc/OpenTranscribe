@@ -236,9 +236,18 @@ check_stage3_precondition() {
         # something that might not be this stage's to touch.
         if [[ "$id" != "3" ]]; then
             info "  clearing a leftover release-test stack from an earlier stage-3 leg..."
-            ./scripts/release-tests/test-fresh-install.sh --cleanup --yes >/dev/null 2>&1 || true
-            ./scripts/release-tests/test-upgrade.sh --cleanup --yes >/dev/null 2>&1 || true
-            ./scripts/release-tests/test-lite-mode.sh --cleanup --yes >/dev/null 2>&1 || true
+            # OT_RELEASE_TEST_RESET_VOLUMES=1 makes --cleanup also remove stale
+            # opentranscribe_* stock volumes (lib/guardrails.sh's gr_cleanup, opt-in
+            # step 3c) — not just containers. Without it, leg "3"'s named volumes
+            # (owned by leg "3"'s own run, not this cleanup pass) survive every
+            # --cleanup call here, and the next fresh-install leg ("3-lite"/"3-pki")
+            # inherits leg "3"'s database credentials and fails its own preflight
+            # ("A fresh-install test against these is NOT a fresh install"). This is
+            # the same live-marker-verified removal gr_preflight already runs on a
+            # standalone invocation, never a raw `docker volume rm`.
+            OT_RELEASE_TEST_RESET_VOLUMES=1 ./scripts/release-tests/test-fresh-install.sh --cleanup --yes >/dev/null 2>&1 || true
+            OT_RELEASE_TEST_RESET_VOLUMES=1 ./scripts/release-tests/test-upgrade.sh --cleanup --yes >/dev/null 2>&1 || true
+            OT_RELEASE_TEST_RESET_VOLUMES=1 ./scripts/release-tests/test-lite-mode.sh --cleanup --yes >/dev/null 2>&1 || true
             for _ in $(seq 1 30); do
                 service_reachable localhost 5174 || break
                 sleep 2

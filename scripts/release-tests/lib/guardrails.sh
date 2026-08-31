@@ -314,6 +314,22 @@ gr_cleanup() {
     # install silently inherits it (issue #408).
     gr_cleanup_owned_stock_resources
 
+    # 3c. Opt-in reset of stale stock-named volumes left by an EARLIER run this
+    # one does not own (gr_cleanup_owned_stock_resources deliberately leaves
+    # those alone — "leaving $vol alone — it existed before this run" — which is
+    # correct in general but is exactly what let leg "3"'s stock volumes survive
+    # into "3-lite"/"3-pki": those legs' own --cleanup calls could stop leg "3"'s
+    # containers but not remove volumes leg "3" never recorded owning, so the very
+    # next fresh-install's preflight found the previous run's Postgres credentials
+    # still there and refused. This reuses gr_check_stale_stock_volumes — the same
+    # live-marker-verified removal gr_preflight already runs — rather than a raw
+    # `docker volume rm`, and only fires when the caller explicitly opts in via
+    # OT_RELEASE_TEST_RESET_VOLUMES=1 (test-matrix.sh's inter-leg cleanup does this;
+    # a plain `--cleanup` a human runs by hand is unaffected).
+    if [[ "${OT_RELEASE_TEST_RESET_VOLUMES:-}" == "1" ]]; then
+        gr_check_stale_stock_volumes
+    fi
+
     # 4. Remove TEST_ROOT contents — but only if TEST_ROOT is still within the allowed area
     if [[ -n "${TEST_ROOT:-}" && -d "$TEST_ROOT" ]]; then
         local resolved

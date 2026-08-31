@@ -108,7 +108,10 @@ def _stage3_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
     # the test can prove test-upgrade.sh's cleanup is what actually clears the state).
     _write_stub(
         fake_repo / "scripts" / "release-tests" / "test-lite-mode.sh",
-        f'if [ "$1" = "--cleanup" ]; then exit 0; fi\ntouch "{marker_dir}/leg3lite.ran"\nexit 0\n',
+        f'if [ "$1" = "--cleanup" ]; then '
+        f'echo "${{OT_RELEASE_TEST_RESET_VOLUMES:-<unset>}}" > "{marker_dir}/lite-mode.reset-volumes"; '
+        f"exit 0; fi\n"
+        f'touch "{marker_dir}/leg3lite.ran"\nexit 0\n',
     )
 
     # Leg "3-pki": scripts/pki/run-pki-e2e-leg.sh --yes
@@ -117,11 +120,21 @@ def _stage3_fixture(tmp_path: Path) -> tuple[Path, Path, Path]:
         f'touch "{marker_dir}/leg3pki.ran"\nexit 0\n',
     )
 
-    # Cleanup-only targets the precondition calls for any leg OTHER than "3".
-    _write_stub(fake_repo / "scripts" / "release-tests" / "test-fresh-install.sh", "exit 0\n")
+    # Cleanup-only targets the precondition calls for any leg OTHER than "3". Each also
+    # records the OT_RELEASE_TEST_RESET_VOLUMES value it was invoked with, so a sibling test
+    # can prove test-matrix.sh actually requests a volume reset on these calls — not just a
+    # container teardown — per the fix in this commit.
+    _write_stub(
+        fake_repo / "scripts" / "release-tests" / "test-fresh-install.sh",
+        f'if [ "$1" = "--cleanup" ]; then '
+        f'echo "${{OT_RELEASE_TEST_RESET_VOLUMES:-<unset>}}" > "{marker_dir}/fresh-install.reset-volumes"; '
+        f"fi\nexit 0\n",
+    )
     _write_stub(
         fake_repo / "scripts" / "release-tests" / "test-upgrade.sh",
-        f'if [ "$1" = "--cleanup" ]; then rm -f "{state_file}"; fi\nexit 0\n',
+        f'if [ "$1" = "--cleanup" ]; then rm -f "{state_file}"; '
+        f'echo "${{OT_RELEASE_TEST_RESET_VOLUMES:-<unset>}}" > "{marker_dir}/upgrade.reset-volumes"; '
+        f"fi\nexit 0\n",
     )
 
     return fake_repo, marker_dir, state_file
@@ -188,6 +201,37 @@ def test_all_three_stage3_legs_run_in_one_invocation(tmp_path: Path) -> None:
     assert not state_file.exists(), (
         "the leftover release-test stack should have been cleared before 3-lite/3-pki ran"
     )
+
+
+@pytest.mark.unit
+def test_inter_leg_cleanup_requests_a_volume_reset(tmp_path: Path) -> None:
+    """The inter-leg cleanup must clear VOLUMES, not just containers (issue: 3-lite/3-pki
+    inherited leg 3's stock-named opentranscribe_* volumes and failed their own fresh-install
+    guardrail with "pre-existing stock volumes found").
+
+    lib/guardrails.sh's gr_cleanup only removes a stale stock volume through the
+    live-marker-verified gr_check_stale_stock_volumes path, and only when the caller sets
+    OT_RELEASE_TEST_RESET_VOLUMES=1 — a plain `--cleanup` a human runs by hand must not
+    suddenly start dying/removing volumes it was never asked to touch. So the fix must be in
+    test-matrix.sh: it has to set that variable on the SPECIFIC inter-leg cleanup calls this
+    precondition makes, not leave it to be set by hand. Each stub script here records the value
+    of OT_RELEASE_TEST_RESET_VOLUMES it was invoked with when called with `--cleanup`, without
+    needing a real `docker volume` — proving the CALLER passed the opt-in, which is all
+    test-matrix.sh is responsible for.
+    """
+    fake_repo, marker_dir, state_file = _stage3_fixture(tmp_path)
+
+    out = _run_stage3(fake_repo, state_file)
+
+    for name in ("fresh-install", "upgrade", "lite-mode"):
+        marker = marker_dir / f"{name}.reset-volumes"
+        assert marker.exists(), (
+            f"{name}.sh --cleanup was never invoked by the inter-leg cleanup pass:\n{out}"
+        )
+        assert marker.read_text().strip() == "1", (
+            f"{name}.sh --cleanup ran without OT_RELEASE_TEST_RESET_VOLUMES=1 — leg 3's "
+            f"stock-named volumes will survive into the next stage-3 leg:\n{out}"
+        )
 
 
 @pytest.mark.unit

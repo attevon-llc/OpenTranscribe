@@ -4,7 +4,7 @@
 # This script helps test LDAP authentication in OpenTranscribe.
 # Make sure you have:
 # 1. Started OpenTranscribe: ./opentr.sh start dev
-# 2. Started LLDAP: docker compose -f docker-compose.ldap-test.yml up -d
+# 2. Started LLDAP: ./opentr.sh start dev --with-ldap-test
 # 3. Added LDAP config to .env and restarted backend
 
 set -e
@@ -32,7 +32,7 @@ if curl -s -o /dev/null -w "%{http_code}" "$LLDAP_URL" | grep -q "200\|302"; the
     echo -e "${GREEN}✓ LLDAP is running at $LLDAP_URL${NC}"
 else
     echo -e "${RED}✗ LLDAP is not accessible at $LLDAP_URL${NC}"
-    echo "  Start it with: docker compose -f docker-compose.ldap-test.yml up -d"
+    echo "  Start it with: ./opentr.sh start dev --with-ldap-test"
     exit 1
 fi
 

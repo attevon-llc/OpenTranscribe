@@ -22,6 +22,55 @@ sequences `scripts/validate-deployments.sh`, `scripts/run-integration-tests.sh`,
 `scripts/test-matrix.sh` is a thin dispatcher over exactly this table — see
 ["Anti-staleness"](#anti-staleness) below.
 
+## `scripts/test-matrix.sh` RUNS every leg
+
+**Every stage executes its leg's real command and reports a real verdict.** This has not always
+been true: stages 2, 3 and 4 used to check a precondition (dev stack up / stopped / scanners on
+`PATH`) and then write `NOT-MEASURED … execution is a separate, future effort` to the report and
+return 0. `scripts/test-matrix.sh all` therefore exited 0 having proven the eight Stage 1 checks
+and the leg table's own doc-sync — and nothing whatsoever about GPU scaling, diarization, lite
+mode, auth, PKI, fresh install or upgrade, while listing every one of them. A green checklist
+that measured none of that is worse than having no leg at all, and it is gone.
+
+Five outcomes, and none of them is a placeholder:
+
+| Outcome | Meaning | Run exits |
+|---|---|---|
+| `PASS` | the leg ran and its own criteria held | `0` |
+| `FAIL` | the leg ran and did not pass; the report names the log file | `1` |
+| `SKIP` | the leg ran and reported **in its own words** that it could not measure this here — printed with that script's stated reason, counted, and repeated loudly at the end | `0` |
+| `BLOCKED` | the leg found a precondition it could not meet | `3` |
+| `ABORT` | the leg reported an operator abort (e.g. a declined `I UNDERSTAND` prompt) | `4` |
+
+A run with any `SKIP` prints `A green matrix with skips is not a fully measured one.` — the same
+discipline `scripts/audit-tests.py` applies to its DEFERRED count.
+
+`BLOCKED` and `ABORT` exist because collapsing every non-zero into `FAIL` made "the operator said
+no" and "the rehearsal found a regression" look identical. `gr_confirmation_gate` in
+`scripts/release-tests/lib/guardrails.sh` now exits `4` (it used to `gr_die`, i.e. `1`), and
+`scripts/release/65-rehearse.sh` preserves `3`/`4` instead of flattening them — so a rehearsal
+nobody agreed to run is no longer recorded as a rehearsal that failed.
+
+**Exit codes are the shared contract** with `scripts/release.sh`: `0` pass, `1` gate failed,
+`2` misuse, `3` precondition unmet, `4` operator abort. Stage 3 legs additionally require
+`--yes`, because they rebuild images and rehearse real deployments for hours.
+
+⚠️ **This repo has two exit-code conventions**, and each leg declares which one its command
+follows (the fifth field of `test-matrix.sh`'s `LEGS` table, shown by `--list`):
+
+- `standard` — the contract above. Used by everything except the three smoke scripts.
+- `smoke` — `0` pass, `1` check failed, **`4` NOT MEASURED**. Used by `gpu-scale-smoke.sh`,
+  `diar-native-smoke.sh` and `lite-smoke.sh`, whose own headers document it.
+
+So exit `4` means "operator abort" in one and "not measured" in the other. Declaring it per leg
+is what lets the dispatcher report a smoke script's honest *"there is no running diar-native
+container"* as a `SKIP` with that reason, instead of misreading it as an abort.
+`backend/tests/unit/test_test_matrix_execution.py` fails if a leg's contract stops matching the
+script it wraps, if a leg names a path that does not exist, or if the placeholder ever returns.
+
+Time budget follows from this being real: Stage 1 is minutes, Stage 2 is hours, Stage 3 is hours.
+That is the honest cost of the coverage, not a reason to defer it.
+
 ## Coverage stance at a glance
 
 Read this table before assuming a mode is covered — several gaps below were only found because
@@ -123,6 +172,22 @@ Run these legs serially against that one stack. LLM provider and auth method are
 single-valued DB-backed `SystemSettings`, so concurrent legs would race each other's config —
 each leg restores its own configuration on exit.
 
+`scripts/test-matrix.sh --only 2a` runs legs 1, 2, 3 and 5 of this table as one command:
+
+```
+scripts/run-dev-tests.sh --full --all-overlays --search-quality && scripts/run-auth-e2e.sh --cleanup --skip-pki
+```
+
+`run-dev-tests.sh` is what supplies the overlay orchestration (it starts mock-llm / lldap /
+keycloak itself, reconciles the `auth_config` rows they need, and restores them on exit), which is
+why the leg goes through it rather than calling `run-integration-tests.sh` directly;
+`--search-quality` exists on that script specifically so this leg matches row 1 exactly. Leg 3's
+chat suites run inside row 2's `run-e2e.sh` with the mock-LLM overlay up. **Row 4 (real vLLM) is
+deliberately NOT in that chain** — `--with-llm-test` reserves a real GPU and is excluded from
+`run-dev-tests.sh`'s overlay table by design, and on a single 12 GB card the default model does
+not fit at any tested setting (#608, above). Run it separately on a multi-GPU host, or with a
+confirmed-fitting `LLM_TEST_MODEL`.
+
 | # | Command | Pass criterion |
 |---|---|---|
 | 1 | `./scripts/run-integration-tests.sh --coverage --search-quality --cleanup` | Exit 0; the search-quality phase reports a non-zero collected-test count |
@@ -206,6 +271,19 @@ Pass: every assertion in each scenario's `REPORT.md` is `PASS`. This sequence is
 ledger and records the run against a real version. Use the raw commands above only when
 rehearsing outside a release cut.
 
+`scripts/test-matrix.sh --only 3 --yes` runs the same sequence by calling the stage script both
+callers share:
+
+```
+scripts/release/65-rehearse.sh "$(tr -d '[:space:]' < VERSION)"
+```
+
+That is one engine with two callers, not two implementations: `65-rehearse.sh` runs Scenario A,
+tears A's stack down so B can bind the stock ports, then runs Scenario B. It is also *pure* —
+only `release.sh` writes the `.release/<version>/` ledger — so running it from the matrix cannot
+corrupt a real release's recorded state. It replaced a leg whose description said
+"fresh-install + upgrade" while its command was `test-fresh-install.sh` alone.
+
 ### Stage 3 — lite-mode full rehearsal
 
 **~30-45 min. Requires the dev stack STOPPED** (same one-liner-defaults constraint as
@@ -246,6 +324,16 @@ RUN_PKI_E2E=true pytest backend/tests/e2e/test_pki.py -v
 Pass: a client cert from `scripts/pki/test-certs/clients/*.p12` authenticates at
 `https://localhost:5182`; a request with no cert is rejected at the TLS layer (nginx), not served
 as an anonymous 200.
+
+`scripts/test-matrix.sh --only 3-pki --yes` runs
+[`scripts/pki/run-pki-e2e-leg.sh`](https://github.com/attevon-llc/OpenTranscribe/blob/master/scripts/pki/run-pki-e2e-leg.sh),
+which owns those three commands plus the orchestration they need and nothing else: it clears any
+release-test stack still holding the stock `opentranscribe-*` names from an earlier Stage 3 leg
+(via each scenario's own labelled `--cleanup`, which cannot reach production volumes), generates
+the CA, brings up prod+nginx+PKI, waits for the mTLS listener on 5182, runs the suite with
+`RUN_PKI_E2E=true` (without which `test_pki.py` skips wholesale and the leg would "pass" having
+run nothing), and stops the stack again. `--keep-stack` leaves it up for inspection. It follows
+the standard exit contract: `0`/`1`/`2`/`3`/`4`.
 
 **Scope decisions, stated explicitly:**
 
@@ -310,6 +398,19 @@ not new work.**
 `scan`'s security-tooling check is a **warn**-severity preflight, not a blocking one — a missing
 `trivy`, `grype`, or `syft` on `PATH` silently reduces scan coverage rather than failing the
 stage. Verify all three are installed before starting Stage 4.
+
+`scripts/test-matrix.sh --only 4` runs the scan for real:
+
+```
+scripts/release/50-scan.sh "$(tr -d '[:space:]' < VERSION)"
+```
+
+The **stage script**, not `release.sh scan`, for the same reason Stage 3 calls `65-rehearse.sh`:
+`50-scan.sh` does the work, `release.sh` owns the `.release/<version>/` ledger, so the matrix can
+run the gate without writing a ledger entry a real release would then read as current. The
+dispatcher warns up front about any of the three scanners missing from `PATH`, so a thin scan
+does not read as a thorough one. `build`/`publish`/`promote` remain `release.sh`-only: they
+reach Docker Hub and GitHub, and nothing outside the release pipeline should invoke them.
 
 ## Time budget
 

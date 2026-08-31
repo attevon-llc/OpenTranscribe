@@ -58,6 +58,7 @@ function show_help {
     echo "  stop          Stop all services"
     echo "  restart       Restart all services"
     echo "  status        Show container status"
+    echo "  compose-files Print the resolved 'docker compose -f ...' chain"
     echo "  logs [svc]    View logs (all or specific service)"
     echo "  update        Pull latest Docker images and restart"
     echo "  update-full   Update images AND configuration files"
@@ -74,6 +75,7 @@ function show_help {
     echo "Examples:"
     echo "  ./opentranscribe.sh start"
     echo "  ./opentranscribe.sh logs backend"
+    echo "  ./opentranscribe.sh compose-files    # which overlays did it pick?"
     echo "  ./opentranscribe.sh update           # Update containers only"
     echo "  ./opentranscribe.sh update-full      # Update everything"
     echo "  ./opentranscribe.sh backup           # Dump the database to ./backups"
@@ -537,6 +539,27 @@ case "${1:-help}" in
         echo -e "${BLUE}📊 Container Status:${NC}"
         compose_files=$(get_compose_files)
         docker compose $compose_files ps
+        ;;
+    compose-files)
+        # Print the resolved `-f` chain on stdout, and nothing else.
+        #
+        # get_compose_files() is the SINGLE owner of overlay selection — GPU vs
+        # Blackwell vs CPU-only, nginx, scheduled backup — but every other arm
+        # consumed it internally, so there was no way to ASK what it chose. Two
+        # consequences this arm exists to remove:
+        #
+        #   * A support request ("why is my GPU not being used?") had to be
+        #     answered by inference. Now: `./opentranscribe.sh compose-files`.
+        #   * The release rehearsal hand-built its own parallel `-f` list rather
+        #     than driving this one, so the whole selection layer was never
+        #     exercised by a release gate and had already drifted. See
+        #     scripts/release-tests/REHEARSAL_ALIGNMENT_PLAN.md.
+        #
+        # The selection banners get_compose_files() prints go to stderr, so stdout
+        # is exactly the chain and stays composable:
+        #   docker compose $(./opentranscribe.sh compose-files 2>/dev/null) ps
+        check_environment
+        get_compose_files
         ;;
     logs)
         check_environment

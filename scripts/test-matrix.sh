@@ -54,28 +54,50 @@ STAGE_ARG=""
 
 # ------------------------------------------------------------- the leg table
 #
-# id|stage|description|command
+# id|stage|description|command|exit-contract
 #
-# "command" is informational for --list/--dry-run; execution for stage 1 legs
-# runs the real command, stage 2/3/4 legs are precondition-checked only (they
-# need a live/stopped stack, GPU time and hours — see full-test-matrix.md).
+# EVERY leg's "command" is a REAL, runnable command line, and run_leg() executes
+# it for every stage. Stages 2/3/4 used to be precondition-checked only: they
+# verified the stack was up/down and then wrote `NOT-MEASURED ... execution is a
+# separate, future effort` to the report and returned 0. So `test-matrix.sh all`
+# exited 0 having proven the eight fast static checks and the leg table's own
+# doc-sync — and nothing about GPU scaling, diarization, lite mode, auth, PKI,
+# fresh install or upgrade, despite listing all of them. A placeholder that
+# reads like coverage is worse than no leg at all.
+#
+# THIS FILE STILL OWNS NO TEST LOGIC. Every command below is an existing script
+# invoked with the flags full-test-matrix.md already documents for that leg.
+# Where a leg needs a sequence, it calls the script that already owns that
+# sequence (stage 3 -> scripts/release/65-rehearse.sh, which is the same thing
+# `scripts/release.sh rehearse` runs; stage 4 -> scripts/release/50-scan.sh).
+# Those stage scripts are pure: only release.sh writes the .release/<v>/ ledger,
+# so running them from here cannot corrupt a real release's recorded state.
+#
+# exit-contract selects how the leg's exit code is READ, because this repo has
+# two conventions and conflating them would misreport results:
+#   standard  0 pass · non-zero fail            (release.sh / this script's own)
+#   smoke     0 pass · 1 fail · 4 NOT MEASURED  (gpu-scale/diar-native/lite-smoke)
+# Note 4 means "operator abort" in the standard contract and "not measured" in
+# the smoke one. That divergence is real and pre-existing; declaring it per leg
+# is how this script reads each verdict correctly instead of calling a smoke
+# script's honest "I could not measure this" an operator abort.
 LEGS=(
-    "1.1|1|safe-precommit full run|scripts/safe-precommit.sh run --all-files"
-    "1.2|1|backend test summary|scripts/run-backend-tests.sh --summary"
-    "1.3|1|backend + frontend test-quality audits|python3 scripts/audit-tests.py backend/tests"
-    "1.4|1|frontend check (no rebuild)|scripts/frontend-check.sh --no-claude --check-only"
-    "1.5|1|docs-site build|cd docs-site && npm run build"
-    "1.6|1|deployment matrix validation|scripts/validate-deployments.sh --json"
-    "1.7|1|version consistency|python3 scripts/release/check-version-consistency.py"
-    "1.8|1|route coverage|backend/venv/bin/python3 scripts/audit-route-coverage.py --json"
-    "2a|2|baseline + LLM + auth (mock-llm, llm-test, ldap/keycloak/authentik-test)|opentr.sh start dev --with-mock-llm --with-llm-test --with-ldap-test --with-keycloak-test --with-authentik-test"
-    "2b|2|GPU scaling|scripts/gpu-scale-smoke.sh"
-    "2c|2|diarization providers|scripts/diar-native-smoke.sh"
-    "2d|2|lite/cpu-only|scripts/lite-smoke.sh"
-    "3|3|deployment mode rehearsal (fresh-install + upgrade)|scripts/release-tests/test-fresh-install.sh"
-    "3-lite|3|lite-mode full pipeline rehearsal (mocked cloud ASR + mocked LLM)|scripts/release-tests/test-lite-mode.sh"
-    "3-pki|3|PKI/mTLS (prod+nginx only)|pytest backend/tests/e2e/test_pki.py"
-    "4|4|image/release gates confirmation|scripts/release.sh scan"
+    "1.1|1|safe-precommit full run|scripts/safe-precommit.sh run --all-files|standard"
+    "1.2|1|backend test summary|scripts/run-backend-tests.sh --summary|standard"
+    "1.3|1|backend + frontend test-quality audits|python3 scripts/audit-tests.py backend/tests|standard"
+    "1.4|1|frontend check (no rebuild)|scripts/frontend-check.sh --no-claude --check-only|standard"
+    "1.5|1|docs-site build|cd docs-site && npm run build|standard"
+    "1.6|1|deployment matrix validation|scripts/validate-deployments.sh --json|standard"
+    "1.7|1|version consistency|python3 scripts/release/check-version-consistency.py|standard"
+    "1.8|1|route coverage|backend/venv/bin/python3 scripts/audit-route-coverage.py --json|standard"
+    "2a|2|Cycle 2A — integration gate + full e2e + frontend + auth e2e (real vLLM leg excluded, see doc)|scripts/run-dev-tests.sh --full --all-overlays --search-quality && scripts/run-auth-e2e.sh --cleanup --skip-pki|standard"
+    "2b|2|Cycle 2B — GPU scaling|scripts/gpu-scale-smoke.sh|smoke"
+    "2c|2|Cycle 2C — diarization providers|scripts/diar-native-smoke.sh|smoke"
+    "2d|2|Cycle 2D — lite/cpu-only topology|scripts/lite-smoke.sh|smoke"
+    "3|3|deployment mode rehearsal (fresh-install + upgrade)|scripts/release/65-rehearse.sh \"\$(tr -d '[:space:]' < VERSION)\"|standard"
+    "3-lite|3|lite-mode full pipeline rehearsal (mocked cloud ASR + mocked LLM)|scripts/release-tests/test-lite-mode.sh --yes|standard"
+    "3-pki|3|PKI/mTLS (prod+nginx only)|scripts/pki/run-pki-e2e-leg.sh --yes|standard"
+    "4|4|image/release gates confirmation|scripts/release/50-scan.sh \"\$(tr -d '[:space:]' < VERSION)\"|standard"
 )
 
 usage() {
@@ -163,11 +185,13 @@ check_doc_sync() {
 # -------------------------------------------------------------------- list
 list_legs() {
     for entry in "${LEGS[@]}"; do
-        IFS='|' read -r id stage desc cmd <<< "$entry"
+        IFS='|' read -r id stage desc cmd contract <<< "$entry"
+        contract="${contract:-standard}"
         if [[ "$JSON_OUT" == "true" ]]; then
-            printf '{"leg":"%s","stage":%s,"description":"%s","command":"%s"}\n' "$id" "$stage" "$desc" "$cmd"
+            printf '{"leg":"%s","stage":%s,"description":"%s","command":"%s","exit_contract":"%s"}\n' \
+                "$id" "$stage" "$desc" "$cmd" "$contract"
         else
-            printf "  %-6s stage %s  %-55s %s\n" "$id" "$stage" "$desc" "$cmd"
+            printf "  %-6s stage %s  [%-8s] %-60s %s\n" "$id" "$stage" "$contract" "$desc" "$cmd"
         fi
     done
 }
@@ -190,64 +214,160 @@ check_stage2_precondition() {
 }
 
 check_stage3_precondition() {
+    local id="${1:-}"
     if service_reachable localhost 5174; then
-        err "Stage 3 requires the dev stack STOPPED (it rebuilds and rehearses against prod images). Run: ./opentr.sh stop"
-        return $EXIT_PRECONDITION
+        # Leg "3" (scripts/release/65-rehearse.sh, Scenario B = test-upgrade.sh) deliberately
+        # leaves its stack running afterward "for inspection" — the right default when a human
+        # runs `release.sh rehearse` standalone and wants to poke at what just upgraded.
+        #
+        # But inside `test-matrix.sh all`/`3`, that same leftover release-test stack (never a
+        # live operator deployment — this check already refused to let leg "3" itself start
+        # unless the field was clear) then permanently blocks every subsequent stage-3 leg from
+        # binding the same stock 5173-5180 ports: leg "3-lite"/"3-pki" would see 5174 reachable
+        # forever and report BLOCKED without ever reaching their own preflight. That is the exact
+        # collision scripts/pki/run-pki-e2e-leg.sh's own teardown preamble already exists to
+        # handle for itself — generalized here so "3-lite" (which has no such preamble of its
+        # own) gets the same chance, and so the precondition check clears the field BEFORE either
+        # sibling leg starts rather than leaving it to a leg that might not have the guard.
+        #
+        # Leg "3" itself gets none of this: if 5174 is reachable when "3" is what is being
+        # checked, that is a real precondition violation (the live/dev stack was never stopped),
+        # not a release-test remnant this stage created — clearing it here would be tearing down
+        # something that might not be this stage's to touch.
+        if [[ "$id" != "3" ]]; then
+            info "  clearing a leftover release-test stack from an earlier stage-3 leg..."
+            ./scripts/release-tests/test-fresh-install.sh --cleanup --yes >/dev/null 2>&1 || true
+            ./scripts/release-tests/test-upgrade.sh --cleanup --yes >/dev/null 2>&1 || true
+            ./scripts/release-tests/test-lite-mode.sh --cleanup --yes >/dev/null 2>&1 || true
+            for _ in $(seq 1 30); do
+                service_reachable localhost 5174 || break
+                sleep 2
+            done
+        fi
+        if service_reachable localhost 5174; then
+            err "Stage 3 requires the dev stack STOPPED (it rebuilds and rehearses against prod images). Run: ./opentr.sh stop"
+            return $EXIT_PRECONDITION
+        fi
     fi
     return 0
 }
 
+check_stage4_tooling() {
+    # Warnings, not a precondition: 50-scan.sh degrades per missing scanner and reports what it
+    # actually ran. Saying so up front keeps a thin scan from reading as a thorough one.
+    local missing=()
+    command -v trivy >/dev/null 2>&1 || missing+=(trivy)
+    command -v grype >/dev/null 2>&1 || missing+=(grype)
+    command -v syft  >/dev/null 2>&1 || missing+=(syft)
+    if (( ${#missing[@]} > 0 )); then
+        info "  ${YELLOW}warn${NC}: not on PATH — scan coverage reduced: ${missing[*]}"
+    fi
+    return 0
+}
+
+# ------------------------------------------------------------ leg outcomes
+#
+# Outcomes, and none of them is a generic placeholder:
+#   PASS     the leg ran and its own criteria held
+#   FAIL     the leg ran and did not pass (log path recorded); the run exits 1
+#   SKIP     the leg ran and reported, in its own words, that it COULD NOT MEASURE this here
+#            (smoke-contract exit 4) — always accompanied by that script's stated reason
+#   ABORT    the leg reported a standard-contract operator abort (4); the run exits 4
+#   BLOCKED  the leg reported a standard-contract unmet precondition (3); the run exits 3
+#
+# ABORT and BLOCKED exist so a declined `I UNDERSTAND` prompt, or a precondition the leg
+# discovered internally, cannot be recorded as a failed test. Before this, every non-zero was
+# a FAIL, so "the operator said no" and "the rehearsal found a regression" looked identical.
+#
+# A SKIP does not fail the run, but it is counted and printed loudly at the end, the same
+# discipline scripts/audit-tests.py uses for its DEFERRED count: a green matrix must never be
+# mistaken for a fully measured one.
+SKIP_COUNT=0
+declare -a SKIPPED_LEGS=()
+
+# not_measured_reason LOG_FILE
+#   Pull the wrapped script's own "NOT MEASURED" explanation out of its log, so the report says
+#   WHY rather than repeating a generic sentence. Falls back to the last non-empty line.
+not_measured_reason() {
+    local log_file="$1" line
+    line="$(grep -m1 -iE 'not measured' "$log_file" 2>/dev/null | sed 's/^[[:space:]]*//')"
+    [[ -n "$line" ]] || line="$(grep -v '^[[:space:]]*$' "$log_file" 2>/dev/null | tail -1)"
+    [[ -n "$line" ]] || line="no reason reported by the leg"
+    echo "$line"
+}
+
 # -------------------------------------------------------------- execution
+#
+# ONE execution path for every stage. Stage-specific work happens BEFORE it (which precondition,
+# whether --yes is required); the run itself, the exit-code reading and the report line are
+# identical everywhere. Stages 2/3/4 used to stop after the precondition and write a
+# NOT-MEASURED placeholder — see the LEGS header for why that had to go.
 run_leg() {
     local id="$1"
-    local entry desc cmd stage
+    local entry desc cmd stage contract
     for entry in "${LEGS[@]}"; do
-        [[ "${entry%%|*}" == "$id" ]] && { IFS='|' read -r _ stage desc cmd <<< "$entry"; break; }
+        [[ "${entry%%|*}" == "$id" ]] && { IFS='|' read -r _ stage desc cmd contract <<< "$entry"; break; }
     done
     [[ -n "${cmd:-}" ]] || { err "unknown leg: $id"; return $EXIT_MISUSE; }
+    contract="${contract:-standard}"
 
     if [[ "$MODE_DRY_RUN" == "true" ]]; then
-        info "[dry-run] $id ($desc): $cmd"
+        info "[dry-run] $id ($desc) [$contract]: $cmd"
         return 0
     fi
 
+    case "$stage" in
+        1) ;;
+        2) check_stage2_precondition || return $? ;;
+        3)
+            [[ "$ASSUME_YES" == "true" ]] || { err "Stage 3 leg $id needs --yes (it rebuilds images and rehearses real deployments for hours)"; return $EXIT_ABORT; }
+            check_stage3_precondition "$id" || return $?
+            ;;
+        4) check_stage4_tooling ;;
+        *) err "leg $id has an unknown stage: $stage"; return $EXIT_MISUSE ;;
+    esac
+
     mkdir -p "$LEDGER_DIR"
     local log_file="$LEDGER_DIR/${id}.log"
+    local started elapsed leg_rc=0
 
-    case "$stage" in
-        1)
-            info "→ $id: $desc"
-            if bash -c "$cmd" > "$log_file" 2>&1; then
-                echo "PASS  $id  $desc" >> "$REPORT_FILE"
-                info "  ${GREEN}PASS${NC}"
-                return 0
-            else
-                echo "FAIL  $id  $desc  (see $log_file)" >> "$REPORT_FILE"
-                info "  ${RED}FAIL${NC} — see $log_file"
-                return $EXIT_GATE
-            fi
-            ;;
-        2)
-            check_stage2_precondition || return $?
-            echo "NOT-MEASURED  $id  $desc  (Stage 2 execution is a separate, future effort — see full-test-matrix.md)" >> "$REPORT_FILE"
-            info "  precondition met; leg itself is a documented future effort, not executed here"
-            return 0
-            ;;
-        3)
-            [[ "$ASSUME_YES" == "true" ]] || { err "Stage 3 leg $id needs --yes"; return $EXIT_ABORT; }
-            check_stage3_precondition || return $?
-            echo "NOT-MEASURED  $id  $desc  (Stage 3 execution is a separate, future effort — see full-test-matrix.md)" >> "$REPORT_FILE"
-            info "  precondition met; leg itself is a documented future effort, not executed here"
-            return 0
-            ;;
-        4)
-            command -v trivy >/dev/null 2>&1 || info "  ${YELLOW}warn${NC}: trivy not on PATH — scan coverage reduced"
-            command -v grype >/dev/null 2>&1 || info "  ${YELLOW}warn${NC}: grype not on PATH — scan coverage reduced"
-            command -v syft >/dev/null 2>&1 || info "  ${YELLOW}warn${NC}: syft not on PATH — scan coverage reduced"
-            echo "NOT-MEASURED  $id  $desc  (confirm-only stage; run via scripts/release.sh scan/build/publish/promote)" >> "$REPORT_FILE"
-            return 0
-            ;;
-    esac
+    info "→ $id: $desc"
+    started=$(date +%s)
+    bash -c "$cmd" > "$log_file" 2>&1 || leg_rc=$?
+    elapsed=$(( $(date +%s) - started ))
+
+    if [[ $leg_rc -eq 0 ]]; then
+        echo "PASS  $id  $desc  (${elapsed}s)" >> "$REPORT_FILE"
+        info "  ${GREEN}PASS${NC} (${elapsed}s)"
+        return 0
+    fi
+
+    # Exit 4 means two different things in this repo (see the LEGS header): "operator abort"
+    # under the standard contract, "NOT MEASURED" under the smoke one. Read it per the leg's
+    # declared contract rather than guessing.
+    if [[ "$contract" == "standard" && $leg_rc -eq 4 ]]; then
+        echo "ABORT  $id  $desc  (operator abort, ${elapsed}s — see $log_file)" >> "$REPORT_FILE"
+        info "  ${YELLOW}ABORT${NC} — the leg reported an operator abort, not a failure"
+        return $EXIT_ABORT
+    fi
+    if [[ "$contract" == "standard" && $leg_rc -eq 3 ]]; then
+        echo "BLOCKED  $id  $desc  (precondition unmet, ${elapsed}s — see $log_file)" >> "$REPORT_FILE"
+        info "  ${YELLOW}BLOCKED${NC} — precondition unmet inside the leg; see $log_file"
+        return $EXIT_PRECONDITION
+    fi
+    if [[ "$contract" == "smoke" && $leg_rc -eq 4 ]]; then
+        local reason
+        reason="$(not_measured_reason "$log_file")"
+        echo "SKIP  $id  $desc  — NOT MEASURED: $reason  (see $log_file)" >> "$REPORT_FILE"
+        info "  ${YELLOW}SKIP${NC} — NOT MEASURED: $reason"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        SKIPPED_LEGS+=("$id: $reason")
+        return 0
+    fi
+
+    echo "FAIL  $id  $desc  (exit $leg_rc, ${elapsed}s — see $log_file)" >> "$REPORT_FILE"
+    info "  ${RED}FAIL${NC} exit $leg_rc (${elapsed}s) — see $log_file"
+    return $EXIT_GATE
 }
 
 run_stage() {
@@ -300,6 +420,14 @@ else
 fi
 
 if [[ "$MODE_DRY_RUN" != "true" ]]; then
+    # A run with skipped legs is NOT a fully measured matrix, and must not read like one.
+    # Same discipline as scripts/audit-tests.py's DEFERRED count.
+    if (( SKIP_COUNT > 0 )); then
+        info ""
+        info "${YELLOW}${SKIP_COUNT} leg(s) reported NOT MEASURED — this run did not cover them:${NC}"
+        for s in "${SKIPPED_LEGS[@]}"; do info "  ⊘ $s"; done
+        info "${YELLOW}A green matrix with skips is not a fully measured one.${NC}"
+    fi
     info "Report: $REPORT_FILE"
 fi
 

@@ -8,7 +8,11 @@
 # It never stops the stack for you. Taking someone's deployment down is their
 # call, so this refuses and prints the command.
 #
-# Exit: 0 both passed · 1 a scenario failed · 3 live stack still running
+# Exit: 0 both passed · 1 a scenario failed · 3 live stack still running ·
+#       4 operator declined a scenario's confirmation prompt (nothing ran —
+#       scripts/release.sh records this as ledger status=aborted, never
+#       =failed, and --force-rehearse does not apply to it: re-run and answer
+#       the prompt, or pass --yes)
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -62,8 +66,19 @@ if [[ $upgrade_rc -eq 0 ]]; then
     REQUIRE_PREVIOUS=1 ./scripts/release-tests/test-upgrade.sh --yes || upgrade_rc=$?
 fi
 
+# Preserve the shared exit-code contract rather than flattening everything to 1.
+# An operator who declines a scenario's `I UNDERSTAND` prompt has ABORTED (4); the
+# stale-container check above sets 3 for an unmet PRECONDITION. Collapsing both into
+# "gate failed" told every caller — release.sh's ledger and scripts/test-matrix.sh's
+# leg 3 alike — that a rehearsal had run and failed, when none had run at all.
 rc=0
-[[ $fresh_rc -eq 0 && $upgrade_rc -eq 0 ]] || rc=1
+if [[ $fresh_rc -eq 4 || $upgrade_rc -eq 4 ]]; then
+    rc=4
+elif [[ $fresh_rc -eq 3 || $upgrade_rc -eq 3 ]]; then
+    rc=3
+elif [[ $fresh_rc -ne 0 || $upgrade_rc -ne 0 ]]; then
+    rc=1
+fi
 [[ $rc -eq 0 ]] && echo -e "${GREEN}both scenarios passed${NC}" >&2
 
 if [[ "$JSON_OUT" == "true" ]]; then

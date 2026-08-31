@@ -51,6 +51,13 @@
 # Future releases need NO edits: FROM and TO are discovered (see the Tunables
 # block). FROM_VERSION / TO_VERSION override; FROM_VERSIONS (plural) runs the
 # scenario once per source, for multi-hop / oldest-supported coverage.
+#
+# Exit codes — the contract scripts/release.sh and scripts/test-matrix.sh share:
+#   0 every assertion PASSed · 1 an assertion FAILed or a guardrail refused ·
+#   2 misuse (unknown argument, --only-rollback without a completed TEST_ROOT) ·
+#   4 operator abort (declined the I UNDERSTAND prompt)
+# Preconditions that a real operator can clear (live containers up, ports bound, disk
+# space) currently exit 1 rather than the contract's 3 — see gr_die in lib/guardrails.sh.
 
 set -euo pipefail
 
@@ -209,6 +216,8 @@ source "$LIB_DIR/versions.sh"
 source "$LIB_DIR/model-cache.sh"
 # shellcheck source=lib/db-snapshot.sh
 source "$LIB_DIR/db-snapshot.sh"
+# shellcheck source=lib/compose-chain.sh
+source "$LIB_DIR/compose-chain.sh"
 
 if (( DO_CLEANUP == 1 )); then
     gr_log "cleanup requested"
@@ -352,6 +361,25 @@ phase_01_build_local_images() {
         -f "$REPO_ROOT/frontend/Dockerfile.prod" "$REPO_ROOT/frontend"
 }
 
+phase_01b_build_docs_image() {
+    # docs is a released image like any other (scripts/docker-build-push.sh's `all`
+    # target builds backend, frontend AND docs), so the upgrade should move it the same
+    # way — by tag. Without this, the after-stack has no :$LOCAL_IMAGE_TAG docs image
+    # and falls back to docker-compose.prod.yml's `build: context: ./docs-site`, which
+    # rehearses a Docusaurus build rather than the image upgrade a real user gets.
+    if docker image inspect "davidamacey/opentranscribe-docs:${LOCAL_IMAGE_TAG}" >/dev/null 2>&1; then
+        gr_ok "docs image davidamacey/opentranscribe-docs:${LOCAL_IMAGE_TAG} already built"
+        return
+    fi
+    gr_log "building local docs image ${LOCAL_IMAGE_TAG}"
+    # Same build args scripts/docker-build-push.sh:build_docs passes — omitting OT_VERSION
+    # renders an empty version badge, omitting DOCS_BASE_URL breaks links behind nginx.
+    docker build -t "davidamacey/opentranscribe-docs:${LOCAL_IMAGE_TAG}" \
+        --build-arg "OT_VERSION=${LOCAL_IMAGE_TAG}" \
+        --build-arg DOCS_BASE_URL=/docs/ \
+        "$REPO_ROOT/docs-site"
+}
+
 phase_02_verify_from_version() {
     gr_log "verifying davidamacey/opentranscribe-*:${FROM_VERSION} exists on Docker Hub"
     if ! docker manifest inspect "davidamacey/opentranscribe-backend:${FROM_VERSION}" >/dev/null 2>&1; then
@@ -409,6 +437,31 @@ phase_03_prepare_v033_compose() {
         cp "$src_gpu" "$stage/docker-compose.gpu.yml"
         gr_ok "GPU overlay copied from $(basename "$(dirname "$src_gpu")")"
     fi
+
+    # Stage the FROM release's OWN management script, plus whatever else that release
+    # shipped alongside it, so phase 04 can start this stack the way a real user on
+    # $FROM_VERSION starts theirs.
+    #
+    # It must be FROM's copy, not HEAD's. A deployment keeps running the script it was
+    # installed with until the operator runs `update-full`, which is the one command
+    # that re-downloads it (docs-site/docs/operations/upgrading.md). Using HEAD's here
+    # meant the FROM stack was driven by a script that release never shipped — so a
+    # regression in FROM's own `start`/`get_compose_files` was invisible, and so was any
+    # incompatibility between an older script and a newer compose file.
+    # REHEARSAL_ALIGNMENT_PLAN.md finding C.
+    #
+    # scripts/common.sh is FEATURE-DETECTED, not version-gated: FROM releases before
+    # issue #613 have no such file and their opentranscribe.sh does not source it.
+    [[ -f "$worktree/opentranscribe.sh" ]] \
+        || gr_die "$FROM_VERSION worktree has no opentranscribe.sh — that release had no shipped management script, so this scenario cannot represent a real user of it"
+    cp "$worktree/opentranscribe.sh" "$stage/opentranscribe.sh"
+    chmod +x "$stage/opentranscribe.sh"
+    if [[ -f "$worktree/scripts/common.sh" ]]; then
+        mkdir -p "$stage/scripts"
+        cp "$worktree/scripts/common.sh" "$stage/scripts/common.sh"
+        chmod +x "$stage/scripts/common.sh"
+    fi
+    gr_ok "staged $FROM_VERSION's own opentranscribe.sh at $stage"
 
     # Model cache strategy: use a PERSISTENT shared cache across test runs so
     # we don't re-download ~5GB of PyAnnote/WhisperX/sentence-transformers
@@ -489,6 +542,12 @@ WHISPER_MODEL=large-v3-turbo
 MODEL_CACHE_DIR=$model_cache
 GPU_DEVICE_ID=$TEST_GPU_DEVICE_ID
 USE_GPU=true
+# The persisted CPU-only opt-out setup-opentranscribe.sh --cpu writes, and the signal
+# the TO release's get_compose_files() reads to skip the GPU overlay. The FROM release
+# may predate it and simply not find a GPU overlay staged (phase 03 only stages one when
+# TEST_USE_GPU=true); the TO side honours this, so both halves of the upgrade agree on
+# the topology instead of the harness deciding by withholding a file.
+FORCE_CPU_MODE=$([[ "$TEST_USE_GPU" == "true" ]] && echo false || echo true)
 COMPUTE_TYPE=float16
 BATCH_SIZE=16
 LLM_PROVIDER=
@@ -508,17 +567,30 @@ EOF
     gr_ok "$FROM_VERSION compose staged at $stage"
 }
 
-phase_04_start_v033() {
+phase_04_start_from_stack() {
     local stage="$TEST_ROOT/before"
+
+    # ── Start the FROM stack with the FROM release's OWN shipped script. ───────
+    #
+    # `./opentranscribe.sh start` is what a real user on $FROM_VERSION runs; phase 03
+    # staged that release's own copy of it beside its own compose files. Two things
+    # this replaces, both of which were second implementations of shipped logic:
+    #
+    #   * a hand-built `-f docker-compose.yml -f docker-compose.prod.yml [-f
+    #     docker-compose.gpu.yml]` chain keyed on the harness's own TEST_USE_GPU, which
+    #     left FROM's get_compose_files() — GPU vs Blackwell vs CPU-only, nginx — never
+    #     executed by a release gate; and
+    #   * an explicit `compose pull`. Phase 03 sets pull_policy: always on the FROM prod
+    #     overlay, so `up` performs the real Docker Hub pull on its own. That is also
+    #     what a real user's `start` does.
+    #
+    # `./opentr.sh` is deliberately not used anywhere in this scenario: it is the
+    # DEVELOPMENT script, absent from release-manifest.txt on purpose, and no curl
+    # install has it (see _stage_manager_at's comment for the measured reason).
+    # Full write-up: REHEARSAL_ALIGNMENT_PLAN.md finding A/C.
     pushd "$stage" >/dev/null
-    local compose_args=(-f docker-compose.yml -f docker-compose.prod.yml)
-    if [[ "$TEST_USE_GPU" == "true" && -f docker-compose.gpu.yml ]]; then
-        compose_args+=(-f docker-compose.gpu.yml)
-    fi
-    gr_log "compose pull (Docker Hub: ${FROM_VERSION})"
-    docker compose "${compose_args[@]}" pull
-    gr_log "compose up -d"
-    docker compose "${compose_args[@]}" up -d
+    gr_log "running '${FROM_VERSION}'s own ./opentranscribe.sh start (real user path, pulls from Docker Hub)"
+    ./opentranscribe.sh start || { popd >/dev/null; gr_die "'${FROM_VERSION} opentranscribe.sh start' failed"; }
     popd >/dev/null
 
     API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
@@ -685,13 +757,20 @@ _capture_minio_etags() {
 #   it despite the invalid project. The fix stages opentranscribe.sh (which resolves its
 #   own compose chain via get_compose_files(), including docker-compose.prod.yml) and
 #   both compose files, so this rehearses the command a real user actually has.
+#
+#   SECOND PARAMETER (optional): the directory to take opentranscribe.sh + common.sh
+#   FROM, defaulting to $REPO_ROOT (i.e. HEAD, the TO release). Callers pass the FROM
+#   worktree when the command being rehearsed is one that release actually shipped —
+#   see _manager_source_for below, which decides that by FEATURE-DETECTING the arm
+#   rather than by comparing versions.
 _stage_manager_at() {
     local src_stage="$1"
+    local script_src="${2:-$REPO_ROOT}"
     local dst="$TEST_ROOT/manager-stage"
     mkdir -p "$dst/scripts" "$dst/backups"
-    cp "$REPO_ROOT/opentranscribe.sh" "$dst/opentranscribe.sh"
+    cp "$script_src/opentranscribe.sh" "$dst/opentranscribe.sh"
     chmod +x "$dst/opentranscribe.sh"
-    cp "$REPO_ROOT/scripts/common.sh" "$dst/scripts/common.sh"
+    cp "$script_src/scripts/common.sh" "$dst/scripts/common.sh"
     cp "$src_stage/docker-compose.yml" "$dst/docker-compose.yml"
     [[ -f "$src_stage/docker-compose.prod.yml" ]] \
         || gr_die "$src_stage missing docker-compose.prod.yml — opentranscribe.sh's " \
@@ -700,6 +779,33 @@ _stage_manager_at() {
     cp "$src_stage/docker-compose.prod.yml" "$dst/docker-compose.prod.yml"
     cp "$src_stage/.env" "$dst/.env"
     echo "$dst"
+}
+
+# _manager_source_for ARM
+#   Echo the directory whose opentranscribe.sh should drive a given command, preferring
+#   the FROM release's own copy and falling back to HEAD's when that release did not
+#   ship the command at all.
+#
+#   FEATURE-DETECTED, never version-gated. Measured against the real FROM release
+#   (v0.4.1): its opentranscribe.sh has no `backup|restore` arm — issue #613 moved
+#   backup/restore into this script for v0.5.0 — and no `--version` handling in
+#   `update`. So a v0.4.1 user genuinely CANNOT run `./opentranscribe.sh backup`, which
+#   is exactly why upgrading.md also gives the raw `docker compose exec ... pg_dump`
+#   recipe and why phase 06b takes BOTH artifacts. Asking the file whether it dispatches
+#   the arm means this needs no edit as FROM moves forward: from v0.5.0 onward the
+#   answer flips to "yes" on its own and the rehearsal becomes strictly more faithful.
+#
+#   Also requires scripts/common.sh, since _stage_manager_at copies it unconditionally
+#   and the backup/restore implementation lives there.
+_manager_source_for() {
+    local arm="$1"
+    local from_dir="$TEST_ROOT/worktree-${FROM_VERSION}"
+    if [[ -f "$from_dir/opentranscribe.sh" && -f "$from_dir/scripts/common.sh" ]] \
+       && grep -qE "^[[:space:]]*[a-z|-]*\b${arm}\b[a-z|-]*\)" "$from_dir/opentranscribe.sh"; then
+        echo "$from_dir"
+    else
+        echo "$REPO_ROOT"
+    fi
 }
 
 # ─── Phase 06b: the pre-upgrade backup — the rollback oracle (issue #598) ───
@@ -769,8 +875,20 @@ phase_06b_pre_upgrade_backup() {
 
     # Artifact 2 — ./opentranscribe.sh backup, exercised through a copy staged under
     # TEST_ROOT (never the repo checkout — see _stage_manager_at's doc comment).
-    local manager_stage
-    manager_stage="$(_stage_manager_at "$TEST_ROOT/before")"
+    #
+    # WHICH copy of the script is feature-detected, not assumed. A real user standing
+    # here is on $FROM_VERSION and has FROM's script; if that release shipped a `backup`
+    # arm this rehearses their actual command. If it did not — v0.4.1 did not, issue
+    # #613 added it for v0.5.0 — then no such user could run this at all, artifact 1
+    # above IS their documented procedure, and this artifact falls back to the TO
+    # script so the wrapper-vs-recipe equivalence below still gets checked.
+    local manager_src manager_stage
+    manager_src="$(_manager_source_for backup)"
+    if [[ "$manager_src" == "$REPO_ROOT" && -d "$TEST_ROOT/worktree-${FROM_VERSION}" ]]; then
+        as_record SKIP "'./opentranscribe.sh backup' as a ${FROM_VERSION} user would run it" \
+            "${FROM_VERSION}'s opentranscribe.sh has no backup arm, so no user of that release could run this command; upgrading.md's raw pg_dump recipe (artifact 1 above) is their documented path. Falling back to the ${TO_VERSION} script for the equivalence check below."
+    fi
+    manager_stage="$(_stage_manager_at "$TEST_ROOT/before" "$manager_src")"
     gr_assert_not_repo_cwd "$manager_stage"
     pushd "$manager_stage" >/dev/null
     ./opentranscribe.sh backup || { popd >/dev/null; gr_die "'./opentranscribe.sh backup' failed"; }
@@ -810,17 +928,64 @@ phase_06b_pre_upgrade_backup() {
     dbs_table_list "$pg" "$db_user" "$db_name" > "$TEST_ROOT/snapshots/before/tables.txt"
 }
 
+# _replay_release_manifest SRC_TREE DST_DIR
+#   Copy every artifact release-manifest.txt lists from SRC_TREE into DST_DIR — the
+#   local-filesystem equivalent of what `./opentranscribe.sh update-full` downloads.
+#
+#   This replaces a hand-written `cp` list (base compose, prod compose, gpu overlay,
+#   opentranscribe.sh). That list was a FOURTH place the set of deployment artifacts was
+#   maintained, alongside the installer, update-full, and the release-validate workflow —
+#   the exact duplication release-manifest.txt was created to end, and its header records
+#   the two production bugs the earlier duplicates caused. Concretely, the old list left
+#   the after-stack with no blackwell overlay, no nginx overlay, no backup overlay and
+#   none of scripts/, so `get_compose_files()` could not have selected them and
+#   `fix_model_cache_permissions`' remedy hint pointed at a file that was not there.
+#
+#   `optional` entries are skipped when absent (a release may not carry them);
+#   `preserve` entries are skipped outright, exactly as update-full skips them.
+_replay_release_manifest() {
+    local src="$1" dst="$2"
+    local manifest="$src/release-manifest.txt"
+    [[ -f "$manifest" ]] || gr_die "no release-manifest.txt in $src — cannot stage a deployment the way update-full would"
+
+    local line path flags copied=0 skipped=0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        case "$line" in ''|'#'*) continue ;; esac
+        path="$(printf '%s' "$line" | cut -f1 | tr -d '[:space:]')"
+        flags="$(printf '%s' "$line" | cut -s -f2)"
+        [[ -n "$path" ]] || continue
+        case ",$flags," in *,preserve,*) continue ;; esac
+
+        if [[ ! -f "$src/$path" ]]; then
+            case ",$flags," in
+                *,optional,*) skipped=$((skipped + 1)); continue ;;
+                *) gr_die "release-manifest.txt lists $path but $src does not have it" ;;
+            esac
+        fi
+        mkdir -p "$dst/$(dirname "$path")"
+        cp "$src/$path" "$dst/$path"
+        case ",$flags," in *,exec,*) chmod +x "$dst/$path" ;; esac
+        copied=$((copied + 1))
+    done < "$manifest"
+    gr_ok "staged $copied manifest artifacts into $dst ($skipped optional entries absent)"
+}
+
 phase_07_swap_to_new() {
     local stage_before="$TEST_ROOT/before"
     local stage_after="$TEST_ROOT/after"
 
     # IMPORTANT: keep the SAME named volumes so the upgrade is in-place against
-    # the data the v0.3.3 stack populated. We do this by reusing the same
+    # the data the FROM stack populated. We do this by reusing the same
     # COMPOSE_PROJECT_NAME (default 'opentranscribe') across both stages.
     mkdir -p "$stage_after"
-    cp "$REPO_ROOT/docker-compose.yml" "$stage_after/docker-compose.yml"
-    [[ -f "$REPO_ROOT/docker-compose.prod.yml" ]] || gr_die "current head missing docker-compose.prod.yml"
-    cp "$REPO_ROOT/docker-compose.prod.yml" "$stage_after/docker-compose.prod.yml"
+
+    # Stage the after-tree the way `./opentranscribe.sh update-full` builds one: from
+    # release-manifest.txt, not from a list written here. This is also the step that
+    # justifies phase 08 running the TO script — update-full is what puts it on a real
+    # user's disk. See _replay_release_manifest above and REHEARSAL_ALIGNMENT_PLAN.md
+    # finding C for why phase 08 cannot instead run FROM's script.
+    _replay_release_manifest "$REPO_ROOT" "$stage_after"
+    [[ -f "$stage_after/docker-compose.prod.yml" ]] || gr_die "current head missing docker-compose.prod.yml"
 
     # 0.4.0 no longer needs the database/init_db.sql bind mount, but copy it
     # anyway in case the compose file still references it (harmless if unused).
@@ -844,37 +1009,37 @@ phase_07_swap_to_new() {
     cp_inject_labels "$stage_after/docker-compose.yml" "$TEST_LABEL"
     cp_inject_labels "$stage_after/docker-compose.prod.yml" "$TEST_LABEL"
     cp_force_pull_policy "$stage_after/docker-compose.prod.yml" never
-    cp_pin_image_tag "$stage_after/docker-compose.prod.yml" backend "$LOCAL_IMAGE_TAG"
-    cp_pin_image_tag "$stage_after/docker-compose.prod.yml" frontend "$LOCAL_IMAGE_TAG"
-    for svc in celery-worker celery-cpu-worker celery-nlp-worker celery-embedding-worker celery-download-worker celery-redaction celery-cloud-asr-worker celery-beat flower; do
-        cp_pin_image_tag "$stage_after/docker-compose.prod.yml" "$svc" "$LOCAL_IMAGE_TAG" 2>/dev/null || true
-    done
 
-    if [[ "$TEST_USE_GPU" == "true" && -f "$REPO_ROOT/docker-compose.gpu.yml" ]]; then
-        cp "$REPO_ROOT/docker-compose.gpu.yml" "$stage_after/docker-compose.gpu.yml"
-    fi
+    # NO per-service cp_pin_image_tag here, deliberately.
+    #
+    # Those pins wrote `:$LOCAL_IMAGE_TAG` literally into backend/frontend/9 celery
+    # services, which meant phase 08's `update --version` was not what actually moved
+    # them — the harness had already done it. The upgrade this scenario exists to prove
+    # was therefore only ever measured on the four services OUTSIDE that hardcoded list.
+    # Every service in docker-compose.prod.yml resolves ${OT_IMAGE_TAG:-latest}
+    # (test_every_prod_service_image_is_tag_pinnable guards that statically), so leaving
+    # them alone makes the .env rewrite performed by the real command the SOLE mechanism
+    # — and phase 10/12's version and tag assertions the thing that catches it if it did
+    # not happen. Phase 13 already re-stages without these pins for the same reason.
 
-    # Stage the actual user-facing upgrade script so phase 08 can invoke
-    # './opentranscribe.sh update' — exercising the real code path users run
-    # when upgrading in place, not a hand-rolled compose sequence.
-    cp "$REPO_ROOT/opentranscribe.sh" "$stage_after/opentranscribe.sh"
-    chmod +x "$stage_after/opentranscribe.sh"
+    # Note: docker-compose.gpu.yml is now staged by _replay_release_manifest above,
+    # unconditionally — that is what a real deployment has on disk. Whether it is
+    # SELECTED is get_compose_files()' decision, driven by FORCE_CPU_MODE in the .env
+    # phase 03 generated (see its TEST_USE_GPU block). The harness no longer decides by
+    # withholding the file.
 
     # Reuse the SAME .env so credentials and ports are preserved across the
     # upgrade (mirrors what a real user sees on disk).
     cp "$stage_before/.env" "$stage_after/.env"
 
-    # OT_IMAGE_TAG is deliberately left at FROM_VERSION here — every service
-    # image resolves ${OT_IMAGE_TAG:-latest}, so it still needs to move to
-    # LOCAL_IMAGE_TAG before the four services outside cp_pin_image_tag's
-    # hardcoded list (docs, the three GPU worker variants) actually upgrade.
-    # That move used to happen here via a hand-rolled `sed`, which is also
-    # exactly what `opentranscribe.sh update --version` does to a real user's
-    # .env — except the sed never recorded `# OT_PREVIOUS_IMAGE_TAG`, so a
-    # `--rollback` invoked at the end of this scenario had no target and
-    # exited 1 (issue #598 §2.4). Phase 08 now runs the real `update --version`
-    # command instead, which performs the same rewrite AND writes the rollback
-    # bookkeeping phase 12 checks and phase 16 depends on.
+    # OT_IMAGE_TAG is deliberately left at FROM_VERSION here — every service image
+    # resolves ${OT_IMAGE_TAG:-latest}, so nothing upgrades until it moves. That move
+    # used to happen here via a hand-rolled `sed`, which is also what `opentranscribe.sh
+    # update --version` does to a real user's .env — except the sed never recorded
+    # `# OT_PREVIOUS_IMAGE_TAG`, so a `--rollback` invoked at the end of this scenario
+    # had no target and exited 1 (issue #598 §2.4). Phase 08 runs the real
+    # `update --version` command instead, which performs the same rewrite AND writes the
+    # rollback bookkeeping phase 12 checks and phase 16 depends on.
     gr_ok "after-stack .env left at OT_IMAGE_TAG=${FROM_VERSION} — phase 08's real 'update --version' does the rewrite"
 }
 
@@ -913,47 +1078,16 @@ _clean_stale_opentranscribe_network() {
         gr_warn "could not remove stale network — upgrade may fail; run 'docker network prune'"
 }
 
-phase_08_start_new() {
-    local stage_after="$TEST_ROOT/after"
-
-    # Clear any stale daemon network state BEFORE invoking 'update' so that
-    # the user-facing upgrade command runs against a clean host — same as a
-    # real user's environment would be.
-    _clean_stale_opentranscribe_network
-
-    # Invoke the actual './opentranscribe.sh update --version' command. This
-    # is what real users run to upgrade to a specific release. It does
-    # 'compose down && compose pull && compose up -d' under the hood (plus the
-    # .env rewrite and rollback bookkeeping --version adds), but going through
-    # the script means we validate the code path users actually exercise —
-    # not a hand-rolled sequence that could silently drift from the real
-    # behavior. `--version` (over a bare `update`) is what actually moves
-    # OT_IMAGE_TAG to LOCAL_IMAGE_TAG now that phase 07 no longer seds it, and
-    # it is also the only path that records `# OT_PREVIOUS_IMAGE_TAG`, which
-    # phase 12 asserts and phase 16's `--rollback` depends on (issue #598).
-    pushd "$stage_after" >/dev/null
-    gr_log "running './opentranscribe.sh update --version ${LOCAL_IMAGE_TAG}' (real user upgrade path)"
-    ./opentranscribe.sh update --version "$LOCAL_IMAGE_TAG" \
-        || gr_die "opentranscribe.sh update --version failed"
-    popd >/dev/null
-
-    API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
-    export API_BASE
-    # Migrations may take several minutes on a populated DB — the healthcheck
-    # start_period in docker-compose.yml is 600s and we mirror that budget.
-    ac_wait_for_health 900
-
-    # Tail backend logs for "Alembic upgrade complete" or similar marker
-    docker logs opentranscribe-backend 2>&1 | grep -iE 'alembic|migration' | tail -20 \
-        > "$TEST_ROOT/migration-log.txt" || true
-}
-
-phase_09_snapshot_post() {
-    snapshot_state after
-}
-
-phase_10_assert_and_report() {
+# The report is opened by phase 08 (the first phase with assertions of its own) and
+# appended to by phase 10 and the rollback tail. Idempotent within a process so two
+# callers cannot stack two headers on one file, and so a resumed run that skips phase 08
+# still gets a header from phase 10.
+REPORT_INITIALISED=0
+_init_report() {
     TEST_REPORT_FILE="$TEST_ROOT/REPORT.md"
+    export TEST_REPORT_FILE
+    (( REPORT_INITIALISED == 0 )) || return 0
+    REPORT_INITIALISED=1
     : > "$TEST_REPORT_FILE"
     {
         echo "# Release Test Report — Scenario B (upgrade $FROM_VERSION → $LOCAL_IMAGE_TAG)"
@@ -974,7 +1108,79 @@ phase_10_assert_and_report() {
         echo "| Status | Assertion | Detail |"
         echo "|---|---|---|"
     } >> "$TEST_REPORT_FILE"
-    export TEST_REPORT_FILE
+}
+
+phase_08_start_new() {
+    local stage_after="$TEST_ROOT/after"
+
+    # Clear any stale daemon network state BEFORE invoking 'update' so that
+    # the user-facing upgrade command runs against a clean host — same as a
+    # real user's environment would be.
+    _clean_stale_opentranscribe_network
+
+    # Invoke the actual './opentranscribe.sh update --version' command. This
+    # is what real users run to upgrade to a specific release. It does
+    # 'compose down && compose pull && compose up -d' under the hood (plus the
+    # .env rewrite and rollback bookkeeping --version adds), but going through
+    # the script means we validate the code path users actually exercise —
+    # not a hand-rolled sequence that could silently drift from the real
+    # behavior. `--version` (over a bare `update`) is what actually moves
+    # OT_IMAGE_TAG to LOCAL_IMAGE_TAG now that phase 07 no longer seds it, and
+    # it is also the only path that records `# OT_PREVIOUS_IMAGE_TAG`, which
+    # phase 12 asserts and phase 16's `--rollback` depends on (issue #598).
+    #
+    # WHY THE **TO** SCRIPT DRIVES THIS, when phase 04 deliberately used FROM's.
+    # Measured against the real FROM release (v0.4.1): its `update` has no `--version`
+    # at all — it can only pull whatever `:latest` currently is, and the version under
+    # test is unreleased and not on Docker Hub, so FROM's script CANNOT reach it. There
+    # is no "run the upgrade from the old script" variant to test here. What puts the TO
+    # script on a real user's disk is `update-full`, which re-downloads every artifact in
+    # release-manifest.txt — which is precisely what phase 07 now replays.
+    # REHEARSAL_ALIGNMENT_PLAN.md finding C has the full table.
+    #
+    # `./opentr.sh` is again deliberately absent: dev-only, not in release-manifest.txt,
+    # and no curl install has it (see _stage_manager_at).
+    pushd "$stage_after" >/dev/null
+    gr_log "running './opentranscribe.sh update --version ${LOCAL_IMAGE_TAG}' (real user upgrade path)"
+    ./opentranscribe.sh update --version "$LOCAL_IMAGE_TAG" \
+        || gr_die "opentranscribe.sh update --version failed"
+    popd >/dev/null
+
+    API_BASE="http://localhost:${TEST_BACKEND_PORT}/api"
+    export API_BASE
+    # Migrations may take several minutes on a populated DB — the healthcheck
+    # start_period in docker-compose.yml is 600s and we mirror that budget.
+    ac_wait_for_health 900
+
+    # Tail backend logs for "Alembic upgrade complete" or similar marker
+    docker logs opentranscribe-backend 2>&1 | grep -iE 'alembic|migration' | tail -20 \
+        > "$TEST_ROOT/migration-log.txt" || true
+
+    # The report is opened HERE now, not in phase 10, because this phase has assertions
+    # of its own and as_record would otherwise write rows into a file phase 10 then
+    # truncates. _init_report is idempotent per process, so phase 10 still gets its
+    # header on a resumed run where this phase was skipped. The migration-log excerpt it
+    # embeds is captured just above, which is why the call sits here and not earlier.
+    _init_report
+
+    # What did the TO release's selector choose for the upgraded stack? Asserted so that
+    # "the upgrade exited 0" is no longer the whole verdict — a `get_compose_files()`
+    # regression that dropped the GPU overlay, or picked Blackwell on non-Blackwell
+    # hardware, would otherwise show up only as unexplained slowness weeks later.
+    cc_assert_chain "after upgrade to ${LOCAL_IMAGE_TAG}" "$stage_after" "$REPO_ROOT"
+
+    # Honest scoping, recorded rather than left implicit: the one documented upgrade
+    # command this scenario does NOT execute.
+    as_record SKIP "'${FROM_VERSION} ./opentranscribe.sh update-full' (self-refreshing cross-release upgrade)" \
+        "update-full fetches every release-manifest.txt artifact from raw.githubusercontent.com/<branch>; the release under test is the local HEAD, which is not fetchable at that URL. Phase 07 replays the manifest from disk to reproduce its RESULT, but the download half is unexercised. Closing this needs a URL-base seam in the shipped script or a local HTTP mirror — a product decision, see REHEARSAL_ALIGNMENT_PLAN.md finding C."
+}
+
+phase_09_snapshot_post() {
+    snapshot_state after
+}
+
+phase_10_assert_and_report() {
+    _init_report
 
     # ─── Snapshot diffs ─────────────────────────────────────────────────
     local pre="$TEST_ROOT/snapshots/before"
@@ -2008,9 +2214,10 @@ echo
 
 phase 00 phase_00_preflight
 phase 01 phase_01_build_local_images
+phase 01b phase_01b_build_docs_image
 phase 02 phase_02_verify_from_version
 phase 03 phase_03_prepare_v033_compose
-phase 04 phase_04_start_v033
+phase 04 phase_04_start_from_stack
 phase 05 phase_05_seed_data
 phase 06 phase_06_snapshot_pre
 phase 06b phase_06b_pre_upgrade_backup

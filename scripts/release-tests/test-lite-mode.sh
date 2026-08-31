@@ -20,8 +20,40 @@
 # TEST_USE_GPU is hard-coded false: this scenario's entire point is the
 # no-GPU lite deployment shape.
 #
+# ⚠️ SCOPE: `--lite` IS NOT A USER-REACHABLE DEPLOYMENT SHAPE TODAY.
+#
+# Unlike Scenarios A and B, this one hand-builds its `docker compose -f ...` chain, and
+# that is currently correct rather than a bug — because there is no shipped command that
+# could build it. Three facts, all verified:
+#
+#   * `docker-compose.lite.yml` is NOT in release-manifest.txt, so a real
+#     `curl … setup-opentranscribe.sh | bash` install never downloads it.
+#   * `opentranscribe.sh:get_compose_files()` has no lite branch, so nothing would
+#     select it even if it were on disk.
+#   * `scripts/docker-build-push.sh all` builds backend, frontend and docs — not the
+#     lite image — so no `opentranscribe-backend-lite` is published by a release.
+#
+# The only documented invocation is `./opentr.sh start dev --lite`
+# (docs-site/docs/operations/deployment-configuration.md), i.e. the DEVELOPMENT script,
+# in a git clone. README.md's "API-Lite Deployment" bullet therefore describes a
+# repo/dev capability, not something a self-hoster can install.
+#
+# So read this scenario's verdict precisely: it proves the lite TOPOLOGY AND PIPELINE
+# work. It does NOT prove a user can deploy them. Making that true is a product decision
+# (manifest entry + a get_compose_files() branch keyed on DEPLOYMENT_MODE + publishing
+# the lite image + installer support) — see scripts/release-tests/REHEARSAL_ALIGNMENT_PLAN.md
+# finding E. `test_lite_mode_is_not_reachable_by_a_shipped_deployment` in
+# backend/tests/unit/test_compose_file_selection.py FAILS the moment any of the three
+# facts above stops holding, so this paragraph cannot quietly go stale.
+#
 # Idempotent: phases are tracked under $TEST_ROOT/.phase/<phase>.done so
 # re-running picks up where it left off. Pass --force to clear them.
+#
+# Exit codes — the contract scripts/release.sh and scripts/test-matrix.sh share:
+#   0 every assertion PASSed · 1 an assertion FAILed or a guardrail refused ·
+#   2 misuse (unknown argument) · 4 operator abort (declined the I UNDERSTAND prompt)
+# Preconditions that a real operator can clear (live containers up, ports bound, disk
+# space) currently exit 1 rather than the contract's 3 — see gr_die in lib/guardrails.sh.
 
 set -euo pipefail
 
@@ -322,6 +354,12 @@ phase_04_start_stack() {
     local target="$TEST_ROOT/install/opentranscribe"
     [[ -d "$target" ]] || target="$TEST_ROOT/install"
     pushd "$target" >/dev/null
+    # The one bring-up in this directory that does NOT go through
+    # `./opentranscribe.sh start`, and the header explains why: no shipped command can
+    # select docker-compose.lite.yml (absent from release-manifest.txt, no branch in
+    # get_compose_files()). Scenarios A and B were converted; this one cannot be until
+    # lite becomes a real shipped mode. Do not "fix" it by copying their pattern — you
+    # would be asking opentranscribe.sh for a chain it has no way to produce.
     gr_log "docker compose up -d (base + prod + lite + mock-asr + mock-llm, CPU-only)"
     docker compose \
         -f docker-compose.yml -f docker-compose.prod.yml \

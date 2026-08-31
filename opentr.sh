@@ -2846,8 +2846,19 @@ stop_all_containers() {
     -f docker-compose.nas.yml \
     -f docker-compose.nginx.yml -f docker-compose.pki.yml "$@" 2>/dev/null || true
 
-  # Catch stragglers by container name pattern
-  for container in $(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^opentranscribe-|^transcribe-app-'); do
+  # Catch stragglers: containers left over from THIS project's compose chains
+  # that a `docker compose down` above didn't reach (e.g. an overlay that
+  # changed between runs). Filtered by compose PROJECT label, not a bare name
+  # prefix -- a prefix match previously stopped-and-removed an unrelated
+  # container on this host ("opentranscribe-homepage", a dashboard app from a
+  # different compose project sharing the name prefix by coincidence). Two
+  # project names are legitimate here: "opentranscribe" (every service with an
+  # explicit container_name) and "transcribe-app" (docker-compose.diar-native.yml's
+  # diar-native service has no explicit container_name, so compose falls back
+  # to the checkout directory's basename as the project name).
+  for container in $( { docker ps -a --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}' 2>/dev/null
+                        docker ps -a --filter 'label=com.docker.compose.project=transcribe-app' --format '{{.Names}}' 2>/dev/null
+                      } | sort -u ); do
     docker stop "$container" 2>/dev/null && docker rm "$container" 2>/dev/null || true
   done
 }

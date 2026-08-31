@@ -1,26 +1,53 @@
 """Tests for ``app.utils.stats_helpers`` — the consolidated admin/system stats
 aggregate queries (issue #474).
 
-Most of these functions run one FILTER-based aggregate query over the WHOLE
-``user``/``media_file``/``task`` tables — tables the live dev database already has
-real rows in, since these tests run against the dev Postgres via the savepoint-isolated
-``db_session`` fixture (see ``backend/tests/CLAUDE.md``). Two strategies are used
-depending on whether the table can be safely reset within the test's own transaction
-(rolled back at teardown either way, per ``tests/conftest.py::db_session``):
+Every function here runs a FILTER-based aggregate over a WHOLE table
+(``user``/``media_file``/``task``), and these tests run against the shared dev
+Postgres. That makes the counts they return a piece of **globally mutable state**:
+the suite runs under ``-n auto --dist loadgroup``, and several tests elsewhere
+deliberately commit rows on a *second* connection — ``test_tag_service.py``'s
+``_commit_user_on_other_connection`` (it needs a real FK target for a genuine
+insert race), ``test_redaction_task_tracking.py``'s ``SessionLocal()`` setup, and
+the ~20 app paths that open their own ``SessionLocal()`` inside a ``TestClient``
+request. ``db_session``'s savepoint hides *our* writes from *them*, but it cannot
+hide *their* commits from *us*: the session reads at READ COMMITTED, so a row
+another worker commits mid-test becomes visible to the very next statement.
 
-* ``task`` has **no foreign keys pointing at it** (verified: `grep 'ForeignKey("task'
-  app/models/` finds nothing), so tests that need an exact, uncontaminated count
-  clear it first with ``db_session.query(Task).delete()`` and assert exact values.
-* ``user`` and ``media_file`` are referenced by many other tables, so clearing them
-  risks FK errors against real dev rows. Those tests use **delta assertions**
-  (call, seed known rows, call again, assert the exact delta) instead, which is
-  correct for every counter/sum here because they are all linear (``COUNT``/``SUM``
-  with a ``FILTER``) — the one exception, ``get_processing_eta``'s division-based
-  ``files_per_hour``/``hours_remaining``, is additionally tested with a tiny hand-built
-  fake session (not ``unittest.mock`` — a two-method stand-in for the exact
-  ``db.query(func.count()).filter(...).scalar()`` chain the function calls) so the
-  zero-throughput and positive-throughput branches get exact-value coverage that
-  does not depend on what is happening in the shared dev database "right now".
+This file used to take a ``before``/``after`` pair around seeding N rows and
+assert the delta was exactly N. That is unsound for exactly the reason above, and
+it failed in the gate: ``assert (18 - 14) == 2`` — two users a concurrent worker
+created and later deleted landed inside the measurement window.
+
+So the tables are **shadowed** instead (``isolated_user_table`` /
+``isolated_file_tables`` / ``isolated_task_table``). ``CREATE TEMP TABLE "user"
+(LIKE public."user" INCLUDING ALL)`` puts an empty copy in this connection's
+private ``pg_temp_*`` schema, which PostgreSQL searches *before* ``public`` when
+resolving an unqualified relation name — and every query in ``stats_helpers``
+(and every ORM write here) names its table unqualified. The code under test is
+therefore pointed at a table no other connection can see or write to, which buys
+two things a delta never could:
+
+* **Exact assertions.** ``get_user_stats(db) == {"total": 2, "new": 2}`` instead
+  of a delta, so the numbers are pinned rather than merely differenced. That is
+  also what lets ``test_a_user_created_eight_days_ago_counts_in_total_but_not_new``
+  exist at all — the seven-day FILTER predicate had no negative case before,
+  because with live data mixed in there was no way to state one.
+* **Immunity to concurrent writers**, by construction rather than by hoping the
+  window stays quiet.
+
+``LIKE`` never copies foreign keys, so the shadows are also free of FK edges back
+into ``public`` — a shadowed ``media_file`` row can carry a real ``user_id`` and a
+shadowed ``speaker`` can point at a shadowed ``media_file``. The temp tables are
+created inside ``db_session``'s outer transaction and vanish when it rolls back at
+teardown; ``TestTableShadowing`` is the guard that the shadowing is really in
+effect, since a shadow that silently failed to apply would turn every exact
+assertion below into an assertion about live dev data.
+
+``get_processing_eta``'s division-based ``files_per_hour``/``hours_remaining`` is
+additionally covered with a tiny hand-built fake session (not ``unittest.mock`` —
+a two-method stand-in for the exact ``db.query(func.count()).filter(...).scalar()``
+chain the function calls), because those branches are pure arithmetic and deserve
+coverage that does not need a database at all.
 """
 
 from __future__ import annotations
@@ -32,7 +59,8 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import func
+from sqlalchemy import bindparam
+from sqlalchemy import text
 
 from app.core.constants import CeleryQueues
 from app.models.media import MediaFile
@@ -125,25 +153,165 @@ def _make_task(
 
 
 # ---------------------------------------------------------------------------
-# get_user_stats — delta assertions (user has too many FK dependents to clear)
+# Table shadowing — see the module docstring for WHY. The SQL is written out at
+# each call site rather than built from a table name, both so it stays static
+# (no interpolation into a DDL string) and so ``test_ddl_marker_discipline.py``
+# can see the literal ``CREATE TEMP TABLE`` it exempts from ``ddl_exclusive``:
+# a temp table lives in a session-private ``pg_temp_*`` schema and takes no lock
+# any other worker can wait on.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def isolated_user_table(db_session):
+    """Point every unqualified ``"user"`` reference at an empty private copy."""
+    db_session.execute(text('CREATE TEMP TABLE "user" (LIKE public."user" INCLUDING ALL)'))
+
+
+@pytest.fixture
+def isolated_file_tables(db_session):
+    """Shadow the three tables ``get_file_stats`` reads.
+
+    ``media_file`` alone is not enough: ``get_file_stats`` also counts
+    ``transcript_segment`` and ``speaker`` with their own whole-table aggregates,
+    so leaving either unshadowed would leave that half of the assertion measuring
+    live dev data.
+    """
+    db_session.execute(text("CREATE TEMP TABLE media_file (LIKE public.media_file INCLUDING ALL)"))
+    db_session.execute(
+        text("CREATE TEMP TABLE transcript_segment (LIKE public.transcript_segment INCLUDING ALL)")
+    )
+    db_session.execute(text("CREATE TEMP TABLE speaker (LIKE public.speaker INCLUDING ALL)"))
+
+
+@pytest.fixture
+def isolated_task_table(db_session):
+    """Shadow ``task``.
+
+    This replaces a ``db_session.query(Task).delete()``, which was exact only
+    until another worker committed a ``Task`` between the delete and the
+    assertion (``test_redaction_task_tracking.py`` opens a real ``SessionLocal()``
+    and does exactly that). The delete also took row locks on every task in the
+    shared dev database purely to roll them back again.
+    """
+    db_session.execute(text("CREATE TEMP TABLE task (LIKE public.task INCLUDING ALL)"))
+
+
+def _public_rows_matching(db_session, statement: str, values: list[str]) -> int:
+    """Count rows in the ``public`` table that match ``values``.
+
+    Deliberately scoped to identifiers this test generated, so the guard is not
+    itself a whole-table count that a concurrent writer could move.
+    """
+    stmt = text(statement).bindparams(bindparam("values", expanding=True))
+    return int(db_session.execute(stmt, {"values": values}).scalar_one())
+
+
+class TestTableShadowing:
+    """Guard the guard: prove the shadows really are in effect.
+
+    Without them every exact assertion in this file silently becomes an assertion
+    about whatever the shared dev database happens to hold, which is the failure
+    mode this file was rewritten to remove. Each test seeds through the ORM (an
+    unqualified write) and then looks for those exact rows in the ``public``
+    table — scoped by identifier, so no concurrent writer can influence the
+    result. With the fixture removed, the seeded rows land in ``public`` and both
+    assertions fail.
+    """
+
+    def test_user_writes_land_in_the_shadow_not_in_public(self, db_session, isolated_user_table):
+        users = [_make_user(db_session), _make_user(db_session)]
+
+        assert get_user_stats(db_session)["total"] == 2
+        assert (
+            _public_rows_matching(
+                db_session,
+                'SELECT count(*) FROM public."user" WHERE email IN :values',
+                [u.email for u in users],
+            )
+            == 0
+        )
+
+    def test_media_writes_land_in_the_shadow_not_in_public(
+        self, db_session, normal_user, isolated_file_tables
+    ):
+        files = [
+            _make_media_file(db_session, normal_user.id),
+            _make_media_file(db_session, normal_user.id),
+        ]
+
+        assert get_file_stats(db_session)["total"] == 2
+        # Scoped by storage_path, not filename: both are unique per seeded row, but
+        # ``MediaFile.filename`` is ``Mapped[str | None]`` while ``storage_path`` is
+        # ``Mapped[str]``, so this one needs no None-handling to be type-correct.
+        assert (
+            _public_rows_matching(
+                db_session,
+                "SELECT count(*) FROM public.media_file WHERE storage_path IN :values",
+                [f.storage_path for f in files],
+            )
+            == 0
+        )
+
+    def test_task_writes_land_in_the_shadow_not_in_public(
+        self, db_session, normal_user, isolated_task_table
+    ):
+        tasks = [
+            _make_task(db_session, normal_user.id, status=TASK_STATUS_PENDING),
+            _make_task(db_session, normal_user.id, status=TASK_STATUS_COMPLETED),
+        ]
+
+        assert get_task_stats(db_session)["total"] == 2
+        assert (
+            _public_rows_matching(
+                db_session,
+                "SELECT count(*) FROM public.task WHERE id IN :values",
+                [t.id for t in tasks],
+            )
+            == 0
+        )
+
+
+# ---------------------------------------------------------------------------
+# get_user_stats
 # ---------------------------------------------------------------------------
 
 
 class TestGetUserStats:
-    def test_default_counts_users_created_just_now_as_new(self, db_session):
-        before = get_user_stats(db_session)
+    def test_default_counts_users_created_just_now_as_new(self, db_session, isolated_user_table):
+        assert get_user_stats(db_session) == {"total": 0, "new": 0}
 
         _make_user(db_session)
         _make_user(db_session)
 
-        after = get_user_stats(db_session)
+        # Exact-dict equality also pins the key set: no breakdown key may leak in.
+        assert get_user_stats(db_session) == {"total": 2, "new": 2}
 
-        assert after["total"] - before["total"] == 2
-        assert after["new"] - before["new"] == 2
-        assert set(after.keys()) == {"total", "new"}  # no breakdown keys leak in
+    def test_a_user_created_eight_days_ago_counts_in_total_but_not_new(
+        self, db_session, isolated_user_table
+    ):
+        """The negative case for the seven-day FILTER predicate.
 
-    def test_breakdown_reports_active_inactive_and_superuser_deltas(self, db_session):
-        before = get_user_stats(db_session, include_breakdown=True)
+        ``new`` is the only thing separating this from a plain ``COUNT(*)``, and
+        nothing exercised the "outside the window" side of it before.
+        """
+        _make_user(db_session)
+        stale = _make_user(db_session)
+        stale.created_at = datetime.now(UTC) - timedelta(days=8)
+        db_session.commit()
+
+        assert get_user_stats(db_session) == {"total": 2, "new": 1}
+
+    def test_breakdown_reports_active_inactive_and_superuser_counts(
+        self, db_session, isolated_user_table
+    ):
+        assert get_user_stats(db_session, include_breakdown=True) == {
+            "total": 0,
+            "active": 0,
+            "inactive": 0,
+            "superusers": 0,
+            "new": 0,
+        }
 
         _make_user(db_session, is_active=True)
         _make_user(db_session, is_active=True, role="super_admin")
@@ -151,59 +319,68 @@ class TestGetUserStats:
 
         after = get_user_stats(db_session, include_breakdown=True)
 
-        assert after["total"] - before["total"] == 3
-        assert after["active"] - before["active"] == 2
-        assert after["superusers"] - before["superusers"] == 1
-        assert after["new"] - before["new"] == 3
-        # inactive is DERIVED as total - active; the identity must hold on the
-        # actual returned numbers, not just on the delta.
+        assert after == {
+            "total": 3,
+            "active": 2,
+            "inactive": 1,
+            "superusers": 1,
+            "new": 3,
+        }
+        # inactive is DERIVED as total - active; assert the identity explicitly so a
+        # future implementation that starts counting it directly still has to agree.
         assert after["inactive"] == after["total"] - after["active"]
-        assert after["inactive"] - before["inactive"] == 1
 
 
 # ---------------------------------------------------------------------------
-# get_file_stats — delta assertions (media_file has 17 FK dependents)
+# get_file_stats
 # ---------------------------------------------------------------------------
 
 
 class TestGetFileStats:
-    def test_default_totals_and_sums(self, db_session, normal_user):
-        before = get_file_stats(db_session)
+    def test_default_totals_and_sums(self, db_session, normal_user, isolated_file_tables):
+        assert get_file_stats(db_session) == {
+            "total": 0,
+            "new": 0,
+            "total_duration": 0,
+            "total_size": 0,
+            "segments": 0,
+            "speakers": 0,
+        }
 
         _make_media_file(db_session, normal_user.id, file_size=1000, duration=10.5)
         _make_media_file(db_session, normal_user.id, file_size=2000, duration=5.25)
 
-        after = get_file_stats(db_session)
+        assert get_file_stats(db_session) == {
+            "total": 2,
+            "new": 2,
+            "total_duration": 15.75,
+            "total_size": 3000,
+            "segments": 0,
+            "speakers": 0,
+        }
 
-        assert after["total"] - before["total"] == 2
-        assert after["new"] - before["new"] == 2
-        assert after["total_size"] - before["total_size"] == 3000
-        # Each side is independently rounded to 2dp before the subtraction, so allow
-        # a hair of slack rather than asserting bit-exact float equality.
-        assert (after["total_duration"] - before["total_duration"]) == pytest.approx(
-            15.75, abs=0.02
-        )
-
-    def test_status_breakdown_deltas(self, db_session, normal_user):
-        before = get_file_stats(db_session, include_status_breakdown=True)
-
+    def test_status_breakdown_counts(self, db_session, normal_user, isolated_file_tables):
         _make_media_file(db_session, normal_user.id, status="pending")
         _make_media_file(db_session, normal_user.id, status="processing")
         _make_media_file(db_session, normal_user.id, status="completed")
         _make_media_file(db_session, normal_user.id, status="completed")
         _make_media_file(db_session, normal_user.id, status="error")
 
-        after = get_file_stats(db_session, include_status_breakdown=True)
-
-        assert after["by_status"]["pending"] - before["by_status"]["pending"] == 1
-        assert after["by_status"]["processing"] - before["by_status"]["processing"] == 1
-        assert after["by_status"]["completed"] - before["by_status"]["completed"] == 2
-        assert after["by_status"]["error"] - before["by_status"]["error"] == 1
+        assert get_file_stats(db_session, include_status_breakdown=True)["by_status"] == {
+            "pending": 1,
+            "processing": 1,
+            "completed": 2,
+            "error": 1,
+        }
         assert "by_status" not in get_file_stats(db_session)  # default omits it
 
-    def test_segment_and_speaker_counts_reflect_new_rows(self, db_session, normal_user):
+    def test_segment_and_speaker_counts_reflect_new_rows(
+        self, db_session, normal_user, isolated_file_tables
+    ):
         media_file = _make_media_file(db_session, normal_user.id)
-        before = get_file_stats(db_session)
+
+        assert get_file_stats(db_session)["segments"] == 0
+        assert get_file_stats(db_session)["speakers"] == 0
 
         speaker = Speaker(
             uuid=uuid_pkg.uuid4(),
@@ -239,20 +416,17 @@ class TestGetFileStats:
 
         after = get_file_stats(db_session)
 
-        assert after["segments"] - before["segments"] == 2
-        assert after["speakers"] - before["speakers"] == 1
+        assert after["segments"] == 2
+        assert after["speakers"] == 1
 
 
 # ---------------------------------------------------------------------------
-# get_task_stats / get_recent_tasks / get_file_timing_stats — task has NO FK
-# dependents, so these clear the table for exact (non-delta) assertions.
+# get_task_stats / get_recent_tasks / get_file_timing_stats
 # ---------------------------------------------------------------------------
 
 
 class TestGetTaskStats:
-    def test_empty_task_table_reports_all_zeros(self, db_session):
-        db_session.query(Task).delete()
-
+    def test_empty_task_table_reports_all_zeros(self, db_session, isolated_task_table):
         result = get_task_stats(db_session)
 
         assert result == {
@@ -265,8 +439,9 @@ class TestGetTaskStats:
             "avg_processing_time": 0,
         }
 
-    def test_counts_success_rate_and_avg_processing_time(self, db_session, normal_user):
-        db_session.query(Task).delete()
+    def test_counts_success_rate_and_avg_processing_time(
+        self, db_session, normal_user, isolated_task_table
+    ):
         now = datetime.now(UTC)
 
         _make_task(
@@ -298,13 +473,12 @@ class TestGetTaskStats:
         assert result["avg_processing_time"] == 200.0  # mean(100, 300)
 
     def test_a_completed_task_with_no_timestamps_is_excluded_from_the_average(
-        self, db_session, normal_user
+        self, db_session, normal_user, isolated_task_table
     ):
         """The AVG's own filter (completed_at/created_at not null) is narrower than the
         ``completed`` COUNT's filter (status alone) — a completed row with no timestamps
         must still count toward ``completed`` but not skew ``avg_processing_time``.
         """
-        db_session.query(Task).delete()
         now = datetime.now(UTC)
 
         _make_task(
@@ -333,8 +507,9 @@ class TestGetTaskStats:
 
 
 class TestGetRecentTasks:
-    def test_orders_by_created_at_descending_and_respects_limit(self, db_session, normal_user):
-        db_session.query(Task).delete()
+    def test_orders_by_created_at_descending_and_respects_limit(
+        self, db_session, normal_user, isolated_task_table
+    ):
         now = datetime.now(UTC)
 
         t_old = _make_task(
@@ -350,8 +525,9 @@ class TestGetRecentTasks:
         assert [r["id"] for r in result] == [t_new.id, t_mid.id]
         assert t_old.id not in [r["id"] for r in result]
 
-    def test_elapsed_time_uses_completed_at_when_present(self, db_session, normal_user):
-        db_session.query(Task).delete()
+    def test_elapsed_time_uses_completed_at_when_present(
+        self, db_session, normal_user, isolated_task_table
+    ):
         now = datetime.now(UTC)
 
         _make_task(
@@ -370,8 +546,9 @@ class TestGetRecentTasks:
         assert result[0]["type"] == "transcription"
         assert result[0]["created_at"] is not None
 
-    def test_elapsed_time_falls_back_to_now_when_not_completed(self, db_session, normal_user):
-        db_session.query(Task).delete()
+    def test_elapsed_time_falls_back_to_now_when_not_completed(
+        self, db_session, normal_user, isolated_task_table
+    ):
         now = datetime.now(UTC)
 
         _make_task(
@@ -386,8 +563,9 @@ class TestGetRecentTasks:
 
 
 class TestGetFileTimingStats:
-    def test_only_completed_transcription_tasks_count(self, db_session, normal_user):
-        db_session.query(Task).delete()
+    def test_only_completed_transcription_tasks_count(
+        self, db_session, normal_user, isolated_task_table
+    ):
         now = datetime.now(UTC)
 
         _make_task(
@@ -444,22 +622,21 @@ class TestGetFileTimingStats:
         assert result["max_secs"] == 180
         assert result["avg_mins"] == 2.0
 
-    def test_empty_reports_zeros(self, db_session):
-        db_session.query(Task).delete()
-
+    def test_empty_reports_zeros(self, db_session, isolated_task_table):
         result = get_file_timing_stats(db_session)
 
         assert result == {"files": 0, "avg_secs": 0, "min_secs": 0, "max_secs": 0, "avg_mins": 0}
 
 
 # ---------------------------------------------------------------------------
-# get_throughput_stats — delta assertions against the shared media_file table
+# get_throughput_stats
 # ---------------------------------------------------------------------------
 
 
 class TestGetThroughputStats:
-    def test_counts_and_rates_reflect_newly_completed_files(self, db_session, normal_user):
-        before = get_throughput_stats(db_session)
+    def test_counts_and_rates_reflect_newly_completed_files(
+        self, db_session, normal_user, isolated_file_tables
+    ):
         now = datetime.now(UTC)
 
         # last_1h AND last_3h
@@ -470,55 +647,42 @@ class TestGetThroughputStats:
         # neither window
         _make_media_file(db_session, normal_user.id, completed_at=now - timedelta(hours=4))
 
-        after = get_throughput_stats(db_session)
+        assert get_throughput_stats(db_session) == {
+            "total_completed": 4,
+            "last_1h": 2,
+            "last_3h": 3,
+            "rate_1h": 2,
+            "rate_3h": 1.0,  # 3 / 3.0
+        }
 
-        assert after["total_completed"] - before["total_completed"] == 4
-        assert after["last_1h"] - before["last_1h"] == 2
-        assert after["last_3h"] - before["last_3h"] == 3
-        assert after["rate_1h"] == after["last_1h"]
-        assert after["rate_3h"] == round(after["last_3h"] / 3.0, 1)
-
-    def test_non_completed_files_are_never_counted(self, db_session, normal_user):
-        before = get_throughput_stats(db_session)
+    def test_non_completed_files_are_never_counted(
+        self, db_session, normal_user, isolated_file_tables
+    ):
         now = datetime.now(UTC)
 
         pending = _make_media_file(db_session, normal_user.id, status="pending")
         pending.completed_at = now  # a completed_at with the "wrong" status must not count
         db_session.commit()
 
-        after = get_throughput_stats(db_session)
-
-        assert after["total_completed"] == before["total_completed"]
-        assert after["last_1h"] == before["last_1h"]
-        assert after["last_3h"] == before["last_3h"]
+        assert get_throughput_stats(db_session) == {
+            "total_completed": 0,
+            "last_1h": 0,
+            "last_3h": 0,
+            "rate_1h": 0,
+            "rate_3h": 0,
+        }
 
 
 # ---------------------------------------------------------------------------
-# get_processing_eta — live-DB delta test plus a fake-session branch test
+# get_processing_eta — shadowed live-DB test plus fake-session branch tests
 # ---------------------------------------------------------------------------
 
 
 class TestGetProcessingEta:
-    def test_remaining_and_rate_reflect_newly_added_files(self, db_session, normal_user):
+    def test_remaining_and_rate_reflect_newly_added_files(
+        self, db_session, normal_user, isolated_file_tables
+    ):
         now = datetime.now(UTC)
-        three_hours_ago = now - timedelta(hours=3)
-
-        completed_3h_before = (
-            db_session.query(func.count())
-            .select_from(MediaFile)
-            .filter(
-                MediaFile.status == "completed",
-                MediaFile.completed_at.isnot(None),
-                MediaFile.completed_at > three_hours_ago,
-            )
-            .scalar()
-        ) or 0
-        remaining_before = (
-            db_session.query(func.count())
-            .select_from(MediaFile)
-            .filter(MediaFile.file_size > 0, MediaFile.status.in_(["pending", "processing"]))
-            .scalar()
-        ) or 0
 
         for _ in range(3):
             _make_media_file(db_session, normal_user.id, completed_at=now - timedelta(minutes=10))
@@ -532,26 +696,12 @@ class TestGetProcessingEta:
 
         result = get_processing_eta(db_session)
 
-        expected_completed_3h = completed_3h_before + 3
-        expected_remaining = remaining_before + 7
-        expected_files_per_hour = (
-            round(expected_completed_3h / 3.0, 1) if expected_completed_3h > 0 else 0
-        )
-        expected_hours_remaining = (
-            round(expected_remaining / expected_files_per_hour, 1)
-            if expected_files_per_hour > 0
-            else None
-        )
+        assert result["remaining"] == 7  # 4 pending + 3 processing, all with file_size > 0
+        assert result["files_per_hour"] == 1.0  # 3 completed in the 3h window / 3.0
+        assert result["hours_remaining"] == 7.0  # 7 / 1.0
+        assert result["est_completion"] is not None
 
-        assert result["remaining"] == expected_remaining
-        assert result["files_per_hour"] == expected_files_per_hour
-        assert result["hours_remaining"] == expected_hours_remaining
-        if expected_hours_remaining is not None:
-            assert result["est_completion"] is not None
-        else:
-            assert result["est_completion"] is None
-
-    # -- fake-session branch tests: exact arithmetic, independent of live dev data --
+    # -- fake-session branch tests: exact arithmetic, independent of any database --
 
     class _FakeEtaQuery:
         def __init__(self, value: int) -> None:

@@ -120,7 +120,7 @@ test_ldap() {
         skip "LDAP is not enabled (LDAP_ENABLED=false)"
         echo ""
         echo "To enable LDAP testing:"
-        echo "  1. Start test LDAP server: docker compose -f docker-compose.ldap-test.yml up -d"
+        echo "  1. Start test LDAP server: ./opentr.sh start dev --with-ldap-test"
         echo "  2. Configure in .env:"
         echo "     LDAP_ENABLED=true"
         echo "     LDAP_SERVER=localhost"
@@ -129,7 +129,7 @@ test_ldap() {
         echo "     LDAP_BIND_DN=cn=admin,dc=example,dc=org"
         echo "     LDAP_BIND_PASSWORD=admin"
         echo "     LDAP_SEARCH_BASE=dc=example,dc=org"
-        echo "  3. Restart backend: docker compose restart backend"
+        echo "  3. Restart backend: ./opentr.sh restart-backend"
         return
     fi
 
@@ -177,7 +177,7 @@ test_keycloak() {
         skip "Keycloak is not enabled (KEYCLOAK_ENABLED=false)"
         echo ""
         echo "To enable Keycloak testing:"
-        echo "  1. Start Keycloak: docker compose -f docker-compose.keycloak.yml up -d keycloak"
+        echo "  1. Start Keycloak: ./opentr.sh start dev --with-keycloak-test"
         echo "  2. Configure realm, client, and users in Keycloak admin (http://localhost:8180)"
         echo "  3. Configure in .env:"
         echo "     KEYCLOAK_ENABLED=true"
@@ -186,7 +186,7 @@ test_keycloak() {
         echo "     KEYCLOAK_CLIENT_ID=opentranscribe-app"
         echo "     KEYCLOAK_CLIENT_SECRET=<your-secret>"
         echo "     KEYCLOAK_CALLBACK_URL=http://localhost:5174/api/auth/keycloak/callback"
-        echo "  4. Restart backend: docker compose restart backend"
+        echo "  4. Restart backend: ./opentr.sh restart-backend"
         echo ""
         echo "  See docs/KEYCLOAK_SETUP.md for detailed instructions"
         return
@@ -247,7 +247,7 @@ test_pki() {
         echo "     PKI_ENABLED=true"
         echo "     PKI_CA_CERT_PATH=/path/to/ca.crt"
         echo "     PKI_VERIFY_REVOCATION=false"
-        echo "  3. Restart backend: docker compose restart backend"
+        echo "  3. Restart backend: ./opentr.sh restart-backend"
         echo ""
         echo "  See docs/PKI_SETUP.md for detailed instructions"
         return
@@ -400,7 +400,7 @@ test_mfa() {
         echo "To enable MFA testing:"
         echo "  1. Set MFA_ENABLED=true in .env"
         echo "  2. Optionally set MFA_REQUIRED=true"
-        echo "  3. Restart backend: docker compose restart backend"
+        echo "  3. Restart backend: ./opentr.sh restart-backend"
         return
     fi
 
@@ -471,7 +471,7 @@ test_login_banner() {
         echo "  1. Set LOGIN_BANNER_ENABLED=true in .env"
         echo "  2. Set LOGIN_BANNER_TEXT with your warning text"
         echo "  3. Set LOGIN_BANNER_CLASSIFICATION (UNCLASSIFIED, CUI, SECRET, etc.)"
-        echo "  4. Restart backend: docker compose restart backend"
+        echo "  4. Restart backend: ./opentr.sh restart-backend"
         return
     fi
 
@@ -702,7 +702,7 @@ test_audit_logging() {
     info "Generated successful login event"
 
     print_subheader "Manual verification"
-    echo "  1. Check backend logs: docker compose logs backend | grep audit"
+    echo "  1. Check backend logs: ./opentr.sh logs backend | grep audit"
     echo "  2. Check OpenSearch: curl http://localhost:5180/audit-*/_search"
     echo ""
     echo "  Events to verify:"
@@ -764,7 +764,7 @@ main() {
     echo ""
     echo "  Keycloak/OIDC:"
     echo "    KEYCLOAK_ENABLED=true"
-    echo "    docker compose -f docker-compose.keycloak.yml up -d keycloak"
+    echo "    ./opentr.sh start dev --with-keycloak-test"
     echo ""
     echo "  PKI/X.509 Certificates:"
     echo "    PKI_ENABLED=true"

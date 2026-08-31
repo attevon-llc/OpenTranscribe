@@ -175,6 +175,59 @@ is unshippable — is out of scope here and belongs in its own issue.
    records the `update-full` coverage gap as a visible SKIP.
 6. `test-lite-mode.sh` + `README.md`: the finding-E relabel.
 
+## The wider test/rehearsal tooling — what each script is, and where the real overlap is
+
+Added after the first pass, because "these three scripts now work" is not the same as "a future
+change to overlay selection propagates by itself". Verified by reading each script, not assumed.
+
+### The map
+
+| Script | What it IS | Who calls it |
+|---|---|---|
+| `scripts/run-dev-tests.sh` | The fast dev loop: backend gate → e2e → frontend check, one report. Auto-starts/stops the overlays the requested phase needs via `scripts/lib/dev-test-overlays.sh`, reconciling the `auth_config` rows it flips. | a developer, per branch |
+| `scripts/lib/dev-test-overlays.sh` | The declarative overlay table + detect/start/teardown for the above. Already delegates to `./opentr.sh start dev --with-*`, batched into one call. | `run-dev-tests.sh` |
+| `scripts/run-auth-e2e.sh` | The auth-specific E2E driver (local / LDAP / OIDC / PKI / MFA), including the PKI frontend swap that no other script does. | a developer; `test-matrix.sh` leg 2a's cycle |
+| `scripts/{diar-native,gpu-scale,lite}-smoke.sh` | Falsifiable topology checks against an **already-running** stack (GPU residency via nvidia-smi, worker topology, concurrent uploads). They start nothing. | `test-matrix.sh` legs 2b/2c/2d |
+| `scripts/release-tests/test-fresh-install.sh` · `test-upgrade.sh` · `test-lite-mode.sh` | **The engine.** The only things that actually install, upgrade, damage, restore and roll back a real deployment. | `release.sh rehearse`, `test-matrix.sh` stage 3 |
+| `scripts/release.sh` | Ships a release: 12 stages, ledger, gates, the only path to Docker Hub/GitHub. Its `rehearse` stage runs Scenario A → cleanup → Scenario B. | a release manager |
+| `scripts/test-matrix.sh` | A **dispatcher**, by its own header: "owns no test logic of its own". Four stages of legs, each wrapping an existing script; self-enforces against `full-test-matrix.md` drift in both directions. | a release manager, pre-release |
+
+### Where it only LOOKS like duplication
+
+`release.sh` and `test-matrix.sh` both reach the rehearsal — but they are two callers of the
+**same** `release-tests/*.sh` engine, not two implementations of it. That is the shape you want,
+and this change set is what makes it true rather than nearly true: the engine now delegates to
+`opentranscribe.sh` instead of carrying its own compose logic, so a change to overlay selection
+reaches every caller automatically.
+
+`run-dev-tests.sh` sits outside that entirely and correctly: different question (does my branch
+work), different stack (dev), different front end (`opentr.sh`). Confirmed it hand-rolls nothing.
+
+### Where the real gap is: stage 2/3/4 of `test-matrix.sh` execute NOTHING
+
+Read `run_leg()`. Stage 1 runs `bash -c "$cmd"` and reports PASS/FAIL. Stages 2, 3 and 4 check a
+precondition (is the stack up / down / are the scanners installed) and then write
+`NOT-MEASURED … execution is a separate, future effort` to the report and return 0.
+
+So `test-matrix.sh all` today proves two things: the eight fast static checks pass, and the leg
+table has not drifted from its doc. It does **not** prove GPU scaling, diarization providers,
+lite mode, auth, PKI, fresh install or upgrade work — despite listing all of them and exiting 0.
+That is almost certainly the gap behind "it feels like these do similar things but the process
+isn't proven": the matrix reads as an executed checklist and is a precondition-checked one.
+
+Two smaller findings in the same area:
+
+* Leg `3`'s description says "fresh-install + upgrade" but its command is
+  `scripts/release-tests/test-fresh-install.sh` alone. If stage 3 were ever made to execute, it
+  would silently run half of what it claims. `release.sh rehearse` runs both.
+* `test-lite-mode.sh` is reachable only from `test-matrix.sh` (leg `3-lite`); the release
+  pipeline has no lite criterion at all. Combined with finding E — lite is not a shippable
+  deployment shape — that is consistent, but it means "the matrix covers lite" is doubly weak.
+
+Recommendation and scoping are in the final report; deliberately not implemented here, because
+making stage 2/3 execute is a multi-hour-runtime orchestration change (stack up for 2, stack
+down for 3, teardown between) that wants its own review, not a rider on a harness fix.
+
 ## How each change is validated
 
 * Selection logic: the unit tests above — they must be watched to fail against the

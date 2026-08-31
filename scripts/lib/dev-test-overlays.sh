@@ -77,40 +77,13 @@ declare -A EXEMPT_WITH_FLAGS=(
     [smb-test]="no test selector this script drives needs it; test_watch_sources_e2e.py only needs the local-folder mount from --with-watch"
 )
 
-compose_project_name() {
-    if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
-        echo "$COMPOSE_PROJECT_NAME"
-        return
-    fi
-    # basename "$REPO_ROOT" is wrong when this script runs from a git worktree
-    # (.claude/worktrees/<name>): REPO_ROOT then resolves to the WORKTREE's own
-    # directory name, not the main checkout's, and never matches the live stack's
-    # actual compose project label — every overlay_container_name lookup silently
-    # finds nothing. Detect the real project from a container that must already be
-    # running for any of these lookups to matter (this file's callers all require
-    # a live stack), falling back to the old directory-name guess only if none is up.
-    local detected
-    detected="$(docker ps \
-        --filter "label=com.docker.compose.service=postgres" \
-        --filter "status=running" \
-        --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null | head -1)"
-    echo "${detected:-$(basename "$REPO_ROOT")}"
-}
-
-# Generalizes the detection primitive the original mock-llm block used
-# (`docker ps --filter name=^opentranscribe-mock-llm$`), which hardcoded a container name that
-# is actually `${MOCK_LLM_CONTAINER_NAME:-opentranscribe-mock-llm}` in the compose file — a
-# --fresh stack's differently-named container would never be found (issue #630 / B5). Filtering
-# on the compose PROJECT+SERVICE labels instead is correct regardless of container_name, or
-# whether the compose file sets one at all (keycloak.yml deliberately doesn't).
-overlay_container_name() {
-    local service="$1"
-    docker ps \
-        --filter "label=com.docker.compose.project=$(compose_project_name)" \
-        --filter "label=com.docker.compose.service=${service}" \
-        --filter "status=running" \
-        --format '{{.Names}}' 2>/dev/null | head -1
-}
+# compose_project_name / overlay_container_name moved to scripts/lib/compose-project.sh so
+# scripts/run-auth-e2e.sh can use them too. They were the ONLY two functions here with no
+# dependency on this file's caller globals (or its EXIT trap), and run-auth-e2e.sh was guessing
+# both the project and container names on its own — see that lib's header for the two bugs each
+# guess has already caused. Sourced, not duplicated.
+# shellcheck source=compose-project.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/compose-project.sh"
 
 # The watch overlay has no dedicated container — it mounts the host watch folder into existing
 # app services (backend, celery-beat, celery-download-worker, celery-cpu-worker) and sets

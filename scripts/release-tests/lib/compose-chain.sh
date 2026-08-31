@@ -52,13 +52,30 @@ cc_chain_files() {
 #   Every compose file release-manifest.txt tells an installer to download.
 #   Read from the manifest, never hardcoded here — a second list is the bug this
 #   whole change set exists to remove.
+#
+#   Honors the `optional` flag exactly as test-upgrade.sh's _replay_release_manifest
+#   does: an optional entry this SOURCE TREE does not actually carry is skipped, not
+#   reported. Both readers of release-manifest.txt used to disagree here — this one
+#   ignored `optional` outright — which is currently harmless (docker-compose.
+#   blackwell.yml and docker-compose.backup.yml, the only two optional entries, both
+#   exist in this checkout) but would silently produce a false FAIL in
+#   cc_assert_chain's "every compose overlay ... was downloaded" check the day either
+#   one is genuinely absent from a release's source tree.
 cc_manifest_compose_overlays() {
     local repo_root="$1"
-    awk -F'\t' '
-        /^[[:space:]]*#/ { next }
-        /^[[:space:]]*$/ { next }
-        $1 ~ /^docker-compose.*\.yml$/ { print $1 }
-    ' "$repo_root/release-manifest.txt"
+    local manifest="$repo_root/release-manifest.txt"
+    local line path flags
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        case "$line" in ''|'#'*) continue ;; esac
+        path="$(printf '%s' "$line" | cut -f1 | tr -d '[:space:]')"
+        flags="$(printf '%s' "$line" | cut -s -f2)"
+        [[ -n "$path" ]] || continue
+        case "$path" in docker-compose*.yml) ;; *) continue ;; esac
+        case ",$flags," in
+            *,optional,*) [[ -f "$repo_root/$path" ]] || continue ;;
+        esac
+        printf '%s\n' "$path"
+    done < "$manifest"
 }
 
 # cc_expected_gpu_overlay INSTALL_DIR

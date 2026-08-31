@@ -449,443 +449,122 @@ create_configuration_files() {
     # Create database initialization files
     create_database_files
 
-    # Create comprehensive docker-compose.yml directly
-    create_production_compose
+    # Directory structure the manifest cannot express: it lists files, and an
+    # empty directory is not a file. nginx/ssl is where generate-ssl-cert.sh
+    # writes, and it must exist before the user runs setup-ssl.
+    mkdir -p nginx/ssl
+    mkdir -p scripts
+    touch nginx/ssl/.gitkeep
+
+    # Download every deployment artifact release-manifest.txt lists.
+    download_release_manifest_artifacts
 
     # Validate all downloaded files
     if ! validate_downloaded_files; then
         echo -e "${RED}❌ File validation failed${NC}"
         exit 1
     fi
-
-    # Download opentranscribe.sh management script
-    download_management_script
-
-    # Download NGINX/SSL configuration files
-    download_nginx_files
-
-    # Download model downloader scripts
-    download_model_downloader_scripts
-
-    # Create .env.example
-    create_production_env_example
 }
 
-create_production_compose() {
-    echo "✓ Downloading production docker-compose configuration..."
+# Download every artifact listed in release-manifest.txt, at the resolved install ref.
+#
+# The file list lives in release-manifest.txt, NOT in this script. This installer used to
+# keep its own hardcoded list, and the two drifted: docker-compose.blackwell.yml and
+# docker-compose.backup.yml were listed in the manifest and downloaded by
+# `opentranscribe.sh update-full`, but never by a fresh install. Because
+# get_compose_files() guards overlay selection with `[ -f ... ]`, the miss was SILENT —
+# a fresh install on a Blackwell (SM_121) card fell back to the generic GPU overlay and
+# then crashed in NVRTC on the first transcription, which is the app's core function
+# (see docs/BLACKWELL_SETUP.md, issue #640).
+#
+# Mirrors the replay loop in opentranscribe.sh's update-full arm, with the same
+# optional/exec/preserve flag semantics, plus this script's retry-and-timeout behaviour.
+# Adding a file to a deployment is now a one-line change in release-manifest.txt.
+download_release_manifest_artifacts() {
+    echo "✓ Downloading deployment files listed in release-manifest.txt..."
 
     local max_retries=3
     local branch="${OPENTRANSCRIBE_BRANCH:-master}"
     # URL-encode the branch name (replace / with %2F)
     local encoded_branch
     encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
+    local github_raw="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}"
 
-    # Download base docker-compose.yml
-    echo "  Downloading base docker-compose.yml..."
-    local retry_count=0
-    local base_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.yml"
+    # The manifest itself is required. Guessing the file list is the bug this replaced,
+    # so refuse to install rather than fall back to an assumed set.
+    if ! curl -fsSL --connect-timeout 10 --max-time 30 \
+        "$github_raw/release-manifest.txt" -o release-manifest.txt.new; then
+        echo -e "${RED}❌ Failed to download release-manifest.txt from ${branch}${NC}"
+        echo "Refusing to install from an unknown artifact list."
+        echo "Alternative: You can manually download from: $github_raw/release-manifest.txt"
+        exit 1
+    fi
+    mv release-manifest.txt.new release-manifest.txt
 
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$base_url" -o docker-compose.yml; then
-            if [ -s docker-compose.yml ] && grep -q "services:" docker-compose.yml; then
-                echo "  ✓ Downloaded base docker-compose.yml"
+    local install_failed=0
+    local manifest_line artifact_path artifact_flags artifact_dir retry_count downloaded
+    while IFS= read -r manifest_line || [ -n "$manifest_line" ]; do
+        # Strip comments and blanks.
+        case "$manifest_line" in '' | '#'*) continue ;; esac
+
+        artifact_path=$(printf '%s' "$manifest_line" | cut -f1 | tr -d '[:space:]')
+        artifact_flags=$(printf '%s' "$manifest_line" | cut -s -f2)
+        [ -n "$artifact_path" ] || continue
+
+        # preserve = user-owned data; never clobber an existing copy.
+        case ",$artifact_flags," in
+            *,preserve,*)
+                if [ -f "$artifact_path" ]; then
+                    echo "  ↷ $artifact_path (preserved)"
+                    continue
+                fi
+                ;;
+        esac
+
+        artifact_dir=$(dirname "$artifact_path")
+        [ "$artifact_dir" = "." ] || mkdir -p "$artifact_dir"
+
+        retry_count=0
+        downloaded=0
+        while [ $retry_count -lt $max_retries ]; do
+            # Stage to .new so a failed attempt never truncates a good file.
+            if curl -fsSL --connect-timeout 10 --max-time 30 \
+                "$github_raw/$artifact_path" -o "${artifact_path}.new" &&
+                [ -s "${artifact_path}.new" ]; then
+                mv "${artifact_path}.new" "$artifact_path"
+                case ",$artifact_flags," in *,exec,*) chmod +x "$artifact_path" ;; esac
+                echo -e "  ${GREEN}✓${NC} $artifact_path"
+                downloaded=1
                 break
-            else
-                echo "  ⚠️  Downloaded base file appears invalid, retrying..."
-                rm -f docker-compose.yml
             fi
-        else
-            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
+            rm -f "${artifact_path}.new"
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $max_retries ]; then
+                sleep 2
+            fi
+        done
 
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            sleep 2
+        if [ "$downloaded" -eq 0 ]; then
+            case ",$artifact_flags," in
+                *,optional,*)
+                    echo -e "  ${YELLOW}⚠️${NC}  $artifact_path (optional, not in this release)"
+                    ;;
+                *)
+                    echo -e "  ${RED}✗${NC}  $artifact_path (REQUIRED — download failed)"
+                    install_failed=1
+                    ;;
+            esac
         fi
-    done
+    done <release-manifest.txt
 
-    if [ $retry_count -ge $max_retries ]; then
-        echo -e "${RED}❌ Failed to download base docker-compose.yml${NC}"
+    if [ "$install_failed" -ne 0 ]; then
+        echo ""
+        echo -e "${RED}❌ One or more required deployment files failed to download.${NC}"
         echo "Please check your internet connection and try again."
-        echo "Alternative: You can manually download from: $base_url"
         exit 1
     fi
 
-    # Download production overrides docker-compose.prod.yml
-    echo "  Downloading production overrides docker-compose.prod.yml..."
-    retry_count=0
-    local prod_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.prod.yml"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$prod_url" -o docker-compose.prod.yml; then
-            if [ -s docker-compose.prod.yml ] && grep -q "services:" docker-compose.prod.yml; then
-                echo "  ✓ Downloaded production docker-compose.prod.yml"
-
-                # Download GPU overlay for NVIDIA acceleration (non-fatal)
-                download_gpu_overlay
-
-                # Download optional gpu-scale overlay (non-fatal)
-                download_gpu_scale_overlay
-
-                echo "✓ Production docker-compose configuration complete"
-                return 0
-            else
-                echo "  ⚠️  Downloaded prod file appears invalid, retrying..."
-                rm -f docker-compose.prod.yml
-            fi
-        else
-            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            sleep 2
-        fi
-    done
-
-    echo -e "${RED}❌ Failed to download docker-compose.prod.yml${NC}"
-    echo "Please check your internet connection and try again."
-    echo "Alternative: You can manually download from: $prod_url"
-    exit 1
-}
-
-download_gpu_overlay() {
-    # Download docker-compose.gpu.yml for NVIDIA GPU support
-    # This enables GPU acceleration when NVIDIA Container Toolkit is detected
-    echo "  Downloading docker-compose.gpu.yml (GPU acceleration support)..."
-
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local gpu_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.gpu.yml"
-
-    if curl -fsSL --connect-timeout 10 --max-time 30 "$gpu_url" -o docker-compose.gpu.yml 2>/dev/null; then
-        if [ -s docker-compose.gpu.yml ] && grep -q "celery-worker:" docker-compose.gpu.yml; then
-            echo "  ✓ Downloaded docker-compose.gpu.yml (GPU acceleration)"
-        else
-            echo "  ⚠️  Downloaded gpu file appears invalid, removing..."
-            rm -f docker-compose.gpu.yml
-        fi
-    else
-        echo "  ℹ️  docker-compose.gpu.yml not available (GPU support optional)"
-    fi
-}
-
-download_gpu_scale_overlay() {
-    # Optional: Download docker-compose.gpu-scale.yml for multi-GPU support
-    # This is non-fatal - users can skip if they don't have multi-GPU setups
-    echo "  Downloading optional docker-compose.gpu-scale.yml (multi-GPU support)..."
-
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local gpu_scale_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.gpu-scale.yml"
-
-    if curl -fsSL --connect-timeout 10 --max-time 30 "$gpu_scale_url" -o docker-compose.gpu-scale.yml 2>/dev/null; then
-        if [ -s docker-compose.gpu-scale.yml ] && grep -q "celery-worker-gpu-scaled:" docker-compose.gpu-scale.yml; then
-            echo "  ✓ Downloaded docker-compose.gpu-scale.yml (optional multi-GPU scaling)"
-        else
-            echo "  ⚠️  Downloaded gpu-scale file appears invalid, removing..."
-            rm -f docker-compose.gpu-scale.yml
-        fi
-    else
-        echo "  ℹ️  docker-compose.gpu-scale.yml not available (optional feature)"
-    fi
-}
-
-download_management_script() {
-    echo "✓ Downloading OpenTranscribe management script..."
-
-    # Download the opentranscribe.sh script from the repository
-    local max_retries=3
-    local retry_count=0
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    # URL-encode the branch name (replace / with %2F)
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/opentranscribe.sh"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o opentranscribe.sh; then
-            # Validate downloaded file
-            if [ -s opentranscribe.sh ] && grep -q "OpenTranscribe Management Script" opentranscribe.sh; then
-                chmod +x opentranscribe.sh
-                echo "✓ Downloaded and validated opentranscribe.sh"
-                return 0
-            else
-                echo "⚠️  Downloaded opentranscribe.sh appears invalid, retrying..."
-                rm -f opentranscribe.sh
-            fi
-        else
-            echo "⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            echo "⏳ Retrying in 2 seconds..."
-            sleep 2
-        fi
-    done
-
-    echo -e "${YELLOW}⚠️  Failed to download opentranscribe.sh after $max_retries attempts${NC}"
-    echo "You can manually download from: $download_url"
-}
-
-download_nginx_files() {
-    echo "✓ Downloading NGINX/SSL configuration files..."
-
-    local max_retries=3
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-
-    # Create nginx and scripts directory structure
-    mkdir -p nginx/ssl
-    mkdir -p scripts
-    touch nginx/ssl/.gitkeep
-
-    # Download docker-compose.nginx.yml
-    echo "  Downloading docker-compose.nginx.yml..."
-    local retry_count=0
-    local nginx_compose_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/docker-compose.nginx.yml"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$nginx_compose_url" -o docker-compose.nginx.yml; then
-            if [ -s docker-compose.nginx.yml ] && grep -q "nginx:" docker-compose.nginx.yml; then
-                echo "  ✓ Downloaded docker-compose.nginx.yml"
-                break
-            else
-                echo "  ⚠️  Downloaded nginx compose file appears invalid, retrying..."
-                rm -f docker-compose.nginx.yml
-            fi
-        else
-            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            sleep 2
-        fi
-    done
-
-    if [ $retry_count -ge $max_retries ]; then
-        echo "  ⚠️  Could not download docker-compose.nginx.yml (HTTPS support optional)"
-    fi
-
-    # Download nginx/site.conf.template
-    echo "  Downloading nginx/site.conf.template..."
-    retry_count=0
-    local nginx_conf_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/nginx/site.conf.template"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$nginx_conf_url" -o nginx/site.conf.template; then
-            if [ -s nginx/site.conf.template ] && grep -q "server" nginx/site.conf.template; then
-                echo "  ✓ Downloaded nginx/site.conf.template"
-                break
-            else
-                echo "  ⚠️  Downloaded nginx config appears invalid, retrying..."
-                rm -f nginx/site.conf.template
-            fi
-        else
-            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            sleep 2
-        fi
-    done
-
-    if [ $retry_count -ge $max_retries ]; then
-        echo "  ⚠️  Could not download nginx/site.conf.template (HTTPS support optional)"
-    fi
-
-    # Download scripts/generate-ssl-cert.sh
-    echo "  Downloading scripts/generate-ssl-cert.sh..."
-    retry_count=0
-    local ssl_script_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/generate-ssl-cert.sh"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$ssl_script_url" -o scripts/generate-ssl-cert.sh; then
-            if [ -s scripts/generate-ssl-cert.sh ] && grep -q "SSL Certificate" scripts/generate-ssl-cert.sh; then
-                chmod +x scripts/generate-ssl-cert.sh
-                echo "  ✓ Downloaded scripts/generate-ssl-cert.sh"
-                break
-            else
-                echo "  ⚠️  Downloaded SSL script appears invalid, retrying..."
-                rm -f scripts/generate-ssl-cert.sh
-            fi
-        else
-            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            sleep 2
-        fi
-    done
-
-    if [ $retry_count -ge $max_retries ]; then
-        echo "  ⚠️  Could not download scripts/generate-ssl-cert.sh (HTTPS support optional)"
-    fi
-
-    # Download scripts/fix-model-permissions.sh
-    echo "  Downloading scripts/fix-model-permissions.sh..."
-    retry_count=0
-    local fix_perms_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/fix-model-permissions.sh"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$fix_perms_url" -o scripts/fix-model-permissions.sh; then
-            if [ -s scripts/fix-model-permissions.sh ] && grep -q "Permission" scripts/fix-model-permissions.sh; then
-                chmod +x scripts/fix-model-permissions.sh
-                echo "  ✓ Downloaded scripts/fix-model-permissions.sh"
-                break
-            else
-                echo "  ⚠️  Downloaded fix-permissions script appears invalid, retrying..."
-                rm -f scripts/fix-model-permissions.sh
-            fi
-        else
-            echo "  ⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            sleep 2
-        fi
-    done
-
-    if [ $retry_count -ge $max_retries ]; then
-        echo "  ⚠️  Could not download scripts/fix-model-permissions.sh"
-    fi
-
-    echo "✓ NGINX/SSL files download complete"
-}
-
-download_model_downloader_scripts() {
-    echo "✓ Downloading model downloader scripts..."
-
-    # Create scripts directory
-    mkdir -p scripts
-
-    # Download download-models.sh
-    local max_retries=3
-    local retry_count=0
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/download-models.sh"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o scripts/download-models.sh; then
-            if [ -s scripts/download-models.sh ] && grep -q "OpenTranscribe Model Downloader" scripts/download-models.sh; then
-                chmod +x scripts/download-models.sh
-                echo "✓ Downloaded and validated download-models.sh"
-                break
-            else
-                echo "⚠️  Downloaded download-models.sh appears invalid, retrying..."
-                rm -f scripts/download-models.sh
-            fi
-        else
-            echo "⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            echo "⏳ Retrying in 2 seconds..."
-            sleep 2
-        fi
-    done
-
-    # Download download-models.py
-    retry_count=0
-    download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/download-models.py"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o scripts/download-models.py; then
-            if [ -s scripts/download-models.py ] && grep -q "Download all required AI models" scripts/download-models.py; then
-                echo "✓ Downloaded and validated download-models.py"
-                break
-            else
-                echo "⚠️  Downloaded download-models.py appears invalid, retrying..."
-                rm -f scripts/download-models.py
-            fi
-        else
-            echo "⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            echo "⏳ Retrying in 2 seconds..."
-            sleep 2
-        fi
-    done
-
-    # Download common.sh (utility functions used by opentr.sh)
-    retry_count=0
-    download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/scripts/common.sh"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o scripts/common.sh; then
-            if [ -s scripts/common.sh ] && grep -q "check_docker" scripts/common.sh; then
-                echo "✓ Downloaded and validated common.sh"
-                return 0
-            else
-                echo "⚠️  Downloaded common.sh appears invalid, retrying..."
-                rm -f scripts/common.sh
-            fi
-        else
-            echo "⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            echo "⏳ Retrying in 2 seconds..."
-            sleep 2
-        fi
-    done
-
-    echo -e "${YELLOW}⚠️  Failed to download model downloader scripts${NC}"
-    echo "Models will be downloaded on first application run instead."
-}
-
-create_production_env_example() {
-    echo "✓ Downloading environment configuration template..."
-
-    # Download the official .env.example from the repository
-    local max_retries=3
-    local retry_count=0
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    # URL-encode the branch name (replace / with %2F)
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local download_url="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}/.env.example"
-
-    while [ $retry_count -lt $max_retries ]; do
-        if curl -fsSL --connect-timeout 10 --max-time 30 "$download_url" -o .env.example; then
-            # Validate downloaded file
-            if [ -s .env.example ] && grep -q "POSTGRES_HOST" .env.example && grep -q "HUGGINGFACE_TOKEN" .env.example; then
-                echo "✓ Downloaded and validated .env.example"
-                return 0
-            else
-                echo "⚠️  Downloaded env file appears invalid, retrying..."
-                rm -f .env.example
-            fi
-        else
-            echo "⚠️  Download attempt $((retry_count + 1)) failed"
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [ $retry_count -lt $max_retries ]; then
-            echo "⏳ Retrying in 2 seconds..."
-            sleep 2
-        fi
-    done
-
-    echo -e "${RED}❌ Failed to download .env.example file after $max_retries attempts${NC}"
-    echo "Please check your internet connection and try again."
-    echo "Alternative: You can manually download from:"
-    echo "$download_url"
-    exit 1
+    echo "✓ All deployment files downloaded"
 }
 
 prompt_huggingface_token() {

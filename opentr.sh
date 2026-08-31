@@ -247,6 +247,41 @@ show_help() {
   echo ""
 }
 
+# Resolve where the diar-native ONNX/PLDA export lives, and EXPORT it so the
+# auto-load check below and docker-compose.diar-native.yml's volume mount can never
+# disagree about the answer.
+#
+# Order: an explicit DIAR_NATIVE_MODELS_DIR wins; then the standard cache location
+# (${MODEL_CACHE_DIR}/diar-native, a sibling of huggingface/ and torch/, and where a
+# self-hosted export lands); then the pre-convention sibling-repo export, which is
+# where this workstation's models still are and which has no entry in .env. Dropping
+# that last probe silently moved existing dev checkouts onto the PyAnnote fallback.
+#
+# This probe is dev-only on purpose: opentr.sh is deliberately not shipped
+# (test_opentr_sh_is_not_shipped_and_the_shipped_script_covers_it), and
+# opentranscribe.sh resolves the standard location only.
+resolve_diar_native_models_dir() {
+  if [ -n "${DIAR_NATIVE_MODELS_DIR:-}" ]; then
+    export DIAR_NATIVE_MODELS_DIR
+    return 0
+  fi
+
+  local standard="${MODEL_CACHE_DIR:-./models}/diar-native"
+  local legacy="/mnt/nvm/repos/diar-native/models_folded"
+
+  if [ -d "$standard" ]; then
+    export DIAR_NATIVE_MODELS_DIR="$standard"
+  elif [ -d "$legacy" ]; then
+    export DIAR_NATIVE_MODELS_DIR="$legacy"
+    # Announced, not silent: this path is a property of one machine, not of the repo,
+    # so it must never become invisible drift that only that machine benefits from.
+    echo "ℹ️  diar-native models found at the legacy path $legacy."
+    echo "   Set DIAR_NATIVE_MODELS_DIR in .env to pin it, or move the export to $standard."
+  else
+    export DIAR_NATIVE_MODELS_DIR="$standard"
+  fi
+}
+
 # Build production images locally (backend + frontend)
 build_prod_images() {
   echo "🥽 Building production Docker images locally..."
@@ -1818,9 +1853,10 @@ start_app() {
   # Guarded on the models dir existing — without it the sidecar restart-loops and
   # `up --wait` would fail the whole startup on checkouts with no local model export.
   # Fresh stacks stay opt-in (pass --with-diar-native explicitly).
+  resolve_diar_native_models_dir
   if [ -z "$WITH_DIAR_NATIVE_FLAG" ] && [ -z "$NO_DIAR_NATIVE_FLAG" ] && [ -z "$FRESH_FLAG" ] \
      && [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ] \
-     && [ -d "${DIAR_NATIVE_MODELS_DIR:-/mnt/nvm/repos/diar-native/models_folded}" ]; then
+     && [ -d "$DIAR_NATIVE_MODELS_DIR" ]; then
     WITH_DIAR_NATIVE_FLAG="auto"
     echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
   fi
@@ -1828,6 +1864,13 @@ start_app() {
   # Add the native diarization sidecar if requested
   if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
     if [ -f "docker-compose.diar-native.yml" ]; then
+      # The overlay defaults to the PUBLISHED backend image, which is correct for a
+      # self-hosted deployment but wrong in this checkout — dev builds the image
+      # locally as opentranscribe-backend:latest and never pushes it. Point the
+      # sidecar at the local build so it matches the workers it serves.
+      if [ "$ENVIRONMENT" = "dev" ]; then
+        export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-opentranscribe-backend:latest}"
+      fi
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
       echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
       echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~4.1 GB warm ORT arena while up."
@@ -2507,9 +2550,10 @@ reset_and_init() {
   # Guarded on the models dir existing — without it the sidecar restart-loops and
   # `up --wait` would fail the whole startup on checkouts with no local model export.
   # Fresh stacks stay opt-in (pass --with-diar-native explicitly).
+  resolve_diar_native_models_dir
   if [ -z "$WITH_DIAR_NATIVE_FLAG" ] && [ -z "$NO_DIAR_NATIVE_FLAG" ] && [ -z "$FRESH_FLAG" ] \
      && [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ] \
-     && [ -d "${DIAR_NATIVE_MODELS_DIR:-/mnt/nvm/repos/diar-native/models_folded}" ]; then
+     && [ -d "$DIAR_NATIVE_MODELS_DIR" ]; then
     WITH_DIAR_NATIVE_FLAG="auto"
     echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
   fi
@@ -2517,6 +2561,13 @@ reset_and_init() {
   # Add the native diarization sidecar if requested
   if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
     if [ -f "docker-compose.diar-native.yml" ]; then
+      # The overlay defaults to the PUBLISHED backend image, which is correct for a
+      # self-hosted deployment but wrong in this checkout — dev builds the image
+      # locally as opentranscribe-backend:latest and never pushes it. Point the
+      # sidecar at the local build so it matches the workers it serves.
+      if [ "$ENVIRONMENT" = "dev" ]; then
+        export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-opentranscribe-backend:latest}"
+      fi
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
       echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
       echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~4.1 GB warm ORT arena while up."

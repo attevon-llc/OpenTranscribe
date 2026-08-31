@@ -21,6 +21,8 @@ Consolidating only helps if the manifest itself stays correct, so:
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -28,6 +30,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MANIFEST = REPO_ROOT / "release-manifest.txt"
 MANAGER = REPO_ROOT / "opentranscribe.sh"
+INSTALLER = REPO_ROOT / "setup-opentranscribe.sh"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 
 pytestmark = pytest.mark.skipif(
@@ -111,6 +114,107 @@ def test_update_full_reads_the_manifest():
         "opentranscribe.sh no longer references release-manifest.txt — "
         "did update-full grow its own artifact list again?"
     )
+
+
+def test_installer_reads_the_manifest():
+    """The FRESH-INSTALL half of the same guard (issue #640).
+
+    The manifest header has always claimed setup-opentranscribe.sh as a consumer, but
+    the installer kept its own hardcoded list of compose files instead, and nothing
+    enforced the claim — so `docker-compose.blackwell.yml` and `docker-compose.backup.yml`
+    were listed here, downloaded by `update-full`, and never by a fresh install.
+    """
+    text = INSTALLER.read_text()
+    assert "release-manifest.txt" in text, (
+        "setup-opentranscribe.sh no longer references release-manifest.txt — "
+        "did the installer grow its own artifact list again?"
+    )
+
+
+def _extract_function(script: Path, name: str) -> str:
+    """Pull one shell function out of a script so it can be run in isolation."""
+    out = subprocess.run(
+        ["sed", "-n", f"/^{name}()/,/^}}/p", str(script)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert out.strip(), f"{name}() not found in {script.name}"
+    return out
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+def test_a_fresh_install_downloads_every_compose_overlay_the_manifest_lists(tmp_path):
+    """Run the installer's REAL download loop against a stub curl and check what it asks for.
+
+    This is the behavioural half of the guard, and the one that would actually have
+    caught #640: a string-presence check passes the moment the manifest is mentioned
+    anywhere, even with the hardcoded list still doing the real work.
+
+    Why it matters that blackwell is in here specifically: get_compose_files() selects
+    the overlay with `if is_blackwell_gpu && [ -f docker-compose.blackwell.yml ]`, so a
+    file that was never downloaded does not error — it silently falls through to the
+    generic GPU overlay, whose image crashes in NVRTC on SM_121 the first time anyone
+    actually transcribes something (docs/BLACKWELL_SETUP.md).
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    requested = tmp_path / "requested.txt"
+
+    # Stub curl: record the URL, write a non-empty file to the -o target.
+    stub = bin_dir / "curl"
+    stub.write_text(
+        "#!/bin/bash\n"
+        "url=''; out=''\n"
+        "while [ $# -gt 0 ]; do\n"
+        '  case "$1" in\n'
+        '    -o) out="$2"; shift 2 ;;\n'
+        '    http*) url="$1"; shift ;;\n'
+        "    *) shift ;;\n"
+        "  esac\n"
+        "done\n"
+        f'echo "$url" >> {requested}\n'
+        'if [ -n "$out" ]; then\n'
+        # The manifest fetch must return the real manifest; anything else is a stub body.
+        '  case "$url" in\n'
+        f'    *release-manifest.txt) cp {MANIFEST} "$out" ;;\n'
+        '    *) printf "stub-content\\n" > "$out" ;;\n'
+        "  esac\n"
+        "fi\n"
+        "exit 0\n"
+    )
+    stub.chmod(0o755)
+
+    workdir = tmp_path / "install"
+    workdir.mkdir()
+
+    snippet = (
+        "set -uo pipefail\nset -e\n"
+        "RED=''; GREEN=''; YELLOW=''; BLUE=''; NC=''\n"
+        + _extract_function(INSTALLER, "download_release_manifest_artifacts")
+        + "\ndownload_release_manifest_artifacts\n"
+    )
+    proc = subprocess.run(
+        ["bash", "-c", snippet],
+        capture_output=True,
+        text=True,
+        cwd=str(workdir),
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "OPENTRANSCRIBE_BRANCH": "master"},
+    )
+    assert proc.returncode == 0, f"replay loop failed:\n{proc.stdout}\n{proc.stderr}"
+
+    asked_for = requested.read_text().splitlines()
+    listed = [path for path, _ in _entries()]
+
+    missing = [p for p in listed if not any(u.endswith("/" + p) for u in asked_for)]
+    assert not missing, (
+        f"a fresh install never downloads {missing} — the manifest lists them, so "
+        "get_compose_files() can select a file that is not on disk"
+    )
+
+    # The two the hardcoded list forgot, named explicitly so a regression is unambiguous.
+    for overlay in ("docker-compose.blackwell.yml", "docker-compose.backup.yml"):
+        assert (workdir / overlay).is_file(), f"{overlay} was not written to the install dir"
 
 
 def test_opentr_sh_is_not_shipped_and_the_shipped_script_covers_it():

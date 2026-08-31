@@ -1265,7 +1265,26 @@ class LLMService:
             parsed_result: dict[str, Any] = json.loads(content)
             return parsed_result
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse section {section_num} JSON: {e}")
+            logger.warning(f"Failed to parse section {section_num} JSON: {e}")
+
+            # Same recovery as `_parse_summary_response` for a mid-document break
+            # (e.g. an unescaped literal `"` in the source transcript reproduced
+            # verbatim in a string value) — see that method for the full
+            # rationale. Worth doing here too: an unrecovered section becomes a
+            # "Failed to parse" placeholder that gets stitched verbatim into the
+            # combine-step prompt, degrading the final summary for that section.
+            try:
+                from json_repair import loads as repair_json_loads
+
+                lib_repaired = repair_json_loads(content)
+            except Exception:
+                lib_repaired = None
+
+            if isinstance(lib_repaired, dict) and lib_repaired:
+                logger.info(f"json_repair recovered section {section_num}'s summary")
+                return lib_repaired
+
+            logger.error(f"Section {section_num} JSON repair also failed")
             return {
                 "key_points": [f"Section {section_num}: Failed to parse structured summary"],
                 "speakers_in_section": [],
@@ -1399,10 +1418,7 @@ class LLMService:
         except json.JSONDecodeError as e:
             logger.warning(f"Initial JSON parse failed: {e}")
 
-            # Attempt JSON repair for truncated responses
-            repaired = self._repair_truncated_json(content)
-            if repaired is not None:
-                logger.info("JSON repair succeeded, using repaired summary")
+            def _repaired_metadata() -> dict[str, Any]:
                 metadata = {
                     "provider": self.config.provider.value,
                     "model": self.config.model,
@@ -1413,8 +1429,42 @@ class LLMService:
                 }
                 if extra_metadata:
                     metadata.update(extra_metadata)
-                repaired["metadata"] = metadata
+                return metadata
+
+            # Attempt JSON repair for truncated responses (a response cut off at
+            # the token limit, i.e. finish_reason="length" — nothing to close mid-
+            # document, only an open string/array/object at the very end).
+            repaired = self._repair_truncated_json(content)
+            if repaired is not None:
+                logger.info("JSON repair succeeded, using repaired summary")
+                repaired["metadata"] = _repaired_metadata()
                 return repaired
+
+            # The bracket-closer above only fixes a trailing cut-off. It does
+            # nothing for a MID-document syntax break, which produces a different
+            # symptom: json.loads fails well past the actual defect (e.g.
+            # "Expecting ':' delimiter" deep into an otherwise well-formed
+            # document) rather than at end-of-string, because there is no open
+            # bracket to close. Measured live: gemma-4-e4b, asked to summarize a
+            # transcript that contains a literal `"` (a spoken aside quoting a
+            # feet/inches measurement, e.g. `6'6"`), sometimes reproduces it
+            # unescaped inside a JSON string value — one stray quote desyncs the
+            # parser's in-string tracking for everything that follows.
+            # `json_repair` (zero transitive deps, MIT) handles this class
+            # directly instead of us hand-rolling a quote-scanner; it never
+            # raises, so a non-dict/empty result means it couldn't make sense of
+            # the content either.
+            try:
+                from json_repair import loads as repair_json_loads
+
+                lib_repaired = repair_json_loads(content)
+            except Exception:
+                lib_repaired = None
+
+            if isinstance(lib_repaired, dict) and lib_repaired:
+                logger.info("json_repair recovered a malformed (non-truncated) summary response")
+                lib_repaired["metadata"] = _repaired_metadata()
+                return lib_repaired
 
             logger.error(f"JSON repair also failed. Response content: {response.content[:500]}...")
 

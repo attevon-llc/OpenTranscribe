@@ -95,3 +95,5 @@ boto3==1.43.74
 openai==3.3.0
 # requests is pulled in transitively by many packages above, but list explicitly for clarity
 requests==2.34.2
+# See requirements.txt for why — LLM summary JSON repair (llm_service.py)
+json-repair==0.63.4

@@ -214,9 +214,40 @@ check_stage2_precondition() {
 }
 
 check_stage3_precondition() {
+    local id="${1:-}"
     if service_reachable localhost 5174; then
-        err "Stage 3 requires the dev stack STOPPED (it rebuilds and rehearses against prod images). Run: ./opentr.sh stop"
-        return $EXIT_PRECONDITION
+        # Leg "3" (scripts/release/65-rehearse.sh, Scenario B = test-upgrade.sh) deliberately
+        # leaves its stack running afterward "for inspection" — the right default when a human
+        # runs `release.sh rehearse` standalone and wants to poke at what just upgraded.
+        #
+        # But inside `test-matrix.sh all`/`3`, that same leftover release-test stack (never a
+        # live operator deployment — this check already refused to let leg "3" itself start
+        # unless the field was clear) then permanently blocks every subsequent stage-3 leg from
+        # binding the same stock 5173-5180 ports: leg "3-lite"/"3-pki" would see 5174 reachable
+        # forever and report BLOCKED without ever reaching their own preflight. That is the exact
+        # collision scripts/pki/run-pki-e2e-leg.sh's own teardown preamble already exists to
+        # handle for itself — generalized here so "3-lite" (which has no such preamble of its
+        # own) gets the same chance, and so the precondition check clears the field BEFORE either
+        # sibling leg starts rather than leaving it to a leg that might not have the guard.
+        #
+        # Leg "3" itself gets none of this: if 5174 is reachable when "3" is what is being
+        # checked, that is a real precondition violation (the live/dev stack was never stopped),
+        # not a release-test remnant this stage created — clearing it here would be tearing down
+        # something that might not be this stage's to touch.
+        if [[ "$id" != "3" ]]; then
+            info "  clearing a leftover release-test stack from an earlier stage-3 leg..."
+            ./scripts/release-tests/test-fresh-install.sh --cleanup --yes >/dev/null 2>&1 || true
+            ./scripts/release-tests/test-upgrade.sh --cleanup --yes >/dev/null 2>&1 || true
+            ./scripts/release-tests/test-lite-mode.sh --cleanup --yes >/dev/null 2>&1 || true
+            for _ in $(seq 1 30); do
+                service_reachable localhost 5174 || break
+                sleep 2
+            done
+        fi
+        if service_reachable localhost 5174; then
+            err "Stage 3 requires the dev stack STOPPED (it rebuilds and rehearses against prod images). Run: ./opentr.sh stop"
+            return $EXIT_PRECONDITION
+        fi
     fi
     return 0
 }
@@ -290,7 +321,7 @@ run_leg() {
         2) check_stage2_precondition || return $? ;;
         3)
             [[ "$ASSUME_YES" == "true" ]] || { err "Stage 3 leg $id needs --yes (it rebuilds images and rehearses real deployments for hours)"; return $EXIT_ABORT; }
-            check_stage3_precondition || return $?
+            check_stage3_precondition "$id" || return $?
             ;;
         4) check_stage4_tooling ;;
         *) err "leg $id has an unknown stage: $stage"; return $EXIT_MISUSE ;;

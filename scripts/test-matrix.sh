@@ -236,11 +236,17 @@ check_stage4_tooling() {
 
 # ------------------------------------------------------------ leg outcomes
 #
-# Three outcomes, and the third is deliberately NOT a generic placeholder:
-#   PASS  the leg ran and its own criteria held
-#   FAIL  the leg ran and did not pass (log path recorded)
-#   SKIP  the leg ran and reported, in its own words, that it COULD NOT MEASURE this here
-#         (smoke-contract exit 4) — always accompanied by that script's stated reason
+# Outcomes, and none of them is a generic placeholder:
+#   PASS     the leg ran and its own criteria held
+#   FAIL     the leg ran and did not pass (log path recorded); the run exits 1
+#   SKIP     the leg ran and reported, in its own words, that it COULD NOT MEASURE this here
+#            (smoke-contract exit 4) — always accompanied by that script's stated reason
+#   ABORT    the leg reported a standard-contract operator abort (4); the run exits 4
+#   BLOCKED  the leg reported a standard-contract unmet precondition (3); the run exits 3
+#
+# ABORT and BLOCKED exist so a declined `I UNDERSTAND` prompt, or a precondition the leg
+# discovered internally, cannot be recorded as a failed test. Before this, every non-zero was
+# a FAIL, so "the operator said no" and "the rehearsal found a regression" looked identical.
 #
 # A SKIP does not fail the run, but it is counted and printed loudly at the end, the same
 # discipline scripts/audit-tests.py uses for its DEFERRED count: a green matrix must never be
@@ -308,6 +314,16 @@ run_leg() {
     # Exit 4 means two different things in this repo (see the LEGS header): "operator abort"
     # under the standard contract, "NOT MEASURED" under the smoke one. Read it per the leg's
     # declared contract rather than guessing.
+    if [[ "$contract" == "standard" && $leg_rc -eq 4 ]]; then
+        echo "ABORT  $id  $desc  (operator abort, ${elapsed}s — see $log_file)" >> "$REPORT_FILE"
+        info "  ${YELLOW}ABORT${NC} — the leg reported an operator abort, not a failure"
+        return $EXIT_ABORT
+    fi
+    if [[ "$contract" == "standard" && $leg_rc -eq 3 ]]; then
+        echo "BLOCKED  $id  $desc  (precondition unmet, ${elapsed}s — see $log_file)" >> "$REPORT_FILE"
+        info "  ${YELLOW}BLOCKED${NC} — precondition unmet inside the leg; see $log_file"
+        return $EXIT_PRECONDITION
+    fi
     if [[ "$contract" == "smoke" && $leg_rc -eq 4 ]]; then
         local reason
         reason="$(not_measured_reason "$log_file")"

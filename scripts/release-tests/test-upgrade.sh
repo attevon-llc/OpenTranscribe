@@ -51,6 +51,13 @@
 # Future releases need NO edits: FROM and TO are discovered (see the Tunables
 # block). FROM_VERSION / TO_VERSION override; FROM_VERSIONS (plural) runs the
 # scenario once per source, for multi-hop / oldest-supported coverage.
+#
+# Exit codes — the contract scripts/release.sh and scripts/test-matrix.sh share:
+#   0 every assertion PASSed · 1 an assertion FAILed or a guardrail refused ·
+#   2 misuse (unknown argument, --only-rollback without a completed TEST_ROOT) ·
+#   4 operator abort (declined the I UNDERSTAND prompt)
+# Preconditions that a real operator can clear (live containers up, ports bound, disk
+# space) currently exit 1 rather than the contract's 3 — see gr_die in lib/guardrails.sh.
 
 set -euo pipefail
 

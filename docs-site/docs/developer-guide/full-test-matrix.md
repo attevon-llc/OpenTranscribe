@@ -32,16 +32,24 @@ and the leg table's own doc-sync — and nothing whatsoever about GPU scaling, d
 mode, auth, PKI, fresh install or upgrade, while listing every one of them. A green checklist
 that measured none of that is worse than having no leg at all, and it is gone.
 
-Three outcomes, and the third is never a placeholder:
+Five outcomes, and none of them is a placeholder:
 
-| Outcome | Meaning |
-|---|---|
-| `PASS` | the leg ran and its own criteria held |
-| `FAIL` | the leg ran and did not pass; the run exits `1` and the report names the log file |
-| `SKIP` | the leg ran and reported **in its own words** that it could not measure this here — always printed with that script's stated reason, counted, and repeated loudly at the end of the run |
+| Outcome | Meaning | Run exits |
+|---|---|---|
+| `PASS` | the leg ran and its own criteria held | `0` |
+| `FAIL` | the leg ran and did not pass; the report names the log file | `1` |
+| `SKIP` | the leg ran and reported **in its own words** that it could not measure this here — printed with that script's stated reason, counted, and repeated loudly at the end | `0` |
+| `BLOCKED` | the leg found a precondition it could not meet | `3` |
+| `ABORT` | the leg reported an operator abort (e.g. a declined `I UNDERSTAND` prompt) | `4` |
 
 A run with any `SKIP` prints `A green matrix with skips is not a fully measured one.` — the same
 discipline `scripts/audit-tests.py` applies to its DEFERRED count.
+
+`BLOCKED` and `ABORT` exist because collapsing every non-zero into `FAIL` made "the operator said
+no" and "the rehearsal found a regression" look identical. `gr_confirmation_gate` in
+`scripts/release-tests/lib/guardrails.sh` now exits `4` (it used to `gr_die`, i.e. `1`), and
+`scripts/release/65-rehearse.sh` preserves `3`/`4` instead of flattening them — so a rehearsal
+nobody agreed to run is no longer recorded as a rehearsal that failed.
 
 **Exit codes are the shared contract** with `scripts/release.sh`: `0` pass, `1` gate failed,
 `2` misuse, `3` precondition unmet, `4` operator abort. Stage 3 legs additionally require

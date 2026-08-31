@@ -222,6 +222,102 @@ def test_smoke_contract_is_declared_for_exactly_the_scripts_that_use_it():
         )
 
 
+# --------------------------------------------------------------------------- #
+# The shared exit-code lexicon
+#
+# 0 pass · 1 gate failed · 2 misuse · 3 precondition unmet · 4 operator abort.
+# Every collapse of that into "non-zero means failed" has the same cost: an operator who
+# declined a prompt, or a precondition nobody could have met, is recorded as a test that ran
+# and found a regression. These pin the two places that used to do it.
+# --------------------------------------------------------------------------- #
+
+GUARDRAILS = REPO_ROOT / "scripts" / "release-tests" / "lib" / "guardrails.sh"
+REHEARSE = REPO_ROOT / "scripts" / "release" / "65-rehearse.sh"
+
+
+def test_a_declined_confirmation_is_an_abort_not_a_failure():
+    """gr_confirmation_gate used to gr_die (exit 1) when the operator declined.
+
+    So "I typed something other than I UNDERSTAND" propagated to release.sh's ledger and to
+    test-matrix.sh's leg 3 as a FAILED rehearsal — a red result for a rehearsal that never ran.
+    """
+    source = GUARDRAILS.read_text(encoding="utf-8")
+    gate = re.search(r"gr_confirmation_gate\(\)\s*\{.*?\n\}", source, re.DOTALL)
+    assert gate, "gr_confirmation_gate not found in guardrails.sh"
+    body = gate.group(0)
+    assert "gr_abort" in body, (
+        "the declined-confirmation branch no longer calls gr_abort — an operator abort would "
+        "again be reported as a gate failure"
+    )
+    assert "gr_die" not in body, (
+        f"gr_confirmation_gate still exits via gr_die (exit 1) somewhere: {body}"
+    )
+    # gr_abort is a one-liner whose body interpolates ${GR_YELLOW}, so a `[^}]*` body match
+    # stops at that brace — check the definition line itself.
+    abort_def = [ln for ln in source.splitlines() if ln.lstrip().startswith("gr_abort()")]
+    assert len(abort_def) == 1, f"expected exactly one gr_abort definition, got {abort_def}"
+    assert "exit 4" in abort_def[0], (
+        f"gr_abort does not exit 4 — the shared contract's operator-abort code: {abort_def[0]}"
+    )
+
+
+def _run_shell(snippet: str) -> tuple[int, str]:
+    import subprocess
+
+    proc = subprocess.run(
+        ["bash", "-c", snippet],
+        capture_output=True,
+        text=True,
+        env={"PATH": "/usr/bin:/bin"},
+    )
+    return proc.returncode, (proc.stdout + proc.stderr).strip()
+
+
+@pytest.mark.parametrize(
+    ("fresh_rc", "upgrade_rc", "expected"),
+    [
+        (0, 0, 0),
+        (1, 0, 1),
+        (0, 1, 1),
+        (3, 0, 3),
+        (0, 3, 3),
+        (4, 0, 4),
+        (0, 4, 4),
+        # An abort outranks a gate failure: if either half was aborted, the run did not
+        # complete, so reporting "failed" would overstate what was measured.
+        (1, 4, 4),
+        (4, 3, 4),
+    ],
+)
+def test_rehearse_preserves_the_exit_contract(fresh_rc: int, upgrade_rc: int, expected: int):
+    """65-rehearse.sh's rc mapping, run for real with the REAL block extracted from the script.
+
+    It used to be `[[ $fresh_rc -eq 0 && $upgrade_rc -eq 0 ]] || rc=1`, flattening abort and
+    precondition into a gate failure for every caller above it.
+    """
+    source = REHEARSE.read_text(encoding="utf-8")
+    block = re.search(r"^rc=0\n(?:if|\[\[).*?^fi$", source, re.DOTALL | re.MULTILINE)
+    assert block, "the rc-mapping block was not found in 65-rehearse.sh"
+    snippet = f"fresh_rc={fresh_rc}\nupgrade_rc={upgrade_rc}\n{block.group(0)}\nexit $rc\n"
+    rc, out = _run_shell(snippet)
+    assert rc == expected, (
+        f"fresh_rc={fresh_rc} upgrade_rc={upgrade_rc} mapped to {rc}, expected {expected}: {out}"
+    )
+
+
+def test_the_matrix_reports_abort_and_blocked_separately_from_fail():
+    """run_leg must not collapse standard-contract 3/4 into FAIL."""
+    source = _matrix_source()
+    assert 'contract" == "standard" && $leg_rc -eq 4' in source, (
+        "test-matrix.sh no longer distinguishes a standard-contract operator abort from a FAIL"
+    )
+    assert 'contract" == "standard" && $leg_rc -eq 3' in source, (
+        "test-matrix.sh no longer distinguishes a standard-contract unmet precondition from a FAIL"
+    )
+    for token in ("ABORT  $id", "BLOCKED  $id", "SKIP  $id", "FAIL  $id", "PASS  $id"):
+        assert token in source, f"the report no longer emits a {token.split()[0]} line"
+
+
 def test_the_doc_and_the_script_still_agree():
     """check_doc_sync's anchors are load-bearing; a doc edit must not silently break them."""
     assert DOC.is_file(), f"{DOC} is missing — the anti-staleness check cannot run"

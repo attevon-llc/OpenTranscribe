@@ -34,6 +34,12 @@ gr_log()  { echo -e "${GR_BLUE}[guardrails]${GR_NC} $*"; }
 gr_ok()   { echo -e "${GR_GREEN}[guardrails] ✓${GR_NC} $*"; }
 gr_warn() { echo -e "${GR_YELLOW}[guardrails] ⚠${GR_NC} $*" >&2; }
 gr_die()  { echo -e "${GR_RED}${GR_BOLD}[guardrails] ✗ FATAL:${GR_NC} $*" >&2; exit 1; }
+# An operator declining a confirmation is NOT a gate failure, and the difference is the shared
+# exit-code contract scripts/release.sh and scripts/test-matrix.sh both publish: 0 pass, 1 gate
+# failed, 2 misuse, 3 precondition unmet, 4 OPERATOR ABORT. The confirmation gate used to
+# gr_die (exit 1), so declining the `I UNDERSTAND` prompt was reported all the way up as a
+# failed rehearsal — a matrix leg 3 FAIL that nothing had actually tested.
+gr_abort() { echo -e "${GR_YELLOW}${GR_BOLD}[guardrails] aborted:${GR_NC} $*" >&2; exit 4; }
 
 # ─── Protected paths (NEVER touch) ──────────────────────────────────────────
 # These are resolved with realpath before comparison so symlinks cannot be
@@ -257,7 +263,7 @@ EOF
     printf "Type 'I UNDERSTAND' to proceed: "
     read -r reply </dev/tty
     if [[ "$reply" != "I UNDERSTAND" ]]; then
-        gr_die "confirmation not given; aborting"
+        gr_abort "confirmation not given"
     fi
 }
 

@@ -22,6 +22,12 @@
 #
 # Idempotent: phases are tracked under $TEST_ROOT/.phase/<phase>.done so
 # re-running picks up where it left off. Pass --force to clear them.
+#
+# Exit codes — the contract scripts/release.sh and scripts/test-matrix.sh share:
+#   0 every assertion PASSed · 1 an assertion FAILed or a guardrail refused ·
+#   2 misuse (unknown argument) · 4 operator abort (declined the I UNDERSTAND prompt)
+# Preconditions that a real operator can clear (live containers up, ports bound, disk
+# space) currently exit 1 rather than the contract's 3 — see gr_die in lib/guardrails.sh.
 
 set -euo pipefail
 

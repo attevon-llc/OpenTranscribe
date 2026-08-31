@@ -314,3 +314,16 @@ protobuf==7.36.0           # via grpcio-status, onnx, opensearch-protobufs — d
 narwhals==2.25.0           # via altair/plotly family — drifted 2.24.0 (venv) vs 2.25.0 (image), 2026-08-21
 scipy==1.18.1              # via scikit-learn, librosa — drifted 1.18.0 (venv) vs 1.18.1 (image), 2026-08-21
 click==8.5.0                # via uvicorn/celery — drifted 8.4.2 (venv) vs 8.5.0 (image), 2026-08-27
+grpcio==1.83.1             # via google-cloud-speech, opensearch-protobufs, opentelemetry-exporter-otlp-proto-grpc — drifted 1.83.0 (venv) vs 1.83.1 (image), 2026-08-31
+grpcio-status==1.83.1      # via google-api-core[grpc] — drifted 1.83.0 (venv) vs 1.83.1 (image), 2026-08-31
+kiwisolver==1.5.1          # via matplotlib — drifted 1.5.0 (venv) vs 1.5.1 (image), 2026-08-31
+phonenumbers==9.0.38       # via presidio-analyzer — drifted 9.0.37 (venv) vs 9.0.38 (image), 2026-08-31
+regex==2026.8.31           # via nltk, presidio-analyzer, transformers — drifted 2026.7.19 (venv) vs 2026.8.31 (image), 2026-08-31
+wcwidth==0.8.3             # via prompt-toolkit — drifted 0.8.2 (venv) vs 0.8.3 (image), 2026-08-31
+wrapt==2.4.0               # via Deprecated, smart-open — drifted 2.3.0 (venv) vs 2.4.0 (image), 2026-08-31
+# joblib 1.6.0 added cloudpickle as a hard dependency; 1.5.3 had none. So this pair
+# drifted in BOTH ways at once — a version mismatch on joblib, and a package the image
+# had that the venv had never heard of. cloudpickle is pinned in its own right rather
+# than left to arrive with joblib, so a later joblib bump cannot silently move it.
+joblib==1.6.0              # via nltk, scikit-learn — drifted 1.5.3 (venv) vs 1.6.0 (image), 2026-08-31
+cloudpickle==3.1.2         # via joblib — image-only (venv's joblib 1.5.3 did not require it), 2026-08-31

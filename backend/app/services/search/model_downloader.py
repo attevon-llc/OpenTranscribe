@@ -76,9 +76,12 @@ _OPENSEARCH_MODEL_REGISTRY = {
     },
 }
 
-# Default model cache directory (backend container path)
-# This maps to ${MODEL_CACHE_DIR}/opensearch-ml on the host
-_DEFAULT_CACHE_DIR = Path.home() / ".cache" / "opensearch-ml"
+# Default model cache directory (backend container path).
+# This is the SAME path OpenSearch mounts read-only at /ml-models (docker-compose.yml),
+# backed by ${MODEL_CACHE_DIR}/opensearch-ml on the host -- not a private backend-only
+# cache. ml_model_service.get_local_model_path() reads from this exact path, so a model
+# downloaded anywhere else is invisible to it (issue #638).
+_DEFAULT_CACHE_DIR = Path("/ml-models")
 
 
 def ensure_model_downloaded(model_name: str, cache_dir: Path | None = None) -> Path | None:
@@ -108,12 +111,18 @@ def ensure_model_downloaded(model_name: str, cache_dir: Path | None = None) -> P
     model_dir.mkdir(parents=True, exist_ok=True)
 
     model_path = model_dir / filename
+    config_path = model_dir / "config.json"
+    config_url = f"{model_info['url_base']}/{model_name}/{version}/torch_script/config.json"
 
     # Check if already downloaded
     if model_path.exists() and model_path.stat().st_size > 0:
         logger.info(
             f"Model already cached: {model_path} ({model_path.stat().st_size / (1024 * 1024):.1f} MB)"
         )
+        # An older cache may hold the zip but not the config.json this fetches now
+        # (issue #638) -- the zip alone cannot be registered offline, so fetch the
+        # missing half rather than reporting a complete cache.
+        _fetch_model_config(config_url, config_path)
         return model_path
 
     # Build download URL
@@ -141,6 +150,13 @@ def ensure_model_downloaded(model_name: str, cache_dir: Path | None = None) -> P
             size_mb = model_path.stat().st_size / (1024 * 1024)
             logger.info(f"Model downloaded successfully: {size_mb:.1f} MB")
 
+            # OpenSearch requires model_config for a file:// registration -- without it,
+            # OpenSearch 3.4 answers 400 "model config is null" (issue #638). Fetching
+            # config.json (published beside every artifact) is what makes offline
+            # registration work without hardcoding a per-model type table that would
+            # drift from upstream.
+            _fetch_model_config(config_url, config_path)
+
             # Update manifest
             _update_manifest(cache_dir, model_name, model_info)
 
@@ -159,6 +175,29 @@ def ensure_model_downloaded(model_name: str, cache_dir: Path | None = None) -> P
     except Exception as e:
         logger.error(f"Failed to download model {model_name}: {e}")
         return None
+
+
+def _fetch_model_config(config_url: str, config_path: Path) -> bool:
+    """Fetch the config.json OpenSearch publishes beside a model artifact.
+
+    Registering a model from a ``file://`` URL REQUIRES its ``model_config``; without it
+    OpenSearch answers ``400 illegal_argument_exception: model config is null`` (issue #638).
+    The file also carries ``model_content_hash_value``, so fetching it buys an integrity
+    check for free. Mirrors ``scripts/download-models.py``'s ``_fetch_model_config`` -- keep
+    both in sync; the config format is OpenSearch's, not ours.
+
+    Returns True when a non-empty config.json is present afterwards.
+    """
+    if config_path.exists() and config_path.stat().st_size > 0:
+        return True
+    try:
+        urllib.request.urlretrieve(config_url, config_path)  # noqa: S310  # nosec B310
+        return config_path.exists() and config_path.stat().st_size > 0
+    except Exception as e:
+        logger.warning(
+            f"config.json unavailable ({e}); cannot register {config_path.parent.name} offline"
+        )
+        return False
 
 
 def _update_manifest(cache_dir: Path, model_name: str, model_info: dict[str, Any]) -> None:

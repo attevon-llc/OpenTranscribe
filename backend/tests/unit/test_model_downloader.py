@@ -65,11 +65,17 @@ def test_ensure_model_downloaded_already_cached_returns_path_without_downloading
     cached_path = model_dir / filename
     cached_path.write_bytes(b"already-here")
 
-    with patch("app.services.search.model_downloader.urllib.request.urlretrieve") as retrieve:
+    with patch(
+        "app.services.search.model_downloader.urllib.request.urlretrieve",
+        side_effect=_fake_urlretrieve_writes_bytes(b"fake-config"),
+    ) as retrieve:
         result = ensure_model_downloaded(_KNOWN_MODEL, cache_dir=tmp_path)
 
     assert result == cached_path
-    retrieve.assert_not_called()
+    # The cached MODEL zip must not be re-downloaded -- only the missing
+    # config.json (issue #638) is fetched on a cache hit.
+    retrieve.assert_called_once()
+    assert retrieve.call_args[0][0].endswith("/config.json")
     # The cached bytes must not have been touched.
     assert cached_path.read_bytes() == b"already-here"
 
@@ -91,7 +97,8 @@ def test_ensure_model_downloaded_zero_byte_cached_file_is_treated_as_not_cached(
     ) as retrieve:
         result = ensure_model_downloaded(_KNOWN_MODEL, cache_dir=tmp_path)
 
-    retrieve.assert_called_once()
+    # One call for the model zip, one for its config.json (issue #638).
+    assert retrieve.call_count == 2
     assert result == stale_empty
     assert stale_empty.read_bytes() == b"fake-model-zip-bytes"
 
@@ -141,12 +148,18 @@ def test_ensure_model_downloaded_url_uses_registry_url_base_name_version_and_fil
     ):
         ensure_model_downloaded(_KNOWN_MODEL, cache_dir=tmp_path)
 
-    assert len(captured_urls) == 1
-    expected = (
+    # One request for the model zip, one for its config.json (issue #638).
+    assert len(captured_urls) == 2
+    expected_zip = (
         f"{_KNOWN_MODEL_INFO['url_base']}/{_KNOWN_MODEL}/{_KNOWN_MODEL_INFO['version']}"
         f"/torch_script/{_KNOWN_MODEL_INFO['filename']}"
     )
-    assert captured_urls[0] == expected
+    expected_config = (
+        f"{_KNOWN_MODEL_INFO['url_base']}/{_KNOWN_MODEL}/{_KNOWN_MODEL_INFO['version']}"
+        f"/torch_script/config.json"
+    )
+    assert captured_urls[0] == expected_zip
+    assert captured_urls[1] == expected_config
 
 
 # =============================================================================
@@ -227,10 +240,12 @@ def test_ensure_model_downloaded_generic_exception_returns_none(tmp_path):
 # =============================================================================
 
 
-def test_ensure_model_downloaded_defaults_to_home_cache_dir_when_none_given(tmp_path):
-    fake_home_cache = tmp_path / "home-cache"
+def test_ensure_model_downloaded_defaults_to_the_module_level_default_cache_dir_when_none_given(
+    tmp_path,
+):
+    fake_default_cache = tmp_path / "shared-ml-models"
     with (
-        patch("app.services.search.model_downloader._DEFAULT_CACHE_DIR", fake_home_cache),
+        patch("app.services.search.model_downloader._DEFAULT_CACHE_DIR", fake_default_cache),
         patch(
             "app.services.search.model_downloader.urllib.request.urlretrieve",
             side_effect=_fake_urlretrieve_writes_bytes(),
@@ -239,7 +254,108 @@ def test_ensure_model_downloaded_defaults_to_home_cache_dir_when_none_given(tmp_
         result = ensure_model_downloaded(_KNOWN_MODEL, cache_dir=None)
 
     assert result is not None
-    assert result.is_relative_to(fake_home_cache)
+    assert result.is_relative_to(fake_default_cache)
+
+
+def test_default_cache_dir_is_the_shared_ml_models_mount():
+    """The default must match OpenSearch's read-only ``/ml-models`` mount
+    (docker-compose.yml), not a private per-service cache -- OpenSearch resolves a
+    ``file://`` registration on ITS OWN filesystem, so a model downloaded anywhere
+    else is invisible to it (issue #638)."""
+    assert Path("/ml-models") == model_downloader._DEFAULT_CACHE_DIR
+
+
+# =============================================================================
+# _fetch_model_config (issue #638) -- OpenSearch refuses a file:// registration
+# with "model config is null" unless config.json sits beside the model zip.
+# =============================================================================
+
+
+def test_fetch_model_config_downloads_when_missing(tmp_path):
+    config_path = tmp_path / "config.json"
+
+    with patch(
+        "app.services.search.model_downloader.urllib.request.urlretrieve",
+        side_effect=_fake_urlretrieve_writes_bytes(b'{"model_config": {}}'),
+    ) as retrieve:
+        result = model_downloader._fetch_model_config(
+            "https://example.test/config.json", config_path
+        )
+
+    assert result is True
+    retrieve.assert_called_once_with("https://example.test/config.json", config_path)
+    assert config_path.read_bytes() == b'{"model_config": {}}'
+
+
+def test_fetch_model_config_skips_download_when_already_present(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_bytes(b'{"model_config": {}}')
+
+    with patch("app.services.search.model_downloader.urllib.request.urlretrieve") as retrieve:
+        result = model_downloader._fetch_model_config(
+            "https://example.test/config.json", config_path
+        )
+
+    assert result is True
+    retrieve.assert_not_called()
+
+
+def test_fetch_model_config_redownloads_a_zero_byte_existing_file(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_bytes(b"")
+
+    with patch(
+        "app.services.search.model_downloader.urllib.request.urlretrieve",
+        side_effect=_fake_urlretrieve_writes_bytes(b'{"model_config": {}}'),
+    ) as retrieve:
+        result = model_downloader._fetch_model_config(
+            "https://example.test/config.json", config_path
+        )
+
+    assert result is True
+    retrieve.assert_called_once()
+    assert config_path.read_bytes() == b'{"model_config": {}}'
+
+
+def test_fetch_model_config_returns_false_and_does_not_raise_on_network_failure(tmp_path):
+    """A missing config.json (e.g. offline, or a model with none published) must
+    degrade to a warning -- the caller (``ensure_model_downloaded``) still returns
+    the model zip path even when the config fetch fails, since a stale/absent
+    config.json is a registration-time problem, not a download failure."""
+    config_path = tmp_path / "config.json"
+
+    with patch(
+        "app.services.search.model_downloader.urllib.request.urlretrieve",
+        side_effect=urllib.error.URLError("network unreachable"),
+    ):
+        result = model_downloader._fetch_model_config(
+            "https://example.test/config.json", config_path
+        )
+
+    assert result is False
+    assert not config_path.exists()
+
+
+def test_ensure_model_downloaded_succeeds_even_when_config_fetch_fails(tmp_path):
+    """The model zip download must not be treated as a failure just because the
+    sidecar config.json request failed (e.g. offline) -- see the docstring above."""
+
+    def _fake(url, filename, reporthook=None):
+        if str(filename).endswith("config.json"):
+            raise urllib.error.URLError("network unreachable")
+        Path(filename).write_bytes(b"real-bytes-here")
+
+    with patch(
+        "app.services.search.model_downloader.urllib.request.urlretrieve", side_effect=_fake
+    ):
+        result = ensure_model_downloaded(_KNOWN_MODEL, cache_dir=tmp_path)
+
+    short_name = _KNOWN_MODEL_INFO["short_name"]
+    filename = _KNOWN_MODEL_INFO["filename"]
+    expected_path = tmp_path / short_name / filename
+    assert result == expected_path
+    assert expected_path.read_bytes() == b"real-bytes-here"
+    assert not (tmp_path / short_name / "config.json").exists()
 
 
 # =============================================================================

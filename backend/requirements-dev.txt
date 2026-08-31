@@ -6,10 +6,10 @@
 
 # Code Quality & Formatting
 black==26.5.1
-ruff==0.16.3
+ruff==0.16.5
 mypy==2.3.1
 mypy-extensions==1.1.0
-import-linter==2.13  # Enforces the app ↛ cloud seam (forbidden contract in pyproject.toml)
+import-linter==2.14  # Enforces the app ↛ cloud seam (forbidden contract in pyproject.toml)
 
 # Testing — pytest + the plugins pyproject's addopts require. Pinned in
 # requirements-test.txt so a test-capable container image (backend/Dockerfile.test)
@@ -37,5 +37,5 @@ types-redis==4.6.0.20241004
 types-passlib==1.7.7.20260211
 
 # Development Utilities
-ipython==9.16.1  # Enhanced Python shell
+ipython==9.17.0  # Enhanced Python shell
 ipdb==0.13.13  # IPython debugger

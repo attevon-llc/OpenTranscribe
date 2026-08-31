@@ -269,7 +269,14 @@ resolve_diar_native_models_dir() {
   local standard="${MODEL_CACHE_DIR:-./models}/diar-native"
   local legacy="/mnt/nvm/repos/diar-native/models_folded"
 
-  if [ -d "$standard" ]; then
+  # `-d` alone is not enough: Docker auto-creates an empty directory at a bind-mount
+  # source that doesn't exist yet, so a standard path that was never populated (or was
+  # only just created by a prior container start) would otherwise be silently preferred
+  # over a legacy path that genuinely has the export -- reproduced live: diar-native
+  # restart-looped on "File at /models/segmentation-3.0.onnx does not exist" the moment
+  # an empty ./models/diar-native existed. Matches opentranscribe.sh's own
+  # `[ -d ... ] && [ -n "$(ls -A ...)" ]` non-emptiness check.
+  if [ -d "$standard" ] && [ -n "$(ls -A "$standard" 2>/dev/null)" ]; then
     export DIAR_NATIVE_MODELS_DIR="$standard"
   elif [ -d "$legacy" ]; then
     export DIAR_NATIVE_MODELS_DIR="$legacy"

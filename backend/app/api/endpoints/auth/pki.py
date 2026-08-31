@@ -186,5 +186,5 @@ def pki_login(request: Request, response: Response, db: Session = Depends(get_db
     # Set httpOnly cookies for browser-based authentication (C2 security hardening)
     from app.auth.cookies import set_auth_cookies
 
-    set_auth_cookies(response, access_token, refresh_token)
+    set_auth_cookies(response, access_token, refresh_token, request)
     return response

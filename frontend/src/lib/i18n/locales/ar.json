@@ -4468,6 +4468,7 @@
   "extraction.extractSavings": "أصغر بنسبة ~{{ratio}}٪ • رفع أسرع • الحفاظ على البيانات الوصفية",
   "extraction.uploadFullDesc": "رفع ملف الفيديو الأصلي بحجم {{size}} كما هو",
   "auth.error.invalidLoginResponse": "استجابة تسجيل دخول غير صالحة من الخادم",
+  "auth.error.sessionCookieRejected": "كانت كلمة المرور صحيحة، لكن المتصفح رفض ملف تعريف ارتباط الجلسة. يحدث هذا عادةً عند الوصول إلى التطبيق عبر HTTP العادي من عنوان شبكة (وليس localhost). اطلب من المسؤول تفعيل HTTPS أو إعداد ملفات تعريف الارتباط غير الآمنة لهذا النشر.",
   "auth.error.loginFailedCheckCredentials": "فشل تسجيل الدخول. يُرجى التحقق من بيانات الاعتماد والمحاولة مرة أخرى.",
   "auth.error.invalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة. يُرجى المحاولة مرة أخرى.",
   "auth.error.invalidRequest": "طلب غير صالح. يُرجى التحقق من المدخلات.",

@@ -4468,6 +4468,7 @@
   "extraction.extractSavings": "~{{ratio}}% smaller • Faster upload • Metadata preserved",
   "extraction.uploadFullDesc": "Upload the original {{size}} video file as-is",
   "auth.error.invalidLoginResponse": "Invalid login response from server",
+  "auth.error.sessionCookieRejected": "Your password was correct, but your browser rejected the session cookie. This usually happens when accessing the app over plain HTTP from a network address (not localhost). Ask your administrator to enable HTTPS or the insecure-cookie setting for this deployment.",
   "auth.error.loginFailedCheckCredentials": "Login failed. Please check your credentials and try again.",
   "auth.error.invalidCredentials": "Invalid email or password. Please try again.",
   "auth.error.invalidRequest": "Invalid request. Please check your input.",

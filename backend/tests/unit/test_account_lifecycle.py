@@ -43,6 +43,7 @@ from app.auth.audit import AuditEventType
 from app.core.auth_settings import get_process_auth_settings
 from app.core.config import settings
 from app.models.user import User
+from tests.helpers import fake_request
 
 USER_UUID = "019ec90a-1b2c-7def-8000-0000000000bb"
 
@@ -438,7 +439,14 @@ class TestLastLoginIsStamped:
         before = datetime.now(UTC)
 
         login_module._generate_login_tokens(
-            cast(Any, _FakeDB()), user, USER_UUID, "user", "pytest", "10.0.0.1", auth_method="local"
+            fake_request(),
+            cast(Any, _FakeDB()),
+            user,
+            USER_UUID,
+            "user",
+            "pytest",
+            "10.0.0.1",
+            auth_method="local",
         )
 
         # The column exists to drive the inactive-account control (AC-2(3)), so the
@@ -455,6 +463,7 @@ class TestLastLoginIsStamped:
 
         db = _BrokenDB()
         response = login_module._generate_login_tokens(
+            fake_request(),
             cast(Any, _FakeDB()),
             _user(),
             USER_UUID,

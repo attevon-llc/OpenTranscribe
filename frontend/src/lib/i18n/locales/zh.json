@@ -4468,6 +4468,7 @@
   "extraction.extractSavings": "体积减小约 {{ratio}}% • 上传更快 • 保留元数据",
   "extraction.uploadFullDesc": "按原样上传原始视频文件（{{size}}）",
   "auth.error.invalidLoginResponse": "服务器返回的登录响应无效",
+  "auth.error.sessionCookieRejected": "您的密码是正确的,但浏览器拒绝了会话 cookie。这通常发生在通过普通 HTTP 从网络地址(而非 localhost)访问应用时。请让管理员为此部署启用 HTTPS 或不安全 cookie 设置。",
   "auth.error.loginFailedCheckCredentials": "登录失败。请检查您的凭据后重试。",
   "auth.error.invalidCredentials": "电子邮箱或密码无效。请重试。",
   "auth.error.invalidRequest": "请求无效。请检查您的输入。",

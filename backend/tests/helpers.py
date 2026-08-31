@@ -12,9 +12,32 @@ import socket
 from collections.abc import Iterator
 
 import pytest
+from starlette.requests import Request
 
 #: A globally-routable literal, used as the answer for stubbed documentation hostnames.
 PUBLIC_TEST_ADDRESS = "93.184.216.34"
+
+
+def fake_request(scheme: str = "https") -> Request:
+    """A minimal real Starlette ``Request`` carrying just a URL scheme.
+
+    For a unit test that calls an auth endpoint HELPER directly (bypassing the real
+    ASGI request cycle) and needs *something* to satisfy a ``request: Request``
+    parameter — e.g. ``auth/cookies.py:_secure_for_request``, which reads only
+    ``request.url.scheme``. Defaults to ``"https"``, the ordinary case, so a test
+    that isn't specifically about the plain-HTTP LAN scenario
+    (``ALLOW_INSECURE_COOKIES``) doesn't have to say so.
+    """
+    scope = {
+        "type": "http",
+        "scheme": scheme,
+        "method": "GET",
+        "path": "/",
+        "query_string": b"",
+        "headers": [],
+        "server": ("testserver", 443 if scheme == "https" else 80),
+    }
+    return Request(scope)
 
 
 def stub_public_dns(

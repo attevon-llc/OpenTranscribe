@@ -15,6 +15,7 @@ from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.config import IMPLEMENTED_ENCRYPTION_ALGORITHMS
 from app.core.config import settings
+from app.core.constants import NEURAL_BOOTSTRAP_LOCK_TIMEOUT_SECONDS
 from app.core.constants import NEURAL_BOOTSTRAP_STARTUP_DELAY_SECONDS
 from app.core.entropy import assert_csprng_available
 from app.core.entropy import validate_secret_entropy
@@ -215,6 +216,23 @@ def _validate_production_secrets():
     if is_production and settings.DEBUG:
         logger.critical("DEBUG=true in production environment!")
         raise ValueError("DEBUG must be false in production environment")
+
+    # ALLOW_INSECURE_COOKIES strips the auth cookies' Secure flag on plain-HTTP
+    # requests to this deployment (see auth/cookies.py:_secure_for_request) — the
+    # documented, narrow opt-out for a homelab/small-business LAN install with no
+    # TLS-terminating reverse proxy. Logged here, not at cookies.py's import time:
+    # this function runs after configure_logging(), so under LOG_FORMAT=json this
+    # warning is actually JSON like every other boot line, instead of being the
+    # one line a structured log collector could drop or mangle.
+    if is_production and settings.ALLOW_INSECURE_COOKIES:
+        logger.warning(
+            "ALLOW_INSECURE_COOKIES is enabled: auth cookies are set WITHOUT the "
+            "Secure flag on plain-HTTP requests to this hardened deployment. This "
+            "is intended for a plain-HTTP LAN deployment with no TLS-terminating "
+            "reverse proxy. If this deployment is reachable from an untrusted "
+            "network, put a TLS-terminating reverse proxy in front of it and "
+            "disable this setting instead."
+        )
 
     # Warn about insecure presigned URLs in production
     public_storage_url = settings.STORAGE_PUBLIC_URL or settings.MINIO_PUBLIC_URL
@@ -633,8 +651,28 @@ async def _initialize_neural_search():
         await asyncio.sleep(NEURAL_BOOTSTRAP_STARTUP_DELAY_SECONDS)
 
         from app.services.search.neural_bootstrap import ensure_neural_search_bootstrap
+        from app.tasks.search_maintenance_task import NEURAL_BOOTSTRAP_LOCK_KEY
+        from app.utils.task_lock import task_lock_manager
 
-        result = await run_in_threadpool(ensure_neural_search_bootstrap)
+        # `run_once_per_boot` above only stops N replicas booting together from
+        # racing EACH OTHER. It does nothing about this startup path racing the
+        # beat self-heal (`neural_search_bootstrap_task`, every 10 minutes) on the
+        # SAME replica -- that race is what let one caller deploy a model the other
+        # was still registering, deleting the in-flight registration's cache
+        # directory (see `ml_model_service._DEPLOYABLE_STATES`'s docstring). Taking
+        # the beat task's own lock here means only one of the two callers ever runs
+        # the bootstrap sequence at a time.
+        with task_lock_manager.acquire_lock(
+            NEURAL_BOOTSTRAP_LOCK_KEY, timeout=NEURAL_BOOTSTRAP_LOCK_TIMEOUT_SECONDS
+        ) as acquired:
+            if not acquired:
+                logger.info(
+                    "Neural bootstrap already running (beat self-heal in progress); "
+                    "startup path skipping"
+                )
+                return
+            result = await run_in_threadpool(ensure_neural_search_bootstrap)
+
         if result.state == "ok":
             logger.info(f"Neural search bootstrap ready (model={result.model_id})")
         elif result.state == "disabled":

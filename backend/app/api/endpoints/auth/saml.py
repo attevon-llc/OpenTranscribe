@@ -257,7 +257,7 @@ async def saml_acs(request: Request, response: Response, db: Session = Depends(g
     response = RedirectResponse(url=redirect_to, status_code=status.HTTP_302_FOUND)
     from app.auth.cookies import set_auth_cookies
 
-    set_auth_cookies(response, access_token, refresh_token)
+    set_auth_cookies(response, access_token, refresh_token, request)
     return response
 
 

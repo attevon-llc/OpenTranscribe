@@ -251,6 +251,21 @@ class Settings(BaseSettings):
         os.getenv("ASR_ALLOW_PRIVATE_ENDPOINTS", "false").lower() == "true"
     )
 
+    # Cookie Secure-flag override for plain-HTTP LAN deployments (issue #284 A0.3
+    # follow-up). `is_hardened` forces every auth cookie's `Secure` attribute on
+    # whenever `ENVIRONMENT` is not explicitly relaxed -- which is correct when
+    # hardened mode means "behind real TLS", but a homelab or small-business
+    # deployment on a plain-HTTP LAN IP is ALSO the normal, legitimate case for a
+    # single-tenant self-hosted install. A `Secure` cookie set over plain HTTP is
+    # silently dropped by the browser on any origin other than localhost/127.0.0.1,
+    # so a LAN IP with no TLS-terminating reverse proxy in front gets a login that
+    # appears to succeed and then can never hold a session -- indistinguishable
+    # from a wrong password. This does NOT relax `is_hardened` itself: secret
+    # enforcement, rate limits, lockout thresholds, and DEBUG-off all stay exactly
+    # as strict. It relaxes only the one attribute that requires TLS to function,
+    # and it is off by default so nothing changes unless an operator opts in.
+    ALLOW_INSECURE_COOKIES: bool = os.getenv("ALLOW_INSECURE_COOKIES", "false").lower() == "true"
+
     # Bootstrap admin (issue #284 A0.9). In a relaxed environment the seeder creates
     # the well-known admin@example.com / "password" super_admin that the test suite
     # and local workflow depend on. In a hardened environment that credential is NEVER

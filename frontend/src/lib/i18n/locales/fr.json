@@ -4468,6 +4468,7 @@
   "extraction.extractSavings": "~{{ratio}} % plus petit • Téléversement plus rapide • Métadonnées conservées",
   "extraction.uploadFullDesc": "Téléverser le fichier vidéo original de {{size}} tel quel",
   "auth.error.invalidLoginResponse": "Réponse de connexion invalide du serveur",
+  "auth.error.sessionCookieRejected": "Votre mot de passe était correct, mais votre navigateur a rejeté le cookie de session. Cela se produit généralement en accédant à l'application via HTTP simple depuis une adresse réseau (pas localhost). Demandez à votre administrateur d'activer HTTPS ou le paramètre de cookies non sécurisés pour ce déploiement.",
   "auth.error.loginFailedCheckCredentials": "Échec de la connexion. Vérifiez vos identifiants et réessayez.",
   "auth.error.invalidCredentials": "Adresse e-mail ou mot de passe invalide. Veuillez réessayer.",
   "auth.error.invalidRequest": "Requête invalide. Veuillez vérifier votre saisie.",

@@ -47,6 +47,7 @@ from app.models.user import User
 from app.models.user_mfa import UserMFA
 from app.schemas.user import MFADisableRequest
 from app.schemas.user import MFAVerifySetupRequest
+from tests.helpers import fake_request
 from tests.jwt_compat import jwt
 
 USER_UUID = "019ec90a-1b2c-7def-8000-0000000000aa"
@@ -742,7 +743,16 @@ class TestHalfTokenIsSingleUse:
 
         def verify():
             return mfa_enrollment_module._complete_mfa_verification(
-                db, user, user_mfa, USER_UUID, "user", "shared-jti", False, "10.0.0.1", "pytest"
+                db,
+                user,
+                user_mfa,
+                USER_UUID,
+                "user",
+                "shared-jti",
+                False,
+                "10.0.0.1",
+                "pytest",
+                fake_request(),
             )
 
         first = verify()
@@ -762,7 +772,16 @@ class TestHalfTokenIsSingleUse:
 
         with pytest.raises(HTTPException):
             mfa_enrollment_module._complete_mfa_verification(
-                db, _user(), user_mfa, USER_UUID, "user", "burned-jti", False, "10.0.0.1", "pytest"
+                db,
+                _user(),
+                user_mfa,
+                USER_UUID,
+                "user",
+                "burned-jti",
+                False,
+                "10.0.0.1",
+                "pytest",
+                fake_request(),
             )
 
         assert db.commits == 0
@@ -838,6 +857,7 @@ class TestAuditRecordsRealAuthMethod:
         )
 
         login_module._generate_login_tokens(
+            fake_request(),
             _db(),
             _user(auth_type="pki"),
             USER_UUID,

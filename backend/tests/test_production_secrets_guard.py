@@ -127,3 +127,29 @@ def test_placeholders_allowed_in_development(production_settings):
     production_settings.setattr(settings, "REDIS_PASSWORD", "")
     with does_not_raise("placeholders are allowed outside production, so validation must pass"):
         _validate_production_secrets()  # must not raise
+
+
+def test_allow_insecure_cookies_warns_in_production(production_settings, caplog):
+    """The ALLOW_INSECURE_COOKIES relaxation must be visible at boot, in JSON.
+
+    This warning used to live in ``app/auth/cookies.py``, logged at module-import
+    time — before ``main.py``'s ``configure_logging()`` runs (that module is
+    imported transitively via the auth routers, well before line 36 of
+    ``main.py``). Under ``LOG_FORMAT=json`` that made it the one boot line NOT
+    rendered as JSON, which a structured log collector could drop or mangle. It
+    now fires from here, after logging is configured — an adversarial review
+    finding on the original cookie fix.
+    """
+    production_settings.setattr(settings, "ALLOW_INSECURE_COOKIES", True)
+    with caplog.at_level("WARNING", logger="app.main"):
+        _validate_production_secrets()
+
+    assert any("ALLOW_INSECURE_COOKIES" in record.message for record in caplog.records)
+
+
+def test_no_allow_insecure_cookies_warning_when_the_flag_is_off(production_settings, caplog):
+    production_settings.setattr(settings, "ALLOW_INSECURE_COOKIES", False)
+    with caplog.at_level("WARNING", logger="app.main"):
+        _validate_production_secrets()
+
+    assert not any("ALLOW_INSECURE_COOKIES" in record.message for record in caplog.records)

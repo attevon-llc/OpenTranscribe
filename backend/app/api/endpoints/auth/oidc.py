@@ -120,7 +120,7 @@ async def oidc_login(request: Request, response: Response, db: Session = Depends
         logger.info("OIDC login initiated, redirecting to authorization URL")
 
     response = JSONResponse(content={"authorization_url": authorization_url})
-    set_oidc_state_binding(response, state_binding, _OIDC_STATE_EXPIRY_SECONDS)
+    set_oidc_state_binding(response, state_binding, _OIDC_STATE_EXPIRY_SECONDS, request)
     return response
 
 
@@ -368,7 +368,7 @@ async def oidc_callback(
     # Set httpOnly cookies for browser-based authentication (C2 security hardening)
     from app.auth.cookies import set_auth_cookies
 
-    set_auth_cookies(response, access_token, refresh_token)
+    set_auth_cookies(response, access_token, refresh_token, request)
     # The flow is complete; the binding cookie has served its purpose.
     clear_oidc_state_binding(response)
     return response

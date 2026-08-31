@@ -4468,6 +4468,7 @@
   "extraction.extractSavings": "~{{ratio}}% menor • Envio mais rápido • Metadados preservados",
   "extraction.uploadFullDesc": "Enviar o arquivo de vídeo original de {{size}} como está",
   "auth.error.invalidLoginResponse": "Resposta de login inválida do servidor",
+  "auth.error.sessionCookieRejected": "Sua senha estava correta, mas o navegador rejeitou o cookie de sessão. Isso geralmente acontece ao acessar o aplicativo por HTTP simples a partir de um endereço de rede (não localhost). Peça ao seu administrador para ativar HTTPS ou a configuração de cookies inseguros para esta implantação.",
   "auth.error.loginFailedCheckCredentials": "Falha no login. Verifique suas credenciais e tente novamente.",
   "auth.error.invalidCredentials": "E-mail ou senha inválidos. Tente novamente.",
   "auth.error.invalidRequest": "Solicitação inválida. Verifique os dados informados.",

@@ -1091,8 +1091,19 @@ PY
         as_assert_http "API docs NOT exposed post-upgrade (hardened)" 404 "$code"
     fi
 
-    code=$(curl -o /dev/null -s -w '%{http_code}' "http://localhost:${TEST_FRONTEND_PORT}/")
-    as_assert_http "frontend reachable post-upgrade" 200 "$code"
+    # Same class as B-8 below and #617/#618: guard the curl so a transient
+    # failure here is recorded as a FAIL rather than crashing the whole
+    # script under set -e and silently truncating every phase after it
+    # (phases 11-18 never ran the first time this fired -- no assertion
+    # summary, no .phase/10.done marker, just a bare "rehearse failed").
+    local frontend_url="http://localhost:${TEST_FRONTEND_PORT}/"
+    ac_wait_for_frontend "$frontend_url" 900 || true
+    local code
+    if code="$(curl -o /dev/null -s -w '%{http_code}' "$frontend_url")"; then
+        as_assert_http "frontend reachable post-upgrade" 200 "$code"
+    else
+        as_record FAIL "frontend reachable post-upgrade" "curl failed to reach $frontend_url"
+    fi
 
     # ── The upgrade is running the NEW code ────────────────────────────────
     #

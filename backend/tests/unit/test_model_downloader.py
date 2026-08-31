@@ -308,3 +308,25 @@ def test_check_internet_connectivity_false_on_timeout():
         side_effect=TimeoutError("timed out"),
     ):
         assert check_internet_connectivity(timeout=0.5) is False
+
+
+def test_check_internet_connectivity_true_on_http_error_response():
+    """A 403/404/etc. still means DNS+TCP+TLS succeeded -- the opposite of no internet.
+
+    Measured live: a bare HEAD on the artifacts.opensearch.org bucket root gets a
+    genuine 403 from CloudFront regardless of real connectivity, which previously made
+    every fresh-install/lite-mode rehearsal on a real network report "no internet" and
+    skip local model pre-download entirely.
+    """
+    http_error = urllib.error.HTTPError(
+        url="https://artifacts.opensearch.org",
+        code=403,
+        msg="Forbidden",
+        hdrs=Message(),
+        fp=None,
+    )
+    with patch(
+        "app.services.search.model_downloader.urllib.request.urlopen",
+        side_effect=http_error,
+    ):
+        assert check_internet_connectivity() is True

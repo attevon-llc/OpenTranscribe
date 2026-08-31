@@ -4468,6 +4468,7 @@
   "extraction.extractSavings": "~{{ratio}}% kleiner • Snellere upload • Metadata behouden",
   "extraction.uploadFullDesc": "Upload het originele videobestand van {{size}} zoals het is",
   "auth.error.invalidLoginResponse": "Ongeldig inlogantwoord van de server",
+  "auth.error.sessionCookieRejected": "Uw wachtwoord was correct, maar uw browser heeft het sessiecookie geweigerd. Dit gebeurt meestal wanneer de app via gewone HTTP vanaf een netwerkadres (niet localhost) wordt benaderd. Vraag uw beheerder om HTTPS of de instelling voor onveilige cookies voor deze implementatie in te schakelen.",
   "auth.error.loginFailedCheckCredentials": "Inloggen mislukt. Controleer je inloggegevens en probeer het opnieuw.",
   "auth.error.invalidCredentials": "Ongeldig e-mailadres of wachtwoord. Probeer het opnieuw.",
   "auth.error.invalidRequest": "Ongeldig verzoek. Controleer je invoer.",

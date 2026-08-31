@@ -4468,6 +4468,7 @@
   "extraction.extractSavings": "~{{ratio}}% più piccolo • Caricamento più veloce • Metadati conservati",
   "extraction.uploadFullDesc": "Carica il file video originale da {{size}} così com'è",
   "auth.error.invalidLoginResponse": "Risposta di accesso non valida dal server",
+  "auth.error.sessionCookieRejected": "La password era corretta, ma il browser ha rifiutato il cookie di sessione. Questo accade di solito quando si accede all'app tramite HTTP semplice da un indirizzo di rete (non localhost). Chiedi al tuo amministratore di abilitare HTTPS o l'impostazione dei cookie non sicuri per questa distribuzione.",
   "auth.error.loginFailedCheckCredentials": "Accesso non riuscito. Controlla le tue credenziali e riprova.",
   "auth.error.invalidCredentials": "Email o password non validi. Riprova.",
   "auth.error.invalidRequest": "Richiesta non valida. Controlla i dati inseriti.",

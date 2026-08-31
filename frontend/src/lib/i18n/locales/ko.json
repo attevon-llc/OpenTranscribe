@@ -4468,6 +4468,7 @@
   "extraction.extractSavings": "약 {{ratio}}% 더 작음 • 더 빠른 업로드 • 메타데이터 유지",
   "extraction.uploadFullDesc": "원본 {{size}} 비디오 파일을 그대로 업로드합니다",
   "auth.error.invalidLoginResponse": "서버로부터 잘못된 로그인 응답을 받았습니다",
+  "auth.error.sessionCookieRejected": "비밀번호는 올바르지만 브라우저가 세션 쿠키를 거부했습니다. 이는 보통 localhost가 아닌 네트워크 주소에서 일반 HTTP로 앱에 접속할 때 발생합니다. 관리자에게 이 배포에 대해 HTTPS 또는 안전하지 않은 쿠키 설정을 활성화하도록 요청하세요.",
   "auth.error.loginFailedCheckCredentials": "로그인에 실패했습니다. 자격 증명을 확인한 후 다시 시도하세요.",
   "auth.error.invalidCredentials": "이메일 또는 비밀번호가 올바르지 않습니다. 다시 시도하세요.",
   "auth.error.invalidRequest": "잘못된 요청입니다. 입력 내용을 확인하세요.",

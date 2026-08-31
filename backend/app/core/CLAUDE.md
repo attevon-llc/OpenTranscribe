@@ -19,6 +19,18 @@ should import `app.api` or `app.services` at module scope.
   deployment — the default-secret refusal, `DEBUG` enforcement, Redis-password requirement, and
   cookie `Secure` flag were all dead code until #284 A0.3. Dev declares itself via the
   `x-dev-environment` anchor in `docker-compose.override.yml`, which prod never loads.
+  **`ALLOW_INSECURE_COOKIES` (default `false`) is the one narrow, explicit opt-out from the
+  `Secure` half of that** — for a hardened deployment reached over plain HTTP with no
+  TLS-terminating reverse proxy in front (a homelab/small-business LAN IP, e.g.
+  `http://10.10.10.20:5173`). A browser silently drops a `Secure` cookie sent over plain HTTP to
+  anything other than `localhost`/`127.0.0.1`, so without this a LAN-IP login answers 200 with a
+  valid `access_token`, the browser never stores the cookie, and the very next request 401s —
+  indistinguishable from a wrong password. It relaxes only that one cookie attribute; every other
+  hardened-mode control (secrets, rate limits, lockout, `DEBUG`) is unaffected, and it is a no-op
+  on an already-relaxed (dev/testing) deployment. Read in `app/auth/cookies.py`, not here — see
+  its CLAUDE.md. Self-signed HTTPS, a real reverse proxy, and cloud/EC2 deployments all already
+  work under the default (`Secure` only requires the `https:` scheme, not a browser-trusted CA),
+  so this flag is never the right fix for those; a plain-HTTP LAN is the only legitimate case.
 - `constants.py` — magic numbers, `CeleryQueues` (**single source of truth for queue names**),
   the `OPENSEARCH_EMBEDDING_MODELS` tiers, and the `DEFAULT_*` values backing DB-stored settings
   (redaction, watch sources, engine/boundary). **Check here before adding a `.env` var.**

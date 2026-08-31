@@ -40,6 +40,8 @@ import pytest
 import requests
 from dotenv import dotenv_values
 
+from tests.compose_project import compose_service_containers
+
 pytestmark = [pytest.mark.integration, pytest.mark.gpu, pytest.mark.slow]
 
 _REPO_ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "..")
@@ -150,24 +152,12 @@ def _gpu_scaled_container_running() -> bool:
     Without this, the gpu-scaled-worker assertions below fail unconditionally on
     any single-GPU host instead of skipping -- exactly the "auto-skip the
     multi-GPU portion" case the dev test runner already handles for --gpu-scale
-    the overlay itself."""
-    import shutil
-    import subprocess
+    the overlay itself.
 
-    if shutil.which("docker") is None:
-        return False
-    names = (
-        subprocess.run(
-            ["docker", "ps", "--filter", "name=celery-worker-gpu-scaled", "--format", "{{.Names}}"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-        .stdout.strip()
-        .splitlines()
-    )
-    return bool(names)
+    Scoped to the project under test -- a bare `--filter name=` would also match a
+    concurrently-running `--fresh` deployment's scaled worker, so this would report
+    "--gpu-scale is up" about somebody else's stack. See `tests/compose_project.py`."""
+    return bool(compose_service_containers("celery-worker-gpu-scaled"))
 
 
 @pytest.fixture(scope="module")
@@ -257,17 +247,7 @@ def test_concurrent_uploads_reach_completed_with_no_gpu_oom(admin_token: str) ->
     if shutil.which("docker") is None:
         pytest.skip("docker not available -- cannot inspect the GPU worker container")
 
-    gpu_container_names = (
-        subprocess.run(
-            ["docker", "ps", "--filter", "name=celery-worker-gpu-scaled", "--format", "{{.Names}}"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-        .stdout.strip()
-        .splitlines()
-    )
+    gpu_container_names = compose_service_containers("celery-worker-gpu-scaled")
     if not gpu_container_names:
         pytest.skip("no running celery-worker-gpu-scaled container")
     gpu_container: str = gpu_container_names[0]

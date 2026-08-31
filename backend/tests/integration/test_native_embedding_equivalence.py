@@ -31,6 +31,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.compose_project import compose_service_container
+
 pytestmark = pytest.mark.models
 
 SAMPLE_WAV = Path(__file__).resolve().parent.parent / "fixtures" / "media" / "sample_short.wav"
@@ -46,22 +48,19 @@ def _sidecar_url() -> str | None:
     from app.services.native_embedding_client import native_embedding_available
 
     candidates = [os.environ.get("DIAR_NATIVE_URL"), "http://localhost:8701"]
-    try:
-        ids = subprocess.run(  # noqa: S603  # nosec B603 — fixed argv, no shell
-            ["docker", "ps", "-q", "--filter", "label=com.docker.compose.service=diar-native"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            check=False,
-        ).stdout.split()
-        for container_id in ids[:1]:
+    # Scoped to the project under test: the service label alone is not, and every
+    # concurrently-running stack (dev + any `--fresh` deployment) carries a diar-native
+    # container with that same label. See `tests/compose_project.py`.
+    container = compose_service_container("diar-native")
+    if container is not None:
+        try:
             addr = subprocess.run(  # noqa: S603  # nosec B603 — fixed argv, no shell
                 [
                     "docker",
                     "inspect",
                     "-f",
                     "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
-                    container_id,
+                    container,
                 ],
                 capture_output=True,
                 text=True,
@@ -69,8 +68,8 @@ def _sidecar_url() -> str | None:
                 check=False,
             ).stdout.split()
             candidates.extend(f"http://{ip}:8701" for ip in addr if ip)
-    except (OSError, subprocess.SubprocessError):
-        pass
+        except (OSError, subprocess.SubprocessError):
+            pass
 
     for url in candidates:
         if url and native_embedding_available(url):

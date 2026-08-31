@@ -44,6 +44,8 @@ import subprocess
 import pytest
 from dotenv import dotenv_values
 
+from tests.compose_project import compose_service_container
+
 pytestmark = [pytest.mark.integration, pytest.mark.gpu]
 
 _REPO_ROOT_ENV = os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")
@@ -59,20 +61,16 @@ def _repo_env_value(key: str) -> str | None:
 
 
 def _diar_native_container() -> str | None:
-    """Resolve the running diar-native container by name prefix, not a hardcoded
-    name -- compose derives the actual name from the project name, which --fresh
-    deployments change."""
-    if shutil.which("docker") is None:
-        return None
-    out = subprocess.run(
-        ["docker", "ps", "--filter", "name=diar-native", "--format", "{{.Names}}"],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    ).stdout.strip()
-    names = [n for n in out.splitlines() if n]
-    return names[0] if names else None
+    """Resolve the running diar-native container IN THE PROJECT UNDER TEST.
+
+    Not a bare ``--filter name=diar-native``: that filter is not scoped to a deployment, and
+    several stacks routinely run on one host (the dev stack plus any ``--fresh`` deployment),
+    each with a container matching it. Taking the first match selects by creation time, so
+    this test would silently measure whichever diar-native sidecar was restarted most
+    recently -- and because deployments are pinned to different GPUs, it could report a PASS
+    about a stack nobody pointed it at. See ``tests/compose_project.py``.
+    """
+    return compose_service_container("diar-native")
 
 
 def _docker_inspect_state(container: str) -> tuple[bool, int, int]:

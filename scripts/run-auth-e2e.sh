@@ -75,10 +75,15 @@ DISPLAY_VAL=":13"
 DO_CLEANUP=false
 VERBOSE=false
 DEV_FRONTEND_STOPPED=false
-# Set by phase 2 when THIS run brought the LDAP/Keycloak overlays up, so --cleanup only tears
+# Set by phase 2, PER SERVICE, when THIS run brought that overlay up, so --cleanup only tears
 # down what it started and never removes an IdP the operator had running beforehand — the same
-# "not ours to stop" rule scripts/lib/dev-test-overlays.sh follows.
-IDP_OVERLAYS_STARTED=false
+# "not ours to stop" rule scripts/lib/dev-test-overlays.sh follows. Two separate flags, not one:
+# LLDAP and Keycloak are independently already-up-or-not, and a single shared boolean covering
+# both meant that starting just one of them (because the other was already running) still made
+# cleanup stop and remove BOTH — including the one the operator had running before this script
+# ever ran.
+LLDAP_OVERLAY_STARTED=false
+KEYCLOAK_OVERLAY_STARTED=false
 
 # ============================================================================
 # Argument parsing
@@ -299,7 +304,8 @@ cleanup_on_exit() {
     reset_admin_mfa_db
     restore_admin_local_auth
 
-    # 5. Optional: remove the LLDAP/Keycloak containers THIS RUN started.
+    # 5. Optional: remove the IdP containers THIS RUN started — per service, never both just
+    #    because one of them was.
     #
     # Resolved by compose PROJECT+SERVICE label, for the same reason phase 2 starts them through
     # ./opentr.sh: `docker compose -f docker-compose.<idp>.yml down` derives the project from the
@@ -307,12 +313,20 @@ cleanup_on_exit() {
     # exist — reporting success while leaving both IdPs running. Keycloak also declares no
     # container_name, so a name filter could not find it under any spelling.
     #
-    # Guarded on IDP_OVERLAYS_STARTED so a --cleanup run never removes an IdP the operator had
-    # up before this script ran ("not ours to stop", per scripts/lib/dev-test-overlays.sh).
-    if [ "$DO_CLEANUP" = true ] && [ "$IDP_OVERLAYS_STARTED" = true ]; then
-        log_step "Removing the LLDAP/Keycloak containers this run started..."
-        local idp_svc idp_container
+    # Guarded per-service on {LLDAP,KEYCLOAK}_OVERLAY_STARTED so a --cleanup run never removes
+    # an IdP the operator had up before this script ran ("not ours to stop", per
+    # scripts/lib/dev-test-overlays.sh) — a single shared flag previously stopped/removed BOTH
+    # containers even when only one of them was started by this run.
+    # BEGIN idp-cleanup-loop
+    if [ "$DO_CLEANUP" = true ] && { [ "$LLDAP_OVERLAY_STARTED" = true ] || [ "$KEYCLOAK_OVERLAY_STARTED" = true ]; }; then
+        log_step "Removing the IdP containers this run started..."
+        local idp_svc idp_container idp_started
         for idp_svc in lldap keycloak; do
+            case "$idp_svc" in
+                lldap)    idp_started="$LLDAP_OVERLAY_STARTED" ;;
+                keycloak) idp_started="$KEYCLOAK_OVERLAY_STARTED" ;;
+            esac
+            [ "$idp_started" = true ] || continue
             idp_container="$(overlay_container_name "$idp_svc")"
             if [ -n "$idp_container" ]; then
                 docker stop "$idp_container" >/dev/null 2>&1 || true
@@ -323,6 +337,7 @@ cleanup_on_exit() {
     elif [ "$DO_CLEANUP" = true ]; then
         log_ok "IdP containers were already running before this run — left alone"
     fi
+    # END idp-cleanup-loop
 
     # 6. Print summary
     print_summary
@@ -477,17 +492,22 @@ phase_2_ldap_keycloak() {
     # Batched into one call for the same reason scripts/lib/dev-test-overlays.sh batches:
     # each `opentr.sh start dev` reconciles the whole chain, so two sequential calls would
     # bring the first overlay up and then immediately re-resolve without it.
+    # BEGIN idp-start-flags
     local idp_flags=()
+    local start_lldap=false start_keycloak=false
     if port_open 3890; then
         log_ok "LLDAP already running"
     else
         idp_flags+=(--with-ldap-test)
+        start_lldap=true
     fi
     if port_open 8180; then
         log_ok "Keycloak already running"
     else
         idp_flags+=(--with-keycloak-test)
+        start_keycloak=true
     fi
+    # END idp-start-flags
 
     if [ ${#idp_flags[@]} -gt 0 ]; then
         log_step "Starting IdP overlays via ./opentr.sh: ${idp_flags[*]}"
@@ -495,7 +515,13 @@ phase_2_ldap_keycloak() {
             log_err "failed to start IdP overlays — run './opentr.sh start dev ${idp_flags[*]}' to see why"
             return 1
         fi
-        IDP_OVERLAYS_STARTED=true
+        # BEGIN idp-mark-started
+        # Marked per service that THIS invocation actually started — not "any overlay flag was
+        # passed" — so a run that only started Keycloak (because LLDAP was already up) does not
+        # later tell cleanup it is also responsible for LLDAP.
+        [ "$start_lldap" = true ] && LLDAP_OVERLAY_STARTED=true
+        [ "$start_keycloak" = true ] && KEYCLOAK_OVERLAY_STARTED=true
+        # END idp-mark-started
     fi
 
     # Wait on the ports regardless of who started the containers: "already running" above only

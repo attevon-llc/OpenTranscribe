@@ -120,6 +120,15 @@ _MAX_COMBINED_PROMPT_CHARS = 4000
 # Rough chars-per-token used only for budgeting the excerpt block.
 _CHARS_PER_TOKEN = 4
 
+# Safety margin (in tokens) subtracted on top of `response_tokens` before converting to a
+# char budget. `_CHARS_PER_TOKEN` is an estimate, not the provider's real tokenizer — a
+# transcript with timestamps/speaker labels tokenizes denser than plain prose, and a live
+# 400 from vLLM showed the estimate landing 1 token over a 60000-token model limit with no
+# margin at all (issue #645). Kept small deliberately: small-context-window deployments
+# (this module's own tests exercise windows as low as 300 tokens) must not lose their whole
+# excerpt budget to an oversized fixed buffer.
+_CONTEXT_SAFETY_MARGIN_TOKENS = 50
+
 
 # Matches the opener of any HIGH-TRUST block tag, in any casing, with optional
 # whitespace — "<excerpt", "</overview", "< / SYNTHESIS". Used to defuse
@@ -761,7 +770,11 @@ def build_messages(
             messages.append({"role": role, "content": content})
 
     overhead = len(system_prompt) + sum(len(m["content"]) for m in messages[1:]) + len(question)
-    budget_chars = max(0, (context_window - response_tokens) * _CHARS_PER_TOKEN - overhead)
+    budget_chars = max(
+        0,
+        (context_window - response_tokens - _CONTEXT_SAFETY_MARGIN_TOKENS) * _CHARS_PER_TOKEN
+        - overhead,
+    )
     # Evidence blocks come off the TOP of the budget, not out of what is left
     # after the excerpts — each IS more authoritative than the excerpts beside
     # it (base rules 10 and 12), so losing one to fit one more speaker turn

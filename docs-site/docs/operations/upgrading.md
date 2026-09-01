@@ -52,7 +52,7 @@ Always back up your database before upgrading. Database migrations run automatic
 ./opentranscribe.sh update-full
 ```
 
-:::note `opentranscribe.sh`, not `opentr.sh`
+:::note[`opentranscribe.sh`, not `opentr.sh`]
 `opentranscribe.sh` is the management script the installer places next to your
 compose files — it is what you have. `opentr.sh` is the *development* script and
 only exists in a git clone of the repository. This page previously said
@@ -105,7 +105,7 @@ available versions.
 
 This re-pins the image tag recorded by the last `update --version`.
 
-:::danger Images roll back; the database does not
+:::danger[Images roll back; the database does not]
 The migration chain is one-way. Rolling images back does **not** revert schema
 changes, and an older image may not be able to read the newer schema. A real
 rollback means restoring the backup you took before upgrading. `update` refuses a
@@ -254,7 +254,7 @@ docker compose up -d postgres
 You must restore the database backup when rolling back. Newer migrations may have altered the schema in ways incompatible with older code.
 :::
 
-:::danger The old order corrupted the restore (issue #610)
+:::danger[The old order corrupted the restore (issue #610)]
 This recipe used to restore the database, THEN re-pin the image — steps 3-5 pulled and
 tagged the previous version only *after* `./opentranscribe.sh restore` had already restarted
 whatever was running. Because the `.env` image tag hadn't moved yet at that point, the
@@ -302,7 +302,7 @@ and the **Redaction policy** floor now require the `super_admin` role instead of
 configure how the deployment runs, and several store infrastructure credentials (S3 keys, SMB
 passwords, SMTP passwords) that a team-level admin has no reason to read or replace.
 
-:::danger ACTION REQUIRED if a plain `admin` manages any of those six panels
+:::danger[ACTION REQUIRED if a plain `admin` manages any of those six panels]
 Promote that account to `super_admin` (Settings → Users → Role → Super Admin) **before
 upgrading**, or hand the work to an existing super admin. Nothing else changes tier: user
 accounts, tasks, search, and speaker maintenance stay at `admin`. Creating additional super

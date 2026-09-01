@@ -29,7 +29,7 @@ Combines full-text and semantic search for the best results:
 - Weighted combination for optimal relevance
 - Falls back gracefully if neural search is unavailable
 
-:::note Hybrid Search Fix (v0.4.0)
+:::note[Hybrid Search Fix (v0.4.0)]
 A critical bug in OpenSearch 3.4 caused hybrid search to silently fall back to keyword-only (BM25) search due to an `ArrayIndexOutOfBoundsException` triggered by the combination of aggregations, `collapse`, and RRF search pipelines. This was fixed in v0.4.0 — semantic search now works as intended. The improvement is significant: for example, searching "pytorch" went from 1 result to 83 results after the fix. Typo tolerance and query latency (255–500ms) are also confirmed working. If you were using an earlier version, reindexing is not required — the fix is in the query layer.
 :::
 

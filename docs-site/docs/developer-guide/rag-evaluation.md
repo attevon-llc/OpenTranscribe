@@ -7,7 +7,7 @@ sidebar_position: 8
 How OpenTranscribe's retrieval and chat quality is measured, what the numbers mean, and how to
 reproduce them.
 
-:::info Living document
+:::info[Living document]
 This page is updated at every stage of the corpus-scale RAG work
 ([issue #403](https://github.com/attevon-llc/OpenTranscribe/issues/403)), not written at the end.
 Sections marked **planned** are not yet implemented. The published research paper is written *from*
@@ -62,7 +62,7 @@ for **development, tuning and internal validation**. The restriction is on **pub
 The tier travels with the data all the way into the results files, so publishable and internal-only
 tables are separated mechanically rather than by memory at writing time.
 
-:::warning Platform metadata is not a licence
+:::warning[Platform metadata is not a licence]
 Repository and dataset-hub metadata has misrepresented the real terms **four times** in this
 project:
 
@@ -107,7 +107,7 @@ and SHA256 per artefact, and supports offline `--verify`. Non-commercial corpora
 Corpora with **no relevance judgements cannot score retrieval.** They contribute ingest realism —
 real timings, real speaker structure — and nothing is claimed from them beyond that.
 
-:::warning ELITR-Bench and ELITR (Minuting) are two different artifacts — do not tier one as the other
+:::warning[ELITR-Bench and ELITR (Minuting) are two different artifacts — do not tier one as the other]
 [ELITR-Bench](https://github.com/utter-project/ELITR-Bench) (COLING 2025) is manually-crafted
 human question-answer pairs over meeting transcripts, with a **"who" question category** that
 directly exercises speaker attribution, speaker identity preserved in the transcripts, and
@@ -201,7 +201,7 @@ Three further behaviours the harness must handle explicitly:
   So `mean(results.values())` *flatters* exactly the regressions worth catching — a run that returns
   nothing scores nothing rather than zero.
 
-:::danger Tie-breaking can manufacture a result
+:::danger[Tie-breaking can manufacture a result]
 Chunk documents are identified `{file_uuid}_{chunk_index}`; summary digests are `{file_uuid}_digest`.
 In ASCII `d` sorts above every digit, and `trec_eval` breaks ties by document id **descending** — so
 at *identical relevance scores* a digest was measured ranking **1st of 13** against `_0`…`_11`.
@@ -356,7 +356,7 @@ crash), occurrence *counts* come from Postgres because chunk overlap double-coun
 tail, and a bucket list truncated at the size limit **raises** rather than reporting a count that
 looks right.
 
-:::warning The reference answerer is the instrument's control, not the product's answer
+:::warning[The reference answerer is the instrument's control, not the product's answer]
 It does not touch the chat path — there is no aggregation route in the product until Stage 4 — and
 `is_production_path: false` is recorded in every results file it writes. Its value is that Stage 4's
 router arrives with a number to beat and a per-rule breakdown of where the difficulty is, instead of
@@ -469,7 +469,7 @@ committed baselines did not carry it.
 | `embedding_dimension` | the index's `knn_vector` dimension |
 | `configured_embedding_model` | what the **settings** say |
 
-:::danger The settings are not authoritative about the vectors
+:::danger[The settings are not authoritative about the vectors]
 The label is surveyed from the documents, never from `get_search_embedding_settings()`. Issue #437
 established that two `SystemSettings` keys — `search.embedding_model`, which drives the index
 dimension, and `search.opensearch_model_id`, which drives the ingest pipeline — are written by
@@ -564,7 +564,7 @@ Whether that 10 ms backchannel sorts before or after the 1.25 s utterance it ove
 whether the turn is split. Every chronological segment read now orders by
 `(start_time, end_time, id)`, with an AST test failing any that does not end in the primary key.
 
-:::danger Why this was worth chasing before building on the control
+:::danger[Why this was worth chasing before building on the control]
 Every stage reports its delta against the previous stage as control, and the index-v6 stage
 **mandates a full reindex** — so its control and treatment necessarily sit on different indexes.
 Its gate is "nDCG@10 up on the multi-file class", and the drift from reshuffling (~2.8%) is the same
@@ -637,7 +637,7 @@ unblocks itself), and the sweep now fails closed: it declines unless indexed + f
 every file the coordinator snapshotted. Skipping the sweep leaves stale documents the next full
 reindex removes; running it on an incomplete tally deletes an index nothing recovers.
 
-:::tip Measuring on a stack with Celery Beat running
+:::tip[Measuring on a stack with Celery Beat running]
 Even with the destructive path closed, a maintenance-dispatched partial reindex overlapping a
 measurement changes what is being measured. Stop `celery-beat` for the duration of a control run.
 :::
@@ -647,7 +647,7 @@ measurement changes what is being measured. Stop `celery-beat` for the duration 
 Committed at `backend/tests/eval/baselines/`. Every later stage reports its delta against these,
 per query class, per D5.
 
-:::warning These two tables are HISTORICAL — do not use them as a control for current work
+:::warning[These two tables are HISTORICAL — do not use them as a control for current work]
 Both were measured on a **119,950-chunk, 232-file, qmsum-only** index, before the v6 reindex and
 before the three determinism fixes below. That index no longer exists, so neither table is
 re-derivable and neither carries embedding provenance. They are kept because they are the evidence
@@ -697,7 +697,7 @@ system result:
   `rerank` stage measures what reaches the prompt and is not part of the committed control, because
   it depends on model weights being present in the cache.
 
-:::note Synthetic timestamps
+:::note[Synthetic timestamps]
 QMSum has no timestamps, but OpenTranscribe chunks and cites by time. Meetings without a timed
 counterpart in AMI or ICSI receive **synthetic** timings, flagged as such in the injection manifest
 so that no timing-derived metric can be computed from them. **Measured on the real corpus: 188 of
@@ -940,7 +940,7 @@ Recorded at this length because a metric that is silently swapped is how a basel
 anything. The old one is written down, the measurement that retired it is written down, and the
 replacement says what it measures.
 
-:::warning The first run of that measurement produced a confidently wrong answer
+:::warning[The first run of that measurement produced a confidently wrong answer]
 Before the fix, the overview was composed from the *ranked* digest leg. Asked for 50 sections over
 a 25-file scope it returned 50 sections drawn from **8 files**, the block was headed
 `recordings: 8`, and the model faithfully reported *"8 vendor review board sessions"* over a scope
@@ -973,7 +973,7 @@ it. The plan does define it: *"per query class **and per model tier** (local vs.
 
 That has a consequence which has to be stated rather than quietly worked around:
 
-:::danger The model-tier axis is unmeasurable by this harness, by design
+:::danger[The model-tier axis is unmeasurable by this harness, by design]
 Every number here is produced with **no LLM anywhere** (D6). A fusion strategy changes the order
 OpenSearch returns documents in; that order is identical whichever model later reads them. So
 for the fusion and budget arms the model-tier axis is not merely unmeasured — it is **invariant
@@ -1201,7 +1201,7 @@ runs, and the results document's determinism is what makes an arm-to-arm differe
 
 1,651 samples per run at concurrency 4, on a shared machine.
 
-:::warning A single latency run manufactured a 50% regression that does not exist
+:::warning[A single latency run manufactured a 50% regression that does not exist]
 Run 1 measured `rrf-60` at **+130.9 ms p95, +50%** against the control. A rank constant changes
 no work — it is a divisor in a scoring formula — so the number was mechanistically implausible
 and was re-measured *interleaved* with the control rather than believed. It did not reproduce:
@@ -1231,7 +1231,7 @@ holds still:
    and produces identical numbers, so every difference in the table is the pipeline and not the
    plumbing.
 
-:::note Adding `retrieval.fusion` changes the bytes of any re-derived baseline
+:::note[Adding `retrieval.fusion` changes the bytes of any re-derived baseline]
 `metrics.json`'s `retrieval` block now always carries a `fusion` sub-block naming the resolved
 strategy and pipeline id — including on runs that named no arm, where it records
 `selected_explicitly: false`. Re-deriving one of the four re-derivable baselines will therefore
@@ -1324,7 +1324,7 @@ scores are small positives bounded by `2/(k+1)` = 0.0645. So with
 `candidate_pool > rerank_max_pairs` a score sort floats the **un-reranked tail above every
 reranked document**. That is precisely the `96/12/4` arm.
 
-:::note Production never had this bug
+:::note[Production never had this bug]
 `diversity_sample` walks **list order**, and `retrieval.py` passes it `rerank`'s output directly,
 so what reaches a real prompt was always correct. This was the instrument reading a ranking out
 of two incomparable score scales — which is why it could sit there producing numbers.
@@ -1438,14 +1438,14 @@ Two further arms, both losers, recorded rather than dropped: `96/12/4` with
 at max_pairs 50 (synthetic nDCG@5 0.1476 vs 0.1542) while costing 31% more wall clock. Reranking
 more candidates makes it worse.
 
-:::danger A quarter of the query set flipped the sign
+:::danger[A quarter of the query set flipped the sign]
 On the 475-query subset, pool 96 read **+0.0004** nDCG@10 on QMSum. On all 1,651 queries it reads
 **−0.0009**. Same instrument, same index, same arm — 400 of 1,576 QMSum queries were enough to
 invert the conclusion, and the subset's version would have been reported as a both-corpus win.
 Every conclusion above is from the full query set for exactly this reason.
 :::
 
-:::warning `--size` is not a truncation knob — it changes the ranking
+:::warning[`--size` is not a truncation knob — it changes the ranking]
 Retrieval at `--size 12` and `--size 48` do **not** share a top ten: nDCG@10 is 0.0942 vs 0.0983
 on QMSum. `dynamic_rrf_window(size) = max(100, min(size*4, 500))`, so the request size sets the
 depth the two legs are *fused* over — 100 at size 12, 192 at size 48 — and a different fusion

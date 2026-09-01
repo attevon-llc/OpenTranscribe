@@ -35,10 +35,10 @@ Key metric names (stable; dashboards are built against these):
 | `user_signups_total` | Counter | `method` (`local`/`ldap`/`keycloak`/`pki`/`external`) |
 | `files_uploaded_total` | Counter | `source` (`upload`/`url`/`watch`) |
 
-:::note Route labels use the route **template** (e.g. `/api/files/{file_id}`), never the raw path or query string — this bounds cardinality and keeps tokens/PII out of metrics. `user_id`/`org_id` are written to the JSON **access log** only, never as Prometheus labels.
+:::note[Route labels use the route **template** (e.g. `/api/files/{file_id}`), never the raw path or query string — this bounds cardinality and keeps tokens/PII out of metrics. `user_id`/`org_id` are written to the JSON **access log** only, never as Prometheus labels.]
 :::
 
-:::info Worker-side product events (transcription outcomes, processed minutes, watch-source imports) happen in Celery workers, whose Prometheus registries are never scraped. Those are dashboarded from the database via Grafana's PostgreSQL datasource (the Product dashboard below), not from Prometheus counters.
+:::info[Worker-side product events (transcription outcomes, processed minutes, watch-source imports) happen in Celery workers, whose Prometheus registries are never scraped. Those are dashboarded from the database via Grafana's PostgreSQL datasource (the Product dashboard below), not from Prometheus counters.]
 :::
 
 ### Starting the stack
@@ -131,7 +131,7 @@ The built-in stack is portable to managed AWS services with no code change:
 - **CloudWatch Logs**: set `LOG_FORMAT=json` and let Fluent Bit / the CloudWatch agent ship the structured access lines. **CloudWatch Logs Insights** then queries `user_id` / `org_id` / `route` / `duration_ms` directly for DAU/WAU and funnels.
 - **Readiness**: switch your load balancer / Kubernetes `readinessProbe` from `/health` to `/health/ready` so traffic is only routed once Postgres and Redis are actually reachable.
 
-:::tip Future tweak: uvicorn emits its own access log line next to OpenTranscribe's structured one (duplicate request lines). This is left as-is because changing the container `CMD` is a behavior change for existing log consumers; in production you can add `--no-access-log` to the uvicorn command to drop the duplicate and rely solely on the structured access logger.
+:::tip[Future tweak: uvicorn emits its own access log line next to OpenTranscribe's structured one (duplicate request lines). This is left as-is because changing the container `CMD` is a behavior change for existing log consumers; in production you can add `--no-access-log` to the uvicorn command to drop the duplicate and rely solely on the structured access logger.]
 :::
 
 ## Monitoring Architecture

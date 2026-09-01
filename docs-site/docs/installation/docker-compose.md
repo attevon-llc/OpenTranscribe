@@ -39,7 +39,7 @@ docker compose version
 Docker Compose version v2.x.x or higher
 ```
 
-:::warning Important
+:::warning[Important]
 Use `docker compose` (with space), not `docker-compose` (with hyphen). OpenTranscribe requires Docker Compose V2.
 :::
 
@@ -194,7 +194,7 @@ This downloads several GB of AI models. The exact total depends on which
 `WHISPER_MODEL` you selected and how many neural-search models you enable — see
 [HuggingFace setup](./huggingface-setup.md).
 
-:::tip Prefer the helper script
+:::tip[Prefer the helper script]
 `bash scripts/download-models.sh` fetches the whole set (transcription,
 diarization, gender classifier, NLTK, embeddings, chat reranker, neural search,
 and content redaction) using the **image version your deployment is pinned to**,

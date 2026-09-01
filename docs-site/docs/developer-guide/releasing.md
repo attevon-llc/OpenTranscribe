@@ -10,7 +10,7 @@ A release is a set of **independently runnable, skippable, resumable stages**
 driven by `scripts/release.sh`. Nothing here is a checklist you follow by hand;
 the mechanics are code, and the gates fail loudly.
 
-:::info Why it works this way
+:::info[Why it works this way]
 The process used to be three markdown checklists that disagreed with each other.
 The most recent release proved the cost: one of them documented "append a row to
 `expected-schemas.tsv`", nothing enforced it, and the row was silently skipped —
@@ -174,7 +174,7 @@ space-separated) to run the scenario once per source. Use `FROM_VERSIONS` on
 minor and major releases to keep the **oldest supported** upgrade exercised —
 once auto-detection moves FROM forward, the older path stops being tested.
 
-:::warning The live stack must be stopped
+:::warning[The live stack must be stopped]
 The scenarios run under the installer's stock container names and ports
 5173-5180 **by design**, so they exercise exactly what a real user gets. They
 cannot run alongside a live deployment, and `lib/guardrails.sh` refuses to start
@@ -186,7 +186,7 @@ For a stack that runs *beside* the live one, use
 `./opentr.sh start dev --fresh <name> --port-offset N` instead.
 :::
 
-:::tip Non-interactive or backgrounded runs need `--yes`
+:::tip[Non-interactive or backgrounded runs need `--yes`]
 The `I UNDERSTAND` confirmation above reads from a tty. Under a backgrounded or
 otherwise non-interactive invocation there is no tty to read from, and the prompt
 fails with `No such device or address` rather than hanging. Pass `--yes` to skip
@@ -285,7 +285,7 @@ workstation after the tag, and the installer resolves "latest" from the GitHub
 Release — publishing it in CI would point new users at a version whose images do
 not exist yet. `finish` owns that, and refuses until this workflow is green.
 
-:::note Why publishing is local
+:::note[Why publishing is local]
 The backend production image is ~13.8 GB. GitHub's free runners cannot build it —
 that is why `docker-publish.yml`'s backend ARM64 job is disabled. ARM64 builds use
 a remote builder over SSH (`scripts/setup-remote-builder.sh`), which turns a 2-3

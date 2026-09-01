@@ -11,7 +11,7 @@ This page is an honest, store-by-store assessment of OpenTranscribe's backup cov
 [Backup & Restore](./backup-restore.md): that page tells you *how* to run a backup; this
 page tells you *what is and isn't protected* and where you must act yourself.
 
-:::danger The one thing most people get wrong
+:::danger[The one thing most people get wrong]
 A database backup is **worthless without the encryption keys**. OpenTranscribe encrypts
 secrets (user API keys, the S3 backup secret, watch-source credentials, email passwords,
 MFA secrets) into the database using a key that lives in **`.env`, not in the database**.

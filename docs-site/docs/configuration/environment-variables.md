@@ -202,7 +202,7 @@ OPENSEARCH_CHUNKS_INDEX_SHARDS=1     # default -- correct for laptop/home-server
 OPENSEARCH_CHUNKS_INDEX_REPLICAS=0   # default -- correct for laptop/home-server (single node)
 ```
 
-:::warning A replica needs a second node to mean anything
+:::warning[A replica needs a second node to mean anything]
 `number_of_replicas` is a *copy count per shard*. On a single-node deployment (laptop, home
 server, the bundled `opensearch` container) there is nowhere to place a replica shard, so
 setting `OPENSEARCH_CHUNKS_INDEX_REPLICAS` above `0` leaves every replica **UNASSIGNED** and the
@@ -484,7 +484,7 @@ PRESIGNED_URL_MAX_SECONDS=21600   # 6h default -- a presigned URL cannot outlive
 MULTIPART_THRESHOLD_MB=512        # objects at/above this size use browser-side multipart upload
 ```
 
-:::note S3 vs MinIO single-PUT ceiling
+:::note[S3 vs MinIO single-PUT ceiling]
 MinIO accepts a single-PUT object up to 5 TiB. AWS S3 rejects a single PUT above 5 GiB
 (`EntityTooLarge`), so on `STORAGE_BACKEND=s3` an upload above that size always goes through the
 multipart path regardless of `MULTIPART_THRESHOLD_MB`.
@@ -600,7 +600,7 @@ owns it in `user.auth_type`. Which methods are *available* is decided per method
 `local_enabled`, `ldap_enabled`, `oidc_enabled` and `pki_enabled` — see
 [the identity-source model](../authentication/overview.md#the-identity-source-model).
 
-:::warning There is no `AUTH_TYPE` setting
+:::warning[There is no `AUTH_TYPE` setting]
 Earlier versions of this page documented `AUTH_TYPE=local,ldap,keycloak` as an informational
 indicator. No such setting exists and nothing ever read it. Remove it from your `.env`; it does
 nothing.
@@ -639,7 +639,7 @@ OIDC_ROLES_CLAIM=groups            # realm_access.roles | groups | roles
 OIDC_ADMIN_ROLE=admin
 ```
 
-:::note `KEYCLOAK_*` still works
+:::note[`KEYCLOAK_*` still works]
 Every one of these variables was previously named `KEYCLOAK_*`, and those names keep working
 permanently — the legacy spelling even wins when both are set. The canonical spelling is
 `OIDC_*`; the backend logs one deprecation line at startup naming any legacy variables it found.
@@ -704,7 +704,7 @@ LOGIN_BANNER_TEXT=This is a restricted system...
 
 ## Cloud ASR Providers
 
-:::tip Configure these in the UI
+:::tip[Configure these in the UI]
 Each user sets their own ASR provider and API key in **Settings → Transcription**,
 stored encrypted in the database. The variables below are only the
 **deployment-wide fallback** for users who have set nothing, and for a zero-touch
@@ -725,7 +725,7 @@ GPU) or one of the cloud providers below.
 | Speechmatics | `speechmatics` | `SPEECHMATICS_API_KEY`, `SPEECHMATICS_MODEL` |
 | Gladia | `gladia` | `GLADIA_API_KEY`, `GLADIA_MODEL` |
 
-:::warning AWS variables are shared
+:::warning[AWS variables are shared]
 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_REGION` are **not
 ASR-specific**. The native S3 storage backend uses them when
 `S3_USE_IAM_ROLE=false`, and `BEDROCK_REGION` falls back to `AWS_REGION`.
@@ -742,7 +742,7 @@ default **16**), not a per-provider setting.
 
 ## LLM Providers
 
-:::tip Configure these in the UI
+:::tip[Configure these in the UI]
 Each user configures their own LLM provider, model and API key in
 **Settings → LLM Provider**, encrypted at rest. `LLMService` resolves per-user
 settings first and only falls back to the variables below when a user has none —
@@ -771,7 +771,7 @@ the symptom is an opaque `Health check blocked … Private IP address`.
 LLM_ALLOW_PRIVATE_ENDPOINTS=true   # required for local vLLM / Ollama
 ```
 
-:::danger Keep it false on multi-tenant deployments
+:::danger[Keep it false on multi-tenant deployments]
 With it on, any user can point a "test connection" at internal services or cloud
 instance metadata. Only enable it where you control who can register.
 :::
@@ -875,14 +875,14 @@ laptop or single home server; none of these need setting for a normal install.
 | `OPENSEARCH_CHUNKS_INDEX_SHARDS` | 1 | applied **only at index creation** |
 | `OPENSEARCH_CHUNKS_INDEX_REPLICAS` | 0 | see the warning below |
 
-:::warning Changing chunk size requires a full reindex
+:::warning[Changing chunk size requires a full reindex]
 Chunk boundaries are baked into the index at write time. Changing
 `SEARCH_CHUNK_TARGET_WORDS` or `SEARCH_CHUNK_OVERLAP_WORDS` affects only
 newly-indexed content until you reindex everything, which leaves a corpus chunked
 two different ways in the meantime.
 :::
 
-:::warning Replicas on a single node
+:::warning[Replicas on a single node]
 `OPENSEARCH_CHUNKS_INDEX_REPLICAS > 0` on a single-node cluster leaves every
 replica shard permanently `UNASSIGNED` and the index status yellow — there is no
 second node to place them on. Set it `>= 1` only on a multi-node domain.
@@ -994,7 +994,7 @@ ANTHROPIC_API_KEY=sk-ant-your-key
 ANTHROPIC_MODEL_NAME=claude-haiku-4-5
 ```
 
-:::note Setting these is optional
+:::note[Setting these is optional]
 None of the above is required. A deployment with `LLM_PROVIDER` empty and
 `ASR_PROVIDER=local` transcribes normally with no cloud account at all — which is
 the default self-hosted configuration.

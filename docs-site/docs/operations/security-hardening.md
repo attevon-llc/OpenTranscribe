@@ -539,7 +539,7 @@ FIPS_MIGRATION_MODE=compatible      # Accept both old and new formats during tra
 FIPS_VALIDATE_ENTROPY=true          # Validate entropy sources
 ```
 
-:::caution `FIPS_MODE` is the switch, not `FIPS_VERSION`
+:::caution[`FIPS_MODE` is the switch, not `FIPS_VERSION`]
 `FIPS_VERSION` defaults to `140-3` on **every** deployment, so a condition that reads it
 alone can never be false. Every gate in the codebase therefore goes through one property,
 `settings.fips_140_3_active` (= `FIPS_MODE and FIPS_VERSION == "140-3"`), and
@@ -547,7 +547,7 @@ alone can never be false. Every gate in the codebase therefore goes through one 
 `FIPS_VERSION` directly. Set `FIPS_MODE=true`.
 :::
 
-:::caution `ENCRYPTION_ALGORITHM_V3` is validated, not dispatched on
+:::caution[`ENCRYPTION_ALGORITHM_V3` is validated, not dispatched on]
 `AES-256-GCM` is the only value this build implements, and it is not selectable. The v3
 ciphertext envelope (`v3:salt:nonce:ciphertext`) records **no algorithm field**, so decrypt
 has to use exactly the algorithm encrypt used — switching would make every stored provider
@@ -583,7 +583,7 @@ in every mode, FIPS included.** This is a compliant configuration, not a gap:
   comfortably above the 112-bit minimum **SP 800-131A Rev. 2** requires through 2030 and
   beyond.
 
-:::info Refresh tokens were HS512 until this release, on every deployment
+:::info[Refresh tokens were HS512 until this release, on every deployment]
 An earlier revision of this page said FIPS mode switched JWT signing to HS512, and that
 was corrected to "HS256 always" -- but **both statements were wrong about refresh
 tokens**. `token_service.create_refresh_token` selected its algorithm with
@@ -637,7 +637,7 @@ verifiable, so a rolling restart does not sign anyone out; `strict` closes that 
    and the one now expected), which is how you know the window can be closed
 4. **Switch to strict mode** when all users have been upgraded: `FIPS_MIGRATION_MODE=strict`
 
-:::warning What `strict` means, and what it does not
+:::warning[What `strict` means, and what it does not]
 `strict` narrows acceptance to **exactly the algorithm this deployment signs with** --
 i.e. it closes the migration window. It does **not** mean "HS512 only": a deployment left
 at the default `JWT_ALGORITHM=HS256` signs HS256, so strict accepts HS256 and refuses

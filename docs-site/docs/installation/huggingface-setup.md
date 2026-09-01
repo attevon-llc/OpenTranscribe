@@ -6,7 +6,7 @@ sidebar_position: 4
 
 Speaker diarization in OpenTranscribe requires access to gated PyAnnote models on HuggingFace. This page guides you through obtaining a free token and accepting the necessary model agreements.
 
-:::warning Critical Requirement
+:::warning[Critical Requirement]
 **Speaker diarization will NOT work** without a valid HuggingFace token and acceptance of both gated model agreements. Transcription will still work, but speakers will not be identified.
 :::
 
@@ -43,7 +43,7 @@ If you don't already have a HuggingFace account:
 
 Example token format: `hf_` followed by random characters
 
-:::tip Token Storage
+:::tip[Token Storage]
 Save your token in a password manager or secure note. You'll need it during OpenTranscribe setup. Tokens don't expire unless you delete them.
 :::
 
@@ -67,7 +67,7 @@ You must accept the license for **BOTH** PyAnnote models. This is required for s
 3. Click **"Agree and access repository"**
 4. ✅ You should see "You have been granted access to this model"
 
-:::caution Both Models Required
+:::caution[Both Models Required]
 Accepting only one model agreement will result in errors. You must accept **BOTH** model agreements for speaker diarization to function.
 :::
 

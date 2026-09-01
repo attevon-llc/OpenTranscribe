@@ -386,7 +386,7 @@ when it's in effect. See [Environment Variables](../configuration/environment-va
 for the full variable reference, including presigned-URL TTL clamping
 (`PRESIGNED_URL_MAX_SECONDS`) and the multipart-upload threshold.
 
-:::note AWS S3's 5 GiB single-PUT ceiling
+:::note[AWS S3's 5 GiB single-PUT ceiling]
 MinIO accepts a single-PUT object up to 5 TiB; AWS S3 rejects one above 5 GiB. On
 `STORAGE_BACKEND=s3`, uploads above that size are always routed through the multipart path, so
 this only affects very large source files, not typical media uploads.
@@ -429,7 +429,7 @@ OpenTranscribe handles this rather than degrading silently:
 
 **Alert on `security_state_degraded_total`.** A non-zero rate means a security control is running without its shared state store. There is deliberately no configuration flag to disable this behaviour -- an off-switch on a security control tends to get flipped during exactly the incident it guards against.
 
-:::warning Run Redis highly available in production
+:::warning[Run Redis highly available in production]
 On AWS, use **ElastiCache for Redis with Multi-AZ and automatic failover** rather than a single Redis container. Failover then takes seconds instead of leaving the cluster in the degraded state above for the length of an outage.
 
 Note that Redis is also the Celery broker, so a Redis outage stops transcription regardless -- highly available Redis protects throughput and security posture together.

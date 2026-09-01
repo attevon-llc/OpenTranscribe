@@ -197,7 +197,7 @@ BEDROCK_MODEL_NAME=us.anthropic.claude-haiku-4-5-20251001-v1:0
 BEDROCK_MODEL_NAME=arn:aws:bedrock:us-east-1:123456789012:inference-profile/my-profile
 ```
 
-:::tip Verify the model ID against your account
+:::tip[Verify the model ID against your account]
 AWS rotates model IDs, and access is per-account. Run
 `aws bedrock list-inference-profiles --region <your-region>` to see exactly what
 you can invoke, rather than copying an ID from documentation.
@@ -207,7 +207,7 @@ you can invoke, rather than copying an ID from documentation.
 user, organization and conversation, so Bedrock's own invocation logs can be
 reconciled against OpenTranscribe's usage records.
 
-:::note Bedrock pricing is separate
+:::note[Bedrock pricing is separate]
 Bedrock is operated by AWS with its own rate card, not Anthropic's. OpenTranscribe
 therefore reports Bedrock usage in **tokens only** and does not estimate a dollar
 cost for it — a confident wrong number would be worse than none. See

@@ -30,7 +30,7 @@ Before running the installer, ensure you have:
 2. **Internet connection** for downloading images and models
 3. **8GB+ RAM** (16GB+ recommended)
 
-:::info HuggingFace Token Required
+:::info[HuggingFace Token Required]
 For speaker diarization to work, you'll need a **free HuggingFace token**. The installer will prompt you for it. See [HuggingFace Setup](../installation/huggingface-setup.md) for details.
 :::
 

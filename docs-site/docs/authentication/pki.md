@@ -27,7 +27,7 @@ why the trust configuration below is not optional.
 
 ## Trust configuration — read this first
 
-:::danger `PKI_TRUSTED_PROXIES` is required whenever PKI is enabled
+:::danger[`PKI_TRUSTED_PROXIES` is required whenever PKI is enabled]
 Header-sourced PKI authentication is **refused outright** when no trusted proxy is allow-listed.
 A hardened deployment additionally refuses to *start*.
 
@@ -56,7 +56,7 @@ certificate this process has itself validated.
 | `header` *(default)* | A trusted proxy terminates mTLS and forwards the certificate and/or its DN |
 | `mutual_tls` | Same transport, but a bare DN assertion is **refused** even from a trusted proxy — the full certificate must be forwarded so this application validates it itself |
 
-:::note Changed in v0.5.0
+:::note[Changed in v0.5.0]
 `pki_mode` used to be `direct` / `broker` / `hybrid` in the schema and `header` / `mutual_tls`
 in the admin UI, so no value could match and **every save of the PKI tab was rejected**; no
 backend code branched on it either way. It is now `header` | `mutual_tls`, and `pki_auth.py`

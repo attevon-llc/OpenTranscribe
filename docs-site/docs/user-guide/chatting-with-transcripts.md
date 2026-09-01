@@ -166,7 +166,7 @@ the follow-up it thinks the passages point at — an unresolved decision, a
 promised action with no outcome. Ignore it freely; it is a suggestion, not part
 of the answer.
 
-:::tip "Summarise this recording" is the wrong question for chat
+:::tip["Summarise this recording" is the wrong question for chat]
 Chat retrieves a handful of relevant passages; it does not read the whole
 recording. For a whole-transcript summary, use the **summary** feature on the
 file itself. Use chat for questions that point at specific moments.

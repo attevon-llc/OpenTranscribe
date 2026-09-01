@@ -41,7 +41,7 @@ ls -la models/
 touch models/huggingface/test.txt && rm models/huggingface/test.txt
 ```
 
-:::tip Prevention
+:::tip[Prevention]
 The latest setup script automatically creates directories with correct permissions. For new installations, use the one-line installer:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash

@@ -65,7 +65,7 @@ they were never discussed.
 You can also start from the gallery: select recordings and choose **Chat with N**
 from the bulk actions menu.
 
-:::tip Narrower is usually better
+:::tip[Narrower is usually better]
 Retrieval quality drops when a question has to compete with an entire library.
 If you know which meetings matter, select them — answers get noticeably more
 specific.
@@ -123,7 +123,7 @@ The practical consequence: **the assistant sees passages, not the whole story.**
 It answers well when the answer lives in a few specific moments, and poorly when
 it requires reading everything end to end.
 
-:::tip This is why "summarise this recording" is the wrong question for chat
+:::tip[This is why "summarise this recording" is the wrong question for chat]
 A summary needs the *whole* transcript; chat retrieves fragments. Use the
 built-in **summary** feature for that — it reads the entire transcript — and use
 chat for questions that point at specific moments.
@@ -169,7 +169,7 @@ citations, so without the trace there is no way to tell them apart. The same goe
 for **Failed**: if search breaks, the assistant still answers — from whatever it
 had — and the reply looks entirely normal. The trace is what makes that visible.
 
-:::tip What to look for when an answer seems thin
+:::tip[What to look for when an answer seems thin]
 Check **Sampled** and **Filtered**. `48 found` followed by `12 kept · 36 dropped`
 is normal narrowing. But `12 kept · 0 dropped` at Filtered followed by
 `0 excerpts` at Answered means the evidence was found and then removed — usually

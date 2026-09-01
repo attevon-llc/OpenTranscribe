@@ -6,7 +6,7 @@ description: How other systems summarize large corpora, which industry patterns 
 
 # RAG — Prior Art and the Package Ledger
 
-:::info This is a living document
+:::info[This is a living document]
 It is written to be **re-read and revised as the work lands**, not archived. Every claim here is
 either measured, cited, or explicitly marked as unverified. When a stage ships and changes one of
 these answers, change it here in the same PR.
@@ -107,7 +107,7 @@ The test we apply, in order:
 | LLM serving | **vLLM** | Gemma 4 E4B |
 | Reranking seam | `reranker.get_reranker()` | Deliberately a seam; the model is Stage 5's bake-off |
 
-:::warning trec_eval is an eval-only dependency for a licence reason, not a size one
+:::warning[trec_eval is an eval-only dependency for a licence reason, not a size one]
 Its C sources carry a "research, non-commercial purposes" header, and **we publish images**. It
 lives in `backend/requirements-eval.txt`; every module that uses it imports lazily and every test
 `importorskip`s it with that reason recorded. Never move it into `requirements.txt`.
@@ -138,7 +138,7 @@ part.** A generic package cannot know about speaker turns, and speaker turns are
 - **Rename propagation.** Renaming a speaker updates the indexed text, because the indexed text
   contains the name.
 
-:::note Sharing beats reimplementing, even internally
+:::note[Sharing beats reimplementing, even internally]
 When the document chunker needed to split over-long blocks, it imported
 `chunking_service.split_into_sentences` rather than writing a third splitter — the transcript
 chunker and the digest builder already shared it. Three splitters over the same words means three
@@ -236,7 +236,7 @@ ranked leg survives only for the unbounded "all accessible" case, where mapping 
 not possible — and there the header says how much it covered rather than reporting the covered
 count as the total.
 
-:::danger Do not "simplify" the map back to the ranked leg
+:::danger[Do not "simplify" the map back to the ranked leg]
 It will look like a redundant second retrieval path and it is not. Increasing `size` does not fix
 it: ranking gives you no coverage guarantee at **any** K. `tests/unit/test_chat_mapreduce.py::test_the_scope_map_covers_every_file_not_the_best_ranked_ones`
 fails if the map is replaced by a ranked retrieval.

@@ -21,7 +21,7 @@ The Admin Panel is role-gated. The dividing rule is:
 | **Admin** | All user sections plus user management, system statistics, task health, search & indexing, data integrity, embedding consistency/migration, retention, retry settings, and media sources |
 | **Super Admin** | All admin sections plus authentication configuration, role changes, audit logs, ASR provider, engine configuration, backups, media mirror, watch sources, and the redaction policy floor |
 
-:::warning Changed in v0.5.0
+:::warning[Changed in v0.5.0]
 Six panels moved from `admin` to `super_admin`: **ASR provider**, **Engine configuration**,
 **Backups**, **Media Mirror**, **Watch sources**, and the **Redaction policy** floor. If a plain
 `admin` administers any of them today, promote that account (Settings → Users → Role) before
@@ -168,7 +168,7 @@ default**, so once you save a panel the stored value wins.
 
 Each tab has **Save**, and LDAP and OIDC have **Test Connection** to verify before committing.
 
-:::note Renamed in v0.5.0
+:::note[Renamed in v0.5.0]
 The **Keycloak** tab is now **OIDC** and works with any conforming provider. Existing `KEYCLOAK_*`
 environment variables keep working permanently; stored database keys were renamed automatically
 by migration `v377`.
@@ -370,7 +370,7 @@ throughput.
 
 Changing the model triggers a full re-index of all documents. A confirmation modal warns about this before applying.
 
-:::warning Adding a model
+:::warning[Adding a model]
 Do not add a model to the list without running
 `python3 scripts/verify-embedding-models.py --url <throwaway-cluster>` against it. Two
 classes of failure are invisible otherwise: a model OpenSearch does not actually provide

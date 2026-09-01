@@ -47,7 +47,7 @@ GPU 2: NVIDIA RTX A6000 (49GB) - 4 parallel workers (scaled)
 
 ### Step 1: Configure Environment
 
-:::warning `GPU_SCALE_ENABLED` does not enable scaling
+:::warning[`GPU_SCALE_ENABLED` does not enable scaling]
 Scaling is turned on **only** by the `--gpu-scale` CLI flag in Step 2 -- no compose file or
 startup script reads `GPU_SCALE_ENABLED`. It's consulted in exactly one unrelated place
 (`tasks/utility.py`), to pick which GPU device IDs the system-stats task queries, so a stale

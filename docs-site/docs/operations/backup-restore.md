@@ -21,7 +21,7 @@ OpenTranscribe stores data across several services. Understanding each component
 | **Model Cache** | `${MODEL_CACHE_DIR:-./models}/` | AI model weights (~2.5GB) | Low (re-downloadable) |
 | **Configuration** | `.env`, `docker-compose.*.yml` | Environment and deployment config | Critical |
 
-:::tip Priority Guide
+:::tip[Priority Guide]
 **Critical** components contain irreplaceable data. **Medium** components can be rebuilt from critical data (e.g., reindexing). **Low** components are automatically regenerated or re-downloaded.
 :::
 
@@ -56,7 +56,7 @@ The built-in backup command creates a timestamped SQL dump:
 
 This creates a file at `./backups/opentranscribe_backup_YYYYMMDD_HHMMSS.sql`.
 
-:::note `opentranscribe.sh`, not `opentr.sh`
+:::note[`opentranscribe.sh`, not `opentr.sh`]
 `opentranscribe.sh` is the management script the installer places next to your
 compose files — it is what you have. `opentr.sh` is the *development* script and
 only exists in a git clone of the repository; it shares the exact same `backup`/
@@ -151,7 +151,7 @@ to the chosen destination, and prunes old backups by the GFS policy. If the
 destination isn't mounted/reachable the task records a clear status and never
 crashes.
 
-:::tip Off-host backups
+:::tip[Off-host backups]
 For real disaster resilience, point the destination at an **S3-compatible
 bucket on a different machine or provider** — a host failure then can't take
 your backups with it. The bucket can be your own MinIO on another box.
@@ -210,7 +210,7 @@ curl -s "http://localhost:5180/_snapshot/opentranscribe_backup/_all" | python3 -
 curl -X POST "http://localhost:5180/_snapshot/opentranscribe_backup/opentranscribe-20260607-030000/_restore?wait_for_completion=true"
 ```
 
-:::note S3 destination + snapshots
+:::note[S3 destination + snapshots]
 The shipped OpenSearch image does **not** include the `repository-s3` plugin, so
 OpenSearch snapshots always use the local `fs` repository — even when the database
 dump destination is an S3 bucket. (The `.dump` files still go to S3; only the
@@ -218,7 +218,7 @@ OpenSearch snapshots stay on the `fs` repo path.) Adding the `repository-s3` plu
 to register an `s3` snapshot repository is a possible future enhancement.
 :::
 
-:::info MinIO media mirroring
+:::info[MinIO media mirroring]
 The uploaded **media files** (MinIO objects) are covered by the in-app
 [Media Mirror](#media-mirror-in-app-incremental) — a separate scheduled,
 incremental, never-deleting copy of the media bucket with its own destination.
@@ -298,7 +298,7 @@ Restore the database dump from the same point in time first, then the media; the
 recoverable, `python -m app.scripts.reingest_minio` can re-register restored
 objects from storage alone (see the storage-recovery runbook).
 
-:::note Bucket versioning (optional, deployment-level)
+:::note[Bucket versioning (optional, deployment-level)]
 The never-delete mirror already protects against source-side deletion. S3/MinIO
 **bucket versioning** on the source or mirror bucket is an optional *extra* —
 it turns overwrites/deletes into recoverable versions at near-zero steady-state
@@ -416,7 +416,7 @@ sudo systemctl list-timers opentranscribe-backup.timer
 
 ## MinIO / Storage Backup
 
-:::tip Prefer the in-app Media Mirror
+:::tip[Prefer the in-app Media Mirror]
 The scheduled, incremental, never-deleting
 [Media Mirror](#media-mirror-in-app-incremental) covers this automatically —
 the manual `mc` approaches below remain useful for one-off copies and
@@ -572,7 +572,7 @@ Using `opentranscribe.sh`:
 ./opentranscribe.sh restore backups/opentranscribe_backup_20260310_020000.sql
 ```
 
-:::warning Destructive — full replace, not a merge
+:::warning[Destructive — full replace, not a merge]
 This **replaces the database entirely**. A plain `pg_dump` file has no `DROP`/`--clean`
 statements, so replaying it into an already-populated database used to fail on every
 statement while `psql` still reported success (issue #599) — and worse, could leave the
@@ -614,7 +614,7 @@ This command automatically:
   heads match. Escape hatch for scripted/orchestrated callers that manage the restart
   themselves. Mutually exclusive with `--migrate-forward`.
 
-:::note MinIO / OpenSearch are not rolled back
+:::note[MinIO / OpenSearch are not rolled back]
 `opentranscribe.sh backup`/`restore` cover **PostgreSQL only**. After a restore, MinIO (media
 files) and OpenSearch (search indices) may be ahead of or behind the restored database —
 media with no row, rows with no media, stale search hits. Reindex from **Admin → Search**
@@ -636,7 +636,7 @@ confirm / safety-dump / drop-recreate / verify sequence described above (issue #
 ./opentranscribe.sh restore backups/opentranscribe-20260827-030000.dump.gpg
 ```
 
-:::danger Do not "fix" a missing stdin redirect by hand
+:::danger[Do not "fix" a missing stdin redirect by hand]
 An earlier version of this page showed `docker compose exec -T postgres pg_restore -U
 postgres -d opentranscribe backup.dump` — that fails outright (`could not open input file`,
 the path resolves *inside* the postgres container). Adding `< backup.dump` to fix the

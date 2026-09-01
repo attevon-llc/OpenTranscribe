@@ -170,7 +170,7 @@ Model Selection (Advanced) or `WHISPER_MODEL=nyrahealth/faster_CrisperWhisper`.
 
 **Alternative**: Use `large-v3` if you need translation to English or maximum accuracy
 
-:::info Hybrid Mode (Low-VRAM GPU / macOS)
+:::info[Hybrid Mode (Low-VRAM GPU / macOS)]
 When the GPU cannot fit the transcription model (or on macOS), OpenTranscribe automatically switches to **hybrid mode**: the `small` model runs on CPU (int8) while PyAnnote diarization stays on GPU/MPS. You still get speaker-separated transcripts — just at CPU transcription speeds (~15–30× real-time).
 
 Override with `WHISPER_HYBRID_MODE=true/false/auto` and `WHISPER_HYBRID_CPU_MODEL=small|medium|base`.

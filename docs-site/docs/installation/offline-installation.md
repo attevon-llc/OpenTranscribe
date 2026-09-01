@@ -76,7 +76,7 @@ EOF
 tar -czf ai-models.tar.gz ~/.cache/huggingface ~/.cache/torch ~/.cache/nltk_data
 ```
 
-:::warning The hand-rolled recipe above is incomplete — prefer the script
+:::warning[The hand-rolled recipe above is incomplete — prefer the script]
 
 The Python snippet fetches the transcription and diarization weights and nothing
 else. It **omits the NLTK corpora**, which the sentence splitter and topic

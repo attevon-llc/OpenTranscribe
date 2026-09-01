@@ -12,7 +12,7 @@ composes the correct overlay set for you — **always launch the stack through i
 rather than bare `docker compose`, so containers get the right database, storage,
 network, and environment.
 
-:::tip Use `./opentr.sh`
+:::tip[Use `./opentr.sh`]
 `./opentr.sh start dev` (and the flags below) selects the correct `-f` overlay
 chain. Bare `docker compose up` skips the overlays and can attach to a
 differently-configured stack — symptoms include schema errors, wrong storage, or
@@ -48,7 +48,7 @@ Flags combine where they make sense (e.g. `--gpu-scale --nas`,
 flags because the dev override is **not** auto-loaded once you pass other
 overlays.
 
-:::note PKI in development
+:::note[PKI in development]
 The dev `--with-pki` flow uses `docker-compose.pki-dev.yml`, which only overrides
 `frontend` + `backend` — every other service comes from the dev override, so the
 override **must** be in the chain (`./opentr.sh` handles this). Because the dev
@@ -115,7 +115,7 @@ MinIO — correct, but much slower. This mount is now present on the default GPU
 worker, the scaled GPU worker, and both GPU-split workers across the dev, prod,
 and offline overlays.
 
-:::warning Scratch volume permissions
+:::warning[Scratch volume permissions]
 The `pipeline_scratch` volume is root-owned when first created, but workers run as
 UID 1000. `./opentr.sh` chowns it to `1000:999` (the container `appuser`) on startup; if you create the
 stack by other means, the handoff will fall back to MinIO until the volume is
@@ -229,7 +229,7 @@ The overlay is **auto-loaded** when any of those paths is set (with a banner);
 `--no-nas` suppresses it (use named volumes; live bind data untouched) and
 `--nas` opts in explicitly.
 
-:::info Schema is built by Alembic, not `init_db.sql`
+:::info[Schema is built by Alembic, not `init_db.sql`]
 The NAS overlay **no longer mounts the legacy `database/init_db.sql`**. The schema
 is built by Alembic/Python on backend startup (migrations run automatically), so
 the init script was redundant — and on a large bind mount it slowed the first
@@ -237,7 +237,7 @@ boot enough to trigger the datastore healthcheck race described above.
 `database/init_db.sql` remains in the repo as a legacy reference only.
 :::
 
-:::warning Protect live data
+:::warning[Protect live data]
 Every NAS-overlay start writes a `.opentranscribe-live-data` marker into each
 bind-mounted directory. Run `./opentr.sh data-paths` to see exactly which host
 paths hold live data **before** deleting or cleaning up anything. Use

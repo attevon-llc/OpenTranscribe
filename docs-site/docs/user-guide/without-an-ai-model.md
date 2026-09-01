@@ -55,7 +55,7 @@ See [Search & Filters](./search-and-filters.md). If your deployment has no inter
 pre-fetch the model as described in
 [Offline Installation](../installation/offline-installation.md).
 
-:::tip Search is the honest answer to most "what did we say about X" questions
+:::tip[Search is the honest answer to most "what did we say about X" questions]
 Chat is more convenient, but search over the same index gets you to the same passage, and it
 never invents anything. On a no-LLM deployment it is the primary way through your library, not a
 consolation prize.
@@ -94,7 +94,7 @@ because summaries and chat read the transcripts and the search index that alread
 The reverse is also true: removing the provider stops those features and leaves everything else
 untouched.
 
-:::note Planned: more of this list moves to the "no provider needed" column
+:::note[Planned: more of this list moves to the "no provider needed" column]
 Work under
 [issue&nbsp;#403](https://github.com/attevon-llc/OpenTranscribe/issues/403) adds deterministic
 per-file facts (duration, speaker roster, talk-time), extractive digests, and a composed

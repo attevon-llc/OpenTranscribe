@@ -28,7 +28,7 @@ Three rules follow from that:
    [Fix the finding, never silence it](https://github.com/attevon-llc/OpenTranscribe/blob/master/CLAUDE.md)
    in the repository guide.
 
-:::tip Quick prototypes and spikes are explicitly exempt
+:::tip[Quick prototypes and spikes are explicitly exempt]
 Throwaway code exploring whether an approach works does **not** need a test harness, and imposing
 one is a good way to make exploration expensive. The bar scales with the project: a spike answers
 a question and is deleted or rewritten; production code is depended upon. If it is genuinely

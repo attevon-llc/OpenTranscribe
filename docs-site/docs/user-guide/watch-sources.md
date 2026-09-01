@@ -97,7 +97,7 @@ unavailable.
 
 ## Per-file history: what a source imported, skipped, or failed on
 
-:::note New in v0.6.0
+:::note[New in v0.6.0]
 Previously the source card showed only aggregate counts, so there was no way to see *which*
 file failed or why. Earlier versions of this page described expanding a source for its
 per-file history; that screen did not exist until now.
@@ -125,7 +125,7 @@ fixing the underlying problem alone would never re-import it. Retry is deliberat
 offered on a file that already imported (that would duplicate it), on one currently in flight,
 or on a part already folded into a stitched recording.
 
-:::info Retry queues; it does not import immediately
+:::info[Retry queues; it does not import immediately]
 The row moves to **Pending** and a scan is requested. That scan may wait behind one already
 running, may not reach your file if a lot is queued ahead of it (see **Max imports per scan**),
 and can only re-import a file still present in the source. The list refreshes itself as soon as
@@ -144,7 +144,7 @@ clear noise, not to delete media.
 
 ## Email notifications (experimental)
 
-:::warning Experimental
+:::warning[Experimental]
 Email delivery has not yet been verified against a live provider — test before relying on it.
 :::
 
@@ -164,7 +164,7 @@ Use **Test** on a saved email config to validate the connection.
 
 ### Choosing which sources a config notifies
 
-:::note New in v0.6.0
+:::note[New in v0.6.0]
 Configurations could be created but not attached to a particular source, so "email me only when
 *this* source has a problem" could not be expressed.
 :::
@@ -188,7 +188,7 @@ notified. The count of sources using a configuration is shown next to it before 
 
 ## Admin: global settings
 
-:::note Changed in v0.5.0
+:::note[Changed in v0.5.0]
 The Global Settings panel and the email-notification configs above now require the
 **super_admin** role rather than `admin`. Managing your own watch sources is unaffected.
 :::

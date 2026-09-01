@@ -30,7 +30,7 @@ OpenTranscribe supports a wide range of formats:
 - Recommended: Under 2GB for faster processing
 - Long videos (3+ hours) supported
 
-:::tip Best Results
+:::tip[Best Results]
 For best transcription quality:
 - Use **clear audio** with minimal background noise
 - **Single speaker per channel** if possible
@@ -129,7 +129,7 @@ flowchart LR
 | 1 hour   | ~5 minutes     | ~60 minutes  |
 | 3 hours  | ~15 minutes    | ~3 hours     |
 
-:::info Processing Speed
+:::info[Processing Speed]
 With GPU acceleration and the `large-v3-turbo` model (default), OpenTranscribe processes at **~40x realtime speed** (full pipeline). A 1-hour file transcribes in about 5 minutes!
 :::
 

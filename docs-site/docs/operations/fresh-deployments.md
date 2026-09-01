@@ -13,7 +13,7 @@ that live data. The `--fresh` mode gives you a fully isolated stack that runs in
 its own compose project with its own named volumes, with the NAS/bind overlay
 guaranteed off.
 
-:::warning Protect your live data
+:::warning[Protect your live data]
 Before deleting or "cleaning up" any directory, run `./opentr.sh data-paths` to
 see which paths hold live, bind-mounted data. Those directories carry a
 `.opentranscribe-live-data` marker file when the NAS overlay is active.
@@ -120,7 +120,7 @@ flag is passed:
 | `--with-keycloak-test` | `KEYCLOAK_PORT` | 8180 | Keycloak |
 | `--with-keycloak-test` | `STEP_CA_PORT` | 9000 | Step CA |
 
-:::note `LDAP_TEST_PORT`, not `LDAP_PORT`
+:::note[`LDAP_TEST_PORT`, not `LDAP_PORT`]
 `LDAP_PORT` is the **application's** LDAP client port (`.env` ships
 `LDAP_PORT=636`). Offsetting that would silently repoint the app's LDAP config,
 so the test container's host ports get their own `LDAP_TEST_*` names.
@@ -134,7 +134,7 @@ have to load the same compose chain the deployment was created with, or the
 generated overlay would re-pin a `container_name` for a service compose can no
 longer see.
 
-:::info Why not a generated ports overlay?
+:::info[Why not a generated ports overlay?]
 Fresh mode used to write a second compose file that redeclared each service's
 `ports:` list. Compose **appends** port lists when merging files instead of
 replacing them, so the base mapping stayed published alongside the offset one —
@@ -147,7 +147,7 @@ Before starting, `--port-offset` checks every resolved port and refuses to start
 if something else already holds one, rather than failing halfway through
 `compose up` with a bind error.
 
-:::warning Host-bind overlays are still shared
+:::warning[Host-bind overlays are still shared]
 `--with-watch` and `--with-backup` mount **live host directories**
 (`WATCH_HOST_PATH`, `BACKUP_HOST_PATH`, `BACKUP_MIRROR_HOST_PATH`) into the
 stack. A fresh deployment reads and writes the same folders as the main stack —

@@ -18,7 +18,7 @@ This one is a narrative. It is the page to read before proposing a change to ret
 most of the obvious changes have already been tried, measured, or explicitly ruled out — and
 because several of the numbers that would have justified them turned out to be artefacts.
 
-:::info Status — most of this is designed and measured, not shipped
+:::info[Status — most of this is designed and measured, not shipped]
 Corpus-scale RAG ([issue&nbsp;#403](https://github.com/attevon-llc/OpenTranscribe/issues/403)) is
 an eight-stage programme. What is **live in the product today** is the hybrid retrieval and chat
 pipeline described in [RAG Chat](./rag-chat.md) — everything else on this page is marked.
@@ -61,7 +61,7 @@ similarities are not on a comparable scale, and normalising them requires choosi
 normalisation — min-max over the page, over the corpus, z-scores — each of which is a tuning
 parameter that silently changes results as the corpus grows.
 
-:::note The alternative is being measured, not assumed
+:::note[The alternative is being measured, not assumed]
 Score-based fusion may well beat RRF here. The decision recorded in
 [issue&nbsp;#363](https://github.com/attevon-llc/OpenTranscribe/issues/363) is **to measure it
 before switching**, which is why Stage 5 exists and why it needs a second search-pipeline id
@@ -340,7 +340,7 @@ This one was not only an evaluation problem: the same instability produced SRT/V
 different orders between exports, transcripts reordering between page loads, and the summariser
 seeing a different transcript on each run.
 
-:::danger The rule this leaves behind
+:::danger[The rule this leaves behind]
 **A control with an unmeasured reproducibility band is not a control.** Establish the band before
 trusting any delta against it. Both of the traps that would have manufactured a Stage 3 pass —
 document-id tie-breaking and index instability — were found by asking "what would make this gate

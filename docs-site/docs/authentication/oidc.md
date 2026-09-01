@@ -9,7 +9,7 @@ OpenTranscribe authenticates against **any conforming OpenID Connect provider** 
 Authentik, Authelia, Okta, Entra ID, Auth0, Zitadel, Google — using the authorization-code flow
 with PKCE.
 
-:::info Renamed in v0.5.0
+:::info[Renamed in v0.5.0]
 The whole surface used to be named for one vendor. Configuration keys are now `oidc_*`, the
 admin panel tab is **OIDC**, and the backend routes are `/api/auth/oidc/login` and
 `/api/auth/oidc/callback`.
@@ -56,7 +56,7 @@ here, not an attack.
 **Only the ID token authenticates.** OIDC Core guarantees the ID token is a JWT audienced to
 your client. A missing or invalid ID token is a hard 401.
 
-:::warning Changed in v0.5.0
+:::warning[Changed in v0.5.0]
 Validation used to try the ID token and then **fall back to the access token**, accepting
 whichever verified. That is an attacker-influenceable downgrade onto a credential RFC 9068 §6
 forbids the client from inspecting, whose `aud` means something else entirely, and which is
@@ -111,7 +111,7 @@ instead of logging in".
 
 ## Per-provider settings
 
-:::tip Provider preset
+:::tip[Provider preset]
 A **Provider preset** dropdown at the top of the OIDC settings panel (Keycloak, Authentik,
 Entra ID, Okta, Google Workspace, Generic) fills the roles claim, scopes, and — where
 applicable — discovery URL to the known-good shape for that provider in one step, instead of
@@ -236,7 +236,7 @@ A user who authenticates via OIDC is created on first login (`auth_type='oidc'`,
 An OIDC login only takes over a pre-existing account with the same email address when the
 provider asserts `email_verified: true`, and **never** when that account is a `super_admin`.
 
-:::warning Behaviour change in v0.5.0
+:::warning[Behaviour change in v0.5.0]
 **Authentik hardcodes `email_verified` to `false`; Entra ID omits the claim.** On those
 providers the takeover path is closed. If you need an OIDC identity attached to an existing
 account, link it deliberately — set that account's subject from the admin UI — or change one of

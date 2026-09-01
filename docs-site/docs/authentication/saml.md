@@ -77,7 +77,7 @@ claim, so an email-match account takeover is refused unconditionally here rather
 admin-togglable setting someone could open by mistake. Link a SAML identity to an existing
 account deliberately (set the account's SAML identifier from the admin UI) instead.
 
-:::note Narrower than OIDC's provisioning
+:::note[Narrower than OIDC's provisioning]
 SAML does not (yet) extend the `group_mapping` table that LDAP/OIDC/proxy use (its `source`
 column is CHECK-constrained to a closed set — widening it is a separate, independently
 reviewable schema change), and does not track `(NameID, SessionIndex)` per session — so

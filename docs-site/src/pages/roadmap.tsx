@@ -44,7 +44,11 @@ const STAGE_LABEL: Record<string, string> = {
   now: 'In progress',
   next: 'Up next',
   later: 'Later',
-  done: 'Shipped',
+  // "complete" is every issue closed but no git tag yet — the work is done, the
+  // release is not out. Calling that "Shipped" would announce a release that does
+  // not exist.
+  complete: 'Ready to ship',
+  shipped: 'Shipped',
 };
 
 function issueUrl(n: number): string {
@@ -80,7 +84,7 @@ function Progress({closed, total, done}: {closed: number; total: number; done: b
 }
 
 function ReleaseEntry({release}: {release: Release}) {
-  const done = release.stage === 'done';
+  const done = release.stage === 'shipped' || release.stage === 'complete';
   const now = release.stage === 'now';
   const label = STAGE_LABEL[release.stage] ?? 'Unscheduled';
   const headline = release.headline || 'Not yet scheduled';

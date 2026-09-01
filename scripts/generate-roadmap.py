@@ -55,6 +55,11 @@ EPICS: dict[str, tuple[str, str]] = {
 #: sentence: the prior art (Immich, GitHub's own roadmap) runs 10-15 words per item,
 #: and the long-form rationale belongs in the linked issues, not here.
 RELEASES: dict[str, tuple[str, str]] = {
+    'v0.5.0': (
+        'Deployment and release hardening',
+        'Release tooling, deployment shapes, and the security and correctness work '
+        'that came out of a full rehearsal.',
+    ),
     'v0.6.0': (
         'Answer quality and interface polish',
         'Make what already ships correct — grounded answers, searchable summaries, '
@@ -87,6 +92,23 @@ RELEASE_ORDER = list(RELEASES)
 #: (immich-app/immich discussion #27924): it says what is being worked on without
 #: committing to a date the project cannot honour.
 STAGES = ['now', 'next', 'later']
+
+
+def released_versions() -> set[str]:
+    """Versions with a git tag.
+
+    A milestone whose issues are all closed is COMPLETE, not SHIPPED — this repo
+    currently has `VERSION` at v0.5.0 with no v0.5.0 tag, so inferring "shipped" from
+    issue state alone would publish a release that does not exist. The tag is the only
+    honest signal, so absence of git degrades to "complete", never to "shipped".
+    """
+    try:
+        out = subprocess.run(
+            ['git', 'tag', '--list', 'v*'], capture_output=True, text=True, check=True
+        ).stdout
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return set()
+    return {line.strip() for line in out.splitlines() if line.strip()}
 
 
 def gh_issues() -> list[dict]:
@@ -128,17 +150,45 @@ def _release_sort_key(release: str) -> tuple:
     return (1, release)
 
 
+def _stage(release: str, total: int, closed: int, tagged: set[str], planned: dict) -> str:
+    if release in tagged:
+        return 'shipped'
+    if total and closed == total:
+        return 'complete'
+    return planned.get(release, '')
+
+
 def build_data(issues: list[dict]) -> dict:
     grouped: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
     for issue in issues:
-        milestone = (issue.get('milestone') or {}).get('title') or 'unscheduled'
+        milestone = (issue.get('milestone') or {}).get('title')
+        if milestone is None:
+            # Unscheduled work belongs on the roadmap only while it is still OPEN.
+            # A CLOSED issue with no milestone is finished work that was never
+            # attributed to a release — history, not plan. Including it rendered a
+            # "Backlog — 17 of 18 complete" entry, which is nonsense: a backlog
+            # cannot be complete.
+            if issue['state'] == 'CLOSED':
+                continue
+            milestone = 'unscheduled'
         grouped[milestone][issue['epic']].append(issue)
 
-    scheduled = [r for r in sorted(grouped, key=_release_sort_key) if r in RELEASES]
+    tagged = released_versions()
+
+    # now/next/later is assigned over releases with work REMAINING. Counting a
+    # finished release would push the active one to "next" and leave nothing marked
+    # as in progress.
+    def _remaining(release: str) -> bool:
+        group = grouped[release]
+        issues_in = [i for area in group.values() for i in area]
+        return release not in tagged and any(i['state'] == 'OPEN' for i in issues_in)
+
+    scheduled = [
+        r for r in sorted(grouped, key=_release_sort_key) if r in RELEASES and _remaining(r)
+    ]
     stage_for: dict[str, str] = {}
     for index, release in enumerate(scheduled):
         stage_for[release] = STAGES[index] if index < len(STAGES) else STAGES[-1]
-
     releases = []
     for release in sorted(grouped, key=_release_sort_key):
         headline, summary = RELEASES.get(release, ('', ''))
@@ -173,7 +223,8 @@ def build_data(issues: list[dict]) -> dict:
                 'version': release,
                 'headline': headline,
                 'summary': summary,
-                'stage': 'done' if total and closed_total == total else stage_for.get(release, ''),
+                'stage': _stage(release, total, closed_total, tagged, stage_for),
+                'released': release in tagged,
                 'scheduled': release in RELEASES,
                 'total': total,
                 'closed': closed_total,

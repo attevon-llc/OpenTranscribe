@@ -3,13 +3,46 @@
   "project": "https://github.com/orgs/attevon-llc/projects/1",
   "releases": [
     {
+      "version": "v0.5.0",
+      "headline": "Deployment and release hardening",
+      "summary": "Release tooling, deployment shapes, and the security and correctness work that came out of a full rehearsal.",
+      "stage": "complete",
+      "released": false,
+      "scheduled": true,
+      "total": 2,
+      "closed": 2,
+      "areas": [
+        {
+          "key": "platform-ops",
+          "name": "Platform & Operations",
+          "scope": "Build, deploy, workers, GPU tuning, governance",
+          "known": true,
+          "total": 2,
+          "closed": 2,
+          "issues": [
+            {
+              "number": 431,
+              "title": "Test suite: 81% of wall clock is one serialized worker + 8 lock barriers; 232 security tests never run; 113 modules untested",
+              "done": true
+            },
+            {
+              "number": 445,
+              "title": "Test suite: 41% of backend modules have no test reference; four authz decorators untested",
+              "done": true
+            }
+          ]
+        }
+      ]
+    },
+    {
       "version": "v0.6.0",
       "headline": "Answer quality and interface polish",
       "summary": "Make what already ships correct — grounded answers, searchable summaries, an interface pass, and the fixes that affect running deployments today.",
       "stage": "now",
+      "released": false,
       "scheduled": true,
-      "total": 43,
-      "closed": 14,
+      "total": 44,
+      "closed": 15,
       "areas": [
         {
           "key": "frontend-ui",
@@ -126,8 +159,8 @@
           "name": "RAG & Chat Quality",
           "scope": "Retrieval, grounding, citations, summary search",
           "known": true,
-          "total": 12,
-          "closed": 6,
+          "total": 13,
+          "closed": 7,
           "issues": [
             {
               "number": 362,
@@ -142,6 +175,11 @@
             {
               "number": 403,
               "title": "feat(rag): master orchestrator — ordered end-to-end implementation of corpus-scale RAG, retrieval tuning, and documents (#383 → #363 → #362)",
+              "done": true
+            },
+            {
+              "number": 439,
+              "title": "fix(chat): Gemma reasoning and a raw <channel|> control token leak into the user-visible answer",
               "done": true
             },
             {
@@ -313,6 +351,7 @@
       "headline": "Documents, speakers, and providers",
       "summary": "Widen the library beyond audio, deepen cross-file speaker identity, and add provider breadth.",
       "stage": "next",
+      "released": false,
       "scheduled": true,
       "total": 22,
       "closed": 0,
@@ -534,6 +573,7 @@
       "headline": "Native diarization",
       "summary": "Retire the in-process PyTorch diarizer for the native Rust/ONNX engine, including the voiceprint migration it depends on.",
       "stage": "later",
+      "released": false,
       "scheduled": true,
       "total": 10,
       "closed": 0,
@@ -605,6 +645,7 @@
       "headline": "Meetings and extensibility",
       "summary": "Bring meetings in automatically and open the pipeline to external tooling.",
       "stage": "later",
+      "released": false,
       "scheduled": true,
       "total": 7,
       "closed": 0,
@@ -691,6 +732,7 @@
       "headline": "Platform maturity",
       "summary": "Alternative transcription engines, a desktop application, live transcription, and formal compliance validation.",
       "stage": "later",
+      "released": false,
       "scheduled": true,
       "total": 6,
       "closed": 0,
@@ -762,137 +804,23 @@
       "headline": "",
       "summary": "",
       "stage": "",
+      "released": false,
       "scheduled": false,
-      "total": 18,
-      "closed": 17,
+      "total": 1,
+      "closed": 0,
       "areas": [
-        {
-          "key": "native-diarizer",
-          "name": "Native Diarizer",
-          "scope": "Rust/ONNX diarization; retiring PyTorch/PyAnnote",
-          "known": true,
-          "total": 1,
-          "closed": 1,
-          "issues": [
-            {
-              "number": 571,
-              "title": "task(asr): migrate CPU-lite + speaker-embedding path off PyTorch/PyAnnote onto native diar-native",
-              "done": true
-            }
-          ]
-        },
-        {
-          "key": "rag-quality",
-          "name": "RAG & Chat Quality",
-          "scope": "Retrieval, grounding, citations, summary search",
-          "known": true,
-          "total": 14,
-          "closed": 14,
-          "issues": [
-            {
-              "number": 514,
-              "title": "Live query-trace panel: an animated, Redis-pushed execution tree for search and RAG",
-              "done": true
-            },
-            {
-              "number": 515,
-              "title": "Umbrella: RAG/chat/search/document-ingest completion — status, plan corrections, and open decisions",
-              "done": true
-            },
-            {
-              "number": 517,
-              "title": "eval: scope coverage — the metric no framework measures, and the bug it hides",
-              "done": true
-            },
-            {
-              "number": 518,
-              "title": "eval: calibrate the LLM judge with Cohen's Kappa before tuning anything on it",
-              "done": true
-            },
-            {
-              "number": 519,
-              "title": "eval: acceptance suite for the four real query shapes, over AMI ground truth",
-              "done": true
-            },
-            {
-              "number": 521,
-              "title": "eval: add ELITR-Bench (CC-BY-4.0) — first benchmark that tests speaker attribution directly",
-              "done": true
-            },
-            {
-              "number": 524,
-              "title": "RAG: the speaker axis silently disables itself at corpus scale (roster cap declines wholesale)",
-              "done": true
-            },
-            {
-              "number": 525,
-              "title": "RAG: widening the candidate pool changes nothing — ranking keeps selecting content-free fragments",
-              "done": true
-            },
-            {
-              "number": 530,
-              "title": "RAG: calibrate the answer judge with Cohen's Kappa (gates every quality claim)",
-              "done": true
-            },
-            {
-              "number": 531,
-              "title": "RAG: shipped 48/12/4 retrieval budget starves the chat — 2x recall available",
-              "done": true
-            },
-            {
-              "number": 533,
-              "title": "LLM settings: discover a model's context window instead of defaulting to 8192",
-              "done": true
-            },
-            {
-              "number": 534,
-              "title": "RAG: validate the budget finding on a second corpus (ELITR-Bench) before changing defaults",
-              "done": true
-            },
-            {
-              "number": 535,
-              "title": "RAG: standing acceptance suite over the four query shapes",
-              "done": true
-            },
-            {
-              "number": 536,
-              "title": "chat: base rules leak prompt-internal block vocabulary into answers when the block is absent",
-              "done": true
-            }
-          ]
-        },
         {
           "key": "compliance",
           "name": "Security & Compliance",
           "scope": "Hardening, data protection, certification",
           "known": true,
-          "total": 2,
-          "closed": 1,
+          "total": 1,
+          "closed": 0,
           "issues": [
             {
               "number": 415,
               "title": "security(dependencies): accepted risk — 16 CRITICAL perl CVEs via libimage-exiftool-perl, re-check when Debian ships fixes",
               "done": false
-            },
-            {
-              "number": 575,
-              "title": "docs(compliance): password policy (forced expiry + composition rules) contradicts current NIST SP 800-63B Rev. 4, not FedRAMP IA-5 best practice",
-              "done": true
-            }
-          ]
-        },
-        {
-          "key": "speaker-persona",
-          "name": "Speaker Intelligence",
-          "scope": "Voiceprints, personas, cross-file identity",
-          "known": true,
-          "total": 1,
-          "closed": 1,
-          "issues": [
-            {
-              "number": 512,
-              "title": "feat(speakers): cross-file speaker clustering — ANN index over speaker embeddings + batch re-resolution",
-              "done": true
             }
           ]
         }

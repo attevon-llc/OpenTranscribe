@@ -1,5 +1,14 @@
 # app/transcription — ASR + diarization engine
 
+> ⚠️ **STALE — do not trust the diarization sections below.** This file predates the native
+> Rust/ONNX `diar-native` sidecar becoming the coded default (`ffd49433` / `a15e94c2`). It has
+> **zero** mentions of it, still calls PyAnnote "the engine", claims "PyAnnote MPS via our fork is
+> solid" for macOS (MPS is unreachable inside Docker on every platform), and its diarization VRAM
+> figures are wrong by ~4× — the sidecar's warm floor is 4 136 MiB, not ~1 GB, and it does not
+> shrink. The Whisper/transcription sections are unaffected. Rewrite tracked in **#671**; current
+> architecture and the removal roadmap in
+> [this gist](https://gist.github.com/attevon-admin/a99819c7ec5e8ab8df0eb8e3e8e668e8) and **#572**.
+
 ## Purpose
 
 WhisperX transcription and PyAnnote speaker diarization, plus the hardware-adaptive config

@@ -1,5 +1,13 @@
 # backend/app/services/diarization — pluggable diarization providers
 
+> ⚠️ **Several line references below are stale — verify before following one.** Measured
+> 2026-09-01: `VALID_DIARIZATION_SOURCES` is at `core/constants.py:648`, not `:508`; the factory's
+> only production caller is `tasks/transcription/cloud_asr.py:83-89` guarded at `:265`, not
+> `tasks/transcription/core.py:1804` (that file is 353 lines). `local_provider.py` is described as
+> delegating to PyAnnote — `ModelManager` is **native-first with PyAnnote as fallback**. Correction
+> tracked in **#671**; the wider diarization roadmap in **#572** and
+> [this gist](https://gist.github.com/attevon-admin/a99819c7ec5e8ab8df0eb8e3e8e668e8).
+
 ## Purpose
 
 Speaker segmentation decoupled from ASR. Same skeleton as `../asr/` (`base.py` + `types.py` +

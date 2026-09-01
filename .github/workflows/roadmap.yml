@@ -1,0 +1,59 @@
+name: Roadmap
+
+# The published roadmap is DERIVED from the issue tracker (epic:* labels, milestones,
+# open/closed state). Regenerating by hand means it is stale the first time an issue
+# moves, so this workflow does it — a single-maintainer project should never have to
+# remember a docs step after re-milestoning an issue.
+#
+# It deliberately reads ISSUES, not the org Project board: `gh issue list` works with
+# the built-in GITHUB_TOKEN, whereas Projects v2 needs a PAT with `project` scope.
+# Same data, no secret to rotate.
+#
+# The docs Docker image has no network and no `gh`, so generation must not happen at
+# image-build time. This commits the file; the image just builds what is committed.
+
+on:
+  issues:
+    types: [closed, reopened, milestoned, demilestoned, labeled, unlabeled, deleted]
+  workflow_dispatch:
+  schedule:
+    # Catches anything the issue events miss (bulk edits via the API do not always
+    # emit one event per issue) without waiting for the next manual run.
+    - cron: '17 6 * * *'
+
+concurrency:
+  # Bulk re-labelling fires one event per issue. Without this they race and half of
+  # them fail to push.
+  group: roadmap
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: read
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Regenerate docs-site/docs/roadmap.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/generate-roadmap.py
+
+      - name: Commit if the roadmap changed
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- docs-site/docs/roadmap.md; then
+            echo "Roadmap unchanged — nothing to commit."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs-site/docs/roadmap.md
+          git commit -m "docs(roadmap): regenerate from issue milestones and epic labels"
+          # A concurrent run (or a human push) may have landed first; rebase rather
+          # than fail the job over a race this workflow deliberately allows.
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
-"""Generate docs-site/docs/roadmap.md from GitHub issues.
+"""Generate docs-site/src/data/roadmap.json from GitHub issues.
 
 The roadmap is DERIVED from the issue tracker, never hand-maintained: epic labels
-supply the grouping, milestones supply the version, and issue state supplies the
+supply the grouping, milestones supply the release, and issue state supplies the
 progress. A hand-written roadmap goes stale the first time an issue moves, and this
 repo has already been bitten by hand-maintained tables of version facts.
+
+This emits DATA, not markup. `docs-site/src/pages/roadmap.tsx` renders it, so the
+presentation can change without touching the generator and vice versa. An earlier
+version emitted a large Markdown page with a Mermaid diagram; it was accurate but
+unreadable — a wall of tables and a diagram five screens tall.
 
 Run after any milestone or epic-label change:
 
     python3 scripts/generate-roadmap.py
-    cd docs-site && npm run build     # verify the Mermaid renders
+    cd docs-site && npm run build
 
-Requires an authenticated `gh`. Exits 2 if the tracker and the checked-in page have
-drifted (``--check``), which is what a CI job would call.
+Requires an authenticated `gh`. Exits 2 under ``--check`` if the tracker and the
+checked-in data have drifted, which is what the CI job calls.
 """
 
 from __future__ import annotations
@@ -22,76 +27,71 @@ import json
 import subprocess
 import sys
 from collections import defaultdict
-from datetime import UTC, datetime
 from pathlib import Path
 
 REPO = 'attevon-llc/OpenTranscribe'
-PROJECT_URL = 'https://github.com/orgs/attevon-llc/projects/1'
-OUT = Path(__file__).resolve().parent.parent / 'docs-site' / 'docs' / 'roadmap.md'
+OUT = Path(__file__).resolve().parent.parent / 'docs-site' / 'src' / 'data' / 'roadmap.json'
 
-#: Epic label suffix -> (display name, one-line scope description).
-#: A label missing here is reported rather than silently dropped: an unlabelled
-#: epic on the roadmap is indistinguishable from one nobody is working on.
+#: Epic label suffix -> (display name, one-line scope).
+#: A label missing here is surfaced in the output rather than silently dropped: an
+#: unlabelled epic on the roadmap is indistinguishable from one nobody is working on.
 EPICS: dict[str, tuple[str, str]] = {
     'rag-quality': ('RAG & Chat Quality', 'Retrieval, grounding, citations, summary search'),
-    'frontend-ui': ('Frontend & UI', 'SPA surfaces, admin screens, and UI defect fixes'),
-    'search-infra': ('Search Infrastructure', 'OpenSearch indexing, reindex correctness, drift'),
-    'compliance': ('Security & Compliance', 'Hardening, data protection, certification work'),
+    'frontend-ui': ('Frontend & UI', 'App surfaces, admin screens, and interface defects'),
+    'search-infra': ('Search Infrastructure', 'Indexing, reindex correctness, index drift'),
+    'compliance': ('Security & Compliance', 'Hardening, data protection, certification'),
     'platform-ops': ('Platform & Operations', 'Build, deploy, workers, GPU tuning, governance'),
-    'document-ingestion': (
-        'Document Ingestion',
-        'Non-audio documents as first-class library items',
-    ),
-    'speaker-persona': (
-        'Speaker Intelligence',
-        'Voiceprint matching, personas, cross-file identity',
-    ),
-    'llm-providers': ('LLM Providers', 'Provider integrations and provider-config UX'),
+    'document-ingestion': ('Document Ingestion', 'Documents as first-class library items'),
+    'speaker-persona': ('Speaker Intelligence', 'Voiceprints, personas, cross-file identity'),
+    'llm-providers': ('LLM Providers', 'Provider integrations and configuration'),
     'native-diarizer': ('Native Diarizer', 'Rust/ONNX diarization; retiring PyTorch/PyAnnote'),
-    'meeting-capture': ('Meeting Capture', 'Recall.ai ingestion, calendar, pre-meeting briefs'),
+    'meeting-capture': ('Meeting Capture', 'Meeting ingestion, calendar, pre-meeting briefs'),
     'public-demo': ('Public Demo', 'Read-only hosted demo deployment'),
     'asr-engines': ('ASR Engines', 'Alternative and native transcription engines'),
     'desktop': ('Desktop App', 'Standalone cross-platform application'),
 }
 
-#: Version -> (headline theme, prose). Versions absent from the tracker are skipped.
-THEMES: dict[str, tuple[str, str]] = {
+#: Release -> (headline, one-sentence summary). Keep the summary to a single
+#: sentence: the prior art (Immich, GitHub's own roadmap) runs 10-15 words per item,
+#: and the long-form rationale belongs in the linked issues, not here.
+RELEASES: dict[str, tuple[str, str]] = {
     'v0.6.0': (
         'Answer quality and interface polish',
-        'Makes what already ships correct: RAG answers that cite what they used, '
-        'searchable summaries, an interface pass, and the security and data-integrity '
-        'fixes that affect running deployments today.',
+        'Make what already ships correct — grounded answers, searchable summaries, '
+        'an interface pass, and the fixes that affect running deployments today.',
     ),
     'v0.7.0': (
-        'Documents, speakers, and provider breadth',
-        'Widens the library beyond audio, deepens cross-file speaker identity, and '
-        'adds the LLM providers and pipeline efficiency work that the quality release '
-        'depends on but does not block.',
+        'Documents, speakers, and providers',
+        'Widen the library beyond audio, deepen cross-file speaker identity, and add '
+        'provider breadth.',
     ),
     'v0.8.0': (
         'Native diarization',
-        'Retires the in-process PyTorch/PyAnnote diarizer in favour of the native '
-        'Rust/ONNX engine, including the voiceprint migration and the deployment and '
-        'test coverage that has to exist first.',
+        'Retire the in-process PyTorch diarizer for the native Rust/ONNX engine, '
+        'including the voiceprint migration it depends on.',
     ),
     'v0.9.0': (
         'Meetings and extensibility',
-        'Brings meetings in automatically — calendar-aware capture and briefs — and '
-        'opens the pipeline to external tooling.',
+        'Bring meetings in automatically and open the pipeline to external tooling.',
     ),
     'v1.0.0': (
         'Platform maturity',
-        'Alternative ASR engines, a standalone desktop application, live transcription, '
+        'Alternative transcription engines, a desktop application, live transcription, '
         'and formal compliance validation.',
     ),
 }
 
-VERSION_ORDER = list(THEMES)
+RELEASE_ORDER = list(RELEASES)
+
+#: now/next/later rather than dates. Immich's own community asked for exactly this
+#: (immich-app/immich discussion #27924): it says what is being worked on without
+#: committing to a date the project cannot honour.
+STAGES = ['now', 'next', 'later']
 
 
 def gh_issues() -> list[dict]:
-    """All issues (any state) carrying an ``epic:`` label."""
-    out = subprocess.run(
+    """Every issue carrying an ``epic:`` label, open or closed."""
+    raw = subprocess.run(
         [
             'gh',
             'issue',
@@ -110,7 +110,7 @@ def gh_issues() -> list[dict]:
         check=True,
     ).stdout
     issues = []
-    for issue in json.loads(out):
+    for issue in json.loads(raw):
         epics = [
             label['name'].removeprefix('epic:')
             for label in issue['labels']
@@ -122,172 +122,71 @@ def gh_issues() -> list[dict]:
     return issues
 
 
-def _version_sort_key(version: str) -> tuple:
-    if version in VERSION_ORDER:
-        return (0, VERSION_ORDER.index(version))
-    return (1, version)
+def _release_sort_key(release: str) -> tuple:
+    if release in RELEASE_ORDER:
+        return (0, RELEASE_ORDER.index(release))
+    return (1, release)
 
 
-def _node_id(version: str, epic: str) -> str:
-    return f'{version.replace(".", "")}_{epic.replace("-", "")}'
-
-
-def build_mermaid(grouped: dict[str, dict[str, list[dict]]]) -> str:
-    """One node per release, listing its epics and their progress.
-
-    Two shapes were tried and rejected. One node per *issue* is a wall at ~75 issues.
-    One node per *epic* inside a per-version ``subgraph`` renders as a single tall
-    column, because Mermaid ignores ``direction LR`` nested inside a ``graph TD``
-    subgraph — verified in the built page, not assumed. Folding the epic list into
-    the release node keeps the diagram five boxes tall no matter how many epics or
-    issues exist, and the tables below carry the per-issue detail.
-    """
-    lines = [
-        '```mermaid',
-        'graph TD',
-        '  classDef done fill:#1a7f37,stroke:#116329,color:#ffffff,text-align:left;',
-        '  classDef active fill:#0969da,stroke:#0550ae,color:#ffffff,text-align:left;',
-        '  classDef planned fill:#f6f8fa,stroke:#8c959f,color:#1f2328,text-align:left;',
-    ]
-    versions = [v for v in sorted(grouped, key=_version_sort_key) if v != '(unscheduled)']
-    for version in versions:
-        theme = THEMES.get(version, ('', ''))[0]
-        rows = []
-        total = closed_total = 0
-        for epic in sorted(grouped[version], key=lambda e: EPICS.get(e, (e,))[0]):
-            issues = grouped[version][epic]
-            closed = sum(1 for i in issues if i['state'] == 'CLOSED')
-            total += len(issues)
-            closed_total += closed
-            name = EPICS.get(epic, (epic, ''))[0]
-            rows.append(f'{name} · {closed}/{len(issues)}')
-        cls = 'done' if closed_total == total else ('active' if closed_total else 'planned')
-        head = f'<b>{version}</b> — {theme}' if theme else f'<b>{version}</b>'
-        body = '<br/>'.join(rows)
-        lines.append(
-            f'  {version.replace(".", "_")}["{head}<br/><i>{closed_total}/{total} issues '
-            f'complete</i><br/><br/>{body}"]:::{cls}'
-        )
-    for earlier, later in zip(versions, versions[1:], strict=False):
-        lines.append(f'  {earlier.replace(".", "_")} --> {later.replace(".", "_")}')
-    lines.append('```')
-    return '\n'.join(lines)
-
-
-def build_page(issues: list[dict]) -> str:
+def build_data(issues: list[dict]) -> dict:
     grouped: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
     for issue in issues:
-        milestone = (issue.get('milestone') or {}).get('title') or '(unscheduled)'
+        milestone = (issue.get('milestone') or {}).get('title') or 'unscheduled'
         grouped[milestone][issue['epic']].append(issue)
 
-    unknown = sorted({i['epic'] for i in issues} - set(EPICS))
-    generated = datetime.now(UTC).strftime('%Y-%m-%d')
+    scheduled = [r for r in sorted(grouped, key=_release_sort_key) if r in RELEASES]
+    stage_for: dict[str, str] = {}
+    for index, release in enumerate(scheduled):
+        stage_for[release] = STAGES[index] if index < len(STAGES) else STAGES[-1]
 
-    parts = [
-        '---',
-        'id: roadmap',
-        'title: Roadmap',
-        'sidebar_label: Roadmap',
-        'description: Planned OpenTranscribe releases, the themes behind them, and live progress.',
-        # Without this the right-hand TOC lists all ~30 epic headings and becomes a
-        # second, noisier copy of the page.
-        'toc_max_heading_level: 2',
-        '---',
-        '',
-        '# Roadmap',
-        '',
-        'Every item below is a real GitHub issue. **This page is generated from the issue '
-        'tracker** — it cannot describe work that is not tracked, and it cannot go stale '
-        'while an issue moves.',
-        '',
-        f'- **Source of truth:** the [project board]({PROJECT_URL}) and the issues it contains',
-        '- **Grouping:** each issue carries exactly one `epic:*` label',
-        "- **Version:** the issue's GitHub milestone",
-        '- **Progress:** open vs. closed issue counts, not estimates',
-        '',
-        # Docusaurus v3 takes the admonition title in BRACKETS. The v2 space-separated
-        # form (`:::note Title`) renders as literal text — verified in the built page.
-        ':::note[Dates are sequence, not commitment]',
-        '',
-        'Versions are ordered by dependency. A later version is not scheduled for a date — '
-        'it is blocked on the one before it. Scope moves between versions as work is '
-        'understood; that is expected, not drift.',
-        '',
-        ':::',
-        '',
-        '## Release flow',
-        '',
-        build_mermaid(grouped),
-        '',
-    ]
-
-    for version in sorted(grouped, key=_version_sort_key):
-        theme, prose = THEMES.get(version, ('', ''))
-        epics = grouped[version]
-        all_issues = [i for group in epics.values() for i in group]
-        closed = sum(1 for i in all_issues if i['state'] == 'CLOSED')
-
-        heading = f'## {version}' + (f' — {theme}' if theme else '')
-        parts += [heading, '']
-        if prose:
-            parts += [prose, '']
-        parts += [f'**{closed} of {len(all_issues)} issues complete.**', '']
-
-        for epic in sorted(epics, key=lambda e: EPICS.get(e, (e,))[0]):
+    releases = []
+    for release in sorted(grouped, key=_release_sort_key):
+        headline, summary = RELEASES.get(release, ('', ''))
+        areas = []
+        total = closed_total = 0
+        for epic in sorted(grouped[release], key=lambda e: EPICS.get(e, (e,))[0]):
+            group = sorted(grouped[release][epic], key=lambda i: i['number'])
+            closed = sum(1 for i in group if i['state'] == 'CLOSED')
+            total += len(group)
+            closed_total += closed
             name, scope = EPICS.get(epic, (epic, ''))
-            group = sorted(epics[epic], key=lambda i: i['number'])
-            done = sum(1 for i in group if i['state'] == 'CLOSED')
-            parts += [f'### {name} · {done}/{len(group)}', '']
-            if scope:
-                parts += [f'_{scope}_', '']
-            parts += ['| | Issue |', '|---|---|']
-            for issue in group:
-                mark = '✅' if issue['state'] == 'CLOSED' else '◻️'
-                title = issue['title'].replace('|', '\\|')
-                parts.append(
-                    f'| {mark} | [#{issue["number"]}]'
-                    f'(https://github.com/{REPO}/issues/{issue["number"]}) {title} |'
-                )
-            parts += [
-                '',
-                f'Browse: [`epic:{epic}`](https://github.com/{REPO}/labels/epic%3A{epic})',
-                '',
-            ]
+            areas.append(
+                {
+                    'key': epic,
+                    'name': name,
+                    'scope': scope,
+                    'known': epic in EPICS,
+                    'total': len(group),
+                    'closed': closed,
+                    'issues': [
+                        {
+                            'number': i['number'],
+                            'title': i['title'],
+                            'done': i['state'] == 'CLOSED',
+                        }
+                        for i in group
+                    ],
+                }
+            )
+        releases.append(
+            {
+                'version': release,
+                'headline': headline,
+                'summary': summary,
+                'stage': 'done' if total and closed_total == total else stage_for.get(release, ''),
+                'scheduled': release in RELEASES,
+                'total': total,
+                'closed': closed_total,
+                'areas': areas,
+            }
+        )
 
-    parts += [
-        '## How this page is maintained',
-        '',
-        'Regenerate after any milestone or epic-label change:',
-        '',
-        '```bash',
-        'python3 scripts/generate-roadmap.py',
-        '```',
-        '',
-        '`--check` exits non-zero when the tracker and this page disagree, so a CI job can '
-        'fail on drift rather than letting the published roadmap quietly diverge from the '
-        'board.',
-        '',
-        'To move an item, change its **milestone** (version) or its **`epic:*` label** '
-        '(grouping) on the issue and regenerate. Editing this file by hand is pointless — '
-        'the next run overwrites it.',
-        '',
-    ]
-
-    if unknown:
-        parts += [
-            ':::warning Unmapped epics',
-            'These epic labels have no entry in `EPICS` in `scripts/generate-roadmap.py`, so '
-            'they render with a raw label name and no scope description: '
-            + ', '.join(f'`epic:{e}`' for e in unknown)
-            + '.',
-            ':::',
-            '',
-        ]
-
-    # MDX v3 rejects HTML comments (`<!-- -->`) outright — the marker has to be a JSX
-    # expression comment or the docs build fails on this line.
-    parts.append(f'{{/* Generated {generated} by scripts/generate-roadmap.py. Do not edit. */}}')
-    return '\n'.join(parts) + '\n'
+    return {
+        'repo': REPO,
+        'project': 'https://github.com/orgs/attevon-llc/projects/1',
+        'releases': releases,
+        'unmappedEpics': sorted({i['epic'] for i in issues} - set(EPICS)),
+    }
 
 
 def main() -> int:
@@ -295,22 +194,16 @@ def main() -> int:
     parser.add_argument(
         '--check',
         action='store_true',
-        help='exit 2 if the generated page differs from what is checked in',
+        help='exit 2 if the generated data differs from what is checked in',
     )
     args = parser.parse_args()
 
-    page = build_page(gh_issues())
+    data = build_data(gh_issues())
+    rendered = json.dumps(data, indent=2, ensure_ascii=False) + '\n'
 
     if args.check:
         current = OUT.read_text() if OUT.exists() else ''
-
-        # The trailing generated-on stamp changes every run; compare the body only.
-        def strip(text: str) -> str:
-            return '\n'.join(
-                line for line in text.splitlines() if not line.startswith('{/* Generated ')
-            )
-
-        if strip(current) != strip(page):
+        if current != rendered:
             print(
                 f'{OUT} is out of date — run: python3 scripts/generate-roadmap.py', file=sys.stderr
             )
@@ -318,8 +211,12 @@ def main() -> int:
         print(f'{OUT} is up to date')
         return 0
 
-    OUT.write_text(page)
-    print(f'wrote {OUT} ({len(page.splitlines())} lines)')
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(rendered)
+    counts = ', '.join(f'{r["version"]} {r["closed"]}/{r["total"]}' for r in data['releases'])
+    print(f'wrote {OUT}\n  {counts}')
+    if data['unmappedEpics']:
+        print(f'  WARNING unmapped epic labels: {", ".join(data["unmappedEpics"])}')
     return 0
 
 

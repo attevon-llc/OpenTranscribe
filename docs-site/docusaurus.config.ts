@@ -140,6 +140,7 @@ const config: Config = {
         //   position: 'left',
         //   label: 'API Reference',
         // },
+        {to: '/roadmap', label: 'Roadmap', position: 'left'},
         {to: '/blog', label: 'Blog', position: 'left'},
         {
           href: githubRepo,

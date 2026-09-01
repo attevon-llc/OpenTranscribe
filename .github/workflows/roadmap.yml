@@ -10,7 +10,8 @@ name: Roadmap
 # Same data, no secret to rotate.
 #
 # The docs Docker image has no network and no `gh`, so generation must not happen at
-# image-build time. This commits the file; the image just builds what is committed.
+# image-build time. This commits the data file; `src/pages/roadmap.tsx` renders it at
+# build time from whatever is committed.
 
 on:
   issues:
@@ -37,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Regenerate docs-site/docs/roadmap.md
+      - name: Regenerate docs-site/src/data/roadmap.json
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/generate-roadmap.py
@@ -45,13 +46,13 @@ jobs:
       - name: Commit if the roadmap changed
         run: |
           set -euo pipefail
-          if git diff --quiet -- docs-site/docs/roadmap.md; then
+          if git diff --quiet -- docs-site/src/data/roadmap.json; then
             echo "Roadmap unchanged — nothing to commit."
             exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs-site/docs/roadmap.md
+          git add docs-site/src/data/roadmap.json
           git commit -m "docs(roadmap): regenerate from issue milestones and epic labels"
           # A concurrent run (or a human push) may have landed first; rebase rather
           # than fail the job over a race this workflow deliberately allows.

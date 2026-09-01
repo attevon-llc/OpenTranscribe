@@ -17,7 +17,7 @@ FROM denoland/deno:bin AS deno-bin
 # restarts, and gpu-scale runs N workers per container which makes a per-worker sidecar
 # ambiguous). Only ~419 MB of the standalone 3.46 GB image is actually needed: the
 # binary, three ORT libs (see the exclusion note below), and libopenblas0.
-FROM davidamacey/diar-native@sha256:544a6a6536464729834dd1b51dc6d76b538776da23a22682501f220cf2ff999c AS diar-native-bin
+FROM davidamacey/diar-native@sha256:9405c4aeee807d1b43f80ff73400336bb2525e2bb35dc07cc7086599b1e22874 AS diar-native-bin
 
 # -----------------------------------------------------------------------------
 # Stage 1: Build Stage - Install Python dependencies with compilation

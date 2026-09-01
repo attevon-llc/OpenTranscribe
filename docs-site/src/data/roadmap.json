@@ -9,25 +9,1205 @@
       "stage": "complete",
       "released": false,
       "scheduled": true,
-      "total": 2,
-      "closed": 2,
+      "total": 220,
+      "closed": 220,
       "areas": [
+        {
+          "key": "asr-engines",
+          "name": "ASR Engines",
+          "scope": "Alternative and native transcription engines",
+          "known": true,
+          "total": 4,
+          "closed": 4,
+          "issues": [
+            {
+              "number": 455,
+              "title": "fix(transcription): storage.py overwrites MediaFile.duration with 0.0, and speaker sets are non-deterministic",
+              "done": true
+            },
+            {
+              "number": 456,
+              "title": "fix(transcription): garbage-word cleanup edits text but not words, and rewrites whitespace on every segment",
+              "done": true
+            },
+            {
+              "number": 470,
+              "title": "ASR providers: real defects found writing #445 test coverage (punctuation loss, retry never fires, timeout bool discarded, wrong response_format)",
+              "done": true
+            },
+            {
+              "number": 584,
+              "title": "Lite mode: cloud-ASR speaker embeddings silently never complete (GPU-only queue, no lite worker)",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "document-ingestion",
+          "name": "Document Ingestion",
+          "scope": "Documents as first-class library items",
+          "known": true,
+          "total": 1,
+          "closed": 1,
+          "issues": [
+            {
+              "number": 362,
+              "title": "feat: Document ingestion & knowledge base — parse, index, and chat over documents alongside transcripts",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "frontend-ui",
+          "name": "Frontend & UI",
+          "scope": "App surfaces, admin screens, and interface defects",
+          "known": true,
+          "total": 20,
+          "closed": 20,
+          "issues": [
+            {
+              "number": 174,
+              "title": "Refactor: Split oversized frontend components (FileDetail, SettingsModal, TranscriptDisplay, Speakers)",
+              "done": true
+            },
+            {
+              "number": 298,
+              "title": "bug(upload): single-file limit is 15 GB but multi-file drop rejects at 2 GB",
+              "done": true
+            },
+            {
+              "number": 301,
+              "title": "bug(frontend): MediaFile status union is missing queued, downloading, and quarantined",
+              "done": true
+            },
+            {
+              "number": 302,
+              "title": "bug(frontend): audioExtractionService hashes on the main thread — tab freeze / OOM on large video",
+              "done": true
+            },
+            {
+              "number": 326,
+              "title": "i18n: ~65 remaining bypasses in the service/store layer + tag-shape contract disagreement",
+              "done": true
+            },
+            {
+              "number": 327,
+              "title": "upload: no browser-side presigned multipart or resume for multi-GB files (A2.9 remainder)",
+              "done": true
+            },
+            {
+              "number": 335,
+              "title": "bug(file-detail): tag changes never propagate — TagsSection says \"re-emit to parent\" but never dispatches",
+              "done": true
+            },
+            {
+              "number": 338,
+              "title": "cleanup: `reactiveFile` is a write-only store — 13 writes, zero readers",
+              "done": true
+            },
+            {
+              "number": 342,
+              "title": "bug(upload): client-side SHA-256 silently skips duplicate detection above ~4 GB",
+              "done": true
+            },
+            {
+              "number": 352,
+              "title": "bug(file-detail): renaming a speaker does not update the transcript until a full page reload",
+              "done": true
+            },
+            {
+              "number": 376,
+              "title": "Frontend dead-code cleanup: knip audit findings",
+              "done": true
+            },
+            {
+              "number": 452,
+              "title": "Responsive: nav overflows at 1280px and clips the user menu; 1280 is an untested breakpoint",
+              "done": true
+            },
+            {
+              "number": 475,
+              "title": "Test suite: frontend statement coverage is 14.27%; core service/store/api logic largely untested",
+              "done": true
+            },
+            {
+              "number": 489,
+              "title": "Watch sources: per-file management UI is entirely unbuilt despite full backend/API support",
+              "done": true
+            },
+            {
+              "number": 490,
+              "title": "Watch sources: per-source email-notification linking UI is entirely unbuilt despite full backend/API support",
+              "done": true
+            },
+            {
+              "number": 527,
+              "title": "Gallery: virtualized rendering and real thumbnails",
+              "done": true
+            },
+            {
+              "number": 578,
+              "title": "task(backend): confirm whether speaker rename/verify still live-updates other connected clients via WebSocket",
+              "done": true
+            },
+            {
+              "number": 583,
+              "title": "ShareCollectionModal hardcodes canManage=true regardless of collection ownership",
+              "done": true
+            },
+            {
+              "number": 585,
+              "title": "fix(frontend): file detail page canEdit fails open on missing/null my_permission",
+              "done": true
+            },
+            {
+              "number": 645,
+              "title": "Waveform seek can stall ~10-30s on a fresh page load before media metadata is ready",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "llm-providers",
+          "name": "LLM Providers",
+          "scope": "Provider integrations and configuration",
+          "known": true,
+          "total": 1,
+          "closed": 1,
+          "issues": [
+            {
+              "number": 596,
+              "title": "fix(llm-provider): Bedrock LLM provider is implemented but unreachable — no schema/UI wiring",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "native-diarizer",
+          "name": "Native Diarizer",
+          "scope": "Rust/ONNX diarization; retiring PyTorch/PyAnnote",
+          "known": true,
+          "total": 8,
+          "closed": 8,
+          "issues": [
+            {
+              "number": 193,
+              "title": "[FEATURE] Improve diarization at boundaries",
+              "done": true
+            },
+            {
+              "number": 299,
+              "title": "bug(diarization): _normalize_speaker_label raises TypeError on every call (object.__new__ on an abstract class)",
+              "done": true
+            },
+            {
+              "number": 482,
+              "title": "speaker_processor.mark_overlapping_segments loses overlap data when a segment spans two overlap regions",
+              "done": true
+            },
+            {
+              "number": 483,
+              "title": "Duplicate normalize_speaker_label implementation in speaker_processor.py diverges from the canonical version",
+              "done": true
+            },
+            {
+              "number": 520,
+              "title": "diarization follow-ups that need a GPU window: speakrs boundary fixture twin + sidecar EP smoke test",
+              "done": true
+            },
+            {
+              "number": 571,
+              "title": "task(asr): migrate CPU-lite + speaker-embedding path off PyTorch/PyAnnote onto native diar-native",
+              "done": true
+            },
+            {
+              "number": 579,
+              "title": "diar-native: WAV write failure hard-fails the pipeline instead of degrading to PyAnnote fallback",
+              "done": true
+            },
+            {
+              "number": 621,
+              "title": "fix(frontend): local diarization settings/About/reprocess text still credit PyAnnote as primary, not diar-native",
+              "done": true
+            }
+          ]
+        },
         {
           "key": "platform-ops",
           "name": "Platform & Operations",
           "scope": "Build, deploy, workers, GPU tuning, governance",
           "known": true,
-          "total": 2,
-          "closed": 2,
+          "total": 95,
+          "closed": 95,
           "issues": [
+            {
+              "number": 21,
+              "title": "[ENHANCEMENT] Implement Comprehensive Testing and Enable CI/CD Pipeline",
+              "done": true
+            },
+            {
+              "number": 26,
+              "title": "[FEATURE] Automatic Bucket Processing with User Access Controls",
+              "done": true
+            },
+            {
+              "number": 123,
+              "title": "E2E Test Expansion: Gallery, Upload, Settings, Transcription, Search & CI/CD",
+              "done": true
+            },
+            {
+              "number": 189,
+              "title": "[BUG] Quick Installation documenation incorrect",
+              "done": true
+            },
+            {
+              "number": 190,
+              "title": "[FEATURE] auto-ingest a file share or support api uploads",
+              "done": true
+            },
+            {
+              "number": 234,
+              "title": "Testing follow-ups: coverage ratchet, responsive E2E, deferred dep majors",
+              "done": true
+            },
+            {
+              "number": 241,
+              "title": "Modernize UUID columns: native pg uuid type + generation strategy review",
+              "done": true
+            },
+            {
+              "number": 242,
+              "title": "Backup extension: MinIO media mirror (OpenSearch snapshots DONE in #239)",
+              "done": true
+            },
+            {
+              "number": 243,
+              "title": "Back up encryption keys / .env alongside the database (or backups are unrecoverable)",
+              "done": true
+            },
+            {
+              "number": 244,
+              "title": "Surface scheduled-backup failures (Prometheus metric + notification)",
+              "done": true
+            },
+            {
+              "number": 245,
+              "title": "Operational: re-ingest the media corpus in place after #239 merges (GPU 1)",
+              "done": true
+            },
+            {
+              "number": 272,
+              "title": "Latent always-False FileStatus string comparisons (found by the py312 codemod audit)",
+              "done": true
+            },
+            {
+              "number": 293,
+              "title": "bug(watch-sources): SMB download size-mismatch check is unreachable — truncated downloads import silently",
+              "done": true
+            },
+            {
+              "number": 294,
+              "title": "bug(watch-sources): watch.fs_events_enabled is a no-op — no watchdog Observer exists",
+              "done": true
+            },
+            {
+              "number": 295,
+              "title": "bug(watch-sources): watch.max_concurrent_imports is a per-scan slice cap, not concurrency",
+              "done": true
+            },
+            {
+              "number": 297,
+              "title": "bug(tests): pytest.mark.gpu is unregistered and silently ungated — GPU tests run in fast CI, integration gate under-covers",
+              "done": true
+            },
+            {
+              "number": 303,
+              "title": "docs(release-tests): README claims hard isolation, but the scripts use live ports and stock container names",
+              "done": true
+            },
+            {
+              "number": 320,
+              "title": "perf/correctness: `async def` functions that never await block the event loop (OpenSearchSummaryService + 78 endpoint handlers)",
+              "done": true
+            },
+            {
+              "number": 325,
+              "title": "test: `@pytest.mark.unit` test downloads a HuggingFace model and randomly reddens CI",
+              "done": true
+            },
+            {
+              "number": 334,
+              "title": "bug(sse): bulk-export stream can hang forever — check-then-subscribe lost-wakeup race",
+              "done": true
+            },
+            {
+              "number": 343,
+              "title": "bug(opentr.sh): --port-offset does not offset — Compose appends port lists",
+              "done": true
+            },
+            {
+              "number": 347,
+              "title": "bug(opentr.sh): --fresh cannot isolate the ldap/smb/monitoring test overlays",
+              "done": true
+            },
+            {
+              "number": 355,
+              "title": "[BUG] Flower container always reports as unhealthy",
+              "done": true
+            },
+            {
+              "number": 389,
+              "title": "Flaky tests: cross-worker Postgres deadlocks + order-dependent failure in migration/settings tests",
+              "done": true
+            },
+            {
+              "number": 397,
+              "title": "test(routes): /api/auth/me/certificate has no frontend caller and no allow-list entry",
+              "done": true
+            },
+            {
+              "number": 398,
+              "title": "Pre-existing defects surfaced by the release-engineering gates (2 failing tests + 4 schema findings)",
+              "done": true
+            },
+            {
+              "number": 399,
+              "title": "fix(bench): engine/status gate on the dev stack's container names — the bench overlay renames everything to otbench-*",
+              "done": true
+            },
+            {
+              "number": 407,
+              "title": "Unattended install aborts at the final step: set -e + pipefail on an absent optional .env key",
+              "done": true
+            },
+            {
+              "number": 408,
+              "title": "Fresh-install release scenario is not repeatable: it reuses the previous run's database",
+              "done": true
+            },
+            {
+              "number": 409,
+              "title": "Unattended install never persists HUGGINGFACE_TOKEN: every transcription fails",
+              "done": true
+            },
+            {
+              "number": 410,
+              "title": "v0.5.0 BREAKING: existing v0.4.x deployments without REDIS_PASSWORD will fail to start after upgrade",
+              "done": true
+            },
+            {
+              "number": 411,
+              "title": "Every production container reports its version as \"unknown\": compose blanks the baked APP_VERSION",
+              "done": true
+            },
+            {
+              "number": 412,
+              "title": "rehearse stage can never reach Scenario B: Scenario A leaves its stack running",
+              "done": true
+            },
+            {
+              "number": 413,
+              "title": "SECURITY: the release scan gate is fail-open — finding CRITICAL CVEs makes it PASS",
+              "done": true
+            },
+            {
+              "number": 414,
+              "title": "SECURITY: the release scan gate scans the PREVIOUS release, not the release candidate",
+              "done": true
+            },
+            {
+              "number": 423,
+              "title": "Upgrade Docusaurus 3.9.2 → 3.10.2 (MDX v3 content migration required)",
+              "done": true
+            },
             {
               "number": 431,
               "title": "Test suite: 81% of wall clock is one serialized worker + 8 lock barriers; 232 security tests never run; 113 modules untested",
               "done": true
             },
             {
+              "number": 434,
+              "title": "pre-commit stashes the WHOLE tree on every run — it has destroyed in-flight work twice",
+              "done": true
+            },
+            {
+              "number": 440,
+              "title": "DB sessions held across slow work hang Alembic and wedge the database",
+              "done": true
+            },
+            {
               "number": 445,
               "title": "Test suite: 41% of backend modules have no test reference; four authz decorators untested",
+              "done": true
+            },
+            {
+              "number": 446,
+              "title": "Mutation testing: ~275 of 636 survivors are real gaps, not log noise — triage the top findings",
+              "done": true
+            },
+            {
+              "number": 447,
+              "title": "Visual regression: all 8 baselines failing",
+              "done": true
+            },
+            {
+              "number": 450,
+              "title": "auth_decorators.py + transcription_service.py are dead code (~650 LOC); require_verified_user doesn't verify",
+              "done": true
+            },
+            {
+              "number": 451,
+              "title": "Visual regression: all 8 baselines depend on live mutable dev data and cannot be honestly refreshed",
+              "done": true
+            },
+            {
+              "number": 454,
+              "title": "Test isolation: tests/unit fixtures vanish when a tests/*.py file is collected in the same run",
+              "done": true
+            },
+            {
+              "number": 457,
+              "title": "fix(recovery): the request cap stops bounding requests exactly when fetches are failing",
+              "done": true
+            },
+            {
+              "number": 458,
+              "title": "fix(gpu): a healthy GPU reports 'No GPU Available', and GPU_SCALE_DEFAULT_WORKER=true is silently False",
+              "done": true
+            },
+            {
+              "number": 459,
+              "title": "mutation --verify: class-method mutants always UNVERIFIABLE (dedented diff matched against un-dedented source)",
+              "done": true
+            },
+            {
+              "number": 474,
+              "title": "Test suite: 57 backend modules have zero test reference after #445/#470",
+              "done": true
+            },
+            {
+              "number": 485,
+              "title": "Celery apply_async() intermittently dispatches to the default AMQP broker instead of the configured Redis one — every admin \"Run now\" action 500s",
+              "done": true
+            },
+            {
+              "number": 486,
+              "title": "test_speaker_metadata.py fails intermittently under xdist parallelism (passes clean standalone)",
+              "done": true
+            },
+            {
+              "number": 487,
+              "title": "Golden-fixture drift: test_boundary_regression word-count mismatch (2282 ref vs 2251 hyp) — real accuracy drift or stale fixture?",
+              "done": true
+            },
+            {
+              "number": 491,
+              "title": "NLTK/offline: corpora fetched at runtime, airgap coverage incomplete",
+              "done": true
+            },
+            {
+              "number": 492,
+              "title": "requirements.txt pins almost nothing: venv and container diverged by 120 packages (18 major)",
+              "done": true
+            },
+            {
+              "number": 493,
+              "title": "Integration phase: 95 tests take >30 min, cannot pass on 12GB GPU, and has no per-test timeout",
+              "done": true
+            },
+            {
+              "number": 500,
+              "title": "Dockerfile.blackwell: huggingface_hub==0.23.5 downgrade makes `import transformers` fail outright",
+              "done": true
+            },
+            {
+              "number": 522,
+              "title": "Ingest real media into dev by pulling from the NAS store (first true ASR + diarization run)",
+              "done": true
+            },
+            {
+              "number": 528,
+              "title": "BUG: --no-bindmount can serve a stale image, silently invalidating measurements",
+              "done": true
+            },
+            {
+              "number": 529,
+              "title": "Final merge gate for feat/rag-transcript-intelligence: full suite, benchmarks, E2E",
+              "done": true
+            },
+            {
+              "number": 538,
+              "title": "opentr.sh: load the diar-native overlay so dev runs the primary diarization engine, not its fallback",
+              "done": true
+            },
+            {
+              "number": 539,
+              "title": "Audit every .env / .env.example variable: read-by-what, accurate, useful — and keep the template in sync",
+              "done": true
+            },
+            {
+              "number": 541,
+              "title": "E2E: a speaker test persists prediction state onto a real profile (data-hygiene violation)",
+              "done": true
+            },
+            {
+              "number": 545,
+              "title": "refactor(backend): audit duplicate public function names — two normalize_language implementations disagree",
+              "done": true
+            },
+            {
+              "number": 553,
+              "title": "bug(opentr.sh): a plain 'start dev' has no port pre-flight, so a collision half-starts the stack",
+              "done": true
+            },
+            {
+              "number": 567,
+              "title": "bug(config): five defects found by the .env audit — non-functional GPU clustering device, 3 phantom ASR aliases, unimplemented FedRAMP AC-2",
+              "done": true
+            },
+            {
+              "number": 568,
+              "title": "bug(testing): DIARIZATION_VRAM_BUDGET_MB perf-gate test asserts a propagation mechanism that doesn't exist",
+              "done": true
+            },
+            {
+              "number": 577,
+              "title": "task(testing): diarization GPU integration tests unrunnable via either documented path (venv torchaudio drift + benchmark container missing test deps)",
+              "done": true
+            },
+            {
+              "number": 580,
+              "title": "fix-shared-volume-perms.sh: default chown GID (1000) doesn't match the image's appuser GID (999)",
+              "done": true
+            },
+            {
+              "number": 586,
+              "title": "test(diarization): pyannote.ai cloud diarization provider has no direct test coverage",
+              "done": true
+            },
+            {
+              "number": 590,
+              "title": "refactor(scripts): replace hand-rolled bash .env parsing + ad-hoc smoke scripts with python-dotenv + pytest",
+              "done": true
+            },
+            {
+              "number": 591,
+              "title": "chore(docker): promote compose-only env vars to .env.example, fix TEMP_DIR name collision",
+              "done": true
+            },
+            {
+              "number": 592,
+              "title": "Upgrade rehearsal proves the happy path; there's no failure-recovery doc or in-script guidance for a failed ./opentranscribe.sh update",
+              "done": true
+            },
+            {
+              "number": 597,
+              "title": "CI: Release Validation dry-run fails on missing NAS mount, not a real deployment defect",
+              "done": true
+            },
+            {
+              "number": 598,
+              "title": "Release rehearsal matrix has no coverage for opentr.sh backup/restore or opentranscribe.sh update --rollback",
+              "done": true
+            },
+            {
+              "number": 599,
+              "title": "P0: opentr.sh restore silently fails to restore data — exits 0, reports success, changes nothing",
+              "done": true
+            },
+            {
+              "number": 600,
+              "title": "P0: scheduled backup_service.py produces -Fc custom-format dumps with NO restore path anywhere in the repo",
+              "done": true
+            },
+            {
+              "number": 601,
+              "title": "cleanup-test-users.py --execute (real DELETE FROM \"user\") has zero test coverage",
+              "done": true
+            },
+            {
+              "number": 602,
+              "title": "fix-model-permissions.sh / fix-shared-volume-perms.sh have zero test coverage (chown on real data volumes)",
+              "done": true
+            },
+            {
+              "number": 604,
+              "title": "backup.encrypt (scheduled/S3 backup gpg encryption) fails in production — gnupg not installed in backend image",
+              "done": true
+            },
+            {
+              "number": 607,
+              "title": "UserLLMSettings.is_active is vestigial (always defaults True, never reflects the real active config) — silently defeats the e2e ensure_llm_provider fixture",
+              "done": true
+            },
+            {
+              "number": 608,
+              "title": "docker-compose.llm-test.yml's default Gemma-4-E4B-AWQ config does not fit a 12GB GPU even with the entire card free — full-test-matrix.md's <=0.45 guidance is insufficient",
+              "done": true
+            },
+            {
+              "number": 609,
+              "title": "Flower /api/workers never shows threads-pool Celery workers (gpu-scaled@*, gpu-transcription@*) — gpu-scale-smoke.sh cannot pass",
+              "done": true
+            },
+            {
+              "number": 610,
+              "title": "opentr.sh restore silently lets the running (newer) app auto-migrate a just-restored older backup forward — blocks the rollback rehearsal's phase 15-17 chain",
+              "done": true
+            },
+            {
+              "number": 612,
+              "title": "fix(testing): search-quality suite fails 2 unrelated checks on a brand-new --fresh deployment (OpenSearch ML model not yet active)",
+              "done": true
+            },
+            {
+              "number": 613,
+              "title": "opentr.sh missing from release-manifest.txt while docs instruct operators to run it for restore/rollback",
+              "done": true
+            },
+            {
+              "number": 614,
+              "title": "MINIO_KMS_SECRET_KEY placeholder in .env.example isn't a format MinIO accepts, blocks a truly-fresh cp .env.example .env boot",
+              "done": true
+            },
+            {
+              "number": 616,
+              "title": "fix(docker): docker-compose.backup.yml is not shipped, so the in-app scheduled/S3 backup has no mounted destination in production",
+              "done": true
+            },
+            {
+              "number": 617,
+              "title": "Release rehearsal: dbs_diff_fingerprints() unguarded under set -e silently truncates phases 15-18",
+              "done": true
+            },
+            {
+              "number": 618,
+              "title": "Release rehearsal: unguarded curl to frontend under set -e silently kills phase 16→17→18 (same class as #617)",
+              "done": true
+            },
+            {
+              "number": 619,
+              "title": "fix(release-tests): test-upgrade.sh F-4 (media_file digest) and phase-06b backup-content-diff race async DB writes — same class as #617's Layer 1",
+              "done": true
+            },
+            {
+              "number": 620,
+              "title": "fix(security,testing): post-rehearsal adversarial review findings (8 items, 1 HIGH)",
+              "done": true
+            },
+            {
+              "number": 622,
+              "title": "fix(backend): detect_speaker_attributes and redaction_detect_task have no Task DB record",
+              "done": true
+            },
+            {
+              "number": 629,
+              "title": "task(testing): automatic, signature-scoped cleanup of orphaned e2e/test data across ALL leak classes",
+              "done": true
+            },
+            {
+              "number": 630,
+              "title": "task(testing): run-dev-tests.sh should dynamically start/stop auth-overlay containers (Keycloak, LDAP, etc.) like it does mock-llm",
+              "done": true
+            },
+            {
+              "number": 640,
+              "title": "setup-opentranscribe.sh doesn't read release-manifest.txt — fresh installs never get docker-compose.blackwell.yml or docker-compose.backup.yml despite the manifest's own header claiming it's a consumer",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "rag-quality",
+          "name": "RAG & Chat Quality",
+          "scope": "Retrieval, grounding, citations, summary search",
+          "known": true,
+          "total": 36,
+          "closed": 36,
+          "issues": [
+            {
+              "number": 52,
+              "title": "Feature: AI Interactive Chat with RAG System for Selected Transcripts",
+              "done": true
+            },
+            {
+              "number": 78,
+              "title": "Feature: Admin-Controlled Prompt Sharing System",
+              "done": true
+            },
+            {
+              "number": 136,
+              "title": "[Tip] Example AI summary for Q&A panel",
+              "done": true
+            },
+            {
+              "number": 359,
+              "title": "chat: per-conversation max_tokens and top_p",
+              "done": true
+            },
+            {
+              "number": 360,
+              "title": "chat: projects with pinned scope and project-level prompts",
+              "done": true
+            },
+            {
+              "number": 383,
+              "title": "feat(chat): corpus-scale RAG — summary tier, query routing, aggregation, model-tier parity, and a real eval harness",
+              "done": true
+            },
+            {
+              "number": 384,
+              "title": "fix(chat): sources frame is sent before the excerpt budget is known — UI can show citations the model never saw",
+              "done": true
+            },
+            {
+              "number": 385,
+              "title": "fix(chat): tag-scoped chat silently excludes shared files (tag scope is owner-only, collection scope is not)",
+              "done": true
+            },
+            {
+              "number": 386,
+              "title": "fix(chat): history_max_turns counts pairs in one place and messages in another, halving conversation depth",
+              "done": true
+            },
+            {
+              "number": 387,
+              "title": "fix(chat): first excerpt is always emitted even when it alone exceeds the prompt budget",
+              "done": true
+            },
+            {
+              "number": 403,
+              "title": "feat(rag): master orchestrator — ordered end-to-end implementation of corpus-scale RAG, retrieval tuning, and documents (#383 → #363 → #362)",
+              "done": true
+            },
+            {
+              "number": 438,
+              "title": "fix(chat): an unscoped conversation searches nothing — file_uuids defaults to [] (match nothing), not None (all accessible)",
+              "done": true
+            },
+            {
+              "number": 439,
+              "title": "fix(chat): Gemma reasoning and a raw <channel|> control token leak into the user-visible answer",
+              "done": true
+            },
+            {
+              "number": 448,
+              "title": "Backlog: multilingual RAG/chat — CJK transcripts produce one un-chunked blob (English-only is the current scope)",
+              "done": true
+            },
+            {
+              "number": 453,
+              "title": "Multilingual RAG and chat: four independent stages, none of them a setting",
+              "done": true
+            },
+            {
+              "number": 461,
+              "title": "RAG retrieval quality: what is measured, what is not, and what to do next",
+              "done": true
+            },
+            {
+              "number": 463,
+              "title": "eval: measure whether chat answers are actually useful — QMSum reference answers are already on disk and unused",
+              "done": true
+            },
+            {
+              "number": 465,
+              "title": "AI summaries are displayed and exported completely unmasked, ignoring the user's redaction policy",
+              "done": true
+            },
+            {
+              "number": 495,
+              "title": "RAG eval harness: synthetic corpus injection indexes no chunks on re-injection (test xfailed)",
+              "done": true
+            },
+            {
+              "number": 514,
+              "title": "Live query-trace panel: an animated, Redis-pushed execution tree for search and RAG",
+              "done": true
+            },
+            {
+              "number": 515,
+              "title": "Umbrella: RAG/chat/search/document-ingest completion — status, plan corrections, and open decisions",
+              "done": true
+            },
+            {
+              "number": 517,
+              "title": "eval: scope coverage — the metric no framework measures, and the bug it hides",
+              "done": true
+            },
+            {
+              "number": 518,
+              "title": "eval: calibrate the LLM judge with Cohen's Kappa before tuning anything on it",
+              "done": true
+            },
+            {
+              "number": 519,
+              "title": "eval: acceptance suite for the four real query shapes, over AMI ground truth",
+              "done": true
+            },
+            {
+              "number": 521,
+              "title": "eval: add ELITR-Bench (CC-BY-4.0) — first benchmark that tests speaker attribution directly",
+              "done": true
+            },
+            {
+              "number": 524,
+              "title": "RAG: the speaker axis silently disables itself at corpus scale (roster cap declines wholesale)",
+              "done": true
+            },
+            {
+              "number": 525,
+              "title": "RAG: widening the candidate pool changes nothing — ranking keeps selecting content-free fragments",
+              "done": true
+            },
+            {
+              "number": 530,
+              "title": "RAG: calibrate the answer judge with Cohen's Kappa (gates every quality claim)",
+              "done": true
+            },
+            {
+              "number": 531,
+              "title": "RAG: shipped 48/12/4 retrieval budget starves the chat — 2x recall available",
+              "done": true
+            },
+            {
+              "number": 533,
+              "title": "LLM settings: discover a model's context window instead of defaulting to 8192",
+              "done": true
+            },
+            {
+              "number": 534,
+              "title": "RAG: validate the budget finding on a second corpus (ELITR-Bench) before changing defaults",
+              "done": true
+            },
+            {
+              "number": 535,
+              "title": "RAG: standing acceptance suite over the four query shapes",
+              "done": true
+            },
+            {
+              "number": 536,
+              "title": "chat: base rules leak prompt-internal block vocabulary into answers when the block is absent",
+              "done": true
+            },
+            {
+              "number": 589,
+              "title": "bug(services): group_batch_by_topics miscounts a collection collision as a creation",
+              "done": true
+            },
+            {
+              "number": 595,
+              "title": "test(release-tests): lite-mode rehearsal chat-summary text comes back empty despite citations succeeding",
+              "done": true
+            },
+            {
+              "number": 611,
+              "title": "Lite-mode rehearsal: chat SSE stream sends the model's real answer inside an event: error frame's 'code' field",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "search-infra",
+          "name": "Search Infrastructure",
+          "scope": "Indexing, reindex correctness, index drift",
+          "known": true,
+          "total": 21,
+          "closed": 21,
+          "issues": [
+            {
+              "number": 363,
+              "title": "search: measure RRF vs score-based hybrid fusion, and record the speaker-turn chunking decision",
+              "done": true
+            },
+            {
+              "number": 400,
+              "title": "fix(search): re-running search indexing never deletes existing chunks — stale tail chunks survive a shorter re-chunk",
+              "done": true
+            },
+            {
+              "number": 401,
+              "title": "fix(search): ingest pipeline recreation compares only model_id — a field_map change is silently ignored on upgrade",
+              "done": true
+            },
+            {
+              "number": 402,
+              "title": "chore(docs): four doc-drift fixes found during the #383/#363 second-opinion review",
+              "done": true
+            },
+            {
+              "number": 405,
+              "title": "fix(search): speaker and title renames never propagate to transcript_chunks — chat speaker scope, search facets, and citations serve stale names until a full reindex",
+              "done": true
+            },
+            {
+              "number": 432,
+              "title": "fix(search): six more display_name writers still leave stale speaker names in transcript_chunks",
+              "done": true
+            },
+            {
+              "number": 433,
+              "title": "fix: ORDER BY start_time is not a total order — re-indexing the same transcript yields different chunks",
+              "done": true
+            },
+            {
+              "number": 435,
+              "title": "fix(search): chunk-prune count gate reads the searcher, so a re-index inside the refresh window leaks orphans permanently",
+              "done": true
+            },
+            {
+              "number": 436,
+              "title": "fix(search): indexing workers have no nltk_data mount — every production chunk was cut by the regex fallback",
+              "done": true
+            },
+            {
+              "number": 437,
+              "title": "fix(search): switching the embedding model silently leaves a mixed-vector index, and embedding_model records the mode not the model",
+              "done": true
+            },
+            {
+              "number": 449,
+              "title": "Chunk boundaries depend on whether NLTK punkt loaded — and on a 5-minute global cooldown",
+              "done": true
+            },
+            {
+              "number": 501,
+              "title": "Bulk indexing fails intermittently: ML Commons circuit breaker false-trips on young-gen garbage",
+              "done": true
+            },
+            {
+              "number": 502,
+              "title": "Offline embedding-model registration is broken on OpenSearch 3.4 (400 'model config is null')",
+              "done": true
+            },
+            {
+              "number": 503,
+              "title": "Verify at setup that the selected embedding model actually works, and size heap per machine",
+              "done": true
+            },
+            {
+              "number": 504,
+              "title": "Embedding model registry offered paraphrase-multilingual-mpnet-base-v2, which OpenSearch does not provide",
+              "done": true
+            },
+            {
+              "number": 540,
+              "title": "OpenSearch startup maintenance: probe the kNN plane and self-heal — vector corruption survives restarts silently",
+              "done": true
+            },
+            {
+              "number": 542,
+              "title": "Dead ANN branch in opensearch_service/transcripts.py::search_transcripts would 400 if ever called",
+              "done": true
+            },
+            {
+              "number": 606,
+              "title": "Semantic search fails to find the obvious gold file for 'space exploration' query, surfaces both anti-gold files instead",
+              "done": true
+            },
+            {
+              "number": 625,
+              "title": "fix(search): neural-search bootstrap is one-shot with no retry, can permanently lose model deployment on a cold OpenSearch boot",
+              "done": true
+            },
+            {
+              "number": 626,
+              "title": "task(search): operator-triggered re-embed for files indexed during a neural-search degraded window",
+              "done": true
+            },
+            {
+              "number": 638,
+              "title": "Offline model registration (file://) is dead in every deployment mode: missing opensearch-ml volume mount + missing config.json",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "compliance",
+          "name": "Security & Compliance",
+          "scope": "Hardening, data protection, certification",
+          "known": true,
+          "total": 30,
+          "closed": 30,
+          "issues": [
+            {
+              "number": 188,
+              "title": "[BUG] LDAP cn not parsed correctly",
+              "done": true
+            },
+            {
+              "number": 262,
+              "title": "Post-0.5.0 hardening follow-ups from the cloud-seams security review",
+              "done": true
+            },
+            {
+              "number": 284,
+              "title": "Improvements & Security Review",
+              "done": true
+            },
+            {
+              "number": 296,
+              "title": "docs(redaction): redaction_task.py docstring claims unconditional detection — dispatch is actually gated",
+              "done": true
+            },
+            {
+              "number": 300,
+              "title": "bug(asr): AWS access_key_id is dropped when building the provider for a job (test-connection passes, transcription doesn't)",
+              "done": true
+            },
+            {
+              "number": 324,
+              "title": "security: six remaining fail-open paths deferred from #284 Phase 3B",
+              "done": true
+            },
+            {
+              "number": 353,
+              "title": "[BUG] Generic OIDC / Authentik does not work because OpenTranscribe hardcodes Keycloak realm URLs",
+              "done": true
+            },
+            {
+              "number": 354,
+              "title": "[FEATURE] Disable self-registration via environment variable",
+              "done": true
+            },
+            {
+              "number": 441,
+              "title": "JWT algorithm decision is duplicated 3x with different gates; issuers and verifiers disagree",
+              "done": true
+            },
+            {
+              "number": 442,
+              "title": "GDPR Art. 17: no erasure ledger, legal-hold data never re-erased, backup restore resurrects subjects",
+              "done": true
+            },
+            {
+              "number": 443,
+              "title": "Audit log: split user_id into actor and target (schema change, not a convention)",
+              "done": true
+            },
+            {
+              "number": 444,
+              "title": "chat_completion — the production LLM path — has no SSRF validation at all",
+              "done": true
+            },
+            {
+              "number": 471,
+              "title": "Replace gender-guesser (GPLv3) with a permissively-licensed alternative",
+              "done": true
+            },
+            {
+              "number": 473,
+              "title": "Compile a minimal, license-confirmed FFmpeg.wasm core (replace generic @ffmpeg/core CDN fetch)",
+              "done": true
+            },
+            {
+              "number": 484,
+              "title": "directory_sync (LDAP deprovisioning sweep) has no admin settings endpoint — unreachable in any real deployment",
+              "done": true
+            },
+            {
+              "number": 497,
+              "title": "Cross-tenant authorization gap: update_comment and delete_comment run no tenant check",
+              "done": true
+            },
+            {
+              "number": 498,
+              "title": "Five PKI revocation settings are writable in the Settings UI and read by nothing",
+              "done": true
+            },
+            {
+              "number": 499,
+              "title": "PII masking misses names spaCy labels ORGANIZATION, which the default policy excludes",
+              "done": true
+            },
+            {
+              "number": 513,
+              "title": "perf(redaction): ONNX-convert toxic-bert and the search embedding model (and why Presidio should stay in Python)",
+              "done": true
+            },
+            {
+              "number": 573,
+              "title": "docs(compliance): FIPS_140_3_COMPLIANCE.md claims 'FIPS 140-3 compliant' but only implements FIPS-approved algorithms, not a validated module",
+              "done": true
+            },
+            {
+              "number": 575,
+              "title": "docs(compliance): password policy (forced expiry + composition rules) contradicts current NIST SP 800-63B Rev. 4, not FedRAMP IA-5 best practice",
+              "done": true
+            },
+            {
+              "number": 582,
+              "title": "SCIM PUT does not implement RFC 7644 replace semantics",
+              "done": true
+            },
+            {
+              "number": 587,
+              "title": "test(services): AutoLabelService tenancy-scoping and per-user cache paths are untested",
+              "done": true
+            },
+            {
+              "number": 588,
+              "title": "fix(auth): viewer-permission users can reprocess/summarize shared files via API",
+              "done": true
+            },
+            {
+              "number": 593,
+              "title": "PKI E2E admin-cert fixture collides with super_admin email-link protection",
+              "done": true
+            },
+            {
+              "number": 594,
+              "title": "ASR UserASRSettings.base_url is validated and persisted but never consumed — wiring it needs an SSRF guard first",
+              "done": true
+            },
+            {
+              "number": 615,
+              "title": "PKI_TRUSTED_PROXIES default CIDR doesn't cover the full range Docker can assign to a compose network (breaks mTLS header trust under --fresh)",
+              "done": true
+            },
+            {
+              "number": 623,
+              "title": "fix(frontend): PKI/proxy trusted-CIDR admin UI still suggests the now-fixed vulnerable range",
+              "done": true
+            },
+            {
+              "number": 632,
+              "title": "Session accumulation: refresh_token rows for one user hit 272x the configured max_concurrent_sessions limit",
+              "done": true
+            },
+            {
+              "number": 633,
+              "title": "refresh_token rows accumulate unbounded on admin@example.com (5,504+ observed)",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "speaker-persona",
+          "name": "Speaker Intelligence",
+          "scope": "Voiceprints, personas, cross-file identity",
+          "known": true,
+          "total": 4,
+          "closed": 4,
+          "issues": [
+            {
+              "number": 512,
+              "title": "feat(speakers): cross-file speaker clustering — ANN index over speaker embeddings + batch re-resolution",
+              "done": true
+            },
+            {
+              "number": 543,
+              "title": "SpeakerProfile.predicted_gender is written but never read — confirming a gender on a member-less profile is silently invisible",
+              "done": true
+            },
+            {
+              "number": 603,
+              "title": "Speaker confirm-gender/merge don't propagate to other open tabs (cosmetic, self-correcting on reload)",
+              "done": true
+            },
+            {
+              "number": 605,
+              "title": "Live speaker chunk-index label drifts from canonical_speaker_label() resolver (speaker_id=74070)",
               "done": true
             }
           ]
@@ -41,8 +1221,8 @@
       "stage": "now",
       "released": false,
       "scheduled": true,
-      "total": 44,
-      "closed": 15,
+      "total": 30,
+      "closed": 0,
       "areas": [
         {
           "key": "frontend-ui",
@@ -134,7 +1314,7 @@
           "name": "Platform & Operations",
           "scope": "Build, deploy, workers, GPU tuning, governance",
           "known": true,
-          "total": 3,
+          "total": 4,
           "closed": 0,
           "issues": [
             {
@@ -151,6 +1331,11 @@
               "number": 681,
               "title": "bug(ci-cd): an unscannable component yields \"All security scans completed successfully!\" — docs is already in this state",
               "done": false
+            },
+            {
+              "number": 683,
+              "title": "[BUG] Can't install due to \"❌ Failed to download release-manifest.txt from v0.4.1\" - 404: Not Found",
+              "done": false
             }
           ]
         },
@@ -159,53 +1344,18 @@
           "name": "RAG & Chat Quality",
           "scope": "Retrieval, grounding, citations, summary search",
           "known": true,
-          "total": 13,
-          "closed": 7,
+          "total": 6,
+          "closed": 0,
           "issues": [
-            {
-              "number": 362,
-              "title": "feat: Document ingestion & knowledge base — parse, index, and chat over documents alongside transcripts",
-              "done": true
-            },
-            {
-              "number": 383,
-              "title": "feat(chat): corpus-scale RAG — summary tier, query routing, aggregation, model-tier parity, and a real eval harness",
-              "done": true
-            },
-            {
-              "number": 403,
-              "title": "feat(rag): master orchestrator — ordered end-to-end implementation of corpus-scale RAG, retrieval tuning, and documents (#383 → #363 → #362)",
-              "done": true
-            },
-            {
-              "number": 439,
-              "title": "fix(chat): Gemma reasoning and a raw <channel|> control token leak into the user-visible answer",
-              "done": true
-            },
-            {
-              "number": 461,
-              "title": "RAG retrieval quality: what is measured, what is not, and what to do next",
-              "done": true
-            },
             {
               "number": 462,
               "title": "feat(search): make AI summaries searchable and citable in the search page",
               "done": false
             },
             {
-              "number": 463,
-              "title": "eval: measure whether chat answers are actually useful — QMSum reference answers are already on disk and unused",
-              "done": true
-            },
-            {
               "number": 464,
               "title": "feat(rag-chat): use LLM summaries as the map output when an LLM is configured (tiered tree_summarize)",
               "done": false
-            },
-            {
-              "number": 465,
-              "title": "AI summaries are displayed and exported completely unmasked, ignoring the user's redaction policy",
-              "done": true
             },
             {
               "number": 506,
@@ -234,49 +1384,9 @@
           "name": "Search Infrastructure",
           "scope": "Indexing, reindex correctness, index drift",
           "known": true,
-          "total": 11,
-          "closed": 8,
+          "total": 3,
+          "closed": 0,
           "issues": [
-            {
-              "number": 363,
-              "title": "search: measure RRF vs score-based hybrid fusion, and record the speaker-turn chunking decision",
-              "done": true
-            },
-            {
-              "number": 400,
-              "title": "fix(search): re-running search indexing never deletes existing chunks — stale tail chunks survive a shorter re-chunk",
-              "done": true
-            },
-            {
-              "number": 401,
-              "title": "fix(search): ingest pipeline recreation compares only model_id — a field_map change is silently ignored on upgrade",
-              "done": true
-            },
-            {
-              "number": 402,
-              "title": "chore(docs): four doc-drift fixes found during the #383/#363 second-opinion review",
-              "done": true
-            },
-            {
-              "number": 405,
-              "title": "fix(search): speaker and title renames never propagate to transcript_chunks — chat speaker scope, search facets, and citations serve stale names until a full reindex",
-              "done": true
-            },
-            {
-              "number": 432,
-              "title": "fix(search): six more display_name writers still leave stale speaker names in transcript_chunks",
-              "done": true
-            },
-            {
-              "number": 435,
-              "title": "fix(search): chunk-prune count gate reads the searcher, so a re-index inside the refresh window leaks orphans permanently",
-              "done": true
-            },
-            {
-              "number": 437,
-              "title": "fix(search): switching the embedding model silently leaves a mixed-vector index, and embedding_model records the mode not the model",
-              "done": true
-            },
             {
               "number": 627,
               "title": "fix(search): admin \"Reindex all\" only re-indexes the admin's own files, not the whole corpus",

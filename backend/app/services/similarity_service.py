@@ -17,6 +17,9 @@ import numpy as np
 import torch
 from torch.nn import functional as nn_functional
 
+from app.utils.cosine_space import opensearch_score_from_raw_cosine
+from app.utils.cosine_space import raw_cosine_from_opensearch_score
+
 logger = logging.getLogger(__name__)
 
 
@@ -115,7 +118,7 @@ class SimilarityService:
         embedding: list[float] | np.ndarray | torch.Tensor,
         user_id: int,
         index_name: str = "speakers",
-        threshold: float = 0.7,
+        min_raw_cosine: float = 0.7,
         max_results: int = 50,
         exclude_ids: list[int] | None = None,
         boost_recent: bool = True,
@@ -127,18 +130,25 @@ class SimilarityService:
         Leverages OpenSearch's native HNSW algorithm with cosine similarity for
         optimal performance at scale.
 
+        The gate is stated in **raw cosine** and converted to OpenSearch's
+        ``cosinesimil`` score space on the way out, so callers never have to know
+        the index's scoring convention (issue #674).
+
         Args:
             embedding: Query embedding vector (any format)
             user_id: User ID for filtering
             index_name: OpenSearch index to search
-            threshold: Minimum similarity threshold
+            min_raw_cosine: Minimum **raw cosine** similarity a hit must reach,
+                in ``[-1, 1]`` — the same space as ``SPEAKER_CONFIDENCE_*`` and as
+                the ``similarity`` this function returns. Never pass a value
+                already in ``cosinesimil`` score space.
             max_results: Maximum number of results (increased default)
             exclude_ids: Optional list of IDs to exclude from results
             boost_recent: Whether to boost recent embeddings in scoring
             organization_id: Active org id (None = personal) — tenant gate.
 
         Returns:
-            List of similarity matches with scores and metadata
+            List of similarity matches with raw-cosine scores and metadata
         """
         from app.services.opensearch_service import _speaker_org_filter_clauses
         from app.services.opensearch_service import opensearch_client
@@ -182,7 +192,10 @@ class SimilarityService:
                 "display_name",
                 "confidence",
             ],
-            "min_score": threshold,
+            # `min_score` is compared against the index's `cosinesimil` score,
+            # which is `(1 + cosine) / 2` — NOT raw cosine. Writing a raw-cosine
+            # value straight in here gates at roughly half the named similarity.
+            "min_score": opensearch_score_from_raw_cosine(min_raw_cosine),
         }
 
         if opensearch_client is None:
@@ -194,7 +207,7 @@ class SimilarityService:
         # Convert OpenSearch cosinesimil scores to raw cosine similarity
         results = []
         for hit in response.get("hits", {}).get("hits", []):
-            similarity = 2.0 * float(hit["_score"]) - 1.0
+            similarity = raw_cosine_from_opensearch_score(hit["_score"])
 
             result = {
                 "similarity": similarity,
@@ -203,7 +216,8 @@ class SimilarityService:
             results.append(result)
 
         logger.info(
-            f"OpenSearch kNN search returned {len(results)} results above threshold {threshold}"
+            f"OpenSearch kNN search returned {len(results)} results "
+            f"above raw cosine {min_raw_cosine}"
         )
         return results
 
@@ -250,7 +264,7 @@ class SimilarityService:
         query_embedding: np.ndarray | torch.Tensor,
         candidate_embeddings: np.ndarray | torch.Tensor | list[np.ndarray],
         k: int = 10,
-        threshold: float = 0.7,
+        min_raw_cosine: float = 0.7,
     ) -> list[tuple[int, float]]:
         """
         Find top-k most similar embeddings using GPU-accelerated operations.
@@ -259,7 +273,10 @@ class SimilarityService:
             query_embedding: Query embedding
             candidate_embeddings: Pool of candidate embeddings
             k: Number of top results to return
-            threshold: Minimum similarity threshold
+            min_raw_cosine: Minimum **raw cosine** similarity, in ``[-1, 1]``.
+                This path computes cosine directly in torch, so no
+                ``cosinesimil`` conversion applies — the name says so rather than
+                leaving the space to be inferred (issue #674).
 
         Returns:
             List of (index, similarity_score) tuples sorted by similarity (highest first)
@@ -293,7 +310,7 @@ class SimilarityService:
         )
 
         # Filter by threshold and get top-k
-        valid_indices = torch.where(similarities >= threshold)[0]
+        valid_indices = torch.where(similarities >= min_raw_cosine)[0]
         if len(valid_indices) == 0:
             return []
 

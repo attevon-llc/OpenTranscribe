@@ -26,6 +26,18 @@ in the sibling speaker/voiceprint plane, none in this package):
 This package itself never reads a raw kNN score: transcript search ranks by **RRF**, whose
 output is a rank-fusion score, not a similarity. Don't treat `relevance_score` as cosine.
 
+### The conversion applies to WRITES too (issue #674)
+
+A threshold sent *into* OpenSearch — `min_score`, or any filter expressed in score space —
+lives in the same shifted space and must be converted the other way,
+`opensearch_score = (1 + raw_cosine) / 2`. A read-site audit cannot find a bad write, because
+nothing is being read: `min_score=0.75` looked like the auto-accept gate and actually admitted
+everything at raw cosine ≥ 0.50, which `_propagate_profile_assignment` then wrote `verified=True`.
+Both directions are named functions in `app/utils/cosine_space.py` — call them rather than
+open-coding the arithmetic, so the space is in the name. There is exactly one `min_score` write
+against a cosinesimil index today (`../similarity_service.py`, whose parameter is now
+`min_raw_cosine`); every other kNN caller filters in Python *after* converting the score.
+
 ## Purpose
 
 The transcript-chunk search plane: chunk → index → query. The **speaker/voiceprint** plane is

@@ -466,6 +466,19 @@ create_configuration_files() {
     fi
 }
 
+# The repo's default branch, asked for at runtime rather than written down.
+#
+# Every hardcoded "master" in a download URL is a rename waiting to break installs, and
+# this script is about to be served from a branch that is renamed. Resolve it instead.
+# Echoes empty on any failure (offline, rate-limited, malformed) — callers MUST treat
+# empty as "no fallback available" and fail closed rather than guessing a name.
+resolve_default_branch() {
+    curl -fsSL --connect-timeout 10 --max-time 20 \
+        "https://api.github.com/repos/attevon-llc/OpenTranscribe" 2>/dev/null |
+        grep -m1 '"default_branch"' |
+        sed -E 's/.*"default_branch"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true
+}
+
 # Download every artifact listed in release-manifest.txt, at the resolved install ref.
 #
 # The file list lives in release-manifest.txt, NOT in this script. This installer used to
@@ -492,12 +505,44 @@ download_release_manifest_artifacts() {
 
     # The manifest itself is required. Guessing the file list is the bug this replaced,
     # so refuse to install rather than fall back to an assumed set.
+    #
+    # WHY THERE IS A FALLBACK REF (issue #683)
+    #
+    # This installer is served from the default branch, but installs whatever
+    # resolve_install_ref() picks — the latest published GitHub Release. Those are two
+    # different refs, and release-manifest.txt was added AFTER the newest release at the
+    # time. So the current installer asked an older tag for a file that tag had never
+    # heard of, 404ed, and correctly-but-fatally refused: 100% of fresh installs died
+    # for 22 days.
+    #
+    # A release that ships its own manifest describes itself best, so that is still
+    # preferred. Only when the pinned ref predates the manifest do we borrow the list
+    # from the default branch. The ARTIFACTS are always fetched from the pinned ref
+    # ($github_raw) either way — only the file *list* falls back, so this cannot
+    # reintroduce an unpinned install. The manifest's `optional` flag is what absorbs
+    # the skew: a file a newer manifest lists but an older release does not have is
+    # reported and skipped, not fatal.
     if ! curl -fsSL --connect-timeout 10 --max-time 30 \
         "$github_raw/release-manifest.txt" -o release-manifest.txt.new; then
-        echo -e "${RED}❌ Failed to download release-manifest.txt from ${branch}${NC}"
-        echo "Refusing to install from an unknown artifact list."
-        echo "Alternative: You can manually download from: $github_raw/release-manifest.txt"
-        exit 1
+        rm -f release-manifest.txt.new
+
+        local default_branch
+        default_branch=$(resolve_default_branch)
+
+        if [ -n "$default_branch" ] && [ "$default_branch" != "$branch" ] &&
+            curl -fsSL --connect-timeout 10 --max-time 30 \
+                "https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${default_branch}/release-manifest.txt" \
+                -o release-manifest.txt.new; then
+            echo -e "  ${YELLOW}⚠️${NC}  ${branch} predates release-manifest.txt — using the file list from '${default_branch}'."
+            echo "     Deployment files are still downloaded from ${branch}; files that release"
+            echo "     does not have are skipped only if the manifest marks them optional."
+        else
+            rm -f release-manifest.txt.new
+            echo -e "${RED}❌ Failed to download release-manifest.txt from ${branch}${NC}"
+            echo "Refusing to install from an unknown artifact list."
+            echo "Alternative: You can manually download from: $github_raw/release-manifest.txt"
+            exit 1
+        fi
     fi
     mv release-manifest.txt.new release-manifest.txt
 

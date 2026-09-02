@@ -43,12 +43,24 @@ on:
       # the stage DIRECTORY. Same for the rehearsal harness the release stages invoke.
       - 'scripts/release.sh'
       - 'scripts/release-tests/**'
+      # The two scripts a user actually runs were in NO path filter, so a PR editing the
+      # installer ran this workflow zero times. That is how #683 merged: the commit adding
+      # release-manifest.txt changed setup-opentranscribe.sh, and the only check that
+      # could have caught it was gated `if: github.ref_type == 'tag'` anyway.
+      - 'setup-opentranscribe.sh'
+      - 'opentranscribe.sh'
+      - 'scripts/verify-install-paths.sh'
       # The docs job below runs `npm ci && npm run build`, and it was unreachable from a PR:
       # docs-site/** was not listed here, and deploy-docs.yml only fires on push to master.
       # So a duplicate blog slug or an undefined author merged green and broke master on
       # deploy. deployment-configuration.md is included because validate-deployments.sh
       # parses it as its anti-staleness source.
       - 'docs-site/**'
+  # The install-paths job below compares the TIP scripts against the PUBLISHED releases,
+  # so it can start failing with no commit at all — publishing a release is enough. A
+  # push-triggered workflow can never notice that, which is why this runs on a timer too.
+  schedule:
+    - cron: '17 6 * * *'
   workflow_dispatch:
     inputs:
       tag:
@@ -130,12 +142,44 @@ jobs:
           shellcheck --severity=warning \
             setup-opentranscribe.sh \
             opentranscribe.sh \
+            scripts/verify-install-paths.sh \
             scripts/release.sh \
             scripts/release/*.sh \
             scripts/validate-deployments.sh \
             scripts/security-scan.sh \
             scripts/release-tests/*.sh \
             scripts/release-tests/lib/*.sh
+
+  install-paths:
+    name: Install paths work against published releases
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Tags are required: the pin check compares each downloaded artifact against
+          # `git show <tag>:<path>`. Without full history it would silently skip that
+          # comparison and pass an unpinned install.
+          fetch-depth: 0
+
+      - name: Verify install / update / upgrade paths
+        env:
+          # Raises the API limit from 60/hr per runner IP to 5000/hr. Without it a busy
+          # day makes this job fail on rate limiting rather than on a real defect.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # THE cross-ref check nothing else does: everything else in this workflow
+          # validates a tag against its OWN checkout, so none of them can see "the
+          # installer at the tip cannot install the release users are being handed".
+          # That blind spot broke 100% of `curl | bash` installs for 22 days (#683).
+          #
+          # --all-releases on a schedule/tag (thorough, ~1 min of curls); latest-only on
+          # a PR, where the question is just "did this change break the live one-liner".
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            ./scripts/verify-install-paths.sh
+          else
+            ./scripts/verify-install-paths.sh --all-releases
+          fi
 
   schema:
     name: Schema integrity

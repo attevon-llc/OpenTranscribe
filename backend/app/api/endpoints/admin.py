@@ -460,8 +460,80 @@ def _delete_user_owned_records(db: Session, user_id: int) -> None:
         logger.info(f"Deleted {len(tag_ids)} tags for user {user_id}")
 
 
+def _assert_no_files_under_legal_hold(db: Session, user_id: int) -> None:
+    """Refuse to delete an account that still owns legally-held evidence (issue #689).
+
+    ``_delete_user_media_files`` ends in a **bulk** ``query(MediaFile).delete()``. A bulk
+    delete emits one statement, loads no instances, and consults no ``legal_hold`` — so
+    it does not reach ``file_cleanup_service.purge_media_file`` and inherits none of
+    #664's refusal. Deleting a user therefore destroyed their held files, object row and
+    all, which is the one failure mode a legal hold exists to prevent, and it is
+    irreversible.
+
+    **The whole deletion is refused, not just the held files.** Deleting everything
+    *except* them would leave ``media_file`` rows owned by an account that no longer
+    exists (``media_file.user_id`` is a plain ``NO ACTION`` FK, so the ``user`` delete
+    would then fail anyway, mid-cascade); silently reassigning them to another owner
+    would invent a retention policy nobody chose. Refusing matches what the GDPR path
+    already does by accident — ``gdpr_erasure_service`` skips held files, and that same
+    FK then keeps the account alive — and what ``purge_media_file`` now does on purpose.
+
+    ``is_quarantined`` is deliberately **not** part of this check, mirroring
+    ``purge_media_file``. Quarantine is a review state an admin legitimately ends by
+    deleting the offending upload — and deleting an abusive *account* is the commonest
+    reason to have quarantined its files in the first place, so blocking on it would
+    turn a takedown into a shield. Only the unattended retention sweep refuses to touch
+    a file under review (``tasks/cleanup._select_expired_files``).
+
+    There is deliberately **no override argument**: an argument that skips the guard is
+    the guard's own failure mode. The supported path is to lift the hold first —
+    ``takedown_service.release_file(..., clear_legal_hold=True)``, exposed as
+    ``POST /api/admin/files/{file_uuid}/release`` — and then delete the account.
+
+    Args:
+        db: Database session.
+        user_id: Internal id of the account being deleted.
+
+    Raises:
+        HTTPException: 409 ``FILE_UNDER_LEGAL_HOLD``, naming how many files are held,
+            when the account owns at least one.
+    """
+    from app.services.file_cleanup_service import LEGAL_HOLD_ERROR_CODE
+
+    held_count = (
+        db.query(func.count(MediaFile.id))
+        .filter(MediaFile.user_id == user_id, MediaFile.legal_hold.is_(True))
+        .scalar()
+    ) or 0
+    if not held_count:
+        return
+
+    noun = "file" if held_count == 1 else "files"
+    message = (
+        f"refused: this account owns {held_count} {noun} under an active legal hold "
+        "and cannot be deleted. Release the hold before deleting."
+    )
+    logger.error(f"user deletion: REFUSED to delete user {user_id} — {message}")
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "error": LEGAL_HOLD_ERROR_CODE,
+            "message": message,
+            "files_under_legal_hold": held_count,
+        },
+    )
+
+
 def _delete_user_media_files(db: Session, user_id: int) -> None:
     """Delete all media files and related records for a user.
+
+    **A user owning any file under an active legal hold is REFUSED before anything is
+    deleted** (:func:`_assert_no_files_under_legal_hold`, issue #689). The check runs
+    here as well as in each endpoint because a guard in one caller protects one caller;
+    the endpoints call it *first* so that the two earlier passes
+    (``_delete_user_owned_records``, ``_delete_user_speakers``) have not already
+    destroyed anything by the time the refusal is raised, and this call is the backstop
+    that a future caller inherits without having to remember.
 
     **Why the children are deleted by hand here.** ``MediaFile`` declares
     ``cascade="all, delete-orphan"`` on eight relationships, but four of the
@@ -493,7 +565,12 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
     Args:
         db: Database session
         user_id: ID of the user whose media files to delete
+
+    Raises:
+        HTTPException: 409 when the user owns a file under an active legal hold.
     """
+    _assert_no_files_under_legal_hold(db, user_id)
+
     media_ids = [
         row[0] for row in db.query(MediaFile.id).filter(MediaFile.user_id == user_id).all()
     ]
@@ -847,6 +924,11 @@ def delete_admin_user(
         from app.api.endpoints.users import _assert_not_last_super_admin
 
         _assert_not_last_super_admin(db, user, ROLE_USER)
+
+        # Legally-held evidence outranks the deletion, and the refusal has to land
+        # BEFORE the first of the three cascade passes: a partial destroy followed by a
+        # 409 is worse than either outcome on its own (issue #689).
+        _assert_no_files_under_legal_hold(db, int(user_id))
 
         # Capture what the audit record needs before the row is gone: after the commit
         # the ORM object is expired, so reading user.email would re-query a deleted row.

@@ -106,9 +106,14 @@ raw_url_for() {
 }
 
 resolve_config_ref() {
-    if [ -n "${OPENTRANSCRIBE_BRANCH:-}" ]; then
-        echo -e "${BLUE}ℹ️  Using branch override: ${OPENTRANSCRIBE_BRANCH}${NC}" >&2
-        printf '%s\n' "$OPENTRANSCRIBE_BRANCH"
+    # Read the override into a defaulted local ONCE rather than expanding the env var at
+    # each use site: `set -u` aborts on a bare $OPENTRANSCRIBE_BRANCH even when an earlier
+    # `[ -n "${VAR:-}" ]` guard proves it is set, and test_shell_expansion_guards.py
+    # enforces that repo-wide (it caught exactly this).
+    local override="${OPENTRANSCRIBE_BRANCH:-}"
+    if [ -n "$override" ]; then
+        echo -e "${BLUE}ℹ️  Using branch override: ${override}${NC}" >&2
+        printf '%s\n' "$override"
         return 0
     fi
 

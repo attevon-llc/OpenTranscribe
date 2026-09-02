@@ -120,6 +120,22 @@ const config: Config = {
       defaultMode: 'dark',
       respectPrefersColorScheme: true,
     },
+    // This site is built and deployed from the default branch (deploy-docs.yml), while
+    // the installer deliberately installs the latest published RELEASE. Those are two
+    // different points in history, so the docs can legitimately describe features that
+    // have not shipped yet. Say so rather than letting a reader discover it.
+    //
+    // No version number here on purpose: it would be a hand-maintained fact that rots,
+    // and the repo's rule is that version facts are DERIVED, never recorded. The link
+    // sends readers to the release list, which is always current.
+    announcementBar: {
+      id: 'active-development',
+      content:
+        'OpenTranscribe is under active development. These docs track the default branch and may ' +
+        'describe features not yet in the latest ' +
+        '<a target="_blank" rel="noopener" href="https://github.com/attevon-llc/OpenTranscribe/releases">release</a>.',
+      isCloseable: true,
+    },
     navbar: {
       title: 'OpenTranscribe',
       logo: {

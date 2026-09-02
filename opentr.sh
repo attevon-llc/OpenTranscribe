@@ -2856,8 +2856,16 @@ stop_all_containers() {
   # explicit container_name) and "transcribe-app" (docker-compose.diar-native.yml's
   # diar-native service has no explicit container_name, so compose falls back
   # to the checkout directory's basename as the project name).
-  for container in $( { docker ps -a --filter 'label=com.docker.compose.project=opentranscribe' --format '{{.Names}}' 2>/dev/null
-                        docker ps -a --filter 'label=com.docker.compose.project=transcribe-app' --format '{{.Names}}' 2>/dev/null
+  #
+  # The two project names are parameterised ONLY so the test that drives this
+  # real loop body (backend/tests/unit/test_opentr_stop_container_scoping.py)
+  # can point it at a throwaway namespace instead of the live stack -- running
+  # the loop unmodified against a developer's daemon destroyed 16 running
+  # containers (issue #693). Nothing in this script, and nothing shipped, ever
+  # sets them: unset, both expand to the literals they replaced, so `opentr.sh
+  # stop` behaves exactly as before.
+  for container in $( { docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' 2>/dev/null
+                        docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}' 2>/dev/null
                       } | sort -u ); do
     docker stop "$container" 2>/dev/null && docker rm "$container" 2>/dev/null || true
   done

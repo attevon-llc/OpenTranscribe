@@ -5,7 +5,13 @@
 # then `docker pull` of :latest, i.e. it scans the PREVIOUS release. That is
 # correct only after a push and actively wrong as a pre-push gate.
 #
-# Exit: 0 clean · 1 blocking findings
+# Exit: 0 clean · 1 blocking findings OR could-not-scan
+#
+# security-scan.sh distinguishes those two (1 = scanned with findings, 2 = never
+# scanned; issue #681). This stage deliberately maps both onto 1, because the
+# RELEASE runner's exit codes mean something else entirely — 2 there is "misuse"
+# and 3 is "precondition unmet". Both scan outcomes are gate failures, so they
+# get the gate-failure code, with the distinction carried in the message.
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -51,6 +57,11 @@ FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-true}" \
 OUTPUT_DIR="$OUT_DIR" \
 IMAGE_TAG="$VERSION" \
     ./scripts/security-scan.sh all || rc=$?
+
+if (( rc >= 2 )); then
+    echo -e "${RED}scan could NOT RUN (security-scan.sh exit ${rc}) — this is not 'no findings'${NC}" >&2
+    rc=1
+fi
 
 # Assert the reports describe the image we meant to scan. Reading the tag back
 # out of the artifact is the only thing that would have caught the bug above --

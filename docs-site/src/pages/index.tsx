@@ -183,13 +183,16 @@ const useCases = [
 function Hero() {
   const {siteConfig} = useDocusaurusContext();
   const version = siteConfig.customFields?.version as string;
+  const versionIsDev = siteConfig.customFields?.versionIsDev as boolean;
   const githubRepo = siteConfig.customFields?.githubRepo as string;
 
   return (
     <header className={styles.heroBanner}>
       <div className={clsx('container', styles.heroContent)}>
         <div className={styles.heroBadges}>
-          {version && <span className={styles.badge}>{`v${version}`}</span>}
+          {version && (
+            <span className={styles.badge}>{`v${version}${versionIsDev ? '-dev' : ''}`}</span>
+          )}
           <span className={styles.badge}>AGPL-3.0</span>
           <span className={styles.badge}>Self-Hosted</span>
         </div>

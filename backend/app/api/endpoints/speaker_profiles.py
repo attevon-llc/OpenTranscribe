@@ -26,6 +26,7 @@ from app.services.opensearch_service import update_speaker_collections
 from app.services.permission_service import PermissionService
 from app.services.speaker_matching_service import ConfidenceLevel
 from app.services.speaker_matching_service import SpeakerMatchingService
+from app.services.speaker_profile_rename import apply_profile_name_to_speakers
 from app.utils.error_handlers import ErrorHandler
 from app.utils.uuid_helpers import get_speaker_by_uuid
 from app.utils.uuid_helpers import get_speaker_profile_by_uuid
@@ -263,6 +264,41 @@ def create_speaker_profile(
         raise ErrorHandler.internal_error() from e
 
 
+def _dispatch_profile_rename_propagation(
+    renames: list[tuple[str, str]], new_name: str | None
+) -> None:
+    """Replay a committed profile rename into ``transcript_chunks`` (issue #675).
+
+    Chunk documents snapshot the speaker display name at index time, and nothing
+    repairs a merely-*wrong* value: ``search_index_maintenance`` only finds files
+    with no chunks at all. So a profile rename that skipped this left search facets,
+    chat's speaker-scoped ``terms`` filter and every citation serving the old name
+    until someone happened to reindex the file.
+
+    ``dispatch_speaker_rename`` is the single entry point every rename path uses
+    (``tasks/rename_propagation_task.py``); it coalesces the pairs per file, so one
+    task is queued per affected file however many members that file holds.
+
+    **No ``speaker_id``.** That argument exists so the task can re-resolve the
+    current name at run time and converge when two renames race. A profile-wide
+    rename sweeps many speakers at once and has no single id to re-read — the
+    omission is the documented contract, not an oversight.
+
+    Best-effort by design, and it must stay that way: the rename is already
+    committed, so an unreachable broker must not turn it into a caller-visible
+    failure. The chunk plane then stays stale until the next reindex, which is
+    exactly the pre-#405 behaviour.
+    """
+    if not renames or not new_name:
+        return
+    try:
+        from app.tasks.rename_propagation_task import dispatch_speaker_rename
+
+        dispatch_speaker_rename(renames, new_name)
+    except Exception as exc:  # noqa: BLE001 — a committed rename must not 500 on dispatch
+        logger.warning(f"Could not queue chunk-plane profile rename propagation: {exc}")
+
+
 @router.put("/profiles/{profile_uuid}", response_model=dict[str, Any])
 def update_speaker_profile(
     profile_uuid: str,
@@ -271,7 +307,16 @@ def update_speaker_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Update a speaker profile."""
+    """Update a speaker profile.
+
+    A name change is **not** a metadata edit. ``SpeakerProfile.name`` is not a
+    field of any search document; what the chunk plane carries is each member
+    speaker's canonical label, so renaming the profile re-applies the new name to
+    every member (the invariant every other profile-linking path upholds — see
+    ``services/speaker_profile_rename``) and then replays the change into
+    ``transcript_chunks``. Doing only one half would leave Postgres and the index
+    disagreeing in whichever direction was skipped.
+    """
     try:
         profile = get_speaker_profile_by_uuid(db, profile_uuid)
 
@@ -280,6 +325,7 @@ def update_speaker_profile(
         )
 
         profile_id = profile.id
+        renames: list[tuple[str, str]] = []
 
         if name:
             # Check for name conflicts
@@ -300,12 +346,29 @@ def update_speaker_profile(
                 )
 
             profile.name = name  # type: ignore[assignment]
+            # Collected BEFORE the commit below: these are the names the chunk
+            # documents were indexed with, and after the commit Postgres can no
+            # longer say what they were (issue #405).
+            renames = apply_profile_name_to_speakers(
+                db,
+                int(profile_id),
+                name,
+                restrict_to_user_id=None if current_user.is_admin else current_user.id,
+            )
 
         if description is not None:
             profile.description = description  # type: ignore[assignment]
 
         db.commit()
         db.refresh(profile)
+
+        # ─── POST-COMMIT REGION ───────────────────────────────────────────────
+        # The rename is durable from here, so nothing below may raise a 500 that
+        # tells the client it did not happen — the broad handler's `db.rollback()`
+        # cannot undo it. Dispatch AFTER the commit, never before: a rolled-back
+        # rename that reached the index would leave the new name existing only
+        # there (`SpeakerRenameTracker.flush`'s reasoning, same rule).
+        _dispatch_profile_rename_propagation(renames, name)
 
         # updated_at populated by server_default after refresh
         assert profile.updated_at is not None

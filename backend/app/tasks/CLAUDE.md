@@ -51,6 +51,20 @@ indexing → WebSocket notification.
   - Scope differs on purpose: **title covers the whole file plane** (a digest inherits `title`
     and renders it as a citation), **speaker covers the chunk plane only** (a digest has no
     `speaker` field and its prose bakes the name — regeneration, not rewriting, is the fix).
+  - ⚠️ **A PROFILE rename reaches the chunk plane only through its member speakers**
+    (issue #675). `SpeakerProfile.name` is indexed nowhere — the chunk writers resolve
+    `canonical_speaker_label_for_row(speaker)` and never look at a profile — so re-applying
+    the name to every member and dispatching are **one unit**:
+    `services/speaker_profile_rename.apply_profile_name_to_speakers` is that unit's single
+    implementation, shared by the **two** endpoints that rename a profile
+    (`PUT /speakers/{uuid}` with `profile_action="update_profile"`, and
+    `PUT /speaker-profiles/profiles/{uuid}` — the Speakers page's editor, which did neither
+    half until #675). Dispatch without the rewrite writes a name Postgres does not hold and
+    the next reindex reverts it; the rewrite without the dispatch is the #675 bug itself, and
+    there is no repair path — `search_index_maintenance` only finds files with **no** chunks,
+    so it cannot fix chunks holding a merely-wrong value. Dispatch carries **no**
+    `speaker_id`: a profile-wide rename sweeps many speakers and has no single id to re-read.
+    Covered by `tests/api/test_rename_propagation_dispatch.py::TestSpeakerProfileUpdateEndpoint`.
 - `ingest_artifacts_task.py` — `artifacts.generate_file_facts` (**nlp** queue, #383 Phase 2).
   Builds the deterministic ingest artifacts (statistics, extractive digest with per-sentence
   provenance, keyphrases) and upserts `file_facts`. It rides the nlp pool because that is the

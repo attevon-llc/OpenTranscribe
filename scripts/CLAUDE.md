@@ -262,6 +262,12 @@ this file is for.
   `backend/tests/CLAUDE.md`.
 - **Frontend gate** — `frontend-check.sh`: `npm ci` → `svelte-kit sync` → ESLint → svelte-check → vite
   build. Also the pre-commit hook (`files: ^frontend/src/`) and the `/fix-frontend` command.
+  **Two hooks, not one, since issue #688**: `frontend-check` runs it with `--check-only` at
+  commit stage (the `vite build` — whose `prebuild` downloads fonts and shells out to
+  `docker buildx` for the FFmpeg.wasm core — measured 91.8 s of a 328 s whole-tree run), and
+  `frontend-build` runs it in full at **pre-push**. On a PR that hook is the only `vite build`
+  in CI at all, so `.github/workflows/pre-commit.yml` invokes both stages; see
+  `backend/tests/unit/test_precommit_stage_ci_parity.py`.
 - **Publish images** — `docker-build-push.sh`; prefer the skill at `.claude/skills/docker-build-push/SKILL.md`.
 - **Models** — `download-models.sh <cache-dir>` is a host wrapper that runs `download-models.py` inside
   the backend image (`DOWNLOAD_ALL_OPENSEARCH_MODELS`, `OPENSEARCH_MODELS`, `WHISPER_MODEL`).
@@ -536,6 +542,22 @@ aux-file record.
   It hard-exits if the `opentranscribe-multiarch` builder is missing (`setup-remote-builder.sh setup`).
 - `SKIP_SECURITY_SCAN=true` for quick iteration; `PLATFORMS=linux/amd64` for single-arch (no remote
   builder needed); `$0 auto` builds only git-changed components.
+- ⚠️ **"Scanned, findings tolerable" and "never scanned" are DIFFERENT outcomes and must stay
+  that way** (issue #681). `security-scan.sh` exits **1** for findings and **2** for could-not-scan
+  (unknown component, image unobtainable, a sub-scan that died without recording a verdict);
+  `run_security_scan` treats 2 as fatal **regardless of `FAIL_ON_SECURITY_ISSUES`**, because that
+  flag is a statement about which findings are acceptable to ship, not about shipping an image
+  nobody looked at. Collapsing the two into one `else` branch is what made an unscannable
+  component print `All security scans completed successfully!` — and `docs` was already in that
+  state, since it was in `BUILT_COMPONENTS` with a `security-scan.sh` arm but no registry-pull
+  branch, so the default path "scanned" an image it never fetched.
+- **The scannable component list has exactly one home**: the `SCAN_COMPONENT_*` tables in
+  `security-scan.sh`, exposed as `./scripts/security-scan.sh list-components`.
+  `docker-build-push.sh` validates `BUILT_COMPONENTS` against that before pulling anything, and
+  both its pull dispatches now have a failing `*)`. Adding a component (e.g. `lite`, issue #667)
+  means adding it there; forgetting is now loud instead of a green run over an unscanned
+  published image. Guarded by `scripts/tests/test-scan-not-a-pass.sh` (19 cases, 0.4 s, no
+  Docker/network), wired as the `scan-not-a-pass` pre-commit hook.
 - **Every path ends in `buildx --push` — there is no local-only mode.** `:latest` and `:vX.Y.Z` hit
   Docker Hub the instant the build finishes, and it then runs `push-security-reports.sh`, which
   **git-commits and pushes** `security-reports/` to whatever branch is checked out.

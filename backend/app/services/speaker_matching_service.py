@@ -1154,7 +1154,10 @@ class SpeakerMatchingService:
                 embedding=embedding,
                 user_id=user_id,
                 index_name="speakers",
-                threshold=0.75,  # High confidence for automatic assignment (matches SPEAKER_CONFIDENCE_HIGH)
+                # Auto-assignment writes `verified=True`, so the gate is the
+                # auto-accept band and nothing weaker. Stated in raw cosine; the
+                # search converts it to OpenSearch score space (issue #674).
+                min_raw_cosine=SPEAKER_CONFIDENCE_HIGH,
                 max_results=20,
                 exclude_ids=[matched_speaker_id],
                 organization_id=profile_org_id,

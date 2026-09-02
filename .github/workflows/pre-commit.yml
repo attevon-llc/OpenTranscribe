@@ -49,15 +49,33 @@ jobs:
           restore-keys: |
             pre-commit-
 
-      - name: Run pre-commit
+      - name: Run pre-commit (pre-commit stage)
         run: pre-commit run --all-files --show-diff-on-failure
+
+      # ⚠️ BOTH stages, always (issue #688). `pre-commit run` with no --hook-stage runs
+      # DEFAULT-stage hooks only, and .pre-commit-config.yaml sets
+      # `default_stages: [pre-commit]` — so a hook demoted to `stages: [pre-push]` silently
+      # stops running here and the workflow stays green while checking less. That is the
+      # exact failure the tiering had to avoid, so the demotion and this step are one change,
+      # not two. It currently covers the frontend production vite build (the ONLY one in CI
+      # for a PR — docker-publish.yml is workflow_dispatch-only) and the recursive
+      # `bandit -r backend/` scan.
+      #
+      # `--show-diff-on-failure` is kept: shared pre-commit-hooks entries such as
+      # trailing-whitespace/end-of-file-fixer declare pre-push in their own stages and can
+      # rewrite files here too.
+      #
+      # backend/tests/unit/test_precommit_stage_ci_parity.py fails the build if any stage a
+      # hook is assigned to has no CI invocation.
+      - name: Run pre-commit (pre-push stage)
+        run: pre-commit run --all-files --hook-stage pre-push --show-diff-on-failure
 
       - name: Generate pre-commit summary
         if: always()
         run: |
           echo "## Pre-commit Check Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Pre-commit hooks executed on all files." >> $GITHUB_STEP_SUMMARY
+          echo "Pre-commit hooks executed on all files (pre-commit AND pre-push stages)." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Hooks Executed:" >> $GITHUB_STEP_SUMMARY
           echo "- Code formatting (Ruff, Prettier)" >> $GITHUB_STEP_SUMMARY

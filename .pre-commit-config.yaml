@@ -90,17 +90,42 @@ repos:
         types_or: [javascript, jsx, ts, tsx, json, yaml, html, css, scss, markdown]
         args: [--write, --ignore-unknown]
 
-  # Frontend type checking and build verification
+  # Frontend type checking and build verification — TWO TIERS (issue #688).
+  #
+  # `npm run build` measured 91.8 s of a 328 s whole-tree run, and its `prebuild`
+  # (frontend/package.json) is `download-fonts.js && build-ffmpeg.js`, the latter shelling
+  # out to `docker buildx`. Every commit touching one .svelte file paid for a production
+  # bundle. eslint + svelte-check catch what you actually get wrong while editing; a
+  # bundling failure is a push-time concern.
+  #
+  # ⚠️ The pre-push tier is NOT optional cover, and CI must run BOTH stages. On a pull
+  # request this hook is the ONLY vite build anywhere in CI: docker-publish.yml (which
+  # builds frontend/Dockerfile.prod) is `workflow_dispatch` only, and release-validate.yml's
+  # `npm ci && npm run build` is docs-site, not frontend. `pre-commit run --all-files` with
+  # no --hook-stage runs DEFAULT-stage hooks only, and default_stages below is
+  # [pre-commit] — so demoting the build without adding the second CI invocation would have
+  # deleted the frontend build from CI while leaving the workflow green.
+  # `.github/workflows/pre-commit.yml` runs both stages, and
+  # backend/tests/unit/test_precommit_stage_ci_parity.py fails if that ever stops being true.
   - repo: local
     hooks:
       - id: frontend-check
-        name: Frontend Build Verification
-        entry: scripts/frontend-check.sh
+        name: Frontend Type Check (eslint + svelte-check)
+        entry: scripts/frontend-check.sh --check-only
         language: system
         files: ^frontend/src/
         types_or: [svelte, ts, javascript, css, html]
         pass_filenames: false
         stages: [pre-commit]
+        verbose: true
+      - id: frontend-build
+        name: Frontend Build Verification (eslint + svelte-check + vite build)
+        entry: scripts/frontend-check.sh
+        language: system
+        files: ^frontend/src/
+        types_or: [svelte, ts, javascript, css, html]
+        pass_filenames: false
+        stages: [pre-push]
         verbose: true
 
   # Dockerfile linting — runs hadolint via its official pinned Docker image
@@ -133,16 +158,36 @@ repos:
   - repo: https://github.com/PyCQA/bandit
     rev: 1.7.7
     hooks:
+      # TWO TIERS (issue #688). The recursive scan below ignored the staged file list
+      # entirely and re-walked all of backend/ on every Python commit — 71.1 s of a 328 s
+      # whole-tree run. At commit time bandit now sees only the files pre-commit passes it;
+      # the whole-tree walk runs at pre-push and in CI (which invokes BOTH stages — see the
+      # frontend-check comment above for why that pairing is mandatory).
       - id: bandit
+        name: bandit (staged backend files)
+        files: ^backend/
+        # Belt and braces: pre-commit only ever passes TRACKED files and backend/mutants
+        # is gitignored, but a stray `git add` of a mutant must not become a finding.
+        exclude: ^backend/mutants/
+        args: [-c, pyproject.toml]
+        additional_dependencies: ["bandit[toml]"]
+        stages: [pre-commit]
+      - id: bandit
+        alias: bandit-recursive
+        name: bandit (recursive backend/ scan)
         files: ^backend/
         # --exclude on the CLI, not just [tool.bandit] exclude_dirs: the pyproject
         # glob does NOT reliably match here (the hook runs from the repo root, so paths
         # are `backend/mutants/...`), and bandit walks the FILESYSTEM, so gitignoring
         # mutmut's generated tree is not enough. Without this, a mutation run left ~330k
         # lines of deliberately corrupted source that failed the commit on a finding
-        # inside a mutant.
+        # inside a mutant. This is the tier that walks, so this is the tier that needs it.
         args: [-c, pyproject.toml, -x, backend/mutants, -r, backend/]
+        # -r backend/ already covers the tree; passing the changed files too would scan
+        # them twice. `files:` still gates whether this tier runs at all.
+        pass_filenames: false
         additional_dependencies: ["bandit[toml]"]
+        stages: [pre-push]
 
   # Import-linter — enforce the cloud seam direction: the open-source core
   # (`app.*`) must NEVER import the closed-source cloud edition (`cloud`/clerk/
@@ -256,6 +301,24 @@ repos:
       - id: shellcheck
         args: [--severity=warning]
 
+  # A component that was never scanned must never read as a clean one (issue #681).
+  #
+  # Wired here rather than left as a script somebody might remember to run: the
+  # failure it guards is silent by construction — an unscannable component
+  # printed "All security scans completed successfully!" and `docs` had been in
+  # that state since it was added. Nothing about the output distinguished it
+  # from a real pass, so a human running the gate by hand would not have looked.
+  #
+  # 0.4 s, no Docker, no network, no images.
+  - repo: local
+    hooks:
+      - id: scan-not-a-pass
+        name: an unscanned component cannot report a passing security scan
+        entry: scripts/tests/test-scan-not-a-pass.sh
+        language: system
+        pass_filenames: false
+        files: ^scripts/(docker-build-push\.sh|security-scan\.sh|tests/test-scan-not-a-pass\.sh)$
+
   # Commit message linting (optional)
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v3.0.0
@@ -265,5 +328,12 @@ repos:
         args: [--force-scope]
 
 # Configuration for specific hooks
+#
+# `default_install_hook_types` is what makes the tiering above real for a human: without it
+# `pre-commit install` wires ONLY the pre-commit hook, so the pre-push tier (frontend build,
+# recursive bandit) and the commit-msg tier (conventional commits) would never fire locally
+# no matter what `stages:` says. Existing checkouts must re-run `pre-commit install` once —
+# this key changes what a FUTURE install does, it cannot retro-wire an installed hook.
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
 default_stages: [pre-commit]
 fail_fast: false

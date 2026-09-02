@@ -154,7 +154,56 @@ update_security_tools() {
     print_success "Security tool updates complete!"
 }
 
-# Function to run security scan if enabled
+# security-scan.sh's exit codes. Kept in sync with the block at the top of that
+# script; 2 means "could not scan", which is NOT a kind of finding.
+SCAN_EXIT_FINDINGS=1
+SCAN_EXIT_COULD_NOT_SCAN=2
+
+# Ask security-scan.sh what it can actually scan, and refuse anything else.
+#
+# Issue #681: the component list lived in three places that were free to
+# disagree. `docs` was in BUILT_COMPONENTS and had a security-scan.sh arm but no
+# registry-pull branch here, so in the default (registry) mode it was scanned
+# against an image that was never fetched — and any resulting failure was then
+# downgraded to a pass. A future `lite` target would have inherited exactly the
+# same hole. So the list is DERIVED from the scanner, once, up front.
+assert_components_scannable() {
+    local requested=("$@")
+
+    if [ ! -f "./scripts/security-scan.sh" ]; then
+        print_error "scripts/security-scan.sh is missing — nothing can establish these images were scanned"
+        return 1
+    fi
+
+    local known=()
+    mapfile -t known < <(./scripts/security-scan.sh list-components 2>/dev/null)
+    if [ ${#known[@]} -eq 0 ]; then
+        print_error "security-scan.sh reported no scannable components"
+        return 1
+    fi
+
+    local component candidate found rc=0
+    for component in "${requested[@]}"; do
+        found=false
+        for candidate in "${known[@]}"; do
+            if [ "${candidate}" = "${component}" ]; then
+                found=true
+                break
+            fi
+        done
+        if [ "${found}" != true ]; then
+            print_error "Component '${component}' has no security-scan.sh arm — it CANNOT be scanned"
+            print_error "  scannable components: ${known[*]}"
+            rc=1
+        fi
+    done
+    return "${rc}"
+}
+
+# Function to run security scan if enabled.
+#
+# Returns 0 (proceed), 1 (findings the caller's policy refuses to tolerate), or
+# SCAN_EXIT_COULD_NOT_SCAN (this component was never scanned).
 run_security_scan() {
     local component=$1
 
@@ -164,24 +213,43 @@ run_security_scan() {
     fi
 
     if [ ! -f "./scripts/security-scan.sh" ]; then
-        print_warning "Security scan script not found, skipping..."
-        return 0
+        # Deliberately fatal, and deliberately NOT gated on
+        # FAIL_ON_SECURITY_ISSUES. There is already an explicit, named opt-out
+        # for "I do not want a scan" — SKIP_SECURITY_SCAN — and an absent
+        # scanner is not somebody choosing it.
+        print_error "Security scan script not found — refusing to claim ${component} was scanned"
+        print_error "Set SKIP_SECURITY_SCAN=true if you genuinely intend to build without scanning"
+        return "${SCAN_EXIT_COULD_NOT_SCAN}"
     fi
 
     print_info "Running security scan for ${component}..."
-    if OUTPUT_DIR="./security-reports" FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-false}" ./scripts/security-scan.sh "${component}"; then
+    local scan_rc=0
+    OUTPUT_DIR="./security-reports" FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-false}" \
+        ./scripts/security-scan.sh "${component}" || scan_rc=$?
+
+    if [ "${scan_rc}" -eq 0 ]; then
         print_success "Security scan passed for ${component}"
         return 0
-    else
-        print_warning "Security scan found issues for ${component}"
-        if [ "${FAIL_ON_SECURITY_ISSUES}" = "true" ]; then
-            print_error "Failing build due to security issues (FAIL_ON_SECURITY_ISSUES=true)"
-            return 1
-        else
-            print_warning "Continuing despite security issues (set FAIL_ON_SECURITY_ISSUES=true to fail)"
-            return 0
-        fi
     fi
+
+    if [ "${scan_rc}" -ge "${SCAN_EXIT_COULD_NOT_SCAN}" ]; then
+        # NOT the findings branch. FAIL_ON_SECURITY_ISSUES is a statement about
+        # which findings are acceptable to ship; it says nothing about shipping
+        # an image nobody looked at, so it does not apply here and must not be
+        # consulted. Folding this into the branch below is the whole of #681.
+        print_error "Security scan could NOT RUN for ${component} (exit ${scan_rc})"
+        print_error "This is not a tolerable-findings result — the image was never scanned"
+        print_error "FAIL_ON_SECURITY_ISSUES does not apply: it tolerates findings, not the absence of a scan"
+        return "${SCAN_EXIT_COULD_NOT_SCAN}"
+    fi
+
+    print_warning "Security scan found issues for ${component}"
+    if [ "${FAIL_ON_SECURITY_ISSUES}" = "true" ]; then
+        print_error "Failing build due to security issues (FAIL_ON_SECURITY_ISSUES=true)"
+        return "${SCAN_EXIT_FINDINGS}"
+    fi
+    print_warning "Continuing despite security issues (set FAIL_ON_SECURITY_ISSUES=true to fail)"
+    return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -372,13 +440,61 @@ build_docs() {
     printf '%s\n' "${tag_args[@]}" | grep -v '^--tag$' | sed 's/^/  - /'
 }
 
-# Function to run parallel security scans on both images
+# Turn the per-component status files into ONE verdict.
+#
+# Three outcomes, because there are three things that can happen (issue #681):
+#   0   every component was scanned and came back acceptable
+#   1   every component was SCANNED; at least one failed the caller's policy
+#   2   at least one component was NOT SCANNED — no status file at all (the
+#       subshell died before recording anything), or a could-not-scan status
+#
+# Split out of run_parallel_scans so it can be exercised directly: the
+# missing-status-file path is otherwise only reachable by killing a subshell
+# mid-run, and a branch that cannot be tested is a branch that quietly rots.
+evaluate_scan_statuses() {
+    local status_dir="$1"
+    shift
+
+    local verdict=0 component status
+    for component in "$@"; do
+        if [ ! -f "${status_dir}/${component}.status" ]; then
+            print_error "${component}: no scan status recorded — NOT SCANNED"
+            verdict="${SCAN_EXIT_COULD_NOT_SCAN}"
+            continue
+        fi
+        status=$(cat "${status_dir}/${component}.status")
+        case "${status}" in
+            0)
+                ;;
+            "${SCAN_EXIT_FINDINGS}")
+                if [ "${verdict}" -eq 0 ]; then
+                    verdict="${SCAN_EXIT_FINDINGS}"
+                fi
+                ;;
+            *)
+                print_error "${component}: security scan could not run (status '${status}') — NOT SCANNED"
+                verdict="${SCAN_EXIT_COULD_NOT_SCAN}"
+                ;;
+        esac
+    done
+    return "${verdict}"
+}
+
+# Function to run parallel security scans on the built images
 run_parallel_scans() {
     local components=("$@")
 
     if [ "${SKIP_SECURITY_SCAN}" = "true" ]; then
         print_warning "Security scanning skipped (SKIP_SECURITY_SCAN=true)"
         return 0
+    fi
+
+    # Fail before pulling or scanning anything: a component the scanner has no
+    # arm for can never produce a meaningful result, so there is no point
+    # spending a registry pull to find that out per-component later.
+    if ! assert_components_scannable "${components[@]}"; then
+        print_error "Refusing to report a security result for a component that cannot be scanned"
+        return 1
     fi
 
     print_info ""
@@ -413,30 +529,45 @@ run_parallel_scans() {
                 return 1
             fi
         }
+        # A `*)` arm is mandatory here: an unhandled component would otherwise
+        # skip the existence check entirely and be "scanned" against whatever
+        # local image happens to carry that tag.
         for component in "${components[@]}"; do
             case "$component" in
                 backend)  return_early_if_missing "${REPO_BACKEND}:${VERSION_FULL}" || return 1 ;;
                 frontend) return_early_if_missing "${REPO_FRONTEND}:${VERSION_FULL}" || return 1 ;;
+                docs)     return_early_if_missing "${REPO_DOCS}:${VERSION_FULL}" || return 1 ;;
+                *)
+                    print_error "No local-image rule for component '${component}' — cannot confirm an image exists to scan"
+                    return 1
+                    ;;
             esac
         done
     else
-        # Pull images in parallel
+        # Pull images in parallel.
+        #
+        # This was an `if backend / elif frontend` with no default, so `docs`
+        # was never pulled and the scan below ran against whatever local image
+        # carried that tag — or nothing (issue #681). A `case` with a failing
+        # `*)` makes the next component that forgets a branch loud.
         print_info "Pulling images from the registry for scanning..."
 
         for component in "${components[@]}"; do
-            if [ "$component" = "backend" ]; then
-                (
-                    docker rmi "${REPO_BACKEND}:latest" 2>/dev/null || true
-                    docker pull --platform linux/amd64 "${REPO_BACKEND}:latest"
-                ) &
-                pids+=($!)
-            elif [ "$component" = "frontend" ]; then
-                (
-                    docker rmi "${REPO_FRONTEND}:latest" 2>/dev/null || true
-                    docker pull --platform linux/amd64 "${REPO_FRONTEND}:latest"
-                ) &
-                pids+=($!)
-            fi
+            local pull_repo
+            case "$component" in
+                backend)  pull_repo="${REPO_BACKEND}" ;;
+                frontend) pull_repo="${REPO_FRONTEND}" ;;
+                docs)     pull_repo="${REPO_DOCS}" ;;
+                *)
+                    print_error "No registry-pull rule for component '${component}' — it would be scanned against a stale or absent local image"
+                    return 1
+                    ;;
+            esac
+            (
+                docker rmi "${pull_repo}:latest" 2>/dev/null || true
+                docker pull --platform linux/amd64 "${pull_repo}:latest"
+            ) &
+            pids+=($!)
         done
     fi
 
@@ -458,11 +589,17 @@ run_parallel_scans() {
     for component in "${components[@]}"; do
         (
             print_info "[${component^}] Starting security scan..."
-            if run_security_scan "$component"; then
-                echo "0" > "${status_dir}/${component}.status"
+            # `|| rc=$?` rather than `if ...; then`: the exact return code is
+            # what distinguishes "scanned, findings" from "never scanned", and
+            # collapsing it to a boolean here is what threw that away.
+            rc=0
+            run_security_scan "$component" || rc=$?
+            echo "${rc}" > "${status_dir}/${component}.status"
+            if [ "${rc}" -eq 0 ]; then
                 print_success "[${component^}] Security scan completed"
+            elif [ "${rc}" -ge "${SCAN_EXIT_COULD_NOT_SCAN}" ]; then
+                print_error "[${component^}] Security scan could NOT RUN"
             else
-                echo "1" > "${status_dir}/${component}.status"
                 print_warning "[${component^}] Security scan had issues"
             fi
         ) 2>&1 | sed "s/^/[${component^}] /" &
@@ -471,32 +608,51 @@ run_parallel_scans() {
     # Wait for all scans to complete
     wait
 
-    # Check results
-    local all_passed=true
-    for component in "${components[@]}"; do
-        if [ -f "${status_dir}/${component}.status" ]; then
-            status=$(cat "${status_dir}/${component}.status")
-            if [ "$status" != "0" ]; then
-                all_passed=false
-            fi
-        fi
-    done
+    local verdict=0
+    evaluate_scan_statuses "${status_dir}" "${components[@]}" || verdict=$?
 
     # Cleanup
     rm -rf "${status_dir}"
 
-    if [ "$all_passed" = true ]; then
+    if [ "${verdict}" -eq 0 ]; then
         print_success "All security scans completed successfully!"
-    else
-        print_warning "Some security scans had issues (see above)"
+        return 0
     fi
+
+    if [ "${verdict}" -ge "${SCAN_EXIT_COULD_NOT_SCAN}" ]; then
+        # The summary must never be able to describe an unscanned component as a
+        # success, and "carry on quietly" is a form of describing it as one:
+        # main() would print "All builds completed successfully!" right after.
+        print_error "One or more components were NOT SCANNED — refusing to report success"
+        print_error "Nothing in this run establishes those images are clean"
+        return 1
+    fi
+
+    # Every component was scanned; at least one failed the caller's policy.
+    # A status of 1 is only ever written when FAIL_ON_SECURITY_ISSUES=true, so
+    # reaching here means the operator explicitly asked for this to be fatal.
+    print_error "Security findings were not tolerated (FAIL_ON_SECURITY_ISSUES=true)"
+    return 1
 }
 
 # Function to scan only (no build, pull latest and scan)
 scan_only() {
     print_info "Running security scan only (no build)..."
+
+    # Derived, not hardcoded. This used to read `backend frontend`, which meant
+    # `$0 scan` silently never looked at the docs image even though `$0 all`
+    # builds and publishes it (issue #681).
+    local components=()
+    if [ -f "./scripts/security-scan.sh" ]; then
+        mapfile -t components < <(./scripts/security-scan.sh list-components 2>/dev/null)
+    fi
+    if [ ${#components[@]} -eq 0 ]; then
+        print_error "Could not determine the scannable component list from security-scan.sh"
+        return 1
+    fi
+
     # Reuse run_parallel_scans which handles DB updates, parallel pulls, and parallel scans
-    run_parallel_scans "backend" "frontend"
+    run_parallel_scans "${components[@]}"
 }
 
 # Function to delete old partial version tags from Docker Hub
@@ -928,5 +1084,12 @@ main() {
     fi
 }
 
-# Run main function
-main
+# Run main function — but only when EXECUTED, not when sourced.
+#
+# Sourcing is how scripts/tests/test-scan-not-a-pass.sh exercises
+# run_security_scan / evaluate_scan_statuses / run_parallel_scans directly. The
+# alternative — driving those branches through a real build — needs Docker Hub
+# credentials and multi-gigabyte images, i.e. they would not be tested at all.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    main
+fi

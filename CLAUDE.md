@@ -215,8 +215,27 @@ Run the full suite before committing — not just the staged subset, and through
 concurrency-guarded wrapper, not bare `pre-commit` (issue #434):
 
 ```bash
-scripts/safe-precommit.sh run --all-files    # the gate CI mirrors
+scripts/safe-precommit.sh run --all-files                      # commit-stage tier
+scripts/safe-precommit.sh run --all-files --hook-stage pre-push # push-stage tier
 ```
+
+**The gate is TIERED (issue #688), and CI runs BOTH tiers.** The commit stage is the fast
+edit loop (eslint + svelte-check, bandit over the staged files); the push stage carries the
+two whole-tree jobs that dominated it — the frontend production `vite build` and
+`bandit -r backend/`. ⚠️ `pre-commit run --all-files` with no `--hook-stage` runs
+**default-stage hooks only** (`default_stages: [pre-commit]`), so "I ran pre-commit" no
+longer means "I ran everything CI runs" — run the second line too before pushing.
+`.github/workflows/pre-commit.yml` has a step per stage and
+`backend/tests/unit/test_precommit_stage_ci_parity.py` fails if a hook ever sits in a stage
+CI does not invoke.
+
+**One-time local setup, per checkout:** `pre-commit install --install-hooks` — the config's
+`default_install_hook_types` now wires `pre-commit`, `commit-msg` and `pre-push`, but it
+only affects a *future* install; an already-installed checkout has just the `pre-commit`
+script and neither the push tier nor conventional-commit message linting fires until you
+re-run it. ⚠️ **Never run it from a git worktree**: `.git/hooks` there resolves to the
+shared common git dir, so you would rewrite the hooks of the main checkout and every other
+worktree at once.
 
 The wrapper (`scripts/safe-precommit.sh`, self-test: `scripts/safe-precommit-selftest.sh`)
 refuses to start — rather than racing silently — when either of the two *known* unsafe
@@ -268,7 +287,7 @@ an arbitrary unstaged edit elsewhere in the tree safe** — only those two speci
 >
 > `--all-files` is always correct in CI, where nothing else is writing.
 
-Hook inventory is in `.pre-commit-config.yaml`. The frontend hook only fires when `frontend/src/**/*.{svelte,ts,js,css,html}` is staged. Note that `prettier` **rewrites files** and then reports failure — re-stage and re-run, don't "fix" anything by hand.
+Hook inventory is in `.pre-commit-config.yaml`. The frontend hooks (`frontend-check` at commit stage, `frontend-build` at push stage) only fire when `frontend/src/**/*.{svelte,ts,js,css,html}` is staged. Note that `prettier` **rewrites files** and then reports failure — re-stage and re-run, don't "fix" anything by hand.
 
 ### ⚠️ Fix the finding, never silence it
 
@@ -434,7 +453,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Full local test matrix (4 stages, overlay sub-matrix) | `docs-site/docs/developer-guide/full-test-matrix.md` |
 | Frontend SPA (+ 24 folder-level files) | `frontend/CLAUDE.md` |
 
-> **Cosine score conversion (repo-wide trap):** OpenSearch `cosinesimil` returns `(1 + cosine) / 2`, NOT raw cosine. Every kNN score read must do `raw_cosine = 2.0 * hit["_score"] - 1.0`. All 11 read sites live in the speaker/voiceprint plane under `backend/app/services/` (none in `api/`, and transcript search ranks by RRF, never raw cosine) — all 11 currently correct. Full table: `backend/app/services/search/CLAUDE.md`.
+> **Cosine score conversion (repo-wide trap):** OpenSearch `cosinesimil` returns `(1 + cosine) / 2`, NOT raw cosine. Every kNN score read must do `raw_cosine = 2.0 * hit["_score"] - 1.0`. All 11 read sites live in the speaker/voiceprint plane under `backend/app/services/` (none in `api/`, and transcript search ranks by RRF, never raw cosine) — all 11 currently correct. **It applies to WRITES too** (issue #674): a threshold sent *into* OpenSearch (`min_score`) needs the inverse, `(1 + raw_cosine) / 2`, and no read-site audit can find a bad one. Both directions are named functions in `backend/app/utils/cosine_space.py` — call them. Full table: `backend/app/services/search/CLAUDE.md`.
 
 > **Chat retrieval trap (issue #52), as amended by the redaction policy of 2026-08-13:** the
 > `transcript_chunks` index stores transcript text **UNREDACTED**. Whether it must be masked before

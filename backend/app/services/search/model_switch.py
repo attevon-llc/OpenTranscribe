@@ -46,20 +46,27 @@ class EmbeddingModelNotDeployedError(SearchIndexError):
 
 
 class ReindexDispatchError(SearchIndexError):
-    """The model was switched but the re-embed could not be queued.
+    """The re-index could not be queued.
 
-    Unlike the two above, this is raised **after** the settings, the ingest
+    Unlike the two above, this can be raised **after** the settings, the ingest
     pipeline and the index mapping have already been changed — the deployment is
-    genuinely half-switched, and that state exists whether or not anyone is told.
-    The only decision left is whether to *report* it, and reporting it is not
-    optional: a switch whose reindex never ran leaves new documents embedded by
-    the new model and every existing document by the old one, which is precisely
-    the mixed vector space #437 exists to prevent. Swallowing this would answer
-    ``200`` with "Re-indexing the transcripts of 0 user(s)".
+    then genuinely half-switched, and that state exists whether or not anyone is
+    told. The only decision left is whether to *report* it, and reporting it is
+    not optional: a switch whose reindex never ran leaves new documents embedded
+    by the new model and every existing document by the old one, which is
+    precisely the mixed vector space #437 exists to prevent. Swallowing this
+    would answer ``200`` with "Re-indexing the transcripts of 0 user(s)".
+
+    ``apply_embedding_model_switch`` re-raises it with that switch-specific
+    framing; the plain ``POST /search/reindex`` path (#627) reports the generic
+    message this module raises, because nothing was switched there.
     """
 
 
-def dispatch_reindex_for_every_owner(triggered_by: int) -> dict[str, Any]:
+def dispatch_reindex_for_every_owner(
+    triggered_by: int,
+    file_uuids_by_owner: dict[int, list[str]] | None = None,
+) -> dict[str, Any]:
     """Reindex **every** user's transcripts, not just the caller's.
 
     ``reindex_transcripts_task`` filters ``MediaFile.user_id == user_id``
@@ -100,49 +107,72 @@ def dispatch_reindex_for_every_owner(triggered_by: int) -> dict[str, Any]:
     ``kombu.exceptions.OperationalError`` and **not** an ``OSError``, so catching
     those by name would have caught nothing while looking careful.)
 
+    **A partial scope names its owners explicitly** (#627). ``POST
+    /search/reindex`` has two narrower modes — a pending-only sweep and an
+    operator-supplied list of file UUIDs — and both were scoped to the calling
+    admin by the same defect this function fixes for the whole-corpus case. They
+    pass ``file_uuids_by_owner`` so each owner's coordinator receives that
+    owner's files, resolved by ``services/search/reindex_scope.py``. There is
+    deliberately no second dispatch loop for them: one loop, one failure
+    contract, one place that decides the caller goes first.
+
+    ⚠️ **An owner with an empty list is DROPPED, not dispatched.**
+    ``reindex_transcripts_task`` treats a falsy ``file_uuids`` as "every file
+    this user owns" (``if file_uuids:``), so passing ``[]`` for an owner with
+    nothing to do would re-embed their entire account.
+
     Args:
-        triggered_by: The admin performing the switch, dispatched first so their
-            own progress stream starts immediately.
+        triggered_by: The admin performing the switch or repair, dispatched
+            first so their own progress stream starts immediately.
+        file_uuids_by_owner: Optional per-owner file scope. ``None`` (the
+            default) means the whole corpus: every owner of a COMPLETED file,
+            each re-indexed in full.
 
     Returns:
         Dict with the dispatched task ids keyed by user id, and a user count.
 
     Raises:
-        ReindexDispatchError: no reindex could be queued. The switch itself has
-            already been applied by the time this runs.
+        ReindexDispatchError: no reindex could be queued.
     """
     from app.db.session_utils import session_scope
     from app.models.media import FileStatus
     from app.models.media import MediaFile
     from app.tasks.reindex_task import reindex_transcripts_task
 
-    with session_scope() as db_session:
-        owner_ids = [
-            int(row[0])
-            for row in db_session.query(MediaFile.user_id)
-            .filter(MediaFile.status == FileStatus.COMPLETED)
-            .distinct()
-            .all()
-        ]
+    payloads: dict[int, list[str] | None]
+    if file_uuids_by_owner is None:
+        with session_scope() as db_session:
+            owner_ids = [
+                int(row[0])
+                for row in db_session.query(MediaFile.user_id)
+                .filter(MediaFile.status == FileStatus.COMPLETED)
+                .distinct()
+                .all()
+            ]
+        # The caller is dispatched first and unconditionally: the settings UI keys
+        # its progress stream on the requesting user, so an admin who owns no files
+        # still needs a run to watch. That costs one no-op coordinator.
+        payloads = {uid: None for uid in owner_ids}
+        payloads[triggered_by] = None
+    else:
+        payloads = {uid: list(uuids) for uid, uuids in file_uuids_by_owner.items() if uuids}
 
-    # The caller is dispatched first and unconditionally: the settings UI keys its
-    # progress stream on the requesting user, so an admin who owns no files still
-    # needs a run to watch. That costs one no-op coordinator.
-    ordered = [triggered_by] + [uid for uid in sorted(owner_ids) if uid != triggered_by]
+    ordered = ([triggered_by] if triggered_by in payloads else []) + [
+        uid for uid in sorted(payloads) if uid != triggered_by
+    ]
     tasks: dict[int, str] = {}
     try:
         for user_id in ordered:
-            tasks[user_id] = reindex_transcripts_task.delay(user_id=user_id, file_uuids=None).id
+            tasks[user_id] = reindex_transcripts_task.delay(
+                user_id=user_id, file_uuids=payloads[user_id]
+            ).id
     except Exception as e:
         raise ReindexDispatchError(
-            f"The embedding model was switched, but the re-embed could not be queued "
-            f"after {len(tasks)} of {len(ordered)} users ({e}). New documents will be "
-            f"embedded by the new model and existing ones still hold the old model's "
-            f"vectors — the index is a mixed vector space until a full reindex runs. "
-            f"Restore the message broker and re-run the switch."
+            f"The re-index could not be queued after {len(tasks)} of {len(ordered)} "
+            f"users ({e}). Restore the message broker and re-run it."
         ) from e
 
-    logger.info(f"Model switch dispatched reindex for {len(tasks)} users")
+    logger.info(f"Dispatched reindex for {len(tasks)} users")
     return {"reindex_task_ids": tasks, "reindex_users": len(tasks)}
 
 
@@ -207,8 +237,19 @@ def apply_embedding_model_switch(model_name: str, triggered_by: int) -> dict[str
     reset_search_provenance_advisory()
     recreate_index_for_dimension(dimension)
 
-    # 4. Everyone's documents, not just the caller's.
-    dispatch = dispatch_reindex_for_every_owner(triggered_by)
+    # 4. Everyone's documents, not just the caller's. The dispatcher's own
+    #    failure message is scope-generic, so the switch-specific consequence —
+    #    a half-applied switch leaves a MIXED vector space — is stated here,
+    #    where it is true, rather than in a helper two other callers share.
+    try:
+        dispatch = dispatch_reindex_for_every_owner(triggered_by)
+    except ReindexDispatchError as e:
+        raise ReindexDispatchError(
+            f"The embedding model was switched, but the re-embed could not be queued: "
+            f"{e} New documents will be embedded by the new model and existing ones "
+            f"still hold the old model's vectors — the index is a mixed vector space "
+            f"until a full reindex runs."
+        ) from e
 
     logger.info(f"Embedding model switched to {model_name} ({model_id}, {dimension}d)")
     return {

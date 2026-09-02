@@ -4,6 +4,11 @@
   **AI-Powered Transcription and Media Analysis Platform**
 </div>
 
+> **Project status — active development.** The default branch tracks ongoing work and may
+> contain unreleased or in-progress features. For a stable deployment, install a published
+> [release](https://github.com/attevon-llc/OpenTranscribe/releases) — the one-line installer
+> below resolves the latest release automatically and pins your deployment to it.
+
 OpenTranscribe is a powerful, containerized web application for transcribing and analyzing audio/video files using state-of-the-art AI models. Built with modern technologies and designed for scalability, it provides an end-to-end solution for speech-to-text conversion, speaker identification, and content analysis.
 
 > **Note**: This application is 99.9% written by AI using frontier models from commercial providers, demonstrating the power of AI-assisted development.

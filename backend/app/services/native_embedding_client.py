@@ -38,7 +38,7 @@ import logging
 import numpy as np
 
 from app.transcription.diarizer_native import post_json
-from app.transcription.diarizer_native import sidecar_healthy
+from app.transcription.diarizer_native import sidecar_ready
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +62,13 @@ _EMBED_TIMEOUT_S = 60.0
 def native_embedding_available(base_url: str | None = None) -> bool:
     """True when the sidecar can serve embeddings right now.
 
-    Shares ``diarizer_native.sidecar_healthy`` so the embedding path and the
-    diarization path agree on what "the sidecar is up" means.
+    Shares ``diarizer_native.sidecar_ready`` so the embedding path and the
+    diarization path agree on what "the sidecar can serve" means — readiness, not mere
+    liveness. ``/embed_window`` runs the same weights ``/diarize`` does, so a sidecar
+    whose models are unusable cannot serve embeddings either, however cheerfully its
+    ``/healthz`` answers 200.
     """
-    return sidecar_healthy(base_url)
+    return sidecar_ready(base_url)
 
 
 def fit_to_window(samples: np.ndarray) -> list[np.ndarray]:

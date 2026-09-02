@@ -222,17 +222,26 @@ class TestOverlapDiarizationEnabled:
 
 
 class TestDiarizerCurrent:
-    def test_native_selected_and_healthy_keeps_native_cached(self, monkeypatch: pytest.MonkeyPatch):
+    def test_native_selected_and_ready_keeps_native_cached(self, monkeypatch: pytest.MonkeyPatch):
+        """The routing probe is READINESS (/readyz), not liveness (/healthz).
+
+        /healthz answers 200 in every model state, including "models unusable", so it
+        cannot decide whether to send work here. See test_diar_native_readiness_gate.py.
+        """
         monkeypatch.setattr(
-            "app.transcription.diarizer_native.sidecar_healthy", lambda *a, **kw: True
+            "app.transcription.diarizer_native.sidecar_ready", lambda *a, **kw: True
         )
         config = TranscriptionConfig(diarizer_backend="native")
         cached = cast(SpeakerDiarizer, NativeSpeakerDiarizer(config))
         assert ModelManager._diarizer_current(cached, config) is True
 
-    def test_native_selected_but_unhealthy_swaps_and_logs(
+    def test_native_selected_but_unreachable_swaps_and_logs(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ):
+        """A sidecar that is GONE must say "unreachable", not merely "not ready"."""
+        monkeypatch.setattr(
+            "app.transcription.diarizer_native.sidecar_ready", lambda *a, **kw: False
+        )
         monkeypatch.setattr(
             "app.transcription.diarizer_native.sidecar_healthy", lambda *a, **kw: False
         )
@@ -242,16 +251,41 @@ class TestDiarizerCurrent:
         assert ModelManager._diarizer_current(cached, config) is False
         assert any("unreachable" in r.message for r in caplog.records)
 
+    def test_native_selected_but_unready_says_so_rather_than_unreachable(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ):
+        """ "Gone" and "up but cannot serve" are different problems with different fixes.
+
+        Logging the second as "unreachable" would send an operator to check networking
+        when the actual fault is an unprovisioned or broken models directory.
+        """
+        monkeypatch.setattr(
+            "app.transcription.diarizer_native.sidecar_ready", lambda *a, **kw: False
+        )
+        monkeypatch.setattr(
+            "app.transcription.diarizer_native.sidecar_healthy", lambda *a, **kw: True
+        )
+        config = TranscriptionConfig(diarizer_backend="native")
+        cached = cast(SpeakerDiarizer, NativeSpeakerDiarizer(config))
+        caplog.set_level(logging.WARNING)
+        assert ModelManager._diarizer_current(cached, config) is False
+        assert any("up but not ready" in r.message for r in caplog.records)
+        assert not any("unreachable" in r.message for r in caplog.records)
+
     def test_pyannote_selected_rejects_native_cached(self, monkeypatch: pytest.MonkeyPatch):
         """Pinning pyannote explicitly means a cached native instance is always stale —
         and no sidecar probe should even run for a pinned-pyannote config."""
         probed: list[int] = []
 
-        def _fake_healthy(*_a: object, **_kw: object) -> bool:
+        def _fake_probe(*_a: object, **_kw: object) -> bool:
             probed.append(1)
             return True
 
-        monkeypatch.setattr("app.transcription.diarizer_native.sidecar_healthy", _fake_healthy)
+        # BOTH predicates, so this stays a real assertion. The routing probe moved from
+        # sidecar_healthy to sidecar_ready; patching only the old one would leave this
+        # test passing vacuously while a probe it is meant to forbid ran unnoticed.
+        monkeypatch.setattr("app.transcription.diarizer_native.sidecar_healthy", _fake_probe)
+        monkeypatch.setattr("app.transcription.diarizer_native.sidecar_ready", _fake_probe)
         config = TranscriptionConfig(diarizer_backend="pyannote")
         cached = cast(SpeakerDiarizer, NativeSpeakerDiarizer(config))
         assert ModelManager._diarizer_current(cached, config) is False

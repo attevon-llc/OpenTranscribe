@@ -31,6 +31,7 @@ import contextlib
 import logging
 import os
 import time
+import urllib.error
 import urllib.request
 import uuid
 import wave
@@ -79,11 +80,16 @@ def default_base_url() -> str:
 
 
 def sidecar_healthy(base_url: str | None = None) -> bool:
-    """True when the diar-native sidecar answers /healthz.
+    """True when the diar-native sidecar is LIVE — the process is up and answering.
 
-    Used by ModelManager to decide, per task, whether the native engine can serve — in
-    both directions: a live sidecar that went away, and a recovered one that a worker
-    running on the PyAnnote fallback should return to.
+    ⚠️ This is liveness, NOT readiness, and the difference is not academic. diar-native's
+    ``/healthz`` returns 200 in *every* model state, including "no models" and "models
+    known to be unusable". That is deliberate on the sidecar's side: the compose
+    healthcheck gates on this endpoint, so a container that has not provisioned yet must
+    not be marked unhealthy and fail ``compose up --wait`` for the whole stack.
+
+    The consequence is that "answers /healthz" does not imply "can diarize". To decide
+    whether to route work at the sidecar, use :func:`sidecar_ready`.
     """
     url = (base_url or _DEFAULT_URL).rstrip("/")
     try:
@@ -92,6 +98,67 @@ def sidecar_healthy(base_url: str | None = None) -> bool:
         ) as resp:
             return bool(resp.status == 200)
     except Exception:  # noqa: BLE001 — unreachable for any reason means "not healthy"
+        return False
+
+
+def sidecar_status(base_url: str | None = None) -> dict:
+    """The sidecar's ``/healthz`` body, or ``{}`` if it cannot be read.
+
+    Used only to attach a REASON to a readiness failure. Never used to decide readiness:
+    the status code carries that, and parsing a body to make a routing decision would
+    reintroduce the coupling ``/readyz`` exists to remove.
+    """
+    import json
+
+    url = (base_url or _DEFAULT_URL).rstrip("/")
+    try:
+        with urllib.request.urlopen(  # noqa: S310  # nosec B310 — internal service
+            f"{url}/healthz", timeout=5
+        ) as resp:
+            body = json.loads(resp.read())
+            # A 0.2.0 sidecar answers /healthz with the bare string "ok", so the body is
+            # not guaranteed to be an object. A non-dict means "no reason available".
+            return body if isinstance(body, dict) else {}
+    except Exception:  # noqa: BLE001 — a missing reason must never fail the caller
+        return {}
+
+
+def sidecar_ready(base_url: str | None = None) -> bool:
+    """True when the sidecar can actually SERVE — models present and verified.
+
+    This is the predicate to route on. ``/readyz`` is 200 only once the models are
+    verified and 503 otherwise, so unlike :func:`sidecar_healthy` it distinguishes
+    "still provisioning" and "models broken" from "ready to work".
+
+    Before this existed, engine selection asked ``/healthz`` and therefore treated a
+    sidecar with an unusable models directory as a working one: the native engine was
+    chosen, and the failure surfaced at request time instead of at the point where the
+    in-process PyAnnote fallback was still available to choose.
+
+    **Older sidecars have no ``/readyz``** (it landed in diar-native 0.3.0) and answer
+    404. That is not "not ready" — it is "cannot say", so we fall back to liveness and
+    preserve the previous behaviour rather than disabling the native engine outright for
+    anyone still pinned to a pre-0.3.0 image.
+    """
+    url = (base_url or _DEFAULT_URL).rstrip("/")
+    try:
+        with urllib.request.urlopen(  # noqa: S310  # nosec B310 — internal service
+            f"{url}/readyz", timeout=5
+        ) as resp:
+            return bool(resp.status == 200)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            logger.debug("diar-native sidecar has no /readyz (pre-0.3.0); falling back to /healthz")
+            return sidecar_healthy(base_url)
+        status = sidecar_status(base_url)
+        logger.warning(
+            "diar-native sidecar is up but not ready (HTTP %s, models_state=%s): %s",
+            exc.code,
+            status.get("models_state", "unknown"),
+            status.get("models_reason", "no reason given"),
+        )
+        return False
+    except Exception:  # noqa: BLE001 — unreachable for any reason means "not ready"
         return False
 
 
@@ -128,18 +195,23 @@ class NativeSpeakerDiarizer:
     # -- lifecycle ---------------------------------------------------------
 
     def load_model(self) -> None:
-        """Health-check the sidecar (weights live server-side; nothing loads here)."""
-        try:
-            with urllib.request.urlopen(  # noqa: S310  # nosec B310 — internal service
-                f"{self.base_url}/healthz", timeout=10
-            ) as resp:
-                self.is_loaded = resp.status == 200
-        except Exception as exc:  # noqa: BLE001
+        """Readiness-check the sidecar (weights live server-side; nothing loads here).
+
+        Deliberately ``sidecar_ready`` and not ``sidecar_healthy``: this method exists to
+        answer "can this object serve diarization", and a sidecar whose models directory
+        is empty or broken answers /healthz with a cheerful 200. Raising here routes the
+        caller to the PyAnnote fallback while it is still a choice.
+        """
+        if not sidecar_healthy(self.base_url):
+            raise RuntimeError(f"diar-native sidecar unavailable at {self.base_url}")
+        if not sidecar_ready(self.base_url):
+            status = sidecar_status(self.base_url)
             raise RuntimeError(
-                f"diar-native sidecar unavailable at {self.base_url}: {exc}"
-            ) from exc
-        if not self.is_loaded:
-            raise RuntimeError(f"diar-native sidecar unhealthy at {self.base_url}")
+                f"diar-native sidecar at {self.base_url} is up but not ready "
+                f"(models_state={status.get('models_state', 'unknown')}): "
+                f"{status.get('models_reason', 'no reason given')}"
+            )
+        self.is_loaded = True
         logger.info("diar-native sidecar ready at %s", self.base_url)
 
     def unload_model(self) -> None:

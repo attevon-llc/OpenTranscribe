@@ -16,8 +16,9 @@ FROM denoland/deno:bin AS deno-bin
 # `command:` override — see that file for why (warm ORT arena must survive worker
 # restarts, and gpu-scale runs N workers per container which makes a per-worker sidecar
 # ambiguous). Only ~419 MB of the standalone 3.46 GB image is actually needed: the
-# binary, three ORT libs (see the exclusion note below), and libopenblas0.
-FROM davidamacey/diar-native@sha256:544a6a6536464729834dd1b51dc6d76b538776da23a22682501f220cf2ff999c AS diar-native-bin
+# binary, three ORT libs (see the exclusion note below), and libopenblas0. The standalone image
+# is 2.9 GB as of diar-native 0.3.1.
+FROM davidamacey/diar-native@sha256:1a8e1491bc12bb0f2c202dece3e5902b080dc6e432e22c64686d63f61c37228f AS diar-native-bin
 
 # -----------------------------------------------------------------------------
 # Stage 1: Build Stage - Install Python dependencies with compilation

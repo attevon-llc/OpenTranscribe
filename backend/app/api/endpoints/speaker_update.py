@@ -40,7 +40,10 @@ def calculate_cosine_similarity(embedding1: np.ndarray, embedding2: np.ndarray) 
         embedding2 (np.ndarray): Second voice embedding vector.
 
     Returns:
-        float: Similarity score between 0 and 1, where 1 is identical voices.
+        float: Raw cosine similarity in ``[-1, 1]``, where 1 is identical
+            voices. Negatives are real and are not clamped away (issue #690);
+            every gate downstream sits well above 0, so a dissimilar pair is
+            rejected on its value rather than on a floor.
     """
     from app.services.similarity_service import SimilarityService
 

@@ -129,6 +129,18 @@ pass everything — one of which caught exactly that: the UI-creation half match
 equality against selectors that embed the label (`"button:has-text('Create Account')"`), so it
 was finding nothing at all.
 
+- **A test that executes real infrastructure tooling must be scoped to a namespace no real
+  object can occupy — and the scoping must be asserted, not intended** (issue #693).
+  `unit/test_opentr_stop_container_scoping.py` extracts `opentr.sh`'s straggler-cleanup loop
+  and *runs* it, which is the whole value of the test — and, unscoped, ran
+  `docker stop && docker rm` over the live dev stack: **17 containers destroyed by a routine
+  `pytest tests/`**, from a file in `tests/unit/` with no marker. It now drives the loop through
+  `OPENTR_STOP_PROJECT_LABEL`/`_ALT` (defaulting, in `opentr.sh`, to the real project names) at a
+  per-test `*-pytest-<uuid4>` compose project, with three guards: a fixture that **refuses** to
+  hand the loop to a real-docker test unless every project-label filter is an overridable
+  `${...}`; a fake-`docker`-on-`PATH` test asserting the filters it actually issued name only
+  that namespace; and a test pinning the unset default to the two real names. Skipping the
+  scoping is not a smaller version of this test — it is the incident.
 - **E2E must never persist changes to dev data.** Upload tests delete what they create (API
   delete, falling back to `/force`); transcript-edit tests use the **cancel path only**.
   Cleanup must be in a `finally`, a fixture teardown that deletes, or an `addfinalizer` — **a

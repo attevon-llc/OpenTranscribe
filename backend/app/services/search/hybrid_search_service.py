@@ -2475,10 +2475,8 @@ class HybridSearchService:
             if is_semantic_only:
                 if "semantic" not in match_sources:
                     match_sources.append("semantic")
-                semantic_high_threshold = getattr(
-                    settings, "SEARCH_SEMANTIC_HIGH_CONFIDENCE", 0.015
-                )
-                semantic_confidence = "high" if best_score >= semantic_high_threshold else "low"
+                threshold = settings.SEARCH_SEMANTIC_HIGH_CONFIDENCE
+                semantic_confidence = "high" if best_score >= threshold else "low"
 
             # Detect metadata speaker match
             if query_lower:
@@ -2670,7 +2668,7 @@ class HybridSearchService:
         if is_semantic_only:
             if "semantic" not in match_sources:
                 match_sources.append("semantic")
-            threshold = getattr(settings, "SEARCH_SEMANTIC_HIGH_CONFIDENCE", 0.010)
+            threshold = settings.SEARCH_SEMANTIC_HIGH_CONFIDENCE
             semantic_confidence = "high" if best_score >= threshold else "low"
 
         has_both = keyword_count > 0 and semantic_count > 0

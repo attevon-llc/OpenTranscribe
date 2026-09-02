@@ -1003,6 +1003,7 @@ def delete_media_file(
 
     # Delegate the actual destroy to the single canonical implementation so the
     # interactive, bulk, retention, and orphan-cleanup paths all behave identically.
+    from app.services.file_cleanup_service import LEGAL_HOLD_ERROR_CODE
     from app.services.file_cleanup_service import purge_media_file
 
     result = purge_media_file(db, db_file)
@@ -1013,7 +1014,7 @@ def delete_media_file(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
-                "error": "FILE_UNDER_LEGAL_HOLD",
+                "error": LEGAL_HOLD_ERROR_CODE,
                 "message": result.get("error"),
                 "file_id": str(db_file.uuid),
             },

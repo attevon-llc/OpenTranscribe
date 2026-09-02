@@ -28,6 +28,13 @@ LEGAL_HOLD_REFUSAL = (
     "Release the hold before deleting."
 )
 
+#: Machine-readable code every API surface answers with when a delete is declined
+#: because of an active legal hold — the single-file interactive delete
+#: (``api/endpoints/files/crud.delete_media_file``) and the whole-account delete
+#: (``api/endpoints/admin._assert_no_files_under_legal_hold``, issue #689) alike. One
+#: constant so a client handles one refusal rather than two spellings of it.
+LEGAL_HOLD_ERROR_CODE = "FILE_UNDER_LEGAL_HOLD"
+
 
 class FileCleanupService:
     """Service for automated file cleanup and recovery operations."""

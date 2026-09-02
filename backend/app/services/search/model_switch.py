@@ -26,6 +26,7 @@ from typing import cast
 
 from app.core.constants import OPENSEARCH_EMBEDDING_MODELS
 from app.core.exceptions import SearchIndexError
+from app.services.search.reindex_cancel import record_fanout
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,15 @@ def dispatch_reindex_for_every_owner(
     this user owns" (``if file_uuids:``), so passing ``[]`` for an owner with
     nothing to do would re-embed their entire account.
 
+    **The dispatch is recorded, because a fan-out has to be cancellable** (#691).
+    The ``{owner: task id}`` mapping is returned *and* written to
+    ``reindex_fanout:{triggered_by}`` by ``services/search/reindex_cancel.py``.
+    Returning it and keeping no record is exactly what left
+    ``POST /search/reindex/stop`` able to flag only the calling admin's own
+    coordinator while the other owners' ran to completion. Recording it here
+    rather than in the endpoint means the model-switch re-embed is stoppable on
+    the same terms — one dispatch loop, one cancellation handle.
+
     Args:
         triggered_by: The admin performing the switch or repair, dispatched
             first so their own progress stream starts immediately.
@@ -173,6 +183,11 @@ def dispatch_reindex_for_every_owner(
         ) from e
 
     logger.info(f"Dispatched reindex for {len(tasks)} users")
+    # Persist what was dispatched so `POST /search/reindex/stop` can cancel the
+    # whole run and not just the caller's share of it (#691). Returning the
+    # mapping and keeping no record is precisely why that endpoint stayed
+    # per-owner through #627.
+    record_fanout(triggered_by, tasks)
     return {"reindex_task_ids": tasks, "reindex_users": len(tasks)}
 
 

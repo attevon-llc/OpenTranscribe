@@ -18,7 +18,7 @@ FROM denoland/deno:bin AS deno-bin
 # ambiguous). Only ~419 MB of the standalone 3.46 GB image is actually needed: the
 # binary, three ORT libs (see the exclusion note below), and libopenblas0. The standalone image
 # is 2.9 GB as of diar-native 0.3.1.
-FROM davidamacey/diar-native@sha256:1a8e1491bc12bb0f2c202dece3e5902b080dc6e432e22c64686d63f61c37228f AS diar-native-bin
+FROM davidamacey/diar-native@sha256:83a709be94d0ca06441fa10aea0680f53b03cc10eb3ce11c4eeb84478400567d AS diar-native-bin
 
 # -----------------------------------------------------------------------------
 # Stage 1: Build Stage - Install Python dependencies with compilation

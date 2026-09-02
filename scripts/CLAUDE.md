@@ -536,6 +536,22 @@ aux-file record.
   It hard-exits if the `opentranscribe-multiarch` builder is missing (`setup-remote-builder.sh setup`).
 - `SKIP_SECURITY_SCAN=true` for quick iteration; `PLATFORMS=linux/amd64` for single-arch (no remote
   builder needed); `$0 auto` builds only git-changed components.
+- ⚠️ **"Scanned, findings tolerable" and "never scanned" are DIFFERENT outcomes and must stay
+  that way** (issue #681). `security-scan.sh` exits **1** for findings and **2** for could-not-scan
+  (unknown component, image unobtainable, a sub-scan that died without recording a verdict);
+  `run_security_scan` treats 2 as fatal **regardless of `FAIL_ON_SECURITY_ISSUES`**, because that
+  flag is a statement about which findings are acceptable to ship, not about shipping an image
+  nobody looked at. Collapsing the two into one `else` branch is what made an unscannable
+  component print `All security scans completed successfully!` — and `docs` was already in that
+  state, since it was in `BUILT_COMPONENTS` with a `security-scan.sh` arm but no registry-pull
+  branch, so the default path "scanned" an image it never fetched.
+- **The scannable component list has exactly one home**: the `SCAN_COMPONENT_*` tables in
+  `security-scan.sh`, exposed as `./scripts/security-scan.sh list-components`.
+  `docker-build-push.sh` validates `BUILT_COMPONENTS` against that before pulling anything, and
+  both its pull dispatches now have a failing `*)`. Adding a component (e.g. `lite`, issue #667)
+  means adding it there; forgetting is now loud instead of a green run over an unscanned
+  published image. Guarded by `scripts/tests/test-scan-not-a-pass.sh` (19 cases, 0.4 s, no
+  Docker/network), wired as the `scan-not-a-pass` pre-commit hook.
 - **Every path ends in `buildx --push` — there is no local-only mode.** `:latest` and `:vX.Y.Z` hit
   Docker Hub the instant the build finishes, and it then runs `push-security-reports.sh`, which
   **git-commits and pushes** `security-reports/` to whatever branch is checked out.

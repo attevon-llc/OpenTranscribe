@@ -23,6 +23,47 @@ OUTPUT_DIR="${OUTPUT_DIR:-./security-reports}"
 SEVERITY_THRESHOLD="${SEVERITY_THRESHOLD:-MEDIUM}"
 FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-true}"
 
+# Exit codes. THREE outcomes, not two (issue #681).
+#
+#   0  scanned, nothing blocking
+#   1  SCANNED, and the scan found something
+#   2  COULD NOT SCAN — unknown component, image unobtainable, or a sub-scan
+#      that died without recording a verdict
+#
+# 1 and 2 must never be collapsed into a single "non-zero" branch. Tolerating
+# findings is a policy choice a caller is entitled to make
+# (FAIL_ON_SECURITY_ISSUES); "we never looked" is not a choice anybody made, so
+# a caller cannot be allowed to wave it through with the same flag. Collapsing
+# them is exactly how an unscannable component produced
+# "All security scans completed successfully!".
+readonly EXIT_FINDINGS=1
+readonly EXIT_COULD_NOT_SCAN=2
+
+# The ONE place that says what this script can scan (issue #681).
+#
+# `docs` used to be built and published by docker-build-push.sh while that
+# script's registry-pull dispatch handled only backend and frontend, because the
+# component list existed in three places that were free to disagree. Everything
+# now derives from this table: scan_component's lookup, the `all` target, the
+# `list-components` command that docker-build-push.sh validates against, and the
+# usage text. Adding a component here is the whole change; forgetting to add one
+# is now a loud failure rather than a silent green scan.
+declare -A SCAN_COMPONENT_DOCKERFILE=(
+    [backend]="backend/Dockerfile.prod"
+    [frontend]="frontend/Dockerfile.prod"
+    [docs]="docs-site/Dockerfile"
+)
+declare -A SCAN_COMPONENT_REPO=(
+    [backend]="${REPO_BACKEND}"
+    [frontend]="${REPO_FRONTEND}"
+    [docs]="${REPO_DOCS}"
+)
+
+# Sorted, one per line — the machine-readable contract other scripts consume.
+scan_components() {
+    printf '%s\n' "${!SCAN_COMPONENT_DOCKERFILE[@]}" | sort
+}
+
 # Create output directory
 mkdir -p "${OUTPUT_DIR}"
 
@@ -342,24 +383,16 @@ scan_component() {
     # .claude/commands/release.md should pass IMAGE_TAG=X.Y.Z.
     local tag="${IMAGE_TAG:-latest}"
 
-    case "${component}" in
-        backend)
-            dockerfile="backend/Dockerfile.prod"
-            image="${REPO_BACKEND}:${tag}"
-            ;;
-        frontend)
-            dockerfile="frontend/Dockerfile.prod"
-            image="${REPO_FRONTEND}:${tag}"
-            ;;
-        docs)
-            dockerfile="docs-site/Dockerfile"
-            image="${REPO_DOCS}:${tag}"
-            ;;
-        *)
-            print_error "Invalid component: ${component}"
-            return 1
-            ;;
-    esac
+    dockerfile="${SCAN_COMPONENT_DOCKERFILE[${component}]:-}"
+    local repo="${SCAN_COMPONENT_REPO[${component}]:-}"
+    if [ -z "${dockerfile}" ] || [ -z "${repo}" ]; then
+        print_error "Invalid component: ${component}"
+        print_error "Known components: $(scan_components | tr '\n' ' ')"
+        # NOT ${EXIT_FINDINGS}: nothing was examined, so there is no finding to
+        # tolerate. See the exit-code block at the top of this file.
+        return "${EXIT_COULD_NOT_SCAN}"
+    fi
+    image="${repo}:${tag}"
 
     print_header "Security Scanning: ${component}"
     print_info "Image: ${image}"
@@ -373,7 +406,8 @@ scan_component() {
         print_info "Attempting to pull from registry..."
         if ! docker pull "${image}"; then
             print_error "Failed to pull image. Please build it first."
-            return 1
+            # There is no image, so there is nothing to have findings about.
+            return "${EXIT_COULD_NOT_SCAN}"
         fi
     fi
 
@@ -457,6 +491,11 @@ scan_component() {
     # "we have no idea what that scanner found" must never read as "clean". This
     # previously fell through the `if [ -f ... ]` and scored as success, which is
     # what let a dead scanner silently pass the gate.
+    #
+    # It is also not the same thing as a finding, so it returns
+    # EXIT_COULD_NOT_SCAN rather than EXIT_FINDINGS: a caller running with
+    # FAIL_ON_SECURITY_ISSUES=false is saying "known CVEs are acceptable to me
+    # today", not "a scanner that never ran is acceptable to me today".
     local exit_code=0
     for tool in hadolint dockle sbom trivy grype; do
         if [ -f "${status_dir}/${tool}.status" ]; then
@@ -464,11 +503,13 @@ scan_component() {
             status=$(cat "${status_dir}/${tool}.status")
             if [ "$status" != "0" ]; then
                 print_warning "${component}: ${tool} reported status ${status}"
-                exit_code=1
+                if [ "${exit_code}" -eq 0 ]; then
+                    exit_code="${EXIT_FINDINGS}"
+                fi
             fi
         else
-            print_error "${component}: ${tool} produced no status — treating as FAILED"
-            exit_code=1
+            print_error "${component}: ${tool} produced no status — NOT SCANNED, not a pass"
+            exit_code="${EXIT_COULD_NOT_SCAN}"
         fi
     done
 
@@ -476,13 +517,15 @@ scan_component() {
     rm -rf "${status_dir}"
 
     echo ""
-    if [ ${exit_code} -eq 0 ]; then
+    if [ "${exit_code}" -eq 0 ]; then
         print_success "Security scan completed for ${component}"
+    elif [ "${exit_code}" -ge "${EXIT_COULD_NOT_SCAN}" ]; then
+        print_error "Security scan could NOT be completed for ${component}"
     else
         print_warning "Security scan completed with issues for ${component}"
     fi
 
-    return ${exit_code}
+    return "${exit_code}"
 }
 
 # Function to generate summary report
@@ -520,12 +563,22 @@ Tools used:
   - Grype: Fast vulnerability scanner
 
 Options:
-    backend     Scan only backend image
-    frontend    Scan only frontend image
-    docs        Scan only docs image
-    all         Scan all images (default)
-    install     Install all required tools
-    help        Show this help message
+    backend          Scan only backend image
+    frontend         Scan only frontend image
+    docs             Scan only docs image
+    all              Scan all images (default)
+    list-components  Print the scannable component names, one per line
+    install          Install all required tools
+    help             Show this help message
+
+Exit codes:
+    0   scanned; nothing blocking
+    1   SCANNED, and the scan found something
+    2   COULD NOT SCAN (unknown component, image unobtainable, or a sub-scan
+        that died without recording a verdict)
+
+    1 and 2 are deliberately distinct. A caller may choose to tolerate findings;
+    no caller may tolerate never having looked. Do not collapse them.
 
 Environment Variables:
     OUTPUT_DIR              Report output directory (default: ./security-reports)
@@ -584,6 +637,16 @@ install_all_tools() {
 
 # Main function
 main() {
+    # Answer the machine-readable query BEFORE any banner output. This is a
+    # contract docker-build-push.sh parses to derive its component list, and a
+    # decorative header on stdout corrupts it — which is not a hypothetical: the
+    # first version of this handled list-components as an ordinary case arm and
+    # returned the banner plus the list.
+    if [ "${SCAN_TARGET}" = "list-components" ]; then
+        scan_components
+        exit 0
+    fi
+
     print_header "OpenTranscribe Security Scanner"
     print_info "Output directory: ${OUTPUT_DIR}"
     print_info "Severity threshold: ${SEVERITY_THRESHOLD}"
@@ -599,17 +662,6 @@ main() {
             show_usage
             exit 0
             ;;
-        backend|frontend|docs)
-            # Check required tools
-            install_trivy
-            install_grype
-            install_syft
-            install_hadolint
-            check_dockle
-
-            scan_component "${SCAN_TARGET}"
-            exit_code=$?
-            ;;
         all)
             # Check required tools
             install_trivy
@@ -618,58 +670,85 @@ main() {
             install_hadolint
             check_dockle
 
-            # Run the three component scans in parallel so total wall time
-            # is roughly max(backend, frontend, docs) instead of the sum.
-            # Each sub-scan logs independently to the same OUTPUT_DIR with
-            # unique per-component filenames so there is no contention.
-            print_info "Running backend, frontend, and docs scans in parallel..."
-            local backend_log="${OUTPUT_DIR}/.scan-backend.log"
-            local frontend_log="${OUTPUT_DIR}/.scan-frontend.log"
-            local docs_log="${OUTPUT_DIR}/.scan-docs.log"
+            # Run the component scans in parallel so total wall time is roughly
+            # max(components) instead of the sum. Each sub-scan logs
+            # independently to the same OUTPUT_DIR with unique per-component
+            # filenames so there is no contention.
+            local all_components=()
+            mapfile -t all_components < <(scan_components)
+            print_info "Running ${all_components[*]} scans in parallel..."
 
-            ( scan_component "backend" > "${backend_log}" 2>&1 ) &
-            local backend_pid=$!
-            ( scan_component "frontend" > "${frontend_log}" 2>&1 ) &
-            local frontend_pid=$!
-            ( scan_component "docs" > "${docs_log}" 2>&1 ) &
-            local docs_pid=$!
+            local comp pids=() names=()
+            for comp in "${all_components[@]}"; do
+                ( scan_component "${comp}" > "${OUTPUT_DIR}/.scan-${comp}.log" 2>&1 ) &
+                pids+=($!)
+                names+=("${comp}")
+            done
 
-            wait "${backend_pid}"
-            backend_exit=$?
-            wait "${frontend_pid}"
-            frontend_exit=$?
-            wait "${docs_pid}"
-            docs_exit=$?
+            # `wait` must be in a `||` list: this script runs under `set -e`, so
+            # a bare `wait "$pid"` on a scan that found something aborts main on
+            # that line — skipping the log replay and the summary below.
+            local idx rc
+            exit_code=0
+            for idx in "${!pids[@]}"; do
+                rc=0
+                wait "${pids[$idx]}" || rc=$?
+                if [ "${rc}" -ge "${EXIT_COULD_NOT_SCAN}" ]; then
+                    exit_code="${EXIT_COULD_NOT_SCAN}"
+                elif [ "${rc}" -ne 0 ] && [ "${exit_code}" -eq 0 ]; then
+                    exit_code="${EXIT_FINDINGS}"
+                fi
+            done
 
-            # Replay each sub-scan's log in order so user sees normal output
-            print_info "=== backend scan output ==="
-            cat "${backend_log}"
-            print_info "=== frontend scan output ==="
-            cat "${frontend_log}"
-            print_info "=== docs scan output ==="
-            cat "${docs_log}"
-            rm -f "${backend_log}" "${frontend_log}" "${docs_log}"
-
-            exit_code=$((backend_exit + frontend_exit + docs_exit))
+            # Replay each sub-scan's log in order so user sees normal output.
+            for idx in "${!names[@]}"; do
+                print_info "=== ${names[$idx]} scan output ==="
+                cat "${OUTPUT_DIR}/.scan-${names[$idx]}.log"
+                rm -f "${OUTPUT_DIR}/.scan-${names[$idx]}.log"
+            done
             ;;
         *)
-            print_error "Invalid option: ${SCAN_TARGET}"
-            show_usage
-            exit 1
+            if ! scan_components | grep -Fqx -- "${SCAN_TARGET}"; then
+                print_error "Invalid option: ${SCAN_TARGET}"
+                show_usage
+                # Exit 2, not 1: a caller must be able to tell "this component
+                # was scanned and had findings" from "this component cannot be
+                # scanned at all". See the exit-code block at the top.
+                exit "${EXIT_COULD_NOT_SCAN}"
+            fi
+
+            # Check required tools
+            install_trivy
+            install_grype
+            install_syft
+            install_hadolint
+            check_dockle
+
+            exit_code=0
+            scan_component "${SCAN_TARGET}" || exit_code=$?
             ;;
     esac
 
     echo ""
     generate_summary
 
-    if [ ${exit_code} -eq 0 ]; then
+    if [ "${exit_code}" -eq 0 ]; then
         print_success "All security scans passed!"
         exit 0
+    elif [ "${exit_code}" -ge "${EXIT_COULD_NOT_SCAN}" ]; then
+        print_error "Security scans could NOT RUN — nothing here establishes these images are clean"
+        exit "${EXIT_COULD_NOT_SCAN}"
     else
         print_error "Security scans failed"
-        exit 1
+        exit "${EXIT_FINDINGS}"
     fi
 }
 
-# Run main function
-main
+# Run main function — but only when EXECUTED, not when sourced.
+#
+# Sourcing is how scripts/tests/test-scan-not-a-pass.sh exercises the `all`
+# aggregation (the path the release `scan` stage runs) with stubbed scanners:
+# doing it for real needs the three published multi-gigabyte images.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    main
+fi

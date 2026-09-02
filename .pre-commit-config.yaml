@@ -256,6 +256,24 @@ repos:
       - id: shellcheck
         args: [--severity=warning]
 
+  # A component that was never scanned must never read as a clean one (issue #681).
+  #
+  # Wired here rather than left as a script somebody might remember to run: the
+  # failure it guards is silent by construction — an unscannable component
+  # printed "All security scans completed successfully!" and `docs` had been in
+  # that state since it was added. Nothing about the output distinguished it
+  # from a real pass, so a human running the gate by hand would not have looked.
+  #
+  # 0.4 s, no Docker, no network, no images.
+  - repo: local
+    hooks:
+      - id: scan-not-a-pass
+        name: an unscanned component cannot report a passing security scan
+        entry: scripts/tests/test-scan-not-a-pass.sh
+        language: system
+        pass_filenames: false
+        files: ^scripts/(docker-build-push\.sh|security-scan\.sh|tests/test-scan-not-a-pass\.sh)$
+
   # Commit message linting (optional)
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v3.0.0

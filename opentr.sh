@@ -177,7 +177,10 @@ show_help() {
   echo "  restart-backend     - Restart backend, all celery workers, celery-beat & flower without database reset"
   echo "  restart-frontend    - Restart frontend without affecting backend services"
   echo "  restart-all         - Restart all services without resetting database"
-  echo "  rebuild-backend [--nas]  - Rebuild backend services with code changes"
+  echo "  rebuild-backend [--nas] [--with-diar-native|--no-diar-native]"
+  echo "                           - Rebuild backend services with code changes. The"
+  echo "                             diar-native overlay is kept automatically when this"
+  echo "                             deployment already has the sidecar."
   echo "                             (pass --nas on NAS/NVMe deployments; auto-detected"
   echo "                             from MINIO_NAS_PATH/POSTGRES_DATA_PATH/OPENSEARCH_DATA_PATH"
   echo "                             env vars). --no-deps protects postgres/minio/opensearch."
@@ -533,6 +536,127 @@ add_nas_overlay() {
   echo "   MinIO media:  $NAS_PATH"
   echo "   PostgreSQL:   $PG_PATH"
   echo "   OpenSearch:   $OS_PATH"
+}
+
+# True when this compose project already has a diar-native container, in ANY state.
+#
+# Label-scoped, never name-prefix-matched: this host runs unrelated compose stacks
+# whose container names share the `opentranscribe` prefix, and a naive
+# `docker ps | grep '^opentranscribe-'` in `opentr.sh stop` once destroyed one of
+# them. The diar-native service also declares no `container_name`, so its container
+# is `<project>-diar-native-1` and a `name=^<project>-diar-native$` filter — the
+# shape the gpu-scale/gpu-split loop uses for services that DO pin a name — would
+# match nothing here.
+#
+# `-a`, i.e. any state, not `status=running`, on purpose: the sidecar is
+# `restart: unless-stopped`, so a crash-looping instance reports `restarting`, and a
+# stack whose sidecar is merely down between rebuilds is still a stack that HAS one.
+# Being over-inclusive costs one named-volume mount and two env vars on
+# celery-worker; being under-inclusive costs the silent PyAnnote fallback that
+# add_diar_native_overlay exists to prevent.
+#
+# ⚠️ THE PROJECT NAME IS DERIVED FROM THE DIRECTORY, NOT DEFAULTED TO "opentranscribe".
+# The first version of this probe used `${COMPOSE_PROJECT_NAME:-opentranscribe}` and was
+# a NO-OP on the machine that has the bug. COMPOSE_PROJECT_NAME is never exported
+# globally by this script — only locally inside the fresh-deployment helpers — so
+# compose falls back to ITS default, the directory basename. Measured against the live
+# daemon: the sidecar's `com.docker.compose.project` label is `transcribe-app` (the
+# checkout is /mnt/nvm/repos/transcribe-app), and a probe filtering on `opentranscribe`
+# matched 0 containers, dropped the overlay, and reproduced the 422 exactly.
+# `basename "$(pwd)"` is the same resolution preflight_ports_or_die already uses; a
+# checkout in a differently-named directory must keep working, so this is derived and
+# never hardcoded. (test_the_probe_resolves_the_project_from_the_checkout_directory)
+diar_native_container_present() {
+  local project="${COMPOSE_PROJECT_NAME:-$(basename "$(pwd)")}"
+  docker ps -a --format '{{.ID}}' \
+    --filter "label=com.docker.compose.project=${project}" \
+    --filter "label=com.docker.compose.service=diar-native" 2>/dev/null | grep -q .
+}
+
+# Append the native diarization sidecar overlay to $COMPOSE_FILES. Mirrors
+# add_nas_overlay: ONE place decides, so start/reset/rebuild can never disagree
+# about whether celery-worker gets the diar-native handoff volume.
+#
+# ⚠️ WHY THIS IS SHARED RATHER THAN INLINED. docker-compose.diar-native.yml is the
+# only file that mounts `diar-native-tmp` at /tmp/diar-native on celery-worker, and
+# that volume is how OpenTranscribe hands the WAV to the sidecar. `rebuild-backend`
+# used to omit the overlay, so it recreated celery-worker with NO mount at that path
+# at all; the worker wrote the WAV to its own filesystem, the sidecar could not see
+# it, and /diarize answered
+#     HTTP 422  opening /tmp/diar-native/<job>.wav: No such file or directory
+# which the worker classified as "sidecar failed mid-job" and answered by falling
+# back to the in-process PyAnnote fork — slower, no speaker gender, and NOTHING
+# surfaced to the user beyond one log line. Same bug class as the NAS overlay note
+# above: containers that look correct, bound to the wrong storage.
+#
+# $1 picks the auto-detect predicate, because "should this deployment have the
+# sidecar?" and "does this deployment have the sidecar?" are different questions:
+#
+#   start   - CONFIGURATION. engine.diarizer_backend resolves to native AND the model
+#             export exists. The right question for a stack that does not exist yet.
+#
+#   rebuild - OBSERVATION. A diar-native container already exists in this compose
+#             project. rebuild-backend recreates services in place, so the only
+#             correct answer is the one the running deployment already made; the
+#             config predicate disagrees with it in BOTH directions (a stack started
+#             with --no-diar-native would gain the overlay; a stack running the
+#             sidecar under ENGINE_DIARIZER_BACKEND=pyannote would lose it, which is
+#             the original bug). Precedent: the gpu-scale/gpu-split loop in
+#             rebuild-backend likewise rebuilds those workers only when they are up.
+#             It can never START a sidecar nobody asked for — with no container there
+#             is no overlay, and rebuild-backend passes an explicit service list with
+#             --no-deps, so `diar-native` is never brought up either way.
+#
+# Either predicate is overridden by an explicit --with-diar-native / --no-diar-native.
+add_diar_native_overlay() {
+  local mode="${1:-start}"
+
+  # Runs unconditionally (even under --no-diar-native): it EXPORTS the path
+  # docker-compose.diar-native.yml interpolates for the read-only /models bind, and
+  # its legacy-path banner is part of every start's output today.
+  resolve_diar_native_models_dir
+
+  if [ -z "${WITH_DIAR_NATIVE_FLAG:-}" ] && [ -z "${NO_DIAR_NATIVE_FLAG:-}" ]; then
+    if [ "$mode" = "rebuild" ]; then
+      if diar_native_container_present; then
+        WITH_DIAR_NATIVE_FLAG="auto"
+        echo "🎙️  diar-native sidecar is part of this deployment — keeping its overlay so celery-worker keeps /tmp/diar-native."
+      fi
+    else
+      # Native diarization sidecar auto-load: `native` is the coded default engine, so a
+      # stack without the sidecar silently serves every file from the in-process PyAnnote
+      # fallback. Mirrors the NAS auto-detect: announced, and --no-diar-native suppresses.
+      # Guarded on the models dir existing — without it the sidecar restart-loops and
+      # `up --wait` would fail the whole startup on checkouts with no local model export.
+      # Fresh stacks stay opt-in (pass --with-diar-native explicitly).
+      if [ -z "${FRESH_FLAG:-}" ] \
+         && [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ] \
+         && [ -d "$DIAR_NATIVE_MODELS_DIR" ]; then
+        WITH_DIAR_NATIVE_FLAG="auto"
+        echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
+      fi
+    fi
+  fi
+
+  # Add the native diarization sidecar if requested
+  if [ -n "${WITH_DIAR_NATIVE_FLAG:-}" ]; then
+    if [ -f "docker-compose.diar-native.yml" ]; then
+      # The overlay defaults to the PUBLISHED backend image, which is correct for a
+      # self-hosted deployment but wrong in this checkout — dev builds the image
+      # locally as opentranscribe-backend:latest and never pushes it. Point the
+      # sidecar at the local build so it matches the workers it serves.
+      if [ "$ENVIRONMENT" = "dev" ]; then
+        export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-opentranscribe-backend:latest}"
+      fi
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
+      echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
+      echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~4.1 GB warm ORT arena while up."
+      echo "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);"
+      echo "   without the sidecar that config falls back to the in-process PyAnnote fork."
+    else
+      echo "⚠️  --with-diar-native specified but docker-compose.diar-native.yml not found"
+    fi
+  fi
 }
 
 # Append the PKI/mTLS overlay to $COMPOSE_FILES if --with-pki was passed.
@@ -1854,39 +1978,9 @@ start_app() {
     fi
   fi
 
-  # Native diarization sidecar auto-load: `native` is the coded default engine, so a
-  # stack without the sidecar silently serves every file from the in-process PyAnnote
-  # fallback. Mirrors the NAS auto-detect: announced, and --no-diar-native suppresses.
-  # Guarded on the models dir existing — without it the sidecar restart-loops and
-  # `up --wait` would fail the whole startup on checkouts with no local model export.
-  # Fresh stacks stay opt-in (pass --with-diar-native explicitly).
-  resolve_diar_native_models_dir
-  if [ -z "$WITH_DIAR_NATIVE_FLAG" ] && [ -z "$NO_DIAR_NATIVE_FLAG" ] && [ -z "$FRESH_FLAG" ] \
-     && [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ] \
-     && [ -d "$DIAR_NATIVE_MODELS_DIR" ]; then
-    WITH_DIAR_NATIVE_FLAG="auto"
-    echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
-  fi
-
-  # Add the native diarization sidecar if requested
-  if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
-    if [ -f "docker-compose.diar-native.yml" ]; then
-      # The overlay defaults to the PUBLISHED backend image, which is correct for a
-      # self-hosted deployment but wrong in this checkout — dev builds the image
-      # locally as opentranscribe-backend:latest and never pushes it. Point the
-      # sidecar at the local build so it matches the workers it serves.
-      if [ "$ENVIRONMENT" = "dev" ]; then
-        export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-opentranscribe-backend:latest}"
-      fi
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
-      echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
-      echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~4.1 GB warm ORT arena while up."
-      echo "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);"
-      echo "   without the sidecar that config falls back to the in-process PyAnnote fork."
-    else
-      echo "⚠️  --with-diar-native specified but docker-compose.diar-native.yml not found"
-    fi
-  fi
+  # Native diarization sidecar. Shared with rebuild-backend so a rebuild can never
+  # drop celery-worker's /tmp/diar-native handoff mount — see add_diar_native_overlay.
+  add_diar_native_overlay start
 
   # Add real GPU-backed LLM test provider if requested
   if [ -n "$WITH_LLM_TEST_FLAG" ]; then
@@ -2551,39 +2645,9 @@ reset_and_init() {
     fi
   fi
 
-  # Native diarization sidecar auto-load: `native` is the coded default engine, so a
-  # stack without the sidecar silently serves every file from the in-process PyAnnote
-  # fallback. Mirrors the NAS auto-detect: announced, and --no-diar-native suppresses.
-  # Guarded on the models dir existing — without it the sidecar restart-loops and
-  # `up --wait` would fail the whole startup on checkouts with no local model export.
-  # Fresh stacks stay opt-in (pass --with-diar-native explicitly).
-  resolve_diar_native_models_dir
-  if [ -z "$WITH_DIAR_NATIVE_FLAG" ] && [ -z "$NO_DIAR_NATIVE_FLAG" ] && [ -z "$FRESH_FLAG" ] \
-     && [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ] \
-     && [ -d "$DIAR_NATIVE_MODELS_DIR" ]; then
-    WITH_DIAR_NATIVE_FLAG="auto"
-    echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
-  fi
-
-  # Add the native diarization sidecar if requested
-  if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
-    if [ -f "docker-compose.diar-native.yml" ]; then
-      # The overlay defaults to the PUBLISHED backend image, which is correct for a
-      # self-hosted deployment but wrong in this checkout — dev builds the image
-      # locally as opentranscribe-backend:latest and never pushes it. Point the
-      # sidecar at the local build so it matches the workers it serves.
-      if [ "$ENVIRONMENT" = "dev" ]; then
-        export DIAR_NATIVE_IMAGE="${DIAR_NATIVE_IMAGE:-opentranscribe-backend:latest}"
-      fi
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
-      echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
-      echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~4.1 GB warm ORT arena while up."
-      echo "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);"
-      echo "   without the sidecar that config falls back to the in-process PyAnnote fork."
-    else
-      echo "⚠️  --with-diar-native specified but docker-compose.diar-native.yml not found"
-    fi
-  fi
+  # Native diarization sidecar. Shared with rebuild-backend so a rebuild can never
+  # drop celery-worker's /tmp/diar-native handoff mount — see add_diar_native_overlay.
+  add_diar_native_overlay start
 
   # Add real GPU-backed LLM test provider if requested
   if [ -n "$WITH_LLM_TEST_FLAG" ]; then
@@ -3155,13 +3219,24 @@ case "$1" in
     echo "🔨 Rebuilding backend services..."
     detect_and_configure_hardware
 
-    # Parse optional flags so NAS-configured deployments keep their mounts.
+    # Parse optional flags so NAS-configured deployments keep their mounts, and so
+    # the diar-native auto-detect below can be overridden either way.
     NAS_FLAG=""
+    WITH_DIAR_NATIVE_FLAG=""
+    NO_DIAR_NATIVE_FLAG=""
     shift || true  # drop "rebuild-backend"
     while [ $# -gt 0 ]; do
       case "$1" in
         --nas)
           NAS_FLAG="--nas"
+          shift
+          ;;
+        --with-diar-native)
+          WITH_DIAR_NATIVE_FLAG="--with-diar-native"
+          shift
+          ;;
+        --no-diar-native)
+          NO_DIAR_NATIVE_FLAG="--no-diar-native"
           shift
           ;;
         *)
@@ -3186,6 +3261,16 @@ case "$1" in
     # appear missing even though it's still on disk.
     add_nas_overlay
 
+    # Keep the native diarization sidecar's handoff volume on celery-worker.
+    # Without this, a rebuilt worker has NO mount at /tmp/diar-native, the sidecar
+    # cannot see the WAV it is handed, /diarize answers 422, and diarization
+    # silently degrades to the in-process PyAnnote fork -- same "correct-looking
+    # container, wrong storage" failure as the NAS note above, but with no user
+    # -visible symptom at all. `rebuild` mode keys off the sidecar container this
+    # deployment already has, so it never starts one nobody asked for; see
+    # add_diar_native_overlay for why that predicate and not the config one.
+    add_diar_native_overlay rebuild
+
     # --no-deps keeps postgres/minio/opensearch/redis containers exactly as
     # they were running. Only rebuild + recreate the services that actually
     # consume backend code -- every service in docker-compose.override.yml
@@ -3193,6 +3278,11 @@ case "$1" in
     # missing from this list for a while: it shares the image but has its own
     # entry, so it silently kept running stale code after every rebuild until
     # something recreated it another way.
+    #
+    # `diar-native` is deliberately NOT in this list even when its overlay is
+    # loaded: it runs a Rust binary out of the same image, so a Python-side change
+    # cannot affect it, and recreating it costs a fresh ~4.1 GB ORT warm-up on the
+    # GPU. Restart it explicitly when the image's diar-server binary itself changed.
     # shellcheck disable=SC2086
     docker compose $COMPOSE_FILES up -d --build --no-deps \
       backend celery-worker celery-download-worker celery-cpu-worker \

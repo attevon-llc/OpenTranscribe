@@ -44,7 +44,10 @@ class SimilarityService:
             embedding2: Second embedding vector (numpy array or torch tensor)
 
         Returns:
-            Cosine similarity score between 0 and 1
+            Cosine similarity in ``[-1, 1]`` — the same space as
+            :meth:`opensearch_similarity_search`'s ``similarity`` and as the
+            ``SPEAKER_CONFIDENCE_*`` constants. Negatives are real and are
+            preserved (issue #690).
         """
         # Convert to torch tensors and move to appropriate device
         if isinstance(embedding1, np.ndarray):
@@ -60,8 +63,11 @@ class SimilarityService:
             embedding1.unsqueeze(0), embedding2.unsqueeze(0), dim=1
         ).item()
 
-        # Ensure result is in valid range and return as Python float
-        return float(max(0.0, min(1.0, similarity)))
+        # Bound float32 rounding to cosine's real domain — NOT to [0, 1].
+        # Clamping the negative half to 0.0 made "opposite" and "orthogonal"
+        # indistinguishable and put this method in a different space from
+        # `opensearch_similarity_search` on the same class (issue #690).
+        return float(max(-1.0, min(1.0, similarity)))
 
     @staticmethod
     def batch_cosine_similarity(
@@ -78,7 +84,8 @@ class SimilarityService:
             target_embeddings: List of target embeddings to compare against
 
         Returns:
-            List of similarity scores in the same order as target_embeddings
+            List of cosine similarities in ``[-1, 1]``, in the same order as
+            ``target_embeddings``. Same space as :meth:`cosine_similarity`.
         """
         if not target_embeddings:
             return []
@@ -105,11 +112,11 @@ class SimilarityService:
             query_tensor.unsqueeze(0).expand(targets_matrix.size(0), -1), targets_matrix, dim=1
         )
 
-        # Convert to Python floats and ensure valid range
+        # Convert to Python floats, bounded to cosine's real domain (issue #690).
         result = []
         for sim in similarities:
             score = float(sim.item())
-            result.append(max(0.0, min(1.0, score)))
+            result.append(max(-1.0, min(1.0, score)))
 
         return result
 
@@ -121,7 +128,6 @@ class SimilarityService:
         min_raw_cosine: float = 0.7,
         max_results: int = 50,
         exclude_ids: list[int] | None = None,
-        boost_recent: bool = True,
         organization_id: int | None = None,
     ) -> list[dict[str, Any]]:
         """
@@ -144,11 +150,17 @@ class SimilarityService:
                 already in ``cosinesimil`` score space.
             max_results: Maximum number of results (increased default)
             exclude_ids: Optional list of IDs to exclude from results
-            boost_recent: Whether to boost recent embeddings in scoring
             organization_id: Active org id (None = personal) — tenant gate.
 
         Returns:
-            List of similarity matches with raw-cosine scores and metadata
+            List of similarity matches whose ``similarity`` is **raw cosine** in
+            ``[-1, 1]`` — the same space :meth:`cosine_similarity` returns.
+
+        Note:
+            There is deliberately no recency boost. A ``boost_recent`` parameter
+            was documented here as an active scoring behaviour and referenced
+            nowhere in the body, so the signature promised a feature the search
+            never had (issue #690). Ranking is pure kNN cosine.
         """
         from app.services.opensearch_service import _speaker_org_filter_clauses
         from app.services.opensearch_service import opensearch_client

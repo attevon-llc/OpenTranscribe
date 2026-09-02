@@ -241,7 +241,7 @@ MUTATING_ENDPOINTS: list[tuple[str, int]] = [
     ("files/__init__.py", 1204),
     ("files/crud.py", 874),
     ("files/crud.py", 965),
-    ("files/crud.py", 1052),
+    ("files/crud.py", 1053),
     ("files/management.py", 206),
     ("files/management.py", 258),
     ("files/management.py", 356),

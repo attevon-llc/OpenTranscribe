@@ -1632,10 +1632,14 @@ def _handle_update_profile_action(
     a dozen linked speakers used to cost a dozen-plus synchronous OpenSearch calls
     before the PUT could answer.
 
-    The ``(file_uuid, old_name)`` pairs are collected **before** the overwrite and
-    handed back, because a profile rename spans files and this is the last moment
-    the previous names exist anywhere: once committed, nothing in Postgres can say
-    what the chunk plane was indexed with (issue #405).
+    The member rewrite and the ``(file_uuid, old_name)`` capture live in
+    ``services/speaker_profile_rename.apply_profile_name_to_speakers`` — the ONE
+    implementation of "a profile rename re-applies the name to its members", shared
+    with ``PUT /speaker-profiles/profiles/{uuid}``, the other endpoint that renames a
+    profile (issue #675). It collects the old names **before** the overwrite, because
+    a profile rename spans files and that is the last moment the previous names exist
+    anywhere: once committed, nothing in Postgres can say what the chunk plane was
+    indexed with (issue #405).
 
     Returns:
         ``None`` when no such profile exists. Otherwise the renames to replay into
@@ -1643,6 +1647,8 @@ def _handle_update_profile_action(
         A non-``None`` return also tells the caller a profile was renamed, so it can
         ask the background task to replay the rename into the speaker index.
     """
+    from app.services.speaker_profile_rename import apply_profile_name_to_speakers
+
     profile = (
         db.query(SpeakerProfile)
         .filter(SpeakerProfile.id == profile_id, SpeakerProfile.user_id == current_user.id)
@@ -1655,40 +1661,12 @@ def _handle_update_profile_action(
     profile.name = new_name  # type: ignore[assignment]
     logger.info(f"Updated profile {profile.id} name to '{new_name}' globally")
 
-    # Update all speakers linked to this profile
-    linked_query = db.query(Speaker).filter(Speaker.profile_id == profile_id)
-    if not current_user.is_admin:
-        linked_query = linked_query.filter(Speaker.user_id == current_user.id)
-    linked_speakers = linked_query.all()
-
-    # One grouped lookup, not a lazy `speaker.media_file.uuid` per row.
-    file_uuids: dict[int, str] = {}
-    media_file_ids = {int(s.media_file_id) for s in linked_speakers if s.media_file_id}
-    if media_file_ids:
-        file_uuids = {
-            int(row[0]): str(row[1])
-            for row in db.query(MediaFile.id, MediaFile.uuid).filter(
-                MediaFile.id.in_(media_file_ids)
-            )
-        }
-
-    renames: list[tuple[str, str]] = []
-    for linked_speaker in linked_speakers:
-        # The CANONICAL indexed label (`canonical_speaker_label_for_row`, the
-        # SAME resolver the chunk-index writers use) — not the ad hoc
-        # `display_name or name` chain issue #605's original sweep replaced at
-        # eight other call sites but missed here. A linked speaker indexed
-        # under a confident suggestion (no `display_name` set) would compute
-        # the wrong "old name", and the propagation's `update_by_query` would
-        # match nothing while logging `status: success`.
-        old_chunk_name = canonical_speaker_label_for_row(linked_speaker)
-        file_uuid = file_uuids.get(int(linked_speaker.media_file_id or 0))
-        if file_uuid and old_chunk_name:
-            renames.append((file_uuid, old_chunk_name))
-        linked_speaker.display_name = new_name  # type: ignore[assignment]
-
-    logger.info(f"Updated {len(linked_speakers)} speakers with new profile name '{new_name}'")
-    return renames
+    return apply_profile_name_to_speakers(
+        db,
+        profile_id,
+        new_name,
+        restrict_to_user_id=None if current_user.is_admin else current_user.id,
+    )
 
 
 def _load_profile_speaker_names(db: Session, profile_id: int) -> list[tuple[str, str]]:

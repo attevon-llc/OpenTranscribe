@@ -23,6 +23,7 @@ from app.models.media import SpeakerProfile
 
 _DELAY = "app.tasks.rename_propagation_task.propagate_speaker_rename.delay"
 _TITLE_DELAY = "app.tasks.rename_propagation_task.propagate_title_rename.delay"
+_DIGEST_DELAY = "app.tasks.rename_propagation_task.regenerate_rename_digests.delay"
 
 
 def _make_media_file(db_session, user, name: str) -> MediaFile:
@@ -60,6 +61,20 @@ def quiet_opensearch():
         patch("app.services.opensearch_service.update_speaker_profile"),
     ):
         yield
+
+
+@pytest.fixture
+def quiet_rename_dispatch():
+    """Capture the chunk-plane dispatch and silence the digest-plane one beside it.
+
+    ``dispatch_speaker_rename`` queues two things per coalesced file: the
+    ``propagate_speaker_rename`` rewrite (what these tests assert on) and a
+    ``regenerate_rename_digests`` batch. Only the first is yielded — patching the
+    second keeps the digest fan-out from reaching a broker without hiding the
+    dispatch under test.
+    """
+    with patch(_DIGEST_DELAY), patch(_DELAY) as delay_mock:
+        yield delay_mock
 
 
 def _queued(delay_mock) -> dict[str, list[str]]:
@@ -289,6 +304,167 @@ class TestSpeakerRenameEndpoint:
             str(other_file.uuid): ["Old Name"],
         }
         assert {c.kwargs["new_name"] for c in delay_mock.call_args_list} == {"New Name"}
+
+
+class TestSpeakerProfileUpdateEndpoint:
+    """``PUT /speaker-profiles/profiles/{uuid}`` — the second profile-rename path (#675).
+
+    There are two ways to rename a profile and only one of them was covered.
+    ``PUT /speakers/{uuid}`` with ``profile_action="update_profile"`` (the file
+    detail page) has dispatched since #405; ``PUT /speaker-profiles/profiles/{uuid}``
+    — what the **Speakers page's** profile editor calls
+    (``frontend/src/routes/speakers/+page.svelte``) — set ``SpeakerProfile.name``
+    and nothing else.
+
+    ⚠️ **``SpeakerProfile.name`` is not a field of ``transcript_chunks``.** The
+    chunk plane carries ``canonical_speaker_label_for_row(speaker)``, resolved from
+    ``Speaker.display_name`` / ``suggested_name`` / ``name`` — a profile is not
+    consulted at index time at all. So dispatching a propagation from this endpoint
+    *without* also re-applying the profile name to its member speakers would write a
+    name into the index that Postgres does not hold, and the next reindex would
+    revert it. The rename and the dispatch are one unit, which is why these tests
+    assert on both halves.
+    """
+
+    def test_renaming_a_profile_queues_propagation_for_every_file_it_reaches(
+        self, client, db_session, normal_user, user_token_headers, quiet_rename_dispatch
+    ):
+        """One profile, three files, three different indexed labels.
+
+        The old name is per-SPEAKER, not per-profile: a member indexed under a
+        confident suggestion and a member with no label at all were indexed under
+        strings the profile never held, so a dispatch keyed on the profile's own
+        previous name would match nothing for either.
+        """
+        profile = SpeakerProfile(uuid=str(uuid_mod.uuid4()), user_id=normal_user.id, name="Bob")
+        db_session.add(profile)
+        db_session.flush()
+
+        labelled_file = _make_media_file(db_session, normal_user, "profile-put-labelled")
+        _make_speaker(
+            db_session,
+            normal_user,
+            labelled_file,
+            "SPEAKER_00",
+            profile_id=profile.id,
+            display_name="Bob",
+        )
+        unlabelled_file = _make_media_file(db_session, normal_user, "profile-put-unlabelled")
+        unlabelled = _make_speaker(
+            db_session, normal_user, unlabelled_file, "SPEAKER_07", profile_id=profile.id
+        )
+        suggested_file = _make_media_file(db_session, normal_user, "profile-put-suggested")
+        _make_speaker(
+            db_session,
+            normal_user,
+            suggested_file,
+            "SPEAKER_03",
+            profile_id=profile.id,
+            suggested_name="Bobby (Host)",
+            confidence=0.9,
+        )
+        # Shares a file with a member but belongs to no profile: a profile rename
+        # must not sweep it along, or an unrelated speaker's chunks get rewritten.
+        bystander = _make_speaker(
+            db_session,
+            normal_user,
+            labelled_file,
+            "SPEAKER_09",
+            display_name="Someone Else",
+        )
+
+        resp = client.put(
+            f"/api/speaker-profiles/profiles/{profile.uuid}?name=Robert",
+            headers=user_token_headers,
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["name"] == "Robert"
+        assert _queued(quiet_rename_dispatch) == {
+            str(labelled_file.uuid): ["Bob"],
+            str(unlabelled_file.uuid): ["SPEAKER_07"],
+            str(suggested_file.uuid): ["Bobby (Host)"],
+        }
+        assert {c.kwargs["new_name"] for c in quiet_rename_dispatch.call_args_list} == {"Robert"}
+
+        # The other half of the unit: Postgres must now hold the name the
+        # propagation just wrote into the index, or the next reindex reverts it.
+        db_session.refresh(unlabelled)
+        assert unlabelled.display_name == "Robert"
+        db_session.refresh(bystander)
+        assert bystander.display_name == "Someone Else"
+
+    def test_two_members_in_one_file_coalesce_into_a_single_task(
+        self, client, db_session, normal_user, user_token_headers, quiet_rename_dispatch
+    ):
+        """Two tasks over one file would each rewrite the same ``speakers`` array.
+
+        The loser of the version conflict is silently dropped, so the coalescing
+        in ``dispatch_speaker_rename`` is correctness, not efficiency.
+        """
+        profile = SpeakerProfile(uuid=str(uuid_mod.uuid4()), user_id=normal_user.id, name="Bob")
+        db_session.add(profile)
+        db_session.flush()
+
+        media_file = _make_media_file(db_session, normal_user, "profile-put-coalesce")
+        _make_speaker(
+            db_session,
+            normal_user,
+            media_file,
+            "SPEAKER_00",
+            profile_id=profile.id,
+            display_name="Bob",
+        )
+        _make_speaker(db_session, normal_user, media_file, "SPEAKER_07", profile_id=profile.id)
+
+        resp = client.put(
+            f"/api/speaker-profiles/profiles/{profile.uuid}?name=Robert",
+            headers=user_token_headers,
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert quiet_rename_dispatch.call_count == 1, (
+            "two diarized speakers in ONE file must coalesce into one "
+            "update_by_query, not race each other"
+        )
+        assert _queued(quiet_rename_dispatch) == {str(media_file.uuid): ["Bob", "SPEAKER_07"]}
+
+    def test_an_update_that_does_not_change_the_name_queues_nothing(
+        self, client, db_session, normal_user, user_token_headers, quiet_rename_dispatch
+    ):
+        """A description edit touches no indexed field — dispatching would be noise.
+
+        The member deliberately carries **no** ``display_name``, so it is indexed
+        under ``SPEAKER_00`` while the profile is called ``Bob``. That gap is what
+        makes this test able to fail: an implementation that re-applied the profile
+        name on every update (rather than only on a name change) would relabel this
+        speaker and queue a real ``SPEAKER_00 -> Bob`` rewrite. Had the member
+        already been labelled ``Bob``, both assertions would hold either way.
+        """
+        profile = SpeakerProfile(uuid=str(uuid_mod.uuid4()), user_id=normal_user.id, name="Bob")
+        db_session.add(profile)
+        db_session.flush()
+
+        media_file = _make_media_file(db_session, normal_user, "profile-put-desc-only")
+        member = _make_speaker(
+            db_session, normal_user, media_file, "SPEAKER_00", profile_id=profile.id
+        )
+
+        resp = client.put(
+            f"/api/speaker-profiles/profiles/{profile.uuid}?description=Podcast+host",
+            headers=user_token_headers,
+        )
+
+        assert resp.status_code == 200, resp.text
+        # Positive control: the request really did update something, so a
+        # not-called assertion cannot pass on a rejected or no-op request.
+        assert resp.json()["description"] == "Podcast host"
+        assert resp.json()["name"] == "Bob"
+        quiet_rename_dispatch.assert_not_called()
+        db_session.refresh(member)
+        assert member.display_name is None, (
+            "an update that changed no name must not relabel the profile's members"
+        )
 
 
 class TestProfileRenameCapture:

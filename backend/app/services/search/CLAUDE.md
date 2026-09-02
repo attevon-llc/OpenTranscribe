@@ -78,7 +78,8 @@ separate and lives in the `../opensearch_service/` package (alias `speakers` →
   mixed-index survey. `model_switch.py` — the whole model switch, shared by both
   endpoints, plus the ONE reindex fan-out loop. See "Switching the embedding model"
   below. `reindex_scope.py` — which owners and which of their files a reindex must
-  cover; see "A reindex is corpus-wide" below.
+  cover; `reindex_cancel.py` — the cancel flag's key shape, the fan-out record, and
+  why the flag names a run. See "A reindex is corpus-wide" below.
 
 ## Conventions / patterns
 
@@ -553,10 +554,43 @@ explicitly did nothing at all.
   per-user gate would trade a scoping bug for a privilege one;
   `test_reindex_is_refused_for_a_plain_user` carries the two-owner corpus fixture so a dropped
   gate shows up as dispatches for *other* owners, not merely a wrong status code.
-- **Not fixed, deliberately: `POST /search/reindex/stop` is still per-owner.** The cancel flag is
-  `reindex_cancel:{user_id}` and the caller can only flag their own coordinator; the endpoint's
-  message says so. Cancelling the whole fan-out needs the dispatched owner set persisted
-  somewhere, which nothing does today.
+- **`POST /search/reindex/stop` cancels the whole run it started** (#691). It was left per-owner
+  by #627 — the caller could only flag their own coordinator while the other owners' ran to
+  completion — because cancelling a fan-out needs the dispatched owner set and nothing persisted
+  it. `dispatch_reindex_for_every_owner` now writes its `{owner: task id}` mapping to
+  `reindex_fanout:{admin id}` as well as returning it, and `stop` flags every owner in it. See
+  the next section for the two properties that make that safe.
+
+## Cancelling a fan-out: the flag NAMES the run (#691)
+
+`reindex_cancel:{user_id}` used to hold `"1"`. It now holds **the coordinator task id being
+cancelled**, and that is not decoration — without it the fix does not work on the deployment
+shape it was written for.
+
+- ⚠️ **The coordinator that most needs to see the flag has not started yet.** The fan-out
+  dispatches the caller first, so with fewer workers than owners the caller's coordinator runs
+  while owners B..N sit in the broker queue. Every coordinator **clears** the cancel flag on
+  entry — a flag left by an *earlier* run would otherwise abort the next legitimate reindex after
+  its first file — so a flag carrying only `"1"` would be erased by the very coordinator it was
+  written for. Naming the run is what distinguishes "I was cancelled before I started" (abort,
+  release the lock, index nothing) from "someone else's flag is lying around" (clear it and
+  proceed). `reindex_cancel.consume_pending_cancel` is that single decision, called once at
+  coordinator entry in place of the old unconditional clear.
+- **A second run started while one is cancelling is unaffected, by construction.** Its
+  coordinators carry fresh task ids, so the first run's flags read as stale and are cleared
+  exactly as they always were. No run can inherit another run's cancellation, and there is no
+  window to reason about.
+- **The record is per triggering admin**, so two admins' concurrent fan-outs cancel separately.
+  Overlapping *owners* are not a hazard either: `reindex_lock:{user_id}` already makes two
+  coordinators for one owner mutually exclusive — the second is skipped, never concurrent.
+- **A caller with no recorded fan-out still cancels their own coordinator**, with the legacy `"1"`
+  value. That is the `search_index_maintenance`-dispatched run, which has no admin-facing run id;
+  its behaviour is unchanged from before #691. Those automatic per-owner runs are deliberately
+  **not** swept up by an admin's stop — the button cancels the run *you* started.
+- **`reindex_fanout:*` is NOT in `app/main.py`'s startup sweep**, unlike `reindex_cancel:*`. The
+  API process restarts independently of the Celery workers still executing the fan-out, and
+  deleting the record takes the only handle `stop` has on those coordinators with it. A 1-hour
+  TTL bounds it instead.
 
 ## The bootstrap self-heals, and why it is a beat task (#625)
 

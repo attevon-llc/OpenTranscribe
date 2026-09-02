@@ -21,12 +21,16 @@ from app.core.constants import SEARCH_DEFAULT_PAGE_SIZE
 from app.core.constants import SEARCH_MAX_PAGE_SIZE
 from app.core.constants import get_speaker_index
 from app.core.constants import get_speaker_index_v4
-from app.core.redis import get_redis
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.search import SEARCH_RESULT_TYPES
 from app.schemas.search import SetEmbeddingModelSchema
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
+from app.services.search.reindex_cancel import LEGACY_CANCEL_VALUE
+from app.services.search.reindex_cancel import cancel_requested
+from app.services.search.reindex_cancel import clear_fanout
+from app.services.search.reindex_cancel import read_fanout
+from app.services.search.reindex_cancel import request_cancel
 
 logger = logging.getLogger(__name__)
 
@@ -561,8 +565,10 @@ def trigger_reindex(
 
     return {
         # The caller's own coordinator, because that is the run the panel's
-        # progress stream and `POST /reindex/stop` are keyed to. It is absent
-        # when a named-file scope contains nothing the caller owns.
+        # progress stream is keyed to. It is absent when a named-file scope
+        # contains nothing the caller owns. `POST /reindex/stop` is NOT keyed to
+        # it — it cancels every owner in the fan-out `dispatch_reindex_for_every_owner`
+        # recorded (#691).
         "task_id": task_ids.get(current_user.id),
         "status": "started",
         "message": (
@@ -577,41 +583,63 @@ def trigger_reindex(
 def stop_reindex(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
-    """Request cancellation of the CALLER'S running reindex coordinator.
+    """Cancel the re-index run this admin started — **every owner's coordinator**.
 
-    Sets a Redis flag that the reindex task checks between files.
-    The task will stop after completing the current file and restore
-    normal index settings (refresh_interval).
+    ``POST /reindex`` fans out one coordinator per owner (#627); this used to set
+    a single ``reindex_cancel:{caller id}`` flag, and each coordinator reads the
+    flag belonging to the *file's* owner. So an admin could start a
+    deployment-wide re-embed and cancel only their own share of it, with every
+    other owner's coordinator running to completion (#691). It now enumerates the
+    owner set the dispatch recorded under ``reindex_fanout:{caller id}`` and flags
+    all of them, naming each coordinator's run id so a coordinator still sitting
+    in the broker queue can honour the stop instead of clearing it on entry.
+    ``services/search/reindex_cancel.py`` holds the mechanism and its rationale.
 
-    ⚠️ **Per-owner, and ``POST /reindex`` is now per-corpus** (#627). The cancel
-    flag is ``reindex_cancel:{user_id}`` and the coordinators are one per owner,
-    so this stops the caller's run only; the other owners' coordinators run to
-    completion. The message says so rather than claiming the whole fan-out
-    stopped. Cancelling the fan-out would mean persisting the dispatched owner
-    set, which nothing does today.
+    Scoped to **this admin's own run**, not to every reindex on the deployment: a
+    concurrent run another admin started, and the per-owner coordinators
+    ``search_index_maintenance`` dispatches on its own schedule, are left alone.
+    A caller whose own coordinator is running but belongs to no recorded fan-out
+    is still flagged, so a maintenance-dispatched run stays stoppable exactly as
+    it was.
+
+    Each flagged coordinator stops after its current file completes and restores
+    normal index settings (``refresh_interval``).
 
     Returns:
-        Dict with stop status.
+        Dict with the stop status and how many coordinators were signalled.
     """
     user_id = current_user.id
 
-    if not _check_reindex_task_active(user_id):
-        return {
-            "status": "not_running",
-            "message": "No reindex task is currently running.",
-        }
-
     try:
-        redis_client = get_redis()
-        redis_client.setex(f"reindex_cancel:{user_id}", 3600, "1")
+        dispatched = read_fanout(user_id)
+        targets = dict(dispatched)
+        if user_id not in targets and _check_reindex_task_active(user_id):
+            # A run this admin did not fan out: dispatched by
+            # `search_index_maintenance`, or started before the record existed.
+            # There is no run id to name, so the flag falls back to the legacy
+            # value — truthy for the batch workers of a coordinator that is
+            # already running, which is the only kind that can exist here.
+            targets[user_id] = LEGACY_CANCEL_VALUE
 
-        logger.info(f"Reindex stop requested for user {user_id}")
+        if not any(_check_reindex_task_active(uid) for uid in targets):
+            return {
+                "status": "not_running",
+                "message": "No reindex task is currently running.",
+            }
+
+        stopped = request_cancel(targets)
+        if dispatched:
+            clear_fanout(user_id)
+
+        logger.info(f"Reindex stop requested by user {user_id} for owner(s) {stopped}")
 
         return {
             "status": "stop_requested",
+            "stopped_users": len(stopped),
             "message": (
-                "Stop signal sent for your own re-index run; it will stop after the "
-                "current file completes. Other accounts' coordinators are unaffected."
+                f"Stop signal sent to {len(stopped)} re-index coordinator(s) — the whole "
+                f"run you started, not just your own files. Each stops after the file it "
+                f"is on completes."
             ),
         }
     except HTTPException:
@@ -627,26 +655,35 @@ def stop_reindex(
         ) from e
 
 
-def _check_reindex_task_active(user_id: int) -> bool:
-    """Check if a reindex task is currently active for this user.
+def _running_reindex_run_id(user_id: int) -> str | None:
+    """The coordinator task id currently holding ``reindex_lock:{user_id}``.
 
-    Uses the ``reindex_lock:{user_id}`` Redis key that the reindex task
-    itself sets on start (NX, 1-hour TTL) and clears on finish.
-    This is a sub-millisecond Redis GET — no Celery broadcast needed.
+    The lock's *value* is the run id (``reindex_task`` sets it NX with a 1-hour
+    TTL and releases it only if it still owns it), so one sub-millisecond GET
+    answers both "is a reindex running for this owner" and "which run is it" — no
+    Celery broadcast needed.
 
     Args:
-        user_id: The user ID to check for active reindex tasks.
+        user_id: The owner to check.
 
     Returns:
-        True if a reindex task is actively running for this user.
+        The run id, or ``None`` when no reindex is running for that owner.
     """
     try:
         from app.core.redis import get_redis
 
-        return bool(get_redis().exists(f"reindex_lock:{user_id}"))
+        value = get_redis().get(f"reindex_lock:{user_id}")
     except Exception as e:
         logger.debug(f"Could not check reindex lock: {e}")
-        return False
+        return None
+    if value is None:
+        return None
+    return value.decode() if isinstance(value, bytes) else str(value)
+
+
+def _check_reindex_task_active(user_id: int) -> bool:
+    """Whether a reindex coordinator is currently running for this user."""
+    return _running_reindex_run_id(user_id) is not None
 
 
 @router.get("/degraded-embeddings")
@@ -800,17 +837,14 @@ def reindex_status(
         except Exception as e:
             logger.exception(f"Error checking index status: {e}")
 
-    # Check if a reindex task is actively running for this user
-    in_progress = _check_reindex_task_active(current_user.id)
+    # Check if a reindex task is actively running for this user, and which run.
+    running_run_id = _running_reindex_run_id(current_user.id)
+    in_progress = running_run_id is not None
 
-    # Check if stop has been requested
-    stop_requested = False
-    if in_progress:
-        try:
-            redis_client = get_redis()
-            stop_requested = bool(redis_client.get(f"reindex_cancel:{current_user.id}"))
-        except Exception as e:
-            logger.debug(f"Could not check reindex cancellation flag: {e}")
+    # Check if stop has been requested — for THIS run. A flag naming a finished
+    # run would otherwise show the panel a stop that cannot apply to what is
+    # currently indexing (#691).
+    stop_requested = in_progress and cancel_requested(current_user.id, running_run_id)
 
     current_model, current_dimension = get_search_embedding_settings()
 

@@ -108,7 +108,7 @@ class _RecordingSetter:
 
 
 class _StandInRedis:
-    """The three operations the reindex lock/cancel flags use, backed by a dict."""
+    """The four operations the reindex lock/cancel/fan-out keys use, backed by a dict."""
 
     def __init__(self) -> None:
         self.store: dict[str, str] = {}
@@ -121,6 +121,9 @@ class _StandInRedis:
 
     def setex(self, key: str, _ttl: int, value: str) -> None:
         self.store[key] = value
+
+    def delete(self, *keys: str) -> int:
+        return sum(1 for key in keys if self.store.pop(key, None) is not None)
 
 
 class _StandInCat:
@@ -137,9 +140,47 @@ class _StandInCat:
 
 
 @pytest.fixture
-def reindex_task():
-    """Replace the reindex task at its import site with a recorder."""
+def reindex_task(standin_redis):
+    """Replace the reindex task at its import site with a recorder.
+
+    Takes ``standin_redis`` because a dispatch now also **writes** — it records
+    the fan-out's ``{owner: task id}`` mapping so ``POST /reindex/stop`` can
+    cancel the whole run (#691). Without the stand-in that write would land in
+    whatever Redis the test environment is pointed at, i.e. the dev stack's.
+    """
+    del standin_redis  # requested for its patching, read through the endpoint
     recorder = _RecordingTask()
+    with patch("app.tasks.reindex_task.reindex_transcripts_task", recorder):
+        yield recorder
+
+
+def _coordinator_id(user_id: int) -> str:
+    """The task id ``_PerOwnerRecordingTask`` hands that owner's coordinator."""
+    return f"coordinator-for-{user_id}"
+
+
+class _PerOwnerRecordingTask:
+    """A recorder that gives each owner a DISTINCT coordinator task id.
+
+    ``_RecordingTask`` returns one id for every dispatch, which cannot show that a
+    cancel flag names *that owner's* run rather than any run at all — and naming
+    the run is the whole mechanism that lets a queued coordinator honour a stop
+    instead of clearing it on entry (#691).
+    """
+
+    def __init__(self) -> None:
+        self.dispatches: list[dict] = []
+
+    def delay(self, **kwargs) -> SimpleNamespace:
+        self.dispatches.append(kwargs)
+        return SimpleNamespace(id=_coordinator_id(kwargs["user_id"]))
+
+
+@pytest.fixture
+def fanout_reindex_task(standin_redis):
+    """``reindex_task``, but with per-owner task ids. See ``_PerOwnerRecordingTask``."""
+    del standin_redis  # requested for its patching, read through the endpoint
+    recorder = _PerOwnerRecordingTask()
     with patch("app.tasks.reindex_task.reindex_transcripts_task", recorder):
         yield recorder
 
@@ -323,17 +364,16 @@ class _StandInIndexedFiles:
 
 @pytest.fixture
 def standin_redis():
-    """Point both reindex-flag readers at one in-memory store.
+    """Point every reindex lock/cancel/fan-out reader at one in-memory store.
 
-    Two patch targets because the handler and its helper resolve ``get_redis``
-    differently: ``stop_reindex`` uses the name imported into ``search.py``,
-    while ``_check_reindex_task_active`` imports it inside the function body.
+    One patch target now covers all of them: ``_running_reindex_run_id`` and
+    ``services/search/reindex_cancel`` both import ``get_redis`` **inside** their
+    function bodies precisely so a single ``app.core.redis`` patch reaches them.
+    (``search.py`` no longer binds the name at module scope; it used to, and the
+    fixture needed two targets.)
     """
     fake = _StandInRedis()
-    with (
-        patch("app.api.endpoints.search.get_redis", return_value=fake),
-        patch("app.core.redis.get_redis", return_value=fake),
-    ):
+    with patch("app.core.redis.get_redis", return_value=fake):
         yield fake
 
 
@@ -780,6 +820,168 @@ def test_stop_is_refused_for_a_plain_user(client, user_token_headers, standin_re
     response = client.post(REINDEX_STOP, headers=user_token_headers)
     assert response.status_code == status.HTTP_403_FORBIDDEN
     assert standin_redis.store == {}
+
+
+# ---------------------------------------------------------------------------
+# POST /reindex/stop — cancelling the FAN-OUT, not just the caller's share (#691)
+# ---------------------------------------------------------------------------
+def test_stopping_a_two_owner_fanout_cancels_both_owners(
+    client, admin_token_headers, admin_user, fanout_reindex_task, two_owner_corpus, standin_redis
+):
+    """The defect, end to end: start corpus-wide, then stop, and mean it.
+
+    ``POST /reindex`` dispatches one coordinator per owner (#627); ``stop`` wrote
+    a single ``reindex_cancel:{caller}`` flag and each coordinator reads the flag
+    for the *file's* owner, so the other owners re-embedded their whole accounts
+    with no way to intervene short of restarting workers. Both routes are
+    admin-gated, so this was never an authorization gap — start and stop simply
+    disagreed about scope.
+    """
+    started = client.post(REINDEX, headers=admin_token_headers, json=None)
+    assert started.status_code == status.HTTP_200_OK
+    dispatched_for = {d["user_id"] for d in fanout_reindex_task.dispatches}
+    other_id = two_owner_corpus.owner_id
+    assert {admin_user.id, other_id} <= dispatched_for
+
+    standin_redis.store[f"reindex_lock:{admin_user.id}"] = "held"
+    standin_redis.store[f"reindex_lock:{other_id}"] = "held"
+
+    stopped = client.post(REINDEX_STOP, headers=admin_token_headers)
+
+    assert stopped.status_code == status.HTTP_200_OK
+    body = stopped.json()
+    assert body["status"] == "stop_requested"
+    # Every owner the fan-out dispatched, not merely the two the fixture created:
+    # the corpus is whatever the database holds, and all of it was queued.
+    assert body["stopped_users"] == len(dispatched_for)
+    assert standin_redis.store[f"reindex_cancel:{admin_user.id}"] == _coordinator_id(admin_user.id)
+    assert standin_redis.store[f"reindex_cancel:{other_id}"] == _coordinator_id(other_id)
+
+
+def test_a_queued_owners_coordinator_is_flagged_though_it_holds_no_lock(
+    client, admin_token_headers, admin_user, fanout_reindex_task, two_owner_corpus, standin_redis
+):
+    """The realistic shape: one worker, so only the caller's coordinator is running.
+
+    The fan-out dispatches the caller first, so owners B..N sit in the broker
+    queue holding no ``reindex_lock``. Flagging only the owners *currently*
+    executing would leave exactly those coordinators to start later and re-embed
+    the corpus — the original defect, one step further along.
+    """
+    client.post(REINDEX, headers=admin_token_headers, json=None)
+    dispatched_for = {d["user_id"] for d in fanout_reindex_task.dispatches}
+    standin_redis.store[f"reindex_lock:{admin_user.id}"] = "held"
+
+    stopped = client.post(REINDEX_STOP, headers=admin_token_headers)
+
+    assert stopped.json()["stopped_users"] == len(dispatched_for)
+    other_id = two_owner_corpus.owner_id
+    assert other_id in dispatched_for
+    assert f"reindex_lock:{other_id}" not in standin_redis.store
+    assert standin_redis.store[f"reindex_cancel:{other_id}"] == _coordinator_id(other_id)
+
+
+def test_stopping_a_single_owner_run_still_cancels_that_owner(
+    client, admin_token_headers, admin_user, fanout_reindex_task, two_owner_corpus, standin_redis
+):
+    """The control. Without it, a fix that flags every account in the deployment —
+    or one that flags nothing at all and passes on an empty two-owner store —
+    would be indistinguishable from a working one.
+
+    Naming only the admin's own file resolves to a one-owner scope, so exactly one
+    coordinator is dispatched and exactly one flag must be written.
+    """
+    started = client.post(
+        REINDEX, headers=admin_token_headers, json=[two_owner_corpus.admin_file_uuid]
+    )
+    assert started.json()["reindex_users"] == 1
+
+    standin_redis.store[f"reindex_lock:{admin_user.id}"] = "held"
+    stopped = client.post(REINDEX_STOP, headers=admin_token_headers)
+
+    assert stopped.json()["stopped_users"] == 1
+    assert standin_redis.store[f"reindex_cancel:{admin_user.id}"] == _coordinator_id(admin_user.id)
+    assert f"reindex_cancel:{two_owner_corpus.owner_id}" not in standin_redis.store
+
+
+def test_a_stop_leaves_another_admins_concurrent_fanout_untouched(
+    client, admin_token_headers, admin_user, fanout_reindex_task, two_owner_corpus, standin_redis
+):
+    """The record is per triggering admin, so two runs cancel independently.
+
+    A deployment-wide cancel flag would be simpler and would take this second run
+    down with the first — an admin repairing search would silently abort a
+    colleague's re-embed.
+    """
+    other_admin_id = 90001
+    other_admin_owner_id = 90002
+    standin_redis.store[f"reindex_fanout:{other_admin_id}"] = (
+        f'{{"{other_admin_owner_id}": "coordinator-for-{other_admin_owner_id}"}}'
+    )
+
+    client.post(REINDEX, headers=admin_token_headers, json=None)
+    standin_redis.store[f"reindex_lock:{admin_user.id}"] = "held"
+    client.post(REINDEX_STOP, headers=admin_token_headers)
+
+    # The caller's own run IS cancelled — otherwise "left the other one alone"
+    # would be satisfied by a stop that cancelled nothing at all.
+    other_id = two_owner_corpus.owner_id
+    assert standin_redis.store[f"reindex_cancel:{other_id}"] == _coordinator_id(other_id)
+    assert f"reindex_cancel:{other_admin_owner_id}" not in standin_redis.store
+    assert f"reindex_fanout:{other_admin_id}" in standin_redis.store
+
+
+def test_a_stop_is_still_possible_once_the_callers_own_coordinator_has_finished(
+    client, admin_token_headers, admin_user, fanout_reindex_task, two_owner_corpus, standin_redis
+):
+    """An admin who owns few files finishes first while the fan-out runs on.
+
+    ``not_running`` was derived from the caller's lock alone, so the button went
+    dead precisely when the rest of the corpus still needed stopping.
+    """
+    client.post(REINDEX, headers=admin_token_headers, json=None)
+    other_id = two_owner_corpus.owner_id
+    standin_redis.store[f"reindex_lock:{other_id}"] = "held"
+
+    stopped = client.post(REINDEX_STOP, headers=admin_token_headers)
+
+    assert stopped.json()["status"] == "stop_requested"
+    assert standin_redis.store[f"reindex_cancel:{other_id}"] == _coordinator_id(other_id)
+
+
+def test_a_finished_fanout_reports_not_running_and_writes_no_flags(
+    client, admin_token_headers, admin_user, fanout_reindex_task, two_owner_corpus, standin_redis
+):
+    """Every coordinator has released its lock: there is nothing left to stop.
+
+    A stray ``reindex_cancel`` key written here would be read by whichever run
+    started next — which is the staleness the run-naming exists to survive, but
+    inventing one is still wrong.
+    """
+    client.post(REINDEX, headers=admin_token_headers, json=None)
+
+    stopped = client.post(REINDEX_STOP, headers=admin_token_headers)
+
+    assert stopped.json()["status"] == "not_running"
+    assert f"reindex_cancel:{admin_user.id}" not in standin_redis.store
+    assert f"reindex_cancel:{two_owner_corpus.owner_id}" not in standin_redis.store
+
+
+def test_the_fanout_record_is_consumed_by_the_stop_that_cancels_it(
+    client, admin_token_headers, admin_user, fanout_reindex_task, two_owner_corpus, standin_redis
+):
+    """A record that outlives its cancellation re-flags owners on the next stop.
+
+    The dispatch writing it at all is half of the fix — ``stop`` had nothing to
+    enumerate before, which is why #627 documented the gap rather than closing it.
+    """
+    client.post(REINDEX, headers=admin_token_headers, json=None)
+    assert f"reindex_fanout:{admin_user.id}" in standin_redis.store
+
+    standin_redis.store[f"reindex_lock:{admin_user.id}"] = "held"
+    client.post(REINDEX_STOP, headers=admin_token_headers)
+
+    assert f"reindex_fanout:{admin_user.id}" not in standin_redis.store
 
 
 def test_stop_requires_authentication(client, standin_redis):

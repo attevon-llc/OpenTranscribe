@@ -20,6 +20,14 @@ from app.utils.task_utils import recover_stuck_file
 
 logger = logging.getLogger(__name__)
 
+#: Refusal reported by :func:`purge_media_file` for a file under an active legal
+#: hold. A module constant rather than an inline literal because callers that
+#: translate the refusal into a user-facing response should not have to re-spell it.
+LEGAL_HOLD_REFUSAL = (
+    "refused: the file is under an active legal hold and cannot be deleted. "
+    "Release the hold before deleting."
+)
+
 
 class FileCleanupService:
     """Service for automated file cleanup and recovery operations."""
@@ -758,8 +766,27 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
 
     SpeakerProfile records and their profile embeddings are intentionally preserved.
 
+    **A file under an active legal hold is REFUSED before step 1.** The hold is
+    the source of truth that keeps DMCA/litigation evidence alive (the S3 object
+    lock only mirrors it, best-effort), and this destroy is irreversible, so the
+    check lives here rather than only in each caller's query: a guard in one
+    query protects one caller, and this function has four. It fails closed — the
+    refusal is logged at ERROR and reported as ``deleted: False`` with
+    ``refused_legal_hold: True``, never as a quiet no-op that a caller reading
+    only ``deleted`` could mistake for a completed destroy. Clear the hold
+    (``takedown_service.release_file``) to make a held file deletable; there is
+    deliberately no override argument, because an argument that skips the guard
+    is the guard's own failure mode.
+
+    ``is_quarantined`` is deliberately **not** part of this check. Quarantine is
+    a review state an admin can legitimately end by deleting the offending
+    upload; it is the unattended retention sweep that must never destroy a file
+    under review, and that predicate lives on the sweep's query
+    (``tasks/cleanup._select_expired_files``).
+
     Returns ``{"deleted": bool, "file_uuid": str, "error": str | None,
-    "residual_errors": list[dict]}``. Never raises.
+    "residual_errors": list[dict]}``, plus ``refused_legal_hold: True`` on the
+    refusal above. Never raises.
 
     ``deleted`` reports the **database row** only. ``residual_errors`` is
     non-empty when a copy of the file's data may still exist in object storage
@@ -780,6 +807,20 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
     """
     file_uuid = str(file.uuid)
     residual: list[dict[str, Any]] = []
+
+    if bool(file.legal_hold):
+        logger.error(
+            f"purge_media_file: REFUSED to delete file {file_uuid} — it is under an "
+            "active legal hold. Release the hold before deleting."
+        )
+        return {
+            "deleted": False,
+            "file_uuid": file_uuid,
+            "error": LEGAL_HOLD_REFUSAL,
+            "residual_errors": residual,
+            "refused_legal_hold": True,
+        }
+
     try:
         # Phase 1 — read (DB session open, Postgres only).
         plan = _load_purge_plan(db, file)

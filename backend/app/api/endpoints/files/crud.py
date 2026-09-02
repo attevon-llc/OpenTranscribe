@@ -1006,6 +1006,18 @@ def delete_media_file(
     from app.services.file_cleanup_service import purge_media_file
 
     result = purge_media_file(db, db_file)
+    if result.get("refused_legal_hold"):
+        # A legal hold is a deliberate, actionable refusal, not a server fault:
+        # the admin has to release the hold first. Reporting it as a 500 told the
+        # caller the delete had broken rather than that it had been declined.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "FILE_UNDER_LEGAL_HOLD",
+                "message": result.get("error"),
+                "file_id": str(db_file.uuid),
+            },
+        )
     if not result["deleted"]:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

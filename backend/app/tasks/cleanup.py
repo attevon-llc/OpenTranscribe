@@ -448,6 +448,17 @@ def _select_expired_files(
     Plain tuples, never ``MediaFile`` instances: the deletion phase runs with no
     session open, and an escaping instance would lazy-load (reopening a
     transaction) the moment ``purge_media_file`` touched it.
+
+    **A file under legal hold or in quarantine is never a candidate** (issue
+    #664). ``status`` alone is not a durable guard for either: a quarantined
+    file keeps its processing status on purpose (so a release restores it
+    verbatim), and ``tasks/transcription/storage`` writes ``COMPLETED`` plus a
+    fresh ``completed_at`` unconditionally when transcription finishes — so a
+    file quarantined *while it was still transcribing* would land in this
+    candidate set with its retention clock started at that write. Both flags are
+    ``NOT NULL DEFAULT false``, so ``is_(False)`` is exact rather than
+    three-valued. ``purge_media_file`` refuses a held file as well; this
+    predicate is the efficient filter, that one is the fail-closed backstop.
     """
     from app.models.media import FileStatus
     from app.models.media import MediaFile
@@ -466,6 +477,8 @@ def _select_expired_files(
         )
         .filter(
             MediaFile.status.in_(eligible_statuses),
+            MediaFile.legal_hold.is_(False),
+            MediaFile.is_quarantined.is_(False),
             ((MediaFile.completed_at.isnot(None)) & (MediaFile.completed_at < query_cutoff))
             | ((MediaFile.completed_at.is_(None)) & (MediaFile.upload_time < query_cutoff)),
         )

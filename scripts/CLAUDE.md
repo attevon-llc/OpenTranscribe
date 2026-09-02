@@ -262,6 +262,12 @@ this file is for.
   `backend/tests/CLAUDE.md`.
 - **Frontend gate** — `frontend-check.sh`: `npm ci` → `svelte-kit sync` → ESLint → svelte-check → vite
   build. Also the pre-commit hook (`files: ^frontend/src/`) and the `/fix-frontend` command.
+  **Two hooks, not one, since issue #688**: `frontend-check` runs it with `--check-only` at
+  commit stage (the `vite build` — whose `prebuild` downloads fonts and shells out to
+  `docker buildx` for the FFmpeg.wasm core — measured 91.8 s of a 328 s whole-tree run), and
+  `frontend-build` runs it in full at **pre-push**. On a PR that hook is the only `vite build`
+  in CI at all, so `.github/workflows/pre-commit.yml` invokes both stages; see
+  `backend/tests/unit/test_precommit_stage_ci_parity.py`.
 - **Publish images** — `docker-build-push.sh`; prefer the skill at `.claude/skills/docker-build-push/SKILL.md`.
 - **Models** — `download-models.sh <cache-dir>` is a host wrapper that runs `download-models.py` inside
   the backend image (`DOWNLOAD_ALL_OPENSEARCH_MODELS`, `OPENSEARCH_MODELS`, `WHISPER_MODEL`).

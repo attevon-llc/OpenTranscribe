@@ -76,7 +76,9 @@ separate and lives in the `../opensearch_service/` package (alias `speakers` →
   `settings_service.py` (DB-backed model + dimension), `tenant_scope.py`.
 - `embedding_provenance.py` — which model produced the vectors, and the one-query
   mixed-index survey. `model_switch.py` — the whole model switch, shared by both
-  endpoints. See "Switching the embedding model" below.
+  endpoints, plus the ONE reindex fan-out loop. See "Switching the embedding model"
+  below. `reindex_scope.py` — which owners and which of their files a reindex must
+  cover; see "A reindex is corpus-wide" below.
 
 ## Conventions / patterns
 
@@ -518,6 +520,43 @@ straight into the pipeline. That silently repointed embedding **with no user act
 one deployed model is not a choice and is adopted with a warning (the recovery the fallback
 exists for); more than one returns `None` and leaves search on BM25 — loud, obvious and
 reversible, where a wrong guess is silent and costs a full re-embed.
+
+## A reindex is corpus-wide, in every mode (#627)
+
+**`POST /search/reindex` had the identical defect #437 fixed for the switch, and kept it for
+another release.** All three of its modes dispatched one
+`reindex_transcripts_task.delay(user_id=current_user.id, ...)`, and that coordinator filters
+`MediaFile.user_id == user_id`. So the admin Settings → Search "Reindex all" button repaired the
+pressing admin's own account and left every other user's files exactly as they were — no error,
+no warning, a success toast. The pending-only sweep was scoped twice over (a `user_id ==` in
+Postgres *and* a `{"term": {"user_id": ...}}` beside the chunk-plane clause in the aggregation),
+so it could not even see another account's unindexed files. Naming another user's file UUID
+explicitly did nothing at all.
+
+- **One fan-out loop, not two.** `dispatch_reindex_for_every_owner` grew an optional
+  `file_uuids_by_owner`; it did **not** grow a sibling. `None` still means the whole corpus
+  (every owner of a COMPLETED file, caller first and unconditionally). A mapping means a partial
+  scope, one coordinator per named owner with that owner's files.
+- ⚠️ **An owner with an empty list is DROPPED, never dispatched.**
+  `reindex_transcripts_task` narrows with `if file_uuids:`, so `[]` is indistinguishable from
+  "no filter" and would re-embed that owner's entire account — the opposite of what a
+  pending-only sweep asked for.
+- **`reindex_scope.py` answers the scope question**, the dispatcher answers the fan-out one.
+  `pending_files_by_owner()` distinguishes "nothing indexable exists" from "everything is
+  already indexed"; the endpoint reports them as different messages, because a corpus-wide sweep
+  answering the empty-deployment message would be hiding a survey that saw nothing.
+  `indexed_file_uuids()` **fails open** — an unreachable cluster reads as "nothing is indexed"
+  and queues the corpus rather than nothing. That is the pre-existing direction and the safe one
+  (re-indexing overwrites by deterministic id), but the blast radius is now deployment-wide, so
+  the failure is logged with a traceback.
+- **The gate is `get_current_admin_user`, and it always was.** Corpus-wide work behind a
+  per-user gate would trade a scoping bug for a privilege one;
+  `test_reindex_is_refused_for_a_plain_user` carries the two-owner corpus fixture so a dropped
+  gate shows up as dispatches for *other* owners, not merely a wrong status code.
+- **Not fixed, deliberately: `POST /search/reindex/stop` is still per-owner.** The cancel flag is
+  `reindex_cancel:{user_id}` and the caller can only flag their own coordinator; the endpoint's
+  message says so. Cancelling the whole fan-out needs the dispatched owner set persisted
+  somewhere, which nothing does today.
 
 ## The bootstrap self-heals, and why it is a beat task (#625)
 

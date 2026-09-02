@@ -199,20 +199,60 @@ def deployed_model():
         yield recorder
 
 
-@pytest.fixture
-def other_users_files(db_session):
-    """A second account owning a COMPLETED file — the user a scoped reindex skips.
+def _indexable_media_file(db_session, owner_id: int, label: str):
+    """One COMPLETED file with a transcript segment — i.e. one the sweep can index.
 
-    ``_dispatch_reindex_for_every_owner`` opens its **own** ``session_scope``,
-    which under the savepoint harness cannot see uncommitted fixture rows, so the
-    scope is pointed at ``db_session``. That is what makes the row observable at
-    all; it stands in for no behaviour under test.
+    The segment is not decoration: the pending-only survey filters on
+    ``EXISTS (transcript_segment)``, because a completed file with nothing to
+    chunk would otherwise report as forever pending.
+    """
+    import uuid as _uuid
+
+    from app.models.media import FileStatus
+    from app.models.media import MediaFile
+    from app.models.media import TranscriptSegment
+
+    suffix = str(_uuid.uuid4())[:8]
+    media = MediaFile(
+        uuid=str(_uuid.uuid4()),
+        user_id=owner_id,
+        filename=f"{label}_{suffix}.wav",
+        storage_path=f"{label}/{suffix}.wav",
+        file_size=1024,
+        content_type="audio/wav",
+        status=FileStatus.COMPLETED,
+    )
+    db_session.add(media)
+    db_session.flush()
+
+    db_session.add(
+        TranscriptSegment(
+            media_file_id=media.id,
+            start_time=0.0,
+            end_time=1.5,
+            text=f"segment for {label}",
+        )
+    )
+    db_session.flush()
+    return media
+
+
+@pytest.fixture
+def two_owner_corpus(db_session, admin_user):
+    """Two accounts, each owning an indexable COMPLETED file.
+
+    The second account is the user a caller-scoped reindex skips — the whole of
+    issues #437 and #627. Both files carry a transcript segment so they are
+    visible to the pending-only survey as well as to the whole-corpus fan-out.
+
+    ``dispatch_reindex_for_every_owner`` and ``reindex_scope`` open their **own**
+    ``session_scope``, which under the savepoint harness cannot see uncommitted
+    fixture rows, so the scope is pointed at ``db_session``. That is what makes
+    the rows observable at all; it stands in for no behaviour under test.
     """
     import uuid as _uuid
 
     from app.core.security import get_password_hash
-    from app.models.media import FileStatus
-    from app.models.media import MediaFile
     from app.models.user import User
 
     suffix = str(_uuid.uuid4())[:8]
@@ -226,24 +266,59 @@ def other_users_files(db_session):
     db_session.add(owner)
     db_session.flush()
 
-    media = MediaFile(
-        uuid=str(_uuid.uuid4()),
-        user_id=owner.id,
-        filename=f"other_{suffix}.wav",
-        storage_path=f"other/{suffix}.wav",
-        file_size=1024,
-        content_type="audio/wav",
-        status=FileStatus.COMPLETED,
-    )
-    db_session.add(media)
-    db_session.flush()
+    other_media = _indexable_media_file(db_session, owner.id, "other")
+    admin_media = _indexable_media_file(db_session, admin_user.id, "admin")
 
     @contextmanager
     def _savepoint_scope():
         yield db_session
 
     with patch("app.db.session_utils.session_scope", _savepoint_scope):
-        yield SimpleNamespace(owner_id=owner.id, file_uuid=media.uuid)
+        yield SimpleNamespace(
+            owner_id=owner.id,
+            file_uuid=other_media.uuid,
+            admin_file_uuid=admin_media.uuid,
+        )
+
+
+def _completed_file_uuids(db_session) -> set[str]:
+    """Every COMPLETED file UUID the survey could possibly consider.
+
+    A superset of the indexable set (it does not require a segment), which is
+    exactly what a test wanting "the whole corpus already has chunks" needs.
+    """
+    from app.models.media import FileStatus
+    from app.models.media import MediaFile
+
+    return {
+        str(row[0])
+        for row in db_session.query(MediaFile.uuid)
+        .filter(MediaFile.status == FileStatus.COMPLETED)
+        .all()
+    }
+
+
+class _StandInIndexedFiles:
+    """OpenSearch stand-in reporting a fixed set of files as already chunked.
+
+    The pending-only survey asks the cluster which files hold chunk-plane
+    documents. Against the real cluster that answer depends on whatever the dev
+    stack happens to hold, so the two tests that need a determinate pending set
+    state it instead.
+    """
+
+    def __init__(self, indexed: set[str]) -> None:
+        self.indexed = indexed
+        self.bodies: list[dict] = []
+        self.indices = SimpleNamespace(exists=lambda **_kwargs: True)
+
+    def search(self, *, index: str, body: dict) -> dict:
+        self.bodies.append(body)
+        return {
+            "aggregations": {
+                "indexed_files": {"buckets": [{"key": u} for u in sorted(self.indexed)]}
+            }
+        }
 
 
 @pytest.fixture
@@ -384,7 +459,7 @@ def test_switching_the_model_repoints_the_ingest_pipeline_not_only_the_setting(
 
 
 def test_switching_the_model_reindexes_every_owner_not_only_the_caller(
-    client, admin_token_headers, admin_user, reindex_task, deployed_model, other_users_files
+    client, admin_token_headers, admin_user, reindex_task, deployed_model, two_owner_corpus
 ):
     """A per-caller reindex leaves every other user in the OLD vector space (#437).
 
@@ -403,7 +478,7 @@ def test_switching_the_model_reindexes_every_owner_not_only_the_caller(
 
     assert response.status_code == status.HTTP_200_OK
     dispatched_for = {d["user_id"] for d in reindex_task.dispatches}
-    assert other_users_files.owner_id in dispatched_for
+    assert two_owner_corpus.owner_id in dispatched_for
     assert admin_user.id in dispatched_for
     assert all(d["file_uuids"] is None for d in reindex_task.dispatches)
     assert response.json()["reindex_users"] == len(dispatched_for)
@@ -512,39 +587,134 @@ def test_setting_a_model_requires_authentication(client, reindex_task):
 # ---------------------------------------------------------------------------
 # POST /reindex — dispatch contract and the pending-only guard
 # ---------------------------------------------------------------------------
-def test_reindex_dispatches_the_named_files_for_the_calling_admin(
-    client, admin_token_headers, admin_user, reindex_task
+def test_reindex_all_fans_out_to_every_owner_not_only_the_caller(
+    client, admin_token_headers, admin_user, reindex_task, two_owner_corpus
 ):
-    """``user_id`` comes from the credential and ``file_uuids`` straight from the body.
+    """The #627 fix: "Reindex all" must reach every account, not the admin's own.
 
-    Attributing a reindex to the wrong account is the #431 shape: progress goes to
-    someone else and the requester waits forever. The task itself is a stand-in —
-    a real dispatch re-embeds transcripts on the dev stack.
+    ``reindex_transcripts_task`` filters ``MediaFile.user_id == user_id``, so the
+    single ``delay(user_id=current_user.id)`` this endpoint used to issue repaired
+    the calling admin's files and left every other user's exactly as they were —
+    no error, no warning, and a success toast. That is not a race: it is what the
+    documented "Reindex all" button did on every multi-user deployment.
     """
-    response = client.post(
-        REINDEX, headers=admin_token_headers, json=["11111111-1111-4111-8111-111111111111"]
-    )
+    response = client.post(REINDEX, headers=admin_token_headers, json=None)
 
     assert response.status_code == status.HTTP_200_OK
     body = response.json()
     assert body["status"] == "started"
+
+    dispatched_for = {d["user_id"] for d in reindex_task.dispatches}
+    assert two_owner_corpus.owner_id in dispatched_for
+    assert admin_user.id in dispatched_for
+    # A whole-corpus run names no files: each owner's coordinator takes their all.
+    assert all(d["file_uuids"] is None for d in reindex_task.dispatches)
+    assert body["reindex_users"] == len(dispatched_for)
+    # The panel's progress stream and POST /reindex/stop are keyed to the caller.
     assert body["task_id"] == reindex_task.task_id
+    assert str(admin_user.id) in body["reindex_task_ids"]
+
+
+def test_pending_only_reindex_surveys_every_owner_not_only_the_caller(
+    client, admin_token_headers, db_session, reindex_task, two_owner_corpus
+):
+    """The pending sweep was caller-scoped in both halves, and both are fixed.
+
+    The Postgres query filtered ``user_id == current_user.id`` and the OpenSearch
+    aggregation carried a ``{"term": {"user_id": ...}}`` beside the chunk-plane
+    clause, so an admin repairing "files without chunks" could not even see
+    another account's unindexed files. Here the whole corpus is declared indexed
+    EXCEPT one file owned by somebody else: the only correct dispatch names that
+    owner and that file.
+    """
+    already_indexed = _completed_file_uuids(db_session) - {two_owner_corpus.file_uuid}
+    opensearch = _StandInIndexedFiles(already_indexed)
+
+    with patch("app.services.opensearch_service.opensearch_client", opensearch):
+        response = client.post(
+            REINDEX, headers=admin_token_headers, params={"pending_only": True}, json=None
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["status"] == "started"
     assert reindex_task.dispatches == [
-        {"user_id": admin_user.id, "file_uuids": ["11111111-1111-4111-8111-111111111111"]}
+        {"user_id": two_owner_corpus.owner_id, "file_uuids": [two_owner_corpus.file_uuid]}
     ]
 
 
-def test_pending_only_reindex_with_nothing_to_index_dispatches_nothing(
-    client, admin_token_headers, reindex_task
+def test_pending_only_reindex_dispatches_nothing_when_the_corpus_is_fully_indexed(
+    client, admin_token_headers, db_session, reindex_task, two_owner_corpus
 ):
-    """The guard: no indexable files means ``no_pending`` and no task at all.
+    """The guard: nothing pending anywhere means ``no_pending`` and no task at all.
 
-    A freshly created admin owns no completed files, so this exercises the
-    early-return branch rather than the sweep. Catches the guard being dropped,
-    which would queue an empty full reindex on every panel visit.
+    Dropping it would queue an empty full reindex on every panel visit — and now
+    one per owner rather than one for the caller. The message is asserted exactly
+    because the sibling ``no_pending`` answer ("No completed files found to
+    index.") means something different, and a corpus-wide sweep that reported the
+    empty-deployment message would be hiding a survey that saw nothing.
+    """
+    opensearch = _StandInIndexedFiles(_completed_file_uuids(db_session))
+
+    with patch("app.services.opensearch_service.opensearch_client", opensearch):
+        response = client.post(
+            REINDEX, headers=admin_token_headers, params={"pending_only": True}, json=None
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["status"] == "no_pending"
+    assert body["message"] == "All files are already indexed."
+    assert body["task_id"] is None
+    assert reindex_task.dispatches == []
+
+    # ...and the survey that produced that answer asked about the whole index.
+    # It used to AND in `{"term": {"user_id": <caller>}}` beside the chunk-plane
+    # clause, so "all files are already indexed" only ever meant the caller's.
+    [agg_body] = opensearch.bodies
+    caller_scoped = [
+        f for f in agg_body["query"]["bool"]["filter"] if "user_id" in f.get("term", {})
+    ]
+    assert caller_scoped == [], "the pending survey is still scoped to one account"
+
+
+def test_a_named_file_is_reindexed_by_the_account_that_owns_it(
+    client, admin_token_headers, admin_user, reindex_task, two_owner_corpus
+):
+    """Naming another user's file used to queue a coordinator that skipped it.
+
+    ``file_uuids`` went straight to ``delay(user_id=current_user.id, ...)``, and
+    the coordinator's owner filter then matched none of them — a run that reported
+    started, did nothing, and said so nowhere. Each named file now goes to its own
+    owner's coordinator.
     """
     response = client.post(
-        REINDEX, headers=admin_token_headers, params={"pending_only": True}, json=None
+        REINDEX,
+        headers=admin_token_headers,
+        json=[two_owner_corpus.file_uuid, two_owner_corpus.admin_file_uuid],
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["status"] == "started"
+    assert sorted(reindex_task.dispatches, key=lambda d: d["user_id"]) == sorted(
+        [
+            {"user_id": admin_user.id, "file_uuids": [two_owner_corpus.admin_file_uuid]},
+            {"user_id": two_owner_corpus.owner_id, "file_uuids": [two_owner_corpus.file_uuid]},
+        ],
+        key=lambda d: d["user_id"],
+    )
+
+
+def test_reindex_of_an_unresolvable_file_uuid_queues_nothing(
+    client, admin_token_headers, reindex_task, two_owner_corpus
+):
+    """A UUID that names no completed file cannot be re-indexed, so say so.
+
+    It previously dispatched a coordinator for the caller that found zero files
+    and reported ``started``. Answering ``no_pending`` is what distinguishes a
+    typo from a queued repair.
+    """
+    response = client.post(
+        REINDEX, headers=admin_token_headers, json=["11111111-1111-4111-8111-111111111111"]
     )
 
     assert response.status_code == status.HTTP_200_OK
@@ -554,8 +724,18 @@ def test_pending_only_reindex_with_nothing_to_index_dispatches_nothing(
     assert reindex_task.dispatches == []
 
 
-def test_reindex_is_refused_for_a_plain_user(client, user_token_headers, reindex_task):
+def test_reindex_is_refused_for_a_plain_user(
+    client, user_token_headers, reindex_task, two_owner_corpus
+):
+    """The admin gate is what makes a corpus-wide reindex legitimate (#627).
+
+    Fanning out across every owner without it would let any account queue a
+    re-embed of the entire deployment's transcripts — a scoping bug traded for a
+    privilege one. The corpus fixture is present so a dropped gate shows up as
+    dispatches for *other* owners, not merely a wrong status code.
+    """
     response = client.post(REINDEX, headers=user_token_headers, json=None)
+
     assert response.status_code == status.HTTP_403_FORBIDDEN
     assert reindex_task.dispatches == []
 

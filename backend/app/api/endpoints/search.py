@@ -474,6 +474,17 @@ def get_available_filters(
     )
 
 
+def _no_pending(message: str) -> dict[str, Any]:
+    """The "there is nothing to queue" answer, in the shape the panel expects."""
+    return {
+        "task_id": None,
+        "status": "no_pending",
+        "message": message,
+        "reindex_task_ids": {},
+        "reindex_users": 0,
+    }
+
+
 @router.post("/reindex")
 def trigger_reindex(
     file_uuids: list[str] | None = Body(
@@ -482,123 +493,83 @@ def trigger_reindex(
     pending_only: bool = Query(False, description="Only reindex files without chunks"),
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
-    """
-    Trigger re-indexing of existing transcripts as a background Celery task.
+    """Re-index existing transcripts **deployment-wide**, one coordinator per owner.
+
+    Admin-only (``get_current_admin_user``), and that gate is what makes the
+    corpus-wide scope legitimate rather than a privilege escalation.
+
+    Every mode used to dispatch a single ``reindex_transcripts_task`` for
+    ``current_user.id`` (issue #627). Since that coordinator filters
+    ``MediaFile.user_id == user_id``, an admin pressing "Reindex all" repaired
+    their own account and left every other user's files untouched — silently,
+    with a success toast. The fan-out is #437's
+    ``dispatch_reindex_for_every_owner``, reused rather than reimplemented; the
+    scope of the two narrower modes comes from
+    ``services/search/reindex_scope.py``.
 
     Args:
-        file_uuids: Optional list of specific file UUIDs. None = all files.
-        pending_only: If True, only reindex files that have no chunks in OpenSearch.
+        file_uuids: Optional list of specific file UUIDs, resolved to whichever
+            accounts own them. ``None`` = every owner's whole corpus.
+        pending_only: If True, only reindex files that have no chunks in
+            OpenSearch — surveyed across every owner, not just the caller's.
 
     Returns:
-        Dict with task_id and status.
+        Dict with the caller's ``task_id`` (the run the settings panel's progress
+        stream is keyed to), the per-owner task ids, and how many owners were
+        dispatched.
+
+    Raises:
+        HTTPException: 503 when nothing could be queued at all.
     """
-    if pending_only and file_uuids is None:
-        # Find file UUIDs that are NOT yet indexed in OpenSearch
-        from sqlalchemy import exists
-        from sqlalchemy import select
+    from app.services.search.model_switch import ReindexDispatchError
+    from app.services.search.model_switch import dispatch_reindex_for_every_owner
+    from app.services.search.reindex_scope import owners_of_files
+    from app.services.search.reindex_scope import pending_files_by_owner
 
-        from app.db.session_utils import session_scope
-        from app.models.media import FileStatus
-        from app.models.media import MediaFile
-        from app.models.media import TranscriptSegment
-        from app.services.opensearch_service import opensearch_client
+    scope: dict[int, list[str]] | None = None
 
-        # Get completed file UUIDs that have transcript segments (indexable)
-        with session_scope() as db:
-            has_segments = exists(
-                select(TranscriptSegment.id).where(TranscriptSegment.media_file_id == MediaFile.id)
+    if file_uuids is not None:
+        scope = owners_of_files(file_uuids)
+        if not scope:
+            return _no_pending(
+                f"None of the {len(file_uuids)} requested file(s) are completed "
+                f"transcripts that can be indexed."
             )
-            completed_files = (
-                db.query(MediaFile.uuid)
-                .filter(
-                    MediaFile.user_id == current_user.id,
-                    MediaFile.status == FileStatus.COMPLETED,
-                    has_segments,
-                )
-                .all()
-            )
-            all_uuids = {str(row[0]) for row in completed_files}
-
-        if not all_uuids:
-            return {
-                "task_id": None,
-                "status": "no_pending",
-                "message": "No completed files found to index.",
-            }
-
-        # Find which file UUIDs already have chunks in OpenSearch
-        indexed_uuids: set[str] = set()
-        if opensearch_client:
-            try:
-                index_name = settings.OPENSEARCH_CHUNKS_INDEX
-                if opensearch_client.indices.exists(index=index_name):
-                    agg_response = opensearch_client.search(
-                        index=index_name,
-                        body={
-                            "size": 0,
-                            "query": {
-                                "bool": {
-                                    "filter": [
-                                        {"term": {"user_id": current_user.id}},
-                                        # G4: "which files still need indexing?".
-                                        # A file left with only a digest (a rebuild
-                                        # that failed part-way) would otherwise read
-                                        # as indexed and never be repaired.
-                                        chunk_plane_clause(),
-                                    ]
-                                }
-                            },
-                            "aggs": {
-                                "indexed_files": {
-                                    "terms": {
-                                        "field": "file_uuid",
-                                        "size": min(len(all_uuids) + 100, 65536),
-                                    }
-                                }
-                            },
-                        },
-                    )
-                    buckets = (
-                        agg_response.get("aggregations", {})
-                        .get("indexed_files", {})
-                        .get("buckets", [])
-                    )
-                    indexed_uuids = {b["key"] for b in buckets}
-            except Exception as e:
-                logger.exception(f"Error querying indexed files: {e}")
-
-        # Compute the difference: files that need indexing
-        pending_uuids = list(all_uuids - indexed_uuids)
-
-        if not pending_uuids:
-            return {
-                "task_id": None,
-                "status": "no_pending",
-                "message": "All files are already indexed.",
-            }
-
-        file_uuids = pending_uuids
+    elif pending_only:
+        scope, indexable_total = pending_files_by_owner()
+        if not indexable_total:
+            return _no_pending("No completed files found to index.")
+        if not scope:
+            return _no_pending("All files are already indexed.")
+        queued = sum(len(uuids) for uuids in scope.values())
         logger.info(
-            f"Pending-only reindex: {len(pending_uuids)} files need indexing "
-            f"(out of {len(all_uuids)} total)"
+            f"Pending-only reindex: {queued} files across {len(scope)} owner(s) need "
+            f"indexing (out of {indexable_total} total)"
         )
 
-    from app.tasks.reindex_task import reindex_transcripts_task
+    try:
+        dispatch = dispatch_reindex_for_every_owner(current_user.id, scope)
+    except ReindexDispatchError as e:
+        logger.error(f"Re-index could not be queued: {e}")
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
-    task = reindex_transcripts_task.delay(
-        user_id=current_user.id,
-        file_uuids=file_uuids,
-    )
-
+    task_ids = dispatch["reindex_task_ids"]
     logger.info(
-        f"Re-index task {task.id} started for user {current_user.id}, "
-        f"files: {len(file_uuids) if file_uuids else 'all'}"
+        f"Re-index dispatched by user {current_user.id} for {dispatch['reindex_users']} "
+        f"owner(s), files: {'named' if scope else 'all'}"
     )
 
     return {
-        "task_id": task.id,
+        # The caller's own coordinator, because that is the run the panel's
+        # progress stream and `POST /reindex/stop` are keyed to. It is absent
+        # when a named-file scope contains nothing the caller owns.
+        "task_id": task_ids.get(current_user.id),
         "status": "started",
-        "message": "Re-indexing started. Progress will be sent via WebSocket.",
+        "message": (
+            f"Re-indexing started for {dispatch['reindex_users']} user(s) across the "
+            f"deployment. Progress will be sent via WebSocket."
+        ),
+        **dispatch,
     }
 
 
@@ -606,11 +577,18 @@ def trigger_reindex(
 def stop_reindex(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
-    """Request cancellation of a running reindex task.
+    """Request cancellation of the CALLER'S running reindex coordinator.
 
     Sets a Redis flag that the reindex task checks between files.
     The task will stop after completing the current file and restore
     normal index settings (refresh_interval).
+
+    ⚠️ **Per-owner, and ``POST /reindex`` is now per-corpus** (#627). The cancel
+    flag is ``reindex_cancel:{user_id}`` and the coordinators are one per owner,
+    so this stops the caller's run only; the other owners' coordinators run to
+    completion. The message says so rather than claiming the whole fan-out
+    stopped. Cancelling the fan-out would mean persisting the dispatched owner
+    set, which nothing does today.
 
     Returns:
         Dict with stop status.
@@ -631,7 +609,10 @@ def stop_reindex(
 
         return {
             "status": "stop_requested",
-            "message": "Stop signal sent. Reindex will stop after the current file completes.",
+            "message": (
+                "Stop signal sent for your own re-index run; it will stop after the "
+                "current file completes. Other accounts' coordinators are unaffected."
+            ),
         }
     except HTTPException:
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns

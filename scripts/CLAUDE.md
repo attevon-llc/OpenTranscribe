@@ -345,6 +345,31 @@ this file is for.
   wrong data — psql treats an unterminated `COPY ... FROM stdin` at EOF as simply
   ending the copy, not a parse error — so that fault mode's rehearsal assertion
   is a content digest, never `restore`'s exit code.
+- **Install-path gate** — `verify-install-paths.sh` (issue #683). The ONLY check that compares
+  the scripts at the TIP against the releases actually PUBLISHED. Everything else in
+  `release-validate.yml` validates a tag against its own checkout, which structurally cannot see
+  the failure this exists for: a self-hosted install has two sources and only one is pinned —
+  `setup-opentranscribe.sh` comes from the default branch (the docs one-liner hardcodes it),
+  everything it downloads comes from the resolved release tag. The installer is therefore always
+  NEWER than what it installs. `release-manifest.txt` was added after v0.4.1 shipped, the new
+  installer asked that tag for a file it had never heard of, and **every `curl | bash` install
+  died for 22 days**. The manifest-fetchable step that could have caught it was gated
+  `if: github.ref_type == 'tag'`, and neither installer script was in any `paths:` filter, so
+  the PR that broke it ran this workflow zero times. Both are fixed.
+  It runs the REAL shell functions out of the REAL scripts against the REAL GitHub in a temp dir
+  — never a re-implementation of the download loop, which would have passed throughout the
+  outage. Four paths: fresh install, `update-full` on a pinned install, `update-full` on a
+  pre-pinning install, and the default one-liner's release resolution. **The pin check is the
+  load-bearing one**: it compares each downloaded artifact against `git show <tag>:<path>`,
+  because a fallback that also pulled *artifacts* from the tip would satisfy an
+  existence-only assertion while silently shipping an unpinned install. Needs
+  `fetch-depth: 0` for that reason. `MIN_SUPPORTED_RELEASE` (v0.3.0) is a declared floor with a
+  written reason — v0.1.0–v0.2.1 predate two non-optional manifest paths; marking those
+  `optional` to make old tags pass would stop the gate noticing if a CURRENT release lost them.
+  Never lower it to silence a red run. Runs on PRs (latest release only), and on a **schedule**
+  because publishing a release can break the invariant with no commit at all. The hermetic half
+  (no network, so it runs in the fast suite and CI) is
+  `backend/tests/unit/test_install_upgrade_scripts.py`'s install-path section.
 - **Release gates** — `check-schema-drift.py` (model-vs-schema, report-first),
   `validate-deployments.sh` (~20 compose permutations in ~15 s),
   `release/check-version-consistency.py` (the six version sources + Alembic single head).

@@ -48,6 +48,96 @@ if ! declare -F read_env_value >/dev/null 2>&1; then
     }
 fi
 
+# The repo's default branch, asked for at runtime rather than written down.
+#
+# Every hardcoded "master" in a download URL is a rename waiting to break an install.
+# Echoes empty on any failure (offline, rate-limited, malformed); callers MUST treat
+# empty as "no fallback available" and fail closed rather than guessing a branch name.
+# Defined here rather than only in common.sh for the same reason as read_env_value
+# above: this script ships standalone, and update-full needs this BEFORE it has
+# downloaded a newer common.sh.
+if ! declare -F resolve_default_branch >/dev/null 2>&1; then
+    resolve_default_branch() {
+        curl -fsSL --connect-timeout 10 --max-time 20 \
+            "https://api.github.com/repos/attevon-llc/OpenTranscribe" 2>/dev/null \
+            | grep -m1 '"default_branch"' \
+            | sed -E 's/.*"default_branch"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' \
+            || true
+    }
+fi
+
+# Which ref does `update-full` take CONFIG files from? Echoes it; messages go to stderr.
+#
+# This was `${OPENTRANSCRIBE_BRANCH:-master}`, so an install pinned to vX.Y.Z re-downloaded
+# tip-of-development compose files on top of vX.Y.Z images. It did not 404 — it silently
+# produced exactly the config/image mismatch OT_IMAGE_TAG exists to prevent, which is worse
+# than failing (issue #683). Service definitions live in docker-compose.yml, so a newer base
+# file can reference services, images and env keys the pinned containers know nothing about.
+#
+# So: follow the pin. Fall back to the default branch ONLY for installs predating pinning
+# (OT_IMAGE_TAG unset or 'latest'), and say so out loud. OPENTRANSCRIBE_BRANCH still
+# overrides, for testing. A function, not inline in the update-full arm, so the invariant
+# is testable — scripts/verify-install-paths.sh and the unit tests both run this directly.
+deployment_ref() {
+    local pinned fallback
+    pinned=$(read_env_value OT_IMAGE_TAG)
+    case "$pinned" in
+        '' | latest)
+            fallback=$(resolve_default_branch)
+            [ -n "$fallback" ] || return 1
+            printf '%s\tfallback\n' "$fallback"
+            ;;
+        *) printf '%s\tpinned\n' "$pinned" ;;
+    esac
+}
+
+# A raw.githubusercontent URL for <path>, at THIS deployment's ref.
+#
+# Every URL printed or fetched by this script used to say /master/ literally, which hands
+# a v0.4.1 user a v0.5.0-development file — the same config/image mismatch as #683, just
+# arriving through a copy-pasted remedy instead of update-full. Falls back to a visible
+# placeholder rather than guessing a branch name, so an unresolvable ref reads as unknown
+# instead of silently wrong.
+raw_url_for() {
+    local out ref=""
+    out=$(deployment_ref) && ref=${out%%$'\t'*}
+    printf 'https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/%s/%s\n' \
+        "${ref:-<your-release-tag>}" "$1"
+}
+
+resolve_config_ref() {
+    # Read the override into a defaulted local ONCE rather than expanding the env var at
+    # each use site: `set -u` aborts on a bare $OPENTRANSCRIBE_BRANCH even when an earlier
+    # `[ -n "${VAR:-}" ]` guard proves it is set, and test_shell_expansion_guards.py
+    # enforces that repo-wide (it caught exactly this).
+    local override="${OPENTRANSCRIBE_BRANCH:-}"
+    if [ -n "$override" ]; then
+        echo -e "${BLUE}ℹ️  Using branch override: ${override}${NC}" >&2
+        printf '%s\n' "$override"
+        return 0
+    fi
+
+    local out ref how
+    if ! out=$(deployment_ref); then
+        echo -e "${RED}❌ This install is not pinned to a release (OT_IMAGE_TAG is unset${NC}" >&2
+        echo -e "${RED}   or 'latest') and the default branch could not be resolved.${NC}" >&2
+        echo -e "${YELLOW}   Pin it first:  ./opentranscribe.sh update --version vX.Y.Z${NC}" >&2
+        echo -e "${YELLOW}   Or update images only:  ./opentranscribe.sh update${NC}" >&2
+        return 1
+    fi
+    ref=${out%%$'\t'*}
+    how=${out##*$'\t'}
+
+    if [ "$how" = pinned ]; then
+        echo -e "${BLUE}ℹ️  Updating config files at the pinned release: ${ref}${NC}" >&2
+    else
+        echo -e "${YELLOW}⚠️  This install is not pinned to a release; taking config from '${ref}'.${NC}" >&2
+        echo -e "${YELLOW}   That config is not guaranteed to match your running images.${NC}" >&2
+        echo -e "${YELLOW}   Pin it with:  ./opentranscribe.sh update --version vX.Y.Z${NC}" >&2
+    fi
+    printf '%s\n' "$ref"
+}
+
 function show_help {
     echo -e "${BLUE}OpenTranscribe Management Script${NC}"
     echo ""
@@ -108,7 +198,7 @@ require_db_helpers() {
         echo -e "${RED}   backup/restore implementation.${NC}"
         echo -e "${YELLOW}   Fix with:  ./opentranscribe.sh update-full${NC}"
         echo -e "${YELLOW}   Or fetch it directly:${NC}"
-        echo -e "     mkdir -p scripts && curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/scripts/common.sh -o scripts/common.sh && chmod +x scripts/common.sh"
+        echo -e "     mkdir -p scripts && curl -fsSL $(raw_url_for scripts/common.sh) -o scripts/common.sh && chmod +x scripts/common.sh"
         exit 1
     fi
 }
@@ -745,15 +835,11 @@ case "${1:-help}" in
         echo -e "${YELLOW}📥 Full update: Updating configuration files and Docker images...${NC}"
         echo ""
 
-        # GitHub raw URL base - supports OPENTRANSCRIBE_BRANCH env var for testing
-        BRANCH="${OPENTRANSCRIBE_BRANCH:-master}"
+        BRANCH=$(resolve_config_ref) || exit 1
+
         # URL-encode the branch name (replace / with %2F for feature branches)
         ENCODED_BRANCH=$(echo "$BRANCH" | sed 's|/|%2F|g')
         GITHUB_RAW="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${ENCODED_BRANCH}"
-
-        if [ "$BRANCH" != "master" ]; then
-            echo -e "${BLUE}ℹ️  Using branch: $BRANCH${NC}"
-        fi
 
         # Backup current opentranscribe.sh
         cp opentranscribe.sh opentranscribe.sh.bak 2>/dev/null || true
@@ -768,12 +854,29 @@ case "${1:-help}" in
         # hardcoded here. See that file's header for the two silent-breakage bugs
         # the old duplicated lists caused (missing docker-compose.yml on upgrade,
         # missing blackwell overlay on fresh install).
+        # Releases published before release-manifest.txt existed have no list to read, and
+        # following the pin (above) means we now ask them for one. Borrow the list from the
+        # default branch in that case — the ARTIFACTS still come from $GITHUB_RAW, i.e. the
+        # pinned release, so this cannot un-pin the install. The manifest's `optional` flag
+        # absorbs entries the older release does not have. Same fallback as
+        # setup-opentranscribe.sh's download_release_manifest_artifacts(); see issue #683.
         echo "  Downloading release-manifest.txt..."
         if ! curl -fsSL "$GITHUB_RAW/release-manifest.txt" -o release-manifest.txt.new; then
-            echo -e "  ${RED}✗${NC} could not fetch release-manifest.txt from $BRANCH"
-            echo -e "  ${YELLOW}Refusing to update config files from an unknown artifact list.${NC}"
-            echo -e "  ${YELLOW}Use './opentranscribe.sh update' to update images only.${NC}"
-            exit 1
+            rm -f release-manifest.txt.new
+            MANIFEST_FALLBACK_BRANCH=$(resolve_default_branch)
+
+            if [ -n "$MANIFEST_FALLBACK_BRANCH" ] && [ "$MANIFEST_FALLBACK_BRANCH" != "$BRANCH" ] &&
+                curl -fsSL "https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${MANIFEST_FALLBACK_BRANCH}/release-manifest.txt" \
+                    -o release-manifest.txt.new; then
+                echo -e "  ${YELLOW}⚠️${NC}  $BRANCH predates release-manifest.txt — using the file list from '${MANIFEST_FALLBACK_BRANCH}'."
+                echo -e "     Config files are still downloaded from $BRANCH."
+            else
+                rm -f release-manifest.txt.new
+                echo -e "  ${RED}✗${NC} could not fetch release-manifest.txt from $BRANCH"
+                echo -e "  ${YELLOW}Refusing to update config files from an unknown artifact list.${NC}"
+                echo -e "  ${YELLOW}Use './opentranscribe.sh update' to update images only.${NC}"
+                exit 1
+            fi
         fi
         mv release-manifest.txt.new release-manifest.txt
 
@@ -1020,7 +1123,7 @@ case "${1:-help}" in
             echo "   Expected: scripts/generate-ssl-cert.sh"
             echo ""
             echo "   Download it from:"
-            echo "   curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/scripts/generate-ssl-cert.sh -o scripts/generate-ssl-cert.sh"
+            echo "   curl -fsSL $(raw_url_for scripts/generate-ssl-cert.sh) -o scripts/generate-ssl-cert.sh"
             echo "   chmod +x scripts/generate-ssl-cert.sh"
             exit 1
         fi
@@ -1031,7 +1134,7 @@ case "${1:-help}" in
             echo "   Expected: docker-compose.nginx.yml"
             echo ""
             echo "   Download it from:"
-            echo "   curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/docker-compose.nginx.yml -o docker-compose.nginx.yml"
+            echo "   curl -fsSL $(raw_url_for docker-compose.nginx.yml) -o docker-compose.nginx.yml"
             exit 1
         fi
 
@@ -1040,8 +1143,12 @@ case "${1:-help}" in
             echo -e "${YELLOW}⚠️  NGINX configuration template not found${NC}"
             echo "   Downloading nginx/site.conf.template..."
             mkdir -p nginx/ssl
-            curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/nginx/site.conf.template -o nginx/site.conf.template || {
+            # A REAL fetch, not a printed remedy: this pulled the nginx template from
+            # tip-of-development onto a pinned deployment, so an HTTPS install could get
+            # a proxy config written for a backend it is not running.
+            curl -fsSL "$(raw_url_for nginx/site.conf.template)" -o nginx/site.conf.template || {
                 echo -e "${RED}❌ Failed to download nginx configuration${NC}"
+                echo -e "${YELLOW}   Or run:  ./opentranscribe.sh update-full${NC}"
                 exit 1
             }
         fi

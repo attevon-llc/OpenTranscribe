@@ -227,6 +227,13 @@ services:
       # its OWN filesystem, so a model the backend downloads must land in this shared
       # path, not the backend's private cache, for OpenSearch to ever find it.
       - ${MODEL_CACHE_DIR:-./models}/opensearch-ml:/ml-models
+      # The native diarizer's exported ONNX/PLDA set, READ-WRITE and only here. The
+      # backend owns the export (app/transcription/native_provision.py, run from the
+      # lifespan); the diar-native sidecar mounts this same host directory READ-ONLY at
+      # the identical container path, so both agree on the location by construction and
+      # only one process can ever write it. Same DIAR_NATIVE_MODELS_DIR indirection the
+      # sidecar uses, so pinning it in .env moves both together (issue #654).
+      - ${DIAR_NATIVE_MODELS_DIR:-${MODEL_CACHE_DIR:-./models}/diar-native}:/models
       # Shared scratch for cross-worker preprocessed-WAV handoff
       - pipeline_scratch:/scratch/opentranscribe
     ports:

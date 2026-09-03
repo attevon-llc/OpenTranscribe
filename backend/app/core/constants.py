@@ -648,6 +648,21 @@ VALID_SPEAKER_PROMPT_BEHAVIORS = ["always_prompt", "use_defaults", "use_custom"]
 VALID_DIARIZATION_SOURCES = ("provider", "local", "pyannote", "off")
 DEFAULT_DIARIZATION_SOURCE = "provider"
 
+# Native diarizer (diar-native sidecar) model provisioning.
+#
+# The ONNX/PLDA set is exported locally from the gated pyannote weights — see
+# app/transcription/native_provision.py for why it cannot be shipped. These are coded
+# defaults so a deployment needs no .env entry to work; the matching DIAR_NATIVE_*
+# variables in .env.example only exist to override them.
+#
+# `fast` carries the batch-64 graphs; `small` is the laptop tier (issue #511).
+VALID_DIAR_NATIVE_MODEL_SETS = ("fast", "small")
+DEFAULT_DIAR_NATIVE_MODEL_SET = "fast"
+# A cold export writes ~484 MB and measured 137 s in this image. The budget is wide
+# because most of the wall clock is a HuggingFace download that a slow link can stretch;
+# it exists to bound a hang, not to pace a healthy run.
+DEFAULT_DIAR_NATIVE_PROVISION_TIMEOUT_S = 1800
+
 # =============================================================================
 # Language Settings (Multilingual Support)
 # =============================================================================

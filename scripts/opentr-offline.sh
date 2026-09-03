@@ -11,6 +11,8 @@ INSTALL_DIR="/opt/opentranscribe"
 BASE_COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml"
 OFFLINE_COMPOSE_FILE="$INSTALL_DIR/docker-compose.offline.yml"
 GPU_SCALE_COMPOSE_FILE="$INSTALL_DIR/docker-compose.gpu-scale.yml"
+DIAR_NATIVE_COMPOSE_FILE="$INSTALL_DIR/docker-compose.diar-native.yml"
+DIAR_NATIVE_GPU_COMPOSE_FILE="$INSTALL_DIR/docker-compose.diar-native-gpu.yml"
 
 # Colors for output
 RED='\033[0;31m'
@@ -114,7 +116,7 @@ dc() {
 }
 
 # Build compose files list in correct order
-# Order: base.yml -> [gpu-scale.yml] -> offline.yml (offline MUST be last)
+# Order: base.yml -> [gpu-scale.yml] -> [diar-native.yml] -> offline.yml (offline MUST be last)
 build_compose_files() {
     local use_gpu_scale="$1"
 
@@ -126,6 +128,37 @@ build_compose_files() {
             COMPOSE_FILES="$COMPOSE_FILES -f $GPU_SCALE_COMPOSE_FILE"
         else
             print_warning "docker-compose.gpu-scale.yml not found - GPU scaling not available"
+        fi
+    fi
+
+    # Native diarization sidecar, conditional on its weights ALREADY being present —
+    # unlike opentr.sh/opentranscribe.sh, this never checks HUGGINGFACE_TOKEN. An
+    # offline install has no network route to HuggingFace at all, so the export can
+    # only ever have arrived pre-populated in the package (see build-offline-package.sh's
+    # download_models()); a token here could never provision anything and would be a
+    # false promise that the sidecar is about to start working.
+    if [ -f "$DIAR_NATIVE_COMPOSE_FILE" ]; then
+        # .env is not guaranteed sourced yet -- cmd_stop()/cmd_restart() never call
+        # check_env(), and cmd_start() calls it AFTER build_compose_files(). Source it
+        # here directly rather than depending on caller order.
+        if [ -z "${MODEL_CACHE_DIR:-}${DIAR_NATIVE_MODELS_DIR:-}" ] && [ -f "$INSTALL_DIR/.env" ]; then
+            # shellcheck source=/dev/null  # Runtime .env file, not available during static analysis
+            source "$INSTALL_DIR/.env"
+        fi
+        local diar_models_dir="${DIAR_NATIVE_MODELS_DIR:-${MODEL_CACHE_DIR:-$INSTALL_DIR/models}/diar-native}"
+        if [ -d "$diar_models_dir" ] && [ -n "$(ls -A "$diar_models_dir" 2>/dev/null)" ]; then
+            COMPOSE_FILES="$COMPOSE_FILES -f $DIAR_NATIVE_COMPOSE_FILE"
+            print_info "Native diarization sidecar enabled (weights present at $diar_models_dir)"
+            # The base overlay is CPU-safe by construction; the device reservation lives
+            # in a second file so this one can load on a GPU-less air-gapped host (#660).
+            # Gated on the same nvidia probe the GPU-scale overlay uses above, so the
+            # sidecar never claims a device the rest of this install cannot see.
+            if [ -f "$DIAR_NATIVE_GPU_COMPOSE_FILE" ] && command -v nvidia-smi >/dev/null 2>&1; then
+                COMPOSE_FILES="$COMPOSE_FILES -f $DIAR_NATIVE_GPU_COMPOSE_FILE"
+                print_info "  GPU reservation added for the diarization sidecar"
+            else
+                print_info "  Sidecar will run on CPU (slower than GPU, identical output)"
+            fi
         fi
     fi
 

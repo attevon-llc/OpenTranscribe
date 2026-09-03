@@ -592,8 +592,9 @@ diar_native_container_present() {
 # $1 picks the auto-detect predicate, because "should this deployment have the
 # sidecar?" and "does this deployment have the sidecar?" are different questions:
 #
-#   start   - CONFIGURATION. engine.diarizer_backend resolves to native AND the model
-#             export exists. The right question for a stack that does not exist yet.
+#   start   - CONFIGURATION. engine.diarizer_backend resolves to native AND (the model
+#             export already exists OR a HUGGINGFACE_TOKEN is configured to produce it on
+#             this startup). The right question for a stack that does not exist yet.
 #
 #   rebuild - OBSERVATION. A diar-native container already exists in this compose
 #             project. rebuild-backend recreates services in place, so the only
@@ -626,14 +627,29 @@ add_diar_native_overlay() {
       # Native diarization sidecar auto-load: `native` is the coded default engine, so a
       # stack without the sidecar silently serves every file from the in-process PyAnnote
       # fallback. Mirrors the NAS auto-detect: announced, and --no-diar-native suppresses.
-      # Guarded on the models dir existing — without it the sidecar restart-loops and
-      # `up --wait` would fail the whole startup on checkouts with no local model export.
-      # Fresh stacks stay opt-in (pass --with-diar-native explicitly).
-      if [ -z "${FRESH_FLAG:-}" ] \
-         && [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ] \
-         && [ -d "$DIAR_NATIVE_MODELS_DIR" ]; then
-        WITH_DIAR_NATIVE_FLAG="auto"
-        echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
+      #
+      # Gate is "models present OR a token is configured", not "models present" alone.
+      # backend/app/transcription/native_provision.py now runs `diar-server
+      # provision-models` from the FastAPI lifespan on backend startup, so gating on the
+      # export already existing meant a fresh checkout needed TWO `start`s to converge —
+      # one to provision, a second to notice the result. A configured HUGGINGFACE_TOKEN is
+      # what lets that provisioning step succeed, so it stands in for the export until the
+      # export exists. With neither, nothing can ever produce the weights and loading the
+      # overlay would just crash-loop the sidecar (see resolve_diar_native_models_dir's
+      # comment for the reproduction).
+      #
+      # `--fresh` is no longer excluded here. It used to be, back when a fresh stack had no
+      # path to its own export; now the same lifespan provisioning runs there too, so a
+      # `--fresh` stack with a token configured is precisely the fresh-install rehearsal
+      # this auto-load exists to cover, not a case to skip.
+      if [ "${ENGINE_DIARIZER_BACKEND:-native}" = "native" ]; then
+        if [ -d "$DIAR_NATIVE_MODELS_DIR" ] && [ -n "$(ls -A "$DIAR_NATIVE_MODELS_DIR" 2>/dev/null)" ]; then
+          WITH_DIAR_NATIVE_FLAG="auto"
+          echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; models present). Use --no-diar-native to skip."
+        elif [ -n "${HUGGINGFACE_TOKEN:-}" ]; then
+          WITH_DIAR_NATIVE_FLAG="auto"
+          echo "🎙️  diar-native sidecar AUTO-LOADED (engine.diarizer_backend defaults to native; no export yet, but HUGGINGFACE_TOKEN is set — backend will provision it on startup). Use --no-diar-native to skip."
+        fi
       fi
     fi
   fi
@@ -650,7 +666,20 @@ add_diar_native_overlay() {
       fi
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native.yml"
       echo "🎙️  Adding native diarization sidecar (docker-compose.diar-native.yml)"
-      echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~4.1 GB warm ORT arena while up."
+
+      # The base overlay above is deliberately CPU-safe: it declares no device
+      # reservation and DIAR_MODE defaults to `cpu`, so it can load on a --lite or
+      # GPU-less host without `up` failing on "could not select device driver" (#660).
+      # The nvidia reservation and the `cuda` override live in this second file, gated on
+      # the same runtime probe add_gpu_overlay uses — without it a GPU host would silently
+      # run the sidecar on CPU, which is slower but produces identical output, so nothing
+      # would ever surface the mistake.
+      if [ "$DOCKER_RUNTIME" = "nvidia" ] && [ -f "docker-compose.diar-native-gpu.yml" ]; then
+        COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.diar-native-gpu.yml"
+        echo "   diar-server on GPU ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} — ~2.2 GB warm ORT arena while up."
+      else
+        echo "   diar-server on CPU (no nvidia runtime detected) — slower, identical output."
+      fi
       echo "   Used when engine.diarizer_backend=native (DB) / ENGINE_DIARIZER_BACKEND=native (env);"
       echo "   without the sidecar that config falls back to the in-process PyAnnote fork."
     else

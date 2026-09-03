@@ -198,6 +198,12 @@ COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/bin/diar-server /
 COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime.so.1.24.2 /opt/diar-native/lib/libonnxruntime.so.1.24.2
 COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime_providers_cuda.so /opt/diar-native/lib/libonnxruntime_providers_cuda.so
 COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime_providers_shared.so /opt/diar-native/lib/libonnxruntime_providers_shared.so
+# The 26 s verification clip `provision-models` diarizes in its end-to-end stage. The
+# standalone diar-server images bake one in; an image that only COPYs the binary out of
+# them has none, so provisioning from here must pass --smoke-clip and would otherwise
+# exit 2. Taken from the same pinned digest as the binary, so the clip and the code that
+# scores it move together. ~832 KB.
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/share/diar-native/smoke.wav /usr/local/share/diar-native/smoke.wav
 # No `chmod +x` here: the source image's binary is already mode 755 and COPY preserves
 # it — an explicit chmod on an already-copied 33 MB file forces the same overlayfs
 # copy-up as the chown-vs-COPY issue above, for zero behavioral change.

@@ -1743,8 +1743,12 @@ download_ai_models() {
     # Create models directory structure with proper permissions
     print_info "Creating model cache directories with proper permissions..."
 
-    # Create main directory and subdirectories
-    mkdir -p models/huggingface models/torch models/nltk_data models/sentence-transformers models/opensearch-ml
+    # Create main directory and subdirectories. diar-native lands at the top level
+    # (mounted at /models, not under ~/.cache like the others) — see
+    # scripts/download-models.sh's own mkdir block for why it is included here anyway:
+    # `bash scripts/download-models.sh models` below runs the diar-native download group
+    # too, and its bind-mount source must exist and be owned correctly before that runs.
+    mkdir -p models/huggingface models/torch models/nltk_data models/sentence-transformers models/opensearch-ml models/diar-native
 
     # Set ownership to prevent permission issues in non-root containers
     # Container runs as UID 1000, so we need to ensure host directories are accessible
@@ -1765,7 +1769,7 @@ download_ai_models() {
     chmod -R 755 models
 
     # Verify directories are writable
-    if [ -w models/huggingface ] && [ -w models/torch ] && [ -w models/nltk_data ] && [ -w models/sentence-transformers ] && [ -w models/opensearch-ml ]; then
+    if [ -w models/huggingface ] && [ -w models/torch ] && [ -w models/nltk_data ] && [ -w models/sentence-transformers ] && [ -w models/opensearch-ml ] && [ -w models/diar-native ]; then
         echo "✓ Model cache directories created with proper permissions"
     else
         print_warning "Model directories exist but may not be writable"

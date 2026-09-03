@@ -279,6 +279,19 @@ install_files() {
         print_info "  Copied docker-compose.gpu-scale.yml (multi-GPU support)"
     fi
 
+    # Native diarization sidecar. Both halves are needed: the base overlay is CPU-safe
+    # and carries the service, the -gpu one adds the device reservation. Copying only the
+    # first would give an air-gapped GPU host a silently CPU-bound diarizer — slower, but
+    # identical output, so nothing would ever surface the mistake. opentr-offline.sh loads
+    # them only when models/diar-native is populated, which an offline install cannot
+    # produce for itself (no HuggingFace access) — it must arrive in the package.
+    for _diar_overlay in docker-compose.diar-native.yml docker-compose.diar-native-gpu.yml; do
+        if [ -f "$SCRIPT_DIR/config/$_diar_overlay" ]; then
+            cp "$SCRIPT_DIR/config/$_diar_overlay" "$INSTALL_DIR/$_diar_overlay"
+            print_info "  Copied $_diar_overlay (native diarization sidecar)"
+        fi
+    done
+
     cp "$SCRIPT_DIR/config/nginx.conf" "$INSTALL_DIR/config/"
 
     # Copy scripts
@@ -316,6 +329,12 @@ install_models() {
     mkdir -p "$INSTALL_DIR/models/torch"
     mkdir -p "$INSTALL_DIR/models/nltk_data"
     mkdir -p "$INSTALL_DIR/models/sentence-transformers"
+    # opensearch-ml and diar-native were both absent here while the packager shipped them,
+    # so the artifacts reached the tarball and stopped. opensearch-ml holds the neural
+    # search models OpenSearch registers over file://; diar-native holds the ONNX/PLDA
+    # export, which an air-gapped host cannot produce for itself.
+    mkdir -p "$INSTALL_DIR/models/opensearch-ml"
+    mkdir -p "$INSTALL_DIR/models/diar-native"
 
     # Copy models
     if [ -d "$model_dir/huggingface" ]; then
@@ -336,6 +355,16 @@ install_models() {
     if [ -d "$model_dir/sentence-transformers" ]; then
         print_info "Copying sentence-transformers models..."
         cp -r "$model_dir/sentence-transformers" "$INSTALL_DIR/models/"
+    fi
+
+    if [ -d "$model_dir/opensearch-ml" ]; then
+        print_info "Copying OpenSearch neural models..."
+        cp -r "$model_dir/opensearch-ml" "$INSTALL_DIR/models/"
+    fi
+
+    if [ -d "$model_dir/diar-native" ]; then
+        print_info "Copying native diarizer (diar-server) export..."
+        cp -r "$model_dir/diar-native" "$INSTALL_DIR/models/"
     fi
 
     # Copy model manifest if exists

@@ -133,6 +133,24 @@ onnx==1.22.0
 # are installed with --no-deps from requirements-nodeps.txt instead of from this file.
 onnxruntime-gpu==1.28.0; sys_platform == 'linux' and platform_machine == 'x86_64'
 onnxruntime==1.28.0; sys_platform != 'linux' or platform_machine != 'x86_64'
+
+# diar-native model export (issue #654). `diar-server provision-models` embeds its own
+# export scripts in the binary, but not the packages those scripts import — these are
+# the three this image was missing. Measured: 483,882,939 bytes exported in 137 s.
+#
+# onnxSLIM, not onnxSIM. onnxsim publishes no CPython 3.13 wheel at any version and is
+# a C++ extension, so it cannot build here; the exporter falls back to onnxslim, which
+# is numerically bit-exact but emits a differently-shaped graph. Which one ran is
+# recorded in the marker's `toolchain.folder`, and a mismatch against a directory folded
+# with onnxsim is NOT corruption.
+#
+# ⚠️ onnxconverter-common is the one whose absence is invisible: without it the gender
+# classifier silently exports at fp32 (379 MB instead of 189 MB, ~500 MiB more VRAM)
+# and NOTHING errors. The marker's `toolchain.gender_precision` is the only signal, and
+# backend/tests asserts it is "fp16" for exactly this reason.
+onnxscript==0.7.1
+onnxslim==0.1.96
+onnxconverter-common==1.16.0
 # NOTE: `tensorrt` was added during Phase 6.3 spike but removed 2026-04-23.
 # ORT's TensorrtExecutionProvider hit rebuild storms on pyannote's variable
 # input shapes — 2 min CPU saturation, 0% GPU usage, no inference. Microbench

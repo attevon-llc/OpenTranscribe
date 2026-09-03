@@ -15,6 +15,8 @@ Models are cached to standard locations and a manifest is created.
 import argparse
 import json
 import os
+import shutil
+import subprocess  # noqa: S404 - diar-server invoked with a fixed argv list, no shell
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -937,6 +939,148 @@ def download_redaction_models():
     return {'redaction': results}
 
 
+#: `crates/diar-core/src/provision/mod.rs::exit` — a stable contract, branched on rather
+#: than parsed out of the message text. Mirrors backend/app/transcription/native_provision.py,
+#: which does the same translation for the FastAPI-lifespan caller; this is the offline/
+#: batch-download caller, and the two never share code because this script has to stay
+#: importable with none of the backend's dependencies installed.
+_DIAR_EXIT_OK = 0
+_DIAR_EXIT_SMOKE_FAILED = 3
+_DIAR_EXIT_EXPORT_FAILED = 4
+_DIAR_EXIT_TOKEN_DENIED = 5
+_DIAR_EXIT_NO_EXPORTER_ENV = 6
+_DIAR_EXIT_NOT_WRITABLE = 7
+_DIAR_EXIT_DEVICE_UNAVAILABLE = 9
+
+#: What an operator should do about each failure. diar-server prints its own message on
+#: stdout/stderr first; these add the remedy it cannot know about (this script's own flags,
+#: this deployment's file paths).
+_DIAR_REMEDY = {
+    _DIAR_EXIT_TOKEN_DENIED: (
+        'Set HUGGINGFACE_TOKEN to a HuggingFace READ token, and -- signed in as that same '
+        'account -- accept the terms at '
+        'https://huggingface.co/pyannote/speaker-diarization-community-1. The gate is '
+        'per-account and auto-approved; a valid token whose account never accepted it '
+        'fails identically.'
+    ),
+    _DIAR_EXIT_NO_EXPORTER_ENV: (
+        'This image has no Python exporter environment (torch, pyannote.audio, onnx, '
+        'onnxscript, onnxslim, onnxconverter-common). That should not happen on a published '
+        'backend image -- please report it.'
+    ),
+    _DIAR_EXIT_NOT_WRITABLE: 'The mounted models directory must be read-write for this step.',
+    _DIAR_EXIT_DEVICE_UNAVAILABLE: (
+        'Provisioning runs on CPU and needs no GPU. Seeing this means something forced an '
+        'unusable device.'
+    ),
+}
+
+#: Wall-clock budget for one export. A cold export writes ~484 MB; a stall this long usually
+#: means the HuggingFace download itself is hanging, not that the export is merely slow.
+_DIAR_PROVISION_TIMEOUT_S = 1800
+
+
+def download_diar_native_models():
+    """Export the native diarizer's (`diar-server`) ONNX/PLDA model set.
+
+    Unlike every other group here, this does not download HuggingFace weights into this
+    process — `diar-server provision-models` carries the whole export recipe itself
+    (embedded Python scripts materialised to a private temp dir at run time) and this
+    function only locates the binary, hands it a writable directory, and translates its
+    typed exit code into an operator-actionable message. See
+    backend/app/transcription/native_provision.py's module docstring for why the binary
+    owns this rather than a Python implementation living in either caller.
+
+    The target directory is `/models` by default -- the same `DIAR_MODELS_DIR` convention
+    the backend and the `diar-native` sidecar both use -- so a caller wires this group by
+    bind-mounting the host's `${MODEL_CACHE_DIR}/diar-native` there, exactly as it mounts
+    `huggingface/`, `torch/`, etc. for the other groups. Writing anywhere else is silently
+    discarded when the one-shot container exits (issue #491, the same reason `--only`
+    exists at all).
+    """
+    print_header('Provisioning Native Diarization Models (diar-server)')
+
+    binary = shutil.which('diar-server')
+    if binary is None:
+        print_info('No diar-server binary in this image -- the native diarizer is not built')
+        print_info('into it (e.g. the lite image). Skipping; the pipeline falls back to the')
+        print_info('in-process PyAnnote engine when engine.diarizer_backend=native.')
+        return {'diar_native': {'status': 'skipped', 'reason': 'no diar-server binary'}}
+
+    hf_token = os.environ.get('HUGGINGFACE_TOKEN')
+    if not hf_token:
+        print_error('HUGGINGFACE_TOKEN not set!')
+        print_error('Required to export the gated pyannote/speaker-diarization-community-1')
+        print_error('weights diar-server converts to ONNX/PLDA.')
+        return {'diar_native': {'status': 'failed', 'error': 'No HuggingFace token'}}
+
+    models_dir = os.environ.get('DIAR_MODELS_DIR', '/models')
+    smoke_clip = os.environ.get('DIAR_NATIVE_SMOKE_CLIP', '/usr/local/share/diar-native/smoke.wav')
+    if not Path(smoke_clip).is_file():
+        print_info(f'No verification clip at {smoke_clip} -- this image was built without one.')
+        print_info('Provisioning cannot verify an export, so it is not attempted.')
+        return {'diar_native': {'status': 'skipped', 'reason': 'no smoke clip in image'}}
+
+    print_info(f'Models directory: {models_dir}')
+    print_info('Model set: fast (mode: cpu -- no GPU needed for export)')
+
+    argv = [
+        binary,
+        'provision-models',
+        '--models-dir',
+        models_dir,
+        '--set',
+        'fast',
+        '--mode',
+        'cpu',
+        '--smoke-clip',
+        smoke_clip,
+        '--json',
+    ]
+
+    try:
+        completed = subprocess.run(  # noqa: S603  # nosec B603 - fixed argv, no shell
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=_DIAR_PROVISION_TIMEOUT_S,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        error = f'export exceeded {_DIAR_PROVISION_TIMEOUT_S}s -- likely a stalled download'
+        print_error(f'diar-native provisioning failed: {error}')
+        return {'diar_native': {'status': 'failed', 'error': error}}
+    except OSError as exc:
+        error = f'could not run {binary}: {exc}'
+        print_error(f'diar-native provisioning failed: {error}')
+        return {'diar_native': {'status': 'failed', 'error': error}}
+
+    # diar-server prints its own progress/errors as it runs; surface it here too, since
+    # this script's caller usually only shows its OWN print_* lines on a terminal.
+    if completed.stdout.strip():
+        print(completed.stdout.strip())
+    if completed.returncode != _DIAR_EXIT_OK and completed.stderr.strip():
+        print_error(completed.stderr.strip())
+
+    if completed.returncode == _DIAR_EXIT_OK:
+        print_success(f'diar-native models provisioned at {models_dir}')
+        return {'diar_native': {'status': 'downloaded', 'models_dir': models_dir}}
+
+    remedy = _DIAR_REMEDY.get(completed.returncode, '')
+    error = f'diar-server exited {completed.returncode}'
+    print_error(f'diar-native provisioning failed ({error}).')
+    if remedy:
+        print_error(remedy)
+    return {
+        'diar_native': {
+            'status': 'failed',
+            'error': error,
+            'exit_code': completed.returncode,
+            'remedy': remedy or None,
+        }
+    }
+
+
 def get_cache_info():
     """Get information about cached models"""
     # Use default paths (same as backend)
@@ -945,6 +1089,9 @@ def get_cache_info():
     nltk_home = os.environ.get('NLTK_DATA') or str(Path.home() / '.cache' / 'nltk_data')
     sent_home = str(Path.home() / '.cache' / 'sentence-transformers')
     opensearch_ml_home = str(Path.home() / '.cache' / 'opensearch-ml')
+    # Not under ~/.cache like the others -- /models (DIAR_MODELS_DIR) is the same
+    # top-level mount point the backend and the diar-native sidecar both read from.
+    diar_native_home = os.environ.get('DIAR_MODELS_DIR', '/models')
 
     cache_dirs = {
         'huggingface': Path(hf_home),
@@ -952,6 +1099,7 @@ def get_cache_info():
         'nltk_data': Path(nltk_home),
         'sentence_transformers': Path(sent_home),
         'opensearch_ml': Path(opensearch_ml_home),
+        'diar_native': Path(diar_native_home),
     }
 
     info = {}
@@ -1022,6 +1170,7 @@ DOWNLOAD_GROUPS = {
     'speaker-attributes': download_speaker_attribute_models,
     'opensearch': download_opensearch_neural_models,
     'redaction': download_redaction_models,
+    'diar-native': download_diar_native_models,
 }
 
 #: Groups that need no Hugging Face credential. NLTK corpora come from NLTK's own

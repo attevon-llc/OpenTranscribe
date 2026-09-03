@@ -48,11 +48,26 @@ docker-compose.backup.yml	optional
 # The native (Rust/ONNX) diarization sidecar. `engine.diarizer_backend` defaults to
 # `native`, so without this overlay a deployment silently serves every file from the
 # in-process PyAnnote fallback instead (issue #639). The diar-server binary already
-# ships inside the backend image; the ONNX/PLDA weights are exported locally by
-# scripts/download-models.py from the operator's own gated HuggingFace access, exactly
-# as the PyAnnote weights are. Selection is gated on those weights existing — no
-# separate toggle, since the directory is only created by running the export.
-docker-compose.diar-native.yml	optional
+# ships inside the backend image; the ONNX/PLDA weights are exported locally from the
+# operator's own gated HuggingFace access, exactly as the PyAnnote weights are.
+#
+# NOT `optional` any more (issue #670). An optional entry that 404s during `update-full`
+# is reported as a yellow "(optional, not in this release)" line and the upgrade
+# continues — which, for the overlay that carries the DEFAULT diarization engine, means
+# a transient network blip silently downgrades an install to the fallback with no error
+# anywhere. Required is the honest description: the engine is not optional, only the
+# fallback is.
+#
+# Selection is no longer gated on the weights already existing. The backend exports them
+# from its FastAPI lifespan (app/transcription/native_provision.py), so gating on them
+# beforehand cost a fresh install two starts to converge; the gate is now "engine is
+# native AND (weights present OR a HuggingFace token is configured)" — the token being
+# what makes the export possible.
+docker-compose.diar-native.yml
+# The GPU reservation for that sidecar, split into its own file so the overlay above is
+# safe to load on a CPU-only or --lite host with no nvidia runtime. Loaded alongside
+# docker-compose.gpu.yml; it also flips DIAR_MODE from the CPU-safe default to `cuda`.
+docker-compose.diar-native-gpu.yml
 
 # --- Reverse proxy -------------------------------------------------------------
 nginx/site.conf.template

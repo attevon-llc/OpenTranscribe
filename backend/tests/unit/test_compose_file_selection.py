@@ -46,7 +46,8 @@ NGINX = "docker-compose.nginx.yml"
 BACKUP = "docker-compose.backup.yml"
 DIAR = "docker-compose.diar-native.yml"
 
-ALL_OVERLAYS = (BASE, PROD, GPU, BLACKWELL, NGINX, BACKUP, DIAR)
+DIAR_GPU = "docker-compose.diar-native-gpu.yml"
+ALL_OVERLAYS = (BASE, PROD, GPU, BLACKWELL, NGINX, BACKUP, DIAR, DIAR_GPU)
 
 
 def _make_deployment(
@@ -297,14 +298,15 @@ def test_backup_overlay_needs_its_own_toggle_not_just_a_backup_path(tmp_path: Pa
 # --------------------------------------------------------------------------- #
 
 
-def test_diar_native_does_not_start_without_its_exported_weights(tmp_path: Path):
+def test_diar_native_does_not_start_with_neither_weights_nor_a_token(tmp_path: Path):
     """.env.example ships ENGINE_DIARIZER_BACKEND=native and several DIAR_NATIVE_*
     variables, so none of those can mean "run the sidecar" — every install has them.
 
     It also must not start weightless: diar-server exits when it cannot load its models
     and the service is `restart: unless-stopped`, so that combination is an endless
-    crash loop that ALSO fails `up --wait` for the entire stack. Falling back to the
-    in-process PyAnnote engine is the correct, working outcome here.
+    crash loop that ALSO fails `up --wait` for the entire stack. With no weights AND no
+    token, nothing can ever produce them, so falling back to the in-process PyAnnote
+    engine is the correct, working outcome.
     """
     chain, _ = _resolve(
         tmp_path,
@@ -318,16 +320,43 @@ def test_diar_native_does_not_start_without_its_exported_weights(tmp_path: Path)
     assert DIAR not in _files(chain), chain
 
 
+def test_diar_native_starts_on_a_token_alone_before_any_export_exists(tmp_path: Path):
+    """A fresh install must converge in ONE start, not two.
+
+    The backend exports the model set from its own lifespan, so gating the overlay on the
+    export already existing meant the first start provisioned and the second finally
+    noticed. A configured HUGGINGFACE_TOKEN is what makes that export possible, so it
+    stands in for the weights until they exist.
+    """
+    chain, stderr = _resolve(
+        tmp_path,
+        env_lines=("ENGINE_DIARIZER_BACKEND=native", "HUGGINGFACE_TOKEN=hf_example"),
+        diar_weights=False,
+    )
+    assert DIAR in _files(chain), chain
+    assert "provision" in stderr.lower(), stderr
+
+
 def test_diar_native_starts_once_its_weights_have_been_exported(tmp_path: Path):
     """The whole point of #639: a self-hosted deployment must have SOME path to the
     engine its own config claims is the default. Before this, there was none.
-
-    Exporting the weights is the opt-in — that directory is created only by
-    `download-models diar-native`, so no extra env var is needed to express intent.
     """
     chain, stderr = _resolve(tmp_path, diar_weights=True)
-    assert _files(chain) == [BASE, PROD, GPU, DIAR], chain
+    assert _files(chain) == [BASE, PROD, GPU, DIAR, DIAR_GPU], chain
     assert "Native diarization sidecar enabled" in stderr, stderr
+
+
+def test_diar_native_gpu_overlay_is_omitted_without_an_nvidia_runtime(tmp_path: Path):
+    """The reservation lives in its own file so the base overlay stays CPU-loadable.
+
+    If both were one file, a GPU-less or --lite host would fail `up` with "could not
+    select device driver" (#660). Splitting them only helps if the GPU half is genuinely
+    conditional, so this drives the no-nvidia path and asserts the sidecar still starts.
+    """
+    chain, stderr = _resolve(tmp_path, diar_weights=True, nvidia_runtime=False)
+    assert DIAR in _files(chain), "the sidecar must still run without a GPU"
+    assert DIAR_GPU not in _files(chain), chain
+    assert "CPU" in stderr, stderr
 
 
 def test_diar_native_weights_without_the_overlay_file_warns_loudly(tmp_path: Path):

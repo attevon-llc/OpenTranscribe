@@ -149,6 +149,9 @@ function show_help {
     echo "  restart       Restart all services"
     echo "  status        Show container status"
     echo "  compose-files Print the resolved 'docker compose -f ...' chain"
+    echo "  download-models [group]"
+    echo "                Fetch model assets not bundled in the images. 'diar-native'"
+    echo "                provisions the native diarizer's weights; omit for everything."
     echo "  logs [svc]    View logs (all or specific service)"
     echo "  update        Pull latest Docker images and restart"
     echo "  update-full   Update images AND configuration files"
@@ -166,6 +169,7 @@ function show_help {
     echo "  ./opentranscribe.sh start"
     echo "  ./opentranscribe.sh logs backend"
     echo "  ./opentranscribe.sh compose-files    # which overlays did it pick?"
+    echo "  ./opentranscribe.sh download-models diar-native  # provision native diarizer weights"
     echo "  ./opentranscribe.sh update           # Update containers only"
     echo "  ./opentranscribe.sh update-full      # Update everything"
     echo "  ./opentranscribe.sh backup           # Dump the database to ./backups"
@@ -216,7 +220,12 @@ fix_model_cache_permissions() {
     # Check if model cache directory exists
     if [ ! -d "$MODEL_CACHE_DIR" ]; then
         echo -e "${BLUE}📁 Creating model cache directory: $MODEL_CACHE_DIR${NC}"
-        mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch"
+        # diar-native is created (empty) here same as huggingface/torch. That is safe
+        # despite the documented crash-loop risk (an empty dir at the sidecar's bind-mount
+        # source): get_compose_files only loads docker-compose.diar-native.yml when the
+        # dir is non-empty OR HUGGINGFACE_TOKEN is set, and an empty dir with no token
+        # never satisfies either arm.
+        mkdir -p "$MODEL_CACHE_DIR/huggingface" "$MODEL_CACHE_DIR/torch" "$MODEL_CACHE_DIR/diar-native"
     fi
 
     # Check current ownership
@@ -289,6 +298,43 @@ force_cpu_mode_requested() {
     return 1
 }
 
+# Resolve where the diar-native ONNX/PLDA export lives (or will land), from .env alone.
+#
+# This is the shipped, standalone script, so — unlike opentr.sh's dev-only same-named
+# helper — there is no machine-local legacy path to fall back to: just the explicit
+# override, then the standard MODEL_CACHE_DIR-relative location every installer and
+# `download-models diar-native` agree on.
+resolve_diar_native_models_dir() {
+    local dir
+    dir=$(read_env_value DIAR_NATIVE_MODELS_DIR)
+    if [ -z "$dir" ]; then
+        local cache_dir
+        cache_dir=$(read_env_value MODEL_CACHE_DIR)
+        dir="${cache_dir:-./models}/diar-native"
+    fi
+    echo "$dir"
+}
+
+# Whether $1 (a models directory) carries a provisioning marker worth trusting.
+#
+# This cannot be the same check diar-server itself makes — that lives in a Rust binary
+# inside the backend image, and this runs before we even know the new image is pullable.
+# It approximates: present, non-empty and (where python3 exists) valid JSON. That is
+# strictly weaker than the binary's own validation, which also checks the recorded
+# exporter/model-set version — so this can call a marker "present" that `provision-models`
+# would still choose to re-export. It only needs to answer one question: has this
+# directory EVER been provisioned, or is native diarization certain to silently become
+# PyAnnote the moment this upgrade lands.
+diar_native_marker_present() {
+    local marker="$1/diar-provision.json"
+    [ -s "$marker" ] || return 1
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$marker" >/dev/null 2>&1
+        return $?
+    fi
+    return 0
+}
+
 get_compose_files() {
     local compose_files="-f docker-compose.yml"
 
@@ -352,7 +398,9 @@ get_compose_files() {
         echo -e "${YELLOW}   Note: this also sets path.repo on OpenSearch — the opensearch container will be recreated.${NC}" >&2
     fi
 
-    # Add the native diarization sidecar when its weights have been exported.
+    # Add the native diarization sidecar when its weights have been exported, OR when
+    # they can still be — i.e. a HUGGINGFACE_TOKEN is on file for the backend's own
+    # startup provisioning (backend/app/transcription/native_provision.py) to use.
     #
     # engine.diarizer_backend defaults to `native`, but before issue #639 no self-hosted
     # deployment could ever run the sidecar: the overlay was not in release-manifest.txt,
@@ -360,31 +408,59 @@ get_compose_files() {
     # install therefore served every file from the in-process PyAnnote fallback while
     # the config, the docs and the admin UI all said `native`.
     #
-    # The signal is the exported weights EXISTING, not a dedicated toggle. Unlike
-    # BACKUP_HOST_PATH (which .env.example ships set, so its presence proves nothing),
-    # this directory is created only by `download-models diar-native` — so its presence
-    # is real evidence the operator asked for this engine, and needs no new variable to
-    # say so. It is also self-consistent: no weights means no sidecar, which is exactly
-    # the condition under which starting it would crash-loop.
+    # Weights-present was the ONLY signal until issue #654's fix: `download-models
+    # diar-native` was advertised but did not exist, so this arm could never actually
+    # fire from a fresh install. Now that the backend provisions its own weights on
+    # startup (given a token), gating on the weights already existing would need TWO
+    # `update`/`start` cycles to converge on a fresh install — one for the backend to
+    # provision, a second for this script to notice. A configured HUGGINGFACE_TOKEN is
+    # what lets that provisioning step succeed, so it stands in for "weights exist" until
+    # they do. With neither signal, nothing can produce the weights and loading the
+    # overlay would just crash-loop the sidecar (empty bind-mount source).
+    #
+    # read_env_value does NOT expand `${VAR}` references inside a value — a
+    # HUGGINGFACE_TOKEN written as `HUGGINGFACE_TOKEN=${SOME_OTHER_VAR}` reads back
+    # literally and passes this non-empty check without being a usable token. That is
+    # the same limitation every other read_env_value call in this file already lives
+    # with; not new here.
     local diar_models_dir=""
-    diar_models_dir=$(read_env_value DIAR_NATIVE_MODELS_DIR)
-    if [ -z "$diar_models_dir" ]; then
-        local diar_cache_dir=""
-        diar_cache_dir=$(read_env_value MODEL_CACHE_DIR)
-        diar_models_dir="${diar_cache_dir:-./models}/diar-native"
-    fi
+    diar_models_dir=$(resolve_diar_native_models_dir)
 
+    local diar_weights_present="0"
     if [ -d "$diar_models_dir" ] && [ -n "$(ls -A "$diar_models_dir" 2>/dev/null)" ]; then
+        diar_weights_present="1"
+    fi
+    local diar_hf_token=""
+    diar_hf_token=$(read_env_value HUGGINGFACE_TOKEN)
+
+    if [ "$diar_weights_present" = "1" ] || [ -n "$diar_hf_token" ]; then
         if [ -f docker-compose.diar-native.yml ]; then
             compose_files="$compose_files -f docker-compose.diar-native.yml"
-            echo -e "${BLUE}🎙️  Native diarization sidecar enabled (weights present)${NC}" >&2
-            echo -e "${BLUE}   Weights: ${diar_models_dir} → /models${NC}" >&2
-            echo -e "${BLUE}   Holds ~4 GB of GPU memory on device ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} while up.${NC}" >&2
+            if [ "$diar_weights_present" = "1" ]; then
+                echo -e "${BLUE}🎙️  Native diarization sidecar enabled (weights present)${NC}" >&2
+                echo -e "${BLUE}   Weights: ${diar_models_dir} → /models${NC}" >&2
+            else
+                echo -e "${BLUE}🎙️  Native diarization sidecar enabled (HUGGINGFACE_TOKEN set — backend will provision weights on startup)${NC}" >&2
+                echo -e "${BLUE}   Weights will land at: ${diar_models_dir} → /models${NC}" >&2
+            fi
+            # The overlay above is CPU-safe by construction (no device reservation,
+            # DIAR_MODE defaults to cpu) so it can load on a GPU-less or FORCE_CPU_MODE
+            # host. The reservation and the `cuda` override are in a second file, added
+            # only when a GPU overlay was actually selected above — keyed off the same
+            # $docker_runtime probe, so the sidecar can never claim a device the rest of
+            # the stack decided not to use (#660).
+            if [ "$docker_runtime" = "nvidia" ] && ! force_cpu_mode_requested \
+               && [ -f docker-compose.diar-native-gpu.yml ]; then
+                compose_files="$compose_files -f docker-compose.diar-native-gpu.yml"
+                echo -e "${BLUE}   Holds ~2.2 GB of GPU memory on device ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} while up.${NC}" >&2
+            else
+                echo -e "${BLUE}   Running on CPU — slower than the GPU path, identical output.${NC}" >&2
+            fi
         else
             # Loud, unlike the GPU overlays' silent `[ -f ]` fallthrough: the operator
-            # exported these weights on purpose, and quietly serving PyAnnote instead is
-            # the exact defect #639 is about.
-            echo -e "${YELLOW}⚠️  Native diarization weights are present but docker-compose.diar-native.yml is missing.${NC}" >&2
+            # exported these weights (or configured a token to) on purpose, and quietly
+            # serving PyAnnote instead is the exact defect #639 is about.
+            echo -e "${YELLOW}⚠️  Native diarization is configured but docker-compose.diar-native.yml is missing.${NC}" >&2
             echo -e "${YELLOW}   Diarization will fall back to the in-process PyAnnote engine.${NC}" >&2
             echo -e "${YELLOW}   Run './opentranscribe.sh update-full' to fetch it.${NC}" >&2
         fi
@@ -433,6 +509,26 @@ preflight_upgrade_env() {
     case "$enc" in
         ""|*change_me*|*CHANGE_ME*) problems+=("ENCRYPTION_KEY is unset or still a placeholder") ;;
     esac
+
+    # issue #670: engine.diarizer_backend's coded (and DB-configured) default is `native`,
+    # and backend/app/transcription/native_provision.py deliberately never aborts startup
+    # over a failed export — a degraded diarizer is a supported configuration, not a crash
+    # (that is what makes it safe to run on every boot). So nothing else ever tells the
+    # operator that an upgrade just silently traded the native engine for the in-process
+    # PyAnnote fallback; this is the one place left to say so, before the current stack is
+    # torn down and the outcome is already decided. Same DB-blindness as get_compose_files:
+    # this script cannot see the SystemSettings value, only the ENGINE_DIARIZER_BACKEND
+    # .env fallback read below.
+    local diar_backend
+    diar_backend=$(read_env_value ENGINE_DIARIZER_BACKEND)
+    if [ "${diar_backend:-native}" = "native" ]; then
+        local diar_dir diar_token
+        diar_dir=$(resolve_diar_native_models_dir)
+        diar_token=$(read_env_value HUGGINGFACE_TOKEN)
+        if ! diar_native_marker_present "$diar_dir" && [ -z "$diar_token" ]; then
+            problems+=("engine.diarizer_backend resolves to native, but $diar_dir has never been provisioned and no HUGGINGFACE_TOKEN is set to provision it on next startup — run './opentranscribe.sh download-models diar-native' first, or set HUGGINGFACE_TOKEN in .env")
+        fi
+    fi
 
     [ ${#problems[@]} -eq 0 ] && return 0
 
@@ -624,6 +720,124 @@ show_access_info() {
     echo -e "${YELLOW}⏳ Please wait a moment for all services to initialize...${NC}"
 }
 
+# The image whose diar-server binary should perform the export. Same reasoning as
+# scripts/download-models.sh's resolve_downloader_image(): the export MUST come from
+# the version this deployment actually runs, because the diar-native sidecar is that
+# SAME image with its CMD replaced — an export made by a different backend build than
+# the one the sidecar will run from is not something either of them is contracted to
+# tolerate.
+resolve_diar_native_downloader_image() {
+    local tag
+    tag=$(read_env_value OT_IMAGE_TAG)
+    echo "${DOCKERHUB_USERNAME:-davidamacey}/opentranscribe-backend:${tag:-latest}"
+}
+
+# `download-models diar-native`: produce the ONNX/PLDA export `diar-server` needs,
+# without running the full model downloader. This is the command five files already
+# advertised (.env.example, this script's own get_compose_files comment, two test
+# files, and native_provision.py's docstring) before it existed anywhere — issue #654.
+#
+# Calls the Rust binary directly (`diar-server provision-models`) rather than routing
+# through download-models.py: that script's `diar-native` DOWNLOAD_GROUPS entry exists
+# for the FULL-downloader / offline-packaging callers that already invoke it in one
+# container per run, and duplicating this one export inside that flow would mean two
+# independent places decide the export's flags. One-shot container construction mirrors
+# scripts/download-models.sh's docker run (lines ~354-371): HUGGINGFACE_TOKEN in the
+# environment (never the command line — visible to any `ps` on the host), the
+# HuggingFace cache mounted so a re-run does not re-fetch the underlying weights, and
+# the pinned deployment image via resolve_diar_native_downloader_image() above.
+download_models_diar_native() {
+    check_environment
+
+    local token
+    token=$(read_env_value HUGGINGFACE_TOKEN)
+    if [ -z "$token" ]; then
+        echo -e "${RED}❌ HUGGINGFACE_TOKEN not set in .env.${NC}"
+        echo ""
+        echo "   1. Create a token (Read access): https://huggingface.co/settings/tokens"
+        echo "   2. Signed in as that account, accept the terms at:"
+        echo "      https://huggingface.co/pyannote/speaker-diarization-community-1"
+        echo "   3. Add it to .env:  HUGGINGFACE_TOKEN=your_token_here"
+        echo ""
+        echo "   Then re-run: ./opentranscribe.sh download-models diar-native"
+        exit 1
+    fi
+
+    local models_dir
+    models_dir=$(resolve_diar_native_models_dir)
+    local cache_dir
+    cache_dir=$(read_env_value MODEL_CACHE_DIR)
+    cache_dir="${cache_dir:-./models}"
+
+    # Created (empty, if this is the first run) and chowned to the container's user
+    # BEFORE the container writes into either mount — a bare `mkdir -p` from whatever
+    # user invoked this script would leave both root-owned, and appuser cannot write
+    # a root-owned bind-mount source. Safe to create empty here specifically: this
+    # function always has a token in hand by this point, and it is about to populate
+    # the directory in the same breath — not a code path that could leave an empty
+    # diar-native dir sitting for `start` to auto-load against and crash-loop.
+    mkdir -p "$models_dir" "$cache_dir/huggingface"
+    fix_model_cache_permissions
+
+    local image
+    image=$(resolve_diar_native_downloader_image)
+    echo -e "${BLUE}🎙️  Provisioning diar-native models via ${image}${NC}"
+    echo -e "${BLUE}   (diar-server provision-models — several hundred MB, a couple of minutes)${NC}"
+    echo ""
+
+    if docker run --rm \
+        -e HUGGINGFACE_TOKEN="$token" \
+        -v "$(realpath "$models_dir"):/models" \
+        -v "$(realpath "$cache_dir/huggingface"):/home/appuser/.cache/huggingface" \
+        "$image" \
+        diar-server provision-models \
+            --models-dir /models \
+            --set fast \
+            --mode cpu \
+            --smoke-clip /usr/local/share/diar-native/smoke.wav \
+            --json; then
+        echo ""
+        echo -e "${GREEN}✅ diar-native models provisioned at ${models_dir}${NC}"
+        echo "   Run './opentranscribe.sh restart' (or 'start') to pick up the native sidecar."
+        return 0
+    fi
+
+    # Stable exit codes from crates/diar-core/src/provision/mod.rs::exit — branched on
+    # rather than parsed out of diar-server's own message text, which it also prints
+    # above this. 0/2/3/4/5/6/7/9 are the whole contract; anything else is unexpected.
+    local rc=$?
+    echo ""
+    echo -e "${RED}❌ diar-native provisioning failed (exit ${rc}).${NC}"
+    case "$rc" in
+        5)
+            echo -e "${YELLOW}   Token denied. The gate is per-account and auto-approved — a valid${NC}"
+            echo -e "${YELLOW}   token whose account never accepted the terms fails identically.${NC}"
+            echo -e "${YELLOW}   Confirm at: https://huggingface.co/pyannote/speaker-diarization-community-1${NC}"
+            ;;
+        7)
+            echo -e "${YELLOW}   ${models_dir} is not writable by the container. Run:${NC}"
+            echo -e "${YELLOW}     ./scripts/fix-model-permissions.sh${NC}"
+            ;;
+        6)
+            echo -e "${YELLOW}   This image has no Python exporter environment. That should not happen${NC}"
+            echo -e "${YELLOW}   on a published backend image — please report it.${NC}"
+            ;;
+        3)
+            echo -e "${YELLOW}   The export completed but failed its own smoke test — see the output above.${NC}"
+            ;;
+        4)
+            echo -e "${YELLOW}   The export itself failed — see the output above.${NC}"
+            ;;
+        9)
+            echo -e "${YELLOW}   Device unavailable. This step runs on CPU and needs no GPU; please report this.${NC}"
+            ;;
+        *)
+            echo -e "${YELLOW}   See diar-server's own output above for detail.${NC}"
+            ;;
+    esac
+    exit 1
+}
+
 case "${1:-help}" in
     start)
         check_environment
@@ -688,6 +902,30 @@ case "${1:-help}" in
         #   docker compose $(./opentranscribe.sh compose-files 2>/dev/null) ps
         check_environment
         get_compose_files
+        ;;
+    download-models)
+        check_environment
+        model_group="${2:-}"
+        case "$model_group" in
+            ""|all)
+                if [ ! -f scripts/download-models.sh ]; then
+                    echo -e "${RED}❌ scripts/download-models.sh not found.${NC}"
+                    echo -e "${YELLOW}   Fix with: ./opentranscribe.sh update-full${NC}"
+                    exit 1
+                fi
+                dl_cache_dir=$(read_env_value MODEL_CACHE_DIR)
+                bash scripts/download-models.sh "${dl_cache_dir:-./models}"
+                ;;
+            diar-native)
+                download_models_diar_native
+                ;;
+            *)
+                echo -e "${RED}❌ Unknown model group: '${model_group}'${NC}"
+                echo "   Known groups: diar-native"
+                echo "   Omit the group to download the full model set."
+                exit 1
+                ;;
+        esac
         ;;
     logs)
         check_environment

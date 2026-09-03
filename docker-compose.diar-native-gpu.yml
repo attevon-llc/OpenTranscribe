@@ -1,0 +1,59 @@
+# GPU reservation for the diar-native sidecar — ADDITIVE, load ONLY next to
+# docker-compose.gpu.yml (i.e. only on hosts where opentr.sh's add_gpu_overlay() found an
+# nvidia runtime and FORCE_CPU_MODE isn't set).
+#
+# WHY THIS IS ITS OWN FILE and not a `deploy:` block inside docker-compose.diar-native.yml:
+# Compose has no `if` — once a key is present in ANY merged file it is present in the
+# final config for every host, so a hardcoded `deploy.resources.reservations.devices:
+# [{driver: nvidia, ...}]` in the sidecar's main overlay asked every host — CPU-only,
+# --lite, or a Blackwell box falling back to CPU — to satisfy an nvidia device
+# reservation it cannot, and `docker compose up` failed outright before the container
+# ever started (#660).
+#
+# This repo already solves the identical problem for the base stack:
+# docker-compose.gpu.yml carries ALL the GPU-specific stanzas for backend/celery-worker,
+# added on top of a GPU-agnostic docker-compose.yml only when add_gpu_overlay() decides
+# a GPU is actually usable (opentranscribe.sh: detect_nvidia_runtime at ~253-260,
+# force_cpu_mode_requested at ~279-290; opentr.sh's add_gpu_overlay at ~398-410 early-
+# returns when DOCKER_RUNTIME != "nvidia"). This file is the diar-native equivalent:
+# docker-compose.diar-native.yml alone is CPU-safe (DIAR_MODE defaults to `cpu`, no
+# device reservation at all), and loading this file on top adds the GPU reservation AND
+# flips DIAR_MODE to `cuda` — the two must move together, which is why both live in the
+# same `environment:`/`deploy:` pair below rather than being split further.
+#
+# Both front ends append this automatically whenever they load the sidecar AND detect an
+# nvidia runtime — `add_diar_native_overlay` in opentr.sh, `get_compose_files` in
+# opentranscribe.sh (which also honours FORCE_CPU_MODE). Pinned by
+# `test_compose_file_selection.py`, whose expected chain includes this file; that test was
+# mutated to prove it fails when the append is removed, because a missing GPU overlay
+# degrades silently — the sidecar still works, just on CPU, so nothing surfaces it.
+#
+# Driving it by hand is only for debugging:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
+#                  -f docker-compose.diar-native.yml -f docker-compose.diar-native-gpu.yml \
+#                  up -d diar-native
+
+services:
+  diar-native:
+    environment:
+      # Overrides the CPU default from docker-compose.diar-native.yml — environment
+      # entries merge BY KEY across compose files, so this line replaces DIAR_MODE only;
+      # every other env var declared there (DIAR_MODELS_DIR, LD_LIBRARY_PATH, RUST_LOG,
+      # ...) is untouched. An operator can still force `cpu` or `mps` explicitly via
+      # DIAR_NATIVE_MODE even with this overlay loaded.
+      - DIAR_MODE=${DIAR_NATIVE_MODE:-cuda}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              # ⚠️ Defaults to GPU_DEVICE_ID — the SAME GPU the rest of the stack uses —
+              # never to a bare 0. This used to read `${DIAR_NATIVE_GPU:-0}`, so simply
+              # enabling this overlay without also setting DIAR_NATIVE_GPU would reserve
+              # device 0. On this workstation device 0 is an A6000 reserved for unrelated
+              # work, and the sidecar holds ~2.2 GB of warm ORT arena — it would have sat
+              # on someone else's card indefinitely. Overlays must inherit the project's
+              # configured GPU, not re-pick one.
+              device_ids: ['${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}}']

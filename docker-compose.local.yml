@@ -32,6 +32,13 @@ services:
   celery-worker-gpu-scaled:
     pull_policy: never
 
+  # diar-native's `image:` (docker-compose.diar-native.yml) defaults to the published
+  # davidamacey/opentranscribe-backend tag same as every other service here — without
+  # this, `start prod --build` builds the backend locally but the sidecar still tries to
+  # pull that tag from Docker Hub (issue #639-adjacent).
+  diar-native:
+    pull_policy: never
+
   frontend:
     pull_policy: never
 

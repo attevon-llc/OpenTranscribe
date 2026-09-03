@@ -32,6 +32,21 @@ services:
       dockerfile: Dockerfile.blackwell
     image: davidamacey/opentranscribe-backend:${OT_BLACKWELL_IMAGE_TAG:-blackwell}
 
+  # diar-native sidecar (docker-compose.diar-native.yml) — retag only, no build override.
+  # The sidecar's `command: ["diar-server"]` overrides the image's CMD but still runs
+  # OUT OF whatever image is named, so on a Blackwell host it must be built from
+  # Dockerfile.blackwell too, or it silently runs the non-Blackwell binary/libs baked
+  # into the plain :${OT_IMAGE_TAG:-latest} image (docker-compose.diar-native.yml's own
+  # comment calls this out as a "same build" invariant — this overlay used to leave the
+  # sidecar on the OT_IMAGE_TAG default while celery-worker below moved to
+  # OT_BLACKWELL_IMAGE_TAG, which is exactly the mismatch that comment warns against).
+  # No `build:` override here: Dockerfile.blackwell is a local dev build target selected
+  # via `build:`, and this file's own header says prod uses the pre-built :blackwell tag
+  # from Docker Hub — the image tag alone is enough for diar-native since it never builds
+  # locally on its own (it's the shared backend image with a `command:` override).
+  diar-native:
+    image: davidamacey/opentranscribe-backend:${OT_BLACKWELL_IMAGE_TAG:-blackwell}
+
   # Override GPU worker to use Blackwell image with SM_121 patches
   celery-worker:
     build:

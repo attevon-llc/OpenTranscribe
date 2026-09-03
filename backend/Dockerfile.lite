@@ -4,6 +4,16 @@
 # No faster-whisper, no ctranslate2, no CUDA — uses cloud ASR providers instead
 # =============================================================================
 
+# diar-native (T1 diarization sidecar) binary + ONNX Runtime CPU-provider libs, pinned
+# by DIGEST — SAME pin as Dockerfile.prod:21, so the binary running here is byte-for-byte
+# the one the full image ships, never a separately-tracked version (#660). Unlike
+# Dockerfile.prod, this stage's COPY below deliberately excludes
+# libonnxruntime_providers_cuda.so: lite is CPU-only by definition (no CUDA runtime, no
+# nvidia driver expected on the host), and diar-server's CPU execution provider needs no
+# separate provider .so to dlopen — only the CUDA path does. DIAR_MODE must be `cpu` (or
+# unset, since diar-server's own default is cpu) for any container built from this image.
+FROM davidamacey/diar-native@sha256:83a709be94d0ca06441fa10aea0680f53b03cc10eb3ce11c4eeb84478400567d AS diar-native-bin
+
 # -----------------------------------------------------------------------------
 # Stage 1: Build Stage - Install Python dependencies with compilation
 # -----------------------------------------------------------------------------
@@ -58,6 +68,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
+# diar-native's only extra system dependency: libopenblas0 (linked by diar-server itself,
+# per `ldd` — see Dockerfile.prod). Its own dependency libgfortran5 is pulled in
+# transitively by apt automatically if not already present; unlike the full image, this
+# lite image has no scipy in requirements-lite.txt, so — unlike Dockerfile.prod's verified
+# "already present" claim — it is NOT assumed present here and this step may pull it in.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libopenblas0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
 # Create non-root user for security
 # No video group needed (no GPU access required in lite mode)
 RUN groupadd -r appuser && \
@@ -76,6 +96,35 @@ WORKDIR /app
 
 # Copy Python packages from builder stage
 COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
+
+# diar-native binary + ONNX Runtime CPU-provider libs (#660). Adapted from
+# Dockerfile.prod's equivalent block — read that one first, this is NOT a blind copy:
+#   - No libonnxruntime_providers_cuda.so: lite has no CUDA runtime to load it against,
+#     and the CPU execution provider needs no separate provider .so.
+#   - No image-wide LD_LIBRARY_PATH here, same as Dockerfile.prod: a compose-level
+#     LD_LIBRARY_PATH scoped to just the diar-native SERVICE is what points at
+#     /opt/diar-native/lib (see docker-compose.diar-native.yml) — never image-wide, so it
+#     can never collide with a Python onnxruntime install's own same-named provider libs.
+#   - No `video` group step needed here either — this image already has none (no GPU
+#     access in lite mode), and the CPU provider needs none.
+# /opt/diar-native/run is diar-server's working_dir (compose-level); chowned to appuser
+# for the same reason Dockerfile.prod chowns it — nothing writes there today, but it is
+# the one place a future write-relative-to-cwd would land.
+RUN mkdir -p /opt/diar-native/lib /opt/diar-native/run && chown appuser:appuser /opt/diar-native/run
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/bin/diar-server /usr/local/bin/diar-server
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime.so.1.24.2 /opt/diar-native/lib/libonnxruntime.so.1.24.2
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/lib/libonnxruntime_providers_shared.so /opt/diar-native/lib/libonnxruntime_providers_shared.so
+# The 26 s verification clip `provision-models` diarizes in its end-to-end stage —
+# same rationale and source as Dockerfile.prod's identical COPY.
+COPY --from=diar-native-bin --chown=appuser:appuser /usr/local/share/diar-native/smoke.wav /usr/local/share/diar-native/smoke.wav
+# ORT resolves its provider libs relative to the executable's directory AND the process
+# cwd (diar-server has no ELF NEEDED entry for libonnxruntime — it's dlopen'd at
+# runtime), so the shared provider lib is symlinked into both locations, same as
+# Dockerfile.prod. Only the shared provider needs this — there is no cuda provider here
+# to symlink.
+RUN ln -s /opt/diar-native/lib/libonnxruntime_providers_shared.so /usr/local/bin/libonnxruntime_providers_shared.so && \
+    ln -s /opt/diar-native/lib/libonnxruntime_providers_shared.so /opt/diar-native/run/libonnxruntime_providers_shared.so && \
+    chown -h appuser:appuser /opt/diar-native/run/libonnxruntime_providers_shared.so
 
 # Ensure scripts in .local are usable by adding to PATH
 # No LD_LIBRARY_PATH needed (no CUDA/cuDNN in lite mode)

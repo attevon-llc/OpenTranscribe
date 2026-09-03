@@ -4,6 +4,10 @@
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
 #                  -f docker-compose.diar-native.yml up -d diar-native
 #
+# CPU-only / no-GPU host: this file alone is CPU-safe (DIAR_MODE defaults to `cpu`, and
+# there is no `deploy.resources.reservations.devices` block here — see the note above the
+# `diar-native` service below for where the GPU reservation actually lives (#660).
+#
 # The engine is selected by `engine.diarizer_backend` (DB) -> ENGINE_DIARIZER_BACKEND
 # (env) -> the coded default, which is now `native`. There is ONE decision point,
 # `TranscriptionConfig.diarizer_backend`; the old ad-hoc DIARIZER_ENGINE env reads in
@@ -40,11 +44,30 @@ services:
     working_dir: /opt/diar-native/run
     user: appuser
     environment:
-      - DIAR_MODE=${DIAR_NATIVE_MODE:-cuda}
+      # Defaults to `cpu` — this file must be safe to load on a CPU-only or --lite host
+      # with NO nvidia runtime present (#660). docker-compose.diar-native-gpu.yml (loaded
+      # alongside docker-compose.gpu.yml, see the note above the `deploy:` block that used
+      # to live here) overrides this same key to `cuda` — compose merges `environment:`
+      # BY KEY across files, so that override does not disturb anything else in this list.
+      # An operator can still force either mode explicitly via DIAR_NATIVE_MODE (the
+      # documented enum is cuda | mps | cpu — see .env.example) regardless of which
+      # overlay is loaded.
+      #
+      # ⚠️ `DIAR_NATIVE_MODE` is COMMENTED OUT in .env.example, and must stay that way. It
+      # used to ship as `cuda`, which — being an explicitly-set env var — beat both this
+      # file's `:-cpu` fallback and the GPU overlay's override on every deployment that
+      # copied the template unmodified, so a CPU-only host got a sidecar it could not
+      # start. Uncommenting it there re-breaks that.
+      - DIAR_MODE=${DIAR_NATIVE_MODE:-cpu}
       - DIAR_MODELS_DIR=/models
       - DIAR_MAX_INFLIGHT=${DIAR_NATIVE_MAX_INFLIGHT:-2}
       - DIAR_BIND=0.0.0.0:8701
       - SPEAKRS_LAZY_SESSIONS=${DIAR_NATIVE_LAZY_SESSIONS:-1}
+      # diar-server 0.3.x emits structured per-request logs (request id, stage timings,
+      # device). Before 0.3.0 it installed no tracing subscriber at all and logged
+      # nothing — these two are new as of this fix, not a pre-existing knob.
+      - RUST_LOG=${DIAR_NATIVE_LOG_LEVEL:-info}
+      - DIAR_LOG_FORMAT=${DIAR_NATIVE_LOG_FORMAT:-text}
       # Scoped to THIS service only — never image-wide (see the ORT version-collision
       # note in Dockerfile.prod: Python's onnxruntime-gpu==1.28.0 ships providers with
       # the same filenames as diar's 1.24.2, so the image-wide env must never point at
@@ -69,36 +92,110 @@ services:
       # every other model cache in docker-compose.yml.
       - ${DIAR_NATIVE_MODELS_DIR:-${MODEL_CACHE_DIR:-./models}/diar-native}:/models:ro
       - diar-native-tmp:/tmp/diar-native
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [gpu]
-              # ⚠️ Defaults to GPU_DEVICE_ID — the SAME GPU the rest of the stack uses —
-              # never to a bare 0. This used to read `${DIAR_NATIVE_GPU:-0}`, so simply
-              # enabling this overlay without also setting DIAR_NATIVE_GPU would reserve
-              # device 0. On this workstation device 0 is an A6000 reserved for unrelated
-              # work, and the sidecar holds ~4.1 GB of warm ORT arena — it would have sat
-              # on someone else's card indefinitely. Overlays must inherit the project's
-              # configured GPU, not re-pick one.
-              device_ids: ['${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}}']
+      # Same transcription-temp volume the celery-worker* services below mount, at the
+      # IDENTICAL absolute path — that identity is what lets a worker hand this sidecar a
+      # path it wrote (Stage 1's shared-volume WAV) with no translation. Before this, the
+      # only volume this container shared with a worker was diar-native-tmp, so /diarize
+      # forced a second full re-encode of every recording purely to get past this gap
+      # (issue #661). Read-only: the sidecar only ever reads a WAV here, never writes one.
+      - transcription-temp:/tmp/transcription:ro
+    # ⚠️ NO `deploy.resources.reservations.devices` block here — that used to be
+    # hardcoded in this file (`driver: nvidia`, unconditionally), which meant EVERY host
+    # loading this overlay was asking Docker to satisfy an nvidia device reservation, CPU-
+    # only and --lite hosts included. Compose has no `if`: once a key merges into the
+    # final config it is there for every host that loads the file, so the GPU stanza
+    # cannot live in the same file as the CPU-safe defaults above (#660).
+    #
+    # This repo already solves the identical problem for the base stack —
+    # docker-compose.gpu.yml carries ALL GPU-specific stanzas for backend/celery-worker,
+    # added on top of a GPU-agnostic docker-compose.yml only when opentr.sh's
+    # add_gpu_overlay() finds an nvidia runtime (detect_nvidia_runtime,
+    # opentranscribe.sh:253-260) and FORCE_CPU_MODE isn't set (opentranscribe.sh:279-290).
+    # docker-compose.diar-native-gpu.yml is the sidecar's equivalent: it adds the same
+    # `device_ids: ['${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}}']` reservation this block used
+    # to have, plus flips DIAR_MODE to `cuda`, and is meant to be loaded next to
+    # docker-compose.gpu.yml.
+    #
+    # Both front ends append it automatically when they detect an nvidia runtime —
+    # `add_diar_native_overlay` in opentr.sh, `get_compose_files` in opentranscribe.sh —
+    # keyed off the same probe that selects docker-compose.gpu.yml, so the sidecar can
+    # never claim a device the rest of the stack decided not to use. Loading this file
+    # alone is the CPU path, and is correct rather than degraded on a GPU-less host.
     restart: unless-stopped   # supervisor: auto-restart (known upstream teardown crash)
+    # The backend exports the model set from its FastAPI lifespan and only becomes
+    # healthy once that finishes (app/transcription/native_provision.py). Waiting for it
+    # is what stops this container starting against an empty /models, where it exits 8
+    # into a `restart: unless-stopped` crash loop that also fails `up --wait` — a
+    # failure mode reproduced live and documented at opentr.sh:275-281.
+    #
+    # `service_healthy`, not `service_completed_successfully`: the backend is a
+    # long-running service, and its healthcheck already allows a 600 s start_period,
+    # comfortably over the 137 s a cold export measured in this image.
+    depends_on:
+      backend:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8701/healthz || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
 
-  # The gpu diarize worker needs the shared audio-handoff volume and the sidecar's URL.
-  # NOTE: service name must match your compose profile's diarization worker
-  # (celery-worker in default gpu profile; celery-worker-diarize under gpu-split).
+  # Every worker that can run the diarization stage needs the SAME env + volume as
+  # celery-worker below — env vars alone are NOT enough. `env_file: .env` (base
+  # docker-compose.yml) reaches every worker automatically, but a compose-level named
+  # volume does not: it must be declared per-service. Before this fix, this overlay
+  # patched ONLY `celery-worker`, so under --gpu-scale and --gpu-split the handoff WAV
+  # was written to a container-local /tmp/diar-native the sidecar could never open,
+  # every /diarize call failed, and the pipeline silently degraded to in-process
+  # PyAnnote (one easy-to-miss warning line) — making PyAnnote the DE-FACTO diarization
+  # engine under both topologies, not the documented fallback (#655).
   #
   # DIARIZER_ENGINE was removed here deliberately: it used to be read ad hoc in three
   # places, and it now selects nothing. Leaving it would have been worse than useless —
   # it defaulted to "python" while the resolved default is "native", so it read as an
   # override that was silently doing the opposite of what it said.
   celery-worker:
+    environment:
+      - DIAR_NATIVE_URL=http://diar-native:8701
+      - DIAR_NATIVE_SHARED_DIR=/tmp/diar-native
+    volumes:
+      - diar-native-tmp:/tmp/diar-native
+
+  # celery-worker-gpu-scaled (docker-compose.gpu-scale.yml, profile gpu-scale, --gpu-scale
+  # flag) consumes the same 'gpu' queue as celery-worker and runs the identical full
+  # pipeline — gpu-scale just fans it out across N concurrent threads in one container.
+  # Same failure mode as celery-worker above if left unwired.
+  celery-worker-gpu-scaled:
+    environment:
+      - DIAR_NATIVE_URL=http://diar-native:8701
+      - DIAR_NATIVE_SHARED_DIR=/tmp/diar-native
+    volumes:
+      - diar-native-tmp:/tmp/diar-native
+
+  # celery-worker-gpu-diarize (base docker-compose.yml, profile gpu-split, --gpu-split
+  # flag) is the diarization half of the multi-GPU split pipeline — it consumes the
+  # 'gpu-diarize' queue and runs diarize_gpu_task, which is exactly where the sidecar
+  # call happens. This overlay's own comment used to point at a service called
+  # "celery-worker-diarize", which does not exist in docker-compose.yml or
+  # docker-compose.gpu-split.yml under any profile — corrected to the real name.
+  celery-worker-gpu-diarize:
+    environment:
+      - DIAR_NATIVE_URL=http://diar-native:8701
+      - DIAR_NATIVE_SHARED_DIR=/tmp/diar-native
+    volumes:
+      - diar-native-tmp:/tmp/diar-native
+
+  # celery-worker-gpu-transcribe (base docker-compose.yml, profile gpu-split) consumes
+  # the 'gpu-transcribe' queue. Under the shipped topology it hardcodes
+  # ENGINE_GPU_SPLIT=true and so normally only runs Stage 2a (transcription), forwarding
+  # diarization to celery-worker-gpu-diarize (transcribe_gpu_task's split branch in
+  # app/tasks/transcription/core.py). But that branch reads the raw ENGINE_GPU_SPLIT
+  # env var per-container, not the admin-editable `engine.gpu_split` DB setting — if
+  # those two ever disagree (or a future dispatch change lands a "split disabled" job on
+  # this queue), this worker falls through to the SAME full pipeline
+  # (`_run_engine_pipeline`, transcribe + diarize) as celery-worker. Wiring the sidecar
+  # here too means that fallback degrades correctly instead of reproducing #655.
+  celery-worker-gpu-transcribe:
     environment:
       - DIAR_NATIVE_URL=http://diar-native:8701
       - DIAR_NATIVE_SHARED_DIR=/tmp/diar-native

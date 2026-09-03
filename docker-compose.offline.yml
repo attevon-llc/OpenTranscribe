@@ -137,6 +137,20 @@ services:
     pull_policy: never
     # No volumes needed - scheduler state lives in container only
 
+  # diar-native sidecar - Offline overrides
+  # No volumes needed here: docker-compose.diar-native.yml already declares the /models
+  # bind (via DIAR_NATIVE_MODELS_DIR, already an absolute-path-capable indirection) and
+  # the diar-native-tmp handoff volume — this block only needs image/pull_policy, same
+  # as celery-beat above. HF_HUB_OFFLINE is set for consistency with every other service
+  # in this file even though diar-server (a Rust ONNX Runtime binary) makes no
+  # HuggingFace calls itself — the weights it reads from /models are ONNX exports already
+  # staged on disk by scripts/download-models.py, not fetched at container start.
+  diar-native:
+    image: davidamacey/opentranscribe-backend:latest
+    pull_policy: never
+    environment:
+      - HF_HUB_OFFLINE=1
+
   frontend:
     image: davidamacey/opentranscribe-frontend:latest
     pull_policy: never
